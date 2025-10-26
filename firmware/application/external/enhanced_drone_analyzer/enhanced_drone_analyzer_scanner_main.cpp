@@ -39,6 +39,8 @@ namespace ui::external_app::enhanced_drone_analyzer {
 
 using namespace portapack;
 
+namespace ui::external_app::enhanced_drone_analyzer_scanner {
+
 namespace ScannerSettingsManager {
     // Function declarations for ChibiOS integration fixes (PHASE 2.2: Complete forward declarations)
     static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
@@ -48,8 +50,6 @@ namespace ScannerSettingsManager {
     static bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content);
     static void reset_to_defaults(DroneAnalyzerSettings& settings);
     template<typename T> static T validate_range(T value, T min_val, T max_val);
-
-    // PHASE 2.3: Implement complete function signatures and return types
 
     // PHASE 2.3: Implement complete function signatures and return types
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) {
@@ -62,8 +62,6 @@ namespace ScannerSettingsManager {
         }
         return settings_loaded;
     }
-
-
 
     static bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content) {
         std::istringstream iss(content);
@@ -184,11 +182,6 @@ namespace ScannerSettingsManager {
         txt_file.close();
         return parse_settings_content(settings, file_content);
     }
-};
-
-} // namespace ScannerSettingsManager
-
-namespace ui::external_app::enhanced_drone_analyzer_scanner {
 void initialize_app(ui::NavigationView& nav) {
     // PHASE 7: Load settings from TXT file if available
     ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings loaded_settings;
@@ -240,7 +233,7 @@ __attribute__((section(".external_app.app_enhanced_drone_analyzer_scanner.applic
     /*.menu_location = */ app_location_t::RX,
     /*.desired_menu_position = */ -1,
 
-    /*.m4_app_tag = portapack::spi_flash::image_tag_wideband_spectrum */
+    /*.m4_app_tag = */ portapack::spi_flash::image_tag_wideband_spectrum,
     /*.m4_app_offset = */ 0x00000000,  // will be filled at compile time
 };
 }
