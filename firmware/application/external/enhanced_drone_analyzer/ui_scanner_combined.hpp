@@ -137,8 +137,8 @@ private:
     systime_t timestamp_history_[MAX_HISTORY] = {0};
     size_t history_index_ = 0;
 
-    TrackedDrone(const TrackedDrone&) = delete;
-    TrackedDrone& operator=(const TrackedDrone&) = delete;
+    // TrackedDrone(const TrackedDrone&) = delete;
+    // TrackedDrone& operator=(const TrackedDrone&) = delete;
 };
 
 struct DisplayDroneEntry {
@@ -214,26 +214,11 @@ struct DetectionLogEntry {
     float confidence_score;
 };
 
-// ===========================================
-// PART 1.5: AUDIO MANAGER (Core audio interface for alerts)
-// ===========================================
-
-class AudioManager {
-public:
-    AudioManager();
-    ~AudioManager();
-
-    void play_detection_beep(ThreatLevel level);
-    void stop_audio();
-    void toggle_audio();
-    bool is_audio_enabled() const;
-
-    AudioManager(const AudioManager&) = delete;
-    AudioManager& operator=(const AudioManager&) = delete;
-
-private:
-    bool audio_enabled_ = true;
-};
+//// ===========================================
+//// PART 1.5: AUDIO MANAGER (Core audio interface for alerts)
+//// ===========================================
+//
+// AudioManager is defined in external header ui_drone_audio.hpp (included in cpp)
 
 struct ConfigData {
     SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;

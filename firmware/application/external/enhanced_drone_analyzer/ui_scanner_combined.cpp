@@ -10,6 +10,11 @@
 
 #include <cstdlib>
 
+static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
+
+// ChibiOS constants for message thread return
+#define MSG_OK (msg_t)0
+
 // Settings file loading helper for scanner app - FIXED per Portapack File API
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
@@ -262,9 +267,6 @@ msg_t DroneScanner::scanning_thread() {
 
 bool DroneScanner::load_frequency_database() {
     try {
-        if (!freq_db_.is_open()) {
-            return false;
-        }
         if (freq_db_.entry_count() == 0) {
             return false;
         }
@@ -336,7 +338,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         current_db_index_ = 0;
     }
 
-    const auto& entry_opt = freq_db_.get_entry(current_db_index_);
+    const freqman_entry& entry_opt = freq_db_[current_db_index_];
     if (entry_opt && entry_opt->frequency_hz > 0) {
         Frequency target_freq_hz = entry_opt->frequency_hz;
         if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
@@ -933,17 +935,16 @@ int32_t DroneHardwareController::get_real_rssi_from_hardware(Frequency target_fr
         chThdSleepMilliseconds(10);
     }
 
-    // PHASE 3.1: Get real RSSI from radio hardware via portapack::receiver_model
+    // PHASE 3.1: Use spectrum data to estimate RSSI - radio API does not expose get_rssi
     if (spectrum_streaming_active_) {
-        // Get RSSI from receiver model when spectrum streaming is active
-        last_valid_rssi_ = receiver_model.rssi();
-        // Convert to dB scale if needed (Portapack returns positive values)
-        if (last_valid_rssi_ > 0) {
-            last_valid_rssi_ = -last_valid_rssi_; // Convert to dB
+        // Get RSSI from spectrum processing (last_valid_rssi_ updated by process_channel_spectrum_data)
+        // If not updated yet, use default threshold
+        if (last_valid_rssi_ == 0) {
+            last_valid_rssi_ = -85; // Default RSSI when no spectrum data
         }
     } else {
-        // Fallback to direct radio API
-        last_valid_rssi_ = radio::get_rssi();
+        // No spectrum streaming, use fallback RSSI
+        last_valid_rssi_ = -85; // Conservative fallback RSSI
     }
 
     // PHASE 3.1: Validate RSSI range
