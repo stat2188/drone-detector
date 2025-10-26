@@ -815,6 +815,7 @@ DroneHardwareController::DroneHardwareController(SpectrumMode mode)
     : spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
       spectrum_streaming_active_(false), last_valid_rssi_(-120)
 {
+    fifo_ = nullptr;
 }
 
 DroneHardwareController::~DroneHardwareController() {
@@ -1669,14 +1670,15 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
 DroneUIController::DroneUIController(NavigationView& nav,
                                    DroneHardwareController& hardware,
                                    DroneScanner& scanner,
-                                   AudioManager& audio)
+                                   AudioManager& audio_mgr)
     : nav_(nav),
       hardware_(hardware),
       scanner_(scanner),
-      audio_(audio),
+      audio_(audio_mgr),
       scanning_active_(false),
       display_controller_(std::make_unique<DroneDisplayController>(nav))
 {
+    audio_mgr_ = &audio_mgr;
 }
 
 void DroneUIController::on_start_scan() {
