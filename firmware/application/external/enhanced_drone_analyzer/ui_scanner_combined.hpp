@@ -346,6 +346,22 @@ public:
 
     void export_runtime_status(); // Export current scanner status to TXT file for Settings app
 
+    // Additional getter methods for external access to private data
+    uint32_t get_scan_cycles() const { return scan_cycles_; }
+    uint32_t get_total_detections() const { return total_detections_; }
+    size_t get_approaching_count() const { return approaching_count_; }
+    size_t get_receding_count() const { return receding_count_; }
+    size_t get_static_count() const { return static_count_; }
+    bool is_real_mode() const { return is_real_mode_; }
+    void reset_scan_cycles() { scan_cycles_ = 0; }
+    size_t get_total_memory_usage() const; // Implementation in cpp
+
+    // Missing function declarations from build errors
+    void setup_wideband_range(Frequency min_freq, Frequency max_freq);
+    void wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override);
+    void process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
+                                                 int32_t original_threshold, int32_t wideband_threshold);
+
     DroneScanner(const DroneScanner&) = delete;
     DroneScanner& operator=(const DroneScanner&) = delete;
 
@@ -459,9 +475,17 @@ public:
     int32_t get_configured_bandwidth() const;
     int32_t get_real_rssi_from_hardware(Frequency target_frequency);
 
+    // Additional getter methods for external access
+    bool is_spectrum_streaming_active() const;
+    int32_t get_current_rssi() const;
+
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
     void process_channel_spectrum_data(const ChannelSpectrum& spectrum);
+
+    // Additional methods from build errors
+    void update_radio_bandwidth();
+    void update_spectrum_for_scanner();
 
     DroneHardwareController(const DroneHardwareController&) = delete;
     DroneHardwareController& operator=(const DroneHardwareController&) = delete;
@@ -893,6 +917,12 @@ public:
 
 // AudioManager forward declarations needed for scanner app
 // (DroneAnalyzerSettings moved inside namespace earlier to fix visibility)
+
+// Global helper functions for drone type handling
+const char* get_drone_type_name(uint8_t type);
+Color get_drone_type_color(uint8_t type);
+Color get_threat_bar_style(ThreatLevel level);
+Color get_threat_text_style(ThreatLevel level);
 
 // Implementation includes and definitions would go here in .cpp file
 

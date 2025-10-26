@@ -16,6 +16,9 @@ static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
 #define MSG_OK (msg_t)0
 
 // Settings file loading helper for scanner app - FIXED per Portapack File API
+// Using namespace to access DroneAnalyzerSettings defined in the scanner namespace
+using namespace ui::external_app::enhanced_drone_analyzer;
+
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
@@ -237,7 +240,7 @@ void DroneScanner::stop_scanning() {
     if (!scanning_active_) return;
 
     scanning_active_ = false;
-    if (scanning_thread_ && chThdTerminatedX(scanning_thread_) == false) {
+    if (scanning_thread_ && chThdTerminated(scanning_thread_) == false) {
         chThdTerminate(scanning_thread_);
         chThdWait(scanning_thread_);
         scanning_thread_ = nullptr;
@@ -264,6 +267,109 @@ msg_t DroneScanner::scanning_thread() {
     scanning_thread_ = nullptr;
     chThdExit(MSG_OK);
     return MSG_OK;
+}
+
+// Implementation for missing methods declared in header but not defined
+size_t DroneScanner::get_total_memory_usage() const {
+    // Estimate memory usage for UI display
+    return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDroneData)) +
+           (freq_db_.is_open() ? freq_db_.entry_count() * sizeof(freqman_entry) : 0);
+}
+
+// Implement missing setup_wideband_range method
+void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) {
+    wideband_scan_data_.min_freq = min_freq;
+    wideband_scan_data_.max_freq = max_freq;
+
+    Frequency scanning_range = max_freq - min_freq;
+    if (scanning_range > WIDEBAND_SLICE_WIDTH) {
+        wideband_scan_data_.slices_nb = (scanning_range + WIDEBAND_SLICE_WIDTH - 1) / WIDEBAND_SLICE_WIDTH;
+        if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
+            wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
+        }
+        Frequency slices_span = wideband_scan_data_.slices_nb * WIDEBAND_SLICE_WIDTH;
+        Frequency offset = ((scanning_range - slices_span) / 2) + (WIDEBAND_SLICE_WIDTH / 2);
+        Frequency center_frequency = min_freq + offset;
+
+        std::generate_n(wideband_scan_data_.slices,
+                       wideband_scan_data_.slices_nb,
+                       [&center_frequency, slice_index = 0]() mutable -> WidebandSlice {
+                           WidebandSlice slice;
+                           slice.center_frequency = center_frequency;
+                           slice.index = slice_index++;
+                           center_frequency += WIDEBAND_SLICE_WIDTH;
+                           return slice;
+                       });
+    } else {
+        wideband_scan_data_.slices[0].center_frequency = (max_freq + min_freq) / 2;
+        wideband_scan_data_.slices_nb = 1;
+    }
+    wideband_scan_data_.slice_counter = 0;
+}
+
+// Implement missing wideband_detection_override method
+void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override) {
+    if (rssi >= threshold_override) {
+        freqman_entry wideband_entry = entry;
+        wideband_entry.description = "Wideband Enhanced Detection";
+        process_wideband_detection_with_override(wideband_entry, rssi, DEFAULT_RSSI_THRESHOLD_DB, threshold_override);
+    }
+}
+
+// Implement missing process_wideband_detection_with_override method
+void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
+                                                           int32_t original_threshold, int32_t wideband_threshold) {
+    if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::NONE) ||
+        !SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
+        return;
+    }
+
+    ThreatLevel threat_level;
+    if (rssi > -70) {
+        threat_level = ThreatLevel::HIGH;
+    } else if (rssi > -80) {
+        threat_level = ThreatLevel::LOW;
+    } else {
+        threat_level = ThreatLevel::NONE;
+    }
+
+    if (entry.frequency_a >= 2'400'000'000 && entry.frequency_a <= 2'500'000'000) {
+        threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
+    }
+
+    total_detections_++;
+    DroneType detected_type = DroneType::UNKNOWN;
+
+    size_t freq_hash = entry.frequency_a;
+    int32_t effective_threshold = detection_threshold;
+    if (local_detection_ring.get_rssi_value(freq_hash) < wideband_threshold) {
+        effective_threshold = wideband_threshold + HYSTERESIS_MARGIN_DB;
+    }
+
+    if (rssi >= effective_threshold) {
+        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
+        current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
+        local_detection_ring.update_detection(freq_hash, current_count, rssi);
+
+        if (current_count >= MIN_DETECTION_COUNT) {
+            DetectionLogEntry log_entry{
+                .timestamp = chTimeNow(),
+                .frequency_hz = static_cast<uint32_t>(entry.frequency_a),
+                .rssi_db = rssi,
+                .threat_level = threat_level,
+                .drone_type = detected_type,
+                .detection_count = current_count,
+                .confidence_score = 0.6f
+            };
+
+            if (detection_logger_.is_session_active()) {
+                detection_logger_.log_detection(log_entry);
+            }
+            update_tracked_drone(detected_type, entry.frequency_a, rssi, threat_level);
+        }
+    } else {
+        local_detection_ring.update_detection(freq_hash, 0, -120);
+    }
 }
 
 bool DroneScanner::load_frequency_database() {
@@ -1465,7 +1571,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
                       }),
         detected_drones_.end());
     sort_drones_by_rssi();
-    displayed_drones_.clear();
+    std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{}); // Use std::fill instead of clear()
     size_t count = std::min(detected_drones_.size(), MAX_DISPLAYED_DRONES);
     for (size_t i = 0; i < count; ++i) {
         displayed_drones_[i] = detected_drones_[i];
