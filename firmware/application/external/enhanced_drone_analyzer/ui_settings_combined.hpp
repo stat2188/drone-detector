@@ -95,16 +95,8 @@ static constexpr int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB = 5;
 static constexpr uint8_t MIN_DETECTION_COUNT = 3;
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 
-using freqman_entry = struct {
-    uint64_t frequency_a;
-    uint64_t frequency_b;
-    uint8_t type;
-    uint16_t modulation;
-    uint16_t bandwidth;
-    uint16_t step;
-    std::string description;
-    std::string tonal;
-};
+// freqman_entry defined in freqman_db.hpp - removed conflicting typedef
+// #include "../../freqman_db.hpp" // Already included in ui_scanner_combined.hpp
 
 static constexpr size_t DETECTION_TABLE_SIZE = 256;
 

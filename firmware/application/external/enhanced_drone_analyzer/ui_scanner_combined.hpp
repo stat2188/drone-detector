@@ -22,6 +22,7 @@
 #include "../../log_file.hpp"  // Required: Log file functionality (FIXED: corrected path)
 #include "../../gradient.hpp"  // Spectrum gradient for waterfall display
 #include <ch.h>                // ChibiOS threading (FIXED: added)
+#include "../../file.hpp"      // File I/O API for TXT settings (FIXED: added)
 
 // Standard library includes (compatible with ARM GCC C++14)
 #include <memory>              // std::unique_ptr, std::make_unique
@@ -39,10 +40,7 @@
 // Forward declarations for build fixes
 // Note: Audio functionality integrated via baseband_api.hpp in hardware section
 
-class DroneHardwareController;
 class LogFile;
-
-class ScanningCoordinator;
 
 using Frequency = uint64_t;
 
@@ -234,32 +232,7 @@ private:
     bool audio_enabled_ = true;
 };
 
-// ===========================================
-// PART 2: CONFIGURATION STRUCTURES (Shared with Settings App)
-// ===========================================
 
-struct DroneAnalyzerSettings {
-    // Core scanning parameters
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    uint32_t scan_interval_ms = 1000;
-    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
-    bool enable_audio_alerts = true;
-    uint16_t audio_alert_frequency_hz = 800;
-    uint32_t audio_alert_duration_ms = 500;
-
-    // Hardware settings
-    uint32_t hardware_bandwidth_hz = 24000000;
-    bool enable_real_hardware = true;
-    bool demo_mode = false;
-};
-
-struct ConfigData {
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
-    uint32_t scan_interval_ms = 1000;
-    bool enable_audio_alerts = true;
-    std::string freqman_path = "DRONES";
-};
 
 class ScannerConfig {
 public:
@@ -901,6 +874,29 @@ private:
 struct DroneAudioSettings;
 class AudioManager;
 struct DroneAnalyzerSettings;
+
+struct DroneAnalyzerSettings {
+    // Core scanning parameters
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    uint32_t scan_interval_ms = 1000;
+    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    bool enable_audio_alerts = true;
+    uint16_t audio_alert_frequency_hz = 800;
+    uint32_t audio_alert_duration_ms = 500;
+
+    // Hardware settings
+    uint32_t hardware_bandwidth_hz = 24000000;
+    bool enable_real_hardware = true;
+    bool demo_mode = false;
+};
+
+struct ConfigData {
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    uint32_t scan_interval_ms = 1000;
+    bool enable_audio_alerts = true;
+    std::string freqman_path = "DRONES";
+};
 
 // Implementation includes and definitions would go here in .cpp file
 
