@@ -232,7 +232,13 @@ private:
     bool audio_enabled_ = true;
 };
 
-
+struct ConfigData {
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    uint32_t scan_interval_ms = 1000;
+    bool enable_audio_alerts = true;
+    std::string freqman_path = "DRONES";
+};
 
 class ScannerConfig {
 public:
@@ -888,13 +894,6 @@ struct DroneAnalyzerSettings {
     uint32_t hardware_bandwidth_hz = 24000000;
     bool enable_real_hardware = true;
     bool demo_mode = false;
-};
-
-struct ConfigData {
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
-    uint32_t scan_interval_ms = 1000;
-    bool enable_audio_alerts = true;
     std::string freqman_path = "DRONES";
 };
 

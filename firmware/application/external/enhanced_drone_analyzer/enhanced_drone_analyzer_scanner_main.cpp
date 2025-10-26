@@ -34,6 +34,8 @@ using namespace portapack;
 
 using namespace ui::external_app::enhanced_drone_analyzer;
 
+namespace ui::external_app::enhanced_drone_analyzer {
+
 namespace ScannerSettingsManager {
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) {
         const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
@@ -79,8 +81,7 @@ namespace ScannerSettingsManager {
         if (equals_pos == std::string::npos) return false;
         std::string key = trim_line(line.substr(0, equals_pos));
         std::string value = trim_line(line.substr(equals_pos + 1));
-        try {
-            if (key == "spectrum_mode") {
+        if (key == "spectrum_mode") {
                 settings.spectrum_mode = parse_spectrum_mode(value);
                 return true;
             } else if (key == "scan_interval_ms") {
@@ -111,7 +112,6 @@ namespace ScannerSettingsManager {
                 settings.freqman_path = value.substr(0, 64);
                 return true;
             }
-        } catch (...) {}
         return false;
     }
 
@@ -170,6 +170,8 @@ private:
     }
 };
 
+} // namespace ScannerSettingsManager
+
 namespace ui::external_app::enhanced_drone_analyzer_scanner {
 void initialize_app(ui::NavigationView& nav) {
     // PHASE 7: Load settings from TXT file if available
@@ -187,7 +189,7 @@ void initialize_app(ui::NavigationView& nav) {
 
     // Push main scanner view with loaded settings
     auto main_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>(nav);
-    nav.replace(main_view.get(), nullptr);
+    nav.replace(main_view.get());
 
     // PHASE 7: Show communication status
     if (settings_loaded) {
