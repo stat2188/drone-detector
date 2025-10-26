@@ -289,6 +289,13 @@ public:
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
+// Forward declarations for ChibiOS integration fixes
+class DroneHardwareController;
+struct DroneAnalyzerSettings;
+class ScanningCoordinator;
+class AudioManager;
+class DroneScanner;
+
 class DetectionRingBuffer {
 public:
     DetectionRingBuffer();
@@ -672,6 +679,22 @@ private:
     const char* get_threat_level_name(ThreatLevel level) const;
 };
 
+struct DroneAnalyzerSettings {
+    // Core scanning parameters
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    uint32_t scan_interval_ms = 1000;
+    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    bool enable_audio_alerts = true;
+    uint16_t audio_alert_frequency_hz = 800;
+    uint32_t audio_alert_duration_ms = 500;
+
+    // Hardware settings
+    uint32_t hardware_bandwidth_hz = 24000000;
+    bool enable_real_hardware = true;
+    bool demo_mode = false;
+    std::string freqman_path = "DRONES";
+};
+
 class DroneUIController {
 public:
     DroneUIController(NavigationView& nav,
@@ -840,6 +863,8 @@ public:
     WidebandMedianFilter& operator=(const WidebandMedianFilter&) = delete;
 };
 
+};
+
 // ScanningCoordinator definition from ui_drone_scanner.hpp
 class ScanningCoordinator {
 public:
@@ -877,25 +902,7 @@ private:
 };
 
 // AudioManager forward declarations needed for scanner app
-struct DroneAudioSettings;
-class AudioManager;
-struct DroneAnalyzerSettings;
-
-struct DroneAnalyzerSettings {
-    // Core scanning parameters
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    uint32_t scan_interval_ms = 1000;
-    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
-    bool enable_audio_alerts = true;
-    uint16_t audio_alert_frequency_hz = 800;
-    uint32_t audio_alert_duration_ms = 500;
-
-    // Hardware settings
-    uint32_t hardware_bandwidth_hz = 24000000;
-    bool enable_real_hardware = true;
-    bool demo_mode = false;
-    std::string freqman_path = "DRONES";
-};
+// (DroneAnalyzerSettings moved inside namespace earlier to fix visibility)
 
 // Implementation includes and definitions would go here in .cpp file
 

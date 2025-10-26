@@ -23,9 +23,16 @@
 #include <string>           // For std::string operations
 #include <vector>           // For parameter parsing
 #include <algorithm>        // For trim operations
+#include <sstream>          // For std::istringstream
 
-// Forward declarations needed for scanner main
-class AudioManager;
+// Forward declarations needed for scanner main (ChibiOS integration fixes)
+namespace ui::external_app::enhanced_drone_analyzer {
+    class DroneHardwareController;
+    class DroneScanner;
+    struct DroneAnalyzerSettings;
+    class ScanningCoordinator;
+    struct AudioManager;  // Actually class, but treated as struct in code
+}
 
 #include "ui_scanner_combined.hpp"
 #include "portapack.hpp"
@@ -37,6 +44,16 @@ using namespace ui::external_app::enhanced_drone_analyzer;
 namespace ui::external_app::enhanced_drone_analyzer {
 
 namespace ScannerSettingsManager {
+    // Function declarations for ChibiOS integration fixes (forward declarations before use)
+    static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
+    static std::string trim_line(const std::string& line);
+    static SpectrumMode parse_spectrum_mode(const std::string& value);
+    static bool parse_key_value(DroneAnalyzerSettings& settings, const std::string& line);
+    static bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content);
+    static void reset_to_defaults(DroneAnalyzerSettings& settings);
+    static bool apply_settings_to_scanner(DroneHardwareController& hardware, DroneScanner& scanner, const DroneAnalyzerSettings& settings);
+    template<typename T> static T validate_range(T value, T min_val, T max_val);
+
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) {
         const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
         return load_from_txt_impl(filepath, settings);
@@ -149,7 +166,7 @@ namespace ScannerSettingsManager {
         return value;
     }
 
-private:
+    // Implementation functions (removed invalid 'private:' for namespace syntax fix)
     static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings) {
         auto result = File::open(filepath, File::Mode::Read);
         if (!result.is_valid()) {
