@@ -12,19 +12,27 @@
 
 // Settings file loading helper for scanner app - FIXED per Portapack File API
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
-    static constexpr const char* SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
-    // Read entire file contents using Portapack File API
-    auto read_result = File::read_file(SETTINGS_FILE_PATH);
-    if (read_result.is_error()) {
+    // FIXED: Use proper File::open with boolean read_only parameter
+    File settings_file;
+    if (!settings_file.open(SETTINGS_FILE_PATH, true)) {  // true = read_only
         return false;  // No file, keep defaults
     }
 
-    std::string file_content = read_result.value();
+    std::string file_content;
+    file_content.resize(settings_file.size());
+    auto read_result = settings_file.read(file_content.data(), settings_file.size());
+    if (read_result != settings_file.size()) {
+        settings_file.close();
+        return false;
+    }
+    settings_file.close();
+
     std::istringstream iss(file_content);
     std::string line;
 
-    // FIXED: Parse lines manually from full file content
+    // Parse lines manually from full file content
     while (std::getline(iss, line)) {
         // Trim whitespace from line
         auto it = std::find_if(line.begin(), line.end(), [](int ch) { return !std::isspace(ch); });

@@ -45,7 +45,7 @@ namespace ui::external_app::enhanced_drone_analyzer {
 
 namespace ScannerSettingsManager {
     // Function declarations for ChibiOS integration fixes (PHASE 2.2: Complete forward declarations)
-    static DroneAnalyzerSettings load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
+    static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
     static std::string trim_line(const std::string& line);
     static SpectrumMode parse_spectrum_mode(const std::string& value);
     static bool parse_key_value(DroneAnalyzerSettings& settings, const std::string& line);
@@ -200,20 +200,19 @@ namespace ScannerSettingsManager {
     // Implementation functions (removed invalid 'private:' for namespace syntax fix)
     static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings) {
         File txt_file;
-        if (!txt_file.open(filepath, true)) {  // true = read_only
+        if (!txt_file.open(filepath, true)) {  // FIXED: true = read_only parameter
             reset_to_defaults(settings);
             return false;
         }
-        auto& file = txt_file;
         std::string file_content;
-        file_content.resize(file.size());
-        auto read_result = file.read(file_content.data(), file.size());
-        if (read_result != file.size()) {
-            file.close();
+        file_content.resize(txt_file.size());
+        auto read_result = txt_file.read(file_content.data(), txt_file.size());
+        if (read_result != txt_file.size()) {
+            txt_file.close();
             reset_to_defaults(settings);
             return false;
         }
-        file.close();
+        txt_file.close();
         return parse_settings_content(settings, file_content);
     }
 };
