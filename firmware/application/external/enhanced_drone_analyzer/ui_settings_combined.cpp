@@ -29,7 +29,7 @@ public:
         create_backup_file(filepath);
 
         // Attempt to open file for writing
-        auto result = File::open(filepath, File::Mode::Write);
+        auto result = File::open(filepath, false);
         if (!result.is_valid()) {
             // SD card error
             return false;
@@ -99,8 +99,8 @@ private:
     static void create_backup_file(const std::string& filepath) {
         const std::string backup_path = filepath + ".bak";
         try {
-            auto orig_result = File::open(filepath, File::Mode::Read);
-            auto backup_result = File::open(backup_path, File::Mode::Write);
+            auto orig_result = File::open(filepath, true);
+            auto backup_result = File::open(backup_path, false);
 
             if (orig_result.is_valid() && backup_result.is_valid()) {
                 auto orig_file = orig_result.take();

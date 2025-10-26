@@ -25,7 +25,7 @@
 #include "../../file.hpp"      // File I/O API for TXT settings (FIXED: added)
 #include "portapack.hpp"       // PHASED 1.1: Core Portapack namespace and hardware
 #include "receiver_model.hpp"  // PHASED 1.1: RX model for receiver configuration
-#include <ch.hpp>             // PHASED 1.1: ChibiOS++ extensions
+//// ch.hpp not available in this ChibiOS version - removed
 
 // Standard library includes (compatible with ARM GCC C++14)
 #include <memory>              // std::unique_ptr, std::make_unique
@@ -909,7 +909,5 @@ private:
 // (DroneAnalyzerSettings moved inside namespace earlier to fix visibility)
 
 // Implementation includes and definitions would go here in .cpp file
-
-} // namespace ui::external_app::enhanced_drone_analyzer
 
 #endif // __UI_SCANNER_COMBINED_HPP__
