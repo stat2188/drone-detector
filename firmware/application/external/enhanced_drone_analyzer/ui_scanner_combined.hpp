@@ -431,7 +431,7 @@ private:
     ThreatLevel max_detected_threat_;
     int32_t last_valid_rssi_;
 
-    static const uint8_t DETECTION_DELAY = 3;
+    static constexpr uint8_t DETECTION_DELAY = 3;
     WidebandScanData wideband_scan_data_;
     FreqmanDB drone_database_;
     DroneDetectionLogger detection_logger_;
@@ -670,7 +670,8 @@ private:
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     size_t pixel_index = 0;
     uint32_t bins_hz_size = 0;
-    uint32_t each_bin_size = 100000;
+    uint32_t hz_per_pixel_target = 100000; // 100kHz per pixel (24MHz/240pixels)
+    uint32_t spectrum_bins_per_sample = 0; // Dynamic: bandwidth / channel_bins
     uint8_t* powerlevel = nullptr;
     uint8_t min_color_power = 0;
     const uint8_t ignore_dc = 4;
@@ -911,5 +912,7 @@ public:
 // (DroneAnalyzerSettings moved inside namespace earlier to fix visibility)
 
 // Implementation includes and definitions would go here in .cpp file
+
+} // namespace ui::external_app::enhanced_drone_analyzer
 
 #endif // __UI_SCANNER_COMBINED_HPP__

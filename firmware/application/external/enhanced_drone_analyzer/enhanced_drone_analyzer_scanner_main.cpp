@@ -39,7 +39,17 @@ namespace ui::external_app::enhanced_drone_analyzer {
 
 using namespace portapack;
 
-namespace ui::external_app::enhanced_drone_analyzer_scanner {
+namespace ui::external_app::enhanced_drone_analyzer {
+
+// Forward declarations that may be needed
+class DroneHardwareController;
+class DroneScanner;
+struct DroneAnalyzerSettings;
+class ScanningCoordinator;
+class AudioManager;
+ class DroneUIController;
+class DroneDisplayController;
+class EnhancedDroneSpectrumAnalyzerView;
 
 namespace ScannerSettingsManager {
     // Function declarations for ChibiOS integration fixes (PHASE 2.2: Complete forward declarations)
@@ -213,13 +223,14 @@ void initialize_app(ui::NavigationView& nav) {
                          "Scanner ready for drone detection");
     }
 }
-}  // namespace ui::external_app::enhanced_drone_analyzer_scanner
+}  // namespace ScannerSettingsManager
+}  // namespace ui::external_app::enhanced_drone_analyzer
 
 extern "C" {
 
 __attribute__((section(".external_app.app_enhanced_drone_analyzer_scanner.application_information"), used)) application_information_t _application_information_enhanced_drone_analyzer_scanner = {
     /*.memory_location = */ (uint8_t*)0x00000000,
-    /*.externalAppEntry = */ ui::external_app::enhanced_drone_analyzer_scanner::initialize_app,
+    /*.externalAppEntry = */ ui::external_app::enhanced_drone_analyzer::initialize_app,
     /*.header_version = */ CURRENT_HEADER_VERSION,
     /*.app_version = */ VERSION_MD5,
 

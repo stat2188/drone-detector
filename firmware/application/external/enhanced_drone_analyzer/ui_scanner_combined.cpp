@@ -812,10 +812,16 @@ inline std::string DroneScanner::DroneDetectionLogger::format_session_summary(si
 // ===========================================
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
-    : spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
-      spectrum_streaming_active_(false), last_valid_rssi_(-120)
+    : spectrum_mode_(mode),
+      center_frequency_(2400000000ULL),
+      bandwidth_hz_(24000000),
+      spectrum_streaming_active_(false),
+      last_valid_rssi_(-120),
+      fifo_(nullptr)
 {
-    fifo_ = nullptr;
+    // Initialize radio state for proper operation
+    initialize_radio_state();
+    initialize_spectrum_collector();
 }
 
 DroneHardwareController::~DroneHardwareController() {
@@ -847,7 +853,7 @@ void DroneHardwareController::initialize_radio_state() {
 void DroneHardwareController::initialize_spectrum_collector() {
     message_handler_spectrum_config_ = MessageHandlerRegistration(
         Message::ID::ChannelSpectrumConfigChange,
-        [this](const Message* const p) { handle_channel_spectrum_config((const ChannelSpectrumConfigMessage*)p); });
+        [this](const Message* const p) { handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p)); });
 
     message_handler_frame_sync_ = MessageHandlerRegistration(
         Message::ID::DisplayFrameSync,
@@ -1311,7 +1317,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
     message_handler_spectrum_config_ = MessageHandlerRegistration(
         Message::ID::ChannelSpectrumConfig,
         [this](const Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            const auto message = *static_cast<const ChannelSpectrumConfigMessage*>(p);
             this->spectrum_fifo_ = message.fifo;
         });
 
@@ -1517,6 +1523,11 @@ void DroneDisplayController::initialize_mini_spectrum() {
         spectrum_gradient_.set_default();
     }
     chMtxInit(&spectrum_access_mutex_);
+
+    // Initialize pixel parameters with dynamic bandwidth calculation
+    hz_per_pixel_target = spectrum_config_.bandwidth / MINI_SPECTRUM_WIDTH;
+    spectrum_bins_per_sample = static_cast<uint32_t>(MINI_SPECTRUM_WIDTH); // Default assumption
+
     clear_spectrum_buffers();
 }
 
@@ -1531,20 +1542,33 @@ void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& s
 }
 
 bool DroneDisplayController::process_bins(uint8_t* power_level) {
-    bins_hz_size += each_bin_size;  // Accumulate Hz for this bin
-    if (bins_hz_size >= 1000000) {  // Each pixel represents 1MHz step
-        if (*power_level > min_color_power) {
-            add_spectrum_pixel_from_bin(*power_level);
-        } else {
-            add_spectrum_pixel_from_bin(0);
+    bins_hz_size += spectrum_bins_per_sample;  // Accumulate Hz for this bin using dynamic rate
+
+    // Check if we've accumulated enough Hz for one pixel
+    if (bins_hz_size >= hz_per_pixel_target) {
+        // Add pixel with background color or spectrum power level
+        uint8_t pixel_power = (*power_level > min_color_power) ? *power_level : 0;
+
+        // Check bounds before setting pixel
+        if (pixel_index < spectrum_row.size()) {
+            add_spectrum_pixel_from_bin(pixel_power);
+            pixel_index++;
         }
-        *power_level = 0;  // Reset for next bin
-        if (pixel_index == 0) {  // New line completed (pixel_index reset to 0)
-            bins_hz_size = 0;  // Reset Hz accumulator for next line
-            return true;  // Signal new line
+
+        *power_level = 0;  // Reset power level for next bin
+
+        // Check if we've completed a full spectrum line
+        if (pixel_index >= spectrum_row.size()) {
+            // Reset for next waterfall line
+            pixel_index = 0;
+            bins_hz_size = 0;  // Start fresh for next update
+            return true;  // Signal that a complete spectrum line was processed
         }
-        bins_hz_size -= 1000000;  // Carry excess Hz into next pixel
+
+        // Carry over excess Hz into next pixel
+        bins_hz_size -= hz_per_pixel_target;
     }
+
     return false;
 }
 
