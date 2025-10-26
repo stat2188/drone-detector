@@ -244,4 +244,3 @@ __attribute__((section(".external_app.app_enhanced_drone_analyzer_scanner.applic
     /*.m4_app_offset = */ 0x00000000,  // will be filled at compile time
 };
 }
-}

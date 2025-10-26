@@ -1,29 +1,25 @@
 [ 97%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:37:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:876:24: error: 'DroneHardwareController' has not been declared
-  876 |                        DroneHardwareController& hardware,
-      |                        ^~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:877:24: error: 'DroneScanner' has not been declared
-  877 |                        DroneScanner& scanner,
-      |                        ^~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:878:24: error: 'DroneDisplayController' has not been declared
-  878 |                        DroneDisplayController& display_controller,
-      |                        ^~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:891:42: error: 'DroneAnalyzerSettings' does not name a type
-  891 |     void update_runtime_parameters(const DroneAnalyzerSettings& settings);
-      |                                          ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:901:5: error: 'DroneHardwareController' does not name a type
-  901 |     DroneHardwareController& hardware_;
-      |     ^~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:902:5: error: 'DroneScanner' does not name a type
-  902 |     DroneScanner& scanner_;
-      |     ^~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:903:5: error: 'DroneDisplayController' does not name a type
-  903 |     DroneDisplayController& display_controller_;
-      |     ^~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:72:17: warning: 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::apply_settings_to_scanner(ui::external_app::enhanced_drone_analyzer::DroneHardwareController&, ui::external_app::enhanced_drone_analyzer::DroneScanner&, const ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)' defined but not used [-Wunused-function]
-   72 |     static bool apply_settings_to_scanner(
-      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:194:25: error: variable or field 'initialize_app' declared void
+  194 | void initialize_app(ui::NavigationView& nav) {
+      |                         ^~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:194:25: error: 'NavigationView' is not a member of 'ui::external_app::enhanced_drone_analyzer::ui'; did you mean 'ui::NavigationView'?
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:19:
+/havoc/firmware/application/./ui_navigation.hpp:95:7: note: 'ui::NavigationView' declared here
+   95 | class NavigationView : public View {
+      |       ^~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:194:41: error: 'nav' was not declared in this scope; did you mean 'nan'?
+  194 | void initialize_app(ui::NavigationView& nav) {
+      |                                         ^~~
+      |                                         nan
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:231:81: error: 'initialize_app' is not a member of 'ui::external_app::enhanced_drone_analyzer::ui::external_app::enhanced_drone_analyzer_scanner'
+  231 |     /*.externalAppEntry = */ ui::external_app::enhanced_drone_analyzer_scanner::initialize_app,
+      |                                                                                 ^~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:241:28: error: 'ui::external_app::enhanced_drone_analyzer::ui::Color' has not been declared
+  241 |     /*.icon_color = */ ui::Color::red().v,
+      |                            ^~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:57:17: warning: 'bool ui::external_app::enhanced_drone_analyzer::ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_settings_from_txt(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)' defined but not used [-Wunused-function]
+   57 |     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) {
+      |                 ^~~~~~~~~~~~~~~~~~~~~~
 cc1plus: warning: unrecognized command line option '-Wno-volatile'
 make[2]: *** [firmware/application/CMakeFiles/application.elf.dir/build.make:5369: firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj] Error 1
 make[1]: *** [CMakeFiles/Makefile2:1337: firmware/application/CMakeFiles/application.elf.dir/all] Error 2
