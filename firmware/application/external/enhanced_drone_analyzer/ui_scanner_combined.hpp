@@ -299,6 +299,8 @@ class ScanningCoordinator;
 class AudioManager;
 class DroneScanner;
 class DroneDisplayController;
+class DroneUIController;
+class EnhancedDroneSpectrumAnalyzerView;
 
 class DetectionRingBuffer {
 public:
@@ -699,6 +701,42 @@ struct DroneAnalyzerSettings {
     std::string freqman_path = "DRONES";
 };
 
+// ScanningCoordinator definition - moved earlier to fix forward declaration issues
+class ScanningCoordinator {
+public:
+    ScanningCoordinator(NavigationView& nav,
+                       DroneHardwareController& hardware,
+                       DroneScanner& scanner,
+                       DroneDisplayController& display_controller,
+                       AudioManager& audio_controller);
+
+    ~ScanningCoordinator();
+
+    ScanningCoordinator(const ScanningCoordinator&) = delete;
+    ScanningCoordinator& operator=(const ScanningCoordinator&) = delete;
+
+    void start_coordinated_scanning();
+    void stop_coordinated_scanning();
+    bool is_scanning_active() const { return scanning_active_; }
+
+    void show_session_summary(const std::string& summary);
+    void update_runtime_parameters(const DroneAnalyzerSettings& settings);
+
+private:
+    static msg_t scanning_thread_function(void* arg);
+    msg_t coordinated_scanning_thread();
+
+    Thread* scanning_thread_ = nullptr;
+    static constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;
+    bool scanning_active_ = false;
+    NavigationView& nav_;
+    DroneHardwareController& hardware_;
+    DroneScanner& scanner_;
+    DroneDisplayController& display_controller_;
+    AudioManager& audio_controller_;
+    uint32_t scan_interval_ms_ = 750;
+};
+
 class DroneUIController {
 public:
     DroneUIController(NavigationView& nav,
@@ -867,43 +905,7 @@ public:
     WidebandMedianFilter& operator=(const WidebandMedianFilter&) = delete;
 };
 
-};
 
-// ScanningCoordinator definition from ui_drone_scanner.hpp
-class ScanningCoordinator {
-public:
-    ScanningCoordinator(NavigationView& nav,
-                       DroneHardwareController& hardware,
-                       DroneScanner& scanner,
-                       DroneDisplayController& display_controller,
-                       AudioManager& audio_controller);
-
-    ~ScanningCoordinator();
-
-    ScanningCoordinator(const ScanningCoordinator&) = delete;
-    ScanningCoordinator& operator=(const ScanningCoordinator&) = delete;
-
-    void start_coordinated_scanning();
-    void stop_coordinated_scanning();
-    bool is_scanning_active() const { return scanning_active_; }
-
-    void show_session_summary(const std::string& summary);
-    void update_runtime_parameters(const DroneAnalyzerSettings& settings);
-
-private:
-    static msg_t scanning_thread_function(void* arg);
-    msg_t coordinated_scanning_thread();
-
-    Thread* scanning_thread_ = nullptr;
-    static constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;
-    bool scanning_active_ = false;
-    NavigationView& nav_;
-    DroneHardwareController& hardware_;
-    DroneScanner& scanner_;
-    DroneDisplayController& display_controller_;
-    AudioManager& audio_controller_;
-    uint32_t scan_interval_ms_ = 750;
-};
 
 // AudioManager forward declarations needed for scanner app
 // (DroneAnalyzerSettings moved inside namespace earlier to fix visibility)

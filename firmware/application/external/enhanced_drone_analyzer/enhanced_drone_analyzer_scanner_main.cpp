@@ -51,7 +51,6 @@ namespace ScannerSettingsManager {
     static bool parse_key_value(DroneAnalyzerSettings& settings, const std::string& line);
     static bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content);
     static void reset_to_defaults(DroneAnalyzerSettings& settings);
-    static bool apply_settings_to_scanner(DroneHardwareController& hardware, DroneScanner& scanner, const DroneAnalyzerSettings& settings);
     template<typename T> static T validate_range(T value, T min_val, T max_val);
 
     // PHASE 2.3: Implement complete function signatures and return types
@@ -68,33 +67,7 @@ namespace ScannerSettingsManager {
         return settings_loaded;
     }
 
-    // PHASE 2.3: Correct hardware integration using portapack::radio API
-    static bool apply_settings_to_scanner(
-        DroneHardwareController& hardware,
-        DroneScanner& scanner,
-        const DroneAnalyzerSettings& settings
-    ) {
-        // PHASE 2.3: Use portapack hardware control API
-        hardware.set_spectrum_mode(settings.spectrum_mode);
-        hardware.set_spectrum_bandwidth(static_cast<uint32_t>(settings.hardware_bandwidth_hz));
 
-        // PHASE 2.3: Mode selection with proper enum casting
-        if (settings.spectrum_mode == SpectrumMode::NARROW) {
-            scanner.set_scanning_mode(DroneScanner::ScanningMode::DATABASE);
-        } else if (settings.spectrum_mode == SpectrumMode::WIDE) {
-            scanner.set_scanning_mode(DroneScanner::ScanningMode::WIDEBAND_CONTINUOUS);
-        } else {
-            scanner.set_scanning_mode(DroneScanner::ScanningMode::HYBRID);
-        }
-
-        // PHASE 2.3: Demo/real mode switching with hardware validation
-        if (settings.enable_real_hardware) {
-            scanner.switch_to_real_mode();
-        } else {
-            scanner.switch_to_demo_mode();
-        }
-        return true;
-    }
 
     static bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content) {
         std::istringstream iss(content);
