@@ -80,9 +80,9 @@ enum class SpectrumMode {
     ULTRA_WIDE
 };
 
-class TrackedDrone {
+class TrackedDroneData {
 public:
-    TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
+    TrackedDroneData() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0), last_seen(0) {}
 
     void add_rssi(int16_t rssi, systime_t timestamp) {
@@ -137,8 +137,8 @@ private:
     systime_t timestamp_history_[MAX_HISTORY] = {0};
     size_t history_index_ = 0;
 
-    // TrackedDrone(const TrackedDrone&) = delete;
-    // TrackedDrone& operator=(const TrackedDrone&) = delete;
+    // TrackedDroneData(const TrackedDroneData&) = delete;
+    // TrackedDroneData& operator=(const TrackedDroneData&) = delete;
 };
 
 struct DisplayDroneEntry {
@@ -339,7 +339,7 @@ public:
 
     Frequency get_current_scanning_frequency() const;
     ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
-    const TrackedDrone& getTrackedDrone(size_t index) const;
+    const TrackedDroneData& getTrackedDrone(size_t index) const;
     void handle_scan_error(const char* error_msg);
 
     std::string get_session_summary() const;
@@ -393,7 +393,7 @@ private:
     Frequency get_current_radio_frequency() const;
 
     Thread* scanning_thread_;
-    static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
+    static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 4096;
     bool scanning_active_;
 
     FreqmanDB freq_db_;
@@ -406,7 +406,7 @@ private:
     ScanningMode scanning_mode_;
     bool is_real_mode_;
 
-    std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
+    std::array<TrackedDroneData, MAX_TRACKED_DRONES> tracked_drones_;
     size_t tracked_drones_count_;
 
     size_t approaching_count_;

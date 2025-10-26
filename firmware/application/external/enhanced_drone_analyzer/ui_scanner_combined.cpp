@@ -225,9 +225,9 @@ void DroneScanner::start_scanning() {
     scan_cycles_ = 0;
     total_detections_ = 0;
 
-    // FIXED: chThdCreateFromHeap call per ChibiOS API - remove thread name, adjust parameters
-    scanning_thread_ = chThdCreateFromHeap(nullptr, SCAN_THREAD_STACK_SIZE,
-                                           NORMALPRIO, scanning_thread_function, this);
+    // FIXED: chThdCreateFromHeap call per ChibiOS API - standard priority for real-time apps
+    scanning_thread_ = chThdCreateFromHeap(NULL, SCAN_THREAD_STACK_SIZE,
+                                           NORMALPRIO + 10, scanning_thread_function, this);
     if (!scanning_thread_) {
         scanning_active_ = false;
     }
@@ -237,7 +237,8 @@ void DroneScanner::stop_scanning() {
     if (!scanning_active_) return;
 
     scanning_active_ = false;
-    if (scanning_thread_) {
+    if (scanning_thread_ && chThdTerminatedX(scanning_thread_) == false) {
+        chThdTerminate(scanning_thread_);
         chThdWait(scanning_thread_);
         scanning_thread_ = nullptr;
     }
@@ -563,7 +564,7 @@ if (threat_level >= ThreatLevel::HIGH) {
 
 void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
     for (size_t i = 0; i < MAX_TRACKED_DRONES; i++) {
-        TrackedDrone& drone = tracked_drones_[i];
+        TrackedDroneData& drone = tracked_drones_[i];
         if (drone.frequency == static_cast<uint32_t>(frequency) && drone.update_count > 0) {
             drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
             drone.drone_type = static_cast<uint8_t>(type);
@@ -592,7 +593,7 @@ void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int
         }
     }
 
-    tracked_drones_[oldest_index] = TrackedDrone();
+    tracked_drones_[oldest_index] = TrackedDroneData();
     tracked_drones_[oldest_index].frequency = static_cast<uint32_t>(frequency);
     tracked_drones_[oldest_index].drone_type = static_cast<uint8_t>(type);
     tracked_drones_[oldest_index].threat_level = static_cast<uint8_t>(threat_level);
@@ -606,7 +607,7 @@ void DroneScanner::remove_stale_drones() {
 
     size_t write_idx = 0;
     for (size_t read_idx = 0; read_idx < MAX_TRACKED_DRONES; read_idx++) {
-        const TrackedDrone& drone = tracked_drones_[read_idx];
+        const TrackedDroneData& drone = tracked_drones_[read_idx];
         if (drone.update_count == 0) continue;
 
         bool is_stale = (current_time - drone.last_seen) > STALE_TIMEOUT;
@@ -616,7 +617,7 @@ void DroneScanner::remove_stale_drones() {
             }
             write_idx++;
         } else {
-            tracked_drones_[read_idx] = TrackedDrone();
+            tracked_drones_[read_idx] = TrackedDroneData();
         }
     }
 
@@ -630,7 +631,7 @@ void DroneScanner::update_tracking_counts() {
     static_count_ = 0;
 
     for (size_t i = 0; i < MAX_TRACKED_DRONES; i++) {
-        const TrackedDrone& drone = tracked_drones_[i];
+        const TrackedDroneData& drone = tracked_drones_[i];
         if (drone.update_count < 2) continue;
 
         MovementTrend trend = drone.get_trend();
@@ -663,7 +664,7 @@ Frequency DroneScanner::get_current_scanning_frequency() const {
     return 433000000;
 }
 
-const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
+const TrackedDroneData& DroneScanner::getTrackedDrone(size_t index) const {
     return (index < MAX_TRACKED_DRONES) ? tracked_drones_[index] : tracked_drones_[0];
 }
 
@@ -686,7 +687,7 @@ uint32_t DroneScanner::get_total_detections() const {
 size_t DroneScanner::get_total_memory_usage() const {
     // Estimate memory usage for UI display
     // This is a rough approximation for performance monitoring
-    return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDrone)) +
+    return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDroneData)) +
            (freq_db_.is_open() ? freq_db_.entry_count() * sizeof(freqman_entry) : 0);
 }
 
