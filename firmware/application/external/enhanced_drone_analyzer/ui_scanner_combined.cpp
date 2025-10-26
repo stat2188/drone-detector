@@ -7,7 +7,7 @@
 #include "../../gradient.hpp"
 #include <algorithm>
 #include <sstream>
-#include <mutex>
+
 #include <cstdlib>
 
 // Settings file loading helper for scanner app - FIXED per Portapack File API
@@ -1483,6 +1483,7 @@ void DroneDisplayController::initialize_mini_spectrum() {
     if (!spectrum_gradient_.load_file(default_gradient_file)) {
         spectrum_gradient_.set_default();
     }
+    chMtxInit(&spectrum_access_mutex_);
     clear_spectrum_buffers();
 }
 
@@ -1558,10 +1559,11 @@ void DroneDisplayController::add_spectrum_pixel_from_bin(uint8_t power) {
 }
 
 void DroneDisplayController::render_mini_spectrum() {
-    std::scoped_lock<std::mutex> lock(spectrum_access_mutex_);  // Section 3: Thread safety for spectrum rendering
+    chMtxLock(&spectrum_access_mutex_);  // ChibiOS: Replace std::scoped_lock with manual mutex
 
     if (!validate_spectrum_data()) {
         clear_spectrum_buffers();
+        chMtxUnlock(&spectrum_access_mutex_);
         return;
     }
     const Color background_color = spectrum_gradient_.lut.size() > 0 ? spectrum_gradient_.lut[0] : Color::black();
@@ -1573,6 +1575,7 @@ void DroneDisplayController::render_mini_spectrum() {
         );
         pixel_index = 0;
     }
+    chMtxUnlock(&spectrum_access_mutex_);
 }
 
 void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES>& drones) {
@@ -2381,29 +2384,96 @@ enum class Language { ENGLISH, RUSSIAN };
 // Environment variables
 const char* default_gradient_file = nullptr;
 
-// AudioManager implementations (stubs)
-AudioManager::AudioManager() {}
-AudioManager::~AudioManager() {}
-void AudioManager::play_detection_beep(ThreatLevel level) { (void)level; }
-void AudioManager::stop_audio() {}
-void AudioManager::toggle_audio() {}
-bool AudioManager::is_audio_enabled() const { return true; }
+// AudioManager implementations with proper baseband_api integration
+AudioManager::AudioManager() : audio_enabled_(true) {}
+AudioManager::~AudioManager() { stop_audio(); }
 
-// ScannerConfig implementations (stubs)
-ScannerConfig::ScannerConfig(ConfigData config) : config_data_(config) {}
-void ScannerConfig::set_frequency_range(uint32_t min_hz, uint32_t max_hz) {
-    (void)min_hz; (void)max_hz;
+void AudioManager::play_detection_beep(ThreatLevel level) {
+    if (!audio_enabled_) return;
+
+    // Convert threat level to frequency following DRONE detection standards
+    uint16_t frequency_hz = 800; // Default beep frequency
+    switch (level) {
+        case ThreatLevel::LOW: frequency_hz = 800; break;
+        case ThreatLevel::MEDIUM: frequency_hz = 1200; break;
+        case ThreatLevel::HIGH: frequency_hz = 1500; break;
+        case ThreatLevel::CRITICAL: frequency_hz = 2000; break;
+        default: frequency_hz = 1000; break;
+    }
+
+    // Use proper baseband_api for hardware audio beeping
+    // Parameters: frequency_hz, sample_rate_hz (48kHz standard), duration_ms
+    baseband_api::request_audio_beep(frequency_hz, 48000, 200);
+
+    // Small delay to prevent spam (chibiOS compliant)
+    chThdSleepMilliseconds(250);
 }
-void ScannerConfig::set_rssi_threshold(int32_t threshold) { config_data_.rssi_threshold_db = threshold; }
-void ScannerConfig::set_scan_interval(uint32_t interval_ms) { config_data_.scan_interval_ms = interval_ms; }
-void ScannerConfig::set_audio_alerts(bool enabled) { config_data_.enable_audio_alerts = enabled; }
-void ScannerConfig::set_freqman_path(const std::string& path) { config_data_.freqman_path = path; }
-void ScannerConfig::set_scanning_mode(const std::string& mode) { (void)mode; }
-bool ScannerConfig::is_valid() const { return true; }
 
-// DroneFrequencyPresets stub
-std::vector<DronePreset> DroneFrequencyPresets::get_all_presets() {
-    return {}; // Empty for now
+void AudioManager::stop_audio() {
+    // Stop any ongoing audio - baseband handles this naturally
+    // No explicit stop needed with beep API
+}
+
+void AudioManager::toggle_audio() {
+    audio_enabled_ = !audio_enabled_;
+}
+
+bool AudioManager::is_audio_enabled() const {
+    return audio_enabled_;
+}
+
+// ScannerConfig implementations with freqman integration
+ScannerConfig::ScannerConfig(ConfigData config) : config_data_(config) {}
+
+void ScannerConfig::set_frequency_range(uint32_t min_hz, uint32_t max_hz) {
+    // Note: Actual frequency range controlled by hardware, this is stored for validation
+    (void)min_hz; (void)max_hz;
+    // Could be extended to validate against freqman data
+}
+
+void ScannerConfig::set_rssi_threshold(int32_t threshold) {
+    config_data_.rssi_threshold_db = threshold;
+    // Validate range
+    if (threshold < -120) config_data_.rssi_threshold_db = -120;
+    if (threshold > -30) config_data_.rssi_threshold_db = -30;
+}
+
+void ScannerConfig::set_scan_interval(uint32_t interval_ms) {
+    config_data_.scan_interval_ms = interval_ms;
+    // Validate reasonable range
+    if (interval_ms < 100) config_data_.scan_interval_ms = 100;
+    if (interval_ms > 5000) config_data_.scan_interval_ms = 5000;
+}
+
+void ScannerConfig::set_audio_alerts(bool enabled) {
+    config_data_.enable_audio_alerts = enabled;
+}
+
+void ScannerConfig::set_freqman_path(const std::string& path) {
+    config_data_.freqman_path = path;
+    // Could validate path exists or create if necessary
+}
+
+void ScannerConfig::set_scanning_mode(const std::string& mode) {
+    if (mode == "Database") {
+        config_data_.spectrum_mode = SpectrumMode::MEDIUM;
+    } else if (mode == "Wideband") {
+        config_data_.spectrum_mode = SpectrumMode::WIDE;
+    } else if (mode == "Narrow") {
+        config_data_.spectrum_mode = SpectrumMode::NARROW;
+    } else if (mode == "Ultrawide") {
+        config_data_.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+    } else {
+        config_data_.spectrum_mode = SpectrumMode::MEDIUM;
+    }
+}
+
+bool ScannerConfig::is_valid() const {
+    return config_data_.rssi_threshold_db >= -120 &&
+           config_data_.rssi_threshold_db <= -30 &&
+           config_data_.scan_interval_ms >= 100 &&
+           config_data_.scan_interval_ms <= 5000 &&
+           !config_data_.freqman_path.empty();
 }
 
 // SimpleDroneValidation implementations
@@ -2472,7 +2542,7 @@ Color get_drone_type_color(uint8_t type) {
 }
 
 // Spectrum mutex definition
-std::mutex spectrum_access_mutex_;
+chMutex spectrum_access_mutex_;
 
 // ScanningCoordinator implementation
 ScanningCoordinator::ScanningCoordinator(NavigationView& nav,

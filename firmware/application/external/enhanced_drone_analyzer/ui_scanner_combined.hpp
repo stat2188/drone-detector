@@ -214,6 +214,27 @@ struct DetectionLogEntry {
 };
 
 // ===========================================
+// PART 1.5: AUDIO MANAGER (Core audio interface for alerts)
+// ===========================================
+
+class AudioManager {
+public:
+    AudioManager();
+    ~AudioManager();
+
+    void play_detection_beep(ThreatLevel level);
+    void stop_audio();
+    void toggle_audio();
+    bool is_audio_enabled() const;
+
+    AudioManager(const AudioManager&) = delete;
+    AudioManager& operator=(const AudioManager&) = delete;
+
+private:
+    bool audio_enabled_ = true;
+};
+
+// ===========================================
 // PART 2: CONFIGURATION STRUCTURES (Shared with Settings App)
 // ===========================================
 
@@ -394,29 +415,29 @@ private:
     bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
     Frequency get_current_radio_frequency() const;
 
-    Thread* scanning_thread_ = nullptr;
+    Thread* scanning_thread_;
     static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
-    bool scanning_active_ = false;
+    bool scanning_active_;
 
     FreqmanDB freq_db_;
-    size_t current_db_index_ = 0;
-    Frequency last_scanned_frequency_ = 0;
+    size_t current_db_index_;
+    Frequency last_scanned_frequency_;
 
-    uint32_t scan_cycles_ = 0;
-    uint32_t total_detections_ = 0;
+    uint32_t scan_cycles_;
+    uint32_t total_detections_;
 
-    ScanningMode scanning_mode_ = ScanningMode::DATABASE;
-    bool is_real_mode_ = true;
+    ScanningMode scanning_mode_;
+    bool is_real_mode_;
 
     std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
-    size_t tracked_drones_count_ = 0;
+    size_t tracked_drones_count_;
 
-    size_t approaching_count_ = 0;
-    size_t receding_count_ = 0;
-    size_t static_count_ = 0;
+    size_t approaching_count_;
+    size_t receding_count_;
+    size_t static_count_;
 
-    ThreatLevel max_detected_threat_ = ThreatLevel::NONE;
-    int32_t last_valid_rssi_ = -120;
+    ThreatLevel max_detected_threat_;
+    int32_t last_valid_rssi_;
 
     static const uint8_t DETECTION_DELAY = 3;
     WidebandScanData wideband_scan_data_;
