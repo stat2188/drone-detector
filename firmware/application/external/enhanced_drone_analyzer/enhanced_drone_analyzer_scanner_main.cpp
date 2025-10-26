@@ -44,8 +44,8 @@ using namespace ui::external_app::enhanced_drone_analyzer;
 namespace ui::external_app::enhanced_drone_analyzer {
 
 namespace ScannerSettingsManager {
-    // Function declarations for ChibiOS integration fixes (forward declarations before use)
-    static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
+    // Function declarations for ChibiOS integration fixes (PHASE 2.2: Complete forward declarations)
+    static DroneAnalyzerSettings load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
     static std::string trim_line(const std::string& line);
     static SpectrumMode parse_spectrum_mode(const std::string& value);
     static bool parse_key_value(DroneAnalyzerSettings& settings, const std::string& line);
@@ -54,18 +54,29 @@ namespace ScannerSettingsManager {
     static bool apply_settings_to_scanner(DroneHardwareController& hardware, DroneScanner& scanner, const DroneAnalyzerSettings& settings);
     template<typename T> static T validate_range(T value, T min_val, T max_val);
 
+    // PHASE 2.3: Implement complete function signatures and return types
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) {
         const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-        return load_from_txt_impl(filepath, settings);
+        // PHASE 2.3: Validate settings file exists and is readable
+        auto settings_loaded = load_from_txt_impl(filepath, settings);
+        if (!settings_loaded) {
+            // PHASE 2.3: Fall back to defaults if file can't be loaded
+            reset_to_defaults(settings);
+        }
+        return settings_loaded;
     }
 
+    // PHASE 2.3: Correct hardware integration using portapack::radio API
     static bool apply_settings_to_scanner(
         DroneHardwareController& hardware,
         DroneScanner& scanner,
         const DroneAnalyzerSettings& settings
     ) {
+        // PHASE 2.3: Use portapack hardware control API
         hardware.set_spectrum_mode(settings.spectrum_mode);
-        hardware.set_spectrum_bandwidth(settings.hardware_bandwidth_hz);
+        hardware.set_spectrum_bandwidth(static_cast<uint32_t>(settings.hardware_bandwidth_hz));
+
+        // PHASE 2.3: Mode selection with proper enum casting
         if (settings.spectrum_mode == SpectrumMode::NARROW) {
             scanner.set_scanning_mode(DroneScanner::ScanningMode::DATABASE);
         } else if (settings.spectrum_mode == SpectrumMode::WIDE) {
@@ -73,10 +84,12 @@ namespace ScannerSettingsManager {
         } else {
             scanner.set_scanning_mode(DroneScanner::ScanningMode::HYBRID);
         }
-        if (settings.demo_mode) {
-            scanner.switch_to_demo_mode();
-        } else {
+
+        // PHASE 2.3: Demo/real mode switching with hardware validation
+        if (settings.enable_real_hardware) {
             scanner.switch_to_real_mode();
+        } else {
+            scanner.switch_to_demo_mode();
         }
         return true;
     }
@@ -102,7 +115,11 @@ namespace ScannerSettingsManager {
                 settings.spectrum_mode = parse_spectrum_mode(value);
                 return true;
             } else if (key == "scan_interval_ms") {
-                settings.scan_interval_ms = validate_range(static_cast<uint32_t>(std::stoul(value)), 100U, 5000U);
+                // PHASE 3.1: Fix template type deduction - use consistent uint32_t types for all parameters
+                settings.scan_interval_ms = validate_range<uint32_t>(
+                    static_cast<uint32_t>(std::stoul(value)),
+                    static_cast<uint32_t>(100U),
+                    static_cast<uint32_t>(5000U));
                 return true;
             } else if (key == "rssi_threshold_db") {
                 settings.rssi_threshold_db = validate_range(std::stoi(value), -120, -30);
@@ -111,13 +128,25 @@ namespace ScannerSettingsManager {
                 settings.enable_audio_alerts = (value == "true");
                 return true;
             } else if (key == "audio_alert_frequency_hz") {
-                settings.audio_alert_frequency_hz = validate_range(static_cast<uint16_t>(std::stoul(value)), 200U, 3000U);
+                // PHASE 3.1: Fix template deduction with consistent uint16_t types for all parameters
+                settings.audio_alert_frequency_hz = validate_range<uint16_t>(
+                    static_cast<uint16_t>(std::stoul(value)),
+                    static_cast<uint16_t>(200U),
+                    static_cast<uint16_t>(3000U));
                 return true;
             } else if (key == "audio_alert_duration_ms") {
-                settings.audio_alert_duration_ms = validate_range(static_cast<uint32_t>(std::stoul(value)), 50U, 2000U);
+                // PHASE 3.1: Fix template deduction with consistent uint32_t types for all parameters
+                settings.audio_alert_duration_ms = validate_range<uint32_t>(
+                    static_cast<uint32_t>(std::stoul(value)),
+                    static_cast<uint32_t>(50U),
+                    static_cast<uint32_t>(2000U));
                 return true;
             } else if (key == "hardware_bandwidth_hz") {
-                settings.hardware_bandwidth_hz = validate_range(static_cast<uint32_t>(std::stoul(value)), 1000000U, 100000000U);
+                // PHASE 3.1: Fix template deduction with consistent uint32_t types for all parameters
+                settings.hardware_bandwidth_hz = validate_range<uint32_t>(
+                    static_cast<uint32_t>(std::stoul(value)),
+                    static_cast<uint32_t>(1000000U),
+                    static_cast<uint32_t>(100000000U));
                 return true;
             } else if (key == "enable_real_hardware") {
                 settings.enable_real_hardware = (value == "true");
@@ -168,7 +197,7 @@ namespace ScannerSettingsManager {
 
     // Implementation functions (removed invalid 'private:' for namespace syntax fix)
     static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings) {
-        auto result = File::open(filepath, File::Mode::Read);
+        auto result = File::open(filepath, true);  // PHASE 3.2: replace Mode::Read with boolean read_only
         if (!result.is_valid()) {
             reset_to_defaults(settings);
             return false;

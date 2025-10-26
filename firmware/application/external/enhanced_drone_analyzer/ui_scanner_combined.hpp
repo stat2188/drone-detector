@@ -23,6 +23,9 @@
 #include "../../gradient.hpp"  // Spectrum gradient for waterfall display
 #include <ch.h>                // ChibiOS threading (FIXED: added)
 #include "../../file.hpp"      // File I/O API for TXT settings (FIXED: added)
+#include "portapack.hpp"       // PHASED 1.1: Core Portapack namespace and hardware
+#include "receiver_model.hpp"  // PHASED 1.1: RX model for receiver configuration
+#include <ch.hpp>             // PHASED 1.1: ChibiOS++ extensions
 
 // Standard library includes (compatible with ARM GCC C++14)
 #include <memory>              // std::unique_ptr, std::make_unique
@@ -289,12 +292,13 @@ public:
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-// Forward declarations for ChibiOS integration fixes
+// Forward declarations for ChibiOS integration fixes (PHASE 3.3: Complete forward declarations)
 class DroneHardwareController;
 struct DroneAnalyzerSettings;
 class ScanningCoordinator;
 class AudioManager;
 class DroneScanner;
+class DroneDisplayController;
 
 class DetectionRingBuffer {
 public:

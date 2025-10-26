@@ -910,9 +910,31 @@ int32_t DroneHardwareController::get_current_rssi() const {
 }
 
 int32_t DroneHardwareController::get_real_rssi_from_hardware(Frequency target_frequency) {
-    // Simulated RSSI for demo - in real hardware, this would measure actual RSSI
-    (void)target_frequency;
-    last_valid_rssi_ = (last_valid_rssi_ + 1) % 100 - 50; // Fake varying RSSI
+    // PHASE 3.1: Use proper Portapack radio:: API for RSSI measurement
+    // First tune to the target frequency if needed
+    if (center_frequency_ != target_frequency) {
+        tune_to_frequency(target_frequency);
+        // Small delay for PLL settling (ChibiOS compliant)
+        chThdSleepMilliseconds(10);
+    }
+
+    // PHASE 3.1: Get real RSSI from radio hardware via portapack::receiver_model
+    if (spectrum_streaming_active_) {
+        // Get RSSI from receiver model when spectrum streaming is active
+        last_valid_rssi_ = receiver_model.rssi();
+        // Convert to dB scale if needed (Portapack returns positive values)
+        if (last_valid_rssi_ > 0) {
+            last_valid_rssi_ = -last_valid_rssi_; // Convert to dB
+        }
+    } else {
+        // Fallback to direct radio API
+        last_valid_rssi_ = radio::get_rssi();
+    }
+
+    // PHASE 3.1: Validate RSSI range
+    if (last_valid_rssi_ < -120) last_valid_rssi_ = -120;
+    if (last_valid_rssi_ > 0) last_valid_rssi_ = 0;
+
     return last_valid_rssi_;
 }
 
@@ -1269,6 +1291,8 @@ void ConsoleStatusBar::paint(Painter& painter) {
 
 DroneDisplayController::DroneDisplayController(NavigationView& nav)
     : nav_(nav), spectrum_gradient_{}
+{
+    chMtxInit(&spectrum_access_mutex_);  // PHASE 4.2: Add missing mutex initialization
 {
     if (!spectrum_gradient_.load_file(default_gradient_file)) {
         spectrum_gradient_.set_default();

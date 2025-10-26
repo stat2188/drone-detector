@@ -72,7 +72,7 @@ public:
      */
     static bool verify_comm_file_exists() {
         const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-        auto result = File::open(filepath, File::Mode::Read);
+        auto result = File::open(filepath, true);  // PHASE 3.2: replace Mode::Read with boolean read_only
         if (result.is_valid()) {
             auto file = result.take();
             file.close();
