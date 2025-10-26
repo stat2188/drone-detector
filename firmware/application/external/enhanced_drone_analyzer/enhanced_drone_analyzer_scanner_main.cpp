@@ -192,6 +192,9 @@ namespace ScannerSettingsManager {
         txt_file.close();
         return parse_settings_content(settings, file_content);
     }
+}  // namespace ScannerSettingsManager
+
+// Move initialize_app to main namespace for external access
 void initialize_app(ui::NavigationView& nav) {
     // PHASE 7: Load settings from TXT file if available
     ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings loaded_settings;
@@ -223,14 +226,21 @@ void initialize_app(ui::NavigationView& nav) {
                          "Scanner ready for drone detection");
     }
 }
-}  // namespace ScannerSettingsManager
 }  // namespace ui::external_app::enhanced_drone_analyzer
+
+// Correct namespace for application entry point
+namespace ui::external_app::enhanced_drone_analyzer_scanner {
+void initialize_app(ui::NavigationView& nav) {
+    // Delegate to the actual implementation
+    ui::external_app::enhanced_drone_analyzer::initialize_app(nav);
+}
+}  // namespace ui::external_app::enhanced_drone_analyzer_scanner
 
 extern "C" {
 
 __attribute__((section(".external_app.app_enhanced_drone_analyzer_scanner.application_information"), used)) application_information_t _application_information_enhanced_drone_analyzer_scanner = {
     /*.memory_location = */ (uint8_t*)0x00000000,
-    /*.externalAppEntry = */ ui::external_app::enhanced_drone_analyzer::initialize_app,
+    /*.externalAppEntry = */ ui::external_app::enhanced_drone_analyzer_scanner::initialize_app,
     /*.header_version = */ CURRENT_HEADER_VERSION,
     /*.app_version = */ VERSION_MD5,
 

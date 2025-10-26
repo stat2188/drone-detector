@@ -739,6 +739,15 @@ private:
 };
 
 class DroneUIController {
+   private:
+    NavigationView& nav_;
+    DroneHardwareController& hardware_;
+    DroneScanner& scanner_;
+    AudioManager& audio_mgr_;
+    bool scanning_active_;
+    DroneDisplayController* display_controller_;
+    DroneAnalyzerSettings settings_;
+    app_settings::SettingsManager constant_settings_manager_;
 public:
     DroneUIController(NavigationView& nav,
                      DroneHardwareController& hardware,
@@ -761,19 +770,8 @@ public:
     bool is_scanning() const { return scanning_active_; }
     DroneAnalyzerSettings& settings() { return settings_; }
     const DroneAnalyzerSettings& settings() const { return settings_; }
-
     DroneUIController(const DroneUIController&) = delete;
     DroneUIController& operator=(const DroneUIController&) = delete;
-
-private:
-    NavigationView& nav_;
-    DroneHardwareController& hardware_;
-    DroneScanner& scanner_;
-    AudioManager& audio_mgr_;
-    bool scanning_active_;
-    DroneDisplayController* display_controller_;
-    DroneAnalyzerSettings settings_;
-    app_settings::SettingsManager constant_settings_manager_;
 
     void on_manage_frequencies();
     void on_create_new_database();

@@ -1700,9 +1700,22 @@ DroneUIController::DroneUIController(NavigationView& nav,
       scanner_(scanner),
       audio_(audio_mgr),
       scanning_active_(false),
-      display_controller_(std::make_unique<DroneDisplayController>(nav))
+      display_controller_(std::make_unique<DroneDisplayController>(nav)),
+      settings_(),  // Initialize DroneAnalyzerSettings with defaults
+      constant_settings_manager_()  // Initialize ConstantSettingsManager
 {
     audio_mgr_ = &audio_mgr;
+    // Initialize settings to defaults
+    settings_.spectrum_mode = SpectrumMode::MEDIUM;
+    settings_.scan_interval_ms = 750;
+    settings_.rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    settings_.enable_audio_alerts = true;
+    settings_.audio_alert_frequency_hz = 800;
+    settings_.audio_alert_duration_ms = 200;
+    settings_.hardware_bandwidth_hz = 24000000;
+    settings_.enable_real_hardware = true;
+    settings_.demo_mode = false;
+    settings_.freqman_path = "DRONES";
 }
 
 void DroneUIController::on_start_scan() {
