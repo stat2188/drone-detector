@@ -39,8 +39,6 @@ namespace ui::external_app::enhanced_drone_analyzer {
 
 using namespace portapack;
 
-namespace ui::external_app::enhanced_drone_analyzer {
-
 namespace ScannerSettingsManager {
     // Function declarations for ChibiOS integration fixes (PHASE 2.2: Complete forward declarations)
     static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
@@ -196,7 +194,7 @@ void initialize_app(ui::NavigationView& nav) {
     ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings loaded_settings;
 
     // Attempt to load settings from SD card
-    bool settings_loaded = ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_settings_from_txt(loaded_settings);
+    bool settings_loaded = ScannerSettingsManager::load_settings_from_txt(loaded_settings);
 
     // Show loading screen with status
     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
