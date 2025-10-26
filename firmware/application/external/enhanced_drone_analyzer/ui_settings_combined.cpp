@@ -29,13 +29,13 @@ public:
         create_backup_file(filepath);
 
         // Attempt to open file for writing
-        auto result = File::open(filepath, false);
-        if (!result.is_valid()) {
+        File settings_file;
+        if (!settings_file.open(filepath, false)) {
             // SD card error
             return false;
         }
 
-        auto file = result.take();
+        auto& file = settings_file;
 
         try {
             // Write header with timestamp
@@ -72,10 +72,9 @@ public:
      */
     static bool verify_comm_file_exists() {
         const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-        auto result = File::open(filepath, true);  // PHASE 3.2: replace Mode::Read with boolean read_only
-        if (result.is_valid()) {
-            auto file = result.take();
-            file.close();
+        File txt_file;
+        if (txt_file.open(filepath, true)) {  // true = read_only
+            txt_file.close();
             return true;
         }
         return false;
@@ -99,12 +98,10 @@ private:
     static void create_backup_file(const std::string& filepath) {
         const std::string backup_path = filepath + ".bak";
         try {
-            auto orig_result = File::open(filepath, true);
-            auto backup_result = File::open(backup_path, false);
+            File orig_file;
+            File backup_file;
 
-            if (orig_result.is_valid() && backup_result.is_valid()) {
-                auto orig_file = orig_result.take();
-                auto backup_file = backup_result.take();
+            if (orig_file.open(filepath, true) && backup_file.open(backup_path, false)) {
 
                 // Copy content to backup (simplified)
                 std::vector<uint8_t> buffer(1024);

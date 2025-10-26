@@ -1,76 +1,57 @@
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:3In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:37:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:872:24: error: 'DroneHardwareController' has not been declared
-  872 |                        DroneHardwareController& hardware,
+ 97%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/debug_pmem/ui_debug_pmem.cpp.obj
+[ 97%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:37:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:876:24: error: 'DroneHardwareController' has not been declared
+  876 |                        DroneHardwareController& hardware,
       |                        ^~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:873:24: error: 'DroneScanner' has not been declared
-  873 |                        DroneScanner& scanner,
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:877:24: error: 'DroneScanner' has not been declared
+  877 |                        DroneScanner& scanner,
       |                        ^~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:874:24: error: 'DroneDisplayController' has not been declared
-  874 |                        DroneDisplayController& display_controller,
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:878:24: error: 'DroneDisplayController' has not been declared
+  878 |                        DroneDisplayController& display_controller,
       |                        ^~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:887:42: error: 'DroneAnalyzerSettings' does not name a type
-  887 |     void update_runtime_parameters(const DroneAnalyzerSettings& settings);
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:891:42: error: 'DroneAnalyzerSettings' does not name a type
+  891 |     void update_runtime_parameters(const DroneAnalyzerSettings& settings);
       |                                          ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:897:5: error: 'DroneHardwareController' does not name a type
-  897 |     DroneHardwareController& hardware_;
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:901:5: error: 'DroneHardwareController' does not name a type
+  901 |     DroneHardwareController& hardware_;
       |     ^~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:898:5: error: 'DroneScanner' does not name a type
-  898 |     DroneScanner& scanner_;
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:902:5: error: 'DroneScanner' does not name a type
+  902 |     DroneScanner& scanner_;
       |     ^~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:899:5: error: 'DroneDisplayController' does not name a type
-  899 |     DroneDisplayController& display_controller_;
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:903:5: error: 'DroneDisplayController' does not name a type
+  903 |     DroneDisplayController& display_controller_;
       |     ^~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:909:1: error: expected declaration before '}' token
-  909 | } // namespace ui::external_app::enhanced_drone_analyzer
-      | ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: In function 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&, const string&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:105:113: error: no matching function for call to 'validate_range(uint32_t, unsigned int, unsigned int)'
-  105 |                 settings.scan_interval_ms = validate_range(static_cast<uint32_t>(std::stoul(value)), 100U, 5000U);
-      |                                                                                                                 ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:55:35: note: candidate: 'template<class T> T ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::validate_range(T, T, T)'
-   55 |     template<typename T> static T validate_range(T value, T min_val, T max_val);
-      |                                   ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:55:35: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:105:113: note:   deduced conflicting types for parameter 'T' ('long unsigned int' and 'unsigned int')
-  105 |                 settings.scan_interval_ms = validate_range(static_cast<uint32_t>(std::stoul(value)), 100U, 5000U);
-      |                                                                                                                 ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:114:121: error: no matching function for call to 'validate_range(uint16_t, unsigned int, unsigned int)'
-  114 |                 settings.audio_alert_frequency_hz = validate_range(static_cast<uint16_t>(std::stoul(value)), 200U, 3000U);
-      |                                                                                                                         ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:55:35: note: candidate: 'template<class T> T ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::validate_range(T, T, T)'
-   55 |     template<typename T> static T validate_range(T value, T min_val, T max_val);
-      |                                   ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:55:35: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:114:121: note:   deduced conflicting types for parameter 'T' ('short unsigned int' and 'unsigned int')
-  114 |                 settings.audio_alert_frequency_hz = validate_range(static_cast<uint16_t>(std::stoul(value)), 200U, 3000U);
-      |                                                                                                                         ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:117:119: error: no matching function for call to 'validate_range(uint32_t, unsigned int, unsigned int)'
-  117 |                 settings.audio_alert_duration_ms = validate_range(static_cast<uint32_t>(std::stoul(value)), 50U, 2000U);
-      |                                                                                                                       ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:55:35: note: candidate: 'template<class T> T ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::validate_range(T, T, T)'
-   55 |     template<typename T> static T validate_range(T value, T min_val, T max_val);
-      |                                   ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:55:35: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:117:119: note:   deduced conflicting types for parameter 'T' ('long unsigned int' and 'unsigned int')
-  117 |                 settings.audio_alert_duration_ms = validate_range(static_cast<uint32_t>(std::stoul(value)), 50U, 2000U);
-      |                                                                                                                       ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:120:127: error: no matching function for call to 'validate_range(uint32_t, unsigned int, unsigned int)'
-  120 |                 settings.hardware_bandwidth_hz = validate_range(static_cast<uint32_t>(std::stoul(value)), 1000000U, 100000000U);
-      |                                                                                                                               ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:55:35: note: candidate: 'template<class T> T ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::validate_range(T, T, T)'
-   55 |     template<typename T> static T validate_range(T value, T min_val, T max_val);
-      |                                   ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:55:35: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:120:127: note:   deduced conflicting types for parameter 'T' ('long unsigned int' and 'unsigned int')
-  120 |                 settings.hardware_bandwidth_hz = validate_range(static_cast<uint32_t>(std::stoul(value)), 1000000U, 100000000U);
-      |                                                                                                                               ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: In function 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_from_txt_impl(const string&, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:171:50: error: 'File::Mode' has not been declared
-  171 |         auto result = File::open(filepath, File::Mode::Read);
-      |                                                  ^~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: In function 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_settings_from_txt(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:62:13: error: no match for 'operator!' (operand type is 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings')
+   62 |         if (!settings_loaded) {
+      |             ^~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:62:13: note: candidate: 'operator!(bool)' <built-in>
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:62:13: note:   no known conversion for argument 1 from 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings' to 'bool'
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:66:16: error: cannot convert 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings' to 'bool' in return
+   66 |         return settings_loaded;
+      |                ^~~~~~~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: At global scope:
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:62:17: warning: 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::apply_settings_to_scanner(ui::external_app::enhanced_drone_analyzer::DroneHardwareController&, ui::external_app::enhanced_drone_analyzer::DroneScanner&, const ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)' defined but not used [-Wunused-function]
-   62 |     static bool apply_settings_to_scanner(
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:199:17: error: ambiguating new declaration of 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_from_txt_impl(const string&, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)'
+  199 |     static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings) {
+      |                 ^~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:48:34: note: old declaration 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_from_txt_impl(const string&, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)'
+   48 |     static DroneAnalyzerSettings load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
+      |                                  ^~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: In function 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_from_txt_impl(const string&, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:200:48: error: cannot call member function 'Optional<std::filesystem::filesystem_error> File::open(const std::filesystem::path&, bool, bool)' without object
+  200 |         auto result = File::open(filepath, true);  // PHASE 3.2: replace Mode::Read with boolean read_only
+      |                                                ^
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: At global scope:
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:48:34: warning: 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_from_txt_impl(const string&, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)' declared 'static' but never defined [-Wunused-function]
+   48 |     static DroneAnalyzerSettings load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
+      |                                  ^~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:48:34: warning: 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_from_txt_impl(const string&, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)' used but never defined
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:199:17: warning: 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::load_from_txt_impl(const string&, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)' defined but not used [-Wunused-function]
+  199 |     static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings) {
+      |                 ^~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:70:17: warning: 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::apply_settings_to_scanner(ui::external_app::enhanced_drone_analyzer::DroneHardwareController&, ui::external_app::enhanced_drone_analyzer::DroneScanner&, const ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)' defined but not used [-Wunused-function]
+   70 |     static bool apply_settings_to_scanner(
       |                 ^~~~~~~~~~~~~~~~~~~~~~~~~
 cc1plus: warning: unrecognized command line option '-Wno-volatile'
 make[2]: *** [firmware/application/CMakeFiles/application.elf.dir/build.make:5369: firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj] Error 1

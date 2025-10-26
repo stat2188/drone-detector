@@ -55,6 +55,8 @@ namespace ScannerSettingsManager {
     template<typename T> static T validate_range(T value, T min_val, T max_val);
 
     // PHASE 2.3: Implement complete function signatures and return types
+
+    // PHASE 2.3: Implement complete function signatures and return types
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) {
         const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
         // PHASE 2.3: Validate settings file exists and is readable
@@ -122,7 +124,7 @@ namespace ScannerSettingsManager {
                     static_cast<uint32_t>(5000U));
                 return true;
             } else if (key == "rssi_threshold_db") {
-                settings.rssi_threshold_db = validate_range(std::stoi(value), -120, -30);
+                settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
                 return true;
             } else if (key == "enable_audio_alerts") {
                 settings.enable_audio_alerts = (value == "true");
@@ -197,12 +199,12 @@ namespace ScannerSettingsManager {
 
     // Implementation functions (removed invalid 'private:' for namespace syntax fix)
     static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings) {
-        auto result = File::open(filepath, true);  // PHASE 3.2: replace Mode::Read with boolean read_only
-        if (!result.is_valid()) {
+        File txt_file;
+        if (!txt_file.open(filepath, true)) {  // true = read_only
             reset_to_defaults(settings);
             return false;
         }
-        auto file = result.take();
+        auto& file = txt_file;
         std::string file_content;
         file_content.resize(file.size());
         auto read_result = file.read(file_content.data(), file.size());

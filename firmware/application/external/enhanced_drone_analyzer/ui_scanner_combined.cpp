@@ -1292,8 +1292,8 @@ void ConsoleStatusBar::paint(Painter& painter) {
 DroneDisplayController::DroneDisplayController(NavigationView& nav)
     : nav_(nav), spectrum_gradient_{}
 {
-    chMtxInit(&spectrum_access_mutex_);  // PHASE 4.2: Add missing mutex initialization
-{
+    chMtxInit(&spectrum_access_mutex_);
+
     if (!spectrum_gradient_.load_file(default_gradient_file)) {
         spectrum_gradient_.set_default();
     }
@@ -2583,6 +2583,8 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
       audio_controller_(audio_controller),
       scan_interval_ms_(750)
 {
+    // PHASE 4.2: Initialize ChibiOS mutex (no member init list for mutex)
+    chMtxInit(&scan_coordinator_mutex_);
 }
 
 ScanningCoordinator::~ScanningCoordinator() {
