@@ -39,8 +39,6 @@ namespace ui::external_app::enhanced_drone_analyzer {
 
 using namespace portapack;
 
-using namespace ui::external_app::enhanced_drone_analyzer;
-
 namespace ui::external_app::enhanced_drone_analyzer {
 
 namespace ScannerSettingsManager {
@@ -192,6 +190,7 @@ namespace ScannerSettingsManager {
 
 } // namespace ScannerSettingsManager
 
+namespace ui::external_app::enhanced_drone_analyzer_scanner {
 void initialize_app(ui::NavigationView& nav) {
     // PHASE 7: Load settings from TXT file if available
     ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings loaded_settings;
@@ -223,12 +222,13 @@ void initialize_app(ui::NavigationView& nav) {
                          "Scanner ready for drone detection");
     }
 }
+}  // namespace ui::external_app::enhanced_drone_analyzer_scanner
 
 extern "C" {
 
 __attribute__((section(".external_app.app_enhanced_drone_analyzer_scanner.application_information"), used)) application_information_t _application_information_enhanced_drone_analyzer_scanner = {
     /*.memory_location = */ (uint8_t*)0x00000000,
-    /*.externalAppEntry = */ initialize_app,
+    /*.externalAppEntry = */ ui::external_app::enhanced_drone_analyzer_scanner::initialize_app,
     /*.header_version = */ CURRENT_HEADER_VERSION,
     /*.app_version = */ VERSION_MD5,
 
@@ -242,7 +242,8 @@ __attribute__((section(".external_app.app_enhanced_drone_analyzer_scanner.applic
     /*.menu_location = */ app_location_t::RX,
     /*.desired_menu_position = */ -1,
 
-    /*.m4_app_tag = */ {'E', 'D', 'A', 'S'},  // EDA Scanner
+    /*.m4_app_tag = portapack::spi_flash::image_tag_wideband_spectrum */
     /*.m4_app_offset = */ 0x00000000,  // will be filled at compile time
 };
+}
 }

@@ -1,0 +1,36 @@
+# Drone Frequencies Database for Enhanced Drone Analyzer
+# Format: f=frequency,d=description,m=modulation,bw=bandwidth
+# Single frequency entries for drone control channels
+
+# DJI Mavic Series Control Channels (2.4GHz)
+f=2400000000,d=DJI Mavic Min Freq,m=NFM,bw=12500
+f=2437000000,d=DJI Mavic Control,m=NFM,bw=12500
+f=2450000000,d=DJI Mavic Telemetry,m=NFM,bw=12500
+f=2470000000,d=DJI Mavic Video,m=NFM,bw=25000
+f=2490000000,d=DJI Mavic Max Freq,m=NFM,bw=12500
+
+# DJI Phantom Series (2.4GHz)
+f=2412000000,d=DJI Phantom Control,m=NFM,bw=12500
+f=2427000000,d=DJI Phantom Telemetry,m=NFM,bw=12500
+f=2442000000,d=DJI Phantom Video,m=NFM,bw=25000
+
+# Parrot Drones (2.4GHz)
+f=2405000000,d=Parrot AR Drone Control,m=NFM,bw=12500
+f=2420000000,d=Parrot Bebop Control,m=NFM,bw=12500
+f=2435000000,d=Parrot Anafi Control,m=NFM,bw=12500
+
+# Military UAV Channels (5.8GHz - higher threat level)
+f=5600000000,d=Military UAV Primary,m=NFM,bw=25000
+f=5700000000,d=Military UAV Secondary,m=NFM,bw=25000
+f=5800000000,d=Military UAV Tertiary,m=NFM,bw=25000
+f=5900000000,d=Military UAV Command,m=NFM,bw=25000
+
+# Hobby/FPV Drones (5.8GHz)
+f=5658000000,d=FPV Drone CH1,m=NFM,bw=15000
+f=5695000000,d=FPV Drone CH2,m=NFM,bw=15000
+f=5732000000,d=FPV Drone CH3,m=NFM,bw=15000
+
+# Surveillance Drones (1.2-1.4GHz)
+f=1200000000,d=Surveillance UAV Low,m=AM,bw=8000
+f=1300000000,d=Surveillance UAV Mid,m=AM,bw=8000
+f=1400000000,d=Surveillance UAV High,m=AM,bw=8000
