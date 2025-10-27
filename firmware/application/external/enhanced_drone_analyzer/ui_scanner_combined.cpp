@@ -10,7 +10,15 @@
 
 #include <cstdlib>
 
+// Add ChibiOS headers for threading
+#include <ch.h>
+
 static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
+// Increase stack size for safety (was 4096)
+static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 8192;
+
+// WORKING_AREA definition for thread stack
+WORKING_AREA(scanning_thread_wa, SCAN_THREAD_STACK_SIZE);
 
 // ChibiOS constants for message thread return
 #define MSG_OK (msg_t)0
@@ -228,9 +236,9 @@ void DroneScanner::start_scanning() {
     scan_cycles_ = 0;
     total_detections_ = 0;
 
-    // FIXED: chThdCreateFromHeap call per ChibiOS API - standard priority for real-time apps
-    scanning_thread_ = chThdCreateFromHeap(NULL, SCAN_THREAD_STACK_SIZE,
-                                           NORMALPRIO + 10, scanning_thread_function, this);
+    // FIXED: Use WORKING_AREA for proper ChibiOS thread creation
+    scanning_thread_ = chThdCreateStatic(scanning_thread_wa, sizeof(scanning_thread_wa),
+                                         NORMALPRIO + 10, scanning_thread_function, this);
     if (!scanning_thread_) {
         scanning_active_ = false;
     }
@@ -341,7 +349,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     DroneType detected_type = DroneType::UNKNOWN;
 
     size_t freq_hash = entry.frequency_a;
-    int32_t effective_threshold = detection_threshold;
+    int32_t effective_threshold = wideband_threshold; // Use wideband threshold as base
     if (local_detection_ring.get_rssi_value(freq_hash) < wideband_threshold) {
         effective_threshold = wideband_threshold + HYSTERESIS_MARGIN_DB;
     }
@@ -373,25 +381,23 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
 }
 
 bool DroneScanner::load_frequency_database() {
-    try {
-        if (freq_db_.entry_count() == 0) {
-            return false;
-        }
-        current_db_index_ = 0;
-        last_scanned_frequency_ = 0;
-
-        if (freq_db_.entry_count() > 100) {
-            handle_scan_error("Large database loaded");
-        }
-        scan_init_from_loaded_frequencies();
-        return true;
-    } catch (...) {
+    // Removed try/catch - exceptions disabled in embedded environment
+    if (freq_db_.entry_count() == 0) {
         return false;
     }
+    current_db_index_ = 0;
+    last_scanned_frequency_ = 0;
+
+    if (freq_db_.entry_count() > 100) {
+        handle_scan_error("Large database loaded");
+    }
+    scan_init_from_loaded_frequencies();
+    return true;
 }
 
 size_t DroneScanner::get_database_size() const {
-    return freq_db_.is_open() ? freq_db_.entry_count() : 0;
+    size_t count = freq_db_.entry_count();
+    return (count > 0) ? count : 0;
 }
 
 void DroneScanner::set_scanning_mode(ScanningMode mode) {
@@ -432,7 +438,8 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    if (!freq_db_.is_open() || freq_db_.entry_count() == 0) {
+    size_t entry_count = freq_db_.entry_count();
+    if (entry_count == 0) {
         if (scan_cycles_ % 50 == 0) {
             handle_scan_error("No frequency database loaded");
             scanning_active_ = false;
@@ -445,13 +452,13 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         current_db_index_ = 0;
     }
 
-    const freqman_entry& entry_opt = freq_db_[current_db_index_];
-    if (entry_opt && entry_opt->frequency_hz > 0) {
-        Frequency target_freq_hz = entry_opt->frequency_hz;
+    const freqman_entry& entry = freq_db_[current_db_index_];
+    if (entry.frequency_a > 0) {
+        Frequency target_freq_hz = entry.frequency_a;
         if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
             if (hardware.tune_to_frequency(target_freq_hz)) {
                 int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-                process_rssi_detection(*entry_opt, real_rssi);
+                process_rssi_detection(entry, real_rssi);
                 last_scanned_frequency_ = target_freq_hz;
             }
         }
@@ -761,11 +768,10 @@ bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
-    if (freq_db_.is_open() && current_db_index_ < freq_db_.entry_count()) {
-        const auto& entry_opt = freq_db_.get_entry(current_db_index_);
-        if (entry_opt) {
-            return entry_opt->frequency_hz;
-        }
+    size_t entry_count = freq_db_.entry_count();
+    if (entry_count > 0 && current_db_index_ < entry_count) {
+        const freqman_entry& entry = freq_db_[current_db_index_];
+        return entry.frequency_a;
     }
     return 433000000;
 }
@@ -794,7 +800,7 @@ size_t DroneScanner::get_total_memory_usage() const {
     // Estimate memory usage for UI display
     // This is a rough approximation for performance monitoring
     return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDroneData)) +
-           (freq_db_.is_open() ? freq_db_.entry_count() * sizeof(freqman_entry) : 0);
+           (freq_db_.entry_count() * sizeof(freqman_entry));
 }
 
 size_t DroneScanner::get_approaching_count() const {
