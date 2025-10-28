@@ -55,8 +55,12 @@
 ## DETALNIY PLAN ISPAWLENIY - PEREKATEGORIZOVANNYIE OSHIBKI S RANGAMI 1-15
 
 ## RANGA 1: KRITICHESKIE OSHIBKI VYZVANCHIE AWAWUR (Critical Linker/Scope Errors)
-- [ ] Fix AudioManager forward declaration vs implementation (incomplete type errors)
+- [x] Fix AudioManager forward declaration vs implementation (incomplete type errors)
   - DONE: AudioManager class fully defined with proper baseband_api integration
+- [x] Fix DetectionProcessor type error
+  - DONE: Moved DetectionProcessor class to header to resolve compilation error
+- [x] Fix chMutex type error
+  - DONE: Changed chMutex to Mutex and updated function calls
 - [ ] Resolve duplicate method definitions (scanner_combined.cpp methods defined twice)
   - DONE: Removed duplicate implementations of wideband_detection_override, process_wideband_detection_with_override, etc.
 - [ ] Exception handling removal (throw/catch replaced with error codes)

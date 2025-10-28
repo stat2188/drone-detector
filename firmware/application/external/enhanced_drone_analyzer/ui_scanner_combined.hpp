@@ -308,6 +308,19 @@ private:
 extern DetectionRingBuffer global_detection_ring;
 extern DetectionRingBuffer& local_detection_ring;
 
+// Unified detection processor class moved to header for compilation
+class DetectionProcessor {
+private:
+    DroneScanner* scanner_;  // Reference to parent scanner for callbacks
+
+public:
+    explicit DetectionProcessor(DroneScanner* scanner) : scanner_(scanner) {}
+
+    // Unified detection function replacing all duplicates
+    void process_unified_detection(const freqman_entry& entry, int32_t rssi, int32_t effective_threshold,
+                                  float confidence_score = 0.7f, bool force_process = false);
+};
+
 class DroneScanner {
 public:
     enum class ScanningMode {
@@ -501,13 +514,14 @@ private:
     MessageHandlerRegistration message_handler_frame_sync_;
 
     // Thread safety mutex for spectrum access
-    chMutex spectrum_access_mutex_;
+    Mutex spectrum_access_mutex_;
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
     uint32_t bandwidth_hz_;
     RxRadioState radio_state_;
     ChannelSpectrumFIFO* fifo_;
+    ChannelSpectrumFIFO* spectrum_fifo_;
     bool spectrum_streaming_active_;
     int32_t last_valid_rssi_;
 };
@@ -616,7 +630,10 @@ private:
 class DroneDisplayController {
 public:
     explicit DroneDisplayController(NavigationView& nav);
-    ~DroneDisplayController() = default;
+    ~DroneDisplayController();
+
+    DroneDisplayController(const DroneDisplayController&) = delete;
+    DroneDisplayController& operator=(const DroneDisplayController&) = delete;
 
     BigFrequency& big_display() { return big_display_; }
     ProgressBar& scanning_progress() { return scanning_progress_; }

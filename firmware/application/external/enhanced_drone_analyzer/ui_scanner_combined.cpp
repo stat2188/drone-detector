@@ -340,6 +340,19 @@ void DroneScanner::start_scanning() {
     }
 }
 
+// ADDED: Spectrum streaming management for proper RSSI acquisition
+void DroneScanner::start_spectrum_for_scanning(DroneHardwareController& hardware) {
+    if (scanning_active_ && !hardware.is_spectrum_streaming_active()) {
+        hardware.start_spectrum_streaming();
+    }
+}
+
+void DroneScanner::stop_spectrum_for_scanning(DroneHardwareController& hardware) {
+    if (!scanning_active_ && hardware.is_spectrum_streaming_active()) {
+        hardware.stop_spectrum_streaming();
+    }
+}
+
 void DroneScanner::stop_scanning() {
     if (!scanning_active_) return;
 
@@ -931,7 +944,8 @@ DroneHardwareController::DroneHardwareController(SpectrumMode mode)
       bandwidth_hz_(24000000),
       spectrum_streaming_active_(false),
       last_valid_rssi_(-120),
-      fifo_(nullptr)
+      fifo_(nullptr),
+      spectrum_fifo_(nullptr)
 {
     // Initialize radio state for proper operation
     initialize_radio_state();
@@ -966,12 +980,22 @@ void DroneHardwareController::initialize_radio_state() {
 
 void DroneHardwareController::initialize_spectrum_collector() {
     message_handler_spectrum_config_ = MessageHandlerRegistration(
-        Message::ID::ChannelSpectrumConfigChange,
-        [this](const Message* const p) { handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p)); });
+        Message::ID::ChannelSpectrumConfig,
+        [this](const Message* const p) {
+            handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
+        });
 
     message_handler_frame_sync_ = MessageHandlerRegistration(
         Message::ID::DisplayFrameSync,
-        [this](const Message* const p) { (void)p; process_channel_spectrum_data({}); });
+        [this](const Message* const p) {
+            (void)p;
+            if (spectrum_fifo_) {
+                ChannelSpectrum channel_spectrum;
+                while (spectrum_fifo_->out(channel_spectrum)) {
+                    process_channel_spectrum_data(channel_spectrum);
+                }
+            }
+        });
 }
 
 void DroneHardwareController::cleanup_spectrum_collector() {
@@ -1420,7 +1444,7 @@ void ConsoleStatusBar::paint(Painter& painter) {
 DroneDisplayController::DroneDisplayController(NavigationView& nav)
     : nav_(nav), spectrum_gradient_{}
 {
-    chMtxInit(&spectrum_access_mutex_);
+    // Mutex initialized automatically with default constructor
 
     if (!spectrum_gradient_.load_file(default_gradient_file)) {
         spectrum_gradient_.set_default();
@@ -1729,11 +1753,11 @@ void DroneDisplayController::add_spectrum_pixel_from_bin(uint8_t power) {
 }
 
 void DroneDisplayController::render_mini_spectrum() {
-    chMtxLock(&spectrum_access_mutex_);  // ChibiOS: Replace std::scoped_lock with manual mutex
+    spectrum_access_mutex_.lock();  // Use Mutex member functions
 
     if (!validate_spectrum_data()) {
         clear_spectrum_buffers();
-        chMtxUnlock(&spectrum_access_mutex_);
+        spectrum_access_mutex_.unlock();
         return;
     }
     const Color background_color = spectrum_gradient_.lut.size() > 0 ? spectrum_gradient_.lut[0] : Color::black();
@@ -1745,7 +1769,7 @@ void DroneDisplayController::render_mini_spectrum() {
         );
         pixel_index = 0;
     }
-    chMtxUnlock(&spectrum_access_mutex_);
+    spectrum_access_mutex_.unlock();
 }
 
 void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES>& drones) {
