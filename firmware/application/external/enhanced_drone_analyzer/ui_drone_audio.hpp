@@ -6,28 +6,33 @@
 
 #include <cstdint>
 
+// Forward declarations to avoid circular includes
 enum class ThreatLevel;
+
 class AudioManager {
 public:
-    AudioManager() = default;
-    virtual ~AudioManager() = default;
+    AudioManager();
+    virtual ~AudioManager();
 
-    virtual bool is_audio_enabled() const { return audio_enabled_; }
-    virtual void toggle_audio() { audio_enabled_ = !audio_enabled_; }
-    virtual void play_detection_beep(ThreatLevel threat) { (void)threat; /* Stub */ }
+    // Core audio control
+    virtual bool is_audio_enabled() const;
+    virtual void toggle_audio();
+    virtual void play_detection_beep(ThreatLevel threat);
+    virtual void stop_audio();
 
+    // Audio parameter getters/setters
     virtual uint16_t get_alert_frequency() const { return 800; }
-    virtual void set_alert_frequency(uint16_t freq) { (void)freq; }
+    virtual void set_alert_frequency(uint16_t freq) { (void)freq; /* TODO: Implement frequency mapping */ }
     virtual uint32_t get_alert_duration_ms() const { return 500; }
-    virtual void set_alert_duration_ms(uint32_t duration) { (void)duration; }
+    virtual void set_alert_duration_ms(uint32_t duration) { (void)duration; /* TODO: Implement duration control */ }
 
 private:
-    bool audio_enabled_ = true;
+    bool audio_enabled_;
 };
 
 struct DroneAudioSettings {
     bool audio_enabled = true;
-    uint16_t test_threat_level = 2; // ThreatLevel::HIGH as uint
+    ThreatLevel test_threat_level = ThreatLevel::HIGH; // Use enum instead of int
 };
 
 #endif // __UI_DRONE_AUDIO_HPP__

@@ -34,81 +34,183 @@ WORKING_AREA(scanning_thread_wa, SCAN_THREAD_STACK_SIZE);
 // Using namespace to access DroneAnalyzerSettings defined in the scanner namespace
 using namespace ui::external_app::enhanced_drone_analyzer;
 
-bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
-    const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-
-    // FIXED: Use proper File::open with boolean read_only parameter
-    File settings_file;
-    if (!settings_file.open(SETTINGS_FILE_PATH, true)) {  // true = read_only
-        return false;  // No file, keep defaults
-    }
-
-    std::string file_content;
-    file_content.resize(settings_file.size());
-    auto read_result = settings_file.read(file_content.data(), settings_file.size());
-    if (read_result != settings_file.size()) {
-        settings_file.close();
+/**
+ * ВАЛИДАЦИЯ ЗАГРУЖЕННЫХ НАСТРОЕК С БЕЗОПАСНЫМИ ПРЕДЕЛАМИ
+ * Проверяет все параметры на соответствие допустимым диапазонам
+ */
+bool validate_loaded_settings(const DroneAnalyzerSettings& settings) {
+    // ВАЛИДАЦИЯ ИНТЕРВАЛА СКАНИРОВАНИЯ (100мс - 30сек)
+    if (settings.scan_interval_ms < 100 || settings.scan_interval_ms > 30000) {
         return false;
     }
-    settings_file.close();
 
-    std::istringstream iss(file_content);
+    // ВАЛИДАЦИЯ ПОРОГА RSSI (-120dB до 0dB)
+    if (settings.rssi_threshold_db < -120 || settings.rssi_threshold_db > 0) {
+        return false;
+    }
+
+    // ВАЛИДАЦИЯ ЧАСТОТЫ АУДИО СИГНАЛА (200Hz - 3000Hz)
+    if (settings.audio_alert_frequency_hz < 200 || settings.audio_alert_frequency_hz > 3000) {
+        return false;
+    }
+
+    // ВАЛИДАЦИЯ ПРОДОЛЖИТЕЛЬНОСТИ АУДИО (50мс - 2сек)
+    if (settings.audio_alert_duration_ms < 50 || settings.audio_alert_duration_ms > 2000) {
+        return false;
+    }
+
+    // ВАЛИДАЦИЯ ПОЛОСЫ ПРОПУСКАНИЯ (1MHz - 100MHz)
+    if (settings.hardware_bandwidth_hz < 1000000 || settings.hardware_bandwidth_hz > 100000000) {
+        return false;
+    }
+
+    return true;  // ВСЕ НАСТРОЙКИ В ДОПУСТИМЫХ ПРЕДЕЛАХ
+}
+
+/**
+ * ПАРСИНГ НАСТРОЕК ИЗ СОДЕРЖИМОГО ФАЙЛА
+ * Разбирает TXT файл построчно с обработкой ошибок
+ */
+bool parse_settings_from_content(const std::string& content, DroneAnalyzerSettings& settings) {
+    std::istringstream iss(content);
     std::string line;
+    size_t parsed_lines = 0;
 
-    // Parse lines manually from full file content
     while (std::getline(iss, line)) {
-        // Trim whitespace from line
-        auto it = std::find_if(line.begin(), line.end(), [](int ch) { return !std::isspace(ch); });
+        // ТРИММИНГ ПРОБЕЛОВ
+        auto it = std::find_if(line.begin(), line.end(), [](int ch) {
+            return !std::isspace(ch);
+        });
         line.erase(line.begin(), it);
-        auto rit = std::find_if(line.rbegin(), line.rend(), [](int ch) { return !std::isspace(ch); });
+
+        auto rit = std::find_if(line.rbegin(), line.rend(), [](int ch) {
+            return !std::isspace(ch);
+        });
         line.erase(rit.base(), line.end());
 
+        // ПРОПУСК ПУСТЫХ СТРОК И КОММЕНТАРИЕВ
+        if (line.empty() || line[0] == '#') continue;
+
+        // НАЙТИ РАЗДЕЛИТЕЛЬ "="
         size_t equals_pos = line.find('=');
-        if (equals_pos == std::string::npos) {
-            continue;  // Skip malformed lines
-        }
+        if (equals_pos == std::string::npos) continue;  // НЕВАЛИДНАЯ СТРОКА
 
         std::string key = line.substr(0, equals_pos);
         std::string value = line.substr(equals_pos + 1);
 
-        // Trim key/value whitespace
-        key.erase(key.begin(), std::find_if(key.begin(), key.end(), [](int ch) { return !std::isspace(ch); }));
-        key.erase(std::find_if(key.rbegin(), key.rend(), [](int ch) { return !std::isspace(ch); }).base(), key.end());
-        value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](int ch) { return !std::isspace(ch); }));
-        value.erase(std::find_if(value.rbegin(), value.rend(), [](int ch) { return !std::isspace(ch); }).base(), value.end());
+        // ТРИММИНГ КЛЮЧА И ЗНАЧЕНИЯ
+        key.erase(key.begin(), std::find_if(key.begin(), key.end(), [](int ch) {
+            return !std::isspace(ch);
+        }));
+        key.erase(std::find_if(key.rbegin(), key.rend(), [](int ch) {
+            return !std::isspace(ch);
+        }).base(), key.end());
 
-        // Parse settings
-        if (key == "spectrum_mode") {
-            if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-            else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
-            else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-            else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-            // Default remains MEDIUM
-        } else if (key == "scan_interval_ms") {
-            uint32_t val = strtoul(value.c_str(), nullptr, 10);
-            if (val >= 100 && val <= 30000) {
-                settings.scan_interval_ms = val;
+        value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](int ch) {
+            return !std::isspace(ch);
+        }));
+        value.erase(std::find_if(value.rbegin(), value.rend(), [](int ch) {
+            return !std::isspace(ch);
+        }).base(), value.end());
+
+        // ПАРСИНГ НЕКОТОРЫХ КЛЮЧЕЙ С ОБРАБОТКОЙ ОШИБОК
+        try {
+            if (key == "spectrum_mode") {
+                // SPECTRUM MODE
+                if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
+                else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
+                else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
+                else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+                parsed_lines++;
+            } else if (key == "scan_interval_ms") {
+                // SCAN INTERVAL
+                settings.scan_interval_ms = static_cast<uint32_t>(strtoul(value.c_str(), nullptr, 10));
+                parsed_lines++;
+            } else if (key == "rssi_threshold_db") {
+                // RSSI THRESHOLD
+                settings.rssi_threshold_db = static_cast<int32_t>(strtol(value.c_str(), nullptr, 10));
+                parsed_lines++;
+            } else if (key == "enable_audio_alerts") {
+                // AUDIO ALERTS
+                settings.enable_audio_alerts = (value == "true");
+                parsed_lines++;
+            } else if (key == "audio_alert_frequency_hz") {
+                // AUDIO FREQUENCY
+                settings.audio_alert_frequency_hz = static_cast<uint16_t>(strtoul(value.c_str(), nullptr, 10));
+                parsed_lines++;
+            } else if (key == "audio_alert_duration_ms") {
+                // AUDIO DURATION
+                settings.audio_alert_duration_ms = static_cast<uint32_t>(strtoul(value.c_str(), nullptr, 10));
+                parsed_lines++;
+            } else if (key == "enable_real_hardware") {
+                // REAL HARDWARE MODE
+                settings.enable_real_hardware = (value == "true");
+                parsed_lines++;
+            } else if (key == "demo_mode") {
+                // DEMO MODE
+                settings.demo_mode = (value == "true");
+                parsed_lines++;
+            } else if (key == "hardware_bandwidth_hz") {
+                // HARDWARE BANDWIDTH
+                settings.hardware_bandwidth_hz = static_cast<uint32_t>(strtoul(value.c_str(), nullptr, 10));
+                parsed_lines++;
             }
-        } else if (key == "rssi_threshold_db") {
-            settings.rssi_threshold_db = strtol(value.c_str(), nullptr, 10);
-            // Validation done elsewhere
-        } else if (key == "enable_audio_alerts") {
-            settings.enable_audio_alerts = (value == "true");
-        } else if (key == "audio_alert_frequency_hz") {
-            settings.audio_alert_frequency_hz = strtoul(value.c_str(), nullptr, 10);
-        } else if (key == "audio_alert_duration_ms") {
-            settings.audio_alert_duration_ms = strtoul(value.c_str(), nullptr, 10);
-        } else if (key == "enable_real_hardware") {
-            settings.enable_real_hardware = (value == "true");
-        } else if (key == "demo_mode") {
-            settings.demo_mode = (value == "true");
-        } else if (key == "hardware_bandwidth_hz") {
-            settings.hardware_bandwidth_hz = strtoul(value.c_str(), nullptr, 10);
+            // ПРОПУСТИТЬ НЕИЗВЕСТНЫЕ КЛЮЧИ
+        } catch (...) {
+            // ОШИБКА ПАРСИНГА - ПРОДОЛЖИТЬ СО СЛЕДУЮЩЕЙ СТРОКОЙ
+            continue;
         }
-        // Ignore unknown keys
     }
 
-    return true;  // SUCCESS: Settings loaded from SD card
+    return parsed_lines >= 5;  // ТРЕБУЕТ МИНИМУМ 5 ВАЛИДНЫХ НАСТРОЕК
+}
+
+bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
+    const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+
+    // СОХРАНИТЬ ОРИГИНАЛЬНЫЕ НАСТРОЙКИ ДЛЯ ОТКАТА
+    DroneAnalyzerSettings original_settings = settings;
+
+    try {
+        // FIXED: Use proper File::open with boolean read_only parameter
+        File settings_file;
+        if (!settings_file.open(SETTINGS_FILE_PATH, true)) {  // true = read_only
+            return false;  // ФАЙЛ НЕ НАЙДЕН - ВЕРНУТЬ FALSE
+        }
+
+        std::string file_content;
+        file_content.resize(settings_file.size());
+        auto read_result = settings_file.read(file_content.data(), settings_file.size());
+        if (read_result != settings_file.size()) {
+            settings_file.close();
+            // ОТКАТ К ОРИГИНАЛЬНЫМ НАСТРОЙКАМ
+            settings = original_settings;
+            return false;
+        }
+        settings_file.close();
+
+        // ПАРСИТЬ СЕКЦИЮ И ВАЛИДАЦИЮ НАСТРОЕК
+        if (!parse_settings_from_content(file_content, settings)) {
+            // НЕУДАЧНЫЙ ПАРСИНГ - ОТКАТ
+            settings = original_settings;
+            return false;
+        }
+
+        // ВАЛИДИРОВАТЬ ЗАГРУЖЕННЫЕ НАСТРОЙКИ
+        if (!validate_loaded_settings(settings)) {
+            // НЕВАЛИДНЫЕ НАСТРОЙКИ - ОТКАТ К БЕЗОПАСНЫМ ЗНАЧЕНИЯМ
+            settings = original_settings;
+            return false;
+        }
+
+        return true;  // УСПЕШНАЯ ЗАГРУЗКА
+
+    } catch (const std::exception& e) {
+        // ЛЮБОЕ ИСКЛЮЧЕНИЕ - БЕЗОПАСНЫЙ ОТКАТ
+        (void)e; // Suppress unused variable warning in embedded env
+        settings = original_settings;
+        return false;
+    }
 }
 
 namespace ui::external_app::enhanced_drone_analyzer {
@@ -244,30 +346,37 @@ private:
 };
 
 DroneScanner::DroneScanner()
-    : scanning_active_(false),              // Initialize in member init list only
-      scanning_thread_(nullptr),            // Initialize in member init list only
-      current_db_index_(0),                 // Initialize in member init list only
-      last_scanned_frequency_(0),           // Initialize in member init list only
-      scan_cycles_(0),                      // Initialize in member init list only
-      total_detections_(0),                 // Initialize in member init list only
-      is_real_mode_(true),                  // Initialize in member init list only
-      tracked_drones_count_(0),             // Initialize in member init list only
-      approaching_count_(0),                // Initialize in member init list only
-      receding_count_(0),                   // Initialize in member init list only
-      static_count_(0),                     // Initialize in member init list only
-      max_detected_threat_(ThreatLevel::NONE), // Initialize in member init list only
-      last_valid_rssi_(-120),               // Initialize in member init list only
-      wideband_scan_data_(),                // Default construct
-      freq_db_(),                           // Default construct
-      scanning_mode_(ScanningMode::DATABASE), // Initialize in member init list only
-      tracked_drones_(),                    // Default construct array
-      detection_processor_(*this)           // Initialize with reference to self
+    : DroneScanner(DroneAnalyzerSettings{})  // Делегируем конструктор с настройками по умолчанию
 {
-    // Removed duplicate variable assignments - no duplicate initializations allowed
-    // All member variables were already initialized in the member init list above
+// Конструктор по умолчанию использует настройки по умолчанию
+}
 
-    // Call initialization functions (these can't be in member init list)
-    initialize_database_and_scanner();
+DroneScanner::DroneScanner(const DroneAnalyzerSettings& config)
+    : scanning_active_(false),                           // Initialize in member init list only
+      scanning_thread_(nullptr),                         // Initialize in member init list only
+      current_db_index_(0),                              // Initialize in member init list only
+      last_scanned_frequency_(0),                        // Initialize in member init list only
+      scan_cycles_(0),                                   // Initialize in member init list only
+      total_detections_(0),                              // Initialize in member init list only
+      is_real_mode_(config.enable_real_hardware),        // ЗАГРУЖЕННЫЕ НАСТРОЙКИ
+      tracked_drones_count_(0),                          // Initialize in member init list only
+      approaching_count_(0),                             // Initialize in member init list only
+      receding_count_(0),                                // Initialize in member init list only
+      static_count_(0),                                  // Initialize in member init list only
+      max_detected_threat_(ThreatLevel::NONE),           // Initialize in member init list only
+      last_valid_rssi_(-120),                            // Initialize in member init list only
+      wideband_scan_data_(),                             // Default construct
+      freq_db_(),                                        // Default construct
+      scanning_mode_(ScanningMode::DATABASE),            // Initialize in member init list only
+      tracked_drones_(),                                 // Default construct array
+      detection_processor_(*this),                        // Initialize with reference to self
+      // КОНФИГУРИРУЕМЫЕ ПАРАМЕТРЫ ИЗ НАСТРОЕК:
+      scan_interval_ms_(config.scan_interval_ms),        // ИНТЕРВАЛ СКАНИРОВАНИЯ
+      rssi_threshold_db_(config.rssi_threshold_db),      // ПОРОГ RSSI
+      audio_alerts_enabled_(config.enable_audio_alerts)  // ВКЛЮЧЕНЫ ЛИ АУДИО СИГНАЛЫ
+{
+    // ПРИМЕНЯЕМ АРГУМЕНТЫ НАСТРОЕК КОГДА ВОЗМОЖНО
+    // (некоторые настройки нельзя применить здесь из-за зависимостей)
 }
 
 DroneScanner::~DroneScanner() {
@@ -376,8 +485,9 @@ msg_t DroneScanner::scanning_thread_function(void* arg) {
 
 msg_t DroneScanner::scanning_thread() {
     // FIXED: chThdShouldTerminateX() → chThdShouldTerminate() (no 'X' suffix)
+    // ЗАМЕНЕНО: Используем configurable scan_interval_ms_ вместо MIN_SCAN_INTERVAL_MS
     while (scanning_active_ && !chThdShouldTerminate()) {
-        chThdSleepMilliseconds(MIN_SCAN_INTERVAL_MS);
+        chThdSleepMilliseconds(scan_interval_ms_);
         scan_cycles_++;
     }
     scanning_active_ = false;

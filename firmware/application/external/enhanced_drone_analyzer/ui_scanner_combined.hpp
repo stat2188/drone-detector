@@ -329,6 +329,7 @@ public:
         HYBRID
     };
 
+    explicit DroneScanner(const DroneAnalyzerSettings& config = {});
     DroneScanner();
     ~DroneScanner();
 
@@ -444,6 +445,11 @@ private:
 
     ThreatLevel max_detected_threat_;
     int32_t last_valid_rssi_;
+
+    // Конфигурируемые параметры из настроек
+    uint32_t scan_interval_ms_;
+    int32_t rssi_threshold_db_;
+    bool audio_alerts_enabled_;
 
     DetectionProcessor detection_processor_;  // Unified detection processing
 
