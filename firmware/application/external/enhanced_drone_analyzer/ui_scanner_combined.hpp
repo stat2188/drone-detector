@@ -432,6 +432,8 @@ private:
     ThreatLevel max_detected_threat_;
     int32_t last_valid_rssi_;
 
+    DetectionProcessor detection_processor_;  // Unified detection processing
+
     static constexpr uint8_t DETECTION_DELAY = 3;
     WidebandScanData wideband_scan_data_;
     FreqmanDB drone_database_;
@@ -497,6 +499,9 @@ private:
 
     MessageHandlerRegistration message_handler_spectrum_config_;
     MessageHandlerRegistration message_handler_frame_sync_;
+
+    // Thread safety mutex for spectrum access
+    chMutex spectrum_access_mutex_;
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;

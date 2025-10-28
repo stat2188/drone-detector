@@ -5,6 +5,7 @@
 #include "ui_scanner_combined.hpp"
 #include "ui_drone_audio.hpp"
 #include "../../gradient.hpp"
+#include "../../baseband_api.hpp"
 #include <algorithm>
 #include <sstream>
 
@@ -16,6 +17,12 @@
 static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
 // Increase stack size for safety (was 4096)
 static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 8192;
+
+// Zombie detection cleanup thread for stale drones
+static constexpr uint32_t CLEANUP_THREAD_STACK_SIZE = 4096;
+
+// Audio processing thread for alert generation
+static constexpr uint32_t AUDIO_THREAD_STACK_SIZE = 4096;
 
 // WORKING_AREA definition for thread stack
 WORKING_AREA(scanning_thread_wa, SCAN_THREAD_STACK_SIZE);
@@ -144,9 +151,97 @@ void DetectionRingBuffer::clear() {
     }
 }
 
-// ===========================================
-// PART 2: DRONE SCANNER IMPLEMENTATION (from ui_drone_scanner.cpp)
-// ===========================================
+/**
+ * UNIFIED DETECTION PROCESSOR - Consolidated abstraction for all drone detection logic
+ * Eliminates code duplication and provides single point for detection processing
+ */
+class DetectionProcessor {
+private:
+    DroneScanner* scanner_;  // Reference to parent scanner for callbacks
+
+public:
+    explicit DetectionProcessor(DroneScanner* scanner) : scanner_(scanner) {}
+
+    // Single unified detection function replacing all duplicates
+    void process_unified_detection(const freqman_entry& entry, int32_t rssi, int32_t effective_threshold,
+                                  float confidence_score = 0.7f, bool force_process = false) {
+        // Validate input parameters
+        if (!scanner_->validate_detection_simple(rssi, ThreatLevel::NONE)) {
+            return;
+        }
+
+        // Threat classification based on RSSI with ISM band enhancement
+        ThreatLevel threat_level = classify_threat_level(rssi, entry.frequency_a);
+
+        // Increment detection counter
+        scanner_->total_detections_++;
+        DroneType detected_type = DroneType::UNKNOWN;
+
+        // Process detection with ring buffer hysteresis
+        process_ring_buffer_logic(entry.frequency_a, rssi, effective_threshold,
+                                threat_level, detected_type, confidence_score, force_process);
+    }
+
+private:
+    ThreatLevel classify_threat_level(int32_t rssi, Frequency freq_hz) const {
+        ThreatLevel base_level = ThreatLevel::NONE;
+        if (rssi > -70) base_level = ThreatLevel::HIGH;
+        else if (rssi > -80) base_level = ThreatLevel::LOW;
+        else if (rssi > -90) base_level = ThreatLevel::NONE;
+
+        // ISM band enhancement for drone frequencies
+        if (freq_hz >= 2'400'000'000ULL && freq_hz <= 2'500'000'000ULL) {
+            return std::max(base_level, ThreatLevel::MEDIUM);
+        }
+        return base_level;
+    }
+
+    void process_ring_buffer_logic(Frequency freq_hz, int32_t rssi, int32_t threshold,
+                                 ThreatLevel threat_level, DroneType drone_type,
+                                 float confidence_score, bool force_process) {
+        size_t freq_hash = freq_hz;
+        uint8_t detection_count = local_detection_ring.get_detection_count(freq_hash);
+
+        if (rssi >= threshold || force_process) {
+            // Increment detection count with saturation
+            if (detection_count < MIN_DETECTION_COUNT - 1) {
+                detection_count = std::min(static_cast<uint8_t>(detection_count + 1), static_cast<uint8_t>(255));
+            }
+            local_detection_ring.update_detection(freq_hash, detection_count, rssi);
+
+            // Trigger detection event on threshold reach
+            if (detection_count >= MIN_DETECTION_COUNT) {
+                trigger_detection_event(freq_hz, rssi, threat_level, drone_type, detection_count, confidence_score);
+                scanner_->update_tracked_drone(drone_type, freq_hz, rssi, threat_level);
+            }
+        } else {
+            // Clear weak signals to prevent false positives
+            local_detection_ring.update_detection(freq_hash, 0, -120);
+        }
+    }
+
+    void trigger_detection_event(Frequency freq_hz, int32_t rssi, ThreatLevel threat_level,
+                                DroneType drone_type, uint8_t detection_count, float confidence_score) {
+        DetectionLogEntry detection_event{
+            .timestamp = chTimeNow(),
+            .frequency_hz = static_cast<uint32_t>(freq_hz),
+            .rssi_db = rssi,
+            .threat_level = threat_level,
+            .drone_type = drone_type,
+            .detection_count = detection_count,
+            .confidence_score = confidence_score
+        };
+
+        if (scanner_->detection_logger_.is_session_active()) {
+            scanner_->detection_logger_.log_detection(detection_event);
+        }
+
+        // Audio alert for high threats
+        if (threat_level >= ThreatLevel::HIGH) {
+            baseband_api::request_audio_beep(800, 48000, 200);
+        }
+    }
+};
 
 DroneScanner::DroneScanner()
     : scanning_active_(false),              // Initialize in member init list only
@@ -165,7 +260,8 @@ DroneScanner::DroneScanner()
       wideband_scan_data_(),                // Default construct
       freq_db_(),                           // Default construct
       scanning_mode_(ScanningMode::DATABASE), // Initialize in member init list only
-      tracked_drones_()                     // Default construct array
+      tracked_drones_(),                    // Default construct array
+      detection_processor_(*this)           // Initialize with reference to self
 {
     // Removed duplicate variable assignments - no duplicate initializations allowed
     // All member variables were already initialized in the member init list above
@@ -284,100 +380,75 @@ size_t DroneScanner::get_total_memory_usage() const {
            (freq_db_.is_open() ? freq_db_.entry_count() * sizeof(freqman_entry) : 0);
 }
 
-// Implement missing setup_wideband_range method
-void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) {
-    wideband_scan_data_.min_freq = min_freq;
-    wideband_scan_data_.max_freq = max_freq;
+// ===========================================
+// UNIFIED WIDEBAND PROCESSING SYSTEM (Consolidated Implementation)
+// ===========================================
 
-    Frequency scanning_range = max_freq - min_freq;
-    if (scanning_range > WIDEBAND_SLICE_WIDTH) {
-        wideband_scan_data_.slices_nb = (scanning_range + WIDEBAND_SLICE_WIDTH - 1) / WIDEBAND_SLICE_WIDTH;
-        if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
-            wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
+/**
+ * MASTER WIDEBAND DETECTION FUNCTION
+ * Consolidated all wideband logic into single, coherent function
+ * Handles all wideband scanning, detection, validation, and tracking
+ */
+void DroneScanner::master_wideband_detection_handler(
+    DroneHardwareController& hardware,
+    Frequency target_frequency_hz,
+    int32_t rss_threshold_override,
+    bool force_detection
+) {
+    // PHASE 1: Wideband Range Validation & Setup
+    const Frequency WIDEBAND_MIN = WIDEBAND_DEFAULT_MIN;
+    const Frequency WIDEBAND_MAX = WIDEBAND_DEFAULT_MAX;
+
+    if (target_frequency_hz < WIDEBAND_MIN || target_frequency_hz > WIDEBAND_MAX) {
+        if (scan_cycles_ % 50 == 0) {
+            handle_scan_error("Wideband frequency out of range");
         }
-        Frequency slices_span = wideband_scan_data_.slices_nb * WIDEBAND_SLICE_WIDTH;
-        Frequency offset = ((scanning_range - slices_span) / 2) + (WIDEBAND_SLICE_WIDTH / 2);
-        Frequency center_frequency = min_freq + offset;
-
-        std::generate_n(wideband_scan_data_.slices,
-                       wideband_scan_data_.slices_nb,
-                       [&center_frequency, slice_index = 0]() mutable -> WidebandSlice {
-                           WidebandSlice slice;
-                           slice.center_frequency = center_frequency;
-                           slice.index = slice_index++;
-                           center_frequency += WIDEBAND_SLICE_WIDTH;
-                           return slice;
-                       });
-    } else {
-        wideband_scan_data_.slices[0].center_frequency = (max_freq + min_freq) / 2;
-        wideband_scan_data_.slices_nb = 1;
-    }
-    wideband_scan_data_.slice_counter = 0;
-}
-
-// Implement missing wideband_detection_override method
-void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override) {
-    if (rssi >= threshold_override) {
-        freqman_entry wideband_entry = entry;
-        wideband_entry.description = "Wideband Enhanced Detection";
-        process_wideband_detection_with_override(wideband_entry, rssi, DEFAULT_RSSI_THRESHOLD_DB, threshold_override);
-    }
-}
-
-// Implement missing process_wideband_detection_with_override method
-void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
-                                                           int32_t original_threshold, int32_t wideband_threshold) {
-    if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::NONE) ||
-        !SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
         return;
     }
 
-    ThreatLevel threat_level;
-    if (rssi > -70) {
-        threat_level = ThreatLevel::HIGH;
-    } else if (rssi > -80) {
-        threat_level = ThreatLevel::LOW;
-    } else {
-        threat_level = ThreatLevel::NONE;
-    }
-
-    if (entry.frequency_a >= 2'400'000'000 && entry.frequency_a <= 2'500'000'000) {
-        threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
-    }
-
-    total_detections_++;
-    DroneType detected_type = DroneType::UNKNOWN;
-
-    size_t freq_hash = entry.frequency_a;
-    int32_t effective_threshold = wideband_threshold; // Use wideband threshold as base
-    if (local_detection_ring.get_rssi_value(freq_hash) < wideband_threshold) {
-        effective_threshold = wideband_threshold + HYSTERESIS_MARGIN_DB;
-    }
-
-    if (rssi >= effective_threshold) {
-        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
-        current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
-        local_detection_ring.update_detection(freq_hash, current_count, rssi);
-
-        if (current_count >= MIN_DETECTION_COUNT) {
-            DetectionLogEntry log_entry{
-                .timestamp = chTimeNow(),
-                .frequency_hz = static_cast<uint32_t>(entry.frequency_a),
-                .rssi_db = rssi,
-                .threat_level = threat_level,
-                .drone_type = detected_type,
-                .detection_count = current_count,
-                .confidence_score = 0.6f
-            };
-
-            if (detection_logger_.is_session_active()) {
-                detection_logger_.log_detection(log_entry);
-            }
-            update_tracked_drone(detected_type, entry.frequency_a, rssi, threat_level);
+    // PHASE 2: Hardware Tuning with Error Handling
+    if (!hardware.tune_to_frequency(target_frequency_hz)) {
+        if (scan_cycles_ % 100 == 0) {
+            handle_scan_error("Wideband hardware tuning failed");
         }
-    } else {
-        local_detection_ring.update_detection(freq_hash, 0, -120);
+        return;
     }
+
+    // PHASE 3: Get Real RSSI Measurement
+    int32_t measured_rssi = hardware.get_real_rssi_from_hardware(target_frequency_hz);
+    last_valid_rssi_ = measured_rssi;
+
+    // PHASE 4: Determine Detection Threshold
+    int32_t rss_threshold = (rss_threshold_override > 0) ?
+        rss_threshold_override : WIDEBAND_RSSI_THRESHOLD_DB;
+
+    // PHASE 5: Pre-processing Validation
+    if (!SimpleDroneValidation::validate_rssi_signal(measured_rssi, ThreatLevel::NONE)) {
+        return;  // Invalid RSSI signal
+    }
+
+    if (!SimpleDroneValidation::validate_frequency_range(target_frequency_hz)) {
+        return;  // Out of valid frequency range
+    }
+
+    // PHASE 6: Quick Rejection for Weak Signals
+    if (measured_rssi < rss_threshold && !force_detection) {
+        return;
+    }
+
+    // PHASE 7: Create Detection Entry for Processing
+    freqman_entry detection_entry{
+        .frequency_a = target_frequency_hz,
+        .frequency_b = target_frequency_hz,
+        .type = freqman_type::Single,
+        .modulation = freqman_invalid_index,
+        .bandwidth = freqman_invalid_index,
+        .step = freqman_invalid_index,
+        .description = "Wideband Enhanced Detection"
+    };
+
+// PHASE 8: Process Detection with Unified Processor (Refactored)
+    detection_processor_.process_unified_detection(detection_entry, measured_rssi, rss_threshold);
 }
 
 bool DroneScanner::load_frequency_database() {
@@ -469,6 +540,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 }
 
 void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware) {
+    // PHASE: Wideband scanning using master unified detection handler
     if (wideband_scan_data_.slices_nb == 0) {
         setup_wideband_range(WIDEBAND_DEFAULT_MIN, WIDEBAND_DEFAULT_MAX);
     }
@@ -478,36 +550,16 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
     }
 
     const WidebandSlice& current_slice = wideband_scan_data_.slices[wideband_scan_data_.slice_counter];
-    if (hardware.tune_to_frequency(current_slice.center_frequency)) {
-        int32_t slice_rssi = hardware.get_real_rssi_from_hardware(current_slice.center_frequency);
-        if (slice_rssi > DEFAULT_RSSI_THRESHOLD_DB) {
-            freqman_entry fake_entry{
-                .frequency_a = current_slice.center_frequency,
-                .frequency_b = current_slice.center_frequency,
-                .type = static_cast<uint8_t>(freqman_type::Single),
-                .modulation = freqman_invalid_index,
-                .bandwidth = freqman_invalid_index,
-                .step = freqman_invalid_index,
-                .description = "Wideband Detection"
-            };
-            wideband_detection_override(fake_entry, slice_rssi, WIDEBAND_RSSI_THRESHOLD_DB);
-        }
-        last_scanned_frequency_ = current_slice.center_frequency;
-    } else {
-        if (scan_cycles_ % 100 == 0) {
-            handle_scan_error("Hardware tuning failed in wideband mode");
-        }
-    }
+
+    // Use the master handler for unified wideband detection processing
+    master_wideband_detection_handler(hardware, current_slice.center_frequency,
+                                     WIDEBAND_RSSI_THRESHOLD_DB, false);
+
+    last_scanned_frequency_ = current_slice.center_frequency;
     wideband_scan_data_.slice_counter = (wideband_scan_data_.slice_counter + 1) % wideband_scan_data_.slices_nb;
 }
 
-void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override) {
-    if (rssi >= threshold_override) {
-        freqman_entry wideband_entry = entry;
-        wideband_entry.description = "Wideband Enhanced Detection";
-        process_wideband_detection_with_override(wideband_entry, rssi, DEFAULT_RSSI_THRESHOLD_DB, threshold_override);
-    }
-}
+
 
 void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                            int32_t original_threshold, int32_t wideband_threshold) {
@@ -533,7 +585,10 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     DroneType detected_type = DroneType::UNKNOWN;
 
     size_t freq_hash = entry.frequency_a;
-    if (local_detection_ring.get_rssi_value(freq_hash) < wideband_threshold) {
+    int32_t effective_threshold = wideband_threshold;
+
+    int32_t previous_rssi = local_detection_ring.get_rssi_value(freq_hash);
+    if (previous_rssi < wideband_threshold - HYSTERESIS_MARGIN_DB) {
         effective_threshold = wideband_threshold + HYSTERESIS_MARGIN_DB;
     }
 
@@ -570,63 +625,6 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
         perform_database_scan_cycle(hardware);
     }
 }
-
-void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
-    if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::NONE)) {
-        return;
-    }
-
-    if (!SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
-        return;
-    }
-
-    if (!validate_detection_simple(rssi, ThreatLevel::NONE)) {
-        return;
-    }
-
-    int32_t detection_threshold = -90;
-    std::optional<freqman_entry> db_entry = std::nullopt;
-
-    // Use FreqmanDB iterator search instead of lookup_frequency
-    auto entry_it = freq_db_.find_entry([&entry](const freqman_entry& e) {
-        return e.frequency_a == entry.frequency_a && e.type == freqman_type::Single;
-    });
-
-    if (entry_it != freq_db_.end()) {
-        db_entry = *entry_it;
-        // Use modulation field to store rssi_threshold_db (custom extension)
-        detection_threshold = db_entry->modulation;
-        if (detection_threshold == freqman_invalid_index) {
-            detection_threshold = -90; // Default if not set
-        }
-    }
-
-    ThreatLevel validated_threat = SimpleDroneValidation::classify_signal_strength(rssi);
-    ThreatLevel threat_level = ThreatLevel::LOW;
-
-    DroneType detected_type = DroneType::UNKNOWN;
-    if (db_entry) {
-        // Extract enhanced drone info from description field
-        std::string desc = db_entry->description;
-        threat_level = (desc.find("CRITICAL") != std::string::npos) ? ThreatLevel::CRITICAL :
-                      (desc.find("HIGH") != std::string::npos) ? ThreatLevel::HIGH :
-                      (desc.find("MEDIUM") != std::string::npos) ? ThreatLevel::MEDIUM :
-                      ThreatLevel::LOW;
-
-        detected_type = (desc.find("DJI") != std::string::npos) ? DroneType::MAVIC :
-                       (desc.find("PARROT") != std::string::npos) ? DroneType::PARROT_ANAFI :
-                       DroneType::UNKNOWN;
-
-        if (validated_threat > threat_level) {
-            threat_level = validated_threat;
-        }
-    } else {
-        threat_level = validated_threat;
-    }
-
-    if (rssi < detection_threshold) {
-        return;
-    }
 
     total_detections_++;
     if (db_entry) {
@@ -799,8 +797,9 @@ uint32_t DroneScanner::get_total_detections() const {
 size_t DroneScanner::get_total_memory_usage() const {
     // Estimate memory usage for UI display
     // This is a rough approximation for performance monitoring
-    return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDroneData)) +
-           (freq_db_.entry_count() * sizeof(freqman_entry));
+    // FreqmanDB doesn't have is_open() method, check entry_count instead
+    size_t database_memory = freq_db_.entry_count() * sizeof(freqman_entry);
+    return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDroneData)) + database_memory;
 }
 
 size_t DroneScanner::get_approaching_count() const {
@@ -2726,8 +2725,7 @@ Color get_drone_type_color(uint8_t type) {
     return Color::white();
 }
 
-// Spectrum mutex definition
-chMutex spectrum_access_mutex_;
+// Spectrum mutex defined in DroneHardwareController header
 
 // ScanningCoordinator implementation
 ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
