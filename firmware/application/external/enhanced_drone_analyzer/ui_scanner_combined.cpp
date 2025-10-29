@@ -725,10 +725,10 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
             }
 
 // PHASE 4.2: AUDIO ALERT INTEGRATION - Play beep for high threats
-// CORRECTED: Using proper baseband_api for audio alerts (per Portapack API)
+// CORRECTED: Using proper baseband API for audio alerts (per baseband_api.hpp)
             if (threat_level >= ThreatLevel::HIGH && audio_alerts_enabled_) {
-                // Use baseband_api::request_audio_beep with SAMPLE_RATE and duration
-                baseband_api::request_audio_beep(800, 48000, 200);  // 800Hz, 48kHz sample rate, 200ms duration
+                // Use baseband::request_audio_beep with proper namespace per library reference
+                baseband::request_audio_beep(800, 48000, 200);  // 800Hz, 48kHz sample rate, 200ms duration
             }
 
             update_tracked_drone(detected_type, entry.frequency_a, rssi, threat_level);
@@ -1230,7 +1230,8 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         snprintf(buffer, sizeof(buffer), "READY: No Threats Detected");
     }
     threat_status_main_.set(buffer);
-    threat_status_main_.set_style(&get_threat_text_style(max_threat));
+    // FIX: Use proper Style object instead of raw Color - correcting UI library usage
+    threat_status_main_.set_style(Style{.foreground = get_threat_text_color(max_threat)});
 
     if (current_freq > 0) {
         float freq_mhz = static_cast<float>(current_freq) / 1000000.0f;
@@ -1693,15 +1694,15 @@ void DroneDisplayController::render_drone_text_display() {
         switch(i) {
             case 0:
                 text_drone_1().set(buffer);
-                text_drone_1().set_style(threat_color);
+                text_drone_1().set_style(Style{.foreground = threat_color});
                 break;
             case 1:
                 text_drone_2().set(buffer);
-                text_drone_2().set_style(threat_color);
+                text_drone_2().set_style(Style{.foreground = threat_color});
                 break;
             case 2:
                 text_drone_3().set(buffer);
-                text_drone_3().set_style(threat_color);
+                text_drone_3().set_style(Style{.foreground = threat_color});
                 break;
         }
     }

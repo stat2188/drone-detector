@@ -391,6 +391,9 @@ public:
     void wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override);
     void process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                  int32_t original_threshold, int32_t wideband_threshold);
+    void start_spectrum_for_scanning(DroneHardwareController& hardware);
+    void stop_spectrum_for_scanning(DroneHardwareController& hardware);
+    void master_wideband_detection_handler(DroneHardwareController& hardware, Frequency frequency, int32_t rssi, bool is_approaching);
 
     DroneScanner(const DroneScanner&) = delete;
     DroneScanner& operator=(const DroneScanner&) = delete;
@@ -406,6 +409,8 @@ public:
         void end_session();
         bool log_detection(const DetectionLogEntry& entry);
         std::string get_log_filename() const;
+        bool is_session_active() const { return session_active_; }
+        std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
 
     private:
         LogFile csv_log_;
@@ -593,6 +598,8 @@ private:
     Color get_threat_bar_color(ThreatLevel level) const;
     Color get_threat_text_color(ThreatLevel level) const;
     std::string get_threat_icon_text(ThreatLevel level) const;
+    Style get_threat_bar_style(ThreatLevel level) const;
+    Style get_threat_text_style(ThreatLevel level) const;
 
     void paint(Painter& painter) override;
 
