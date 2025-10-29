@@ -284,15 +284,15 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& config)
       static_count_(0),                                  // Initialize in member init list only
       max_detected_threat_(ThreatLevel::NONE),           // Initialize in member init list only
       last_valid_rssi_(-120),                            // Initialize in member init list only
-      wideband_scan_data_(),                             // Default construct
-      freq_db_(),                                        // Default construct
-      scanning_mode_(ScanningMode::DATABASE),            // Initialize in member init list only
-      tracked_drones_(),                                 // Default construct array
-      detection_processor_(*this),                        // Initialize with reference to self
-      // КОНФИГУРИРУЕМЫЕ ПАРАМЕТРЫ ИЗ НАСТРОЕК:
-      scan_interval_ms_(config.scan_interval_ms),        // ИНТЕРВАЛ СКАНИРОВАНИЯ
-      rssi_threshold_db_(config.rssi_threshold_db),      // ПОРОГ RSSI
-      audio_alerts_enabled_(config.enable_audio_alerts)  // ВКЛЮЧЕНЫ ЛИ АУДИО СИГНАЛЫ
+    wideband_scan_data_(),                             // Default construct
+    freq_db_(),                                        // Default construct
+    scanning_mode_(ScanningMode::DATABASE),            // Initialize in member init list only
+    tracked_drones_(),                                 // Default construct array
+    detection_processor_(this),                         // Initialize with pointer to self
+    // КОНФИГУРИРУЕМЫЕ ПАРАМЕТРЫ ИЗ НАСТРОЕК:
+    scan_interval_ms_(config.scan_interval_ms),        // ИНТЕРВАЛ СКАНИРОВАНИЯ
+    rssi_threshold_db_(config.rssi_threshold_db),      // ПОРОГ RSSI
+    audio_alerts_enabled_(config.enable_audio_alerts)  // ВКЛЮЧЕНЫ ЛИ АУДИО СИГНАЛЫ
 {
     // ПРИМЕНЯЕМ АРГУМЕНТЫ НАСТРОЕК КОГДА ВОЗМОЖНО
     // (некоторые настройки нельзя применить здесь из-за зависимостей)
@@ -668,15 +668,38 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
     }
 }
 
+void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
+    if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::NONE) ||
+        !SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
+        return;
+    }
+
+    ThreatLevel threat_level;
+    if (rssi > -70) {
+        threat_level = ThreatLevel::HIGH;
+    } else if (rssi > -80) {
+        threat_level = ThreatLevel::MEDIUM;
+    } else {
+        threat_level = ThreatLevel::LOW;
+    }
+
+    if (entry.frequency_a >= 2'400'000'000 && entry.frequency_a <= 2'500'000'000) {
+        threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
+    }
+
     total_detections_++;
+    DroneType detected_type = DroneType::UNKNOWN;
+
+    // Look up drone type in database if available
+    auto db_entry = freq_db_[0]; // Simplified - would need proper database lookup
     if (db_entry) {
         detected_type = db_entry->drone_type;
     }
 
     size_t freq_hash = entry.frequency_a;
-    int32_t effective_threshold = detection_threshold;
-    if (local_detection_ring.get_rssi_value(freq_hash) < detection_threshold) {
-        effective_threshold = detection_threshold + HYSTERESIS_MARGIN_DB;
+    int32_t effective_threshold = rssi_threshold_db_;
+    if (local_detection_ring.get_rssi_value(freq_hash) < rssi_threshold_db_) {
+        effective_threshold = rssi_threshold_db_ + HYSTERESIS_MARGIN_DB;
     }
 
     if (rssi >= effective_threshold) {
@@ -703,10 +726,10 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 
 // PHASE 4.2: AUDIO ALERT INTEGRATION - Play beep for high threats
 // CORRECTED: Using proper baseband_api for audio alerts (per Portapack API)
-if (threat_level >= ThreatLevel::HIGH) {
-    // Use baseband_api::request_audio_beep with SAMPLE_RATE and duration
-    baseband_api::request_audio_beep(800, 48000, 200);  // 800Hz, 48kHz sample rate, 200ms duration
-}
+            if (threat_level >= ThreatLevel::HIGH && audio_alerts_enabled_) {
+                // Use baseband_api::request_audio_beep with SAMPLE_RATE and duration
+                baseband_api::request_audio_beep(800, 48000, 200);  // 800Hz, 48kHz sample rate, 200ms duration
+            }
 
             update_tracked_drone(detected_type, entry.frequency_a, rssi, threat_level);
         }
@@ -1263,6 +1286,10 @@ void SmartThreatHeader::set_color_scheme(bool use_dark_theme) {
     (void)use_dark_theme;
 }
 
+Style SmartThreatHeader::get_threat_bar_style(ThreatLevel level) const {
+    return Style{.foreground = get_threat_bar_color(level)};
+}
+
 Color SmartThreatHeader::get_threat_bar_color(ThreatLevel level) const {
     switch (level) {
         case ThreatLevel::CRITICAL: return Color::red();
@@ -1272,6 +1299,10 @@ Color SmartThreatHeader::get_threat_bar_color(ThreatLevel level) const {
         case ThreatLevel::NONE:
         default: return Color::blue();
     }
+}
+
+Style SmartThreatHeader::get_threat_text_style(ThreatLevel level) const {
+    return Style{.foreground = get_threat_text_color(level)};
 }
 
 Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
@@ -1347,11 +1378,11 @@ std::string ThreatCard::render_compact() const {
     float freq_mhz = static_cast<float>(frequency_) / 1000000.0f;
     if (freq_mhz >= 1000) {
         freq_mhz /= 1000;
-        snprintf(buffer, sizeof(buffer), "🛰️ %s │ %.1fG │ %s %s │ %ddB",
-                threat_name_.c_str(), freq_mhz, trend_symbol, threat_abbr, rssi_);
+        snprintf(buffer, sizeof(buffer), "🛰️ %s │ %.1fG │ %s %s │ %lldB",
+                threat_name_.c_str(), freq_mhz, trend_symbol, threat_abbr, static_cast<long long>(rssi_));
     } else {
-        snprintf(buffer, sizeof(buffer), "🛰️ %s │ %.0fM │ %s %s │ %ddB",
-                threat_name_.c_str(), freq_mhz, trend_symbol, threat_abbr, rssi_);
+        snprintf(buffer, sizeof(buffer), "🛰️ %s │ %.0fM │ %s %s │ %lldB",
+                threat_name_.c_str(), freq_mhz, trend_symbol, threat_abbr, static_cast<long long>(rssi_));
     }
     return std::string(buffer);
 }
