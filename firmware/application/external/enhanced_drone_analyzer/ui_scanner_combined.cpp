@@ -482,11 +482,11 @@ void DroneScanner::master_wideband_detection_handler(
     freqman_entry detection_entry{
         .frequency_a = target_frequency_hz,
         .frequency_b = target_frequency_hz,
+        .description = "Wideband Enhanced Detection",
         .type = freqman_type::Single,
         .modulation = freqman_invalid_index,
         .bandwidth = freqman_invalid_index,
-        .step = freqman_invalid_index,
-        .description = "Wideband Enhanced Detection"
+        .step = freqman_invalid_index
     };
 
 // PHASE 8: Process Detection with Unified Processor (Refactored)
@@ -1614,9 +1614,9 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
 
 
 void DroneDisplayController::render_drone_text_display() {
-    text_drone_1().set("");
-    text_drone_2().set("");
-    text_drone_3().set("");
+    text_drone_1.set("");
+    text_drone_2.set("");
+    text_drone_3.set("");
     for (size_t i = 0; i < std::min(displayed_drones_.size(), size_t(3)); ++i) {
         const auto& drone = displayed_drones_[i];
         char buffer[32];
@@ -1644,16 +1644,16 @@ void DroneDisplayController::render_drone_text_display() {
         Color threat_color = get_threat_level_color(drone.threat);
         switch(i) {
             case 0:
-                text_drone_1().set(buffer);
-                text_drone_1().set_style(&Style{threat_color});
+                text_drone_1.set(buffer);
+                text_drone_1.set_style(&Style{.foreground = threat_color});
                 break;
             case 1:
-                text_drone_2().set(buffer);
-                text_drone_2().set_style(Style{.foreground = threat_color});
+                text_drone_2.set(buffer);
+                text_drone_2.set_style(&Style{.foreground = threat_color});
                 break;
             case 2:
-                text_drone_3().set(buffer);
-                text_drone_3().set_style(Style{.foreground = threat_color});
+                text_drone_3.set(buffer);
+                text_drone_3.set_style(&Style{.foreground = threat_color});
                 break;
         }
     }
