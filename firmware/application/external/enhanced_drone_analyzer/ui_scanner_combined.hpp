@@ -532,8 +532,24 @@ private:
     void initialize_spectrum_collector();
     void cleanup_spectrum_collector();
 
-    MessageHandlerRegistration message_handler_spectrum_config_;
-    MessageHandlerRegistration message_handler_frame_sync_;
+    MessageHandlerRegistration message_handler_spectrum_config_{
+        Message::ID::ChannelSpectrumConfig,
+        [this](const Message* const p) {
+            handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
+        }};
+
+    MessageHandlerRegistration message_handler_frame_sync_{
+        Message::ID::DisplayFrameSync,
+        [this](const Message* const p) {
+            (void)p;
+            if (spectrum_fifo_) {
+                ChannelSpectrum channel_spectrum;
+                while (spectrum_fifo_->out(channel_spectrum)) {
+                    process_mini_spectrum_data(channel_spectrum);
+                }
+                render_mini_spectrum();
+            }
+        }};
 
     // Thread safety mutex for spectrum access
     Mutex spectrum_access_mutex_;
@@ -729,8 +745,25 @@ private:
     SpectrumConfig spectrum_config_;
     NavigationView& nav_;
 
-    MessageHandlerRegistration message_handler_spectrum_config_;
-    MessageHandlerRegistration message_handler_frame_sync_;
+    MessageHandlerRegistration message_handler_spectrum_config_{
+        Message::ID::ChannelSpectrumConfig,
+        [this](const Message* const p) {
+            const auto message = *static_cast<const ChannelSpectrumConfigMessage*>(p);
+            this->spectrum_fifo_ = message.fifo;
+        }};
+
+    MessageHandlerRegistration message_handler_frame_sync_{
+        Message::ID::DisplayFrameSync,
+        [this](const Message* const p) {
+            (void)p;
+            if (this->spectrum_fifo_) {
+                ChannelSpectrum channel_spectrum;
+                while (spectrum_fifo_->out(channel_spectrum)) {
+                    this->process_mini_spectrum_data(channel_spectrum);
+                }
+                this->render_mini_spectrum();
+            }
+        }};
 
     Color get_threat_level_color(ThreatLevel level) const;
     const char* get_threat_level_name(ThreatLevel level) const;
@@ -835,17 +868,17 @@ public:
     void on_hide() override;
 
 private:
+    NavigationView& nav_;
+    std::unique_ptr<DroneHardwareController> hardware_;
+    std::unique_ptr<DroneScanner> scanner_;
+    std::unique_ptr<AudioManager> audio_mgr_;
+    std::unique_ptr<DroneUIController> ui_controller_;
+    std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
+    std::unique_ptr<DroneDisplayController> display_controller_;
+
     SmartThreatHeader* smart_header_ = nullptr;
     ConsoleStatusBar* status_bar_ = nullptr;
     std::array<ThreatCard*, 3> threat_cards_ = {nullptr, nullptr, nullptr};
-
-    NavigationView& nav_;
-    DroneHardwareController* hardware_ = nullptr;
-    DroneScanner* scanner_ = nullptr;
-    AudioManager* audio_mgr_ = nullptr;
-    DroneUIController* ui_controller_ = nullptr;
-    ScanningCoordinator* scanning_coordinator_ = nullptr;
-    DroneDisplayController* display_controller_ = nullptr;
 
     Button button_start_{{screen_width - 120, screen_height - 32, 120, 32}, "START/STOP"};
     Button button_menu_{{screen_width - 60, screen_height - 32, 60, 32}, "⚙️"};

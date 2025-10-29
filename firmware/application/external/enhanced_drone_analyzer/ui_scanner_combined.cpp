@@ -113,53 +113,68 @@ bool parse_settings_from_content(const std::string& content, DroneAnalyzerSettin
             return !std::isspace(ch);
         }).base(), value.end());
 
-        // ПАРСИНГ НЕКОТОРЫХ КЛЮЧЕЙ С ОБРАБОТКОЙ ОШИБОК
-        try {
-            if (key == "spectrum_mode") {
-                // SPECTRUM MODE
-                if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-                else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
-                else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-                else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-                parsed_lines++;
-            } else if (key == "scan_interval_ms") {
-                // SCAN INTERVAL
-                settings.scan_interval_ms = static_cast<uint32_t>(strtoul(value.c_str(), nullptr, 10));
-                parsed_lines++;
-            } else if (key == "rssi_threshold_db") {
-                // RSSI THRESHOLD
-                settings.rssi_threshold_db = static_cast<int32_t>(strtol(value.c_str(), nullptr, 10));
-                parsed_lines++;
-            } else if (key == "enable_audio_alerts") {
-                // AUDIO ALERTS
-                settings.enable_audio_alerts = (value == "true");
-                parsed_lines++;
-            } else if (key == "audio_alert_frequency_hz") {
-                // AUDIO FREQUENCY
-                settings.audio_alert_frequency_hz = static_cast<uint16_t>(strtoul(value.c_str(), nullptr, 10));
-                parsed_lines++;
-            } else if (key == "audio_alert_duration_ms") {
-                // AUDIO DURATION
-                settings.audio_alert_duration_ms = static_cast<uint32_t>(strtoul(value.c_str(), nullptr, 10));
-                parsed_lines++;
-            } else if (key == "enable_real_hardware") {
-                // REAL HARDWARE MODE
-                settings.enable_real_hardware = (value == "true");
-                parsed_lines++;
-            } else if (key == "demo_mode") {
-                // DEMO MODE
-                settings.demo_mode = (value == "true");
-                parsed_lines++;
-            } else if (key == "hardware_bandwidth_hz") {
-                // HARDWARE BANDWIDTH
-                settings.hardware_bandwidth_hz = static_cast<uint32_t>(strtoul(value.c_str(), nullptr, 10));
+        // ПАРСИНГ НЕКОТОРЫХ КЛЮЧЕЙ (exceptions disabled in embedded context)
+        if (key == "spectrum_mode") {
+            // SPECTRUM MODE
+            if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
+            else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
+            else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
+            else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+            parsed_lines++;
+        } else if (key == "scan_interval_ms") {
+            // SCAN INTERVAL - safe strtoul with bounds check
+            char* endptr = nullptr;
+            unsigned long val = strtoul(value.c_str(), &endptr, 10);
+            if (endptr != value.c_str() && val <= 30000) {
+                settings.scan_interval_ms = static_cast<uint32_t>(val);
                 parsed_lines++;
             }
-            // ПРОПУСТИТЬ НЕИЗВЕСТНЫЕ КЛЮЧИ
-        } catch (...) {
-            // ОШИБКА ПАРСИНГА - ПРОДОЛЖИТЬ СО СЛЕДУЮЩЕЙ СТРОКОЙ
-            continue;
+        } else if (key == "rssi_threshold_db") {
+            // RSSI THRESHOLD - safe strtol with bounds check
+            char* endptr = nullptr;
+            long val = strtol(value.c_str(), &endptr, 10);
+            if (endptr != value.c_str() && val >= -120 && val <= 0) {
+                settings.rssi_threshold_db = static_cast<int32_t>(val);
+                parsed_lines++;
+            }
+        } else if (key == "enable_audio_alerts") {
+            // AUDIO ALERTS
+            settings.enable_audio_alerts = (value == "true");
+            parsed_lines++;
+        } else if (key == "audio_alert_frequency_hz") {
+            // AUDIO FREQUENCY - safe strtoul with bounds check
+            char* endptr = nullptr;
+            unsigned long val = strtoul(value.c_str(), &endptr, 10);
+            if (endptr != value.c_str() && val >= 200 && val <= 3000) {
+                settings.audio_alert_frequency_hz = static_cast<uint16_t>(val);
+                parsed_lines++;
+            }
+        } else if (key == "audio_alert_duration_ms") {
+            // AUDIO DURATION - safe strtoul with bounds check
+            char* endptr = nullptr;
+            unsigned long val = strtoul(value.c_str(), &endptr, 10);
+            if (endptr != value.c_str() && val >= 50 && val <= 2000) {
+                settings.audio_alert_duration_ms = static_cast<uint32_t>(val);
+                parsed_lines++;
+            }
+        } else if (key == "enable_real_hardware") {
+            // REAL HARDWARE MODE
+            settings.enable_real_hardware = (value == "true");
+            parsed_lines++;
+        } else if (key == "demo_mode") {
+            // DEMO MODE
+            settings.demo_mode = (value == "true");
+            parsed_lines++;
+        } else if (key == "hardware_bandwidth_hz") {
+            // HARDWARE BANDWIDTH - safe strtoul with bounds check
+            char* endptr = nullptr;
+            unsigned long val = strtoul(value.c_str(), &endptr, 10);
+            if (endptr != value.c_str() && val >= 1000000 && val <= 100000000) {
+                settings.hardware_bandwidth_hz = static_cast<uint32_t>(val);
+                parsed_lines++;
+            }
         }
+        // ПРОПУСТИТЬ НЕИЗВЕСТНЫЕ КЛЮЧИ
     }
 
     return parsed_lines >= 5;  // ТРЕБУЕТ МИНИМУМ 5 ВАЛИДНЫХ НАСТРОЕК
@@ -253,97 +268,7 @@ void DetectionRingBuffer::clear() {
     }
 }
 
-/**
- * UNIFIED DETECTION PROCESSOR - Consolidated abstraction for all drone detection logic
- * Eliminates code duplication and provides single point for detection processing
- */
-class DetectionProcessor {
-private:
-    DroneScanner* scanner_;  // Reference to parent scanner for callbacks
 
-public:
-    explicit DetectionProcessor(DroneScanner* scanner) : scanner_(scanner) {}
-
-    // Single unified detection function replacing all duplicates
-    void process_unified_detection(const freqman_entry& entry, int32_t rssi, int32_t effective_threshold,
-                                  float confidence_score = 0.7f, bool force_process = false) {
-        // Validate input parameters
-        if (!scanner_->validate_detection_simple(rssi, ThreatLevel::NONE)) {
-            return;
-        }
-
-        // Threat classification based on RSSI with ISM band enhancement
-        ThreatLevel threat_level = classify_threat_level(rssi, entry.frequency_a);
-
-        // Increment detection counter
-        scanner_->total_detections_++;
-        DroneType detected_type = DroneType::UNKNOWN;
-
-        // Process detection with ring buffer hysteresis
-        process_ring_buffer_logic(entry.frequency_a, rssi, effective_threshold,
-                                threat_level, detected_type, confidence_score, force_process);
-    }
-
-private:
-    ThreatLevel classify_threat_level(int32_t rssi, Frequency freq_hz) const {
-        ThreatLevel base_level = ThreatLevel::NONE;
-        if (rssi > -70) base_level = ThreatLevel::HIGH;
-        else if (rssi > -80) base_level = ThreatLevel::LOW;
-        else if (rssi > -90) base_level = ThreatLevel::NONE;
-
-        // ISM band enhancement for drone frequencies
-        if (freq_hz >= 2'400'000'000ULL && freq_hz <= 2'500'000'000ULL) {
-            return std::max(base_level, ThreatLevel::MEDIUM);
-        }
-        return base_level;
-    }
-
-    void process_ring_buffer_logic(Frequency freq_hz, int32_t rssi, int32_t threshold,
-                                 ThreatLevel threat_level, DroneType drone_type,
-                                 float confidence_score, bool force_process) {
-        size_t freq_hash = freq_hz;
-        uint8_t detection_count = local_detection_ring.get_detection_count(freq_hash);
-
-        if (rssi >= threshold || force_process) {
-            // Increment detection count with saturation
-            if (detection_count < MIN_DETECTION_COUNT - 1) {
-                detection_count = std::min(static_cast<uint8_t>(detection_count + 1), static_cast<uint8_t>(255));
-            }
-            local_detection_ring.update_detection(freq_hash, detection_count, rssi);
-
-            // Trigger detection event on threshold reach
-            if (detection_count >= MIN_DETECTION_COUNT) {
-                trigger_detection_event(freq_hz, rssi, threat_level, drone_type, detection_count, confidence_score);
-                scanner_->update_tracked_drone(drone_type, freq_hz, rssi, threat_level);
-            }
-        } else {
-            // Clear weak signals to prevent false positives
-            local_detection_ring.update_detection(freq_hash, 0, -120);
-        }
-    }
-
-    void trigger_detection_event(Frequency freq_hz, int32_t rssi, ThreatLevel threat_level,
-                                DroneType drone_type, uint8_t detection_count, float confidence_score) {
-        DetectionLogEntry detection_event{
-            .timestamp = chTimeNow(),
-            .frequency_hz = static_cast<uint32_t>(freq_hz),
-            .rssi_db = rssi,
-            .threat_level = threat_level,
-            .drone_type = drone_type,
-            .detection_count = detection_count,
-            .confidence_score = confidence_score
-        };
-
-        if (scanner_->detection_logger_.is_session_active()) {
-            scanner_->detection_logger_.log_detection(detection_event);
-        }
-
-        // Audio alert for high threats
-        if (threat_level >= ThreatLevel::HIGH) {
-            baseband_api::request_audio_beep(800, 48000, 200);
-        }
-    }
-};
 
 DroneScanner::DroneScanner()
     : DroneScanner(DroneAnalyzerSettings{})  // Делегируем конструктор с настройками по умолчанию
@@ -1950,7 +1875,6 @@ DroneUIController::DroneUIController(NavigationView& nav,
       settings_(),  // Initialize DroneAnalyzerSettings with defaults
       constant_settings_manager_()  // Initialize ConstantSettingsManager
 {
-    audio_mgr_ = &audio_mgr;
     // Initialize settings to defaults
     settings_.spectrum_mode = SpectrumMode::MEDIUM;
     settings_.scan_interval_ms = 750;
