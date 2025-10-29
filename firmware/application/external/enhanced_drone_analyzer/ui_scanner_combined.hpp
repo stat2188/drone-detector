@@ -1000,8 +1000,8 @@ public:
             default: frequency_hz = 1000; break;
         }
 
-        // Use proper baseband_api for hardware audio beeping
-        ::baseband_api::request_audio_beep(frequency_hz, 48000, 200);
+        // Use proper baseband API for hardware audio beeping (FIXED: baseband namespace, not baseband_api)
+        baseband::request_audio_beep(frequency_hz, 48000, 200);
         // Small delay to prevent spam (chibiOS compliant)
         chThdSleepMilliseconds(250);
     }
