@@ -321,6 +321,22 @@ public:
                                   float confidence_score = 0.7f, bool force_process = false);
 };
 
+struct DroneAnalyzerSettings {
+    // Core scanning parameters
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    uint32_t scan_interval_ms = 1000;
+    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    bool enable_audio_alerts = true;
+    uint16_t audio_alert_frequency_hz = 800;
+    uint32_t audio_alert_duration_ms = 500;
+
+    // Hardware settings
+    uint32_t hardware_bandwidth_hz = 24000000;
+    bool enable_real_hardware = true;
+    bool demo_mode = false;
+    std::string freqman_path = "DRONES";
+};
+
 class DroneScanner {
 public:
     enum class ScanningMode {
@@ -672,9 +688,6 @@ public:
 
     void set_spectrum_range(Frequency min_freq, Frequency max_freq);
 
-    DroneDisplayController(const DroneDisplayController&) = delete;
-    DroneDisplayController& operator=(const DroneDisplayController&) = delete;
-
     static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %-4ddB %c";
     struct SpectrumConfig {
         Frequency min_freq = 2400000000ULL;
@@ -721,22 +734,6 @@ private:
 
     Color get_threat_level_color(ThreatLevel level) const;
     const char* get_threat_level_name(ThreatLevel level) const;
-};
-
-struct DroneAnalyzerSettings {
-    // Core scanning parameters
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    uint32_t scan_interval_ms = 1000;
-    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
-    bool enable_audio_alerts = true;
-    uint16_t audio_alert_frequency_hz = 800;
-    uint32_t audio_alert_duration_ms = 500;
-
-    // Hardware settings
-    uint32_t hardware_bandwidth_hz = 24000000;
-    bool enable_real_hardware = true;
-    bool demo_mode = false;
-    std::string freqman_path = "DRONES";
 };
 
 // ScanningCoordinator definition - moved earlier to fix forward declaration issues

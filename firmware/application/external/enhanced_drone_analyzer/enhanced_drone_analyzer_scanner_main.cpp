@@ -25,15 +25,6 @@
 #include <algorithm>        // For trim operations
 #include <sstream>          // For std::istringstream
 
-// Forward declarations needed for scanner main (ChibiOS integration fixes)
-namespace ui::external_app::enhanced_drone_analyzer {
-    class DroneHardwareController;
-    class DroneScanner;
-    struct DroneAnalyzerSettings;
-    class ScanningCoordinator;
-    struct AudioManager;  // Actually class, but treated as struct in code
-}
-
 #include "ui_scanner_combined.hpp"
 #include "portapack.hpp"
 

@@ -500,7 +500,7 @@ msg_t DroneScanner::scanning_thread() {
 size_t DroneScanner::get_total_memory_usage() const {
     // Estimate memory usage for UI display
     return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDroneData)) +
-           (freq_db_.is_open() ? freq_db_.entry_count() * sizeof(freqman_entry) : 0);
+           (freq_db_.entry_count() > 0 ? freq_db_.entry_count() * sizeof(freqman_entry) : 0);
 }
 
 // ===========================================
@@ -1769,7 +1769,6 @@ void DroneDisplayController::initialize_mini_spectrum() {
     if (!spectrum_gradient_.load_file(default_gradient_file)) {
         spectrum_gradient_.set_default();
     }
-    chMtxInit(&spectrum_access_mutex_);
 
     // Initialize pixel parameters with dynamic bandwidth calculation
     hz_per_pixel_target = spectrum_config_.bandwidth / MINI_SPECTRUM_WIDTH;
@@ -2876,8 +2875,7 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
       audio_controller_(audio_controller),
       scan_interval_ms_(750)
 {
-    // PHASE 4.2: Initialize ChibiOS mutex (no member init list for mutex)
-    chMtxInit(&scan_coordinator_mutex_);
+    // Mutex initialized automatically with default constructor
 }
 
 ScanningCoordinator::~ScanningCoordinator() {
