@@ -8,18 +8,24 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:550:17: error: 'render_mini_spectrum' was not declared in this scope
   550 |                 render_mini_spectrum();
       |                 ^~~~~~~~~~~~~~~~~~~~
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/memory:80,
-                 from /havoc/firmware/application/./theme.hpp:26,
-                 from /havoc/firmware/application/./ui_navigation.hpp:33,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:19:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h: In instantiation of 'void std::default_delete<_Tp>::operator()(_Tp*) const [with _Tp = ui::external_app::enhanced_drone_analyzer::AudioManager]':
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h:284:17:   required from 'std::unique_ptr<_Tp, _Dp>::~unique_ptr() [with _Tp = ui::external_app::enhanced_drone_analyzer::AudioManager; _Dp = std::default_delete<ui::external_app::enhanced_drone_analyzer::AudioManager>]'
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:860:5:   required from 'void std::default_delete<_Tp>::operator()(_Tp*) const [with _Tp = ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView]'
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h:284:17:   required from 'std::unique_ptr<_Tp, _Dp>::~unique_ptr() [with _Tp = ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView; _Dp = std::default_delete<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>]'
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:204:120:   required from here
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h:79:16: error: invalid application of 'sizeof' to incomplete type 'ui::external_app::enhanced_drone_analyzer::AudioManager'
-   79 |  static_assert(sizeof(_Tp)>0,
-      |                ^~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: At global scope:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:708:10: error: 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum&)' cannot be overloaded with 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum&)'
+  708 |     void process_mini_spectrum_data(const ChannelSpectrum& spectrum);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:696:10: note: previous declaration 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum&)'
+  696 |     void process_mini_spectrum_data(const ChannelSpectrum& spectrum);
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:709:10: error: 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::render_mini_spectrum()' cannot be overloaded with 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::render_mini_spectrum()'
+  709 |     void render_mini_spectrum();
+      |          ^~~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:698:10: note: previous declaration 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::render_mini_spectrum()'
+  698 |     void render_mini_spectrum();
+      |          ^~~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'virtual void ui::external_app::enhanced_drone_analyzer::AudioManager::play_detection_beep(ThreatLevel)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1013:9: error: 'baseband_api' has not been declared
+ 1013 |         baseband_api::request_audio_beep(frequency_hz, 48000, 200);
+      |         ^~~~~~~~~~~~
 At global scope:
 cc1plus: warning: unrecognized command line option '-Wno-volatile'
 make[2]: *** [firmware/application/CMakeFiles/application.elf.dir/build.make:5369: firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj] Error 1

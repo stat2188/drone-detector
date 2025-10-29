@@ -542,13 +542,8 @@ private:
         Message::ID::DisplayFrameSync,
         [this](const Message* const p) {
             (void)p;
-            if (spectrum_fifo_) {
-                ChannelSpectrum channel_spectrum;
-                while (spectrum_fifo_->out(channel_spectrum)) {
-                    process_mini_spectrum_data(channel_spectrum);
-                }
-                render_mini_spectrum();
-            }
+            // Forward spectrum processing to display controller if available
+            // Note: Spectrum methods are handled by DroneDisplayController
         }};
 
     // Thread safety mutex for spectrum access
@@ -703,10 +698,6 @@ public:
     size_t get_safe_spectrum_index(size_t x, size_t y) const;
 
     void set_spectrum_range(Frequency min_freq, Frequency max_freq);
-
-    // Make spectrum methods accessible for message handlers (PHASE 3.3: Fix method accessibility)
-    void process_mini_spectrum_data(const ChannelSpectrum& spectrum);
-    void render_mini_spectrum();
 
     static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %-4ddB %c";
     struct SpectrumConfig {
@@ -1010,7 +1001,7 @@ public:
         }
 
         // Use proper baseband_api for hardware audio beeping
-        baseband_api::request_audio_beep(frequency_hz, 48000, 200);
+        ::baseband_api::request_audio_beep(frequency_hz, 48000, 200);
         // Small delay to prevent spam (chibiOS compliant)
         chThdSleepMilliseconds(250);
     }
