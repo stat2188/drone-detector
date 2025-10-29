@@ -6,15 +6,6 @@
 
 #include <cstdint>
 
-// Define enums needed for audio
-enum class ThreatLevel {
-    NONE,
-    LOW,
-    MEDIUM,
-    HIGH,
-    CRITICAL
-};
-
 class AudioManager {
 public:
     AudioManager();

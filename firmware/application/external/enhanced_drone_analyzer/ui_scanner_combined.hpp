@@ -36,6 +36,8 @@
 #include <array>              // std::array for fixed-size arrays
 #include <functional>         // std::function for callbacks (FIXED: added)
 
+#include "ui_drone_common_types.hpp"  // Common enums and types
+
 // ===========================================
 // PART 1: COMMON TYPES (from ui_drone_common_types.hpp)
 // ===========================================
@@ -46,39 +48,6 @@
 class LogFile;
 
 using Frequency = uint64_t;
-
-enum class ThreatLevel {
-    NONE,
-    LOW,
-    MEDIUM,
-    HIGH,
-    CRITICAL
-};
-
-enum class DroneType {
-    UNKNOWN,
-    MAVIC,
-    PHANTOM,
-    DJI_MINI,
-    PARROT_ANAFI,
-    PARROT_BEBOP,
-    PX4_DRONE,
-    MILITARY_DRONE
-};
-
-enum class MovementTrend {
-    UNKNOWN,
-    STATIC,
-    APPROACHING,
-    RECEDING
-};
-
-enum class SpectrumMode {
-    NARROW,
-    MEDIUM,
-    WIDE,
-    ULTRA_WIDE
-};
 
 class TrackedDroneData {
 public:
@@ -984,6 +953,13 @@ const char* get_drone_type_name(uint8_t type);
 Color get_drone_type_color(uint8_t type);
 Color get_threat_bar_style(ThreatLevel level);
 Color get_threat_text_style(ThreatLevel level);
+
+// Recacon defines (from recon app)
+#define RECON_DEF_SQUELCH (-40)
+#define RECON_DEF_NB_MATCH (3)
+#define RECON_MIN_LOCK_DURATION (50)
+#define RECON_MATCH_CONTINUOUS (0)
+#define RECON_MATCH_SPARSE (1)
 
 // Implementation includes and definitions would go here in .cpp file
 

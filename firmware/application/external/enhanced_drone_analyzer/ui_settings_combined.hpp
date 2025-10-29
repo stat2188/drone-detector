@@ -15,38 +15,7 @@
 
 using Frequency = uint64_t;
 
-enum class ThreatLevel {
-    NONE,
-    LOW,
-    MEDIUM,
-    HIGH,
-    CRITICAL
-};
-
-enum class DroneType {
-    UNKNOWN,
-    MAVIC,
-    PHANTOM,
-    DJI_MINI,
-    PARROT_ANAFI,
-    PARROT_BEBOP,
-    PX4_DRONE,
-    MILITARY_DRONE
-};
-
-enum class MovementTrend {
-    UNKNOWN,
-    STATIC,
-    APPROACHING,
-    RECEDING
-};
-
-enum class SpectrumMode {
-    NARROW,
-    MEDIUM,
-    WIDE,
-    ULTRA_WIDE
-};
+#include "ui_drone_common_types.hpp"  // Common enums and types
 
 struct TrackedDrone {
     uint32_t frequency;
