@@ -421,7 +421,6 @@ public:
 
         bool ensure_csv_header();
         std::string format_csv_entry(const DetectionLogEntry& entry);
-        std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
         std::string generate_log_filename() const;
     };
 
