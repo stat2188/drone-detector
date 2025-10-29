@@ -1511,21 +1511,12 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     if (scanner.is_scanning_active()) {
         Frequency current_freq = scanner.get_current_scanning_frequency();
         if (current_freq > 0) {
-            char freq_buffer[32];
-            float freq_mhz = static_cast<float>(current_freq) / 1000000.0f;
-            if (freq_mhz < 1000.0f) {
-                snprintf(freq_buffer, sizeof(freq_buffer), "%.1f MHz", freq_mhz);
-            } else {
-                freq_mhz /= 1000.0f;
-                snprintf(freq_buffer, sizeof(freq_buffer), "%.2f GHz", freq_mhz);
-            }
-            big_display_.set(freq_buffer);
+            // BigFrequency expects Frequency value, not string
+            big_display_.set(current_freq);
         } else {
-            big_display_.set("SCANNING...");
+            // When not scanning, show default frequency (scanner frequency)
+            big_display_.set(scanner.get_current_scanning_frequency());
         }
-    } else {
-        big_display_.set("READY");
-    }
 
     size_t total_freqs = scanner.get_database_size();
     if (total_freqs > 0 && scanner.is_scanning_active()) {
@@ -1644,10 +1635,11 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     render_drone_text_display();
 }
 
+
 void DroneDisplayController::render_drone_text_display() {
-    text_drone_1.set("");
-    text_drone_2.set("");
-    text_drone_3.set("");
+    text_drone_1().set("");
+    text_drone_2().set("");
+    text_drone_3().set("");
     for (size_t i = 0; i < std::min(displayed_drones_.size(), size_t(3)); ++i) {
         const auto& drone = displayed_drones_[i];
         char buffer[32];
@@ -1675,16 +1667,16 @@ void DroneDisplayController::render_drone_text_display() {
         Color threat_color = get_threat_level_color(drone.threat);
         switch(i) {
             case 0:
-                text_drone_1.set(buffer);
-                text_drone_1.set_style(threat_color);
+                text_drone_1().set(buffer);
+                text_drone_1().set_style(threat_color);
                 break;
             case 1:
-                text_drone_2.set(buffer);
-                text_drone_2.set_style(threat_color);
+                text_drone_2().set(buffer);
+                text_drone_2().set_style(threat_color);
                 break;
             case 2:
-                text_drone_3.set(buffer);
-                text_drone_3.set_style(threat_color);
+                text_drone_3().set(buffer);
+                text_drone_3().set_style(threat_color);
                 break;
         }
     }
@@ -2532,22 +2524,7 @@ void LoadingScreenView::paint(Painter& painter) {
 // PART 6: MISSING WIDGET IMPLEMENTATIONS
 // ===========================================
 
-// Fix OptionsField selected_index method
-size_t OptionsField::selected_index() const {
-    return selected_index_;
-}
 
-size_t OptionsField::selected_index_value() const {
-    return selected_index_value_;
-}
-
-const std::string& OptionsField::selected_index_name() const {
-    return options_[selected_index_].first;
-}
-
-int32_t OptionsField::selected_index_value() const {
-    return options_[selected_index_].second;
-}
 
 // Forward declarations for missing classes (stubs)
 class DroneFrequencyManagerView : public View {
