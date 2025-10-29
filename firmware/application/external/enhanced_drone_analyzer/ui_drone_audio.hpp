@@ -6,8 +6,14 @@
 
 #include <cstdint>
 
-// Forward declarations to avoid circular includes
-enum class ThreatLevel;
+// Define enums needed for audio
+enum class ThreatLevel {
+    NONE,
+    LOW,
+    MEDIUM,
+    HIGH,
+    CRITICAL
+};
 
 class AudioManager {
 public:

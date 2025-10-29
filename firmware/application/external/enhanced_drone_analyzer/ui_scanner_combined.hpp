@@ -974,58 +974,7 @@ public:
 
 
 
-// AudioManager complete definition moved here to fix incomplete type errors (PHASE 3.4: Fix unique_ptr destructor errors)
-
-// Include required headers for AudioManager
-#include "baseband_api.hpp"
-
-class AudioManager {
-public:
-    AudioManager() : audio_enabled_(true) {}
-    virtual ~AudioManager() = default;
-
-    // Core audio control
-    virtual bool is_audio_enabled() const {
-        return audio_enabled_;
-    }
-
-    virtual void toggle_audio() {
-        audio_enabled_ = !audio_enabled_;
-    }
-
-    virtual void play_detection_beep(ThreatLevel level) {
-        if (!audio_enabled_) return;
-
-        // Convert threat level to frequency following DRONE detection standards
-        uint16_t frequency_hz = 800; // Default beep frequency
-        switch (level) {
-            case ThreatLevel::LOW: frequency_hz = 800; break;
-            case ThreatLevel::MEDIUM: frequency_hz = 1200; break;
-            case ThreatLevel::HIGH: frequency_hz = 1500; break;
-            case ThreatLevel::CRITICAL: frequency_hz = 2000; break;
-            default: frequency_hz = 1000; break;
-        }
-
-        // Use proper baseband API for hardware audio beeping (FIXED: baseband namespace, not baseband_api)
-        baseband::request_audio_beep(frequency_hz, 48000, 200);
-        // Small delay to prevent spam (chibiOS compliant)
-        chThdSleepMilliseconds(250);
-    }
-
-    virtual void stop_audio() {
-        // Stop any ongoing audio - baseband handles this naturally
-        // No explicit stop needed with beep API
-    }
-
-    // Audio parameter getters/setters
-    virtual uint16_t get_alert_frequency() const { return 800; }
-    virtual void set_alert_frequency(uint16_t freq) { (void)freq; /* TODO: Implement frequency mapping */ }
-    virtual uint32_t get_alert_duration_ms() const { return 500; }
-    virtual void set_alert_duration_ms(uint32_t duration) { (void)duration; /* TODO: Implement duration control */ }
-
-private:
-    bool audio_enabled_;
-};
+#include "ui_drone_audio.hpp"
 
 // AudioManager is defined in external header ui_drone_audio.hpp (included in cpp)
 #include "ui_drone_audio.hpp"
