@@ -996,23 +996,9 @@ void DroneHardwareController::initialize_radio_state() {
 }
 
 void DroneHardwareController::initialize_spectrum_collector() {
-    message_handler_spectrum_config_ = MessageHandlerRegistration(
-        Message::ID::ChannelSpectrumConfig,
-        [this](const Message* const p) {
-            handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
-        });
-
-    message_handler_frame_sync_ = MessageHandlerRegistration(
-        Message::ID::DisplayFrameSync,
-        [this](const Message* const p) {
-            (void)p;
-            if (spectrum_fifo_) {
-                ChannelSpectrum channel_spectrum;
-                while (spectrum_fifo_->out(channel_spectrum)) {
-                    process_channel_spectrum_data(channel_spectrum);
-                }
-            }
-        });
+    // MessageHandlerRegistration assignment is not allowed - they must be initialized in constructor
+    // The handlers are already initialized in the header definition
+    // This function is for additional setup if needed
 }
 
 void DroneHardwareController::cleanup_spectrum_collector() {
@@ -1301,7 +1287,7 @@ void SmartThreatHeader::paint(Painter& painter) {
         uint8_t alpha = (pulse_timer % 20) < 10 ? 50 : 100;
         Color pulse_color = get_threat_bar_color(current_threat_);
         pulse_color = Color(pulse_color.r, pulse_color.g, pulse_color.b, alpha);
-        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 4}, pulse_color);
+        painter.fill_rectangle(Rect(parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 4), pulse_color);
     }
 }
 
@@ -1381,7 +1367,7 @@ void ThreatCard::paint(Painter& painter) {
     View::paint(painter);
     if (is_active_) {
         Color bg_color = get_card_bg_color();
-        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 2}, bg_color);
+        painter.fill_rectangle(Rect(parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 2), bg_color);
     }
 }
 
@@ -1659,7 +1645,7 @@ void DroneDisplayController::render_drone_text_display() {
         switch(i) {
             case 0:
                 text_drone_1().set(buffer);
-                text_drone_1().set_style(Style{.foreground = threat_color});
+                text_drone_1().set_style(&Style{threat_color});
                 break;
             case 1:
                 text_drone_2().set(buffer);

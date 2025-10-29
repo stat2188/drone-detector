@@ -818,9 +818,9 @@ class DroneUIController {
     app_settings::SettingsManager constant_settings_manager_;
 public:
     DroneUIController(NavigationView& nav,
-                     DroneHardwareController& hardware,
-                     DroneScanner& scanner,
-                     AudioManager& audio_mgr);
+    DroneHardwareController& hardware,
+    DroneScanner& scanner,
+    AudioManager& audio_mgr);
     ~DroneUIController() = default;
 
     void on_start_scan();
@@ -1026,6 +1026,9 @@ public:
 private:
     bool audio_enabled_;
 };
+
+// AudioManager is defined in external header ui_drone_audio.hpp (included in cpp)
+#include "ui_drone_audio.hpp"
 
 // Global helper functions for drone type handling
 const char* get_drone_type_name(uint8_t type);
