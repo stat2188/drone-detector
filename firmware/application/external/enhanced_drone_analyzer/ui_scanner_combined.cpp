@@ -848,16 +848,10 @@ std::string DroneScanner::get_session_summary() const {
 }
 
 void DroneScanner::handle_scan_error(const char* error_msg) {
-    (void)error_msg;
+(void)error_msg;
 }
 
-uint32_t DroneScanner::get_scan_cycles() const {
-    return scan_cycles_;
-}
-
-uint32_t DroneScanner::get_total_detections() const {
-    return total_detections_;
-}
+// Removed duplicate definitions for get_scan_cycles() and get_total_detections() - inline in header
 
 size_t DroneScanner::get_total_memory_usage() const {
     // Estimate memory usage for UI display
@@ -867,37 +861,8 @@ size_t DroneScanner::get_total_memory_usage() const {
     return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDroneData)) + database_memory;
 }
 
-size_t DroneScanner::get_approaching_count() const {
-    return approaching_count_;
-}
-
-size_t DroneScanner::get_receding_count() const {
-    return receding_count_;
-}
-
-size_t DroneScanner::get_static_count() const {
-    return static_count_;
-}
-
-bool DroneScanner::is_real_mode() const {
-    return is_real_mode_;
-}
-
-void DroneScanner::switch_to_demo_mode() {
-    is_real_mode_ = false;
-}
-
-void DroneScanner::switch_to_real_mode() {
-    is_real_mode_ = true;
-}
-
-void DroneScanner::scan_init_from_loaded_frequencies() {
-    // Placeholder for initialization from loaded frequency database
-}
-
-void DroneScanner::reset_scan_cycles() {
-    scan_cycles_ = 0;
-}
+// Removed duplicate method definitions - inline in header
+// get_approaching_count, get_receding_count, get_static_count, is_real_mode, reset_scan_cycles
 
 // DroneScanner::DroneDetectionLogger implementations
 inline DroneScanner::DroneDetectionLogger::DroneDetectionLogger()
