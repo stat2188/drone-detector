@@ -186,46 +186,40 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     // СОХРАНИТЬ ОРИГИНАЛЬНЫЕ НАСТРОЙКИ ДЛЯ ОТКАТА
     DroneAnalyzerSettings original_settings = settings;
 
-    try {
-        // FIXED: Use proper File::open with boolean read_only parameter
-        File settings_file;
-        if (!settings_file.open(SETTINGS_FILE_PATH, true)) {  // true = read_only
-            return false;  // ФАЙЛ НЕ НАЙДЕН - ВЕРНУТЬ FALSE
-        }
+    // REMOVED: try/catch - exceptions disabled in embedded C++ environment
 
-        std::string file_content;
-        file_content.resize(settings_file.size());
-        auto read_result = settings_file.read(file_content.data(), settings_file.size());
-        if (read_result != settings_file.size()) {
-            settings_file.close();
-            // ОТКАТ К ОРИГИНАЛЬНЫМ НАСТРОЙКАМ
-            settings = original_settings;
-            return false;
-        }
+    // FIXED: Use proper File::open with boolean read_only parameter
+    File settings_file;
+    if (!settings_file.open(SETTINGS_FILE_PATH, true)) {  // true = read_only
+        return false;  // ФАЙЛ НЕ НАЙДЕН - ВЕРНУТЬ FALSE
+    }
+
+    std::string file_content;
+    file_content.resize(settings_file.size());
+    auto read_result = settings_file.read(file_content.data(), settings_file.size());
+    if (read_result != settings_file.size()) {
         settings_file.close();
-
-        // ПАРСИТЬ СЕКЦИЮ И ВАЛИДАЦИЮ НАСТРОЕК
-        if (!parse_settings_from_content(file_content, settings)) {
-            // НЕУДАЧНЫЙ ПАРСИНГ - ОТКАТ
-            settings = original_settings;
-            return false;
-        }
-
-        // ВАЛИДИРОВАТЬ ЗАГРУЖЕННЫЕ НАСТРОЙКИ
-        if (!validate_loaded_settings(settings)) {
-            // НЕВАЛИДНЫЕ НАСТРОЙКИ - ОТКАТ К БЕЗОПАСНЫМ ЗНАЧЕНИЯМ
-            settings = original_settings;
-            return false;
-        }
-
-        return true;  // УСПЕШНАЯ ЗАГРУЗКА
-
-    } catch (const std::exception& e) {
-        // ЛЮБОЕ ИСКЛЮЧЕНИЕ - БЕЗОПАСНЫЙ ОТКАТ
-        (void)e; // Suppress unused variable warning in embedded env
+        // ОТКАТ К ОРИГИНАЛЬНЫМ НАСТРОЙКАМ
         settings = original_settings;
         return false;
     }
+    settings_file.close();
+
+    // ПАРСИТЬ СЕКЦИЮ И ВАЛИДАЦИЮ НАСТРОЕК
+    if (!parse_settings_from_content(file_content, settings)) {
+        // НЕУДАЧНЫЙ ПАРСИНГ - ОТКАТ
+        settings = original_settings;
+        return false;
+    }
+
+    // ВАЛИДИРОВАТЬ ЗАГРУЖЕННЫЕ НАСТРОЙКИ
+    if (!validate_loaded_settings(settings)) {
+        // НЕВАЛИДНЫЕ НАСТРОЙКИ - ОТКАТ К БЕЗОПАСНЫМ ЗНАЧЕНИЯМ
+        settings = original_settings;
+        return false;
+    }
+
+    return true;  // УСПЕШНАЯ ЗАГРУЗКА
 }
 
 namespace ui::external_app::enhanced_drone_analyzer {

@@ -314,7 +314,7 @@ private:
     DroneScanner* scanner_;  // Reference to parent scanner for callbacks
 
 public:
-    explicit DetectionProcessor(DroneScanner* scanner) : scanner_(scanner) {}
+    explicit DetectionProcessor(DroneScanner* scanner);
 
     // Unified detection function replacing all duplicates
     void process_unified_detection(const freqman_entry& entry, int32_t rssi, int32_t effective_threshold,
