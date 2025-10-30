@@ -261,9 +261,17 @@ set(EXTCPPSRC
 	external/morse_practice/main.cpp
 	external/morse_practice/ui_morse_practice.cpp
 
-	#adult_toys_controller  144 bytes 
+	#adult_toys_controller  144 bytes
 	external/adult_toys_controller/main.cpp
 	external/adult_toys_controller/ui_adult_toys_controller.cpp
+
+	#enhanced_drone_analyzer_scanner
+	external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp
+	external/enhanced_drone_analyzer/ui_scanner_combined.cpp
+
+	#enhanced_drone_analyzer_settings
+	external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp
+	external/enhanced_drone_analyzer/ui_settings_combined.cpp
 )
 
 set(EXTAPPLIST
@@ -330,4 +338,6 @@ set(EXTAPPLIST
 	bht_tx
 	morse_practice
 	adult_toys_controller
+	enhanced_drone_analyzer_scanner
+	enhanced_drone_analyzer_settings
 )
