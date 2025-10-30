@@ -314,8 +314,8 @@ public:
         HYBRID
     };
 
-    explicit DroneScanner(const DroneAnalyzerSettings& config = {});
     DroneScanner();
+    explicit DroneScanner(const DroneAnalyzerSettings& config);
     ~DroneScanner();
 
     void start_scanning();
