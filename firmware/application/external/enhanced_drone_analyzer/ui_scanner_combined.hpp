@@ -36,8 +36,6 @@
 #include <array>              // std::array for fixed-size arrays
 #include <functional>         // std::function for callbacks (FIXED: added)
 
-#include "ui_drone_common_types.hpp"  // Common enums and types
-
 // ===========================================
 // PART 1: COMMON TYPES (from ui_drone_common_types.hpp)
 // ===========================================
