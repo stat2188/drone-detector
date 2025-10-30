@@ -108,6 +108,9 @@ void DroneScanner::initialize_database_and_scanner() {
 void DroneScanner::cleanup_database_and_scanner() {
     if (scanning_thread_) {
         scanning_active_ = false;
+        if (chThdTerminated(scanning_thread_) == false) {
+            chThdTerminate(scanning_thread_);
+        }
         chThdWait(scanning_thread_);
         scanning_thread_ = nullptr;
     }
@@ -1381,6 +1384,9 @@ void ScanningCoordinator::stop_coordinated_scanning() {
 
     scanning_active_ = false;
     if (scanning_thread_) {
+        if (chThdTerminated(scanning_thread_) == false) {
+            chThdTerminate(scanning_thread_);
+        }
         chThdWait(scanning_thread_);
         scanning_thread_ = nullptr;
     }
