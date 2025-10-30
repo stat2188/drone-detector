@@ -1,3 +1,4 @@
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:69:5: error: 'MovementTrend' does not name a type
    69 |     MovementTrend get_trend() const {
       |     ^~~~~~~~~~~~~
@@ -132,10 +133,10 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
   739 |     const char* get_threat_level_name(ThreatLevel level) const;
       |                                      ~           ^~~~~~
       |                                                  )
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:819:31: error: 'SpectrumMode' has not been declared
-  819 |     void select_spectrum_mode(SpectrumMode mode);
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:820:31: error: 'SpectrumMode' has not been declared
+  820 |     void select_spectrum_mode(SpectrumMode mode);
       |                               ^~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:946,
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:947,
                  from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_audio.hpp:17:30: error: 'ThreatLevel' has not been declared
    17 |     void play_detection_beep(ThreatLevel threat);
@@ -144,11 +145,11 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
    32 |     ThreatLevel test_threat_level = ThreatLevel::HIGH; // Use enum instead of int
       |     ^~~~~~~~~~~
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:954:28: error: 'ThreatLevel' was not declared in this scope
-  954 | Color get_threat_bar_style(ThreatLevel level);
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:955:28: error: 'ThreatLevel' was not declared in this scope
+  955 | Color get_threat_bar_style(ThreatLevel level);
       |                            ^~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:955:29: error: 'ThreatLevel' was not declared in this scope
-  955 | Color get_threat_text_style(ThreatLevel level);
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:956:29: error: 'ThreatLevel' was not declared in this scope
+  956 | Color get_threat_text_style(ThreatLevel level);
       |                             ^~~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:49:12: error: 'SpectrumMode' does not name a type
    49 |     static SpectrumMode parse_spectrum_mode(const std::string& value);

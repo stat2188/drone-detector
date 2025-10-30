@@ -123,12 +123,12 @@ namespace ScannerSettingsManager {
                 return true;
             } else if (key == "demo_mode") {
                 settings.demo_mode = (value == "true");
-                return true;
-            } else if (key == "freqman_path") {
-                settings.freqman_path = value.substr(0, 64);
-                return true;
-            }
-        return false;
+        return true;
+    } else if (key == "freqman_path") {
+        settings.freqman_path = value.substr(0, 64);
+        return true;
+    }
+    return false;
     }
 
     static void reset_to_defaults(DroneAnalyzerSettings& settings) {

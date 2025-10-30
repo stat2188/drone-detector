@@ -5,6 +5,7 @@
 #define __UI_DRONE_AUDIO_HPP__
 
 #include <stdint.h>
+#include "ui_drone_common_types.hpp"
 
 class AudioManager {
 public:

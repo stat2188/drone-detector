@@ -10,6 +10,7 @@
 // ===========================================
 
 #include "ui.hpp"              // Required: Color class, basic UI framework
+#include "ui_drone_common_types.hpp"  // Required: ThreatLevel, DroneType, MovementTrend, SpectrumMode enums
 #include "ui_widget.hpp"       // Required: ProgressBar, Text, BigFrequency widgets
 #include "ui_navigation.hpp"   // Required: NavigationView class
 #include "ui_freq_field.hpp"   // Required: BigFrequency specific functionality
