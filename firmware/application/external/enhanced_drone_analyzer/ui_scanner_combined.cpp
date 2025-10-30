@@ -35,41 +35,41 @@ WORKING_AREA(scanning_thread_wa, SCAN_THREAD_STACK_SIZE);
 using namespace ui::external_app::enhanced_drone_analyzer;
 
 /**
- * ВАЛИДАЦИЯ ЗАГРУЖЕННЫХ НАСТРОЕК С БЕЗОПАСНЫМИ ПРЕДЕЛАМИ
- * Проверяет все параметры на соответствие допустимым диапазонам
+ * VALIDATION OF LOADED SETTINGS WITH SAFE LIMITS
+ * Checks all parameters for compliance with acceptable ranges
  */
 bool validate_loaded_settings(const DroneAnalyzerSettings& settings) {
-    // ВАЛИДАЦИЯ ИНТЕРВАЛА СКАНИРОВАНИЯ (100мс - 30сек)
+    // Validate scan interval (100ms - 30sec)
     if (settings.scan_interval_ms < 100 || settings.scan_interval_ms > 30000) {
         return false;
     }
 
-    // ВАЛИДАЦИЯ ПОРОГА RSSI (-120dB до 0dB)
+    // Validate RSSI threshold (-120dB to 0dB)
     if (settings.rssi_threshold_db < -120 || settings.rssi_threshold_db > 0) {
         return false;
     }
 
-    // ВАЛИДАЦИЯ ЧАСТОТЫ АУДИО СИГНАЛА (200Hz - 3000Hz)
+    // Validate audio signal frequency (200Hz - 3000Hz)
     if (settings.audio_alert_frequency_hz < 200 || settings.audio_alert_frequency_hz > 3000) {
         return false;
     }
 
-    // ВАЛИДАЦИЯ ПРОДОЛЖИТЕЛЬНОСТИ АУДИО (50мс - 2сек)
+    // Validate audio duration (50ms - 2sec)
     if (settings.audio_alert_duration_ms < 50 || settings.audio_alert_duration_ms > 2000) {
         return false;
     }
 
-    // ВАЛИДАЦИЯ ПОЛОСЫ ПРОПУСКАНИЯ (1MHz - 100MHz)
+    // Validate bandwidth (1MHz - 100MHz)
     if (settings.hardware_bandwidth_hz < 1000000 || settings.hardware_bandwidth_hz > 100000000) {
         return false;
     }
 
-    return true;  // ВСЕ НАСТРОЙКИ В ДОПУСТИМЫХ ПРЕДЕЛАХ
+    return true;  // ALL SETTINGS WITHIN ACCEPTABLE LIMITS
 }
 
 /**
- * ПАРСИНГ НАСТРОЕК ИЗ СОДЕРЖИМОГО ФАЙЛА
- * Разбирает TXT файл построчно с обработкой ошибок
+ * PARSING SETTINGS FROM FILE CONTENT
+ * Parses TXT file line by line with error handling
  */
 bool parse_settings_from_content(const std::string& content, DroneAnalyzerSettings& settings) {
     std::istringstream iss(content);
@@ -77,7 +77,7 @@ bool parse_settings_from_content(const std::string& content, DroneAnalyzerSettin
     size_t parsed_lines = 0;
 
     while (std::getline(iss, line)) {
-        // ТРИММИНГ ПРОБЕЛОВ
+        // TRIM SPACES
         auto it = std::find_if(line.begin(), line.end(), [](int ch) {
             return !std::isspace(ch);
         });
@@ -88,17 +88,17 @@ bool parse_settings_from_content(const std::string& content, DroneAnalyzerSettin
         });
         line.erase(rit.base(), line.end());
 
-        // ПРОПУСК ПУСТЫХ СТРОК И КОММЕНТАРИЕВ
+        // SKIP EMPTY LINES AND COMMENTS
         if (line.empty() || line[0] == '#') continue;
 
-        // НАЙТИ РАЗДЕЛИТЕЛЬ "="
+        // FIND DELIMITER "="
         size_t equals_pos = line.find('=');
-        if (equals_pos == std::string::npos) continue;  // НЕВАЛИДНАЯ СТРОКА
+        if (equals_pos == std::string::npos) continue;  // INVALID LINE
 
         std::string key = line.substr(0, equals_pos);
         std::string value = line.substr(equals_pos + 1);
 
-        // ТРИММИНГ КЛЮЧА И ЗНАЧЕНИЯ
+        // TRIM KEY AND VALUE
         key.erase(key.begin(), std::find_if(key.begin(), key.end(), [](int ch) {
             return !std::isspace(ch);
         }));
@@ -113,7 +113,7 @@ bool parse_settings_from_content(const std::string& content, DroneAnalyzerSettin
             return !std::isspace(ch);
         }).base(), value.end());
 
-        // ПАРСИНГ НЕКОТОРЫХ КЛЮЧЕЙ (exceptions disabled in embedded context)
+        // PARSING SOME KEYS (exceptions disabled in embedded context)
         if (key == "spectrum_mode") {
             // SPECTRUM MODE
             if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
@@ -174,16 +174,16 @@ bool parse_settings_from_content(const std::string& content, DroneAnalyzerSettin
                 parsed_lines++;
             }
         }
-        // ПРОПУСТИТЬ НЕИЗВЕСТНЫЕ КЛЮЧИ
+        // SKIP UNKNOWN KEYS
     }
 
-    return parsed_lines >= 5;  // ТРЕБУЕТ МИНИМУМ 5 ВАЛИДНЫХ НАСТРОЕК
+    return parsed_lines >= 5;  // REQUIRES MINIMUM 5 VALID SETTINGS
 }
 
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
-    // СОХРАНИТЬ ОРИГИНАЛЬНЫЕ НАСТРОЙКИ ДЛЯ ОТКАТА
+    // SAVE ORIGINAL SETTINGS FOR ROLLBACK
     DroneAnalyzerSettings original_settings = settings;
 
     // REMOVED: try/catch - exceptions disabled in embedded C++ environment
@@ -191,7 +191,7 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     // FIXED: Use proper File::open with boolean read_only parameter
     File settings_file;
     if (!settings_file.open(SETTINGS_FILE_PATH, true)) {  // true = read_only
-        return false;  // ФАЙЛ НЕ НАЙДЕН - ВЕРНУТЬ FALSE
+        return false;  // FILE NOT FOUND - RETURN FALSE
     }
 
     std::string file_content;
@@ -199,27 +199,27 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     auto read_result = settings_file.read(file_content.data(), settings_file.size());
     if (read_result != settings_file.size()) {
         settings_file.close();
-        // ОТКАТ К ОРИГИНАЛЬНЫМ НАСТРОЙКАМ
+        // ROLLBACK TO ORIGINAL SETTINGS
         settings = original_settings;
         return false;
     }
     settings_file.close();
 
-    // ПАРСИТЬ СЕКЦИЮ И ВАЛИДАЦИЮ НАСТРОЕК
+    // PARSE AND VALIDATE SETTINGS
     if (!parse_settings_from_content(file_content, settings)) {
-        // НЕУДАЧНЫЙ ПАРСИНГ - ОТКАТ
+        // PARSING FAILED - ROLLBACK
         settings = original_settings;
         return false;
     }
 
-    // ВАЛИДИРОВАТЬ ЗАГРУЖЕННЫЕ НАСТРОЙКИ
+    // VALIDATE LOADED SETTINGS
     if (!validate_loaded_settings(settings)) {
-        // НЕВАЛИДНЫЕ НАСТРОЙКИ - ОТКАТ К БЕЗОПАСНЫМ ЗНАЧЕНИЯМ
+        // INVALID SETTINGS - ROLLBACK TO SAFE VALUES
         settings = original_settings;
         return false;
     }
 
-    return true;  // УСПЕШНАЯ ЗАГРУЗКА
+    return true;  // SUCCESSFUL LOAD
 }
 
 namespace ui::external_app::enhanced_drone_analyzer {
@@ -265,9 +265,9 @@ void DetectionRingBuffer::clear() {
 
 
 DroneScanner::DroneScanner()
-    : DroneScanner(DroneAnalyzerSettings{})  // Делегируем конструктор с настройками по умолчанию
+    : DroneScanner(DroneAnalyzerSettings{})  //
 {
-// Конструктор по умолчанию использует настройки по умолчанию
+// 
 }
 
 DroneScanner::DroneScanner(const DroneAnalyzerSettings& config)
@@ -277,7 +277,7 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& config)
       last_scanned_frequency_(0),                        // Initialize in member init list only
       scan_cycles_(0),                                   // Initialize in member init list only
       total_detections_(0),                              // Initialize in member init list only
-      is_real_mode_(config.enable_real_hardware),        // ЗАГРУЖЕННЫЕ НАСТРОЙКИ
+      is_real_mode_(config.enable_real_hardware),        // LOADED SETTINGS
       tracked_drones_count_(0),                          // Initialize in member init list only
       approaching_count_(0),                             // Initialize in member init list only
       receding_count_(0),                                // Initialize in member init list only
@@ -289,13 +289,13 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& config)
     scanning_mode_(ScanningMode::DATABASE),            // Initialize in member init list only
     tracked_drones_(),                                 // Default construct array
     detection_processor_(this),                         // Initialize with pointer to self
-    // КОНФИГУРИРУЕМЫЕ ПАРАМЕТРЫ ИЗ НАСТРОЕК:
-    scan_interval_ms_(config.scan_interval_ms),        // ИНТЕРВАЛ СКАНИРОВАНИЯ
-    rssi_threshold_db_(config.rssi_threshold_db),      // ПОРОГ RSSI
-    audio_alerts_enabled_(config.enable_audio_alerts)  // ВКЛЮЧЕНЫ ЛИ АУДИО СИГНАЛЫ
+    // CONFIGURABLE PARAMETERS FROM SETTINGS:
+    scan_interval_ms_(config.scan_interval_ms),        // SCANNING INTERVAL
+    rssi_threshold_db_(config.rssi_threshold_db),      // RSSI THRESHOLD
+    audio_alerts_enabled_(config.enable_audio_alerts)  // ARE AUDIO SIGNALS ENABLED
 {
-    // ПРИМЕНЯЕМ АРГУМЕНТЫ НАСТРОЕК КОГДА ВОЗМОЖНО
-    // (некоторые настройки нельзя применить здесь из-за зависимостей)
+    //
+    //
 }
 
 DroneScanner::~DroneScanner() {
@@ -404,7 +404,7 @@ msg_t DroneScanner::scanning_thread_function(void* arg) {
 
 msg_t DroneScanner::scanning_thread() {
     // FIXED: chThdShouldTerminateX() → chThdShouldTerminate() (no 'X' suffix)
-    // ЗАМЕНЕНО: Используем configurable scan_interval_ms_ вместо MIN_SCAN_INTERVAL_MS
+    // CHANGED: Using configurable scan_interval_ms_ instead of MIN_SCAN_INTERVAL_MS
     while (scanning_active_ && !chThdShouldTerminate()) {
         chThdSleepMilliseconds(scan_interval_ms_);
         scan_cycles_++;
@@ -691,9 +691,13 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     DroneType detected_type = DroneType::UNKNOWN;
 
     // Look up drone type in database if available
-    auto db_entry = freq_db_[0]; // Simplified - would need proper database lookup
-    if (db_entry) {
-        detected_type = db_entry->drone_type;
+    if (freq_db_.entry_count() > 0) {
+        freqman_entry db_entry = freq_db_[0];
+        if (db_entry.frequency_a > 0) {
+            // Assume drone type encoded in bandwidth field for now
+            // TODO: Enhance database schema for drone types
+            detected_type = (db_entry.bandwidth == 0 ? DroneType::MAVIC : DroneType::UNKNOWN);
+        }
     }
 
     size_t freq_hash = entry.frequency_a;
@@ -860,9 +864,6 @@ size_t DroneScanner::get_total_memory_usage() const {
     size_t database_memory = freq_db_.entry_count() * sizeof(freqman_entry);
     return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDroneData)) + database_memory;
 }
-
-// Removed duplicate method definitions - inline in header
-// get_approaching_count, get_receding_count, get_static_count, is_real_mode, reset_scan_cycles
 
 // DroneScanner::DroneDetectionLogger implementations
 inline DroneScanner::DroneDetectionLogger::DroneDetectionLogger()
@@ -1181,8 +1182,12 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         snprintf(buffer, sizeof(buffer), "READY: No Threats Detected");
     }
     threat_status_main_.set(buffer);
-    // FIX: Use proper Style object instead of raw Color - correcting UI library usage
-    threat_status_main_.set_style(Style{.foreground = get_threat_text_color(max_threat)});
+    // FIX: Use proper Style object with C++14 compatible initialization
+    Style status_style;
+    status_style.foreground = get_threat_text_color(max_threat);
+    status_style.background = Color::black(); // Explicit background
+    status_style.font = Theme::getInstance()->fg_light->font; // Set font
+    threat_status_main_.set_style(&status_style);
 
     if (current_freq > 0) {
         float freq_mhz = static_cast<float>(current_freq) / 1000000.0f;
@@ -1204,7 +1209,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     } else {
         threat_frequency_.set("NO SIGNAL");
     }
-    threat_frequency_.set_style(get_threat_text_color(max_threat));
+    threat_frequency_.set_style(&status_style);
     set_dirty();
 }
 
@@ -1238,8 +1243,11 @@ void SmartThreatHeader::set_color_scheme(bool use_dark_theme) {
     (void)use_dark_theme;
 }
 
-Style SmartThreatHeader::get_threat_bar_style(ThreatLevel level) const {
-    return Style{.foreground = get_threat_bar_color(level)};
+Style get_threat_bar_style(ThreatLevel level) {
+    Style style;
+    style.foreground = get_threat_bar_color(level);
+    style.background = Color::black();
+    return style;
 }
 
 Color SmartThreatHeader::get_threat_bar_color(ThreatLevel level) const {
