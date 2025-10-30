@@ -40,6 +40,8 @@
 // PART 1: COMMON TYPES (from ui_drone_common_types.hpp)
 // ===========================================
 
+// Enums defined above in PART 0.5
+
 // Forward declarations for build fixes
 // Note: Audio functionality integrated via baseband_api.hpp in hardware section
 
