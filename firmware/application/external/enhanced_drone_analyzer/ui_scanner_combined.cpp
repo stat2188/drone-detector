@@ -212,9 +212,20 @@ void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32
 }
 
 void DroneScanner::master_wideband_detection_handler(DroneHardwareController& hardware, Frequency frequency, int32_t rssi, bool is_approaching) {
-    // Wrapper for existing wideband detection handler
-    const bool force_detection = !is_approaching; // Force detection if not approaching
-    master_wideband_detection_handler(hardware, frequency, rssi, force_detection);
+    // Wrapper for existing wideband detection handler - process wideband signal
+    (void)is_approaching; // Not used in current implementation
+
+    // Validate inputs
+    if (rssi < WIDEBAND_RSSI_THRESHOLD_DB - 10) return; // Too weak for detection
+
+    // Create a mock freqman_entry for wideband detection processing
+    freqman_entry wideband_entry{};
+    wideband_entry.frequency_a = frequency;
+    wideband_entry.type = freqman_type::WILDCARD;
+    wideband_entry.bandwidth = 0; // Wideband has variable bandwidth
+
+    // Process detection with wideband-specific threshold
+    process_rssi_detection(wideband_entry, rssi);
 }
 
 bool DroneScanner::load_frequency_database() {
@@ -485,6 +496,18 @@ Frequency DroneScanner::get_current_scanning_frequency() const {
 
 const TrackedDroneData& DroneScanner::getTrackedDrone(size_t index) const {
     return (index < MAX_TRACKED_DRONES) ? tracked_drones_[index] : tracked_drones_[0];
+}
+
+size_t DroneScanner::get_approaching_count() const {
+    return approaching_count_;
+}
+
+size_t DroneScanner::get_static_count() const {
+    return static_count_;
+}
+
+size_t DroneScanner::get_receding_count() const {
+    return receding_count_;
 }
 
 std::string DroneScanner::get_session_summary() const {
