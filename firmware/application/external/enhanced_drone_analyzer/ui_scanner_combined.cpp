@@ -857,13 +857,7 @@ void DroneScanner::handle_scan_error(const char* error_msg) {
 
 // Removed duplicate definitions for get_scan_cycles() and get_total_detections() - inline in header
 
-size_t DroneScanner::get_total_memory_usage() const {
-    // Estimate memory usage for UI display
-    // This is a rough approximation for performance monitoring
-    // FreqmanDB doesn't have is_open() method, check entry_count instead
-    size_t database_memory = freq_db_.entry_count() * sizeof(freqman_entry);
-    return sizeof(*this) + (tracked_drones_.size() * sizeof(TrackedDroneData)) + database_memory;
-}
+
 
 // DroneScanner::DroneDetectionLogger implementations
 inline DroneScanner::DroneDetectionLogger::DroneDetectionLogger()
@@ -893,10 +887,10 @@ inline bool DroneScanner::DroneDetectionLogger::log_detection(const DetectionLog
     if (!ensure_csv_header()) return false;
 
     std::string csv_entry = format_csv_entry(entry);
-    auto error = csv_log_.append(generate_log_filename().string());
-    if (error.is_error()) return false;
+    auto error = csv_log_.append(generate_log_filename().native());
+    if (!error.has_value()) return false;
     error = csv_log_.write_raw(csv_entry);
-    if (!error.is_error()) {
+    if (error.has_value()) {
         logged_count_++;
         return true;
     }
@@ -907,9 +901,9 @@ inline bool DroneScanner::DroneDetectionLogger::ensure_csv_header() {
     if (header_written_) return true;
     const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence\n";
     auto error = csv_log_.append(generate_log_filename());
-    if (error.is_error()) return false;
+    if (!error.has_value()) return false;
     error = csv_log_.write_raw(header);
-    if (!error.is_error()) {
+    if (error.has_value()) {
         header_written_ = true;
         return true;
     }
@@ -1182,11 +1176,11 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         snprintf(buffer, sizeof(buffer), "READY: No Threats Detected");
     }
     threat_status_main_.set(buffer);
-    // FIX: Use proper Style object with C++14 compatible initialization
-    Style status_style;
-    status_style.foreground = get_threat_text_color(max_threat);
-    status_style.background = Color::black(); // Explicit background
-    status_style.font = Theme::getInstance()->fg_light->font; // Set font
+    Style status_style{
+        .foreground = get_threat_text_color(max_threat),
+        .background = Color::black(),
+        .font = Theme::getInstance()->fg_light->font
+    };
     threat_status_main_.set_style(&status_style);
 
     if (current_freq > 0) {
