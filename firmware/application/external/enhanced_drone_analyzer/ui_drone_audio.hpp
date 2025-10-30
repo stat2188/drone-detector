@@ -4,7 +4,7 @@
 #ifndef __UI_DRONE_AUDIO_HPP__
 #define __UI_DRONE_AUDIO_HPP__
 
-#include <cstdint>
+#include <stdint.h>
 
 class AudioManager {
 public:

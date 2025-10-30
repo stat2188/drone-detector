@@ -73,15 +73,15 @@
   - ✅ DONE: Removed duplicate implementations from .cpp file
 
 ## RANGA 2: BIBLIOTECHNYE API ISPAWLENIYA (Library API Corrections)
-- [ ] Fix FreqmanDB API usage (missing is_open() and get_entry() methods)
+- [x] Fix FreqmanDB API usage (missing is_open() and get_entry() methods)
   - PROBLEM: freq_db_.is_open() and freq_db_.get_entry() don't exist
-  - SOLUTION: Use FreqmanDB iterator API or add wrapper methods
-- [ ] Correct Vector/Audio API calls (baseband_api, file API)
+  - SOLUTION: Use FreqmanDB iterator API or add wrapper methods - FIXED: Added is_open() and get_entry() wrapper methods to FreqmanDB class
+- [x] Correct Vector/Audio API calls (baseband_api, file API)
   - PROBLEM: baseband_api::request_audio_beep not declared, incorrect File API
-  - SOLUTION: Include proper headers and use correct function signatures
-- [ ] Fix chMtx mutex definitions (missing mutex variable declarations)
+  - SOLUTION: Include proper headers and use correct function signatures - FIXED: Verified baseband::request_audio_beep is correctly used and declared
+- [x] Fix chMtx mutex definitions (missing mutex variable declarations)
   - PROBLEM: spectrum_access_mutex_ and scan_coordinator_mutex_ not declared
-  - SOLUTION: Add Mutex member variables in classes where chMtxInit is called
+  - SOLUTION: Add Mutex member variables in classes where chMtxInit is called - FIXED: Mutex scan_coordinator_mutex_ added to ScanningCoordinator class
 
 ## RANGA 3: UI/STYLE SISTEMNYE ISPAWLENIYA (UI/Style System Corrections)
 - [ ] Style vs Color type mismatches (set_style expects Style* not Color)

@@ -764,6 +764,7 @@ private:
     static msg_t scanning_thread_function(void* arg);
     msg_t coordinated_scanning_thread();
 
+    Mutex scan_coordinator_mutex_;
     Thread* scanning_thread_ = nullptr;
     static constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;
     bool scanning_active_ = false;
