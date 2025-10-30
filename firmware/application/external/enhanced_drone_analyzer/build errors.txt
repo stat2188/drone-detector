@@ -1,526 +1,180 @@
-[100%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/ui_scanner_combined.cpp.obj
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:17:37: error: 'DroneAnalyzerSettings' does not name a type
-   17 | bool validate_loaded_settings(const DroneAnalyzerSettings& settings);
-      |                                     ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:18:62: error: 'DroneAnalyzerSettings' has not been declared
-   18 | bool parse_settings_from_content(const std::string& content, DroneAnalyzerSettings& settings);
-      |                                                              ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:19:33: error: 'DroneAnalyzerSettings' was not declared in this scope; did you mean 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'?
-   19 | bool load_settings_from_sd_card(DroneAnalyzerSettings& settings);
-      |                                 ^~~~~~~~~~~~~~~~~~~~~
-      |                                 ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:293:8: note: 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings' declared here
-  293 | struct DroneAnalyzerSettings {
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:19:56: error: 'settings' was not declared in this scope; did you mean 'app_settings'?
-   19 | bool load_settings_from_sd_card(DroneAnalyzerSettings& settings);
-      |                                                        ^~~~~~~~
-      |                                                        app_settings
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'ui::external_app::enhanced_drone_analyzer::DroneScanner::DroneScanner(const ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:416:10: warning: 'ui::external_app::enhanced_drone_analyzer::DroneScanner::scanning_active_' will be initialized after [-Wreorder]
-  416 |     bool scanning_active_;
-      |          ^~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:414:13: warning:   'Thread* ui::external_app::enhanced_drone_analyzer::DroneScanner::scanning_thread_' [-Wreorder]
-  414 |     Thread* scanning_thread_;
-      |             ^~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:67:1: warning:   when initialized here [-Wreorder]
-   67 | DroneScanner::DroneScanner(const DroneAnalyzerSettings& config)
-      | ^~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:446:22: warning: 'ui::external_app::enhanced_drone_analyzer::DroneScanner::wideband_scan_data_' will be initialized after [-Wreorder]
-  446 |     WidebandScanData wideband_scan_data_;
-      |                      ^~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:418:15: warning:   'FreqmanDB ui::external_app::enhanced_drone_analyzer::DroneScanner::freq_db_' [-Wreorder]
-  418 |     FreqmanDB freq_db_;
-      |               ^~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:67:1: warning:   when initialized here [-Wreorder]
-   67 | DroneScanner::DroneScanner(const DroneAnalyzerSettings& config)
-      | ^~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:443:24: warning: 'ui::external_app::enhanced_drone_analyzer::DroneScanner::detection_processor_' will be initialized after [-Wreorder]
-  443 |     DetectionProcessor detection_processor_;  // Unified detection processing
-      |                        ^~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:439:14: warning:   'uint32_t ui::external_app::enhanced_drone_analyzer::DroneScanner::scan_interval_ms_' [-Wreorder]
-  439 |     uint32_t scan_interval_ms_;
-      |              ^~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:67:1: warning:   when initialized here [-Wreorder]
-   67 | DroneScanner::DroneScanner(const DroneAnalyzerSettings& config)
-      | ^~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:67:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneScanner::drone_database_' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:67:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneScanner::detection_logger_' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneScanner::master_wideband_detection_handler(ui::external_app::enhanced_drone_analyzer::DroneHardwareController&, Frequency, int32_t, bool)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:224:41: error: 'WILDCARD' is not a member of 'freqman_type'
-  224 |     wideband_entry.type = freqman_type::WILDCARD;
-      |                                         ^~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:214:79: warning: unused parameter 'hardware' [-Wunused-parameter]
-  214 | void DroneScanner::master_wideband_detection_handler(DroneHardwareController& hardware, Frequency frequency, int32_t rssi, bool is_approaching) {
-      |                                                      ~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: At global scope:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:501:8: error: redefinition of 'size_t ui::external_app::enhanced_drone_analyzer::DroneScanner::get_approaching_count() const'
-  501 | size_t DroneScanner::get_approaching_count() const {
-      |        ^~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:351:12: note: 'size_t ui::external_app::enhanced_drone_analyzer::DroneScanner::get_approaching_count() const' previously defined here
-  351 |     size_t get_approaching_count() const { return approaching_count_; }
-      |            ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:505:8: error: redefinition of 'size_t ui::external_app::enhanced_drone_analyzer::DroneScanner::get_static_count() const'
-  505 | size_t DroneScanner::get_static_count() const {
-      |        ^~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:353:12: note: 'size_t ui::external_app::enhanced_drone_analyzer::DroneScanner::get_static_count() const' previously defined here
-  353 |     size_t get_static_count() const { return static_count_; }
-      |            ^~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:509:8: error: redefinition of 'size_t ui::external_app::enhanced_drone_analyzer::DroneScanner::get_receding_count() const'
-  509 | size_t DroneScanner::get_receding_count() const {
-      |        ^~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:352:12: note: 'size_t ui::external_app::enhanced_drone_analyzer::DroneScanner::get_receding_count() const' previously defined here
-  352 |     size_t get_receding_count() const { return receding_count_; }
-      |            ^~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In constructor 'ui::external_app::enhanced_drone_analyzer::DroneScanner::DroneDetectionLogger::DroneDetectionLogger()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:522:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneScanner::DroneDetectionLogger::csv_log_' should be initialized in the member initialization list [-Weffc++]
-  522 | DroneScanner::DroneDetectionLogger::DroneDetectionLogger()
-      | ^~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'bool ui::external_app::enhanced_drone_analyzer::DroneScanner::DroneDetectionLogger::log_detection(const DetectionLogEntry&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:550:16: error: 'class Optional<std::filesystem::filesystem_error>' has no member named 'has_value'
-  550 |     if (!error.has_value()) return false;
-      |                ^~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:552:15: error: 'class Optional<std::filesystem::filesystem_error>' has no member named 'has_value'
-  552 |     if (error.has_value()) {
-      |               ^~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'bool ui::external_app::enhanced_drone_analyzer::DroneScanner::DroneDetectionLogger::ensure_csv_header()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:563:16: error: 'class Optional<std::filesystem::filesystem_error>' has no member named 'has_value'
-  563 |     if (!error.has_value()) return false;
-      |                ^~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:565:15: error: 'class Optional<std::filesystem::filesystem_error>' has no member named 'has_value'
-  565 |     if (error.has_value()) {
-      |               ^~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'std::string ui::external_app::enhanced_drone_analyzer::DroneScanner::DroneDetectionLogger::format_csv_entry(const DetectionLogEntry&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:576:24: warning: format '%d' expects argument of type 'int', but argument 6 has type 'int32_t' {aka 'long int'} [-Wformat=]
-  576 |              "%lu,%lu,%d,%u,%u,%u,%.2f\n",
-      |                       ~^
-      |                        |
-      |                        int
-      |                       %ld
-  577 |              entry.timestamp, entry.frequency_hz, entry.rssi_db,
-      |                                                   ~~~~~~~~~~~~~
-      |                                                         |
-      |                                                         int32_t {aka long int}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DetectionProcessor::process_unified_detection(const freqman_entry&, int32_t, int32_t, float, bool)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:630:19: error: 'ui::external_app::enhanced_drone_analyzer::DroneScanner::DroneDetectionLogger ui::external_app::enhanced_drone_analyzer::DroneScanner::detection_logger_' is private within this context
-  630 |     if (scanner_->detection_logger_.is_session_active()) {
-      |                   ^~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:448:26: note: declared private here
-  448 |     DroneDetectionLogger detection_logger_;
-      |                          ^~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:631:19: error: 'ui::external_app::enhanced_drone_analyzer::DroneScanner::DroneDetectionLogger ui::external_app::enhanced_drone_analyzer::DroneScanner::detection_logger_' is private within this context
-  631 |         scanner_->detection_logger_.log_detection(log_entry);
-      |                   ^~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:448:26: note: declared private here
-  448 |     DroneDetectionLogger detection_logger_;
-      |                          ^~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:635:15: error: 'uint32_t ui::external_app::enhanced_drone_analyzer::DroneScanner::total_detections_' is private within this context
-  635 |     scanner_->total_detections_++;
-      |               ^~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:423:14: note: declared private here
-  423 |     uint32_t total_detections_;
-      |              ^~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:635:15: note: field 'uint32_t ui::external_app::enhanced_drone_analyzer::DroneScanner::total_detections_' can be accessed via 'uint32_t ui::external_app::enhanced_drone_analyzer::DroneScanner::get_total_detections() const'
-  635 |     scanner_->total_detections_++;
-      |               ^~~~~~~~~~~~~~~~~
-      |               get_total_detections()
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'ui::external_app::enhanced_drone_analyzer::DroneHardwareController::DroneHardwareController(SpectrumMode)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:532:13: warning: 'ui::external_app::enhanced_drone_analyzer::DroneHardwareController::last_valid_rssi_' will be initialized after [-Wreorder]
-  532 |     int32_t last_valid_rssi_;
-      |             ^~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:529:26: warning:   'ChannelSpectrumFIFO* ui::external_app::enhanced_drone_analyzer::DroneHardwareController::fifo_' [-Wreorder]
-  529 |     ChannelSpectrumFIFO* fifo_;
-      |                          ^~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:639:1: warning:   when initialized here [-Wreorder]
-  639 | DroneHardwareController::DroneHardwareController(SpectrumMode mode)
-      | ^~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:639:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneHardwareController::spectrum_access_mutex_' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:639:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneHardwareController::radio_state_' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::SmartThreatHeader::update(ThreatLevel, size_t, size_t, size_t, Frequency, bool)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:812:31: error: 'get_threat_text' was not declared in this scope; did you mean 'get_threat_icon_text'?
-  812 |     std::string threat_name = get_threat_text(max_threat);
-      |                               ^~~~~~~~~~~~~~~
-      |                               get_threat_icon_text
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:828:5: error: member 'ui::Style::font' is uninitialized reference
-  828 |     };
-      |     ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:828:5: warning: missing initializer for member 'ui::Style::font' [-Wmissing-field-initializers]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:828:5: warning: missing initializer for member 'ui::Style::background' [-Wmissing-field-initializers]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:828:5: error: designator order for field 'ui::Style::background' does not match declaration order in 'ui::Style'
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:851:66: error: taking address of rvalue [-fpermissive]
-  851 |     threat_frequency_.set_style(&get_threat_text_color(max_threat));
-      |                                                                  ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:851:33: error: cannot convert 'ui::Color*' to 'const ui::Style*'
-  851 |     threat_frequency_.set_style(&get_threat_text_color(max_threat));
-      |                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      |                                 |
-      |                                 ui::Color*
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:13,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/common/ui_widget.hpp:119:33: note:   initializing argument 1 of 'void ui::Widget::set_style(const ui::Style*)'
-  119 |     void set_style(const Style* new_style);
-      |                    ~~~~~~~~~~~~~^~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: At global scope:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:907:13: error: no declaration matches 'std::string ui::external_app::enhanced_drone_analyzer::SmartThreatHeader::get_threat_text(ThreatLevel) const'
-  907 | std::string SmartThreatHeader::get_threat_text(ThreatLevel level) const {
-      |             ^~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:907:13: note: no functions named 'std::string ui::external_app::enhanced_drone_analyzer::SmartThreatHeader::get_threat_text(ThreatLevel) const'
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:545:7: note: 'class ui::external_app::enhanced_drone_analyzer::SmartThreatHeader' defined here
-  545 | class SmartThreatHeader : public View {
-      |       ^~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'virtual void ui::external_app::enhanced_drone_analyzer::SmartThreatHeader::paint(ui::Painter&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:928:37: error: 'parent_rect_' was not declared in this scope; did you mean 'parent_rect'?
-  928 |         painter.fill_rectangle(Rect(parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 4), base_color);
-      |                                     ^~~~~~~~~~~~
-      |                                     parent_rect
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:925:17: warning: unused variable 'alpha' [-Wunused-variable]
-  925 |         uint8_t alpha = (pulse_timer % 20) < 10 ? 50 : 100;
-      |                 ^~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar::update_scanning_progress(uint32_t, uint32_t, uint32_t)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:955:67: error: invalid initialization of reference of type 'const ui::Font&' from expression of type 'const ui::Color'
-  955 |     progress_text_.set_style(Style{Theme::getInstance()->fg_blue->foreground, Color::black(), Theme::getInstance()->fg_blue->font});
-      |                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:955:126: error: could not convert 'ui::Theme::getInstance()->ui::ThemeTemplate::fg_blue->ui::Style::font' from 'const ui::Font' to 'const ui::Color'
-  955 |     progress_text_.set_style(Style{Theme::getInstance()->fg_blue->foreground, Color::black(), Theme::getInstance()->fg_blue->font});
-      |                                                                                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~
-      |                                                                                                                              |
-      |                                                                                                                              const ui::Font
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:961:45: error: invalid initialization of reference of type 'const ui::Font&' from expression of type 'const ui::Color'
-  961 |         Style alert_style{(detections > 10) ? Theme::getInstance()->fg_red->foreground : Theme::getInstance()->fg_yellow->foreground,
-      |                           ~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:962:75: error: could not convert 'ui::Theme::getInstance()->ui::ThemeTemplate::fg_yellow->ui::Style::font' from 'const ui::Font' to 'const ui::Color'
-  962 |                          Color::black(), Theme::getInstance()->fg_yellow->font};
-      |                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~
-      |                                                                           |
-      |                                                                           const ui::Font
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar::update_alert_status(ThreatLevel, size_t, const string&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:980:57: error: invalid initialization of reference of type 'const ui::Font&' from expression of type 'const ui::Color'
-  980 |     Style alert_style{(threat >= ThreatLevel::CRITICAL) ? Theme::getInstance()->fg_red->foreground : Theme::getInstance()->fg_yellow->foreground,
-      |                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:981:71: error: could not convert 'ui::Theme::getInstance()->ui::ThemeTemplate::fg_yellow->ui::Style::font' from 'const ui::Font' to 'const ui::Color'
-  981 |                      Color::black(), Theme::getInstance()->fg_yellow->font};
-      |                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~
-      |                                                                       |
-      |                                                                       const ui::Font
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar::update_normal_status(const string&, const string&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:996:66: error: invalid initialization of reference of type 'const ui::Font&' from expression of type 'const ui::Color'
-  996 |     normal_text_.set_style(Style{Theme::getInstance()->fg_light->foreground, Color::black(), Theme::getInstance()->fg_light->font});
-      |                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:996:126: error: could not convert 'ui::Theme::getInstance()->ui::ThemeTemplate::fg_light->ui::Style::font' from 'const ui::Font' to 'const ui::Color'
-  996 |     normal_text_.set_style(Style{Theme::getInstance()->fg_light->foreground, Color::black(), Theme::getInstance()->fg_light->font});
-      |                                                                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~
-      |                                                                                                                              |
-      |                                                                                                                              const ui::Font
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'virtual void ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar::paint(ui::Painter&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1021:37: error: 'parent_rect_' was not declared in this scope; did you mean 'parent_rect'?
- 1021 |         painter.fill_rectangle(Rect(parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 2), Color(32, 0, 0));
-      |                                     ^~~~~~~~~~~~
-      |                                     parent_rect
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In constructor 'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(ui::NavigationView&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1059:7: error: class 'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView' does not have any field named 'audio_'
- 1059 |       audio_(std::make_unique<AudioManager>()),
-      |       ^~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1060:87: error: 'audio_' was not declared in this scope; did you mean 'Audio'?
- 1060 |       ui_controller_(std::make_unique<DroneUIController>(nav, *hardware_, *scanner_, *audio_)),
-      |                                                                                       ^~~~~~
-      |                                                                                       Audio
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:847:45: warning: 'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::display_controller_' will be initialized after [-Wreorder]
-  847 |     std::unique_ptr<DroneDisplayController> display_controller_;
-      |                                             ^~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:846:42: warning:   'std::unique_ptr<ui::external_app::enhanced_drone_analyzer::ScanningCoordinator> ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::scanning_coordinator_' [-Wreorder]
-  846 |     std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
-      |                                          ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1055:1: warning:   when initialized here [-Wreorder]
- 1055 | EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
-      | ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1055:1: warning: 'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::audio_mgr_' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1066:52: error: 'load_settings_from_sd_card' cannot be used as a function
- 1066 |     if (!load_settings_from_sd_card(loaded_settings)) {
-      |                                                    ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1092:5: error: no match for 'operator=' (operand types are 'std::function<void(unsigned int, long int)>' and 'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(ui::NavigationView&)::<lambda(size_t)>')
- 1092 |     };
-      |     ^
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/functional:59,
-                 from /havoc/firmware/application/./signal.hpp:27,
-                 from /havoc/firmware/application/./rtc_time.hpp:26,
-                 from /havoc/firmware/common/ui_widget.hpp:32,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:13,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:462:7: note: candidate: 'std::function<_Res(_ArgTypes ...)>& std::function<_Res(_ArgTypes ...)>::operator=(const std::function<_Res(_ArgTypes ...)>&) [with _Res = void; _ArgTypes = {unsigned int, long int}]'
-  462 |       operator=(const function& __x)
-      |       ^~~~~~~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:462:33: note:   no known conversion for argument 1 from 'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(ui::NavigationView&)::<lambda(size_t)>' to 'const std::function<void(unsigned int, long int)>&'
-  462 |       operator=(const function& __x)
-      |                 ~~~~~~~~~~~~~~~~^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:480:7: note: candidate: 'std::function<_Res(_ArgTypes ...)>& std::function<_Res(_ArgTypes ...)>::operator=(std::function<_Res(_ArgTypes ...)>&&) [with _Res = void; _ArgTypes = {unsigned int, long int}]'
-  480 |       operator=(function&& __x) noexcept
-      |       ^~~~~~~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:480:28: note:   no known conversion for argument 1 from 'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(ui::NavigationView&)::<lambda(size_t)>' to 'std::function<void(unsigned int, long int)>&&'
-  480 |       operator=(function&& __x) noexcept
-      |                 ~~~~~~~~~~~^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:494:7: note: candidate: 'std::function<_Res(_ArgTypes ...)>& std::function<_Res(_ArgTypes ...)>::operator=(std::nullptr_t) [with _Res = void; _ArgTypes = {unsigned int, long int}; std::nullptr_t = std::nullptr_t]'
-  494 |       operator=(nullptr_t) noexcept
-      |       ^~~~~~~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:494:17: note:   no known conversion for argument 1 from 'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(ui::NavigationView&)::<lambda(size_t)>' to 'std::nullptr_t'
-  494 |       operator=(nullptr_t) noexcept
-      |                 ^~~~~~~~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:523:2: note: candidate: 'template<class _Functor> std::function<_Res(_ArgTypes ...)>::_Requires<std::function<_Res(_ArgTypes ...)>::_Callable<typename std::decay<_Functor>::type>, std::function<_Res(_ArgTypes ...)>&> std::function<_Res(_ArgTypes ...)>::operator=(_Functor&&) [with _Functor = _Functor; _Res = void; _ArgTypes = {unsigned int, long int}]'
-  523 |  operator=(_Functor&& __f)
-      |  ^~~~~~~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:523:2: note:   template argument deduction/substitution failed:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h: In substitution of 'template<class _Res, class ... _ArgTypes> template<class _Cond, class _Tp> using _Requires = typename std::enable_if<_Cond::value, _Tp>::type [with _Cond = std::function<void(unsigned int, long int)>::_Callable<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(ui::NavigationView&)::<lambda(size_t)>, std::__invoke_result<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(ui::NavigationView&)::<lambda(size_t)>&, unsigned int, long int> >; _Tp = std::function<void(unsigned int, long int)>&; _Res = void; _ArgTypes = {unsigned int, long int}]':
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:523:2:   required by substitution of 'template<class _Functor> std::function<void(unsigned int, long int)>::_Requires<std::function<void(unsigned int, long int)>::_Callable<typename std::decay<_Tp>::type, std::__invoke_result<typename std::decay<_Tp>::type&, unsigned int, long int> >, std::function<void(unsigned int, long int)>&> std::function<void(unsigned int, long int)>::operator=<_Functor>(_Functor&&) [with _Functor = ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(ui::NavigationView&)::<lambda(size_t)>]'
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1092:5:   required from here
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:385:8: error: no type named 'type' in 'struct std::enable_if<false, std::function<void(unsigned int, long int)>&>'
-  385 |  using _Requires = typename enable_if<_Cond::value, _Tp>::type;
-      |        ^~~~~~~~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:532:2: note: candidate: 'template<class _Functor> std::function<_Res(_ArgTypes ...)>& std::function<_Res(_ArgTypes ...)>::operator=(std::reference_wrapper<_Functor>) [with _Functor = _Functor; _Res = void; _ArgTypes = {unsigned int, long int}]'
-  532 |  operator=(reference_wrapper<_Functor> __f) noexcept
-      |  ^~~~~~~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/std_function.h:532:2: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1092:5: note:   'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(ui::NavigationView&)::<lambda(size_t)>' is not derived from 'std::reference_wrapper<_Tp>'
- 1092 |     };
-      |     ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1095:26: error: 'class ui::OptionsField' has no member named 'set_value'; did you mean 'set_by_value'?
- 1095 |     field_scanning_mode_.set_value(initial_mode);
-      |                          ^~~~~~~~~
-      |                          set_by_value
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1098:29: error: request for member 'get' in '((ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView*)this)->ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::smart_header_', which is of pointer type 'ui::external_app::enhanced_drone_analyzer::SmartThreatHeader*' (maybe you meant to use '->' ?)
- 1098 |     add_child(smart_header_.get());
-      |                             ^~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1099:27: error: request for member 'get' in '((ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView*)this)->ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::status_bar_', which is of pointer type 'ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar*' (maybe you meant to use '->' ?)
- 1099 |     add_child(status_bar_.get());
-      |                           ^~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1101:24: error: request for member 'get' in 'card', which is of pointer type 'ui::external_app::enhanced_drone_analyzer::ThreatCard*' (maybe you meant to use '->' ?)
- 1101 |         add_child(card.get());
-      |                        ^~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1176:56: error: cannot convert 'std::_MakeUniq<ui::external_app::enhanced_drone_analyzer::SmartThreatHeader>::__single_object' {aka 'std::unique_ptr<ui::external_app::enhanced_drone_analyzer::SmartThreatHeader, std::default_delete<ui::external_app::enhanced_drone_analyzer::SmartThreatHeader> >'} to 'ui::external_app::enhanced_drone_analyzer::SmartThreatHeader*' in assignment
- 1176 |     smart_header_ = std::make_unique<SmartThreatHeader>(Rect{0, 0, screen_width, 48});
-      |                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      |                                                        |
-      |                                                        std::_MakeUniq<ui::external_app::enhanced_drone_analyzer::SmartThreatHeader>::__single_object {aka std::unique_ptr<ui::external_app::enhanced_drone_analyzer::SmartThreatHeader, std::default_delete<ui::external_app::enhanced_drone_analyzer::SmartThreatHeader> >}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1177:53: error: cannot convert 'std::_MakeUniq<ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar>::__single_object' {aka 'std::unique_ptr<ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar, std::default_delete<ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar> >'} to 'ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar*' in assignment
- 1177 |     status_bar_ = std::make_unique<ConsoleStatusBar>(0, Rect{0, screen_height - 32, screen_width, 16});
-      |                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      |                                                     |
-      |                                                     std::_MakeUniq<ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar>::__single_object {aka std::unique_ptr<ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar, std::default_delete<ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar> >}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1182:68: warning: narrowing conversion of 'card_y_pos' from 'size_t' {aka 'unsigned int'} to 'int' [-Wnarrowing]
- 1182 |         threat_cards_[i] = std::make_unique<ThreatCard>(i, Rect{0, card_y_pos, screen_width, 24});
-      |                                                                    ^~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1182:56: error: cannot convert 'std::_MakeUniq<ui::external_app::enhanced_drone_analyzer::ThreatCard>::__single_object' {aka 'std::unique_ptr<ui::external_app::enhanced_drone_analyzer::ThreatCard, std::default_delete<ui::external_app::enhanced_drone_analyzer::ThreatCard> >'} to 'std::array<ui::external_app::enhanced_drone_analyzer::ThreatCard*, 3>::value_type' {aka 'ui::external_app::enhanced_drone_analyzer::ThreatCard*'} in assignment
- 1182 |         threat_cards_[i] = std::make_unique<ThreatCard>(i, Rect{0, card_y_pos, screen_width, 24});
-      |                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      |                                                        |
-      |                                                        std::_MakeUniq<ui::external_app::enhanced_drone_analyzer::ThreatCard>::__single_object {aka std::unique_ptr<ui::external_app::enhanced_drone_analyzer::ThreatCard, std::default_delete<ui::external_app::enhanced_drone_analyzer::ThreatCard> >}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::handle_scanner_update()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1215:55: error: no matching function for call to 'min(long unsigned int, unsigned int)'
- 1215 |         uint32_t progress = std::min(cycles * 10, 100u); // Rough estimate
-      |                                                       ^
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/char_traits.h:39,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/string:40,
-                 from /havoc/firmware/common/ui_text.hpp:27,
-                 from /havoc/firmware/common/ui_widget.hpp:29,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:13,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algobase.h:198:5: note: candidate: 'template<class _Tp> constexpr const _Tp& std::min(const _Tp&, const _Tp&)'
-  198 |     min(const _Tp& __a, const _Tp& __b)
-      |     ^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algobase.h:198:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1215:55: note:   deduced conflicting types for parameter 'const _Tp' ('long unsigned int' and 'unsigned int')
- 1215 |         uint32_t progress = std::min(cycles * 10, 100u); // Rough estimate
-      |                                                       ^
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/char_traits.h:39,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/string:40,
-                 from /havoc/firmware/common/ui_text.hpp:27,
-                 from /havoc/firmware/common/ui_widget.hpp:29,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:13,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algobase.h:246:5: note: candidate: 'template<class _Tp, class _Compare> constexpr const _Tp& std::min(const _Tp&, const _Tp&, _Compare)'
-  246 |     min(const _Tp& __a, const _Tp& __b, _Compare __comp)
-      |     ^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algobase.h:246:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1215:55: note:   deduced conflicting types for parameter 'const _Tp' ('long unsigned int' and 'unsigned int')
- 1215 |         uint32_t progress = std::min(cycles * 10, 100u); // Rough estimate
-      |                                                       ^
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/functional:65,
-                 from /havoc/firmware/application/./signal.hpp:27,
-                 from /havoc/firmware/application/./rtc_time.hpp:26,
-                 from /havoc/firmware/common/ui_widget.hpp:32,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:13,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algo.h:3444:5: note: candidate: 'template<class _Tp> constexpr _Tp std::min(std::initializer_list<_Tp>)'
- 3444 |     min(initializer_list<_Tp> __l)
-      |     ^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algo.h:3444:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1215:55: note:   mismatched types 'std::initializer_list<_Tp>' and 'long unsigned int'
- 1215 |         uint32_t progress = std::min(cycles * 10, 100u); // Rough estimate
-      |                                                       ^
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/functional:65,
-                 from /havoc/firmware/application/./signal.hpp:27,
-                 from /havoc/firmware/application/./rtc_time.hpp:26,
-                 from /havoc/firmware/common/ui_widget.hpp:32,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:13,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algo.h:3450:5: note: candidate: 'template<class _Tp, class _Compare> constexpr _Tp std::min(std::initializer_list<_Tp>, _Compare)'
- 3450 |     min(initializer_list<_Tp> __l, _Compare __comp)
-      |     ^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algo.h:3450:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1215:55: note:   mismatched types 'std::initializer_list<_Tp>' and 'long unsigned int'
- 1215 |         uint32_t progress = std::min(cycles * 10, 100u); // Rough estimate
-      |                                                       ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1227:60: error: 'MAX_DISPLAYED_DRONES' is not a member of 'DisplayDroneEntry'
- 1227 |     for (size_t i = 0; i < std::min(3u, DisplayDroneEntry::MAX_DISPLAYED_DRONES); ++i) {
-      |                                                            ^~~~~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'DisplayDroneEntry::DisplayDroneEntry()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:113:8: warning: 'DisplayDroneEntry::frequency' should be initialized in the member initialization list [-Weffc++]
-  113 | struct DisplayDroneEntry {
-      |        ^~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:113:8: warning: 'DisplayDroneEntry::type' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:113:8: warning: 'DisplayDroneEntry::threat' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:113:8: warning: 'DisplayDroneEntry::rssi' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:113:8: warning: 'DisplayDroneEntry::last_seen' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:113:8: warning: 'DisplayDroneEntry::type_name' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:113:8: warning: 'DisplayDroneEntry::display_color' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:113:8: warning: 'DisplayDroneEntry::trend' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::handle_scanner_update()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1231:31: note: synthesized method 'DisplayDroneEntry::DisplayDroneEntry()' first required here
- 1231 |             DisplayDroneEntry entry;
-      |                               ^~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1233:32: error: 'const class TrackedDroneData' has no member named 'type'
- 1233 |             entry.type = drone.type;
-      |                                ^~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1234:34: error: cannot convert 'const uint8_t' {aka 'const unsigned char'} to 'ThreatLevel' in assignment
- 1234 |             entry.threat = drone.threat_level;
-      |                            ~~~~~~^~~~~~~~~~~~
-      |                                  |
-      |                                  const uint8_t {aka const unsigned char}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1235:32: error: 'const class TrackedDroneData' has no member named 'rssi'
- 1235 |             entry.rssi = drone.rssi;
-      |                                ^~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1237:37: error: 'const class TrackedDroneData' has no member named 'model_name'
- 1237 |             entry.type_name = drone.model_name; // Assuming scanner provides this
-      |                                     ^~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1249:53: error: 'MAX_DISPLAYED_DRONES' is not a member of 'DisplayDroneEntry'
- 1249 |     for (size_t i = std::min(3u, DisplayDroneEntry::MAX_DISPLAYED_DRONES); i < 3; ++i) {
-      |                                                     ^~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: At global scope:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1266:1: error: definition of explicitly-defaulted 'ui::external_app::enhanced_drone_analyzer::LoadingScreenView::~LoadingScreenView()'
- 1266 | LoadingScreenView::~LoadingScreenView() {
-      | ^~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:880:5: note: 'virtual ui::external_app::enhanced_drone_analyzer::LoadingScreenView::~LoadingScreenView()' explicitly defaulted here
-  880 |     ~LoadingScreenView() = default;
-      |     ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1317:71: error: definition of 'bool SimpleDroneValidation::validate_frequency_range(Frequency)' is not in namespace enclosing 'SimpleDroneValidation' [-fpermissive]
- 1317 | bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
-      |                                                                       ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1321:85: error: definition of 'bool SimpleDroneValidation::validate_rssi_signal(int32_t, ThreatLevel)' is not in namespace enclosing 'SimpleDroneValidation' [-fpermissive]
- 1321 | bool SimpleDroneValidation::validate_rssi_signal(int32_t rssi_db, ThreatLevel threat) {
-      |                                                                                     ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1326:76: error: definition of 'ThreatLevel SimpleDroneValidation::classify_signal_strength(int32_t)' is not in namespace enclosing 'SimpleDroneValidation' [-fpermissive]
- 1326 | ThreatLevel SimpleDroneValidation::classify_signal_strength(int32_t rssi_db) {
-      |                                                                            ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1333:88: error: definition of 'DroneType SimpleDroneValidation::identify_drone_type(Frequency, int32_t)' is not in namespace enclosing 'SimpleDroneValidation' [-fpermissive]
- 1333 | DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
-      |                                                                                        ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1340:86: error: definition of 'bool SimpleDroneValidation::validate_drone_detection(Frequency, int32_t, DroneType, ThreatLevel)' is not in namespace enclosing 'SimpleDroneValidation' [-fpermissive]
- 1340 |                                                    DroneType type, ThreatLevel threat) {
-      |                                                                                      ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1426:6: error: redefinition of 'bool ui::external_app::enhanced_drone_analyzer::ScanningCoordinator::is_scanning_active() const'
- 1426 | bool ScanningCoordinator::is_scanning_active() const {
-      |      ^~~~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:758:10: note: 'bool ui::external_app::enhanced_drone_analyzer::ScanningCoordinator::is_scanning_active() const' previously defined here
-  758 |     bool is_scanning_active() const { return scanning_active_; }
-      |          ^~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In function 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&, const string&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1471:41: error: 'validate_range' was not declared in this scope
- 1471 |             settings.scan_interval_ms = validate_range<uint32_t>(
-      |                                         ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1471:64: error: expected primary-expression before '>' token
- 1471 |             settings.scan_interval_ms = validate_range<uint32_t>(
-      |                                                                ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1474:44: warning: right operand of comma operator has no effect [-Wunused-value]
- 1474 |                 static_cast<uint32_t>(5000U));
-      |                                            ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1477:42: error: 'validate_range' was not declared in this scope
- 1477 |             settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
-      |                                          ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1477:64: error: expected primary-expression before '>' token
- 1477 |             settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
-      |                                                                ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1477:91: warning: right operand of comma operator has no effect [-Wunused-value]
- 1477 |             settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
-      |                                                                                           ^~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1483:49: error: 'validate_range' was not declared in this scope
- 1483 |             settings.audio_alert_frequency_hz = validate_range<uint16_t>(
-      |                                                 ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1483:72: error: expected primary-expression before '>' token
- 1483 |             settings.audio_alert_frequency_hz = validate_range<uint16_t>(
-      |                                                                        ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1484:17: warning: value computed is not used [-Wunused-value]
- 1484 |                 static_cast<uint16_t>(std::stoul(value)),
-      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1486:44: warning: right operand of comma operator has no effect [-Wunused-value]
- 1486 |                 static_cast<uint16_t>(3000U));
-      |                                            ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1489:48: error: 'validate_range' was not declared in this scope
- 1489 |             settings.audio_alert_duration_ms = validate_range<uint32_t>(
-      |                                                ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1489:71: error: expected primary-expression before '>' token
- 1489 |             settings.audio_alert_duration_ms = validate_range<uint32_t>(
-      |                                                                       ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1492:44: warning: right operand of comma operator has no effect [-Wunused-value]
- 1492 |                 static_cast<uint32_t>(2000U));
-      |                                            ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1495:46: error: 'validate_range' was not declared in this scope
- 1495 |             settings.hardware_bandwidth_hz = validate_range<uint32_t>(
-      |                                              ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1495:69: error: expected primary-expression before '>' token
- 1495 |             settings.hardware_bandwidth_hz = validate_range<uint32_t>(
-      |                                                                     ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1498:49: warning: right operand of comma operator has no effect [-Wunused-value]
- 1498 |                 static_cast<uint32_t>(100000000U));
-      |                                                 ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: At global scope:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1723:25: error: variable or field 'initialize_app' declared void
- 1723 | void initialize_app(ui::NavigationView& nav) {
-      |                         ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1723:25: error: 'NavigationView' is not a member of 'ui::external_app::enhanced_drone_analyzer::ui'; did you mean 'ui::NavigationView'?
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:14,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/./ui_navigation.hpp:95:7: note: 'ui::NavigationView' declared here
-   95 | class NavigationView : public View {
-      |       ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1723:41: error: 'nav' was not declared in this scope; did you mean 'nan'?
- 1723 | void initialize_app(ui::NavigationView& nav) {
-      |                                         ^~~
-      |                                         nan
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1733:81: error: 'initialize_app' is not a member of 'ui::external_app::enhanced_drone_analyzer::ui::external_app::enhanced_drone_analyzer_scanner'; did you mean 'ui::external_app::enhanced_drone_analyzer::initialize_app'?
- 1733 |     /*.externalAppEntry = */ ui::external_app::enhanced_drone_analyzer_scanner::initialize_app,
-      |                                                                                 ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1567:6: note: 'ui::external_app::enhanced_drone_analyzer::initialize_app' declared here
- 1567 | void initialize_app(ui::NavigationView& nav) {
-      |      ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1743:28: error: 'ui::external_app::enhanced_drone_analyzer::ui::Color' has not been declared
- 1743 |     /*.icon_color = */ ui::Color::red().v,
-      |                            ^~~~~
+[100%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:67:5: error: 'MovementTrend' does not name a type
+   67 |     MovementTrend get_trend() const {
+      |     ^~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'TrackedDroneData::TrackedDroneData()':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:52:72: error: 'DroneType' has not been declared
+   52 |     TrackedDroneData() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
+      |                                                                        ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:53:56: error: 'ThreatLevel' has not been declared
+   53 |                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0), last_seen(0) {}
+      |                                                        ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: At global scope:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:113:5: error: 'DroneType' does not name a type
+  113 |     DroneType type;
+      |     ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:114:5: error: 'ThreatLevel' does not name a type
+  114 |     ThreatLevel threat;
+      |     ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:119:5: error: 'MovementTrend' does not name a type
+  119 |     MovementTrend trend;
+      |     ^~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:126:5: error: 'ThreatLevel' does not name a type
+  126 |     ThreatLevel threat_level;
+      |     ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:127:5: error: 'DroneType' does not name a type
+  127 |     DroneType drone_type;
+      |     ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:178:5: error: 'ThreatLevel' does not name a type
+  178 |     ThreatLevel threat_level;
+      |     ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:179:5: error: 'DroneType' does not name a type
+  179 |     DroneType drone_type;
+      |     ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:191:5: error: 'SpectrumMode' does not name a type
+  191 |     SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+      |     ^~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:228:55: error: 'ThreatLevel' has not been declared
+  228 |     static bool validate_rssi_signal(int32_t rssi_db, ThreatLevel threat);
+      |                                                       ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:229:12: error: 'ThreatLevel' does not name a type
+  229 |     static ThreatLevel classify_signal_strength(int32_t rssi_db);
+      |            ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:230:12: error: 'DroneType' does not name a type
+  230 |     static DroneType identify_drone_type(Frequency freq_hz, int32_t rssi_db);
+      |            ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:232:40: error: 'DroneType' has not been declared
+  232 |                                        DroneType type, ThreatLevel threat);
+      |                                        ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:232:56: error: 'ThreatLevel' has not been declared
+  232 |                                        DroneType type, ThreatLevel threat);
+      |                                                        ^~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:293:5: error: 'SpectrumMode' does not name a type
+  293 |     SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+      |     ^~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:334:31: error: 'DroneType' has not been declared
+  334 |     void update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
+      |                               ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:334:82: error: 'ThreatLevel' has not been declared
+  334 |     void update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
+      |                                                                                  ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:338:5: error: 'ThreatLevel' does not name a type
+  338 |     ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
+      |     ^~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:409:53: error: 'ThreatLevel' has not been declared
+  409 |     bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
+      |                                                     ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:433:5: error: 'ThreatLevel' does not name a type
+  433 |     ThreatLevel max_detected_threat_;
+      |     ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:464:50: error: expected ')' before 'mode'
+  464 |     explicit DroneHardwareController(SpectrumMode mode = SpectrumMode::MEDIUM);
+      |                                     ~            ^~~~~
+      |                                                  )
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:472:28: error: 'SpectrumMode' has not been declared
+  472 |     void set_spectrum_mode(SpectrumMode mode);
+      |                            ^~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:523:5: error: 'SpectrumMode' does not name a type
+  523 |     SpectrumMode spectrum_mode_;
+      |     ^~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:548:17: error: 'ThreatLevel' has not been declared
+  548 |     void update(ThreatLevel max_threat, size_t approaching, size_t static_count,
+      |                 ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:550:25: error: 'ThreatLevel' has not been declared
+  550 |     void set_max_threat(ThreatLevel threat);
+      |                         ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:564:32: error: 'ThreatLevel' has not been declared
+  564 |     Color get_threat_bar_color(ThreatLevel level) const;
+      |                                ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:565:33: error: 'ThreatLevel' has not been declared
+  565 |     Color get_threat_text_color(ThreatLevel level) const;
+      |                                 ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:566:38: error: 'ThreatLevel' has not been declared
+  566 |     std::string get_threat_icon_text(ThreatLevel level) const;
+      |                                      ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:567:32: error: 'ThreatLevel' has not been declared
+  567 |     Style get_threat_bar_style(ThreatLevel level) const;
+      |                                ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:568:33: error: 'ThreatLevel' has not been declared
+  568 |     Style get_threat_text_style(ThreatLevel level) const;
+      |                                 ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:572:5: error: 'ThreatLevel' does not name a type
+  572 |     ThreatLevel current_threat_ = ThreatLevel::NONE;
+      |     ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:600:5: error: 'ThreatLevel' does not name a type
+  600 |     ThreatLevel threat_ = ThreatLevel::NONE;
+      |     ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:601:5: error: 'MovementTrend' does not name a type
+  601 |     MovementTrend trend_ = MovementTrend::STATIC;
+      |     ^~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:618:30: error: 'ThreatLevel' has not been declared
+  618 |     void update_alert_status(ThreatLevel threat, size_t total_drones, const std::string& alert_msg);
+      |                              ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:658:45: error: 'DroneType' has not been declared
+  658 |     void add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi);
+      |                                             ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:658:61: error: 'ThreatLevel' has not been declared
+  658 |     void add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi);
+      |                                                             ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:699:36: error: 'ThreatLevel' does not name a type
+  699 |     struct ThreatBin { size_t bin; ThreatLevel threat; };
+      |                                    ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:736:34: error: 'ThreatLevel' has not been declared
+  736 |     Color get_threat_level_color(ThreatLevel level) const;
+      |                                  ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:737:17: error: expected ';' at end of member declaration
+  737 |     const char* get_threat_level_name(ThreatLevel level) const;
+      |                 ^~~~~~~~~~~~~~~~~~~~~
+      |                                      ;
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:737:50: error: expected ')' before 'level'
+  737 |     const char* get_threat_level_name(ThreatLevel level) const;
+      |                                      ~           ^~~~~~
+      |                                                  )
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:817:31: error: 'SpectrumMode' has not been declared
+  817 |     void select_spectrum_mode(SpectrumMode mode);
+      |                               ^~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:944,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_audio.hpp:17:30: error: 'ThreatLevel' has not been declared
+   17 |     void play_detection_beep(ThreatLevel threat);
+      |                              ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_audio.hpp:32:5: error: 'ThreatLevel' does not name a type
+   32 |     ThreatLevel test_threat_level = ThreatLevel::HIGH; // Use enum instead of int
+      |     ^~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:952:28: error: 'ThreatLevel' was not declared in this scope
+  952 | Color get_threat_bar_style(ThreatLevel level);
+      |                            ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:953:29: error: 'ThreatLevel' was not declared in this scope
+  953 | Color get_threat_text_style(ThreatLevel level);
+      |                             ^~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:49:12: error: 'SpectrumMode' does not name a type
+   49 |     static SpectrumMode parse_spectrum_mode(const std::string& value);
+      |            ^~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: In function 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&, const string&)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:85:26: error: 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings' has no member named 'spectrum_mode'
+   85 |                 settings.spectrum_mode = parse_spectrum_mode(value);
+      |                          ^~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:85:42: error: 'parse_spectrum_mode' was not declared in this scope
+   85 |                 settings.spectrum_mode = parse_spectrum_mode(value);
+      |                                          ^~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: In function 'void ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:135:18: error: 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings' has no member named 'spectrum_mode'
+  135 |         settings.spectrum_mode = SpectrumMode::MEDIUM;
+      |                  ^~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:135:34: error: 'SpectrumMode' has not been declared
+  135 |         settings.spectrum_mode = SpectrumMode::MEDIUM;
+      |                                  ^~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: At global scope:
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:147:12: error: 'SpectrumMode' does not name a type
+  147 |     static SpectrumMode parse_spectrum_mode(const std::string& value) {
+      |            ^~~~~~~~~~~~
 cc1plus: warning: unrecognized command line option '-Wno-volatile'
-make[2]: *** [firmware/application/CMakeFiles/application.elf.dir/build.make:5775: firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/ui_scanner_combined.cpp.obj] Error 1
+make[2]: *** [firmware/application/CMakeFiles/application.elf.dir/build.make:5761: firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj] Error 1
 make[1]: *** [CMakeFiles/Makefile2:1337: firmware/application/CMakeFiles/application.elf.dir/all] Error 2
 make: *** [Makefile:101: all] Error 2
+Error: Process completed with exit code 2.
