@@ -227,10 +227,10 @@ public:
     void start_session() {
         if (session_active_) return;
         session_active_ = true;
-        session_start_ = Timestamp::now();
+        session_start_ = chVTGetSystemTime();
         logged_total_count_ = 0;
         header_written_ = false;
-        last_flush_time_ = Timestamp::now();
+        last_flush_time_ = chVTGetSystemTime();
     }
 
     void end_session() {

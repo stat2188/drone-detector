@@ -1,118 +1,136 @@
 [100%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'bool ui::external_app::enhanced_drone_analyzer::FreqDBCacheEntry::is_expired(systime_t) const':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:329:52: error: 'TIME_MS2I' was not declared in this scope
+  329 |         return (current_time - last_access_time) > TIME_MS2I(FREQ_DB_CACHE_TIMEOUT_MS);
+      |                                                    ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'const freqman_entry* ui::external_app::enhanced_drone_analyzer::FreqDBCache::get_entry(size_t)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:346:40: error: 'chVTGetSystemTime' was not declared in this scope
+  346 |         const systime_t current_time = chVTGetSystemTime();
+      |                                        ^~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'void ui::external_app::enhanced_drone_analyzer::FreqDBCache::cache_entry(const freqman_entry&, size_t, const string&)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:364:40: error: 'chVTGetSystemTime' was not declared in this scope
+  364 |         const systime_t current_time = chVTGetSystemTime();
+      |                                        ^~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'ui::external_app::enhanced_drone_analyzer::FreqDBCacheEntry::FreqDBCacheEntry()':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:321:8: warning: 'ui::external_app::enhanced_drone_analyzer::FreqDBCacheEntry::entry' should be initialized in the member initialization list [-Weffc++]
+  321 | struct FreqDBCacheEntry {
+      |        ^~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:321:8: warning: 'ui::external_app::enhanced_drone_analyzer::FreqDBCacheEntry::index' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:321:8: warning: 'ui::external_app::enhanced_drone_analyzer::FreqDBCacheEntry::last_access_time' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:321:8: warning: 'ui::external_app::enhanced_drone_analyzer::FreqDBCacheEntry::access_count' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:321:8: warning: 'ui::external_app::enhanced_drone_analyzer::FreqDBCacheEntry::filename' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'void ui::external_app::enhanced_drone_analyzer::FreqDBCache::cache_entry(const freqman_entry&, size_t, const string&)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:398:30: note: synthesized method 'ui::external_app::enhanced_drone_analyzer::FreqDBCacheEntry::FreqDBCacheEntry()' first required here
+  398 |             FreqDBCacheEntry new_entry;
+      |                              ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'ui::external_app::enhanced_drone_analyzer::BufferedDetectionLogger::BufferedDetectionLogger()':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:426:5: warning: 'ui::external_app::enhanced_drone_analyzer::BufferedDetectionLogger::csv_log_' should be initialized in the member initialization list [-Weffc++]
+  426 |     BufferedDetectionLogger() : last_flush_time_(0), entries_count_(0) {}
+      |     ^~~~~~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:426:5: warning: 'ui::external_app::enhanced_drone_analyzer::BufferedDetectionLogger::buffered_entries_' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'void ui::external_app::enhanced_drone_analyzer::BufferedDetectionLogger::log_detection(const DetectionLogEntry&)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:435:40: error: 'chVTGetSystemTime' was not declared in this scope
+  435 |         const systime_t current_time = chVTGetSystemTime();
+      |                                        ^~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:437:49: error: 'TIME_MS2I' was not declared in this scope
+  437 |             (current_time - last_flush_time_) > TIME_MS2I(LOG_BUFFER_FLUSH_MS)) {
+      |                                                 ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'void ui::external_app::enhanced_drone_analyzer::BufferedDetectionLogger::flush_buffer()':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:454:20: error: 'class Optional<std::filesystem::filesystem_error>' has no member named 'has_value'
+  454 |         if (!error.has_value()) return;
+      |                    ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:457:19: error: 'class Optional<std::filesystem::filesystem_error>' has no member named 'has_value'
+  457 |         if (error.has_value()) {
+      |                   ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:458:32: error: 'chVTGetSystemTime' was not declared in this scope
+  458 |             last_flush_time_ = chVTGetSystemTime();
+      |                                ^~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'void ui::external_app::enhanced_drone_analyzer::BufferedDetectionLogger::start_session()':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:468:26: error: 'chSysGetTimeX' was not declared in this scope
+  468 |         session_start_ = chSysGetTimeX();
+      |                          ^~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'bool ui::external_app::enhanced_drone_analyzer::BufferedDetectionLogger::ensure_csv_header()':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:496:20: error: 'class Optional<std::filesystem::filesystem_error>' has no member named 'has_value'
+  496 |         if (!error.has_value()) return false;
+      |                    ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:499:19: error: 'class Optional<std::filesystem::filesystem_error>' has no member named 'has_value'
+  499 |         if (error.has_value()) {
+      |                   ^~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In member function 'std::string ui::external_app::enhanced_drone_analyzer::BufferedDetectionLogger::format_csv_entry(const DetectionLogEntry&)':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:510:28: warning: format '%d' expects argument of type 'int', but argument 6 has type 'int32_t' {aka 'long int'} [-Wformat=]
+  510 |                  "%lu,%lu,%d,%u,%u,%u,%.2f\n",
+      |                           ~^
+      |                            |
+      |                            int
+      |                           %ld
+  511 |                  entry.timestamp, entry.frequency_hz, entry.rssi_db,
+      |                                                       ~~~~~~~~~~~~~
+      |                                                             |
+      |                                                             int32_t {aka long int}
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In static member function 'static ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::TestResult ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::validate_cache_functionality()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1037:40: error: exception handling disabled, use '-fexceptions' to enable
- 1037 |         } catch (const std::exception& e) {
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1244:40: error: exception handling disabled, use '-fexceptions' to enable
+ 1244 |         } catch (const std::exception& e) {
       |                                        ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1038:80: error: 'e' was not declared in this scope
- 1038 |             result.error_message = std::string("Exception during testing: ") + e.what();
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1245:80: error: 'e' was not declared in this scope
+ 1245 |             result.error_message = std::string("Exception during testing: ") + e.what();
       |                                                                                ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1037:11: error: '...' handler must be the last handler for its try block [-fpermissive]
- 1037 |         } catch (const std::exception& e) {
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1244:11: error: '...' handler must be the last handler for its try block [-fpermissive]
+ 1244 |         } catch (const std::exception& e) {
       |           ^~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'ui::external_app::enhanced_drone_analyzer::FreqDBCache::FreqDBCache()':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:341:5: warning: 'ui::external_app::enhanced_drone_analyzer::FreqDBCache::cache_entries_' should be initialized in the member initialization list [-Weffc++]
+  341 |     FreqDBCache() = default;
+      |     ^~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In static member function 'static bool ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::validate_freq_db_cache_logic(ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::TestResult&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1051:9: error: 'FreqDBCache' was not declared in this scope
- 1051 |         FreqDBCache test_cache;
-      |         ^~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1058:50: error: 'HAM' is not a member of 'freqman_type'
- 1058 |             test_entries[i].type = freqman_type::HAM;
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1258:21: note: synthesized method 'ui::external_app::enhanced_drone_analyzer::FreqDBCache::FreqDBCache()' first required here
+ 1258 |         FreqDBCache test_cache;
+      |                     ^~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1265:50: error: 'HAM' is not a member of 'freqman_type'
+ 1265 |             test_entries[i].type = freqman_type::HAM;
       |                                                  ^~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1059:36: error: cannot convert 'std::string' {aka 'std::__cxx11::basic_string<char>'} to 'void*'
- 1059 |             memset(test_entries[i].description, 0, 16);
-      |                    ~~~~~~~~~~~~~~~~^~~~~~~~~~~
-      |                                    |
-      |                                    std::string {aka std::__cxx11::basic_string<char>}
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/cstring:42,
-                 from /havoc/firmware/application/protocols/modems.hpp:24,
-                 from /havoc/firmware/common/portapack_persistent_memory.hpp:33,
-                 from /havoc/firmware/application/./rtc_time.hpp:29,
-                 from /havoc/firmware/common/ui_widget.hpp:32,
-                 from /havoc/firmware/application/./ui_navigation.hpp:35,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:19:
-/opt/build/armbin/arm-none-eabi/include/string.h:33:17: note:   initializing argument 1 of 'void* memset(void*, int, size_t)'
-   33 | void *  memset (void *, int, size_t);
-      |                 ^~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1060:38: error: cannot convert 'std::string' {aka 'std::__cxx11::basic_string<char>'} to 'char*'
- 1060 |             snprintf(test_entries[i].description, 16, "TEST_FREQ_%zu", i);
-      |                      ~~~~~~~~~~~~~~~~^~~~~~~~~~~
-      |                                      |
-      |                                      std::string {aka std::__cxx11::basic_string<char>}
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/cstdio:42,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/ext/string_conversions.h:43,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/basic_string.h:6493,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/string:55,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/stdexcept:39,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/optional:38,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/node_handle.h:39,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_tree.h:72,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/map:60,
-                 from /havoc/firmware/application/./ui_navigation.hpp:29,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:19:
-/opt/build/armbin/arm-none-eabi/include/stdio.h:266:15: note:   initializing argument 1 of 'int snprintf(char*, size_t, const char*, ...)'
-  266 | int snprintf (char *__restrict, size_t, const char *__restrict, ...)
-      |               ^~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1064:43: error: 'test_cache' was not declared in this scope
- 1064 |         const freqman_entry* null_entry = test_cache.get_entry(0);
-      |                                           ^~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In static member function 'static bool ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::validate_buffered_logger_logic(ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::TestResult&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1112:9: error: 'BufferedDetectionLogger' was not declared in this scope
- 1112 |         BufferedDetectionLogger test_logger;
-      |         ^~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1115:13: error: 'test_logger' was not declared in this scope
- 1115 |         if (test_logger.is_session_active()) {
-      |             ^~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1120:9: error: 'test_logger' was not declared in this scope
- 1120 |         test_logger.start_session();
-      |         ^~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1131:52: error: 'now' is not a member of 'Timestamp' {aka 'lpc43xx::rtc::RTC'}
- 1131 |             test_entries[i].timestamp = Timestamp::now() + i;
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1338:52: error: 'now' is not a member of 'Timestamp' {aka 'lpc43xx::rtc::RTC'}
+ 1338 |             test_entries[i].timestamp = Timestamp::now() + i;
       |                                                    ^~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In static member function 'static bool ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::validate_cache_integration_scenarios(ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::TestResult&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1154:9: error: 'FreqDBCache' was not declared in this scope
- 1154 |         FreqDBCache freq_cache;
-      |         ^~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1155:9: error: 'BufferedDetectionLogger' was not declared in this scope
- 1155 |         BufferedDetectionLogger log_cache;
-      |         ^~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1159:38: error: 'FreqmanEntry' was not declared in this scope; did you mean 'freqman_entry'?
- 1159 |         freqman_entry frequent_entry{FreqmanEntry{}};
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1366:38: error: 'FreqmanEntry' was not declared in this scope; did you mean 'freqman_entry'?
+ 1366 |         freqman_entry frequent_entry{FreqmanEntry{}};
       |                                      ^~~~~~~~~~~~
       |                                      freqman_entry
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1159:50: error: expected '}' before '{' token
- 1159 |         freqman_entry frequent_entry{FreqmanEntry{}};
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1366:50: error: expected '}' before '{' token
+ 1366 |         freqman_entry frequent_entry{FreqmanEntry{}};
       |                                     ~            ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1159:50: error: expected ',' or ';' before '{' token
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1158:22: warning: unused variable 'FREQUENT_PATTERNS' [-Wunused-variable]
- 1158 |         const size_t FREQUENT_PATTERNS = 5;
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1366:50: error: expected ',' or ';' before '{' token
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1365:22: warning: unused variable 'FREQUENT_PATTERNS' [-Wunused-variable]
+ 1365 |         const size_t FREQUENT_PATTERNS = 5;
       |                      ^~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1159:52: warning: no return statement in function returning non-void [-Wreturn-type]
- 1159 |         freqman_entry frequent_entry{FreqmanEntry{}};
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1366:52: warning: no return statement in function returning non-void [-Wreturn-type]
+ 1366 |         freqman_entry frequent_entry{FreqmanEntry{}};
       |                                                    ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1153:66: warning: unused parameter 'result' [-Wunused-parameter]
- 1153 |     static bool validate_cache_integration_scenarios(TestResult& result) {
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1360:66: warning: unused parameter 'result' [-Wunused-parameter]
+ 1360 |     static bool validate_cache_integration_scenarios(TestResult& result) {
       |                                                      ~~~~~~~~~~~~^~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In static member function 'static bool ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::validate_memory_management(ui::external_app::enhanced_drone_analyzer::CacheLogicValidator::TestResult&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1209:9: error: 'FreqDBCache' was not declared in this scope
- 1209 |         FreqDBCache size_cache;
-      |         ^~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1212:39: error: 'FreqmanEntry' was not declared in this scope; did you mean 'freqman_entry'?
- 1212 |         freqman_entry size_test_entry{FreqmanEntry{}};
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1419:39: error: 'FreqmanEntry' was not declared in this scope; did you mean 'freqman_entry'?
+ 1419 |         freqman_entry size_test_entry{FreqmanEntry{}};
       |                                       ^~~~~~~~~~~~
       |                                       freqman_entry
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1212:51: error: expected '}' before '{' token
- 1212 |         freqman_entry size_test_entry{FreqmanEntry{}};
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1419:51: error: expected '}' before '{' token
+ 1419 |         freqman_entry size_test_entry{FreqmanEntry{}};
       |                                      ~            ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1212:51: error: expected ',' or ';' before '{' token
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1210:22: warning: unused variable 'entries_to_cache' [-Wunused-variable]
- 1210 |         const size_t entries_to_cache = FREQ_DB_CACHE_SIZE * 2; // More than cache size
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1419:51: error: expected ',' or ';' before '{' token
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1417:22: warning: unused variable 'entries_to_cache' [-Wunused-variable]
+ 1417 |         const size_t entries_to_cache = FREQ_DB_CACHE_SIZE * 2; // More than cache size
       |                      ^~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1212:53: warning: no return statement in function returning non-void [-Wreturn-type]
- 1212 |         freqman_entry size_test_entry{FreqmanEntry{}};
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1419:53: warning: no return statement in function returning non-void [-Wreturn-type]
+ 1419 |         freqman_entry size_test_entry{FreqmanEntry{}};
       |                                                     ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1207:56: warning: unused parameter 'result' [-Wunused-parameter]
- 1207 |     static bool validate_memory_management(TestResult& result) {
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1414:56: warning: unused parameter 'result' [-Wunused-parameter]
+ 1414 |     static bool validate_memory_management(TestResult& result) {
       |                                            ~~~~~~~~~~~~^~~~~~
 At global scope:
 cc1plus: warning: unrecognized command line option '-Wno-volatile'

@@ -299,9 +299,8 @@ public:
     DetectionRingBuffer& operator=(const DetectionRingBuffer&) = delete;
 
 private:
-    DetectionEntry entries_[DETECTION_TABLE_SIZE] = {};
-    size_t size_ = 0;
-    Mutex ring_buffer_mutex_{};  // ✅ FIXED: Initialize mutex properly
+    std::vector<DetectionEntry> entries_;
+    Mutex ring_buffer_mutex_;
 
     bool update_existing_entry(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
     void add_new_entry(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
@@ -326,7 +325,7 @@ struct FreqDBCacheEntry {
     std::string filename;  // File this entry came from
 
     bool is_expired(systime_t current_time) const {
-        return (current_time - last_access_time) > TIME_MS2I(FREQ_DB_CACHE_TIMEOUT_MS);
+        return (current_time - last_access_time) > MS2ST(FREQ_DB_CACHE_TIMEOUT_MS);
     }
 
     void update_access(systime_t timestamp) {
@@ -343,7 +342,7 @@ public:
 
     // Get cached entry by index, returns nullptr if not in cache or expired
     const freqman_entry* get_entry(size_t index) {
-        const systime_t current_time = chVTGetSystemTime();
+        const systime_t current_time = chTimeNow();
 
         // ✅ FIXED: Find entry by index, not by frequency range
         auto it = std::find_if(cache_entries_.begin(), cache_entries_.end(),
@@ -361,7 +360,7 @@ public:
 
     // Cache a new entry, maintaining LRU eviction
     void cache_entry(const freqman_entry& entry, size_t index, const std::string& filename) {
-        const systime_t current_time = chVTGetSystemTime();
+        const systime_t current_time = chTimeNow();
 
         // Remove expired entries first
         cache_entries_.erase(
@@ -432,9 +431,9 @@ public:
         entries_count_++;
 
         // Flush if buffer is full or timeout reached
-        const systime_t current_time = chVTGetSystemTime();
+        const systime_t current_time = chTimeNow();
         if (entries_count_ >= LOG_BUFFER_SIZE ||
-            (current_time - last_flush_time_) > TIME_MS2I(LOG_BUFFER_FLUSH_MS)) {
+            (current_time - last_flush_time_) > MS2ST(LOG_BUFFER_FLUSH_MS)) {
             flush_buffer();
         }
     }
@@ -451,11 +450,11 @@ public:
         }
 
         auto error = csv_log_.append(generate_log_filename());
-        if (!error.has_value()) return;
+        if (error.code() != FR_OK) return;
 
         error = csv_log_.write_raw(batch_log);
-        if (error.has_value()) {
-            last_flush_time_ = chVTGetSystemTime();
+        if (error.code() == FR_OK) {
+            last_flush_time_ = chTimeNow();
             entries_count_ = 0;  // Reset buffer count
         }
     }
@@ -465,10 +464,10 @@ public:
     void start_session() {
         if (session_active_) return;
         session_active_ = true;
-        session_start_ = chSysGetTimeX();
+        session_start_ = chTimeNow();
         logged_total_count_ = 0;
         header_written_ = false;
-        last_flush_time_ = chSysGetTimeX();
+        last_flush_time_ = chTimeNow();
     }
 
     void end_session() {
@@ -493,10 +492,10 @@ private:
         const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence\n";
 
         auto error = csv_log_.append(generate_log_filename());
-        if (!error.has_value()) return false;
+        if (error.code() != FR_OK) return false;
 
         error = csv_log_.write_raw(header);
-        if (error.has_value()) {
+        if (error.code() == FR_OK) {
             header_written_ = true;
             return true;
         }
