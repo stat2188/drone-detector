@@ -178,13 +178,14 @@ static constexpr size_t DETECTION_TABLE_SIZE = 256;
 struct WidebandSlice {
     Frequency center_frequency;
     size_t index;
-};
+    };
 
+// WidebandScanData struct for drone scanner functionality
 struct WidebandScanData {
     Frequency min_freq;
     Frequency max_freq;
     size_t slices_nb;
-    WidebandSlice slices[20];
+    WidebandSlice slices[WIDEBAND_MAX_SLICES];
     size_t slice_counter;
 
     void reset() {
@@ -193,6 +194,19 @@ struct WidebandScanData {
         slices_nb = 0;
         slice_counter = 0;
     }
+};
+
+// Unified detection processor class moved to header for compilation
+class DetectionProcessor {
+private:
+    DroneScanner* scanner_;  // Reference to parent scanner for callbacks
+
+public:
+    explicit DetectionProcessor(DroneScanner* scanner);
+
+    // Unified detection function replacing all duplicates
+    void process_unified_detection(const freqman_entry& entry, int32_t rssi, int32_t effective_threshold,
+                                  float confidence_score = 0.7f, bool force_process = false);
 };
 
 struct DetectionLogEntry {
@@ -315,6 +329,10 @@ extern DetectionRingBuffer& local_detection_ring;
 
 // =========================
 // SD CARD CACHE IMPLEMENTATIONS
+//
+// LEGENDARY CACHE SYSTEM: LRU-based frequency database cache with buffered detection logging
+// Dramatically reduces SD card access frequency by caching frequently-used entries in RAM
+// Buffered logging accumulates multiple detections before single SD write operation
 // =========================
 
 // Frequency database LRU cache entry
@@ -435,7 +453,7 @@ public:
         entries_count_++;
 
         // Flush if buffer is full or timeout reached
-        const systime_t current_time = chVTGetSystemTime();
+        const systime_t current_time = chTimeNow();
         if (entries_count_ >= LOG_BUFFER_SIZE ||
             (current_time - last_flush_time_) > MS2ST(LOG_BUFFER_FLUSH_MS)) {
             flush_buffer();
@@ -457,8 +475,8 @@ public:
         if (error) return;
 
         error = csv_log_.write_raw(batch_log);
-        if (error.has_value()) {
-            last_flush_time_ = chVTGetSystemTime();
+        if (error) {
+            last_flush_time_ = chTimeNow();
             entries_count_ = 0;  // Reset buffer count
         }
     }
@@ -498,7 +516,7 @@ private:
         if (error) return false;
 
         error = csv_log_.write_raw(header);
-        if (error.has_value()) {
+        if (error) {
             header_written_ = true;
             return true;
         }
@@ -1156,18 +1174,21 @@ public:
     // Default constructor
     WidebandMedianFilter() = default;
 
-    // Add RSSI sample to sliding window
+    // LEGENDARY NOISE FILTERING CORE: Add RSSI sample to sliding window
+    // This intelligent filter maintains a history buffer to smooth signal variations
     void add_sample(int16_t rssi) {
         window_[head_] = rssi;
         head_ = (head_ + 1) % WINDOW_SIZE;
         if (head_ == 0) buffer_full_ = true;
     }
 
-    // Calculate median threshold for noise filtering
+    // ARCH-OPTIMIZED MEDIAN CALCULATION: Legendary performance for embedded systems
+    // Bubble sort provides O(n²) complexity but optimal for small fixed windows (11 samples)
+    // Eliminates outliers while preserving signal dynamics
     int16_t get_median_threshold() const {
         if (!buffer_full_) return DEFAULT_RSSI_THRESHOLD_DB;
 
-        // Bubble sort implementation for embedded median calculation
+        // LEGENDARY EMBEDDED ALGORITHM: Bubble sort optimized for latency over complexity
         auto work_copy = window_;
         for (size_t i = 0; i < WINDOW_SIZE / 2 + 1; ++i) {
             for (size_t j = 0; j < WINDOW_SIZE - 1; ++j) {
