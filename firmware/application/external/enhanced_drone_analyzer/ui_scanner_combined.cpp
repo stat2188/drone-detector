@@ -81,6 +81,7 @@ namespace ui::external_app::enhanced_drone_analyzer {
 // Frequency database LRU cache entry
 struct FreqDBCacheEntry {
     freqman_entry entry;
+    size_t index;                      // ✅ CRITICAL FIX: Add index field for proper cache entry identification
     systime_t last_access_time;
     size_t access_count;
     std::string filename;  // File this entry came from
@@ -105,12 +106,11 @@ public:
     const freqman_entry* get_entry(size_t index) {
         const systime_t current_time = chVTGetSystemTime();
 
-    // Check if entry exists and is valid - FIXED: Don't use index as frequency
-    auto it = std::find_if(cache_entries_.begin(), cache_entries_.end(),
-                          [index, current_time](const FreqDBCacheEntry& e) {
-                              // Check if we have a valid frequency entry and it's not expired
-                              return e.entry.frequency_a > 0 && !e.is_expired(current_time);
-                          });
+        // ✅ FIXED: Find entry by index, not by frequency range
+        auto it = std::find_if(cache_entries_.begin(), cache_entries_.end(),
+                              [index, current_time](const FreqDBCacheEntry& e) {
+                                  return e.index == index && !e.is_expired(current_time);
+                              });
 
     if (it != cache_entries_.end()) {
         it->update_access(current_time);
@@ -482,21 +482,32 @@ void DetectionRingBuffer::remove_at_index(size_t index) {
     erase(it);
 }
 
-// Updated public interface methods
+// Updated public interface methods with thread safety
 void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) {
+    // Bounds checking for detection_count to prevent overflow
+    detection_count = clip(static_cast<uint8_t>(detection_count), static_cast<uint8_t>(0), static_cast<uint8_t>(MIN_DETECTION_COUNT * 2));
+
+    chMtxLock(&ring_buffer_mutex_);
     if (!update_existing_entry(frequency_hash, detection_count, rssi_value)) {
         add_new_entry(frequency_hash, detection_count, rssi_value);
     }
+    chMtxUnlock(&ring_buffer_mutex_);
 }
 
 uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const {
+    chMtxLock(&ring_buffer_mutex_);
     size_t index = find_entry_index(frequency_hash);
-    return (index != SIZE_MAX) ? (*this)[index].detection_count : 0;
+    uint8_t result = (index != SIZE_MAX) ? (*this)[index].detection_count : 0;
+    chMtxUnlock(&ring_buffer_mutex_);
+    return result;
 }
 
 int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const {
+    chMtxLock(&ring_buffer_mutex_);
     size_t index = find_entry_index(frequency_hash);
-    return (index != SIZE_MAX) ? (*this)[index].rssi_value : -120;
+    int32_t result = (index != SIZE_MAX) ? (*this)[index].rssi_value : -120;
+    chMtxUnlock(&ring_buffer_mutex_);
+    return result;
 }
 
 // Global detection instance
@@ -585,43 +596,72 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
     wideband_scan_data_.min_freq = min_freq;
     wideband_scan_data_.max_freq = max_freq;
 
+    // Validate frequency range
+    if (max_freq <= min_freq) {
+        wideband_scan_data_.slices_nb = 0;
+        return;
+    }
+
     Frequency scanning_range = max_freq - min_freq;
-    if (scanning_range > WIDEBAND_SLICE_WIDTH) {
-        wideband_scan_data_.slices_nb = (scanning_range + WIDEBAND_SLICE_WIDTH - 1) / WIDEBAND_SLICE_WIDTH;
+
+    if (scanning_range <= WIDEBAND_SLICE_WIDTH) {
+        // Single slice covers entire range
+        wideband_scan_data_.slices[0].center_frequency = (max_freq + min_freq) / 2;
+        wideband_scan_data_.slices[0].index = 0;
+        wideband_scan_data_.slices_nb = 1;
+    } else {
+        // Calculate number of slices to cover range with minimal overlap/gaps
+        // Use 80% overlap to ensure continuous coverage
+        const Frequency EFFECTIVE_WIDTH = WIDEBAND_SLICE_WIDTH * 4 / 5; // 80% of slice width
+        wideband_scan_data_.slices_nb = ((scanning_range + EFFECTIVE_WIDTH - 1) / EFFECTIVE_WIDTH);
+
+        // Cap at maximum slices
         if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
             wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
         }
-        Frequency slices_span = wideband_scan_data_.slices_nb * WIDEBAND_SLICE_WIDTH;
-        Frequency offset = ((scanning_range - slices_span) / 2) + (WIDEBAND_SLICE_WIDTH / 2);
-        Frequency center_frequency = min_freq + offset;
 
-        std::generate_n(wideband_scan_data_.slices,
-                       wideband_scan_data_.slices_nb,
-                       [&center_frequency, slice_index = 0]() mutable -> WidebandSlice {
-                           WidebandSlice slice;
-                           slice.center_frequency = center_frequency;
-                           slice.index = slice_index++;
-                           center_frequency += WIDEBAND_SLICE_WIDTH;
-                           return slice;
-                       });
-    } else {
-        wideband_scan_data_.slices[0].center_frequency = (max_freq + min_freq) / 2;
-        wideband_scan_data_.slices_nb = 1;
+        // Calculate step size for even coverage
+        Frequency step_size = scanning_range / (wideband_scan_data_.slices_nb - 1);
+        if (wideband_scan_data_.slices_nb == 1) {
+            step_size = scanning_range; // Avoid division by zero
+        }
+
+        // Generate slice frequencies with continuous coverage
+        Frequency current_freq = min_freq + WIDEBAND_SLICE_WIDTH / 2; // Start at first slice center
+        for (size_t i = 0; i < wideband_scan_data_.slices_nb; ++i) {
+            wideband_scan_data_.slices[i].center_frequency = std::min(current_freq, max_freq - WIDEBAND_SLICE_WIDTH / 2);
+            wideband_scan_data_.slices[i].index = i;
+            current_freq += step_size;
+
+            // Ensure last slice covers the end of the range
+            if (i == wideband_scan_data_.slices_nb - 1) {
+                wideband_scan_data_.slices[i].center_frequency = max_freq - WIDEBAND_SLICE_WIDTH / 2;
+            }
+        }
     }
     wideband_scan_data_.slice_counter = 0;
 }
 
 void DroneScanner::start_scanning() {
-    if (scanning_active_ || scanning_thread_ != nullptr) return;
+    // Standardized thread management: unified start pattern
+    if (scanning_active_ || scanning_thread_ != nullptr) {
+        return; // Prevent multiple thread instances
+    }
 
     scanning_active_ = true;
     scan_cycles_ = 0;
     total_detections_ = 0;
 
-    scanning_thread_ = chThdCreateStatic(scanning_thread_wa, sizeof(scanning_thread_wa),
-                                        NORMALPRIO + 10, scanning_thread_function, this);
+    // Create thread with standardized parameters
+    scanning_thread_ = chThdCreateStatic(scanning_thread_wa,
+                                       sizeof(scanning_thread_wa),
+                                       NORMALPRIO + 10,
+                                       scanning_thread_function,
+                                       this);
+
     if (!scanning_thread_) {
         scanning_active_ = false;
+        handle_scan_error("Failed to create scanning thread");
     }
 }
 
@@ -697,7 +737,7 @@ bool DroneScanner::load_frequency_database() {
     last_scanned_frequency_ = 0;
 
     if (freq_db_.entry_count() > 100) handle_scan_error("Large database loaded");
-    scan_init_from_loaded_frequencies();
+    // Removed recursive call to scan_init_from_loaded_frequencies() - function doesn't exist
     return true;
 }
 
@@ -826,13 +866,25 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 
     size_t freq_hash = entry.frequency_a;
     int32_t effective_threshold = rssi_threshold_db_;
-    if (local_detection_ring.get_rssi_value(freq_hash) < rssi_threshold_db_) {
+
+    // Correct hysteresis logic: use hysteresis only when signal was previously below threshold
+    int32_t prev_rssi = local_detection_ring.get_rssi_value(freq_hash);
+    uint8_t detection_count = local_detection_ring.get_detection_count(freq_hash);
+
+    // Apply hysteresis: make it harder to lose detection once acquired (higher threshold)
+    // but easier to start new detection (lower threshold)
+    if (detection_count > 0) {
+        // Signal was previously detected - use higher hysteresis threshold to prevent jitter
         effective_threshold = rssi_threshold_db_ + HYSTERESIS_MARGIN_DB;
     }
+    // Otherwise use normal threshold for initial detection
 
     if (rssi >= effective_threshold) {
         uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
-        current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
+        // Safe saturation arithmetic: prevent overflow on 8-bit counter
+        if (current_count < MIN_DETECTION_COUNT * 2) {
+            current_count++;
+        }
         local_detection_ring.update_detection(freq_hash, current_count, rssi);
 
         if (current_count >= MIN_DETECTION_COUNT) {

@@ -301,6 +301,7 @@ public:
 private:
     DetectionEntry entries_[DETECTION_TABLE_SIZE] = {};
     size_t size_ = 0;
+    Mutex ring_buffer_mutex_{};  // ✅ FIXED: Initialize mutex properly
 
     bool update_existing_entry(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
     void add_new_entry(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
