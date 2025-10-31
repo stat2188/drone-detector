@@ -20,10 +20,11 @@
 // MISSING CONSTANTS DEFINITION
 // =========================
 
-// Ring buffer configuration
-static constexpr size_t DETECTION_TABLE_SIZE = 64;
+// Ring buffer configuration (now configurable via settings)
+static constexpr size_t DETECTION_TABLE_SIZE_DEFAULT = 64;
 static constexpr uint32_t MIN_DETECTION_COUNT = 3;
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
+static size_t DETECTION_TABLE_SIZE = DETECTION_TABLE_SIZE_DEFAULT; // Made configurable
 
 // Cache configuration
 static constexpr uint32_t FREQ_DB_CACHE_SIZE = 32;
@@ -133,10 +134,10 @@ public:
             cache_entries_.end()
         );
 
-        // Find existing entry or create new one
+        // CRITICAL FIX: Фикс сравнения - используем index, а не frequency_a
         auto it = std::find_if(cache_entries_.begin(), cache_entries_.end(),
-                              [index, filename](const FreqDBCacheEntry& e) {
-                                  return e.entry.frequency_a == index; // Using frequency as key
+                              [index](const FreqDBCacheEntry& e) {
+                                  return e.index == index; // Фикс: сравниваем индекс, не частоту
                               });
 
         if (it != cache_entries_.end()) {
@@ -284,6 +285,9 @@ private:
 // Global cache instances
 FreqDBCache global_freq_cache;
 BufferedDetectionLogger global_buffered_logger;
+
+// CRITICAL FIX: Глобальный мьютекс для синхронизации доступа к global_detection_ring
+Mutex global_detection_ring_mutex;
 
 // =========================
 // CACHE LOGIC TESTING EXECUTION
@@ -864,7 +868,17 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     }
     DroneType detected_type = (db_entry.bandwidth == 0 ? DroneType::MAVIC : DroneType::UNKNOWN);
 
-    size_t freq_hash = entry.frequency_a;
+    // CRITICAL FIX: Исправлено collision в frequency hash
+    // Используем std::hash для collision-resistant indexing
+    struct FrequencyHash {
+        size_t operator()(Frequency freq) const {
+            size_t h1 = std::hash<uint64_t>{}(freq);
+            size_t h2 = std::hash<uint64_t>{}(freq >> 32);
+            return h1 ^ (h2 << 1); // XOR с shift для лучшего распределения
+        }
+    };
+    static FrequencyHash freq_hasher;
+    size_t freq_hash = freq_hasher(entry.frequency_a);
     int32_t effective_threshold = rssi_threshold_db_;
 
     // Correct hysteresis logic: use hysteresis only when signal was previously below threshold

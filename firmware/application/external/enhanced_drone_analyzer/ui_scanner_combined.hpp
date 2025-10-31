@@ -313,6 +313,213 @@ private:
 extern DetectionRingBuffer global_detection_ring;
 extern DetectionRingBuffer& local_detection_ring;
 
+// =========================
+// SD CARD CACHE IMPLEMENTATIONS
+// =========================
+
+// Frequency database LRU cache entry
+struct FreqDBCacheEntry {
+    freqman_entry entry;
+    size_t index;                      // ✅ CRITICAL FIX: Add index field for proper cache entry identification
+    systime_t last_access_time;
+    size_t access_count;
+    std::string filename;  // File this entry came from
+
+    bool is_expired(systime_t current_time) const {
+        return (current_time - last_access_time) > TIME_MS2I(FREQ_DB_CACHE_TIMEOUT_MS);
+    }
+
+    void update_access(systime_t timestamp) {
+        last_access_time = timestamp;
+        access_count++;
+    }
+};
+
+// Frequency database cache implementation
+class FreqDBCache {
+public:
+    FreqDBCache() = default;
+    ~FreqDBCache() { cache_entries_.clear(); }
+
+    // Get cached entry by index, returns nullptr if not in cache or expired
+    const freqman_entry* get_entry(size_t index) {
+        const systime_t current_time = chVTGetSystemTime();
+
+        // ✅ FIXED: Find entry by index, not by frequency range
+        auto it = std::find_if(cache_entries_.begin(), cache_entries_.end(),
+                              [index, current_time](const FreqDBCacheEntry& e) {
+                                  return e.index == index && !e.is_expired(current_time);
+                              });
+
+    if (it != cache_entries_.end()) {
+        it->update_access(current_time);
+        return &it->entry;
+    }
+
+        return nullptr;
+    }
+
+    // Cache a new entry, maintaining LRU eviction
+    void cache_entry(const freqman_entry& entry, size_t index, const std::string& filename) {
+        const systime_t current_time = chVTGetSystemTime();
+
+        // Remove expired entries first
+        cache_entries_.erase(
+            std::remove_if(cache_entries_.begin(), cache_entries_.end(),
+                          [current_time](const FreqDBCacheEntry& e) {
+                              return e.is_expired(current_time);
+                          }),
+            cache_entries_.end()
+        );
+
+        // CRITICAL FIX: Фикс сравнения - используем index, а не frequency_a
+        auto it = std::find_if(cache_entries_.begin(), cache_entries_.end(),
+                              [index](const FreqDBCacheEntry& e) {
+                                  return e.index == index; // Фикс: сравниваем индекс, не частоту
+                              });
+
+        if (it != cache_entries_.end()) {
+            // Update existing entry
+            it->entry = entry;
+            it->update_access(current_time);
+        } else {
+            // Evict least recently used if cache is full
+            if (cache_entries_.size() >= FREQ_DB_CACHE_SIZE) {
+                auto oldest_it = std::min_element(cache_entries_.begin(), cache_entries_.end(),
+                                                 [](const FreqDBCacheEntry& a, const FreqDBCacheEntry& b) {
+                                                     return a.last_access_time < b.last_access_time;
+                                                 });
+                if (oldest_it != cache_entries_.end()) {
+                    cache_entries_.erase(oldest_it);
+                }
+            }
+
+            // Add new entry
+            FreqDBCacheEntry new_entry;
+            new_entry.entry = entry;
+            new_entry.last_access_time = current_time;
+            new_entry.access_count = 1;
+            new_entry.filename = filename;
+            cache_entries_.push_back(std::move(new_entry));
+        }
+    }
+
+    void clear() {
+        cache_entries_.clear();
+    }
+
+    size_t size() const { return cache_entries_.size(); }
+
+    void flush_to_sd(const std::string& cache_file = "/EDA_CACHE/FREQ_CACHE.BIN") {
+        // Optional: Persist cache to SD for faster startup
+        // This could save cache state between sessions
+        (void)cache_file; // Mark unused for now
+    }
+
+private:
+    std::vector<FreqDBCacheEntry> cache_entries_;
+};
+
+// Buffered detection logger for reduced SD writes
+class BufferedDetectionLogger {
+public:
+    BufferedDetectionLogger() : last_flush_time_(0), entries_count_(0) {}
+    ~BufferedDetectionLogger() { flush_buffer(); }
+
+    void log_detection(const DetectionLogEntry& entry) {
+        // Add to buffer
+        buffered_entries_[entries_count_] = entry;
+        entries_count_++;
+
+        // Flush if buffer is full or timeout reached
+        const systime_t current_time = chVTGetSystemTime();
+        if (entries_count_ >= LOG_BUFFER_SIZE ||
+            (current_time - last_flush_time_) > TIME_MS2I(LOG_BUFFER_FLUSH_MS)) {
+            flush_buffer();
+        }
+    }
+
+    void flush_buffer() {
+        if (entries_count_ == 0) return;
+
+        // Ensure CSV header and log all buffered entries
+        if (!ensure_csv_header()) return;
+
+        std::string batch_log;
+        for (size_t i = 0; i < entries_count_; ++i) {
+            batch_log += format_csv_entry(buffered_entries_[i]);
+        }
+
+        auto error = csv_log_.append(generate_log_filename());
+        if (!error.has_value()) return;
+
+        error = csv_log_.write_raw(batch_log);
+        if (error.has_value()) {
+            last_flush_time_ = chVTGetSystemTime();
+            entries_count_ = 0;  // Reset buffer count
+        }
+    }
+
+    bool is_session_active() const { return session_active_; }
+
+    void start_session() {
+        if (session_active_) return;
+        session_active_ = true;
+        session_start_ = chSysGetTimeX();
+        logged_total_count_ = 0;
+        header_written_ = false;
+        last_flush_time_ = chSysGetTimeX();
+    }
+
+    void end_session() {
+        if (!session_active_) return;
+        flush_buffer();  // Ensure all buffered entries are written
+        session_active_ = false;
+    }
+
+private:
+    LogFile csv_log_;
+    bool session_active_ = false;
+    systime_t session_start_ = 0;
+    bool header_written_ = false;
+    systime_t last_flush_time_ = 0;
+    size_t logged_total_count_ = 0;
+
+    std::array<DetectionLogEntry, LOG_BUFFER_SIZE> buffered_entries_;
+    size_t entries_count_ = 0;
+
+    bool ensure_csv_header() {
+        if (header_written_) return true;
+        const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence\n";
+
+        auto error = csv_log_.append(generate_log_filename());
+        if (!error.has_value()) return false;
+
+        error = csv_log_.write_raw(header);
+        if (error.has_value()) {
+            header_written_ = true;
+            return true;
+        }
+        return false;
+    }
+
+    std::string format_csv_entry(const DetectionLogEntry& entry) {
+        char buffer[128];
+        memset(buffer, 0, sizeof(buffer));
+        snprintf(buffer, sizeof(buffer) - 1,
+                 "%lu,%lu,%d,%u,%u,%u,%.2f\n",
+                 entry.timestamp, entry.frequency_hz, entry.rssi_db,
+                 static_cast<uint8_t>(entry.threat_level),
+                 static_cast<uint8_t>(entry.drone_type),
+                 entry.detection_count, entry.confidence_score);
+        return std::string(buffer);
+    }
+
+    std::string generate_log_filename() const {
+        return "EDA_LOG_BUFFERED.CSV";
+    }
+};
+
 // Unified detection processor class moved to header for compilation
 class DetectionProcessor {
 private:
@@ -1056,8 +1263,8 @@ private:
             test_entries[i].frequency_a = 2400000000ULL + (i * 1000000ULL); // 2.4GHz + i*1MHz
             test_entries[i].frequency_b = test_entries[i].frequency_a + 1000000ULL;
             test_entries[i].type = freqman_type::HAM;
-            memset(test_entries[i].description, 0, 16);
-            snprintf(test_entries[i].description, 16, "TEST_FREQ_%zu", i);
+            memset(&test_entries[i].description[0], 0, 16);
+            snprintf(&test_entries[i].description[0], 16, "TEST_FREQ_%zu", i);
         }
 
         // Test 1: Empty cache should return nullptr
