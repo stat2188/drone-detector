@@ -371,10 +371,10 @@ public:
             cache_entries_.end()
         );
 
-        // CRITICAL FIX: Фикс сравнения - используем index, а не frequency_a
+        // CRITICAL FIX: Fixed comparison - use index instead of frequency_a
         auto it = std::find_if(cache_entries_.begin(), cache_entries_.end(),
                               [index](const FreqDBCacheEntry& e) {
-                                  return e.index == index; // Фикс: сравниваем индекс, не частоту
+                                  return e.index == index; // Fix: compare index, not frequency
                               });
 
         if (it != cache_entries_.end()) {
@@ -417,6 +417,7 @@ public:
 
 private:
     std::vector<FreqDBCacheEntry> cache_entries_;
+    Mutex cache_mutex_;
 };
 
 // Buffered detection logger for reduced SD writes
@@ -492,10 +493,10 @@ private:
         const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence\n";
 
         auto error = csv_log_.append(generate_log_filename());
-        if (error.code() != FR_OK) return false;
+        if (!error) return false;
 
         error = csv_log_.write_raw(header);
-        if (error.code() == FR_OK) {
+        if (error) {
             header_written_ = true;
             return true;
         }
