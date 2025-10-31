@@ -16,6 +16,9 @@
 
 #include <ch.h>
 
+// Unified type definitions for consistency
+using Frequency = uint64_t;
+
 // =========================
 // MISSING CONSTANTS DEFINITION
 // =========================
