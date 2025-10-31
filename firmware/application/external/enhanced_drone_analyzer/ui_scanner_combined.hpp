@@ -1205,48 +1205,39 @@ public:
         std::string error_message = "";
     };
 
-    // Run comprehensive cache logic tests
+    // Run comprehensive cache logic tests - exceptions disabled in ChibiOS
     static TestResult validate_cache_functionality() {
         TestResult result;
         result.tests_run = 0;
         result.tests_passed = 0;
 
-        try {
-            // Test 1: Frequency DB Cache Basic Operations
-            if (validate_freq_db_cache_logic(result)) {
-                result.tests_passed++;
-            }
-            result.tests_run++;
+        // Test 1: Frequency DB Cache Basic Operations (use Optional pattern)
+        if (validate_freq_db_cache_logic(result)) {
+            result.tests_passed++;
+        }
+        result.tests_run++;
 
-            // Test 2: Buffered Logger Operations
-            if (validate_buffered_logger_logic(result)) {
-                result.tests_passed++;
-            }
-            result.tests_run++;
+        // Test 2: Buffered Logger Operations
+        if (validate_buffered_logger_logic(result)) {
+            result.tests_passed++;
+        }
+        result.tests_run++;
 
-            // Test 3: Cache Integration Scenarios
-            if (validate_cache_integration_scenarios(result)) {
-                result.tests_passed++;
-            }
-            result.tests_run++;
+        // Test 3: Cache Integration Scenarios
+        if (validate_cache_integration_scenarios(result)) {
+            result.tests_passed++;
+        }
+        result.tests_run++;
 
-            // Test 4: Memory Management and Limits
-            if (validate_memory_management(result)) {
-                result.tests_passed++;
-            }
-            result.tests_run++;
+        // Test 4: Memory Management and Limits
+        if (validate_memory_management(result)) {
+            result.tests_passed++;
+        }
+        result.tests_run++;
 
-            result.passed = (result.tests_passed == result.tests_run);
-            if (!result.passed) {
-                result.error_message = "Some cache logic tests failed. Check test results.";
-            }
-
-        } catch (const std::exception& e) {
-            result.error_message = std::string("Exception during testing: ") + e.what();
-            result.passed = false;
-        } catch (...) {
-            result.error_message = "Unknown exception during cache testing";
-            result.passed = false;
+        result.passed = (result.tests_passed == result.tests_run);
+        if (!result.passed) {
+            result.error_message = "Some cache logic tests failed.";
         }
 
         return result;
@@ -1335,7 +1326,7 @@ private:
         DetectionLogEntry test_entries[LOG_BUFFER_SIZE / 4];
 
         for (size_t i = 0; i < test_logs; ++i) {
-            test_entries[i].timestamp = Timestamp::now() + i;
+            test_entries[i].timestamp = chVTGetSystemTimeX() + i;
             test_entries[i].frequency_hz = 2400000000ULL + (i * 1000000ULL);
             test_entries[i].rssi_db = -80 - static_cast<int32_t>(i);
             test_entries[i].threat_level = (i % 4 == 0) ? ThreatLevel::HIGH : ThreatLevel::LOW;

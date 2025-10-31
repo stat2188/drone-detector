@@ -316,18 +316,10 @@ struct CachePerformanceMetrics {
     }
 
     void log_performance_stats() {
+        // Simplified for embedded environment - no actual file logging
         const float hit_rate = get_hit_rate();
         const uint32_t avg_lookup_ms = get_avg_lookup_time_ms();
-
-        // Log cache performance statistics
-        std::string perf_report = "CACHE PERFORMANCE:\n";
-        perf_report += "Hit Rate: " + std::to_string(hit_rate) + "%\n";
-        perf_report += "Avg Lookup: " + std::to_string(avg_lookup_ms) + "ms\n";
-        perf_report += "SD Accesses: " + std::to_string(sd_access_count) + "\n";
-        perf_report += "Total Lookups: " + std::to_string(cache_hits + cache_misses) + "\n";
-
-        // In production, this would be written to a log file
-        (void)perf_report; // Mark as used for now
+        (void)hit_rate; (void)avg_lookup_ms; // Mark as used
     }
 };
 
