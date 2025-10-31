@@ -28,14 +28,15 @@
 #include "receiver_model.hpp"  // PHASED 1.1: RX model for receiver configuration
 //// ch.hpp not available in this ChibiOS version - removed
 
-// Standard library includes (compatible with ARM GCC C++14)
 #include <memory>              // std::unique_ptr, std::make_unique
 #include <vector>              // std::vector for dynamic arrays
 #include <string>              // std::string for text handling
 #include <cstdint>            // int32_t, uint32_t, etc.
 #include <algorithm>          // std::min, std::max, std::fill
 #include <array>              // std::array for fixed-size arrays
-#include <functional>         // std::function for callbacks (FIXED: added)
+#include <functional>         // std::function for callbacks
+#include <deque>              // std::deque for ring buffer
+#include <numeric>            // std::accumulate
 
 // ===========================================
 // PART 1: COMMON TYPES (from ui_drone_common_types.hpp)
@@ -422,10 +423,10 @@ private:
     Mutex cache_mutex_;
 };
 
-// Buffered detection logger for reduced SD writes
 class BufferedDetectionLogger {
 public:
-    BufferedDetectionLogger() : last_flush_time_(0), entries_count_(0) {}
+    BufferedDetectionLogger() : last_flush_time_(0), entries_count_(0), session_active_(false),
+                               session_start_(0), logged_total_count_(0), header_written_(false) {}
     ~BufferedDetectionLogger() { flush_buffer(); }
 
     void log_detection(const DetectionLogEntry& entry) {
@@ -434,7 +435,7 @@ public:
         entries_count_++;
 
         // Flush if buffer is full or timeout reached
-        const systime_t current_time = chTimeNow();
+        const systime_t current_time = chVTGetSystemTime();
         if (entries_count_ >= LOG_BUFFER_SIZE ||
             (current_time - last_flush_time_) > MS2ST(LOG_BUFFER_FLUSH_MS)) {
             flush_buffer();
@@ -453,11 +454,11 @@ public:
         }
 
         auto error = csv_log_.append(generate_log_filename());
-        if (!error.is_ok()) return;
+        if (error) return;
 
         error = csv_log_.write_raw(batch_log);
-        if (!error.is_ok()) return;
-            last_flush_time_ = chTimeNow();
+        if (error.has_value()) {
+            last_flush_time_ = chVTGetSystemTime();
             entries_count_ = 0;  // Reset buffer count
         }
     }
@@ -481,24 +482,23 @@ public:
 
 private:
     LogFile csv_log_;
-    bool session_active_ = false;
-    systime_t session_start_ = 0;
-    bool header_written_ = false;
-    systime_t last_flush_time_ = 0;
-    size_t logged_total_count_ = 0;
-
-    std::array<DetectionLogEntry, LOG_BUFFER_SIZE> buffered_entries_;
-    size_t entries_count_ = 0;
+    bool session_active_;
+    systime_t session_start_;
+    bool header_written_;
+    systime_t last_flush_time_;
+    size_t logged_total_count_;
+    size_t entries_count_;
+    DetectionLogEntry buffered_entries_[LOG_BUFFER_SIZE];
 
     bool ensure_csv_header() {
         if (header_written_) return true;
         const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence\n";
 
         auto error = csv_log_.append(generate_log_filename());
-        if (!error) return false;
+        if (error) return false;
 
         error = csv_log_.write_raw(header);
-        if (error) {
+        if (error.has_value()) {
             header_written_ = true;
             return true;
         }
@@ -520,6 +520,7 @@ private:
     std::string generate_log_filename() const {
         return "EDA_LOG_BUFFERED.CSV";
     }
+
 };
 
 // Unified detection processor class moved to header for compilation
@@ -1016,7 +1017,7 @@ private:
 
     Mutex scan_coordinator_mutex_;
     Thread* scanning_thread_ = nullptr;
-    static constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;
+    static constexpr size_t SCANNING_THREAD_STACK_SIZE = 8192;  // CORRECTED: Increased stack size for safety (Critical Fix #3)
     bool scanning_active_ = false;
     NavigationView& nav_;
     DroneHardwareController& hardware_;
@@ -1075,6 +1076,7 @@ public:
     void on_load_settings();
 };
 
+// CORRECTED: Fixed memory leaks in UI construction (Critical Fix #2)
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
     explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
@@ -1090,12 +1092,13 @@ public:
 
 private:
     NavigationView& nav_;
-    std::unique_ptr<DroneHardwareController> hardware_;
-    std::unique_ptr<DroneScanner> scanner_;
-    std::unique_ptr<AudioManager> audio_mgr_;
-    std::unique_ptr<DroneUIController> ui_controller_;
-    std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
+    // RAII members to prevent memory leaks during construction
+    DroneHardwareController hardware_;       // Direct member - RAII safe
+    DroneScanner scanner_;                   // Direct member - RAII safe
+    AudioManager audio_mgr_;                 // Direct member - RAII safe
     std::unique_ptr<DroneDisplayController> display_controller_;
+    std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
+    // Note: ui_controller_ moved to constructor for safe initialization
 
     SmartThreatHeader* smart_header_ = nullptr;
     ConsoleStatusBar* status_bar_ = nullptr;
