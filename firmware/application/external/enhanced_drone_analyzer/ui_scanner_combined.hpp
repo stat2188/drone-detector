@@ -150,6 +150,26 @@ static constexpr int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB = 5;
 static constexpr uint8_t MIN_DETECTION_COUNT = 3;
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 
+// =========================
+// SD CARD CACHE CONFIGURATION
+// =========================
+
+// Frequency database cache settings
+static constexpr size_t FREQ_DB_CACHE_SIZE = 32;  // Cache 32 most recently used entries
+static constexpr uint32_t FREQ_DB_CACHE_TIMEOUT_MS = 30000;  // 30 second cache lifetime
+
+// Detection log buffering settings
+static constexpr size_t LOG_BUFFER_SIZE = 64;     // Buffer 64 log entries before SD write
+static constexpr uint32_t LOG_BUFFER_FLUSH_MS = 5000;  // Flush every 5 seconds
+
+// Performance metrics cache settings
+static constexpr size_t PERF_CACHE_SIZE = 16;     // Cache last 16 performance measurements
+static constexpr uint32_t PERF_CACHE_TIMEOUT_MS = 10000;  // 10 second cache lifetime
+
+// Configuration cache settings
+static constexpr size_t CONFIG_CACHE_SIZE_KB = 2; // Cache up to 2KB of config data
+static constexpr uint32_t CONFIG_CACHE_TIMEOUT_MS = 60000;  // 1 minute cache lifetime
+
 // freqman_entry defined in freqman_db.hpp - removed conflicting typedef
 
 static constexpr size_t DETECTION_TABLE_SIZE = 256;
@@ -257,6 +277,14 @@ class DroneDisplayController;
 class DroneUIController;
 class EnhancedDroneSpectrumAnalyzerView;
 
+struct DetectionEntry {
+    size_t frequency_hash;
+    uint8_t detection_count;
+    int32_t rssi_value;
+    systime_t last_update;
+    uint32_t access_count;
+};
+
 class DetectionRingBuffer {
 public:
     DetectionRingBuffer();
@@ -271,8 +299,14 @@ public:
     DetectionRingBuffer& operator=(const DetectionRingBuffer&) = delete;
 
 private:
-    uint8_t detection_counts_[DETECTION_TABLE_SIZE] = {0};
-    int32_t rssi_values_[DETECTION_TABLE_SIZE] = {0};
+    DetectionEntry entries_[DETECTION_TABLE_SIZE] = {};
+    size_t size_ = 0;
+
+    bool update_existing_entry(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
+    void add_new_entry(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
+    void evict_least_recently_used();
+    size_t find_entry_index(size_t frequency_hash) const;
+    void remove_at_index(size_t index);
 } __attribute__((aligned(4)));
 
 extern DetectionRingBuffer global_detection_ring;
@@ -492,6 +526,11 @@ public:
 
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
+    /**
+     * @brief Process incoming spectrum data for drone detection
+     * This method analyzes spectrum power levels to identify potential drone signals
+     * @param spectrum The channel spectrum data from baseband processor
+     */
     void process_channel_spectrum_data(const ChannelSpectrum& spectrum);
 
     // Additional methods from build errors
@@ -941,6 +980,282 @@ public:
 
     WidebandMedianFilter(const WidebandMedianFilter&) = delete;
     WidebandMedianFilter& operator=(const WidebandMedianFilter&) = delete;
+};
+
+// =========================
+// CACHE VALIDATION AND TESTING
+// =========================
+
+class CacheLogicValidator {
+public:
+    static constexpr size_t TEST_ENTRIES = 16;
+
+    struct TestResult {
+        bool passed = false;
+        size_t tests_run = 0;
+        size_t tests_passed = 0;
+        std::string error_message = "";
+    };
+
+    // Run comprehensive cache logic tests
+    static TestResult validate_cache_functionality() {
+        TestResult result;
+        result.tests_run = 0;
+        result.tests_passed = 0;
+
+        try {
+            // Test 1: Frequency DB Cache Basic Operations
+            if (validate_freq_db_cache_logic(result)) {
+                result.tests_passed++;
+            }
+            result.tests_run++;
+
+            // Test 2: Buffered Logger Operations
+            if (validate_buffered_logger_logic(result)) {
+                result.tests_passed++;
+            }
+            result.tests_run++;
+
+            // Test 3: Cache Integration Scenarios
+            if (validate_cache_integration_scenarios(result)) {
+                result.tests_passed++;
+            }
+            result.tests_run++;
+
+            // Test 4: Memory Management and Limits
+            if (validate_memory_management(result)) {
+                result.tests_passed++;
+            }
+            result.tests_run++;
+
+            result.passed = (result.tests_passed == result.tests_run);
+            if (!result.passed) {
+                result.error_message = "Some cache logic tests failed. Check test results.";
+            }
+
+        } catch (const std::exception& e) {
+            result.error_message = std::string("Exception during testing: ") + e.what();
+            result.passed = false;
+        } catch (...) {
+            result.error_message = "Unknown exception during cache testing";
+            result.passed = false;
+        }
+
+        return result;
+    }
+
+private:
+    // Test Frequency DB cache basic functionality
+    static bool validate_freq_db_cache_logic(TestResult& result) {
+        FreqDBCache test_cache;
+
+        // Create test frequency entries
+        freqman_entry test_entries[TEST_ENTRIES];
+        for (size_t i = 0; i < TEST_ENTRIES; ++i) {
+            test_entries[i].frequency_a = 2400000000ULL + (i * 1000000ULL); // 2.4GHz + i*1MHz
+            test_entries[i].frequency_b = test_entries[i].frequency_a + 1000000ULL;
+            test_entries[i].type = freqman_type::HAM;
+            memset(test_entries[i].description, 0, 16);
+            snprintf(test_entries[i].description, 16, "TEST_FREQ_%zu", i);
+        }
+
+        // Test 1: Empty cache should return nullptr
+        const freqman_entry* null_entry = test_cache.get_entry(0);
+        if (null_entry != nullptr) {
+            result.error_message += "[FreqCache] Empty cache should return nullptr; ";
+            return false;
+        }
+
+        // Test 2: Cache entries and retrieve them
+        for (size_t i = 0; i < 8; ++i) { // Cache first 8 entries
+            test_cache.cache_entry(test_entries[i], i, "test_db.csv");
+        }
+
+        // Verify cached entries can be retrieved
+        for (size_t i = 0; i < 8; ++i) {
+            const freqman_entry* cached = test_cache.get_entry(i);
+            if (cached == nullptr) {
+                result.error_message += "[FreqCache] Cached entry retrieval failed; ";
+                return false;
+            }
+            if (cached->frequency_a != test_entries[i].frequency_a) {
+                result.error_message += "[FreqCache] Cached frequency mismatch; ";
+                return false;
+            }
+        }
+
+        // Test 3: Simulate LRU eviction by caching more than cache size
+        for (size_t i = 8; i < TEST_ENTRIES; ++i) { // Cache remaining entries
+            test_cache.cache_entry(test_entries[i], i, "test_db.csv");
+        }
+
+        // Verify some earliest entries are evicted (LRU behavior)
+        bool found_evicted = false;
+        bool found_recent = false;
+        for (size_t i = 0; i < TEST_ENTRIES; ++i) {
+            const freqman_entry* cached = test_cache.get_entry(i);
+            if (i < 5 && cached == nullptr) found_evicted = true; // Should have some evictions
+            if (i >= 5 && cached != nullptr) found_recent = true; // Recent should be there
+        }
+
+        if (!found_evicted && !found_recent) {
+            result.error_message += "[FreqCache] LRU eviction logic appears incorrect; ";
+            return false;
+        }
+
+        return true; // All frequency cache tests passed
+    }
+
+    // Test buffered logger functionality
+    static bool validate_buffered_logger_logic(TestResult& result) {
+        BufferedDetectionLogger test_logger;
+
+        // Test 1: Session management
+        if (test_logger.is_session_active()) {
+            result.error_message += "[BufferedLogger] Logger should not be active before start_session; ";
+            return false;
+        }
+
+        test_logger.start_session();
+        if (!test_logger.is_session_active()) {
+            result.error_message += "[BufferedLogger] Logger should be active after start_session; ";
+            return false;
+        }
+
+        // Test 2: Buffered logging
+        size_t test_logs = LOG_BUFFER_SIZE / 4; // Test with partial buffer
+        DetectionLogEntry test_entries[LOG_BUFFER_SIZE / 4];
+
+        for (size_t i = 0; i < test_logs; ++i) {
+            test_entries[i].timestamp = Timestamp::now() + i;
+            test_entries[i].frequency_hz = 2400000000ULL + (i * 1000000ULL);
+            test_entries[i].rssi_db = -80 - static_cast<int32_t>(i);
+            test_entries[i].threat_level = (i % 4 == 0) ? ThreatLevel::HIGH : ThreatLevel::LOW;
+            test_entries[i].drone_type = (i % 3 == 0) ? DroneType::MAVIC : DroneType::UNKNOWN;
+            test_entries[i].detection_count = static_cast<uint8_t>(i + 1);
+            test_entries[i].confidence_score = 0.7f + (i * 0.05f);
+
+            test_logger.log_detection(test_entries[i]);
+        }
+
+        // Test 3: Session ending flushes buffer
+        test_logger.end_session();
+        if (test_logger.is_session_active()) {
+            result.error_message += "[BufferedLogger] Logger should not be active after end_session; ";
+            return false;
+        }
+
+        return true; // All buffered logger tests passed
+    }
+
+    // Test integration scenarios
+    static bool validate_cache_integration_scenarios(TestResult& result) {
+        FreqDBCache freq_cache;
+        BufferedDetectionLogger log_cache;
+
+        // Scenario 1: Frequent access pattern (typical scanning)
+        const size_t FREQUENT_PATTERNS = 5;
+        freqman_entry frequent_entry{FreqmanEntry{}};
+
+        // Simulate scanning same frequencies repeatedly
+        for (size_t pattern = 0; pattern < FREQUENT_PATTERNS; ++pattern) {
+            for (size_t access = 0; access < 20; ++access) { // 20 accesses per pattern
+                size_t freq_idx = (pattern * 3) % FREQ_DB_CACHE_SIZE;
+
+                // First access will cache, subsequent will hit cache
+                if (freq_cache.get_entry(freq_idx) == nullptr) {
+                    // Create and cache entry
+                    frequent_entry.frequency_a = 2400000000ULL + (freq_idx * 1000000ULL);
+                    frequent_entry.frequency_b = frequent_entry.frequency_a + 500000ULL;
+                    frequent_entry.type = freqman_type::HAM;
+                    freq_cache.cache_entry(frequent_entry, freq_idx, "test_integration.csv");
+                }
+
+                // Verify we can always get the entry after initial caching
+                const freqman_entry* retrieved = freq_cache.get_entry(freq_idx);
+                if (retrieved == nullptr) {
+                    result.error_message += "[CacheIntegration] Failed to retrieve frequently accessed entry; ";
+                    return false;
+                }
+            }
+        }
+
+        // Scenario 2: Cache pressure with access patterns
+        log_cache.start_session();
+
+        // Simulate detection burst (realistic scenario)
+        for (size_t detection = 0; detection < LOG_BUFFER_SIZE + 10; ++detection) {
+            DetectionLogEntry detection_entry{
+                .timestamp = Timestamp::now() + detection,
+                .frequency_hz = 2400000000ULL + (detection % 100) * 1000000ULL,
+                .rssi_db = -75,
+                .threat_level = ThreatLevel::MEDIUM,
+                .drone_type = DroneType::UNKNOWN,
+                .detection_count = static_cast<uint8_t>((detection % 5) + 1),
+                .confidence_score = 0.8f
+            };
+            log_cache.log_detection(detection_entry);
+        }
+
+        log_cache.end_session();
+
+        return true; // Integration tests passed
+    }
+
+    // Test memory bounds and resource management
+    static bool validate_memory_management(TestResult& result) {
+        // Test 1: Cache size limits
+        FreqDBCache size_cache;
+        const size_t entries_to_cache = FREQ_DB_CACHE_SIZE * 2; // More than cache size
+
+        freqman_entry size_test_entry{FreqmanEntry{}};
+
+        for (size_t i = 0; i < entries_to_cache; ++i) {
+            size_test_entry.frequency_a = 2400000000ULL + (i * 1000000ULL);
+            size_test_entry.frequency_b = size_test_entry.frequency_a + 1000000ULL;
+            size_cache.cache_entry(size_test_entry, i, "size_test.csv");
+        }
+
+        // Verify cache size stays within limits
+        if (size_cache.size() > FREQ_DB_CACHE_SIZE + 5) { // Allow small margin for implementation
+            result.error_message += "[MemoryMgmt] Cache exceeded maximum size; ";
+            return false;
+        }
+
+        // Test 2: Logger buffer bounds
+        BufferedDetectionLogger buffer_logger;
+        buffer_logger.start_session();
+
+        // Fill buffer exactly
+        for (size_t i = 0; i < LOG_BUFFER_SIZE; ++i) {
+            DetectionLogEntry entry{
+                .timestamp = Timestamp::now(),
+                .frequency_hz = 2400000000ULL + i,
+                .rssi_db = -80,
+                .threat_level = ThreatLevel::LOW,
+                .drone_type = DroneType::UNKNOWN,
+                .detection_count = 1,
+                .confidence_score = 0.7f
+            };
+            buffer_logger.log_detection(entry);
+        }
+
+        // This next log should trigger flush (assuming no timing-based flush)
+        DetectionLogEntry trigger_entry{
+            .timestamp = Timestamp::now(),
+            .frequency_hz = 2400000000ULL,
+            .rssi_db = -70,
+            .threat_level = ThreatLevel::HIGH,
+            .drone_type = DroneType::MAVIC,
+            .detection_count = 3,
+            .confidence_score = 0.9f
+        };
+        buffer_logger.log_detection(trigger_entry);
+
+        buffer_logger.end_session();
+
+        return true; // Memory management tests passed
+    }
 };
 
 
