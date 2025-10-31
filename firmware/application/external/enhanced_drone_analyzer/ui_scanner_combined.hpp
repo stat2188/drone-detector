@@ -318,11 +318,13 @@ extern DetectionRingBuffer& local_detection_ring;
 
 // Frequency database LRU cache entry
 struct FreqDBCacheEntry {
-    freqman_entry entry;
-    size_t index;                      // ✅ CRITICAL FIX: Add index field for proper cache entry identification
-    systime_t last_access_time;
-    size_t access_count;
-    std::string filename;  // File this entry came from
+    freqman_entry entry{};           // Explicit default init
+    size_t index{0};                 // ✅ CRITICAL FIX: Add index field for proper cache entry identification
+    systime_t last_access_time{0};   // Explicit zero
+    size_t access_count{0};          // Explicit zero
+    std::string filename{};          // Empty string
+
+    FreqDBCacheEntry() = default;
 
     bool is_expired(systime_t current_time) const {
         return (current_time - last_access_time) > MS2ST(FREQ_DB_CACHE_TIMEOUT_MS);
@@ -451,10 +453,10 @@ public:
         }
 
         auto error = csv_log_.append(generate_log_filename());
-        if (error.code() != FR_OK) return;
+        if (!error.is_ok()) return;
 
         error = csv_log_.write_raw(batch_log);
-        if (error.code() == FR_OK) {
+        if (!error.is_ok()) return;
             last_flush_time_ = chTimeNow();
             entries_count_ = 0;  // Reset buffer count
         }
@@ -1253,7 +1255,7 @@ private:
         for (size_t i = 0; i < TEST_ENTRIES; ++i) {
             test_entries[i].frequency_a = 2400000000ULL + (i * 1000000ULL); // 2.4GHz + i*1MHz
             test_entries[i].frequency_b = test_entries[i].frequency_a + 1000000ULL;
-            test_entries[i].type = freqman_type::HAM;
+            test_entries[i].type = freqman_type::HamRadio;
             memset(&test_entries[i].description[0], 0, 16);
             snprintf(&test_entries[i].description[0], 16, "TEST_FREQ_%zu", i);
         }
@@ -1326,7 +1328,7 @@ private:
         DetectionLogEntry test_entries[LOG_BUFFER_SIZE / 4];
 
         for (size_t i = 0; i < test_logs; ++i) {
-            test_entries[i].timestamp = chVTGetSystemTimeX() + i;
+            test_entries[i].timestamp = chTimeNow() + i;
             test_entries[i].frequency_hz = 2400000000ULL + (i * 1000000ULL);
             test_entries[i].rssi_db = -80 - static_cast<int32_t>(i);
             test_entries[i].threat_level = (i % 4 == 0) ? ThreatLevel::HIGH : ThreatLevel::LOW;
@@ -1354,7 +1356,7 @@ private:
 
         // Scenario 1: Frequent access pattern (typical scanning)
         const size_t FREQUENT_PATTERNS = 5;
-        freqman_entry frequent_entry{FreqmanEntry{}};
+        freqman_entry frequent_entry{};
 
         // Simulate scanning same frequencies repeatedly
         for (size_t pattern = 0; pattern < FREQUENT_PATTERNS; ++pattern) {
@@ -1366,7 +1368,7 @@ private:
                     // Create and cache entry
                     frequent_entry.frequency_a = 2400000000ULL + (freq_idx * 1000000ULL);
                     frequent_entry.frequency_b = frequent_entry.frequency_a + 500000ULL;
-                    frequent_entry.type = freqman_type::HAM;
+                    frequent_entry.type = freqman_type::HamRadio;
                     freq_cache.cache_entry(frequent_entry, freq_idx, "test_integration.csv");
                 }
 
@@ -1385,7 +1387,7 @@ private:
         // Simulate detection burst (realistic scenario)
         for (size_t detection = 0; detection < LOG_BUFFER_SIZE + 10; ++detection) {
             DetectionLogEntry detection_entry{
-                .timestamp = Timestamp::now() + detection,
+                .timestamp = chTimeNow() + static_cast<uint32_t>(detection),
                 .frequency_hz = 2400000000ULL + (detection % 100) * 1000000ULL,
                 .rssi_db = -75,
                 .threat_level = ThreatLevel::MEDIUM,
@@ -1407,7 +1409,7 @@ private:
         FreqDBCache size_cache;
         const size_t entries_to_cache = FREQ_DB_CACHE_SIZE * 2; // More than cache size
 
-        freqman_entry size_test_entry{FreqmanEntry{}};
+        freqman_entry size_test_entry{};
 
         for (size_t i = 0; i < entries_to_cache; ++i) {
             size_test_entry.frequency_a = 2400000000ULL + (i * 1000000ULL);
@@ -1428,7 +1430,7 @@ private:
         // Fill buffer exactly
         for (size_t i = 0; i < LOG_BUFFER_SIZE; ++i) {
             DetectionLogEntry entry{
-                .timestamp = Timestamp::now(),
+                .timestamp = chTimeNow(),
                 .frequency_hz = 2400000000ULL + i,
                 .rssi_db = -80,
                 .threat_level = ThreatLevel::LOW,
@@ -1441,7 +1443,7 @@ private:
 
         // This next log should trigger flush (assuming no timing-based flush)
         DetectionLogEntry trigger_entry{
-            .timestamp = Timestamp::now(),
+            .timestamp = chTimeNow(),
             .frequency_hz = 2400000000ULL,
             .rssi_db = -70,
             .threat_level = ThreatLevel::HIGH,
