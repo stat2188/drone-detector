@@ -1133,7 +1133,7 @@ std::string DroneScanner::DroneDetectionLogger::format_session_summary(size_t sc
     char summary_buffer[512];
     memset(summary_buffer, 0, sizeof(summary_buffer));
     int ret = snprintf(summary_buffer, sizeof(summary_buffer) - 1,
-    "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\nDuration: %.1f seconds\nScan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\nAvg. detections/cycle: %.2f\nDetection rate: %.1f/sec\nLogged entries: %lu\n\nEnhanced Drone Analyzer v0.3",
+    "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\nDuration: %.1f seconds\nScan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\nAvg. detections/cycle: %.2f\nDetection rate: %.1f/sec\nLogged entries: %lu\n\nEnhanced Drone Analyzer v3.0",
         static_cast<float>(session_duration_ms) / 1000.0f, scan_cycles, total_detections,
         avg_detections_per_cycle, detections_per_second, logged_count_);
 
