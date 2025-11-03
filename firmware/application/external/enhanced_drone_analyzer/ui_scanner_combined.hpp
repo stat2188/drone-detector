@@ -39,9 +39,9 @@
 #include <numeric>            // std::accumulate
 
 // ================================
-// FIX: Include AudioManager BEFORE forward declarations
+// INCLUDE AudioManager class EARLY - REQUIRED FOR CLASS DEFINITIONS
 // ================================
-#include "ui_drone_audio.hpp" // AudioManager class
+// #include "ui_drone_audio.hpp" // AudioManager class - Moved inline to fix incomplete type error
 
 // ===========================================
 // PART 1: COMMON TYPES (from ui_drone_common_types.hpp)
@@ -55,6 +55,8 @@
 class LogFile;
 
 using Frequency = uint64_t;
+
+
 
 class TrackedDroneData {
 public:
@@ -286,6 +288,32 @@ class DroneDisplayController;
 class DroneUIController;
 class EnhancedDroneSpectrumAnalyzerView;
 
+// AudioManager class definition inside namespace
+class AudioManager {
+public:
+    AudioManager() : audio_enabled_(true) {}
+    ~AudioManager() = default;
+
+    // Core audio control
+    bool is_audio_enabled() const { return audio_enabled_; }
+    void toggle_audio() { audio_enabled_ = !audio_enabled_; }
+    void play_detection_beep(ThreatLevel threat) {
+        (void)threat; // TODO: Implement audio playback
+    }
+    void stop_audio() {
+        // TODO: Implement audio stop
+    }
+
+    // Audio parameter getters/setters
+    uint16_t get_alert_frequency() const { return 800; }
+    void set_alert_frequency(uint16_t freq) { (void)freq; /* TODO: Implement frequency mapping */ }
+    uint32_t get_alert_duration_ms() const { return 500; }
+    void set_alert_duration_ms(uint32_t duration) { (void)duration; /* TODO: Implement duration control */ }
+
+private:
+    bool audio_enabled_;
+};
+
 struct DetectionEntry {
     size_t frequency_hash;
     uint8_t detection_count;
@@ -438,7 +466,7 @@ private:
 class BufferedDetectionLogger {
 public:
     BufferedDetectionLogger() : last_flush_time_(0), entries_count_(0), session_active_(false),
-                               session_start_(0), logged_total_count_(0), header_written_(false) {}
+                               header_written_(false), session_start_(0), logged_total_count_(0) {}
     ~BufferedDetectionLogger() { flush_buffer(); }
 
     void log_detection(const DetectionLogEntry& entry) {
@@ -521,8 +549,8 @@ private:
         char buffer[128];
         memset(buffer, 0, sizeof(buffer));
         snprintf(buffer, sizeof(buffer) - 1,
-                 "%lu,%lu,%d,%u,%u,%u,%.2f\n",
-                 entry.timestamp, entry.frequency_hz, entry.rssi_db,
+                 "%lu,%lu,%ld,%u,%u,%u,%.2f\n",
+                 entry.timestamp, entry.frequency_hz, static_cast<long int>(entry.rssi_db),
                  static_cast<uint8_t>(entry.threat_level),
                  static_cast<uint8_t>(entry.drone_type),
                  entry.detection_count, entry.confidence_score);
@@ -775,10 +803,18 @@ private:
     void initialize_spectrum_collector();
     void cleanup_spectrum_collector();
 
+    // Message-driven hardware interface (CRITICAL FIX: Added proper message handler for spectrum streaming)
     MessageHandlerRegistration message_handler_spectrum_config_{
         Message::ID::ChannelSpectrumConfig,
         [this](const Message* const p) {
-            handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
+            const auto message = *static_cast<const ChannelSpectrumConfigMessage*>(p);
+            spectrum_fifo_ = message.fifo;
+            if (spectrum_fifo_) {
+                ChannelSpectrum channel_spectrum;
+                while (spectrum_fifo_->out(channel_spectrum)) {
+                    handle_channel_spectrum(channel_spectrum);
+                }
+            }
         }};
 
     MessageHandlerRegistration message_handler_frame_sync_{
@@ -792,10 +828,14 @@ private:
     // Thread safety mutex for spectrum access
     Mutex spectrum_access_mutex_;
 
+    // Hardware state - ALIGNED WITH PORTAPACK ARCHITECTURE
+    RxRadioState radio_state_;
+    app_settings::SettingsManager settings_{
+        "eda_hardware", app_settings::Mode::RX};
+
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
     uint32_t bandwidth_hz_;
-    RxRadioState radio_state_;
     ChannelSpectrumFIFO* fifo_;
     ChannelSpectrumFIFO* spectrum_fifo_;
     bool spectrum_streaming_active_;
@@ -1486,9 +1526,7 @@ private:
 
 
 
-#include "ui_drone_audio.hpp"
-
-// Global helper functions for drone type handling
+ // Global helper functions for drone type handling
 const char* get_drone_type_name(uint8_t type);
 Color get_drone_type_color(uint8_t type);
 Color get_threat_bar_style(ThreatLevel level);

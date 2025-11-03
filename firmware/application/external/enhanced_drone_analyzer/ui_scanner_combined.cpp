@@ -1246,7 +1246,8 @@ bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
     }
 
     center_frequency_ = frequency_hz;
-    radio::set_tuning_frequency(frequency_hz);
+    // CRITICAL FIX: Replace direct radio::* calls with message-driven approach aligned with Recon/Looking Glass
+    receiver_model::set_target_frequency(frequency_hz);
     update_radio_bandwidth();
     return true;
 }
