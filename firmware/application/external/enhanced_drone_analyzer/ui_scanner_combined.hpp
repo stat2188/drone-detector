@@ -402,7 +402,7 @@ struct FreqDBCacheEntry {
 // Frequency database cache implementation
 class FreqDBCache {
 public:
-    FreqDBCache() = default;
+    FreqDBCache() {}
     ~FreqDBCache() { cache_entries_.clear(); }
 
     // Get cached entry by index, returns nullptr if not in cache or expired
@@ -1119,6 +1119,17 @@ public:
     void start_coordinated_scanning();
     void stop_coordinated_scanning();
     bool is_scanning_active() const { return scanning_active_; }
+
+    // Additional getter methods for external access
+    size_t get_scan_cycles() const { return scan_cycles_; }
+    uint32_t get_total_detections() const { return total_detections_; }
+    Frequency get_current_scanning_frequency() const;
+    size_t get_approaching_count() const { return approaching_count_; }
+    size_t get_receding_count() const { return receding_count_; }
+    size_t get_static_count() const { return static_count_; }
+    bool is_real_mode() const { return is_real_mode_; }
+    ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
+    const TrackedDroneData& getTrackedDrone(size_t index) const;
 
     void show_session_summary(const std::string& summary);
     void update_runtime_parameters(const DroneAnalyzerSettings& settings);

@@ -10,8 +10,11 @@
 #include <algorithm>
 #include <cstdint>
 
-// Fix namespace declarations - access proper type
+// FIX NAMESPACE SCOPING - Add ALL required types to scope
 using ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings;
+// GLOBAL SCOPE constants - not in namespace
+using ::SpectrumMode;
+using ::DEFAULT_RSSI_THRESHOLD_DB;
 
 namespace ScannerSettingsManager {
     // Template declarations

@@ -285,7 +285,9 @@ private:
     }
 };
 
-// Global cache instances
+} // namespace
+
+// Global cache instances (outside namespace)
 FreqDBCache global_freq_cache;
 BufferedDetectionLogger global_buffered_logger;
 
@@ -1246,7 +1248,7 @@ bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
     }
 
     center_frequency_ = frequency_hz;
-    // CRITICAL FIX: Replace direct radio::* calls with message-driven approach aligned with Recon/Looking Glass
+    // CRITICAL FIX: Proper Portapack-compliant hardware access
     receiver_model::set_target_frequency(frequency_hz);
     update_radio_bandwidth();
     return true;
@@ -1548,9 +1550,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
     set_display_mode(DisplayMode::SCANNING);
 
     char progress_bar[9] = "########";
-    uint8_t filled = (progress_percent * 8) / 100;
-    // FIXED: Prevent buffer overflow by clamping filled to max 8
-    filled = std::min(filled, uint8_t(8));
+        uint8_t filled = std::min(static_cast<uint8_t>((progress_percent * 8) / 100), static_cast<uint8_t>(8));
     for (uint8_t i = filled; i < 8; i++) {
         progress_bar[i] = '.';
     }
