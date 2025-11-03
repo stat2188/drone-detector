@@ -96,9 +96,9 @@ namespace ScannerSettingsManager {
     }
 
     void reset_to_defaults(DroneAnalyzerSettings& settings) {
-        settings.spectrum_mode = ui::external_app::enhanced_drone_analyzer::SpectrumMode::MEDIUM;
+        settings.spectrum_mode = SpectrumMode::MEDIUM;
         settings.scan_interval_ms = 750;
-        settings.rssi_threshold_db = ui::external_app::enhanced_drone_analyzer::DEFAULT_RSSI_THRESHOLD_DB;
+        settings.rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
         settings.enable_audio_alerts = true;
         settings.audio_alert_frequency_hz = 800;
         settings.audio_alert_duration_ms = 200;
@@ -109,11 +109,11 @@ namespace ScannerSettingsManager {
     }
 
     SpectrumMode parse_spectrum_mode(const std::string& value) {
-        if (value == "NARROW") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::NARROW;
-        if (value == "MEDIUM") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::MEDIUM;
-        if (value == "WIDE") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::WIDE;
-        if (value == "ULTRA_WIDE") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::ULTRA_WIDE;
-        return ui::external_app::enhanced_drone_analyzer::SpectrumMode::MEDIUM;
+        if (value == "NARROW") return SpectrumMode::NARROW;
+        if (value == "MEDIUM") return SpectrumMode::MEDIUM;
+        if (value == "WIDE") return SpectrumMode::WIDE;
+        if (value == "ULTRA_WIDE") return SpectrumMode::ULTRA_WIDE;
+        return SpectrumMode::MEDIUM;
     }
 
     std::string trim_line(const std::string& line) {
@@ -130,7 +130,7 @@ namespace ScannerSettingsManager {
     }
 
     bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings) {
-        ui::File txt_file;
+        File txt_file;
         if (!txt_file.open(filepath, true)) {  // true = read_only parameter
             reset_to_defaults(settings);
             return false;
