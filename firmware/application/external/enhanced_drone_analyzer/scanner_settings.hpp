@@ -1,40 +1,40 @@
-//
-// scanner_settings.hpp - Shared settings management for Enhanced Drone Analyzer
-// Contains ScannerSettingsManager namespace to avoid duplication
-//
+// scanner_settings.hpp - Settings management for Enhanced Drone Analyzer
+// Handles scanning configuration, threshold settings, and persistent storage
 
 #ifndef __SCANNER_SETTINGS_HPP__
 #define __SCANNER_SETTINGS_HPP__
 
+#include "ui_scanner_combined.hpp"
 #include <string>
 #include <sstream>
 #include <algorithm>
 #include <cstdint>
 
-#include "ui_scanner_combined.hpp"  // For DroneAnalyzerSettings, SpectrumMode enums
+using namespace ui::external_app::enhanced_drone_analyzer;
 
 namespace ScannerSettingsManager {
-    // Function declarations for ChibiOS integration fixes (PHASE 2.2: Complete forward declarations)
-    static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
-    static std::string trim_line(const std::string& line);
-    static SpectrumMode parse_spectrum_mode(const std::string& value);
-    static bool parse_key_value(DroneAnalyzerSettings& settings, const std::string& line);
-    static bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content);
-    static void reset_to_defaults(DroneAnalyzerSettings& settings);
+    // Template declarations
     template<typename T> static T validate_range(T value, T min_val, T max_val);
 
-    // PHASE 2.3: Implement complete function signatures and return types
+    // Forward declarations
+    static void reset_to_defaults(DroneAnalyzerSettings& settings);
+    static SpectrumMode parse_spectrum_mode(const std::string& value);
+    static std::string trim_line(const std::string& line);
+    static bool parse_key_value(DroneAnalyzerSettings& settings, const std::string& line);
+    static bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content);
+    static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
+
+    // Public interface
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) {
         const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-        // PHASE 2.3: Validate settings file exists and is readable
-        auto settings_loaded = load_from_txt_impl(filepath, settings);
+        bool settings_loaded = load_from_txt_impl(filepath, settings);
         if (!settings_loaded) {
-            // PHASE 2.3: Fall back to defaults if file can't be loaded
             reset_to_defaults(settings);
         }
         return settings_loaded;
     }
 
+    // Implementation functions
     static bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content) {
         std::istringstream iss(content);
         std::string line;
@@ -52,54 +52,43 @@ namespace ScannerSettingsManager {
         if (equals_pos == std::string::npos) return false;
         std::string key = trim_line(line.substr(0, equals_pos));
         std::string value = trim_line(line.substr(equals_pos + 1));
+
         if (key == "spectrum_mode") {
-                settings.spectrum_mode = parse_spectrum_mode(value);
-                return true;
-            } else if (key == "scan_interval_ms") {
-                // PHASE 3.1: Fix template type deduction - use consistent uint32_t types for all parameters
-                settings.scan_interval_ms = validate_range<uint32_t>(
-                    static_cast<uint32_t>(std::stoul(value)),
-                    static_cast<uint32_t>(100U),
-                    static_cast<uint32_t>(5000U));
-                return true;
-            } else if (key == "rssi_threshold_db") {
-                settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
-                return true;
-            } else if (key == "enable_audio_alerts") {
-                settings.enable_audio_alerts = (value == "true");
-                return true;
-            } else if (key == "audio_alert_frequency_hz") {
-                // PHASE 3.1: Fix template deduction with consistent uint16_t types for all parameters
-                settings.audio_alert_frequency_hz = validate_range<uint16_t>(
-                    static_cast<uint16_t>(std::stoul(value)),
-                    static_cast<uint16_t>(200U),
-                    static_cast<uint16_t>(3000U));
-                return true;
-            } else if (key == "audio_alert_duration_ms") {
-                // PHASE 3.1: Fix template deduction with consistent uint32_t types for all parameters
-                settings.audio_alert_duration_ms = validate_range<uint32_t>(
-                    static_cast<uint32_t>(std::stoul(value)),
-                    static_cast<uint32_t>(50U),
-                    static_cast<uint32_t>(2000U));
-                return true;
-            } else if (key == "hardware_bandwidth_hz") {
-                // PHASE 3.1: Fix template deduction with consistent uint32_t types for all parameters
-                settings.hardware_bandwidth_hz = validate_range<uint32_t>(
-                    static_cast<uint32_t>(std::stoul(value)),
-                    static_cast<uint32_t>(1000000U),
-                    static_cast<uint32_t>(100000000U));
-                return true;
-            } else if (key == "enable_real_hardware") {
-                settings.enable_real_hardware = (value == "true");
-                return true;
-            } else if (key == "demo_mode") {
-                settings.demo_mode = (value == "true");
-        return true;
-    } else if (key == "freqman_path") {
-        settings.freqman_path = value.substr(0, 64);
-        return true;
-    }
-    return false;
+            settings.spectrum_mode = parse_spectrum_mode(value);
+            return true;
+        } else if (key == "scan_interval_ms") {
+            settings.scan_interval_ms = validate_range<uint32_t>(
+                static_cast<uint32_t>(std::stoul(value)), 100U, 5000U);
+            return true;
+        } else if (key == "rssi_threshold_db") {
+            settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
+            return true;
+        } else if (key == "enable_audio_alerts") {
+            settings.enable_audio_alerts = (value == "true");
+            return true;
+        } else if (key == "audio_alert_frequency_hz") {
+            settings.audio_alert_frequency_hz = validate_range<uint16_t>(
+                static_cast<uint16_t>(std::stoul(value)), 200U, 3000U);
+            return true;
+        } else if (key == "audio_alert_duration_ms") {
+            settings.audio_alert_duration_ms = validate_range<uint32_t>(
+                static_cast<uint32_t>(std::stoul(value)), 50U, 2000U);
+            return true;
+        } else if (key == "hardware_bandwidth_hz") {
+            settings.hardware_bandwidth_hz = validate_range<uint32_t>(
+                static_cast<uint32_t>(std::stoul(value)), 1000000U, 100000000U);
+            return true;
+        } else if (key == "enable_real_hardware") {
+            settings.enable_real_hardware = (value == "true");
+            return true;
+        } else if (key == "demo_mode") {
+            settings.demo_mode = (value == "true");
+            return true;
+        } else if (key == "freqman_path") {
+            settings.freqman_path = value.substr(0, 64);
+            return true;
+        }
+        return false;
     }
 
     static void reset_to_defaults(DroneAnalyzerSettings& settings) {
@@ -136,10 +125,9 @@ namespace ScannerSettingsManager {
         return value;
     }
 
-    // Implementation functions (removed invalid 'private:' for namespace syntax fix)
     static bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings) {
         File txt_file;
-        if (!txt_file.open(filepath, true)) {  // FIXED: true = read_only parameter
+        if (!txt_file.open(filepath, true)) {  // true = read_only parameter
             reset_to_defaults(settings);
             return false;
         }

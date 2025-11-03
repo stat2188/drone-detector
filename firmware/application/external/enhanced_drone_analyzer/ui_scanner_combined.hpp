@@ -38,6 +38,11 @@
 #include <deque>              // std::deque for ring buffer
 #include <numeric>            // std::accumulate
 
+// ================================
+// FIX: Include AudioManager BEFORE forward declarations
+// ================================
+#include "ui_drone_audio.hpp" // AudioManager class
+
 // ===========================================
 // PART 1: COMMON TYPES (from ui_drone_common_types.hpp)
 // ===========================================
@@ -196,18 +201,7 @@ struct WidebandScanData {
     }
 };
 
-// Unified detection processor class moved to header for compilation
-class DetectionProcessor {
-private:
-    DroneScanner* scanner_;  // Reference to parent scanner for callbacks
 
-public:
-    explicit DetectionProcessor(DroneScanner* scanner);
-
-    // Unified detection function replacing all duplicates
-    void process_unified_detection(const freqman_entry& entry, int32_t rssi, int32_t effective_threshold,
-                                  float confidence_score = 0.7f, bool force_process = false);
-};
 
 struct DetectionLogEntry {
     uint32_t timestamp;
@@ -547,11 +541,18 @@ private:
     DroneScanner* scanner_;  // Reference to parent scanner for callbacks
 
 public:
-    explicit DetectionProcessor(DroneScanner* scanner);
+    explicit DetectionProcessor(DroneScanner* scanner) : scanner_(scanner) {}
 
     // Unified detection function replacing all duplicates
     void process_unified_detection(const freqman_entry& entry, int32_t rssi, int32_t effective_threshold,
-                                  float confidence_score = 0.7f, bool force_process = false);
+                                  float confidence_score = 0.7f, bool force_process = false) {
+        // Implementation will be moved to cpp file - placeholder
+        (void)entry;
+        (void)rssi;
+        (void)effective_threshold;
+        (void)confidence_score;
+        (void)force_process;
+    }
 };
 
 struct DroneAnalyzerSettings {
@@ -1485,9 +1486,6 @@ private:
 
 
 
-#include "ui_drone_audio.hpp"
-
-// AudioManager is defined in external header ui_drone_audio.hpp (included in cpp)
 #include "ui_drone_audio.hpp"
 
 // Global helper functions for drone type handling
