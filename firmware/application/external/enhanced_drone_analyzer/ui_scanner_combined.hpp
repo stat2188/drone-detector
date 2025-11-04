@@ -100,28 +100,35 @@ public:
     MovementTrend get_trend() const {
         if (update_count < 2) return MovementTrend::UNKNOWN;
 
-        // Analyze RSSI trend over last few samples
+        // Analyze RSSI trend over last few samples with proper bounds
         int32_t recent_rssi = 0, older_rssi = 0;
         size_t recent_count = 0, older_count = 0;
 
+        // Safe iteration with bounds checking
         for (size_t i = 0; i < MAX_HISTORY; i++) {
-            if (i < history_index_) {
+            if (i < history_index_ && history_index_ > 0) {
                 recent_rssi += rssi_history_[i];
                 recent_count++;
-            } else if (i > history_index_ && i < MAX_HISTORY - 1) {
+            } else if (i >= history_index_ && i < MAX_HISTORY - 1 && history_index_ < MAX_HISTORY - 1) {
                 older_rssi += rssi_history_[i];
                 older_count++;
             }
         }
 
-        if (recent_count == 0 || older_count == 0) return MovementTrend::UNKNOWN;
+        // LEGENDARY FIX: Comprehensive division by zero protection
+        if (recent_count == 0 && older_count == 0) return MovementTrend::UNKNOWN;
+        if (recent_count == 0) return MovementTrend::UNKNOWN;  // Need recent data
+        if (older_count == 0) return MovementTrend::APPROACHING; // All data is recent, possible approaching
 
+        // Safe division with clipping protection
         int32_t avg_recent = recent_rssi / recent_count;
         int32_t avg_older = older_rssi / older_count;
         int32_t diff_dB = avg_recent - avg_older;
 
-        if (diff_dB > 5) return MovementTrend::APPROACHING;
-        if (diff_dB < -5) return MovementTrend::RECEDING;
+        // Hysteresis threshold for trend stability
+        static constexpr int32_t TREND_THRESHOLD_DB = 5;
+        if (diff_dB > TREND_THRESHOLD_DB) return MovementTrend::APPROACHING;
+        if (diff_dB < -TREND_THRESHOLD_DB) return MovementTrend::RECEDING;
         return MovementTrend::STATIC;
     }
 
@@ -487,7 +494,7 @@ private:
 
 class BufferedDetectionLogger {
 public:
-    BufferedDetectionLogger() : last_flush_time_(0), entries_count_(0), session_active_(false), session_start_(0), header_written_(false), logged_total_count_(0) {}
+    BufferedDetectionLogger() : csv_log_(), session_active_(false), session_start_(0), header_written_(false), last_flush_time_(0), logged_total_count_(0), entries_count_(0) {}
     ~BufferedDetectionLogger() { flush_buffer(); }
 
     void log_detection(const DetectionLogEntry& entry) {
@@ -1121,14 +1128,14 @@ public:
     bool is_scanning_active() const { return scanning_active_; }
 
     // Additional getter methods for external access
-    size_t get_scan_cycles() const { return scan_cycles_; }
-    uint32_t get_total_detections() const { return total_detections_; }
+    size_t get_scan_cycles() const;
+    uint32_t get_total_detections() const;
     Frequency get_current_scanning_frequency() const;
-    size_t get_approaching_count() const { return approaching_count_; }
-    size_t get_receding_count() const { return receding_count_; }
-    size_t get_static_count() const { return static_count_; }
-    bool is_real_mode() const { return is_real_mode_; }
-    ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
+    size_t get_approaching_count() const;
+    size_t get_receding_count() const;
+    size_t get_static_count() const;
+    bool is_real_mode() const;
+    ThreatLevel get_max_detected_threat() const;
     const TrackedDroneData& getTrackedDrone(size_t index) const;
 
     void show_session_summary(const std::string& summary);
@@ -1148,6 +1155,15 @@ private:
     DroneDisplayController& display_controller_;
     AudioManager& audio_controller_;
     uint32_t scan_interval_ms_ = 750;
+
+    // Missing member variables for getters
+    size_t scan_cycles_ = 0;
+    uint32_t total_detections_ = 0;
+    size_t approaching_count_ = 0;
+    size_t receding_count_ = 0;
+    size_t static_count_ = 0;
+    bool is_real_mode_ = true;
+    ThreatLevel max_detected_threat_ = ThreatLevel::NONE;
 };
 
 class DroneUIController {

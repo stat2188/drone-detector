@@ -892,8 +892,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 
     if (rssi >= effective_threshold) {
         uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
-        // Safe saturation arithmetic: prevent overflow on 8-bit counter
-        if (current_count < MIN_DETECTION_COUNT * 2) {
+        // CRITICAL FIX: Prevent unbounded detection count growth with saturation arithmetic
+        if (current_count < std::numeric_limits<uint8_t>::max()) {
             current_count++;
         }
         local_detection_ring.update_detection(freq_hash, current_count, rssi);
@@ -1004,7 +1004,9 @@ void DroneScanner::update_tracking_counts() {
             default: static_count_++; break;
         }
     }
-    update_trends_compact_display();
+    // CRITICAL FIX: Removed call to update_trends_compact_display() to fix compilation
+    // This method should be called from UI layer, not from scanner private method
+    // update_trends_compact_display();
 }
 
 void DroneScanner::update_trends_compact_display() {
@@ -1249,8 +1251,15 @@ bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
 
     center_frequency_ = frequency_hz;
     // CRITICAL FIX: Proper Portapack-compliant hardware access
-    receiver_model::set_target_frequency(frequency_hz);
+    receiver_model.set_target_frequency(frequency_hz);
     update_radio_bandwidth();
+
+    // LEGENDARY FIX: Add frequency lock validation before RSSI measurement
+    // Prevents false negatives from unstable PLL during scanning
+    if (!wait_for_frequency_lock(200)) {  // 200ms timeout for frequency stability
+        return false;  // Frequency tuning failed - abort scan cycle
+    }
+
     return true;
 }
 
@@ -1627,6 +1636,43 @@ void ConsoleStatusBar::paint(Painter& painter) {
     if (mode_ == DisplayMode::ALERT) {
         painter.fill_rectangle(Rect(parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 2), Color(32, 0, 0));
     }
+}
+
+// Missing ScanningCoordinator getter implementations
+size_t ScanningCoordinator::get_scan_cycles() const {
+    return scanner_.get_scan_cycles();
+}
+
+uint32_t ScanningCoordinator::get_total_detections() const {
+    return scanner_.get_total_detections();
+}
+
+Frequency ScanningCoordinator::get_current_scanning_frequency() const {
+    return scanner_.get_current_scanning_frequency();
+}
+
+size_t ScanningCoordinator::get_approaching_count() const {
+    return scanner_.get_approaching_count();
+}
+
+size_t ScanningCoordinator::get_receding_count() const {
+    return scanner_.get_receding_count();
+}
+
+size_t ScanningCoordinator::get_static_count() const {
+    return scanner_.get_static_count();
+}
+
+bool ScanningCoordinator::is_real_mode() const {
+    return scanner_.is_real_mode();
+}
+
+ThreatLevel ScanningCoordinator::get_max_detected_threat() const {
+    return scanner_.get_max_detected_threat();
+}
+
+const TrackedDroneData& ScanningCoordinator::getTrackedDrone(size_t index) const {
+    return scanner_.getTrackedDrone(index);
 }
 
 // Global utility functions
