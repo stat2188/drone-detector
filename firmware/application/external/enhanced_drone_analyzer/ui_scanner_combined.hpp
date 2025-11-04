@@ -409,7 +409,7 @@ struct FreqDBCacheEntry {
 // Frequency database cache implementation
 class FreqDBCache {
 public:
-    FreqDBCache() {}
+    FreqDBCache() : cache_mutex_{} {}
     ~FreqDBCache() { cache_entries_.clear(); }
 
     // Get cached entry by index, returns nullptr if not in cache or expired
@@ -492,11 +492,10 @@ private:
     Mutex cache_mutex_;
 };
 
+
 class BufferedDetectionLogger {
 public:
-<<<<<<< HEAD
-    BufferedDetectionLogger() : last_flush_time_(0), entries_count_(0), session_active_(false),
-                               session_start_(0), logged_total_count_(0), header_written_(false) {}
+    BufferedDetectionLogger() : csv_log_(), session_active_(false), session_start_(0), header_written_(false), last_flush_time_(0), logged_total_count_(0), entries_count_(0) {}
 =======
 <<<<<<< HEAD
     BufferedDetectionLogger() : last_flush_time_(0), entries_count_(0), session_active_(false),
