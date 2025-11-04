@@ -40,4 +40,11 @@ enum class SpectrumMode {
     ULTRA_WIDE
 };
 
+// Spectrum analysis constants (migrated from Looking Glass)
+static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
+static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -95;
+static constexpr int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB = 5;
+static constexpr uint8_t MIN_DETECTION_COUNT = 3;
+static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
+
 #endif // __UI_DRONE_COMMON_TYPES_HPP__

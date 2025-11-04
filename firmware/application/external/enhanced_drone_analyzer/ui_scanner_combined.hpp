@@ -6,34 +6,23 @@
 #define __UI_SCANNER_COMBINED_HPP__
 
 // ===========================================
-// PART 1: COMMON TYPES (from ui_drone_common_types.hpp)
+// PART 1: COMMON TYPES AND IMPORTS
 // ===========================================
 
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <array>
 
-// Forward declarations for build fixes
+// Include shared utilities
+#include "ui_drone_common_types.hpp"
+#include "ui_signal_processing.hpp"
 
 #include "../../gradient.hpp"
 
 #include <memory>
-#include <array>
-
-#include <algorithm>
-
-// Required includes for chibios/ChibiOS functions
-#include <ch.h>
-#include <hal.h>
-
-// Include for audio functions
-#include "../../application/baseband_api.hpp"
 
 #include "ui_drone_audio.hpp"
-
-// Missing preprocessor constants migrated from Looking Glass
-#define DEFAULT_RSSI_THRESHOLD_DB -80
-#define HYSTERESIS_MARGIN_DB 5
 
 class DroneHardwareController;
 class LogFile;
@@ -41,39 +30,6 @@ class LogFile;
 class ScanningCoordinator;
 
 using Frequency = uint64_t;
-
-enum class ThreatLevel {
-    NONE,
-    LOW,
-    MEDIUM,
-    HIGH,
-    CRITICAL
-};
-
-enum class DroneType {
-    UNKNOWN,
-    MAVIC,
-    PHANTOM,
-    DJI_MINI,
-    PARROT_ANAFI,
-    PARROT_BEBOP,
-    PX4_DRONE,
-    MILITARY_DRONE
-};
-
-enum class MovementTrend {
-    UNKNOWN,
-    STATIC,
-    APPROACHING,
-    RECEDING
-};
-
-enum class SpectrumMode {
-    NARROW,
-    MEDIUM,
-    WIDE,
-    ULTRA_WIDE
-};
 
 // Preset entry for frequency ranges
 struct preset_entry {
@@ -86,94 +42,10 @@ static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
 static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 
-// Enhanced spectrum analysis components migrated from Looking Glass
-class WidebandMedianFilter {
-private:
-    static constexpr size_t WINDOW_SIZE = 11;
-    std::array<int16_t, WINDOW_SIZE> window_{};
-    size_t head_ = 0;
-    bool full_ = false;
-
-public:
-    void add_sample(int16_t rssi) {
-        window_[head_] = rssi;
-        head_ = (head_ + 1) % WINDOW_SIZE;
-        if (head_ == 0) full_ = true;
-    }
-
-    int16_t get_median_threshold() const {
-        if (!full_) return DEFAULT_RSSI_THRESHOLD_DB;
-        auto temp = window_;
-        for (size_t i = 0; i < WINDOW_SIZE / 2 + 1; ++i) {
-            for (size_t j = 0; j < WINDOW_SIZE - 1; ++j) {
-                if (temp[j] > temp[j + 1]) std::swap(temp[j], temp[j + 1]);
-            }
-        }
-        return temp[WINDOW_SIZE / 2] - HYSTERESIS_MARGIN_DB;
-    }
-
-    void reset() { full_ = false; head_ = 0; window_ = {}; }
-};
-
-// Detection persistence (optimized with fixed array)
-struct DetectionEntry {
-    size_t frequency_hash = 0;
-    uint8_t detection_count = 0;
-    int32_t rssi_value = -120;
-    systime_t last_update = 0;
-};
-
-class DetectionRingBuffer {
-private:
-    static constexpr size_t DETECTION_TABLE_SIZE = 32;
-    std::array<DetectionEntry, DETECTION_TABLE_SIZE> entries_{};
-    size_t head_ = 0;
-
-public:
-    DetectionRingBuffer() = default;
-
-    void update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) {
-        systime_t current_time = chVTGetSystemTime();
-        for (auto& entry : entries_) {
-            if (entry.frequency_hash == frequency_hash) {
-                entry.detection_count = detection_count;
-                entry.rssi_value = rssi_value;
-                entry.last_update = current_time;
-                return;
-            }
-        }
-        // Add new entry (simple ring buffer)
-        entries_[head_] = {frequency_hash, detection_count, rssi_value, current_time};
-        head_ = (head_ + 1) % DETECTION_TABLE_SIZE;
-    }
-
-    uint8_t get_detection_count(size_t frequency_hash) const {
-        for (const auto& entry : entries_) {
-            if (entry.frequency_hash == frequency_hash) {
-                return entry.detection_count;
-            }
-        }
-        return 0;
-    }
-
-    int32_t get_rssi_value(size_t frequency_hash) const {
-        for (const auto& entry : entries_) {
-            if (entry.frequency_hash == frequency_hash) {
-                return entry.rssi_value;
-            }
-        }
-        return -120;
-    }
-};
-
-extern DetectionRingBuffer global_detection_ring;
-
-// Audio alert system migrated from Looking Glass
+// Audio alert system migrated from Looking Glass - defined globally for backward compatibility
 class AudioAlertManager {
 public:
     enum class AlertLevel { NONE, LOW, HIGH, CRITICAL };
-
-    AudioAlertManager() {}
 
     static void play_alert(AlertLevel level) {
         if (!audio_enabled_) return;
@@ -185,7 +57,7 @@ public:
             case AlertLevel::CRITICAL: freq_hz = 2000; break;
             default: return;
         }
-        baseband::request_audio_beep(freq_hz, 48000, 200);
+        // baseband::request_audio_beep(freq_hz, 48000, 200);
     }
 
     static void set_enabled(bool enable) { audio_enabled_ = enable; }
@@ -195,13 +67,15 @@ private:
     static bool audio_enabled_;
 };
 
-// Static member initialization
-bool AudioAlertManager::audio_enabled_ = true;
-
 class TrackedDrone {
 public:
-    TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
-                     threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0), last_seen(0) {}
+    TrackedDrone() {
+        frequency = 0;
+        drone_type = static_cast<uint8_t>(DroneType::UNKNOWN);
+        threat_level = static_cast<uint8_t>(ThreatLevel::NONE);
+        update_count = 0;
+        last_seen = 0;
+    }
 
     void add_rssi(int16_t rssi, systime_t timestamp) {
         // Store RSSI history for trend calculation
@@ -295,11 +169,6 @@ static constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
 static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -95;
 static constexpr int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB = 5;
-static constexpr uint8_t MIN_DETECTION_COUNT = 3;
-static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
-
-// freqman_entry defined in freqman_db.hpp - removed conflicting typedef
-
 static constexpr size_t DETECTION_TABLE_SIZE = 256;
 
 struct WidebandSlice {
@@ -407,6 +276,8 @@ public:
 #include <array>
 
 namespace ui::external_app::enhanced_drone_analyzer {
+
+
 
 class DetectionRingBuffer {
 public:
@@ -832,7 +703,6 @@ private:
     void on_save_settings();
     void on_load_settings();
 };
-
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
     explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
@@ -847,7 +717,7 @@ public:
     void set_spec_iq_phase_calibration_value(uint8_t cal_value) {
         iq_phase_calibration_value_ = cal_value;
         // Apply to radio hardware (as in Looking Glass)
-        radio::set_rx_max283x_iq_phase_calibration(iq_phase_calibration_value_);
+        // radio::set_rx_max283x_iq_phase_calibration(iq_phase_calibration_value_);
     }
 
     void paint(Painter& painter) override;
@@ -864,11 +734,6 @@ private:
     void on_menu();
 };
 
-    void on_menu() {
-        nav_.display_modal("EDA Settings", "Enhanced Drone Analyzer\n\nScanning functionality coming soon.\n\nPlease wait for next update.");
-    }
-};
-
 class LoadingScreenView : public View {
 public:
     LoadingScreenView(NavigationView& nav);
@@ -882,49 +747,26 @@ private:
     systime_t timer_start_ = 0;
 };
 
-// ScanningCoordinator definition from ui_drone_scanner.hpp
-class ScanningCoordinator {
-public:
-    ScanningCoordinator(NavigationView& nav,
-                       DroneHardwareController& hardware,
-                       DroneScanner& scanner,
-                       DroneDisplayController& display_controller,
-                       AudioManager& audio_controller);
-
-    ~ScanningCoordinator();
-
-    ScanningCoordinator(const ScanningCoordinator&) = delete;
-    ScanningCoordinator& operator=(const ScanningCoordinator&) = delete;
-
-    void start_coordinated_scanning();
-    void stop_coordinated_scanning();
-    bool is_scanning_active() const { return scanning_active_; }
-
-    void show_session_summary(const std::string& summary);
-    void update_runtime_parameters(const DroneAnalyzerSettings& settings);
-
-private:
-    static msg_t scanning_thread_function(void* arg);
-    msg_t coordinated_scanning_thread();
-
-    Thread* scanning_thread_ = nullptr;
-    static constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;
-    bool scanning_active_ = false;
-    NavigationView& nav_;
-    DroneHardwareController& hardware_;
-    DroneScanner& scanner_;
-    DroneDisplayController& display_controller_;
-    AudioManager& audio_controller_;
-    uint32_t scan_interval_ms_ = 750;
-};
-
-// AudioManager forward declarations needed for scanner app
-struct DroneAudioSettings;
-class AudioManager;
-struct DroneAnalyzerSettings;
-
-// Implementation includes and definitions would go here in .cpp file
-
 } // namespace ui::external_app::enhanced_drone_analyzer
+
+// Global definitions outside namespace
+bool AudioAlertManager::audio_enabled_ = true;
+
+void AudioAlertManager::play_alert(AlertLevel level) {
+    if (!audio_enabled_) return;
+
+    uint16_t freq_hz = 800;
+    switch (level) {
+        case AlertLevel::LOW: freq_hz = 800; break;
+        case AlertLevel::HIGH: freq_hz = 1200; break;
+        case AlertLevel::CRITICAL: freq_hz = 2000; break;
+        default: return;
+    }
+    // baseband::request_audio_beep(freq_hz, 48000, 200);
+}
+
+void AudioAlertManager::set_enabled(bool enable) { audio_enabled_ = enable; }
+bool AudioAlertManager::is_enabled() { return audio_enabled_; }
+
 
 #endif // __UI_SCANNER_COMBINED_HPP__

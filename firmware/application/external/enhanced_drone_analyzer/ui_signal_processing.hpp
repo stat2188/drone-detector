@@ -8,9 +8,7 @@
 #include <array>
 #include <cstdint>
 
-// Enhanced spectrum analysis (migrated from Looking Glass)
-#define HYSTERESIS_MARGIN_DB 5
-#define DEFAULT_RSSI_THRESHOLD_DB -80
+
 
 // WidebandMedianFilter for noise reduction
 class WidebandMedianFilter {

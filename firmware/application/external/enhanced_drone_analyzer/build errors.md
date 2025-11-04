@@ -121,6 +121,31 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:299:26: note: in expansion of macro 'HYSTERESIS_MARGIN_DB'
   299 | static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
       |                          ^~~~~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In function 'void ui::external_app::enhanced_drone_analyzer::on_menu()':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:868:9: error: 'nav_' was not declared in this scope
+  868 |         nav_.display_modal("EDA Settings", "Enhanced Drone Analyzer\n\nScanning functionality coming soon.\n\nPlease wait for next update.");
+      |         ^~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: At global scope:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:890:24: error: 'DroneScanner' has not been declared
+  890 |                        DroneScanner& scanner,
+      |                        ^~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:891:24: error: 'DroneDisplayController' has not been declared
+  891 |                        DroneDisplayController& display_controller,
+      |                        ^~~~~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:915:5: error: 'DroneScanner' does not name a type
+  915 |     DroneScanner& scanner_;
+      |     ^~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:916:5: error: 'DroneDisplayController' does not name a type; did you mean 'DroneHardwareController'?
+  916 |     DroneDisplayController& display_controller_;
+      |     ^~~~~~~~~~~~~~~~~~~~~~
+      |     DroneHardwareController
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:928:1: error: expected declaration before '}' token
+  928 | } // namespace ui::external_app::enhanced_drone_analyzer
+      | ^
 cc1plus: warning: unrecognized command line option '-Wno-volatile'
 make[2]: *** [firmware/application/CMakeFiles/application.elf.dir/build.make:5761: firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj] Error 1
 make[1]: *** [CMakeFiles/Makefile2:1337: firmware/application/CMakeFiles/application.elf.dir/all] Error 2
