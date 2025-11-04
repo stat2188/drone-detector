@@ -2076,7 +2076,7 @@ void EnhancedDroneSpectrumAnalyzerView::update_modern_layout() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
-    if (!scanner_) return;
+    if (!scanner_ || !smart_header_ || !status_bar_) return;
 
     // Get current scanner state
     ThreatLevel max_threat = scanner_->get_max_detected_threat();
@@ -2087,52 +2087,73 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     Frequency current_freq = scanner_->get_current_scanning_frequency();
     uint32_t total_detections = scanner_->get_total_detections();
 
-    // Update Smart Threat Header - single consolidated update
-    smart_header_->update(max_threat, approaching, static_count, receding,
-                         current_freq, is_scanning);
-
-    // Update status bar based on scanning state
-    if (is_scanning) {
-        // PHASE 3: Estimate progress based on scan cycles (need improvement)
-        uint32_t cycles = scanner_->get_scan_cycles();
-        uint32_t progress = std::min(cycles * 10, 100u); // Rough estimate
-        status_bar_->update_scanning_progress(progress, cycles, total_detections);
-    } else if (approaching + static_count + receding > 0) {
-        // Alert mode when threats detected but not scanning
-        size_t total_drones = approaching + static_count + receding;
-        status_bar_->update_alert_status(max_threat, total_drones, "Threats detected!");
-    } else {
-        // Normal ready state
-        status_bar_->update_normal_status("EDA Ready", "No threats detected");
+    // Update Smart Threat Header - comprehensive threat overview
+    if (smart_header_) {
+        smart_header_->update(max_threat, approaching, static_count, receding,
+                             current_freq, is_scanning);
     }
 
-    // Update threat cards with current top 3 threats
-    for (size_t i = 0; i < std::min(3u, DisplayDroneEntry::MAX_DISPLAYED_DRONES); ++i) {
+    // Update status bar based on scanning state and alerts
+    if (status_bar_) {
+        if (is_scanning) {
+            // Show scanning progress with detection statistics
+            uint32_t cycles = scanner_->get_scan_cycles();
+            uint32_t progress = std::min(cycles * 5, 100u); // Better progress calculation
+            status_bar_->update_scanning_progress(progress, cycles, total_detections);
+        } else if (approaching + static_count + receding > 0) {
+            // Alert mode when threats detected but not scanning
+            size_t total_drones = approaching + static_count + receding;
+            const char* alert_msg = (max_threat >= ThreatLevel::CRITICAL) ? "CRITICAL THREATS!" :
+                                   (max_threat >= ThreatLevel::HIGH) ? "HIGH THREATS!" : "Threats detected";
+            status_bar_->update_alert_status(max_threat, total_drones, alert_msg);
+        } else {
+            // Normal ready state with helpful information
+            const char* primary_msg = (!display_controller_ || display_controller_->big_display().text().empty()) ?
+                                     "EDA Ready" : display_controller_->big_display().text().c_str();
+            char secondary_buffer[32];
+            if (total_detections > 0) {
+                snprintf(secondary_buffer, sizeof(secondary_buffer), "Total detections: %u", total_detections);
+            } else {
+                strcpy(secondary_buffer, "Awaiting commands");
+            }
+            status_bar_->update_normal_status(primary_msg, secondary_buffer);
+        }
+    }
+
+    // Update threat cards with current top 3 active threats
+    for (size_t i = 0; i < std::min(size_t(3), threat_cards_.size()); ++i) {
+        if (!threat_cards_[i]) continue;
+
         const auto& drone = scanner_->getTrackedDrone(i);
         if (drone.update_count > 0) {
-            // Create a display entry for the card
+            // Create detailed display entry for active threat
             DisplayDroneEntry entry;
             entry.frequency = drone.frequency;
-            entry.type = drone.type;
-            entry.threat = drone.threat_level;
+            entry.type = static_cast<DroneType>(drone.drone_type);
+            entry.threat = static_cast<ThreatLevel>(drone.threat_level);
             entry.rssi = drone.rssi;
-            entry.last_seen = chTimeNow();
-            entry.type_name = drone.model_name; // Assuming scanner provides this
-            entry.display_color = Color::white(); // Default, should be calculated
+            entry.last_seen = chTimeNow() - drone.last_seen; // Show age
+            entry.type_name = "UNKNOWN"; // TODO: Map from drone type enum
+            entry.trend = drone.get_trend();
+            entry.display_color = get_drone_type_color(entry.type);
 
             threat_cards_[i]->update_card(entry);
         } else {
-            // Clear inactive cards
-            if (threat_cards_[i]) {
-                threat_cards_[i]->clear_card();
-            }
+            // Clear inactive threat cards
+            threat_cards_[i]->clear_card();
         }
     }
-    // Clear remaining cards if less than 3 threats
-    for (size_t i = std::min(3u, DisplayDroneEntry::MAX_DISPLAYED_DRONES); i < 3; ++i) {
+
+    // Ensure all unused cards are cleared
+    for (size_t i = std::min(size_t(3), threat_cards_.size()); i < threat_cards_.size(); ++i) {
         if (threat_cards_[i]) {
             threat_cards_[i]->clear_card();
         }
+    }
+
+    // Update display controller if available
+    if (display_controller_) {
+        display_controller_->update_detection_display(*scanner_);
     }
 }
 

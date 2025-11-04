@@ -835,47 +835,34 @@ private:
 
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
-    explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
-        : nav_(nav), button_menu_(Rect{screen_width / 2 - 60, screen_height / 2 - 16, 120, 32}, "⚙️ SETTINGS") {
-        add_children({&button_menu_});
-        button_menu_.on_select = [this](Button&) { on_menu(); };
-    }
+    explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
 
     ~EnhancedDroneSpectrumAnalyzerView() override = default;
 
-    void focus() override { button_menu_.focus(); }
+    void focus() override;
+    std::string title() const override;
 
-    std::string title() const override { return "Enhanced Drone Analyzer"; }
-
-    void paint(Painter& painter) override {
-        View::paint(painter);
-        // Simple text display using existing Text component would be better,
-        // but for now just skip complex drawing to avoid namespace issues
+    // IQ Phase calibration functions migrated from Looking Glass
+    uint8_t get_spec_iq_phase_calibration_value() const { return iq_phase_calibration_value_; }
+    void set_spec_iq_phase_calibration_value(uint8_t cal_value) {
+        iq_phase_calibration_value_ = cal_value;
+        // Apply to radio hardware (as in Looking Glass)
+        radio::set_rx_max283x_iq_phase_calibration(iq_phase_calibration_value_);
     }
 
-    bool on_key(const KeyEvent key) override {
-        switch(key) {
-            case KeyEvent::Back: nav_.pop(); return true;
-            case KeyEvent::Select: on_menu(); return true;
-            default: break;
-        }
-        return View::on_key(key);
-    }
-
-    bool on_touch(const TouchEvent event) override {
-        return View::on_touch(event);
-    }
-
-    void on_show() override {
-        button_menu_.focus();
-    }
-
-    void on_hide() override {
-    }
+    void paint(Painter& painter) override;
+    bool on_key(const KeyEvent key) override;
+    bool on_touch(const TouchEvent event) override;
+    void on_show() override;
+    void on_hide() override;
 
 private:
     NavigationView& nav_;
     Button button_menu_;
+    uint8_t iq_phase_calibration_value_; // Migrated from Looking Glass
+
+    void on_menu();
+};
 
     void on_menu() {
         nav_.display_modal("EDA Settings", "Enhanced Drone Analyzer\n\nScanning functionality coming soon.\n\nPlease wait for next update.");

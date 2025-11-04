@@ -6,25 +6,53 @@
 #include <algorithm>
 #include <cstdint>
 
-// Include the header that defines the types
+// Include required types
 #include "ui_scanner_combined.hpp"
 
-#define SCANNER_DEFAULT_RSSI_THRESHOLD_DB -80
+// Fixed File reference since it's not nested
+using ScanFile = File;
+
+namespace ui::external_app::enhanced_drone_analyzer {
+
+enum class SpectrumMode {
+    NARROW,
+    MEDIUM,
+    WIDE,
+    ULTRA_WIDE
+};
+
+struct DroneAnalyzerSettings {
+    // Core scanning parameters
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    uint32_t scan_interval_ms = 1000;
+    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    bool enable_audio_alerts = true;
+    uint16_t audio_alert_frequency_hz = 800;
+    uint32_t audio_alert_duration_ms = 500;
+
+    // Hardware settings
+    uint32_t hardware_bandwidth_hz = 24000000;
+    bool enable_real_hardware = true;
+    bool demo_mode = false;
+};
+
+}  // namespace ui::external_app::enhanced_drone_analyzer
 
 namespace ScannerSettingsManager {
+
     // Template declarations
     template<typename T> T validate_range(T value, T min_val, T max_val);
 
     // Function declarations
-    void reset_to_defaults(DroneAnalyzerSettings& settings);
-    SpectrumMode parse_spectrum_mode(const std::string& value);
+    void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+    ui::external_app::enhanced_drone_analyzer::SpectrumMode parse_spectrum_mode(const std::string& value);
     std::string trim_line(const std::string& line);
-    bool parse_key_value(DroneAnalyzerSettings& settings, const std::string& line);
-    bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content);
-    bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings);
+    bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line);
+    bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content);
+    bool load_from_txt_impl(const std::string& filepath, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
 
     // Public interface
-    bool load_settings_from_txt(DroneAnalyzerSettings& settings) {
+    bool load_settings_from_txt(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
         const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
         bool settings_loaded = load_from_txt_impl(filepath, settings);
         if (!settings_loaded) {
@@ -32,12 +60,9 @@ namespace ScannerSettingsManager {
         }
         return settings_loaded;
     }
-}
 
-// Implementation
-namespace ScannerSettingsManager {
-
-    bool parse_settings_content(DroneAnalyzerSettings& settings, const std::string& content) {
+    // Implementation
+    bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content) {
         std::istringstream iss(content);
         std::string line;
         int parsed_count = 0;
@@ -49,7 +74,7 @@ namespace ScannerSettingsManager {
         return parsed_count > 3;
     }
 
-    bool parse_key_value(DroneAnalyzerSettings& settings, const std::string& line) {
+    bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line) {
         size_t equals_pos = line.find('=');
         if (equals_pos == std::string::npos) return false;
         std::string key = trim_line(line.substr(0, equals_pos));
@@ -90,10 +115,10 @@ namespace ScannerSettingsManager {
         return false;
     }
 
-    void reset_to_defaults(DroneAnalyzerSettings& settings) {
-        settings.spectrum_mode = SpectrumMode::MEDIUM;
+    void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
+        settings.spectrum_mode = ui::external_app::enhanced_drone_analyzer::SpectrumMode::MEDIUM;
         settings.scan_interval_ms = 750;
-        settings.rssi_threshold_db = SCANNER_DEFAULT_RSSI_THRESHOLD_DB;
+        settings.rssi_threshold_db = -80;
         settings.enable_audio_alerts = true;
         settings.audio_alert_frequency_hz = 800;
         settings.audio_alert_duration_ms = 200;
@@ -102,12 +127,12 @@ namespace ScannerSettingsManager {
         settings.demo_mode = false;
     }
 
-    SpectrumMode parse_spectrum_mode(const std::string& value) {
-        if (value == "NARROW") return SpectrumMode::NARROW;
-        if (value == "MEDIUM") return SpectrumMode::MEDIUM;
-        if (value == "WIDE") return SpectrumMode::WIDE;
-        if (value == "ULTRA_WIDE") return SpectrumMode::ULTRA_WIDE;
-        return SpectrumMode::MEDIUM;
+    ui::external_app::enhanced_drone_analyzer::SpectrumMode parse_spectrum_mode(const std::string& value) {
+        if (value == "NARROW") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::NARROW;
+        if (value == "MEDIUM") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::MEDIUM;
+        if (value == "WIDE") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::WIDE;
+        if (value == "ULTRA_WIDE") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::ULTRA_WIDE;
+        return ui::external_app::enhanced_drone_analyzer::SpectrumMode::MEDIUM;
     }
 
     std::string trim_line(const std::string& line) {
@@ -123,8 +148,8 @@ namespace ScannerSettingsManager {
         return value;
     }
 
-    bool load_from_txt_impl(const std::string& filepath, DroneAnalyzerSettings& settings) {
-        File txt_file;
+    bool load_from_txt_impl(const std::string& filepath, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
+        ScanFile txt_file;
         if (!txt_file.open(filepath, true)) {  // true = read_only parameter
             reset_to_defaults(settings);
             return false;
@@ -140,6 +165,7 @@ namespace ScannerSettingsManager {
         txt_file.close();
         return parse_settings_content(settings, file_content);
     }
+
 }  // namespace ScannerSettingsManager
 
 #endif // __SCANNER_SETTINGS_HPP__
