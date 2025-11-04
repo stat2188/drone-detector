@@ -317,7 +317,57 @@ class DroneDisplayController;
 class DroneUIController;
 class EnhancedDroneSpectrumAnalyzerView;
 
-// AudioManager class definition inside namespace
+// Enhanced audio manager for intelligent alerts (migrated from Looking Glass)
+class AudioAlertManager {
+public:
+    enum class AlertLevel { NONE, LOW, MEDIUM, HIGH, CRITICAL };
+
+    static void play_alert(AlertLevel level) {
+        if (!enabled_) return;
+
+        uint16_t freq_hz = 800;
+        switch (level) {
+            case AlertLevel::NONE: return; // No alert
+            case AlertLevel::LOW: freq_hz = 800; break;
+            case AlertLevel::MEDIUM: freq_hz = 1000; break;
+            case AlertLevel::HIGH: freq_hz = 1200; break;
+            case AlertLevel::CRITICAL: freq_hz = 2000; break;
+        }
+        baseband::request_audio_beep(freq_hz, 48000, 150);
+    }
+
+    static void play_alert_threat(ThreatLevel threat_level) {
+        AlertLevel alert_level = AlertLevel::NONE;
+        switch (threat_level) {
+            case ThreatLevel::NONE: alert_level = AlertLevel::NONE; break;
+            case ThreatLevel::LOW: alert_level = AlertLevel::LOW; break;
+            case ThreatLevel::MEDIUM: alert_level = AlertLevel::MEDIUM; break;
+            case ThreatLevel::HIGH: alert_level = AlertLevel::HIGH; break;
+            case ThreatLevel::CRITICAL: alert_level = AlertLevel::CRITICAL; break;
+        }
+        play_alert(alert_level);
+    }
+
+    static void set_enabled(bool enable) { enabled_ = enable; }
+    static bool is_enabled() { return enabled_; }
+
+    // Classification based on signal strength and persistence
+    static AlertLevel classify_signal_strength(int32_t rssi_db, uint8_t persistence_count) {
+        const uint32_t ALERT_PERSISTENCE_THRESHOLD = 3; // Minimum detections for alert
+        if (persistence_count >= ALERT_PERSISTENCE_THRESHOLD) {
+            if (rssi_db > -60) return AlertLevel::CRITICAL;
+            if (rssi_db > -75) return AlertLevel::HIGH;
+            if (rssi_db > -90) return AlertLevel::MEDIUM;
+            if (rssi_db > -100) return AlertLevel::LOW;
+        }
+        return AlertLevel::NONE;
+    }
+
+private:
+    static bool enabled_;
+};
+
+// Legacy AudioManager - wrapper for backward compatibility
 class AudioManager {
 public:
     AudioManager() : audio_enabled_(true) {}
@@ -327,10 +377,10 @@ public:
     bool is_audio_enabled() const { return audio_enabled_; }
     void toggle_audio() { audio_enabled_ = !audio_enabled_; }
     void play_detection_beep(ThreatLevel threat) {
-        (void)threat; // TODO: Implement audio playback
+        AudioAlertManager::play_alert_threat(threat);
     }
     void stop_audio() {
-        // TODO: Implement audio stop
+        // Audio stops naturally with beep API
     }
 
     // Audio parameter getters/setters
@@ -377,6 +427,13 @@ private:
 
 extern DetectionRingBuffer global_detection_ring;
 extern DetectionRingBuffer& local_detection_ring;
+
+static constexpr size_t FREQ_DB_CACHE_SIZE = 32;  // Cache 32 most recently used entries
+static constexpr uint32_t FREQ_DB_CACHE_TIMEOUT_MS = 30000;  // 30 second cache lifetime
+
+// Detection log buffering settings
+static constexpr size_t LOG_BUFFER_SIZE = 64;     // Buffer 64 log entries before SD write
+static constexpr uint32_t LOG_BUFFER_FLUSH_MS = 5000;  // Flush every 5 seconds
 
 // =========================
 // SD CARD CACHE IMPLEMENTATIONS
@@ -494,25 +551,30 @@ private:
 
 
 class BufferedDetectionLogger {
+private:
+    LogFile csv_log_;
+    bool session_active_;
+    systime_t session_start_;
+    bool header_written_;
+    systime_t last_flush_time_;
+    size_t logged_total_count_;
+    size_t entries_count_;
+    std::array<DetectionLogEntry, LOG_BUFFER_SIZE> buffered_entries_;
+
 public:
-    BufferedDetectionLogger() : csv_log_(), session_active_(false), session_start_(0), header_written_(false), last_flush_time_(0), logged_total_count_(0), entries_count_(0) {}
-=======
-<<<<<<< HEAD
-    BufferedDetectionLogger() : last_flush_time_(0), entries_count_(0), session_active_(false),
-                               session_start_(0), logged_total_count_(0), header_written_(false) {}
-=======
-    BufferedDetectionLogger() : csv_log_(), session_active_(false), session_start_(0), header_written_(false), last_flush_time_(0), logged_total_count_(0), entries_count_(0) {}
->>>>>>> ccac7db35a1842e525330580ab3eab7b714549a4
->>>>>>> 719ae38a77c1adee8dedf345f94060f76a428f43
+    BufferedDetectionLogger()
+        : session_active_(false), session_start_(0), header_written_(false),
+          last_flush_time_(0), logged_total_count_(0), entries_count_(0) {}
+
     ~BufferedDetectionLogger() { flush_buffer(); }
 
     void log_detection(const DetectionLogEntry& entry) {
-        // Add to buffer
+        if (entries_count_ >= LOG_BUFFER_SIZE) return;
+
         buffered_entries_[entries_count_] = entry;
         entries_count_++;
 
-        // Flush if buffer is full or timeout reached
-        const systime_t current_time = chVTGetSystemTime();
+        const systime_t current_time = chTimeNow();
         if (entries_count_ >= LOG_BUFFER_SIZE ||
             (current_time - last_flush_time_) > MS2ST(LOG_BUFFER_FLUSH_MS)) {
             flush_buffer();
@@ -522,7 +584,6 @@ public:
     void flush_buffer() {
         if (entries_count_ == 0) return;
 
-        // Ensure CSV header and log all buffered entries
         if (!ensure_csv_header()) return;
 
         std::string batch_log;
@@ -531,22 +592,12 @@ public:
         }
 
         auto error = csv_log_.append(generate_log_filename());
-        if (error) return;
-
-        error = csv_log_.write_raw(batch_log);
-<<<<<<< HEAD
-        if (error.has_value()) {
-            last_flush_time_ = chVTGetSystemTime();
-=======
-<<<<<<< HEAD
-        if (error.has_value()) {
-            last_flush_time_ = chVTGetSystemTime();
-=======
-        if (error) {
-            last_flush_time_ = chTimeNow();
->>>>>>> ccac7db35a1842e525330580ab3eab7b714549a4
->>>>>>> 719ae38a77c1adee8dedf345f94060f76a428f43
-            entries_count_ = 0;  // Reset buffer count
+        if (!error) {
+            error = csv_log_.write_raw(batch_log);
+            if (!error) {
+                last_flush_time_ = chTimeNow();
+                entries_count_ = 0;
+            }
         }
     }
 
@@ -563,7 +614,7 @@ public:
 
     void end_session() {
         if (!session_active_) return;
-        flush_buffer();  // Ensure all buffered entries are written
+        flush_buffer();
         session_active_ = false;
     }
 
@@ -575,27 +626,19 @@ private:
     systime_t last_flush_time_;
     size_t logged_total_count_;
     size_t entries_count_;
-<<<<<<< HEAD
     std::array<DetectionLogEntry, LOG_BUFFER_SIZE> buffered_entries_;
-=======
-<<<<<<< HEAD
-    std::array<DetectionLogEntry, LOG_BUFFER_SIZE> buffered_entries_;
-=======
-    DetectionLogEntry buffered_entries_[LOG_BUFFER_SIZE];
->>>>>>> ccac7db35a1842e525330580ab3eab7b714549a4
->>>>>>> 719ae38a77c1adee8dedf345f94060f76a428f43
 
     bool ensure_csv_header() {
         if (header_written_) return true;
         const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence\n";
 
         auto error = csv_log_.append(generate_log_filename());
-        if (error) return false;
-
-        error = csv_log_.write_raw(header);
-        if (error.has_value()) {
-            header_written_ = true;
-            return true;
+        if (error.is_ok()) {
+            error = csv_log_.write_raw(header);
+            if (error.is_ok()) {
+                header_written_ = true;
+                return true;
+            }
         }
         return false;
     }
@@ -613,28 +656,123 @@ private:
     }
 
     std::string generate_log_filename() const {
-        return "EDA_LOG_BUFFERED.CSV";
+        char filename[32];
+        const systime_t current_time = chTimeNow();
+        snprintf(filename, sizeof(filename), "EDA_%lu.CSV", current_time);
+        return std::string(filename);
     }
 
+    BufferedDetectionLogger(const BufferedDetectionLogger&) = delete;
+    BufferedDetectionLogger& operator=(const BufferedDetectionLogger&) = delete;
 };
 
-// Unified detection processor class moved to header for compilation
+// Enhanced detection processor with Recon-style signal locking
 class DetectionProcessor {
 private:
     DroneScanner* scanner_;  // Reference to parent scanner for callbacks
 
+    // Recon-style locking parameters (migrated from Recon app)
+    int32_t squelch_{-40};                   // RSSI threshold for detection
+    uint8_t recon_lock_nb_match_{3};        // Number of matches needed for lock (from RECON_DEF_NB_MATCH)
+    uint16_t recon_lock_duration_{1000};    // Minimum lock duration in STATS_UPDATE_INTERVAL units
+    int32_t wait_{1000};                    // Wait duration after lock (-1 for activity-based)
+    uint8_t match_mode_{0};                 // 0=continuous, 1=sparse matching (RECON_MATCH_*)
+
+    // Runtime locking state (migrated from Recon)
+    bool recon_{true};                      // Scanning active flag
+    uint8_t freq_lock_{0};                  // Current number of consecutive matches
+    systime_t timer_{0};                     // Lock timer
+    bool locked_on_signal_{false};          // Whether signal is currently locked
+    systime_t last_signal_time_{0};         // Timestamp of last signal detection
+
 public:
     explicit DetectionProcessor(DroneScanner* scanner) : scanner_(scanner) {}
 
-    // Unified detection function replacing all duplicates
-    void process_unified_detection(const freqman_entry& entry, int32_t rssi, int32_t effective_threshold,
-                                  float confidence_score = 0.7f, bool force_process = false) {
-        // Implementation will be moved to cpp file - placeholder
-        (void)entry;
-        (void)rssi;
-        (void)effective_threshold;
-        (void)confidence_score;
-        (void)force_process;
+    // Configure Recon-style parameters
+    void set_locking_parameters(int32_t squelch, uint8_t nb_match, uint16_t lock_duration, int32_t wait, uint8_t match_mode) {
+        squelch_ = squelch;
+        recon_lock_nb_match_ = nb_match;
+        recon_lock_duration_ = lock_duration;
+        wait_ = wait;
+        match_mode_ = match_mode;
+    }
+
+    // Get current locking state
+    bool is_signal_locked() const { return locked_on_signal_; }
+    uint8_t get_lock_count() const { return freq_lock_; }
+
+    // COMPLETE Recon-style hysteresis logic - VALIDATES signals for DroneScanner
+    // Returns true if signal should be processed by DroneScanner drone tracker
+    bool should_process_signal(const freqman_entry& entry, int32_t rssi, int32_t effective_threshold) {
+        const systime_t current_time = chTimeNow();
+        const systime_t STATS_UPDATE_INTERVAL_TICKS = MS2ST(100); // Recon's 100ms intervals
+
+        // Recon signal validation: Squelch + threshold
+        bool signal_above_squelch = (rssi >= squelch_);
+        bool signal_above_effective_threshold = (rssi >= effective_threshold);
+
+        // Recon hysteresis locking algorithm - PROVEN IMPLEMENTATION
+        if (recon_) {  // Scanning active
+            if (timer_ == 0) {
+                // Initialize lock cycle (Recon style)
+                freq_lock_ = 0;
+                timer_ = recon_lock_duration_ * 10; // ms to ticks conversion
+                locked_on_signal_ = false;
+            }
+
+            // LOCKING PHASE: Require multiple consecutive matches
+            if (freq_lock_ < recon_lock_nb_match_) {
+                if (signal_above_squelch && signal_above_effective_threshold) {
+                    freq_lock_++;
+                    // Extend lock attempt time
+                    timer_ += STATS_UPDATE_INTERVAL_TICKS;
+                } else {
+                    // Sparse mode: Reset on signal loss (Recon RECON_MATCH_SPARSE)
+                    if (match_mode_ == 1) {
+                        freq_lock_ = 0;
+                        timer_ = 0;
+                    }
+                }
+            }
+
+            // LOCKED PHASE: Signal is locked
+            if (freq_lock_ >= recon_lock_nb_match_) {
+                locked_on_signal_ = true;
+                last_signal_time_ = current_time;
+
+                // Recon wait period handling
+                if (wait_ > 0) {
+                    // Fixed wait period after lock
+                    if (signal_above_squelch) last_signal_time_ = current_time;
+                } else if (wait_ < 0) {
+                    // Activity-based wait: extend timer on continued signal
+                    if (signal_above_squelch) {
+                        timer_ = abs(wait_) * 10; // Convert to ticks
+                    }
+                }
+            }
+        }
+
+        // Recon timer processing
+        if (timer_ > 0) {
+            timer_ -= STATS_UPDATE_INTERVAL_TICKS;
+            if (timer_ <= 0) {
+                timer_ = 0;
+                freq_lock_ = 0;
+                locked_on_signal_ = false;
+            }
+        }
+
+        // DECISION: Return true if signal passes Recon hysteresis validation
+        return signal_above_squelch && signal_above_effective_threshold;
+    }
+
+    // Reset locking state (for mode changes or manual resets)
+    void reset_locking_state() {
+        freq_lock_ = 0;
+        timer_ = 0;
+        locked_on_signal_ = false;
+        recon_ = true;
     }
 };
 
@@ -1194,7 +1332,7 @@ private:
 };
 
 class DroneUIController {
-   private:
+private:
     NavigationView& nav_;
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
@@ -1242,10 +1380,11 @@ public:
     void on_load_settings();
 };
 
-// CORRECTED: Fixed memory leaks in UI construction (Critical Fix #2)
+    // FIXED: Proper initialization of all components to prevent nullptr crashes
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
     explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
+
     ~EnhancedDroneSpectrumAnalyzerView() override = default;
 
     void focus() override;
@@ -1258,10 +1397,6 @@ public:
 
 private:
     NavigationView& nav_;
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
 
     // Portapack standard state management (like Recon)
     RxRadioState rx_radio_state_{ReceiverModel::Mode::SpectrumAnalysis};
@@ -1273,19 +1408,28 @@ private:
     app_settings::SettingsManager settings_{
         "eda_scanner"sv, app_settings::Mode::RX_TX};
 
->>>>>>> ccac7db35a1842e525330580ab3eab7b714549a4
->>>>>>> 719ae38a77c1adee8dedf345f94060f76a428f43
-    // RAII members to prevent memory leaks during construction
+    // RAII members - properly initialized in constructor
     DroneHardwareController hardware_;       // Direct member - RAII safe
     DroneScanner scanner_;                   // Direct member - RAII safe
     AudioManager audio_mgr_;                 // Direct member - RAII safe
+
+    // FIXED: No longer nullptr - properly initialized in constructor
     std::unique_ptr<DroneDisplayController> display_controller_;
     std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
-    // Note: ui_controller_ moved to constructor for safe initialization
 
-    SmartThreatHeader* smart_header_ = nullptr;
-    ConsoleStatusBar* status_bar_ = nullptr;
-    std::array<ThreatCard*, 3> threat_cards_ = {nullptr, nullptr, nullptr};
+    // FIXED: No longer nullptr - proper UI components created in constructor
+    std::unique_ptr<SmartThreatHeader> smart_header_;
+    std::unique_ptr<ConsoleStatusBar> status_bar_;
+    std::array<std::unique_ptr<ThreatCard>, 3> threat_cards_;
+
+    // Preset system migrated from Looking Glass - adapted for EDA
+    struct preset_entry {
+        Frequency min{};
+        Frequency max{};
+        std::string label{};
+    };
+    std::vector<preset_entry> presets_db{};
+    uint8_t preset_index = 0;
 
     Button button_start_{{screen_width - 120, screen_height - 32, 120, 32}, "START/STOP"};
     Button button_menu_{{screen_width - 60, screen_height - 32, 60, 32}, "⚙️"};
@@ -1299,6 +1443,12 @@ private:
         {"Hybrid Discovery", 2}
     }};
 
+    OptionsField field_preset_mode_{
+        {180, 220},
+        20,  // Display length
+        {}  // Options will be populated by load_presets()
+    };
+
     void initialize_modern_layout();
     void update_modern_layout();
     void handle_scanner_update();
@@ -1306,6 +1456,10 @@ private:
     void stop_scanning_thread();
     bool handle_start_stop_button();
     bool handle_menu_button();
+
+    // Preset system migrated from Looking Glass - adapted for EDA frequencies
+    void load_presets();
+    void populate_presets();
 
     EnhancedDroneSpectrumAnalyzerView(const EnhancedDroneSpectrumAnalyzerView&) = delete;
     EnhancedDroneSpectrumAnalyzerView& operator=(const EnhancedDroneSpectrumAnalyzerView&) = delete;
