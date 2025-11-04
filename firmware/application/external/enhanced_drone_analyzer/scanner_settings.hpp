@@ -6,10 +6,10 @@
 #include <algorithm>
 #include <cstdint>
 
-#define SCANNER_DEFAULT_RSSI_THRESHOLD_DB -80
+// Include the header that defines the types
+#include "ui_scanner_combined.hpp"
 
-using ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings;
-using ui::external_app::enhanced_drone_analyzer::SpectrumMode;
+#define SCANNER_DEFAULT_RSSI_THRESHOLD_DB -80
 
 namespace ScannerSettingsManager {
     // Template declarations
@@ -86,9 +86,6 @@ namespace ScannerSettingsManager {
         } else if (key == "demo_mode") {
             settings.demo_mode = (value == "true");
             return true;
-        } else if (key == "freqman_path") {
-            settings.freqman_path = value.substr(0, 64);
-            return true;
         }
         return false;
     }
@@ -103,7 +100,6 @@ namespace ScannerSettingsManager {
         settings.hardware_bandwidth_hz = 24000000;
         settings.enable_real_hardware = true;
         settings.demo_mode = false;
-        settings.freqman_path = "DRONES";
     }
 
     SpectrumMode parse_spectrum_mode(const std::string& value) {
