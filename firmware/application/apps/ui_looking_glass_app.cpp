@@ -152,15 +152,15 @@ void GlassView::add_spectrum_pixel(uint8_t power) {
     // Enhanced spectrum analysis (migrated from EDA)
     // Track signal persistence for intelligent detection
     size_t freq_hash = hash_frequency(get_freq_from_bin_pos(pixel_index));
-    uint8_t persistence_count = signal_history_.get_detection_count(freq_hash);
 
     if (power > min_color_power) {
         signal_history_.update_detection(freq_hash, power);
 
         // Intelligent audio alerts based on signal strength and persistence
+        uint8_t persistence_count = signal_history_.get_detection_count(freq_hash);
         AudioAlertManager::AlertLevel alert_level = classify_signal_strength(
             map(power, 0, 255, -100, 20), // Convert to dB
-            signal_history_.get_detection_count(freq_hash)
+            persistence_count
         );
 
         if (alert_level != AudioAlertManager::AlertLevel::NONE && beep_enabled) {
@@ -409,7 +409,9 @@ void GlassView::update_range_field() {
 
 GlassView::GlassView(
     NavigationView& nav)
-    : nav_(nav) {
+    : nav_(nav),
+      spectrum_filter_(),
+      signal_history_() {
     baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
     spectrum_row.resize(screen_width);
     spectrum_data.resize(screen_width);
