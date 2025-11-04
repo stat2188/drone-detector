@@ -1,4 +1,3 @@
-[100%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:463:6: error: expected ';' after class definition
   463 |     }
@@ -268,161 +267,19 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1484:1: error: expected declaration before '}' token
  1484 | } // namespace ui::external_app::enhanced_drone_analyzer
       | ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: In function 'bool ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&, const string&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:85:17: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-   85 |                 settings.spectrum_mode = parse_spectrum_mode(value);
-      |                 ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:89:17: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-   89 |                 settings.scan_interval_ms = validate_range<uint32_t>(
-      |                 ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:95:17: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-   95 |                 settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
-      |                 ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:98:17: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-   98 |                 settings.enable_audio_alerts = (value == "true");
-      |                 ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:102:17: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  102 |                 settings.audio_alert_frequency_hz = validate_range<uint16_t>(
-      |                 ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:109:17: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  109 |                 settings.audio_alert_duration_ms = validate_range<uint32_t>(
-      |                 ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:116:17: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  116 |                 settings.hardware_bandwidth_hz = validate_range<uint32_t>(
-      |                 ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:122:17: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  122 |                 settings.enable_real_hardware = (value == "true");
-      |                 ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:125:17: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  125 |                 settings.demo_mode = (value == "true");
-      |                 ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:128:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  128 |         settings.freqman_path = value.substr(0, 64);
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: In function 'void ui::external_app::enhanced_drone_analyzer::ScannerSettingsManager::reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:135:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  135 |         settings.spectrum_mode = SpectrumMode::MEDIUM;
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:136:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  136 |         settings.scan_interval_ms = 750;
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:137:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  137 |         settings.rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:138:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  138 |         settings.enable_audio_alerts = true;
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:139:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  139 |         settings.audio_alert_frequency_hz = 800;
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:140:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  140 |         settings.audio_alert_duration_ms = 200;
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:141:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  141 |         settings.hardware_bandwidth_hz = 24000000;
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:142:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  142 |         settings.enable_real_hardware = true;
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:143:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  143 |         settings.demo_mode = false;
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:144:9: error: invalid use of incomplete type 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  144 |         settings.freqman_path = "DRONES";
-      |         ^~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:272:8: note: forward declaration of 'struct ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings'
-  272 | struct DroneAnalyzerSettings;
-      |        ^~~~~~~~~~~~~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp: In function 'void ui::external_app::enhanced_drone_analyzer::initialize_app(ui::NavigationView&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:191:70: error: aggregate 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings loaded_settings' has incomplete type and cannot be defined
-  191 |     ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings loaded_settings;
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:51:70: error: aggregate 'ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings loaded_settings' has incomplete type and cannot be defined
+   51 |     ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings loaded_settings;
       |                                                                      ^~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:197:85: error: 'LoadingScreenView' is not a member of 'ui::external_app::enhanced_drone_analyzer'; did you mean 'LoadingScreenView'?
-  197 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:57:85: error: 'LoadingScreenView' is not a member of 'ui::external_app::enhanced_drone_analyzer'; did you mean 'LoadingScreenView'?
+   57 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
       |                                                                                     ^~~~~~~~~~~~~~~~~
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:1128:7: note: 'LoadingScreenView' declared here
  1128 | class LoadingScreenView : public View {
       |       ^~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:197:107: error: no matching function for call to 'make_unique<<expression error> >(ui::NavigationView&)'
-  197 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:57:107: error: no matching function for call to 'make_unique<<expression error> >(ui::NavigationView&)'
+   57 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
       |                                                                                                           ^
 In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/memory:80,
                  from /havoc/firmware/application/./theme.hpp:26,
@@ -432,8 +289,8 @@ In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/memory:8
   848 |     make_unique(_Args&&... __args)
       |     ^~~~~~~~~~~
 /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h:848:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:197:107: error: template argument 1 is invalid
-  197 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:57:107: error: template argument 1 is invalid
+   57 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
       |                                                                                                           ^
 In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/memory:80,
                  from /havoc/firmware/application/./theme.hpp:26,
@@ -443,8 +300,8 @@ In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/memory:8
   854 |     make_unique(size_t __num)
       |     ^~~~~~~~~~~
 /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h:854:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:197:107: error: template argument 1 is invalid
-  197 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:57:107: error: template argument 1 is invalid
+   57 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
       |                                                                                                           ^
 In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/memory:80,
                  from /havoc/firmware/application/./theme.hpp:26,
@@ -454,19 +311,19 @@ In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/memory:8
   860 |     make_unique(_Args&&...) = delete;
       |     ^~~~~~~~~~~
 /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h:860:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:197:107: error: template argument 1 is invalid
-  197 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:57:107: error: template argument 1 is invalid
+   57 |     auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
       |                                                                                                           ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:205:32: error: no matching function for call to 'ui::NavigationView::replace(std::unique_ptr<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView, std::default_delete<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView> >::pointer)'
-  205 |     nav.replace(main_view.get());
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:65:32: error: no matching function for call to 'ui::NavigationView::replace(std::unique_ptr<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView, std::default_delete<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView> >::pointer)'
+   65 |     nav.replace(main_view.get());
       |                                ^
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:19:
 /havoc/firmware/application/./ui_navigation.hpp:115:8: note: candidate: 'template<class T, class ... Args> T* ui::NavigationView::replace(Args&& ...)'
   115 |     T* replace(Args&&... args) {
       |        ^~~~~~~
 /havoc/firmware/application/./ui_navigation.hpp:115:8: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:205:32: note:   couldn't deduce template parameter 'T'
-  205 |     nav.replace(main_view.get());
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:65:32: note:   couldn't deduce template parameter 'T'
+   65 |     nav.replace(main_view.get());
       |                                ^
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:19:
 /havoc/firmware/application/./ui_navigation.hpp:122:10: note: candidate: 'void ui::NavigationView::replace(ui::View*)'
@@ -480,7 +337,7 @@ In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/memory:8
                  from /havoc/firmware/application/./ui_navigation.hpp:33,
                  from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:19:
 /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h: In instantiation of 'typename std::_MakeUniq<_Tp>::__single_object std::make_unique(_Args&& ...) [with _Tp = ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView; _Args = {ui::NavigationView&}; typename std::_MakeUniq<_Tp>::__single_object = std::unique_ptr<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView, std::default_delete<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView> >]':
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:204:120:   required from here
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:64:120:   required from here
 /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h:849:30: error: invalid use of incomplete type 'class ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView'
   849 |     { return unique_ptr<_Tp>(new _Tp(std::forward<_Args>(__args)...)); }
       |                              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -494,7 +351,7 @@ In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/memory:8
                  from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:19:
 /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h: In instantiation of 'void std::default_delete<_Tp>::operator()(_Tp*) const [with _Tp = ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView]':
 /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h:284:17:   required from 'std::unique_ptr<_Tp, _Dp>::~unique_ptr() [with _Tp = ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView; _Dp = std::default_delete<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>]'
-/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:204:120:   required from here
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:64:120:   required from here
 /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/unique_ptr.h:79:16: error: invalid application of 'sizeof' to incomplete type 'ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView'
    79 |  static_assert(sizeof(_Tp)>0,
       |                ^~~~~~~~~~~

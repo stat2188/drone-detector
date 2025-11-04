@@ -52,6 +52,104 @@ namespace ui {
 // one spectrum line number of bins
 #define SPEC_NB_BINS 256
 
+// Enhanced spectrum analysis (migrated from EDA)
+#define HYSTERESIS_MARGIN_DB 5
+#define DEFAULT_RSSI_THRESHOLD_DB -80
+
+// WidebandMedianFilter for noise reduction
+class WidebandMedianFilter {
+private:
+    static constexpr size_t WINDOW_SIZE = 11;
+    std::array<int16_t, WINDOW_SIZE> window_{};
+    size_t head_ = 0;
+    bool full_ = false;
+
+public:
+    void add_sample(int16_t rssi) {
+        window_[head_] = rssi;
+        head_ = (head_ + 1) % WINDOW_SIZE;
+        if (head_ == 0) full_ = true;
+    }
+
+    int16_t get_median_threshold() const {
+        if (!full_) return DEFAULT_RSSI_THRESHOLD_DB;
+        auto temp = window_;
+        for (size_t i = 0; i < WINDOW_SIZE / 2 + 1; ++i) {
+            for (size_t j = 0; j < WINDOW_SIZE - 1; ++j) {
+                if (temp[j] > temp[j + 1]) std::swap(temp[j], temp[j + 1]);
+            }
+        }
+        return temp[WINDOW_SIZE / 2] - HYSTERESIS_MARGIN_DB;
+    }
+
+    void reset() { full_ = false; head_ = 0; window_ = {}; }
+};
+
+// Detection persistence tracking
+struct DetectionEntry {
+    size_t frequency_hash;
+    uint8_t detection_count;
+    int32_t rssi_value;
+    systime_t last_update;
+};
+
+class DetectionRingBuffer {
+public:
+    static constexpr size_t MAX_ENTRIES = 32;
+
+    void update_detection(size_t frequency_hash, int32_t rssi_value) {
+        for (auto& entry : entries_) {
+            if (entry.frequency_hash == frequency_hash) {
+                entry.rssi_value = rssi_value;
+                entry.last_update = chTimeNow();
+                if (entry.detection_count < 255) entry.detection_count++;
+                return;
+            }
+        }
+        // Add new entry
+        entries_[head_] = {frequency_hash, 1, rssi_value, chTimeNow()};
+        head_ = (head_ + 1) % MAX_ENTRIES;
+    }
+
+    uint8_t get_detection_count(size_t frequency_hash) const {
+        for (const auto& entry : entries_) {
+            if (entry.frequency_hash == frequency_hash) {
+                return entry.detection_count;
+            }
+        }
+        return 0;
+    }
+
+private:
+    std::array<DetectionEntry, MAX_ENTRIES> entries_{};
+    size_t head_ = 0;
+};
+
+// Enhanced audio manager for intelligent alerts
+class AudioAlertManager {
+public:
+    enum class AlertLevel { NONE, LOW, HIGH, CRITICAL };
+
+    static void play_alert(AlertLevel level) {
+        if (!enabled_) return;
+
+        uint16_t freq_hz = 800;
+        switch (level) {
+            case AlertLevel::LOW: freq_hz = 800; break;
+            case AlertLevel::HIGH: freq_hz = 1200; break;
+            case AlertLevel::CRITICAL: freq_hz = 2000; break;
+            default: return;
+        }
+        baseband::request_audio_beep(freq_hz, 48000, 150);
+    }
+
+    static void set_enabled(bool enable) { enabled_ = enable; }
+    static bool is_enabled() { return enabled_; }
+
+private:
+    static bool enabled_;
+};
+
 class GlassView : public View {
    public:
     GlassView(NavigationView& nav);
@@ -85,6 +183,9 @@ class GlassView : public View {
     uint8_t iq_phase_calibration_value{15};  // initial default RX IQ phase calibration value , used for both max2837 & max2839
     int32_t beep_squelch = 20;               // range from -100 to +20, >=20 disabled
     bool beep_enabled = false;               // activate on bip button click
+
+    // Public constants for enhanced spectrum analysis
+    static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3; // Minimum detections for alert
     app_settings::SettingsManager settings_{
         "rx_glass"sv,
         app_settings::Mode::RX,
@@ -168,6 +269,10 @@ class GlassView : public View {
     uint8_t bin_length = screen_width;
     uint8_t offset = 0;
     uint8_t ignore_dc = 0;
+
+    // Enhanced spectrum analysis members (migrated from EDA)
+    WidebandMedianFilter spectrum_filter_;
+    DetectionRingBuffer signal_history_;
 
     Labels labels{
         {{0, UI_POS_Y(0)}, "MIN:     MAX:     LNA   VGA  ", Theme::getInstance()->fg_light->foreground},
