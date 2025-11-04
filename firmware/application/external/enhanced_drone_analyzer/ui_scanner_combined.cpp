@@ -290,7 +290,7 @@ FreqDBCache global_freq_cache;
 BufferedDetectionLogger global_buffered_logger;
 
 // CRITICAL FIX: Глобальный мьютекс для синхронизации доступа к global_detection_ring
-Mutex global_detection_ring_mutex;
+chMtxObject global_detection_ring_mutex;
 
 // =========================
 // CACHE LOGIC TESTING EXECUTION
@@ -366,7 +366,7 @@ void demonstrate_cache_scenarios() {
     freqman_entry test_entry{};
     test_entry.frequency_a = 2400000000ULL; // 2.4GHz drone frequency
     test_entry.frequency_b = 2401000000ULL; // Bandwidth
-    test_entry.type = freqman_type::HAM;
+    test_entry.type = freqman_type::HamRadio;
     snprintf(test_entry.description, 16, "DRONE_TEST");
 
     // Cache a frequently accessed frequency entry
@@ -1655,16 +1655,20 @@ Color get_drone_type_color(uint8_t type) {
 
 // UI View implementations - restored from backup without duplicates
 
-// EnhancedDroneSpectrumAnalyzerView complete implementation
+/ CORRECTED: Fixed memory leaks using RAII members instead of chained unique_ptr initialization
 EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
-    : nav_(nav),
-      hardware_(std::make_unique<DroneHardwareController>()),
-      scanner_(std::make_unique<DroneScanner>()),
-      audio_(std::make_unique<AudioManager>()),
-      ui_controller_(std::make_unique<DroneUIController>(nav, *hardware_, *scanner_, *audio_)),
-      display_controller_(std::make_unique<DroneDisplayController>(nav)),
-      scanning_coordinator_(std::make_unique<ScanningCoordinator>(nav, *hardware_, *scanner_, *display_controller_, *audio_))
+    : View(),
+      nav_(nav),
+      hardware_(),        // RAII construction - safe during exceptions
+      scanner_(),         // RAII construction - safe during exceptions
+      audio_mgr_(),       // RAII construction - safe during exceptions
+      display_controller_(nullptr),
+      scanning_coordinator_(nullptr)
 {
+    // Safe initialization after RAII members are constructed
+    display_controller_ = std::make_unique<DroneDisplayController>(nav);
+    scanning_coordinator_ = std::make_unique<ScanningCoordinator>(
+        nav, hardware_, scanner_, *display_controller_, audio_mgr_);
     // Load settings from SD card TXT file for scanner initialization
     DroneAnalyzerSettings loaded_settings;
     if (!load_settings_from_sd_card(loaded_settings)) {

@@ -45,37 +45,10 @@ class EnhancedDroneSpectrumAnalyzerView;
 
 
 
-// Move initialize_app to main namespace for external access
+// CORRECTED: Remove blocking operations from entry point (Critical Fix #1)
 void initialize_app(ui::NavigationView& nav) {
-    // PHASE 7: Load settings from TXT file if available
-    ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings loaded_settings;
-
-    // Attempt to load settings from SD card
-    bool settings_loaded = ScannerSettingsManager::load_settings_from_txt(loaded_settings);
-
-    // Show loading screen with status
-    auto loading_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::LoadingScreenView>(nav);
-    nav.push(loading_view.get());
-
-    // Small delay to show loading (ChibiOS compliant)
-    chThdSleepMilliseconds(500);
-
-    // Push main scanner view with loaded settings
-    auto main_view = std::make_unique<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>(nav);
-    nav.replace(main_view.get());
-
-    // PHASE 7: Show communication status
-    if (settings_loaded) {
-        nav.display_modal("Scanner Ready",
-                         "Configuration loaded from SD card\n"
-                         "Settings applied successfully\n\n"
-                         "Scanner ready for drone detection");
-    } else {
-        nav.display_modal("Scanner Ready",
-                         "Default configuration used\n"
-                         "Use Settings app to save preferences\n\n"
-                         "Scanner ready for drone detection");
-    }
+    // Only push main view - all logic moved to UI constructor
+    nav.push<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>();
 }
 }  // namespace ui::external_app::enhanced_drone_analyzer
 
