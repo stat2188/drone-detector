@@ -18,8 +18,22 @@
 #include "../../gradient.hpp"
 
 #include <memory>
+#include <array>
+
+#include <algorithm>
+
+// Required includes for chibios/ChibiOS functions
+#include <ch.h>
+#include <hal.h>
+
+// Include for audio functions
+#include "../../application/baseband_api.hpp"
 
 #include "ui_drone_audio.hpp"
+
+// Missing preprocessor constants migrated from Looking Glass
+#define DEFAULT_RSSI_THRESHOLD_DB -80
+#define HYSTERESIS_MARGIN_DB 5
 
 class DroneHardwareController;
 class LogFile;
@@ -159,7 +173,7 @@ class AudioAlertManager {
 public:
     enum class AlertLevel { NONE, LOW, HIGH, CRITICAL };
 
-    AudioAlertManager() : audio_enabled_(true) {}
+    AudioAlertManager() {}
 
     static void play_alert(AlertLevel level) {
         if (!audio_enabled_) return;
@@ -180,6 +194,9 @@ public:
 private:
     static bool audio_enabled_;
 };
+
+// Static member initialization
+bool AudioAlertManager::audio_enabled_ = true;
 
 class TrackedDrone {
 public:
@@ -388,6 +405,9 @@ public:
 #include <ch.h>
 #include <vector>
 #include <array>
+
+// Bring std namespace into scope for this namespace (required for embedded compatibility)
+using namespace std;
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
