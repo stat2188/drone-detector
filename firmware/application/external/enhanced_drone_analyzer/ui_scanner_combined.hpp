@@ -69,13 +69,9 @@ private:
 
 class TrackedDrone {
 public:
-    TrackedDrone() {
-        frequency = 0;
-        drone_type = static_cast<uint8_t>(DroneType::UNKNOWN);
-        threat_level = static_cast<uint8_t>(ThreatLevel::NONE);
-        update_count = 0;
-        last_seen = 0;
-    }
+    TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
+                     threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
+                     last_seen(0) {}
 
     void add_rssi(int16_t rssi, systime_t timestamp) {
         // Store RSSI history for trend calculation
@@ -723,7 +719,15 @@ public:
     void paint(Painter& painter) override;
     bool on_key(const KeyEvent key) override;
     bool on_touch(const TouchEvent event) override;
-    void on_show() override;
+void on_show() override {
+    // Initialize IQ phase calibration UI (migrated from Looking Glass)
+    field_rx_iq_phase_cal.set_range(0, 63);  // max2839 has 6 bits [0..63]
+    field_rx_iq_phase_cal.set_value(get_spec_iq_phase_calibration_value());
+    field_rx_iq_phase_cal.on_change = [this](int32_t v) {
+        set_spec_iq_phase_calibration_value(v);
+    };
+    set_spec_iq_phase_calibration_value(get_spec_iq_phase_calibration_value());  // Initialize IQ calibration
+}
     void on_hide() override;
 
 private:

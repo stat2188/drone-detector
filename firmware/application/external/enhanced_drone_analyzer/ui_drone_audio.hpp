@@ -7,6 +7,35 @@
 #include <stdint.h>
 #include "ui_drone_common_types.hpp"
 
+// AudioAlertManager migrated from Looking Glass
+class AudioAlertManager {
+public:
+    enum class AlertLevel { NONE, LOW, HIGH, CRITICAL };
+
+    AudioAlertManager() : audio_enabled_(true) {}
+
+    static void play_alert(AlertLevel level) {
+        if (!audio_enabled_) return;
+
+        uint16_t freq_hz = 800;
+        switch (level) {
+            case AlertLevel::NONE: return;
+            case AlertLevel::LOW: freq_hz = 800; break;
+            case AlertLevel::HIGH: freq_hz = 1200; break;
+            case AlertLevel::CRITICAL: freq_hz = 2000; break;
+        }
+        baseband::request_audio_beep(freq_hz, 48000, 200);
+    }
+
+    static void set_enabled(bool enable) { audio_enabled_ = enable; }
+    static bool is_enabled() { return audio_enabled_; }
+
+private:
+    static bool audio_enabled_;
+};
+
+#include "baseband_api.hpp"
+
 // Legacy AudioManager class for backward compatibility
 class AudioManager {
 public:
