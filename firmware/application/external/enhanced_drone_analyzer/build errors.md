@@ -45,107 +45,70 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
       |                                       ^~~~~
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
                  from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: At global scope:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:45:12: error: multiple definition of 'enum class ThreatLevel'
-   45 | enum class ThreatLevel {
-      |            ^~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_common_types.hpp:10:12: note: previous definition here
-   10 | enum class ThreatLevel {
-      |            ^~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:53:12: error: multiple definition of 'enum class DroneType'
-   53 | enum class DroneType {
-      |            ^~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_common_types.hpp:18:12: note: previous definition here
-   18 | enum class DroneType {
-      |            ^~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:64:12: error: multiple definition of 'enum class MovementTrend'
-   64 | enum class MovementTrend {
-      |            ^~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_common_types.hpp:29:12: note: previous definition here
-   29 | enum class MovementTrend {
-      |            ^~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:71:12: error: multiple definition of 'enum class SpectrumMode'
-   71 | enum class SpectrumMode {
-      |            ^~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_common_types.hpp:36:12: note: previous definition here
-   36 | enum class SpectrumMode {
-      |            ^~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:90:7: error: redefinition of 'class WidebandMedianFilter'
-   90 | class WidebandMedianFilter {
-      |       ^~~~~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:30:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_signal_processing.hpp:16:7: note: previous definition of 'class WidebandMedianFilter'
-   16 | class WidebandMedianFilter {
-      |       ^~~~~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:119:8: error: redefinition of 'struct DetectionEntry'
-  119 | struct DetectionEntry {
-      |        ^~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:30:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_signal_processing.hpp:45:8: note: previous definition of 'struct DetectionEntry'
-   45 | struct DetectionEntry {
-      |        ^~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:126:7: error: redefinition of 'class DetectionRingBuffer'
-  126 | class DetectionRingBuffer {
-      |       ^~~~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:30:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_signal_processing.hpp:52:7: note: previous definition of 'class DetectionRingBuffer'
-   52 | class DetectionRingBuffer {
-      |       ^~~~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:35:35: error: expected unqualified-id before '-' token
-   35 | #define DEFAULT_RSSI_THRESHOLD_DB -80
-      |                                   ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:295:26: note: in expansion of macro 'DEFAULT_RSSI_THRESHOLD_DB'
-  295 | static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:36:30: error: expected unqualified-id before numeric constant
-   36 | #define HYSTERESIS_MARGIN_DB 5
-      |                              ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:299:26: note: in expansion of macro 'HYSTERESIS_MARGIN_DB'
-  299 | static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
-      |                          ^~~~~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In function 'void ui::external_app::enhanced_drone_analyzer::on_menu()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:868:9: error: 'nav_' was not declared in this scope
-  868 |         nav_.display_modal("EDA Settings", "Enhanced Drone Analyzer\n\nScanning functionality coming soon.\n\nPlease wait for next update.");
-      |         ^~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: At global scope:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:890:24: error: 'DroneScanner' has not been declared
-  890 |                        DroneScanner& scanner,
-      |                        ^~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:891:24: error: 'DroneDisplayController' has not been declared
-  891 |                        DroneDisplayController& display_controller,
-      |                        ^~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:915:5: error: 'DroneScanner' does not name a type
-  915 |     DroneScanner& scanner_;
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'TrackedDrone::TrackedDrone()':
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:72:5: warning: 'TrackedDrone::frequency' should be initialized in the member initialization list [-Weffc++]
+   72 |     TrackedDrone() {
       |     ^~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:916:5: error: 'DroneDisplayController' does not name a type; did you mean 'DroneHardwareController'?
-  916 |     DroneDisplayController& display_controller_;
-      |     ^~~~~~~~~~~~~~~~~~~~~~
-      |     DroneHardwareController
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:928:1: error: expected declaration before '}' token
-  928 | } // namespace ui::external_app::enhanced_drone_analyzer
-      | ^
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:72:5: warning: 'TrackedDrone::drone_type' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:72:5: warning: 'TrackedDrone::threat_level' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:72:5: warning: 'TrackedDrone::update_count' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:72:5: warning: 'TrackedDrone::last_seen' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: At global scope:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:169:26: error: redefinition of 'constexpr const int32_t DEFAULT_RSSI_THRESHOLD_DB'
+  169 | static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_common_types.hpp:44:26: note: 'constexpr const int32_t DEFAULT_RSSI_THRESHOLD_DB' previously defined here
+   44 | static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:170:26: error: redefinition of 'constexpr const int32_t WIDEBAND_RSSI_THRESHOLD_DB'
+  170 | static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -95;
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_common_types.hpp:45:26: note: 'constexpr const int32_t WIDEBAND_RSSI_THRESHOLD_DB' previously defined here
+   45 | static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -95;
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:171:26: error: redefinition of 'constexpr const int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB'
+  171 | static constexpr int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB = 5;
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:28:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_drone_common_types.hpp:46:26: note: 'constexpr const int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB' previously defined here
+   46 | static constexpr int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB = 5;
+      |                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:755:6: error: redefinition of 'static void AudioAlertManager::play_alert(AudioAlertManager::AlertLevel)'
+  755 | void AudioAlertManager::play_alert(AlertLevel level) {
+      |      ^~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:50:17: note: 'static void AudioAlertManager::play_alert(AudioAlertManager::AlertLevel)' previously defined here
+   50 |     static void play_alert(AlertLevel level) {
+      |                 ^~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:768:6: error: redefinition of 'static void AudioAlertManager::set_enabled(bool)'
+  768 | void AudioAlertManager::set_enabled(bool enable) { audio_enabled_ = enable; }
+      |      ^~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:63:17: note: 'static void AudioAlertManager::set_enabled(bool)' previously defined here
+   63 |     static void set_enabled(bool enable) { audio_enabled_ = enable; }
+      |                 ^~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:769:6: error: redefinition of 'static bool AudioAlertManager::is_enabled()'
+  769 | bool AudioAlertManager::is_enabled() { return audio_enabled_; }
+      |      ^~~~~~~~~~~~~~~~~
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:10,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:31:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:64:17: note: 'static bool AudioAlertManager::is_enabled()' previously defined here
+   64 |     static bool is_enabled() { return audio_enabled_; }
+      |                 ^~~~~~~~~~
 cc1plus: warning: unrecognized command line option '-Wno-volatile'
 make[2]: *** [firmware/application/CMakeFiles/application.elf.dir/build.make:5761: firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj] Error 1
 make[1]: *** [CMakeFiles/Makefile2:1337: firmware/application/CMakeFiles/application.elf.dir/all] Error 2
