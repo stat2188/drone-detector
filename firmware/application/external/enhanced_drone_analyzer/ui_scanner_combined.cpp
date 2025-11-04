@@ -143,15 +143,7 @@ DroneScanner::DroneScanner()
       last_valid_rssi_(-120),
       wideband_scan_data_(),
       freq_db_(),
-      scanning_mode_(ScanningMode::DATABASE),
-      is_real_mode_(true),
-      tracked_drones_(),  // FIXED: Initialize tracked drones array to resolve cppcheck uninitialized member warning
-      approaching_count_(0),
-      receding_count_(0),
-      static_count_(0),
-      max_detected_threat_(ThreatLevel::NONE),
-      last_valid_rssi_(-120),
-      scanning_active_(false)
+      scanning_mode_(ScanningMode::DATABASE)
 {
     initialize_database_and_scanner();
     initialize_wideband_scanning();
@@ -849,8 +841,13 @@ int32_t DroneHardwareController::get_configured_bandwidth() const {
 // PART 4: UI IMPLEMENTATIONS (from ui_drone_ui.cpp)
 // ===========================================
 
+using namespace ui;
+
 SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
-    : View(parent_rect) {
+    : View(parent_rect),
+      threat_progress_bar_({0, 0, screen_width, 16}),
+      threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | ▲0 ■0 ▼0"),
+      threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING") {
     add_children({&threat_progress_bar_, &threat_status_main_, &threat_frequency_});
     update(ThreatLevel::NONE, 0, 0, 0, 2400000000ULL, false);
 }
