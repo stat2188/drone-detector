@@ -1,17 +1,15 @@
-// scanner_settings.hpp - Settings management for Enhanced Drone Analyzer
-// Handles scanning configuration, threshold settings, and persistent storage
-
 #ifndef __SCANNER_SETTINGS_HPP__
 #define __SCANNER_SETTINGS_HPP__
 
-#include "ui_scanner_combined.hpp"
 #include <string>
 #include <sstream>
 #include <algorithm>
 #include <cstdint>
 
-// FIX NAMESPACE SCOPING - Add ALL required types to scope
+#define SCANNER_DEFAULT_RSSI_THRESHOLD_DB -80
 
+using ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings;
+using ui::external_app::enhanced_drone_analyzer::SpectrumMode;
 
 namespace ScannerSettingsManager {
     // Template declarations
@@ -98,7 +96,7 @@ namespace ScannerSettingsManager {
     void reset_to_defaults(DroneAnalyzerSettings& settings) {
         settings.spectrum_mode = SpectrumMode::MEDIUM;
         settings.scan_interval_ms = 750;
-        settings.rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+        settings.rssi_threshold_db = SCANNER_DEFAULT_RSSI_THRESHOLD_DB;
         settings.enable_audio_alerts = true;
         settings.audio_alert_frequency_hz = 800;
         settings.audio_alert_duration_ms = 200;
