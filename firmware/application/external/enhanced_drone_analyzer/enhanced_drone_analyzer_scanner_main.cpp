@@ -25,9 +25,16 @@
 #include <algorithm>        // For trim operations
 #include <sstream>          // For std::istringstream
 
-#include "ui_scanner_combined.hpp"
+#include "ui_drone_common_types.hpp"
+#include "ui_drone_audio.hpp"
+#include "ui_signal_processing.hpp"
 #include "scanner_settings.hpp"
 #include "portapack.hpp"
+
+// Define VERSION_MD5 if not defined (build system should provide this)
+#ifndef VERSION_MD5
+#define VERSION_MD5 1
+#endif
 
 using namespace portapack;
 
