@@ -320,6 +320,12 @@ public:
     void handle_scan_error(const char* error_msg);
 
     std::string get_session_summary() const;
+    size_t get_approaching_count() const { return approaching_count_; }
+    size_t get_receding_count() const { return receding_count_; }
+    size_t get_static_count() const { return static_count_; }
+    uint32_t get_total_detections() const { return total_detections_; }
+    bool is_real_mode() const { return is_real_mode_; }
+    size_t get_total_memory_usage() const { return 0; } // placeholder
 
     DroneScanner(const DroneScanner&) = delete;
     DroneScanner& operator=(const DroneScanner&) = delete;
@@ -627,6 +633,13 @@ private:
     const char* get_threat_level_name(ThreatLevel level) const;
 };
 
+// Missing constants referenced in implementation
+static constexpr const char* DEFAULT_CONFIG_PATH = "DRONES/DATA.CFG";
+static constexpr const char* FALLBACK_CONFIG_PATH = "APP/SETTINGS/DRONES.CFG";
+static constexpr uint32_t DEFAULT_BANDWIDTH = 24000000UL;
+static constexpr Frequency DEFAULT_CENTER_FREQUENCY = 2400000000ULL;
+static constexpr const char* DEFAULT_SPECTRUM_FILE = "DEFAULT";
+
 class DroneUIController {
 public:
     DroneUIController(NavigationView& nav,
@@ -646,6 +659,8 @@ public:
     void on_advanced_settings();
     void on_open_settings();
     void on_open_constant_settings();
+    void on_select_language();
+    void on_about();
 
     bool is_scanning() const { return scanning_active_; }
     DroneAnalyzerSettings& settings() { return settings_; }
@@ -659,10 +674,9 @@ private:
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
     AudioManager& audio_mgr_;
-    bool scanning_active_;
-    DroneDisplayController* display_controller_;
+    bool scanning_active_ = false;
+    std::unique_ptr<DroneDisplayController> display_controller_;
     DroneAnalyzerSettings settings_;
-    app_settings::SettingsManager constant_settings_manager_;
 
     void on_manage_frequencies();
     void on_create_new_database();
@@ -674,6 +688,13 @@ private:
     void on_spectrum_range_config();
     void on_add_preset_quick();
     void on_hardware_control_menu();
+    void show_current_bandwidth();
+    void show_current_center_freq();
+    void on_set_bandwidth_config();
+    void on_set_center_freq_config();
+    void set_bandwidth_from_menu(uint32_t bandwidth_hz);
+    void set_center_freq_from_menu(Frequency center_freq);
+    void add_preset_to_scanner(const DronePreset& preset);
     void on_save_settings();
     void on_load_settings();
 };
