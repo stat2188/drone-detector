@@ -140,7 +140,6 @@ static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
 static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 25'000'000;
 static constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
-static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 static constexpr size_t DETECTION_TABLE_SIZE = 256;
 
 struct WidebandSlice {
