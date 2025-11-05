@@ -8,10 +8,10 @@
 #include "../../audio.hpp"
 #include "../../baseband_api.hpp"
 #include "../../portapack.hpp"
-#include "../../portapack_persistent_memory.hpp"
+#include "portapack_persistent_memory.hpp"
 #include "../../ui_navigation.hpp"
 #include "../../file_path.hpp"
-#include "../../analog_audio_app.hpp"
+#include "analog_audio_app.hpp"
 
 #include <algorithm>
 #include <sstream>
