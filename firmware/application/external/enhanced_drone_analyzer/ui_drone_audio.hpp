@@ -6,13 +6,14 @@
 
 #include <stdint.h>
 #include "ui_drone_common_types.hpp"
+#include "baseband_api.hpp"
 
 // AudioAlertManager migrated from Looking Glass
 class AudioAlertManager {
 public:
     enum class AlertLevel { NONE, LOW, HIGH, CRITICAL };
 
-    AudioAlertManager() : audio_enabled_(true) {}
+    AudioAlertManager() = default;
 
     static void play_alert(AlertLevel level) {
         if (!audio_enabled_) return;
@@ -33,6 +34,11 @@ public:
 private:
     static bool audio_enabled_;
 };
+
+#ifndef UI_DRONE_AUDIO_HPP_STATIC_INIT
+#define UI_DRONE_AUDIO_HPP_STATIC_INIT
+bool AudioAlertManager::audio_enabled_ = true;
+#endif // UI_DRONE_AUDIO_HPP_STATIC_INIT
 
 #include "baseband_api.hpp"
 

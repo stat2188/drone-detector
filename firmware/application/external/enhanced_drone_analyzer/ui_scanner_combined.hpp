@@ -42,30 +42,8 @@ static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
 static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 
-// Audio alert system migrated from Looking Glass - defined globally for backward compatibility
-class AudioAlertManager {
-public:
-    enum class AlertLevel { NONE, LOW, HIGH, CRITICAL };
+// Audio alert system migrated from Looking Glass - defined in ui_drone_audio.hpp
 
-    static void play_alert(AlertLevel level) {
-        if (!audio_enabled_) return;
-
-        uint16_t freq_hz = 800;
-        switch (level) {
-            case AlertLevel::LOW: freq_hz = 800; break;
-            case AlertLevel::HIGH: freq_hz = 1200; break;
-            case AlertLevel::CRITICAL: freq_hz = 2000; break;
-            default: return;
-        }
-        // baseband::request_audio_beep(freq_hz, 48000, 200);
-    }
-
-    static void set_enabled(bool enable) { audio_enabled_ = enable; }
-    static bool is_enabled() { return audio_enabled_; }
-
-private:
-    static bool audio_enabled_;
-};
 
 class TrackedDrone {
 public:
@@ -162,9 +140,7 @@ static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
 static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 25'000'000;
 static constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
-static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -95;
-static constexpr int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB = 5;
+static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 static constexpr size_t DETECTION_TABLE_SIZE = 256;
 
 struct WidebandSlice {
@@ -719,6 +695,15 @@ public:
     void paint(Painter& painter) override;
     bool on_key(const KeyEvent key) override;
     bool on_touch(const TouchEvent event) override;
+
+    NumberField field_rx_iq_phase_cal{
+        {28 * 8, 3 * 16},
+        2,
+        {0, 63},  // 5 or 6 bits IQ CAL phase adjustment (migrated from Looking Glass)
+        1,
+        ' ',
+    };
+
 void on_show() override {
     // Initialize IQ phase calibration UI (migrated from Looking Glass)
     field_rx_iq_phase_cal.set_range(0, 63);  // max2839 has 6 bits [0..63]
@@ -753,24 +738,6 @@ private:
 
 } // namespace ui::external_app::enhanced_drone_analyzer
 
-// Global definitions outside namespace
-bool AudioAlertManager::audio_enabled_ = true;
-
-void AudioAlertManager::play_alert(AlertLevel level) {
-    if (!audio_enabled_) return;
-
-    uint16_t freq_hz = 800;
-    switch (level) {
-        case AlertLevel::LOW: freq_hz = 800; break;
-        case AlertLevel::HIGH: freq_hz = 1200; break;
-        case AlertLevel::CRITICAL: freq_hz = 2000; break;
-        default: return;
-    }
-    // baseband::request_audio_beep(freq_hz, 48000, 200);
-}
-
-void AudioAlertManager::set_enabled(bool enable) { audio_enabled_ = enable; }
-bool AudioAlertManager::is_enabled() { return audio_enabled_; }
 
 
 #endif // __UI_SCANNER_COMBINED_HPP__
