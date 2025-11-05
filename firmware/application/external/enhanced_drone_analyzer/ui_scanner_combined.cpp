@@ -19,7 +19,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
-#include "../../ui_fileman.hpp"
 #include "../../capture_app.hpp"
 
 // Settings file loading helper for scanner app
