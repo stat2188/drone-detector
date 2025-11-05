@@ -19,7 +19,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
-#include "../../capture_app.hpp"
+#include "../../apps/capture_app.hpp"
 
 // Settings file loading helper for scanner app
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
