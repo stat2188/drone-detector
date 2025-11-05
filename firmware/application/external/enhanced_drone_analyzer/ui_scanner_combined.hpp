@@ -24,6 +24,26 @@
 
 #include "ui_drone_audio.hpp"
 
+// Include necessary headers for Color and MessageHandlerRegistration
+#include "../../../../common/ui.hpp"  // for Color
+#include "../../event_m0.hpp"   // for MessageHandlerRegistration
+
+// Move includes outside namespace to avoid std pollution
+#include "../../freqman_db.hpp"
+#include "../../application/log_file.hpp"
+#include <ch.h>
+
+#include "../../radio_state.hpp"
+#include "../../baseband_api.hpp"
+#include "../../portapack.hpp"
+#include "../../radio.hpp"
+#include "../../../../common/message.hpp"
+#include "../../irq_controls.hpp"
+
+#include "../../../../common/ui.hpp"
+#include "../../ui_navigation.hpp"
+#include "../../app_settings.hpp"
+
 class DroneHardwareController;
 class LogFile;
 
@@ -240,12 +260,6 @@ public:
 // PART 3: SCANNER CLASSES (from ui_drone_scanner.hpp)
 // ===========================================
 
-#include "freqman_db.hpp"
-#include "../../application/log_file.hpp"
-#include <ch.h>
-#include <vector>
-#include <array>
-
 namespace ui::external_app::enhanced_drone_analyzer {
 
 
@@ -386,13 +400,6 @@ private:
 // PART 3: HARDWARE CLASSES (from ui_drone_hardware.hpp)
 // ===========================================
 
-#include "radio_state.hpp"
-#include "baseband_api.hpp"
-#include "portapack.hpp"
-#include "radio.hpp"
-#include "message.hpp"
-#include "irq_controls.hpp"
-
 class DroneHardwareController {
 public:
     explicit DroneHardwareController(SpectrumMode mode = SpectrumMode::MEDIUM);
@@ -441,11 +448,7 @@ private:
     int32_t last_valid_rssi_ = -120;
 };
 
-#include "ui.hpp"
-#include "ui_navigation.hpp"
-#include "app_settings.hpp"
-#include "freqman_db.hpp"
-#include <memory>
+
 
 class SmartThreatHeader : public View {
 public:

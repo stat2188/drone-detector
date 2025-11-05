@@ -1,14 +1,26 @@
 // ui_scanner_combined.cpp - Unified implementation for Enhanced Drone Analyzer Scanner App
-// Combines implementations from: ui_drone_scanner.cpp, ui_drone_hardware.cpp, ui_drone_ui.cpp
-// Combines all required implementations for scanner functionality
+// Integrates Recon scanning logic with Looking Glass audio alerts and spectrum processing
+// Priority given to Recon and Looking Glass implementations, adapted for drone analysis
 
 #include "ui_scanner_combined.hpp"
 #include "ui_drone_audio.hpp"
 #include "../../gradient.hpp"
+#include "../../audio.hpp"
+#include "../../baseband_api.hpp"
+#include "../../portapack.hpp"
+#include "../../portapack_persistent_memory.hpp"
+#include "../../ui_navigation.hpp"
+#include "../../file_path.hpp"
+#include "../../analog_audio_app.hpp"
+
 #include <algorithm>
 #include <sstream>
 #include <mutex>
 #include <cstdlib>
+#include <filesystem>
+#include <memory>
+#include "../../ui_fileman.hpp"
+#include "../../capture_app.hpp"
 
 // Settings file loading helper for scanner app
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
