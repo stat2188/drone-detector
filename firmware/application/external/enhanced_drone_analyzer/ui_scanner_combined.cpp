@@ -17,9 +17,7 @@
 #include <sstream>
 #include <mutex>
 #include <cstdlib>
-#include <filesystem>
 #include <memory>
-#include "../../apps/capture_app.hpp"
 
 // Settings file loading helper for scanner app
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
@@ -166,7 +164,7 @@ DroneScanner::~DroneScanner() {
 }
 
 void DroneScanner::initialize_database_and_scanner() {
-    std::filesystem::path db_path = get_freqman_path("DRONES");
+    auto db_path = get_freqman_path("DRONES");
     if (!drone_database_.open(db_path, true)) {
         // Continue without enhanced drone data
     }
@@ -715,8 +713,8 @@ inline std::string DroneScanner::DroneDetectionLogger::format_csv_entry(const De
     return std::string(buffer);
 }
 
-inline std::filesystem::path DroneScanner::DroneDetectionLogger::generate_log_filename() const {
-    return std::filesystem::path("EDA_LOG.CSV");
+inline std::string DroneScanner::DroneDetectionLogger::generate_log_filename() const {
+    return std::string("EDA_LOG.CSV");
 }
 
 inline std::string DroneScanner::DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
