@@ -327,12 +327,6 @@ public:
     bool is_real_mode() const { return is_real_mode_; }
     size_t get_total_memory_usage() const { return 0; } // placeholder
 
-    DroneScanner(const DroneScanner&) = delete;
-    DroneScanner& operator=(const DroneScanner&) = delete;
-
-    class DroneDetectionLogger {
-    public:
-        DroneDetectionLogger();
         ~DroneDetectionLogger();
         DroneDetectionLogger(const DroneDetectionLogger&) = delete;
         DroneDetectionLogger& operator=(const DroneDetectionLogger&) = delete;
@@ -739,11 +733,11 @@ void on_show() override {
     void on_hide() override;
 
 private:
-    NavigationView& nav_;
-    Button button_menu_;
-    uint8_t iq_phase_calibration_value_; // Migrated from Looking Glass
+    static constexpr size_t MAX_HISTORY = 16;
+    int16_t rssi_history_[MAX_HISTORY] = {0};
+    systime_t timestamp_history_[MAX_HISTORY] = {0};
+    size_t history_index_ = 0;
 
-    void on_menu();
 };
 
 class LoadingScreenView : public View {
