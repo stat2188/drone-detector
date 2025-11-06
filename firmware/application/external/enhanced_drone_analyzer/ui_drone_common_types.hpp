@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <fstream>
+#include "ch.h"
 
 // SpectrumMode forward declare
 enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE };
@@ -117,7 +117,8 @@ enum class ThreatLevel {
     LOW = 1,
     MEDIUM = 2,
     HIGH = 3,
-    CRITICAL = 4
+    CRITICAL = 4,
+    UNKNOWN = 5
 };
 
 enum class DroneType {

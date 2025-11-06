@@ -5,6 +5,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cstdint>
+#include "file.hpp"
 
 // Include required types
 #include "ui_scanner_combined.hpp"

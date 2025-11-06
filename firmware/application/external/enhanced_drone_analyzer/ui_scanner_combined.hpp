@@ -338,8 +338,68 @@ public:
     size_t get_receding_count() const { return receding_count_; }
     size_t get_static_count() const { return static_count_; }
     uint32_t get_total_detections() const { return total_detections_; }
+    uint32_t get_scan_cycles() const { return scan_cycles_; }
     bool is_real_mode() const { return is_real_mode_; }
     size_t get_total_memory_usage() const { return 0; } // placeholder
+
+    // Utility functions for UI
+    std::string get_drone_type_name(DroneType type) const;
+    Color get_drone_type_color(DroneType type) const;
+
+private:
+    // Declare missing methods
+    void reset_scan_cycles();
+    void initialize_wideband_scanning();
+    void setup_wideband_range(Frequency min_freq, Frequency max_freq);
+    void wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override);
+    void process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
+                                                 int32_t original_threshold, int32_t wideband_threshold);
+
+    void update_trends_compact_display();
+    bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
+    Frequency get_current_radio_frequency() const;
+
+    static msg_t scanning_thread_function(void* arg);
+    msg_t scanning_thread();
+
+    void initialize_database_and_scanner();
+    void cleanup_database_and_scanner();
+    void scan_init_from_loaded_frequencies();
+
+    void perform_database_scan_cycle(DroneHardwareController& hardware);
+    void perform_wideband_scan_cycle(DroneHardwareController& hardware);
+    void perform_hybrid_scan_cycle(DroneHardwareController& hardware);
+
+    void update_tracking_counts();
+
+    Thread* scanning_thread_ = nullptr;
+    static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
+    bool scanning_active_ = false;
+
+    freqman_db freq_db_;
+    size_t current_db_index_ = 0;
+    Frequency last_scanned_frequency_ = 0;
+
+    uint32_t scan_cycles_ = 0;
+    uint32_t total_detections_ = 0;
+
+    ScanningMode scanning_mode_ = ScanningMode::DATABASE;
+    bool is_real_mode_ = true;
+
+    std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
+    size_t tracked_drones_count_ = 0;
+
+    size_t approaching_count_ = 0;
+    size_t receding_count_ = 0;
+    size_t static_count_ = 0;
+
+    ThreatLevel max_detected_threat_ = ThreatLevel::NONE;
+    int32_t last_valid_rssi_ = -120;
+
+    static constexpr uint8_t DETECTION_DELAY = 3;
+    WidebandScanData wideband_scan_data_;
+    freqman_db drone_database_;
+    DroneDetectionLogger detection_logger_;
 
 private:
     static msg_t scanning_thread_function(void* arg);
@@ -362,7 +422,7 @@ private:
     static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
     bool scanning_active_ = false;
 
-    freqman_db frequency_list_;
+    freqman_db freq_db_;
     size_t current_db_index_ = 0;
     Frequency last_scanned_frequency_ = 0;
 

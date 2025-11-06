@@ -28,6 +28,11 @@
 // Alias for chThdShouldTerminateX since it doesn't exist
 #define chThdShouldTerminateX() chThdShouldTerminate()
 
+// Missing ARM memory barrier
+#ifndef __DMB
+#define __DMB() __asm__ volatile ("dmb" ::: "memory")
+#endif
+
 // Missing int types
 #ifndef int32_t
 typedef long int32_t;
@@ -41,13 +46,20 @@ typedef unsigned long uint32_t;
 using Frequency = uint64_t;
 #endif
 
+// Missing detection constants
+static constexpr int32_t HYSTERESIS_MARGIN_DB = 3;
+static constexpr int32_t MIN_DETECTION_COUNT = 3;
+static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
+static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
+static constexpr size_t MAX_HISTORY = 8;
+
 // Settings file loading helper for scanner app
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     static constexpr const char* SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
     File settings_file;
     auto open_result = settings_file.open(SETTINGS_FILE_PATH);
-    if (!open_result.is_ok()) {
+    if (!open_result) {
         return false;  // No file, keep defaults
     }
 
@@ -243,8 +255,8 @@ void DroneScanner::start_scanning() {
     scan_cycles_ = 0;
     total_detections_ = 0;
 
-    scanning_thread_ = chThdCreateFromHeap(nullptr, SCAN_THREAD_STACK_SIZE,
-                                          "drone_scanner", NORMALPRIO,
+    scanning_thread_ = chThdCreateFromHeap(NULL, SCAN_THREAD_STACK_SIZE,
+                                          NORMALPRIO,
                                           scanning_thread_function, this);
     if (!scanning_thread_) {
         scanning_active_ = false;
@@ -831,7 +843,7 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 }
 
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
-    radio_state_.configure_tuning(frequency_hz);
+    radio_state_.receiver_model.set_tuning_frequency(frequency_hz);
     return true;
 }
 
