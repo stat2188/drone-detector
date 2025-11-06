@@ -843,19 +843,19 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 }
 
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
-    radio_state_.receiver_model.set_tuning_frequency(frequency_hz);
+    radio_state_.tune_rf(frequency_hz);
     return true;
 }
 
 void DroneHardwareController::start_spectrum_streaming() {
     if (spectrum_streaming_active_) return;
     spectrum_streaming_active_ = true;
-    radio_state_.start_sampling();
+    radio_state_.receiver_model.start_baseband_streaming();
 }
 
 void DroneHardwareController::stop_spectrum_streaming() {
     spectrum_streaming_active_ = false;
-    radio_state_.stop_sampling();
+    radio_state_.receiver_model.stop_baseband_streaming();
 }
 
 int32_t DroneHardwareController::get_real_rssi_from_hardware(Frequency target_frequency) {

@@ -401,51 +401,6 @@ private:
     freqman_db drone_database_;
     DroneDetectionLogger detection_logger_;
 
-private:
-    static msg_t scanning_thread_function(void* arg);
-    msg_t scanning_thread();
-
-    void initialize_database_and_scanner();
-    void cleanup_database_and_scanner();
-    void scan_init_from_loaded_frequencies();
-
-    void perform_database_scan_cycle(DroneHardwareController& hardware);
-    void perform_wideband_scan_cycle(DroneHardwareController& hardware);
-    void perform_hybrid_scan_cycle(DroneHardwareController& hardware);
-
-    void update_tracking_counts();
-    void update_trends_compact_display();
-    bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
-    Frequency get_current_radio_frequency() const;
-
-    Thread* scanning_thread_ = nullptr;
-    static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
-    bool scanning_active_ = false;
-
-    freqman_db freq_db_;
-    size_t current_db_index_ = 0;
-    Frequency last_scanned_frequency_ = 0;
-
-    uint32_t scan_cycles_ = 0;
-    uint32_t total_detections_ = 0;
-
-    ScanningMode scanning_mode_ = ScanningMode::DATABASE;
-    bool is_real_mode_ = true;
-
-    std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
-    size_t tracked_drones_count_ = 0;
-
-    size_t approaching_count_ = 0;
-    size_t receding_count_ = 0;
-    size_t static_count_ = 0;
-
-    ThreatLevel max_detected_threat_ = ThreatLevel::NONE;
-    int32_t last_valid_rssi_ = -120;
-
-    static constexpr uint8_t DETECTION_DELAY = 3;
-    WidebandScanData wideband_scan_data_;
-    freqman_db drone_database_;
-    DroneDetectionLogger detection_logger_;
 };
 
 // ===========================================
