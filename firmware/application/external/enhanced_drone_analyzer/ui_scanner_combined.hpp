@@ -2,7 +2,8 @@
 // Combines: ui_drone_common_types.hpp, ui_drone_scanner.hpp, ui_drone_hardware.hpp, ui_drone_ui.hpp
 // Created during migration: Split monolithic app into focused Scanner application
 
-#pragma once
+#ifndef __UI_SCANNER_COMBINED_HPP__
+#define __UI_SCANNER_COMBINED_HPP__
 
 // ===========================================
 // PART 1: COMMON TYPES AND IMPORTS
@@ -197,7 +198,7 @@ struct DetectionLogEntry {
 
 struct ConfigData {
     SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    int32_t rssi_threshold_db = -90;
     uint32_t scan_interval_ms = 1000;
     bool enable_audio_alerts = true;
     std::string freqman_path = "DRONES";
@@ -308,7 +309,6 @@ public:
     };
 
     DroneScanner();
-    ~DroneScanner();
 
     void start_scanning();
     void stop_scanning();

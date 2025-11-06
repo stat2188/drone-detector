@@ -43,7 +43,7 @@ inline std::string DroneAnalyzerSettingsManager::get_settings_path() {
 inline void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
     settings.spectrum_mode = SpectrumMode::MEDIUM;
     settings.scan_interval_ms = 1000;
-    settings.rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    settings.rssi_threshold_db = -90;
     settings.enable_audio_alerts = true;
     settings.audio_alert_frequency_hz = 800;
     settings.audio_alert_duration_ms = 500;
@@ -107,6 +107,7 @@ inline bool DroneAnalyzerSettingsManager::load_settings(DroneAnalyzerSettings& s
 
 inline bool DroneAnalyzerSettingsManager::save_settings(const DroneAnalyzerSettings& settings) {
     // Implementation would require File API
+    (void)settings;
     return false;
 }
 
