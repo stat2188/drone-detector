@@ -2,8 +2,7 @@
 // Combines: ui_drone_common_types.hpp, ui_drone_scanner.hpp, ui_drone_hardware.hpp, ui_drone_ui.hpp
 // Created during migration: Split monolithic app into focused Scanner application
 
-#ifndef __UI_SCANNER_COMBINED_HPP__
-#define __UI_SCANNER_COMBINED_HPP__
+#pragma once
 
 // ===========================================
 // PART 1: COMMON TYPES AND IMPORTS
@@ -17,6 +16,7 @@
 // Include shared utilities
 #include "ui_drone_common_types.hpp"
 #include "ui_signal_processing.hpp"
+#include "scanner_settings.hpp"
 
 #include "../../gradient.hpp"
 
@@ -46,8 +46,6 @@
 
 class DroneHardwareController;
 class LogFile;
-
-class ScanningCoordinator;
 
 using Frequency = uint64_t;
 
@@ -196,21 +194,6 @@ struct DetectionLogEntry {
 // PART 2: CONFIGURATION STRUCTURES (Shared with Settings App)
 // ===========================================
 
-struct DroneAnalyzerSettings {
-    // Core scanning parameters
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    uint32_t scan_interval_ms = 1000;
-    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
-    bool enable_audio_alerts = true;
-    uint16_t audio_alert_frequency_hz = 800;
-    uint32_t audio_alert_duration_ms = 500;
-
-    // Hardware settings
-    uint32_t hardware_bandwidth_hz = 24000000;
-    bool enable_real_hardware = true;
-    bool demo_mode = false;
-};
-
 struct ConfigData {
     SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
     int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
@@ -313,6 +296,9 @@ private:
 };
 
 class DroneScanner {
+   public:
+    virtual ~DroneScanner();
+
 public:
     enum class ScanningMode {
         DATABASE,
@@ -375,7 +361,7 @@ private:
     static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
     bool scanning_active_ = false;
 
-    FreqmanDB freq_db_;
+    freqman_db frequency_list_;
     size_t current_db_index_ = 0;
     Frequency last_scanned_frequency_ = 0;
 
@@ -395,9 +381,9 @@ private:
     ThreatLevel max_detected_threat_ = ThreatLevel::NONE;
     int32_t last_valid_rssi_ = -120;
 
-    static const uint8_t DETECTION_DELAY = 3;
+    static constexpr uint8_t DETECTION_DELAY = 3;
     WidebandScanData wideband_scan_data_;
-    FreqmanDB drone_database_;
+    freqman_db drone_database_;
     DroneDetectionLogger detection_logger_;
 };
 

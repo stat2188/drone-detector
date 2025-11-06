@@ -1,50 +1,211 @@
-// ui_drone_common_types.hpp - Common types for Enhanced Drone Analyzer
-// Defines enums and structs used across multiple modules
+// ui_drone_common_types.hpp - Common types and enums for Enhanced Drone Analyzer
 
-#ifndef __UI_DRONE_COMMON_TYPES_HPP__
-#define __UI_DRONE_COMMON_TYPES_HPP__
+#pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
+#include <fstream>
 
-// Define enums shared across modules
+// SpectrumMode forward declare
+enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE };
+
+// DroneAnalyzerSettings struct
+struct DroneAnalyzerSettings {
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    uint32_t scan_interval_ms = 1000;
+    int32_t rssi_threshold_db = -90;
+    bool enable_audio_alerts = true;
+    uint16_t audio_alert_frequency_hz = 800;
+    uint32_t audio_alert_duration_ms = 500;
+    uint32_t hardware_bandwidth_hz = 24000000;
+    bool enable_real_hardware = true;
+    bool demo_mode = false;
+};
+
+// DroneAnalyzerSettingsManager class
+class DroneAnalyzerSettingsManager {
+public:
+    static bool load_settings(DroneAnalyzerSettings& settings);
+    static bool save_settings(const DroneAnalyzerSettings& settings);
+    static void reset_to_defaults(DroneAnalyzerSettings& settings);
+
+private:
+    static std::string get_settings_path();
+    static bool parse_line(const std::string& line, DroneAnalyzerSettings& settings);
+};
+
+// Implementations
+inline std::string DroneAnalyzerSettingsManager::get_settings_path() {
+    return "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+}
+
+inline void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
+    settings.spectrum_mode = SpectrumMode::MEDIUM;
+    settings.scan_interval_ms = 1000;
+    settings.rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    settings.enable_audio_alerts = true;
+    settings.audio_alert_frequency_hz = 800;
+    settings.audio_alert_duration_ms = 500;
+    settings.hardware_bandwidth_hz = 24000000;
+    settings.enable_real_hardware = true;
+    settings.demo_mode = false;
+}
+
+inline bool DroneAnalyzerSettingsManager::parse_line(const std::string& line, DroneAnalyzerSettings& settings) {
+    size_t equals_pos = line.find('=');
+    if (equals_pos == std::string::npos) return false;
+    std::string key = line.substr(0, equals_pos);
+    std::string value = line.substr(equals_pos + 1);
+
+    // Trim whitespace
+    key.erase(0, key.find_first_not_of(" \t"));
+    key.erase(key.find_last_not_of(" \t") + 1);
+    value.erase(0, value.find_first_not_of(" \t"));
+    value.erase(value.find_last_not_of(" \t") + 1);
+
+    if (key == "spectrum_mode") {
+        if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
+        else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
+        else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
+        else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+        return true;
+    } else if (key == "scan_interval_ms") {
+        settings.scan_interval_ms = std::stoul(value);
+        return true;
+    } else if (key == "rssi_threshold_db") {
+        settings.rssi_threshold_db = std::stoi(value);
+        return true;
+    } else if (key == "enable_audio_alerts") {
+        settings.enable_audio_alerts = (value == "true");
+        return true;
+    } else if (key == "audio_alert_frequency_hz") {
+        settings.audio_alert_frequency_hz = std::stoul(value);
+        return true;
+    } else if (key == "audio_alert_duration_ms") {
+        settings.audio_alert_duration_ms = std::stoul(value);
+        return true;
+    } else if (key == "hardware_bandwidth_hz") {
+        settings.hardware_bandwidth_hz = std::stoul(value);
+        return true;
+    } else if (key == "enable_real_hardware") {
+        settings.enable_real_hardware = (value == "true");
+        return true;
+    } else if (key == "demo_mode") {
+        settings.demo_mode = (value == "true");
+        return true;
+    }
+    return false;
+}
+
+inline bool DroneAnalyzerSettingsManager::load_settings(DroneAnalyzerSettings& settings) {
+    std::string filepath = get_settings_path();
+    // For now, just reset to defaults - actual file loading would need File API
+    reset_to_defaults(settings);
+    return true;
+}
+
+inline bool DroneAnalyzerSettingsManager::save_settings(const DroneAnalyzerSettings& settings) {
+    // Implementation would require File API
+    return false;
+}
+
+// Enhanced enums for EDA
 enum class ThreatLevel {
-    NONE,
-    LOW,
-    MEDIUM,
-    HIGH,
-    CRITICAL
+    NONE = 0,
+    LOW = 1,
+    MEDIUM = 2,
+    HIGH = 3,
+    CRITICAL = 4
 };
 
 enum class DroneType {
-    UNKNOWN,
-    MAVIC,
-    PHANTOM,
-    DJI_MINI,
-    PARROT_ANAFI,
-    PARROT_BEBOP,
-    PX4_DRONE,
-    MILITARY_DRONE
+    UNKNOWN = 0,
+    MAVIC = 1,
+    DJI_P34 = 2,
+    // Add more as needed
 };
 
 enum class MovementTrend {
-    UNKNOWN,
-    STATIC,
-    APPROACHING,
-    RECEDING
+    STATIC = 0,
+    APPROACHING = 1,
+    RECEDING = 2,
+    UNKNOWN = 3
 };
 
-enum class SpectrumMode {
-    NARROW,
-    MEDIUM,
-    WIDE,
-    ULTRA_WIDE
+// Language support
+enum class Language {
+    ENGLISH,
+    RUSSIAN
 };
 
-// Spectrum analysis constants (migrated from Looking Glass)
+// Translator class for localization
+class Translator {
+public:
+    static void set_language(Language lang);
+    static Language get_language();
+    static const char* translate(const std::string& key);
+    static const char* get_translation(const std::string& key);
+
+private:
+    static Language current_language_;
+    static const char* get_english(const std::string& key);
+    static const char* get_russian(const std::string& key);
+};
+
+// Initialize static member
+inline Language Translator::current_language_ = Language::ENGLISH;
+
+const char* Translator::get_english(const std::string& key) {
+    if (key == "load_database") return "Load Database";
+    if (key == "save_frequency") return "Save Frequency";
+    if (key == "advanced") return "Advanced";
+    if (key == "constant_settings") return "Constant Settings";
+    if (key == "select_language") return "Select Language";
+    if (key == "about_author") return "About Author";
+    if (key == "english") return "English";
+    if (key == "russian") return "Russian";
+    if (key == "english_selected") return "Language updated to English";
+    if (key == "russian_selected") return "Язык изменен на русский";
+    return key.c_str();
+}
+
+const char* Translator::get_russian(const std::string& key) {
+    if (key == "load_database") return "Загрузить БД";
+    if (key == "save_frequency") return "Сохранить частоту";
+    if (key == "advanced") return "Расширенные";
+    if (key == "constant_settings") return "Постоянные настройки";
+    if (key == "select_language") return "Выбрать язык";
+    if (key == "about_author") return "Об авторе";
+    if (key == "english") return "Английский";
+    if (key == "russian") return "Русский";
+    if (key == "english_selected") return "Language updated to English";
+    if (key == "russian_selected") return "Язык изменен на русский";
+    return key.c_str();
+}
+
+void Translator::set_language(Language lang) {
+    current_language_ = lang;
+}
+
+Language Translator::get_language() {
+    return current_language_;
+}
+
+const char* Translator::translate(const std::string& key) {
+    return get_translation(key);
+}
+
+const char* Translator::get_translation(const std::string& key) {
+    if (current_language_ == Language::RUSSIAN) {
+        return get_russian(key);
+    } else {
+        return get_english(key);
+    }
+}
+
+// Default RSSI threshold
 static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -95;
-static constexpr int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB = 5;
-static constexpr uint8_t MIN_DETECTION_COUNT = 3;
-static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 
-#endif // __UI_DRONE_COMMON_TYPES_HPP__
+// MSG_OK constant
+static constexpr msg_t MSG_OK = 0;

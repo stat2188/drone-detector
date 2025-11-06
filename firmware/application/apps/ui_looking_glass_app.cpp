@@ -31,26 +31,6 @@
 using namespace portapack;
 
 namespace ui {
-
-// Initialize static member for AudioAlertManager
-bool AudioAlertManager::enabled_ = true;
-
-// Simple hash function for frequency persistence tracking
-size_t hash_frequency(rf::Frequency freq) {
-    return std::hash<uint32_t>{}(freq) & 0xFF;  // Simple 8-bit hash
-}
-
-// Classify signal strength for alerts (migrated from EDA)
-AudioAlertManager::AlertLevel classify_signal_strength(int32_t rssi_db, uint8_t persistence_count) {
-    const uint32_t ALERT_PERSISTENCE_THRESHOLD = 3; // Minimum detections for alert
-    if (persistence_count >= ALERT_PERSISTENCE_THRESHOLD) {
-        if (rssi_db > -60) return AudioAlertManager::AlertLevel::CRITICAL;
-        if (rssi_db > -75) return AudioAlertManager::AlertLevel::HIGH;
-        if (rssi_db > -90) return AudioAlertManager::AlertLevel::LOW;
-    }
-    return AudioAlertManager::AlertLevel::NONE;
-}
-
 void GlassView::focus() {
     range_presets.focus();
 }
@@ -148,26 +128,6 @@ void GlassView::reset_live_view() {
 void GlassView::add_spectrum_pixel(uint8_t power) {
     spectrum_row[pixel_index] = gradient.lut[power];                                                                                // row of colors
     spectrum_data[pixel_index] = (live_frequency_integrate * spectrum_data[pixel_index] + power) / (live_frequency_integrate + 1);  // smoothing
-
-    // Enhanced spectrum analysis (migrated from EDA)
-    // Track signal persistence for intelligent detection
-    size_t freq_hash = hash_frequency(get_freq_from_bin_pos(pixel_index));
-
-    if (power > min_color_power) {
-        signal_history_.update_detection(freq_hash, power);
-
-        // Intelligent audio alerts based on signal strength and persistence
-        uint8_t persistence_count = signal_history_.get_detection_count(freq_hash);
-        AudioAlertManager::AlertLevel alert_level = classify_signal_strength(
-            map(power, 0, 255, -100, 20), // Convert to dB
-            persistence_count
-        );
-
-        if (alert_level != AudioAlertManager::AlertLevel::NONE && beep_enabled) {
-            AudioAlertManager::play_alert(alert_level);
-        }
-    }
-
     pixel_index++;
 
     if (pixel_index == screen_width)  // got an entire waterfall line
@@ -191,14 +151,6 @@ void GlassView::add_spectrum_pixel(uint8_t power) {
                 }
                 int16_t point = y_max_range.clip(((spectrum_data[xpos] - raw_min) * (screen_height - (108 + 16))) / raw_delta);
                 uint8_t color_gradient = (point * 255) / 212;
-
-                // Enhanced: Highlight persistent signals with different color
-                size_t bin_freq_hash = hash_frequency(get_freq_from_bin_pos(xpos));
-                uint8_t bin_persistence = signal_history_.get_detection_count(bin_freq_hash);
-                if (bin_persistence >= 3) {  // Persistent signal
-                    color_gradient = 255;  // Bright red highlight
-                }
-
                 // clear if not in peak view
                 if (live_frequency_view != 2) {
                     display.fill_rectangle({{xpos, 108 + 16}, {1, screen_height - point}}, {0, 0, 0});
@@ -292,11 +244,6 @@ void GlassView::on_show() {
 
 void GlassView::on_range_changed() {
     reset_live_view();
-
-    // Enhanced spectrum analysis: Reset filters on range change
-    spectrum_filter_.reset();
-    signal_history_ = DetectionRingBuffer();  // Clear signal persistence history
-    AudioAlertManager::set_enabled(beep_enabled);  // Sync alert state
     f_min = field_frequency_min.value();
     f_max = field_frequency_max.value();
     f_min = f_min * MHZ_DIV;  // Transpose into full frequency realm
@@ -409,9 +356,7 @@ void GlassView::update_range_field() {
 
 GlassView::GlassView(
     NavigationView& nav)
-    : nav_(nav),
-      spectrum_filter_(),
-      signal_history_() {
+    : nav_(nav) {
     baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
     spectrum_row.resize(screen_width);
     spectrum_data.resize(screen_width);
@@ -588,11 +533,6 @@ GlassView::GlassView(
     set_spec_iq_phase_calibration_value(get_spec_iq_phase_calibration_value());  // initialize iq_phase_calibration in radio
 
     display.scroll_set_area(109, screen_height - 1);  // Restart scroll on the correct coordinates
-
-    // Enhanced spectrum analysis initialization (migrated from EDA)
-    AudioAlertManager::set_enabled(beep_enabled);
-    spectrum_filter_.reset();  // Clear median filter history
-    signal_history_ = DetectionRingBuffer();  // Reset signal persistence tracking
 
     // trigger:
     // Discord User jteich:  WidebandSpectrum::on_message to set the trigger value. In WidebandSpectrum::execute,

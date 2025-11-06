@@ -12,8 +12,7 @@
 // Fixed File reference since it's not nested
 using ScanFile = File;
 
-namespace ui::external_app::enhanced_drone_analyzer {
-
+// Define SpectrumMode globally for compatibility
 enum class SpectrumMode {
     NARROW,
     MEDIUM,
@@ -21,9 +20,11 @@ enum class SpectrumMode {
     ULTRA_WIDE
 };
 
+namespace ui::external_app::enhanced_drone_analyzer {
+
 struct DroneAnalyzerSettings {
     // Core scanning parameters
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    ::SpectrumMode spectrum_mode = ::SpectrumMode::MEDIUM;
     uint32_t scan_interval_ms = 1000;
     int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
     bool enable_audio_alerts = true;
@@ -45,7 +46,7 @@ namespace ScannerSettingsManager {
 
     // Function declarations
     void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
-    ui::external_app::enhanced_drone_analyzer::SpectrumMode parse_spectrum_mode(const std::string& value);
+    ::SpectrumMode parse_spectrum_mode(const std::string& value);
     std::string trim_line(const std::string& line);
     bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line);
     bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content);
@@ -116,7 +117,7 @@ namespace ScannerSettingsManager {
     }
 
     void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
-        settings.spectrum_mode = ui::external_app::enhanced_drone_analyzer::SpectrumMode::MEDIUM;
+        settings.spectrum_mode = ::SpectrumMode::MEDIUM;
         settings.scan_interval_ms = 750;
         settings.rssi_threshold_db = -80;
         settings.enable_audio_alerts = true;
@@ -127,12 +128,12 @@ namespace ScannerSettingsManager {
         settings.demo_mode = false;
     }
 
-    ui::external_app::enhanced_drone_analyzer::SpectrumMode parse_spectrum_mode(const std::string& value) {
-        if (value == "NARROW") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::NARROW;
-        if (value == "MEDIUM") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::MEDIUM;
-        if (value == "WIDE") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::WIDE;
-        if (value == "ULTRA_WIDE") return ui::external_app::enhanced_drone_analyzer::SpectrumMode::ULTRA_WIDE;
-        return ui::external_app::enhanced_drone_analyzer::SpectrumMode::MEDIUM;
+    ::SpectrumMode parse_spectrum_mode(const std::string& value) {
+        if (value == "NARROW") return ::SpectrumMode::NARROW;
+        if (value == "MEDIUM") return ::SpectrumMode::MEDIUM;
+        if (value == "WIDE") return ::SpectrumMode::WIDE;
+        if (value == "ULTRA_WIDE") return ::SpectrumMode::ULTRA_WIDE;
+        return ::SpectrumMode::MEDIUM;
     }
 
     std::string trim_line(const std::string& line) {

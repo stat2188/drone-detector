@@ -15,9 +15,31 @@
 
 #include <algorithm>
 #include <sstream>
-#include <mutex>
+//#include <mutex>  // Not available in embedded environment, use ChibiOS mutex
 #include <cstdlib>
 #include <memory>
+
+// Missing constants and defines
+#define MSG_OK 0
+#define MIN_SCAN_INTERVAL_MS 750
+#define NORMALPRIO 64
+#define SCAN_THREAD_STACK_SIZE 2048
+
+// Alias for chThdShouldTerminateX since it doesn't exist
+#define chThdShouldTerminateX() chThdShouldTerminate()
+
+// Missing int types
+#ifndef int32_t
+typedef long int32_t;
+#endif
+
+#ifndef uint32_t
+typedef unsigned long uint32_t;
+#endif
+
+#ifndef Frequency
+using Frequency = uint64_t;
+#endif
 
 // Settings file loading helper for scanner app
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
@@ -25,16 +47,17 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
 
     File settings_file;
     auto open_result = settings_file.open(SETTINGS_FILE_PATH);
-    if (open_result.is_error()) {
+    if (!open_result.is_ok()) {
         return false;  // No file, keep defaults
     }
 
     char line_buffer[256];
     while (true) {
-        auto read_result = settings_file.read_line(line_buffer, sizeof(line_buffer));
-        if (read_result.is_error() || read_result.value == 0) {
+        auto read_count = settings_file.read(line_buffer, sizeof(line_buffer) - 1);
+        if (read_count == 0) {
             break;  // End of file
         }
+        line_buffer[read_count] = '\0'; // Null terminate
 
         // Trim whitespace from line
         std::string line(line_buffer);
@@ -151,7 +174,7 @@ DroneScanner::DroneScanner()
       max_detected_threat_(ThreatLevel::NONE),
       last_valid_rssi_(-120),
       wideband_scan_data_(),
-      freq_db_(),
+      frequency_list_(),
       scanning_mode_(ScanningMode::DATABASE)
 {
     initialize_database_and_scanner();
@@ -872,7 +895,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
 
     size_t total_drones = approaching + static_count + receding;
     threat_progress_bar_.set_value(total_drones * 10);
-    threat_progress_bar_.set_style(get_threat_bar_color(max_threat));
+    threat_progress_bar_.set_color(get_threat_bar_color(max_threat));
 
     char buffer[64];
     std::string threat_name = get_threat_icon_text(max_threat);
