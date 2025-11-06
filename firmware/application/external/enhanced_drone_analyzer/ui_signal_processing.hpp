@@ -7,6 +7,8 @@
 
 #include <array>
 #include <cstdint>
+#include <ch.h>  // for systime_t
+#include "ui_drone_common_types.hpp"
 
 
 
@@ -41,10 +43,10 @@ public:
 };
 
 struct DetectionEntry {
-    size_t frequency_hash = 0;
-    uint8_t detection_count = 0;
-    int32_t rssi_value = -120;
-    uint32_t last_update = 0;
+    size_t frequency_hash;
+    uint8_t detection_count;
+    int32_t rssi_value;
+    systime_t last_update;
 };
 
 class DetectionRingBuffer {
@@ -56,7 +58,7 @@ public:
 
     // Replaces dynamic std::deque with fixed-size array for embedded systems
     void update_detection(size_t frequency_hash, int32_t rssi_value) {
-        uint32_t current_time = 0; // TODO: Get system time (will be implemented later)
+        systime_t current_time = chTimeNow();
 
         // Find existing entry or use LRU entry
         for (auto& entry : entries_) {

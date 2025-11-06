@@ -285,6 +285,33 @@ private:
 extern DetectionRingBuffer global_detection_ring;
 extern DetectionRingBuffer& local_detection_ring;
 
+class DroneDetectionLogger {
+public:
+    DroneDetectionLogger();
+    ~DroneDetectionLogger();
+
+    void start_session();
+    void end_session();
+    bool log_detection(const DetectionLogEntry& entry);
+    std::string get_log_filename() const;
+    bool is_session_active() const { return session_active_; }
+
+private:
+    LogFile csv_log_;
+    bool session_active_ = false;
+    systime_t session_start_ = 0;
+    uint32_t logged_count_ = 0;
+    bool header_written_ = false;
+
+    bool ensure_csv_header();
+    std::string format_csv_entry(const DetectionLogEntry& entry);
+    std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
+    std::string generate_log_filename() const;
+
+    DroneDetectionLogger(const DroneDetectionLogger&) = delete;
+    DroneDetectionLogger& operator=(const DroneDetectionLogger&) = delete;
+};
+
 class DroneScanner {
 public:
     enum class ScanningMode {
@@ -326,28 +353,6 @@ public:
     uint32_t get_total_detections() const { return total_detections_; }
     bool is_real_mode() const { return is_real_mode_; }
     size_t get_total_memory_usage() const { return 0; } // placeholder
-
-        ~DroneDetectionLogger();
-        DroneDetectionLogger(const DroneDetectionLogger&) = delete;
-        DroneDetectionLogger& operator=(const DroneDetectionLogger&) = delete;
-
-        void start_session();
-        void end_session();
-        bool log_detection(const DetectionLogEntry& entry);
-        std::string get_log_filename() const;
-
-    private:
-        LogFile csv_log_;
-        bool session_active_;
-        uint32_t session_start_;
-        uint32_t logged_count_;
-        bool header_written_;
-
-        bool ensure_csv_header();
-        std::string format_csv_entry(const DetectionLogEntry& entry);
-        std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
-        std::string generate_log_filename() const;
-    };
 
 private:
     static msg_t scanning_thread_function(void* arg);
@@ -695,49 +700,48 @@ private:
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
     explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
-
     ~EnhancedDroneSpectrumAnalyzerView() override = default;
 
     void focus() override;
-    std::string title() const override;
+    std::string title() const override { return "Enhanced Drone Analyzer"; };
 
     // IQ Phase calibration functions migrated from Looking Glass
     uint8_t get_spec_iq_phase_calibration_value() const { return iq_phase_calibration_value_; }
     void set_spec_iq_phase_calibration_value(uint8_t cal_value) {
         iq_phase_calibration_value_ = cal_value;
-        // Apply to radio hardware (as in Looking Glass)
-        // radio::set_rx_max283x_iq_phase_calibration(iq_phase_calibration_value_);
     }
 
     void paint(Painter& painter) override;
     bool on_key(const KeyEvent key) override;
     bool on_touch(const TouchEvent event) override;
-
-    NumberField field_rx_iq_phase_cal{
-        {28 * 8, 3 * 16},
-        2,
-        {0, 63},  // 5 or 6 bits IQ CAL phase adjustment (migrated from Looking Glass)
-        1,
-        ' ',
-    };
-
-void on_show() override {
-    // Initialize IQ phase calibration UI (migrated from Looking Glass)
-    field_rx_iq_phase_cal.set_range(0, 63);  // max2839 has 6 bits [0..63]
-    field_rx_iq_phase_cal.set_value(get_spec_iq_phase_calibration_value());
-    field_rx_iq_phase_cal.on_change = [this](int32_t v) {
-        set_spec_iq_phase_calibration_value(v);
-    };
-    set_spec_iq_phase_calibration_value(get_spec_iq_phase_calibration_value());  // Initialize IQ calibration
-}
+    void on_show() override;
     void on_hide() override;
 
 private:
-    static constexpr size_t MAX_HISTORY = 16;
-    int16_t rssi_history_[MAX_HISTORY] = {0};
-    systime_t timestamp_history_[MAX_HISTORY] = {0};
-    size_t history_index_ = 0;
+    NavigationView& nav_;
+    uint8_t iq_phase_calibration_value_ = 15;
 
+    std::unique_ptr<DroneHardwareController> hardware_;
+    std::unique_ptr<DroneScanner> scanner_;
+    std::unique_ptr<AudioManager> audio_;
+    std::unique_ptr<DroneUIController> ui_controller_;
+    std::unique_ptr<DroneDisplayController> display_controller_;
+    std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
+
+    Button button_start_stop_;
+    Button button_menu_;
+    OptionsField field_scanning_mode_;
+    std::unique_ptr<SmartThreatHeader> smart_header_;
+    std::unique_ptr<ConsoleStatusBar> status_bar_;
+    std::array<std::unique_ptr<ThreatCard>, 3> threat_cards_;
+
+    void start_scanning_thread();
+    void stop_scanning_thread();
+    bool handle_start_stop_button();
+    bool handle_menu_button();
+    void initialize_modern_layout();
+    void update_modern_layout();
+    void handle_scanner_update();
 };
 
 class LoadingScreenView : public View {
