@@ -23,6 +23,7 @@
 #include <memory>
 
 #include "ui_drone_audio.hpp"
+#include "scanning_coordinator.hpp"
 
 // Include necessary headers for Color and MessageHandlerRegistration
 #include "../../../../common/ui.hpp"  // for Color

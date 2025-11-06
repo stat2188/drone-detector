@@ -12,14 +12,6 @@
 // Fixed File reference since it's not nested
 using ScanFile = File;
 
-// Define SpectrumMode globally for compatibility
-enum class SpectrumMode {
-    NARROW,
-    MEDIUM,
-    WIDE,
-    ULTRA_WIDE
-};
-
 namespace ui::external_app::enhanced_drone_analyzer {
 
 struct DroneAnalyzerSettings {
