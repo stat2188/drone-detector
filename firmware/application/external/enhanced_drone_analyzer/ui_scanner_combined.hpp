@@ -376,6 +376,7 @@ private:
     static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
     bool scanning_active_ = false;
 
+    using freqman_db = std::vector<std::unique_ptr<freqman_entry>>;
     freqman_db freq_db_;
     size_t current_db_index_ = 0;
     Frequency last_scanned_frequency_ = 0;

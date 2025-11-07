@@ -840,19 +840,19 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 }
 
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
-    radio_state_.tune_rf(frequency_hz);
+    portapack::receiver_model.set_target_frequency(frequency_hz);
     return true;
 }
 
 void DroneHardwareController::start_spectrum_streaming() {
     if (spectrum_streaming_active_) return;
     spectrum_streaming_active_ = true;
-    radio_state_.receiver_model.start_baseband_streaming();
+    portapack::receiver_model.start_baseband_streaming();
 }
 
 void DroneHardwareController::stop_spectrum_streaming() {
     spectrum_streaming_active_ = false;
-    radio_state_.receiver_model.stop_baseband_streaming();
+    portapack::receiver_model.stop_baseband_streaming();
 }
 
 int32_t DroneHardwareController::get_real_rssi_from_hardware(Frequency target_frequency) {
@@ -904,7 +904,6 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
 
     size_t total_drones = approaching + static_count + receding;
     threat_progress_bar_.set_value(total_drones * 10);
-    threat_progress_bar_.set_color(get_threat_bar_color(max_threat));
 
     char buffer[64];
     std::string threat_name = get_threat_icon_text(max_threat);
@@ -918,7 +917,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         snprintf(buffer, sizeof(buffer), "READY: No Threats Detected");
     }
     threat_status_main_.set(buffer);
-    threat_status_main_.set_style(get_threat_text_color(max_threat));
+    threat_status_main_.set_style(Theme::getInstance()->fg_red);
 
     if (current_freq > 0) {
         float freq_mhz = static_cast<float>(current_freq) / 1000000.0f;
@@ -1015,7 +1014,7 @@ void SmartThreatHeader::paint(Painter& painter) {
         uint8_t alpha = (pulse_timer % 20) < 10 ? 50 : 100;
         Color pulse_color = get_threat_bar_color(current_threat_);
         pulse_color = Color(pulse_color.r, pulse_color.g, pulse_color.b, alpha);
-        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 4}, pulse_color);
+        painter.fill_rectangle({0, parent_rect().top(), parent_rect().width(), 4}, pulse_color);
     }
 }
 
@@ -1472,7 +1471,7 @@ void DroneDisplayController::add_spectrum_pixel_from_bin(uint8_t power) {
 }
 
 void DroneDisplayController::render_mini_spectrum() {
-    std::scoped_lock<std::mutex> lock(spectrum_access_mutex_);  // Section 3: Thread safety for spectrum rendering
+    // std::scoped_lock<std::mutex> lock(spectrum_access_mutex_);  // Section 3: Thread safety not available in embedded env
 
     if (!validate_spectrum_data()) {
         clear_spectrum_buffers();
@@ -2298,6 +2297,53 @@ void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings&
 
 void ScanningCoordinator::show_session_summary(const std::string& summary) {
     nav_.display_modal("Session Summary", summary.c_str());
+}
+
+// ===========================================
+// MISSING IMPLEMENTATIONS FOR DRONE SCANNER
+// ===========================================
+
+void DroneScanner::reset_scan_cycles() {
+    scan_cycles_ = 0;
+}
+
+void DroneScanner::initialize_wideband_scanning() {
+    wideband_scan_data_.reset();
+    setup_wideband_range(WIDEBAND_DEFAULT_MIN, WIDEBAND_DEFAULT_MAX);
+}
+
+void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) {
+    wideband_scan_data_.min_freq = min_freq;
+    wideband_scan_data_.max_freq = max_freq;
+    wideband_scan_data_.slices_nb = (max_freq - min_freq + WIDEBAND_SLICE_WIDTH - 1) / WIDEBAND_SLICE_WIDTH;
+    if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
+        wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
+    }
+    for (size_t i = 0; i < wideband_scan_data_.slices_nb; ++i) {
+        wideband_scan_data_.slices[i].center_frequency = min_freq + (max_freq - min_freq) * (i + 1) / (wideband_scan_data_.slices_nb + 1);
+        wideband_scan_data_.slices[i].index = i;
+    }
+    wideband_scan_data_.slice_counter = 0;
+}
+
+std::string DroneScanner::get_drone_type_name(DroneType type) const {
+    switch (type) {
+        case DroneType::MAVIC: return "MAVIC";
+        case DroneType::DJI_P34: return "DJI P34";
+        case DroneType::UNKNOWN: default: return "UNKNOWN";
+    }
+}
+
+Color DroneScanner::get_drone_type_color(DroneType type) const {
+    switch (type) {
+        case DroneType::MAVIC: return Color::red();
+        case DroneType::DJI_P34: return Color::orange();
+        case DroneType::UNKNOWN: default: return Color::white();
+    }
+}
+
+uint32_t DroneScanner::get_scan_cycles() const {
+    return scan_cycles_;
 }
 
 } // namespace ui::external_app::enhanced_drone_analyzer
