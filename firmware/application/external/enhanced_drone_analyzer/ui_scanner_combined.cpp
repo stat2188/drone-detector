@@ -10,7 +10,7 @@
 #include "../../ui_navigation.hpp"
 #include "../../file_path.hpp"
 #include "../../string_format.hpp"
-#include "../../convert.hpp"
+#include "convert.hpp"
 #include "../../file.hpp"
 #include "../../tone_key.hpp"
 #include "../../rtc_time.hpp"
@@ -2283,7 +2283,7 @@ void ScanningCoordinator::start_coordinated_scanning() {
     scanning_active_ = true;
 
     scanning_thread_ = chThdCreateFromHeap(nullptr, SCANNING_THREAD_STACK_SIZE,
-                                          "scanning_coord", NORMALPRIO,
+                                          NORMALPRIO,
                                           scanning_thread_function, this);
     if (!scanning_thread_) {
         scanning_active_ = false;

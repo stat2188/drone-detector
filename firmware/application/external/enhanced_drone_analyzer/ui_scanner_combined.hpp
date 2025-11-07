@@ -553,7 +553,7 @@ public:
     explicit DroneDisplayController(NavigationView& nav);
     ~DroneDisplayController() = default;
 
-    BigFrequency& big_display() { return big_display_; }
+    Text& big_display() { return big_display_; }
     ProgressBar& scanning_progress() { return scanning_progress_; }
     Text& text_threat_summary() { return text_threat_summary_; }
     Text& text_status_info() { return text_status_info_; }
@@ -596,7 +596,7 @@ public:
     };
 
 private:
-    BigFrequency big_display_{{4, 6 * 16, 28 * 8, 52}, 0};
+    Text big_display_{{4, 6 * 16, 28 * 8, 52}, ""};
     ProgressBar scanning_progress_{{0, 7 * 16, screen_width, 8}};
     Text text_threat_summary_{{0, 8 * 16, screen_width, 16}, "THREAT: NONE"};
     Text text_status_info_{{0, 9 * 16, screen_width, 16}, "Ready"};
