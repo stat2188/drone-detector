@@ -28,6 +28,24 @@ namespace fs = std::filesystem;
 static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
 static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
 static constexpr size_t MAX_TRACKED_DRONES = 8;
+static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 750;
+static constexpr uint32_t DETECTION_DELAY = 100;
+static constexpr uint8_t MIN_DETECTION_COUNT = 3;
+static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
+static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -85;
+static constexpr Frequency WIDEBAND_DEFAULT_MIN = 2400000000ULL;
+static constexpr Frequency WIDEBAND_DEFAULT_MAX = 2500000000ULL;
+static constexpr Frequency WIDEBAND_SLICE_WIDTH = 20000000ULL;
+static constexpr size_t WIDEBAND_MAX_SLICES = 8;
+static constexpr size_t DETECTION_TABLE_SIZE = 1024;
+static constexpr size_t MAX_DISPLAYED_DRONES = 8;
+static constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;
+static constexpr const char* default_gradient_file = "/sdcard/GRADIENT.BMP";
+static constexpr size_t MINI_SPECTRUM_WIDTH = 240;
+static constexpr size_t MINI_SPECTRUM_HEIGHT = 64;
+static constexpr Frequency MIN_HARDWARE_FREQ = 50000000ULL;
+static constexpr Frequency MAX_HARDWARE_FREQ = 6000000000ULL;
+static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %ddB %c";
 
 // Drone detection structures
 struct TrackedDrone {
@@ -333,13 +351,14 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         return;
     }
 
-    const size_t total_entries = freq_db_.size();
+    const size_t total_entries = freq_db_.entry_count();
     if (current_db_index_ >= total_entries) {
         current_db_index_ = 0;
     }
 
-    if (current_db_index_ < freq_db_.size() && freq_db_[current_db_index_]) {
-        const auto& entry = *freq_db_[current_db_index_];
+    auto entry_opt = freq_db_.get_entry(current_db_index_);
+    if (entry_opt) {
+        const auto& entry = *entry_opt;
         Frequency target_freq_hz = entry.frequency_a;
         if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
             if (hardware.tune_to_frequency(target_freq_hz)) {
@@ -419,6 +438,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     DroneType detected_type = DroneType::UNKNOWN;
 
     size_t freq_hash = entry.frequency_a;
+    int32_t effective_threshold = wideband_threshold;
     if (local_detection_ring.get_rssi_value(freq_hash) < wideband_threshold) {
         effective_threshold = wideband_threshold + HYSTERESIS_MARGIN_DB;
     }
@@ -541,8 +561,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 }
 
 void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
-    for (size_t i = 0; i < MAX_TRACKED_DRONES; i++) {
-        TrackedDrone& drone = tracked_drones_[i];
+    // First, try to update existing drone
+    for (auto& drone : tracked_drones_) {
         if (drone.frequency == static_cast<uint32_t>(frequency) && drone.update_count > 0) {
             drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
             drone.drone_type = static_cast<uint8_t>(type);
@@ -550,21 +570,25 @@ void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int
             update_tracking_counts();
             return;
         }
-        if (drone.update_count == 0) {
-            drone.frequency = static_cast<uint32_t>(frequency);
-            drone.drone_type = static_cast<uint8_t>(type);
-            drone.threat_level = static_cast<uint8_t>(threat_level);
-            drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
-            tracked_drones_count_++;
-            update_tracking_counts();
-            return;
-        }
+    }
+
+    // If we haven't reached max capacity, add new drone
+    if (tracked_drones_.size() < MAX_TRACKED_DRONES) {
+        TrackedDrone new_drone;
+        new_drone.frequency = static_cast<uint32_t>(frequency);
+        new_drone.drone_type = static_cast<uint8_t>(type);
+        new_drone.threat_level = static_cast<uint8_t>(threat_level);
+        new_drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
+        tracked_drones_.push_back(new_drone);
+        tracked_drones_count_++;
+        update_tracking_counts();
+        return;
     }
 
     // Replace oldest drone
     size_t oldest_index = 0;
     systime_t oldest_time = tracked_drones_[0].last_seen;
-    for (size_t i = 1; i < MAX_TRACKED_DRONES; i++) {
+    for (size_t i = 1; i < tracked_drones_.size(); i++) {
         if (tracked_drones_[i].last_seen < oldest_time) {
             oldest_time = tracked_drones_[i].last_seen;
             oldest_index = i;
@@ -583,23 +607,15 @@ void DroneScanner::remove_stale_drones() {
     const systime_t STALE_TIMEOUT = 30000;
     systime_t current_time = chTimeNow();
 
-    size_t write_idx = 0;
-    for (size_t read_idx = 0; read_idx < MAX_TRACKED_DRONES; read_idx++) {
-        const TrackedDrone& drone = tracked_drones_[read_idx];
-        if (drone.update_count == 0) continue;
+    // Remove stale drones using erase-remove idiom
+    tracked_drones_.erase(
+        std::remove_if(tracked_drones_.begin(), tracked_drones_.end(),
+                      [current_time, STALE_TIMEOUT](const TrackedDrone& drone) {
+                          return drone.update_count > 0 && (current_time - drone.last_seen) > STALE_TIMEOUT;
+                      }),
+        tracked_drones_.end());
 
-        bool is_stale = (current_time - drone.last_seen) > STALE_TIMEOUT;
-        if (!is_stale) {
-            if (write_idx != read_idx) {
-                tracked_drones_[write_idx] = drone;
-            }
-            write_idx++;
-        } else {
-            tracked_drones_[read_idx] = TrackedDrone();
-        }
-    }
-
-    tracked_drones_count_ = write_idx;
+    tracked_drones_count_ = tracked_drones_.size();
     update_tracking_counts();
 }
 
@@ -608,8 +624,7 @@ void DroneScanner::update_tracking_counts() {
     receding_count_ = 0;
     static_count_ = 0;
 
-    for (size_t i = 0; i < MAX_TRACKED_DRONES; i++) {
-        const TrackedDrone& drone = tracked_drones_[i];
+    for (const auto& drone : tracked_drones_) {
         if (drone.update_count < 2) continue;
 
         MovementTrend trend = drone.get_trend();
@@ -640,7 +655,11 @@ Frequency DroneScanner::get_current_scanning_frequency() const {
 }
 
 const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
-    return (index < MAX_TRACKED_DRONES) ? tracked_drones_[index] : tracked_drones_[0];
+    if (index < tracked_drones_.size()) {
+        return tracked_drones_[index];
+    }
+    static TrackedDrone empty_drone;
+    return empty_drone;
 }
 
 std::string DroneScanner::get_session_summary() const {
@@ -845,6 +864,18 @@ int32_t DroneHardwareController::get_configured_sampling_rate() const {
 
 int32_t DroneHardwareController::get_configured_bandwidth() const {
     return bandwidth_hz_;
+}
+
+bool DroneHardwareController::is_spectrum_streaming_active() const {
+    return spectrum_streaming_active_;
+}
+
+int32_t DroneHardwareController::get_current_rssi() const {
+    return last_valid_rssi_;
+}
+
+void DroneHardwareController::update_spectrum_for_scanner() {
+    // Update spectrum data for scanner
 }
 
 // ===========================================
@@ -1511,6 +1542,44 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
     Frequency relative_freq = freq_hz - MIN_FREQ;
     size_t bin = (relative_freq * MINI_SPECTRUM_WIDTH) / FREQ_RANGE;
     return std::min(bin, MINI_SPECTRUM_WIDTH - 1);
+}
+
+std::string DroneDisplayController::get_threat_level_name(ThreatLevel level) const {
+    switch (level) {
+        case ThreatLevel::CRITICAL: return "CRITICAL";
+        case ThreatLevel::HIGH: return "HIGH";
+        case ThreatLevel::MEDIUM: return "MEDIUM";
+        case ThreatLevel::LOW: return "LOW";
+        case ThreatLevel::NONE:
+        default: return "NONE";
+    }
+}
+
+std::string DroneDisplayController::get_drone_type_name(DroneType type) const {
+    switch (type) {
+        case DroneType::MAVIC: return "MAVIC";
+        case DroneType::DJI_P34: return "DJI P34";
+        case DroneType::UNKNOWN: default: return "UNKNOWN";
+    }
+}
+
+Color DroneDisplayController::get_drone_type_color(DroneType type) const {
+    switch (type) {
+        case DroneType::MAVIC: return Color::red();
+        case DroneType::DJI_P34: return Color::orange();
+        case DroneType::UNKNOWN: default: return Color::white();
+    }
+}
+
+Color DroneDisplayController::get_threat_level_color(ThreatLevel level) const {
+    switch (level) {
+        case ThreatLevel::CRITICAL: return Color::red();
+        case ThreatLevel::HIGH: return Color(255, 140, 0);
+        case ThreatLevel::MEDIUM: return Color::yellow();
+        case ThreatLevel::LOW: return Color::green();
+        case ThreatLevel::NONE:
+        default: return Color::white();
+    }
 }
 
 DroneUIController::DroneUIController(NavigationView& nav,
@@ -2313,6 +2382,46 @@ Color DroneScanner::get_drone_type_color(DroneType type) const {
 
 uint32_t DroneScanner::get_scan_cycles() const {
     return scan_cycles_;
+}
+
+bool DroneScanner::is_real_mode() const {
+    return is_real_mode_;
+}
+
+void DroneScanner::switch_to_demo_mode() {
+    is_real_mode_ = false;
+}
+
+void DroneScanner::switch_to_real_mode() {
+    is_real_mode_ = true;
+}
+
+ThreatLevel DroneScanner::get_max_detected_threat() const {
+    return max_detected_threat_;
+}
+
+size_t DroneScanner::get_approaching_count() const {
+    return approaching_count_;
+}
+
+size_t DroneScanner::get_receding_count() const {
+    return receding_count_;
+}
+
+size_t DroneScanner::get_static_count() const {
+    return static_count_;
+}
+
+size_t DroneScanner::get_total_memory_usage() const {
+    return 0; // Placeholder
+}
+
+uint32_t DroneScanner::get_total_detections() const {
+    return total_detections_;
+}
+
+bool DroneScanner::is_scanning_active() const {
+    return scanning_active_;
 }
 
 } // namespace ui::external_app::enhanced_drone_analyzer
