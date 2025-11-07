@@ -14,7 +14,7 @@
 #include "../../file.hpp"
 #include "../../tone_key.hpp"
 #include "../../rtc_time.hpp"
-#include "../../ui_freqman.hpp"
+#include "../../apps/ui_freqman.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -356,9 +356,8 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         current_db_index_ = 0;
     }
 
-    auto entry_opt = freq_db_.get_entry(current_db_index_);
-    if (entry_opt) {
-        const auto& entry = *entry_opt;
+    if (current_db_index_ < freq_db_.entry_count()) {
+        const auto& entry = freq_db_[current_db_index_];
         Frequency target_freq_hz = entry.frequency_a;
         if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
             if (hardware.tune_to_frequency(target_freq_hz)) {
