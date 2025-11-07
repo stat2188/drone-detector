@@ -1,124 +1,94 @@
-// ui_scanner_combined.cpp - Unified implementation for Enhanced Drone Analyzer Scanner App
-// Integrates Recon scanning logic with Looking Glass audio alerts and spectrum processing
-// Priority given to Recon and Looking Glass implementations, adapted for drone analysis
+// ui_scanner_combined.cpp - Enhanced Drone Analyzer based on ReconView
+// Migrated from Recon scanning logic with drone detection capabilities
 
 #include "ui_scanner_combined.hpp"
-#include "ui_drone_audio.hpp"
+#include "../../freqman_db.hpp"
 #include "../../gradient.hpp"
 #include "../../audio.hpp"
 #include "../../baseband_api.hpp"
 #include "../../portapack.hpp"
-#include "portapack_persistent_memory.hpp"
 #include "../../ui_navigation.hpp"
 #include "../../file_path.hpp"
-#include "analog_audio_app.hpp"
+#include "../../string_format.hpp"
+#include "../../convert.hpp"
+#include "../../file.hpp"
+#include "../../tone_key.hpp"
+#include "../../rtc_time.hpp"
+#include "../../ui_freqman.hpp"
 
 #include <algorithm>
 #include <sstream>
-//#include <mutex>  // Not available in embedded environment, use ChibiOS mutex
-#include <cstdlib>
 #include <memory>
 
-// Missing constants and defines
-#define MSG_OK 0
-#define MIN_SCAN_INTERVAL_MS 750
-#define NORMALPRIO 64
-#define SCAN_THREAD_STACK_SIZE 2048
+using namespace portapack;
+using namespace tonekey;
+namespace fs = std::filesystem;
 
-// Alias for chThdShouldTerminateX since it doesn't exist
-#define chThdShouldTerminateX() chThdShouldTerminate()
+// Constants from ReconView
+static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
+static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
+static constexpr size_t MAX_TRACKED_DRONES = 8;
 
-// Missing ARM memory barrier
-#ifndef __DMB
-#define __DMB() __asm__ volatile ("dmb" ::: "memory")
-#endif
+// Drone detection structures
+struct TrackedDrone {
+    uint32_t frequency;
+    int32_t rssi;
+    uint32_t last_seen;
+    uint32_t detection_count;
+    ThreatLevel threat_level;
+    MovementTrend trend;
 
-// Missing int types
-#ifndef int32_t
-typedef long int32_t;
-#endif
+    TrackedDrone() : frequency(0), rssi(-120), last_seen(0), detection_count(0),
+                    threat_level(ThreatLevel::NONE), trend(MovementTrend::UNKNOWN) {}
+};
 
-#ifndef uint32_t
-typedef unsigned long uint32_t;
-#endif
+struct DetectionLogEntry {
+    uint32_t timestamp;
+    uint32_t frequency_hz;
+    int32_t rssi_db;
+    ThreatLevel threat_level;
+    uint32_t detection_count;
+};
 
-#ifndef Frequency
-using Frequency = uint64_t;
-#endif
-
-// Missing detection constants
-static constexpr int32_t MIN_DETECTION_COUNT = 3;
-static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
-static constexpr size_t MAX_HISTORY = 8;
-
-// Settings file loading helper for scanner app
+// Settings loading helper
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     static constexpr const char* SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
     File settings_file;
     auto open_result = settings_file.open(SETTINGS_FILE_PATH);
     if (!open_result) {
-        return false;  // No file, keep defaults
+        return false;
     }
 
     char line_buffer[256];
     while (true) {
         auto read_count = settings_file.read(line_buffer, sizeof(line_buffer) - 1);
-        if (read_count == 0) {
-            break;  // End of file
-        }
-        line_buffer[read_count] = '\0'; // Null terminate
+        if (read_count == 0) break;
+        line_buffer[read_count] = '\0';
 
-        // Trim whitespace from line
         std::string line(line_buffer);
-        auto it = std::find_if(line.begin(), line.end(), [](int ch) { return !std::isspace(ch); });
-        line.erase(line.begin(), it);
-        auto rit = std::find_if(line.rbegin(), line.rend(), [](int ch) { return !std::isspace(ch); });
-        line.erase(rit.base(), line.end());
-
         size_t equals_pos = line.find('=');
-        if (equals_pos == std::string::npos) {
-            continue;  // Skip malformed lines
-        }
+        if (equals_pos == std::string::npos) continue;
 
         std::string key = line.substr(0, equals_pos);
         std::string value = line.substr(equals_pos + 1);
 
-        // Trim key/value whitespace
+        // Trim whitespace
         key.erase(key.begin(), std::find_if(key.begin(), key.end(), [](int ch) { return !std::isspace(ch); }));
         key.erase(std::find_if(key.rbegin(), key.rend(), [](int ch) { return !std::isspace(ch); }).base(), key.end());
         value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](int ch) { return !std::isspace(ch); }));
         value.erase(std::find_if(value.rbegin(), value.rend(), [](int ch) { return !std::isspace(ch); }).base(), value.end());
 
-        // Parse settings
         if (key == "spectrum_mode") {
-            if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-            else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
+            if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
             else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-            else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-            // Default remains MEDIUM
         } else if (key == "scan_interval_ms") {
-            uint32_t val = strtoul(value.c_str(), nullptr, 10);
-            if (val >= 100 && val <= 30000) {
-                settings.scan_interval_ms = val;
-            }
+            settings.scan_interval_ms = strtoul(value.c_str(), nullptr, 10);
         } else if (key == "rssi_threshold_db") {
             settings.rssi_threshold_db = strtol(value.c_str(), nullptr, 10);
-            // Validation done elsewhere
         } else if (key == "enable_audio_alerts") {
             settings.enable_audio_alerts = (value == "true");
-        } else if (key == "audio_alert_frequency_hz") {
-            settings.audio_alert_frequency_hz = strtoul(value.c_str(), nullptr, 10);
-        } else if (key == "audio_alert_duration_ms") {
-            settings.audio_alert_duration_ms = strtoul(value.c_str(), nullptr, 10);
-        } else if (key == "enable_real_hardware") {
-            settings.enable_real_hardware = (value == "true");
-        } else if (key == "demo_mode") {
-            settings.demo_mode = (value == "true");
-        } else if (key == "hardware_bandwidth_hz") {
-            settings.hardware_bandwidth_hz = strtoul(value.c_str(), nullptr, 10);
         }
-        // Ignore unknown keys
     }
 
     settings_file.close();
@@ -197,7 +167,12 @@ DroneScanner::~DroneScanner() {
 
 void DroneScanner::initialize_database_and_scanner() {
     auto db_path = get_freqman_path("DRONES");
-    if (!drone_database_.open(db_path, true)) {
+    freqman_load_options options{
+        .load_freqs = true,
+        .load_ranges = true,
+        .load_hamradios = true,
+        .load_repeaters = true};
+    if (!load_freqman_file(db_path.string(), drone_database_, options)) {
         // Continue without enhanced drone data
     }
 }
@@ -293,10 +268,7 @@ msg_t DroneScanner::scanning_thread() {
 
 bool DroneScanner::load_frequency_database() {
     try {
-        if (!freq_db_.is_open()) {
-            return false;
-        }
-        if (freq_db_.entry_count() == 0) {
+        if (!freq_db_.open(get_freqman_path("DRONES"))) {
             return false;
         }
         current_db_index_ = 0;
@@ -313,7 +285,7 @@ bool DroneScanner::load_frequency_database() {
 }
 
 size_t DroneScanner::get_database_size() const {
-    return freq_db_.is_open() ? freq_db_.entry_count() : 0;
+    return freq_db_.entry_count();
 }
 
 void DroneScanner::set_scanning_mode(ScanningMode mode) {
@@ -353,7 +325,7 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    if (!freq_db_.is_open() || freq_db_.entry_count() == 0) {
+    if (freq_db_.empty()) {
         if (scan_cycles_ % 50 == 0) {
             handle_scan_error("No frequency database loaded");
             scanning_active_ = false;
@@ -361,18 +333,18 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         return;
     }
 
-    const size_t total_entries = freq_db_.entry_count();
+    const size_t total_entries = freq_db_.size();
     if (current_db_index_ >= total_entries) {
         current_db_index_ = 0;
     }
 
-    const auto& entry_opt = freq_db_.get_entry(current_db_index_);
-    if (entry_opt && entry_opt->frequency_hz > 0) {
-        Frequency target_freq_hz = entry_opt->frequency_hz;
+    if (current_db_index_ < freq_db_.size() && freq_db_[current_db_index_]) {
+        const auto& entry = *freq_db_[current_db_index_];
+        Frequency target_freq_hz = entry.frequency_a;
         if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
             if (hardware.tune_to_frequency(target_freq_hz)) {
                 int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-                process_rssi_detection(*entry_opt, real_rssi);
+                process_rssi_detection(entry, real_rssi);
                 last_scanned_frequency_ = target_freq_hz;
             }
         }
@@ -661,11 +633,8 @@ bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
-    if (freq_db_.is_open() && current_db_index_ < freq_db_.entry_count()) {
-        const auto& entry_opt = freq_db_.get_entry(current_db_index_);
-        if (entry_opt) {
-            return entry_opt->frequency_hz;
-        }
+    if (!freq_db_.empty() && current_db_index_ < freq_db_.size() && freq_db_[current_db_index_]) {
+        return freq_db_[current_db_index_]->frequency_a;
     }
     return 433000000;
 }
