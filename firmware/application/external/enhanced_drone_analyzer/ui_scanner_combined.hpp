@@ -376,9 +376,10 @@ private:
     static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
     bool scanning_active_ = false;
 
-    FreqmanDB freq_db_;
+    freqman_db freq_db_;
     size_t current_db_index_ = 0;
     Frequency last_scanned_frequency_ = 0;
+    bool freq_db_loaded_ = false;
 
     uint32_t scan_cycles_ = 0;
     uint32_t total_detections_ = 0;
