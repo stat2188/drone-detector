@@ -16,7 +16,6 @@
 #include "../../ui_navigation.hpp"
 #include "../../file_path.hpp"
 #include "../../string_format.hpp"
-#include "convert.hpp"
 #include "../../file.hpp"
 #include "../../tone_key.hpp"
 #include "../../rtc_time.hpp"
@@ -54,28 +53,6 @@ static constexpr size_t MINI_SPECTRUM_HEIGHT = 64;
 static constexpr Frequency MIN_HARDWARE_FREQ = 50000000ULL;
 static constexpr Frequency MAX_HARDWARE_FREQ = 6000000000ULL;
 static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %ddB %c";
-
-// Drone detection structures
-struct TrackedDrone {
-    uint32_t frequency;
-    int32_t rssi;
-    uint32_t last_seen;
-    uint32_t detection_count;
-    ThreatLevel threat_level;
-    MovementTrend trend;
-
-    TrackedDrone() : frequency(0), rssi(-120), last_seen(0), detection_count(0),
-                    threat_level(ThreatLevel::NONE), trend(MovementTrend::UNKNOWN) {}
-};
-
-struct DetectionLogEntry {
-    uint32_t timestamp;
-    uint32_t frequency_hz;
-    int32_t rssi_db;
-    ThreatLevel threat_level;
-    DroneType drone_type;
-    uint32_t detection_count;
-};
 
 // Settings loading helper
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
@@ -359,13 +336,13 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         return;
     }
 
-    const size_t total_entries = freq_db_.size();
+    const size_t total_entries = freq_db_.entry_count();
     if (current_db_index_ >= total_entries) {
         current_db_index_ = 0;
     }
 
-    if (current_db_index_ < freq_db_.size()) {
-        const auto& entry = *freq_db_[current_db_index_];
+    if (current_db_index_ < freq_db_.entry_count()) {
+        const auto& entry = freq_db_[current_db_index_];
             Frequency target_freq_hz = entry.frequency_a;
             if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
                 if (hardware.tune_to_frequency(target_freq_hz)) {
@@ -640,15 +617,56 @@ void DroneScanner::update_tracking_counts() {
 void DroneScanner::update_trends_compact_display() {
 }
 
+void DroneScanner::reset_scan_cycles() {
+    scan_cycles_ = 0;
+}
+
+void DroneScanner::switch_to_real_mode() {
+    is_real_mode_ = true;
+}
+
+void DroneScanner::switch_to_demo_mode() {
+    is_real_mode_ = false;
+}
+
+void DroneScanner::initialize_database_and_scanner() {
+    auto db_path = get_freqman_path("DRONES");
+    freqman_load_options options{
+        .load_freqs = true,
+        .load_ranges = true,
+        .load_hamradios = true,
+        .load_repeaters = true};
+    if (!load_freqman_file("DRONES", drone_database_, options)) {
+        // Continue without enhanced drone data
+    }
+    freq_db_.open(db_path, false);
+}
+
+void DroneScanner::cleanup_database_and_scanner() {
+    if (scanning_thread_) {
+        scanning_active_ = false;
+        chThdWait(scanning_thread_);
+        scanning_thread_ = nullptr;
+    }
+}
+
+void DroneScanner::scan_init_from_loaded_frequencies() {
+    // Implementation for initializing scan from loaded frequencies
+}
+
 bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat) {
     return SimpleDroneValidation::validate_rssi_signal(rssi_db, threat);
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
-    if (!freq_db_.empty() && current_db_index_ < freq_db_.size() && freq_db_[current_db_index_]) {
-        return freq_db_[current_db_index_]->frequency_a;
+    if (!freq_db_.empty() && current_db_index_ < freq_db_.entry_count() && freq_db_[current_db_index_].frequency_a > 0) {
+        return freq_db_[current_db_index_].frequency_a;
     }
     return 433000000;
+}
+
+Frequency DroneScanner::get_current_radio_frequency() const {
+    return get_current_scanning_frequency();
 }
 
 const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
@@ -760,7 +778,7 @@ inline std::string DroneScanner::DroneDetectionLogger::format_session_summary(si
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
     : spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
-      spectrum_streaming_active_(false), last_valid_rssi_(-120)
+      radio_state_(), spectrum_streaming_active_(false), last_valid_rssi_(-120)
 {
 }
 
@@ -787,6 +805,12 @@ void DroneHardwareController::shutdown_hardware() {
 }
 
 void DroneHardwareController::initialize_radio_state() {
+    // Following Recon and Looking Glass patterns
+    receiver_model.enable();
+    receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
+    receiver_model.set_sampling_rate(get_configured_sampling_rate());
+    receiver_model.set_baseband_bandwidth(get_configured_bandwidth());
+    receiver_model.set_squelch_level(0);
 }
 
 void DroneHardwareController::initialize_spectrum_collector() {
@@ -824,19 +848,19 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 }
 
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
-    portapack::receiver_model.set_target_frequency(frequency_hz);
+    radio_state_.tune_rf(frequency_hz);
     return true;
 }
 
 void DroneHardwareController::start_spectrum_streaming() {
     if (spectrum_streaming_active_) return;
     spectrum_streaming_active_ = true;
-    portapack::receiver_model.start_baseband_streaming();
+    baseband::spectrum_streaming_start();
 }
 
 void DroneHardwareController::stop_spectrum_streaming() {
     spectrum_streaming_active_ = false;
-    portapack::receiver_model.stop_baseband_streaming();
+    baseband::spectrum_streaming_stop();
 }
 
 int32_t DroneHardwareController::get_real_rssi_from_hardware(Frequency target_frequency) {
@@ -1087,7 +1111,7 @@ void ThreatCard::paint(Painter& painter) {
     View::paint(painter);
     if (is_active_) {
         Color bg_color = get_card_bg_color();
-        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 2}, bg_color);
+        painter.fill_rectangle({parent_rect_.left(), parent_rect().top(), parent_rect_.width(), 2}, bg_color);
     }
 }
 
@@ -1169,12 +1193,23 @@ void ConsoleStatusBar::set_display_mode(DisplayMode mode) {
 void ConsoleStatusBar::paint(Painter& painter) {
     View::paint(painter);
     if (mode_ == DisplayMode::ALERT) {
-        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 2}, Color(32, 0, 0));
+        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect().width(), 2}, Color(32, 0, 0));
     }
 }
 
 DroneDisplayController::DroneDisplayController(NavigationView& nav)
-    : nav_(nav), spectrum_gradient_{}
+    : nav_(nav), spectrum_gradient_{}, big_display_({0, 0, screen_width, 32}, "2400.0MHz"),
+      text_threat_summary_({0, 32, screen_width, 16}, "THREAT: NONE | All clear"),
+      text_status_info_({0, 48, screen_width, 16}, "Ready - Enhanced Drone Analyzer"),
+      text_scanner_stats_({0, 64, screen_width, 16}, "No database loaded"),
+      scanning_progress_({0, 80, screen_width, 16}),
+      text_drone_1({0, 96, screen_width, 16}, ""),
+      text_drone_2({0, 112, screen_width, 16}, ""),
+      text_drone_3({0, 128, screen_width, 16}, ""),
+      spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
+      pixel_index(0), bins_hz_size(0), each_bin_size(0), marker_pixel_step(0), min_color_power(0),
+      mode(LOOKING_GLASS_SINGLEPASS), spectrum_config_(), spectrum_fifo_(nullptr),
+      message_handler_spectrum_config_(), message_handler_frame_sync_()
 {
     if (!spectrum_gradient_.load_file(default_gradient_file)) {
         spectrum_gradient_.set_default();
@@ -1207,12 +1242,12 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     if (scanner.is_scanning_active()) {
         Frequency current_freq = scanner.get_current_scanning_frequency();
         if (current_freq > 0) {
-            big_display_.set(current_freq);
+            big_display_.set(to_string_short_freq(current_freq));
         } else {
-            big_display_.set(2400000000ULL);
+            big_display_.set("2400.0MHz");
         }
     } else {
-        big_display_.set(0);
+        big_display_.set("READY");
     }
 
     size_t total_freqs = scanner.get_database_size();
@@ -1702,7 +1737,12 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       audio_(std::make_unique<AudioManager>()),
       ui_controller_(std::make_unique<DroneUIController>(nav, *hardware_, *scanner_, *audio_)),
       display_controller_(std::make_unique<DroneDisplayController>(nav)),
-      scanning_coordinator_(std::make_unique<ScanningCoordinator>(nav, *hardware_, *scanner_, *display_controller_, *audio_))
+      scanning_coordinator_(std::make_unique<ScanningCoordinator>(nav, *hardware_, *scanner_, *display_controller_, *audio_)),
+      smart_header_(), status_bar_(), threat_cards_(),
+      button_start_({screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"),
+      button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
+      field_scanning_mode_({0, screen_height - 72, screen_width - 80, 24}, 3),
+      settings_()
 {
     load_settings_from_sd_card(settings_);
 

@@ -446,6 +446,7 @@ private:
 
     MessageHandlerRegistration message_handler_spectrum_config_;
     MessageHandlerRegistration message_handler_frame_sync_;
+    MessageHandlerRegistration message_handler_spectrum_;
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
@@ -621,9 +622,12 @@ private:
     size_t pixel_index = 0;
     uint32_t bins_hz_size = 0;
     uint32_t each_bin_size = 100000;
-    uint8_t* powerlevel = nullptr;
     uint8_t min_color_power = 0;
     const uint8_t ignore_dc = 4;
+    uint32_t marker_pixel_step = 1000000;
+    uint8_t max_power = 0;
+    uint8_t range_max_power = 0;
+    int mode = 0;
 
     SpectrumConfig spectrum_config_;
     NavigationView& nav_;
