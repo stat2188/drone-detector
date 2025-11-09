@@ -76,7 +76,6 @@ static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 static constexpr uint8_t MIN_DETECTION_COUNT = 3;
 static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
-static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;  // Alias for compatibility
 static constexpr int LOOKING_GLASS_SINGLEPASS = 0;
 static constexpr int LOOKING_GLASS_FASTSCAN = 1;
 static constexpr int LOOKING_GLASS_SLOWSCAN = 2;
@@ -444,8 +443,8 @@ private:
     Thread* scanning_thread_ = nullptr;
     bool scanning_active_ = false;
 
-    FreqmanDB freq_db_;
-    FreqmanDB::Index current_db_index_ = 0;
+    freqman_db freq_db_;
+    size_t current_db_index_ = 0;
     Frequency last_scanned_frequency_ = 0;
     bool freq_db_loaded_ = false;
 

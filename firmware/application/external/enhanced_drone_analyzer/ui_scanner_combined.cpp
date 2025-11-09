@@ -151,7 +151,14 @@ DroneScanner::~DroneScanner() {
 }
 
 void DroneScanner::initialize_database_and_scanner() {
-    if (!freq_db_.open(get_freqman_path("DRONES"))) {
+    freqman_load_options options;
+    options.max_entries = 150;
+    options.load_freqs = true;
+    options.load_ranges = true;
+    options.load_hamradios = true;
+    options.load_repeaters = true;
+
+    if (!load_freqman_file("DRONES", freq_db_, options)) {
         // Continue without enhanced drone data
     }
 }
@@ -242,23 +249,30 @@ msg_t DroneScanner::scanning_thread() {
 }
 
 bool DroneScanner::load_frequency_database() {
-    freq_db_.close();
+    freq_db_.clear();
     current_db_index_ = 0;
 
-    if (!freq_db_.open(get_freqman_path("DRONES"))) {
+    freqman_load_options options;
+    options.max_entries = 150;
+    options.load_freqs = true;
+    options.load_ranges = true;
+    options.load_hamradios = true;
+    options.load_repeaters = true;
+
+    if (!load_freqman_file("DRONES", freq_db_, options)) {
         return false;
     }
 
-    if (freq_db_.entry_count() > 100) {
+    if (freq_db_.size() > 100) {
         handle_scan_error("Large database loaded");
     }
 
     freq_db_loaded_ = true;
-    return freq_db_.entry_count() > 0;
+    return freq_db_.size() > 0;
 }
 
 size_t DroneScanner::get_database_size() const {
-    return freq_db_.entry_count();
+    return freq_db_.size();
 }
 
 void DroneScanner::set_scanning_mode(ScanningMode mode) {
@@ -298,7 +312,7 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    if (freq_db_.entry_count() == 0) {
+    if (freq_db_.size() == 0) {
         if (scan_cycles_ % 50 == 0) {
             handle_scan_error("No frequency database loaded");
             scanning_active_ = false;
@@ -306,12 +320,12 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         return;
     }
 
-    const size_t total_entries = freq_db_.entry_count();
+    const size_t total_entries = freq_db_.size();
     if (current_db_index_ >= total_entries) {
         current_db_index_ = 0;
     }
 
-    if (current_db_index_ < freq_db_.entry_count()) {
+    if (current_db_index_ < freq_db_.size()) {
         const auto& entry = freq_db_[current_db_index_];
         Frequency target_freq_hz = entry.frequency_a;
         if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
@@ -599,7 +613,14 @@ void DroneScanner::switch_to_demo_mode() {
 }
 
 void DroneScanner::initialize_database_and_scanner() {
-    if (!freq_db_.open(get_freqman_path("DRONES"))) {
+    freqman_load_options options;
+    options.max_entries = 150;
+    options.load_freqs = true;
+    options.load_ranges = true;
+    options.load_hamradios = true;
+    options.load_repeaters = true;
+
+    if (!load_freqman_file("DRONES", freq_db_, options)) {
         // Continue without enhanced drone data
     }
 }
@@ -621,7 +642,7 @@ bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
-    if (!freq_db_.empty() && current_db_index_ < freq_db_.entry_count() && freq_db_[current_db_index_].frequency_a > 0) {
+    if (!freq_db_.empty() && current_db_index_ < freq_db_.size() && freq_db_[current_db_index_].frequency_a > 0) {
         return freq_db_[current_db_index_].frequency_a;
     }
     return 433000000;
