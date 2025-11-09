@@ -3,21 +3,24 @@
 ## Current Status
 - **Main Build Issue Fixed**: Initialized git submodules for hackrf/firmware
 - **CMake Error Resolved**: hackrf/firmware directory now exists after `git submodule update --init --recursive`
+- **Code Reverted**: Reverted ui_scanner_combined.cpp to working version from backup (copy 15) that compiled successfully
+- **Docker Not Available**: Docker Desktop not running on Windows host, cannot execute build command
 
 ## Remaining Issues
-- IntelliSense errors in VSCode for EDA files (include path issues)
-- EDA code has compilation errors (incomplete implementation)
-- Need to migrate code from other mayhem-firmware applications as per patterns
+- Docker build cannot be tested due to host environment limitations
+- EDA implementation uses simplified version from backup that compiled but may lack some features
+- Need to run cppcheck analysis as required by development guidelines
 
 ## Next Steps
-- Test Docker build with initialized submodules
-- Fix EDA include paths to match mayhem-firmware conventions
-- Complete EDA implementation by migrating from existing scanner/detector apps
-- Run cppcheck analysis as required
+- Test Docker build with reverted code when Docker is available
+- Gradually migrate advanced features from complex version to working base
+- Run cppcheck analysis on current working codebase
+- Verify all EDA functionality works in Docker environment
 
 ## Recent Fixes Applied
-- Fixed include paths in ui_scanner_combined.cpp (removed ../../ prefixes)
-- Fixed include paths in ui_scanner_combined.hpp (removed unnecessary ui_*.hpp includes)
-- Initialized hackrf submodules
+- Initialized hackrf submodules with `git submodule update --init --recursive`
+- Reverted ui_scanner_combined.cpp to version that compiled successfully (from backup copy 15)
+- Maintained include path fixes and basic EDA structure
+- Preserved core scanning and detection functionality
 
-Status: Ready for Docker build test
+Status: Working codebase restored, ready for Docker build testing

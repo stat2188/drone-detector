@@ -1,35 +1,16 @@
-// ui_scanner_combined.cpp - Enhanced Drone Analyzer based on ReconView
-// Migrated from Recon scanning logic with drone detection capabilities
+// ui_scanner_combined.cpp - Unified implementation for Enhanced Drone Analyzer Scanner App
+// Combines implementations from: ui_drone_scanner.cpp, ui_drone_hardware.cpp, ui_drone_ui.cpp
+// Combines all required implementations for scanner functionality
 
 #include "ui_scanner_combined.hpp"
-#include "ui_drone_common_types.hpp"
-#include "ui_signal_processing.hpp"
-#include "scanner_settings.hpp"
 #include "ui_drone_audio.hpp"
-#include "scanning_coordinator.hpp"
-
-#include "freqman_db.hpp"
-#include "gradient.hpp"
-#include "audio.hpp"
-#include "baseband_api.hpp"
-#include "portapack.hpp"
-#include "ui_navigation.hpp"
-#include "file_path.hpp"
-#include "string_format.hpp"
-#include "file.hpp"
-#include "tone_key.hpp"
-#include "rtc_time.hpp"
-#include "ui.hpp"
-
+#include "../../gradient.hpp"
+#include "../../baseband_api.hpp"
 #include <algorithm>
 #include <sstream>
-#include <memory>
-#include <array>
-#include <vector>
+#include <cstdlib>
 
-using namespace portapack;
-using namespace tonekey;
-namespace fs = std::filesystem;
+#include <ch.h>
 
 // Settings loading helper
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
