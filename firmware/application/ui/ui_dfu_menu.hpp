@@ -23,7 +23,10 @@
 #define __UI_DFU_MENU_H__
 
 #include "ui_widget.hpp"
-#include "ui_navigation.hpp"
+
+namespace ui {
+class NavigationView;
+}
 
 namespace ui {
 

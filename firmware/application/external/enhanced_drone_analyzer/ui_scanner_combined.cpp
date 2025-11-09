@@ -1159,16 +1159,17 @@ void ConsoleStatusBar::paint(Painter& painter) {
 }
 
 DroneDisplayController::DroneDisplayController(NavigationView& nav)
-    : nav_(nav), spectrum_gradient_{}, big_display_({0, 0, screen_width, 32}, "2400.0MHz"),
-      text_threat_summary_({0, 32, screen_width, 16}, "THREAT: NONE | All clear"),
-      text_status_info_({0, 48, screen_width, 16}, "Ready - Enhanced Drone Analyzer"),
-      text_scanner_stats_({0, 64, screen_width, 16}, "No database loaded"),
-      scanning_progress_({0, 80, screen_width, 16}),
-      text_drone_1({0, 96, screen_width, 16}, ""),
-      text_drone_2({0, 112, screen_width, 16}, ""),
-      text_drone_3({0, 128, screen_width, 16}, ""),
+    : nav_(nav), spectrum_gradient_{}, big_display_({4, 6 * 16, 28 * 8, 52}, ""),
+      scanning_progress_({0, 7 * 16, screen_width, 8}),
+      text_threat_summary_({0, 8 * 16, screen_width, 16}, "THREAT: NONE"),
+      text_status_info_({0, 9 * 16, screen_width, 16}, "Ready"),
+      text_scanner_stats_({0, 10 * 16, screen_width, 16}, "No database"),
+      text_trends_compact_({0, 11 * 16, screen_width, 16}, ""),
+      text_drone_1_({screen_width - 120, 12 * 16, 120, 16}, ""),
+      text_drone_2_({screen_width - 120, 13 * 16, 120, 16}, ""),
+      text_drone_3_({screen_width - 120, 14 * 16, 120, 16}, ""),
       spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
-      pixel_index(0), bins_hz_size(0), each_bin_size(0), marker_pixel_step(0), min_color_power(0),
+      pixel_index(0), bins_hz_size(0), each_bin_size(100000), marker_pixel_step(1000000), min_color_power(0),
       mode(LOOKING_GLASS_SINGLEPASS), spectrum_config_(), spectrum_fifo_(nullptr),
       message_handler_spectrum_config_(), message_handler_frame_sync_()
 {
@@ -1313,9 +1314,9 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
 }
 
 void DroneDisplayController::render_drone_text_display() {
-    text_drone_1.set("");
-    text_drone_2.set("");
-    text_drone_3.set("");
+    text_drone_1_.set("");
+    text_drone_2_.set("");
+    text_drone_3_.set("");
     for (size_t i = 0; i < std::min(displayed_drones_.size(), size_t(3)); ++i) {
         const auto& drone = displayed_drones_[i];
         char buffer[32];
@@ -1340,19 +1341,21 @@ void DroneDisplayController::render_drone_text_display() {
                 freq_str.c_str(),
                 drone.rssi,
                 trend_symbol);
-        Color threat_color = get_threat_level_color(drone.threat);
+        const Style* threat_style = (drone.threat >= ThreatLevel::HIGH) ? Theme::getInstance()->fg_red :
+                                   (drone.threat >= ThreatLevel::MEDIUM) ? Theme::getInstance()->fg_yellow :
+                                   Theme::getInstance()->fg_green;
         switch(i) {
             case 0:
-                text_drone_1.set(buffer);
-                text_drone_1.set_style(threat_color);
+                text_drone_1_.set(buffer);
+                text_drone_1_.set_style(threat_style);
                 break;
             case 1:
-                text_drone_2.set(buffer);
-                text_drone_2.set_style(threat_color);
+                text_drone_2_.set(buffer);
+                text_drone_2_.set_style(threat_style);
                 break;
             case 2:
-                text_drone_3.set(buffer);
-                text_drone_3.set_style(threat_color);
+                text_drone_3_.set(buffer);
+                text_drone_3_.set_style(threat_style);
                 break;
         }
     }

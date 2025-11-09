@@ -485,6 +485,42 @@
         <error id="missingInclude" severity="information" msg="Include file: &quot;battery.hpp&quot; not found." verbose="Include file: &quot;battery.hpp&quot; not found.">
             <location file="firmware\application\ui_navigation.hpp" line="54" column="0"/>
         </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_checkbox.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_checkbox.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="48" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_numberfield.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_numberfield.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="49" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_freq_field.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_freq_field.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="50" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_fileman.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_fileman.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="51" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_menu.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_menu.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="52" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_btngrid.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_btngrid.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="53" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_rssi.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_rssi.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="54" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_channel.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_channel.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="55" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_audio.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_audio.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="56" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_dfu_menu.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_dfu_menu.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="57" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_bmpview.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_bmpview.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="58" column="0"/>
+        </error>
+        <error id="missingInclude" severity="information" msg="Include file: &quot;../ui/ui_textentry.hpp&quot; not found." verbose="Include file: &quot;../ui/ui_textentry.hpp&quot; not found.">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="59" column="0"/>
+        </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;portapack.hpp&quot; not found." verbose="Include file: &quot;portapack.hpp&quot; not found.">
             <location file="firmware\application\external\enhanced_drone_analyzer\enhanced_drone_analyzer_scanner_main.cpp" line="32" column="0"/>
         </error>
@@ -492,7 +528,7 @@
             <location file="firmware\application\external\enhanced_drone_analyzer\enhanced_drone_analyzer_scanner_main.cpp" line="0" column="0"/>
         </error>
         <error id="operatorEqVarError" severity="warning" msg="Member variable &apos;TrackedDrone::rssi&apos; is not assigned a value in &apos;TrackedDrone::operator=&apos;." verbose="Member variable &apos;TrackedDrone::rssi&apos; is not assigned a value in &apos;TrackedDrone::operator=&apos;." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="86" column="19"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="98" column="19"/>
             <symbol>TrackedDrone::rssi</symbol>
         </error>
         <error id="unusedPrivateFunction" severity="style" msg="Unused private function: &apos;DroneAnalyzerSettingsManager::parse_line&apos;" verbose="Unused private function: &apos;DroneAnalyzerSettingsManager::parse_line&apos;" cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp">
@@ -572,7 +608,7 @@
             <symbol>SystemMenuView</symbol>
         </error>
         <error id="noExplicitConstructor" severity="style" msg="Class &apos;LoadingScreenView&apos; has a constructor with 1 argument that is not explicit." verbose="Class &apos;LoadingScreenView&apos; has a constructor with 1 argument that is not explicit. Such, so called &quot;Converting constructors&quot;, should in general be explicit for type safety reasons as that prevents unintended implicit conversions." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="832" column="5"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="844" column="5"/>
             <symbol>LoadingScreenView</symbol>
         </error>
         <error id="noExplicitConstructor" severity="style" msg="Class &apos;RadioState &lt; ReceiverModel , &amp; portapack :: receiver_model &gt;&apos; has a constructor with 1 argument that is not explicit." verbose="Class &apos;RadioState &lt; ReceiverModel , &amp; portapack :: receiver_model &gt;&apos; has a constructor with 1 argument that is not explicit. Such, so called &quot;Converting constructors&quot;, should in general be explicit for type safety reasons as that prevents unintended implicit conversions." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp">
@@ -642,31 +678,31 @@
             <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="16" column="0"/>
         </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;ui.hpp&quot; not found." verbose="Include file: &quot;ui.hpp&quot; not found.">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="253" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="231" column="0"/>
         </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;ui_navigation.hpp&quot; not found." verbose="Include file: &quot;ui_navigation.hpp&quot; not found.">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="254" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="232" column="0"/>
         </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;ui_tabview.hpp&quot; not found." verbose="Include file: &quot;ui_tabview.hpp&quot; not found.">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="255" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="233" column="0"/>
         </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;app_settings.hpp&quot; not found." verbose="Include file: &quot;app_settings.hpp&quot; not found.">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="256" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="234" column="0"/>
         </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;ui.hpp&quot; not found." verbose="Include file: &quot;ui.hpp&quot; not found.">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="396" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="374" column="0"/>
         </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;ui_navigation.hpp&quot; not found." verbose="Include file: &quot;ui_navigation.hpp&quot; not found.">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="397" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="375" column="0"/>
         </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;external_app.hpp&quot; not found." verbose="Include file: &quot;external_app.hpp&quot; not found.">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="398" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="376" column="0"/>
         </error>
         <error id="normalCheckLevelMaxBranches" severity="information" msg="Limiting analysis of branches. Use --check-level=exhaustive to analyze all branches." verbose="Limiting analysis of branches. Use --check-level=exhaustive to analyze all branches." file0="firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp">
             <location file="firmware\application\external\enhanced_drone_analyzer\enhanced_drone_analyzer_settings_main.cpp" line="0" column="0"/>
         </error>
         <error id="noExplicitConstructor" severity="style" msg="Class &apos;LoadingView&apos; has a constructor with 1 argument that is not explicit." verbose="Class &apos;LoadingView&apos; has a constructor with 1 argument that is not explicit. Such, so called &quot;Converting constructors&quot;, should in general be explicit for type safety reasons as that prevents unintended implicit conversions." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="478" column="5"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="456" column="5"/>
             <symbol>LoadingView</symbol>
         </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;volume.hpp&quot; not found." verbose="Include file: &quot;volume.hpp&quot; not found.">
@@ -721,7 +757,7 @@
             <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="0" column="0"/>
         </error>
         <error id="uninitMemberVar" severity="warning" msg="Member variable &apos;DroneDisplayController::displayed_drones_&apos; is not initialized in the constructor." verbose="Member variable &apos;DroneDisplayController::displayed_drones_&apos; is not initialized in the constructor. Member variables of native types, pointers, or references are left uninitialized when the class is instantiated. That may cause bugs or undefined behavior." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1158" column="25"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1161" column="25"/>
             <symbol>DroneDisplayController::displayed_drones_</symbol>
         </error>
         <error id="knownConditionTrueFalse" severity="style" msg="Condition &apos;hardware.tune_to_frequency(target_freq_hz)&apos; is always true" verbose="Condition &apos;hardware.tune_to_frequency(target_freq_hz)&apos; is always true" cwe="571" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
@@ -733,22 +769,28 @@
             <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="338" column="35" info="Calling function &apos;tune_to_frequency&apos; returns 1"/>
         </error>
         <error id="knownConditionTrueFalse" severity="style" msg="Condition &apos;smart_header_&apos; is always true" verbose="Condition &apos;smart_header_&apos; is always true" cwe="571" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1821" column="9" info="Condition &apos;smart_header_&apos; is always true"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1827" column="9" info="Condition &apos;smart_header_&apos; is always true"/>
         </error>
         <error id="knownConditionTrueFalse" severity="style" msg="Condition &apos;status_bar_&apos; is always true" verbose="Condition &apos;status_bar_&apos; is always true" cwe="571" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1826" column="9" info="Condition &apos;status_bar_&apos; is always true"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1832" column="9" info="Condition &apos;status_bar_&apos; is always true"/>
         </error>
         <error id="invalidPrintfArgType_s" severity="warning" msg="%s in format string (no. 1) requires &apos;char *&apos; but the argument type is &apos;std::string&apos;." verbose="%s in format string (no. 1) requires &apos;char *&apos; but the argument type is &apos;std::string&apos;." cwe="686" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1205" column="9"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1209" column="9"/>
+        </error>
+        <error id="cstyleCast" severity="style" msg="C-style pointer casting" verbose="C-style pointer casting detected. C++ offers four different kinds of casts as replacements: static_cast, const_cast, dynamic_cast and reinterpret_cast. A C-style cast could evaluate to any of those automatically, thus it is considered safer if the programmer explicitly states which kind of cast is expected." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="742" column="141"/>
+        </error>
+        <error id="cstyleCast" severity="style" msg="C-style pointer casting" verbose="C-style pointer casting detected. C++ offers four different kinds of casts as replacements: static_cast, const_cast, dynamic_cast and reinterpret_cast. A C-style cast could evaluate to any of those automatically, thus it is considered safer if the programmer explicitly states which kind of cast is expected." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="744" column="121"/>
         </error>
         <error id="useStlAlgorithm" severity="style" msg="Consider using std::find_if algorithm instead of a raw loop." verbose="Consider using std::find_if algorithm instead of a raw loop." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
             <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="513" column="92"/>
         </error>
         <error id="useStlAlgorithm" severity="style" msg="Consider using std::fill or std::generate algorithm instead of a raw loop." verbose="Consider using std::fill or std::generate algorithm instead of a raw loop." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1302" column="15"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1306" column="15"/>
         </error>
         <error id="unreadVariable" severity="style" msg="Variable &apos;threat_abbr&apos; is assigned a value that is never used." verbose="Variable &apos;threat_abbr&apos; is assigned a value that is never used." cwe="563" file0="firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1027" column="29"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1030" column="29"/>
             <symbol>threat_abbr</symbol>
         </error>
         <error id="missingInclude" severity="information" msg="Include file: &quot;file.hpp&quot; not found." verbose="Include file: &quot;file.hpp&quot; not found.">
@@ -792,7 +834,7 @@
         </error>
         <error id="passedByValueCallback" severity="performance" msg="Function parameter &apos;config&apos; should be passed by const reference. However it seems that &apos;ScannerConfig&apos; is a callback function." verbose="Parameter &apos;config&apos; is passed by value. It could be passed as a const reference which is usually faster and recommended in C++." cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/ui_settings_combined.cpp">
             <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.cpp" line="402" column="41" info="Function parameter &apos;config&apos; should be passed by const reference. However it seems that &apos;ScannerConfig&apos; is a callback function."/>
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="172" column="7" info="Function pointer used here."/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="150" column="7" info="Function pointer used here."/>
             <symbol>config</symbol>
         </error>
         <error id="constParameterReference" severity="style" msg="Parameter &apos;config&apos; can be declared as reference to const" verbose="Parameter &apos;config&apos; can be declared as reference to const" cwe="398" file0="firmware/application/external/enhanced_drone_analyzer/ui_settings_combined.cpp">
@@ -867,16 +909,6 @@
         <error id="unsignedPositive" severity="style" msg="Unsigned expression &apos;gain&apos; can&apos;t be negative so it is unnecessary to test it." verbose="Unsigned expression &apos;gain&apos; can&apos;t be negative so it is unnecessary to test it." cwe="570" file0="firmware/application/external/enhanced_drone_analyzer/ui_spectrum_settings.cpp">
             <location file="firmware\application\external\enhanced_drone_analyzer\ui_spectrum_settings.hpp" line="64" column="18" info="Unsigned positive"/>
             <symbol>gain</symbol>
-        </error>
-        <error id="ctuOneDefinitionRuleViolation" severity="error" msg="The one definition rule is violated, different classes/structs have the same name &apos;DisplayDroneEntry&apos;" verbose="The one definition rule is violated, different classes/structs have the same name &apos;DisplayDroneEntry&apos;" cwe="758" file0="firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="160" column="1"/>
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="22" column="1"/>
-            <symbol>DisplayDroneEntry</symbol>
-        </error>
-        <error id="ctuOneDefinitionRuleViolation" severity="error" msg="The one definition rule is violated, different classes/structs have the same name &apos;DronePreset&apos;" verbose="The one definition rule is violated, different classes/structs have the same name &apos;DronePreset&apos;" cwe="758" file0="firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="171" column="1"/>
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_settings_combined.hpp" line="33" column="1"/>
-            <symbol>DronePreset</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;name&apos; is never used." verbose="The function &apos;name&apos; is never used." cwe="561">
             <location file="firmware\application\app_settings.hpp" line="76" column="0"/>
@@ -963,107 +995,119 @@
             <symbol>get_session_summary</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;get_spectrum_bandwidth&apos; is never used." verbose="The function &apos;get_spectrum_bandwidth&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="790" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="793" column="0"/>
             <symbol>get_spectrum_bandwidth</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;set_spectrum_bandwidth&apos; is never used." verbose="The function &apos;set_spectrum_bandwidth&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="794" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="797" column="0"/>
             <symbol>set_spectrum_bandwidth</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;get_spectrum_center_frequency&apos; is never used." verbose="The function &apos;get_spectrum_center_frequency&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="798" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="801" column="0"/>
             <symbol>get_spectrum_center_frequency</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;set_spectrum_center_frequency&apos; is never used." verbose="The function &apos;set_spectrum_center_frequency&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="802" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="805" column="0"/>
             <symbol>set_spectrum_center_frequency</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;get_current_rssi&apos; is never used." verbose="The function &apos;get_current_rssi&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="847" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="850" column="0"/>
             <symbol>get_current_rssi</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;set_max_threat&apos; is never used." verbose="The function &apos;set_max_threat&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="921" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="924" column="0"/>
             <symbol>set_max_threat</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;set_movement_counts&apos; is never used." verbose="The function &apos;set_movement_counts&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="928" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="931" column="0"/>
             <symbol>set_movement_counts</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;set_current_frequency&apos; is never used." verbose="The function &apos;set_current_frequency&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="933" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="936" column="0"/>
             <symbol>set_current_frequency</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;set_scanning_state&apos; is never used." verbose="The function &apos;set_scanning_state&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="940" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="943" column="0"/>
             <symbol>set_scanning_state</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;set_color_scheme&apos; is never used." verbose="The function &apos;set_color_scheme&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="947" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="950" column="0"/>
             <symbol>set_color_scheme</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;add_detected_drone&apos; is never used." verbose="The function &apos;add_detected_drone&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1251" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1255" column="0"/>
             <symbol>add_detected_drone</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;process_mini_spectrum_data&apos; is never used." verbose="The function &apos;process_mini_spectrum_data&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1365" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1371" column="0"/>
             <symbol>process_mini_spectrum_data</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;render_mini_spectrum&apos; is never used." verbose="The function &apos;render_mini_spectrum&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1433" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1439" column="0"/>
             <symbol>render_mini_spectrum</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;get_safe_spectrum_index&apos; is never used." verbose="The function &apos;get_safe_spectrum_index&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1473" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1479" column="0"/>
             <symbol>get_safe_spectrum_index</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;set_spectrum_range&apos; is never used." verbose="The function &apos;set_spectrum_range&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1480" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1486" column="0"/>
             <symbol>set_spectrum_range</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;on_toggle_mode&apos; is never used." verbose="The function &apos;on_toggle_mode&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1576" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1582" column="0"/>
             <symbol>on_toggle_mode</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;start_scanning_thread&apos; is never used." verbose="The function &apos;start_scanning_thread&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1767" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.cpp" line="1773" column="0"/>
             <symbol>start_scanning_thread</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;get_data&apos; is never used." verbose="The function &apos;get_data&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="245" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="257" column="0"/>
             <symbol>get_data</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;get_total_memory_usage&apos; is never used." verbose="The function &apos;get_total_memory_usage&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="375" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="387" column="0"/>
             <symbol>get_total_memory_usage</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;scanning_progress&apos; is never used." verbose="The function &apos;scanning_progress&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="606" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="618" column="0"/>
             <symbol>scanning_progress</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;text_threat_summary&apos; is never used." verbose="The function &apos;text_threat_summary&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="607" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="619" column="0"/>
             <symbol>text_threat_summary</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;text_status_info&apos; is never used." verbose="The function &apos;text_status_info&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="608" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="620" column="0"/>
             <symbol>text_status_info</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;text_scanner_stats&apos; is never used." verbose="The function &apos;text_scanner_stats&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="609" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="621" column="0"/>
             <symbol>text_scanner_stats</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;text_trends_compact&apos; is never used." verbose="The function &apos;text_trends_compact&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="610" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="622" column="0"/>
             <symbol>text_trends_compact</symbol>
         </error>
+        <error id="unusedFunction" severity="style" msg="The function &apos;text_drone_1&apos; is never used." verbose="The function &apos;text_drone_1&apos; is never used." cwe="561">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="623" column="0"/>
+            <symbol>text_drone_1</symbol>
+        </error>
+        <error id="unusedFunction" severity="style" msg="The function &apos;text_drone_2&apos; is never used." verbose="The function &apos;text_drone_2&apos; is never used." cwe="561">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="624" column="0"/>
+            <symbol>text_drone_2</symbol>
+        </error>
+        <error id="unusedFunction" severity="style" msg="The function &apos;text_drone_3&apos; is never used." verbose="The function &apos;text_drone_3&apos; is never used." cwe="561">
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="625" column="0"/>
+            <symbol>text_drone_3</symbol>
+        </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;get_spec_iq_phase_calibration_value&apos; is never used." verbose="The function &apos;get_spec_iq_phase_calibration_value&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="792" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="804" column="0"/>
             <symbol>get_spec_iq_phase_calibration_value</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;set_spec_iq_phase_calibration_value&apos; is never used." verbose="The function &apos;set_spec_iq_phase_calibration_value&apos; is never used." cwe="561">
-            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="793" column="0"/>
+            <location file="firmware\application\external\enhanced_drone_analyzer\ui_scanner_combined.hpp" line="805" column="0"/>
             <symbol>set_spec_iq_phase_calibration_value</symbol>
         </error>
         <error id="unusedFunction" severity="style" msg="The function &apos;save_settings_to_txt&apos; is never used." verbose="The function &apos;save_settings_to_txt&apos; is never used." cwe="561">

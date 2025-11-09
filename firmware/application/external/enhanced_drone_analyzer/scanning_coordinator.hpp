@@ -28,6 +28,7 @@ public:
     void stop_coordinated_scanning();
     bool is_scanning_active() const { return scanning_active_; }
     void update_runtime_parameters(const DroneAnalyzerSettings& settings);
+    void show_session_summary(const std::string& summary);
 
 private:
     static msg_t scanning_thread_function(void* arg);
@@ -37,9 +38,10 @@ private:
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
     DroneDisplayController& display_controller_;
-    AudioManager& audio_;
+    AudioManager& audio_controller_;
     bool scanning_active_ = false;
-    Thread* coordinator_thread_ = nullptr;
+    Thread* scanning_thread_ = nullptr;
+    uint32_t scan_interval_ms_ = 750;
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 4096;
 };
 
@@ -49,7 +51,7 @@ inline ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
                                               DroneScanner& scanner,
                                               DroneDisplayController& display_controller,
                                               AudioManager& audio_controller)
-    : nav_(nav), hardware_(hardware), scanner_(scanner), display_controller_(display_controller), audio_(audio_controller) {}
+    : nav_(nav), hardware_(hardware), scanner_(scanner), display_controller_(display_controller), audio_controller_(audio_controller) {}
 
 inline ScanningCoordinator::~ScanningCoordinator() {
     stop_coordinated_scanning();
