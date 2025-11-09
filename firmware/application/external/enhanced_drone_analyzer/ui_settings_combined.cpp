@@ -242,37 +242,59 @@ bool DroneAnalyzerSettingsManager::load(DroneAnalyzerSettings& settings) {
         settings.settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     }
 
-    std::ifstream file(settings.settings_file_path);
-    if (!file.is_open()) {
+    File file;
+    if (!file.open(settings.settings_file_path, true)) {  // true = read_only
         reset_to_defaults(settings);
         return false;
     }
 
     std::string line;
-    while (std::getline(file, line)) {
-        size_t equals_pos = line.find('=');
-        if (equals_pos != std::string::npos) {
-            std::string key = line.substr(0, equals_pos);
-            std::string value = line.substr(equals_pos + 1);
+    char buffer[256];
+    size_t bytes_read;
+    while ((bytes_read = file.read(buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytes_read] = '\0';
+        line += buffer;
 
-            // Parse key-value pairs and update settings
-            if (key == "spectrum_mode") {
-                if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-                else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
-                else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-                else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+        size_t newline_pos;
+        while ((newline_pos = line.find('\n')) != std::string::npos) {
+            std::string current_line = line.substr(0, newline_pos);
+            line = line.substr(newline_pos + 1);
+
+            // Skip comments and empty lines
+            if (current_line.empty() || current_line[0] == '#') continue;
+
+            size_t equals_pos = current_line.find('=');
+            if (equals_pos != std::string::npos) {
+                std::string key = current_line.substr(0, equals_pos);
+                std::string value = current_line.substr(equals_pos + 1);
+
+                // Trim whitespace
+                key.erase(key.begin(), std::find_if(key.begin(), key.end(), [](int ch) { return !std::isspace(ch); }));
+                key.erase(std::find_if(key.rbegin(), key.rend(), [](int ch) { return !std::isspace(ch); }).base(), key.end());
+                value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](int ch) { return !std::isspace(ch); }));
+                value.erase(std::find_if(value.rbegin(), value.rend(), [](int ch) { return !std::isspace(ch); }).base(), value.end());
+
+                // Parse key-value pairs and update settings
+                if (key == "spectrum_mode") {
+                    if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
+                    else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
+                    else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
+                    else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+                    else if (value == "ULTRA_NARROW") settings.spectrum_mode = SpectrumMode::ULTRA_NARROW;
+                }
+                else if (key == "scan_interval_ms") settings.scan_interval_ms = std::stoul(value);
+                else if (key == "rssi_threshold_db") settings.rssi_threshold_db = std::stoi(value);
+                else if (key == "enable_audio_alerts") settings.enable_audio_alerts = (value == "true");
+                else if (key == "audio_alert_frequency_hz") settings.audio_alert_frequency_hz = std::stoul(value);
+                else if (key == "audio_alert_duration_ms") settings.audio_alert_duration_ms = std::stoul(value);
+                else if (key == "enable_real_hardware") settings.enable_real_hardware = (value == "true");
+                else if (key == "demo_mode") settings.demo_mode = (value == "true");
+                else if (key == "hardware_bandwidth_hz") settings.hardware_bandwidth_hz = std::stoul(value);
             }
-            else if (key == "scan_interval_ms") settings.scan_interval_ms = std::stoul(value);
-            else if (key == "rssi_threshold_db") settings.rssi_threshold_db = std::stoi(value);
-            else if (key == "enable_audio_alerts") settings.enable_audio_alerts = (value == "true");
-            else if (key == "audio_alert_frequency_hz") settings.audio_alert_frequency_hz = std::stoul(value);
-            else if (key == "audio_alert_duration_ms") settings.audio_alert_duration_ms = std::stoul(value);
-            else if (key == "enable_real_hardware") settings.enable_real_hardware = (value == "true");
-            else if (key == "demo_mode") settings.demo_mode = (value == "true");
-            else if (key == "hardware_bandwidth_hz") settings.hardware_bandwidth_hz = std::stoul(value);
         }
     }
 
+    file.close();
     return validate(settings);
 }
 
@@ -282,32 +304,35 @@ bool DroneAnalyzerSettingsManager::save(const DroneAnalyzerSettings& settings) {
         const_cast<DroneAnalyzerSettings&>(settings).settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     }
 
-    std::ofstream file(settings.settings_file_path);
-    if (!file.is_open()) {
+    File file;
+    if (!file.open(settings.settings_file_path, false)) {  // false = write mode
         return false;
     }
 
     // Write settings in key=value format
-    file << "spectrum_mode=";
+    std::string content = "spectrum_mode=";
     switch (settings.spectrum_mode) {
-        case SpectrumMode::NARROW: file << "NARROW"; break;
-        case SpectrumMode::MEDIUM: file << "MEDIUM"; break;
-        case SpectrumMode::WIDE: file << "WIDE"; break;
-        case SpectrumMode::ULTRA_WIDE: file << "ULTRA_WIDE"; break;
+        case SpectrumMode::NARROW: content += "NARROW"; break;
+        case SpectrumMode::MEDIUM: content += "MEDIUM"; break;
+        case SpectrumMode::WIDE: content += "WIDE"; break;
+        case SpectrumMode::ULTRA_WIDE: content += "ULTRA_WIDE"; break;
+        case SpectrumMode::ULTRA_NARROW: content += "ULTRA_NARROW"; break;
     }
-    file << "\n";
+    content += "\n";
 
-    file << "scan_interval_ms=" << settings.scan_interval_ms << "\n";
-    file << "rssi_threshold_db=" << settings.rssi_threshold_db << "\n";
-    file << "enable_audio_alerts=" << (settings.enable_audio_alerts ? "true" : "false") << "\n";
-    file << "audio_alert_frequency_hz=" << settings.audio_alert_frequency_hz << "\n";
-    file << "audio_alert_duration_ms=" << settings.audio_alert_duration_ms << "\n";
-    file << "enable_real_hardware=" << (settings.enable_real_hardware ? "true" : "false") << "\n";
-    file << "demo_mode=" << (settings.demo_mode ? "true" : "false") << "\n";
-    file << "hardware_bandwidth_hz=" << settings.hardware_bandwidth_hz << "\n";
-    file << "freqman_path=" << settings.freqman_path << "\n";
+    content += "scan_interval_ms=" + std::to_string(settings.scan_interval_ms) + "\n";
+    content += "rssi_threshold_db=" + std::to_string(settings.rssi_threshold_db) + "\n";
+    content += "enable_audio_alerts=" + std::string(settings.enable_audio_alerts ? "true" : "false") + "\n";
+    content += "audio_alert_frequency_hz=" + std::to_string(settings.audio_alert_frequency_hz) + "\n";
+    content += "audio_alert_duration_ms=" + std::to_string(settings.audio_alert_duration_ms) + "\n";
+    content += "enable_real_hardware=" + std::string(settings.enable_real_hardware ? "true" : "false") + "\n";
+    content += "demo_mode=" + std::string(settings.demo_mode ? "true" : "false") + "\n";
+    content += "hardware_bandwidth_hz=" + std::to_string(settings.hardware_bandwidth_hz) + "\n";
+    content += "freqman_path=" + settings.freqman_path + "\n";
 
-    return file.good();
+    auto result = file.write(content.data(), content.size());
+    file.close();
+    return result == content.size();
 }
 
 void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
@@ -404,51 +429,65 @@ ScannerConfig::ScannerConfig(ConfigData config)
 }
 
 bool ScannerConfig::load_from_file(const std::string& filepath) {
-    std::ifstream file(filepath);
-    if (!file.is_open()) return false;
+    File file;
+    if (!file.open(filepath, true)) return false;  // true = read_only
 
     std::string line;
-    while (std::getline(file, line)) {
-        size_t equals_pos = line.find('=');
-        if (equals_pos != std::string::npos) {
-            std::string key = line.substr(0, equals_pos);
-            std::string value = line.substr(equals_pos + 1);
+    char buffer[256];
+    size_t bytes_read;
+    while ((bytes_read = file.read(buffer, sizeof(buffer) - 1)) > 0) {
+        buffer[bytes_read] = '\0';
+        line += buffer;
 
-            if (key == "spectrum_mode") {
-                if (value == "NARROW") config_data_.spectrum_mode = SpectrumMode::NARROW;
-                else if (value == "MEDIUM") config_data_.spectrum_mode = SpectrumMode::MEDIUM;
-                else if (value == "WIDE") config_data_.spectrum_mode = SpectrumMode::WIDE;
-                else if (value == "ULTRA_WIDE") config_data_.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+        size_t newline_pos;
+        while ((newline_pos = line.find('\n')) != std::string::npos) {
+            std::string current_line = line.substr(0, newline_pos);
+            line = line.substr(newline_pos + 1);
+
+            size_t equals_pos = current_line.find('=');
+            if (equals_pos != std::string::npos) {
+                std::string key = current_line.substr(0, equals_pos);
+                std::string value = current_line.substr(equals_pos + 1);
+
+                if (key == "spectrum_mode") {
+                    if (value == "NARROW") config_data_.spectrum_mode = SpectrumMode::NARROW;
+                    else if (value == "MEDIUM") config_data_.spectrum_mode = SpectrumMode::MEDIUM;
+                    else if (value == "WIDE") config_data_.spectrum_mode = SpectrumMode::WIDE;
+                    else if (value == "ULTRA_WIDE") config_data_.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+                }
+                else if (key == "rssi_threshold_db") config_data_.rssi_threshold_db = std::stoi(value);
+                else if (key == "scan_interval_ms") config_data_.scan_interval_ms = std::stoul(value);
+                else if (key == "enable_audio_alerts") config_data_.enable_audio_alerts = (value == "true");
+                else if (key == "freqman_path") config_data_.freqman_path = value;
             }
-            else if (key == "rssi_threshold_db") config_data_.rssi_threshold_db = std::stoi(value);
-            else if (key == "scan_interval_ms") config_data_.scan_interval_ms = std::stoul(value);
-            else if (key == "enable_audio_alerts") config_data_.enable_audio_alerts = (value == "true");
-            else if (key == "freqman_path") config_data_.freqman_path = value;
         }
     }
 
+    file.close();
     return true;
 }
 
 bool ScannerConfig::save_to_file(const std::string& filepath) const {
-    std::ofstream file(filepath);
-    if (!file.is_open()) return false;
+    File file;
+    if (!file.open(filepath, false)) return false;  // false = write mode
 
-    file << "spectrum_mode=";
+    std::string content = "spectrum_mode=";
     switch (config_data_.spectrum_mode) {
-        case SpectrumMode::NARROW: file << "NARROW"; break;
-        case SpectrumMode::MEDIUM: file << "MEDIUM"; break;
-        case SpectrumMode::WIDE: file << "WIDE"; break;
-        case SpectrumMode::ULTRA_WIDE: file << "ULTRA_WIDE"; break;
+        case SpectrumMode::NARROW: content += "NARROW"; break;
+        case SpectrumMode::MEDIUM: content += "MEDIUM"; break;
+        case SpectrumMode::WIDE: content += "WIDE"; break;
+        case SpectrumMode::ULTRA_WIDE: content += "ULTRA_WIDE"; break;
     }
-    file << "\n";
+    content += "\n";
 
-    file << "rssi_threshold_db=" << config_data_.rssi_threshold_db << "\n";
-    file << "scan_interval_ms=" << config_data_.scan_interval_ms << "\n";
-    file << "enable_audio_alerts=" << (config_data_.enable_audio_alerts ? "true" : "false") << "\n";
-    file << "freqman_path=" << config_data_.freqman_path << "\n";
+    content += "rssi_threshold_db=" + std::to_string(config_data_.rssi_threshold_db) + "\n";
+    content += "scan_interval_ms=" + std::to_string(config_data_.scan_interval_ms) + "\n";
+    content += "enable_audio_alerts=" + std::string(config_data_.enable_audio_alerts ? "true" : "false") + "\n";
+    content += "freqman_path=" + config_data_.freqman_path + "\n";
 
-    return file.good();
+    auto result = file.write(content.data(), content.size());
+    file.close();
+    return result == content.size();
 }
 
 void ScannerConfig::set_frequency_range(uint32_t min_hz, uint32_t max_hz) {
@@ -495,6 +534,14 @@ static const std::vector<DronePreset> default_presets = {
 
 const std::vector<DronePreset>& DroneFrequencyPresets::get_all_presets() {
     return default_presets;
+}
+
+std::vector<std::string> DroneFrequencyPresets::get_preset_names() {
+    std::vector<std::string> names;
+    for (const auto& preset : default_presets) {
+        names.push_back(preset.display_name);
+    }
+    return names;
 }
 
 std::vector<DroneType> DroneFrequencyPresets::get_available_types() {
@@ -712,7 +759,7 @@ void HardwareSettingsView::load_current_settings() {
         case SpectrumMode::WIDE: mode_idx = 3; break;
         case SpectrumMode::ULTRA_WIDE: mode_idx = 4; break;
     }
-    field_spectrum_mode_.set_value(mode_idx);
+    field_spectrum_mode_.set_selected_index(mode_idx);
 
     // Note: Hardware control not available in settings app, settings are passed to scanner
 }
@@ -799,6 +846,36 @@ void AudioSettingsView::update_settings_from_ui() {
 void AudioSettingsView::on_save_settings() {
     save_current_settings();
     nav_.display_modal("Success", "Audio settings saved\nto TXT file");
+}
+
+// LoadingView Implementation
+LoadingView::LoadingView(NavigationView& nav, const std::string& loading_text)
+    : View(), nav_(nav), loading_text_(loading_text),
+      loading_text_1_{{screen_width / 2 - 50, screen_height / 2 - 10, 100, 16}, loading_text},
+      loading_text_2_{{screen_width / 2 - 50, screen_height / 2 + 10, 100, 16}, ""}
+{
+    add_children({&loading_text_1_, &loading_text_2_});
+}
+
+void LoadingView::focus() {
+    // No focusable elements
+}
+
+std::string LoadingView::title() const {
+    return "Loading";
+}
+
+void LoadingView::paint(Painter& painter) {
+    View::paint(painter);
+    // Additional painting if needed
+}
+
+void LoadingView::on_show() {
+    start_time_ = chTimeNow();
+}
+
+void LoadingView::on_hide() {
+    // Cleanup if needed
 }
 
 } // namespace ui::external_app::enhanced_drone_analyzer

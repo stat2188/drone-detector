@@ -58,18 +58,13 @@ struct preset_entry {
 };
 
 static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
+static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
-<<<<<<< HEAD
 static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-=======
->>>>>>> 590b9a227cc0a7f15e521a6705a5a62881f7a90f
-static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 static constexpr uint8_t MIN_DETECTION_COUNT = 3;
 static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
-<<<<<<< HEAD
-=======
 static constexpr int LOOKING_GLASS_SINGLEPASS = 0;
 static constexpr int LOOKING_GLASS_FASTSCAN = 1;
 static constexpr int LOOKING_GLASS_SLOWSCAN = 2;
@@ -78,7 +73,18 @@ static constexpr uint32_t LOOKING_GLASS_SLICE_WIDTH_MAX = 24000000;
 static constexpr uint32_t LOOKING_GLASS_MAX_SAMPLERATE = 24000000;
 static constexpr uint32_t MHZ_DIV = 1000000;
 static constexpr uint32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
->>>>>>> 590b9a227cc0a7f15e521a6705a5a62881f7a90f
+static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
+static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
+static constexpr uint8_t MIN_DETECTION_COUNT = 3;
+static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
+static constexpr int LOOKING_GLASS_SINGLEPASS = 0;
+static constexpr int LOOKING_GLASS_FASTSCAN = 1;
+static constexpr int LOOKING_GLASS_SLOWSCAN = 2;
+static constexpr size_t SPEC_NB_BINS = 256;
+static constexpr uint32_t LOOKING_GLASS_SLICE_WIDTH_MAX = 24000000;
+static constexpr uint32_t LOOKING_GLASS_MAX_SAMPLERATE = 24000000;
+static constexpr uint32_t MHZ_DIV = 1000000;
+static constexpr uint32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
 
 // Audio alert system migrated from Looking Glass - defined in ui_drone_audio.hpp
 
@@ -96,6 +102,7 @@ public:
             threat_level = other.threat_level;
             update_count = other.update_count;
             last_seen = other.last_seen;
+            rssi = other.rssi;
             memcpy(rssi_history_, other.rssi_history_, sizeof(rssi_history_));
             memcpy(timestamp_history_, other.timestamp_history_, sizeof(timestamp_history_));
             history_index_ = other.history_index_;

@@ -181,6 +181,7 @@ using FilteredPresetMenuView = std::function<void(const DronePreset&, const std:
 class DroneFrequencyPresets {
 public:
     static const ::std::vector<DronePreset>& get_all_presets();
+    static ::std::vector<::std::string> get_preset_names();
     static ::std::vector<DroneType> get_available_types();
     static ::std::string get_type_display_name(DroneType type);
 
@@ -256,14 +257,14 @@ private:
     NavigationView& nav_;
     DroneAudioSettings audio_settings_;
 
-    Checkbox checkbox_audio_enabled_{{8, 8, 16, 16}};
+    Checkbox checkbox_audio_enabled_{{8, 8}, 20, "Enable Audio Alerts"};
     Text text_audio_enabled_{{28, 8, 200, 16}, "Enable Audio Alerts"};
 
-    NumberField number_alert_frequency_{{8, 32, 120, 24}, 1, "Alert Frequency (Hz)"};
-    NumberField number_alert_duration_{{8, 64, 120, 24}, 1, "Duration (ms)"};
-    NumberField number_volume_{{8, 96, 120, 24}, 1, "Volume (%)"};
+    NumberField number_alert_frequency_{{8, 32}, 5, {200, 2000}, 50, ' '};
+    NumberField number_alert_duration_{{8, 64}, 4, {100, 5000}, 100, ' '};
+    NumberField number_volume_{{8, 96}, 3, {0, 100}, 5, ' '};
 
-    Checkbox checkbox_repeat_{{8, 128, 16, 16}};
+    Checkbox checkbox_repeat_{{8, 128}, 12, "Repeat Alerts"};
     Text text_repeat_{{28, 128, 200, 16}, "Repeat Alerts"};
 
     Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings"};
@@ -290,15 +291,14 @@ public:
 private:
     NavigationView& nav_;
 
-    Checkbox checkbox_real_hardware_{{8, 8, 16, 16}};
+    Checkbox checkbox_real_hardware_{{8, 8}, 18, "Use Real Hardware"};
     Text text_real_hardware_{{28, 8, 224, 16}, "Use Real Hardware (Disable for Demo)"};
 
-    OptionsField field_spectrum_mode_{{8, 32, 160, 24},
-                                     {"Narrow", "Medium", "Wide", "Ultra Wide"}, 1, "Spectrum Mode"};
+    OptionsField field_spectrum_mode_{{8, 32}, 10, { {"Narrow", 0}, {"Medium", 1}, {"Wide", 2}, {"Ultra Wide", 3} }};
 
-    NumberField number_bandwidth_{{8, 64, 120, 24}, 1, "Hardware Bandwidth (Hz)"};
-    NumberField number_min_freq_{{8, 96, 120, 24}, 1, "Min Frequency (Hz)"};
-    NumberField number_max_freq_{{8, 128, 120, 24}, 1, "Max Frequency (Hz)"};
+    NumberField number_bandwidth_{{8, 64}, 8, {1000000, 24000000}, 1000000, ' '};
+    NumberField number_min_freq_{{8, 96}, 10, {1000000, 6000000000ULL}, 1000000, ' '};
+    NumberField number_max_freq_{{8, 128}, 10, {1000000, 6000000000ULL}, 1000000, ' '};
 
     Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings"};
 
@@ -324,14 +324,12 @@ public:
 private:
     NavigationView& nav_;
 
-    OptionsField field_scanning_mode_{{8, 8, 160, 24},
-                                     {"Database Scan", "Wideband Monitor", "Hybrid Discovery"},
-                                     0, "Scanning Mode"};
+    OptionsField field_scanning_mode_{{8, 8}, 15, { {"Database Scan", 0}, {"Wideband Monitor", 1}, {"Hybrid Discovery", 2} }};
 
-    NumberField number_scan_interval_{{8, 32, 120, 24}, 1, "Scan Interval (ms)"};
-    NumberField number_rssi_threshold_{{8, 64, 120, 24}, 1, "RSSI Threshold (dB)"};
+    NumberField number_scan_interval_{{8, 32}, 5, {100, 10000}, 100, ' '};
+    NumberField number_rssi_threshold_{{8, 64}, 4, {-120, 0}, 5, ' '};
 
-    Checkbox checkbox_wideband_{{8, 96, 16, 16}};
+    Checkbox checkbox_wideband_{{8, 96}, 20, "Enable Wideband Scanning"};
     Text text_wideband_{{28, 96, 200, 16}, "Enable Wideband Scanning"};
 
     Button button_presets_{{8, 128, 120, 32}, "Frequency Presets"};
@@ -467,6 +465,7 @@ public:
 
 private:
     NavigationView& nav_;
+    std::string loading_text_;
     Text loading_text_1_;
     Text loading_text_2_;
     systime_t start_time_ = 0;

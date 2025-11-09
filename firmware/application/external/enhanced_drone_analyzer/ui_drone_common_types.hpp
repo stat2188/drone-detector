@@ -8,7 +8,7 @@
 #include "ch.h"
 
 // SpectrumMode forward declare
-enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE };
+enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE, ULTRA_NARROW };
 
 // DroneAnalyzerSettings struct
 struct DroneAnalyzerSettings {
@@ -125,7 +125,12 @@ enum class DroneType {
     UNKNOWN = 0,
     MAVIC = 1,
     DJI_P34 = 2,
-    // Add more as needed
+    PHANTOM = 3,
+    DJI_MINI = 4,
+    PARROT_ANAFI = 5,
+    PARROT_BEBOP = 6,
+    PX4_DRONE = 7,
+    MILITARY_DRONE = 8
 };
 
 enum class MovementTrend {

@@ -6,7 +6,6 @@
 #include "ui_drone_audio.hpp"
 #include "../../gradient.hpp"
 #include "../../baseband_api.hpp"
-<<<<<<< HEAD
 #include "../../portapack.hpp"
 #include "../../ui_navigation.hpp"
 #include "../../file_path.hpp"
@@ -19,19 +18,13 @@
 #include "../ui/ui_menu.hpp"
 #include "../ui/ui_freq_field.hpp"
 
-=======
->>>>>>> 590b9a227cc0a7f15e521a6705a5a62881f7a90f
 #include <algorithm>
 #include <sstream>
 #include <cstdlib>
 
-<<<<<<< HEAD
 using namespace portapack;
 using namespace tonekey;
-namespace fs = std::filesystem;
-=======
 #include <ch.h>
->>>>>>> 590b9a227cc0a7f15e521a6705a5a62881f7a90f
 
 // Settings loading helper
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
@@ -153,13 +146,6 @@ DroneScanner::~DroneScanner() {
 }
 
 void DroneScanner::initialize_database_and_scanner() {
-<<<<<<< HEAD
-    freqman_load_options options{
-        .load_freqs = true,
-        .load_ranges = true,
-        .load_hamradios = true,
-        .load_repeaters = true};
-=======
     freqman_load_options options;
     options.max_entries = 150;
     options.load_freqs = true;
@@ -167,7 +153,6 @@ void DroneScanner::initialize_database_and_scanner() {
     options.load_hamradios = true;
     options.load_repeaters = true;
 
->>>>>>> 590b9a227cc0a7f15e521a6705a5a62881f7a90f
     if (!load_freqman_file("DRONES", freq_db_, options)) {
         // Continue without enhanced drone data
     }
@@ -262,13 +247,11 @@ bool DroneScanner::load_frequency_database() {
     freq_db_.clear();
     current_db_index_ = 0;
 
-<<<<<<< HEAD
     freqman_load_options options{
         .load_freqs = true,
         .load_ranges = true,
         .load_hamradios = true,
         .load_repeaters = true};
-=======
     freqman_load_options options;
     options.max_entries = 150;
     options.load_freqs = true;
@@ -276,7 +259,6 @@ bool DroneScanner::load_frequency_database() {
     options.load_hamradios = true;
     options.load_repeaters = true;
 
->>>>>>> 590b9a227cc0a7f15e521a6705a5a62881f7a90f
     if (!load_freqman_file("DRONES", freq_db_, options)) {
         return false;
     }
@@ -344,18 +326,6 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
     }
 
     if (current_db_index_ < freq_db_.size()) {
-<<<<<<< HEAD
-        const auto& entry_ptr = freq_db_[current_db_index_];
-        if (entry_ptr) {
-            const auto& entry = *entry_ptr;
-            Frequency target_freq_hz = entry.frequency_a;
-            if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
-                if (hardware.tune_to_frequency(target_freq_hz)) {
-                    int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-                    process_rssi_detection(entry, real_rssi);
-                    last_scanned_frequency_ = target_freq_hz;
-                }
-=======
         const auto& entry = freq_db_[current_db_index_];
         Frequency target_freq_hz = entry.frequency_a;
         if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
@@ -363,7 +333,6 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
                 int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
                 process_rssi_detection(entry, real_rssi);
                 last_scanned_frequency_ = target_freq_hz;
->>>>>>> 590b9a227cc0a7f15e521a6705a5a62881f7a90f
             }
         }
         current_db_index_ = (current_db_index_ + 1) % total_entries;
@@ -644,13 +613,11 @@ void DroneScanner::switch_to_demo_mode() {
 }
 
 void DroneScanner::initialize_database_and_scanner() {
-<<<<<<< HEAD
     freqman_load_options options{
         .load_freqs = true,
         .load_ranges = true,
         .load_hamradios = true,
         .load_repeaters = true};
-=======
     freqman_load_options options;
     options.max_entries = 150;
     options.load_freqs = true;
@@ -658,7 +625,6 @@ void DroneScanner::initialize_database_and_scanner() {
     options.load_hamradios = true;
     options.load_repeaters = true;
 
->>>>>>> 590b9a227cc0a7f15e521a6705a5a62881f7a90f
     if (!load_freqman_file("DRONES", freq_db_, options)) {
         // Continue without enhanced drone data
     }
