@@ -19,7 +19,7 @@
 #include "ui_signal_processing.hpp"
 #include "scanner_settings.hpp"
 
-#include "../../gradient.hpp"
+#include "gradient.hpp"
 
 #include <memory>
 
@@ -27,36 +27,24 @@
 #include "scanning_coordinator.hpp"
 
 // Include necessary headers for Color and MessageHandlerRegistration
-#include "../../../../common/ui.hpp"  // for Color
-#include "../../event_m0.hpp"   // for MessageHandlerRegistration
+#include "ui.hpp"  // for Color
+#include "event_m0.hpp"   // for MessageHandlerRegistration
 
 // Move includes outside namespace to avoid std pollution
-#include "../../freqman_db.hpp"
-#include "../../application/log_file.hpp"
+#include "freqman_db.hpp"
+#include "log_file.hpp"
 #include <ch.h>
 
-#include "../../radio_state.hpp"
-#include "../../baseband_api.hpp"
-#include "../../portapack.hpp"
-#include "../../radio.hpp"
-#include "../../../../common/message.hpp"
-#include "../../irq_controls.hpp"
+#include "radio_state.hpp"
+#include "baseband_api.hpp"
+#include "portapack.hpp"
+#include "radio.hpp"
+#include "message.hpp"
+#include "irq_controls.hpp"
 
-#include "../../../../common/ui.hpp"
-#include "../../ui_navigation.hpp"
-#include "../../app_settings.hpp"
-#include "../ui/ui_checkbox.hpp"
-#include "../ui/ui_numberfield.hpp"
-#include "../ui/ui_freq_field.hpp"
-#include "../ui/ui_fileman.hpp"
-#include "../ui/ui_menu.hpp"
-#include "../ui/ui_btngrid.hpp"
-#include "../ui/ui_rssi.hpp"
-#include "../ui/ui_channel.hpp"
-#include "../ui/ui_audio.hpp"
-#include "../ui/ui_dfu_menu.hpp"
-#include "../ui/ui_bmpview.hpp"
-#include "../ui/ui_textentry.hpp"
+#include "ui.hpp"
+#include "ui_navigation.hpp"
+#include "app_settings.hpp"
 
 class LogFile;
 
