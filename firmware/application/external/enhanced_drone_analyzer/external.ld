@@ -86,7 +86,12 @@ MEMORY
     ram_external_app_bht_tx          (rwx) : org = 0xADED0000, len = 32k
     ram_external_app_morse_practice  (rwx) : org = 0xADEE0000, len = 32k
     ram_external_app_adult_toys_controller  (rwx) : org = 0xADEF0000, len = 32k
-    ram_external_app_enhanced_drone_analyzer (rwx) : org = 0xADF00000, len = 32k
+    /*
+     * Enhanced Drone Analyzer: Two applications (Scanner + Settings)
+     * Allocated outside standard range to avoid conflicts
+     */
+    ram_external_app_enhanced_drone_analyzer_scanner (rwx) : org = 0xADF00000, len = 32k
+    ram_external_app_enhanced_drone_analyzer_settings (rwx) : org = 0xADF10000, len = 32k
 
 }
 
@@ -472,10 +477,19 @@ SECTIONS
         *(*ui*external_app*adult_toys_controller*);
     } > ram_external_app_adult_toys_controller
 
-    .external_app_enhanced_drone_analyzer : ALIGN(4) SUBALIGN(4)
+    /*
+     * Enhanced Drone Analyzer: Two separate applications
+     */
+    .external_app_enhanced_drone_analyzer_scanner : ALIGN(4) SUBALIGN(4)
     {
-        KEEP(*(.external_app.app_enhanced_drone_analyzer.application_information));
-        *(*ui*external_app*enhanced_drone_analyzer*);
-    } > ram_external_app_enhanced_drone_analyzer
+        KEEP(*(.external_app.app_enhanced_drone_analyzer_scanner.application_information));
+        *(*ui*external_app*enhanced_drone_analyzer*scanner*);
+    } > ram_external_app_enhanced_drone_analyzer_scanner
+
+    .external_app_enhanced_drone_analyzer_settings : ALIGN(4) SUBALIGN(4)
+    {
+        KEEP(*(.external_app.app_enhanced_drone_analyzer_settings.application_information));
+        *(*ui*external_app*enhanced_drone_analyzer*settings*);
+    } > ram_external_app_enhanced_drone_analyzer_settings
 
 }
