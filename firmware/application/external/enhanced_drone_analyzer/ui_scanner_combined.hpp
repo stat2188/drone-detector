@@ -46,7 +46,6 @@
 #include "../../ui_navigation.hpp"
 #include "../../app_settings.hpp"
 
-class DroneHardwareController;
 class LogFile;
 
 using Frequency = uint64_t;
@@ -61,6 +60,12 @@ struct preset_entry {
 static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
 static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
+static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
+static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
+static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
+static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
+static constexpr uint8_t MIN_DETECTION_COUNT = 3;
+static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
 
 // Audio alert system migrated from Looking Glass - defined in ui_drone_audio.hpp
 
@@ -345,6 +350,19 @@ public:
     // Utility functions for UI
     std::string get_drone_type_name(DroneType type) const;
     Color get_drone_type_color(DroneType type) const;
+
+    // Additional utility functions
+    bool is_scanning_active() const { return scanning_active_; }
+    bool is_real_mode() const { return is_real_mode_; }
+    size_t get_approaching_count() const { return approaching_count_; }
+    size_t get_receding_count() const { return receding_count_; }
+    size_t get_static_count() const { return static_count_; }
+    uint32_t get_total_detections() const { return total_detections_; }
+    uint32_t get_scan_cycles() const { return scan_cycles_; }
+    ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
+    Frequency get_current_scanning_frequency() const;
+    Frequency get_current_radio_frequency() const;
+    std::string get_session_summary() const;
 
 private:
     // Declare missing methods
