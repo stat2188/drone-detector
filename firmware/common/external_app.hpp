@@ -23,18 +23,14 @@
 #define __EXTERNAL_APPS_H__
 
 #include "ch.h"
-#include "ui.hpp"
+#include "ui_navigation.hpp"
 #include "spi_image.hpp"
 #include "standalone_app.hpp"
-
-namespace ui {
-class NavigationView;
-}
 
 #define CURRENT_HEADER_VERSION 0x00000003
 #define MIN_HEADER_VERSION_FOR_CHECKSUM 0x00000002
 
-typedef void (*externalAppEntry_t)(::ui::NavigationView& nav);
+typedef void (*externalAppEntry_t)(ui::NavigationView& nav);
 
 struct application_information_t {
     uint8_t* memory_location;

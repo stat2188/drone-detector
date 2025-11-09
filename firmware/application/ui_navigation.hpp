@@ -41,7 +41,7 @@
 #include "ui_channel.hpp"
 #include "ui_audio.hpp"
 #include "ui_sd_card_status_view.hpp"
-#include "apps/ui_dfu_menu.hpp"
+#include "ui_dfu_menu.hpp"
 
 #include "bitmap.hpp"
 #include "ui_bmpview.hpp"
@@ -55,10 +55,6 @@
 
 // for incrementing fake date when RTC battery is dead
 #define DATE_FILEFLAG u"/SETTINGS/DATE_FILEFLAG"
-
-#ifndef VERSION_STRING
-#define VERSION_STRING "unknown"
-#endif
 
 using namespace sd_card;
 
