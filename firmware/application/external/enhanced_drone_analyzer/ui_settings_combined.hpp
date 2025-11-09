@@ -257,17 +257,17 @@ private:
     NavigationView& nav_;
     DroneAudioSettings audio_settings_;
 
-    Checkbox checkbox_audio_enabled_{{8, 8}, 20, "Enable Audio Alerts"};
+    Checkbox checkbox_audio_enabled_{{8, 8}, 20, "Enable Audio Alerts", false};
     Text text_audio_enabled_{{28, 8, 200, 16}, "Enable Audio Alerts"};
 
-    NumberField number_alert_frequency_{{8, 32}, 5, {200, 2000}, 50, ' '};
-    NumberField number_alert_duration_{{8, 64}, 4, {100, 5000}, 100, ' '};
-    NumberField number_volume_{{8, 96}, 3, {0, 100}, 5, ' '};
+    NumberField number_alert_frequency_{{8, 32}, 5, {200, 2000}, 50, ' ', false};
+    NumberField number_alert_duration_{{8, 64}, 4, {100, 5000}, 100, ' ', false};
+    NumberField number_volume_{{8, 96}, 3, {0, 100}, 5, ' ', false};
 
-    Checkbox checkbox_repeat_{{8, 128}, 12, "Repeat Alerts"};
+    Checkbox checkbox_repeat_{{8, 128}, 12, "Repeat Alerts", false};
     Text text_repeat_{{28, 128, 200, 16}, "Repeat Alerts"};
 
-    Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings"};
+    Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings", false};
 
     void load_current_settings();
     void save_current_settings();
@@ -291,16 +291,16 @@ public:
 private:
     NavigationView& nav_;
 
-    Checkbox checkbox_real_hardware_{{8, 8}, 18, "Use Real Hardware"};
+    Checkbox checkbox_real_hardware_{{8, 8}, 18, "Use Real Hardware", false};
     Text text_real_hardware_{{28, 8, 224, 16}, "Use Real Hardware (Disable for Demo)"};
 
     OptionsField field_spectrum_mode_{{8, 32}, 10, { {"Narrow", 0}, {"Medium", 1}, {"Wide", 2}, {"Ultra Wide", 3} }};
 
-    NumberField number_bandwidth_{{8, 64}, 8, {1000000, 24000000}, 1000000, ' '};
-    NumberField number_min_freq_{{8, 96}, 10, {1000000, 6000000000ULL}, 1000000, ' '};
-    NumberField number_max_freq_{{8, 128}, 10, {1000000, 6000000000ULL}, 1000000, ' '};
+    NumberField number_bandwidth_{{8, 64}, 8, {1000000, 24000000}, 1000000, ' ', false};
+    NumberField number_min_freq_{{8, 96}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
+    NumberField number_max_freq_{{8, 128}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
 
-    Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings"};
+    Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings", false};
 
     void load_current_settings();
     void save_current_settings();
@@ -326,14 +326,14 @@ private:
 
     OptionsField field_scanning_mode_{{8, 8}, 15, { {"Database Scan", 0}, {"Wideband Monitor", 1}, {"Hybrid Discovery", 2} }};
 
-    NumberField number_scan_interval_{{8, 32}, 5, {100, 10000}, 100, ' '};
-    NumberField number_rssi_threshold_{{8, 64}, 4, {-120, 0}, 5, ' '};
+    NumberField number_scan_interval_{{8, 32}, 5, {100, 10000}, 100, ' ', false};
+    NumberField number_rssi_threshold_{{8, 64}, 4, {-120, 0}, 5, ' ', false};
 
-    Checkbox checkbox_wideband_{{8, 96}, 20, "Enable Wideband Scanning"};
+    Checkbox checkbox_wideband_{{8, 96}, 20, "Enable Wideband Scanning", false};
     Text text_wideband_{{28, 96, 200, 16}, "Enable Wideband Scanning"};
 
-    Button button_presets_{{8, 128, 120, 32}, "Frequency Presets"};
-    Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings"};
+    Button button_presets_{{8, 128, 120, 32}, "Frequency Presets", false};
+    Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings", false};
 
     void load_current_settings();
     void save_current_settings();
@@ -392,13 +392,13 @@ public:
 private:
     NavigationView& nav_;
 
-    Button button_audio_settings_{{8, 32, 120, 32}, "Audio Settings"};
-    Button button_hardware_settings_{{136, 32, 120, 32}, "Hardware Settings"};
-    Button button_scanning_settings_{{8, 72, 120, 32}, "Scanning Settings"};
-    Button button_advanced_settings_{{136, 72, 120, 32}, "Advanced Settings"};
+    Button button_audio_settings_{{8, 32, 120, 32}, "Audio Settings", false};
+    Button button_hardware_settings_{{136, 32, 120, 32}, "Hardware Settings", false};
+    Button button_scanning_settings_{{8, 72, 120, 32}, "Scanning Settings", false};
+    Button button_advanced_settings_{{136, 72, 120, 32}, "Advanced Settings", false};
 
-    Button button_load_defaults_{{8, 112, 120, 32}, "Load Defaults"};
-    Button button_save_all_{{136, 112, 120, 32}, "Save All Settings"};
+    Button button_load_defaults_{{8, 112, 120, 32}, "Load Defaults", false};
+    Button button_save_all_{{136, 112, 120, 32}, "Save All Settings", false};
 
     Text text_title_{{8, 8, screen_width - 16, 16}, "Enhanced Drone Analyzer Settings"};
 

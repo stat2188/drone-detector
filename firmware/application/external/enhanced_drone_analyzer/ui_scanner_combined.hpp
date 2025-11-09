@@ -909,9 +909,11 @@ private:
     std::unique_ptr<DroneDisplayController> display_controller_;
     std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
 
-    Button button_start_stop_;
-    Button button_menu_;
-    OptionsField field_scanning_mode_;
+    DroneAnalyzerSettings settings_;
+
+    Button button_start_stop_{{screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"};
+    Button button_menu_{{screen_width - 80, screen_height - 24, 72, 24}, "MENU"};
+    OptionsField field_scanning_mode_{{0, screen_height - 72}, 20, {{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}};
     std::unique_ptr<SmartThreatHeader> smart_header_;
     std::unique_ptr<ConsoleStatusBar> status_bar_;
     std::array<std::unique_ptr<ThreatCard>, 3> threat_cards_;
