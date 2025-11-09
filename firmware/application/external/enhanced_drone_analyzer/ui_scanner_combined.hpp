@@ -45,8 +45,19 @@
 #include "../../../../common/ui.hpp"
 #include "../../ui_navigation.hpp"
 #include "../../app_settings.hpp"
+#include "../ui/ui_checkbox.hpp"
+#include "../ui/ui_numberfield.hpp"
+#include "../ui/ui_freq_field.hpp"
+#include "../ui/ui_fileman.hpp"
+#include "../ui/ui_menu.hpp"
+#include "../ui/ui_btngrid.hpp"
+#include "../ui/ui_rssi.hpp"
+#include "../ui/ui_channel.hpp"
+#include "../ui/ui_audio.hpp"
+#include "../ui/ui_dfu_menu.hpp"
+#include "../ui/ui_bmpview.hpp"
+#include "../ui/ui_textentry.hpp"
 
-class DroneHardwareController;
 class LogFile;
 
 using Frequency = uint64_t;
@@ -59,8 +70,21 @@ struct preset_entry {
 };
 
 static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
-static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
+static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
+static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
+static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
+static constexpr uint8_t MIN_DETECTION_COUNT = 3;
+static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
+static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;  // Alias for compatibility
+static constexpr int LOOKING_GLASS_SINGLEPASS = 0;
+static constexpr int LOOKING_GLASS_FASTSCAN = 1;
+static constexpr int LOOKING_GLASS_SLOWSCAN = 2;
+static constexpr size_t SPEC_NB_BINS = 256;
+static constexpr uint32_t LOOKING_GLASS_SLICE_WIDTH_MAX = 24000000;
+static constexpr uint32_t LOOKING_GLASS_MAX_SAMPLERATE = 24000000;
+static constexpr uint32_t MHZ_DIV = 1000000;
+static constexpr uint32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
 
 // Audio alert system migrated from Looking Glass - defined in ui_drone_audio.hpp
 
@@ -71,11 +95,28 @@ public:
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
                      last_seen(0) {}
 
+    TrackedDrone& operator=(const TrackedDrone& other) {
+        if (this != &other) {
+            frequency = other.frequency;
+            drone_type = other.drone_type;
+            threat_level = other.threat_level;
+            update_count = other.update_count;
+            last_seen = other.last_seen;
+            memcpy(rssi_history_, other.rssi_history_, sizeof(rssi_history_));
+            memcpy(timestamp_history_, other.timestamp_history_, sizeof(timestamp_history_));
+            history_index_ = other.history_index_;
+        }
+        return *this;
+    }
+
     void add_rssi(int16_t rssi, systime_t timestamp) {
         // Store RSSI history for trend calculation
         rssi_history_[history_index_] = rssi;
         timestamp_history_[history_index_] = timestamp;
         history_index_ = (history_index_ + 1) % MAX_HISTORY;
+
+        // Update current RSSI
+        this->rssi = rssi;
 
         if (last_seen < timestamp) {
             last_seen = timestamp;
@@ -117,14 +158,15 @@ public:
     uint8_t update_count;
     systime_t last_seen;
 
+    int32_t rssi = -120;  // Current RSSI value
+
 private:
     static constexpr size_t MAX_HISTORY = 8;
     int16_t rssi_history_[MAX_HISTORY] = {0};
     systime_t timestamp_history_[MAX_HISTORY] = {0};
     size_t history_index_ = 0;
 
-    TrackedDrone(const TrackedDrone&) = delete;
-    TrackedDrone& operator=(const TrackedDrone&) = delete;
+
 };
 
 struct DisplayDroneEntry {
@@ -288,9 +330,11 @@ private:
     uint32_t logged_count_ = 0;
     bool header_written_ = false;
 
+public:
+    std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
+private:
     bool ensure_csv_header();
     std::string format_csv_entry(const DetectionLogEntry& entry);
-    std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
     std::string generate_log_filename() const;
 
     DroneDetectionLogger(const DroneDetectionLogger&) = delete;
@@ -346,6 +390,19 @@ public:
     std::string get_drone_type_name(DroneType type) const;
     Color get_drone_type_color(DroneType type) const;
 
+    // Additional utility functions
+    bool is_scanning_active() const { return scanning_active_; }
+    bool is_real_mode() const { return is_real_mode_; }
+    size_t get_approaching_count() const { return approaching_count_; }
+    size_t get_receding_count() const { return receding_count_; }
+    size_t get_static_count() const { return static_count_; }
+    uint32_t get_total_detections() const { return total_detections_; }
+    uint32_t get_scan_cycles() const { return scan_cycles_; }
+    ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
+    Frequency get_current_scanning_frequency() const;
+    Frequency get_current_radio_frequency() const;
+    std::string get_session_summary() const;
+
 private:
     // Declare missing methods
     void reset_scan_cycles();
@@ -373,11 +430,10 @@ private:
     void update_tracking_counts();
 
     Thread* scanning_thread_ = nullptr;
-    static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
     bool scanning_active_ = false;
 
-    freqman_db freq_db_;
-    size_t current_db_index_ = 0;
+    FreqmanDB freq_db_;
+    FreqmanDB::Index current_db_index_ = 0;
     Frequency last_scanned_frequency_ = 0;
     bool freq_db_loaded_ = false;
 
@@ -428,6 +484,9 @@ public:
     void start_spectrum_streaming();
     void stop_spectrum_streaming();
     int32_t get_real_rssi_from_hardware(Frequency target_frequency);
+    bool is_spectrum_streaming_active() const;
+    int32_t get_current_rssi() const;
+    void update_spectrum_for_scanner();
 
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
@@ -636,7 +695,7 @@ private:
     MessageHandlerRegistration message_handler_frame_sync_;
 
     Color get_threat_level_color(ThreatLevel level) const;
-    const char* get_threat_level_name(ThreatLevel level) const;
+    std::string get_threat_level_name(ThreatLevel level) const;
 };
 
 // Missing constants referenced in implementation
@@ -683,6 +742,35 @@ private:
     bool scanning_active_ = false;
     std::unique_ptr<DroneDisplayController> display_controller_;
     DroneAnalyzerSettings settings_;
+
+    void on_manage_frequencies();
+    void on_create_new_database();
+    void on_frequency_warning();
+    void show_system_status();
+    void show_performance_stats();
+    void show_debug_info();
+    void select_spectrum_mode(SpectrumMode mode);
+    void on_spectrum_range_config();
+    void on_add_preset_quick();
+    void on_hardware_control_menu();
+    void show_current_bandwidth();
+    void show_current_center_freq();
+    void on_set_bandwidth_config();
+    void on_set_center_freq_config();
+    void set_bandwidth_from_menu(uint32_t bandwidth_hz);
+    void set_center_freq_from_menu(Frequency center_freq);
+    void add_preset_to_scanner(const DronePreset& preset);
+    void on_save_settings();
+    void on_load_settings();
+
+    void on_audio_settings();
+    void on_spectrum_mode();
+    void on_hardware_control();
+    void on_set_bandwidth();
+    void on_set_center_freq();
+    void show_hardware_status();
+    void on_view_logs();
+    void set_spectrum_mode(SpectrumMode mode);
 
     void on_manage_frequencies();
     void on_create_new_database();

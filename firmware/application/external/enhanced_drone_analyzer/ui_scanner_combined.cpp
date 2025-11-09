@@ -19,7 +19,7 @@
 #include "../../file.hpp"
 #include "../../tone_key.hpp"
 #include "../../rtc_time.hpp"
-#include "../../apps/ui_freqman.hpp"
+#include "../../../../common/ui.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -30,29 +30,6 @@
 using namespace portapack;
 using namespace tonekey;
 namespace fs = std::filesystem;
-
-// Constants from ReconView
-static constexpr uint32_t SCAN_THREAD_STACK_SIZE = 2048;
-static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-static constexpr size_t MAX_TRACKED_DRONES = 8;
-static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 750;
-static constexpr uint32_t DETECTION_DELAY = 100;
-static constexpr uint8_t MIN_DETECTION_COUNT = 3;
-static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
-static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -85;
-static constexpr Frequency WIDEBAND_DEFAULT_MIN = 2400000000ULL;
-static constexpr Frequency WIDEBAND_DEFAULT_MAX = 2500000000ULL;
-static constexpr Frequency WIDEBAND_SLICE_WIDTH = 20000000ULL;
-static constexpr size_t WIDEBAND_MAX_SLICES = 8;
-static constexpr size_t DETECTION_TABLE_SIZE = 1024;
-static constexpr size_t MAX_DISPLAYED_DRONES = 8;
-static constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;
-static constexpr const char* default_gradient_file = "/sdcard/GRADIENT.BMP";
-static constexpr size_t MINI_SPECTRUM_WIDTH = 240;
-static constexpr size_t MINI_SPECTRUM_HEIGHT = 64;
-static constexpr Frequency MIN_HARDWARE_FREQ = 50000000ULL;
-static constexpr Frequency MAX_HARDWARE_FREQ = 6000000000ULL;
-static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %ddB %c";
 
 // Settings loading helper
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
@@ -143,13 +120,17 @@ void DetectionRingBuffer::clear() {
 // ===========================================
 
 DroneScanner::DroneScanner()
-    : scanning_active_(false),
-      scanning_thread_(nullptr),
+    : scanning_thread_(nullptr),
+      scanning_active_(false),
+      freq_db_(),
       current_db_index_(0),
       last_scanned_frequency_(0),
+      freq_db_loaded_(false),
       scan_cycles_(0),
       total_detections_(0),
+      scanning_mode_(ScanningMode::DATABASE),
       is_real_mode_(true),
+      tracked_drones_(),
       tracked_drones_count_(0),
       approaching_count_(0),
       receding_count_(0),
@@ -157,10 +138,7 @@ DroneScanner::DroneScanner()
       max_detected_threat_(ThreatLevel::NONE),
       last_valid_rssi_(-120),
       wideband_scan_data_(),
-      scanning_mode_(ScanningMode::DATABASE),
-      freq_db_(),
-      freq_db_loaded_(false),
-      tracked_drones_(),
+      drone_database_(),
       detection_logger_()
 {
     initialize_database_and_scanner();
@@ -173,16 +151,9 @@ DroneScanner::~DroneScanner() {
 }
 
 void DroneScanner::initialize_database_and_scanner() {
-    auto db_path = get_freqman_path("DRONES");
-    freqman_load_options options{
-        .load_freqs = true,
-        .load_ranges = true,
-        .load_hamradios = true,
-        .load_repeaters = true};
-    if (!load_freqman_file("DRONES", drone_database_, options)) {
+    if (!freq_db_.open(get_freqman_path("DRONES"))) {
         // Continue without enhanced drone data
     }
-    freq_db_.open(db_path, false);
 }
 
 void DroneScanner::cleanup_database_and_scanner() {
@@ -235,7 +206,7 @@ void DroneScanner::start_scanning() {
     scan_cycles_ = 0;
     total_detections_ = 0;
 
-    scanning_thread_ = chThdCreateFromHeap(NULL, SCAN_THREAD_STACK_SIZE,
+    scanning_thread_ = chThdCreateFromHeap(NULL, SCANNING_THREAD_STACK_SIZE,
                                           NORMALPRIO,
                                           scanning_thread_function, this);
     if (!scanning_thread_) {
@@ -274,8 +245,7 @@ bool DroneScanner::load_frequency_database() {
     freq_db_.close();
     current_db_index_ = 0;
 
-    auto db_path = get_freqman_path("DRONES");
-    if (!freq_db_.open(db_path, false)) {
+    if (!freq_db_.open(get_freqman_path("DRONES"))) {
         return false;
     }
 
@@ -284,7 +254,7 @@ bool DroneScanner::load_frequency_database() {
     }
 
     freq_db_loaded_ = true;
-    return !freq_db_.empty();
+    return freq_db_.entry_count() > 0;
 }
 
 size_t DroneScanner::get_database_size() const {
@@ -328,7 +298,7 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    if (freq_db_.empty()) {
+    if (freq_db_.entry_count() == 0) {
         if (scan_cycles_ % 50 == 0) {
             handle_scan_error("No frequency database loaded");
             scanning_active_ = false;
@@ -343,17 +313,14 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     if (current_db_index_ < freq_db_.entry_count()) {
         const auto& entry = freq_db_[current_db_index_];
-            Frequency target_freq_hz = entry.frequency_a;
-            if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
-                if (hardware.tune_to_frequency(target_freq_hz)) {
-                    int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-                    process_rssi_detection(entry, real_rssi);
-                    last_scanned_frequency_ = target_freq_hz;
-                }
+        Frequency target_freq_hz = entry.frequency_a;
+        if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
+            if (hardware.tune_to_frequency(target_freq_hz)) {
+                int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
+                process_rssi_detection(entry, real_rssi);
+                last_scanned_frequency_ = target_freq_hz;
             }
         }
-        current_db_index_ = (current_db_index_ + 1) % total_entries;
-    } else {
         current_db_index_ = (current_db_index_ + 1) % total_entries;
     }
 }
@@ -374,7 +341,7 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
             freqman_entry fake_entry{
                 .frequency_a = current_slice.center_frequency,
                 .frequency_b = current_slice.center_frequency,
-                .type = static_cast<uint8_t>(freqman_type::Single),
+                .type = freqman_type::Single,
                 .modulation = freqman_invalid_index,
                 .bandwidth = freqman_invalid_index,
                 .step = freqman_invalid_index,
@@ -476,33 +443,35 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     }
 
     int32_t detection_threshold = -90;
-    const auto* db_entry = drone_database_.lookup_frequency(entry.frequency_a);
-    if (db_entry) {
-        detection_threshold = db_entry->rssi_threshold_db;
-    }
+    // TODO: Implement drone database lookup
+    // const auto* db_entry = drone_database_.lookup_frequency(entry.frequency_a);
+    // if (db_entry) {
+    //     detection_threshold = db_entry->rssi_threshold_db;
+    // }
 
     ThreatLevel validated_threat = SimpleDroneValidation::classify_signal_strength(rssi);
     ThreatLevel threat_level = ThreatLevel::LOW;
 
     DroneType detected_type = DroneType::UNKNOWN;
-    if (db_entry) {
-        detected_type = db_entry->drone_type;
-        threat_level = db_entry->threat_level;
-        if (validated_threat > threat_level) {
-            threat_level = validated_threat;
-        }
-    } else {
+    // TODO: Implement proper database lookup
+    // if (db_entry) {
+    //     detected_type = db_entry->drone_type;
+    //     threat_level = db_entry->threat_level;
+    //     if (validated_threat > threat_level) {
+    //         threat_level = validated_threat;
+    //     }
+    // } else {
         threat_level = validated_threat;
-    }
+    // }
 
     if (rssi < detection_threshold) {
         return;
     }
 
     total_detections_++;
-    if (db_entry) {
-        detected_type = db_entry->drone_type;
-    }
+    // if (db_entry) {
+    //     detected_type = db_entry->drone_type;
+    // }
 
     size_t freq_hash = entry.frequency_a;
     int32_t effective_threshold = detection_threshold;
@@ -630,16 +599,9 @@ void DroneScanner::switch_to_demo_mode() {
 }
 
 void DroneScanner::initialize_database_and_scanner() {
-    auto db_path = get_freqman_path("DRONES");
-    freqman_load_options options{
-        .load_freqs = true,
-        .load_ranges = true,
-        .load_hamradios = true,
-        .load_repeaters = true};
-    if (!load_freqman_file("DRONES", drone_database_, options)) {
+    if (!freq_db_.open(get_freqman_path("DRONES"))) {
         // Continue without enhanced drone data
     }
-    freq_db_.open(db_path, false);
 }
 
 void DroneScanner::cleanup_database_and_scanner() {
@@ -685,17 +647,17 @@ void DroneScanner::handle_scan_error(const char* error_msg) {
     (void)error_msg;
 }
 
-// DroneScanner::DroneDetectionLogger implementations
-inline DroneScanner::DroneDetectionLogger::DroneDetectionLogger()
+// DroneDetectionLogger implementations
+DroneDetectionLogger::DroneDetectionLogger()
     : session_active_(false), session_start_(0), logged_count_(0), header_written_(false) {
     start_session();
 }
 
-inline DroneScanner::DroneDetectionLogger::~DroneDetectionLogger() {
+DroneDetectionLogger::~DroneDetectionLogger() {
     end_session();
 }
 
-inline void DroneScanner::DroneDetectionLogger::start_session() {
+void DroneDetectionLogger::start_session() {
     if (session_active_) return;
     session_active_ = true;
     session_start_ = chTimeNow();
@@ -703,40 +665,40 @@ inline void DroneScanner::DroneDetectionLogger::start_session() {
     header_written_ = false;
 }
 
-inline void DroneScanner::DroneDetectionLogger::end_session() {
+void DroneDetectionLogger::end_session() {
     if (!session_active_) return;
     session_active_ = false;
 }
 
-inline bool DroneScanner::DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
+bool DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
     if (!session_active_) return false;
     if (!ensure_csv_header()) return false;
 
     std::string csv_entry = format_csv_entry(entry);
-    auto error = csv_log_.append(generate_log_filename().string());
-    if (error.is_error()) return false;
+    auto error = csv_log_.append(generate_log_filename());
+    if (error && !error->ok()) return false;
     error = csv_log_.write_raw(csv_entry);
-    if (!error.is_error()) {
+    if (error && error->ok()) {
         logged_count_++;
         return true;
     }
     return false;
 }
 
-inline bool DroneScanner::DroneDetectionLogger::ensure_csv_header() {
+bool DroneDetectionLogger::ensure_csv_header() {
     if (header_written_) return true;
     const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence\n";
-    auto error = csv_log_.append(generate_log_filename());
-    if (error.is_error()) return false;
+    auto error = csv_log_.append(std::filesystem::path(generate_log_filename()));
+    if (error && !error->ok()) return false;
     error = csv_log_.write_raw(header);
-    if (!error.is_error()) {
+    if (error && error->ok()) {
         header_written_ = true;
         return true;
     }
     return false;
 }
 
-inline std::string DroneScanner::DroneDetectionLogger::format_csv_entry(const DetectionLogEntry& entry) {
+std::string DroneDetectionLogger::format_csv_entry(const DetectionLogEntry& entry) {
     char buffer[128];
     memset(buffer, 0, sizeof(buffer));
     snprintf(buffer, sizeof(buffer) - 1,
@@ -748,11 +710,11 @@ inline std::string DroneScanner::DroneDetectionLogger::format_csv_entry(const De
     return std::string(buffer);
 }
 
-inline std::string DroneScanner::DroneDetectionLogger::generate_log_filename() const {
+std::string DroneDetectionLogger::generate_log_filename() const {
     return std::string("EDA_LOG.CSV");
 }
 
-inline std::string DroneScanner::DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
+std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
     uint32_t session_duration_ms = chTimeNow() - session_start_;
     float avg_detections_per_cycle = scan_cycles > 0 ? static_cast<float>(total_detections) / scan_cycles : 0.0f;
     float detections_per_second = session_duration_ms > 0 ?
@@ -777,7 +739,10 @@ inline std::string DroneScanner::DroneDetectionLogger::format_session_summary(si
 // ===========================================
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
-    : spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
+    : message_handler_spectrum_config_(Message::ID::ChannelSpectrumConfig, [this](const Message* const p) { handle_channel_spectrum_config((const ChannelSpectrumConfigMessage*)p); }),
+      message_handler_frame_sync_(Message::ID::DisplayFrameSync, [this](const Message* const p) { (void)p; process_channel_spectrum_data({}); }),
+      message_handler_spectrum_(Message::ID::ChannelSpectrum, [this](const Message* const p) { handle_channel_spectrum((const ChannelSpectrum*)p); }),
+      spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
       radio_state_(), spectrum_streaming_active_(false), last_valid_rssi_(-120)
 {
 }
@@ -814,13 +779,7 @@ void DroneHardwareController::initialize_radio_state() {
 }
 
 void DroneHardwareController::initialize_spectrum_collector() {
-    message_handler_spectrum_config_ = MessageHandlerRegistration(
-        Message::ID::ChannelSpectrumConfig,
-        [this](const Message* const p) { handle_channel_spectrum_config((const ChannelSpectrumConfigMessage*)p); });
-
-    message_handler_frame_sync_ = MessageHandlerRegistration(
-        Message::ID::DisplayFrameSync,
-        [this](const Message* const p) { (void)p; process_channel_spectrum_data({}); });
+    // Message handlers are now initialized in the constructor
 }
 
 void DroneHardwareController::cleanup_spectrum_collector() {
@@ -848,7 +807,7 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 }
 
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
-    radio_state_.tune_rf(frequency_hz);
+    receiver_model.set_target_frequency(frequency_hz);
     return true;
 }
 
@@ -893,6 +852,8 @@ int32_t DroneHardwareController::get_current_rssi() const {
 }
 
 void DroneHardwareController::update_spectrum_for_scanner() {
+    // Update spectrum data for scanner processing
+    // This method is called by the scanning coordinator
 }
 
 // ===========================================
@@ -1216,26 +1177,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
     }
     initialize_mini_spectrum();
 
-    message_handler_spectrum_config_ = MessageHandlerRegistration(
-        Message::ID::ChannelSpectrumConfig,
-        [this](const Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
-        });
-
-    message_handler_frame_sync_ = MessageHandlerRegistration(
-        Message::ID::DisplayFrameSync,
-        [this](const Message* const p) {
-            (void)p;
-            if (this->spectrum_fifo_) {
-                ChannelSpectrum channel_spectrum;
-                while (spectrum_fifo_->out_readable()) {
-                    spectrum_fifo_->out_read(channel_spectrum);
-                    this->process_mini_spectrum_data(channel_spectrum);
-                }
-                this->render_mini_spectrum();
-            }
-        });
+    // Message handlers are now initialized in the constructor
 }
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
@@ -1358,7 +1300,10 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
                       }),
         detected_drones_.end());
     sort_drones_by_rssi();
-    displayed_drones_.clear();
+    // Clear displayed drones array
+    for (auto& drone : displayed_drones_) {
+        drone = DisplayDroneEntry{};
+    }
     size_t count = std::min(detected_drones_.size(), MAX_DISPLAYED_DRONES);
     for (size_t i = 0; i < count; ++i) {
         displayed_drones_[i] = detected_drones_[i];
@@ -1605,10 +1550,14 @@ DroneUIController::DroneUIController(NavigationView& nav,
     : nav_(nav),
       hardware_(hardware),
       scanner_(scanner),
-      audio_(audio),
+      audio_mgr_(audio),
       scanning_active_(false),
       display_controller_(std::make_unique<DroneDisplayController>(nav))
 {
+    settings_.spectrum_mode = SpectrumMode::MEDIUM;
+    settings_.scan_interval_ms = 1000;
+    settings_.rssi_threshold_db = -90;
+    settings_.enable_audio_alerts = true;
 }
 
 void DroneUIController::on_start_scan() {
@@ -1732,12 +1681,12 @@ void DroneUIController::on_about() {
 
 EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
     : nav_(nav),
-      hardware_(std::make_unique<DroneHardwareController>()),
-      scanner_(std::make_unique<DroneScanner>()),
-      audio_(std::make_unique<AudioManager>()),
-      ui_controller_(std::make_unique<DroneUIController>(nav, *hardware_, *scanner_, *audio_)),
-      display_controller_(std::make_unique<DroneDisplayController>(nav)),
-      scanning_coordinator_(std::make_unique<ScanningCoordinator>(nav, *hardware_, *scanner_, *display_controller_, *audio_)),
+      hardware_(new DroneHardwareController()),
+      scanner_(new DroneScanner()),
+      audio_(new AudioManager()),
+      ui_controller_(new DroneUIController(nav, *hardware_, *scanner_, *audio_)),
+      display_controller_(new DroneDisplayController(nav)),
+      scanning_coordinator_(new ScanningCoordinator(nav, *hardware_, *scanner_, *display_controller_, *audio_)),
       smart_header_(), status_bar_(), threat_cards_(),
       button_start_({screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"),
       button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
@@ -1746,7 +1695,9 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 {
     load_settings_from_sd_card(settings_);
 
-    scanning_coordinator_->update_runtime_parameters(settings_);
+    if (scanning_coordinator_) {
+        scanning_coordinator_->update_runtime_parameters(settings_);
+    }
 
     initialize_modern_layout();
 
@@ -2000,7 +1951,7 @@ msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
 }
 
 msg_t ScanningCoordinator::coordinated_scanning_thread() {
-    while (scanning_active_ && !chThdShouldTerminateX()) {
+    while (scanning_active_ && !chThdShouldTerminate()) {
         if (scanner_.is_scanning_active()) {
             hardware_.update_spectrum_for_scanner();
             scanner_.perform_scan_cycle(hardware_);

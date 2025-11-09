@@ -12,41 +12,13 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <map>
+#include <functional>
 
 using Frequency = uint64_t;
 
-#include "ui_drone_common_types.hpp"  // Common enums and types
-
-struct TrackedDrone {
-    uint32_t frequency;
-    uint8_t drone_type;
-    uint8_t threat_level;
-    uint8_t update_count;
-    systime_t last_seen;
-};
-
-struct DisplayDroneEntry {
-    Frequency frequency;
-    DroneType type;
-    ThreatLevel threat;
-    int32_t rssi;
-    systime_t last_seen;
-    std::string type_name;
-    Color display_color;
-    MovementTrend trend;
-};
-
-struct DronePreset {
-    std::string display_name;
-    std::string name_template;
-    Frequency frequency_hz;
-    ThreatLevel threat_level;
-    DroneType drone_type;
-
-    bool is_valid() const {
-        return !display_name.empty() && frequency_hz > 0;
-    }
-};
+// Include common types from scanner header to avoid duplication
+#include "ui_scanner_combined.hpp"
 
 static constexpr size_t MAX_TRACKED_DRONES = 8;
 static constexpr size_t MAX_DISPLAYED_DRONES = 3;
@@ -125,11 +97,11 @@ struct DroneAnalyzerSettings {
     // Display options
     bool show_detailed_info = true;
     bool auto_save_logs = true;
-    std::string log_file_path = "/eda_logs";
+    ::std::string log_file_path = "/eda_logs";
 
     // File paths
-    std::string freqman_path = "DRONES";
-    std::string settings_file_path = "/settings/scanner_config.txt";
+    ::std::string freqman_path = "DRONES";
+    ::std::string settings_file_path = "/settings/scanner_config.txt";
 
     // Hardware settings
     uint32_t hardware_bandwidth_hz = 24000000;
@@ -150,16 +122,16 @@ public:
     static bool save(const DroneAnalyzerSettings& settings);
     static void reset_to_defaults(DroneAnalyzerSettings& settings);
     static bool validate(const DroneAnalyzerSettings& settings);
-    static std::string serialize(const DroneAnalyzerSettings& settings);
-    static bool deserialize(DroneAnalyzerSettings& settings, const std::string& data);
+    static ::std::string serialize(const DroneAnalyzerSettings& settings);
+    static bool deserialize(DroneAnalyzerSettings& settings, const ::std::string& data);
 
     static void set_language(Language lang) { current_language_ = lang; }
     static Language get_language() { return current_language_; }
-    static const char* translate(const std::string& key);
+    static const char* translate(const ::std::string& key);
 
     // Default translations (English)
-    static const std::map<std::string, const char*> translations_english;
-    static const char* get_translation(const std::string& key);
+    static const ::std::map<::std::string, const char*> translations_english;
+    static const char* get_translation(const ::std::string& key);
 
 private:
     static Language current_language_;
@@ -172,7 +144,7 @@ struct ConfigData {
     int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
     uint32_t scan_interval_ms = 1000;
     bool enable_audio_alerts = true;
-    std::string freqman_path = "DRONES";
+    ::std::string freqman_path = "DRONES";
 };
 
 class ScannerConfig {
@@ -180,8 +152,8 @@ public:
     explicit ScannerConfig(ConfigData config = {});
     ~ScannerConfig() = default;
 
-    bool load_from_file(const std::string& filepath);
-    bool save_to_file(const std::string& filepath) const;
+    bool load_from_file(const ::std::string& filepath);
+    bool save_to_file(const ::std::string& filepath) const;
 
     const ConfigData& get_data() const { return config_data_; }
     ConfigData& get_data() { return config_data_; }
@@ -190,10 +162,10 @@ public:
     void set_rssi_threshold(int32_t threshold);
     void set_scan_interval(uint32_t interval_ms);
     void set_audio_alerts(bool enabled);
-    void set_freqman_path(const std::string& path);
+    void set_freqman_path(const ::std::string& path);
 
     // Legacy compatibility methods
-    void set_scanning_mode(const std::string& mode);
+    void set_scanning_mode(const ::std::string& mode);
     bool is_valid() const;
 
     ScannerConfig(const ScannerConfig&) = delete;
@@ -208,15 +180,15 @@ using FilteredPresetMenuView = std::function<void(const DronePreset&, const std:
 
 class DroneFrequencyPresets {
 public:
-    static const std::vector<DronePreset>& get_all_presets();
-    static std::vector<DroneType> get_available_types();
-    static std::string get_type_display_name(DroneType type);
+    static const ::std::vector<DronePreset>& get_all_presets();
+    static ::std::vector<DroneType> get_available_types();
+    static ::std::string get_type_display_name(DroneType type);
 
-    static std::vector<DronePreset> get_presets_of_type(const std::vector<DronePreset>& all_presets, DroneType type);
+    static ::std::vector<DronePreset> get_presets_of_type(const ::std::vector<DronePreset>& all_presets, DroneType type);
     static bool apply_preset(ScannerConfig& config, const DronePreset& preset);
 
 private:
-    static const std::vector<DronePreset> standard_presets_;
+    static const ::std::vector<DronePreset> standard_presets_;
 };
 
 class DronePresetSelector {
@@ -250,7 +222,7 @@ struct DroneFrequencyEntry {
     bool is_valid() const;
 };
 
-using DroneFrequencyDatabase = std::vector<DroneFrequencyEntry>;
+using DroneFrequencyDatabase = ::std::vector<DroneFrequencyEntry>;
 
 // ===========================================
 // PART 3: SETTINGS UI CLASSES (from ui_drone_settings_complete.hpp)
@@ -260,8 +232,6 @@ using DroneFrequencyDatabase = std::vector<DroneFrequencyEntry>;
 #include "ui_navigation.hpp"
 #include "ui_tabview.hpp"
 #include "app_settings.hpp"
-#include <string>
-#include <sstream>
 
 struct DroneAudioSettings {
     bool audio_enabled = true;
@@ -471,7 +441,7 @@ public:
 
 private:
     NavigationView& nav_;
-    std::vector<Button> menu_buttons_;
+    ::std::vector<Button> menu_buttons_;
 
     void setup_menu_buttons();
     void on_menu_button_pressed(size_t button_index);
