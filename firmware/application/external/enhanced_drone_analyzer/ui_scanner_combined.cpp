@@ -17,9 +17,6 @@
 #include "ui_textentry.hpp"
 #include "ui_menu.hpp"
 #include "ui_freq_field.hpp"
-#include "ui_checkbox.hpp"
-#include "ui_numberfield.hpp"
-#include "ui_fileman.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -329,13 +326,15 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
     }
 
     if (current_db_index_ < freq_db_.size()) {
-        const auto& entry = freq_db_[current_db_index_];
-        Frequency target_freq_hz = entry->frequency_a;
-        if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
-            if (hardware.tune_to_frequency(target_freq_hz)) {
-                int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-                process_rssi_detection(entry, real_rssi);
-                last_scanned_frequency_ = target_freq_hz;
+        const auto& entry_ptr = freq_db_[current_db_index_];
+        if (entry_ptr) {
+            Frequency target_freq_hz = entry_ptr->frequency_a;
+            if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
+                if (hardware.tune_to_frequency(target_freq_hz)) {
+                    int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
+                    process_rssi_detection(*entry_ptr, real_rssi);
+                    last_scanned_frequency_ = target_freq_hz;
+                }
             }
         }
         current_db_index_ = (current_db_index_ + 1) % total_entries;
@@ -650,8 +649,8 @@ bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
-    if (!freq_db_.empty() && current_db_index_ < freq_db_.size() && freq_db_[current_db_index_].frequency_a > 0) {
-        return freq_db_[current_db_index_].frequency_a;
+    if (!freq_db_.empty() && current_db_index_ < freq_db_.size() && freq_db_[current_db_index_]) {
+        return freq_db_[current_db_index_]->frequency_a;
     }
     return 433000000;
 }
@@ -768,9 +767,7 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
 // ===========================================
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
-    : message_handler_spectrum_config_(Message::ID::ChannelSpectrumConfig, [this](const Message* const p) { handle_channel_spectrum_config((const ChannelSpectrumConfigMessage*)p); }),
-      message_handler_frame_sync_(Message::ID::DisplayFrameSync, [this](const Message* const p) { (void)p; process_channel_spectrum_data({}); }),
-      spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
+    : spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
       radio_state_(), spectrum_streaming_active_(false), last_valid_rssi_(-120)
 {
 }

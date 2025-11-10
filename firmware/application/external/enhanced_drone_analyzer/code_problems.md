@@ -1,86 +1,26 @@
 [{
 	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
 	"owner": "C/C++: IntelliSense",
-	"code": "135",
-	"severity": 8,
-	"message": "class \"std::unique_ptr<freqman_entry, std::default_delete<freqman_entry>>\" has no member \"frequency_a\"",
-	"source": "C/C++",
-	"startLineNumber": 330,
-	"startColumn": 42,
-	"endLineNumber": 330,
-	"endColumn": 53,
-	"origin": "extHost1"
-},{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "312",
-	"severity": 8,
-	"message": "no suitable user-defined conversion from \"const __gnu_cxx::__alloc_traits<std::allocator<freqman_entry_ptr>, std::allocator<freqman_entry_ptr>::value_type>::value_type\" (aka \"const freqman_entry_ptr\") to \"const freqman_entry\" exists",
-	"source": "C/C++",
-	"startLineNumber": 334,
-	"startColumn": 40,
-	"endLineNumber": 334,
-	"endColumn": 45,
-	"origin": "extHost1"
-},{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
-	"owner": "C/C++: IntelliSense",
 	"code": "2904",
 	"severity": 8,
 	"message": "out-of-order initializers are nonstandard in C++",
 	"source": "C/C++",
-	"startLineNumber": 362,
+	"startLineNumber": 364,
 	"startColumn": 17,
-	"endLineNumber": 362,
+	"endLineNumber": 364,
 	"endColumn": 18,
 	"origin": "extHost1"
 },{
 	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
 	"owner": "C/C++: IntelliSense",
-	"code": "135",
+	"code": "291",
 	"severity": 8,
-	"message": "class \"std::unique_ptr<freqman_entry, std::default_delete<freqman_entry>>\" has no member \"frequency_a\"",
+	"message": "no default constructor exists for class \"MessageHandlerRegistration\"",
 	"source": "C/C++",
-	"startLineNumber": 650,
-	"startColumn": 97,
-	"endLineNumber": 650,
-	"endColumn": 108,
-	"origin": "extHost1"
-},{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "135",
-	"severity": 8,
-	"message": "class \"std::unique_ptr<freqman_entry, std::default_delete<freqman_entry>>\" has no member \"frequency_a\"",
-	"source": "C/C++",
-	"startLineNumber": 651,
-	"startColumn": 44,
-	"endLineNumber": 651,
-	"endColumn": 55,
-	"origin": "extHost1"
-},{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "135",
-	"severity": 8,
-	"message": "enum \"Message::ID\" has no member \"ChannelSpectrum\"",
-	"source": "C/C++",
-	"startLineNumber": 770,
-	"startColumn": 46,
-	"endLineNumber": 770,
-	"endColumn": 61,
-	"origin": "extHost1"
-},{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "415",
-	"severity": 8,
-	"message": "no suitable constructor exists to convert from \"const ChannelSpectrum *\" to \"ChannelSpectrum\"",
-	"source": "C/C++",
-	"startLineNumber": 770,
-	"startColumn": 120,
-	"endLineNumber": 770,
-	"endColumn": 121,
+	"startLineNumber": 772,
+	"startColumn": 1,
+	"endLineNumber": 772,
+	"endColumn": 2,
 	"origin": "extHost1"
 },{
 	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
@@ -89,9 +29,9 @@
 	"severity": 8,
 	"message": "no suitable conversion function from \"ui::Color\" to \"const ui::Style *\" exists",
 	"source": "C/C++",
-	"startLineNumber": 946,
+	"startLineNumber": 945,
 	"startColumn": 33,
-	"endLineNumber": 946,
+	"endLineNumber": 945,
 	"endColumn": 54,
 	"origin": "extHost1"
 },{
@@ -101,15 +41,15 @@
 	"severity": 8,
 	"message": "no instance of constructor \"ui::Color::Color\" matches the argument list",
 	"source": "C/C++",
-	"startLineNumber": 1020,
+	"startLineNumber": 1019,
 	"startColumn": 23,
-	"endLineNumber": 1020,
+	"endLineNumber": 1019,
 	"endColumn": 28,
 	"relatedInformation": [
 		{
-			"startLineNumber": 1020,
+			"startLineNumber": 1019,
 			"startColumn": 23,
-			"endLineNumber": 1020,
+			"endLineNumber": 1019,
 			"endColumn": 28,
 			"message": "argument types are: (uint8_t (), uint8_t (), uint8_t (), uint8_t)",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
@@ -123,9 +63,9 @@
 	"severity": 8,
 	"message": "a pointer to a bound function may only be used to call the function",
 	"source": "C/C++",
-	"startLineNumber": 1020,
+	"startLineNumber": 1019,
 	"startColumn": 41,
-	"endLineNumber": 1020,
+	"endLineNumber": 1019,
 	"endColumn": 42,
 	"origin": "extHost1"
 },{
@@ -135,9 +75,9 @@
 	"severity": 8,
 	"message": "a pointer to a bound function may only be used to call the function",
 	"source": "C/C++",
-	"startLineNumber": 1020,
+	"startLineNumber": 1019,
 	"startColumn": 56,
-	"endLineNumber": 1020,
+	"endLineNumber": 1019,
 	"endColumn": 57,
 	"origin": "extHost1"
 },{
@@ -147,9 +87,9 @@
 	"severity": 8,
 	"message": "a pointer to a bound function may only be used to call the function",
 	"source": "C/C++",
-	"startLineNumber": 1020,
+	"startLineNumber": 1019,
 	"startColumn": 71,
-	"endLineNumber": 1020,
+	"endLineNumber": 1019,
 	"endColumn": 72,
 	"origin": "extHost1"
 },{
@@ -159,9 +99,9 @@
 	"severity": 8,
 	"message": "no suitable conversion function from \"ui::Color\" to \"const ui::Style *\" exists",
 	"source": "C/C++",
-	"startLineNumber": 1040,
+	"startLineNumber": 1039,
 	"startColumn": 26,
-	"endLineNumber": 1040,
+	"endLineNumber": 1039,
 	"endColumn": 45,
 	"origin": "extHost1"
 },{
@@ -171,9 +111,9 @@
 	"severity": 8,
 	"message": "identifier \"parent_rect_\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1101,
+	"startLineNumber": 1100,
 	"startColumn": 33,
-	"endLineNumber": 1101,
+	"endLineNumber": 1100,
 	"endColumn": 45,
 	"origin": "extHost1"
 },{
@@ -183,9 +123,9 @@
 	"severity": 8,
 	"message": "a value of type \"const char [25]\" cannot be used to initialize an entity of type \"char [9]\"",
 	"source": "C/C++",
-	"startLineNumber": 1114,
+	"startLineNumber": 1113,
 	"startColumn": 28,
-	"endLineNumber": 1114,
+	"endLineNumber": 1113,
 	"endColumn": 38,
 	"origin": "extHost1"
 },{
@@ -195,9 +135,9 @@
 	"severity": 8,
 	"message": "expression preceding parentheses of apparent call must have (pointer-to-) function type",
 	"source": "C/C++",
-	"startLineNumber": 1146,
+	"startLineNumber": 1145,
 	"startColumn": 94,
-	"endLineNumber": 1146,
+	"endLineNumber": 1145,
 	"endColumn": 99,
 	"origin": "extHost1"
 },{
@@ -207,9 +147,9 @@
 	"severity": 8,
 	"message": "no suitable conversion function from \"const ui::Color\" to \"const ui::Style *\" exists",
 	"source": "C/C++",
-	"startLineNumber": 1160,
+	"startLineNumber": 1159,
 	"startColumn": 28,
-	"endLineNumber": 1160,
+	"endLineNumber": 1159,
 	"endColumn": 33,
 	"origin": "extHost1"
 },{
@@ -219,9 +159,9 @@
 	"severity": 8,
 	"message": "identifier \"parent_rect_\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1183,
+	"startLineNumber": 1182,
 	"startColumn": 33,
-	"endLineNumber": 1183,
+	"endLineNumber": 1182,
 	"endColumn": 45,
 	"origin": "extHost1"
 },{
@@ -231,9 +171,9 @@
 	"severity": 8,
 	"message": "no instance of constructor \"MessageHandlerRegistration::MessageHandlerRegistration\" matches the argument list",
 	"source": "C/C++",
-	"startLineNumber": 1200,
+	"startLineNumber": 1199,
 	"startColumn": 39,
-	"endLineNumber": 1200,
+	"endLineNumber": 1199,
 	"endColumn": 40,
 	"origin": "extHost1"
 },{
@@ -243,9 +183,9 @@
 	"severity": 8,
 	"message": "no instance of constructor \"MessageHandlerRegistration::MessageHandlerRegistration\" matches the argument list",
 	"source": "C/C++",
-	"startLineNumber": 1200,
+	"startLineNumber": 1199,
 	"startColumn": 70,
-	"endLineNumber": 1200,
+	"endLineNumber": 1199,
 	"endColumn": 71,
 	"origin": "extHost1"
 },{
@@ -255,9 +195,9 @@
 	"severity": 8,
 	"message": "identifier \"get_drone_type_name\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1292,
+	"startLineNumber": 1294,
 	"startColumn": 25,
-	"endLineNumber": 1292,
+	"endLineNumber": 1294,
 	"endColumn": 44,
 	"origin": "extHost1"
 },{
@@ -267,9 +207,9 @@
 	"severity": 8,
 	"message": "identifier \"get_drone_type_color\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1293,
+	"startLineNumber": 1295,
 	"startColumn": 29,
-	"endLineNumber": 1293,
+	"endLineNumber": 1295,
 	"endColumn": 49,
 	"origin": "extHost1"
 },{
@@ -279,9 +219,9 @@
 	"severity": 8,
 	"message": "identifier \"get_drone_type_name\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1302,
+	"startLineNumber": 1304,
 	"startColumn": 31,
-	"endLineNumber": 1302,
+	"endLineNumber": 1304,
 	"endColumn": 50,
 	"origin": "extHost1"
 },{
@@ -291,9 +231,9 @@
 	"severity": 8,
 	"message": "identifier \"get_drone_type_color\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1303,
+	"startLineNumber": 1305,
 	"startColumn": 35,
-	"endLineNumber": 1303,
+	"endLineNumber": 1305,
 	"endColumn": 55,
 	"origin": "extHost1"
 },{
@@ -303,9 +243,9 @@
 	"severity": 8,
 	"message": "too few arguments in function call",
 	"source": "C/C++",
-	"startLineNumber": 1308,
+	"startLineNumber": 1310,
 	"startColumn": 27,
-	"endLineNumber": 1308,
+	"endLineNumber": 1310,
 	"endColumn": 28,
 	"origin": "extHost1"
 },{
@@ -315,9 +255,9 @@
 	"severity": 8,
 	"message": "class \"ui::external_app::enhanced_drone_analyzer::DroneDisplayController\" has no member \"get_drone_type_name\"",
 	"source": "C/C++",
-	"startLineNumber": 1548,
+	"startLineNumber": 1550,
 	"startColumn": 37,
-	"endLineNumber": 1548,
+	"endLineNumber": 1550,
 	"endColumn": 56,
 	"origin": "extHost1"
 },{
@@ -327,9 +267,9 @@
 	"severity": 8,
 	"message": "a type qualifier is not allowed on a nonmember function",
 	"source": "C/C++",
-	"startLineNumber": 1548,
+	"startLineNumber": 1550,
 	"startColumn": 73,
-	"endLineNumber": 1548,
+	"endLineNumber": 1550,
 	"endColumn": 78,
 	"origin": "extHost1"
 },{
@@ -339,9 +279,9 @@
 	"severity": 8,
 	"message": "class \"ui::external_app::enhanced_drone_analyzer::DroneDisplayController\" has no member \"get_drone_type_color\"",
 	"source": "C/C++",
-	"startLineNumber": 1556,
+	"startLineNumber": 1558,
 	"startColumn": 31,
-	"endLineNumber": 1556,
+	"endLineNumber": 1558,
 	"endColumn": 51,
 	"origin": "extHost1"
 },{
@@ -351,9 +291,9 @@
 	"severity": 8,
 	"message": "a type qualifier is not allowed on a nonmember function",
 	"source": "C/C++",
-	"startLineNumber": 1556,
+	"startLineNumber": 1558,
 	"startColumn": 68,
-	"endLineNumber": 1556,
+	"endLineNumber": 1558,
 	"endColumn": 73,
 	"origin": "extHost1"
 },{
@@ -363,9 +303,9 @@
 	"severity": 8,
 	"message": "identifier \"audio_\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1603,
+	"startLineNumber": 1605,
 	"startColumn": 5,
-	"endLineNumber": 1603,
+	"endLineNumber": 1605,
 	"endColumn": 11,
 	"origin": "extHost1"
 },{
@@ -375,9 +315,9 @@
 	"severity": 8,
 	"message": "class \"ui::MenuView\" has no member \"Item\"",
 	"source": "C/C++",
-	"startLineNumber": 1625,
+	"startLineNumber": 1627,
 	"startColumn": 64,
-	"endLineNumber": 1625,
+	"endLineNumber": 1627,
 	"endColumn": 68,
 	"origin": "extHost1"
 },{
@@ -387,15 +327,15 @@
 	"severity": 8,
 	"message": "no instance of constructor \"std::vector<_Tp, _Alloc>::vector [with _Tp=<error type>, _Alloc=std::allocator<<error type>>]\" matches the argument list",
 	"source": "C/C++",
-	"startLineNumber": 1625,
+	"startLineNumber": 1627,
 	"startColumn": 69,
-	"endLineNumber": 1625,
+	"endLineNumber": 1627,
 	"endColumn": 70,
 	"relatedInformation": [
 		{
-			"startLineNumber": 1625,
+			"startLineNumber": 1627,
 			"startColumn": 69,
-			"endLineNumber": 1625,
+			"endLineNumber": 1627,
 			"endColumn": 70,
 			"message": "argument types are: ({...}, {...}, {...}, {...}, {...}, {...}, {...})",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
@@ -409,9 +349,9 @@
 	"severity": 8,
 	"message": "class \"ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings\" has no member \"save\"",
 	"source": "C/C++",
-	"startLineNumber": 1646,
+	"startLineNumber": 1648,
 	"startColumn": 15,
-	"endLineNumber": 1646,
+	"endLineNumber": 1648,
 	"endColumn": 19,
 	"origin": "extHost1"
 },{
@@ -421,9 +361,9 @@
 	"severity": 8,
 	"message": "name followed by '::' must be a class or namespace name",
 	"source": "C/C++",
-	"startLineNumber": 1646,
+	"startLineNumber": 1648,
 	"startColumn": 20,
-	"endLineNumber": 1646,
+	"endLineNumber": 1648,
 	"endColumn": 26,
 	"origin": "extHost1"
 },{
@@ -433,9 +373,9 @@
 	"severity": 8,
 	"message": "identifier \"CheckboxView\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1651,
+	"startLineNumber": 1653,
 	"startColumn": 15,
-	"endLineNumber": 1651,
+	"endLineNumber": 1653,
 	"endColumn": 27,
 	"origin": "extHost1"
 },{
@@ -445,9 +385,9 @@
 	"severity": 8,
 	"message": "class \"ui::MenuView\" has no member \"Item\"",
 	"source": "C/C++",
-	"startLineNumber": 1655,
+	"startLineNumber": 1657,
 	"startColumn": 47,
-	"endLineNumber": 1655,
+	"endLineNumber": 1657,
 	"endColumn": 51,
 	"origin": "extHost1"
 },{
@@ -457,15 +397,15 @@
 	"severity": 8,
 	"message": "no instance of constructor \"std::vector<_Tp, _Alloc>::vector [with _Tp=<error type>, _Alloc=std::allocator<<error type>>]\" matches the argument list",
 	"source": "C/C++",
-	"startLineNumber": 1655,
+	"startLineNumber": 1657,
 	"startColumn": 52,
-	"endLineNumber": 1655,
+	"endLineNumber": 1657,
 	"endColumn": 53,
 	"relatedInformation": [
 		{
-			"startLineNumber": 1655,
+			"startLineNumber": 1657,
 			"startColumn": 52,
-			"endLineNumber": 1655,
+			"endLineNumber": 1657,
 			"endColumn": 53,
 			"message": "argument types are: ({...}, {...}, {...}, {...}, {...})",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
@@ -479,9 +419,9 @@
 	"severity": 8,
 	"message": "class \"ui::MenuView\" has no member \"Item\"",
 	"source": "C/C++",
-	"startLineNumber": 1670,
+	"startLineNumber": 1672,
 	"startColumn": 47,
-	"endLineNumber": 1670,
+	"endLineNumber": 1672,
 	"endColumn": 51,
 	"origin": "extHost1"
 },{
@@ -491,15 +431,15 @@
 	"severity": 8,
 	"message": "no instance of constructor \"std::vector<_Tp, _Alloc>::vector [with _Tp=<error type>, _Alloc=std::allocator<<error type>>]\" matches the argument list",
 	"source": "C/C++",
-	"startLineNumber": 1670,
+	"startLineNumber": 1672,
 	"startColumn": 52,
-	"endLineNumber": 1670,
+	"endLineNumber": 1672,
 	"endColumn": 53,
 	"relatedInformation": [
 		{
-			"startLineNumber": 1670,
+			"startLineNumber": 1672,
 			"startColumn": 52,
-			"endLineNumber": 1670,
+			"endLineNumber": 1672,
 			"endColumn": 53,
 			"message": "argument types are: ({...}, {...}, {...})",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
@@ -513,9 +453,9 @@
 	"severity": 8,
 	"message": "class \"ui::external_app::enhanced_drone_analyzer::DroneHardwareController\" has no member \"get_bandwidth\"",
 	"source": "C/C++",
-	"startLineNumber": 1678,
+	"startLineNumber": 1680,
 	"startColumn": 37,
-	"endLineNumber": 1678,
+	"endLineNumber": 1680,
 	"endColumn": 50,
 	"origin": "extHost1"
 },{
@@ -525,9 +465,9 @@
 	"severity": 8,
 	"message": "identifier \"NumberInputView\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1679,
+	"startLineNumber": 1681,
 	"startColumn": 28,
-	"endLineNumber": 1679,
+	"endLineNumber": 1681,
 	"endColumn": 43,
 	"origin": "extHost1"
 },{
@@ -537,9 +477,9 @@
 	"severity": 8,
 	"message": "class \"ui::external_app::enhanced_drone_analyzer::DroneHardwareController\" has no member \"set_bandwidth\"",
 	"source": "C/C++",
-	"startLineNumber": 1681,
+	"startLineNumber": 1683,
 	"startColumn": 19,
-	"endLineNumber": 1681,
+	"endLineNumber": 1683,
 	"endColumn": 32,
 	"origin": "extHost1"
 },{
@@ -549,9 +489,9 @@
 	"severity": 8,
 	"message": "class \"ui::external_app::enhanced_drone_analyzer::DroneHardwareController\" has no member \"get_center_frequency\"",
 	"source": "C/C++",
-	"startLineNumber": 1686,
+	"startLineNumber": 1688,
 	"startColumn": 38,
-	"endLineNumber": 1686,
+	"endLineNumber": 1688,
 	"endColumn": 58,
 	"origin": "extHost1"
 },{
@@ -561,9 +501,9 @@
 	"severity": 8,
 	"message": "identifier \"FrequencyInputView\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1687,
+	"startLineNumber": 1689,
 	"startColumn": 28,
-	"endLineNumber": 1687,
+	"endLineNumber": 1689,
 	"endColumn": 46,
 	"origin": "extHost1"
 },{
@@ -573,9 +513,9 @@
 	"severity": 8,
 	"message": "class \"ui::external_app::enhanced_drone_analyzer::DroneHardwareController\" has no member \"set_center_frequency\"",
 	"source": "C/C++",
-	"startLineNumber": 1690,
+	"startLineNumber": 1692,
 	"startColumn": 19,
-	"endLineNumber": 1690,
+	"endLineNumber": 1692,
 	"endColumn": 39,
 	"origin": "extHost1"
 },{
@@ -585,9 +525,9 @@
 	"severity": 8,
 	"message": "class \"ui::external_app::enhanced_drone_analyzer::DroneHardwareController\" has no member \"get_bandwidth\"",
 	"source": "C/C++",
-	"startLineNumber": 1698,
+	"startLineNumber": 1700,
 	"startColumn": 23,
-	"endLineNumber": 1698,
+	"endLineNumber": 1700,
 	"endColumn": 36,
 	"origin": "extHost1"
 },{
@@ -597,9 +537,9 @@
 	"severity": 8,
 	"message": "class \"ui::external_app::enhanced_drone_analyzer::DroneHardwareController\" has no member \"get_center_frequency\"",
 	"source": "C/C++",
-	"startLineNumber": 1699,
+	"startLineNumber": 1701,
 	"startColumn": 23,
-	"endLineNumber": 1699,
+	"endLineNumber": 1701,
 	"endColumn": 43,
 	"origin": "extHost1"
 },{
@@ -609,9 +549,9 @@
 	"severity": 8,
 	"message": "identifier \"FileBrowserView\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1704,
+	"startLineNumber": 1706,
 	"startColumn": 15,
-	"endLineNumber": 1704,
+	"endLineNumber": 1706,
 	"endColumn": 30,
 	"origin": "extHost1"
 },{
@@ -621,9 +561,9 @@
 	"severity": 8,
 	"message": "incomplete type \"ui::external_app::enhanced_drone_analyzer::AudioManager\" is not allowed",
 	"source": "C/C++",
-	"startLineNumber": 1715,
+	"startLineNumber": 1717,
 	"startColumn": 18,
-	"endLineNumber": 1715,
+	"endLineNumber": 1717,
 	"endColumn": 30,
 	"origin": "extHost1"
 },{
@@ -633,9 +573,9 @@
 	"severity": 8,
 	"message": "\"button_start_\" is not a nonstatic data member or base class of class \"ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView\"",
 	"source": "C/C++",
-	"startLineNumber": 1720,
+	"startLineNumber": 1722,
 	"startColumn": 7,
-	"endLineNumber": 1720,
+	"endLineNumber": 1722,
 	"endColumn": 20,
 	"origin": "extHost1"
 },{
@@ -645,15 +585,15 @@
 	"severity": 8,
 	"message": "no instance of constructor \"ui::OptionsField::OptionsField\" matches the argument list",
 	"source": "C/C++",
-	"startLineNumber": 1722,
+	"startLineNumber": 1724,
 	"startColumn": 27,
-	"endLineNumber": 1722,
+	"endLineNumber": 1724,
 	"endColumn": 28,
 	"relatedInformation": [
 		{
-			"startLineNumber": 1722,
+			"startLineNumber": 1724,
 			"startColumn": 27,
-			"endLineNumber": 1722,
+			"endLineNumber": 1724,
 			"endColumn": 28,
 			"message": "argument types are: ({...}, int)",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
@@ -663,25 +603,13 @@
 },{
 	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
 	"owner": "C/C++: IntelliSense",
-	"code": "292",
+	"code": "434",
 	"severity": 8,
-	"message": "\"settings_\" is not a nonstatic data member or base class of class \"ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView\"",
+	"message": "a reference of type \"DroneAnalyzerSettings &\" (not const-qualified) cannot be initialized with a value of type \"ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings\"",
 	"source": "C/C++",
-	"startLineNumber": 1723,
-	"startColumn": 7,
-	"endLineNumber": 1723,
-	"endColumn": 16,
-	"origin": "extHost1"
-},{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "20",
-	"severity": 8,
-	"message": "identifier \"settings_\" is undefined",
-	"source": "C/C++",
-	"startLineNumber": 1725,
+	"startLineNumber": 1727,
 	"startColumn": 32,
-	"endLineNumber": 1725,
+	"endLineNumber": 1727,
 	"endColumn": 41,
 	"origin": "extHost1"
 },{
@@ -691,9 +619,9 @@
 	"severity": 8,
 	"message": "identifier \"button_start_\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1733,
+	"startLineNumber": 1735,
 	"startColumn": 5,
-	"endLineNumber": 1733,
+	"endLineNumber": 1735,
 	"endColumn": 18,
 	"origin": "extHost1"
 },{
@@ -703,55 +631,55 @@
 	"severity": 8,
 	"message": "no operator \"=\" matches these operands",
 	"source": "C/C++",
-	"startLineNumber": 1740,
+	"startLineNumber": 1742,
 	"startColumn": 36,
-	"endLineNumber": 1740,
+	"endLineNumber": 1742,
 	"endColumn": 37,
 	"relatedInformation": [
 		{
-			"startLineNumber": 1740,
+			"startLineNumber": 1742,
 			"startColumn": 36,
-			"endLineNumber": 1740,
+			"endLineNumber": 1742,
 			"endColumn": 37,
 			"message": "operand types are: std::function<void (size_t, ui::OptionsField::value_t)> = lambda [](size_t index)->void",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
 		},
 		{
-			"startLineNumber": 1740,
+			"startLineNumber": 1742,
 			"startColumn": 36,
-			"endLineNumber": 1740,
+			"endLineNumber": 1742,
 			"endColumn": 37,
 			"message": "candidate function template \"std::function<_Res (_ArgTypes...)>::operator=(std::reference_wrapper<_Functor> __f) noexcept [with _Res=void, _ArgTypes=<size_t, ui::OptionsField::value_t>]\" failed deduction",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
 		},
 		{
-			"startLineNumber": 1740,
+			"startLineNumber": 1742,
 			"startColumn": 36,
-			"endLineNumber": 1740,
+			"endLineNumber": 1742,
 			"endColumn": 37,
 			"message": "candidate function template \"std::function<_Res (_ArgTypes...)>::operator=(_Functor &&__f) [with _Res=void, _ArgTypes=<size_t, ui::OptionsField::value_t>]\" failed deduction",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
 		},
 		{
-			"startLineNumber": 1740,
+			"startLineNumber": 1742,
 			"startColumn": 36,
-			"endLineNumber": 1740,
+			"endLineNumber": 1742,
 			"endColumn": 37,
 			"message": "function \"std::function<_Res (_ArgTypes...)>::operator=(std::nullptr_t) noexcept [with _Res=void, _ArgTypes=<size_t, ui::OptionsField::value_t>]\" does not match because argument #1 does not match parameter",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
 		},
 		{
-			"startLineNumber": 1740,
+			"startLineNumber": 1742,
 			"startColumn": 36,
-			"endLineNumber": 1740,
+			"endLineNumber": 1742,
 			"endColumn": 37,
 			"message": "function \"std::function<_Res (_ArgTypes...)>::operator=(std::function<_Res (_ArgTypes...)> &&__x) noexcept [with _Res=void, _ArgTypes=<size_t, ui::OptionsField::value_t>]\" does not match because argument #1 does not match parameter",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
 		},
 		{
-			"startLineNumber": 1740,
+			"startLineNumber": 1742,
 			"startColumn": 36,
-			"endLineNumber": 1740,
+			"endLineNumber": 1742,
 			"endColumn": 37,
 			"message": "function \"std::function<_Res (_ArgTypes...)>::operator=(const std::function<_Res (_ArgTypes...)> &__x) [with _Res=void, _ArgTypes=<size_t, ui::OptionsField::value_t>]\" does not match because argument #1 does not match parameter",
 			"resource": "/c:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp"
@@ -765,9 +693,9 @@
 	"severity": 8,
 	"message": "class \"ui::OptionsField\" has no member \"set_value\"",
 	"source": "C/C++",
-	"startLineNumber": 1749,
+	"startLineNumber": 1751,
 	"startColumn": 26,
-	"endLineNumber": 1749,
+	"endLineNumber": 1751,
 	"endColumn": 35,
 	"origin": "extHost1"
 },{
@@ -777,9 +705,9 @@
 	"severity": 8,
 	"message": "identifier \"button_start_\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1764,
+	"startLineNumber": 1766,
 	"startColumn": 5,
-	"endLineNumber": 1764,
+	"endLineNumber": 1766,
 	"endColumn": 18,
 	"origin": "extHost1"
 },{
@@ -789,9 +717,9 @@
 	"severity": 8,
 	"message": "identifier \"button_start_\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1812,
+	"startLineNumber": 1814,
 	"startColumn": 9,
-	"endLineNumber": 1812,
+	"endLineNumber": 1814,
 	"endColumn": 22,
 	"origin": "extHost1"
 },{
@@ -801,9 +729,9 @@
 	"severity": 8,
 	"message": "identifier \"button_start_\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1815,
+	"startLineNumber": 1817,
 	"startColumn": 9,
-	"endLineNumber": 1815,
+	"endLineNumber": 1817,
 	"endColumn": 22,
 	"origin": "extHost1"
 },{
@@ -813,9 +741,9 @@
 	"severity": 8,
 	"message": "call of an object of a class type without appropriate operator() or conversion functions to pointer-to-function type",
 	"source": "C/C++",
-	"startLineNumber": 1869,
+	"startLineNumber": 1871,
 	"startColumn": 64,
-	"endLineNumber": 1869,
+	"endLineNumber": 1871,
 	"endColumn": 83,
 	"origin": "extHost1"
 },{
@@ -825,9 +753,9 @@
 	"severity": 8,
 	"message": "member \"ui::Text::text\" (declared at line 230 of \"C:\\Users\\Max\\Desktop\\M\\mayhem-firmware\\firmware\\common\\ui_widget.hpp\") is inaccessible",
 	"source": "C/C++",
-	"startLineNumber": 1869,
+	"startLineNumber": 1871,
 	"startColumn": 99,
-	"endLineNumber": 1869,
+	"endLineNumber": 1871,
 	"endColumn": 103,
 	"origin": "extHost1"
 },{
@@ -837,9 +765,9 @@
 	"severity": 8,
 	"message": "call of an object of a class type without appropriate operator() or conversion functions to pointer-to-function type",
 	"source": "C/C++",
-	"startLineNumber": 1870,
+	"startLineNumber": 1872,
 	"startColumn": 52,
-	"endLineNumber": 1870,
+	"endLineNumber": 1872,
 	"endColumn": 71,
 	"origin": "extHost1"
 },{
@@ -849,9 +777,9 @@
 	"severity": 8,
 	"message": "member \"ui::Text::text\" (declared at line 230 of \"C:\\Users\\Max\\Desktop\\M\\mayhem-firmware\\firmware\\common\\ui_widget.hpp\") is inaccessible",
 	"source": "C/C++",
-	"startLineNumber": 1870,
+	"startLineNumber": 1872,
 	"startColumn": 87,
-	"endLineNumber": 1870,
+	"endLineNumber": 1872,
 	"endColumn": 91,
 	"origin": "extHost1"
 },{
@@ -861,22 +789,10 @@
 	"severity": 8,
 	"message": "identifier \"get_drone_type_color\" is undefined",
 	"source": "C/C++",
-	"startLineNumber": 1894,
+	"startLineNumber": 1896,
 	"startColumn": 35,
-	"endLineNumber": 1894,
+	"endLineNumber": 1896,
 	"endColumn": 55,
-	"origin": "extHost1"
-},{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "70",
-	"severity": 8,
-	"message": "incomplete type \"ui::external_app::enhanced_drone_analyzer::AudioManager\" is not allowed",
-	"source": "C/C++",
-	"startLineNumber": 1990,
-	"startColumn": 17,
-	"endLineNumber": 1990,
-	"endColumn": 34,
 	"origin": "extHost1"
 },{
 	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
@@ -890,70 +806,16 @@
 	"endLineNumber": 1992,
 	"endColumn": 34,
 	"origin": "extHost1"
-}]
-
-
-[{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "135",
-	"severity": 8,
-	"message": "namespace \"ui::external_app::enhanced_drone_analyzer\" has no member \"EnhancedDroneAnalyzerSettingsView\"",
-	"source": "C/C++",
-	"startLineNumber": 11,
-	"startColumn": 57,
-	"endLineNumber": 11,
-	"endColumn": 90,
-	"origin": "extHost1"
 },{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp",
+	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp",
 	"owner": "C/C++: IntelliSense",
-	"code": "20",
+	"code": "70",
 	"severity": 8,
-	"message": "identifier \"VERSION_MD5\" is undefined",
+	"message": "incomplete type \"ui::external_app::enhanced_drone_analyzer::AudioManager\" is not allowed",
 	"source": "C/C++",
-	"startLineNumber": 21,
-	"startColumn": 25,
-	"endLineNumber": 21,
-	"endColumn": 36,
-	"origin": "extHost1"
-}]
-[{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/scanning_coordinator.hpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "147",
-	"severity": 8,
-	"message": "declaration is incompatible with \"void ui::external_app::enhanced_drone_analyzer::ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings &settings)\" (declared at line 72 of \"C:\\Users\\Max\\Desktop\\M\\mayhem-firmware\\firmware\\application\\external\\enhanced_drone_analyzer\\scanning_coordinator.hpp\")",
-	"source": "C/C++",
-	"startLineNumber": 72,
-	"startColumn": 34,
-	"endLineNumber": 72,
-	"endColumn": 59,
-	"origin": "extHost1"
-}]
-
-[{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_settings_combined.hpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "262",
-	"severity": 8,
-	"message": "not a class or struct name",
-	"source": "C/C++",
-	"startLineNumber": 348,
-	"startColumn": 35,
-	"endLineNumber": 348,
-	"endColumn": 42,
-	"origin": "extHost1"
-},{
-	"resource": "/C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application/external/enhanced_drone_analyzer/ui_settings_combined.hpp",
-	"owner": "C/C++: IntelliSense",
-	"code": "1455",
-	"severity": 8,
-	"message": "member function declared with 'override' does not override a base class member",
-	"source": "C/C++",
-	"startLineNumber": 353,
-	"startColumn": 10,
-	"endLineNumber": 353,
-	"endColumn": 15,
+	"startLineNumber": 1994,
+	"startColumn": 17,
+	"endLineNumber": 1994,
+	"endColumn": 34,
 	"origin": "extHost1"
 }]
