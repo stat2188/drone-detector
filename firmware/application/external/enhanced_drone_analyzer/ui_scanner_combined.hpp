@@ -521,9 +521,10 @@ private:
     int32_t get_configured_sampling_rate() const;
     int32_t get_configured_bandwidth() const;
 
-    MessageHandlerRegistration message_handler_spectrum_config_;
-    MessageHandlerRegistration message_handler_frame_sync_;
-    MessageHandlerRegistration message_handler_spectrum_;
+    // Direct initialization in constructor
+    std::unique_ptr<MessageHandlerRegistration> message_handler_spectrum_config_;
+    std::unique_ptr<MessageHandlerRegistration> message_handler_frame_sync_;
+    std::unique_ptr<MessageHandlerRegistration> message_handler_spectrum_;
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
@@ -907,6 +908,8 @@ public:
     bool on_touch(const TouchEvent event) override;
     void on_show() override;
     void on_hide() override;
+
+private:
 
 private:
     NavigationView& nav_;

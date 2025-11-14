@@ -769,7 +769,22 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
     : spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
-      radio_state_(), spectrum_streaming_active_(false), last_valid_rssi_(-120)
+      radio_state_(), spectrum_streaming_active_(false), last_valid_rssi_(-120),
+      message_handler_spectrum_config_(std::make_unique<MessageHandlerRegistration>(
+          Message::ID::ChannelSpectrumConfig,
+          [this](const Message* const p) {
+              this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage* const>(p));
+          })),
+      message_handler_frame_sync_(std::make_unique<MessageHandlerRegistration>(
+          Message::ID::DisplayFrameSync,
+          [this](const Message* const p) {
+              (void)p;
+          })),
+      message_handler_spectrum_(std::make_unique<MessageHandlerRegistration>(
+          Message::ID::ChannelSpectrum,
+          [this](const Message* const p) {
+              this->handle_channel_spectrum(static_cast<const ChannelSpectrum*>(p));
+          }))
 {
 }
 
@@ -805,21 +820,21 @@ void DroneHardwareController::initialize_radio_state() {
 }
 
 void DroneHardwareController::initialize_spectrum_collector() {
-    message_handler_spectrum_config_{
+    message_handler_spectrum_config_ = MessageHandlerRegistration{
         Message::ID::ChannelSpectrumConfig,
         [this](const Message* const p) {
             this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage* const>(p));
-        }},
-    message_handler_frame_sync_{
+        }};
+    message_handler_frame_sync_ = MessageHandlerRegistration{
         Message::ID::DisplayFrameSync,
         [this](const Message* const p) {
             (void)p;
-        }},
-    message_handler_spectrum_{
+        }};
+    message_handler_spectrum_ = MessageHandlerRegistration{
         Message::ID::ChannelSpectrum,
         [this](const Message* const p) {
             this->handle_channel_spectrum(static_cast<const ChannelSpectrum*>(p));
-        }}
+        }};
 }
 
 void DroneHardwareController::cleanup_spectrum_collector() {
@@ -1485,9 +1500,9 @@ void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
         return;
     }
     if (pixel_index < spectrum_row.size()) {
-        Color pixel_color = spectrum_gradient_.lut[
-            std::min(power, static_cast<uint8_t>(spectrum_gradient_.lut.size() - 1))
-        ];
+        Color pixel_color = spectrum_gradient_.lut.size() > 0 ?
+            spectrum_gradient_.lut[std::min(power, static_cast<uint8_t>(spectrum_gradient_.lut.size() - 1))] :
+            Color::black();
         for (size_t i = 0; i < threat_bins_count_; i++) {
             if (threat_bins_[i].bin == pixel_index) {
                 pixel_color = get_threat_level_color(threat_bins_[i].threat);
@@ -1749,14 +1764,14 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     : nav_(nav),
       hardware_(new DroneHardwareController()),
       scanner_(new DroneScanner()),
-      audio_(),  // Direct initialization, not pointer
+      audio_(),
       ui_controller_(new DroneUIController(nav, *hardware_, *scanner_, audio_)),
       display_controller_(new DroneDisplayController(nav)),
       scanning_coordinator_(new ScanningCoordinator(nav, *hardware_, *scanner_, *display_controller_, audio_)),
-      smart_header_(), status_bar_(), threat_cards_(),
-      button_start_stop_({screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"),
-      button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
-      field_scanning_mode_({0, screen_height - 72}, 20, {{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
+    smart_header_(), status_bar_(), threat_cards_(),
+    button_start_stop_({screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"),
+    button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
+    field_scanning_mode_({{0, screen_height - 72}, {120, 16}}, {{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
       settings_ptr_(&settings_),  // Initialize direct pointer
       audio_ptr_(&audio_)         // Initialize direct pointer to audio_ member
 {
@@ -1969,81 +1984,6 @@ void LoadingScreenView::paint(Painter& painter) {
     View::paint(painter);
 }
 
-ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
-                                       DroneHardwareController& hardware,
-                                       DroneScanner& scanner,
-                                       DroneDisplayController& display_controller,
-                                       AudioManager& audio_controller)
-    : scanning_thread_(nullptr),
-      scanning_active_(false),
-      nav_(nav),
-      hardware_(hardware),
-      scanner_(scanner),
-      display_controller_(display_controller),
-      audio_controller_(audio_controller),
-      scan_interval_ms_(750)
-{
-}
-
-ScanningCoordinator::~ScanningCoordinator() {
-    stop_coordinated_scanning();
-}
-
-void ScanningCoordinator::start_coordinated_scanning() {
-    if (scanning_active_ || scanning_thread_ != nullptr) return;
-
-    scanning_active_ = true;
-
-    scanning_thread_ = chThdCreateFromHeap(nullptr, SCANNING_THREAD_STACK_SIZE,
-                                          NORMALPRIO,
-                                          scanning_thread_function, this);
-    if (!scanning_thread_) {
-        scanning_active_ = false;
-    }
-}
-
-void ScanningCoordinator::stop_coordinated_scanning() {
-    if (!scanning_active_) return;
-
-    scanning_active_ = false;
-    if (scanning_thread_) {
-        chThdWait(scanning_thread_);
-        scanning_thread_ = nullptr;
-    }
-}
-
-msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
-    auto* self = static_cast<ScanningCoordinator*>(arg);
-    return self->coordinated_scanning_thread();
-}
-
-msg_t ScanningCoordinator::coordinated_scanning_thread() {
-    while (scanning_active_ && !chThdShouldTerminate()) {
-        if (scanner_.is_scanning_active()) {
-            hardware_.update_spectrum_for_scanner();
-            scanner_.perform_scan_cycle(hardware_);
-
-            display_controller_.update_detection_display(scanner_);
-
-            if (audio_controller_.is_audio_enabled() &&
-                scanner_.get_max_detected_threat() >= ThreatLevel::HIGH) {
-                audio_controller_.play_detection_beep(ThreatLevel::HIGH);
-            }
-        }
-        chThdSleepMilliseconds(scan_interval_ms_);
-    }
-    scanning_active_ = false;
-    scanning_thread_ = nullptr;
-    chThdExit(MSG_OK);
-    return MSG_OK;
-}
-
-void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {
-    scan_interval_ms_ = settings.scan_interval_ms;
-}
-
-void ScanningCoordinator::show_session_summary(const std::string& summary) {
-    nav_.display_modal("Session Summary", summary.c_str());
-}
+// ScanningCoordinator implementation moved to .hpp file (inline methods)
 
 } // namespace ui::external_app::enhanced_drone_analyzer
