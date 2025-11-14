@@ -7,8 +7,10 @@
 #include <cstdint>
 #include "file.hpp"
 
-// Include required types
-#include "ui_scanner_combined.hpp"
+// Forward declarations to avoid circular includes
+enum class SpectrumMode;
+
+static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
 
 // Fixed File reference since it's not nested
 using ScanFile = File;
@@ -28,6 +30,45 @@ struct DroneAnalyzerSettings {
     uint32_t hardware_bandwidth_hz = 24000000;
     bool enable_real_hardware = true;
     bool demo_mode = false;
+
+    // Save settings to TXT file
+    bool save() const {
+        const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+        std::stringstream ss;
+
+        ss << "spectrum_mode=" << spectrum_mode_to_string(spectrum_mode) << "\n";
+        ss << "scan_interval_ms=" << scan_interval_ms << "\n";
+        ss << "rssi_threshold_db=" << rssi_threshold_db << "\n";
+        ss << "enable_audio_alerts=" << (enable_audio_alerts ? "true" : "false") << "\n";
+        ss << "audio_alert_frequency_hz=" << audio_alert_frequency_hz << "\n";
+        ss << "audio_alert_duration_ms=" << audio_alert_duration_ms << "\n";
+        ss << "hardware_bandwidth_hz=" << hardware_bandwidth_hz << "\n";
+        ss << "enable_real_hardware=" << (enable_real_hardware ? "true" : "false") << "\n";
+        ss << "demo_mode=" << (demo_mode ? "true" : "false") << "\n";
+
+        std::string content = ss.str();
+
+        ScanFile file;
+        if (!file.create(filepath)) {
+            return false;
+        }
+
+        auto result = file.write(content.data(), content.size());
+        file.close();
+
+        return result == content.size();
+    }
+
+private:
+    std::string spectrum_mode_to_string(::SpectrumMode mode) const {
+        switch (mode) {
+            case ::SpectrumMode::NARROW: return "NARROW";
+            case ::SpectrumMode::MEDIUM: return "MEDIUM";
+            case ::SpectrumMode::WIDE: return "WIDE";
+            case ::SpectrumMode::ULTRA_WIDE: return "ULTRA_WIDE";
+            default: return "MEDIUM";
+        }
+    }
 };
 
 }  // namespace ui::external_app::enhanced_drone_analyzer

@@ -18,6 +18,8 @@
 #include "ui_drone_common_types.hpp"
 #include "ui_signal_processing.hpp"
 #include "scanner_settings.hpp"
+// Ensure SpectrumMode enum is available
+enum class SpectrumMode;
 
 #include "gradient.hpp"
 
@@ -57,6 +59,9 @@ struct preset_entry {
     std::string label;
 };
 
+// Audio alert system migrated from Looking Glass - defined in ui_drone_audio.hpp
+
+// Constants (no duplicates)
 static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
@@ -72,19 +77,6 @@ static constexpr size_t SPEC_NB_BINS = 256;
 static constexpr uint32_t LOOKING_GLASS_SLICE_WIDTH_MAX = 24000000;
 static constexpr uint32_t LOOKING_GLASS_MAX_SAMPLERATE = 24000000;
 static constexpr uint32_t MHZ_DIV = 1000000;
-static constexpr uint32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
-static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
-static constexpr uint8_t MIN_DETECTION_COUNT = 3;
-static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
-static constexpr int LOOKING_GLASS_SINGLEPASS = 0;
-static constexpr int LOOKING_GLASS_FASTSCAN = 1;
-static constexpr int LOOKING_GLASS_SLOWSCAN = 2;
-static constexpr size_t SPEC_NB_BINS = 256;
-static constexpr uint32_t LOOKING_GLASS_SLICE_WIDTH_MAX = 24000000;
-static constexpr uint32_t LOOKING_GLASS_MAX_SAMPLERATE = 24000000;
-static constexpr uint32_t MHZ_DIV = 1000000;
-static constexpr uint32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
 
 // Audio alert system migrated from Looking Glass - defined in ui_drone_audio.hpp
 
@@ -458,7 +450,7 @@ private:
     Thread* scanning_thread_ = nullptr;
     bool scanning_active_ = false;
 
-    freqman_db freq_db_;
+    FreqmanDB freq_db_;
     size_t current_db_index_ = 0;
     Frequency last_scanned_frequency_ = 0;
     bool freq_db_loaded_ = false;
@@ -722,6 +714,23 @@ private:
     MessageHandlerRegistration message_handler_spectrum_config_;
     MessageHandlerRegistration message_handler_frame_sync_;
 
+    // Add missing methods for drone type/color lookup
+    std::string get_drone_type_name(DroneType type) const {
+        switch (type) {
+            case DroneType::MAVIC: return "MAVIC";
+            case DroneType::DJI_P34: return "DJI P34";
+            case DroneType::UNKNOWN: default: return "UNKNOWN";
+        }
+    }
+
+    Color get_drone_type_color(DroneType type) const {
+        switch (type) {
+            case DroneType::MAVIC: return Color::red();
+            case DroneType::DJI_P34: return Color::orange();
+            case DroneType::UNKNOWN: default: return Color::white();
+        }
+    }
+
     Color get_threat_level_color(ThreatLevel level) const {
         switch (level) {
             case ThreatLevel::CRITICAL: return Color::red();
@@ -732,6 +741,7 @@ private:
             default: return Color::white();
         }
     }
+
     std::string get_threat_level_name(ThreatLevel level) const {
         switch (level) {
             case ThreatLevel::CRITICAL: return "CRITICAL";
@@ -904,19 +914,24 @@ private:
 
     std::unique_ptr<DroneHardwareController> hardware_;
     std::unique_ptr<DroneScanner> scanner_;
-    std::unique_ptr<AudioManager> audio_;
+    AudioManager* audio_;  // Changed to direct pointer for now
     std::unique_ptr<DroneUIController> ui_controller_;
     std::unique_ptr<DroneDisplayController> display_controller_;
     std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
 
     DroneAnalyzerSettings settings_;
 
-    Button button_start_stop_{{screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"};
-    Button button_menu_{{screen_width - 80, screen_height - 24, 72, 24}, "MENU"};
-    OptionsField field_scanning_mode_{{0, screen_height - 72}, 20, {{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}};
+    // Add missing member variables required by implementation
+    Button button_start_stop_;
+    Button button_menu_;
+    OptionsField field_scanning_mode_;
     std::unique_ptr<SmartThreatHeader> smart_header_;
     std::unique_ptr<ConsoleStatusBar> status_bar_;
     std::array<std::unique_ptr<ThreatCard>, 3> threat_cards_;
+
+    // Add missing member variables for direct access (avoid naming conflicts)
+    DroneAnalyzerSettings* settings_ptr_;  // Direct access pointer
+    AudioManager* audio_ptr_;               // Direct access pointer
 
     void start_scanning_thread();
     void stop_scanning_thread();
