@@ -4,7 +4,6 @@
 
 #include <memory>
 #include "ui_drone_common_types.hpp"
-#include "ui_scanner_combined.hpp"  // For namespace
 #include "ui_navigation.hpp"
 #include "thread_base.hpp"
 
@@ -44,41 +43,5 @@ private:
     uint32_t scan_interval_ms_ = 750;
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 4096;
 };
-
-// Dummy implementation to avoid incomplete type
-inline ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
-                                              DroneHardwareController& hardware,
-                                              DroneScanner& scanner,
-                                              DroneDisplayController& display_controller,
-                                              AudioManager& audio_controller)
-    : nav_(nav), hardware_(hardware), scanner_(scanner), display_controller_(display_controller), audio_controller_(audio_controller) {}
-
-inline ScanningCoordinator::~ScanningCoordinator() {
-    stop_coordinated_scanning();
-}
-
-inline void ScanningCoordinator::start_coordinated_scanning() {
-    if (scanning_active_) return;
-    scanning_active_ = true;
-    // Start thread logic would go here
-}
-
-inline void ScanningCoordinator::stop_coordinated_scanning() {
-    if (!scanning_active_) return;
-    scanning_active_ = false;
-    // Stop thread logic would go here
-}
-
-inline void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {
-    (void)settings;  // Suppress unused parameter warning
-}
-
-inline msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
-    return static_cast<ScanningCoordinator*>(arg)->coordinated_scanning_thread();
-}
-
-inline msg_t ScanningCoordinator::coordinated_scanning_thread() {
-    return MSG_OK;
-}
 
 } // namespace ui::external_app::enhanced_drone_analyzer

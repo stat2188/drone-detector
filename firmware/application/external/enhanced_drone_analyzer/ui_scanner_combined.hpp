@@ -29,6 +29,9 @@ enum class SpectrumMode;
 #include "ui_drone_audio.hpp"
 #include "scanning_coordinator.hpp"
 
+// Forward declaration for AudioManager (defined in ui_drone_audio.hpp)
+class AudioManager;
+
 // Include necessary headers for Color and MessageHandlerRegistration - Fixed paths
 #include "../../common/ui.hpp"  // for Color
 #include "../event_m0.hpp"   // for MessageHandlerRegistration
@@ -287,6 +290,9 @@ public:
 // ===========================================
 
 namespace ui::external_app::enhanced_drone_analyzer {
+
+// Bring AudioManager from global namespace into this namespace
+using AudioManager = ::AudioManager;
 
 class DetectionRingBuffer {
 public:
@@ -865,7 +871,7 @@ private:
     void select_spectrum_mode(SpectrumMode mode);
     void on_spectrum_range_config();
     void on_add_preset_quick();
-    void on_hardware_control_menu();
+    void on_hardware_control();
     void show_current_bandwidth();
     void show_current_center_freq();
     void on_set_bandwidth_config();
@@ -881,6 +887,12 @@ private:
     void on_audio_settings();
     void show_system_status();
     void on_spectrum_mode();
+
+    // Hardware control methods
+    void on_set_bandwidth();
+    void on_set_center_freq();
+    void show_hardware_status();
+    void on_view_logs();
 };
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
@@ -947,6 +959,10 @@ private:
     void initialize_modern_layout();
     void update_modern_layout();
     void handle_scanner_update();
+    void setup_button_handlers();
+    void initialize_scanning_mode();
+    void set_scanning_mode_from_index(size_t index);
+    void add_ui_elements();
 };
 
 class LoadingScreenView : public View {
