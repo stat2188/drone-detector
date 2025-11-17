@@ -20,7 +20,7 @@ public:
                        DroneHardwareController& hardware,
                        DroneScanner& scanner,
                        DroneDisplayController& display_controller,
-                       AudioManager& audio_controller);
+                       ::AudioManager& audio_controller);
     ~ScanningCoordinator();
 
     void start_coordinated_scanning();

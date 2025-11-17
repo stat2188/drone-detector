@@ -1624,11 +1624,11 @@ Color DroneDisplayController::get_threat_level_color(ThreatLevel level) const {
 DroneUIController::DroneUIController(NavigationView& nav,
                                    DroneHardwareController& hardware,
                                    DroneScanner& scanner,
-                                   AudioManager& audio)
+                                   ::AudioManager& audio_mgr)
     : nav_(nav),
       hardware_(hardware),
       scanner_(scanner),
-      audio_mgr_(audio),
+      audio_mgr_(audio_mgr),
       scanning_active_(false),
       display_controller_(std::make_unique<DroneDisplayController>(nav)),
       settings_()
@@ -2045,7 +2045,7 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
                                        DroneHardwareController& hardware,
                                        DroneScanner& scanner,
                                        DroneDisplayController& display_controller,
-                                       AudioManager& audio_controller)
+                                       ::AudioManager& audio_controller)
     : nav_(nav), hardware_(hardware), scanner_(scanner), display_controller_(display_controller), audio_controller_(audio_controller),
       scanning_active_(false), scanning_thread_(nullptr), scan_interval_ms_(750)
 {
