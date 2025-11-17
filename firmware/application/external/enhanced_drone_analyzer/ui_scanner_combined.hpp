@@ -75,8 +75,7 @@ static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
-static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
+// Constants moved to ui_drone_common_types.hpp to avoid duplicates
 static constexpr uint8_t MIN_DETECTION_COUNT = 3;
 static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
 static constexpr int LOOKING_GLASS_SINGLEPASS = 0;
@@ -291,9 +290,6 @@ public:
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-// Bring AudioManager from global namespace into this namespace
-using AudioManager = ::AudioManager;
-
 class DetectionRingBuffer {
 public:
     DetectionRingBuffer();
@@ -405,18 +401,7 @@ public:
         }
     }
 
-    // Additional utility functions
-    bool is_scanning_active() const { return scanning_active_; }
-    bool is_real_mode() const { return is_real_mode_; }
-    size_t get_approaching_count() const { return approaching_count_; }
-    size_t get_receding_count() const { return receding_count_; }
-    size_t get_static_count() const { return static_count_; }
-    uint32_t get_total_detections() const { return total_detections_; }
-    uint32_t get_scan_cycles() const { return scan_cycles_; }
-    ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
-    Frequency get_current_scanning_frequency() const;
     Frequency get_current_radio_frequency() const;
-    std::string get_session_summary() const;
 
     // Additional utility functions
     bool is_scanning_active() const { return scanning_active_; }
@@ -442,7 +427,6 @@ private:
 
     void update_trends_compact_display();
     bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
-    Frequency get_current_radio_frequency() const;
 
     static msg_t scanning_thread_function(void* arg);
     msg_t scanning_thread();
@@ -829,7 +813,7 @@ public:
     DroneUIController(NavigationView& nav,
                      DroneHardwareController& hardware,
                      DroneScanner& scanner,
-                     AudioManager& audio_mgr);
+                     ::AudioManager& audio_mgr);
     ~DroneUIController() = default;
 
     void on_start_scan();
@@ -857,7 +841,7 @@ private:
     NavigationView& nav_;
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
-    AudioManager& audio_mgr_;
+    ::AudioManager& audio_mgr_;
     bool scanning_active_ = false;
     std::unique_ptr<DroneDisplayController> display_controller_;
     ::ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
@@ -914,7 +898,7 @@ private:
     // Core components
     std::unique_ptr<DroneHardwareController> hardware_;
     std::unique_ptr<DroneScanner> scanner_;
-    AudioManager audio_;  // Direct member now
+    ::AudioManager audio_;  // Direct member now
 
     // Forward declare SettingsManager to avoid circular dependency
     std::unique_ptr<DroneUIController> ui_controller_;

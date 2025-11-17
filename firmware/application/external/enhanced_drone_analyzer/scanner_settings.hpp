@@ -10,8 +10,6 @@
 // Forward declarations to avoid circular includes
 enum class SpectrumMode;
 
-static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-
 // Fixed File reference since it's not nested
 using ScanFile = File;
 

@@ -20,94 +20,17 @@ using Frequency = uint64_t;
 // Include common types from scanner header to avoid duplication
 #include "ui_scanner_combined.hpp"
 
-static constexpr size_t MAX_TRACKED_DRONES = 8;
-static constexpr size_t MAX_DISPLAYED_DRONES = 3;
-static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
-static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
-static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
-static constexpr uint32_t MAX_HARDWARE_FREQ = 6'000'000'000;
-static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
-static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
-static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 25'000'000;
-static constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
-static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -95;
-static constexpr int32_t WIDEBAND_DYNAMIC_THRESHOLD_OFFSET_DB = 5;
-static constexpr uint8_t MIN_DETECTION_COUNT = 3;
-
-// freqman_entry defined in freqman_db.hpp - removed conflicting typedef
-// #include "../../freqman_db.hpp" // Already included in ui_scanner_combined.hpp
-
-static constexpr size_t DETECTION_TABLE_SIZE = 256;
-
-struct WidebandSlice {
-    Frequency center_frequency;
-    size_t index;
-};
-
-struct WidebandScanData {
-    Frequency min_freq;
-    Frequency max_freq;
-    size_t slices_nb;
-    WidebandSlice slices[20];
-    size_t slice_counter;
-
-    void reset() {
-        min_freq = WIDEBAND_DEFAULT_MIN;
-        max_freq = WIDEBAND_DEFAULT_MAX;
-        slices_nb = 0;
-        slice_counter = 0;
-    }
-};
-
-struct DetectionLogEntry {
-    uint32_t timestamp;
-    uint32_t frequency_hz;
-    int32_t rssi_db;
-    ThreatLevel threat_level;
-    DroneType drone_type;
-    uint8_t detection_count;
-    float confidence_score;
-};
+// UI framework includes must be outside namespace to avoid nested namespace issues
+#include "ui.hpp"
+#include "ui_navigation.hpp"
+#include "ui_tabview.hpp"
+#include "app_settings.hpp"
 
 // ===========================================
 // PART 2: CONFIGURATION STRUCTURES (from ui_drone_config.hpp)
 // ===========================================
 
 namespace ui::external_app::enhanced_drone_analyzer {
-
-struct DroneAnalyzerSettings {
-    // Core scanning parameters
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    uint32_t scan_interval_ms = 1000;
-    int32_t rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
-    bool enable_audio_alerts = true;
-    uint16_t audio_alert_frequency_hz = 800;
-    uint32_t audio_alert_duration_ms = 500;
-
-    // Wideband scanning
-    bool enable_wideband_scanning = false;
-    Frequency wideband_min_freq_hz = WIDEBAND_DEFAULT_MIN;
-    Frequency wideband_max_freq_hz = WIDEBAND_DEFAULT_MAX;
-
-    // Frequency range limits
-    Frequency min_frequency_hz = 2400000000ULL;  // 2.4GHz
-    Frequency max_frequency_hz = 2500000000ULL;  // 2.5GHz
-
-    // Display options
-    bool show_detailed_info = true;
-    bool auto_save_logs = true;
-    ::std::string log_file_path = "/eda_logs";
-
-    // File paths
-    ::std::string freqman_path = "DRONES";
-    ::std::string settings_file_path = "/settings/scanner_config.txt";
-
-    // Hardware settings
-    uint32_t hardware_bandwidth_hz = 24000000;
-    bool enable_real_hardware = true;
-    bool demo_mode = false;
-};
 
 enum class Language {
     ENGLISH,
@@ -229,11 +152,6 @@ using DroneFrequencyDatabase = ::std::vector<DroneFrequencyEntry>;
 // PART 3: SETTINGS UI CLASSES (from ui_drone_settings_complete.hpp)
 // ===========================================
 
-#include "ui.hpp"
-#include "ui_navigation.hpp"
-#include "ui_tabview.hpp"
-#include "app_settings.hpp"
-
 struct DroneAudioSettings {
     bool audio_enabled = true;
     uint16_t alert_frequency_hz = 800;
@@ -345,7 +263,7 @@ private:
     void on_wideband_enabled_changed();
 };
 
-class SettingsTabbedView : public TabView {
+class SettingsTabbedView : public ::ui::TabView {
 public:
     explicit SettingsTabbedView(NavigationView& nav);
     ~SettingsTabbedView() = default;
@@ -368,10 +286,6 @@ private:
 // ===========================================
 // PART 4: MINIMAL UI FRAMEWORK (from ui_minimal_drone_analyzer.hpp)
 // ===========================================
-
-#include "ui.hpp"
-#include "ui_navigation.hpp"
-#include "external_app.hpp"
 
 class DroneAnalyzerSettingsView : public View {
 public:

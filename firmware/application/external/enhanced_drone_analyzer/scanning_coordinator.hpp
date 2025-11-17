@@ -37,7 +37,7 @@ private:
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
     DroneDisplayController& display_controller_;
-    AudioManager& audio_controller_;
+    ::AudioManager& audio_controller_;
     bool scanning_active_ = false;
     Thread* scanning_thread_ = nullptr;
     uint32_t scan_interval_ms_ = 750;

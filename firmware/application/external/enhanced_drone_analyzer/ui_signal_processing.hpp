@@ -11,7 +11,7 @@
 #include "ui_drone_common_types.hpp"
 
 // Signal processing constants
-static constexpr int16_t HYSTERESIS_MARGIN_DB = 5;
+static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 
 
 
