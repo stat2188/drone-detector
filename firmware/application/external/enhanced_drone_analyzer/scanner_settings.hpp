@@ -150,7 +150,7 @@ namespace ScannerSettingsManager {
 
     void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
         settings.spectrum_mode = ::SpectrumMode::MEDIUM;
-        settings.scan_interval_ms = 750;
+        settings.scan_interval_ms = 712;
         settings.rssi_threshold_db = -80;
         settings.enable_audio_alerts = true;
         settings.audio_alert_frequency_hz = 800;

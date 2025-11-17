@@ -455,7 +455,7 @@ private:
     ThreatLevel max_detected_threat_ = ThreatLevel::NONE;
     int32_t last_valid_rssi_ = -120;
 
-    static constexpr uint8_t DETECTION_DELAY = 3;
+    static constexpr uint8_t DETECTION_DELAY = 2;
     WidebandScanData wideband_scan_data_;
     std::vector<std::unique_ptr<freqman_entry>> drone_database_;
     DroneDetectionLogger detection_logger_;
