@@ -30,6 +30,7 @@
 #include "ui_drone_audio.hpp"
 #include "ui_signal_processing.hpp"
 #include "scanner_settings.hpp"
+#include "ui_scanner_combined.hpp"
 #include "portapack.hpp"
 
 // Define VERSION_MD5 if not defined (build system should provide this)

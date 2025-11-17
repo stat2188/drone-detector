@@ -29,6 +29,9 @@ public:
     void update_runtime_parameters(const DroneAnalyzerSettings& settings);
     void show_session_summary(const std::string& summary);
 
+    ScanningCoordinator(const ScanningCoordinator&) = delete;
+    ScanningCoordinator& operator=(const ScanningCoordinator&) = delete;
+
 private:
     static msg_t scanning_thread_function(void* arg);
     msg_t coordinated_scanning_thread();

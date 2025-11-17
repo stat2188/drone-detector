@@ -1,29 +1,31 @@
-# Build Errors Resolution - Enhanced Drone Analyzer
-**Session Date:** 2025-11-17
-
-**Summary of Fixes Applied:**
-
-1. **Resolved Duplicate Function Overloads in ui_scanner_combined.hpp:**
-   - Removed duplicate inline function definitions in DroneScanner class (lines 407-417)
-   - Removed duplicate function declarations in DroneDisplayController (get_max_power_for_current_bin, add_spectrum_pixel)
-   - Removed duplicate show_system_status() declaration in DroneUIController
-
-2. **Corrected Class Name in enhanced_drone_analyzer_settings_main.cpp:**
-   - Changed 'EnhancedDroneAnalyzerSettingsView' to correct 'DroneAnalyzerSettingsView'
-   - Added missing VERSION_MD5 define guard
-
-3. **Removed Unused Static Declaration:**
-   - Eliminated undefined static function get_settings_manager() in ui_settings_combined.hpp
-
-**Remaining Warnings (Non-Critical):**
-- Effc++ warnings about pointer data members without copy constructors (can be addressed if needed)
-- Unrecognized -Wno-volatile option (cmake configuration issue, not EDA related)
-
-**Build Status:** 
-- Compilation errors for EDA-specific files have been resolved.
-- General cmake build issues may persist due to excessive define repetitions in build system (outside EDA scope).
-
-**Next Steps:**
-- Verify EDA apps compile individually 
-- Test functionality once build system is corrected
-- Consider implementing rule-of-three for classes with pointer members if warnings become issues
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:30,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_settings_combined.hpp:21,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp:7:
+/havoc/firmware/application/external/enhanced_drone_analyzer/scanning_coordinator.hpp:17:7: warning: 'class ui::external_app::enhanced_drone_analyzer::ScanningCoordinator' has pointer data members [-Weffc++]
+   17 | class ScanningCoordinator {
+      |       ^~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/scanning_coordinator.hpp:17:7: warning:   but does not override 'ui::external_app::enhanced_drone_analyzer::ScanningCoordinator(const ui::external_app::enhanced_drone_analyzer::ScanningCoordinator&)' [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/scanning_coordinator.hpp:17:7: warning:   or 'operator=(const ui::external_app::enhanced_drone_analyzer::ScanningCoordinator&)' [-Weffc++]
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_settings_combined.hpp:21,
+                 from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp:7:
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:343:7: warning: 'class ui::external_app::enhanced_drone_analyzer::DroneScanner' has pointer data members [-Weffc++]
+  343 | class DroneScanner {
+      |       ^~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:343:7: warning:   but does not override 'ui::external_app::enhanced_drone_analyzer::DroneScanner(const ui::external_app::enhanced_drone_analyzer::DroneScanner&)' [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:343:7: warning:   or 'operator=(const ui::external_app::enhanced_drone_analyzer::DroneScanner&)' [-Weffc++]
+cc1plus: warning: unrecognized command line option '-Wno-volatile'
+[ 98%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj
+In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:20:
+/havoc/firmware/application/ui/../ui_navigation.hpp: In instantiation of 'T* ui::NavigationView::push(Args&& ...) [with T = ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView; Args = {}]':
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:59:92:   required from here
+/havoc/firmware/application/ui/../ui_navigation.hpp:111:69: error: invalid use of incomplete type 'class ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView'
+  111 |         return reinterpret_cast<T*>(push_view(std::unique_ptr<View>(new T(*this, std::forward<Args>(args)...))));
+      |                                                                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/havoc/firmware/application/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp:52:7: note: forward declaration of 'class ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView'
+   52 | class EnhancedDroneSpectrumAnalyzerView;
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cc1plus: warning: unrecognized command line option '-Wno-volatile'
+make[2]: *** [firmware/application/CMakeFiles/application.elf.dir/build.make:5775: firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp.obj] Error 1
+make[1]: *** [CMakeFiles/Makefile2:1337: firmware/application/CMakeFiles/application.elf.dir/all] Error 2
+make: *** [Makefile:101: all] Error 2
+Error: Process completed with exit code 2.

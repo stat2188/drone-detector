@@ -385,6 +385,9 @@ public:
     bool is_real_mode() const { return is_real_mode_; }
     size_t get_total_memory_usage() const { return 0; } // placeholder
 
+    DroneScanner(const DroneScanner&) = delete;
+    DroneScanner& operator=(const DroneScanner&) = delete;
+
     // Utility functions for UI
     std::string get_drone_type_name(DroneType type) const {
         switch (type) {
