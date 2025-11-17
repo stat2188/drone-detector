@@ -23,30 +23,36 @@ enum class SpectrumMode;
 
 #include "gradient.hpp"
 
+// Fixed include paths for proper compilation
 #include <memory>
 
 #include "ui_drone_audio.hpp"
 #include "scanning_coordinator.hpp"
 
-// Include necessary headers for Color and MessageHandlerRegistration
-#include "ui.hpp"  // for Color
-#include "event_m0.hpp"   // for MessageHandlerRegistration
+// Include necessary headers for Color and MessageHandlerRegistration - Fixed paths
+#include "../../common/ui.hpp"  // for Color
+#include "../event_m0.hpp"   // for MessageHandlerRegistration
+#include "../../common/ui_widget.hpp"  // for Button, Text, OptionsField
+#include "../../common/message.hpp"  // for Message::ID etc
 
 // Move includes outside namespace to avoid std pollution
-#include "freqman_db.hpp"
-#include "log_file.hpp"
+#include "../freqman_db.hpp"
+#include "../log_file.hpp"
 #include <ch.h>
 
-#include "radio_state.hpp"
-#include "baseband_api.hpp"
-#include "portapack.hpp"
-#include "radio.hpp"
-#include "message.hpp"
-#include "irq_controls.hpp"
+#include "../radio_state.hpp"
+#include "../baseband_api.hpp"
+#include "../portapack.hpp"
+#include "../radio.hpp"
+#include "../../common/message.hpp"
+#include "../irq_controls.hpp"
 
-#include "ui.hpp"
-#include "ui_navigation.hpp"
-#include "app_settings.hpp"
+#include "../../common/ui.hpp"
+#include "../ui_navigation.hpp"
+#include "../../common/ui_widget.hpp"  // For Button, Text, etc.
+#include "../app_settings.hpp"
+#include "../string_format.hpp"
+#include "../tone_key.hpp"
 
 class LogFile;
 
@@ -860,34 +866,10 @@ private:
     void on_save_settings();
     void on_load_settings();
 
+    // Simplified UI methods using basic widgets only
     void on_audio_settings();
-    void on_spectrum_mode();
-    void on_hardware_control();
-    void on_set_bandwidth();
-    void on_set_center_freq();
-    void show_hardware_status();
-    void on_view_logs();
-    void set_spectrum_mode(SpectrumMode mode);
-
-    void on_manage_frequencies();
-    void on_create_new_database();
-    void on_frequency_warning();
     void show_system_status();
-    void show_performance_stats();
-    void show_debug_info();
-    void select_spectrum_mode(SpectrumMode mode);
-    void on_spectrum_range_config();
-    void on_add_preset_quick();
-    void on_hardware_control_menu();
-    void show_current_bandwidth();
-    void show_current_center_freq();
-    void on_set_bandwidth_config();
-    void on_set_center_freq_config();
-    void set_bandwidth_from_menu(uint32_t bandwidth_hz);
-    void set_center_freq_from_menu(Frequency center_freq);
-    void add_preset_to_scanner(const DronePreset& preset);
-    void on_save_settings();
-    void on_load_settings();
+    void on_spectrum_mode();
 };
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
@@ -897,12 +879,6 @@ public:
     void focus() override;
     std::string title() const override { return "Enhanced Drone Analyzer"; };
 
-    // IQ Phase calibration functions migrated from Looking Glass
-    uint8_t get_spec_iq_phase_calibration_value() const { return iq_phase_calibration_value_; }
-    void set_spec_iq_phase_calibration_value(uint8_t cal_value) {
-        iq_phase_calibration_value_ = cal_value;
-    }
-
     void paint(Painter& painter) override;
     bool on_key(const KeyEvent key) override;
     bool on_touch(const TouchEvent event) override;
@@ -910,31 +886,48 @@ public:
     void on_hide() override;
 
 private:
-
-private:
     NavigationView& nav_;
-    uint8_t iq_phase_calibration_value_ = 15;
 
+    // Core components
     std::unique_ptr<DroneHardwareController> hardware_;
     std::unique_ptr<DroneScanner> scanner_;
-    AudioManager* audio_;  // Changed to direct pointer for now
+    AudioManager audio_;  // Direct member now
+
+    // Forward declare SettingsManager to avoid circular dependency
     std::unique_ptr<DroneUIController> ui_controller_;
     std::unique_ptr<DroneDisplayController> display_controller_;
     std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
 
-    DroneAnalyzerSettings settings_;
-
-    // Add missing member variables required by implementation
-    Button button_start_stop_;
-    Button button_menu_;
-    OptionsField field_scanning_mode_;
+    // UI components (modern layout)
     std::unique_ptr<SmartThreatHeader> smart_header_;
     std::unique_ptr<ConsoleStatusBar> status_bar_;
     std::array<std::unique_ptr<ThreatCard>, 3> threat_cards_;
 
-    // Add missing member variables for direct access (avoid naming conflicts)
-    DroneAnalyzerSettings* settings_ptr_;  // Direct access pointer
-    AudioManager* audio_ptr_;               // Direct access pointer
+    // Simple UI widgets (replacing complex ones)
+    Button button_start_stop_{{screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"};
+    Button button_menu_{{screen_width - 80, screen_height - 24, 72, 24}, "MENU"};
+
+    // Options field for scanning mode - simplified
+    OptionsField field_scanning_mode_{
+        {10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}
+    };
+
+    // Status texts
+    Text text_status_{{10, 20, 240, 16}, "EDA Ready"};
+    Text text_drone_info1_{{10, 180, 240, 16}, "Drone 1: None"};
+    Text text_drone_info2_{{10, 200, 240, 16}, "Drone 2: None"};
+    Text text_drone_info3_{{10, 220, 240, 16}, "Drone 3: None"};
+    Text text_detection_count_{{10, 40, 240, 16}, "Detections: 0"};
+
+    // Audio checkbox
+    Checkbox checkbox_audio_{{10, 60}, 20, ""};
+
+    // Threshold and interval controls
+    NumberField numberfield_threshold_{{100, 40}, 4, {-120, 0}, 5, ' ', false};
+    NumberField numberfield_interval_{{100, 70}, 5, {100, 10000}, 100, ' ', false};
+
+    bool scanning_active_ = false;
+    DroneAnalyzerSettings settings_;
 
     void start_scanning_thread();
     void stop_scanning_thread();

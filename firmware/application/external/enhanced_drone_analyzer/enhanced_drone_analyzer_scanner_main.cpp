@@ -15,11 +15,12 @@
  * GNU General Public License for more details.
  */
 
-#include "ui.hpp"
-#include "ui_navigation.hpp"
-#include "external_app.hpp"
-#include "../../file.hpp"          // For file I/O operations (Phase 7: TXT communication)
-#include "database.hpp"     // For configuration storage patterns
+// Fixed include paths to use proper relative paths from EDA directory
+#include "../../common/ui.hpp"
+#include "../ui_navigation.hpp"
+#include "../../common/external_app.hpp"
+#include "../file.hpp"  // For file I/O operations (Phase 7: TXT communication)
+#include "../database.hpp"     // For configuration storage patterns
 #include <string>           // For std::string operations
 #include <vector>           // For parameter parsing
 #include <algorithm>        // For trim operations
