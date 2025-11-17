@@ -61,7 +61,6 @@
 #include "ui_weatherstation.hpp"
 #include "ui_subghzd.hpp"
 #include "ui_battinfo.hpp"
-#include "ui_detector_app.hpp"
 #include "ui_external_items_menu_loader.hpp"
 
 #include "ais_app.hpp"
@@ -117,7 +116,6 @@ const NavigationView::AppList NavigationView::appList = {
     {nullptr, "Transmit", HOME, Color::cyan(), &bitmap_icon_transmit, new ViewFactory<TransmittersMenuView>()},
     {nullptr, "Tranceiver", HOME, Color::cyan(), &bitmap_icon_tranceivers, new ViewFactory<TranceiversMenuView>()},
     {"recon", "Recon", HOME, Color::green(), &bitmap_icon_scanner, new ViewFactory<ReconView>()},
-    {"detector", "Detector", HOME, Color::green(), &bitmap_icon_scanner, new ViewFactory<DetectorView>()},
     {"capture", "Capture", HOME, Color::red(), &bitmap_icon_capture, new ViewFactory<CaptureAppView>()},
     {"replay", "Replay", HOME, Color::green(), &bitmap_icon_replay, new ViewFactory<PlaylistView>()},
     {"lookingglass", "Looking Glass", HOME, Color::green(), &bitmap_icon_looking, new ViewFactory<GlassView>()},

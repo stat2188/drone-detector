@@ -289,7 +289,7 @@ macro(DeclareTargets chunk_tag name)
 			OUTPUT ${chunk_tag}.bin ${PROJECT_NAME}.img
 			COMMAND ${CMAKE_OBJCOPY} -O binary ${PROJECT_NAME}.elf ${chunk_tag}.bin
 			COMMAND ${LZ4} -f -9 ${chunk_tag}.bin ${PROJECT_NAME}.lz4
-			COMMAND python ${MAKE_IMAGE_CHUNK} ${PROJECT_NAME}.lz4 ${chunk_tag} ${PROJECT_NAME}.img
+			COMMAND ${MAKE_IMAGE_CHUNK} ${PROJECT_NAME}.lz4 ${chunk_tag} ${PROJECT_NAME}.img
 			DEPENDS ${PROJECT_NAME}.elf ${MAKE_IMAGE_CHUNK}
 			VERBATIM
 		)
@@ -696,7 +696,7 @@ DeclareTargets(PATX audio_tx)
 add_custom_command(
 	OUTPUT hackrf.img
 	COMMAND ${LZ4} -f -9 ${HACKRF_FIRMWARE_BIN_IMAGE} hackrf.lz4
-	COMMAND python ${MAKE_IMAGE_CHUNK} hackrf.lz4 HRF1 hackrf.img
+	COMMAND ${MAKE_IMAGE_CHUNK} hackrf.lz4 HRF1 hackrf.img
 	DEPENDS ${HACKRF_FIRMWARE_BIN_FILENAME} ${MAKE_IMAGE_CHUNK}
 	VERBATIM
 )
@@ -707,7 +707,7 @@ set(BASEBAND_IMAGES ${BASEBAND_IMAGES} hackrf.img)
 
 add_custom_command(
 	OUTPUT terminator.img
-	COMMAND python ${MAKE_IMAGE_CHUNK} terminator.img
+	COMMAND ${MAKE_IMAGE_CHUNK} terminator.img
 	DEPENDS ${MAKE_IMAGE_CHUNK}
 	VERBATIM
 )
