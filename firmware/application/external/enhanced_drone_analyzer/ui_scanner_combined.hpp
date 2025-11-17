@@ -288,8 +288,6 @@ public:
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-
-
 class DetectionRingBuffer {
 public:
     DetectionRingBuffer();
@@ -596,6 +594,7 @@ private:
     size_t card_index_;
     Text card_text_ {{0, 2, screen_width, 20}, ""};
     bool is_active_ = false;
+    Rect parent_rect_;
 
     Frequency frequency_ = 0;
     ThreatLevel threat_ = ThreatLevel::NONE;
@@ -626,6 +625,7 @@ public:
 private:
     size_t bar_index_;
     DisplayMode mode_ = DisplayMode::NORMAL;
+    Rect parent_rect_;
 
     Text progress_text_  {{0, 1, screen_width, 16}, ""};
     Text alert_text_     {{0, 1, screen_width, 16}, ""};
@@ -718,8 +718,18 @@ private:
     SpectrumConfig spectrum_config_;
     NavigationView& nav_;
 
-    MessageHandlerRegistration message_handler_spectrum_config_;
-    MessageHandlerRegistration message_handler_frame_sync_;
+    MessageHandlerRegistration message_handler_spectrum_config_{
+        Message::ID::ChannelSpectrumConfig,
+        [this](const Message* const p) {
+            (void)p;
+        }
+    };
+    MessageHandlerRegistration message_handler_frame_sync_{
+        Message::ID::DisplayFrameSync,
+        [this](const Message* const p) {
+            (void)p;
+        }
+    };
 
     // Add missing methods for drone type/color lookup
     std::string get_drone_type_name(DroneType type) const {
@@ -844,7 +854,7 @@ private:
     AudioManager& audio_mgr_;
     bool scanning_active_ = false;
     std::unique_ptr<DroneDisplayController> display_controller_;
-    DroneAnalyzerSettings settings_;
+    ::ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
     void on_manage_frequencies();
     void on_create_new_database();
@@ -865,6 +875,7 @@ private:
     void add_preset_to_scanner(const DronePreset& preset);
     void on_save_settings();
     void on_load_settings();
+    void set_spectrum_mode(SpectrumMode mode);
 
     // Simplified UI methods using basic widgets only
     void on_audio_settings();
@@ -927,7 +938,7 @@ private:
     NumberField numberfield_interval_{{100, 70}, 5, {100, 10000}, 100, ' ', false};
 
     bool scanning_active_ = false;
-    DroneAnalyzerSettings settings_;
+    ::ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
     void start_scanning_thread();
     void stop_scanning_thread();

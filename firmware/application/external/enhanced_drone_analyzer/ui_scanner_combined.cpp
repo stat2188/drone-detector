@@ -360,11 +360,12 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
             freqman_entry fake_entry{
                 .frequency_a = current_slice.center_frequency,
                 .frequency_b = current_slice.center_frequency,
+                .description = "Wideband Detection",
                 .type = freqman_type::Single,
                 .modulation = freqman_invalid_index,
                 .bandwidth = freqman_invalid_index,
                 .step = freqman_invalid_index,
-                .description = "Wideband Detection"
+                .tone = freqman_invalid_index
             };
             wideband_detection_override(fake_entry, slice_rssi, WIDEBAND_RSSI_THRESHOLD_DB);
         }
@@ -769,6 +770,7 @@ DroneHardwareController::DroneHardwareController(SpectrumMode mode)
     : radio_state_(), spectrum_streaming_active_(false), last_valid_rssi_(-120),
       spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000)
 {
+    // Initialize message handlers - these will be properly set up in initialize_spectrum_collector
 }
 
 DroneHardwareController::~DroneHardwareController() {
@@ -805,14 +807,16 @@ void DroneHardwareController::initialize_radio_state() {
 void DroneHardwareController::initialize_spectrum_collector() {
     message_handler_spectrum_config_ = std::make_unique<MessageHandlerRegistration>(
         Message::ID::ChannelSpectrumConfig,
-        [this](const Message* const p) {
-            this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage* const>(p));
-        });
+        std::move(std::function<void(Message* const)>(
+            [this](Message* const p) {
+                this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage* const>(p));
+            })));
     message_handler_frame_sync_ = std::make_unique<MessageHandlerRegistration>(
         Message::ID::DisplayFrameSync,
-        [this](const Message* const p) {
-            (void)p;
-        });
+        std::move(std::function<void(Message* const)>(
+            [this](Message* const p) {
+                (void)p;
+            })));
     // Note: ChannelSpectrum message ID doesn't exist, removed handler
 }
 
@@ -895,6 +899,7 @@ void DroneHardwareController::update_spectrum_for_scanner() {
 // ===========================================
 
 using namespace ui;
+
 
 SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
     : View(parent_rect),
@@ -1043,14 +1048,19 @@ void SmartThreatHeader::paint(Painter& painter) {
         static uint32_t pulse_timer = 0;
         pulse_timer++;
         uint8_t alpha = (pulse_timer % 20) < 10 ? 50 : 150;
-        Color pulse_color = get_threat_bar_color(current_threat_);
-        pulse_color = Color(pulse_color.r, pulse_color.g, pulse_color.b, alpha);
-        painter.fill_rectangle({0, rect().top(), rect().width(), 4}, pulse_color);
+        Color base_color = get_threat_bar_color(current_threat_);
+        // Create pulsing effect by blending with a brighter version
+        Color pulse_color = Color(
+            std::min(255, (base_color.r() * 2 + 100) / 3),
+            std::min(255, (base_color.g() * 2 + 100) / 3),
+            std::min(255, (base_color.b() * 2 + 100) / 3)
+        );
+        painter.fill_rectangle({0, screen_rect().top(), screen_rect().width(), 4}, pulse_color);
     }
 }
 
 ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
-    : View(parent_rect), card_index_(card_index) {
+    : View(parent_rect), card_index_(card_index), parent_rect_(parent_rect) {
     add_children({&card_text_});
 }
 
@@ -1064,8 +1074,7 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     trend_ = MovementTrend::STATIC;
 
     card_text_.set(render_compact());
-        const auto style = Theme::getInstance()->fg_light->foreground;
-        card_text_.set_style(style);
+    card_text_.set_style(Theme::getInstance()->fg_light);
     set_dirty();
 }
 
@@ -1126,12 +1135,12 @@ void ThreatCard::paint(Painter& painter) {
     View::paint(painter);
     if (is_active_) {
         Color bg_color = get_card_bg_color();
-        painter.fill_rectangle({parent_rect_.left(), parent_rect().top(), parent_rect_.width(), 2}, bg_color);
+        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect_.width(), 2}, bg_color);
     }
 }
 
 ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
-    : View(parent_rect), bar_index_(bar_index) {
+    : View(parent_rect), bar_index_(bar_index), parent_rect_(parent_rect) {
     add_children({&progress_text_, &alert_text_, &normal_text_});
     set_display_mode(DisplayMode::NORMAL);
 }
@@ -1139,7 +1148,7 @@ ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
 void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles, uint32_t detections) {
     set_display_mode(DisplayMode::SCANNING);
 
-    char progress_bar[9] = "░░░░░░░░";
+    char progress_bar[25] = "░░░░░░░░";
     uint8_t filled = (progress_percent * 8) / 100;
     for (uint8_t i = 0; i < filled; i++) {
         progress_bar[i] = '█';
@@ -1153,8 +1162,9 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
 
     if (detections > 0) {
         set_display_mode(DisplayMode::ALERT);
-        snprintf(buffer, sizeof(buffer), "⚠️ DETECTED: %u threats found!", detections);
-        alert_text_.set(buffer);
+        char alert_buffer[64];
+        snprintf(alert_buffer, sizeof(alert_buffer), "⚠️ DETECTED: %u threats found!", detections);
+        alert_text_.set(alert_buffer);
         alert_text_.set_style(Theme::getInstance()->fg_red);
     }
     set_dirty();
@@ -1171,7 +1181,11 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
             icons[icon_idx], total_drones, alert_msg.c_str());
 
     alert_text_.set(buffer);
-    alert_text_.set_style((threat >= ThreatLevel::CRITICAL) ? Theme::getInstance()->fg_red : Theme::getInstance()->fg_yellow());
+    if (threat >= ThreatLevel::CRITICAL) {
+        alert_text_.set_style(Theme::getInstance()->fg_red);
+    } else {
+        alert_text_.set_style(Theme::getInstance()->fg_yellow);
+    }
     set_dirty();
 }
 
@@ -1185,7 +1199,7 @@ void ConsoleStatusBar::update_normal_status(const std::string& primary, const st
         snprintf(buffer, sizeof(buffer), "%s | %s", primary.c_str(), secondary.c_str());
     }
     normal_text_.set(buffer);
-    normal_text_.set_style(Theme::getInstance()->fg_light->foreground);
+    normal_text_.set_style(Theme::getInstance()->fg_light);
     set_dirty();
 }
 
@@ -1224,8 +1238,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
       text_drone_3_({screen_width - 120, 14 * 16, 120, 16}, ""),
       spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
       pixel_index(0), bins_hz_size(0), each_bin_size(100000), marker_pixel_step(1000000), min_color_power(0),
-      mode(LOOKING_GLASS_SINGLEPASS), spectrum_config_(), spectrum_fifo_(nullptr),
-      message_handler_spectrum_config_(), message_handler_frame_sync_()
+      mode(LOOKING_GLASS_SINGLEPASS), spectrum_config_(), spectrum_fifo_(nullptr)
 {
     // Initialize displayed_drones_ array
     displayed_drones_ = {};
@@ -1336,7 +1349,8 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
             detected_drones_.push_back(entry);
         }
     }
-    update_drones_display();
+    sort_drones_by_rssi();
+    render_drone_text_display();
 }
 
 void DroneDisplayController::sort_drones_by_rssi() {
@@ -1612,7 +1626,8 @@ DroneUIController::DroneUIController(NavigationView& nav,
       scanner_(scanner),
       audio_mgr_(audio),
       scanning_active_(false),
-      display_controller_(std::make_unique<DroneDisplayController>(nav))
+      display_controller_(std::make_unique<DroneDisplayController>(nav)),
+      settings_()
 {
     settings_.spectrum_mode = SpectrumMode::MEDIUM;
     settings_.scan_interval_ms = 1000;
@@ -1631,7 +1646,7 @@ void DroneUIController::on_start_scan() {
 void DroneUIController::on_stop_scan() {
     scanning_active_ = false;
     scanner_.stop_scanning();
-    audio_.stop_audio();
+    audio_mgr_.stop_audio();
     display_controller_->set_scanning_status(false, "Stopped");
     display_controller_->update_detection_display(scanner_);
 }
@@ -1681,12 +1696,13 @@ void DroneUIController::on_audio_settings() {
 }
 
 void DroneUIController::on_spectrum_mode() {
-    nav_.push<MenuView>(std::vector<MenuView::Item>{
-        {"Ultra Narrow (4MHz)", [this]() { set_spectrum_mode(SpectrumMode::ULTRA_NARROW); }},
-        {"Narrow (8MHz)", [this]() { set_spectrum_mode(SpectrumMode::NARROW); }},
-        {"Medium (12MHz)", [this]() { set_spectrum_mode(SpectrumMode::MEDIUM); }},
-        {"Wide (20MHz)", [this]() { set_spectrum_mode(SpectrumMode::WIDE); }},
-        {"Ultra Wide (24MHz)", [this]() { set_spectrum_mode(SpectrumMode::ULTRA_WIDE); }}
+    auto menu_view = nav_.push<MenuView>();
+    menu_view->add_items({
+        {"Ultra Narrow (4MHz)", ui::Color::white(), nullptr, [this](ui::KeyEvent) { set_spectrum_mode(SpectrumMode::ULTRA_NARROW); }},
+        {"Narrow (8MHz)", ui::Color::white(), nullptr, [this](ui::KeyEvent) { set_spectrum_mode(SpectrumMode::NARROW); }},
+        {"Medium (12MHz)", ui::Color::white(), nullptr, [this](ui::KeyEvent) { set_spectrum_mode(SpectrumMode::MEDIUM); }},
+        {"Wide (20MHz)", ui::Color::white(), nullptr, [this](ui::KeyEvent) { set_spectrum_mode(SpectrumMode::WIDE); }},
+        {"Ultra Wide (24MHz)", ui::Color::white(), nullptr, [this](ui::KeyEvent) { set_spectrum_mode(SpectrumMode::ULTRA_WIDE); }}
     });
 }
 
@@ -1696,10 +1712,11 @@ void DroneUIController::set_spectrum_mode(SpectrumMode mode) {
 }
 
 void DroneUIController::on_hardware_control() {
-    nav_.push<MenuView>(std::vector<MenuView::Item>{
-        {"Set Bandwidth", [this]() { on_set_bandwidth(); }},
-        {"Set Center Freq", [this]() { on_set_center_freq(); }},
-        {"Current Status", [this]() { show_hardware_status(); }}
+    auto menu_view = nav_.push<MenuView>();
+    menu_view->add_items({
+        {"Set Bandwidth", ui::Color::white(), nullptr, [this](ui::KeyEvent) { on_set_bandwidth(); }},
+        {"Set Center Freq", ui::Color::white(), nullptr, [this](ui::KeyEvent) { on_set_center_freq(); }},
+        {"Current Status", ui::Color::white(), nullptr, [this](ui::KeyEvent) { show_hardware_status(); }}
     });
 }
 
@@ -1738,30 +1755,30 @@ void DroneUIController::on_about() {
 }
 
 EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
-    : nav_(nav),
+    : View({0, 0, screen_width, screen_height}),
+      nav_(nav),
       hardware_(new DroneHardwareController()),
       scanner_(new DroneScanner()),
       audio_(),
       ui_controller_(new DroneUIController(nav, *hardware_, *scanner_, audio_)),
       display_controller_(new DroneDisplayController(nav)),
-    scanning_coordinator_(new ScanningCoordinator(nav, *hardware_, *scanner_, *display_controller_, audio_)),
-    smart_header_(), status_bar_(), threat_cards_(),
-    button_start_stop_({screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"),
-    button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
-    field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
-    // Status texts
-    text_status_({10, 20, 240, 16}, "EDA Ready"),
-    text_drone_info1_({10, 180, 240, 16}, "Drone 1: None"),
-    text_drone_info2_({10, 200, 240, 16}, "Drone 2: None"),
-    text_drone_info3_({10, 220, 240, 16}, "Drone 3: None"),
-    text_detection_count_({10, 40, 240, 16}, "Detections: 0"),
-    // Audio checkbox - simplified
-    checkbox_audio_({10, 60, 20}),
-    // Threshold and interval controls - simplified
-    numberfield_threshold_({100, 40}, 4, {-120, 0}, 5, ' ', false),
-    numberfield_interval_({100, 70}, 5, {100, 10000}, 100, ' ', false),
-    scanning_active_(false),
-    settings_()
+      scanning_coordinator_(new ScanningCoordinator(nav, *hardware_.get(), *scanner_.get(), *display_controller_.get(), audio_)),
+      smart_header_(),
+      status_bar_(),
+      threat_cards_(),
+      button_start_stop_({screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"),
+      button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
+      field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
+      text_status_({10, 20, 240, 16}, "EDA Ready"),
+      text_drone_info1_({10, 180, 240, 16}, "Drone 1: None"),
+      text_drone_info2_({10, 200, 240, 16}, "Drone 2: None"),
+      text_drone_info3_({10, 220, 240, 16}, "Drone 3: None"),
+      text_detection_count_({10, 40, 240, 16}, "Detections: 0"),
+      checkbox_audio_({10, 60, 20}),
+      numberfield_threshold_({100, 40}, 4, {-120, 0}, 5, ' ', false),
+      numberfield_interval_({100, 70}, 5, {100, 10000}, 100, ' ', false),
+      scanning_active_(false),
+      settings_()
 {
     load_settings_from_sd_card(settings_);
 
@@ -1770,46 +1787,27 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     }
 
     initialize_modern_layout();
+    setup_button_handlers();
+    initialize_scanning_mode();
+    add_ui_elements();
+}
 
-    button_start_stop_.on_select = [this](Button&) {
-        handle_start_stop_button();
-    };
-    button_menu_.on_select = [this, &nav](Button&) {
-        handle_menu_button();
-    };
+void EnhancedDroneSpectrumAnalyzerView::set_scanning_mode_from_index(size_t index) {
+    DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
+    scanner_->set_scanning_mode(mode);
+    display_controller_->set_scanning_status(ui_controller_->is_scanning(),
+                                           scanner_->scanning_mode_name());
+    update_modern_layout();
+}
 
+void EnhancedDroneSpectrumAnalyzerView::initialize_scanning_options() {
     field_scanning_mode_.on_change = [this](size_t index) {
-        DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
-        scanner_->set_scanning_mode(mode);
-        display_controller_->set_scanning_status(ui_controller_->is_scanning(),
-                                               scanner_->scanning_mode_name());
-        update_modern_layout();
+        set_scanning_mode_from_index(index);
     };
 
+    // Initialize scanning mode
     int initial_mode = static_cast<int>(scanner_->get_scanning_mode());
     field_scanning_mode_.set_value(initial_mode);
-
-    add_child(smart_header_.get());
-    add_child(status_bar_.get());
-    for (auto& card : threat_cards_) {
-        add_child(card.get());
-    }
-
-    add_child(&button_start_stop_);
-    add_child(&button_menu_);
-    add_child(&checkbox_audio_);
-    add_children({&numberfield_threshold_, &numberfield_interval_});
-
-    // Initialize UI
-    field_scanning_mode_.on_change = [this](size_t index) {
-        DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
-        scanner_->set_scanning_mode(mode);
-        display_controller_->set_scanning_status(ui_controller_->is_scanning(),
-                                               scanner_->scanning_mode_name());
-    };
-
-    int initial_mode = static_cast<int>(scanner_->get_scanning_mode());
-    field_scanning_mode_.set_selected_index(initial_mode);
 
     // Initialize threshold and interval values
     numberfield_threshold_.set_value(settings_.rssi_threshold_db);
@@ -1994,6 +1992,33 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     if (display_controller_) {
         display_controller_->update_detection_display(*scanner_);
     }
+}
+
+void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
+    button_start_stop_.on_select = [this](Button&) {
+        handle_start_stop_button();
+    };
+    button_menu_.on_select = [this, &nav_](Button&) {
+        handle_menu_button();
+    };
+
+    field_scanning_mode_.on_change = [this](size_t index) {
+        set_scanning_mode_from_index(index);
+    };
+}
+
+void EnhancedDroneSpectrumAnalyzerView::initialize_scanning_mode() {
+    int initial_mode = static_cast<int>(scanner_->get_scanning_mode());
+    field_scanning_mode_.set_value(initial_mode);
+}
+
+void EnhancedDroneSpectrumAnalyzerView::add_ui_elements() {
+    add_children({smart_header_.get(), status_bar_.get()});
+    for (auto& card : threat_cards_) {
+        add_child(card.get());
+    }
+    add_children({&button_start_stop_, &button_menu_, &checkbox_audio_});
+    add_children({&numberfield_threshold_, &numberfield_interval_});
 }
 
 LoadingScreenView::LoadingScreenView(NavigationView& nav)
