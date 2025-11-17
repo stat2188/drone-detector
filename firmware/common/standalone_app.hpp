@@ -148,7 +148,7 @@ struct standalone_application_information_t {
     void (*shutdown)();
 
     void (*PaintViewMirror)();
-    bool (*OnTouchEvent)(int x, int y, uint32_t type);
+    void (*OnTouchEvent)(int x, int y, uint32_t type);
     void (*OnFocus)();
     bool (*OnKeyEvent)(uint8_t key);
     bool (*OnEncoder)(int32_t delta);
