@@ -56,11 +56,11 @@ public:
     static const ::std::map<::std::string, const char*> translations_english;
     static const char* get_translation(const ::std::string& key);
 
+    static DroneAnalyzerSettingsManager& get_settings_manager();
+
 private:
     static Language current_language_;
 };
-
-static DroneAnalyzerSettingsManager& get_settings_manager();
 
 struct ConfigData {
     SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;

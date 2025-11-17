@@ -403,19 +403,6 @@ public:
 
     Frequency get_current_radio_frequency() const;
 
-    // Additional utility functions
-    bool is_scanning_active() const { return scanning_active_; }
-    bool is_real_mode() const { return is_real_mode_; }
-    size_t get_approaching_count() const { return approaching_count_; }
-    size_t get_receding_count() const { return receding_count_; }
-    size_t get_static_count() const { return static_count_; }
-    uint32_t get_total_detections() const { return total_detections_; }
-    uint32_t get_scan_cycles() const { return scan_cycles_; }
-    ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
-    Frequency get_current_scanning_frequency() const;
-    Frequency get_current_radio_frequency() const;
-    std::string get_session_summary() const;
-
 private:
     // Declare missing methods
     void reset_scan_cycles();
@@ -657,8 +644,6 @@ public:
     void clear_spectrum_buffers();
     bool validate_spectrum_data() const;
     size_t get_safe_spectrum_index(size_t x, size_t y) const;
-    void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power);
-    void add_spectrum_pixel(uint8_t power);
 
     void set_spectrum_range(Frequency min_freq, Frequency max_freq);
 
@@ -869,7 +854,6 @@ private:
 
     // Simplified UI methods using basic widgets only
     void on_audio_settings();
-    void show_system_status();
     void on_spectrum_mode();
 
     // Hardware control methods

@@ -6,9 +6,14 @@
 #include "external_app.hpp"
 #include "ui_settings_combined.hpp"
 
+// Define VERSION_MD5 if not defined (build system should provide this)
+#ifndef VERSION_MD5
+#define VERSION_MD5 1
+#endif
+
 namespace ui::external_app::enhanced_drone_analyzer_settings {
 void initialize_app(ui::NavigationView& nav) {
-    nav.push<ui::external_app::enhanced_drone_analyzer::EnhancedDroneAnalyzerSettingsView>();
+    nav.push<ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettingsView>();
 }
 }  // namespace ui::external_app::enhanced_drone_analyzer_settings
 
