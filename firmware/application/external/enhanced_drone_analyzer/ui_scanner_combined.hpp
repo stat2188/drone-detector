@@ -961,6 +961,7 @@ private:
     void handle_scanner_update();
     void setup_button_handlers();
     void initialize_scanning_mode();
+    void initialize_scanning_options();
     void set_scanning_mode_from_index(size_t index);
     void add_ui_elements();
 };
