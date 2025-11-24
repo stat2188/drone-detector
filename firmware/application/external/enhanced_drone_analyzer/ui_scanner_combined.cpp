@@ -1646,7 +1646,6 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       button_start_stop_({screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"),
       button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
       field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
-      text_status_({10, 20, 240, 16}, "EDA Ready"),
       scanning_active_(false),
       settings_()
 {

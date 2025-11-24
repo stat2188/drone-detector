@@ -703,13 +703,20 @@ private:
     MessageHandlerRegistration message_handler_spectrum_config_{
         Message::ID::ChannelSpectrumConfig,
         [this](const Message* const p) {
-            (void)p;
+            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            this->spectrum_fifo_ = message.fifo;
         }
     };
     MessageHandlerRegistration message_handler_frame_sync_{
         Message::ID::DisplayFrameSync,
-        [this](const Message* const p) {
-            (void)p;
+        [this](const Message* const) {
+            if (this->spectrum_fifo_) {
+                ChannelSpectrum channel_spectrum;
+                while (spectrum_fifo_->out(channel_spectrum)) {
+                    this->process_mini_spectrum_data(channel_spectrum);
+                    this->render_mini_spectrum();
+                }
+            }
         }
     };
 
@@ -840,19 +847,7 @@ private:
         {10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}
     };
 
-    // Status texts
-    Text text_status_{{10, 20, 240, 16}, "EDA Ready"};
-    Text text_drone_info1_{{10, 180, 240, 16}, "Drone 1: None"};
-    Text text_drone_info2_{{10, 200, 240, 16}, "Drone 2: None"};
-    Text text_drone_info3_{{10, 220, 240, 16}, "Drone 3: None"};
-    Text text_detection_count_{{10, 40, 240, 16}, "Detections: 0"};
 
-    // Audio checkbox
-    Checkbox checkbox_audio_{{10, 60}, 20, ""};
-
-    // Threshold and interval controls
-    NumberField numberfield_threshold_{{100, 40}, 4, {-120, 0}, 5, ' ', false};
-    NumberField numberfield_interval_{{100, 70}, 5, {100, 10000}, 100, ' ', false};
 
     bool scanning_active_ = false;
     ::ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
@@ -866,7 +861,7 @@ private:
     void handle_scanner_update();
     void setup_button_handlers();
     void initialize_scanning_mode();
-    void initialize_scanning_options();
+//    void initialize_scanning_options();  // Removed conflicting text fields
     void set_scanning_mode_from_index(size_t index);
     void add_ui_elements();
 };
