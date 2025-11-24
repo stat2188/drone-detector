@@ -17,7 +17,7 @@
 
 // Fixed include paths to use proper relative paths from EDA directory
 #include "../../common/ui.hpp"
-#include "../ui_navigation.hpp"
+#include "../../ui_navigation.hpp"
 #include "../../common/external_app.hpp"
 #include "../file.hpp"  // For file I/O operations (Phase 7: TXT communication)
 #include "../database.hpp"     // For configuration storage patterns

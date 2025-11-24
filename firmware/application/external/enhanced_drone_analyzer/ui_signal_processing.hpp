@@ -60,21 +60,21 @@ public:
     ~DetectionRingBuffer() = default;
 
     // Replaces dynamic std::deque with fixed-size array for embedded systems
-    void update_detection(size_t frequency_hash, int32_t rssi_value) {
+    void update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) {
         systime_t current_time = chTimeNow();
 
         // Find existing entry or use LRU entry
         for (auto& entry : entries_) {
             if (entry.frequency_hash == frequency_hash) {
                 entry.rssi_value = rssi_value;
+                entry.detection_count = detection_count;
                 entry.last_update = current_time;
-                if (entry.detection_count < 255) entry.detection_count++;
                 return;
             }
         }
 
         // Add new entry (overwrites oldest)
-        entries_[head_] = {frequency_hash, 1, rssi_value, current_time};
+        entries_[head_] = {frequency_hash, detection_count, rssi_value, current_time};
         head_ = (head_ + 1) % MAX_ENTRIES;
     }
 

@@ -51,7 +51,7 @@ class AudioManager;
 #include "../../irq_controls.hpp"
 
 #include "../../common/ui.hpp"
-#include "../../ui/ui_navigation.hpp"
+#include "../../ui_navigation.hpp"
 #include "../../common/ui_widget.hpp"  // For Button, Text, etc.
 #include "../../app_settings.hpp"
 #include "../../string_format.hpp"

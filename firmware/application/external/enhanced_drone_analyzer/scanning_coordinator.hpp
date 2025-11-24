@@ -4,7 +4,7 @@
 
 #include <memory>
 #include "ui_drone_common_types.hpp"
-#include "ui_navigation.hpp"
+#include "../../ui_navigation.hpp"
 #include "thread_base.hpp"
 
 namespace ui::external_app::enhanced_drone_analyzer {

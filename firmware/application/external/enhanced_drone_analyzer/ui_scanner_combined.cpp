@@ -7,7 +7,7 @@
 #include "../../gradient.hpp"
 #include "../../baseband_api.hpp"
 #include "../../portapack.hpp"
-#include "../../ui/ui_navigation.hpp"
+#include "../../ui_navigation.hpp"
 #include "../../ui/ui_receiver.hpp"
 #include "../../file_path.hpp"
 #include "../../string_format.hpp"
