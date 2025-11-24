@@ -493,6 +493,7 @@ public:
     void update_spectrum_for_scanner();
 
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
+    void handle_channel_statistics(const ChannelStatistics& statistics);
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
     void process_channel_spectrum_data(const ChannelSpectrum& spectrum);
 
@@ -511,6 +512,7 @@ private:
     std::unique_ptr<MessageHandlerRegistration> message_handler_spectrum_config_;
     std::unique_ptr<MessageHandlerRegistration> message_handler_frame_sync_;
     std::unique_ptr<MessageHandlerRegistration> message_handler_spectrum_;
+    std::unique_ptr<MessageHandlerRegistration> message_handler_channel_statistics_;
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;

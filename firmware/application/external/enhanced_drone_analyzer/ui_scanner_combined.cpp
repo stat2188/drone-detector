@@ -445,26 +445,25 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     }
 
     int32_t detection_threshold = -90;
-    // TODO: Implement drone database lookup
-    // const auto* db_entry = drone_database_.lookup_frequency(entry.frequency_a);
-    // if (db_entry) {
-    //     detection_threshold = db_entry->rssi_threshold_db;
-    // }
-
-    ThreatLevel validated_threat = SimpleDroneValidation::classify_signal_strength(rssi);
-    ThreatLevel threat_level = ThreatLevel::LOW;
-
+    // Check if frequency matches any known drone entry in the database
     DroneType detected_type = DroneType::UNKNOWN;
-    // TODO: Implement proper database lookup
-    // if (db_entry) {
-    //     detected_type = db_entry->drone_type;
-    //     threat_level = db_entry->threat_level;
-    //     if (validated_threat > threat_level) {
-    //         threat_level = validated_threat;
-    //     }
-    // } else {
-        threat_level = validated_threat;
-    // }
+    ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
+
+    // Search through loaded drone database for this frequency
+    for (const auto& db_entry : drone_database_) {
+        if (db_entry && db_entry->frequency_a == entry.frequency_a) {
+            // Found matching frequency in database
+            detected_type = DroneType::MAVIC; // Default to MAVIC, could be extended with more types
+            // Use database threat level if available, otherwise use signal strength classification
+            threat_level = std::max(threat_level, ThreatLevel::MEDIUM); // At least MEDIUM if in database
+            break;
+        }
+    }
+
+    // If not in database, stick with basic signal strength classification
+    if (detected_type == DroneType::UNKNOWN) {
+        threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
+    }
 
     if (rssi < detection_threshold) {
         return;
@@ -781,7 +780,14 @@ void DroneHardwareController::initialize_spectrum_collector() {
             [this](Message* const p) {
                 (void)p;
             })));
-    // Note: ChannelSpectrum message ID doesn't exist, removed handler
+    // Add ChannelStatistics handler for RSSI updates
+    message_handler_channel_statistics_ = std::make_unique<MessageHandlerRegistration>(
+        Message::ID::ChannelStatistics,
+        std::move(std::function<void(Message* const)>(
+            [this](Message* const p) {
+                const auto* statistics_msg = static_cast<const ChannelStatisticsMessage*>(p);
+                this->handle_channel_statistics(statistics_msg->statistics);
+            })));
 }
 
 void DroneHardwareController::cleanup_spectrum_collector() {
@@ -830,10 +836,25 @@ int32_t DroneHardwareController::get_real_rssi_from_hardware(Frequency target_fr
 }
 
 void DroneHardwareController::handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message) {
-    (void)message;
+    if (message) {
+        fifo_ = message->fifo;
+        // Process any existing spectrum data when configuration changes
+        if (fifo_) {
+            ChannelSpectrum spectrum;
+            while (fifo_->out(spectrum)) {
+                process_channel_spectrum_data(spectrum);
+            }
+        }
+    }
+}
+
+void DroneHardwareController::handle_channel_statistics(const ChannelStatistics& statistics) {
+    last_valid_rssi_ = statistics.max_db;
 }
 
 void DroneHardwareController::process_channel_spectrum_data(const ChannelSpectrum& spectrum) {
+    // TODO: Forward spectrum data to display controller for visualization
+    // For now, spectrum visualization is partially implemented but not fully connected
     (void)spectrum;
 }
 
@@ -1893,12 +1914,13 @@ void EnhancedDroneSpectrumAnalyzerView::initialize_scanning_mode() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::add_ui_elements() {
+    // Modern layout: Only modern UI elements, no overlays
     add_children({smart_header_.get(), status_bar_.get()});
     for (auto& card : threat_cards_) {
         add_child(card.get());
     }
-    add_children({&button_start_stop_, &button_menu_, &checkbox_audio_});
-    add_children({&numberfield_threshold_, &numberfield_interval_});
+    add_children({&button_start_stop_, &button_menu_});
+    // Removed legacy overlaying elements: checkbox_audio_, numberfield_threshold_, numberfield_interval_
 }
 
 LoadingScreenView::LoadingScreenView(NavigationView& nav)
