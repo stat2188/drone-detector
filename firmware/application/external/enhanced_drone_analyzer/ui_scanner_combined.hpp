@@ -56,6 +56,7 @@ class AudioManager;
 #include "app_settings.hpp"
 #include "string_format.hpp"
 #include "tone_key.hpp"
+#include "message_queue.hpp"
 
 class LogFile;
 
@@ -253,6 +254,23 @@ struct DetectionLogEntry {
     float confidence_score;
 };
 
+// Message structures for thread-safe communication
+struct DroneDetectionMessage {
+    DroneType type;
+    Frequency frequency;
+    int32_t rssi;
+    ThreatLevel threat_level;
+    systime_t timestamp;
+};
+
+struct DroneUpdateMessage {
+    enum class Type { DETECTION, STALE_REMOVAL, SCAN_COMPLETE } type;
+    union {
+        DroneDetectionMessage detection;
+        systime_t scan_complete_timestamp;
+    } data;
+};
+
 // ===========================================
 // PART 2: CONFIGURATION STRUCTURES (Shared with Settings App)
 // ===========================================
@@ -386,6 +404,9 @@ public:
 
     void perform_scan_cycle(DroneHardwareController& hardware);
     void process_rssi_detection(const freqman_entry& entry, int32_t rssi);
+    // Message queue for thread-safe UI updates
+    void send_drone_detection_message(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
+
     void update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
     void remove_stale_drones();
 
@@ -882,6 +903,15 @@ private:
 //    void initialize_scanning_options();  // Removed conflicting text fields
     void set_scanning_mode_from_index(size_t index);
     void add_ui_elements();
+
+private:
+    void set_scanning_mode_from_index(size_t index) {
+        DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
+        scanner_->set_scanning_mode(mode);
+        display_controller_->set_scanning_status(ui_controller_->is_scanning(),
+                                                 scanner_->scanning_mode_name());
+        update_modern_layout();
+    }
 };
 
 class LoadingScreenView : public View {

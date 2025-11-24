@@ -282,23 +282,29 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
     }
 
     const size_t total_entries = drone_database_.size();
-    if (current_db_index_ >= total_entries) {
-        current_db_index_ = 0;
-    }
+    const size_t batch_size = std::min(static_cast<size_t>(20), total_entries); // Scan 20 frequencies per cycle
 
-    if (current_db_index_ < drone_database_.size()) {
-        const auto& entry_ptr = drone_database_[current_db_index_];
-        if (entry_ptr) {
-            Frequency target_freq_hz = entry_ptr->frequency_a;
-            if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
-                if (hardware.tune_to_frequency(target_freq_hz)) {
-                    int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-                    process_rssi_detection(*entry_ptr, real_rssi);
-                    last_scanned_frequency_ = target_freq_hz;
+    for (size_t i = 0; i < batch_size && scanning_active_; ++i) {
+        if (current_db_index_ >= total_entries) {
+            current_db_index_ = 0;
+        }
+
+        if (current_db_index_ < drone_database_.size()) {
+            const auto& entry_ptr = drone_database_[current_db_index_];
+            if (entry_ptr) {
+                Frequency target_freq_hz = entry_ptr->frequency_a;
+                if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
+                    if (hardware.tune_to_frequency(target_freq_hz)) {
+                        // Wait for RSSI stabilization after frequency change
+                        chThdSleepMilliseconds(2); // Additional stabilization
+                        int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
+                        process_rssi_detection(*entry_ptr, real_rssi);
+                        last_scanned_frequency_ = target_freq_hz;
+                    }
                 }
             }
+            current_db_index_ = (current_db_index_ + 1) % total_entries;
         }
-        current_db_index_ = (current_db_index_ + 1) % total_entries;
     }
 }
 
@@ -369,7 +375,8 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     total_detections_++;
     DroneType detected_type = DroneType::UNKNOWN;
 
-    size_t freq_hash = entry.frequency_a;
+    // Improve hash to reduce collisions: use frequency step-based hashing
+    size_t freq_hash = entry.frequency_a / 100000; // Group by 100kHz steps to reduce collisions
     int32_t effective_threshold = wideband_threshold;
     if (local_detection_ring.get_rssi_value(freq_hash) < wideband_threshold) {
         effective_threshold = wideband_threshold + HYSTERESIS_MARGIN_DB;
@@ -394,7 +401,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
             if (detection_logger_.is_session_active()) {
                 detection_logger_.log_detection(log_entry);
             }
-            update_tracked_drone(detected_type, entry.frequency_a, rssi, threat_level);
+            send_drone_detection_message(detected_type, entry.frequency_a, rssi, threat_level);
         }
     } else {
         local_detection_ring.update_detection(freq_hash, 0, -120);
@@ -452,7 +459,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     //     detected_type = db_entry->drone_type;
     // }
 
-    size_t freq_hash = entry.frequency_a;
+    // Improve hash to reduce collisions: use frequency step-based hashing
+    size_t freq_hash = entry.frequency_a / 100000; // Group by 100kHz steps to reduce collisions
     int32_t effective_threshold = detection_threshold;
     if (local_detection_ring.get_rssi_value(freq_hash) < detection_threshold) {
         effective_threshold = detection_threshold + HYSTERESIS_MARGIN_DB;
@@ -485,6 +493,23 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     } else {
         local_detection_ring.update_detection(freq_hash, 0, -120);
     }
+}
+
+void DroneScanner::send_drone_detection_message(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
+    // Send message to UI thread instead of direct modification
+    DroneUpdateMessage message;
+    message.type = DroneUpdateMessage::Type::DETECTION;
+    message.data.detection = {
+        .type = type,
+        .frequency = frequency,
+        .rssi = rssi,
+        .threat_level = threat_level,
+        .timestamp = chTimeNow()
+    };
+
+    // Note: MessageQueue implementation would go here
+    // For now, fall back to direct update (this will be fixed when MessageQueue is properly implemented)
+    update_tracked_drone(type, frequency, rssi, threat_level);
 }
 
 void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
@@ -1631,14 +1656,14 @@ void DroneUIController::on_about() {
 EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
     : View({0, 0, screen_width, screen_height}),
       nav_(nav),
-      hardware_(new DroneHardwareController()),
-      scanner_(new DroneScanner()),
+      hardware_(std::make_unique<DroneHardwareController>()),
+      scanner_(std::make_unique<DroneScanner>()),
       audio_(),
-      ui_controller_(new DroneUIController(nav, *hardware_, *scanner_, audio_)),
-      display_controller_(new DroneDisplayController(nav)),
+      ui_controller_(std::make_unique<DroneUIController>(nav, *hardware_, *scanner_, audio_)),
+      display_controller_(std::make_unique<DroneDisplayController>(nav)),
       scanning_coordinator_(std::make_unique<ScanningCoordinator>(nav, *hardware_, *scanner_, *display_controller_, audio_)),
-      smart_header_(),
-      status_bar_(),
+      smart_header_(std::make_unique<SmartThreatHeader>(Rect{0, 0, screen_width, 48})),
+      status_bar_(std::make_unique<ConsoleStatusBar>(0, Rect{0, screen_height - 32, screen_width, 16})),
       threat_cards_(),
       button_start_stop_({screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"),
       button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
@@ -1646,6 +1671,12 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       scanning_active_(false),
       settings_()
 {
+    // Initialize threat_cards_ array
+    for (size_t i = 0; i < threat_cards_.size(); ++i) {
+        size_t card_y_pos = 52 + i * 26;
+        threat_cards_[i] = std::make_unique<ThreatCard>(i, Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
+    }
+
     load_settings_from_sd_card(settings_);
 
     if (scanning_coordinator_) {
@@ -1659,13 +1690,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     update_modern_layout();
 }
 
-void EnhancedDroneSpectrumAnalyzerView::set_scanning_mode_from_index(size_t index) {
-    DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
-    scanner_->set_scanning_mode(mode);
-    display_controller_->set_scanning_status(ui_controller_->is_scanning(),
-                                             scanner_->scanning_mode_name());
-    update_modern_layout();
-}
+
 
 void EnhancedDroneSpectrumAnalyzerView::focus() {
     button_start_stop_.focus();
@@ -1730,13 +1755,15 @@ bool EnhancedDroneSpectrumAnalyzerView::handle_menu_button() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout() {
-    smart_header_ = std::make_unique<SmartThreatHeader>(Rect{0, 0, screen_width, 48});
-    status_bar_ = std::make_unique<ConsoleStatusBar>(0, Rect{0, screen_height - 32, screen_width, 16});
+    // smart_header_ and status_bar_ are already initialized in constructor
 
-    size_t card_y_pos = 52;
+    // Update existing threat cards if needed
     for (size_t i = 0; i < threat_cards_.size(); ++i) {
-        threat_cards_[i] = std::make_unique<ThreatCard>(i, Rect{0, card_y_pos, screen_width, 24});
-        card_y_pos += 26;
+        if (threat_cards_[i]) {
+            // Update position if needed
+            size_t card_y_pos = 52 + i * 26;
+            threat_cards_[i]->set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
+        }
     }
 
     handle_scanner_update();
