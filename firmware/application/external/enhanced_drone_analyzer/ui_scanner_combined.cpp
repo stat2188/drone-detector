@@ -692,8 +692,8 @@ std::string DroneDetectionLogger::format_csv_entry(const DetectionLogEntry& entr
     char buffer[128];
     memset(buffer, 0, sizeof(buffer));
     snprintf(buffer, sizeof(buffer) - 1,
-             "%u,%u,%d,%u,%u,%u,%.2f\n",
-             entry.timestamp, entry.frequency_hz, entry.rssi_db,
+             "%lu,%lu,%d,%u,%u,%u,%.2f\n",
+             static_cast<unsigned long>(entry.timestamp), static_cast<unsigned long>(entry.frequency_hz), entry.rssi_db,
              static_cast<uint8_t>(entry.threat_level),
              static_cast<uint8_t>(entry.drone_type),
              entry.detection_count, entry.confidence_score);
@@ -1117,8 +1117,8 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
     }
 
     char buffer[32];
-    snprintf(buffer, sizeof(buffer), "%s %u%% C:%u D:%u",
-            progress_bar, progress_percent, total_cycles, detections);
+    snprintf(buffer, sizeof(buffer), "%s %lu%% C:%lu D:%lu",
+            progress_bar, (unsigned long)progress_percent, (unsigned long)total_cycles, (unsigned long)detections);
     progress_text_.set(buffer);
     progress_text_.set_style(Theme::getInstance()->fg_blue);
 
@@ -1240,8 +1240,9 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
 
     if (has_detections) {
         char summary_buffer[64];
+        std::string threat_name = get_threat_level_name(max_threat);
         snprintf(summary_buffer, sizeof(summary_buffer), "THREAT: %s | <%zu ~%zu >%zu",
-                get_threat_level_name(max_threat), scanner.get_approaching_count(),
+                threat_name.c_str(), scanner.get_approaching_count(),
                 scanner.get_static_count(), scanner.get_receding_count());
         text_threat_summary_.set(summary_buffer);
         text_threat_summary_.set_style(Theme::getInstance()->fg_red);
@@ -1556,11 +1557,8 @@ void DroneUIController::on_toggle_mode() {
 }
 
 void DroneUIController::show_menu() {
-    auto menu_view = nav_.push<MenuView>();
-    if (menu_view) {
-        // Simplified menu using basic text - complex menu items removed
-        nav_.display_modal("EDA Menu", "Available: Load DB, Save Settings, Audio, About");
-    }
+    // Simplified menu using modal dialog
+    nav_.display_modal("EDA Menu", "Available: Load DB, Save Settings, Audio, About");
 }
 
 void DroneUIController::on_load_frequency_file() {
@@ -1791,7 +1789,7 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     if (status_bar_) {
         if (is_scanning) {
             uint32_t cycles = scanner_->get_scan_cycles();
-            uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), 100u);
+            uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), (uint32_t)100);
             status_bar_->update_scanning_progress(progress, cycles, total_detections);
         } else if (approaching + static_count + receding > 0) {
             size_t total_drones = approaching + static_count + receding;
