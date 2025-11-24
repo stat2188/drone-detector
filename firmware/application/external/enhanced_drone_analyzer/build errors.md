@@ -1,10 +1,4 @@
-Session Fix Summary - 24.11.2025:
-- Fixed std::min type mismatch in progress calculation
-- Fixed file.hpp std::filesystem::path constructor for const char*
-- Removed problematic MenuView::push call
-- Fixed std::string.c_str() format specifier issue
-
-Remaining issues: Format specifier warnings (info only), initialization order warnings (cosmetic)
+[ 98%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/ui_scanner_combined.cpp.obj
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneScanner::perform_wideband_scan_cycle(ui::external_app::enhanced_drone_analyzer::DroneHardwareController&)':
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:343:46: warning: narrowing conversion of '(Frequency)current_slice.WidebandSlice::center_frequency' from 'Frequency' {aka 'long long unsigned int'} to 'int64_t' {aka 'long long int'} [-Wnarrowing]
   343 |                 .frequency_a = current_slice.center_frequency,
@@ -21,36 +15,16 @@ Remaining issues: Format specifier warnings (info only), initialization order wa
   641 | DroneDetectionLogger::DroneDetectionLogger()
       | ^~~~~~~~~~~~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'std::string ui::external_app::enhanced_drone_analyzer::DroneDetectionLogger::format_csv_entry(const DetectionLogEntry&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:695:16: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
-  695 |              "%u,%u,%d,%u,%u,%u,%.2f\n",
-      |               ~^
-      |                |
-      |                unsigned int
-      |               %lu
-  696 |              entry.timestamp, entry.frequency_hz, entry.rssi_db,
-      |              ~~~~~~~~~~~~~~~
-      |                    |
-      |                    uint32_t {aka long unsigned int}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:695:19: warning: format '%u' expects argument of type 'unsigned int', but argument 5 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
-  695 |              "%u,%u,%d,%u,%u,%u,%.2f\n",
-      |                  ~^
-      |                   |
-      |                   unsigned int
-      |                  %lu
-  696 |              entry.timestamp, entry.frequency_hz, entry.rssi_db,
-      |                               ~~~~~~~~~~~~~~~~~~
-      |                                     |
-      |                                     uint32_t {aka long unsigned int}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:695:22: warning: format '%d' expects argument of type 'int', but argument 6 has type 'int32_t' {aka 'long int'} [-Wformat=]
-  695 |              "%u,%u,%d,%u,%u,%u,%.2f\n",
-      |                     ~^
-      |                      |
-      |                      int
-      |                     %ld
-  696 |              entry.timestamp, entry.frequency_hz, entry.rssi_db,
-      |                                                   ~~~~~~~~~~~~~
-      |                                                         |
-      |                                                         int32_t {aka long int}
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:695:24: warning: format '%d' expects argument of type 'int', but argument 6 has type 'int32_t' {aka 'long int'} [-Wformat=]
+  695 |              "%lu,%lu,%d,%u,%u,%u,%.2f\n",
+      |                       ~^
+      |                        |
+      |                        int
+      |                       %ld
+  696 |              static_cast<unsigned long>(entry.timestamp), static_cast<unsigned long>(entry.frequency_hz), entry.rssi_db,
+      |                                                                                                           ~~~~~~~~~~~~~
+      |                                                                                                                 |
+      |                                                                                                                 int32_t {aka long int}
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'std::string ui::external_app::enhanced_drone_analyzer::DroneDetectionLogger::format_session_summary(size_t, size_t) const':
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:716:235: warning: format '%u' expects argument of type 'unsigned int', but argument 9 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
   716 |     "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\nDuration: %.1f seconds\nScan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\nAvg. detections/cycle: %.2f\nDetection rate: %.1f/sec\nLogged entries: %u\n\nEnhanced Drone Analyzer v0.3",
@@ -109,37 +83,6 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1055:17: warning: unused variable 'threat_abbr' [-Wunused-variable]
  1055 |     const char* threat_abbr = (threat_ == ThreatLevel::CRITICAL) ? "CRIT" :
       |                 ^~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar::update_scanning_progress(uint32_t, uint32_t, uint32_t)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1120:43: warning: format '%u' expects argument of type 'unsigned int', but argument 5 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
- 1120 |     snprintf(buffer, sizeof(buffer), "%s %u%% C:%u D:%u",
-      |                                          ~^
-      |                                           |
-      |                                           unsigned int
-      |                                          %lu
- 1121 |             progress_bar, progress_percent, total_cycles, detections);
-      |                           ~~~~~~~~~~~~~~~~ 
-      |                           |
-      |                           uint32_t {aka long unsigned int}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1120:50: warning: format '%u' expects argument of type 'unsigned int', but argument 6 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
- 1120 |     snprintf(buffer, sizeof(buffer), "%s %u%% C:%u D:%u",
-      |                                                 ~^
-      |                                                  |
-      |                                                  unsigned int
-      |                                                 %lu
- 1121 |             progress_bar, progress_percent, total_cycles, detections);
-      |                                             ~~~~~~~~~~~~
-      |                                             |
-      |                                             uint32_t {aka long unsigned int}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1120:55: warning: format '%u' expects argument of type 'unsigned int', but argument 7 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
- 1120 |     snprintf(buffer, sizeof(buffer), "%s %u%% C:%u D:%u",
-      |                                                      ~^
-      |                                                       |
-      |                                                       unsigned int
-      |                                                      %lu
- 1121 |             progress_bar, progress_percent, total_cycles, detections);
-      |                                                           ~~~~~~~~~~
-      |                                                           |
-      |                                                           uint32_t {aka long unsigned int}
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::DroneDisplayController(ui::NavigationView&)':
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:699:21: warning: 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::nav_' will be initialized after [-Wreorder]
@@ -205,119 +148,62 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1203:81: note: synthesized method 'std::array<DisplayDroneEntry, 3>::array()' first required here
  1203 |       mode(LOOKING_GLASS_SINGLEPASS), spectrum_config_(), spectrum_fifo_(nullptr)
       |                                                                                 ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::update_detection_display(const ui::external_app::enhanced_drone_analyzer::DroneScanner&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1243:68: warning: format '%s' expects argument of type 'char*', but argument 4 has type 'std::string' {aka 'std::__cxx11::basic_string<char>'} [-Wformat=]
- 1243 |         snprintf(summary_buffer, sizeof(summary_buffer), "THREAT: %s | <%zu ~%zu >%zu",
-      |                                                                   ~^
-      |                                                                    |
-      |                                                                    char*
- 1244 |                 get_threat_level_name(max_threat), scanner.get_approaching_count(),
-      |                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                   
-      |                                      |
-      |                                      std::string {aka std::__cxx11::basic_string<char>}
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::update_drones_display(const ui::external_app::enhanced_drone_analyzer::DroneScanner&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1329:72: warning: unused parameter 'scanner' [-Wunused-parameter]
- 1329 | void DroneDisplayController::update_drones_display(const DroneScanner& scanner) {
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1330:72: warning: unused parameter 'scanner' [-Wunused-parameter]
+ 1330 | void DroneDisplayController::update_drones_display(const DroneScanner& scanner) {
       |                                                    ~~~~~~~~~~~~~~~~~~~~^~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::render_drone_text_display()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1374:42: warning: format '%d' expects argument of type 'int', but argument 6 has type 'int32_t' {aka 'long int'} [-Wformat=]
- 1374 |         snprintf(buffer, sizeof(buffer), DRONE_DISPLAY_FORMAT,
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1375:42: warning: format '%d' expects argument of type 'int', but argument 6 has type 'int32_t' {aka 'long int'} [-Wformat=]
+ 1375 |         snprintf(buffer, sizeof(buffer), DRONE_DISPLAY_FORMAT,
       |                                          ^~~~~~~~~~~~~~~~~~~~
 ......
- 1377 |                 drone.rssi,
+ 1378 |                 drone.rssi,
       |                 ~~~~~~~~~~                
       |                       |
       |                       int32_t {aka long int}
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneUIController::on_set_bandwidth()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1605:40: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
- 1605 |     snprintf(buffer, sizeof(buffer), "%u", current_bw);
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1603:40: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
+ 1603 |     snprintf(buffer, sizeof(buffer), "%u", current_bw);
       |                                       ~^   ~~~~~~~~~~
       |                                        |   |
       |                                        |   uint32_t {aka long unsigned int}
       |                                        unsigned int
       |                                       %lu
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneUIController::show_hardware_status()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1619:21: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'long unsigned int' [-Wformat=]
- 1619 |             "Band: %u MHz\nFreq: %.3f GHz",
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1617:21: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'long unsigned int' [-Wformat=]
+ 1617 |             "Band: %u MHz\nFreq: %.3f GHz",
       |                    ~^
       |                     |
       |                     unsigned int
       |                    %lu
- 1620 |             hardware_.get_spectrum_bandwidth() / 1000000,
+ 1618 |             hardware_.get_spectrum_bandwidth() / 1000000,
       |             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       |                                                |
       |                                                long unsigned int
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1764:68: warning: narrowing conversion of 'card_y_pos' from 'size_t' {aka 'unsigned int'} to 'int' [-Wnarrowing]
- 1764 |         threat_cards_[i] = std::make_unique<ThreatCard>(i, Rect{0, card_y_pos, screen_width, 24});
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1762:68: warning: narrowing conversion of 'card_y_pos' from 'size_t' {aka 'unsigned int'} to 'int' [-Wnarrowing]
+ 1762 |         threat_cards_[i] = std::make_unique<ThreatCard>(i, Rect{0, card_y_pos, screen_width, 24});
       |                                                                    ^~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::handle_scanner_update()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1794:81: error: no matching function for call to 'min(uint32_t, unsigned int)'
- 1794 |             uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), 100u);
-      |                                                                                 ^
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/char_traits.h:39,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/string:40,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:13,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algobase.h:198:5: note: candidate: 'template<class _Tp> constexpr const _Tp& std::min(const _Tp&, const _Tp&)'
-  198 |     min(const _Tp& __a, const _Tp& __b)
-      |     ^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algobase.h:198:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1794:81: note:   deduced conflicting types for parameter 'const _Tp' ('long unsigned int' and 'unsigned int')
- 1794 |             uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), 100u);
-      |                                                                                 ^
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/char_traits.h:39,
-                 from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/string:40,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:13,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algobase.h:246:5: note: candidate: 'template<class _Tp, class _Compare> constexpr const _Tp& std::min(const _Tp&, const _Tp&, _Compare)'
-  246 |     min(const _Tp& __a, const _Tp& __b, _Compare __comp)
-      |     ^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algobase.h:246:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1794:81: note:   deduced conflicting types for parameter 'const _Tp' ('long unsigned int' and 'unsigned int')
- 1794 |             uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), 100u);
-      |                                                                                 ^
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/algorithm:62,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:6,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:20,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algo.h:3444:5: note: candidate: 'template<class _Tp> constexpr _Tp std::min(std::initializer_list<_Tp>)'
- 3444 |     min(initializer_list<_Tp> __l)
-      |     ^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algo.h:3444:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1794:81: note:   mismatched types 'std::initializer_list<_Tp>' and 'long unsigned int'
- 1794 |             uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), 100u);
-      |                                                                                 ^
-In file included from /opt/build/armbin/arm-none-eabi/include/c++/9.2.1/algorithm:62,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:6,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:20,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algo.h:3450:5: note: candidate: 'template<class _Tp, class _Compare> constexpr _Tp std::min(std::initializer_list<_Tp>, _Compare)'
- 3450 |     min(initializer_list<_Tp> __l, _Compare __comp)
-      |     ^~~
-/opt/build/armbin/arm-none-eabi/include/c++/9.2.1/bits/stl_algo.h:3450:5: note:   template argument deduction/substitution failed:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1794:81: note:   mismatched types 'std::initializer_list<_Tp>' and 'long unsigned int'
- 1794 |             uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), 100u);
-      |                                                                                 ^
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1806:90: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
- 1806 |                 snprintf(secondary_buffer, sizeof(secondary_buffer), "Total detections: %u", total_detections);
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1804:90: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
+ 1804 |                 snprintf(secondary_buffer, sizeof(secondary_buffer), "Total detections: %u", total_detections);
       |                                                                                         ~^   ~~~~~~~~~~~~~~~~
       |                                                                                          |   |
       |                                                                                          |   uint32_t {aka long unsigned int}
       |                                                                                          unsigned int
       |                                                                                         %lu
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1836:62: warning: format '%d' expects argument of type 'int', but argument 7 has type 'int32_t' {aka 'long int'} [-Wformat=]
- 1836 |             snprintf(buffer, sizeof(buffer), "%s %c %.1fMHz %ddB",
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1834:62: warning: format '%d' expects argument of type 'int', but argument 7 has type 'int32_t' {aka 'long int'} [-Wformat=]
+ 1834 |             snprintf(buffer, sizeof(buffer), "%s %c %.1fMHz %ddB",
       |                                                             ~^
       |                                                              |
       |                                                              int
       |                                                             %ld
- 1837 |                     type_name.c_str(), trend_symbol, freq_mhz, drone.rssi);
+ 1835 |                     type_name.c_str(), trend_symbol, freq_mhz, drone.rssi);
       |                                                                ~~~~~~~~~~
       |                                                                      |
       |                                                                      int32_t {aka long int}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1852:25: warning: unused variable 'empty_text' [-Wunused-variable]
- 1852 |             const char* empty_text = "Drone X: None";
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1850:25: warning: unused variable 'empty_text' [-Wunused-variable]
+ 1850 |             const char* empty_text = "Drone X: None";
       |                         ^~~~~~~~~~
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanner_settings.hpp:8,
                  from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:20,
@@ -515,24 +401,6 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
    75 |     path()
       |     ^~~~
 /havoc/firmware/application/./file.hpp:75:5: note:   candidate expects 0 arguments, 2 provided
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/scanning_coordinator.hpp:7,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:30,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/external/enhanced_drone_analyzer/../../ui_navigation.hpp: In instantiation of 'T* ui::NavigationView::push(Args&& ...) [with T = ui::MenuView; Args = {}]':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1559:42:   required from here
-/havoc/firmware/application/external/enhanced_drone_analyzer/../../ui_navigation.hpp:111:69: error: no matching function for call to 'ui::MenuView::MenuView(ui::NavigationView&)'
-  111 |         return reinterpret_cast<T*>(push_view(std::unique_ptr<View>(new T(*this, std::forward<Args>(args)...))));
-      |                                                                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/../../ui_navigation.hpp:37,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/scanning_coordinator.hpp:7,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:30,
-                 from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
-/havoc/firmware/application/ui/ui_menu.hpp:81:5: note: candidate: 'ui::MenuView::MenuView(ui::Rect, bool)'
-   81 |     MenuView(Rect new_parent_rect = {0, 0, screen_width, screen_height - 16},
-      |     ^~~~~~~~
-/havoc/firmware/application/ui/ui_menu.hpp:81:19: note:   no known conversion for argument 1 from 'ui::NavigationView' to 'ui::Rect'
-   81 |     MenuView(Rect new_parent_rect = {0, 0, screen_width, screen_height - 16},
-      |              ~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 At global scope:
 cc1plus: warning: unrecognized command line option '-Wno-volatile'
 make[2]: *** [firmware/application/CMakeFiles/application.elf.dir/build.make:5789: firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/ui_scanner_combined.cpp.obj] Error 1

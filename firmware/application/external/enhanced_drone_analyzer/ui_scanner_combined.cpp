@@ -30,7 +30,7 @@ namespace ui::external_app::enhanced_drone_analyzer {
 
 // Settings loading helper
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
-    static constexpr const char* SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    static const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
     File settings_file;
     auto open_result = settings_file.open(SETTINGS_FILE_PATH);
