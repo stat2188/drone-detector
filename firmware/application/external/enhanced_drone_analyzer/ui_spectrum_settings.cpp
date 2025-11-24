@@ -88,31 +88,38 @@ bool SpectrumPresetLoader::parse_preset_line(const std::string& line, FrequencyP
 
     if (parts.size() < 4) return false;
 
-    try {
-        preset.min_freq_hz = std::stoull(parts[0]);
-        preset.max_freq_hz = std::stoull(parts[1]);
-        preset.label = parts[2];
+    // REPLACEMENT FOR EXCEPTION HANDLING: Use strtoull
+    char* end;
 
-        // Parse threat level
-        std::string threat_str = parts[3];
-        std::transform(threat_str.begin(), threat_str.end(), threat_str.begin(), ::toupper);
+    preset.min_freq_hz = std::strtoull(parts[0].c_str(), &end, 10);
+    if (*end != '\0') return false; // Parsing failed
 
-        if (threat_str == "NONE") preset.default_threat_level = ThreatLevel::NONE;
-        else if (threat_str == "LOW") preset.default_threat_level = ThreatLevel::LOW;
-        else if (threat_str == "MEDIUM") preset.default_threat_level = ThreatLevel::MEDIUM;
-        else if (threat_str == "HIGH") preset.default_threat_level = ThreatLevel::HIGH;
-        else if (threat_str == "CRITICAL") preset.default_threat_level = ThreatLevel::CRITICAL;
+    preset.max_freq_hz = std::strtoull(parts[1].c_str(), &end, 10);
+    if (*end != '\0') return false; // Parsing failed
 
-        // Determine spectrum mode based on range width
-        Frequency range = preset.max_freq_hz - preset.min_freq_hz;
-        if (range > 500000000ULL) preset.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-        else if (range > 100000000ULL) preset.spectrum_mode = SpectrumMode::WIDE;
-        else preset.spectrum_mode = SpectrumMode::MEDIUM;
+    preset.label = parts[2];
 
-        return preset.is_valid();
-    } catch (const std::exception&) {
-        return false;
-    }
+    // Parse threat level
+    std::string threat_str = parts[3];
+    // Simple uppercase conversion
+    for(char & c : threat_str) c = std::toupper((unsigned char)c);
+
+    if (threat_str == "NONE") preset.default_threat_level = ThreatLevel::NONE;
+    else if (threat_str == "LOW") preset.default_threat_level = ThreatLevel::LOW;
+    else if (threat_str == "MEDIUM") preset.default_threat_level = ThreatLevel::MEDIUM;
+    else if (threat_str == "HIGH") preset.default_threat_level = ThreatLevel::HIGH;
+    else if (threat_str == "CRITICAL") preset.default_threat_level = ThreatLevel::CRITICAL;
+    else preset.default_threat_level = ThreatLevel::NONE; // Default
+
+    // Determine spectrum mode based on range width
+    // Fix signed/unsigned warning by casting literals
+    int64_t range = (int64_t)(preset.max_freq_hz - preset.min_freq_hz);
+
+    if (range > (int64_t)500000000) preset.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+    else if (range > (int64_t)100000000) preset.spectrum_mode = SpectrumMode::WIDE;
+    else preset.spectrum_mode = SpectrumMode::MEDIUM;
+
+    return preset.is_valid();
 }
 
 std::string SpectrumPresetLoader::serialize_preset(const FrequencyPreset& preset) const {

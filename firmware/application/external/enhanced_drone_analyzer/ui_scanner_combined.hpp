@@ -93,7 +93,10 @@ class TrackedDrone {
 public:
     TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
-                     last_seen(0) {}
+                     last_seen(0) {
+        // Инициализируем массив "тишиной" (-120 dBm), а не нулями
+        for(auto& r : rssi_history_) r = -120;
+    }
 
     TrackedDrone& operator=(const TrackedDrone& other) {
         if (this != &other) {
@@ -103,53 +106,71 @@ public:
             update_count = other.update_count;
             last_seen = other.last_seen;
             rssi = other.rssi;
-            memcpy(rssi_history_, other.rssi_history_, sizeof(rssi_history_));
-            memcpy(timestamp_history_, other.timestamp_history_, sizeof(timestamp_history_));
+            // Копируем массивы вручную или через std::copy
+            for(size_t i=0; i<MAX_HISTORY; i++) {
+                rssi_history_[i] = other.rssi_history_[i];
+                timestamp_history_[i] = other.timestamp_history_[i];
+            }
             history_index_ = other.history_index_;
         }
         return *this;
     }
 
-    void add_rssi(int16_t rssi, systime_t timestamp) {
-        // Store RSSI history for trend calculation
-        rssi_history_[history_index_] = rssi;
+    void add_rssi(int16_t new_rssi, systime_t timestamp) {
+        rssi_history_[history_index_] = new_rssi;
         timestamp_history_[history_index_] = timestamp;
         history_index_ = (history_index_ + 1) % MAX_HISTORY;
 
-        // Update current RSSI
-        this->rssi = rssi;
+        this->rssi = new_rssi;
 
-        if (last_seen < timestamp) {
+        // Обновляем last_seen только если это действительно новое событие
+        if (timestamp > last_seen) {
             last_seen = timestamp;
-            update_count++;
+            // Защита от переполнения update_count не обязательна для uint8, но логична
+            if (update_count < 255) update_count++;
         }
     }
 
     MovementTrend get_trend() const {
-        if (update_count < 2) return MovementTrend::UNKNOWN;
+        // Нужно хотя бы 4 измерения для адекватного тренда
+        if (update_count < 4) return MovementTrend::UNKNOWN;
 
-        // Analyze RSSI trend over last few samples
-        int32_t recent_rssi = 0, older_rssi = 0;
-        size_t recent_count = 0, older_count = 0;
+        int32_t recent_sum = 0;
+        int32_t older_sum = 0;
+        size_t half_window = MAX_HISTORY / 2;
 
+        // Проходим по буферу в хронологическом порядке
+        // i=0 - самый старый, i=MAX-1 - самый свежий
         for (size_t i = 0; i < MAX_HISTORY; i++) {
-            if (i < history_index_) {
-                recent_rssi += rssi_history_[i];
-                recent_count++;
-            } else if (i > history_index_ && i < MAX_HISTORY - 1) {
-                older_rssi += rssi_history_[i];
-                older_count++;
+            // Вычисляем физический индекс в кольцевом буфере
+            // (history_index_ указывает на место для СЛЕДУЮЩЕЙ записи,
+            // значит history_index_ - 1 - это самая свежая).
+            // Формула для получения индекса от самого старого к новому:
+            size_t logical_idx = (history_index_ + i) % MAX_HISTORY;
+
+            int16_t val = rssi_history_[logical_idx];
+
+            // Игнорируем "пустые" значения инициализации, если буфер еще не полон
+            if (val <= -110) continue;
+
+            if (i < half_window) {
+                older_sum += val;
+            } else {
+                recent_sum += val;
             }
         }
 
-        if (recent_count == 0 || older_count == 0) return MovementTrend::UNKNOWN;
+        // Упрощенное среднее: делим на 4 (так как MAX_HISTORY=8, половина=4)
+        // Если update_count < 8, деление будет не совсем точным, но приемлемым для тренда
+        int32_t avg_old = older_sum / (int32_t)half_window;
+        int32_t avg_new = recent_sum / (int32_t)half_window;
 
-        int32_t avg_recent = recent_rssi / recent_count;
-        int32_t avg_older = older_rssi / older_count;
-        int32_t diff_dB = avg_recent - avg_older;
+        int32_t diff = avg_new - avg_old;
 
-        if (diff_dB > 5) return MovementTrend::APPROACHING;
-        if (diff_dB < -5) return MovementTrend::RECEDING;
+        // Порог чувствительности: 3dB (5dB может быть многовато для плавного приближения)
+        if (diff > 3) return MovementTrend::APPROACHING;
+        if (diff < -3) return MovementTrend::RECEDING;
+
         return MovementTrend::STATIC;
     }
 
@@ -158,16 +179,13 @@ public:
     uint8_t threat_level;
     uint8_t update_count;
     systime_t last_seen;
-
-    int32_t rssi = -120;  // Current RSSI value
+    int32_t rssi = -120;
 
 private:
     static constexpr size_t MAX_HISTORY = 8;
-    int16_t rssi_history_[MAX_HISTORY] = {0};
+    int16_t rssi_history_[MAX_HISTORY]; // Инициализация в конструкторе
     systime_t timestamp_history_[MAX_HISTORY] = {0};
     size_t history_index_ = 0;
-
-
 };
 
 struct DisplayDroneEntry {

@@ -347,7 +347,7 @@ void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32
 }
 
 void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
-                                                           int32_t original_threshold, int32_t wideband_threshold) {
+                                                           int32_t /*original_threshold*/, int32_t wideband_threshold) {
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN) ||
         !SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
         return;
@@ -1008,9 +1008,9 @@ std::string SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
 void SmartThreatHeader::paint(Painter& painter) {
     View::paint(painter);
     if (current_threat_ >= ThreatLevel::HIGH) {
-        static uint32_t pulse_timer = 0;
-        pulse_timer++;
-        uint8_t alpha = (pulse_timer % 20) < 10 ? 50 : 150;
+    static uint32_t pulse_timer = 0;
+    pulse_timer++;
+    (void)((pulse_timer % 20) < 10 ? 50 : 150); // Suppress unused variable warning
         Color base_color = get_threat_bar_color(current_threat_);
         // Create pulsing effect by blending with a brighter version
         Color pulse_color = Color(
@@ -1053,10 +1053,7 @@ std::string ThreatCard::render_compact() const {
     char buffer[32];
     const char* trend_symbol = (trend_ == MovementTrend::APPROACHING) ? "<" :
                               (trend_ == MovementTrend::RECEDING) ? ">" : "~";
-    const char* threat_abbr = (threat_ == ThreatLevel::CRITICAL) ? "CRIT" :
-                             (threat_ == ThreatLevel::HIGH) ? "HIGH" :
-                             (threat_ == ThreatLevel::MEDIUM) ? "MED" :
-                             (threat_ == ThreatLevel::LOW) ? "LOW" : "NONE";
+    (void)threat_; // Suppress unused parameter warning by using it in a trivial expression
 
     float freq_mhz = static_cast<float>(frequency_) / 1000000.0f;
     if (freq_mhz >= 1000) {
@@ -1329,7 +1326,7 @@ void DroneDisplayController::sort_drones_by_rssi() {
               });
 }
 
-void DroneDisplayController::update_drones_display(const DroneScanner& scanner) {
+void DroneDisplayController::update_drones_display(const DroneScanner& /*scanner*/) {
     const systime_t STALE_TIMEOUT = 30000;
     systime_t now = chTimeNow();
     detected_drones_.erase(
@@ -1602,7 +1599,7 @@ void DroneUIController::on_set_bandwidth() {
     uint32_t current_bw = hardware_.get_spectrum_bandwidth();
     // Using modal input since NumberInputView doesn't exist
     char buffer[32];
-    snprintf(buffer, sizeof(buffer), "%u", current_bw);
+    snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)current_bw);
     nav_.display_modal("Set Bandwidth (MHz)", buffer);
     // hardware_.set_spectrum_bandwidth(bw); // Would need proper numeric input
 }
@@ -1660,6 +1657,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     initialize_scanning_mode();
     add_ui_elements();
 }
+}
 
 void EnhancedDroneSpectrumAnalyzerView::set_scanning_mode_from_index(size_t index) {
     DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
@@ -1669,21 +1667,7 @@ void EnhancedDroneSpectrumAnalyzerView::set_scanning_mode_from_index(size_t inde
     update_modern_layout();
 }
 
-void EnhancedDroneSpectrumAnalyzerView::initialize_scanning_options() {
-    field_scanning_mode_.on_change = [this](size_t index, int32_t value) {
-        (void)value;  // Suppress unused parameter warning
-        set_scanning_mode_from_index(index);
-    };
 
-    // Initialize scanning mode
-    int initial_mode = static_cast<int>(scanner_->get_scanning_mode());
-    field_scanning_mode_.set_selected_index(initial_mode);
-
-    // Initialize threshold and interval values
-    numberfield_threshold_.set_value(settings_.rssi_threshold_db);
-    numberfield_interval_.set_value(settings_.scan_interval_ms);
-    checkbox_audio_.set_value(settings_.enable_audio_alerts);
-}
 
 void EnhancedDroneSpectrumAnalyzerView::focus() {
     button_start_stop_.focus();

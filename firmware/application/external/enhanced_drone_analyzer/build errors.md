@@ -1,27 +1,27 @@
 [ 98%] Building CXX object firmware/application/CMakeFiles/application.elf.dir/external/enhanced_drone_analyzer/ui_scanner_combined.cpp.obj
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneScanner::process_wideband_detection_with_override(const freqman_entry&, int32_t, int32_t, int32_t)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:372:68: warning: unused parameter 'original_threshold' [-Wunused-parameter]
-  372 |                                                            int32_t original_threshold, int32_t wideband_threshold) {
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:350:68: warning: unused parameter 'original_threshold' [-Wunused-parameter]
+  350 |                                                            int32_t original_threshold, int32_t wideband_threshold) {
       |                                                            ~~~~~~~~^~~~~~~~~~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In constructor 'ui::external_app::enhanced_drone_analyzer::DroneDetectionLogger::DroneDetectionLogger()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:640:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneDetectionLogger::csv_log_' should be initialized in the member initialization list [-Weffc++]
-  640 | DroneDetectionLogger::DroneDetectionLogger()
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:618:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneDetectionLogger::csv_log_' should be initialized in the member initialization list [-Weffc++]
+  618 | DroneDetectionLogger::DroneDetectionLogger()
       | ^~~~~~~~~~~~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In constructor 'ui::external_app::enhanced_drone_analyzer::DroneHardwareController::DroneHardwareController(SpectrumMode)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:731:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneHardwareController::message_handler_channel_statistics_' should be initialized in the member initialization list [-Weffc++]
-  731 | DroneHardwareController::DroneHardwareController(SpectrumMode mode)
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:709:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneHardwareController::message_handler_channel_statistics_' should be initialized in the member initialization list [-Weffc++]
+  709 | DroneHardwareController::DroneHardwareController(SpectrumMode mode)
       | ^~~~~~~~~~~~~~~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In lambda function:
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:775:110: warning: type qualifiers ignored on cast result type [-Wignored-qualifiers]
-  775 |                 this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage* const>(p));
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:753:110: warning: type qualifiers ignored on cast result type [-Wignored-qualifiers]
+  753 |                 this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage* const>(p));
       |                                                                                                              ^
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'virtual void ui::external_app::enhanced_drone_analyzer::SmartThreatHeader::paint(ui::Painter&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1035:17: warning: unused variable 'alpha' [-Wunused-variable]
- 1035 |         uint8_t alpha = (pulse_timer % 20) < 10 ? 50 : 150;
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1013:17: warning: unused variable 'alpha' [-Wunused-variable]
+ 1013 |         uint8_t alpha = (pulse_timer % 20) < 10 ? 50 : 150;
       |                 ^~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'std::string ui::external_app::enhanced_drone_analyzer::ThreatCard::render_compact() const':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1078:17: warning: unused variable 'threat_abbr' [-Wunused-variable]
- 1078 |     const char* threat_abbr = (threat_ == ThreatLevel::CRITICAL) ? "CRIT" :
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1056:17: warning: unused variable 'threat_abbr' [-Wunused-variable]
+ 1056 |     const char* threat_abbr = (threat_ == ThreatLevel::CRITICAL) ? "CRIT" :
       |                 ^~~~~~~~~~~
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::DroneDisplayController(ui::NavigationView&)':
@@ -31,8 +31,8 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:693:13: warning:   'uint8_t ui::external_app::enhanced_drone_analyzer::DroneDisplayController::min_color_power' [-Wreorder]
   693 |     uint8_t min_color_power = 0;
       |             ^~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1214:1: warning:   when initialized here [-Wreorder]
- 1214 | DroneDisplayController::DroneDisplayController(NavigationView& nav)
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1192:1: warning:   when initialized here [-Wreorder]
+ 1192 | DroneDisplayController::DroneDisplayController(NavigationView& nav)
       | ^~~~~~~~~~~~~~~~~~~~~~
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:700:20: warning: 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::spectrum_config_' will be initialized after [-Wreorder]
@@ -41,8 +41,8 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:689:26: warning:   'ChannelSpectrumFIFO* ui::external_app::enhanced_drone_analyzer::DroneDisplayController::spectrum_fifo_' [-Wreorder]
   689 |     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
       |                          ^~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1214:1: warning:   when initialized here [-Wreorder]
- 1214 | DroneDisplayController::DroneDisplayController(NavigationView& nav)
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1192:1: warning:   when initialized here [-Wreorder]
+ 1192 | DroneDisplayController::DroneDisplayController(NavigationView& nav)
       | ^~~~~~~~~~~~~~~~~~~~~~
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:701:21: warning: 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::nav_' will be initialized after [-Wreorder]
@@ -51,11 +51,11 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:688:14: warning:   'Gradient ui::external_app::enhanced_drone_analyzer::DroneDisplayController::spectrum_gradient_' [-Wreorder]
   688 |     Gradient spectrum_gradient_;
       |              ^~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1214:1: warning:   when initialized here [-Wreorder]
- 1214 | DroneDisplayController::DroneDisplayController(NavigationView& nav)
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1192:1: warning:   when initialized here [-Wreorder]
+ 1192 | DroneDisplayController::DroneDisplayController(NavigationView& nav)
       | ^~~~~~~~~~~~~~~~~~~~~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1214:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::detected_drones_' should be initialized in the member initialization list [-Weffc++]
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1214:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::displayed_drones_' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1192:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::detected_drones_' should be initialized in the member initialization list [-Weffc++]
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1192:1: warning: 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::displayed_drones_' should be initialized in the member initialization list [-Weffc++]
 In file included from /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:5:
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp: In constructor 'DisplayDroneEntry::DisplayDroneEntry()':
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.hpp:173:8: warning: 'DisplayDroneEntry::frequency' should be initialized in the member initialization list [-Weffc++]
@@ -75,74 +75,61 @@ In file included from /havoc/firmware/application/external/enhanced_drone_analyz
    94 |     struct array
       |            ^~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In constructor 'ui::external_app::enhanced_drone_analyzer::DroneDisplayController::DroneDisplayController(ui::NavigationView&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1227:37: note: synthesized method 'std::array<DisplayDroneEntry, 3>::array()' first required here
- 1227 |       nav_(nav), spectrum_gradient_()
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1205:37: note: synthesized method 'std::array<DisplayDroneEntry, 3>::array()' first required here
+ 1205 |       nav_(nav), spectrum_gradient_()
       |                                     ^
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::update_drones_display(const ui::external_app::enhanced_drone_analyzer::DroneScanner&)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1354:72: warning: unused parameter 'scanner' [-Wunused-parameter]
- 1354 | void DroneDisplayController::update_drones_display(const DroneScanner& scanner) {
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1332:72: warning: unused parameter 'scanner' [-Wunused-parameter]
+ 1332 | void DroneDisplayController::update_drones_display(const DroneScanner& scanner) {
       |                                                    ~~~~~~~~~~~~~~~~~~~~^~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneDisplayController::render_drone_text_display()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1399:42: warning: format '%d' expects argument of type 'int', but argument 6 has type 'int32_t' {aka 'long int'} [-Wformat=]
- 1399 |         snprintf(buffer, sizeof(buffer), DRONE_DISPLAY_FORMAT,
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1377:42: warning: format '%d' expects argument of type 'int', but argument 6 has type 'int32_t' {aka 'long int'} [-Wformat=]
+ 1377 |         snprintf(buffer, sizeof(buffer), DRONE_DISPLAY_FORMAT,
       |                                          ^~~~~~~~~~~~~~~~~~~~
 ......
- 1402 |                 drone.rssi,
+ 1380 |                 drone.rssi,
       |                 ~~~~~~~~~~                
       |                       |
       |                       int32_t {aka long int}
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneUIController::on_set_bandwidth()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1627:40: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
- 1627 |     snprintf(buffer, sizeof(buffer), "%u", current_bw);
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1605:40: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
+ 1605 |     snprintf(buffer, sizeof(buffer), "%u", current_bw);
       |                                       ~^   ~~~~~~~~~~
       |                                        |   |
       |                                        |   uint32_t {aka long unsigned int}
       |                                        unsigned int
       |                                       %lu
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::DroneUIController::show_hardware_status()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1641:21: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'long unsigned int' [-Wformat=]
- 1641 |             "Band: %u MHz\nFreq: %.3f GHz",
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1619:21: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'long unsigned int' [-Wformat=]
+ 1619 |             "Band: %u MHz\nFreq: %.3f GHz",
       |                    ~^
       |                     |
       |                     unsigned int
       |                    %lu
- 1642 |             hardware_.get_spectrum_bandwidth() / 1000000,
+ 1620 |             hardware_.get_spectrum_bandwidth() / 1000000,
       |             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       |                                                |
       |                                                long unsigned int
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1786:68: warning: narrowing conversion of 'card_y_pos' from 'size_t' {aka 'unsigned int'} to 'int' [-Wnarrowing]
- 1786 |         threat_cards_[i] = std::make_unique<ThreatCard>(i, Rect{0, card_y_pos, screen_width, 24});
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1757:68: warning: narrowing conversion of 'card_y_pos' from 'size_t' {aka 'unsigned int'} to 'int' [-Wnarrowing]
+ 1757 |         threat_cards_[i] = std::make_unique<ThreatCard>(i, Rect{0, card_y_pos, screen_width, 24});
       |                                                                    ^~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView::handle_scanner_update()':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1828:90: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
- 1828 |                 snprintf(secondary_buffer, sizeof(secondary_buffer), "Total detections: %u", total_detections);
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1799:90: warning: format '%u' expects argument of type 'unsigned int', but argument 4 has type 'uint32_t' {aka 'long unsigned int'} [-Wformat=]
+ 1799 |                 snprintf(secondary_buffer, sizeof(secondary_buffer), "Total detections: %u", total_detections);
       |                                                                                         ~^   ~~~~~~~~~~~~~~~~
       |                                                                                          |   |
       |                                                                                          |   uint32_t {aka long unsigned int}
       |                                                                                          unsigned int
       |                                                                                         %lu
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1858:62: warning: format '%d' expects argument of type 'int', but argument 7 has type 'int32_t' {aka 'long int'} [-Wformat=]
- 1858 |             snprintf(buffer, sizeof(buffer), "%s %c %.1fMHz %ddB",
-      |                                                             ~^
-      |                                                              |
-      |                                                              int
-      |                                                             %ld
- 1859 |                     type_name.c_str(), trend_symbol, freq_mhz, drone.rssi);
-      |                                                                ~~~~~~~~~~
-      |                                                                      |
-      |                                                                      int32_t {aka long int}
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1874:25: warning: unused variable 'empty_text' [-Wunused-variable]
- 1874 |             const char* empty_text = "Drone X: None";
-      |                         ^~~~~~~~~~
 /havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp: In member function 'void ui::external_app::enhanced_drone_analyzer::ConsoleStatusBar::update_scanning_progress(uint32_t, uint32_t, uint32_t)':
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1143:53: warning: ' D:' directive output may be truncated writing 3 bytes into a region of size between 0 and 25 [-Wformat-truncation=]
- 1143 |     snprintf(buffer, sizeof(buffer), "%s %lu%% C:%lu D:%lu",
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1121:53: warning: ' D:' directive output may be truncated writing 3 bytes into a region of size between 0 and 25 [-Wformat-truncation=]
+ 1121 |     snprintf(buffer, sizeof(buffer), "%s %lu%% C:%lu D:%lu",
       |                                                     ^~~
-/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1143:13: note: 'snprintf' output between 12 and 63 bytes into a destination of size 32
- 1143 |     snprintf(buffer, sizeof(buffer), "%s %lu%% C:%lu D:%lu",
+/havoc/firmware/application/external/enhanced_drone_analyzer/ui_scanner_combined.cpp:1121:13: note: 'snprintf' output between 12 and 63 bytes into a destination of size 32
+ 1121 |     snprintf(buffer, sizeof(buffer), "%s %lu%% C:%lu D:%lu",
       |     ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- 1144 |             progress_bar, (unsigned long)progress_percent, (unsigned long)total_cycles, (unsigned long)detections);
+ 1122 |             progress_bar, (unsigned long)progress_percent, (unsigned long)total_cycles, (unsigned long)detections);
       |             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 At global scope:
 cc1plus: warning: unrecognized command line option '-Wno-volatile'

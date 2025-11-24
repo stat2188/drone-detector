@@ -53,15 +53,15 @@ struct AmplifierControl {
     // RF pre-amplifier enable/disable
     bool rf_amp_enabled = false;
 
-    bool is_valid_lna_gain() const { return lna_gain_db >= 0 && lna_gain_db <= 63; }
-    bool is_valid_vga_gain() const { return vga_gain_db >= 0 && vga_gain_db <= 62; }
+    bool is_valid_lna_gain() const { return lna_gain_db <= 63; }
+    bool is_valid_vga_gain() const { return vga_gain_db <= 62; }
 
     void set_lna_gain(uint8_t gain) {
-        if (gain >= 0 && gain <= 63) lna_gain_db = gain;
+        if (gain <= 63) lna_gain_db = gain;
     }
 
     void set_vga_gain(uint8_t gain) {
-        if (gain >= 0 && gain <= 62) vga_gain_db = gain;
+        if (gain <= 62) vga_gain_db = gain;
     }
 };
 
