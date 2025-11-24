@@ -1,9 +1,9 @@
 // enhanced_drone_analyzer_settings_main.cpp - Portapack app entry point for Settings App
 // Integrates settings management with Portapack menu system
 
-#include "../../common/ui.hpp"
-#include "../../ui_navigation.hpp"
-#include "../../common/external_app.hpp"
+#include "ui.hpp"
+#include "ui_navigation.hpp"
+#include "external_app.hpp"
 #include "ui_settings_combined.hpp"
 
 // Define VERSION_MD5 if not defined (build system should provide this)

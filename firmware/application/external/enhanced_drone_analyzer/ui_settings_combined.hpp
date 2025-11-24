@@ -21,10 +21,10 @@ using Frequency = uint64_t;
 #include "ui_scanner_combined.hpp"
 
 // UI framework includes must be outside namespace to avoid nested namespace issues
-#include "../../common/ui.hpp"
-#include "../../ui_navigation.hpp"
-#include "../../ui_tabview.hpp"
-#include "../../app_settings.hpp"
+#include "ui.hpp"
+#include "ui_navigation.hpp"
+#include "ui_tabview.hpp"
+#include "app_settings.hpp"
 
 // ===========================================
 // PART 2: CONFIGURATION STRUCTURES (from ui_drone_config.hpp)

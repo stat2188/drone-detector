@@ -2,7 +2,7 @@
 // Migrated preset loading from Looking Glass, adapted for EDA
 
 #include "ui_spectrum_settings.hpp"
-#include "../../file.hpp"
+#include "file.hpp"
 #include <sstream>
 #include <algorithm>
 #include <cstdio>

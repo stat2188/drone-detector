@@ -21,7 +21,7 @@
 // Ensure SpectrumMode enum is available
 enum class SpectrumMode;
 
-#include "../../gradient.hpp"
+#include "gradient.hpp"
 
 // Fixed include paths for proper compilation
 #include <memory>
@@ -33,29 +33,29 @@ enum class SpectrumMode;
 class AudioManager;
 
 // Include necessary headers for Color and MessageHandlerRegistration - Fixed paths
-#include "../../common/ui.hpp"  // for Color
+#include "ui.hpp"  // for Color
 #include "../event_m0.hpp"   // for MessageHandlerRegistration
-#include "../../common/ui_widget.hpp"  // for Button, Text, OptionsField
-#include "../../common/message.hpp"  // for Message::ID etc
+#include "ui_widget.hpp"  // for Button, Text, OptionsField
+#include "message.hpp"  // for Message::ID etc
 
 // Move includes outside namespace to avoid std pollution
-#include "../../freqman_db.hpp"
-#include "../../log_file.hpp"
+#include "freqman_db.hpp"
+#include "log_file.hpp"
 #include <ch.h>
 
-#include "../../radio_state.hpp"
-#include "../../baseband_api.hpp"
-#include "../../portapack.hpp"
-#include "../../radio.hpp"
-#include "../../common/message.hpp"
-#include "../../irq_controls.hpp"
+#include "radio_state.hpp"
+#include "baseband_api.hpp"
+#include "portapack.hpp"
+#include "radio.hpp"
+#include "message.hpp"
+#include "irq_controls.hpp"
 
-#include "../../common/ui.hpp"
-#include "../../ui_navigation.hpp"
-#include "../../common/ui_widget.hpp"  // For Button, Text, etc.
-#include "../../app_settings.hpp"
-#include "../../string_format.hpp"
-#include "../../tone_key.hpp"
+#include "ui.hpp"
+#include "ui_navigation.hpp"
+#include "ui_widget.hpp"  // For Button, Text, etc.
+#include "app_settings.hpp"
+#include "string_format.hpp"
+#include "tone_key.hpp"
 
 class LogFile;
 
