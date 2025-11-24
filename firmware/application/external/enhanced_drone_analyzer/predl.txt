@@ -1,0 +1,189 @@
+В текущем состоянии код не скомпилируется. В нем отсутствуют реализации объявленных методов, есть проблемы с зависимостями заголовков и логические разрывы между объявлением классов и их использованием.
+
+Основные проблемы
+1. Отсутствующая реализация (Linker Errors)
+В заголовочном файле (.hpp) объявлены классы и статические методы, реализации которых нет в .cpp файле. Компилятор пройдет, но линковщик (linker) выдаст ошибку undefined reference.
+
+SimpleDroneValidation: Класс объявлен, методы validate_frequency_range, classify_signal_strength и др. используются в DroneScanner, но их тела отсутствуют.
+ScannerConfig: Объявлен в .hpp, но методы load_from_file, save_to_file и сеттеры не реализованы.
+DroneDisplayController: Методы get_max_power_for_current_bin, add_spectrum_pixel, get_drone_type_name (версия контроллера), get_drone_type_color объявлены, но не реализованы.
+2. Проблемы с зависимостями и типами (Compiler Errors)
+DroneAnalyzerSettings: Этот тип используется повсеместно (в load_settings_from_sd_card, в контроллере UI), но его определение (struct/class) отсутствует в предоставленном коде. Код ссылается на #include "scanner_settings.hpp", но предполагается, что это "combined" файл.
+ScanningCoordinator: В .hpp файле EnhancedDroneSpectrumAnalyzerView использует std::unique_ptr<ScanningCoordinator>, но класс ScanningCoordinator не определен в .hpp (он определен только в конце .cpp). Необходим Forward Declaration в .hpp.
+AudioManager: В .hpp используется ::AudioManager audio_ как член класса (не указатель). Для этого компилятор должен знать полный размер AudioManager. Если #include "ui_drone_audio.hpp" не содержит полного определения класса, будет ошибка.
+3. Дублирование и конфликты имен
+Redefinition: В начале .hpp определены структуры TrackedDrone, DisplayDroneEntry, константы. Если они также определены в #include "ui_drone_common_types.hpp" (который включен), возникнет ошибка переопределения (redefinition).
+Namespace Hell: Использование using namespace ui; глобально перед пространством имен namespace ui::external_app... может привести к конфликтам имен (например, Button, Text могут конфликтовать с системными, если не аккуратно).
+4. Логические ошибки UI
+Settings: Функция load_settings_from_sd_card пытается парсить файл, но структура DroneAnalyzerSettings не определена внутри файла, что делает функцию бесполезной без внешнего хедера.
+План исправления
+Добавить Forward Declarations: В .hpp добавить class ScanningCoordinator; перед его использованием в std::unique_ptr.
+Определить структуру настроек: Вставить определение struct DroneAnalyzerSettings в .hpp, так как внешнего файла scanner_settings.hpp может не быть.
+Реализовать заглушки (Stubs): Добавить реализации недостающих методов (SimpleDroneValidation, DroneDisplayController helpers) в .cpp.
+Исправить порядок определений: Переместить определение ScanningCoordinator (или его декларацию) так, чтобы оно было видимо там, где используется.
+Очистка Includes: Убрать инклюды несуществующих файлов, если мы делаем "Combined" версию, и определить типы локально.
+Исправленный код (Патч)
+Ниже приведены только необходимые исправления, которые нужно внести в соответствующие файлы, чтобы код скомпилировался.
+
+1. Исправления в ui_scanner_combined.hpp
+Вставьте это в начало пространства имен ui::external_app::enhanced_drone_analyzer (после инклюдов), удалив #include "scanner_settings.hpp", если файла нет.
+
+// [FIX] Forward Declaration for Coordinator used in View
+class ScanningCoordinator; 
+
+// [FIX] Define Settings struct if scanner_settings.hpp is missing
+struct DroneAnalyzerSettings {
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    int32_t rssi_threshold_db = -90;
+    uint32_t scan_interval_ms = 1000;
+    bool enable_audio_alerts = true;
+    
+    void save() { 
+        // Stub implementation for save
+    }
+};
+2. Добавление недостающих реализаций в ui_scanner_combined.cpp
+Добавьте этот код перед реализацией DroneScanner (например, после DetectionRingBuffer):
+
+// ===========================================
+// [FIX] PART 1.5: VALIDATION & HELPER IMPLEMENTATIONS
+// ===========================================
+
+// Implementation of SimpleDroneValidation to fix Linker Errors
+bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
+    return (freq_hz >= 1000000 && freq_hz <= 6000000000ULL);
+}
+
+bool SimpleDroneValidation::validate_rssi_signal(int32_t rssi_db, ThreatLevel threat) {
+    (void)threat;
+    return (rssi_db > -110 && rssi_db < 0); // Basic validation
+}
+
+ThreatLevel SimpleDroneValidation::classify_signal_strength(int32_t rssi_db) {
+    if (rssi_db > -50) return ThreatLevel::CRITICAL;
+    if (rssi_db > -70) return ThreatLevel::HIGH;
+    if (rssi_db > -85) return ThreatLevel::MEDIUM;
+    if (rssi_db > -100) return ThreatLevel::LOW;
+    return ThreatLevel::NONE;
+}
+
+DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
+    (void)rssi_db;
+    // Simple stub logic based on frequency
+    if (freq_hz > 2400000000 && freq_hz < 2483500000) return DroneType::MAVIC;
+    return DroneType::UNKNOWN;
+}
+
+// Implementation of DroneDisplayController Helpers
+std::string DroneDisplayController::get_drone_type_name(DroneType type) const {
+    switch (type) {
+        case DroneType::MAVIC: return "MAVIC";
+        case DroneType::DJI_P34: return "DJI P34";
+        default: return "UNKNOWN";
+    }
+}
+
+Color DroneDisplayController::get_drone_type_color(DroneType type) const {
+    switch (type) {
+        case DroneType::MAVIC: return Color::red();
+        case DroneType::DJI_P34: return Color::orange();
+        default: return Color::white();
+    }
+}
+
+Color DroneDisplayController::get_threat_level_color(ThreatLevel level) const {
+    switch (level) {
+        case ThreatLevel::CRITICAL: return Color::red();
+        case ThreatLevel::HIGH: return Color::orange();
+        case ThreatLevel::MEDIUM: return Color::yellow();
+        case ThreatLevel::LOW: return Color::green();
+        default: return Color::grey();
+    }
+}
+
+std::string DroneDisplayController::get_threat_level_name(ThreatLevel level) const {
+    switch (level) {
+        case ThreatLevel::CRITICAL: return "CRITICAL";
+        case ThreatLevel::HIGH: return "HIGH";
+        case ThreatLevel::MEDIUM: return "MEDIUM";
+        case ThreatLevel::LOW: return "LOW";
+        default: return "NONE";
+    }
+}
+
+void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
+    // Placeholder logic for spectrum processing
+    // In reality, this would map spectrum.db array to the bin
+    (void)spectrum; (void)bin;
+    max_power = 0; 
+}
+
+void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
+    if (pixel_index < spectrum_row.size()) {
+        // Use gradient lut if available, otherwise grayscale
+        if (!spectrum_gradient_.lut.empty()) {
+             // Map power 0-255 to LUT size
+             size_t lut_idx = (power * spectrum_gradient_.lut.size()) / 255;
+             if (lut_idx >= spectrum_gradient_.lut.size()) lut_idx = spectrum_gradient_.lut.size() - 1;
+             spectrum_row[pixel_index] = spectrum_gradient_.lut[lut_idx];
+        } else {
+            spectrum_row[pixel_index] = Color::black();
+        }
+        pixel_index++;
+    }
+}
+
+// ScannerConfig stubs
+ScannerConfig::ScannerConfig(ConfigData config) : config_data_(config) {}
+bool ScannerConfig::load_from_file(const std::string& filepath) { (void)filepath; return false; }
+bool ScannerConfig::save_to_file(const std::string& filepath) const { (void)filepath; return false; }
+void ScannerConfig::set_frequency_range(uint32_t min_hz, uint32_t max_hz) { (void)min_hz; (void)max_hz; }
+void ScannerConfig::set_rssi_threshold(int32_t threshold) { config_data_.rssi_threshold_db = threshold; }
+void ScannerConfig::set_scan_interval(uint32_t interval_ms) { config_data_.scan_interval_ms = interval_ms; }
+void ScannerConfig::set_audio_alerts(bool enabled) { config_data_.enable_audio_alerts = enabled; }
+void ScannerConfig::set_freqman_path(const std::string& path) { config_data_.freqman_path = path; }
+void ScannerConfig::set_scanning_mode(const std::string& mode) { (void)mode; }
+bool ScannerConfig::is_valid() const { return true; }
+3. Исправление UI контроллера
+В методе on_manage_frequencies, on_create_new_database и других в DroneUIController, которые объявлены в .hpp (внутри private секции), но отсутствуют в .cpp, нужно либо добавить реализации, либо (проще) удалить объявления из .hpp, если они не используются в DroneUIController.
+
+В текущем .cpp есть методы on_load_frequency_file, on_save_settings и т.д.
+В .hpp объявлены дополнительные:
+
+void on_manage_frequencies(); // Missing impl
+void on_create_new_database(); // Missing impl
+void on_frequency_warning(); // Missing impl
+// ... и другие
+Решение: Удалите нереализованные объявления из class DroneUIController в файле ui_scanner_combined.hpp, либо добавьте пустые тела в .cpp:
+
+void DroneUIController::on_manage_frequencies() {}
+void DroneUIController::on_create_new_database() {}
+void DroneUIController::on_frequency_warning() {}
+void DroneUIController::show_system_status() {}
+void DroneUIController::show_performance_stats() {}
+void DroneUIController::show_debug_info() {}
+void DroneUIController::select_spectrum_mode(SpectrumMode mode) { (void)mode; }
+void DroneUIController::on_spectrum_range_config() {}
+void DroneUIController::on_add_preset_quick() {}
+void DroneUIController::show_current_bandwidth() {}
+void DroneUIController::show_current_center_freq() {}
+void DroneUIController::on_set_bandwidth_config() {}
+void DroneUIController::on_set_center_freq_config() {}
+void DroneUIController::set_bandwidth_from_menu(uint32_t bandwidth_hz) { (void)bandwidth_hz; }
+void DroneUIController::set_center_freq_from_menu(Frequency center_freq) { (void)center_freq; }
+void DroneUIController::add_preset_to_scanner(const DronePreset& preset) { (void)preset; }
+void DroneUIController::on_load_settings() {}
+void DroneUIController::on_save_frequency() {}
+void DroneUIController::on_toggle_audio_simple() {}
+void DroneUIController::on_audio_toggle() {}
+void DroneUIController::on_advanced_settings() {}
+void DroneUIController::on_open_settings() {}
+void DroneUIController::on_open_constant_settings() {}
+void DroneUIController::on_select_language() {}
+Итоговая рекомендация
+Для успешной компиляции этот код требует PortaPack Firmware build environment.
+
+Поместите исправленный .hpp в firmware/application/ui/external_app/enhanced_drone_analyzer/.
+Поместите .cpp туда же.
+Убедитесь, что ui_drone_audio.hpp существует (или закомментируйте ::AudioManager и используйте заглушку, если аудио не критично для этапа сборки).
+Примените блок исправлений №2 (реализация SimpleDroneValidation и ScannerConfig) в тело .cpp файла, иначе линковка упадет.

@@ -33,7 +33,7 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     static const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
     File settings_file;
-    auto open_result = settings_file.open(SETTINGS_FILE_PATH);
+    auto open_result = settings_file.open(std::filesystem::path(SETTINGS_FILE_PATH));
     if (!open_result) {
         return false;
     }
@@ -340,8 +340,8 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         int32_t slice_rssi = hardware.get_real_rssi_from_hardware(current_slice.center_frequency);
         if (slice_rssi > DEFAULT_RSSI_THRESHOLD_DB) {
             freqman_entry fake_entry{
-                .frequency_a = current_slice.center_frequency,
-                .frequency_b = current_slice.center_frequency,
+                .frequency_a = static_cast<int64_t>(current_slice.center_frequency),
+                .frequency_b = static_cast<int64_t>(current_slice.center_frequency),
                 .description = "Wideband Detection",
                 .type = freqman_type::Single,
                 .modulation = freqman_invalid_index,
@@ -692,8 +692,9 @@ std::string DroneDetectionLogger::format_csv_entry(const DetectionLogEntry& entr
     char buffer[128];
     memset(buffer, 0, sizeof(buffer));
     snprintf(buffer, sizeof(buffer) - 1,
-             "%lu,%lu,%d,%u,%u,%u,%.2f\n",
-             static_cast<unsigned long>(entry.timestamp), static_cast<unsigned long>(entry.frequency_hz), entry.rssi_db,
+             "%lu,%lu,%ld,%u,%u,%u,%.2f\n",
+             static_cast<unsigned long>(entry.timestamp), static_cast<unsigned long>(entry.frequency_hz),
+             (long int)entry.rssi_db,
              static_cast<uint8_t>(entry.threat_level),
              static_cast<uint8_t>(entry.drone_type),
              entry.detection_count, entry.confidence_score);
@@ -713,9 +714,9 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
     char summary_buffer[512];
     memset(summary_buffer, 0, sizeof(summary_buffer));
     int ret = snprintf(summary_buffer, sizeof(summary_buffer) - 1,
-    "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\nDuration: %.1f seconds\nScan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\nAvg. detections/cycle: %.2f\nDetection rate: %.1f/sec\nLogged entries: %u\n\nEnhanced Drone Analyzer v0.3",
+    "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\nDuration: %.1f seconds\nScan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\nAvg. detections/cycle: %.2f\nDetection rate: %.1f/sec\nLogged entries: %lu\n\nEnhanced Drone Analyzer v0.3",
         static_cast<float>(session_duration_ms) / 1000.0f, scan_cycles, total_detections,
-        avg_detections_per_cycle, detections_per_second, logged_count_);
+        avg_detections_per_cycle, detections_per_second, (unsigned long)logged_count_);
 
     if (ret < 0 || ret >= static_cast<int>(sizeof(summary_buffer))) {
         return std::string("SCANNING COMPLETE\nCycles: ") + std::to_string(scan_cycles) +
@@ -729,8 +730,9 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
 // ===========================================
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
-    : radio_state_(), spectrum_streaming_active_(false), last_valid_rssi_(-120),
-      spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000)
+    : message_handler_spectrum_config_(nullptr), message_handler_frame_sync_(nullptr), message_handler_spectrum_(nullptr),
+      spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
+      radio_state_(), fifo_(nullptr), spectrum_streaming_active_(false), last_valid_rssi_(-120)
 {
     // Initialize message handlers - these will be properly set up in initialize_spectrum_collector
 }
@@ -1060,11 +1062,11 @@ std::string ThreatCard::render_compact() const {
     float freq_mhz = static_cast<float>(frequency_) / 1000000.0f;
     if (freq_mhz >= 1000) {
         freq_mhz /= 1000;
-        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5.1fG %4ddB",
-                threat_name_.c_str(), *trend_symbol, freq_mhz, rssi_);
+        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5.1fG %4lddB",
+                threat_name_.c_str(), *trend_symbol, freq_mhz, (long int)rssi_);
     } else {
-        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5.0fM %4ddB",
-                threat_name_.c_str(), *trend_symbol, freq_mhz, rssi_);
+        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5.0fM %4lddB",
+                threat_name_.c_str(), *trend_symbol, freq_mhz, (long int)rssi_);
     }
     return std::string(buffer);
 }
@@ -1189,7 +1191,7 @@ void ConsoleStatusBar::paint(Painter& painter) {
 }
 
 DroneDisplayController::DroneDisplayController(NavigationView& nav)
-    : nav_(nav), spectrum_gradient_{}, big_display_({4, 6 * 16, 28 * 8, 52}, ""),
+    : big_display_({4, 6 * 16, 28 * 8, 52}, ""),
       scanning_progress_({0, 7 * 16, screen_width, 8}),
       text_threat_summary_({0, 8 * 16, screen_width, 16}, "THREAT: NONE"),
       text_status_info_({0, 9 * 16, screen_width, 16}, "Ready"),
@@ -1200,7 +1202,8 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
       text_drone_3_({screen_width - 120, 14 * 16, 120, 16}, ""),
       spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
       pixel_index(0), bins_hz_size(0), each_bin_size(100000), marker_pixel_step(1000000), min_color_power(0),
-      mode(LOOKING_GLASS_SINGLEPASS), spectrum_config_(), spectrum_fifo_(nullptr)
+      mode(LOOKING_GLASS_SINGLEPASS), spectrum_config_(), spectrum_fifo_(nullptr),
+      nav_(nav), spectrum_gradient_()
 {
     // Initialize displayed_drones_ array
     for (auto& drone : displayed_drones_) {
