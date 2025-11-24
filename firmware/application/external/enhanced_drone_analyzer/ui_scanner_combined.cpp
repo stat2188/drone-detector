@@ -1656,18 +1656,16 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     setup_button_handlers();
     initialize_scanning_mode();
     add_ui_elements();
-}
+    update_modern_layout();
 }
 
 void EnhancedDroneSpectrumAnalyzerView::set_scanning_mode_from_index(size_t index) {
     DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
     scanner_->set_scanning_mode(mode);
     display_controller_->set_scanning_status(ui_controller_->is_scanning(),
-                                           scanner_->scanning_mode_name());
+                                             scanner_->scanning_mode_name());
     update_modern_layout();
 }
-
-
 
 void EnhancedDroneSpectrumAnalyzerView::focus() {
     button_start_stop_.focus();
@@ -1798,11 +1796,11 @@ void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
     button_start_stop_.on_select = [this](Button&) {
         handle_start_stop_button();
     };
-    button_menu_.on_select = [this](Button&) {
+    button_menu_.on_select = [this](Button&) -> void {
         ui_controller_->show_menu();
     };
 
-    field_scanning_mode_.on_change = [this](size_t index, int32_t value) {
+    field_scanning_mode_.on_change = [this](size_t index, int32_t value) -> void {
         (void)value;  // Suppress unused parameter warning
         set_scanning_mode_from_index(index);
     };
