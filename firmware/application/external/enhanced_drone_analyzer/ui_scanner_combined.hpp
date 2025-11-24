@@ -712,83 +712,13 @@ private:
     };
 
     // Add missing methods for drone type/color lookup
-    std::string get_drone_type_name(DroneType type) const {
-        switch (type) {
-            case DroneType::MAVIC: return "MAVIC";
-            case DroneType::DJI_P34: return "DJI P34";
-            case DroneType::UNKNOWN: default: return "UNKNOWN";
-        }
-    }
+    std::string get_drone_type_name(DroneType type) const;
+    Color get_drone_type_color(DroneType type) const;
+    Color get_threat_level_color(ThreatLevel level) const;
+    std::string get_threat_level_name(ThreatLevel level) const;
 
-    Color get_drone_type_color(DroneType type) const {
-        switch (type) {
-            case DroneType::MAVIC: return Color::red();
-            case DroneType::DJI_P34: return Color::orange();
-            case DroneType::UNKNOWN: default: return Color::white();
-        }
-    }
-
-    Color get_threat_level_color(ThreatLevel level) const {
-        switch (level) {
-            case ThreatLevel::CRITICAL: return Color::red();
-            case ThreatLevel::HIGH: return Color(255, 140, 0);
-            case ThreatLevel::MEDIUM: return Color::yellow();
-            case ThreatLevel::LOW: return Color::green();
-            case ThreatLevel::NONE:
-            default: return Color::white();
-        }
-    }
-
-    std::string get_threat_level_name(ThreatLevel level) const {
-        switch (level) {
-            case ThreatLevel::CRITICAL: return "CRITICAL";
-            case ThreatLevel::HIGH: return "HIGH";
-            case ThreatLevel::MEDIUM: return "MEDIUM";
-            case ThreatLevel::LOW: return "LOW";
-            case ThreatLevel::NONE:
-            default: return "NONE";
-        }
-    }
-
-    void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
-        if (mode == LOOKING_GLASS_SINGLEPASS) {
-            if (bin < 120) {
-                if (spectrum.db[SPEC_NB_BINS - 120 + bin] > max_power)
-                    max_power = spectrum.db[SPEC_NB_BINS - 120 + bin];
-            } else {
-                if (spectrum.db[bin - 120] > max_power)
-                    max_power = spectrum.db[bin - 120];
-            }
-        } else {
-            if (bin < 120) {
-                if (spectrum.db[134 + bin] > max_power)
-                    max_power = spectrum.db[134 + bin];
-            } else {
-                if (spectrum.db[bin - 118] > max_power)
-                    max_power = spectrum.db[bin - 118];
-            }
-        }
-    }
-
-    void add_spectrum_pixel(uint8_t power) {
-        if (!validate_spectrum_data()) {
-            clear_spectrum_buffers();
-            return;
-        }
-        if (pixel_index < spectrum_row.size()) {
-            Color pixel_color = spectrum_gradient_.lut[
-                std::min(static_cast<size_t>(power), spectrum_gradient_.lut.size() - 1)
-            ];
-            for (size_t i = 0; i < threat_bins_count_; i++) {
-                if (threat_bins_[i].bin == pixel_index) {
-                    pixel_color = get_threat_level_color(threat_bins_[i].threat);
-                    break;
-                }
-            }
-            spectrum_row[pixel_index] = pixel_color;
-            pixel_index++;
-        }
-    }
+    void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power);
+    void add_spectrum_pixel(uint8_t power);
 };
 
 // Missing constants referenced in implementation

@@ -145,27 +145,7 @@ DroneScanner::~DroneScanner() {
     cleanup_database_and_scanner();
 }
 
-void DroneScanner::initialize_database_and_scanner() {
-    freqman_load_options options;
-    options.max_entries = 150;
-    options.load_freqs = true;
-    options.load_ranges = true;
-    options.load_hamradios = true;
-    options.load_repeaters = true;
 
-    // Load data into our vector instead of FreqmanDB
-    if (!load_freqman_file("DRONES", drone_database_, options)) {
-        // Continue without enhanced drone data
-    }
-}
-
-void DroneScanner::cleanup_database_and_scanner() {
-    if (scanning_thread_) {
-        scanning_active_ = false;
-        chThdWait(scanning_thread_);
-        scanning_thread_ = nullptr;
-    }
-}
 
 void DroneScanner::initialize_wideband_scanning() {
     wideband_scan_data_.reset();
@@ -620,27 +600,7 @@ void DroneScanner::switch_to_demo_mode() {
     is_real_mode_ = false;
 }
 
-void DroneScanner::initialize_database_and_scanner() {
-    freqman_load_options options;
-    options.max_entries = 150;
-    options.load_freqs = true;
-    options.load_ranges = true;
-    options.load_hamradios = true;
-    options.load_repeaters = true;
 
-    // Load data into our vector instead of FreqmanDB
-    if (!load_freqman_file("DRONES", drone_database_, options)) {
-        // Continue without enhanced drone data
-    }
-}
-
-void DroneScanner::cleanup_database_and_scanner() {
-    if (scanning_thread_) {
-        scanning_active_ = false;
-        chThdWait(scanning_thread_);
-        scanning_thread_ = nullptr;
-    }
-}
 
 void DroneScanner::scan_init_from_loaded_frequencies() {
     // Implementation for initializing scan from loaded frequencies
@@ -718,7 +678,7 @@ bool DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
 bool DroneDetectionLogger::ensure_csv_header() {
     if (header_written_) return true;
     const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence\n";
-    auto error = csv_log_.append(std::filesystem::path(generate_log_filename()));
+    auto error = csv_log_.append(generate_log_filename());
     if (error && !error->ok()) return false;
     error = csv_log_.write_raw(header);
     if (error && error->ok()) {
@@ -906,7 +866,7 @@ using namespace ui;
 SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
     : View(parent_rect),
       threat_progress_bar_({0, 0, screen_width, 16}),
-      threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | ▲0 ■0 ▼0"),
+      threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | <0 ~0 >0"),
       threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING") {
     add_children({&threat_progress_bar_, &threat_status_main_, &threat_frequency_});
     update(ThreatLevel::NONE, 0, 0, 0, 2400000000ULL, false);
@@ -927,10 +887,10 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     char buffer[64];
     std::string threat_name = get_threat_icon_text(max_threat);
     if (total_drones > 0) {
-        snprintf(buffer, sizeof(buffer), "THREAT: %s | ▲%zu ■%zu ▼%zu",
+        snprintf(buffer, sizeof(buffer), "THREAT: %s | <%zu ~%zu >%zu",
                 threat_name.c_str(), approaching, static_count, receding);
     } else if (is_scanning) {
-        snprintf(buffer, sizeof(buffer), "SCANNING: ▲%zu ■%zu ▼%zu",
+        snprintf(buffer, sizeof(buffer), "SCANNING: <%zu ~%zu >%zu",
                 approaching, static_count, receding);
     } else {
         snprintf(buffer, sizeof(buffer), "READY");
@@ -1035,12 +995,12 @@ Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
 
 std::string SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
     switch (level) {
-        case ThreatLevel::CRITICAL: return "CRITICAL 🔴";
-        case ThreatLevel::HIGH: return "HIGH 🟠";
-        case ThreatLevel::MEDIUM: return "MEDIUM 🟡";
-        case ThreatLevel::LOW: return "LOW 🟢";
+        case ThreatLevel::CRITICAL: return "CRITICAL";
+        case ThreatLevel::HIGH: return "HIGH";
+        case ThreatLevel::MEDIUM: return "MEDIUM";
+        case ThreatLevel::LOW: return "LOW";
         case ThreatLevel::NONE:
-        default: return "CLEAR ✅";
+        default: return "CLEAR";
     }
 }
 
@@ -1090,8 +1050,8 @@ std::string ThreatCard::render_compact() const {
     if (!is_active_) return "";
 
     char buffer[32];
-    const char* trend_symbol = (trend_ == MovementTrend::APPROACHING) ? "▲" :
-                              (trend_ == MovementTrend::RECEDING) ? "▼" : "■";
+    const char* trend_symbol = (trend_ == MovementTrend::APPROACHING) ? "<" :
+                              (trend_ == MovementTrend::RECEDING) ? ">" : "~";
     const char* threat_abbr = (threat_ == ThreatLevel::CRITICAL) ? "CRIT" :
                              (threat_ == ThreatLevel::HIGH) ? "HIGH" :
                              (threat_ == ThreatLevel::MEDIUM) ? "MED" :
@@ -1100,10 +1060,10 @@ std::string ThreatCard::render_compact() const {
     float freq_mhz = static_cast<float>(frequency_) / 1000000.0f;
     if (freq_mhz >= 1000) {
         freq_mhz /= 1000;
-        snprintf(buffer, sizeof(buffer), "🛰️ %-10s %c %5.1fG %4ddB",
+        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5.1fG %4ddB",
                 threat_name_.c_str(), *trend_symbol, freq_mhz, rssi_);
     } else {
-        snprintf(buffer, sizeof(buffer), "🛰️ %-10s %c %5.0fM %4ddB",
+        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5.0fM %4ddB",
                 threat_name_.c_str(), *trend_symbol, freq_mhz, rssi_);
     }
     return std::string(buffer);
@@ -1150,10 +1110,10 @@ ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
 void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles, uint32_t detections) {
     set_display_mode(DisplayMode::SCANNING);
 
-    char progress_bar[25] = "░░░░░░░░";
+    char progress_bar[25] = "--------";
     uint8_t filled = (progress_percent * 8) / 100;
     for (uint8_t i = 0; i < filled; i++) {
-        progress_bar[i] = '█';
+        progress_bar[i] = '=';
     }
 
     char buffer[32];
@@ -1165,7 +1125,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
     if (detections > 0) {
         set_display_mode(DisplayMode::ALERT);
         char alert_buffer[64];
-        snprintf(alert_buffer, sizeof(alert_buffer), "⚠️ DETECTED: %u threats found!", detections);
+        snprintf(alert_buffer, sizeof(alert_buffer), "[!] DETECTED: %lu threats found!", static_cast<unsigned long>(detections));
         alert_text_.set(alert_buffer);
         alert_text_.set_style(Theme::getInstance()->fg_red);
     }
@@ -1175,7 +1135,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
 void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_drones, const std::string& alert_msg) {
     set_display_mode(DisplayMode::ALERT);
 
-    const char* icons[5] = {"ℹ️", "⚠️", "🟠", "🔴", "🚨"};
+    const char* icons[5] = {"(i)", "[!]", "[O]", "[X]", "[!!!]"};
     size_t icon_idx = std::min(static_cast<size_t>(threat), size_t(4));
 
     char buffer[64];
@@ -1280,7 +1240,7 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
 
     if (has_detections) {
         char summary_buffer[64];
-        snprintf(summary_buffer, sizeof(summary_buffer), "THREAT: %s | ▲%zu ■%zu ▼%zu",
+        snprintf(summary_buffer, sizeof(summary_buffer), "THREAT: %s | <%zu ~%zu >%zu",
                 get_threat_level_name(max_threat), scanner.get_approaching_count(),
                 scanner.get_static_count(), scanner.get_receding_count());
         text_threat_summary_.set(summary_buffer);
@@ -1293,8 +1253,8 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     char status_buffer[64];
     if (scanner.is_scanning_active()) {
         std::string mode_str = scanner.is_real_mode() ? "REAL" : "DEMO";
-        snprintf(status_buffer, sizeof(status_buffer), "%s - Detections: %u",
-                mode_str.c_str(), scanner.get_total_detections());
+        snprintf(status_buffer, sizeof(status_buffer), "%s - Detections: %lu",
+                mode_str.c_str(), static_cast<unsigned long>(scanner.get_total_detections()));
     } else {
         snprintf(status_buffer, sizeof(status_buffer), "Ready - Enhanced Drone Analyzer");
     }
@@ -1304,8 +1264,8 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     char stats_buffer[64];
     if (scanner.is_scanning_active() && loaded_freqs > 0) {
         size_t current_idx = 0;
-        snprintf(stats_buffer, sizeof(stats_buffer), "Freq: %zu/%zu | Cycle: %u",
-                current_idx + 1, loaded_freqs, scanner.get_scan_cycles());
+        snprintf(stats_buffer, sizeof(stats_buffer), "Freq: %zu/%zu | Cycle: %lu",
+                current_idx + 1, loaded_freqs, static_cast<unsigned long>(scanner.get_scan_cycles()));
     } else if (loaded_freqs > 0) {
         snprintf(stats_buffer, sizeof(stats_buffer), "Loaded: %zu frequencies", loaded_freqs);
     } else {
@@ -1397,11 +1357,11 @@ void DroneDisplayController::render_drone_text_display() {
         char buffer[32];
         char trend_symbol;
         switch (drone.trend) {
-            case MovementTrend::APPROACHING: trend_symbol = '▲'; break;
-            case MovementTrend::RECEDING: trend_symbol = '▼'; break;
+            case MovementTrend::APPROACHING: trend_symbol = '<'; break;
+            case MovementTrend::RECEDING: trend_symbol = '>'; break;
             case MovementTrend::STATIC:
             case MovementTrend::UNKNOWN:
-            default: trend_symbol = '■'; break;
+            default: trend_symbol = '~'; break;
         }
         std::string freq_str;
         if (drone.frequency >= 1000000000) {
@@ -1471,45 +1431,6 @@ bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
     return false;
 }
 
-void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
-    if (mode == LOOKING_GLASS_SINGLEPASS) {
-        if (bin < 120) {
-            if (spectrum.db[SPEC_NB_BINS - 120 + bin] > max_power)
-                max_power = spectrum.db[SPEC_NB_BINS - 120 + bin];
-        } else {
-            if (spectrum.db[bin - 120] > max_power)
-                max_power = spectrum.db[bin - 120];
-        }
-    } else {
-        if (bin < 120) {
-            if (spectrum.db[134 + bin] > max_power)
-                max_power = spectrum.db[134 + bin];
-        } else {
-            if (spectrum.db[bin - 118] > max_power)
-                max_power = spectrum.db[bin - 118];
-        }
-    }
-}
-
-void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
-    if (!validate_spectrum_data()) {
-        clear_spectrum_buffers();
-        return;
-    }
-    if (pixel_index < spectrum_row.size()) {
-        Color pixel_color = spectrum_gradient_.lut.size() > 0 ?
-            spectrum_gradient_.lut[std::min(power, static_cast<uint8_t>(spectrum_gradient_.lut.size() - 1))] :
-            Color::black();
-        for (size_t i = 0; i < threat_bins_count_; i++) {
-            if (threat_bins_[i].bin == pixel_index) {
-                pixel_color = get_threat_level_color(threat_bins_[i].threat);
-                break;
-            }
-        }
-        spectrum_row[pixel_index] = pixel_color;
-        pixel_index++;
-    }
-}
 
 void DroneDisplayController::render_mini_spectrum() {
     if (!validate_spectrum_data()) {
@@ -1583,43 +1504,6 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
     return std::min(bin, MINI_SPECTRUM_WIDTH - 1);
 }
 
-std::string DroneDisplayController::get_threat_level_name(ThreatLevel level) const {
-    switch (level) {
-        case ThreatLevel::CRITICAL: return "CRITICAL";
-        case ThreatLevel::HIGH: return "HIGH";
-        case ThreatLevel::MEDIUM: return "MEDIUM";
-        case ThreatLevel::LOW: return "LOW";
-        case ThreatLevel::NONE:
-        default: return "NONE";
-    }
-}
-
-std::string DroneDisplayController::get_drone_type_name(DroneType type) const {
-    switch (type) {
-        case DroneType::MAVIC: return "MAVIC";
-        case DroneType::DJI_P34: return "DJI P34";
-        case DroneType::UNKNOWN: default: return "UNKNOWN";
-    }
-}
-
-Color DroneDisplayController::get_drone_type_color(DroneType type) const {
-    switch (type) {
-        case DroneType::MAVIC: return Color::red();
-        case DroneType::DJI_P34: return Color::orange();
-        case DroneType::UNKNOWN: default: return Color::white();
-    }
-}
-
-Color DroneDisplayController::get_threat_level_color(ThreatLevel level) const {
-    switch (level) {
-        case ThreatLevel::CRITICAL: return Color::red();
-        case ThreatLevel::HIGH: return Color(255, 140, 0);
-        case ThreatLevel::MEDIUM: return Color::yellow();
-        case ThreatLevel::LOW: return Color::green();
-        case ThreatLevel::NONE:
-        default: return Color::white();
-    }
-}
 
 DroneUIController::DroneUIController(NavigationView& nav,
                                    DroneHardwareController& hardware,
@@ -1907,7 +1791,7 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     if (status_bar_) {
         if (is_scanning) {
             uint32_t cycles = scanner_->get_scan_cycles();
-            uint32_t progress = std::min(cycles * 5, 100u);
+            uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), 100u);
             status_bar_->update_scanning_progress(progress, cycles, total_detections);
         } else if (approaching + static_count + receding > 0) {
             size_t total_drones = approaching + static_count + receding;
@@ -1940,12 +1824,12 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
                 default: type_name = "UNKNOWN"; break;
             }
 
-            char trend_symbol = '■'; // Static by default
+            char trend_symbol = '~'; // Static by default
             MovementTrend trend = drone.get_trend();
             switch (trend) {
-                case MovementTrend::APPROACHING: trend_symbol = '▲'; break;
-                case MovementTrend::RECEDING: trend_symbol = '▼'; break;
-                default: trend_symbol = '■'; break;
+                case MovementTrend::APPROACHING: trend_symbol = '<'; break;
+                case MovementTrend::RECEDING: trend_symbol = '>'; break;
+                default: trend_symbol = '~'; break;
             }
 
             float freq_mhz = static_cast<float>(drone.frequency) / 1000000.0f;
@@ -2026,8 +1910,7 @@ LoadingScreenView::LoadingScreenView(NavigationView& nav)
     set_focusable(false);
 }
 
-LoadingScreenView::~LoadingScreenView() {
-}
+
 
 void LoadingScreenView::paint(Painter& painter) {
     painter.fill_rectangle(
