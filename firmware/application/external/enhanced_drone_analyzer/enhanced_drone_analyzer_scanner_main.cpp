@@ -42,15 +42,7 @@ using namespace portapack;
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-// Forward declarations that may be needed
-class DroneHardwareController;
-class DroneScanner;
-struct DroneAnalyzerSettings;
-class ScanningCoordinator;
-class AudioManager;
- class DroneUIController;
-class DroneDisplayController;
-class EnhancedDroneSpectrumAnalyzerView;
+// Classes are defined in included headers - no forward declarations needed
 
 
 

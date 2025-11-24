@@ -30,7 +30,9 @@ public:
     void show_session_summary(const std::string& summary);
 
     ScanningCoordinator(const ScanningCoordinator&) = delete;
+    ScanningCoordinator(ScanningCoordinator&&) = delete;
     ScanningCoordinator& operator=(const ScanningCoordinator&) = delete;
+    ScanningCoordinator& operator=(ScanningCoordinator&&) = delete;
 
 private:
     static msg_t scanning_thread_function(void* arg);

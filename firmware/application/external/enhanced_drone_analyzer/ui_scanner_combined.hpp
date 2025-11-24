@@ -386,7 +386,9 @@ public:
     size_t get_total_memory_usage() const { return 0; } // placeholder
 
     DroneScanner(const DroneScanner&) = delete;
+    DroneScanner(DroneScanner&&) = delete;
     DroneScanner& operator=(const DroneScanner&) = delete;
+    DroneScanner& operator=(DroneScanner&&) = delete;
 
     // Utility functions for UI
     std::string get_drone_type_name(DroneType type) const {
