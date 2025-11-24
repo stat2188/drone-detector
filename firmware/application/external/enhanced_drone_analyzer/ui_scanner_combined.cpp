@@ -183,46 +183,22 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
 }
 
 void DroneScanner::start_scanning() {
-    if (scanning_active_ || scanning_thread_ != nullptr) return;
+    if (scanning_active_) return;
 
     scanning_active_ = true;
     scan_cycles_ = 0;
     total_detections_ = 0;
-
-    scanning_thread_ = chThdCreateFromHeap(NULL, SCANNING_THREAD_STACK_SIZE,
-                                          NORMALPRIO,
-                                          scanning_thread_function, this);
-    if (!scanning_thread_) {
-        scanning_active_ = false;
-    }
+    // No thread creation - scanning is now passive and driven externally
 }
 
 void DroneScanner::stop_scanning() {
     if (!scanning_active_) return;
 
     scanning_active_ = false;
-    if (scanning_thread_) {
-        chThdWait(scanning_thread_);
-        scanning_thread_ = nullptr;
-    }
     remove_stale_drones();
 }
 
-msg_t DroneScanner::scanning_thread_function(void* arg) {
-    auto* self = static_cast<DroneScanner*>(arg);
-    return self->scanning_thread();
-}
-
-msg_t DroneScanner::scanning_thread() {
-    while (scanning_active_) {
-        chThdSleepMilliseconds(MIN_SCAN_INTERVAL_MS);
-        scan_cycles_++;
-    }
-    scanning_active_ = false;
-    scanning_thread_ = nullptr;
-    chThdExit(MSG_OK);
-    return MSG_OK;
-}
+// Removed thread functions as DroneScanner is now passive
 
 bool DroneScanner::load_frequency_database() {
     current_db_index_ = 0;
@@ -337,6 +313,8 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
 
     const WidebandSlice& current_slice = wideband_scan_data_.slices[wideband_scan_data_.slice_counter];
     if (hardware.tune_to_frequency(current_slice.center_frequency)) {
+        // Add settling delay after frequency change
+        chThdSleepMilliseconds(5);
         int32_t slice_rssi = hardware.get_real_rssi_from_hardware(current_slice.center_frequency);
         if (slice_rssi > DEFAULT_RSSI_THRESHOLD_DB) {
             freqman_entry fake_entry{
@@ -1669,13 +1647,6 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
       field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
       text_status_({10, 20, 240, 16}, "EDA Ready"),
-      text_drone_info1_({10, 180, 240, 16}, "Drone 1: None"),
-      text_drone_info2_({10, 200, 240, 16}, "Drone 2: None"),
-      text_drone_info3_({10, 220, 240, 16}, "Drone 3: None"),
-      text_detection_count_({10, 40, 240, 16}, "Detections: 0"),
-      checkbox_audio_({{10, 60}, 20, ""}),
-      numberfield_threshold_({100, 40}, 4, {-120, 0}, 5, ' ', false),
-      numberfield_interval_({100, 70}, 5, {100, 10000}, 100, ' ', false),
       scanning_active_(false),
       settings_()
 {
@@ -1833,61 +1804,7 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
         }
     }
 
-    // Simplified: Update drone info using existing text fields
-    for (size_t i = 0; i < 3; ++i) {
-        const auto& drone = scanner_->getTrackedDrone(i);
-        if (drone.update_count > 0) {
-            // Prepare display info
-            char buffer[64];
-            std::string type_name = "UNKNOWN";
-            switch (static_cast<DroneType>(drone.drone_type)) {
-                case DroneType::MAVIC: type_name = "MAVIC"; break;
-                case DroneType::DJI_P34: type_name = "DJI P34"; break;
-                default: type_name = "UNKNOWN"; break;
-            }
-
-            char trend_symbol = '~'; // Static by default
-            MovementTrend trend = drone.get_trend();
-            switch (trend) {
-                case MovementTrend::APPROACHING: trend_symbol = '<'; break;
-                case MovementTrend::RECEDING: trend_symbol = '>'; break;
-                default: trend_symbol = '~'; break;
-            }
-
-            float freq_mhz = static_cast<float>(drone.frequency) / 1000000.0f;
-            snprintf(buffer, sizeof(buffer), "%s %c %.1fMHz %ddB",
-                    type_name.c_str(), trend_symbol, freq_mhz, drone.rssi);
-
-            switch(i) {
-                case 0:
-                    text_drone_info1_.set(buffer);
-                    break;
-                case 1:
-                    text_drone_info2_.set(buffer);
-                    break;
-                case 2:
-                    text_drone_info3_.set(buffer);
-                    break;
-            }
-        } else {
-            // Clear drone info
-            const char* empty_text = "Drone X: None";
-            char empty_buffer[32];
-            snprintf(empty_buffer, sizeof(empty_buffer), "Drone %zu: None", i + 1);
-
-            switch(i) {
-                case 0:
-                    text_drone_info1_.set(empty_buffer);
-                    break;
-                case 1:
-                    text_drone_info2_.set(empty_buffer);
-                    break;
-                case 2:
-                    text_drone_info3_.set(empty_buffer);
-                    break;
-            }
-        }
-    }
+    // Drone info is now handled by ThreatCard components - no legacy text fields
 
     if (display_controller_) {
         display_controller_->update_detection_display(*scanner_);
