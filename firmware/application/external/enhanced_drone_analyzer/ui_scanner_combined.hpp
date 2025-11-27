@@ -190,14 +190,14 @@ private:
 };
 
 struct DisplayDroneEntry {
-    Frequency frequency;
-    DroneType type;
-    ThreatLevel threat;
-    int32_t rssi;
-    systime_t last_seen;
-    std::string type_name;
-    Color display_color;
-    MovementTrend trend;
+    Frequency frequency = 0;
+    DroneType type = DroneType::UNKNOWN;
+    ThreatLevel threat = ThreatLevel::NONE;
+    int32_t rssi = -120;
+    systime_t last_seen = 0;
+    std::string type_name = "";
+    Color display_color = Color::white();
+    MovementTrend trend = MovementTrend::UNKNOWN;
 };
 
 struct DronePreset {
