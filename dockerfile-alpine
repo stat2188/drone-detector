@@ -23,7 +23,7 @@ ENV LANG C.UTF-8
 ENV LC_ALL C.UTF-8
 
 CMD cd /havocsrc && \
-        chmod +x firmware/tools/export_external_apps.py && \
-        mkdir build && cd build && \
+        mkdir build && cd build && \ 
         cmake .. && make firmware && \
         cp /portapack-havoc/firmware/portapack-h1-havoc.bin /havocbin
+
