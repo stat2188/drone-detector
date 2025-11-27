@@ -1,490 +1,49 @@
-Анализ проблем
-Multiple Definitions (Множественные определения):
-
-Функции в заголовочных файлах (ui_drone_common_types.hpp, scanner_settings.hpp) определены без ключевого слова inline. Поскольку эти заголовки включаются в несколько единиц трансляции (_scanner_main.cpp и _settings_main.cpp), линковщик видит дубликаты.
-Статическая переменная AudioAlertManager::audio_enabled_ определена в заголовке.
-Глобальные объекты global_detection_ring и local_detection_ring определены и в ui_scanner_combined.cpp, и в ui_signal_processing.cpp.
-Undefined Reference (Неопределенная ссылка):
-
-Метод DroneDisplayController::set_scanning_status объявлен в классе, но его реализация отсутствует в ui_scanner_combined.cpp.
-Warnings (Предупреждения -Weffc++):
-
-Отсутствует инициализация членов структуры SpectrumAnalyzerSettings в списке инициализации конструктора.
-Исправленные файлы
-Ниже приведен код исправленных файлов.
-
-1. ui_drone_common_types.hpp
-Добавляем inline ко всем методам класса Translator, чтобы избежать множественных определений при включении заголовка в разные .cpp файлы.
-
-#pragma once
-
-#include <cstdint>
-#include <string>
-#include <vector>
-#include "ch.h"
-
-// SpectrumMode forward declare
-enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE, ULTRA_NARROW };
-
-// DroneAnalyzerSettings struct
-struct DroneAnalyzerSettings {
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    uint32_t scan_interval_ms = 1000;
-    int32_t rssi_threshold_db = -90;
-    bool enable_audio_alerts = true;
-    uint16_t audio_alert_frequency_hz = 800;
-    uint32_t audio_alert_duration_ms = 500;
-    uint32_t hardware_bandwidth_hz = 24000000;
-    bool enable_real_hardware = true;
-    bool demo_mode = false;
-    
-    // Additional members required by settings parser
-    std::string freqman_path = "DRONES";
-    std::string settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-    bool enable_wideband_scanning = false;
-    uint64_t wideband_min_freq_hz = 2400000000ULL;
-    uint64_t wideband_max_freq_hz = 2500000000ULL;
-    uint64_t min_frequency_hz = 2400000000ULL;
-    uint64_t max_frequency_hz = 2500000000ULL;
-    bool show_detailed_info = true;
-    bool auto_save_logs = true;
-    std::string log_file_path = "/eda_logs";
-};
-
-// DroneAnalyzerSettingsManager class
-class DroneAnalyzerSettingsManager {
-public:
-    static bool load_settings(DroneAnalyzerSettings& settings);
-    static bool save_settings(const DroneAnalyzerSettings& settings);
-    static void reset_to_defaults(DroneAnalyzerSettings& settings);
-
-private:
-    static std::string get_settings_path();
-    static bool parse_line(const std::string& line, DroneAnalyzerSettings& settings);
-};
-
-// Implementations marked as inline to prevent ODR violations
-inline std::string DroneAnalyzerSettingsManager::get_settings_path() {
-    return "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-}
-
-inline void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
-    settings.spectrum_mode = SpectrumMode::MEDIUM;
-    settings.scan_interval_ms = 1000;
-    settings.rssi_threshold_db = -90;
-    settings.enable_audio_alerts = true;
-    settings.audio_alert_frequency_hz = 800;
-    settings.audio_alert_duration_ms = 500;
-    settings.hardware_bandwidth_hz = 24000000;
-    settings.enable_real_hardware = true;
-    settings.demo_mode = false;
-}
-
-inline bool DroneAnalyzerSettingsManager::parse_line(const std::string& line, DroneAnalyzerSettings& settings) {
-    size_t equals_pos = line.find('=');
-    if (equals_pos == std::string::npos) return false;
-    std::string key = line.substr(0, equals_pos);
-    std::string value = line.substr(equals_pos + 1);
-
-    // Trim whitespace
-    key.erase(0, key.find_first_not_of(" \t"));
-    if (key.length() > 0) key.erase(key.find_last_not_of(" \t") + 1);
-    value.erase(0, value.find_first_not_of(" \t"));
-    if (value.length() > 0) value.erase(value.find_last_not_of(" \t") + 1);
-
-    if (key == "spectrum_mode") {
-        if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-        else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
-        else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-        else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-        return true;
-    } else if (key == "scan_interval_ms") {
-        settings.scan_interval_ms = std::stoul(value);
-        return true;
-    } else if (key == "rssi_threshold_db") {
-        settings.rssi_threshold_db = std::stoi(value);
-        return true;
-    } else if (key == "enable_audio_alerts") {
-        settings.enable_audio_alerts = (value == "true");
-        return true;
-    }
-    return false;
-}
-
-inline bool DroneAnalyzerSettingsManager::load_settings(DroneAnalyzerSettings& settings) {
-    reset_to_defaults(settings);
-    return true;
-}
-
-inline bool DroneAnalyzerSettingsManager::save_settings(const DroneAnalyzerSettings& settings) {
-    (void)settings;
-    return false;
-}
-
-// Enhanced enums for EDA
-enum class ThreatLevel {
-    NONE = 0,
-    LOW = 1,
-    MEDIUM = 2,
-    HIGH = 3,
-    CRITICAL = 4,
-    UNKNOWN = 5
-};
-
-enum class DroneType {
-    UNKNOWN = 0,
-    MAVIC = 1,
-    DJI_P34 = 2,
-    PHANTOM = 3,
-    DJI_MINI = 4,
-    PARROT_ANAFI = 5,
-    PARROT_BEBOP = 6,
-    PX4_DRONE = 7,
-    MILITARY_DRONE = 8
-};
-
-enum class MovementTrend {
-    STATIC = 0,
-    APPROACHING = 1,
-    RECEDING = 2,
-    UNKNOWN = 3
-};
-
-enum class Language {
-    ENGLISH,
-    RUSSIAN
-};
-
-class Translator {
-public:
-    static void set_language(Language lang);
-    static Language get_language();
-    static const char* translate(const std::string& key);
-    static const char* get_translation(const std::string& key);
-
-private:
-    static Language current_language_;
-    static const char* get_english(const std::string& key);
-    static const char* get_russian(const std::string& key);
-};
-
-// Inline implementations to avoid multiple definition linker errors
-inline Language Translator::current_language_ = Language::ENGLISH;
-
-inline const char* Translator::get_english(const std::string& key) {
-    if (key == "load_database") return "Load Database";
-    if (key == "save_frequency") return "Save Frequency";
-    if (key == "advanced") return "Advanced";
-    if (key == "constant_settings") return "Constant Settings";
-    if (key == "select_language") return "Select Language";
-    if (key == "about_author") return "About Author";
-    if (key == "english") return "English";
-    if (key == "russian") return "Russian";
-    if (key == "english_selected") return "Language updated to English";
-    if (key == "russian_selected") return "Язык изменен на русский";
-    return key.c_str();
-}
-
-inline const char* Translator::get_russian(const std::string& key) {
-    if (key == "load_database") return "Загрузить БД";
-    if (key == "save_frequency") return "Сохранить частоту";
-    if (key == "advanced") return "Расширенные";
-    if (key == "constant_settings") return "Постоянные настройки";
-    if (key == "select_language") return "Выбрать язык";
-    if (key == "about_author") return "Об авторе";
-    if (key == "english") return "Английский";
-    if (key == "russian") return "Русский";
-    if (key == "english_selected") return "Language updated to English";
-    if (key == "russian_selected") return "Язык изменен на русский";
-    return key.c_str();
-}
-
-inline void Translator::set_language(Language lang) {
-    current_language_ = lang;
-}
-
-inline Language Translator::get_language() {
-    return current_language_;
-}
-
-inline const char* Translator::translate(const std::string& key) {
-    return get_translation(key);
-}
-
-inline const char* Translator::get_translation(const std::string& key) {
-    if (current_language_ == Language::RUSSIAN) {
-        return get_russian(key);
-    } else {
-        return get_english(key);
-    }
-}
-
-static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-static constexpr msg_t MSG_OK = 0;
-2. scanner_settings.hpp
-Добавляем inline к функциям пространства имен ScannerSettingsManager и исправляем дубликаты.
-
-#ifndef __SCANNER_SETTINGS_HPP__
-#define __SCANNER_SETTINGS_HPP__
-
-#include <string>
-#include <sstream>
-#include <algorithm>
-#include <cstdint>
-#include "file.hpp"
-#include "ui_drone_common_types.hpp"
-
-// Forward declarations
-enum class SpectrumMode;
-using ScanFile = File;
-
-namespace ScannerSettingsManager {
-
-    // Template declarations
-    template<typename T> T validate_range(T value, T min_val, T max_val);
-
-    // Function declarations
-    inline void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
-    inline ::SpectrumMode parse_spectrum_mode(const std::string& value);
-    inline std::string trim_line(const std::string& line);
-    inline bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line);
-    inline bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content);
-    inline bool load_from_txt_impl(const std::string& filepath, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
-
-    // Public interface (marked inline)
-    inline bool load_settings_from_txt(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
-        const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-        bool settings_loaded = load_from_txt_impl(filepath, settings);
-        if (!settings_loaded) {
-            reset_to_defaults(settings);
-        }
-        return settings_loaded;
-    }
-
-    // Implementation (marked inline)
-    inline bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content) {
-        std::istringstream iss(content);
-        std::string line;
-        int parsed_count = 0;
-        while (std::getline(iss, line)) {
-            auto trimmed_line = trim_line(line);
-            if (trimmed_line.empty() || trimmed_line[0] == '#') continue;
-            if (parse_key_value(settings, trimmed_line)) parsed_count++;
-        }
-        return parsed_count > 3;
-    }
-
-    inline bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line) {
-        size_t equals_pos = line.find('=');
-        if (equals_pos == std::string::npos) return false;
-        std::string key = trim_line(line.substr(0, equals_pos));
-        std::string value = trim_line(line.substr(equals_pos + 1));
-
-        if (key == "spectrum_mode") {
-            settings.spectrum_mode = parse_spectrum_mode(value);
-            return true;
-        } else if (key == "scan_interval_ms") {
-            settings.scan_interval_ms = validate_range<uint32_t>(
-                static_cast<uint32_t>(std::stoul(value)), 100U, 5000U);
-            return true;
-        } else if (key == "rssi_threshold_db") {
-            settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
-            return true;
-        } else if (key == "enable_audio_alerts") {
-            settings.enable_audio_alerts = (value == "true");
-            return true;
-        }
-        // Additional fields can be added here
-        return false;
-    }
-
-    inline void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
-        // Reset to reasonable defaults
-        settings.spectrum_mode = ::SpectrumMode::MEDIUM;
-        settings.scan_interval_ms = 712;
-        settings.rssi_threshold_db = -80;
-        settings.enable_audio_alerts = true;
-        settings.audio_alert_frequency_hz = 800;
-        settings.audio_alert_duration_ms = 200;
-        settings.hardware_bandwidth_hz = 24000000;
-        settings.enable_real_hardware = true;
-        settings.demo_mode = false;
-        settings.freqman_path = "DRONES";
-    }
-
-    inline ::SpectrumMode parse_spectrum_mode(const std::string& value) {
-        if (value == "NARROW") return ::SpectrumMode::NARROW;
-        if (value == "MEDIUM") return ::SpectrumMode::MEDIUM;
-        if (value == "WIDE") return ::SpectrumMode::WIDE;
-        if (value == "ULTRA_WIDE") return ::SpectrumMode::ULTRA_WIDE;
-        return ::SpectrumMode::MEDIUM;
-    }
-
-    inline std::string trim_line(const std::string& line) {
-        auto start = std::find_if_not(line.begin(), line.end(), ::isspace);
-        auto end = std::find_if_not(line.rbegin(), line.rend(), ::isspace).base();
-        return (start < end) ? std::string(start, end) : std::string();
-    }
-
-    template<typename T>
-    T validate_range(T value, T min_val, T max_val) {
-        if (value < min_val) return min_val;
-        if (value > max_val) return max_val;
-        return value;
-    }
-
-    inline bool load_from_txt_impl(const std::string& filepath, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
-        ScanFile txt_file;
-        if (!txt_file.open(filepath)) { // removed read_only parameter if not supported by API wrapper
-            reset_to_defaults(settings);
-            return false;
-        }
-        std::string file_content;
-        file_content.resize(txt_file.size());
-        auto read_result = txt_file.read(file_content.data(), txt_file.size());
-        txt_file.close();
-        
-        if (read_result.is_error()) {
-             reset_to_defaults(settings);
-             return false;
-        }
-        
-        return parse_settings_content(settings, file_content);
-    }
-
-}  // namespace ScannerSettingsManager
-
-#endif // __SCANNER_SETTINGS_HPP__
-3. ui_drone_audio.hpp
-Используем inline static для переменной audio_enabled_, чтобы решить проблему множественного определения.
-
-#ifndef __UI_DRONE_AUDIO_HPP__
-#define __UI_DRONE_AUDIO_HPP__
-
-#include <stdint.h>
-#include "baseband_api.hpp"
-#include "ui_drone_common_types.hpp"
-
-struct AudioAlertManager {
-    static void play_alert(ThreatLevel level) {
-        if (!audio_enabled_) return;
-
-        uint16_t freq_hz = 800;
-        switch (level) {
-            case ThreatLevel::NONE: return; 
-            case ThreatLevel::LOW: freq_hz = 800; break;
-            case ThreatLevel::MEDIUM: freq_hz = 1200; break;
-            case ThreatLevel::HIGH: freq_hz = 1200; break;
-            case ThreatLevel::CRITICAL: freq_hz = 2000; break;
-            default: freq_hz = 800; break;
-        }
-        baseband::request_audio_beep(freq_hz, 24000, 200);
-    }
-
-    static void set_enabled(bool enable) { audio_enabled_ = enable; }
-    static bool is_enabled() { return audio_enabled_; }
-
-private:
-    // Inline definition for C++17 (Mayhem standard) to allow header inclusion in multiple TUs
-    inline static bool audio_enabled_ = true;
-};
-
-class AudioManager {
-public:
-    AudioManager() : audio_enabled_(true) {}
-    ~AudioManager() {}
-
-    bool is_audio_enabled() const { return AudioAlertManager::is_enabled(); }
-    void toggle_audio() { AudioAlertManager::set_enabled(!AudioAlertManager::is_enabled()); }
-    void play_detection_beep(ThreatLevel threat) { AudioAlertManager::play_alert(threat); }
-    void stop_audio() { }
-
-private:
-    bool audio_enabled_;
-};
-
-#endif // __UI_DRONE_AUDIO_HPP__
-4. ui_scanner_combined.cpp
-Удаляем дублирующиеся определения global_detection_ring и добавляем реализацию set_scanning_status.
-
-// ... includes ...
-#include "ui_scanner_combined.hpp"
-#include "ui_drone_audio.hpp"
-// ... other includes ...
-
-namespace ui::external_app::enhanced_drone_analyzer {
-
-// ... (Loading settings function) ...
-
-// REMOVED: DetectionRingBuffer definitions (they are now in ui_signal_processing.cpp)
-// DetectionRingBuffer global_detection_ring;
-// DetectionRingBuffer& local_detection_ring = global_detection_ring;
-
-// ... (DroneScanner implementation) ...
-
-// ===========================================
-// IMPLEMENTATION: DroneDisplayController::set_scanning_status
-// ===========================================
-void DroneDisplayController::set_scanning_status(bool active, const std::string& message) {
-    if (active) {
-        text_status_info_.set("SCAN: " + message);
-        text_status_info_.set_style(Theme::getInstance()->fg_green);
-    } else {
-        text_status_info_.set("STOP: " + message);
-        // Use a color that exists in Theme, falling back to white/light
-        text_status_info_.set_style(Theme::getInstance()->fg_white);
-    }
-}
-
-// ... (Rest of the file) ...
-5. ui_spectrum_settings.hpp
-Исправляем предупреждения конструктора, добавляя явную инициализацию.
-
-// ... imports ...
-
-struct SpectrumAnalyzerSettings {
-    // Initialize in default constructor to satisfy -Weffc++
-    SpectrumAnalyzerSettings() :
-        preset_ranges(),
-        current_preset_index(0),
-        iq_calibration(),
-        amplifiers(),
-        range_lock(),
-        live_frequency_view_display(true),
-        trigger_level(32),
-        scan_mode(0),
-        current_min_freq(2400000000ULL),
-        current_max_freq(2500000000ULL)
-    {
-    }
-
-    // Preset management
-    std::vector<FrequencyPreset> preset_ranges;
-    size_t current_preset_index;
-
-    // IQ calibration
-    IQCalibrationSettings iq_calibration;
-
-    // Amplifier controls
-    AmplifierControl amplifiers;
-
-    // Range locking
-    RangeLockSettings range_lock;
-
-    // UI state
-    bool live_frequency_view_display;
-    uint8_t trigger_level;
-    uint8_t scan_mode;
-
-    // Frequency range
-    Frequency current_min_freq;
-    Frequency current_max_freq;
-
-    // ... methods ...
-};
-// ...
-6. ui_signal_processing.hpp
-Убеждаемся, что здесь только объявления extern.
+Анализ проблем компиляции Enhanced Drone Analyzer (EDA)
+Проведя анализ предоставленного кода и лога ошибок, выявлено нарушение принципа One Definition Rule (ODR) и архитектурных паттернов Mayhem Firmware.
+
+Основные проблемы:
+Множественное определение методов (Redefinition):
+
+В файле ui_signal_processing.hpp методы класса DetectionRingBuffer (update_detection, get_detection_count, и др.) определены (реализованы) прямо внутри объявления класса (inline-реализация).
+В файле ui_signal_processing.cpp эти же методы реализованы повторно.
+В файле ui_scanner_combined.cpp (строки ~90-116) эти методы реализованы в третий раз.
+Компилятор C++ запрещает иметь реализацию функции в заголовке (если она не inline) и одновременно в .cpp файле. Даже если они идентичны, это ошибка линковки или компиляции.
+Множественное определение класса:
+
+Класс DetectionRingBuffer полностью объявлен в ui_signal_processing.hpp.
+Он же объявлен (повторно) в ui_scanner_combined.hpp (строки 235-251).
+Он же объявлен в ui_scanner_combined.cpp (строки 85-89).
+Проблемы с пространствами имен (Namespace):
+
+Ошибки definition of '...' is not in namespace enclosing ... возникают из-за того, что заголовочный файл определяет класс в одном контексте (или глобально, если namespace закрыт некорректно), а .cpp пытается реализовать его внутри ui::external_app::enhanced_drone_analyzer.
+Нарушение паттернов Mayhem:
+
+В Mayhem Firmware принято разделять объявление (.hpp) и реализацию (.cpp) для нешаблонных классов.
+Дублирование кода между "combined" файлом и модульными файлами (ui_signal_processing) недопустимо.
+План исправления
+Для устранения ошибок необходимо устранить дублирование и привести структуру к модульному виду.
+
+Очистка ui_signal_processing.hpp:
+
+Оставить только объявления методов класса DetectionRingBuffer. Убрать тела функций.
+Убедиться, что класс находится внутри namespace ui::external_app::enhanced_drone_analyzer.
+Исправление ui_signal_processing.cpp:
+
+Оставить реализации методов.
+Убедиться, что они находятся внутри того же namespace.
+Определить глобальный экземпляр global_detection_ring.
+Чистка ui_scanner_combined.hpp:
+
+Удалить повторное определение class DetectionRingBuffer.
+Удалить повторное определение struct DetectionEntry.
+Вместо этого использовать #include "ui_signal_processing.hpp".
+Чистка ui_scanner_combined.cpp:
+
+Удалить секцию "PART 1: DETECTION RING BUFFER IMPLEMENTATION".
+Удалить локальное определение DetectionRingBuffer и его методов.
+Реализация исправлений
+1. Исправленный ui_signal_processing.hpp
+Убираем реализацию методов, оставляем только сигнатуры.
 
 #ifndef __UI_SIGNAL_PROCESSING_HPP__
 #define __UI_SIGNAL_PROCESSING_HPP__
@@ -494,9 +53,43 @@ struct SpectrumAnalyzerSettings {
 #include <ch.h>
 #include "ui_drone_common_types.hpp"
 
+namespace ui::external_app::enhanced_drone_analyzer {
+
+// Signal processing constants
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 
-// ... (DetectionRingBuffer class definition) ...
+// WidebandMedianFilter implementation can stay in header if intended to be inline/template-like, 
+// or moved to cpp. Keeping inline for simplicity as it is a helper.
+class WidebandMedianFilter {
+private:
+    static constexpr size_t WINDOW_SIZE = 11;
+    std::array<int16_t, WINDOW_SIZE> window_{};
+    size_t head_ = 0;
+    bool full_ = false;
+
+public:
+    void add_sample(int16_t rssi) {
+        window_[head_] = rssi;
+        head_ = (head_ + 1) % WINDOW_SIZE;
+        if (head_ == 0) full_ = true;
+    }
+
+    int16_t get_median_threshold() const {
+        if (!full_) return DEFAULT_RSSI_THRESHOLD_DB;
+
+        auto temp = window_;
+        // Simple bubble sort for small window
+        for (size_t i = 0; i < WINDOW_SIZE / 2 + 1; ++i) {
+            for (size_t j = 0; j < WINDOW_SIZE - 1; ++j) {
+                if (temp[j] > temp[j + 1]) std::swap(temp[j], temp[j + 1]);
+            }
+        }
+        return temp[WINDOW_SIZE / 2] - HYSTERESIS_MARGIN_DB;
+    }
+
+    void reset() { full_ = false; head_ = 0; window_ = {}; }
+};
+
 struct DetectionEntry {
     size_t frequency_hash;
     uint8_t detection_count;
@@ -507,37 +100,50 @@ struct DetectionEntry {
 class DetectionRingBuffer {
 public:
     static constexpr size_t MAX_ENTRIES = 32;
-    DetectionRingBuffer() = default;
-    // ... implementation ...
+
+    DetectionRingBuffer();
+    ~DetectionRingBuffer() = default;
+
     void update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
     uint8_t get_detection_count(size_t frequency_hash) const;
     int32_t get_rssi_value(size_t frequency_hash) const;
     void clear();
+
+    DetectionRingBuffer(const DetectionRingBuffer&) = delete;
+    DetectionRingBuffer& operator=(const DetectionRingBuffer&) = delete;
+
 private:
     std::array<DetectionEntry, MAX_ENTRIES> entries_{};
     size_t head_ = 0;
 };
 
-// EXTERN declarations only
+// EXTERN declarations
 extern DetectionRingBuffer global_detection_ring;
-// Alias reference
 extern DetectionRingBuffer& local_detection_ring;
 
+} // namespace ui::external_app::enhanced_drone_analyzer
+
 #endif // __UI_SIGNAL_PROCESSING_HPP__
-7. ui_signal_processing.cpp
-В этом файле должны быть единственные определения глобальных объектов.
+2. Исправленный ui_signal_processing.cpp
+Реализуем методы здесь. Убираем дублирование заголовков.
 
 #include "ui_signal_processing.hpp"
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-// Global Definitions
+// Global Instance Definition
 DetectionRingBuffer global_detection_ring;
 DetectionRingBuffer& local_detection_ring = global_detection_ring;
 
-// Implementation of DetectionRingBuffer methods if not fully inlined in class
+// Constructor
+DetectionRingBuffer::DetectionRingBuffer() : entries_{}, head_(0) {
+    clear();
+}
+
 void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) {
     systime_t current_time = chTimeNow();
+
+    // Find existing entry
     for (auto& entry : entries_) {
         if (entry.frequency_hash == frequency_hash) {
             entry.rssi_value = rssi_value;
@@ -546,6 +152,8 @@ void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detect
             return;
         }
     }
+
+    // Add new entry (overwrite oldest)
     entries_[head_] = {frequency_hash, detection_count, rssi_value, current_time};
     head_ = (head_ + 1) % MAX_ENTRIES;
 }
@@ -565,12 +173,60 @@ int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const {
             return entry.rssi_value;
         }
     }
-    return -120;
+    return -120; // Default silence value
 }
 
 void DetectionRingBuffer::clear() {
-    entries_ = {};
+    // Reset array with default values
+    for(auto& entry : entries_) {
+        entry = DetectionEntry{0, 0, -120, 0};
+    }
     head_ = 0;
 }
 
 } // namespace ui::external_app::enhanced_drone_analyzer
+3. Исправления в ui_scanner_combined.hpp
+Вам нужно удалить блоки кода, которые конфликтуют.
+
+Удалить (строки ~230-260):
+
+// ===========================================
+// PART 3: SCANNER CLASSES (from ui_drone_scanner.hpp)
+// ===========================================
+
+namespace ui::external_app::enhanced_drone_analyzer {
+
+class DetectionRingBuffer {
+    // ... весь блок класса ...
+} __attribute__((aligned(4)));
+
+extern DetectionRingBuffer global_detection_ring;
+extern DetectionRingBuffer& local_detection_ring;
+Заменить на:
+
+// PART 3: SCANNER CLASSES
+#include "ui_signal_processing.hpp" 
+4. Исправления в ui_scanner_combined.cpp
+Удалить реализацию, так как она теперь в ui_signal_processing.cpp.
+
+Удалить (строки ~80-116):
+
+// ===========================================
+// PART 1: DETECTION RING BUFFER IMPLEMENTATION
+// ===========================================
+
+DetectionRingBuffer::DetectionRingBuffer()
+    : detection_counts_{}, rssi_values_{}
+{
+    clear();
+}
+
+// ... update_detection ...
+// ... get_detection_count ...
+// ... get_rssi_value ...
+// ... clear ...
+Почему это исправит ошибку?
+Redefinition Error: Мы убрали тело функций из .hpp. Теперь .hpp содержит только обещание (прототип), что функции существуют.
+Namespace Error: Мы явно обернули реализацию в ui_signal_processing.cpp в корректное пространство имен ui::external_app::enhanced_drone_analyzer.
+Linker Error (в будущем): Мы убрали дублирующие реализации из ui_scanner_combined.cpp, оставив только одну "истину" в ui_signal_processing.cpp.
+Примените эти изменения, и ошибки компиляции, связанные с DetectionRingBuffer, исчезнут.

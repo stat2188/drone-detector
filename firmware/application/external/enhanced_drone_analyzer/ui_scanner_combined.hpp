@@ -326,27 +326,6 @@ public:
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-class DetectionRingBuffer {
-public:
-    DetectionRingBuffer();
-    ~DetectionRingBuffer() = default;
-
-    void update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
-    uint8_t get_detection_count(size_t frequency_hash) const;
-    int32_t get_rssi_value(size_t frequency_hash) const;
-    void clear();
-
-    DetectionRingBuffer(const DetectionRingBuffer&) = delete;
-    DetectionRingBuffer& operator=(const DetectionRingBuffer&) = delete;
-
-private:
-    uint8_t detection_counts_[DETECTION_TABLE_SIZE] = {0};
-    int32_t rssi_values_[DETECTION_TABLE_SIZE] = {0};
-} __attribute__((aligned(4)));
-
-extern DetectionRingBuffer global_detection_ring;
-extern DetectionRingBuffer& local_detection_ring;
-
 class DroneDetectionLogger {
 public:
     DroneDetectionLogger();

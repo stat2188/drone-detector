@@ -71,41 +71,7 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     return true;
 }
 
-// ===========================================
-// PART 1: DETECTION RING BUFFER IMPLEMENTATION
-// ===========================================
 
-
-
-DetectionRingBuffer::DetectionRingBuffer()
-    : detection_counts_{}, rssi_values_{}
-{
-    clear();
-}
-
-void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) {
-    const size_t index = frequency_hash % DETECTION_TABLE_SIZE;
-    detection_counts_[index] = detection_count;
-    rssi_values_[index] = rssi_value;
-}
-
-uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const {
-    const size_t index = frequency_hash % DETECTION_TABLE_SIZE;
-    return detection_counts_[index];
-}
-
-int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const {
-    const size_t index = frequency_hash % DETECTION_TABLE_SIZE;
-    return rssi_values_[index];
-}
-
-void DetectionRingBuffer::clear() {
-    memset(detection_counts_, 0, sizeof(detection_counts_));
-    memset(rssi_values_, 0, sizeof(rssi_values_));
-    for (size_t i = 0; i < DETECTION_TABLE_SIZE; i++) {
-        rssi_values_[i] = -120;
-    }
-}
 
 // ===========================================
 // PART 2: DRONE SCANNER IMPLEMENTATION

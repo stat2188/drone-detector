@@ -6,7 +6,36 @@ namespace ui::external_app::enhanced_drone_analyzer {
 DetectionRingBuffer global_detection_ring;
 DetectionRingBuffer& local_detection_ring = global_detection_ring;
 
-// Implementation of DetectionRingBuffer methods if not fully inlined in class
+// WidebandMedianFilter implementations
+void WidebandMedianFilter::add_sample(int16_t rssi) {
+    window_[head_] = rssi;
+    head_ = (head_ + 1) % WINDOW_SIZE;
+    if (head_ == 0) full_ = true;
+}
+
+int16_t WidebandMedianFilter::get_median_threshold() const {
+    if (!full_) return DEFAULT_RSSI_THRESHOLD_DB;
+
+    auto temp = window_;
+    for (size_t i = 0; i < WINDOW_SIZE / 2 + 1; ++i) {
+        for (size_t j = 0; j < WINDOW_SIZE - 1; ++j) {
+            if (temp[j] > temp[j + 1]) std::swap(temp[j], temp[j + 1]);
+        }
+    }
+    return temp[WINDOW_SIZE / 2] - HYSTERESIS_MARGIN_DB;
+}
+
+void WidebandMedianFilter::reset() {
+    full_ = false;
+    head_ = 0;
+    window_ = {};
+}
+
+// DetectionRingBuffer implementations
+DetectionRingBuffer::DetectionRingBuffer() : entries_{}, head_(0) {
+    clear();
+}
+
 void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) {
     systime_t current_time = chTimeNow();
     for (auto& entry : entries_) {
@@ -40,7 +69,9 @@ int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const {
 }
 
 void DetectionRingBuffer::clear() {
-    entries_ = {};
+    for (auto& entry : entries_) {
+        entry = DetectionEntry{0, 0, -120, 0};
+    }
     head_ = 0;
 }
 
