@@ -882,11 +882,15 @@ void DroneHardwareController::update_spectrum_for_scanner() {
     // This method is called by the scanning coordinator
 }
 
+using namespace portapack;
+using namespace tonekey;
+#include <ch.h>
+
+namespace ui::external_app::enhanced_drone_analyzer {
+
 // ===========================================
 // PART 4: UI IMPLEMENTATIONS
 // ===========================================
-
-using namespace ui;
 
 
 SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
@@ -1665,9 +1669,9 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       smart_header_(std::make_unique<SmartThreatHeader>(Rect{0, 0, screen_width, 48})),
       status_bar_(std::make_unique<ConsoleStatusBar>(0, Rect{0, screen_height - 32, screen_width, 16})),
       threat_cards_(),
-      button_start_stop_({screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"),
-      button_menu_({screen_width - 80, screen_height - 24, 72, 24}, "MENU"),
-      field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
+      button_start_stop_({{screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"}),
+      button_menu_({{screen_width - 80, screen_height - 24, 72, 24}, "MENU"}),
+      field_scanning_mode_({{10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}}),
       scanning_active_(false),
       settings_()
 {
@@ -1690,7 +1694,9 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     update_modern_layout();
 }
 
-
+EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
+    stop_scanning_thread();
+}
 
 void EnhancedDroneSpectrumAnalyzerView::focus() {
     button_start_stop_.focus();
@@ -1838,6 +1844,14 @@ void EnhancedDroneSpectrumAnalyzerView::initialize_scanning_mode() {
     field_scanning_mode_.set_selected_index(initial_mode);
 }
 
+void EnhancedDroneSpectrumAnalyzerView::set_scanning_mode_from_index(size_t index) {
+    DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
+    scanner_->set_scanning_mode(mode);
+    display_controller_->set_scanning_status(ui_controller_->is_scanning(),
+                                             scanner_->scanning_mode_name());
+    update_modern_layout();
+}
+
 void EnhancedDroneSpectrumAnalyzerView::add_ui_elements() {
     // Modern layout: Only modern UI elements, no overlays
     add_children({smart_header_.get(), status_bar_.get()});
@@ -1847,6 +1861,9 @@ void EnhancedDroneSpectrumAnalyzerView::add_ui_elements() {
     add_children({&button_start_stop_, &button_menu_});
     // Removed legacy overlaying elements: checkbox_audio_, numberfield_threshold_, numberfield_interval_
 }
+
+
+
 
 LoadingScreenView::LoadingScreenView(NavigationView& nav)
     : nav_(nav),

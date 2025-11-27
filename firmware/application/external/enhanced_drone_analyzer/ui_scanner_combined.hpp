@@ -848,7 +848,7 @@ private:
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
     explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
-    ~EnhancedDroneSpectrumAnalyzerView() override = default;
+    ~EnhancedDroneSpectrumAnalyzerView() override;
 
     void focus() override;
     std::string title() const override { return "Enhanced Drone Analyzer"; };
@@ -878,15 +878,11 @@ private:
     std::array<std::unique_ptr<ThreatCard>, 3> threat_cards_;
 
     // Simple UI widgets (replacing complex ones)
-    Button button_start_stop_{{screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"};
-    Button button_menu_{{screen_width - 80, screen_height - 24, 72, 24}, "MENU"};
+    Button button_start_stop_;
+    Button button_menu_;
 
     // Options field for scanning mode - simplified
-    OptionsField field_scanning_mode_{
-        {10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}
-    };
-
-
+    OptionsField field_scanning_mode_;
 
     bool scanning_active_ = false;
     ::ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
@@ -900,18 +896,8 @@ private:
     void handle_scanner_update();
     void setup_button_handlers();
     void initialize_scanning_mode();
-//    void initialize_scanning_options();  // Removed conflicting text fields
     void set_scanning_mode_from_index(size_t index);
     void add_ui_elements();
-
-private:
-    void set_scanning_mode_from_index(size_t index) {
-        DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
-        scanner_->set_scanning_mode(mode);
-        display_controller_->set_scanning_status(ui_controller_->is_scanning(),
-                                                 scanner_->scanning_mode_name());
-        update_modern_layout();
-    }
 };
 
 class LoadingScreenView : public View {
