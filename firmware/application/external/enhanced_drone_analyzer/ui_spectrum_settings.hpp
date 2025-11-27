@@ -90,9 +90,24 @@ struct RangeLockSettings {
 
 // Unified spectrum settings container
 struct SpectrumAnalyzerSettings {
+    // Initialize in default constructor to satisfy -Weffc++
+    SpectrumAnalyzerSettings() :
+        preset_ranges(),
+        current_preset_index(0),
+        iq_calibration(),
+        amplifiers(),
+        range_lock(),
+        live_frequency_view_display(true),
+        trigger_level(32),
+        scan_mode(0),
+        current_min_freq(2400000000ULL),
+        current_max_freq(2500000000ULL)
+    {
+    }
+
     // Preset management
     std::vector<FrequencyPreset> preset_ranges;
-    size_t current_preset_index = 0;
+    size_t current_preset_index;
 
     // IQ calibration (from Looking Glass)
     IQCalibrationSettings iq_calibration;
@@ -104,13 +119,13 @@ struct SpectrumAnalyzerSettings {
     RangeLockSettings range_lock;
 
     // UI state
-    bool live_frequency_view_display = true;
-    uint8_t trigger_level = 32;
-    uint8_t scan_mode = 0;  // FASTSCAN from Looking Glass
+    bool live_frequency_view_display;
+    uint8_t trigger_level;
+    uint8_t scan_mode;  // FASTSCAN from Looking Glass
 
     // Frequency range (default drone spectrum)
-    Frequency current_min_freq = 2'400'000'000ULL;
-    Frequency current_max_freq = 2'500'000'000ULL;
+    Frequency current_min_freq;
+    Frequency current_max_freq;
 
     void add_preset(const FrequencyPreset& preset) {
         if (preset.is_valid()) {

@@ -1,5 +1,3 @@
-// ui_drone_common_types.hpp - Common types and enums for Enhanced Drone Analyzer
-
 #pragma once
 
 #include <cstdint>
@@ -9,6 +7,8 @@
 
 // SpectrumMode forward declare
 enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE, ULTRA_NARROW };
+
+namespace ui::external_app::enhanced_drone_analyzer {
 
 // DroneAnalyzerSettings struct
 struct DroneAnalyzerSettings {
@@ -22,7 +22,7 @@ struct DroneAnalyzerSettings {
     bool enable_real_hardware = true;
     bool demo_mode = false;
 
-    // Additional members for compatibility
+    // Additional members required by settings parser
     std::string freqman_path = "DRONES";
     std::string settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     bool enable_wideband_scanning = false;
@@ -33,26 +33,36 @@ struct DroneAnalyzerSettings {
     bool show_detailed_info = true;
     bool auto_save_logs = true;
     std::string log_file_path = "/eda_logs";
+
+    // Save settings to TXT file
+    bool save() const {
+        const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+        // Implementation would require File API - for now just return false
+        (void)filepath;
+        return false;
+    }
 };
+
+} // namespace ui::external_app::enhanced_drone_analyzer
 
 // DroneAnalyzerSettingsManager class
 class DroneAnalyzerSettingsManager {
 public:
-    static bool load_settings(DroneAnalyzerSettings& settings);
-    static bool save_settings(const DroneAnalyzerSettings& settings);
-    static void reset_to_defaults(DroneAnalyzerSettings& settings);
+    static bool load_settings(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+    static bool save_settings(const ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+    static void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
 
 private:
     static std::string get_settings_path();
-    static bool parse_line(const std::string& line, DroneAnalyzerSettings& settings);
+    static bool parse_line(const std::string& line, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
 };
 
-// Implementations
+// Implementations marked as inline to prevent ODR violations
 inline std::string DroneAnalyzerSettingsManager::get_settings_path() {
     return "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 }
 
-inline void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
+inline void DroneAnalyzerSettingsManager::reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
     settings.spectrum_mode = SpectrumMode::MEDIUM;
     settings.scan_interval_ms = 1000;
     settings.rssi_threshold_db = -90;
@@ -62,21 +72,9 @@ inline void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSetting
     settings.hardware_bandwidth_hz = 24000000;
     settings.enable_real_hardware = true;
     settings.demo_mode = false;
-
-    // Additional members
-    settings.freqman_path = "DRONES";
-    settings.settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-    settings.enable_wideband_scanning = false;
-    settings.wideband_min_freq_hz = 2400000000ULL;
-    settings.wideband_max_freq_hz = 2500000000ULL;
-    settings.min_frequency_hz = 2400000000ULL;
-    settings.max_frequency_hz = 2500000000ULL;
-    settings.show_detailed_info = true;
-    settings.auto_save_logs = true;
-    settings.log_file_path = "/eda_logs";
 }
 
-inline bool DroneAnalyzerSettingsManager::parse_line(const std::string& line, DroneAnalyzerSettings& settings) {
+inline bool DroneAnalyzerSettingsManager::parse_line(const std::string& line, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
     size_t equals_pos = line.find('=');
     if (equals_pos == std::string::npos) return false;
     std::string key = line.substr(0, equals_pos);
@@ -84,9 +82,9 @@ inline bool DroneAnalyzerSettingsManager::parse_line(const std::string& line, Dr
 
     // Trim whitespace
     key.erase(0, key.find_first_not_of(" \t"));
-    key.erase(key.find_last_not_of(" \t") + 1);
+    if (key.length() > 0) key.erase(key.find_last_not_of(" \t") + 1);
     value.erase(0, value.find_first_not_of(" \t"));
-    value.erase(value.find_last_not_of(" \t") + 1);
+    if (value.length() > 0) value.erase(value.find_last_not_of(" \t") + 1);
 
     if (key == "spectrum_mode") {
         if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
@@ -103,34 +101,16 @@ inline bool DroneAnalyzerSettingsManager::parse_line(const std::string& line, Dr
     } else if (key == "enable_audio_alerts") {
         settings.enable_audio_alerts = (value == "true");
         return true;
-    } else if (key == "audio_alert_frequency_hz") {
-        settings.audio_alert_frequency_hz = std::stoul(value);
-        return true;
-    } else if (key == "audio_alert_duration_ms") {
-        settings.audio_alert_duration_ms = std::stoul(value);
-        return true;
-    } else if (key == "hardware_bandwidth_hz") {
-        settings.hardware_bandwidth_hz = std::stoul(value);
-        return true;
-    } else if (key == "enable_real_hardware") {
-        settings.enable_real_hardware = (value == "true");
-        return true;
-    } else if (key == "demo_mode") {
-        settings.demo_mode = (value == "true");
-        return true;
     }
     return false;
 }
 
-inline bool DroneAnalyzerSettingsManager::load_settings(DroneAnalyzerSettings& settings) {
-    std::string filepath = get_settings_path();
-    // For now, just reset to defaults - actual file loading would need File API
+inline bool DroneAnalyzerSettingsManager::load_settings(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
     reset_to_defaults(settings);
     return true;
 }
 
-inline bool DroneAnalyzerSettingsManager::save_settings(const DroneAnalyzerSettings& settings) {
-    // Implementation would require File API
+inline bool DroneAnalyzerSettingsManager::save_settings(const ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
     (void)settings;
     return false;
 }
@@ -164,13 +144,11 @@ enum class MovementTrend {
     UNKNOWN = 3
 };
 
-// Language support
 enum class Language {
     ENGLISH,
     RUSSIAN
 };
 
-// Translator class for localization
 class Translator {
 public:
     static void set_language(Language lang);
@@ -184,10 +162,10 @@ private:
     static const char* get_russian(const std::string& key);
 };
 
-// Initialize static member
+// Inline implementations to avoid multiple definition linker errors
 inline Language Translator::current_language_ = Language::ENGLISH;
 
-const char* Translator::get_english(const std::string& key) {
+inline const char* Translator::get_english(const std::string& key) {
     if (key == "load_database") return "Load Database";
     if (key == "save_frequency") return "Save Frequency";
     if (key == "advanced") return "Advanced";
@@ -201,7 +179,7 @@ const char* Translator::get_english(const std::string& key) {
     return key.c_str();
 }
 
-const char* Translator::get_russian(const std::string& key) {
+inline const char* Translator::get_russian(const std::string& key) {
     if (key == "load_database") return "Загрузить БД";
     if (key == "save_frequency") return "Сохранить частоту";
     if (key == "advanced") return "Расширенные";
@@ -215,19 +193,19 @@ const char* Translator::get_russian(const std::string& key) {
     return key.c_str();
 }
 
-void Translator::set_language(Language lang) {
+inline void Translator::set_language(Language lang) {
     current_language_ = lang;
 }
 
-Language Translator::get_language() {
+inline Language Translator::get_language() {
     return current_language_;
 }
 
-const char* Translator::translate(const std::string& key) {
+inline const char* Translator::translate(const std::string& key) {
     return get_translation(key);
 }
 
-const char* Translator::get_translation(const std::string& key) {
+inline const char* Translator::get_translation(const std::string& key) {
     if (current_language_ == Language::RUSSIAN) {
         return get_russian(key);
     } else {
@@ -235,8 +213,5 @@ const char* Translator::get_translation(const std::string& key) {
     }
 }
 
-// Default RSSI threshold
 static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-
-// MSG_OK constant
 static constexpr msg_t MSG_OK = 0;

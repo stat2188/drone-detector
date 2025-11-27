@@ -1,153 +1,576 @@
-Текущая реализация жестко ограничивает возможности HackRF/Portapack. Чтобы прибор мог сканировать весь диапазон от 1 МГц до 7.2 ГГц и настройки стали гибкими, нужно изменить архитектуру передачи параметров от файла настроек к движку сканера.
+Анализ проблем
+Multiple Definitions (Множественные определения):
 
-Вот детальный план исправлений (refactoring plan).
+Функции в заголовочных файлах (ui_drone_common_types.hpp, scanner_settings.hpp) определены без ключевого слова inline. Поскольку эти заголовки включаются в несколько единиц трансляции (_scanner_main.cpp и _settings_main.cpp), линковщик видит дубликаты.
+Статическая переменная AudioAlertManager::audio_enabled_ определена в заголовке.
+Глобальные объекты global_detection_ring и local_detection_ring определены и в ui_scanner_combined.cpp, и в ui_signal_processing.cpp.
+Undefined Reference (Неопределенная ссылка):
 
-Этап 1: Обновление констант и типов данных
-Сначала нужно расширить допустимые границы и добавить поля в структуру настроек.
+Метод DroneDisplayController::set_scanning_status объявлен в классе, но его реализация отсутствует в ui_scanner_combined.cpp.
+Warnings (Предупреждения -Weffc++):
 
-Файл: ui_scanner_combined.hpp (или ui_drone_common_types.hpp)
+Отсутствует инициализация членов структуры SpectrumAnalyzerSettings в списке инициализации конструктора.
+Исправленные файлы
+Ниже приведен код исправленных файлов.
 
-Измените константу максимальной частоты.
-Добавьте поля границ сканирования в структуру настроек.
-// 1. Обновляем лимит частоты
-static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL; // Было 6G
+1. ui_drone_common_types.hpp
+Добавляем inline ко всем методам класса Translator, чтобы избежать множественных определений при включении заголовка в разные .cpp файлы.
 
-// 2. Расширяем структуру настроек (DroneAnalyzerSettings)
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+#include "ch.h"
+
+// SpectrumMode forward declare
+enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE, ULTRA_NARROW };
+
+// DroneAnalyzerSettings struct
 struct DroneAnalyzerSettings {
-    // ... существующие поля ...
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
+    uint32_t scan_interval_ms = 1000;
+    int32_t rssi_threshold_db = -90;
+    bool enable_audio_alerts = true;
+    uint16_t audio_alert_frequency_hz = 800;
+    uint32_t audio_alert_duration_ms = 500;
+    uint32_t hardware_bandwidth_hz = 24000000;
+    bool enable_real_hardware = true;
+    bool demo_mode = false;
     
-    // Добавляем новые поля для гибкости Wideband
-    uint64_t wideband_min_hz = 2400000000ULL;
-    uint64_t wideband_max_hz = 2500000000ULL;
-    
-    // ... методы save() ...
+    // Additional members required by settings parser
+    std::string freqman_path = "DRONES";
+    std::string settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    bool enable_wideband_scanning = false;
+    uint64_t wideband_min_freq_hz = 2400000000ULL;
+    uint64_t wideband_max_freq_hz = 2500000000ULL;
+    uint64_t min_frequency_hz = 2400000000ULL;
+    uint64_t max_frequency_hz = 2500000000ULL;
+    bool show_detailed_info = true;
+    bool auto_save_logs = true;
+    std::string log_file_path = "/eda_logs";
 };
-Этап 2: Обновление парсера настроек (Загрузка/Сохранение)
-Нужно научить приложение читать эти новые параметры из файла ENHANCED_DRONE_ANALYZER_SETTINGS.txt.
 
-Файл: scanner_settings.hpp
+// DroneAnalyzerSettingsManager class
+class DroneAnalyzerSettingsManager {
+public:
+    static bool load_settings(DroneAnalyzerSettings& settings);
+    static bool save_settings(const DroneAnalyzerSettings& settings);
+    static void reset_to_defaults(DroneAnalyzerSettings& settings);
 
-Нужно обновить методы parse_key_value и save.
+private:
+    static std::string get_settings_path();
+    static bool parse_line(const std::string& line, DroneAnalyzerSettings& settings);
+};
 
-// В методе save():
-ss << "wideband_min_hz=" << wideband_min_hz << "\n";
-ss << "wideband_max_hz=" << wideband_max_hz << "\n";
+// Implementations marked as inline to prevent ODR violations
+inline std::string DroneAnalyzerSettingsManager::get_settings_path() {
+    return "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+}
 
-// В методе parse_key_value(..., settings, line):
-else if (key == "wideband_min_hz") {
-    settings.wideband_min_hz = validate_range<uint64_t>(
-        std::stoull(value), 1000000ULL, 7200000000ULL); // от 1МГц
-    return true;
-} 
-else if (key == "wideband_max_hz") {
-    settings.wideband_max_hz = validate_range<uint64_t>(
-        std::stoull(value), 1000000ULL, 7200000000ULL);
+inline void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
+    settings.spectrum_mode = SpectrumMode::MEDIUM;
+    settings.scan_interval_ms = 1000;
+    settings.rssi_threshold_db = -90;
+    settings.enable_audio_alerts = true;
+    settings.audio_alert_frequency_hz = 800;
+    settings.audio_alert_duration_ms = 500;
+    settings.hardware_bandwidth_hz = 24000000;
+    settings.enable_real_hardware = true;
+    settings.demo_mode = false;
+}
+
+inline bool DroneAnalyzerSettingsManager::parse_line(const std::string& line, DroneAnalyzerSettings& settings) {
+    size_t equals_pos = line.find('=');
+    if (equals_pos == std::string::npos) return false;
+    std::string key = line.substr(0, equals_pos);
+    std::string value = line.substr(equals_pos + 1);
+
+    // Trim whitespace
+    key.erase(0, key.find_first_not_of(" \t"));
+    if (key.length() > 0) key.erase(key.find_last_not_of(" \t") + 1);
+    value.erase(0, value.find_first_not_of(" \t"));
+    if (value.length() > 0) value.erase(value.find_last_not_of(" \t") + 1);
+
+    if (key == "spectrum_mode") {
+        if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
+        else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
+        else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
+        else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+        return true;
+    } else if (key == "scan_interval_ms") {
+        settings.scan_interval_ms = std::stoul(value);
+        return true;
+    } else if (key == "rssi_threshold_db") {
+        settings.rssi_threshold_db = std::stoi(value);
+        return true;
+    } else if (key == "enable_audio_alerts") {
+        settings.enable_audio_alerts = (value == "true");
+        return true;
+    }
+    return false;
+}
+
+inline bool DroneAnalyzerSettingsManager::load_settings(DroneAnalyzerSettings& settings) {
+    reset_to_defaults(settings);
     return true;
 }
-Этап 3: Модернизация класса DroneScanner
-Сейчас сканер игнорирует настройки и берет константы. Нужно сделать метод настройки публичным и использовать его.
 
-Файл: ui_scanner_combined.hpp
+inline bool DroneAnalyzerSettingsManager::save_settings(const DroneAnalyzerSettings& settings) {
+    (void)settings;
+    return false;
+}
 
-В классе DroneScanner:
+// Enhanced enums for EDA
+enum class ThreatLevel {
+    NONE = 0,
+    LOW = 1,
+    MEDIUM = 2,
+    HIGH = 3,
+    CRITICAL = 4,
+    UNKNOWN = 5
+};
 
-class DroneScanner {
+enum class DroneType {
+    UNKNOWN = 0,
+    MAVIC = 1,
+    DJI_P34 = 2,
+    PHANTOM = 3,
+    DJI_MINI = 4,
+    PARROT_ANAFI = 5,
+    PARROT_BEBOP = 6,
+    PX4_DRONE = 7,
+    MILITARY_DRONE = 8
+};
+
+enum class MovementTrend {
+    STATIC = 0,
+    APPROACHING = 1,
+    RECEDING = 2,
+    UNKNOWN = 3
+};
+
+enum class Language {
+    ENGLISH,
+    RUSSIAN
+};
+
+class Translator {
 public:
-    // ... существующие методы ...
+    static void set_language(Language lang);
+    static Language get_language();
+    static const char* translate(const std::string& key);
+    static const char* get_translation(const std::string& key);
 
-    // ДОБАВИТЬ: Публичный метод для изменения диапазона на лету
-    void update_scan_range(Frequency min_freq, Frequency max_freq) {
-        // Защита от некорректных данных
-        if (min_freq >= max_freq) return;
-        if (min_freq < 1000000) min_freq = 1000000;
-        if (max_freq > 7200000000ULL) max_freq = 7200000000ULL;
+private:
+    static Language current_language_;
+    static const char* get_english(const std::string& key);
+    static const char* get_russian(const std::string& key);
+};
 
-        setup_wideband_range(min_freq, max_freq);
+// Inline implementations to avoid multiple definition linker errors
+inline Language Translator::current_language_ = Language::ENGLISH;
+
+inline const char* Translator::get_english(const std::string& key) {
+    if (key == "load_database") return "Load Database";
+    if (key == "save_frequency") return "Save Frequency";
+    if (key == "advanced") return "Advanced";
+    if (key == "constant_settings") return "Constant Settings";
+    if (key == "select_language") return "Select Language";
+    if (key == "about_author") return "About Author";
+    if (key == "english") return "English";
+    if (key == "russian") return "Russian";
+    if (key == "english_selected") return "Language updated to English";
+    if (key == "russian_selected") return "Язык изменен на русский";
+    return key.c_str();
+}
+
+inline const char* Translator::get_russian(const std::string& key) {
+    if (key == "load_database") return "Загрузить БД";
+    if (key == "save_frequency") return "Сохранить частоту";
+    if (key == "advanced") return "Расширенные";
+    if (key == "constant_settings") return "Постоянные настройки";
+    if (key == "select_language") return "Выбрать язык";
+    if (key == "about_author") return "Об авторе";
+    if (key == "english") return "Английский";
+    if (key == "russian") return "Русский";
+    if (key == "english_selected") return "Language updated to English";
+    if (key == "russian_selected") return "Язык изменен на русский";
+    return key.c_str();
+}
+
+inline void Translator::set_language(Language lang) {
+    current_language_ = lang;
+}
+
+inline Language Translator::get_language() {
+    return current_language_;
+}
+
+inline const char* Translator::translate(const std::string& key) {
+    return get_translation(key);
+}
+
+inline const char* Translator::get_translation(const std::string& key) {
+    if (current_language_ == Language::RUSSIAN) {
+        return get_russian(key);
+    } else {
+        return get_english(key);
+    }
+}
+
+static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
+static constexpr msg_t MSG_OK = 0;
+2. scanner_settings.hpp
+Добавляем inline к функциям пространства имен ScannerSettingsManager и исправляем дубликаты.
+
+#ifndef __SCANNER_SETTINGS_HPP__
+#define __SCANNER_SETTINGS_HPP__
+
+#include <string>
+#include <sstream>
+#include <algorithm>
+#include <cstdint>
+#include "file.hpp"
+#include "ui_drone_common_types.hpp"
+
+// Forward declarations
+enum class SpectrumMode;
+using ScanFile = File;
+
+namespace ScannerSettingsManager {
+
+    // Template declarations
+    template<typename T> T validate_range(T value, T min_val, T max_val);
+
+    // Function declarations
+    inline void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+    inline ::SpectrumMode parse_spectrum_mode(const std::string& value);
+    inline std::string trim_line(const std::string& line);
+    inline bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line);
+    inline bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content);
+    inline bool load_from_txt_impl(const std::string& filepath, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+
+    // Public interface (marked inline)
+    inline bool load_settings_from_txt(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
+        const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+        bool settings_loaded = load_from_txt_impl(filepath, settings);
+        if (!settings_loaded) {
+            reset_to_defaults(settings);
+        }
+        return settings_loaded;
     }
 
-    // ... 
-};
-Этап 4: Интеграция настроек при запуске
-Нужно, чтобы при старте приложения настройки из файла сразу применялись к сканеру.
+    // Implementation (marked inline)
+    inline bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content) {
+        std::istringstream iss(content);
+        std::string line;
+        int parsed_count = 0;
+        while (std::getline(iss, line)) {
+            auto trimmed_line = trim_line(line);
+            if (trimmed_line.empty() || trimmed_line[0] == '#') continue;
+            if (parse_key_value(settings, trimmed_line)) parsed_count++;
+        }
+        return parsed_count > 3;
+    }
 
-Файл: ui_scanner_combined.cpp
+    inline bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line) {
+        size_t equals_pos = line.find('=');
+        if (equals_pos == std::string::npos) return false;
+        std::string key = trim_line(line.substr(0, equals_pos));
+        std::string value = trim_line(line.substr(equals_pos + 1));
 
-Найдите метод EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView (конструктор главного окна).
+        if (key == "spectrum_mode") {
+            settings.spectrum_mode = parse_spectrum_mode(value);
+            return true;
+        } else if (key == "scan_interval_ms") {
+            settings.scan_interval_ms = validate_range<uint32_t>(
+                static_cast<uint32_t>(std::stoul(value)), 100U, 5000U);
+            return true;
+        } else if (key == "rssi_threshold_db") {
+            settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
+            return true;
+        } else if (key == "enable_audio_alerts") {
+            settings.enable_audio_alerts = (value == "true");
+            return true;
+        }
+        // Additional fields can be added here
+        return false;
+    }
 
-// В конструкторе после load_settings_from_sd_card(settings_):
+    inline void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
+        // Reset to reasonable defaults
+        settings.spectrum_mode = ::SpectrumMode::MEDIUM;
+        settings.scan_interval_ms = 712;
+        settings.rssi_threshold_db = -80;
+        settings.enable_audio_alerts = true;
+        settings.audio_alert_frequency_hz = 800;
+        settings.audio_alert_duration_ms = 200;
+        settings.hardware_bandwidth_hz = 24000000;
+        settings.enable_real_hardware = true;
+        settings.demo_mode = false;
+        settings.freqman_path = "DRONES";
+    }
 
-load_settings_from_sd_card(settings_);
+    inline ::SpectrumMode parse_spectrum_mode(const std::string& value) {
+        if (value == "NARROW") return ::SpectrumMode::NARROW;
+        if (value == "MEDIUM") return ::SpectrumMode::MEDIUM;
+        if (value == "WIDE") return ::SpectrumMode::WIDE;
+        if (value == "ULTRA_WIDE") return ::SpectrumMode::ULTRA_WIDE;
+        return ::SpectrumMode::MEDIUM;
+    }
 
-// ВАЖНО: Применяем загруженные границы к сканеру
-if (scanner_) {
-    scanner_->update_scan_range(settings_.wideband_min_hz, settings_.wideband_max_hz);
-}
+    inline std::string trim_line(const std::string& line) {
+        auto start = std::find_if_not(line.begin(), line.end(), ::isspace);
+        auto end = std::find_if_not(line.rbegin(), line.rend(), ::isspace).base();
+        return (start < end) ? std::string(start, end) : std::string();
+    }
 
-// Если координатор использует настройки, передаем их и туда
-if (scanning_coordinator_) {
-    scanning_coordinator_->update_runtime_parameters(settings_);
-}
-Этап 5: UI для ручного ввода частот
-Самое важное для пользователя — возможность поменять частоты через меню, не вынимая SD-карту.
+    template<typename T>
+    T validate_range(T value, T min_val, T max_val) {
+        if (value < min_val) return min_val;
+        if (value > max_val) return max_val;
+        return value;
+    }
 
-Файл: ui_settings_combined.cpp
-
-В DroneUIController нужно реализовать методы вызова клавиатуры для ввода частоты.
-
-// В классе DroneUIController
-
-void DroneUIController::on_set_wideband_limits() {
-    // Шаг 1: Ввод минимальной частоты
-    auto min_view = nav_.push<FrequencyKeypadView>(
-        settings_.wideband_min_hz
-    );
-    
-    min_view->on_changed = [this](Frequency new_min) {
-        // Шаг 2: После ввода мин, запрашиваем макс
-        auto max_view = nav_.push<FrequencyKeypadView>(
-            settings_.wideband_max_hz
-        );
+    inline bool load_from_txt_impl(const std::string& filepath, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
+        ScanFile txt_file;
+        if (!txt_file.open(filepath)) { // removed read_only parameter if not supported by API wrapper
+            reset_to_defaults(settings);
+            return false;
+        }
+        std::string file_content;
+        file_content.resize(txt_file.size());
+        auto read_result = txt_file.read(file_content.data(), txt_file.size());
+        txt_file.close();
         
-        max_view->on_changed = [this, new_min](Frequency new_max) {
-            if (new_max > new_min) {
-                // Сохраняем в настройки
-                settings_.wideband_min_hz = new_min;
-                settings_.wideband_max_hz = new_max;
-                settings_.save(); // Сохраняем на SD
-                
-                // Применяем к сканеру немедленно
-                scanner_.update_scan_range(new_min, new_max);
-                
-                nav_.display_modal("Success", "Range updated!");
-            } else {
-                nav_.display_modal("Error", "Min must be < Max");
-            }
-        };
-    };
+        if (read_result.is_error()) {
+             reset_to_defaults(settings);
+             return false;
+        }
+        
+        return parse_settings_content(settings, file_content);
+    }
+
+}  // namespace ScannerSettingsManager
+
+#endif // __SCANNER_SETTINGS_HPP__
+3. ui_drone_audio.hpp
+Используем inline static для переменной audio_enabled_, чтобы решить проблему множественного определения.
+
+#ifndef __UI_DRONE_AUDIO_HPP__
+#define __UI_DRONE_AUDIO_HPP__
+
+#include <stdint.h>
+#include "baseband_api.hpp"
+#include "ui_drone_common_types.hpp"
+
+struct AudioAlertManager {
+    static void play_alert(ThreatLevel level) {
+        if (!audio_enabled_) return;
+
+        uint16_t freq_hz = 800;
+        switch (level) {
+            case ThreatLevel::NONE: return; 
+            case ThreatLevel::LOW: freq_hz = 800; break;
+            case ThreatLevel::MEDIUM: freq_hz = 1200; break;
+            case ThreatLevel::HIGH: freq_hz = 1200; break;
+            case ThreatLevel::CRITICAL: freq_hz = 2000; break;
+            default: freq_hz = 800; break;
+        }
+        baseband::request_audio_beep(freq_hz, 24000, 200);
+    }
+
+    static void set_enabled(bool enable) { audio_enabled_ = enable; }
+    static bool is_enabled() { return audio_enabled_; }
+
+private:
+    // Inline definition for C++17 (Mayhem standard) to allow header inclusion in multiple TUs
+    inline static bool audio_enabled_ = true;
+};
+
+class AudioManager {
+public:
+    AudioManager() : audio_enabled_(true) {}
+    ~AudioManager() {}
+
+    bool is_audio_enabled() const { return AudioAlertManager::is_enabled(); }
+    void toggle_audio() { AudioAlertManager::set_enabled(!AudioAlertManager::is_enabled()); }
+    void play_detection_beep(ThreatLevel threat) { AudioAlertManager::play_alert(threat); }
+    void stop_audio() { }
+
+private:
+    bool audio_enabled_;
+};
+
+#endif // __UI_DRONE_AUDIO_HPP__
+4. ui_scanner_combined.cpp
+Удаляем дублирующиеся определения global_detection_ring и добавляем реализацию set_scanning_status.
+
+// ... includes ...
+#include "ui_scanner_combined.hpp"
+#include "ui_drone_audio.hpp"
+// ... other includes ...
+
+namespace ui::external_app::enhanced_drone_analyzer {
+
+// ... (Loading settings function) ...
+
+// REMOVED: DetectionRingBuffer definitions (they are now in ui_signal_processing.cpp)
+// DetectionRingBuffer global_detection_ring;
+// DetectionRingBuffer& local_detection_ring = global_detection_ring;
+
+// ... (DroneScanner implementation) ...
+
+// ===========================================
+// IMPLEMENTATION: DroneDisplayController::set_scanning_status
+// ===========================================
+void DroneDisplayController::set_scanning_status(bool active, const std::string& message) {
+    if (active) {
+        text_status_info_.set("SCAN: " + message);
+        text_status_info_.set_style(Theme::getInstance()->fg_green);
+    } else {
+        text_status_info_.set("STOP: " + message);
+        // Use a color that exists in Theme, falling back to white/light
+        text_status_info_.set_style(Theme::getInstance()->fg_white);
+    }
 }
-Этап 6: Обновление Пресетов (Presets)
-Чтобы пресеты (5.8, 915 и т.д.) реально работали, они должны вызывать новый метод сканера.
 
-Файл: ui_settings_combined.cpp (метод on_preset_selected или аналогичный в FilteredPresetMenuView):
+// ... (Rest of the file) ...
+5. ui_spectrum_settings.hpp
+Исправляем предупреждения конструктора, добавляя явную инициализацию.
 
-// Когда пользователь выбирает пресет из списка:
-void DroneUIController::apply_preset(const DronePreset& preset) {
-    // 1. Обновляем настройки
-    settings_.wideband_min_hz = preset.min_freq; // Предполагается, что в DronePreset есть min/max
-    settings_.wideband_max_hz = preset.max_freq;
-    
-    // 2. Применяем к сканеру
-    scanner_.update_scan_range(preset.min_freq, preset.max_freq);
-    
-    // 3. Меняем режим на WIDEBAND, чтобы сразу видеть результат
-    scanner_.set_scanning_mode(DroneScanner::ScanningMode::WIDEBAND_CONTINUOUS);
-    
-    nav_.display_modal("Preset Loaded", preset.name);
+// ... imports ...
+
+struct SpectrumAnalyzerSettings {
+    // Initialize in default constructor to satisfy -Weffc++
+    SpectrumAnalyzerSettings() :
+        preset_ranges(),
+        current_preset_index(0),
+        iq_calibration(),
+        amplifiers(),
+        range_lock(),
+        live_frequency_view_display(true),
+        trigger_level(32),
+        scan_mode(0),
+        current_min_freq(2400000000ULL),
+        current_max_freq(2500000000ULL)
+    {
+    }
+
+    // Preset management
+    std::vector<FrequencyPreset> preset_ranges;
+    size_t current_preset_index;
+
+    // IQ calibration
+    IQCalibrationSettings iq_calibration;
+
+    // Amplifier controls
+    AmplifierControl amplifiers;
+
+    // Range locking
+    RangeLockSettings range_lock;
+
+    // UI state
+    bool live_frequency_view_display;
+    uint8_t trigger_level;
+    uint8_t scan_mode;
+
+    // Frequency range
+    Frequency current_min_freq;
+    Frequency current_max_freq;
+
+    // ... methods ...
+};
+// ...
+6. ui_signal_processing.hpp
+Убеждаемся, что здесь только объявления extern.
+
+#ifndef __UI_SIGNAL_PROCESSING_HPP__
+#define __UI_SIGNAL_PROCESSING_HPP__
+
+#include <array>
+#include <cstdint>
+#include <ch.h>
+#include "ui_drone_common_types.hpp"
+
+static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
+
+// ... (DetectionRingBuffer class definition) ...
+struct DetectionEntry {
+    size_t frequency_hash;
+    uint8_t detection_count;
+    int32_t rssi_value;
+    systime_t last_update;
+};
+
+class DetectionRingBuffer {
+public:
+    static constexpr size_t MAX_ENTRIES = 32;
+    DetectionRingBuffer() = default;
+    // ... implementation ...
+    void update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
+    uint8_t get_detection_count(size_t frequency_hash) const;
+    int32_t get_rssi_value(size_t frequency_hash) const;
+    void clear();
+private:
+    std::array<DetectionEntry, MAX_ENTRIES> entries_{};
+    size_t head_ = 0;
+};
+
+// EXTERN declarations only
+extern DetectionRingBuffer global_detection_ring;
+// Alias reference
+extern DetectionRingBuffer& local_detection_ring;
+
+#endif // __UI_SIGNAL_PROCESSING_HPP__
+7. ui_signal_processing.cpp
+В этом файле должны быть единственные определения глобальных объектов.
+
+#include "ui_signal_processing.hpp"
+
+namespace ui::external_app::enhanced_drone_analyzer {
+
+// Global Definitions
+DetectionRingBuffer global_detection_ring;
+DetectionRingBuffer& local_detection_ring = global_detection_ring;
+
+// Implementation of DetectionRingBuffer methods if not fully inlined in class
+void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) {
+    systime_t current_time = chTimeNow();
+    for (auto& entry : entries_) {
+        if (entry.frequency_hash == frequency_hash) {
+            entry.rssi_value = rssi_value;
+            entry.detection_count = detection_count;
+            entry.last_update = current_time;
+            return;
+        }
+    }
+    entries_[head_] = {frequency_hash, detection_count, rssi_value, current_time};
+    head_ = (head_ + 1) % MAX_ENTRIES;
 }
-Итог изменений
-После этих правок:
 
-Файл настроек будет содержать wideband_min_hz и wideband_max_hz.
-При старте сканер будет настраиваться на эти частоты (хоть 100 МГц, хоть 7 ГГц).
-В меню появится возможность ввести произвольные границы.
-Пресеты начнут реально переключать физический диапазон сканирования, а не только менять надписи на экране.
+uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const {
+    for (const auto& entry : entries_) {
+        if (entry.frequency_hash == frequency_hash) {
+            return entry.detection_count;
+        }
+    }
+    return 0;
+}
+
+int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const {
+    for (const auto& entry : entries_) {
+        if (entry.frequency_hash == frequency_hash) {
+            return entry.rssi_value;
+        }
+    }
+    return -120;
+}
+
+void DetectionRingBuffer::clear() {
+    entries_ = {};
+    head_ = 0;
+}
+
+} // namespace ui::external_app::enhanced_drone_analyzer

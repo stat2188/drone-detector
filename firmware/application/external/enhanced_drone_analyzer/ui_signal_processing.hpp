@@ -109,7 +109,9 @@ private:
     size_t head_ = 0;
 };
 
-// Global instance for thread-safe access across components
+// EXTERN declarations only
 extern DetectionRingBuffer global_detection_ring;
+// Alias reference
+extern DetectionRingBuffer& local_detection_ring;
 
 #endif // __UI_SIGNAL_PROCESSING_HPP__

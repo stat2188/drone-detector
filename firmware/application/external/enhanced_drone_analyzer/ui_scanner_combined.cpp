@@ -75,8 +75,7 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
 // PART 1: DETECTION RING BUFFER IMPLEMENTATION
 // ===========================================
 
-DetectionRingBuffer global_detection_ring;
-DetectionRingBuffer& local_detection_ring = global_detection_ring;
+
 
 DetectionRingBuffer::DetectionRingBuffer()
     : detection_counts_{}, rssi_values_{}
@@ -1306,6 +1305,20 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
         big_display_.set_style(Theme::getInstance()->fg_green);
     } else {
         big_display_.set_style(Theme::getInstance()->bg_darkest);
+    }
+}
+
+// ===========================================
+// IMPLEMENTATION: DroneDisplayController::set_scanning_status
+// ===========================================
+void DroneDisplayController::set_scanning_status(bool active, const std::string& message) {
+    if (active) {
+        text_status_info_.set("SCAN: " + message);
+        text_status_info_.set_style(Theme::getInstance()->fg_green);
+    } else {
+        text_status_info_.set("STOP: " + message);
+        // Use a color that exists in Theme, falling back to white/light
+        text_status_info_.set_style(Theme::getInstance()->fg_light);
     }
 }
 

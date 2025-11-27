@@ -29,8 +29,8 @@ struct AudioAlertManager {
     static bool is_enabled() { return audio_enabled_; }
 
 private:
-    // Simple static member - no extern issues
-    static bool audio_enabled_;
+    // Inline definition for C++17 (Mayhem standard) to allow header inclusion in multiple TUs
+    inline static bool audio_enabled_ = true;
 };
 
 // Class-compatible interface to maintain API compatibility
@@ -59,8 +59,5 @@ struct DroneAudioSettings {
     bool audio_enabled = true;
     ThreatLevel test_threat_level = ThreatLevel::HIGH;
 };
-
-// Static variable - simple and compatible
-bool AudioAlertManager::audio_enabled_ = true;
 
 #endif // __UI_DRONE_AUDIO_HPP__
