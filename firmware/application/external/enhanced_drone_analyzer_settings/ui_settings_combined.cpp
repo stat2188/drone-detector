@@ -10,6 +10,9 @@
 #include <vector>           // For container operations
 #include <memory>           // For unique_ptr management
 
+// Use ScannerSettingsManager for loading settings from TXT
+using ScannerSettingsManager::load_settings_from_txt;
+
 namespace ui::external_app::enhanced_drone_analyzer {
 
 /**
@@ -233,101 +236,37 @@ DroneAnalyzerSettingsManager& get_settings_manager() {
 }
 
 bool DroneAnalyzerSettingsManager::load(DroneAnalyzerSettings& settings) {
-    if (settings.settings_file_path.empty()) {
-        settings.settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-    }
-
-    File file;
-    if (!file.open(settings.settings_file_path, true)) {  // true = read_only
+    // Use ScannerSettingsManager for loading
+    bool loaded = load_settings_from_txt(settings);
+    if (!loaded) {
         reset_to_defaults(settings);
-        return false;
     }
-
-    std::string line;
-    char buffer[256];
-    size_t bytes_read;
-    while ((bytes_read = file.read(buffer, sizeof(buffer) - 1)) > 0) {
-        buffer[bytes_read] = '\0';
-        line += buffer;
-
-        size_t newline_pos;
-        while ((newline_pos = line.find('\n')) != std::string::npos) {
-            std::string current_line = line.substr(0, newline_pos);
-            line = line.substr(newline_pos + 1);
-
-            // Skip comments and empty lines
-            if (current_line.empty() || current_line[0] == '#') continue;
-
-            size_t equals_pos = current_line.find('=');
-            if (equals_pos != std::string::npos) {
-                std::string key = current_line.substr(0, equals_pos);
-                std::string value = current_line.substr(equals_pos + 1);
-
-                // Trim whitespace
-                key.erase(key.begin(), std::find_if(key.begin(), key.end(), [](int ch) { return !std::isspace(ch); }));
-                key.erase(std::find_if(key.rbegin(), key.rend(), [](int ch) { return !std::isspace(ch); }).base(), key.end());
-                value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](int ch) { return !std::isspace(ch); }));
-                value.erase(std::find_if(value.rbegin(), value.rend(), [](int ch) { return !std::isspace(ch); }).base(), value.end());
-
-                // Parse key-value pairs and update settings
-                if (key == "spectrum_mode") {
-                    if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-                    else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
-                    else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-                    else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-                    else if (value == "ULTRA_NARROW") settings.spectrum_mode = SpectrumMode::ULTRA_NARROW;
-                }
-                else if (key == "scan_interval_ms") settings.scan_interval_ms = std::stoul(value);
-                else if (key == "rssi_threshold_db") settings.rssi_threshold_db = std::stoi(value);
-                else if (key == "enable_audio_alerts") settings.enable_audio_alerts = (value == "true");
-                else if (key == "audio_alert_frequency_hz") settings.audio_alert_frequency_hz = std::stoul(value);
-                else if (key == "audio_alert_duration_ms") settings.audio_alert_duration_ms = std::stoul(value);
-                else if (key == "enable_real_hardware") settings.enable_real_hardware = (value == "true");
-                else if (key == "demo_mode") settings.demo_mode = (value == "true");
-                else if (key == "hardware_bandwidth_hz") settings.hardware_bandwidth_hz = std::stoul(value);
-            }
-        }
-    }
-
-    file.close();
-    return validate(settings);
+    return loaded;
 }
 
 bool DroneAnalyzerSettingsManager::save(const DroneAnalyzerSettings& settings) {
-    if (settings.settings_file_path.empty()) {
-        // Default path on SD card
-        const_cast<DroneAnalyzerSettings&>(settings).settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-    }
+    // Implementation manual forming string, as ScannerSettingsManager
+    // in provided code has only load logic.
 
     File file;
-    if (!file.open(settings.settings_file_path, false)) {  // false = write mode
-        return false;
-    }
+    if (!file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt", false)) return false; // create/write
 
-    // Write settings in key=value format
-    std::string content = "spectrum_mode=";
-    switch (settings.spectrum_mode) {
-        case SpectrumMode::NARROW: content += "NARROW"; break;
-        case SpectrumMode::MEDIUM: content += "MEDIUM"; break;
-        case SpectrumMode::WIDE: content += "WIDE"; break;
-        case SpectrumMode::ULTRA_WIDE: content += "ULTRA_WIDE"; break;
-        case SpectrumMode::ULTRA_NARROW: content += "ULTRA_NARROW"; break;
+    std::string content = "";
+    content += "spectrum_mode=";
+    switch(settings.spectrum_mode) {
+        case SpectrumMode::NARROW: content += "NARROW\n"; break;
+        case SpectrumMode::MEDIUM: content += "MEDIUM\n"; break;
+        case SpectrumMode::WIDE: content += "WIDE\n"; break;
+        case SpectrumMode::ULTRA_WIDE: content += "ULTRA_WIDE\n"; break;
+        default: content += "MEDIUM\n"; break;
     }
-    content += "\n";
 
     content += "scan_interval_ms=" + std::to_string(settings.scan_interval_ms) + "\n";
     content += "rssi_threshold_db=" + std::to_string(settings.rssi_threshold_db) + "\n";
     content += "enable_audio_alerts=" + std::string(settings.enable_audio_alerts ? "true" : "false") + "\n";
-    content += "audio_alert_frequency_hz=" + std::to_string(settings.audio_alert_frequency_hz) + "\n";
-    content += "audio_alert_duration_ms=" + std::to_string(settings.audio_alert_duration_ms) + "\n";
-    content += "enable_real_hardware=" + std::string(settings.enable_real_hardware ? "true" : "false") + "\n";
-    content += "demo_mode=" + std::string(settings.demo_mode ? "true" : "false") + "\n";
-    content += "hardware_bandwidth_hz=" + std::to_string(settings.hardware_bandwidth_hz) + "\n";
-    content += "freqman_path=" + settings.freqman_path + "\n";
 
-    auto result = file.write(content.data(), content.size());
-    file.close();
-    return result == content.size();
+    file.write(content.data(), content.size());
+    return true;
 }
 
 void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {

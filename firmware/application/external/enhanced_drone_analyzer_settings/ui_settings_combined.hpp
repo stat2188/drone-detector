@@ -17,8 +17,12 @@
 
 using Frequency = uint64_t;
 
-// Include common types from scanner header to avoid duplication
-#include "ui_scanner_combined.hpp"
+// Include common types from local header to avoid scanner dependencies
+#include "ui_drone_common_types.hpp"
+#include "ui.hpp"
+#include "ui_navigation.hpp"
+#include "ui_widget.hpp"
+#include "scanner_settings.hpp"
 
 // UI framework includes must be outside namespace to avoid nested namespace issues
 #include "ui.hpp"
