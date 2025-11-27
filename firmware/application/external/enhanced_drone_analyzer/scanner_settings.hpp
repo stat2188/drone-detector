@@ -55,6 +55,8 @@ struct DroneAnalyzerSettings {
         ss << "hardware_bandwidth_hz=" << hardware_bandwidth_hz << "\n";
         ss << "enable_real_hardware=" << (enable_real_hardware ? "true" : "false") << "\n";
         ss << "demo_mode=" << (demo_mode ? "true" : "false") << "\n";
+        ss << "wideband_min_hz=" << wideband_min_freq_hz << "\n";
+        ss << "wideband_max_hz=" << wideband_max_freq_hz << "\n";
 
         std::string content = ss.str();
 
@@ -155,6 +157,14 @@ namespace ScannerSettingsManager {
             return true;
         } else if (key == "demo_mode") {
             settings.demo_mode = (value == "true");
+            return true;
+        } else if (key == "wideband_min_hz") {
+            settings.wideband_min_freq_hz = validate_range<uint64_t>(
+                std::stoull(value), 1000000ULL, 7200000000ULL);
+            return true;
+        } else if (key == "wideband_max_hz") {
+            settings.wideband_max_freq_hz = validate_range<uint64_t>(
+                std::stoull(value), 1000000ULL, 7200000000ULL);
             return true;
         }
         return false;

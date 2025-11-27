@@ -1,161 +1,153 @@
-Enhanced Drone Analyzer (EDA) в прошивке Mayhem.
+Текущая реализация жестко ограничивает возможности HackRF/Portapack. Чтобы прибор мог сканировать весь диапазон от 1 МГц до 7.2 ГГц и настройки стали гибкими, нужно изменить архитектуру передачи параметров от файла настроек к движку сканера.
 
-Анализ проблем
-Критическая ошибка: Исключения (try-catch)
+Вот детальный план исправлений (refactoring plan).
 
-Ошибка: error: exception handling disabled, use '-fexceptions' to enable
-Причина: Прошивка Mayhem (как и большинство встроенного ПО для микроконтроллеров) компилируется с флагом -fno-exceptions для экономии памяти и быстродействия. Использование блоков try, catch и throw запрещено.
-Решение: Заменить try-catch на проверку кодов возврата (return false/true) или статусов ошибок.
-Критическая ошибка: Несовпадение шаблонов (ui_navigation.hpp)
+Этап 1: Обновление констант и типов данных
+Сначала нужно расширить допустимые границы и добавить поля в структуру настроек.
 
-Ошибка: no matching function for call to ...::FilteredPresetMenuView(...)
-Причина: Вызов nav_.push<T>(...) передает аргументы, типы которых не совпадают с конструктором класса FilteredPresetMenuView. В частности, передается std::function с двумя аргументами, а конструктор ожидает с одним.
-Решение: Привести сигнатуру лямбда-функции или std::function в соответствие с конструктором View.
-Ошибки типов и спецификаторов (-Wignored-qualifiers, -Wformat)
+Файл: ui_scanner_combined.hpp (или ui_drone_common_types.hpp)
 
-Ошибка: type qualifiers ignored on cast result type и format '%d' expects argument of type 'int'
-Причина: Избыточный const при static_cast и использование %d для int32_t (который на данной архитектуре является long int).
-Решение: Исправить приведение типов и использовать %ld для int32_t.
-Предупреждения -Weffc++ (Списки инициализации)
+Измените константу максимальной частоты.
+Добавьте поля границ сканирования в структуру настроек.
+// 1. Обновляем лимит частоты
+static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL; // Было 6G
 
-Причина: Члены классов не инициализированы в списке инициализации конструктора.
-Решение: Перенести инициализацию переменных из тела конструктора в список инициализации (: member(value)).
-Логическая ошибка: Пропущенные значения enum
-
-Причина: В switch пропущен case SpectrumMode::ULTRA_NARROW.
-Решение: Добавить обработку этого значения.
-План исправления
-Ниже приведен исправленный код для затронутых файлов.
-
-1. Исправление ui_scanner_combined.cpp
-Необходимо исправить приведение типов, форматирование строк и размер буфера.
-
-// В файле ui_scanner_combined.cpp
-
-// ИСПРАВЛЕНИЕ 1: Убираем лишний const в static_cast (строка ~787)
-// Было: this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage* const>(p));
-this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
-
-// ИСПРАВЛЕНИЕ 2: Увеличиваем буфер и исправляем форматирование (строка ~1141)
-// Было: char buffer[32]; snprintf(..., "%s %lu%% C:%lu D:%lu", ...);
-// Стало:
-void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles, uint32_t detections) {
-    set_display_mode(DisplayMode::SCANNING);
-
-    char progress_bar[25] = "--------";
-    uint8_t filled = (progress_percent * 8) / 100;
-    for (uint8_t i = 0; i < filled; i++) {
-        progress_bar[i] = '=';
-    }
-
-    // Увеличен размер буфера во избежание truncation warning
-    char buffer[64]; 
-    snprintf(buffer, sizeof(buffer), "%s %lu%% C:%lu D:%lu",
-            progress_bar, (unsigned long)progress_percent, (unsigned long)total_cycles, (unsigned long)detections);
+// 2. Расширяем структуру настроек (DroneAnalyzerSettings)
+struct DroneAnalyzerSettings {
+    // ... существующие поля ...
     
-    // ... остальной код ...
+    // Добавляем новые поля для гибкости Wideband
+    uint64_t wideband_min_hz = 2400000000ULL;
+    uint64_t wideband_max_hz = 2500000000ULL;
+    
+    // ... методы save() ...
+};
+Этап 2: Обновление парсера настроек (Загрузка/Сохранение)
+Нужно научить приложение читать эти новые параметры из файла ENHANCED_DRONE_ANALYZER_SETTINGS.txt.
+
+Файл: scanner_settings.hpp
+
+Нужно обновить методы parse_key_value и save.
+
+// В методе save():
+ss << "wideband_min_hz=" << wideband_min_hz << "\n";
+ss << "wideband_max_hz=" << wideband_max_hz << "\n";
+
+// В методе parse_key_value(..., settings, line):
+else if (key == "wideband_min_hz") {
+    settings.wideband_min_hz = validate_range<uint64_t>(
+        std::stoull(value), 1000000ULL, 7200000000ULL); // от 1МГц
+    return true;
+} 
+else if (key == "wideband_max_hz") {
+    settings.wideband_max_hz = validate_range<uint64_t>(
+        std::stoull(value), 1000000ULL, 7200000000ULL);
+    return true;
 }
+Этап 3: Модернизация класса DroneScanner
+Сейчас сканер игнорирует настройки и берет константы. Нужно сделать метод настройки публичным и использовать его.
 
-// ИСПРАВЛЕНИЕ 3: Исправляем спецификатор формата для int32_t (строка ~1396)
-// В DroneDisplayController::render_drone_text_display
-// Было: snprintf(buffer, ..., DRONE_DISPLAY_FORMAT, ... (long int)drone.rssi, ...);
-// Проблема: DRONE_DISPLAY_FORMAT скорее всего содержит %d, а передается long int.
-// Нужно синхронизировать формат в ui_scanner_combined.hpp
-В файле ui_scanner_combined.hpp (или там, где определен DRONE_DISPLAY_FORMAT):
+Файл: ui_scanner_combined.hpp
 
-// Измените %d на %ld для RSSI
-static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %-4lddB %c";
-2. Исправление ui_settings_combined.cpp
-Это самый проблемный файл. Нужно убрать try-catch, исправить push и добавить ULTRA_NARROW.
+В классе DroneScanner:
 
-// В файле ui_settings_combined.cpp
+class DroneScanner {
+public:
+    // ... существующие методы ...
 
-// ИСПРАВЛЕНИЕ 4: Удаление try-catch (строка ~122)
-// Mayhem не поддерживает исключения. Используем File API проверки.
-void EnhancedSettingsManager::create_backup_file(const std::string& filepath) {
-    // Простое копирование без try-catch
-    File src_file;
-    if (!src_file.open(filepath)) return; // Ошибка открытия
+    // ДОБАВИТЬ: Публичный метод для изменения диапазона на лету
+    void update_scan_range(Frequency min_freq, Frequency max_freq) {
+        // Защита от некорректных данных
+        if (min_freq >= max_freq) return;
+        if (min_freq < 1000000) min_freq = 1000000;
+        if (max_freq > 7200000000ULL) max_freq = 7200000000ULL;
 
-    std::string content;
-    content.resize(src_file.size());
-    src_file.read(content.data(), src_file.size());
-    src_file.close();
-
-    std::string backup_path = filepath + ".BAK";
-    File backup_file;
-    if (backup_file.create(backup_path)) {
-        backup_file.write(content.data(), content.size());
-        backup_file.close();
+        setup_wideband_range(min_freq, max_freq);
     }
+
+    // ... 
+};
+Этап 4: Интеграция настроек при запуске
+Нужно, чтобы при старте приложения настройки из файла сразу применялись к сканеру.
+
+Файл: ui_scanner_combined.cpp
+
+Найдите метод EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView (конструктор главного окна).
+
+// В конструкторе после load_settings_from_sd_card(settings_):
+
+load_settings_from_sd_card(settings_);
+
+// ВАЖНО: Применяем загруженные границы к сканеру
+if (scanner_) {
+    scanner_->update_scan_range(settings_.wideband_min_hz, settings_.wideband_max_hz);
 }
 
-// ИСПРАВЛЕНИЕ 5: Добавление case ULTRA_NARROW (строка ~372 и ~474)
-// В DroneAnalyzerSettingsManager::serialize и ScannerConfig::save_to_file
-// Добавьте этот case в switch(settings.spectrum_mode)
-case SpectrumMode::ULTRA_NARROW: ss << "ULTRA_NARROW"; break; // Или ss << "NARROW"; как fallback
+// Если координатор использует настройки, передаем их и туда
+if (scanning_coordinator_) {
+    scanning_coordinator_->update_runtime_parameters(settings_);
+}
+Этап 5: UI для ручного ввода частот
+Самое важное для пользователя — возможность поменять частоты через меню, не вынимая SD-карту.
 
-// ИСПРАВЛЕНИЕ 6: Исправление вызова push (строка ~658)
-// Проблема: Лямбда ожидает (Preset, List), а конструктор View (Preset).
-// В DronePresetSelector::show_type_filtered_presets:
+Файл: ui_settings_combined.cpp
 
-// Измените определение callback или его передачу:
-void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneType type) {
-    // ... код фильтрации ...
+В DroneUIController нужно реализовать методы вызова клавиатуры для ввода частоты.
 
-    // Исправленная сигнатура лямбды: принимает только DronePreset, так как View возвращает только его
-    auto on_selected = [this, &nav](const DronePreset& preset) {
-        // Логика обработки выбора
-        this->on_preset_selected(preset); // Предположим, у вас есть такой метод
-        nav.pop();
-    };
+// В классе DroneUIController
 
-    // Теперь типы совпадают с конструктором FilteredPresetMenuView(nav, names, function<void(const preset&)>, presets)
-    auto view = nav.push<FilteredPresetMenuView>(
-        names, 
-        on_selected, 
-        filtered_presets
+void DroneUIController::on_set_wideband_limits() {
+    // Шаг 1: Ввод минимальной частоты
+    auto min_view = nav_.push<FrequencyKeypadView>(
+        settings_.wideband_min_hz
     );
+    
+    min_view->on_changed = [this](Frequency new_min) {
+        // Шаг 2: После ввода мин, запрашиваем макс
+        auto max_view = nav_.push<FrequencyKeypadView>(
+            settings_.wideband_max_hz
+        );
+        
+        max_view->on_changed = [this, new_min](Frequency new_max) {
+            if (new_max > new_min) {
+                // Сохраняем в настройки
+                settings_.wideband_min_hz = new_min;
+                settings_.wideband_max_hz = new_max;
+                settings_.save(); // Сохраняем на SD
+                
+                // Применяем к сканеру немедленно
+                scanner_.update_scan_range(new_min, new_max);
+                
+                nav_.display_modal("Success", "Range updated!");
+            } else {
+                nav_.display_modal("Error", "Min must be < Max");
+            }
+        };
+    };
 }
+Этап 6: Обновление Пресетов (Presets)
+Чтобы пресеты (5.8, 915 и т.д.) реально работали, они должны вызывать новый метод сканера.
 
-// ИСПРАВЛЕНИЕ 7: Инициализация в конструкторе AudioSettingsView (строка ~802)
-AudioSettingsView::AudioSettingsView(NavigationView& nav)
-    : nav_(nav),
-      // Инициализируем члены здесь, а не в теле
-      audio_settings_{true, ThreatLevel::HIGH}, // Пример значений
-      check_enable_audio_({/* координаты */}, "Enable Audio"),
-      field_test_tone_({/* координаты */}, /* опции */)
-{
-    // Тело конструктора...
+Файл: ui_settings_combined.cpp (метод on_preset_selected или аналогичный в FilteredPresetMenuView):
+
+// Когда пользователь выбирает пресет из списка:
+void DroneUIController::apply_preset(const DronePreset& preset) {
+    // 1. Обновляем настройки
+    settings_.wideband_min_hz = preset.min_freq; // Предполагается, что в DronePreset есть min/max
+    settings_.wideband_max_hz = preset.max_freq;
+    
+    // 2. Применяем к сканеру
+    scanner_.update_scan_range(preset.min_freq, preset.max_freq);
+    
+    // 3. Меняем режим на WIDEBAND, чтобы сразу видеть результат
+    scanner_.set_scanning_mode(DroneScanner::ScanningMode::WIDEBAND_CONTINUOUS);
+    
+    nav_.display_modal("Preset Loaded", preset.name);
 }
-3. Исправление ui_spectrum_settings.cpp / .hpp
-Исправление предупреждений -Weffc++.
+Итог изменений
+После этих правок:
 
-В ui_spectrum_settings.hpp:
-Убедитесь, что SpectrumAnalyzerSettings имеет конструктор по умолчанию или инициализацию полей (в C++11+ инициализация по месту type var = val; работает, но warning может ругаться на сложные структуры).
-
-В ui_spectrum_settings.cpp:
-
-// ИСПРАВЛЕНИЕ 8: Список инициализации для SpectrumPresetLoader
-SpectrumPresetLoader::SpectrumPresetLoader(const std::string& preset_path)
-    : preset_file_path_(preset_path),
-      settings_() // Явная инициализация settings_
-{
-    initialize_default_presets();
-}
-Итоговый чек-лист изменений
-ui_settings_combined.cpp:
-
-Удалить блок try { ... } catch (...) { ... }.
-В методе show_type_filtered_presets изменить лямбду так, чтобы она принимала (const DronePreset&) вместо (const DronePreset&, const std::vector<...>&).
-Добавить case SpectrumMode::ULTRA_NARROW: во все switch конструкции по spectrum_mode.
-Перенести инициализацию audio_settings_ в список инициализации конструктора AudioSettingsView.
-ui_scanner_combined.cpp:
-
-Заменить static_cast<const T* const>(p) на static_cast<const T*>(p).
-Увеличить размер буфера в ConsoleStatusBar::update_scanning_progress до 64 байт.
-Убедиться, что в snprintf для int32_t используется %ld и явное приведение (long int).
-ui_scanner_combined.hpp:
-
-Изменить DRONE_DISPLAY_FORMAT на "%s %s %-4lddB %c".
-Эти изменения устранят ошибки остановки компиляции и большинство предупреждений, соблюдая архитектурные требования Mayhem.
+Файл настроек будет содержать wideband_min_hz и wideband_max_hz.
+При старте сканер будет настраиваться на эти частоты (хоть 100 МГц, хоть 7 ГГц).
+В меню появится возможность ввести произвольные границы.
+Пресеты начнут реально переключать физический диапазон сканирования, а не только менять надписи на экране.

@@ -1662,6 +1662,10 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 
     load_settings_from_sd_card(settings_);
 
+    if (scanner_) {
+        scanner_->update_scan_range(settings_.wideband_min_freq_hz, settings_.wideband_max_freq_hz);
+    }
+
     if (scanning_coordinator_) {
         scanning_coordinator_->update_runtime_parameters(settings_);
     }

@@ -217,7 +217,7 @@ static constexpr size_t MAX_DISPLAYED_DRONES = 3;
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
-static constexpr uint64_t MAX_HARDWARE_FREQ = 6'000'000'000ULL;
+static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
 static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 25'000'000;
@@ -401,6 +401,16 @@ public:
 
     void switch_to_real_mode();
     void switch_to_demo_mode();
+
+    // Public method for updating scan range
+    void update_scan_range(Frequency min_freq, Frequency max_freq) {
+        // Protection from invalid data
+        if (min_freq >= max_freq) return;
+        if (min_freq < 1000000) min_freq = 1000000;
+        if (max_freq > 7200000000ULL) max_freq = 7200000000ULL;
+
+        setup_wideband_range(min_freq, max_freq);
+    }
 
     void perform_scan_cycle(DroneHardwareController& hardware);
     void process_rssi_detection(const freqman_entry& entry, int32_t rssi);

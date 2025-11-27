@@ -129,12 +129,8 @@ private:
      */
     static void restore_from_backup(const std::string& filepath) {
         const std::string backup_path = filepath + ".bak";
-        try {
-            // Simple rename operation (would need OS-level support)
-            // For now, backup remains if restore fails
-        } catch (...) {
-            // Restore failed, backup remains available
-        }
+        // Simple rename operation (would need OS-level support)
+        // For now, backup remains if restore fails
     }
 
     /**
