@@ -266,12 +266,14 @@ set(EXTCPPSRC
 	external/adult_toys_controller/ui_adult_toys_controller.cpp
 
 	#enhanced_drone_analyzer - Enhanced Drone Analyzer application
-	external/enhanced_drone_analyzer/enhanced_drone_analyzer_settings_main.cpp
-	external/enhanced_drone_analyzer/enhanced_drone_analyzer_scanner_main.cpp
+	external/enhanced_drone_analyzer/main.cpp
 	external/enhanced_drone_analyzer/ui_scanner_combined.cpp
 	external/enhanced_drone_analyzer/ui_spectrum_settings.cpp
 	external/enhanced_drone_analyzer/ui_signal_processing.cpp
-	external/enhanced_drone_analyzer/ui_settings_combined.cpp
+
+	#enhanced_drone_analyzer_settings - Enhanced Drone Analyzer Settings application
+	external/enhanced_drone_analyzer_settings/main.cpp
+	external/enhanced_drone_analyzer_settings/ui_settings_combined.cpp
 )
 
 set(EXTAPPLIST
@@ -339,4 +341,5 @@ set(EXTAPPLIST
 	morse_practice
 	adult_toys_controller
 	enhanced_drone_analyzer
+	enhanced_drone_analyzer_settings
 )
