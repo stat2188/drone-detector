@@ -409,13 +409,16 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
             send_drone_detection_message(detected_type, entry.frequency_a, rssi, threat_level);
         }
     } else {
-        // Implement leaky bucket algorithm: gradually decrease detection count instead of resetting to 0
         uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
+        int32_t stored_rssi = local_detection_ring.get_rssi_value(freq_hash); // Читаем старый RSSI
+
         if (current_count > 0) {
-            // Decrease count by 1, but keep RSSI value for hysteresis
-            current_count = std::max(static_cast<uint8_t>(current_count - 1), static_cast<uint8_t>(0));
+            current_count--;
+            // Сохраняем старый RSSI, чтобы интерфейс не мигал
+            local_detection_ring.update_detection(freq_hash, current_count, stored_rssi);
+        } else {
+            local_detection_ring.update_detection(freq_hash, 0, -120);
         }
-        local_detection_ring.update_detection(freq_hash, current_count, -120);
     }
 }
 
@@ -1912,6 +1915,61 @@ void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings&
 
 void ScanningCoordinator::show_session_summary(const std::string& summary) {
     (void)summary;
+}
+
+// ===========================================
+// PART 6: DISPLAY HELPER IMPLEMENTATIONS
+// ===========================================
+
+std::string DroneDisplayController::get_drone_type_name(DroneType type) const {
+    switch (type) {
+        case DroneType::MAVIC: return "MAVIC";
+        case DroneType::DJI_P34: return "DJI P34";
+        case DroneType::UNKNOWN: default: return "UNKNOWN";
+    }
+}
+
+Color DroneDisplayController::get_drone_type_color(DroneType type) const {
+    switch (type) {
+        case DroneType::MAVIC: return Color::red();
+        case DroneType::DJI_P34: return Color::orange();
+        case DroneType::UNKNOWN: default: return Color::white();
+    }
+}
+
+Color DroneDisplayController::get_threat_level_color(ThreatLevel level) const {
+     switch (level) {
+        case ThreatLevel::CRITICAL: return Color::red();
+        case ThreatLevel::HIGH: return Color::orange();
+        case ThreatLevel::MEDIUM: return Color::yellow();
+        case ThreatLevel::LOW: return Color::green();
+        default: return Color::grey();
+    }
+}
+
+std::string DroneDisplayController::get_threat_level_name(ThreatLevel level) const {
+    switch (level) {
+        case ThreatLevel::CRITICAL: return "CRITICAL";
+        case ThreatLevel::HIGH: return "HIGH";
+        case ThreatLevel::MEDIUM: return "MEDIUM";
+        case ThreatLevel::LOW: return "LOW";
+        default: return "NONE";
+    }
+}
+
+void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
+    if (bin >= spectrum.db.size()) {
+        max_power = 0;
+        return;
+    }
+    max_power = spectrum.db[bin];
+}
+
+void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
+    if (pixel_index < spectrum_row.size()) {
+        spectrum_row[pixel_index] = spectrum_gradient_.lut[power];
+        pixel_index++;
+    }
 }
 
 } // namespace ui::external_app::enhanced_drone_analyzer
