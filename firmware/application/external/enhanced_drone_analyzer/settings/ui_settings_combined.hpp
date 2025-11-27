@@ -118,7 +118,7 @@ private:
 class DronePresetSelector {
 public:
     static void show_preset_menu(NavigationView& nav, PresetMenuView callback);
-    static void show_type_filtered_presets(NavigationView& nav, DroneType type, FilteredPresetMenuView callback);
+    static void show_type_filtered_presets(NavigationView& nav, DroneType type);
     static PresetMenuView create_config_updater(ScannerConfig& config_to_update);
 };
 

@@ -696,7 +696,7 @@ public:
     DroneDisplayController(const DroneDisplayController&) = delete;
     DroneDisplayController& operator=(const DroneDisplayController&) = delete;
 
-    static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %-4ddB %c";
+    static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %-4lddB %c";
     struct SpectrumConfig {
         Frequency min_freq = 2400000000ULL;
         Frequency max_freq = 2500000000ULL;

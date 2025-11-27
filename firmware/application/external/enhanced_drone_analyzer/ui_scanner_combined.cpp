@@ -784,7 +784,7 @@ void DroneHardwareController::initialize_spectrum_collector() {
         Message::ID::ChannelSpectrumConfig,
         std::move(std::function<void(Message* const)>(
             [this](Message* const p) {
-                this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage* const>(p));
+                this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
             })));
     message_handler_frame_sync_ = std::make_unique<MessageHandlerRegistration>(
         Message::ID::DisplayFrameSync,
@@ -1137,7 +1137,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
         progress_bar[i] = '=';
     }
 
-    char buffer[32];
+    char buffer[64];
     snprintf(buffer, sizeof(buffer), "%s %lu%% C:%lu D:%lu",
             progress_bar, (unsigned long)progress_percent, (unsigned long)total_cycles, (unsigned long)detections);
     progress_text_.set(buffer);

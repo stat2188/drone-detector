@@ -11,7 +11,7 @@ namespace ui::external_app::enhanced_drone_analyzer {
 
 // SpectrumPresetLoader implementation
 SpectrumPresetLoader::SpectrumPresetLoader(const std::string& preset_path)
-    : preset_file_path_(preset_path) {
+    : preset_file_path_(preset_path), settings_() {
     // Initialize with default drone presets
     initialize_default_presets();
 }
