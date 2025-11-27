@@ -821,4 +821,193 @@ void LoadingView::on_hide() {
     // Cleanup if needed
 }
 
+// ===========================================
+// PART 3: MISSING UI IMPLEMENTATIONS
+// ===========================================
+
+// --- ScanningSettingsView Implementation ---
+
+ScanningSettingsView::ScanningSettingsView(NavigationView& nav)
+    : View(), nav_(nav)
+{
+    add_children({
+        &field_scanning_mode_,
+        &number_scan_interval_,
+        &number_rssi_threshold_,
+        &checkbox_wideband_,
+        &text_wideband_,
+        // &button_presets_, // Пока закомментируем, если пресеты сложны в реализации
+        &button_save_
+    });
+
+    button_save_.on_select = [this](Button&) {
+        on_save_settings();
+    };
+
+    // Добавляем обработчики изменений если нужно
+    checkbox_wideband_.on_select = [this](Checkbox&, bool) {
+        on_wideband_enabled_changed();
+    };
+
+    load_current_settings();
+}
+
+void ScanningSettingsView::focus() {
+    button_save_.focus();
+}
+
+void ScanningSettingsView::load_current_settings() {
+    DroneAnalyzerSettings settings;
+    if (!DroneAnalyzerSettingsManager::load(settings)) {
+        DroneAnalyzerSettingsManager::reset_to_defaults(settings);
+    }
+
+    // Маппинг режима сканирования в индекс (упрощенно)
+    // 0: Database, 1: Wideband, 2: Hybrid
+    field_scanning_mode_.set_selected_index(0); // По умолчанию
+
+    number_scan_interval_.set_value(settings.scan_interval_ms);
+    number_rssi_threshold_.set_value(settings.rssi_threshold_db);
+    checkbox_wideband_.set_value(settings.enable_wideband_scanning);
+}
+
+void ScanningSettingsView::save_current_settings() {
+    DroneAnalyzerSettings settings;
+    DroneAnalyzerSettingsManager::load(settings);
+
+    settings.scan_interval_ms = number_scan_interval_.value();
+    settings.rssi_threshold_db = number_rssi_threshold_.value();
+    settings.enable_wideband_scanning = checkbox_wideband_.value();
+
+    // Сохранение режима сканирования пропустим для простоты или добавим логику позже
+
+    DroneAnalyzerSettingsManager::save(settings);
+}
+
+void ScanningSettingsView::on_save_settings() {
+    save_current_settings();
+    nav_.display_modal("Success", "Scanning settings\nsaved to TXT");
+}
+
+void ScanningSettingsView::on_show_presets() {
+    // Placeholder
+    nav_.display_modal("Info", "Presets menu\nnot implemented");
+}
+
+void ScanningSettingsView::on_wideband_enabled_changed() {
+    // Логика UI обновления при переключении галочки
+}
+
+void ScanningSettingsView::update_ui_from_settings() {
+    load_current_settings();
+}
+
+void ScanningSettingsView::update_settings_from_ui() {
+    save_current_settings();
+}
+
+// --- DroneAnalyzerSettingsView Implementation (MAIN SETTINGS MENU) ---
+
+DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav)
+    : View(), nav_(nav)
+{
+    add_children({
+        &text_title_,
+        &button_audio_settings_,
+        &button_hardware_settings_,
+        &button_scanning_settings_,
+        &button_advanced_settings_,
+        &button_load_defaults_,
+        &button_save_all_
+    });
+
+    // Настройка обработчиков кнопок
+    button_audio_settings_.on_select = [this](Button&) {
+        show_audio_settings();
+    };
+
+    button_hardware_settings_.on_select = [this](Button&) {
+        show_hardware_settings();
+    };
+
+    button_scanning_settings_.on_select = [this](Button&) {
+        show_scanning_settings();
+    };
+
+    button_advanced_settings_.on_select = [this](Button&) {
+        show_advanced_settings();
+    };
+
+    button_load_defaults_.on_select = [this](Button&) {
+        load_default_settings();
+    };
+
+    button_save_all_.on_select = [this](Button&) {
+        save_all_settings();
+    };
+
+    // Загружаем текущие настройки при старте
+    DroneAnalyzerSettingsManager::load(current_settings_);
+}
+
+void DroneAnalyzerSettingsView::focus() {
+    button_audio_settings_.focus();
+}
+
+void DroneAnalyzerSettingsView::paint(Painter& painter) {
+    View::paint(painter);
+    // Можно добавить рамку или фон
+}
+
+bool DroneAnalyzerSettingsView::on_key(const KeyEvent key) {
+    if (key == KeyEvent::Back) {
+        nav_.pop();
+        return true;
+    }
+    return View::on_key(key);
+}
+
+bool DroneAnalyzerSettingsView::on_touch(const TouchEvent event) {
+    return View::on_touch(event);
+}
+
+void DroneAnalyzerSettingsView::on_show() {
+    View::on_show();
+    // Обновляем состояние если нужно
+}
+
+void DroneAnalyzerSettingsView::on_hide() {
+    View::on_hide();
+}
+
+void DroneAnalyzerSettingsView::show_audio_settings() {
+    nav_.push<AudioSettingsView>();
+}
+
+void DroneAnalyzerSettingsView::show_hardware_settings() {
+    nav_.push<HardwareSettingsView>();
+}
+
+void DroneAnalyzerSettingsView::show_scanning_settings() {
+    nav_.push<ScanningSettingsView>();
+}
+
+void DroneAnalyzerSettingsView::show_advanced_settings() {
+    nav_.display_modal("Info", "Advanced settings\ncoming soon");
+}
+
+void DroneAnalyzerSettingsView::load_default_settings() {
+    DroneAnalyzerSettingsManager::reset_to_defaults(current_settings_);
+    DroneAnalyzerSettingsManager::save(current_settings_);
+    nav_.display_modal("Reset", "Settings reset to\ndefaults");
+}
+
+void DroneAnalyzerSettingsView::save_all_settings() {
+    if (DroneAnalyzerSettingsManager::save(current_settings_)) {
+         nav_.display_modal("Success", "All settings saved\nsuccessfully");
+    } else {
+         nav_.display_modal("Error", "Failed to save\nsettings file");
+    }
+}
+
 } // namespace ui::external_app::enhanced_drone_analyzer
