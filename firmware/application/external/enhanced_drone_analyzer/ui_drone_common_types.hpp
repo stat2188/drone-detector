@@ -21,6 +21,18 @@ struct DroneAnalyzerSettings {
     uint32_t hardware_bandwidth_hz = 24000000;
     bool enable_real_hardware = true;
     bool demo_mode = false;
+
+    // Additional members for compatibility
+    std::string freqman_path = "DRONES";
+    std::string settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    bool enable_wideband_scanning = false;
+    uint64_t wideband_min_freq_hz = 2400000000ULL;
+    uint64_t wideband_max_freq_hz = 2500000000ULL;
+    uint64_t min_frequency_hz = 2400000000ULL;
+    uint64_t max_frequency_hz = 2500000000ULL;
+    bool show_detailed_info = true;
+    bool auto_save_logs = true;
+    std::string log_file_path = "/eda_logs";
 };
 
 // DroneAnalyzerSettingsManager class
@@ -50,6 +62,18 @@ inline void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSetting
     settings.hardware_bandwidth_hz = 24000000;
     settings.enable_real_hardware = true;
     settings.demo_mode = false;
+
+    // Additional members
+    settings.freqman_path = "DRONES";
+    settings.settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    settings.enable_wideband_scanning = false;
+    settings.wideband_min_freq_hz = 2400000000ULL;
+    settings.wideband_max_freq_hz = 2500000000ULL;
+    settings.min_frequency_hz = 2400000000ULL;
+    settings.max_frequency_hz = 2500000000ULL;
+    settings.show_detailed_info = true;
+    settings.auto_save_logs = true;
+    settings.log_file_path = "/eda_logs";
 }
 
 inline bool DroneAnalyzerSettingsManager::parse_line(const std::string& line, DroneAnalyzerSettings& settings) {

@@ -286,7 +286,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
                 Frequency target_freq_hz = entry_ptr->frequency_a;
                 if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
                     if (hardware.tune_to_frequency(target_freq_hz)) {
-                        chThdSleepMilliseconds(2);
+                        chThdSleepMilliseconds(10);
                         int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
                         process_rssi_detection(*entry_ptr, real_rssi);
                         last_scanned_frequency_ = target_freq_hz;
@@ -309,20 +309,37 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
 
     const WidebandSlice& current_slice = wideband_scan_data_.slices[wideband_scan_data_.slice_counter];
     if (hardware.tune_to_frequency(current_slice.center_frequency)) {
-        chThdSleepMilliseconds(5);
+        chThdSleepMilliseconds(10);
         int32_t slice_rssi = hardware.get_real_rssi_from_hardware(current_slice.center_frequency);
         if (slice_rssi > DEFAULT_RSSI_THRESHOLD_DB) {
+            // Two-stage scanning: find exact frequency within the slice
+            Frequency start_f = current_slice.center_frequency - (WIDEBAND_SLICE_WIDTH / 2);
+            Frequency found_peak_freq = current_slice.center_frequency;
+            int32_t max_peak_rssi = slice_rssi;
+
+            // Fast sub-scan within slice with 2MHz steps
+            for (Frequency f = start_f; f < start_f + WIDEBAND_SLICE_WIDTH; f += 2000000) {
+                if (hardware.tune_to_frequency(f)) {
+                    chThdSleepMilliseconds(1);  // Minimal delay for sub-scan
+                    int32_t r = hardware.get_real_rssi_from_hardware(f);
+                    if (r > max_peak_rssi) {
+                        max_peak_rssi = r;
+                        found_peak_freq = f;
+                    }
+                }
+            }
+
             freqman_entry fake_entry{
-                .frequency_a = static_cast<int64_t>(current_slice.center_frequency),
-                .frequency_b = static_cast<int64_t>(current_slice.center_frequency),
-                .description = "Wideband Detection",
+                .frequency_a = static_cast<int64_t>(found_peak_freq),
+                .frequency_b = static_cast<int64_t>(found_peak_freq),
+                .description = "Wideband Fine Detection",
                 .type = freqman_type::Single,
                 .modulation = freqman_invalid_index,
                 .bandwidth = freqman_invalid_index,
                 .step = freqman_invalid_index,
                 .tone = freqman_invalid_index
             };
-            wideband_detection_override(fake_entry, slice_rssi, WIDEBAND_RSSI_THRESHOLD_DB);
+            wideband_detection_override(fake_entry, max_peak_rssi, WIDEBAND_RSSI_THRESHOLD_DB);
         }
         last_scanned_frequency_ = current_slice.center_frequency;
     } else {
@@ -392,7 +409,13 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
             send_drone_detection_message(detected_type, entry.frequency_a, rssi, threat_level);
         }
     } else {
-        local_detection_ring.update_detection(freq_hash, 0, -120);
+        // Implement leaky bucket algorithm: gradually decrease detection count instead of resetting to 0
+        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
+        if (current_count > 0) {
+            // Decrease count by 1, but keep RSSI value for hysteresis
+            current_count = std::max(static_cast<uint8_t>(current_count - 1), static_cast<uint8_t>(0));
+        }
+        local_detection_ring.update_detection(freq_hash, current_count, -120);
     }
 }
 
@@ -470,7 +493,19 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
             update_tracked_drone(detected_type, entry.frequency_a, rssi, threat_level);
         }
     } else {
-        local_detection_ring.update_detection(freq_hash, 0, -120);
+        // Implement leaky bucket algorithm: gradually decrease detection count instead of resetting to 0
+        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
+        int32_t stored_rssi = local_detection_ring.get_rssi_value(freq_hash);
+
+        // Медленное затухание
+        if (current_count > 0) {
+            current_count--;
+            // Сохраняем старый RSSI, показывая, что сигнал "был здесь недавно"
+            local_detection_ring.update_detection(freq_hash, current_count, stored_rssi);
+        } else {
+            // Только когда счетчик совсем обнулился, стираем данные
+            local_detection_ring.update_detection(freq_hash, 0, -120);
+        }
     }
 }
 

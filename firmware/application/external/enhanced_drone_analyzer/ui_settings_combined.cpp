@@ -37,34 +37,32 @@ public:
 
         auto& file = settings_file;
 
-        try {
-            // Write header with timestamp
-            std::string header = generate_file_header();
-            auto header_result = file.write(header.data(), header.size());
-            if (header_result != header.size()) {
-                throw std::runtime_error("Header write failed");
-            }
-
-            // Generate and write all settings
-            std::string content = generate_settings_content(settings);
-            auto content_result = file.write(content.data(), content.size());
-            if (content_result != content.size()) {
-                throw std::runtime_error("Content write failed");
-            }
-
-            file.close();
-
-            // Remove backup on successful write
-            remove_backup_file(filepath);
-
-            return true;
-
-        } catch (const std::exception&) {
+        // Write header with timestamp
+        std::string header = generate_file_header();
+        auto header_result = file.write(header.data(), header.size());
+        if (header_result != header.size()) {
             file.close();
             // Restore from backup on error
             restore_from_backup(filepath);
             return false;
         }
+
+        // Generate and write all settings
+        std::string content = generate_settings_content(settings);
+        auto content_result = file.write(content.data(), content.size());
+        if (content_result != content.size()) {
+            file.close();
+            // Restore from backup on error
+            restore_from_backup(filepath);
+            return false;
+        }
+
+        file.close();
+
+        // Remove backup on successful write
+        remove_backup_file(filepath);
+
+        return true;
     }
 
     /**
@@ -108,7 +106,7 @@ private:
                 size_t total_read = 0;
 
                 while (total_read < orig_file.size()) {
-                    size_t to_read = std::min(size_t(1024), orig_file.size() - total_read);
+                    size_t to_read = std::min(size_t(1024), static_cast<size_t>(orig_file.size() - total_read));
                     auto read_result = orig_file.read(buffer.data(), to_read);
                     if (read_result != to_read) break;
 
@@ -200,6 +198,7 @@ private:
             case SpectrumMode::MEDIUM: return "MEDIUM";
             case SpectrumMode::WIDE: return "WIDE";
             case SpectrumMode::ULTRA_WIDE: return "ULTRA_WIDE";
+            case SpectrumMode::ULTRA_NARROW: return "ULTRA_NARROW";
             default: return "MEDIUM";
         }
     }
@@ -584,13 +583,16 @@ void DronePresetSelector::show_preset_menu(NavigationView& nav, PresetMenuView c
 
     class PresetMenuView : public MenuView {
     public:
-        PresetMenuView(std::vector<std::string> names, std::function<void(const DronePreset&)> on_selected,
+        PresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const DronePreset&)> on_selected,
                       const std::vector<DronePreset>& presets)
-            : MenuView(), names_(names), on_selected_fn_(on_selected), presets_(presets) {
+            : MenuView(), nav_(nav), names_(names), on_selected_fn_(on_selected), presets_(presets) {
             for (const auto& name : names) {
-                add_item({name, Color::white()});
+                add_item({name, Color::white(), nullptr, nullptr});
             }
         }
+
+    private:
+        NavigationView& nav_;
 
         bool on_key(const KeyEvent key) override {
             if (key == KeyEvent::Select) {
@@ -623,13 +625,16 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
 
     class FilteredPresetMenuView : public MenuView {
     public:
-        FilteredPresetMenuView(std::vector<std::string> names, std::function<void(const DronePreset&)> on_selected,
+        FilteredPresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const DronePreset&)> on_selected,
                               const std::vector<DronePreset>& presets)
-            : MenuView(), names_(names), on_selected_fn_(on_selected), presets_(presets) {
+            : MenuView(), nav_(nav), names_(names), on_selected_fn_(on_selected), presets_(presets) {
             for (const auto& name : names) {
-                add_item({name, Color::white()});
+                add_item({name, Color::white(), nullptr, nullptr});
             }
         }
+
+    private:
+        NavigationView& nav_;
 
         bool on_key(const KeyEvent key) override {
             if (key == KeyEvent::Select) {
@@ -737,9 +742,7 @@ void HardwareSettingsView::focus() {
     button_save_.focus();
 }
 
-std::string HardwareSettingsView::title() const {
-    return "Hardware Settings";
-}
+
 
 void HardwareSettingsView::load_current_settings() {
     // Load settings from TXT file or defaults
@@ -805,9 +808,7 @@ void AudioSettingsView::focus() {
     button_save_.focus();
 }
 
-std::string AudioSettingsView::title() const {
-    return "Audio Settings";
-}
+
 
 void AudioSettingsView::load_current_settings() {
     // Load from settings TXT
@@ -861,9 +862,7 @@ void LoadingView::focus() {
     // No focusable elements
 }
 
-std::string LoadingView::title() const {
-    return "Loading";
-}
+
 
 void LoadingView::paint(Painter& painter) {
     View::paint(painter);
