@@ -1,6 +1,6 @@
 /*
- * Enhanced Drone Analyzer Scanner App
- * Fixed Section Name for Linker
+ * Enhanced Drone Analyzer - Main Entry Point
+ * Fixed: Section name matches external_app.ld (added 'app_' prefix)
  */
 
 #include "ui_navigation.hpp"
@@ -25,10 +25,11 @@ void initialize_app(ui::NavigationView& nav) {
 
 extern "C" {
 
-// !!! КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ !!!
-// Имя секции должно быть: .external_app.<ИМЯ_ПАПКИ>.application_information
-// Ваша папка называется: enhanced_drone_analyzer
-__attribute__((section(".external_app.enhanced_drone_analyzer.application_information"), used)) 
+// !!! ИСПРАВЛЕНИЕ ЗДЕСЬ !!!
+// Добавлен префикс 'app_' после .external_app.
+// Было: .external_app.enhanced_drone_analyzer...
+// Стало: .external_app.app_enhanced_drone_analyzer...
+__attribute__((section(".external_app.app_enhanced_drone_analyzer.application_information"), used)) 
 application_information_t enhanced_drone_analyzer_application_information = {
     
     /*.memory_location = */ (uint8_t*)0x00000000,
@@ -50,7 +51,6 @@ application_information_t enhanced_drone_analyzer_application_information = {
     /*.menu_location = */ app_location_t::RX,
     /*.desired_menu_position = */ 1,
 
-    // Тег Baseband (PWFM) как массив символов
     /*.m4_app_tag = */ { 'P', 'W', 'F', 'M' },
 
     /*.m4_app_offset = */ 0x00000000 
