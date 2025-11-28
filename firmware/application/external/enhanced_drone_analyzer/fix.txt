@@ -1,0 +1,212 @@
+copy from `/havoc/build/firmware/application/application.elf' [elf32-littlearm] to `/havoc/build/firmware/application/external_app_enhanced_drone_analyzer.himg' [binary]
+Traceback (most recent call last):
+Creating external application image for afsk_rx
+  File "/havoc/firmware/tools/export_external_apps.py", line 131, in <module>
+b'PAFR'
+PAFR
+/havoc/build/firmware/application/../baseband/PAFR.bin
+Creating external application image for calculator
+Creating external application image for font_viewer
+Creating external application image for blespam
+b'PBTT'
+PBTT
+/havoc/build/firmware/application/../baseband/PBTT.bin
+Creating external application image for analogtv
+b'PAMT'
+PAMT
+/havoc/build/firmware/application/../baseband/PAMT.bin
+Creating external application image for nrf_rx
+b'PNRR'
+PNRR
+/havoc/build/firmware/application/../baseband/PNRR.bin
+Creating external application image for coasterp
+b'PFSK'
+PFSK
+/havoc/build/firmware/application/../baseband/PFSK.bin
+Creating external application image for lge
+b'PFSK'
+PFSK
+/havoc/build/firmware/application/../baseband/PFSK.bin
+Creating external application image for lcr
+b'PAFT'
+PAFT
+/havoc/build/firmware/application/../baseband/PAFT.bin
+Creating external application image for jammer
+b'PJAM'
+PJAM
+/havoc/build/firmware/application/../baseband/PJAM.bin
+Creating external application image for gpssim
+b'PGPS'
+PGPS
+/havoc/build/firmware/application/../baseband/PGPS.bin
+Creating external application image for spainter
+b'PSPT'
+PSPT
+/havoc/build/firmware/application/../baseband/PSPT.bin
+Creating external application image for keyfob
+b'POOK'
+POOK
+/havoc/build/firmware/application/../baseband/POOK.bin
+Creating external application image for tetris
+Creating external application image for extsensors
+Creating external application image for foxhunt_rx
+b'PAMA'
+PAMA
+/havoc/build/firmware/application/../baseband/PAMA.bin
+Creating external application image for audio_test
+b'PABP'
+PABP
+/havoc/build/firmware/application/../baseband/PABP.bin
+Creating external application image for wardrivemap
+Creating external application image for tpmsrx
+b'PTPM'
+PTPM
+/havoc/build/firmware/application/../baseband/PTPM.bin
+Creating external application image for protoview
+b'PPVW'
+PPVW
+/havoc/build/firmware/application/../baseband/PPVW.bin
+Creating external application image for adsbtx
+b'PADT'
+PADT
+/havoc/build/firmware/application/../baseband/PADT.bin
+Creating external application image for morse_tx
+b'PTON'
+PTON
+/havoc/build/firmware/application/../baseband/PTON.bin
+Creating external application image for sstvtx
+b'PSTX'
+PSTX
+/havoc/build/firmware/application/../baseband/PSTX.bin
+Creating external application image for random_password
+b'PAFR'
+PAFR
+/havoc/build/firmware/application/../baseband/PAFR.bin
+Creating external application image for wefax_rx
+b'PWFX'
+PWFX
+/havoc/build/firmware/application/../baseband/PWFX.bin
+Creating external application image for noaaapt_rx
+b'PNOA'
+PNOA
+/havoc/build/firmware/application/../baseband/PNOA.bin
+Creating external application image for shoppingcart_lock
+b'PATX'
+PATX
+/havoc/build/firmware/application/../baseband/PATX.bin
+Creating external application image for ookbrute
+b'POOK'
+POOK
+/havoc/build/firmware/application/../baseband/POOK.bin
+Creating external application image for ook_editor
+b'POOK'
+POOK
+/havoc/build/firmware/application/../baseband/POOK.bin
+Creating external application image for cvs_spam
+b'PREP'
+PREP
+/havoc/build/firmware/application/../baseband/PREP.bin
+Creating external application image for flippertx
+b'POSK'
+POSK
+/havoc/build/firmware/application/../baseband/POSK.bin
+Creating external application image for remote
+b'PREP'
+PREP
+/havoc/build/firmware/application/../baseband/PREP.bin
+Creating external application image for mcu_temperature
+Creating external application image for fmradio
+b'PWFM'
+PWFM
+/havoc/build/firmware/application/../baseband/PWFM.bin
+Creating external application image for tuner
+b'PABP'
+PABP
+/havoc/build/firmware/application/../baseband/PABP.bin
+Creating external application image for metronome
+b'PABP'
+PABP
+/havoc/build/firmware/application/../baseband/PABP.bin
+Creating external application image for app_manager
+Creating external application image for hopper
+b'PJAM'
+PJAM
+/havoc/build/firmware/application/../baseband/PJAM.bin
+Creating external application image for antenna_length
+Creating external application image for view_wav
+b'PATX'
+    m4_image = read_image("{}/../baseband/{}.bin".format(binary_dir, chunk_tag))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/havoc/firmware/tools/export_external_apps.py", line 46, in read_image
+    f = open(path, 'rb')
+        ^^^^^^^^^^^^^^^^
+ValueError: embedded null byte
+PATX
+/havoc/build/firmware/application/../baseband/PATX.bin
+Creating external application image for sd_wipe
+Creating external application image for playlist_editor
+Creating external application image for snake
+Creating external application image for stopwatch
+Creating external application image for breakout
+b'PABP'
+PABP
+/havoc/build/firmware/application/../baseband/PABP.bin
+Creating external application image for dinogame
+Creating external application image for doom
+Creating external application image for debug_pmem
+Creating external application image for scanner
+b'PWFM'
+PWFM
+/havoc/build/firmware/application/../baseband/PWFM.bin
+Creating external application image for level
+b'PWFM'
+PWFM
+/havoc/build/firmware/application/../baseband/PWFM.bin
+Creating external application image for gfxeq
+b'PWFM'
+PWFM
+/havoc/build/firmware/application/../baseband/PWFM.bin
+Creating external application image for detector_rx
+b'PWFM'
+PWFM
+/havoc/build/firmware/application/../baseband/PWFM.bin
+Creating external application image for spaceinv
+Creating external application image for blackjack
+Creating external application image for battleship
+b'PPO2'
+PPO2
+/havoc/build/firmware/application/../baseband/PPO2.bin
+Creating external application image for ert
+b'PERT'
+PERT
+/havoc/build/firmware/application/../baseband/PERT.bin
+Creating external application image for epirb_rx
+b'PEPI'
+PEPI
+/havoc/build/firmware/application/../baseband/PEPI.bin
+Creating external application image for soundboard
+b'PATX'
+PATX
+/havoc/build/firmware/application/../baseband/PATX.bin
+Creating external application image for game2048
+Creating external application image for bht_tx
+b'PTON'
+PTON
+/havoc/build/firmware/application/../baseband/PTON.bin
+Creating external application image for morse_practice
+b'PABP'
+PABP
+/havoc/build/firmware/application/../baseband/PABP.bin
+Creating external application image for adult_toys_controller
+b'PBTT'
+PBTT
+/havoc/build/firmware/application/../baseband/PBTT.bin
+Creating external application image for enhanced_drone_analyzer
+b'D\x07\x00\x00'
+D
+/havoc/build/firmware/application/../baseband/D.bin
+make[2]: *** [firmware/application/CMakeFiles/application.dir/build.make:74: firmware/application/application.bin] Error 1
+make[2]: *** Deleting file 'firmware/application/application.bin'
+make[1]: *** [CMakeFiles/Makefile2:1363: firmware/application/CMakeFiles/application.dir/all] Error 2
+make: *** [Makefile:101: all] Error 2
+Error: Process completed with exit code 2.
