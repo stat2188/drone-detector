@@ -89,7 +89,7 @@ DroneScanner::DroneScanner()
       scanning_mode_(ScanningMode::DATABASE),
       is_real_mode_(true),
       tracked_drones_(),
-      tracked_drones_count_(0),
+      tracked_count_(0),
       approaching_count_(0),
       receding_count_(0),
       static_count_(0),
@@ -482,31 +482,31 @@ void DroneScanner::send_drone_detection_message(DroneType type, Frequency freque
 }
 
 void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
-    for (auto& drone : tracked_drones_) {
-        if (drone.frequency == static_cast<uint32_t>(frequency) && drone.update_count > 0) {
-            drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
-            drone.drone_type = static_cast<uint8_t>(type);
-            drone.threat_level = static_cast<uint8_t>(threat_level);
+    for (size_t i = 0; i < tracked_count_; ++i) {
+        if (tracked_drones_[i].frequency == static_cast<uint32_t>(frequency) && tracked_drones_[i].update_count > 0) {
+            tracked_drones_[i].add_rssi(static_cast<int16_t>(rssi), chTimeNow());
+            tracked_drones_[i].drone_type = static_cast<uint8_t>(type);
+            tracked_drones_[i].threat_level = static_cast<uint8_t>(threat_level);
             update_tracking_counts();
             return;
         }
     }
 
-    if (tracked_drones_.size() < MAX_TRACKED_DRONES) {
+    if (tracked_count_ < MAX_TRACKED_DRONES) {
         TrackedDrone new_drone;
         new_drone.frequency = static_cast<uint32_t>(frequency);
         new_drone.drone_type = static_cast<uint8_t>(type);
         new_drone.threat_level = static_cast<uint8_t>(threat_level);
         new_drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
-        tracked_drones_.push_back(new_drone);
-        tracked_drones_count_++;
+        tracked_drones_[tracked_count_] = new_drone;
+        tracked_count_++;
         update_tracking_counts();
         return;
     }
 
     size_t oldest_index = 0;
     systime_t oldest_time = tracked_drones_[0].last_seen;
-    for (size_t i = 1; i < tracked_drones_.size(); i++) {
+    for (size_t i = 1; i < tracked_count_; i++) {
         if (tracked_drones_[i].last_seen < oldest_time) {
             oldest_time = tracked_drones_[i].last_seen;
             oldest_index = i;
@@ -525,14 +525,18 @@ void DroneScanner::remove_stale_drones() {
     const systime_t STALE_TIMEOUT = 30000;
     systime_t current_time = chTimeNow();
 
-    tracked_drones_.erase(
-        std::remove_if(tracked_drones_.begin(), tracked_drones_.end(),
-                      [current_time, STALE_TIMEOUT](const TrackedDrone& drone) {
-                          return drone.update_count > 0 && (current_time - drone.last_seen) > STALE_TIMEOUT;
-                      }),
-        tracked_drones_.end());
-
-    tracked_drones_count_ = tracked_drones_.size();
+    // Compact array by shifting valid drones to the front
+    size_t write_index = 0;
+    for (size_t read_index = 0; read_index < tracked_count_; ++read_index) {
+        if (!(tracked_drones_[read_index].update_count > 0 && (current_time - tracked_drones_[read_index].last_seen) > STALE_TIMEOUT)) {
+            // Keep this drone
+            if (write_index != read_index) {
+                tracked_drones_[write_index] = tracked_drones_[read_index];
+            }
+            write_index++;
+        }
+    }
+    tracked_count_ = write_index;
     update_tracking_counts();
 }
 
@@ -541,10 +545,10 @@ void DroneScanner::update_tracking_counts() {
     receding_count_ = 0;
     static_count_ = 0;
 
-    for (const auto& drone : tracked_drones_) {
-        if (drone.update_count < 2) continue;
+    for (size_t i = 0; i < tracked_count_; ++i) {
+        if (tracked_drones_[i].update_count < 2) continue;
 
-        MovementTrend trend = drone.get_trend();
+        MovementTrend trend = tracked_drones_[i].get_trend();
         switch (trend) {
             case MovementTrend::APPROACHING: approaching_count_++; break;
             case MovementTrend::RECEDING: receding_count_++; break;
@@ -598,7 +602,7 @@ Frequency DroneScanner::get_current_radio_frequency() const {
 }
 
 const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
-    if (index < tracked_drones_.size()) {
+    if (index < tracked_count_) {
         return tracked_drones_[index];
     }
     static TrackedDrone empty_drone;
@@ -695,8 +699,14 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
         avg_detections_per_cycle, detections_per_second, (unsigned long)logged_count_);
 
     if (ret < 0 || ret >= static_cast<int>(sizeof(summary_buffer))) {
-        return std::string("SCANNING COMPLETE\nCycles: ") + std::to_string(scan_cycles) +
-               "\nDetections: " + std::to_string(total_detections);
+        char buffer[64];
+        auto s1 = to_string_dec_uint(scan_cycles);
+        auto s2 = to_string_dec_uint(total_detections);
+        strcpy(buffer, "SCANNING COMPLETE\nCycles: ");
+        strcat(buffer, s1.c_str());
+        strcat(buffer, "\nDetections: ");
+        strcat(buffer, s2.c_str());
+        return std::string(buffer);
     }
     return std::string(summary_buffer);
 }
@@ -890,19 +900,21 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     threat_status_main_.set_style(Theme::getInstance()->fg_red);
 
     if (current_freq > 0) {
-        float freq_mhz = static_cast<float>(current_freq) / 1000000.0f;
-        if (freq_mhz >= 1000) {
-            freq_mhz /= 1000;
+        if (current_freq >= 1000000000ULL) {
+            uint32_t ghz = current_freq / 1000000000ULL;
+            uint32_t decimals = ((current_freq % 1000000000ULL) / 10000000ULL);
             if (is_scanning) {
-                snprintf(buffer, sizeof(buffer), "%.2fGHz SCANNING", freq_mhz);
+                snprintf(buffer, sizeof(buffer), "%lu.%02luGHz SCANNING", (unsigned long)ghz, (unsigned long)decimals);
             } else {
-                snprintf(buffer, sizeof(buffer), "%.2fGHz READY", freq_mhz);
+                snprintf(buffer, sizeof(buffer), "%lu.%02luGHz READY", (unsigned long)ghz, (unsigned long)decimals);
             }
         } else {
+            uint32_t mhz = current_freq / 1000000ULL;
+            uint32_t decimals = (current_freq % 1000000ULL) / 100000ULL;
             if (is_scanning) {
-                snprintf(buffer, sizeof(buffer), "%.1fMHz SCANNING", freq_mhz);
+                snprintf(buffer, sizeof(buffer), "%lu.%01luMHz SCANNING", (unsigned long)mhz, (unsigned long)decimals);
             } else {
-                snprintf(buffer, sizeof(buffer), "%.1fMHz READY", freq_mhz);
+                snprintf(buffer, sizeof(buffer), "%lu.%01luMHz READY", (unsigned long)mhz, (unsigned long)decimals);
             }
         }
         threat_frequency_.set(buffer);
@@ -1043,14 +1055,16 @@ std::string ThreatCard::render_compact() const {
                               (trend_ == MovementTrend::RECEDING) ? ">" : "~";
     (void)threat_;
 
-    float freq_mhz = static_cast<float>(frequency_) / 1000000.0f;
-    if (freq_mhz >= 1000) {
-        freq_mhz /= 1000;
-        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5.1fG %4lddB",
-                threat_name_.c_str(), *trend_symbol, freq_mhz, (long int)rssi_);
+    if (frequency_ >= 1000000000ULL) {
+        uint32_t ghz = frequency_ / 1000000000ULL;
+        uint32_t decimals = (frequency_ % 1000000000ULL) / 100000000ULL;
+        snprintf(buffer, sizeof(buffer), "DR %-10s %c %lu.%01luG %4lddB",
+                threat_name_.c_str(), *trend_symbol, (unsigned long)ghz, (unsigned long)decimals, (long int)rssi_);
     } else {
-        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5.0fM %4lddB",
-                threat_name_.c_str(), *trend_symbol, freq_mhz, (long int)rssi_);
+        uint32_t mhz = frequency_ / 1000000ULL;
+        uint32_t decimals = (frequency_ % 1000000ULL) / 1000000ULL;
+        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5lu.%01luM %4lddB",
+                threat_name_.c_str(), *trend_symbol, (unsigned long)mhz, (unsigned long)decimals, (long int)rssi_);
     }
     return std::string(buffer);
 }
@@ -1555,7 +1569,12 @@ void DroneUIController::show_menu() {
 void DroneUIController::on_load_frequency_file() {
     if (scanner_.load_frequency_database()) {
         size_t count = scanner_.get_database_size();
-        nav_.display_modal("Success", "Loaded " + std::to_string(count) + " frequencies");
+        char buffer[64];
+        auto s = to_string_dec_uint(count);
+        strcpy(buffer, "Loaded ");
+        strcat(buffer, s.c_str());
+        strcat(buffer, " frequencies");
+        nav_.display_modal("Success", buffer);
     } else {
         nav_.display_modal("Error", "Failed to load database");
     }
@@ -1568,8 +1587,11 @@ void DroneUIController::on_save_settings() {
 
 void DroneUIController::on_audio_settings() {
     settings_.enable_audio_alerts = !settings_.enable_audio_alerts;
-    std::string status = settings_.enable_audio_alerts ? "ENABLED" : "DISABLED";
-    nav_.display_modal("Audio Alerts", std::string("Alerts ") + status);
+    char buffer[32];
+    const char* status = settings_.enable_audio_alerts ? "ENABLED" : "DISABLED";
+    strcpy(buffer, "Alerts ");
+    strcat(buffer, status);
+    nav_.display_modal("Audio Alerts", buffer);
 }
 
 void DroneUIController::on_spectrum_mode() {
@@ -1600,10 +1622,12 @@ void DroneUIController::on_set_center_freq() {
 
 void DroneUIController::show_hardware_status() {
     char buffer[128];
+    uint32_t band_mhz = hardware_.get_spectrum_bandwidth() / 1000000ULL;
+    uint32_t freq_ghz = hardware_.get_spectrum_center_frequency() / 1000000000ULL;
+    uint32_t freq_decimals = (hardware_.get_spectrum_center_frequency() % 1000000000ULL) / 100000000ULL;
     snprintf(buffer, sizeof(buffer),
-            "Band: %lu MHz\nFreq: %.3f GHz",
-            hardware_.get_spectrum_bandwidth() / 1000000UL,
-            hardware_.get_spectrum_center_frequency() / 1000000000.0);
+            "Band: %lu MHz\nFreq: %lu.%03lu GHz",
+            (unsigned long)band_mhz, (unsigned long)freq_ghz, (unsigned long)freq_decimals);
     nav_.display_modal("Hardware Status", buffer);
 }
 

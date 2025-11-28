@@ -475,8 +475,8 @@ private:
     ScanningMode scanning_mode_ = ScanningMode::DATABASE;
     bool is_real_mode_ = true;
 
-    std::vector<TrackedDrone> tracked_drones_;
-    size_t tracked_drones_count_ = 0;
+    TrackedDrone tracked_drones_[MAX_TRACKED_DRONES];
+    size_t tracked_count_ = 0;
 
     size_t approaching_count_ = 0;
     size_t receding_count_ = 0;
