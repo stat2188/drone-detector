@@ -1905,7 +1905,7 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() {
     while (scanning_active_) {
         if (scanning_active_) {
             scanner_.perform_scan_cycle(hardware_);
-            display_controller_.update_detection_display(scanner_);
+            // Removed UI update from scanning thread - UI will pull data when needed
         }
 
         chThdSleepMilliseconds(scan_interval_ms_);

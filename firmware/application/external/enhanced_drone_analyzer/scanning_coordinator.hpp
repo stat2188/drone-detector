@@ -46,7 +46,7 @@ private:
     bool scanning_active_ = false;
     Thread* scanning_thread_ = nullptr;
     uint32_t scan_interval_ms_ = 712;
-    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 4096;
+    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;
 };
 
 } // namespace ui::external_app::enhanced_drone_analyzer
