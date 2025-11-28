@@ -1,258 +1,222 @@
-Вот максимально детальный, пошаговый план по полному удалению std::string из кодовой базы Enhanced Drone Analyzer (EDA).
+Вот хирургически точный план, как заменить базу данных и адаптировать под неё остальные методы, чтобы ничего не сломалось.
 
-Этот план разбит на 5 этапов: от фундаментальных изменений в структурах данных до реализации безопасного парсинга и логики UI.
+Выполняйте строго в этом порядке.
 
-Этап 1: Фундаментальные изменения данных (Header Files)
-Цель: Заменить все поля std::string в структурах на массивы фиксированной длины (char[]) или указатели на константы (const char*).
+Шаг 1.1: Изменения в Header (ui_scanner_combined.hpp)
+Мы меняем структуру хранения, поэтому нам нужно подготовить почву.
 
-1.1. Файл ui_drone_common_types.hpp / ui_scanner_combined.hpp
-Структура DroneAnalyzerSettings
+Найдите класс DroneScanner и сделайте следующее:
 
-Было: std::string freqman_path, settings_file_path, log_file_path.
-Стало: Используем массивы. Для файловой системы FATFS в Mayhem 64 байта обычно достаточно для путей.
-struct DroneAnalyzerSettings {
-    // ... примитивные типы без изменений ...
-    char freqman_path[64] = "DRONES";
-    char settings_file_path[64] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-    char log_file_path[64] = "/eda_logs";
+Определите константу и структуру (если еще не сделали):
+
+struct CompactEntry {
+    Frequency frequency;
 };
-Структура DisplayDroneEntry
+static constexpr size_t MAX_DB_ENTRIES = 150;
+Измените приватные члены класса DroneScanner:
 
-Было: std::string type_name.
-Стало: type_name — это всегда одно из фиксированных значений ("MAVIC", "UNKNOWN"). Память выделять не нужно.
-struct DisplayDroneEntry {
-    // ...
-    const char* type_name = ""; // Указывает на строковый литерал в .rodata
-};
-Структура DronePreset
+private:
+    // --- БЫЛО ---
+    // std::vector<std::unique_ptr<freqman_entry>> drone_database_;
+    // size_t current_db_index_ = 0;
 
-Было: std::string display_name, std::string name_template.
-Стало:
-struct DronePreset {
-    char display_name[32];    // Ограничим имя 31 символом + \0
-    char name_template[16];
-    // ...
-};
-Класс Translator
+    // --- СТАЛО ---
+    CompactEntry drone_database_[MAX_DB_ENTRIES]; // Статический массив, 0 аллокаций
+    size_t db_entry_count_ = 0;                   // Реальное кол-во загруженных частот
+    size_t current_db_index_ = 0;                 // Текущий индекс сканирования
+ВАЖНО: Измените сигнатуру метода process_rssi_detection.
+Раньше он принимал тяжелую запись freqman_entry. Теперь он должен принимать просто частоту.
 
-Было: translate(const std::string& key).
-Стало: Использование const char*.
-static const char* translate(const char* key);
-Этап 2: Вспомогательные утилиты (Utils)
-Цель: Создать замену функциям std::string (trim, split) и безопасную работу со строками.
+// --- БЫЛО ---
+// void process_rssi_detection(const freqman_entry& entry, int32_t rssi);
 
-2.1. Реализация Helper-функций (в ui_scanner_combined.cpp)
-Нам понадобятся функции для работы с C-строками без аллокаций.
+// --- СТАЛО ---
+void process_rssi_detection(Frequency frequency, int32_t rssi);
+Шаг 1.2: Реализация Загрузки (ui_scanner_combined.cpp)
+Здесь мы загружаем данные во временный вектор (чтобы использовать готовый парсер), быстро копируем цифры в наш массив и тут же убиваем вектор.
 
-// Безопасное копирование (аналог strlcpy, если его нет в стандартной библиотеке)
-void safe_strcpy(char* dest, const char* src, size_t dest_size) {
-    if (dest_size == 0) return;
-    strncpy(dest, src, dest_size - 1);
-    dest[dest_size - 1] = '\0';
-}
+Замените метод load_frequency_database:
 
-// Удаление пробелов в начале и конце строки (изменяет строку на месте)
-char* trim_inplace(char* str) {
-    if (!str) return nullptr;
-    
-    // Удаляем пробелы в конце
-    size_t len = strlen(str);
-    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\t' || str[len - 1] == '\r' || str[len - 1] == '\n')) {
-        str[--len] = '\0';
-    }
-    
-    // Удаляем пробелы в начале
-    char* start = str;
-    while (*start && (*start == ' ' || *start == '\t')) {
-        start++;
-    }
-    
-    // Если есть пробелы в начале, сдвигаем строку
-    if (start != str) {
-        memmove(str, start, strlen(start) + 1);
-    }
-    return str;
-}
-Этап 3: Логика парсинга настроек (Settings Parser)
-Цель: Переписать load_settings_from_sd_card, избавившись от stringstream и чтения файла целиком в память.
+bool DroneScanner::load_frequency_database() {
+    // 1. Сброс счетчика
+    db_entry_count_ = 0;
+    current_db_index_ = 0;
 
-3.1. Переписывание load_settings_from_sd_card
-bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
-    File settings_file;
-    auto result = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
-    if (result.is_error()) {
+    // 2. Опции загрузки (как было)
+    freqman_load_options options;
+    options.max_entries = MAX_DB_ENTRIES; // Ограничиваем сразу, чтобы не взорвать RAM
+    options.load_freqs = true;
+    options.load_ranges = false; // Экономим, нам нужны только одиночные частоты
+    options.load_hamradios = false;
+    options.load_repeaters = false;
+
+    // 3. Загрузка во временный буфер
+    freqman_db temp_db;
+    // Используем стандартную функцию загрузки, она создаст vector<unique_ptr>
+    if (!load_freqman_file("DRONES", temp_db, options)) {
         return false;
     }
 
-    char line_buffer[128]; // Статический буфер для одной строки
-    char file_buffer[1];   // Читаем посимвольно (медленно, но экономит память) 
-                           // ИЛИ читаем блоками по 64 байта и склеиваем.
-                           
-    // Упрощенный вариант чтения построчно (псевдокод для Portapack File API):
-    // В реальности Portapack не имеет getline, нужно реализовать буферизированное чтение.
-    
-    size_t pos = 0;
-    while (true) {
-        char c;
-        auto read_res = settings_file.read(&c, 1);
-        if (read_res.is_error() || read_res.value() == 0) break;
+    // 4. Быстрое копирование в статический массив
+    for (const auto& entry_ptr : temp_db) {
+        if (db_entry_count_ >= MAX_DB_ENTRIES) break;
         
-        if (c == '\n' || c == '\r') {
-            if (pos > 0) {
-                line_buffer[pos] = '\0';
-                parse_settings_line(settings, line_buffer);
-                pos = 0;
+        if (entry_ptr && entry_ptr->frequency_a >= 1000000) { // Валидация > 1МГц
+            drone_database_[db_entry_count_].frequency = entry_ptr->frequency_a;
+            db_entry_count_++;
+        }
+    }
+
+    // 5. Вектор temp_db уничтожится здесь автоматически, освобождая кучу (~5 КБ)
+    freq_db_loaded_ = (db_entry_count_ > 0);
+    return freq_db_loaded_;
+}
+Также добавьте метод получения размера (если он был):
+
+size_t DroneScanner::get_database_size() const {
+    return db_entry_count_; // Теперь возвращаем счетчик, а не .size() вектора
+}
+Шаг 1.3: Исправление метода обнаружения (Критично!)
+Это то место, где обычно ломается логика. Мы изменили сигнатуру в хедере, теперь нужно переписать реализацию. Мы больше не имеем доступа к entry.description, поэтому определение типа дрона будет упрощенным (только по частоте).
+
+Перепишите process_rssi_detection:
+
+// Обратите внимание: аргумент теперь Frequency, а не const freqman_entry&
+void DroneScanner::process_rssi_detection(Frequency frequency, int32_t rssi) {
+    // 1. Базовые проверки
+    if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN)) {
+        return;
+    }
+    if (!SimpleDroneValidation::validate_frequency_range(frequency)) {
+        return;
+    }
+    
+    // 2. Определение типа (раньше мы могли читать имя из базы, теперь используем хелпер)
+    // Этот метод уже должен быть у вас в SimpleDroneValidation
+    DroneType detected_type = SimpleDroneValidation::identify_drone_type(frequency, rssi);
+    ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
+
+    // 3. Фильтрация по порогу
+    int32_t detection_threshold = DEFAULT_RSSI_THRESHOLD_DB;
+    if (rssi < detection_threshold) {
+        return;
+    }
+
+    total_detections_++;
+
+    // 4. Логика с кольцевым буфером (остается почти такой же)
+    size_t freq_hash = frequency / 100000; // Используем frequency напрямую
+    int32_t effective_threshold = detection_threshold;
+    
+    if (local_detection_ring.get_rssi_value(freq_hash) < detection_threshold) {
+        effective_threshold = detection_threshold + HYSTERESIS_MARGIN_DB;
+    }
+
+    if (rssi >= effective_threshold) {
+        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
+        current_count = (current_count >= 255) ? 255 : current_count + 1;
+        
+        local_detection_ring.update_detection(freq_hash, current_count, rssi);
+
+        if (current_count >= MIN_DETECTION_COUNT) {
+            // Логирование
+            DetectionLogEntry log_entry{
+                .timestamp = chTimeNow(),
+                .frequency_hz = static_cast<uint32_t>(frequency),
+                .rssi_db = rssi,
+                .threat_level = threat_level,
+                .drone_type = detected_type,
+                .detection_count = current_count,
+                .confidence_score = 0.85f
+            };
+            
+            if (detection_logger_.is_session_active()) {
+                detection_logger_.log_detection(log_entry);
             }
+
+            // Обновление UI
+            update_tracked_drone(detected_type, frequency, rssi, threat_level);
+        }
+    } else {
+        // Логика затухания
+        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
+        int32_t stored_rssi = local_detection_ring.get_rssi_value(freq_hash);
+        if (current_count > 0) {
+            local_detection_ring.update_detection(freq_hash, current_count - 1, stored_rssi);
         } else {
-            if (pos < sizeof(line_buffer) - 1) {
-                line_buffer[pos++] = c;
+            local_detection_ring.update_detection(freq_hash, 0, -120);
+        }
+    }
+}
+Шаг 1.4: Исправление Цикла Сканирования (perform_database_scan_cycle)
+Теперь нам нужно научить сканер бегать по обычному массиву, а не по вектору указателей.
+
+Перепишите perform_database_scan_cycle:
+
+void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
+    // Проверка на пустоту
+    if (db_entry_count_ == 0) {
+        if (scan_cycles_ % 50 == 0) {
+            // handle_scan_error("No DB"); // Опционально
+            scanning_active_ = false;
+        }
+        return;
+    }
+
+    // Сканируем пачками по 20 частот (чтобы интерфейс не вис)
+    const size_t batch_size = 20;
+    
+    for (size_t i = 0; i < batch_size && scanning_active_; ++i) {
+        // Циклический проход
+        if (current_db_index_ >= db_entry_count_) {
+            current_db_index_ = 0;
+        }
+
+        // --- ДОСТУП К МАССИВУ ---
+        Frequency target_freq_hz = drone_database_[current_db_index_].frequency;
+
+        // Тюнинг хардвара
+        if (target_freq_hz >= 1000000) { // Валидация
+            if (hardware.tune_to_frequency(target_freq_hz)) {
+                chThdSleepMilliseconds(10); // Время на захват PLL
+                int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
+                
+                // ВЫЗОВ ОБНОВЛЕННОГО МЕТОДА (передаем частоту, а не структуру)
+                process_rssi_detection(target_freq_hz, real_rssi);
+                
+                last_scanned_frequency_ = target_freq_hz;
             }
         }
-    }
-    // Обработка последней строки, если нет переноса
-    if (pos > 0) {
-        line_buffer[pos] = '\0';
-        parse_settings_line(settings, line_buffer);
-    }
-
-    return true;
-}
-
-// Функция парсинга одной строки
-void parse_settings_line(DroneAnalyzerSettings& settings, char* line) {
-    // Убираем комментарии
-    char* comment = strchr(line, '#');
-    if (comment) *comment = '\0';
-    
-    trim_inplace(line);
-    if (strlen(line) == 0) return;
-
-    char* eq = strchr(line, '=');
-    if (!eq) return;
-
-    *eq = '\0'; // Разделяем ключ и значение
-    char* key = trim_inplace(line);
-    char* val = trim_inplace(eq + 1);
-
-    if (strcmp(key, "spectrum_mode") == 0) {
-        if (strcmp(val, "WIDE") == 0) settings.spectrum_mode = SpectrumMode::WIDE;
-        else settings.spectrum_mode = SpectrumMode::MEDIUM;
-    } 
-    else if (strcmp(key, "scan_interval_ms") == 0) {
-        settings.scan_interval_ms = strtoul(val, nullptr, 10);
-    }
-    else if (strcmp(key, "freqman_path") == 0) {
-        safe_strcpy(settings.freqman_path, val, sizeof(settings.freqman_path));
-    }
-    // ... остальные поля ...
-}
-Этап 4: Логгирование (Logger)
-Цель: Избежать создания временных строк при записи в CSV.
-
-4.1. Обновление DroneDetectionLogger
-Убираем возвращаемое значение std::string и пишем напрямую.
-
-Header (ui_scanner_combined.hpp):
-
-class DroneDetectionLogger {
-    // ...
-private:
-    // Принимает буфер, куда писать
-    bool format_csv_entry(char* buffer, size_t max_len, const DetectionLogEntry& entry);
-    // ...
-};
-Implementation (ui_scanner_combined.cpp):
-
-bool DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
-    if (!session_active_) return false;
-    
-    // Буфер на стеке, достаточно большой для одной строки лога
-    char line_buffer[128]; 
-    
-    if (format_csv_entry(line_buffer, sizeof(line_buffer), entry)) {
-        auto error = csv_log_.write_raw(line_buffer, strlen(line_buffer));
-        if (error.is_valid()) { // write_raw в Mayhem возвращает Result<...>
-            logged_count_++;
-            return true;
-        }
-    }
-    return false;
-}
-
-bool DroneDetectionLogger::format_csv_entry(char* buffer, size_t max_len, const DetectionLogEntry& entry) {
-    int written = snprintf(buffer, max_len,
-             "%lu,%lu,%ld,%u,%u,%u,%d.%02d\n", // float confidence заменяем на части для безопасности
-             entry.timestamp, 
-             entry.frequency_hz,
-             entry.rssi_db,
-             (uint8_t)entry.threat_level,
-             (uint8_t)entry.drone_type,
-             entry.detection_count, 
-             (int)entry.confidence_score, (int)(entry.confidence_score * 100) % 100);
-             
-    return (written > 0 && (size_t)written < max_len);
-}
-Этап 5: Пользовательский интерфейс (Display Controller)
-Цель: Избежать конвертации в std::string при передаче текста в виджеты.
-
-5.1. Обновление DroneDisplayController
-Методы виджетов (Text::set) в Mayhem Portapack обычно принимают std::string. Мы не можем изменить сам фреймворк UI, но мы можем минимизировать наше использование строк.
-
-Вместо формирования строки через std::string + std::string, используем буфер.
-
-// Было:
-// big_display_.set(to_string_short_freq(current_freq)); 
-
-// Стало:
-char buf[32];
-// to_string_dec_uint возвращает std::string, это проблема стандартных утилит Portapack.
-// Лучше использовать свой конвертер или snprintf.
-uint32_t mhz = current_freq / 1000000;
-snprintf(buf, sizeof(buf), "%luMHz", mhz);
-big_display_.set(buf); // Неявная конвертация char* -> std::string внутри set, но мы не храним объект.
-Обновление get_drone_type_name:
-
-// Возвращаем const char*, а не string
-const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
-    switch (type) {
-        case DroneType::MAVIC: return "MAVIC";
-        case DroneType::DJI_P34: return "DJI P34";
-        default: return "UNKNOWN";
-    }
-}
-Оптимизация render_drone_text_display:
-
-void DroneDisplayController::render_drone_text_display() {
-    char buffer[48]; // Буфер на стеке
-    
-    for (size_t i = 0; i < 3; ++i) {
-        // ... логика получения drone ...
         
-        // Форматируем всё в один буфер за один проход
-        snprintf(buffer, sizeof(buffer), "DR %s %c %luM %lddB",
-                drone.type_name, // теперь это const char*
-                trend_symbol,
-                drone.frequency / 1000000,
-                drone.rssi);
-                
-        // Передаем буфер
-        if (i == 0) text_drone_1_.set(buffer);
-        // ...
+        // Инкремент индекса
+        current_db_index_++;
     }
 }
-Чек-лист для проверки (Final Review)
-Удалить инклуды:
+Шаг 1.5: Подчистка хвостов
+Возможно, в коде остались места, которые пытаются получить частоту из базы старым способом.
 
-#include <string>
-#include <sstream>
-#include <algorithm> (если использовался только для строк)
-Добавить инклуды:
+get_current_scanning_frequency():
 
-#include <cstring> (для strlen, strcmp, strncpy)
-#include <cstdio> (для snprintf)
-#include <cstdlib> (для strtoul, strtol)
-Проверить память: Убедиться, что все буферы char[...] достаточно велики (с учетом завершающего нуля \0).
+Frequency DroneScanner::get_current_scanning_frequency() const {
+    if (db_entry_count_ > 0 && current_db_index_ < db_entry_count_) {
+        // Индекс мог убежать вперед в цикле, берем предыдущий (безопасно)
+        size_t idx = (current_db_index_ > 0) ? current_db_index_ - 1 : 0;
+        return drone_database_[idx].frequency;
+    }
+    return 433000000; // Дефолт
+}
+Wideband Scan (perform_wideband_scan_cycle):
+Там есть вызов wideband_detection_override. Проверьте, что он внутри себя вызывает process_wideband_detection_with_override, который тоже нужно немного подправить, если он зависит от entry.description.
 
-Проверить Translator: Убедиться, что ключи передаются как const char*, и сравнение идет через strcmp.
+Если process_wideband_detection_with_override использует const freqman_entry&, то для Wideband это допустимо (т.к. там создается фейковая запись на стеке), но лучше унифицировать и там тоже передавать просто частоту.
 
-Этот план полностью устраняет динамическую аллокацию строк, что критически важно для стабильной работы Scanner App на Portapack.
+Если компилятор ругается на Wideband, просто поменяйте вызов внутри него:
+
+// Внутри wideband_detection_override или аналогичного метода
+// Вместо передачи всей структуры entry, передайте entry.frequency_a
+// process_rssi_detection(entry.frequency_a, rssi); // Если логика позволяет
+Почему это сработает
+Мы убрали vector и unique_ptr -> нет динамической памяти, нет крашей при нехватке кучи.
+Мы изменили process_rssi_detection -> нет зависимости от удаленных полей структуры freqman_entry.
+Мы изменили цикл -> нет итераторов, простой индекс по массиву.
+Теперь компилируйте. Если будут ошибки линковки или "no matching function", проверьте, что изменили сигнатуру process_rssi_detection и в .hpp, и в .cpp.

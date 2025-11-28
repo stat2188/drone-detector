@@ -19,12 +19,12 @@ namespace ui::external_app::enhanced_drone_analyzer {
 struct FrequencyPreset {
     Frequency min_freq_hz = 0;
     Frequency max_freq_hz = 0;
-    std::string label = "";
+    char label[16] = {0}; // Static buffer
     SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
     ThreatLevel default_threat_level = ThreatLevel::NONE;
 
     bool is_valid() const {
-        return min_freq_hz > 0 && max_freq_hz > min_freq_hz && !label.empty();
+        return min_freq_hz > 0 && max_freq_hz > min_freq_hz && label[0] != '\0';
     }
 };
 
@@ -88,12 +88,14 @@ struct RangeLockSettings {
     }
 };
 
+static constexpr size_t MAX_PRESETS = 10;
+
 // Unified spectrum settings container
 struct SpectrumAnalyzerSettings {
     // Initialize in default constructor to satisfy -Weffc++
     SpectrumAnalyzerSettings() :
-        preset_ranges(),
         current_preset_index(0),
+        preset_count(0),
         iq_calibration(),
         amplifiers(),
         range_lock(),
@@ -106,8 +108,9 @@ struct SpectrumAnalyzerSettings {
     }
 
     // Preset management
-    std::vector<FrequencyPreset> preset_ranges;
+    FrequencyPreset preset_ranges[MAX_PRESETS];
     size_t current_preset_index;
+    size_t preset_count;
 
     // IQ calibration (from Looking Glass)
     IQCalibrationSettings iq_calibration;
@@ -128,8 +131,8 @@ struct SpectrumAnalyzerSettings {
     Frequency current_max_freq;
 
     void add_preset(const FrequencyPreset& preset) {
-        if (preset.is_valid()) {
-            preset_ranges.push_back(preset);
+        if (preset.is_valid() && preset_count < MAX_PRESETS) {
+            preset_ranges[preset_count++] = preset;
         }
     }
 
@@ -141,7 +144,7 @@ struct SpectrumAnalyzerSettings {
     }
 
     bool load_preset(size_t index) {
-        if (index < preset_ranges.size()) {
+        if (index < preset_count) {
             const auto& preset = preset_ranges[index];
             if (!range_lock.is_in_locked_range()) {
                 current_min_freq = preset.min_freq_hz;
@@ -154,7 +157,7 @@ struct SpectrumAnalyzerSettings {
     }
 
     const FrequencyPreset* get_current_preset() const {
-        if (current_preset_index < preset_ranges.size()) {
+        if (current_preset_index < preset_count) {
             return &preset_ranges[current_preset_index];
         }
         return nullptr;
@@ -169,7 +172,7 @@ public:
 
     bool load_presets_from_file();
     bool save_presets_to_file() const;
-    size_t get_preset_count() const { return settings_.preset_ranges.size(); }
+    size_t get_preset_count() const { return settings_.preset_count; }
     const FrequencyPreset* get_preset(size_t index) const;
     bool add_custom_preset(const FrequencyPreset& preset);
 
