@@ -79,7 +79,7 @@ __attribute__((section(".external_app.app_enhanced_drone_analyzer_scanner.applic
     /*.menu_location = */ app_location_t::RX,
     /*.desired_menu_position = */ -1,
 
-    /*.m4_app_tag = */ portapack::spi_flash::image_tag_wfm_audio, // Это код "PWFM" (Wideband Audio/Spectrum image)
+    /*.m4_app_tag = */ 0x4D465750, // "PWFM" 
     /*.m4_app_offset = */ 0x00000000,  // will be filled at compile time
 };
 }
