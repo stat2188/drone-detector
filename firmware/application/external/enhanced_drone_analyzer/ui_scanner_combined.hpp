@@ -62,6 +62,11 @@ class LogFile;
 
 using Frequency = uint64_t;
 
+// Compact entry for memory-efficient frequency storage
+struct CompactEntry {
+    Frequency frequency; // 8 байт - only storing frequency
+};
+
 // Preset entry for frequency ranges
 struct preset_entry {
     Frequency min = 0;
@@ -76,6 +81,7 @@ static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
+static constexpr size_t MAX_DB_ENTRIES = 150;
 // Constants moved to ui_drone_common_types.hpp to avoid duplicates
 static constexpr uint8_t MIN_DETECTION_COUNT = 3;
 static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
@@ -372,7 +378,7 @@ public:
     void stop_scanning();
     bool is_scanning_active() const { return scanning_active_; }
     bool load_frequency_database();
-    size_t get_database_size() const;
+    size_t get_database_size() const { return db_entry_count_; }
 
     ScanningMode get_scanning_mode() const { return scanning_mode_; }
     std::string scanning_mode_name() const;
@@ -487,7 +493,8 @@ private:
 
     static constexpr uint8_t DETECTION_DELAY = 2;
     WidebandScanData wideband_scan_data_;
-    std::vector<std::unique_ptr<freqman_entry>> drone_database_;
+    CompactEntry drone_database_[MAX_DB_ENTRIES];
+    size_t db_entry_count_ = 0;
     DroneDetectionLogger detection_logger_;
 
 };

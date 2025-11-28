@@ -1,259 +1,258 @@
-Код представляет собой монолитное объединение нескольких модулей (Scanner, UI, Hardware, Audio, Settings). В нем реализована сложная логика сканирования частот, анализа спектра, трекинга дронов и отрисовки интерфейса.
+Вот максимально детальный, пошаговый план по полному удалению std::string из кодовой базы Enhanced Drone Analyzer (EDA).
 
-Ниже представлен анализ проблем и пошаговый план оптимизации.
+Этот план разбит на 5 этапов: от фундаментальных изменений в структурах данных до реализации безопасного парсинга и логики UI.
 
-📊 Часть 1: Анализ проблем (Почему приложение может тормозить и падать)
-1. Управление памятью (Memory Management)
-Проблема: Чрезмерное использование динамической памяти (std::vector, std::unique_ptr, std::string) в цикле отрисовки и сканирования.
-В DroneScanner база данных частот загружается как std::vector<std::unique_ptr<freqman_entry>>. На embedded-системе с ограниченной кучей (Heap) это вызывает фрагментацию памяти. Каждый unique_ptr — это отдельная аллокация.
-В ScannerSettingsManager::load_from_txt_impl файл считывается целиком в один огромный буфер: file_content.resize(txt_file.size()). Если файл настроек или логов станет большим (даже 10-20 КБ), это может вызвать Out Of Memory (OOM) или сильный фриз при аллокации.
-Вердикт: Высокий риск утечек памяти и падения приложения при длительной работе.
-2. Файловые операции (File I/O) — Главная причина фризов
-Проблема: Логгирование в DroneDetectionLogger::log_detection происходит синхронно.
-При каждом обнаружении дрона: открывается файл -> происходит запись -> файл закрывается.
-SD-карта имеет высокую латентность. Запись может занимать от 10 до 500 мс. Если это происходит в потоке сканирования, сканер "замирает". Если в потоке UI — интерфейс "виснет".
-Проблема: Парсинг настроек читает файл целиком, вместо построчного чтения через буфер.
-3. Конкурентность и потоки (Concurrency & Race Conditions)
-Проблема: ScanningCoordinator запускает отдельный поток scanning_thread_function, который пишет в структуры данных (tracked_drones_, global_detection_ring).
-В это же время DroneDisplayController (работающий в главном UI-потоке) читает эти данные для отрисовки (paint).
-Отсутствуют мьютексы (Mutex) или атомарные операции.
-Результат: "Глитчи" на экране, отображение мусорных данных, потенциальный Hard Fault (краш), если вектор дронов будет переаллоцирован (resize) во время чтения другим потоком.
-4. Производительность сканирования (Scanning Latency)
-Проблема: В цикле perform_database_scan_cycle используется chThdSleepMilliseconds(10) после перестройки частоты.
-При базе в 100 частот один цикл занимает минимум 1 секунду. Это делает интерфейс "отзывчивым", но детектор "слепым" на 99% времени.
-Проблема: Синхронизация RSSI. Метод get_real_rssi_from_hardware просто возвращает last_valid_rssi_. Есть риск, что после перестройки частоты (команда M0 ядру) обновление last_valid_rssi_ (сообщение от M0 ядра) еще не пришло, и сканер запишет RSSI от предыдущей частоты.
-5. Отрисовка интерфейса (UI Rendering)
-Проблема: В методе render_drone_text_display и SmartThreatHeader::update активно используется snprintf и создание временных std::string.
-Операции со строками и форматированием в цикле paint (который вызывается 30-60 раз в секунду) съедают CPU и создают нагрузку на аллокатор.
-Проблема: Отрисовка спектра (render_mini_spectrum) рисует попиксельно или короткими линиями, что медленно для дисплея Portapack (SPI шина).
-🛠 Часть 2: План исправления и оптимизации
-Этот план разбит от критических исправлений (стабильность) к оптимизации (скорость).
+Этап 1: Фундаментальные изменения данных (Header Files)
+Цель: Заменить все поля std::string в структурах на массивы фиксированной длины (char[]) или указатели на константы (const char*).
 
-Этап 1: Стабилизация памяти и Файлового ввода/вывода (Критично)
-Оптимизация базы данных частот (DroneScanner):
+1.1. Файл ui_drone_common_types.hpp / ui_scanner_combined.hpp
+Структура DroneAnalyzerSettings
 
-Сейчас: std::vector<std::unique_ptr<freqman_entry>>
-Исправление: Заменить на плоский массив структур или std::vector<freqman_entry> (без указателей), чтобы данные лежали в памяти последовательно. Это уберет сотни мелких аллокаций.
-Лимит: Ввести жесткий лимит (например, MAX_DB_ENTRIES = 100) и использовать std::array или std::vector::reserve().
-Переписать логгер (DroneDetectionLogger):
-
-Исправление: Не открывать/закрывать файл на каждую запись.
-Держать файл открытым во время сессии сканирования.
-Использовать буферизацию: писать в файл только когда накопится 512 байт или раз в N секунд, чтобы не дергать SD-карту постоянно.
-Безопасное чтение настроек:
-
-Исправление: Переписать load_from_txt_impl. Читать файл кусками (буфер 256 байт) и парсить построчно, не загружая весь файл в RAM.
-Этап 2: Решение проблем многопоточности (Concurrency)
-Внедрение защиты данных:
-
-Добавить chMtxObject mutex_scan_data; в класс DroneScanner.
-Захватывать мьютекс перед записью в tracked_drones_ (в потоке сканирования).
-Захватывать мьютекс перед чтением tracked_drones_ (в UI контроллере перед обновлением дисплея).
-Разделение данных UI и Логики:
-
-UI не должен читать "живые" данные сканера.
-Решение: Создать структуру ScanResultSnapshot. Сканер заполняет её и атомарно (под мьютексом) передает в UI. UI рисует копию данных. Это полностью уберет визуальные артефакты и гонки.
-Этап 3: Оптимизация логики сканирования (Speed)
-Умное ожидание RSSI:
-
-Убрать жесткий Sleep(10).
-Использовать механизм событий (Event Flags) или ожидание сообщения ChannelStatistics от Baseband.
-Алгоритм:
-tune_to_frequency(...)
-Очистить флаг "RSSI_UPDATED".
-Ждать флага с таймаутом 10мс.
-Если флаг пришел — читать RSSI сразу (это будет быстрее 10мс).
-Оптимизация Wideband мониторинга:
-
-Широкополосное сканирование сейчас делает "суб-сканирование" с шагом 2МГц внутри цикла. Это блокирует поток.
-Разбить широкий диапазон на мелкие задачи и выполнять их итеративно, не блокируя основной цикл надолго.
-Этап 4: UI Оптимизация (Smoothness)
-Убрать аллокации из paint():
-
-Заменить std::string и snprintf внутри paint на статические буферы char buffer[64] и быстрые функции конвертации (например, to_string_dec_uint), которые уже есть в Portapack FW.
-Кэшировать строки. Если данные дрона не изменились, не пересобирать строку для вывода на экран.
-Оптимизация отрисовки спектра:
-
-В render_mini_spectrum: вместо попиксельной отрисовки накапливать строку пикселей в буфере (массив Color line_buffer[240]) и отправлять на дисплей одной командой display.draw_pixels(rect, buffer).
-Пример кода для исправления (Ключевые моменты)
-1. Безопасная база данных:
-
-// Вместо vector<unique_ptr>
-struct OptimizedEntry {
-    Frequency freq;
-    DroneType type;
-    // ... только нужные поля, без тяжелых string
+Было: std::string freqman_path, settings_file_path, log_file_path.
+Стало: Используем массивы. Для файловой системы FATFS в Mayhem 64 байта обычно достаточно для путей.
+struct DroneAnalyzerSettings {
+    // ... примитивные типы без изменений ...
+    char freqman_path[64] = "DRONES";
+    char settings_file_path[64] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    char log_file_path[64] = "/eda_logs";
 };
-std::array<OptimizedEntry, 128> db_entries;
-size_t db_count = 0;
-2. Мьютексы:
+Структура DisplayDroneEntry
 
-// В DroneScanner.hpp
-Mutex data_mutex;
+Было: std::string type_name.
+Стало: type_name — это всегда одно из фиксированных значений ("MAVIC", "UNKNOWN"). Память выделять не нужно.
+struct DisplayDroneEntry {
+    // ...
+    const char* type_name = ""; // Указывает на строковый литерал в .rodata
+};
+Структура DronePreset
 
-// В cpp
-void DroneScanner::update_tracked_drone(...) {
-    chMtxLock(&data_mutex);
-    // ... изменение tracked_drones_
-    chMtxUnlock(&data_mutex);
+Было: std::string display_name, std::string name_template.
+Стало:
+struct DronePreset {
+    char display_name[32];    // Ограничим имя 31 символом + \0
+    char name_template[16];
+    // ...
+};
+Класс Translator
+
+Было: translate(const std::string& key).
+Стало: Использование const char*.
+static const char* translate(const char* key);
+Этап 2: Вспомогательные утилиты (Utils)
+Цель: Создать замену функциям std::string (trim, split) и безопасную работу со строками.
+
+2.1. Реализация Helper-функций (в ui_scanner_combined.cpp)
+Нам понадобятся функции для работы с C-строками без аллокаций.
+
+// Безопасное копирование (аналог strlcpy, если его нет в стандартной библиотеке)
+void safe_strcpy(char* dest, const char* src, size_t dest_size) {
+    if (dest_size == 0) return;
+    strncpy(dest, src, dest_size - 1);
+    dest[dest_size - 1] = '\0';
 }
 
-// В UI
-void DroneDisplayController::update_drones_display(...) {
-    if (chMtxTryLock(&data_mutex)) { // TryLock чтобы UI не вис, если сканер занят
-        // Копируем данные для отображения
-        local_copy = scanner.get_tracked_drones(); 
-        chMtxUnlock(&data_mutex);
+// Удаление пробелов в начале и конце строки (изменяет строку на месте)
+char* trim_inplace(char* str) {
+    if (!str) return nullptr;
+    
+    // Удаляем пробелы в конце
+    size_t len = strlen(str);
+    while (len > 0 && (str[len - 1] == ' ' || str[len - 1] == '\t' || str[len - 1] == '\r' || str[len - 1] == '\n')) {
+        str[--len] = '\0';
     }
-    // Рисуем local_copy
+    
+    // Удаляем пробелы в начале
+    char* start = str;
+    while (*start && (*start == ' ' || *start == '\t')) {
+        start++;
+    }
+    
+    // Если есть пробелы в начале, сдвигаем строку
+    if (start != str) {
+        memmove(str, start, strlen(start) + 1);
+    }
+    return str;
 }
-3. Оптимизация I/O:
+Этап 3: Логика парсинга настроек (Settings Parser)
+Цель: Переписать load_settings_from_sd_card, избавившись от stringstream и чтения файла целиком в память.
 
-// Чтение файла построчно (псевдокод)
-File file;
-if (file.open(path)) {
-    char buffer[128];
+3.1. Переписывание load_settings_from_sd_card
+bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
+    File settings_file;
+    auto result = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
+    if (result.is_error()) {
+        return false;
+    }
+
+    char line_buffer[128]; // Статический буфер для одной строки
+    char file_buffer[1];   // Читаем посимвольно (медленно, но экономит память) 
+                           // ИЛИ читаем блоками по 64 байта и склеиваем.
+                           
+    // Упрощенный вариант чтения построчно (псевдокод для Portapack File API):
+    // В реальности Portapack не имеет getline, нужно реализовать буферизированное чтение.
+    
+    size_t pos = 0;
     while (true) {
-        // Реализовать функцию readline, читающую в статический буфер
-        // ...
-        parse_line(buffer); 
-    }
-}
-Этот план превратит текущий код из "прототипа" в стабильное приложение, пригодное для реального использования в полевых условиях.
-
-1. Где объявлять Мьютекс?
-Мьютекс должен находиться в том классе, который владеет данными. В твоем случае это DroneScanner, так как он владеет списком tracked_drones_.
-
-Открой файл ui_scanner_combined.hpp (раздел DroneScanner).
-
-Шаг 1.1: Добавляем поле мьютекса
-В private секцию класса добавь переменную типа mutex_t. Это нативный тип ChibiOS.
-
-// Внутри class DroneScanner
-private:
-    // ... существующие переменные ...
-    
-    // Объявляем мьютекс. 
-    // mutable позволяет блокировать его даже в const-методах (например, getTrackedDrone)
-    mutable mutex_t data_mutex; 
-Шаг 1.2: Создаем RAII-обертку (Best Practice)
-Чтобы не писать вручную chMtxLock и chMtxUnlock (и не забывать про Unlock при return), мы добавим маленький вспомогательный класс прямо в этот же файл или в ui_drone_common_types.hpp.
-
-// Добавь это где-то в начале файла или в common types
-struct MutexLock {
-    mutex_t& mtx;
-    
-    // Конструктор: Блокирует мьютекс при создании объекта
-    explicit MutexLock(mutex_t& m) : mtx(m) {
-        chMtxLock(&mtx);
-    }
-    
-    // Деструктор: Разблокирует мьютекс при удалении объекта (выход из скобок)
-    ~MutexLock() {
-        chMtxUnlock(&mtx);
-    }
-    
-    // Запрещаем копирование, чтобы случайно не разблокировать дважды
-    MutexLock(const MutexLock&) = delete;
-    MutexLock& operator=(const MutexLock&) = delete;
-};
-2. Инициализация Мьютекса
-Мьютекс обязательно нужно инициализировать перед использованием. Лучшее место — конструктор класса.
-
-Открой файл ui_scanner_combined.cpp (Конструктор DroneScanner).
-
-DroneScanner::DroneScanner()
-    : scanning_thread_(nullptr),
-      // ... остальные инициализаторы ...
-      detection_logger_()
-{
-    // !!! ВАЖНО: Инициализация мьютекса
-    chMtxObjectInit(&data_mutex);
-
-    initialize_database_and_scanner();
-    initialize_wideband_scanning();
-}
-3. Защита записи данных (Writer)
-Теперь защитим методы, которые изменяют данные. Это делает поток сканирования (ScanningCoordinator).
-
-В файле ui_scanner_combined.cpp, найди методы, меняющие tracked_drones_ или detection_ring.
-
-Пример для метода update_tracked_drone:
-
-void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
-    // Вставляем блокировку в самом начале метода.
-    // Как только создается объект 'lock', другие потоки (UI) будут ждать здесь.
-    MutexLock lock(data_mutex);
-
-    // ... Весь твой старый код остается без изменений ...
-    
-    for (auto& drone : tracked_drones_) {
-        if (drone.frequency == static_cast<uint32_t>(frequency) && drone.update_count > 0) {
-            drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
-            // ...
-            update_tracking_counts();
-            return; // MutexLock автоматически сделает Unlock здесь!
+        char c;
+        auto read_res = settings_file.read(&c, 1);
+        if (read_res.is_error() || read_res.value() == 0) break;
+        
+        if (c == '\n' || c == '\r') {
+            if (pos > 0) {
+                line_buffer[pos] = '\0';
+                parse_settings_line(settings, line_buffer);
+                pos = 0;
+            }
+        } else {
+            if (pos < sizeof(line_buffer) - 1) {
+                line_buffer[pos++] = c;
+            }
         }
     }
-
-    // ... остальной код добавления дрона ...
-
-} // MutexLock автоматически сделает Unlock здесь, при выходе из функции
-Сделай то же самое для метода remove_stale_drones(), так как он удаляет элементы из вектора, что очень опасно при чтении.
-
-void DroneScanner::remove_stale_drones() {
-    MutexLock lock(data_mutex); // Блокируем на время чистки
-    
-    // ... твой код erase / remove_if ...
-}
-4. Защита чтения данных (Reader / UI)
-Это самая важная часть для устранения фризов и крашей. UI не должен лезть в tracked_drones_ напрямую, пока сканер их меняет.
-
-Способ А: Метод Snapshot (Рекомендуемый)
-Вместо того чтобы UI постоянно дергал сканер, сканер отдает безопасную копию данных.
-
-Добавь в DroneScanner (в .hpp) публичный метод:
-
-// Возвращает копию вектора дронов безопасно
-std::vector<TrackedDrone> get_tracked_drones_snapshot() const {
-    MutexLock lock(data_mutex);
-    return tracked_drones_; // Создается копия вектора, мьютекс отпускается
-}
-Теперь идем в DroneDisplayController::update_drones_display (в .cpp):
-
-void DroneDisplayController::update_drones_display(const DroneScanner& scanner) {
-    // ШАГ 1: Получаем безопасную копию данных
-    // Мы НЕ лезем в scanner.tracked_drones_ напрямую!
-    // Мы используем наш новый метод, который внутри использует мьютекс.
-    // Обрати внимание: scanner должен быть передан не как const, либо мьютекс должен быть mutable.
-    std::vector<TrackedDrone> safe_drones = scanner.get_tracked_drones_snapshot();
-
-    // ШАГ 2: Работаем только с локальной копией (safe_drones)
-    // Теперь мьютекс свободен, сканер может работать дальше, пока мы рисуем.
-    
-    detected_drones_.clear(); // Очищаем локальный список UI
-
-    for (const auto& drone : safe_drones) {
-         // Конвертируем данные для UI...
-         // ... заполняем displayed_drones_ ...
+    // Обработка последней строки, если нет переноса
+    if (pos > 0) {
+        line_buffer[pos] = '\0';
+        parse_settings_line(settings, line_buffer);
     }
 
-    // ШАГ 3: Сортировка и отрисовка (уже безопасно)
-    sort_drones_by_rssi();
-    render_drone_text_display();
+    return true;
 }
-Итоговая схема работы
-Инициализация: При запуске приложения вызывается chMtxObjectInit.
-Сканирование (Фон):
-Поток находит дрон.
-Создается MutexLock. Другие потоки "ждут у двери".
-Данные пишутся в вектор.
-Функция завершается -> MutexLock уничтожается -> Дверь открыта.
-Отрисовка (UI):
-Приходит время рисовать экран.
-UI вызывает get_snapshot().
-Создается MutexLock. Если сканер пишет данные прямо сейчас, UI ждет (микросекунды).
-Данные быстро копируются.
-MutexLock уничтожается.
-UI спокойно рисует данные из копии, а Сканер уже может писать новые данные.
-Этот подход гарантирует Zero Crash по причине памяти и отсутствие мерцания данных на экране.
+
+// Функция парсинга одной строки
+void parse_settings_line(DroneAnalyzerSettings& settings, char* line) {
+    // Убираем комментарии
+    char* comment = strchr(line, '#');
+    if (comment) *comment = '\0';
+    
+    trim_inplace(line);
+    if (strlen(line) == 0) return;
+
+    char* eq = strchr(line, '=');
+    if (!eq) return;
+
+    *eq = '\0'; // Разделяем ключ и значение
+    char* key = trim_inplace(line);
+    char* val = trim_inplace(eq + 1);
+
+    if (strcmp(key, "spectrum_mode") == 0) {
+        if (strcmp(val, "WIDE") == 0) settings.spectrum_mode = SpectrumMode::WIDE;
+        else settings.spectrum_mode = SpectrumMode::MEDIUM;
+    } 
+    else if (strcmp(key, "scan_interval_ms") == 0) {
+        settings.scan_interval_ms = strtoul(val, nullptr, 10);
+    }
+    else if (strcmp(key, "freqman_path") == 0) {
+        safe_strcpy(settings.freqman_path, val, sizeof(settings.freqman_path));
+    }
+    // ... остальные поля ...
+}
+Этап 4: Логгирование (Logger)
+Цель: Избежать создания временных строк при записи в CSV.
+
+4.1. Обновление DroneDetectionLogger
+Убираем возвращаемое значение std::string и пишем напрямую.
+
+Header (ui_scanner_combined.hpp):
+
+class DroneDetectionLogger {
+    // ...
+private:
+    // Принимает буфер, куда писать
+    bool format_csv_entry(char* buffer, size_t max_len, const DetectionLogEntry& entry);
+    // ...
+};
+Implementation (ui_scanner_combined.cpp):
+
+bool DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
+    if (!session_active_) return false;
+    
+    // Буфер на стеке, достаточно большой для одной строки лога
+    char line_buffer[128]; 
+    
+    if (format_csv_entry(line_buffer, sizeof(line_buffer), entry)) {
+        auto error = csv_log_.write_raw(line_buffer, strlen(line_buffer));
+        if (error.is_valid()) { // write_raw в Mayhem возвращает Result<...>
+            logged_count_++;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool DroneDetectionLogger::format_csv_entry(char* buffer, size_t max_len, const DetectionLogEntry& entry) {
+    int written = snprintf(buffer, max_len,
+             "%lu,%lu,%ld,%u,%u,%u,%d.%02d\n", // float confidence заменяем на части для безопасности
+             entry.timestamp, 
+             entry.frequency_hz,
+             entry.rssi_db,
+             (uint8_t)entry.threat_level,
+             (uint8_t)entry.drone_type,
+             entry.detection_count, 
+             (int)entry.confidence_score, (int)(entry.confidence_score * 100) % 100);
+             
+    return (written > 0 && (size_t)written < max_len);
+}
+Этап 5: Пользовательский интерфейс (Display Controller)
+Цель: Избежать конвертации в std::string при передаче текста в виджеты.
+
+5.1. Обновление DroneDisplayController
+Методы виджетов (Text::set) в Mayhem Portapack обычно принимают std::string. Мы не можем изменить сам фреймворк UI, но мы можем минимизировать наше использование строк.
+
+Вместо формирования строки через std::string + std::string, используем буфер.
+
+// Было:
+// big_display_.set(to_string_short_freq(current_freq)); 
+
+// Стало:
+char buf[32];
+// to_string_dec_uint возвращает std::string, это проблема стандартных утилит Portapack.
+// Лучше использовать свой конвертер или snprintf.
+uint32_t mhz = current_freq / 1000000;
+snprintf(buf, sizeof(buf), "%luMHz", mhz);
+big_display_.set(buf); // Неявная конвертация char* -> std::string внутри set, но мы не храним объект.
+Обновление get_drone_type_name:
+
+// Возвращаем const char*, а не string
+const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
+    switch (type) {
+        case DroneType::MAVIC: return "MAVIC";
+        case DroneType::DJI_P34: return "DJI P34";
+        default: return "UNKNOWN";
+    }
+}
+Оптимизация render_drone_text_display:
+
+void DroneDisplayController::render_drone_text_display() {
+    char buffer[48]; // Буфер на стеке
+    
+    for (size_t i = 0; i < 3; ++i) {
+        // ... логика получения drone ...
+        
+        // Форматируем всё в один буфер за один проход
+        snprintf(buffer, sizeof(buffer), "DR %s %c %luM %lddB",
+                drone.type_name, // теперь это const char*
+                trend_symbol,
+                drone.frequency / 1000000,
+                drone.rssi);
+                
+        // Передаем буфер
+        if (i == 0) text_drone_1_.set(buffer);
+        // ...
+    }
+}
+Чек-лист для проверки (Final Review)
+Удалить инклуды:
+
+#include <string>
+#include <sstream>
+#include <algorithm> (если использовался только для строк)
+Добавить инклуды:
+
+#include <cstring> (для strlen, strcmp, strncpy)
+#include <cstdio> (для snprintf)
+#include <cstdlib> (для strtoul, strtol)
+Проверить память: Убедиться, что все буферы char[...] достаточно велики (с учетом завершающего нуля \0).
+
+Проверить Translator: Убедиться, что ключи передаются как const char*, и сравнение идет через strcmp.
+
+Этот план полностью устраняет динамическую аллокацию строк, что критически важно для стабильной работы Scanner App на Portapack.
