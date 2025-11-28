@@ -195,8 +195,8 @@ struct DisplayDroneEntry {
     ThreatLevel threat = ThreatLevel::NONE;
     int32_t rssi = -120;
     systime_t last_seen = 0;
-    // УДАЛИТЬ: std::string type_name = "";
-    // УДАЛИТЬ: Color display_color; (вычислять в paint() switch-ом, не хранить)
+    std::string type_name = "";
+    Color display_color = Color::white();
     MovementTrend trend = MovementTrend::UNKNOWN;
 };
 
@@ -419,11 +419,11 @@ public:
     DroneScanner& operator=(DroneScanner&&) = delete;
 
     // Utility functions for UI
-    const char* get_drone_type_name(DroneType type) const {
+    std::string get_drone_type_name(DroneType type) const {
         switch (type) {
             case DroneType::MAVIC: return "MAVIC";
             case DroneType::DJI_P34: return "DJI P34";
-            case DroneType::UNKNOWN: default: return "UNK";
+            case DroneType::UNKNOWN: default: return "UNKNOWN";
         }
     }
     Color get_drone_type_color(DroneType type) const {
@@ -704,9 +704,7 @@ private:
     Text text_drone_2_{{screen_width - 120, 13 * 16, 120, 16}, ""};
     Text text_drone_3_{{screen_width - 120, 14 * 16, 120, 16}, ""};
 
-    static constexpr size_t MAX_TRACKING_CAPACITY = 16;
-    DisplayDroneEntry detected_drones_[MAX_TRACKING_CAPACITY];
-    size_t detected_drones_count_ = 0;
+    std::vector<DisplayDroneEntry> detected_drones_;
     std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES> displayed_drones_;
 
     std::array<Color, 240u> spectrum_row;
@@ -751,7 +749,7 @@ private:
     };
 
     // Add missing methods for drone type/color lookup
-    const char* get_drone_type_name(DroneType type) const;
+    std::string get_drone_type_name(DroneType type) const;
     Color get_drone_type_color(DroneType type) const;
     Color get_threat_level_color(ThreatLevel level) const;
     std::string get_threat_level_name(ThreatLevel level) const;

@@ -1033,7 +1033,7 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     threat_ = drone.threat;
     rssi_ = drone.rssi;
     last_seen_ = drone.last_seen;
-    // threat_name_ computed in render_compact()
+    threat_name_ = drone.type_name;
     trend_ = MovementTrend::STATIC;
 
     card_text_.set(render_compact());
@@ -1055,20 +1055,16 @@ std::string ThreatCard::render_compact() const {
                               (trend_ == MovementTrend::RECEDING) ? ">" : "~";
     (void)threat_;
 
-    // Compute type name inline
-    const char* type_name = (threat_name_ == "MAVIC") ? "MAVIC" :
-                           (threat_name_ == "DJI_P34") ? "DJI P34" : "UNK";
-
     if (frequency_ >= 1000000000ULL) {
         uint32_t ghz = frequency_ / 1000000000ULL;
         uint32_t decimals = (frequency_ % 1000000000ULL) / 100000000ULL;
         snprintf(buffer, sizeof(buffer), "DR %-10s %c %lu.%01luG %4lddB",
-                type_name, *trend_symbol, (unsigned long)ghz, (unsigned long)decimals, (long int)rssi_);
+                threat_name_.c_str(), *trend_symbol, (unsigned long)ghz, (unsigned long)decimals, (long int)rssi_);
     } else {
         uint32_t mhz = frequency_ / 1000000ULL;
         uint32_t decimals = (frequency_ % 1000000ULL) / 1000000ULL;
         snprintf(buffer, sizeof(buffer), "DR %-10s %c %5lu.%01luM %4lddB",
-                type_name, *trend_symbol, (unsigned long)mhz, (unsigned long)decimals, (long int)rssi_);
+                threat_name_.c_str(), *trend_symbol, (unsigned long)mhz, (unsigned long)decimals, (long int)rssi_);
     }
     return std::string(buffer);
 }
@@ -1308,35 +1304,37 @@ void DroneDisplayController::set_scanning_status(bool active, const std::string&
 
 void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi) {
     systime_t now = chTimeNow();
-    for (size_t i = 0; i < detected_drones_count_; ++i) {
-        if (detected_drones_[i].frequency == freq) {
-            detected_drones_[i].rssi = rssi;
-            detected_drones_[i].threat = threat;
-            detected_drones_[i].type = type;
-            detected_drones_[i].last_seen = now;
-            sort_drones_by_rssi();
-            render_drone_text_display();
-            return;
+    auto it = std::find_if(detected_drones_.begin(), detected_drones_.end(),
+                          [freq](const DisplayDroneEntry& entry) {
+                              return entry.frequency == freq;
+                          });
+    if (it != detected_drones_.end()) {
+        it->rssi = rssi;
+        it->threat = threat;
+        it->type = type;
+        it->last_seen = now;
+        it->type_name = get_drone_type_name(type);
+        it->display_color = get_drone_type_color(type);
+    } else {
+        if (detected_drones_.size() < MAX_TRACKED_DRONES) {
+            DisplayDroneEntry entry;
+            entry.frequency = freq;
+            entry.rssi = rssi;
+            entry.threat = threat;
+            entry.type = type;
+            entry.last_seen = now;
+            entry.type_name = get_drone_type_name(type);
+            entry.display_color = get_drone_type_color(type);
+            entry.trend = MovementTrend::STATIC;
+            detected_drones_.push_back(entry);
         }
     }
-    if (detected_drones_count_ < MAX_TRACKING_CAPACITY) {
-        DisplayDroneEntry entry;
-        entry.frequency = freq;
-        entry.rssi = rssi;
-        entry.threat = threat;
-        entry.type = type;
-        entry.last_seen = now;
-        entry.trend = MovementTrend::STATIC;
-        detected_drones_[detected_drones_count_] = entry;
-        detected_drones_count_++;
-        sort_drones_by_rssi();
-        render_drone_text_display();
-    }
+    sort_drones_by_rssi();
+    render_drone_text_display();
 }
 
 void DroneDisplayController::sort_drones_by_rssi() {
-    if (detected_drones_count_ <= 1) return;
-    std::sort(detected_drones_, detected_drones_ + detected_drones_count_,
+    std::sort(detected_drones_.begin(), detected_drones_.end(),
               [](const DisplayDroneEntry& a, const DisplayDroneEntry& b) {
                   if (a.rssi != b.rssi) return a.rssi > b.rssi;
                   if (a.threat != b.threat) return static_cast<int>(a.threat) > static_cast<int>(b.threat);
@@ -1347,24 +1345,17 @@ void DroneDisplayController::sort_drones_by_rssi() {
 void DroneDisplayController::update_drones_display(const DroneScanner& /*scanner*/) {
     const systime_t STALE_TIMEOUT = 30000;
     systime_t now = chTimeNow();
-
-    // Remove stale drones by shifting valid entries to the front
-    size_t write_index = 0;
-    for (size_t read_index = 0; read_index < detected_drones_count_; ++read_index) {
-        if ((now - detected_drones_[read_index].last_seen) <= STALE_TIMEOUT) {
-            if (write_index != read_index) {
-                detected_drones_[write_index] = detected_drones_[read_index];
-            }
-            write_index++;
-        }
-    }
-    detected_drones_count_ = write_index;
-
+    detected_drones_.erase(
+        std::remove_if(detected_drones_.begin(), detected_drones_.end(),
+                      [now, STALE_TIMEOUT](const DisplayDroneEntry& entry) {
+                          return (now - entry.last_seen) > STALE_TIMEOUT;
+                      }),
+        detected_drones_.end());
     sort_drones_by_rssi();
     for (auto& drone : displayed_drones_) {
         drone = DisplayDroneEntry{};
     }
-    size_t count = std::min(detected_drones_count_, MAX_DISPLAYED_DRONES);
+    size_t count = std::min(detected_drones_.size(), MAX_DISPLAYED_DRONES);
     for (size_t i = 0; i < count; ++i) {
         displayed_drones_[i] = detected_drones_[i];
     }
@@ -1395,9 +1386,8 @@ void DroneDisplayController::render_drone_text_display() {
         } else {
             freq_str = to_string_dec_uint(drone.frequency / 1000, 1) + "k";
         }
-        const char* type_name = get_drone_type_name(drone.type);
         snprintf(buffer, sizeof(buffer), DRONE_DISPLAY_FORMAT,
-                type_name,
+                drone.type_name.c_str(),
                 freq_str.c_str(),
                 (long int)drone.rssi,
                 trend_symbol);
@@ -1938,11 +1928,11 @@ void ScanningCoordinator::show_session_summary(const std::string& summary) {
 // PART 6: DISPLAY HELPER IMPLEMENTATIONS
 // ===========================================
 
-const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
+std::string DroneDisplayController::get_drone_type_name(DroneType type) const {
     switch (type) {
         case DroneType::MAVIC: return "MAVIC";
         case DroneType::DJI_P34: return "DJI P34";
-        case DroneType::UNKNOWN: default: return "UNK";
+        case DroneType::UNKNOWN: default: return "UNKNOWN";
     }
 }
 

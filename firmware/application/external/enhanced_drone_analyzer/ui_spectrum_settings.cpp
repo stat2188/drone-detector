@@ -23,21 +23,37 @@ SpectrumPresetLoader::~SpectrumPresetLoader() {
 void SpectrumPresetLoader::initialize_default_presets() {
     // Add common drone frequency ranges from Looking Glass pattern
     // Migrated and adapted for EDA focus
-    FrequencyPreset preset1 = {2410000000ULL, 2460000000ULL, {}, SpectrumMode::MEDIUM, ThreatLevel::HIGH};
-    strncpy(preset1.label, "DJI/Mavic Band", 15);
-    settings_.add_preset(preset1);
+    settings_.add_preset({
+        2410000000ULL,  // 2.41 GHz (DJI/Mavic)
+        2460000000ULL,  // 2.46 GHz
+        "DJI/Mavic Band",
+        SpectrumMode::MEDIUM,
+        ThreatLevel::HIGH
+    });
 
-    FrequencyPreset preset2 = {2425000000ULL, 2475000000ULL, {}, SpectrumMode::MEDIUM, ThreatLevel::MEDIUM};
-    strncpy(preset2.label, "Parrot Band", 15);
-    settings_.add_preset(preset2);
+    settings_.add_preset({
+        2425000000ULL,  // 2.425 GHz (Parrot)
+        2475000000ULL,  // 2.475 GHz
+        "Parrot Band",
+        SpectrumMode::MEDIUM,
+        ThreatLevel::MEDIUM
+    });
 
-    FrequencyPreset preset3 = {5705000000ULL, 5905000000ULL, {}, SpectrumMode::WIDE, ThreatLevel::LOW};
-    strncpy(preset3.label, "5.8GHz Band", 15);
-    settings_.add_preset(preset3);
+    settings_.add_preset({
+        5705000000ULL,  // 5.705 GHz (Experimental)
+        5905000000ULL,  // 5.905 GHz
+        "5.8GHz Band",
+        SpectrumMode::WIDE,
+        ThreatLevel::LOW
+    });
 
-    FrequencyPreset preset4 = {915000000ULL, 928000000ULL, {}, SpectrumMode::MEDIUM, ThreatLevel::LOW};
-    strncpy(preset4.label, "915MHz Band", 15);
-    settings_.add_preset(preset4);
+    settings_.add_preset({
+        915000000ULL,   // 915 MHz (US drones)
+        928000000ULL,   // 928 MHz
+        "915MHz Band",
+        SpectrumMode::MEDIUM,
+        ThreatLevel::LOW
+    });
 }
 
 bool SpectrumPresetLoader::load_presets_from_file() {
@@ -81,8 +97,7 @@ bool SpectrumPresetLoader::parse_preset_line(const std::string& line, FrequencyP
     preset.max_freq_hz = std::strtoull(parts[1].c_str(), &end, 10);
     if (*end != '\0') return false; // Parsing failed
 
-    strncpy(preset.label, parts[2].c_str(), 15);
-    preset.label[15] = '\0';
+    preset.label = parts[2];
 
     // Parse threat level
     std::string threat_str = parts[3];
@@ -122,7 +137,7 @@ std::string SpectrumPresetLoader::serialize_preset(const FrequencyPreset& preset
     std::stringstream ss;
     ss << preset.min_freq_hz << ",";
     ss << preset.max_freq_hz << ",";
-    ss << std::string(preset.label) << ",";
+    ss << preset.label << ",";
     ss << threat_to_string(preset.default_threat_level);
 
     return ss.str();
@@ -134,7 +149,7 @@ std::string SpectrumPresetLoader::get_preset_filename() const {
 }
 
 const FrequencyPreset* SpectrumPresetLoader::get_preset(size_t index) const {
-    if (index < settings_.preset_count) {
+    if (index < settings_.preset_ranges.size()) {
         return &settings_.preset_ranges[index];
     }
     return nullptr;
