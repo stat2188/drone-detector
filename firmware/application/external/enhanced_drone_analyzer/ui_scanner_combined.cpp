@@ -97,7 +97,6 @@ DroneScanner::DroneScanner()
       last_valid_rssi_(-120),
       wideband_scan_data_(),
       drone_database_(),
-      db_entry_count_(0),
       detection_logger_()
 {
     initialize_database_and_scanner();
@@ -163,7 +162,7 @@ bool DroneScanner::load_frequency_database() {
     current_db_index_ = 0;
 
     freqman_load_options options;
-    options.max_entries = MAX_DB_ENTRIES;
+    options.max_entries = 150;
     options.load_freqs = true;
     options.load_ranges = true;
     options.load_hamradios = true;
@@ -174,26 +173,23 @@ bool DroneScanner::load_frequency_database() {
         return false;
     }
 
-    db_entry_count_ = 0;
+    drone_database_.clear();
     for (const auto& entry_ptr : temp_db) {
-        if (db_entry_count_ >= MAX_DB_ENTRIES) break;
-
-        if (entry_ptr && entry_ptr->frequency_a > 0) {
-            drone_database_[db_entry_count_].frequency = entry_ptr->frequency_a;
-            db_entry_count_++;
+        if (entry_ptr) {
+            drone_database_.push_back(std::make_unique<freqman_entry>(*entry_ptr));
         }
     }
 
-    if (db_entry_count_ > 100) {
+    if (drone_database_.size() > 100) {
         handle_scan_error("Large database loaded");
     }
 
     freq_db_loaded_ = true;
-    return db_entry_count_ > 0;
+    return drone_database_.size() > 0;
 }
 
 size_t DroneScanner::get_database_size() const {
-    return db_entry_count_;
+    return freq_db_.entry_count();
 }
 
 void DroneScanner::set_scanning_mode(ScanningMode mode) {
@@ -233,7 +229,7 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    if (db_entry_count_ == 0) {
+    if (drone_database_.size() == 0) {
         if (scan_cycles_ % 50 == 0) {
             handle_scan_error("No frequency database loaded");
             scanning_active_ = false;
@@ -241,7 +237,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         return;
     }
 
-    const size_t total_entries = db_entry_count_;
+    const size_t total_entries = drone_database_.size();
     const size_t batch_size = std::min(static_cast<size_t>(20), total_entries);
 
     for (size_t i = 0; i < batch_size && scanning_active_; ++i) {
@@ -249,26 +245,17 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
             current_db_index_ = 0;
         }
 
-        if (current_db_index_ < db_entry_count_) {
-            const auto& entry = drone_database_[current_db_index_];
-            Frequency target_freq_hz = entry.frequency;
-            if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
-                if (hardware.tune_to_frequency(target_freq_hz)) {
-                    chThdSleepMilliseconds(10);
-                    int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-                    // Create temporary freqman_entry for compatibility
-                    freqman_entry temp_entry{
-                        .frequency_a = static_cast<int64_t>(target_freq_hz),
-                        .frequency_b = static_cast<int64_t>(target_freq_hz),
-                        .description = "Compact DB Entry",
-                        .type = freqman_type::Single,
-                        .modulation = freqman_invalid_index,
-                        .bandwidth = freqman_invalid_index,
-                        .step = freqman_invalid_index,
-                        .tone = freqman_invalid_index
-                    };
-                    process_rssi_detection(temp_entry, real_rssi);
-                    last_scanned_frequency_ = target_freq_hz;
+        if (current_db_index_ < drone_database_.size()) {
+            const auto& entry_ptr = drone_database_[current_db_index_];
+            if (entry_ptr) {
+                Frequency target_freq_hz = entry_ptr->frequency_a;
+                if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
+                    if (hardware.tune_to_frequency(target_freq_hz)) {
+                        chThdSleepMilliseconds(10);
+                        int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
+                        process_rssi_detection(*entry_ptr, real_rssi);
+                        last_scanned_frequency_ = target_freq_hz;
+                    }
                 }
             }
             current_db_index_ = (current_db_index_ + 1) % total_entries;
@@ -425,8 +412,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
 
-    for (size_t i = 0; i < db_entry_count_; ++i) {
-        if (drone_database_[i].frequency == entry.frequency_a) {
+    for (const auto& db_entry : drone_database_) {
+        if (db_entry && db_entry->frequency_a == entry.frequency_a) {
             detected_type = DroneType::MAVIC;
             threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
             break;
@@ -604,8 +591,8 @@ bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
-    if (db_entry_count_ > 0 && current_db_index_ < db_entry_count_) {
-        return drone_database_[current_db_index_].frequency;
+    if (!drone_database_.empty() && current_db_index_ < drone_database_.size() && drone_database_[current_db_index_]) {
+        return drone_database_[current_db_index_]->frequency_a;
     }
     return 433000000;
 }
