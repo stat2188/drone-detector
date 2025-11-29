@@ -236,9 +236,9 @@ set(EXTCPPSRC
 	external/battleship/main.cpp
 	external/battleship/ui_battleship.cpp
 
-	#ert 3040 bytes - has common with baseband, could be renamed the namespace, so both could have it, but not kept in fw.
-	external/ert/main.cpp
-	external/ert/ert_app.cpp
+	##ert 3040 bytes - baseband ERT disabled, so app also disabled
+	#external/ert/main.cpp
+	#external/ert/ert_app.cpp
 
 	#epirb_rx 168 byte flash 
 	external/epirb_rx/main.cpp
@@ -333,7 +333,7 @@ set(EXTAPPLIST
 	spaceinv
 	blackjack
 	battleship
-	ert
+	#ert
 	epirb_rx
 	soundboard
 	game2048
