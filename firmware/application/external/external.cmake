@@ -285,7 +285,7 @@ set(EXTAPPLIST
 	nrf_rx
 	coasterp
 	lge
-	lcr
+	#lcr
 	jammer
 	gpssim
 	spainter
