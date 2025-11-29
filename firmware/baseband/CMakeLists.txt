@@ -428,10 +428,10 @@ DeclareTargets(POOK ook)
 
 ### POCSAG2 RX
 
-set(MODE_CPPSRC
-	proc_pocsag2.cpp
-)
-DeclareTargets(PPO2 pocsag2)
+# set(MODE_CPPSRC
+# 	proc_pocsag2.cpp
+# )
+# DeclareTargets(PPO2 pocsag2)
 
 ### RDS
 
