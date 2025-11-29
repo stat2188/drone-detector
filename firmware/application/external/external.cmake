@@ -56,9 +56,9 @@ set(EXTCPPSRC
 	external/keyfob/ui_keyfob.cpp
 	external/keyfob/ui_keyfob.hpp
 
-	#tetris 88 byte
-	external/tetris/main.cpp
-	external/tetris/ui_tetris.cpp
+	##tetris 88 byte
+	#external/tetris/main.cpp
+	#external/tetris/ui_tetris.cpp
 
 
 	#extsensors 192 byte
@@ -183,9 +183,9 @@ set(EXTCPPSRC
 	external/playlist_editor/main.cpp
 	external/playlist_editor/ui_playlist_editor.cpp
 
-	#snake 240 bytes
-	external/snake/main.cpp
-	external/snake/ui_snake.cpp
+	##snake 240 bytes
+	#external/snake/main.cpp
+	#external/snake/ui_snake.cpp
 
 
 	#stopwatch 0
@@ -248,9 +248,9 @@ set(EXTCPPSRC
 	external/soundboard/main.cpp
 	external/soundboard/soundboard_app.cpp
 
-	#game2048   - 168 byte flash
-	external/game2048/main.cpp
-	external/game2048/ui_game2048.cpp
+	##game2048   - 168 byte flash
+	#external/game2048/main.cpp
+	#external/game2048/ui_game2048.cpp
 
 	#bht_tx - 3920 byte flash, unknown
 	external/bht_tx/main.cpp
@@ -290,7 +290,7 @@ set(EXTAPPLIST
 	gpssim
 	spainter
 	keyfob
-	tetris
+	#tetris
 	extsensors
 	foxhunt_rx
 	audio_test
@@ -320,7 +320,7 @@ set(EXTAPPLIST
 	view_wav
 	sd_wipe
 	playlist_editor
-	snake
+	#snake
 	stopwatch
 	breakout
 	dinogame
@@ -336,7 +336,7 @@ set(EXTAPPLIST
 	ert
 	epirb_rx
 	soundboard
-	game2048
+	#game2048
 	bht_tx
 	morse_practice
 	adult_toys_controller
