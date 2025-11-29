@@ -56,11 +56,6 @@ set(EXTCPPSRC
 	external/keyfob/ui_keyfob.cpp
 	external/keyfob/ui_keyfob.hpp
 
-	##tetris 88 byte
-	#external/tetris/main.cpp
-	#external/tetris/ui_tetris.cpp
-
-
 	#extsensors 192 byte
 	external/extsensors/main.cpp
 	external/extsensors/ui_extsensors.cpp
@@ -183,26 +178,9 @@ set(EXTCPPSRC
 	external/playlist_editor/main.cpp
 	external/playlist_editor/ui_playlist_editor.cpp
 
-	##snake 240 bytes
-	#external/snake/main.cpp
-	#external/snake/ui_snake.cpp
-
-
 	#stopwatch 0
 	external/stopwatch/main.cpp
 	external/stopwatch/ui_stopwatch.cpp
-
-	##breakout 1144 bytes
-	#external/breakout/main.cpp
-	#external/breakout/ui_breakout.cpp
-
-	##dinogame 0 
-	#external/dinogame/main.cpp
-	#external/dinogame/ui_dinogame.cpp
-
-	##doom 224
-	#external/doom/main.cpp
-	#external/doom/ui_doom.cpp
 
 	#debug_pmem  944 byte
 	external/debug_pmem/main.cpp
@@ -224,18 +202,6 @@ set(EXTCPPSRC
 	external/detector_rx/main.cpp
 	external/detector_rx/ui_detector_rx.cpp
 
-	##space_invaders  0 byte
-	#external/spaceinv/main.cpp
-	#external/spaceinv/ui_spaceinv.cpp
-
-	##blackjack 24 byte
-	#external/blackjack/main.cpp
-	#external/blackjack/ui_blackjack.cpp
-
-	##battleship  256 byte
-	#external/battleship/main.cpp
-	#external/battleship/ui_battleship.cpp
-
 	#ert 3040 bytes - has common with baseband, could be renamed the namespace, so both could have it, but not kept in fw.
 	external/ert/main.cpp
 	external/ert/ert_app.cpp
@@ -247,10 +213,6 @@ set(EXTCPPSRC
 	#soundboard  272byte  - 1236 bytes
 	external/soundboard/main.cpp
 	external/soundboard/soundboard_app.cpp
-
-	##game2048   - 168 byte flash
-	#external/game2048/main.cpp
-	#external/game2048/ui_game2048.cpp
 
 	#bht_tx - 3920 byte flash, unknown
 	external/bht_tx/main.cpp
@@ -290,7 +252,6 @@ set(EXTAPPLIST
 	gpssim
 	spainter
 	keyfob
-	#tetris
 	extsensors
 	foxhunt_rx
 	audio_test
@@ -320,23 +281,15 @@ set(EXTAPPLIST
 	view_wav
 	sd_wipe
 	playlist_editor
-	#snake
 	stopwatch
-	#breakout
-	#dinogame
-	#doom
 	debug_pmem
 	scanner
 	level
 	gfxeq
 	detector_rx
-	#spaceinv
-	#blackjack
-	#battleship
 	ert
 	epirb_rx
 	soundboard
-	#game2048
 	bht_tx
 	morse_practice
 	adult_toys_controller
