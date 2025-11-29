@@ -232,9 +232,9 @@ set(EXTCPPSRC
 	external/blackjack/main.cpp
 	external/blackjack/ui_blackjack.cpp
 
-	#battleship  256 byte
-	external/battleship/main.cpp
-	external/battleship/ui_battleship.cpp
+	##battleship  256 byte - disabled
+	#external/battleship/main.cpp
+	#external/battleship/ui_battleship.cpp
 
 	##ert 3040 bytes - baseband ERT disabled, so app also disabled
 	#external/ert/main.cpp
@@ -332,7 +332,7 @@ set(EXTAPPLIST
 	detector_rx
 	spaceinv
 	blackjack
-	battleship
+	#battleship
 	#ert
 	epirb_rx
 	soundboard
