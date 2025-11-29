@@ -33,9 +33,9 @@ set(EXTCPPSRC
 	external/lge/lge_app.cpp
 	external/lge/rfm69.cpp
 
-	#lcr - 460 byte flash
-	external/lcr/main.cpp
-	external/lcr/ui_lcr.cpp
+	##lcr - 460 byte flash - uses AFSK TX which is disabled
+	#external/lcr/main.cpp
+	#external/lcr/ui_lcr.cpp
 
 	#jammer 144 byte
 	external/jammer/main.cpp
