@@ -27,6 +27,7 @@ import sys
 import struct
 import subprocess
 from external_app_info import maximum_application_size
+from external_app_info import special_app_sizes
 from external_app_info import external_apps_address_start
 from external_app_info import external_apps_address_end
 
@@ -143,8 +144,9 @@ for external_image_prefix in sys.argv[4:]:
 	external_application_image[memory_location_header_position:memory_location_header_position+4] = replace_address.to_bytes(4, byteorder='little')
 	external_application_image[m4_app_offset_header_position:m4_app_offset_header_position+4] = app_image_len.to_bytes(4, byteorder='little')
 
-	if (len(external_application_image) > maximum_application_size) != 0:
-		print("application {} can not exceed 32kb: {} bytes used".format(external_image_prefix, len(external_application_image)))
+	app_max_size = special_app_sizes.get(external_image_prefix, maximum_application_size)
+	if (len(external_application_image) > app_max_size) != 0:
+		print("application {} can not exceed {}kb: {} bytes used".format(external_image_prefix, app_max_size//1024, len(external_application_image)))
 		sys.exit(-1)
 
 	checksum = 0

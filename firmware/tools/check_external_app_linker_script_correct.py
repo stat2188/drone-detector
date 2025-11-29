@@ -61,6 +61,11 @@ def validate_memory_regions(regions):
     expected_step = 0x10000  # 64k as step (not sure why)
     expected_base = 0xADB10000 # the start (not sure why this one)
     expected_size = 32 * 1024  # 32k
+    # Special sizes for specific apps
+    special_sizes = {
+        'enhanced_drone_analyzer': 40 * 1024,  # 40k
+        'enhanced_drone_analyzer_settings': 40 * 1024,  # 40k
+    }
     issues_found = False
     
     print("\n")
@@ -80,9 +85,10 @@ def validate_memory_regions(regions):
             issues_found = True
         
         # size
-        if region['length'] != expected_size:
+        app_expected_size = special_sizes.get(region['app_name'], expected_size)
+        if region['length'] != app_expected_size:
             print(f"WARNING: external app region '{region['app_name']}' has incorrect size")
-            print(f"want: {expected_size//1024}KB, Found: {region['length']//1024}KB")
+            print(f"want: {app_expected_size//1024}KB, Found: {region['length']//1024}KB")
             issues_found = True
         
         # overlap

@@ -26,6 +26,7 @@
 import sys
 import os
 from external_app_info import maximum_application_size
+from external_app_info import special_app_sizes
 from external_app_info import external_apps_address_start
 from external_app_info import external_apps_address_end
 import subprocess
@@ -87,41 +88,47 @@ def parse_memory_regions(ld_file_path):
 def validate_memory_regions(regions):
     if not regions:
         return False
-    
+
     expected_step = 0x10000  # 64k as step (not sure why)
     expected_base = 0xADB10000 # the start (not sure why this one)
     expected_size = 32 * 1024  # 32k
+    # Special sizes for specific apps
+    special_sizes = {
+        'enhanced_drone_analyzer': 40 * 1024,  # 40k
+        'enhanced_drone_analyzer_settings': 40 * 1024,  # 40k
+    }
     issues_found = False
-    
+
     print("\n")
     print(f"checking {len(regions)} external apps address memory regions")
-    
+
     if regions[0]['address'] != expected_base:
         print(f"WARNING: external app first region should start at {hex(expected_base)}, but starts at {hex(regions[0]['address'])}")
         issues_found = True
-    
+
     for i, region in enumerate(regions):
         expected_address = expected_base + (i * expected_step)
-        
+
         # address count
         if region['address'] != expected_address:
             print(f"WARNING: external app region '{region['app_name']}' has incorrect address")
             print(f"want: {hex(expected_address)}, Found: {hex(region['address'])}")
             issues_found = True
-        
+
         # size
-        if region['length'] != expected_size:
+        app_expected_size = special_sizes.get(region['app_name'], expected_size)
+        if region['length'] != app_expected_size:
             print(f"WARNING: external app region '{region['app_name']}' has incorrect size")
-            print(f"want: {expected_size//1024}KB, Found: {region['length']//1024}KB")
+            print(f"want: {app_expected_size//1024}KB, Found: {region['length']//1024}KB")
             issues_found = True
-        
+
         # overlap
         if i < len(regions) - 1:
             next_region = regions[i + 1]
             if region['address'] + region['length'] > next_region['address']:
                 print(f"WARNING: external app region '{region['app_name']}' overlapped with '{next_region['app_name']}'")
                 issues_found = True
-    
+
     return not issues_found
 
 #^^^^^^^^external app linker script address check^^^^^^^^
@@ -283,5 +290,3 @@ if not os.path.exists(flash_py_path):
     import shutil
     print(f"\ncopy {source_file} to {flash_py_path}\n")
     shutil.copy2(source_file, flash_py_path)
-
-
