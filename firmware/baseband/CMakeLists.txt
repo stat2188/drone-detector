@@ -327,17 +327,17 @@ set(MODE_FLAGS "-O3")
 
 ### AFSK TX
 
-set(MODE_CPPSRC
-	proc_afsk.cpp
-)
-DeclareTargets(PAFT afsktx)
+# set(MODE_CPPSRC
+# 	proc_afsk.cpp
+# )
+# DeclareTargets(PAFT afsktx)
 
 ### APRS RX
 
-set(MODE_CPPSRC
-	proc_aprsrx.cpp
-)
-DeclareTargets(PAPR aprsrx)
+# set(MODE_CPPSRC
+# 	proc_aprsrx.cpp
+# )
+# DeclareTargets(PAPR aprsrx)
 
 
 ### BTLE RX
@@ -378,10 +378,10 @@ DeclareTargets(PCAP capture)
 
 ### ERT
 
-set(MODE_CPPSRC
-	proc_ert.cpp
-)
-DeclareTargets(PERT ert)
+# set(MODE_CPPSRC
+# 	proc_ert.cpp
+# )
+# DeclareTargets(PERT ert)
 
 ### Radiosonde
 
