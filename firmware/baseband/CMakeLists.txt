@@ -319,10 +319,10 @@ set(MODE_FLAGS "-O3")
 
 ### ADS-B RX
 
-set(MODE_CPPSRC
-	proc_adsbrx.cpp
-)
-DeclareTargets(PADR adsbrx)
+# set(MODE_CPPSRC
+# 	proc_adsbrx.cpp
+# )
+# DeclareTargets(PADR adsbrx)
 
 
 ### AFSK TX
@@ -385,10 +385,10 @@ DeclareTargets(PERT ert)
 
 ### Radiosonde
 
-set(MODE_CPPSRC
-	proc_sonde.cpp
-)
-DeclareTargets(PSON sonde)
+# set(MODE_CPPSRC
+# 	proc_sonde.cpp
+# )
+# DeclareTargets(PSON sonde)
 
 ### FSK RX
 
@@ -428,10 +428,10 @@ DeclareTargets(POOK ook)
 
 ### POCSAG2 RX
 
-set(MODE_CPPSRC
-	proc_pocsag2.cpp
-)
-DeclareTargets(PPO2 pocsag2)
+# set(MODE_CPPSRC
+# 	proc_pocsag2.cpp
+# )
+# DeclareTargets(PPO2 pocsag2)
 
 ### RDS
 
