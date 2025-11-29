@@ -909,7 +909,7 @@ void ScanningSettingsView::update_settings_from_ui() {
 // --- DroneAnalyzerSettingsView Implementation (MAIN SETTINGS MENU) ---
 
 DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav)
-    : View(), nav_(nav)
+    : View(), nav_(nav), current_settings_{}
 {
     add_children({
         &text_title_,

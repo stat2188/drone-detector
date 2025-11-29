@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <sstream>
 #include <cstdlib>
+#include <cctype>
 
 using namespace portapack;
 using namespace tonekey;
@@ -27,47 +28,78 @@ using namespace tonekey;
 namespace ui::external_app::enhanced_drone_analyzer {
 
 // Settings loading helper
+// ИСПРАВЛЕННАЯ ВЕРСИЯ: Читает файл целиком и парсит построчно
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     static const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
     File settings_file;
-    auto open_result = settings_file.open(std::filesystem::path(SETTINGS_FILE_PATH));
-    if (!open_result) {
+    auto error = settings_file.open(SETTINGS_FILE_PATH);
+    if (error) {
         return false;
     }
 
-    char line_buffer[256];
-    while (true) {
-        auto read_count = settings_file.read(line_buffer, sizeof(line_buffer) - 1);
-        if (read_count == 0) break;
-        line_buffer[read_count] = '\0';
+    // Получаем размер файла
+    uint64_t file_size = settings_file.size();
+    if (file_size == 0) return false;
 
-        std::string line(line_buffer);
+    // Ограничиваем размер чтения для безопасности (настройки обычно занимают < 1КБ)
+    if (file_size > 4096) file_size = 4096;
+
+    std::string content;
+    content.resize(file_size);
+
+    // Читаем весь файл в буфер
+    auto read_res = settings_file.read(content.data(), file_size);
+    if (read_res.is_error()) return false;
+
+    // Если прочитали меньше, чем размер файла (редко, но возможно), корректируем строку
+    if (read_res.value() < file_size) {
+        content.resize(read_res.value());
+    }
+
+    std::stringstream ss(content);
+    std::string line;
+
+    while (std::getline(ss, line)) {
+        // Удаляем CR (возврат каретки) для совместимости с Windows-стилем строк
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+
+        // Пропускаем пустые строки и комментарии
+        if (line.empty() || line[0] == '#') continue;
+
         size_t equals_pos = line.find('=');
         if (equals_pos == std::string::npos) continue;
 
         std::string key = line.substr(0, equals_pos);
         std::string value = line.substr(equals_pos + 1);
 
-        // Trim whitespace
-        key.erase(key.begin(), std::find_if(key.begin(), key.end(), [](int ch) { return !std::isspace(ch); }));
-        key.erase(std::find_if(key.rbegin(), key.rend(), [](int ch) { return !std::isspace(ch); }).base(), key.end());
-        value.erase(value.begin(), std::find_if(value.begin(), value.end(), [](int ch) { return !std::isspace(ch); }));
-        value.erase(std::find_if(value.rbegin(), value.rend(), [](int ch) { return !std::isspace(ch); }).base(), value.end());
+        // Trim whitespace (удаление пробелов)
+        key.erase(0, key.find_first_not_of(" \t"));
+        key.erase(key.find_last_not_of(" \t") + 1);
+        value.erase(0, value.find_first_not_of(" \t"));
+        value.erase(value.find_last_not_of(" \t") + 1);
 
+        // Парсинг значений
         if (key == "spectrum_mode") {
-            if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
+            if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
+            else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
             else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
+            else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
         } else if (key == "scan_interval_ms") {
-            settings.scan_interval_ms = strtoul(value.c_str(), nullptr, 10);
+            settings.scan_interval_ms = std::strtoul(value.c_str(), nullptr, 10);
         } else if (key == "rssi_threshold_db") {
-            settings.rssi_threshold_db = strtol(value.c_str(), nullptr, 10);
+            settings.rssi_threshold_db = std::strtol(value.c_str(), nullptr, 10);
         } else if (key == "enable_audio_alerts") {
             settings.enable_audio_alerts = (value == "true");
+        } else if (key == "hardware_bandwidth_hz") {
+            settings.hardware_bandwidth_hz = std::strtoul(value.c_str(), nullptr, 10);
+        } else if (key == "enable_real_hardware") {
+            settings.enable_real_hardware = (value == "true");
         }
     }
 
-    settings_file.close();
     return true;
 }
 
