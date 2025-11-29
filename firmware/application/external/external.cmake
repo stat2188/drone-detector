@@ -192,17 +192,17 @@ set(EXTCPPSRC
 	external/stopwatch/main.cpp
 	external/stopwatch/ui_stopwatch.cpp
 
-	#breakout 1144 bytes
-	external/breakout/main.cpp
-	external/breakout/ui_breakout.cpp
+	##breakout 1144 bytes
+	#external/breakout/main.cpp
+	#external/breakout/ui_breakout.cpp
 
-	#dinogame 0 
-	external/dinogame/main.cpp
-	external/dinogame/ui_dinogame.cpp
+	##dinogame 0 
+	#external/dinogame/main.cpp
+	#external/dinogame/ui_dinogame.cpp
 
-	#doom 224
-	external/doom/main.cpp
-	external/doom/ui_doom.cpp
+	##doom 224
+	#external/doom/main.cpp
+	#external/doom/ui_doom.cpp
 
 	#debug_pmem  944 byte
 	external/debug_pmem/main.cpp
@@ -224,17 +224,17 @@ set(EXTCPPSRC
 	external/detector_rx/main.cpp
 	external/detector_rx/ui_detector_rx.cpp
 
-	#space_invaders  0 byte
-	external/spaceinv/main.cpp
-	external/spaceinv/ui_spaceinv.cpp
+	##space_invaders  0 byte
+	#external/spaceinv/main.cpp
+	#external/spaceinv/ui_spaceinv.cpp
 
-	#blackjack 24 byte
-	external/blackjack/main.cpp
-	external/blackjack/ui_blackjack.cpp
+	##blackjack 24 byte
+	#external/blackjack/main.cpp
+	#external/blackjack/ui_blackjack.cpp
 
-	#battleship  256 byte
-	external/battleship/main.cpp
-	external/battleship/ui_battleship.cpp
+	##battleship  256 byte
+	#external/battleship/main.cpp
+	#external/battleship/ui_battleship.cpp
 
 	#ert 3040 bytes - has common with baseband, could be renamed the namespace, so both could have it, but not kept in fw.
 	external/ert/main.cpp
@@ -322,17 +322,17 @@ set(EXTAPPLIST
 	playlist_editor
 	#snake
 	stopwatch
-	breakout
-	dinogame
-	doom
+	#breakout
+	#dinogame
+	#doom
 	debug_pmem
 	scanner
 	level
 	gfxeq
 	detector_rx
-	spaceinv
-	blackjack
-	battleship
+	#spaceinv
+	#blackjack
+	#battleship
 	ert
 	epirb_rx
 	soundboard
