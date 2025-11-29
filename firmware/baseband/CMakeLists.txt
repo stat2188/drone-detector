@@ -356,10 +356,10 @@ DeclareTargets(PBTT btletx)
 
 ### AIS
 
-set(MODE_CPPSRC
-	proc_ais.cpp
-)
-DeclareTargets(PAIS ais)
+# set(MODE_CPPSRC
+# 	proc_ais.cpp
+# )
+# DeclareTargets(PAIS ais)
 
 ### AM Audio
 
