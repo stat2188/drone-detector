@@ -45,11 +45,11 @@ set(EXTCPPSRC
 	external/gpssim/main.cpp
 	external/gpssim/gps_sim_app.cpp
 
-	#spainter   464 byte
-	external/spainter/main.cpp
-	external/spainter/ui_spectrum_painter.cpp
-	external/spainter/ui_spectrum_painter_text.cpp
-	external/spainter/ui_spectrum_painter_image.cpp
+	##spainter   464 byte - disabled
+	#external/spainter/main.cpp
+	#external/spainter/ui_spectrum_painter.cpp
+	#external/spainter/ui_spectrum_painter_text.cpp
+	#external/spainter/ui_spectrum_painter_image.cpp
 
 	#keyfob 216 byte
 	external/keyfob/main.cpp
@@ -288,7 +288,7 @@ set(EXTAPPLIST
 	#lcr
 	jammer
 	gpssim
-	spainter
+	#spainter
 	keyfob
 	tetris
 	extsensors
