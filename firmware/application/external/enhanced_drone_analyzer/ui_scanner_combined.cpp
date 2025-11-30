@@ -20,6 +20,7 @@
 #include <sstream>
 #include <cstdlib>
 #include <cctype>
+#include <cstring>
 
 using namespace portapack;
 using namespace tonekey;
@@ -27,112 +28,102 @@ using namespace tonekey;
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
-    static const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+// Функция парсит строку, меняя её содержимое (вставляет \0 вместо =)
+void parse_settings_line_inplace(char* line, DroneAnalyzerSettings& settings) {
+    // 1. Пропускаем комментарии
+    if (line[0] == '#' || line[0] == 0) return;
 
-    File settings_file;
-    auto error = settings_file.open(SETTINGS_FILE_PATH);
-    if (error) {
-        return false;
+    // 2. Ищем разделитель '='
+    char* equals_ptr = strchr(line, '=');
+    if (!equals_ptr) return;
+
+    // 3. Разделяем ключ и значение
+    *equals_ptr = 0; // Разрываем строку: "key\0value"
+    char* key = line;
+    char* value = equals_ptr + 1;
+
+    // 4. Тримминг пробелов (простой вариант)
+    // Функция trim должна быть легкой, пропускаем leading spaces
+    while (*key == ' ' || *key == '\t') key++;
+    while (*value == ' ' || *value == '\t') value++;
+
+    // Удаление trailing spaces для value (обычно в конце строки может быть \r)
+    size_t val_len = strlen(value);
+    while (val_len > 0 && (value[val_len-1] == ' ' || value[val_len-1] == '\t' || value[val_len-1] == '\r')) {
+        value[val_len-1] = 0;
+        val_len--;
     }
 
-    // Buffer for accumulating one line
-    std::string line;
-    line.reserve(64); // Reserve some memory to avoid frequent allocations
+    // 5. Сравнение ключей (используем strcmp вместо string ==)
+    if (strcmp(key, "spectrum_mode") == 0) {
+        if (strcmp(value, "NARROW") == 0) settings.spectrum_mode = SpectrumMode::NARROW;
+        else if (strcmp(value, "MEDIUM") == 0) settings.spectrum_mode = SpectrumMode::MEDIUM;
+        else if (strcmp(value, "WIDE") == 0) settings.spectrum_mode = SpectrumMode::WIDE;
+        else if (strcmp(value, "ULTRA_WIDE") == 0) settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+    }
+    else if (strcmp(key, "scan_interval_ms") == 0) {
+        settings.scan_interval_ms = strtoul(value, nullptr, 10);
+    }
+    else if (strcmp(key, "rssi_threshold_db") == 0) {
+        settings.rssi_threshold_db = strtol(value, nullptr, 10);
+    }
+    else if (strcmp(key, "enable_audio_alerts") == 0) {
+        settings.enable_audio_alerts = (strcmp(value, "true") == 0);
+    }
+    else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
+        settings.hardware_bandwidth_hz = strtoul(value, nullptr, 10);
+    }
+    else if (strcmp(key, "enable_real_hardware") == 0) {
+        settings.enable_real_hardware = (strcmp(value, "true") == 0);
+    }
+}
 
-    char read_buffer[1]; // Read 1 byte at a time (simple and reliable for configs)
-                         // For large files, a 64-byte buffer is better, but for config it's ok.
+bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
+    File settings_file;
+    auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
+    if (error) return false;
+
+    char read_buffer[128];      // Читаем блоками по 128 байт
+    char line_buffer[128];      // Буфер для сборки одной строки
+    size_t line_idx = 0;
 
     while (true) {
-        auto read_res = settings_file.read(read_buffer, 1);
+        // Читаем блок
+        auto read_res = settings_file.read(read_buffer, sizeof(read_buffer));
+        if (read_res.is_error()) break;
 
-        // End of file or read error
-        if (read_res.is_error() || read_res.value() == 0) {
-            // If something remains in the buffer (last line without \n), parse it
-            if (!line.empty()) {
-                // Call single line parser (see below, it needs to be adapted)
-                // parse_settings_line(settings, line);
+        size_t bytes_read = read_res.value();
+        if (bytes_read == 0) break; // EOF
 
-                // Since your parsing logic was inside, we'll move it here:
-                if (line[0] != '#') {
-                    size_t equals_pos = line.find('=');
-                    if (equals_pos != std::string::npos) {
-                        std::string key = line.substr(0, equals_pos);
-                        std::string value = line.substr(equals_pos + 1);
+        // Обрабатываем прочитанный блок
+        for (size_t i = 0; i < bytes_read; i++) {
+            char c = read_buffer[i];
 
-                        // Trim (remove spaces)
-                        key.erase(0, key.find_first_not_of(" \t"));
-                        key.erase(key.find_last_not_of(" \t") + 1);
-                        value.erase(0, value.find_first_not_of(" \t"));
-                        value.erase(value.find_last_not_of(" \t") + 1);
+            if (c == '\n') {
+                // Конец строки найден
+                line_buffer[line_idx] = 0; // Null-terminate
 
-                        // Value assignment
-                        if (key == "spectrum_mode") {
-                            if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-                            else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
-                            else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-                            else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-                        } else if (key == "scan_interval_ms") {
-                            settings.scan_interval_ms = std::strtoul(value.c_str(), nullptr, 10);
-                        } else if (key == "rssi_threshold_db") {
-                            settings.rssi_threshold_db = std::strtol(value.c_str(), nullptr, 10);
-                        } else if (key == "enable_audio_alerts") {
-                            settings.enable_audio_alerts = (value == "true");
-                        }
-                    }
-                }
+                // Парсим готовую строку
+                parse_settings_line_inplace(line_buffer, settings);
+
+                // Сброс для следующей строки
+                line_idx = 0;
             }
-            break;
-        }
-
-        char c = read_buffer[0];
-
-        if (c == '\n') {
-            // End of line - parse
-            if (!line.empty()) {
-                // Remove \r if present (Windows format)
-                if (line.back() == '\r') line.pop_back();
-
-                // --- HERE IS COPY OF PARSING LOGIC FROM BLOCK ABOVE ---
-                // (For code cleanliness, it's better to extract line parsing into a separate parse_line function)
-                if (!line.empty() && line[0] != '#') {
-                    size_t equals_pos = line.find('=');
-                    if (equals_pos != std::string::npos) {
-                        std::string key = line.substr(0, equals_pos);
-                        std::string value = line.substr(equals_pos + 1);
-
-                        key.erase(0, key.find_first_not_of(" \t"));
-                        key.erase(key.find_last_not_of(" \t") + 1);
-                        value.erase(0, value.find_first_not_of(" \t"));
-                        value.erase(value.find_last_not_of(" \t") + 1);
-
-                        if (key == "spectrum_mode") {
-                            if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-                            else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
-                            else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-                            else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-                        } else if (key == "scan_interval_ms") {
-                            settings.scan_interval_ms = std::strtoul(value.c_str(), nullptr, 10);
-                        } else if (key == "rssi_threshold_db") {
-                            settings.rssi_threshold_db = std::strtol(value.c_str(), nullptr, 10);
-                        } else if (key == "enable_audio_alerts") {
-                            settings.enable_audio_alerts = (value == "true");
-                        } else if (key == "hardware_bandwidth_hz") {
-                            settings.hardware_bandwidth_hz = std::strtoul(value.c_str(), nullptr, 10);
-                        } else if (key == "enable_real_hardware") {
-                            settings.enable_real_hardware = (value == "true");
-                        }
-                    }
+            else if (c != '\r') {
+                // Игнорируем \r, накапливаем остальные символы
+                if (line_idx < sizeof(line_buffer) - 1) {
+                    line_buffer[line_idx++] = c;
                 }
-                // -----------------------------------------------
-            }
-            line.clear(); // Clear for next line
-        } else {
-            // Just add the character
-            if (line.length() < 128) { // Protection against line overflow (if file is corrupted and no \n)
-                line += c;
+                // Если строка длиннее буфера, лишние символы просто игнорируются
+                // до встречи \n, чтобы не переполнить стек
             }
         }
+    }
+
+    // Обработка последней строки, если файл не заканчивается на \n
+    if (line_idx > 0) {
+        line_buffer[line_idx] = 0;
+        parse_settings_line_inplace(line_buffer, settings);
     }
 
     return true;
@@ -780,10 +771,32 @@ bool DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
     if (!session_active_) return false;
     if (!ensure_csv_header()) return false;
 
-    std::string csv_entry = format_csv_entry(entry);
+    // Используем уже существующий в классе line_buffer_ (он там есть, 192 байта)
+    // snprintf пишет сразу в char array, без создания std::string
+    int len = snprintf(line_buffer_, sizeof(line_buffer_),
+             "%lu,%lu,%ld,%u,%u,%u,%ld\n", // %f (float) тяжел для M4, лучше писать int * 100
+             static_cast<unsigned long>(entry.timestamp),
+             static_cast<unsigned long>(entry.frequency_hz),
+             (long int)entry.rssi_db,
+             static_cast<uint8_t>(entry.threat_level),
+             static_cast<uint8_t>(entry.drone_type),
+             entry.detection_count,
+             (long int)(entry.confidence_score * 100)); // Трюк с float
+
+    // Проверка на ошибку форматирования
+    if (len <= 0) return false;
+
     auto error = csv_log_.append(generate_log_filename());
     if (error && !error->ok()) return false;
-    error = csv_log_.write_raw(csv_entry);
+
+    // Пишем raw buffer. API Mayhem принимает void* и size
+    // Внимание: метод write_raw в Mayhem обычно принимает строку или буфер.
+    // Если он принимает std::string, придется сделать write_raw(std::string(line_buffer_, len)),
+    // но лучше использовать write(data, len) если доступно.
+
+    // Предполагая стандартный API LogFile в Mayhem:
+    error = csv_log_.write_raw(std::string(line_buffer_, len));
+
     if (error && error->ok()) {
         logged_count_++;
         return true;
