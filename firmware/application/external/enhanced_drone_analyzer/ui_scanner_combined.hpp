@@ -837,6 +837,9 @@ public:
     void on_open_constant_settings();
     void on_select_language();
     void on_about();
+    void on_audio_settings();
+    void on_hardware_control();
+    void on_view_logs();
 
     bool is_scanning() const { return scanning_active_; }
     DroneAnalyzerSettings& settings() { return settings_; }
@@ -952,6 +955,30 @@ private:
     NavigationView& nav_;
     Text text_eda_{Rect{108, 213, 24, 16}, "EDA"};
     systime_t timer_start_ = 0;
+};
+
+// 1. Объявляем класс меню
+class DroneSettingsMenuView : public View {
+public:
+    // Конструктор принимает навигацию и контроллер, чтобы вызывать функции
+    DroneSettingsMenuView(NavigationView& nav, DroneUIController& controller);
+
+    void focus() override;
+    std::string title() const override { return "Settings"; };
+
+private:
+    DroneUIController& controller_;
+
+    // Объявляем кнопки. Координаты: {x, y, ширина, высота}
+    // Делаем их большими (40px высотой) для удобства нажатия
+    Button button_load_db_   { {16, 16,  208, 40}, "Load Freq Database" };
+    Button button_audio_     { {16, 64,  208, 40}, "Audio Alerts: Toggle" };
+    Button button_hw_        { {16, 112, 208, 40}, "Hardware Info" };
+    Button button_logs_      { {16, 160, 208, 40}, "View CSV Logs" };
+    Button button_about_     { {16, 208, 208, 40}, "About EDA" };
+
+    // Текстовая подсказка внизу
+    Text text_info_          { {16, 260, 208, 16}, "Ver: 0.3 | Mayhem" };
 };
 
 } // namespace ui::external_app::enhanced_drone_analyzer

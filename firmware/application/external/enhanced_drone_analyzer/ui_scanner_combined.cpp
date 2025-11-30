@@ -1200,7 +1200,7 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
 }
 
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
-    // Проверяем, изменился ли уровень угрозы (влияет на цвет фона в paint)
+    // Check if threat level changed (affects background color in paint)
     bool visual_state_changed = (threat_ != drone.threat) || (!is_active_);
 
     is_active_ = true;
@@ -1218,24 +1218,24 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
 
     uint32_t mhz = frequency_ / 1000000;
 
-    // ОПТИМИЗАЦИЯ:
-    // %-7.7s : Выровнять влево, минимум 7 символов, МАКСИМУМ 7 символов.
-    // Это заменяет .substr(0,7) и не создает временных строк.
+    // OPTIMIZATION:
+    // %-7.7s : Left-align, minimum 7 characters, MAXIMUM 7 characters.
+    // This replaces .substr(0,7) and doesn't create temporary strings.
     snprintf(buffer, sizeof(buffer), "%-7.7s %c %4luM %3ld",
-            threat_name_.c_str(), // Берем сырой указатель оригинала
+            threat_name_.c_str(), // Take raw pointer to original
             trend_char,
             mhz,
             (long int)rssi_);
 
-    // Сравнение строк (std::string с char* работает эффективно)
+    // String comparison (std::string with char* works efficiently)
     if (current_text_ != buffer) {
-        current_text_ = buffer; // Аллокация только если текст реально изменился
+        current_text_ = buffer; // Allocate only if text actually changed
         card_text_.set(current_text_);
         visual_state_changed = true;
     }
 
-    // Перерисовываем виджет ТОЛЬКО если что-то изменилось
-    // (либо текст, либо цвет угрозы для фона)
+    // Redraw widget ONLY if something changed
+    // (either text, or threat color for background)
     if (visual_state_changed) {
         card_text_.set_style(Theme::getInstance()->fg_light);
         set_dirty();
@@ -1793,7 +1793,11 @@ void DroneUIController::on_toggle_mode() {
 }
 
 void DroneUIController::show_menu() {
-    nav_.display_modal("EDA Menu", "Available: Load DB, Save Settings, Audio, About");
+    // БЫЛО: nav_.display_modal("EDA Menu", "Available: ...");
+
+    // СТАЛО: Открываем наш новый класс меню
+    // *this передается как ссылка на контроллер, чтобы меню могло вызывать функции
+    nav_.push<DroneSettingsMenuView>(*this);
 }
 
 void DroneUIController::on_load_frequency_file() {
@@ -1868,6 +1872,67 @@ void DroneUIController::on_view_logs() {
 
 void DroneUIController::on_about() {
     nav_.display_modal("EDA v1.0", "Enhanced Drone Analyzer\nMayhem Firmware Integration\nBased on Recon & Looking Glass");
+}
+
+// 2. Реализация меню
+DroneSettingsMenuView::DroneSettingsMenuView(NavigationView& nav, DroneUIController& controller)
+    : View({0, 0, screen_width, screen_height}), controller_(controller)
+{
+    // Добавляем элементы на экран
+    add_children({
+        &button_load_db_,
+        &button_audio_,
+        &button_hw_,
+        &button_logs_,
+        &button_about_,
+        &text_info_
+    });
+
+    // Настраиваем стили (опционально, для красоты)
+    text_info_.set_style(Theme::getInstance()->fg_light);
+
+    // --- ПРИВЯЗКА КНОПОК К ФУНКЦИЯМ ---
+
+    // 1. Загрузка базы частот
+    button_load_db_.on_select = [&controller](Button&) {
+        controller.on_load_frequency_file();
+    };
+
+    // 2. Настройка аудио (здесь мы обновляем текст кнопки после нажатия)
+    button_audio_.on_select = [this, &controller](Button&) {
+        controller.on_audio_settings(); // Переключает в контроллере
+        // Обновляем текст кнопки, чтобы показать новое состояние
+        if (controller.settings().enable_audio_alerts) {
+            button_audio_.set_text("Audio Alerts: ON");
+        } else {
+            button_audio_.set_text("Audio Alerts: OFF");
+        }
+    };
+    // Устанавливаем начальный текст кнопки аудио
+    if (controller.settings().enable_audio_alerts) {
+        button_audio_.set_text("Audio Alerts: ON");
+    } else {
+        button_audio_.set_text("Audio Alerts: OFF");
+    }
+
+    // 3. Информация о железе
+    button_hw_.on_select = [&controller](Button&) {
+        controller.on_hardware_control();
+    };
+
+    // 4. Просмотр логов (открывает файловый менеджер)
+    button_logs_.on_select = [&controller](Button&) {
+        controller.on_view_logs();
+    };
+
+    // 5. О программе
+    button_about_.on_select = [&controller](Button&) {
+        controller.on_about();
+    };
+}
+
+void DroneSettingsMenuView::focus() {
+    button_load_db_.focus();
 }
 
 EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
