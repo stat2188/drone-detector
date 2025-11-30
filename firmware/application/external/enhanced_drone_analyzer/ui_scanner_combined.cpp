@@ -862,7 +862,14 @@ void DroneHardwareController::on_hardware_hide() {
 }
 
 void DroneHardwareController::shutdown_hardware() {
+    // Stop Baseband data streaming
     stop_spectrum_streaming();
+
+    // Explicitly disable radio chip (CPLD/R820T/MAX2837)
+    // This is critical for power saving and stability of the next application launch
+    receiver_model.disable();
+
+    // Clean up message subscriptions
     cleanup_spectrum_collector();
 }
 
@@ -1606,23 +1613,25 @@ void DroneDisplayController::render_mini_spectrum() {
     // 2. Shift index (ring buffer)
     waterfall_line_index_ = (waterfall_line_index_ + 1) % SPEC_HEIGHT;
 
-    // 3. Draw buffer to screen (Software Scroll)
-    // Draw lines so that 'waterfall_line_index_' is the newest (bottom)
-    const int start_y = 80; // Y-coordinate of spectrum start on screen
+    // 2. Rendering (OPTIMIZED)
+    const int start_y = 80;
+
+    // Line buffer on stack (moved outside loop to avoid recreating)
+    std::array<Color, SPEC_WIDTH> line_colors;
 
     for (int y = 0; y < SPEC_HEIGHT; ++y) {
-        // Calculate buffer row index
-        // We want (waterfall_line_index_ - 1) to be drawn at bottom (y = SPEC_HEIGHT-1)
-        size_t buf_idx = (waterfall_line_index_ + y) % SPEC_HEIGHT;
+        // Correct index calculation for "flowing down"
+        // Newest line (waterfall_line_index_ - 1) should be at y=0
+        size_t buf_idx = (waterfall_line_index_ + SPEC_HEIGHT - 1 - y) % SPEC_HEIGHT;
 
-        // Prepare pixel row
-        std::array<Color, SPEC_WIDTH> line_colors;
+        const auto& src_row = waterfall_buffer_[buf_idx];
+
+        // Convert indices to colors
         for (int x = 0; x < SPEC_WIDTH; ++x) {
-            uint8_t color_index = waterfall_buffer_[buf_idx][x];
-            line_colors[x] = spectrum_gradient_.lut[color_index];
+            line_colors[x] = spectrum_gradient_.lut[src_row[x]];
         }
 
-        // Draw one line
+        // Draw line
         display.draw_pixels({{0, start_y + y}, {SPEC_WIDTH, 1}}, line_colors);
     }
 }
@@ -1886,8 +1895,27 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
+    // 1. First stop high-level logic (scanning threads)
+    // This will prevent new attempts to access hardware.
     stop_scanning_thread();
-    hardware_->on_hardware_hide();
+
+    // 2. Stop scanner logic (reset states)
+    if (scanner_) {
+        scanner_->stop_scanning();
+    }
+
+    // 3. Disable "hardware"
+    if (hardware_) {
+        // Stop spectrum streaming (Baseband)
+        hardware_->stop_spectrum_streaming();
+        // Completely disable radio module
+        hardware_->shutdown_hardware();
+
+        // Call on_hardware_hide (if there is specific logic there)
+        hardware_->on_hardware_hide();
+    }
+
+    // 4. Pass control to base class (hide widgets)
     View::on_hide();
 }
 
