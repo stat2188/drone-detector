@@ -365,6 +365,7 @@ private:
     systime_t session_start_ = 0;
     uint32_t logged_count_ = 0;
     bool header_written_ = false;
+    char line_buffer_[192]; // Buffer moved from stack to class member for safety
 
 public:
     std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
@@ -397,7 +398,7 @@ public:
     size_t get_database_size() const;
 
     ScanningMode get_scanning_mode() const { return scanning_mode_; }
-    std::string scanning_mode_name() const;
+    const char* scanning_mode_name() const;
     void set_scanning_mode(ScanningMode mode);
 
     void switch_to_real_mode();
@@ -449,7 +450,7 @@ public:
     DroneScanner& operator=(DroneScanner&&) = delete;
 
     // Utility functions for UI
-    std::string get_drone_type_name(DroneType type) const {
+    const char* get_drone_type_name(DroneType type) const {
         switch (type) {
             case DroneType::MAVIC: return "MAVIC";
             case DroneType::DJI_P34: return "DJI P34";
@@ -621,7 +622,7 @@ private:
 
     Color get_threat_bar_color(ThreatLevel level) const;
     Color get_threat_text_color(ThreatLevel level) const;
-    std::string get_threat_icon_text(ThreatLevel level) const;
+    const char* get_threat_icon_text(ThreatLevel level) const;
 
     void paint(Painter& painter) override;
 
@@ -641,7 +642,6 @@ public:
 
     void update_card(const DisplayDroneEntry& drone);
     void clear_card();
-    std::string render_compact() const;
     Color get_card_bg_color() const;
     Color get_card_text_color() const;
 
@@ -651,6 +651,7 @@ public:
 private:
     size_t card_index_;
     Text card_text_ {{0, 2, screen_width, 20}, ""};
+    std::string current_text_;  // Store current text for change detection
     bool is_active_ = false;
     Rect parent_rect_;
 
@@ -799,10 +800,10 @@ private:
     };
 
     // Add missing methods for drone type/color lookup
-    std::string get_drone_type_name(DroneType type) const;
+    const char* get_drone_type_name(DroneType type) const;
     Color get_drone_type_color(DroneType type) const;
     Color get_threat_level_color(ThreatLevel level) const;
-    std::string get_threat_level_name(ThreatLevel level) const;
+    const char* get_threat_level_name(ThreatLevel level) const;
 
     void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power);
     void add_spectrum_pixel(uint8_t power);

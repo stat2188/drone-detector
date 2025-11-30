@@ -3,9 +3,14 @@
 
 #include "ui_spectrum_settings.hpp"
 #include "file.hpp"
-#include <sstream>
+#include "string_format.hpp" // Важно для to_string_dec_uint
+
+// <sstream> больше не нужен!
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cctype>
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
@@ -70,77 +75,105 @@ bool SpectrumPresetLoader::save_presets_to_file() const {
 }
 
 bool SpectrumPresetLoader::parse_preset_line(const std::string& line, FrequencyPreset& preset) {
-    std::stringstream ss(line);
-    std::string token;
-    std::vector<std::string> parts;
+    char buffer[128];
+    // Копируем безопасно
+    strncpy(buffer, line.c_str(), sizeof(buffer) - 1);
+    buffer[sizeof(buffer) - 1] = '\0';
 
-    // Parse comma-separated values
-    while (std::getline(ss, token, ',')) {
-        // Trim whitespace
-        token.erase(token.begin(), std::find_if(token.begin(), token.end(), [](int ch) {
-            return !std::isspace(ch);
-        }));
-        token.erase(std::find_if(token.rbegin(), token.rend(), [](int ch) {
-            return !std::isspace(ch);
-        }).base(), token.end());
-        parts.push_back(token);
+    // 1. MIN FREQUENCY
+    char* token = strtok(buffer, ",");
+    if (!token) return false;
+
+    char* end;
+    preset.min_freq_hz = std::strtoull(token, &end, 10);
+    // Проверка: если число не распарсилось, end будет равен началу token
+    if (token == end) return false;
+
+    // 2. MAX FREQUENCY
+    token = strtok(NULL, ",");
+    if (!token) return false;
+    preset.max_freq_hz = std::strtoull(token, &end, 10);
+    if (token == end) return false;
+
+    // 3. LABEL
+    token = strtok(NULL, ",");
+    if (!token) return false;
+
+    // Trim leading spaces
+    while(*token == ' ' || *token == '\t') token++;
+
+    // Trim trailing newline/return (частая проблема CSV)
+    size_t len = strlen(token);
+    while(len > 0 && (token[len-1] == '\r' || token[len-1] == '\n' || token[len-1] == ' ')) {
+        token[len-1] = '\0';
+        len--;
     }
 
-    if (parts.size() < 4) return false;
+    preset.label = token; // Единственная аллокация (неизбежна для хранения)
 
-    // REPLACEMENT FOR EXCEPTION HANDLING: Use strtoull
-    char* end;
+    // 4. THREAT LEVEL
+    token = strtok(NULL, ",");
+    // Если threat level отсутствует, ставим дефолт и не считаем это ошибкой
+    if (!token) {
+        preset.default_threat_level = ThreatLevel::NONE;
+    } else {
+        while(*token == ' ' || *token == '\t') token++;
 
-    preset.min_freq_hz = std::strtoull(parts[0].c_str(), &end, 10);
-    if (*end != '\0') return false; // Parsing failed
+        // In-place uppercase (без создания std::string)
+        for(char* p = token; *p; ++p) {
+            *p = std::toupper((unsigned char)*p);
+            // Убираем возможные символы переноса строки в конце
+            if (*p == '\r' || *p == '\n') { *p = '\0'; break; }
+        }
 
-    preset.max_freq_hz = std::strtoull(parts[1].c_str(), &end, 10);
-    if (*end != '\0') return false; // Parsing failed
+        if (strncmp(token, "NONE", 4) == 0) preset.default_threat_level = ThreatLevel::NONE;
+        else if (strncmp(token, "LOW", 3) == 0) preset.default_threat_level = ThreatLevel::LOW;
+        else if (strncmp(token, "MEDIUM", 6) == 0) preset.default_threat_level = ThreatLevel::MEDIUM;
+        else if (strncmp(token, "HIGH", 4) == 0) preset.default_threat_level = ThreatLevel::HIGH;
+        else if (strncmp(token, "CRITICAL", 8) == 0) preset.default_threat_level = ThreatLevel::CRITICAL;
+        else preset.default_threat_level = ThreatLevel::NONE;
+    }
 
-    preset.label = parts[2];
-
-    // Parse threat level
-    std::string threat_str = parts[3];
-    // Simple uppercase conversion
-    for(char & c : threat_str) c = std::toupper((unsigned char)c);
-
-    if (threat_str == "NONE") preset.default_threat_level = ThreatLevel::NONE;
-    else if (threat_str == "LOW") preset.default_threat_level = ThreatLevel::LOW;
-    else if (threat_str == "MEDIUM") preset.default_threat_level = ThreatLevel::MEDIUM;
-    else if (threat_str == "HIGH") preset.default_threat_level = ThreatLevel::HIGH;
-    else if (threat_str == "CRITICAL") preset.default_threat_level = ThreatLevel::CRITICAL;
-    else preset.default_threat_level = ThreatLevel::NONE; // Default
-
-    // Determine spectrum mode based on range width
-    // Fix signed/unsigned warning by casting literals
+    // 5. ВАЖНО: Расчет режима спектра (восстановленная логика)
     int64_t range = (int64_t)(preset.max_freq_hz - preset.min_freq_hz);
-
-    if (range > (int64_t)500000000) preset.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-    else if (range > (int64_t)100000000) preset.spectrum_mode = SpectrumMode::WIDE;
+    if (range > 500000000) preset.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+    else if (range > 100000000) preset.spectrum_mode = SpectrumMode::WIDE;
     else preset.spectrum_mode = SpectrumMode::MEDIUM;
 
     return preset.is_valid();
 }
 
 std::string SpectrumPresetLoader::serialize_preset(const FrequencyPreset& preset) const {
-    auto threat_to_string = [](ThreatLevel level) -> std::string {
+    // Лямбда возвращает const char* (без аллокации string)
+    auto threat_to_string = [](ThreatLevel level) -> const char* {
         switch (level) {
-            case ThreatLevel::NONE: return "NONE";
             case ThreatLevel::LOW: return "LOW";
             case ThreatLevel::MEDIUM: return "MEDIUM";
             case ThreatLevel::HIGH: return "HIGH";
             case ThreatLevel::CRITICAL: return "CRITICAL";
-            default: return "NONE";
+            case ThreatLevel::NONE: default: return "NONE";
         }
     };
 
-    std::stringstream ss;
-    ss << preset.min_freq_hz << ",";
-    ss << preset.max_freq_hz << ",";
-    ss << preset.label << ",";
-    ss << threat_to_string(preset.default_threat_level);
+    // Используем to_string_dec_uint из string_format.hpp (стандарт Mayhem)
+    // Если его нет, можно использовать std::to_string или snprintf
+    
+    std::string line;
+    // Резервируем память заранее, чтобы избежать 5-6 переаллокаций при +=
+    line.reserve(128);
 
-    return ss.str();
+    line += to_string_dec_uint(preset.min_freq_hz);
+    line += ",";
+    line += to_string_dec_uint(preset.max_freq_hz);
+    line += ",";
+    line += preset.label;
+    line += ",";
+    line += threat_to_string(preset.default_threat_level);
+    
+    // Добавляем перенос строки, так как это CSV
+    line += "\n";
+
+    return line;
 }
 
 std::string SpectrumPresetLoader::get_preset_filename() const {

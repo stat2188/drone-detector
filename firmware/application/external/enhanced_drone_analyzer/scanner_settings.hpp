@@ -19,9 +19,9 @@ namespace ScannerSettingsManager {
 
     // Function declarations
     void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
-    ::SpectrumMode parse_spectrum_mode(const std::string& value);
-    std::string trim_line(const std::string& line);
-    bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line);
+    ::SpectrumMode parse_spectrum_mode(const char* value);
+    char* trim_in_place(char* str);
+    bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, char* line_buffer);
     bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content);
     bool load_from_txt_impl(const std::string& filepath, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
 

@@ -273,7 +273,7 @@ void DroneScanner::set_scanning_mode(ScanningMode mode) {
     }
 }
 
-std::string DroneScanner::scanning_mode_name() const {
+const char* DroneScanner::scanning_mode_name() const {
     switch (scanning_mode_) {
         case ScanningMode::DATABASE: return "Database Scan";
         case ScanningMode::WIDEBAND_CONTINUOUS: return "Wideband Monitor";
@@ -396,70 +396,75 @@ void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32
 
 void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                            int32_t /*original_threshold*/, int32_t wideband_threshold) {
-    // 1. First validation (this is fast and doesn't require protection)
+    // 1. Валидация (без блокировок)
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN) ||
         !SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
         return;
     }
 
-    // 2. Now capture mutex before working with memory (DetectionRingBuffer)
-    MutexLock lock(data_mutex);
+    bool should_log = false;
+    DetectionLogEntry log_entry_to_write;
+    DroneType detected_type = DroneType::UNKNOWN;
+    ThreatLevel threat_level; // ... логика определения threat level ...
 
-    ThreatLevel threat_level;
-    if (rssi > -70) {
-        threat_level = ThreatLevel::HIGH;
-    } else if (rssi > -80) {
-        threat_level = ThreatLevel::LOW;
-    } else {
-        threat_level = ThreatLevel::UNKNOWN;
-    }
-
+    // Логика threat_level (скопировать из оригинала)
+    if (rssi > -70) threat_level = ThreatLevel::HIGH;
+    else if (rssi > -80) threat_level = ThreatLevel::LOW;
+    else threat_level = ThreatLevel::UNKNOWN;
     if (entry.frequency_a >= 2'400'000'000 && entry.frequency_a <= 2'500'000'000) {
         threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
     }
 
-    total_detections_++;
-    DroneType detected_type = DroneType::UNKNOWN;
+    // --- НАЧАЛО КРИТИЧЕСКОЙ СЕКЦИИ ---
+    {
+        MutexLock lock(data_mutex);
 
-    size_t freq_hash = entry.frequency_a / 100000;
-    int32_t effective_threshold = wideband_threshold;
-    if (detection_ring_buffer_.get_rssi_value(freq_hash) < wideband_threshold) {
-        effective_threshold = wideband_threshold + HYSTERESIS_MARGIN_DB;
-    }
+        total_detections_++; // Защищаем счетчик
 
-    if (rssi >= effective_threshold) {
-        uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
-        current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
-        detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
+        size_t freq_hash = entry.frequency_a / 100000;
+        int32_t effective_threshold = wideband_threshold;
 
-        if (current_count >= MIN_DETECTION_COUNT) {
-            DetectionLogEntry log_entry{
-                .timestamp = chTimeNow(),
-                .frequency_hz = static_cast<uint32_t>(entry.frequency_a),
-                .rssi_db = rssi,
-                .threat_level = threat_level,
-                .drone_type = detected_type,
-                .detection_count = current_count,
-                .confidence_score = 0.6f
-            };
+        if (detection_ring_buffer_.get_rssi_value(freq_hash) < wideband_threshold) {
+            effective_threshold = wideband_threshold + HYSTERESIS_MARGIN_DB;
+        }
 
-            if (detection_logger_.is_session_active()) {
-                detection_logger_.log_detection(log_entry);
+        if (rssi >= effective_threshold) {
+            uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
+            current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
+            detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
+
+            if (current_count >= MIN_DETECTION_COUNT) {
+                should_log = true;
+
+                log_entry_to_write = {
+                    chTimeNow(),
+                    static_cast<uint32_t>(entry.frequency_a),
+                    rssi,
+                    threat_level,
+                    detected_type,
+                    current_count,
+                    0.6f
+                };
+
+                update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
             }
-            // Mutex already acquired above - use internal version to avoid deadlock
-            update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
-        }
-    } else {
-        uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
-        int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash); // Read old RSSI
-
-        if (current_count > 0) {
-            current_count--;
-            // Keep old RSSI, so interface doesn't flicker
-            detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
         } else {
-            detection_ring_buffer_.update_detection(freq_hash, 0, -120);
+            // Логика уменьшения счетчика...
+            uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
+            int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
+            if (current_count > 0) {
+                current_count--;
+                detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
+            } else {
+                detection_ring_buffer_.update_detection(freq_hash, 0, -120);
+            }
         }
+    }
+    // --- КОНЕЦ КРИТИЧЕСКОЙ СЕКЦИИ ---
+
+    // 3. Логирование
+    if (should_log && detection_logger_.is_session_active()) {
+        detection_logger_.log_detection(log_entry_to_write);
     }
 }
 
@@ -472,16 +477,13 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 }
 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
-    // NOISE AND ERROR FILTER
-    // -120 dBm - this is the noise floor level
-    // 0 dBm - theoretical maximum (if antenna is not close)
-    // -128 dBm - often used as "no data" code or error
+    // 1. Предварительная фильтрация (не требует блокировок)
     const int32_t INVALID_RSSI = -128;
-    const int32_t MIN_VALID_RSSI = -110; // Filter out thermal noise
-    const int32_t MAX_VALID_RSSI = 10;   // Filter out obvious overflow glitches
+    const int32_t MIN_VALID_RSSI = -110;
+    const int32_t MAX_VALID_RSSI = 10;
 
     if (rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI) {
-        return; // Ignore this measurement
+        return;
     }
 
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN)) {
@@ -492,14 +494,13 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
-    if (!validate_detection_simple(rssi, ThreatLevel::UNKNOWN)) {
-        return;
-    }
-
+    // Определяем параметры (локально)
     int32_t detection_threshold = -90;
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
 
+    // Простой поиск по БД (если drone_database_ не меняется в рантайме, это безопасно читать без мьютекса,
+    // НО если БД может перезагружаться, здесь нужен reader-lock. Для простоты допустим, что БД статична во время скана)
     for (const auto& db_entry : drone_database_) {
         if (db_entry && db_entry->frequency_a == entry.frequency_a) {
             detected_type = DroneType::MAVIC;
@@ -508,60 +509,74 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         }
     }
 
-    if (detected_type == DroneType::UNKNOWN) {
-        threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
-    }
-
     if (rssi < detection_threshold) {
         return;
     }
 
-    total_detections_++;
+    // Флаг и данные для отложенного логирования
+    bool should_log = false;
+    DetectionLogEntry log_entry_to_write;
 
-    size_t freq_hash = entry.frequency_a / 100000;
-    int32_t effective_threshold = detection_threshold;
-    if (detection_ring_buffer_.get_rssi_value(freq_hash) < detection_threshold) {
-        effective_threshold = detection_threshold + HYSTERESIS_MARGIN_DB;
-    }
+    // --- НАЧАЛО КРИТИЧЕСКОЙ СЕКЦИИ ---
+    {
+        MutexLock lock(data_mutex); // Блокируем доступ UI к данным
 
-    if (rssi >= effective_threshold) {
-        uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
-        current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
-        detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
+        total_detections_++; // Защищаем счетчик
 
-        if (current_count >= MIN_DETECTION_COUNT) {
-            chThdSleepMilliseconds(DETECTION_DELAY);
-
-            DetectionLogEntry log_entry{
-                .timestamp = chTimeNow(),
-                .frequency_hz = static_cast<uint32_t>(entry.frequency_a),
-                .rssi_db = rssi,
-                .threat_level = threat_level,
-                .drone_type = detected_type,
-                .detection_count = current_count,
-                .confidence_score = 0.85f
-            };
-
-            if (detection_logger_.is_session_active()) {
-                detection_logger_.log_detection(log_entry);
-            }
-
-            update_tracked_drone(detected_type, entry.frequency_a, rssi, threat_level);
+        size_t freq_hash = entry.frequency_a / 100000;
+        int32_t effective_threshold = detection_threshold;
+        if (detection_ring_buffer_.get_rssi_value(freq_hash) < detection_threshold) {
+            effective_threshold = detection_threshold + HYSTERESIS_MARGIN_DB;
         }
-    } else {
-    // Implement leaky bucket algorithm: gradually decrease detection count instead of resetting to 0
-    uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
-    int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
 
-    // Slow decay
-    if (current_count > 0) {
-        current_count--;
-        // Keep old RSSI, showing that signal "was here recently"
-        detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
-    } else {
-        // Only when counter is completely zeroed, erase data
-        detection_ring_buffer_.update_detection(freq_hash, 0, -120);
+        if (rssi >= effective_threshold) {
+            uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
+            current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
+
+            // Пишем в буфер (безопасно)
+            detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
+
+            if (current_count >= MIN_DETECTION_COUNT) {
+                // Мы НЕ пишем лог здесь. Мы только готовим данные.
+                should_log = true;
+
+                // Подготовка данных для лога
+                log_entry_to_write.timestamp = chTimeNow();
+                log_entry_to_write.frequency_hz = static_cast<uint32_t>(entry.frequency_a);
+                log_entry_to_write.rssi_db = rssi;
+                log_entry_to_write.threat_level = threat_level;
+                log_entry_to_write.drone_type = detected_type;
+                log_entry_to_write.detection_count = current_count;
+                log_entry_to_write.confidence_score = 0.85f;
+
+                // Обновляем трекинг дронов для UI (внутренний метод, который НЕ берет мьютекс повторно)
+                update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
+            }
+        } else {
+            // Логика "leaky bucket"
+            uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
+            int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
+
+            if (current_count > 0) {
+                current_count--;
+                detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
+            } else {
+                detection_ring_buffer_.update_detection(freq_hash, 0, -120);
+            }
+        }
     }
+    // --- КОНЕЦ КРИТИЧЕСКОЙ СЕКЦИИ ---
+    // Мьютекс освобожден. UI может перерисовываться.
+
+    // 3. Выполняем тяжелые операции ввода-вывода
+    if (should_log) {
+        // Имитация задержки "анти-дребезга" для логгера, если нужно, но лучше без sleep в цикле скана
+        // chThdSleepMilliseconds(DETECTION_DELAY);
+
+        if (detection_logger_.is_session_active()) {
+            // Это займет время, но UI поток не будет заблокирован, так как data_mutex свободен
+            detection_logger_.log_detection(log_entry_to_write);
+        }
     }
 }
 
@@ -740,6 +755,7 @@ uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
 // DroneDetectionLogger implementations
 DroneDetectionLogger::DroneDetectionLogger()
     : csv_log_(), session_active_(false), session_start_(0), logged_count_(0), header_written_(false) {
+    memset(line_buffer_, 0, sizeof(line_buffer_));
     start_session();
 }
 
@@ -789,16 +805,21 @@ bool DroneDetectionLogger::ensure_csv_header() {
 }
 
 std::string DroneDetectionLogger::format_csv_entry(const DetectionLogEntry& entry) {
-    char buffer[128];
-    memset(buffer, 0, sizeof(buffer));
-    snprintf(buffer, sizeof(buffer) - 1,
+    // Use member buffer to avoid stack allocation in deep call chains
+    int ret = snprintf(line_buffer_, sizeof(line_buffer_),
              "%lu,%lu,%ld,%u,%u,%u,%.2f\n",
              static_cast<unsigned long>(entry.timestamp), static_cast<unsigned long>(entry.frequency_hz),
              (long int)entry.rssi_db,
              static_cast<uint8_t>(entry.threat_level),
              static_cast<uint8_t>(entry.drone_type),
              entry.detection_count, entry.confidence_score);
-    return std::string(buffer);
+
+    // Ensure null termination if snprintf didn't have enough space
+    if (ret >= static_cast<int>(sizeof(line_buffer_))) {
+        line_buffer_[sizeof(line_buffer_) - 1] = '\0';
+    }
+
+    return std::string(line_buffer_);
 }
 
 std::string DroneDetectionLogger::generate_log_filename() const {
@@ -806,29 +827,53 @@ std::string DroneDetectionLogger::generate_log_filename() const {
 }
 
 std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
+    std::string result;
+
+    // 1. Резервируем память в куче ОДИН раз.
+    // 384 байта достаточно для всего текста summary.
+    result.reserve(384);
+
+    result += "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\n";
+
+    // Вычисляем длительность сессии
     uint32_t session_duration_ms = chTimeNow() - session_start_;
-    float avg_detections_per_cycle = scan_cycles > 0 ? static_cast<float>(total_detections) / scan_cycles : 0.0f;
-    float detections_per_second = session_duration_ms > 0 ?
-        static_cast<float>(total_detections) * 1000.0f / session_duration_ms : 0.0f;
+    if (session_duration_ms == 0) session_duration_ms = 1; // Защита от деления на 0
 
-    char summary_buffer[256];
-    memset(summary_buffer, 0, sizeof(summary_buffer));
-    int ret = snprintf(summary_buffer, sizeof(summary_buffer) - 1,
-    "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\nDuration: %.1f seconds\nScan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\nAvg. detections/cycle: %.2f\nDetection rate: %.1f/sec\nLogged entries: %lu\n\nEnhanced Drone Analyzer v0.3",
-        static_cast<float>(session_duration_ms) / 1000.0f, scan_cycles, total_detections,
-        avg_detections_per_cycle, detections_per_second, (unsigned long)logged_count_);
+    // 2. Форматируем время БЕЗ %f (float). Используем целочисленное деление.
+    // Пример: 1500 мс -> "1.5" сек.
+    char duration_buf[32];
+    snprintf(duration_buf, sizeof(duration_buf), "Duration: %lu.%lu seconds\n",
+             session_duration_ms / 1000,       // Целые секунды
+             (session_duration_ms % 1000) / 100); // Десятые доли секунды
+    result += duration_buf;
 
-    if (ret < 0 || ret >= static_cast<int>(sizeof(summary_buffer))) {
-        char buffer[64];
-        auto s1 = to_string_dec_uint(scan_cycles);
-        auto s2 = to_string_dec_uint(total_detections);
-        strcpy(buffer, "SCANNING COMPLETE\nCycles: ");
-        strcat(buffer, s1.c_str());
-        strcat(buffer, "\nDetections: ");
-        strcat(buffer, s2.c_str());
-        return std::string(buffer);
-    }
-    return std::string(summary_buffer);
+    // 3. Добавляем простые числа, используя эффективные функции Mayhem
+    result += "Scan Cycles: ";
+    result += to_string_dec_uint(scan_cycles);
+    result += "\nTotal Detections: ";
+    result += to_string_dec_uint(total_detections);
+    result += "\n\nPERFORMANCE:\n";
+
+    // 4. Вычисляем метрики вручную (избегаем тяжелых float операций в snprintf)
+    // Среднее число детекций на цикл (умножаем на 100 для 2 знаков после запятой)
+    uint32_t avg_det_x100 = (scan_cycles > 0) ? (total_detections * 100) / scan_cycles : 0;
+
+    // Детекций в секунду (умножаем на 10 для 1 знака после запятой)
+    // Формула: (detections * 1000 * 10) / ms
+    uint32_t rate_x10 = (uint64_t)total_detections * 10000 / session_duration_ms;
+
+    char perf_buf[64];
+    snprintf(perf_buf, sizeof(perf_buf),
+             "Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: ",
+             avg_det_x100 / 100, avg_det_x100 % 100, // Целая и дробная части
+             rate_x10 / 10, rate_x10 % 10);          // Целая и дробная части
+    result += perf_buf;
+
+    // Добавляем количество записей
+    result += to_string_dec_uint(logged_count_);
+    result += "\n\nEnhanced Drone Analyzer v0.3";
+
+    return result;
 }
 
 // ===========================================
@@ -1123,7 +1168,7 @@ Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
     }
 }
 
-std::string SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
+const char* SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
     switch (level) {
         case ThreatLevel::CRITICAL: return "CRITICAL";
         case ThreatLevel::HIGH: return "HIGH";
@@ -1155,51 +1200,56 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
 }
 
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
+    // Проверяем, изменился ли уровень угрозы (влияет на цвет фона в paint)
+    bool visual_state_changed = (threat_ != drone.threat) || (!is_active_);
+
     is_active_ = true;
     frequency_ = drone.frequency;
     threat_ = drone.threat;
     rssi_ = drone.rssi;
     last_seen_ = drone.last_seen;
     threat_name_ = drone.type_name;
-    trend_ = MovementTrend::STATIC;
-
-    card_text_.set(render_compact());
-    card_text_.set_style(Theme::getInstance()->fg_light);
-    set_dirty();
-}
-
-void ThreatCard::clear_card() {
-    is_active_ = false;
-    card_text_.set("");
-    set_dirty();
-}
-
-std::string ThreatCard::render_compact() const {
-    if (!is_active_) return "";
+    trend_ = drone.trend;
 
     char buffer[32];
-    // Replace < > with text codes or simplification
-    char trend_char = (trend_ == MovementTrend::APPROACHING) ? '^' : // Approaching (Up)
-                      (trend_ == MovementTrend::RECEDING)    ? 'v' : // Receding (Down)
-                      '=';                                           // Static
-
-    // Formatting with fixed width:
-    // %-5s : string of 5 characters aligned left
-    // %4d  : number of 4 characters aligned right (adds spaces)
-
-    // Was: "MAVIC < 2.4G -60dB" (jumping length)
-    // Became: "MAVIC ^ 2.4G  -60" (monolithic)
+    char trend_char = (trend_ == MovementTrend::APPROACHING) ? '^' :
+                      (trend_ == MovementTrend::RECEDING)    ? 'v' :
+                      '=';
 
     uint32_t mhz = frequency_ / 1000000;
 
-    snprintf(buffer, sizeof(buffer), "%-7s %c %4luM %3ld",
-            threat_name_.substr(0,7).c_str(), // Trim name to 7 characters
+    // ОПТИМИЗАЦИЯ:
+    // %-7.7s : Выровнять влево, минимум 7 символов, МАКСИМУМ 7 символов.
+    // Это заменяет .substr(0,7) и не создает временных строк.
+    snprintf(buffer, sizeof(buffer), "%-7.7s %c %4luM %3ld",
+            threat_name_.c_str(), // Берем сырой указатель оригинала
             trend_char,
             mhz,
             (long int)rssi_);
 
-    return std::string(buffer);
+    // Сравнение строк (std::string с char* работает эффективно)
+    if (current_text_ != buffer) {
+        current_text_ = buffer; // Аллокация только если текст реально изменился
+        card_text_.set(current_text_);
+        visual_state_changed = true;
+    }
+
+    // Перерисовываем виджет ТОЛЬКО если что-то изменилось
+    // (либо текст, либо цвет угрозы для фона)
+    if (visual_state_changed) {
+        card_text_.set_style(Theme::getInstance()->fg_light);
+        set_dirty();
+    }
 }
+
+void ThreatCard::clear_card() {
+    is_active_ = false;
+    current_text_ = "";
+    card_text_.set("");
+    set_dirty();
+}
+
+
 
 Color ThreatCard::get_card_bg_color() const {
     if (!is_active_) return Color::black();
@@ -2141,7 +2191,7 @@ void ScanningCoordinator::show_session_summary(const std::string& summary) {
 // PART 6: DISPLAY HELPER IMPLEMENTATIONS
 // ===========================================
 
-std::string DroneDisplayController::get_drone_type_name(DroneType type) const {
+const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
     switch (type) {
         case DroneType::MAVIC: return "MAVIC";
         case DroneType::DJI_P34: return "DJI P34";
@@ -2167,7 +2217,7 @@ Color DroneDisplayController::get_threat_level_color(ThreatLevel level) const {
     }
 }
 
-std::string DroneDisplayController::get_threat_level_name(ThreatLevel level) const {
+const char* DroneDisplayController::get_threat_level_name(ThreatLevel level) const {
     switch (level) {
         case ThreatLevel::CRITICAL: return "CRITICAL";
         case ThreatLevel::HIGH: return "HIGH";

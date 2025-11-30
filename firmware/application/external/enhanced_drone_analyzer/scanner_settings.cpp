@@ -3,6 +3,8 @@
 #include <sstream>
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
+#include <cstdlib>
 #include "file.hpp"
 #include "ui_drone_common_types.hpp"
 
@@ -35,38 +37,53 @@ namespace ScannerSettingsManager {
         settings.freqman_path = "DRONES";
     }
 
-    ::SpectrumMode parse_spectrum_mode(const std::string& value) {
-        if (value == "NARROW") return ::SpectrumMode::NARROW;
-        if (value == "MEDIUM") return ::SpectrumMode::MEDIUM;
-        if (value == "WIDE") return ::SpectrumMode::WIDE;
-        if (value == "ULTRA_WIDE") return ::SpectrumMode::ULTRA_WIDE;
+    ::SpectrumMode parse_spectrum_mode(const char* value) {
+        if (strcmp(value, "NARROW") == 0) return ::SpectrumMode::NARROW;
+        if (strcmp(value, "MEDIUM") == 0) return ::SpectrumMode::MEDIUM;
+        if (strcmp(value, "WIDE") == 0) return ::SpectrumMode::WIDE;
+        if (strcmp(value, "ULTRA_WIDE") == 0) return ::SpectrumMode::ULTRA_WIDE;
         return ::SpectrumMode::MEDIUM;
     }
 
-    std::string trim_line(const std::string& line) {
-        auto start = std::find_if_not(line.begin(), line.end(), ::isspace);
-        auto end = std::find_if_not(line.rbegin(), line.rend(), ::isspace).base();
-        return (start < end) ? std::string(start, end) : std::string();
+    char* trim_in_place(char* str) {
+        if (!str) return nullptr;
+
+        // Trim leading
+        while (*str && ::isspace((unsigned char)*str)) str++;
+
+        if (*str == 0) return str; // Empty string
+
+        // Trim trailing
+        char* end = str + strlen(str) - 1;
+        while (end > str && ::isspace((unsigned char)*end)) end--;
+        *(end + 1) = 0; // Null terminator
+
+        return str;
     }
 
-    bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line) {
-        size_t equals_pos = line.find('=');
-        if (equals_pos == std::string::npos) return false;
-        std::string key = trim_line(line.substr(0, equals_pos));
-        std::string value = trim_line(line.substr(equals_pos + 1));
+    bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, char* line_buffer) {
+        // Ищем разделитель
+        char* equals_ptr = strchr(line_buffer, '=');
+        if (!equals_ptr) return false;
 
-        if (key == "spectrum_mode") {
+        *equals_ptr = 0; // Разрываем строку на две части: key и value
+
+        char* key = trim_in_place(line_buffer);
+        char* value = trim_in_place(equals_ptr + 1);
+
+        // Сравнение через strcmp (0 аллокаций)
+        if (strcmp(key, "spectrum_mode") == 0) {
             settings.spectrum_mode = parse_spectrum_mode(value);
             return true;
-        } else if (key == "scan_interval_ms") {
+        } else if (strcmp(key, "scan_interval_ms") == 0) {
             settings.scan_interval_ms = validate_range<uint32_t>(
-                static_cast<uint32_t>(std::stoul(value)), 100U, 5000U);
+                static_cast<uint32_t>(strtoul(value, nullptr, 10)), 100U, 5000U);
             return true;
-        } else if (key == "rssi_threshold_db") {
-            settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
+        } else if (strcmp(key, "rssi_threshold_db") == 0) {
+            settings.rssi_threshold_db = validate_range<int32_t>(strtol(value, nullptr, 10), -120, -30);
             return true;
-        } else if (key == "enable_audio_alerts") {
-            settings.enable_audio_alerts = (value == "true");
+        } else if (strcmp(key, "enable_audio_alerts") == 0) {
+            settings.enable_audio_alerts = (strcmp(value, "true") == 0);
             return true;
         }
         // Additional fields can be added here
@@ -74,14 +91,37 @@ namespace ScannerSettingsManager {
     }
 
     bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content) {
-        std::istringstream iss(content);
-        std::string line;
+        const char* ptr = content.c_str();
+        const char* end = ptr + content.size();
         int parsed_count = 0;
-        while (std::getline(iss, line)) {
-            auto trimmed_line = trim_line(line);
-            if (trimmed_line.empty() || trimmed_line[0] == '#') continue;
-            if (parse_key_value(settings, trimmed_line)) parsed_count++;
+
+        while (ptr < end) {
+            // Find end of line
+            const char* line_end = ptr;
+            while (line_end < end && *line_end != '\n' && *line_end != '\r') line_end++;
+
+            // Copy line to buffer (assuming lines are short, < 128 chars)
+            char line_buffer[128];
+            size_t line_len = line_end - ptr;
+            if (line_len >= sizeof(line_buffer)) line_len = sizeof(line_buffer) - 1;
+            memcpy(line_buffer, ptr, line_len);
+            line_buffer[line_len] = 0;
+
+            // Trim and check
+            char* trimmed = trim_in_place(line_buffer);
+            if (*trimmed == 0 || *trimmed == '#') {
+                ptr = line_end;
+                while (ptr < end && (*ptr == '\n' || *ptr == '\r')) ptr++;
+                continue;
+            }
+
+            if (parse_key_value(settings, trimmed)) parsed_count++;
+
+            // Move to next line
+            ptr = line_end;
+            while (ptr < end && (*ptr == '\n' || *ptr == '\r')) ptr++;
         }
+
         return parsed_count > 3;
     }
 
