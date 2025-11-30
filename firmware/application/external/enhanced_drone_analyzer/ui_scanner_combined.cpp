@@ -27,8 +27,6 @@ using namespace tonekey;
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-// Settings loading helper
-// FIXED VERSION: Reads the entire file and parses line by line
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     static const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
@@ -38,65 +36,102 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
         return false;
     }
 
-    // Get file size
-    uint64_t file_size = settings_file.size();
-    if (file_size == 0) return false;
-
-    // Limit reading size for security (settings usually take < 1KB)
-    if (file_size > 4096) file_size = 4096;
-
-    std::string content;
-    content.resize(file_size);
-
-    // Read entire file into buffer
-    auto read_res = settings_file.read(content.data(), file_size);
-    if (read_res.is_error()) return false;
-
-    // If read less than file size (rare but possible), adjust string
-    if (read_res.value() < file_size) {
-        content.resize(read_res.value());
-    }
-
-    std::stringstream ss(content);
+    // Buffer for accumulating one line
     std::string line;
+    line.reserve(64); // Reserve some memory to avoid frequent allocations
 
-    while (std::getline(ss, line)) {
-        // Remove CR (carriage return) for Windows-style string compatibility
-        if (!line.empty() && line.back() == '\r') {
-            line.pop_back();
+    char read_buffer[1]; // Read 1 byte at a time (simple and reliable for configs)
+                         // For large files, a 64-byte buffer is better, but for config it's ok.
+
+    while (true) {
+        auto read_res = settings_file.read(read_buffer, 1);
+
+        // End of file or read error
+        if (read_res.is_error() || read_res.value() == 0) {
+            // If something remains in the buffer (last line without \n), parse it
+            if (!line.empty()) {
+                // Call single line parser (see below, it needs to be adapted)
+                // parse_settings_line(settings, line);
+
+                // Since your parsing logic was inside, we'll move it here:
+                if (line[0] != '#') {
+                    size_t equals_pos = line.find('=');
+                    if (equals_pos != std::string::npos) {
+                        std::string key = line.substr(0, equals_pos);
+                        std::string value = line.substr(equals_pos + 1);
+
+                        // Trim (remove spaces)
+                        key.erase(0, key.find_first_not_of(" \t"));
+                        key.erase(key.find_last_not_of(" \t") + 1);
+                        value.erase(0, value.find_first_not_of(" \t"));
+                        value.erase(value.find_last_not_of(" \t") + 1);
+
+                        // Value assignment
+                        if (key == "spectrum_mode") {
+                            if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
+                            else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
+                            else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
+                            else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+                        } else if (key == "scan_interval_ms") {
+                            settings.scan_interval_ms = std::strtoul(value.c_str(), nullptr, 10);
+                        } else if (key == "rssi_threshold_db") {
+                            settings.rssi_threshold_db = std::strtol(value.c_str(), nullptr, 10);
+                        } else if (key == "enable_audio_alerts") {
+                            settings.enable_audio_alerts = (value == "true");
+                        }
+                    }
+                }
+            }
+            break;
         }
 
-        // Skip empty lines and comments
-        if (line.empty() || line[0] == '#') continue;
+        char c = read_buffer[0];
 
-        size_t equals_pos = line.find('=');
-        if (equals_pos == std::string::npos) continue;
+        if (c == '\n') {
+            // End of line - parse
+            if (!line.empty()) {
+                // Remove \r if present (Windows format)
+                if (line.back() == '\r') line.pop_back();
 
-        std::string key = line.substr(0, equals_pos);
-        std::string value = line.substr(equals_pos + 1);
+                // --- HERE IS COPY OF PARSING LOGIC FROM BLOCK ABOVE ---
+                // (For code cleanliness, it's better to extract line parsing into a separate parse_line function)
+                if (!line.empty() && line[0] != '#') {
+                    size_t equals_pos = line.find('=');
+                    if (equals_pos != std::string::npos) {
+                        std::string key = line.substr(0, equals_pos);
+                        std::string value = line.substr(equals_pos + 1);
 
-        // Trim whitespace (remove spaces)
-        key.erase(0, key.find_first_not_of(" \t"));
-        key.erase(key.find_last_not_of(" \t") + 1);
-        value.erase(0, value.find_first_not_of(" \t"));
-        value.erase(value.find_last_not_of(" \t") + 1);
+                        key.erase(0, key.find_first_not_of(" \t"));
+                        key.erase(key.find_last_not_of(" \t") + 1);
+                        value.erase(0, value.find_first_not_of(" \t"));
+                        value.erase(value.find_last_not_of(" \t") + 1);
 
-        // Parse values
-        if (key == "spectrum_mode") {
-            if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-            else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
-            else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-            else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-        } else if (key == "scan_interval_ms") {
-            settings.scan_interval_ms = std::strtoul(value.c_str(), nullptr, 10);
-        } else if (key == "rssi_threshold_db") {
-            settings.rssi_threshold_db = std::strtol(value.c_str(), nullptr, 10);
-        } else if (key == "enable_audio_alerts") {
-            settings.enable_audio_alerts = (value == "true");
-        } else if (key == "hardware_bandwidth_hz") {
-            settings.hardware_bandwidth_hz = std::strtoul(value.c_str(), nullptr, 10);
-        } else if (key == "enable_real_hardware") {
-            settings.enable_real_hardware = (value == "true");
+                        if (key == "spectrum_mode") {
+                            if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
+                            else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
+                            else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
+                            else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+                        } else if (key == "scan_interval_ms") {
+                            settings.scan_interval_ms = std::strtoul(value.c_str(), nullptr, 10);
+                        } else if (key == "rssi_threshold_db") {
+                            settings.rssi_threshold_db = std::strtol(value.c_str(), nullptr, 10);
+                        } else if (key == "enable_audio_alerts") {
+                            settings.enable_audio_alerts = (value == "true");
+                        } else if (key == "hardware_bandwidth_hz") {
+                            settings.hardware_bandwidth_hz = std::strtoul(value.c_str(), nullptr, 10);
+                        } else if (key == "enable_real_hardware") {
+                            settings.enable_real_hardware = (value == "true");
+                        }
+                    }
+                }
+                // -----------------------------------------------
+            }
+            line.clear(); // Clear for next line
+        } else {
+            // Just add the character
+            if (line.length() < 128) { // Protection against line overflow (if file is corrupted and no \n)
+                line += c;
+            }
         }
     }
 
@@ -287,7 +322,10 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
                 Frequency target_freq_hz = entry_ptr->frequency_a;
                 if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
                     if (hardware.tune_to_frequency(target_freq_hz)) {
-                        chThdSleepMilliseconds(10);
+                        // 2. IMPORTANT CHANGE: Increase delay
+                        // 30ms - conservative time for Mayhem/PortaPack H2
+                        // This allows transition processes in the radio path to complete.
+                        chThdSleepMilliseconds(30);
                         int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
                         process_rssi_detection(*entry_ptr, real_rssi);
                         last_scanned_frequency_ = target_freq_hz;
@@ -300,54 +338,51 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 }
 
 void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware) {
+    // Initialize range if needed (leave as is)
     if (wideband_scan_data_.slices_nb == 0) {
         setup_wideband_range(WIDEBAND_DEFAULT_MIN, WIDEBAND_DEFAULT_MAX);
     }
 
-    if (wideband_scan_data_.slice_counter >= wideband_scan_data_.slices_nb) {
-        wideband_scan_data_.slice_counter = 0;
-    }
-
     const WidebandSlice& current_slice = wideband_scan_data_.slices[wideband_scan_data_.slice_counter];
-    if (hardware.tune_to_frequency(current_slice.center_frequency)) {
-        chThdSleepMilliseconds(10);
-        int32_t slice_rssi = hardware.get_real_rssi_from_hardware(current_slice.center_frequency);
-        if (slice_rssi > DEFAULT_RSSI_THRESHOLD_DB) {
-            // Two-stage scanning: find exact frequency within the slice
-            Frequency start_f = current_slice.center_frequency - (WIDEBAND_SLICE_WIDTH / 2);
-            Frequency found_peak_freq = current_slice.center_frequency;
-            int32_t max_peak_rssi = slice_rssi;
 
-            // Fast sub-scan within slice with 2MHz steps
-            for (Frequency f = start_f; f < start_f + WIDEBAND_SLICE_WIDTH; f += 2000000) {
-                if (hardware.tune_to_frequency(f)) {
-                    chThdSleepMilliseconds(1);  // Minimal delay for sub-scan
-                    int32_t r = hardware.get_real_rssi_from_hardware(f);
-                    if (r > max_peak_rssi) {
-                        max_peak_rssi = r;
-                        found_peak_freq = f;
-                    }
-                }
-            }
+    // 1. Tune to SLICE CENTER
+    if (hardware.tune_to_frequency(current_slice.center_frequency)) {
+
+        // 2. Wait for stabilization (same as in Database Scan)
+        chThdSleepMilliseconds(25); // Slightly less, since retuning to adjacent channel is faster
+
+        // 3. Get total RSSI of entire band (Wideband RSSI)
+        int32_t slice_rssi = hardware.get_real_rssi_from_hardware(current_slice.center_frequency);
+
+        // 4. If signal is strong, we assume drone presence
+        if (slice_rssi > WIDEBAND_RSSI_THRESHOLD_DB) {
+
+            // Instead of trying to find exact peak by enumeration (which is slow),
+            // we register detection at slice center frequency.
+            // (For more accurate analysis FFT is needed, which works in DisplayController,
+            // but here, in scanner logic, the fact of energy presence is important).
 
             freqman_entry fake_entry{
-                .frequency_a = static_cast<int64_t>(found_peak_freq),
-                .frequency_b = static_cast<int64_t>(found_peak_freq),
-                .description = "Wideband Fine Detection",
+                .frequency_a = static_cast<int64_t>(current_slice.center_frequency),
+                .frequency_b = static_cast<int64_t>(current_slice.center_frequency),
+                .description = "Wideband Activity",
                 .type = freqman_type::Single,
-                .modulation = freqman_invalid_index,
-                .bandwidth = freqman_invalid_index,
-                .step = freqman_invalid_index,
-                .tone = freqman_invalid_index
+                // ... initialization of other fields by default ...
             };
-            wideband_detection_override(fake_entry, max_peak_rssi, WIDEBAND_RSSI_THRESHOLD_DB);
+
+            // Call detection handler (now protected by mutex from Stage 1)
+            wideband_detection_override(fake_entry, slice_rssi, WIDEBAND_RSSI_THRESHOLD_DB);
         }
+
         last_scanned_frequency_ = current_slice.center_frequency;
     } else {
+        // Handle tuning error
         if (scan_cycles_ % 100 == 0) {
             handle_scan_error("Hardware tuning failed in wideband mode");
         }
     }
+
+    // Transition to next slice
     wideband_scan_data_.slice_counter = (wideband_scan_data_.slice_counter + 1) % wideband_scan_data_.slices_nb;
 }
 
@@ -361,10 +396,14 @@ void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32
 
 void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                            int32_t /*original_threshold*/, int32_t wideband_threshold) {
+    // 1. First validation (this is fast and doesn't require protection)
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN) ||
         !SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
         return;
     }
+
+    // 2. Now capture mutex before working with memory (DetectionRingBuffer)
+    MutexLock lock(data_mutex);
 
     ThreatLevel threat_level;
     if (rssi > -70) {
@@ -384,14 +423,14 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
 
     size_t freq_hash = entry.frequency_a / 100000;
     int32_t effective_threshold = wideband_threshold;
-    if (local_detection_ring.get_rssi_value(freq_hash) < wideband_threshold) {
+    if (detection_ring_buffer_.get_rssi_value(freq_hash) < wideband_threshold) {
         effective_threshold = wideband_threshold + HYSTERESIS_MARGIN_DB;
     }
 
     if (rssi >= effective_threshold) {
-        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
+        uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
         current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
-        local_detection_ring.update_detection(freq_hash, current_count, rssi);
+        detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
 
         if (current_count >= MIN_DETECTION_COUNT) {
             DetectionLogEntry log_entry{
@@ -407,18 +446,19 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
             if (detection_logger_.is_session_active()) {
                 detection_logger_.log_detection(log_entry);
             }
-            send_drone_detection_message(detected_type, entry.frequency_a, rssi, threat_level);
+            // Mutex already acquired above - use internal version to avoid deadlock
+            update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
         }
     } else {
-        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
-        int32_t stored_rssi = local_detection_ring.get_rssi_value(freq_hash); // Read old RSSI
+        uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
+        int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash); // Read old RSSI
 
         if (current_count > 0) {
             current_count--;
             // Keep old RSSI, so interface doesn't flicker
-            local_detection_ring.update_detection(freq_hash, current_count, stored_rssi);
+            detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
         } else {
-            local_detection_ring.update_detection(freq_hash, 0, -120);
+            detection_ring_buffer_.update_detection(freq_hash, 0, -120);
         }
     }
 }
@@ -432,6 +472,18 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 }
 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
+    // NOISE AND ERROR FILTER
+    // -120 dBm - this is the noise floor level
+    // 0 dBm - theoretical maximum (if antenna is not close)
+    // -128 dBm - often used as "no data" code or error
+    const int32_t INVALID_RSSI = -128;
+    const int32_t MIN_VALID_RSSI = -110; // Filter out thermal noise
+    const int32_t MAX_VALID_RSSI = 10;   // Filter out obvious overflow glitches
+
+    if (rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI) {
+        return; // Ignore this measurement
+    }
+
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN)) {
         return;
     }
@@ -468,14 +520,14 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 
     size_t freq_hash = entry.frequency_a / 100000;
     int32_t effective_threshold = detection_threshold;
-    if (local_detection_ring.get_rssi_value(freq_hash) < detection_threshold) {
+    if (detection_ring_buffer_.get_rssi_value(freq_hash) < detection_threshold) {
         effective_threshold = detection_threshold + HYSTERESIS_MARGIN_DB;
     }
 
     if (rssi >= effective_threshold) {
-        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
+        uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
         current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
-        local_detection_ring.update_detection(freq_hash, current_count, rssi);
+        detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
 
         if (current_count >= MIN_DETECTION_COUNT) {
             chThdSleepMilliseconds(DETECTION_DELAY);
@@ -498,17 +550,17 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         }
     } else {
     // Implement leaky bucket algorithm: gradually decrease detection count instead of resetting to 0
-    uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
-    int32_t stored_rssi = local_detection_ring.get_rssi_value(freq_hash);
+    uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
+    int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
 
     // Slow decay
     if (current_count > 0) {
         current_count--;
         // Keep old RSSI, showing that signal "was here recently"
-        local_detection_ring.update_detection(freq_hash, current_count, stored_rssi);
+        detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
     } else {
         // Only when counter is completely zeroed, erase data
-        local_detection_ring.update_detection(freq_hash, 0, -120);
+        detection_ring_buffer_.update_detection(freq_hash, 0, -120);
     }
     }
 }
@@ -520,14 +572,18 @@ void DroneScanner::send_drone_detection_message(DroneType type, Frequency freque
 void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
     // Lock access. While we're here, UI will wait.
     MutexLock lock(data_mutex);
+    update_tracked_drone_internal(type, frequency, rssi, threat_level);
+}
 
+void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
+    // Internal method - assumes that the mutex is ALREADY acquired by the caller
     for (size_t i = 0; i < tracked_count_; ++i) {
         if (tracked_drones_[i].frequency == static_cast<uint32_t>(frequency) && tracked_drones_[i].update_count > 0) {
             tracked_drones_[i].add_rssi(static_cast<int16_t>(rssi), chTimeNow());
             tracked_drones_[i].drone_type = static_cast<uint8_t>(type);
             tracked_drones_[i].threat_level = static_cast<uint8_t>(threat_level);
             update_tracking_counts();
-            return; // lock will automatically unlock
+            return;
         }
     }
 
@@ -669,6 +725,18 @@ DroneScanner::DroneSnapshot DroneScanner::get_tracked_drones_snapshot() const {
     return snapshot;
 }
 
+    // Implementation of safe read methods
+
+int32_t DroneScanner::get_detection_rssi_safe(size_t freq_hash) const {
+    MutexLock lock(data_mutex); // Lock reading while scanner can write
+    return detection_ring_buffer_.get_rssi_value(freq_hash);
+}
+
+uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
+    MutexLock lock(data_mutex);
+    return detection_ring_buffer_.get_detection_count(freq_hash);
+}
+
 // DroneDetectionLogger implementations
 DroneDetectionLogger::DroneDetectionLogger()
     : csv_log_(), session_active_(false), session_start_(0), logged_count_(0), header_written_(false) {
@@ -743,7 +811,7 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
     float detections_per_second = session_duration_ms > 0 ?
         static_cast<float>(total_detections) * 1000.0f / session_duration_ms : 0.0f;
 
-    char summary_buffer[512];
+    char summary_buffer[256];
     memset(summary_buffer, 0, sizeof(summary_buffer));
     int ret = snprintf(summary_buffer, sizeof(summary_buffer) - 1,
     "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\nDuration: %.1f seconds\nScan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\nAvg. detections/cycle: %.2f\nDetection rate: %.1f/sec\nLogged entries: %lu\n\nEnhanced Drone Analyzer v0.3",
@@ -2000,12 +2068,17 @@ void ScanningCoordinator::start_coordinated_scanning() {
 }
 
 void ScanningCoordinator::stop_coordinated_scanning() {
-    if (!scanning_active_) return;
-    scanning_active_ = false;
+    // 1. First check if thread is active at all
+    if (scanning_active_) {
+        // 2. Reset flag. Thread will see this in while(scanning_active_) loop and exit.
+        scanning_active_ = false;
 
-    if (scanning_thread_) {
-        chThdWait(scanning_thread_);
-        scanning_thread_ = nullptr;
+        // 3. If thread pointer exists, wait for its completion.
+        if (scanning_thread_) {
+            // chThdWait blocks current (UI) thread until scanning_thread_ calls chThdExit
+            chThdWait(scanning_thread_);
+            scanning_thread_ = nullptr;
+        }
     }
 }
 

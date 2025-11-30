@@ -2,9 +2,7 @@
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-// Global Definitions
-DetectionRingBuffer global_detection_ring;
-DetectionRingBuffer& local_detection_ring = global_detection_ring;
+// Global Definitions removed - DetectionRingBuffer now lives inside DroneScanner instances
 
 // WidebandMedianFilter implementations
 void WidebandMedianFilter::add_sample(int16_t rssi) {

@@ -95,7 +95,7 @@ public:
     TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
                      last_seen(0) {
-        // Инициализируем массив "тишиной" (-120 dBm), а не нулями
+        // Initialize array with "silence" (-120 dBm), not zeros
         for(auto& r : rssi_history_) r = -120;
     }
 
@@ -107,7 +107,7 @@ public:
             update_count = other.update_count;
             last_seen = other.last_seen;
             rssi = other.rssi;
-            // Копируем массивы вручную или через std::copy
+            // Copy arrays manually or via std::copy
             for(size_t i=0; i<MAX_HISTORY; i++) {
                 rssi_history_[i] = other.rssi_history_[i];
                 timestamp_history_[i] = other.timestamp_history_[i];
@@ -124,34 +124,34 @@ public:
 
         this->rssi = new_rssi;
 
-        // Обновляем last_seen только если это действительно новое событие
+        // Update last_seen only if this is actually a new event
         if (timestamp > last_seen) {
             last_seen = timestamp;
-            // Защита от переполнения update_count не обязательна для uint8, но логична
+            // Overflow protection for update_count is not necessary for uint8, but logical
             if (update_count < 255) update_count++;
         }
     }
 
     MovementTrend get_trend() const {
-        // Нужно хотя бы 4 измерения для адекватного тренда
+        // Need at least 4 measurements for adequate trend
         if (update_count < 4) return MovementTrend::UNKNOWN;
 
         int32_t recent_sum = 0;
         int32_t older_sum = 0;
         size_t half_window = MAX_HISTORY / 2;
 
-        // Проходим по буферу в хронологическом порядке
-        // i=0 - самый старый, i=MAX-1 - самый свежий
+        // Go through buffer in chronological order
+        // i=0 - oldest, i=MAX-1 - newest
         for (size_t i = 0; i < MAX_HISTORY; i++) {
-            // Вычисляем физический индекс в кольцевом буфере
-            // (history_index_ указывает на место для СЛЕДУЮЩЕЙ записи,
-            // значит history_index_ - 1 - это самая свежая).
-            // Формула для получения индекса от самого старого к новому:
+            // Calculate physical index in ring buffer
+            // (history_index_ points to NEXT write position,
+            // so history_index_ - 1 is the most recent).
+            // Formula for getting index from oldest to newest:
             size_t logical_idx = (history_index_ + i) % MAX_HISTORY;
 
             int16_t val = rssi_history_[logical_idx];
 
-            // Игнорируем "пустые" значения инициализации, если буфер еще не полон
+            // Ignore "empty" initialization values if buffer is not yet full
             if (val <= -110) continue;
 
             if (i < half_window) {
@@ -161,14 +161,14 @@ public:
             }
         }
 
-        // Упрощенное среднее: делим на 4 (так как MAX_HISTORY=8, половина=4)
-        // Если update_count < 8, деление будет не совсем точным, но приемлемым для тренда
+        // Simplified average: divide by 4 (since MAX_HISTORY=8, half=4)
+        // If update_count < 8, division will not be entirely accurate but acceptable for trend
         int32_t avg_old = older_sum / (int32_t)half_window;
         int32_t avg_new = recent_sum / (int32_t)half_window;
 
         int32_t diff = avg_new - avg_old;
 
-        // Порог чувствительности: 3dB (5dB может быть многовато для плавного приближения)
+        // Sensitivity threshold: 3dB (5dB might be too much for smooth approaching)
         if (diff > 3) return MovementTrend::APPROACHING;
         if (diff < -3) return MovementTrend::RECEDING;
 
@@ -184,7 +184,7 @@ public:
 
 private:
     static constexpr size_t MAX_HISTORY = 8;
-    int16_t rssi_history_[MAX_HISTORY]; // Инициализация в конструкторе
+    int16_t rssi_history_[MAX_HISTORY]; // Initialized in constructor
     systime_t timestamp_history_[MAX_HISTORY] = {0};
     size_t history_index_ = 0;
 };
@@ -329,7 +329,7 @@ public:
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-// RAII wrapper для мьютексов ChibiOS
+// RAII wrapper for ChibiOS mutexes
 class MutexLock {
 public:
     explicit MutexLock(Mutex& mtx) : mtx_(mtx) {
@@ -340,7 +340,7 @@ public:
         chMtxUnlock();
     }
 
-    // Запрещаем копирование
+    // Disable copying
     MutexLock(const MutexLock&) = delete;
     MutexLock& operator=(const MutexLock&) = delete;
 
@@ -413,12 +413,20 @@ public:
         setup_wideband_range(min_freq, max_freq);
     }
 
+    // Add public method for safe reading by UI controller
+    // Returns RSSI by frequency hash (used for rendering)
+    int32_t get_detection_rssi_safe(size_t freq_hash) const;
+
+    // Method for getting detection count
+    uint8_t get_detection_count_safe(size_t freq_hash) const;
+
     void perform_scan_cycle(DroneHardwareController& hardware);
     void process_rssi_detection(const freqman_entry& entry, int32_t rssi);
     // Message queue for thread-safe UI updates
     void send_drone_detection_message(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
 
     void update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
+    void update_tracked_drone_internal(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
     void remove_stale_drones();
 
     Frequency get_current_scanning_frequency() const;
@@ -458,8 +466,8 @@ public:
 
     Frequency get_current_radio_frequency() const;
 
-    // НОВЫЙ МЕТОД: Получить безопасную копию данных для UI
-    // Возвращаем структуру с фиксированным массивом, чтобы не делать malloc/new для std::vector
+    // NEW METHOD: Get safe data copy for UI
+    // Returns structure with fixed array to avoid malloc/new for std::vector
     struct DroneSnapshot {
         TrackedDrone drones[MAX_TRACKED_DRONES];
         size_t count;
@@ -521,9 +529,12 @@ private:
     std::vector<std::unique_ptr<freqman_entry>> drone_database_;
     DroneDetectionLogger detection_logger_;
 
-    // Добавляем Мьютекс.
-    // mutable позволяет блокировать его даже внутри const методов (как get_snapshot)
+    // Add Mutex.
+    // mutable allows locking even inside const methods (like get_snapshot)
     mutable Mutex data_mutex;
+
+    // ADD HERE:
+    DetectionRingBuffer detection_ring_buffer_; // Now the buffer lives inside the class instance
 };
 
 // ===========================================
@@ -582,7 +593,7 @@ private:
     RxRadioState radio_state_;
     ChannelSpectrumFIFO* fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
-    int32_t last_valid_rssi_ = -120;
+    volatile int32_t last_valid_rssi_ = -120;
 };
 
 
