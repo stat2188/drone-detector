@@ -216,6 +216,9 @@ static constexpr size_t MAX_TRACKED_DRONES = 8;
 static constexpr size_t MAX_DISPLAYED_DRONES = 3;
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
+// Constants for spectrum buffer
+static constexpr int SPEC_HEIGHT = 64;
+static constexpr int SPEC_WIDTH = 240;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
@@ -325,6 +328,25 @@ public:
 // ===========================================
 
 namespace ui::external_app::enhanced_drone_analyzer {
+
+// RAII wrapper для мьютексов ChibiOS
+class MutexLock {
+public:
+    explicit MutexLock(Mutex& mtx) : mtx_(mtx) {
+        chMtxLock(&mtx_);
+    }
+
+    ~MutexLock() {
+        chMtxUnlock();
+    }
+
+    // Запрещаем копирование
+    MutexLock(const MutexLock&) = delete;
+    MutexLock& operator=(const MutexLock&) = delete;
+
+private:
+    Mutex& mtx_;
+};
 
 class DroneDetectionLogger {
 public:
@@ -436,6 +458,15 @@ public:
 
     Frequency get_current_radio_frequency() const;
 
+    // НОВЫЙ МЕТОД: Получить безопасную копию данных для UI
+    // Возвращаем структуру с фиксированным массивом, чтобы не делать malloc/new для std::vector
+    struct DroneSnapshot {
+        TrackedDrone drones[MAX_TRACKED_DRONES];
+        size_t count;
+    };
+
+    DroneSnapshot get_tracked_drones_snapshot() const;
+
 private:
     // Declare missing methods
     void reset_scan_cycles();
@@ -490,6 +521,9 @@ private:
     std::vector<std::unique_ptr<freqman_entry>> drone_database_;
     DroneDetectionLogger detection_logger_;
 
+    // Добавляем Мьютекс.
+    // mutable позволяет блокировать его даже внутри const методов (как get_snapshot)
+    mutable Mutex data_mutex;
 };
 
 // ===========================================
@@ -555,7 +589,7 @@ private:
 
 class SmartThreatHeader : public View {
 public:
-    explicit SmartThreatHeader(Rect parent_rect = {0, 0, screen_width, 48});
+    explicit SmartThreatHeader(Rect parent_rect = {0, 0, screen_width, 60});
     ~SmartThreatHeader() = default;
 
     void update(ThreatLevel max_threat, size_t approaching, size_t static_count,
@@ -586,6 +620,7 @@ private:
     size_t approaching_count_ = 0;
     size_t static_count_ = 0;
     size_t receding_count_ = 0;
+    std::string current_text_;
 };
 
 class ThreatCard : public View {
@@ -712,6 +747,10 @@ private:
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
+
+    // Waterfall spectrum buffer in RAM
+    std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT> waterfall_buffer_;
+    size_t waterfall_line_index_ = 0;
 
     Gradient spectrum_gradient_;
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
@@ -869,6 +908,7 @@ private:
     // Simple UI widgets (replacing complex ones)
     Button button_start_stop_;
     Button button_menu_;
+    Button button_audio_;
 
     // Options field for scanning mode - simplified
     OptionsField field_scanning_mode_;

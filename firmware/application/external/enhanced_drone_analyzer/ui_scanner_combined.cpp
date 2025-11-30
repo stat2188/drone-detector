@@ -28,7 +28,7 @@ using namespace tonekey;
 namespace ui::external_app::enhanced_drone_analyzer {
 
 // Settings loading helper
-// ИСПРАВЛЕННАЯ ВЕРСИЯ: Читает файл целиком и парсит построчно
+// FIXED VERSION: Reads the entire file and parses line by line
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     static const std::string SETTINGS_FILE_PATH = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
@@ -38,21 +38,21 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
         return false;
     }
 
-    // Получаем размер файла
+    // Get file size
     uint64_t file_size = settings_file.size();
     if (file_size == 0) return false;
 
-    // Ограничиваем размер чтения для безопасности (настройки обычно занимают < 1КБ)
+    // Limit reading size for security (settings usually take < 1KB)
     if (file_size > 4096) file_size = 4096;
 
     std::string content;
     content.resize(file_size);
 
-    // Читаем весь файл в буфер
+    // Read entire file into buffer
     auto read_res = settings_file.read(content.data(), file_size);
     if (read_res.is_error()) return false;
 
-    // Если прочитали меньше, чем размер файла (редко, но возможно), корректируем строку
+    // If read less than file size (rare but possible), adjust string
     if (read_res.value() < file_size) {
         content.resize(read_res.value());
     }
@@ -61,12 +61,12 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     std::string line;
 
     while (std::getline(ss, line)) {
-        // Удаляем CR (возврат каретки) для совместимости с Windows-стилем строк
+        // Remove CR (carriage return) for Windows-style string compatibility
         if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
 
-        // Пропускаем пустые строки и комментарии
+        // Skip empty lines and comments
         if (line.empty() || line[0] == '#') continue;
 
         size_t equals_pos = line.find('=');
@@ -75,13 +75,13 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
         std::string key = line.substr(0, equals_pos);
         std::string value = line.substr(equals_pos + 1);
 
-        // Trim whitespace (удаление пробелов)
+        // Trim whitespace (remove spaces)
         key.erase(0, key.find_first_not_of(" \t"));
         key.erase(key.find_last_not_of(" \t") + 1);
         value.erase(0, value.find_first_not_of(" \t"));
         value.erase(value.find_last_not_of(" \t") + 1);
 
-        // Парсинг значений
+        // Parse values
         if (key == "spectrum_mode") {
             if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
             else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
@@ -129,8 +129,12 @@ DroneScanner::DroneScanner()
       last_valid_rssi_(-120),
       wideband_scan_data_(),
       drone_database_(),
-      detection_logger_()
+      detection_logger_(),
+      data_mutex()
 {
+    // IMPORTANT: Initialize mutex before everything else
+    chMtxInit(&data_mutex);
+
     initialize_database_and_scanner();
     initialize_wideband_scanning();
 }
@@ -407,11 +411,11 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
         }
     } else {
         uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
-        int32_t stored_rssi = local_detection_ring.get_rssi_value(freq_hash); // Читаем старый RSSI
+        int32_t stored_rssi = local_detection_ring.get_rssi_value(freq_hash); // Read old RSSI
 
         if (current_count > 0) {
             current_count--;
-            // Сохраняем старый RSSI, чтобы интерфейс не мигал
+            // Keep old RSSI, so interface doesn't flicker
             local_detection_ring.update_detection(freq_hash, current_count, stored_rssi);
         } else {
             local_detection_ring.update_detection(freq_hash, 0, -120);
@@ -493,19 +497,19 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
             update_tracked_drone(detected_type, entry.frequency_a, rssi, threat_level);
         }
     } else {
-        // Implement leaky bucket algorithm: gradually decrease detection count instead of resetting to 0
-        uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
-        int32_t stored_rssi = local_detection_ring.get_rssi_value(freq_hash);
+    // Implement leaky bucket algorithm: gradually decrease detection count instead of resetting to 0
+    uint8_t current_count = local_detection_ring.get_detection_count(freq_hash);
+    int32_t stored_rssi = local_detection_ring.get_rssi_value(freq_hash);
 
-        // Медленное затухание
-        if (current_count > 0) {
-            current_count--;
-            // Сохраняем старый RSSI, показывая, что сигнал "был здесь недавно"
-            local_detection_ring.update_detection(freq_hash, current_count, stored_rssi);
-        } else {
-            // Только когда счетчик совсем обнулился, стираем данные
-            local_detection_ring.update_detection(freq_hash, 0, -120);
-        }
+    // Slow decay
+    if (current_count > 0) {
+        current_count--;
+        // Keep old RSSI, showing that signal "was here recently"
+        local_detection_ring.update_detection(freq_hash, current_count, stored_rssi);
+    } else {
+        // Only when counter is completely zeroed, erase data
+        local_detection_ring.update_detection(freq_hash, 0, -120);
+    }
     }
 }
 
@@ -514,13 +518,16 @@ void DroneScanner::send_drone_detection_message(DroneType type, Frequency freque
 }
 
 void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
+    // Lock access. While we're here, UI will wait.
+    MutexLock lock(data_mutex);
+
     for (size_t i = 0; i < tracked_count_; ++i) {
         if (tracked_drones_[i].frequency == static_cast<uint32_t>(frequency) && tracked_drones_[i].update_count > 0) {
             tracked_drones_[i].add_rssi(static_cast<int16_t>(rssi), chTimeNow());
             tracked_drones_[i].drone_type = static_cast<uint8_t>(type);
             tracked_drones_[i].threat_level = static_cast<uint8_t>(threat_level);
             update_tracking_counts();
-            return;
+            return; // lock will automatically unlock
         }
     }
 
@@ -554,6 +561,9 @@ void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int
 }
 
 void DroneScanner::remove_stale_drones() {
+    // Protect deletion
+    MutexLock lock(data_mutex);
+
     const systime_t STALE_TIMEOUT = 30000;
     systime_t current_time = chTimeNow();
 
@@ -647,6 +657,16 @@ std::string DroneScanner::get_session_summary() const {
 
 void DroneScanner::handle_scan_error(const char* error_msg) {
     (void)error_msg;
+}
+
+DroneScanner::DroneSnapshot DroneScanner::get_tracked_drones_snapshot() const {
+    DroneSnapshot snapshot;
+    MutexLock lock(data_mutex);
+    snapshot.count = tracked_count_;
+    for (size_t i = 0; i < tracked_count_ && i < MAX_TRACKED_DRONES; ++i) {
+        snapshot.drones[i] = tracked_drones_[i];
+    }
+    return snapshot;
 }
 
 // DroneDetectionLogger implementations
@@ -930,6 +950,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     }
     threat_status_main_.set(buffer);
     threat_status_main_.set_style(Theme::getInstance()->fg_red);
+    current_text_ = buffer;
 
     if (current_freq > 0) {
         if (current_freq >= 1000000000ULL) {
@@ -1039,19 +1060,18 @@ std::string SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
 }
 
 void SmartThreatHeader::paint(Painter& painter) {
-    View::paint(painter);
-    if (current_threat_ >= ThreatLevel::HIGH) {
-    static uint32_t pulse_timer = 0;
-    pulse_timer++;
-    (void)((pulse_timer % 20) < 10 ? 50 : 150);
-        Color base_color = get_threat_bar_color(current_threat_);
-        Color pulse_color = Color(
-            std::min(255, (base_color.r() * 2 + 100) / 3),
-            std::min(255, (base_color.g() * 2 + 100) / 3),
-            std::min(255, (base_color.b() * 2 + 100) / 3)
-        );
-        painter.fill_rectangle({0, screen_rect().top(), screen_rect().width(), 4}, pulse_color);
-    }
+    // 1. Fill the entire background with threat color
+    Color bg_color = get_threat_bar_color(current_threat_);
+    painter.fill_rectangle(screen_rect(), bg_color);
+
+    // 2. Draw large centered text with white color on colored background
+    // Calculate centered position
+    const int text_width = current_text_.length() * 8; // fixed_8x16 is 8px per char
+    const int text_height = 16;
+    const int center_x = (screen_width - text_width) / 2;
+    const int center_y = (60 - text_height) / 2; // Header height is 60px
+    Point text_pos = {center_x, center_y};
+    painter.draw_string(text_pos, font::fixed_8x16, Color::white(), bg_color, current_text_);
 }
 
 ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
@@ -1083,21 +1103,26 @@ std::string ThreatCard::render_compact() const {
     if (!is_active_) return "";
 
     char buffer[32];
-    const char* trend_symbol = (trend_ == MovementTrend::APPROACHING) ? "<" :
-                              (trend_ == MovementTrend::RECEDING) ? ">" : "~";
-    (void)threat_;
+    // Replace < > with text codes or simplification
+    char trend_char = (trend_ == MovementTrend::APPROACHING) ? '^' : // Approaching (Up)
+                      (trend_ == MovementTrend::RECEDING)    ? 'v' : // Receding (Down)
+                      '=';                                           // Static
 
-    if (frequency_ >= 1000000000ULL) {
-        uint32_t ghz = frequency_ / 1000000000ULL;
-        uint32_t decimals = (frequency_ % 1000000000ULL) / 100000000ULL;
-        snprintf(buffer, sizeof(buffer), "DR %-10s %c %lu.%01luG %4lddB",
-                threat_name_.c_str(), *trend_symbol, (unsigned long)ghz, (unsigned long)decimals, (long int)rssi_);
-    } else {
-        uint32_t mhz = frequency_ / 1000000ULL;
-        uint32_t decimals = (frequency_ % 1000000ULL) / 1000000ULL;
-        snprintf(buffer, sizeof(buffer), "DR %-10s %c %5lu.%01luM %4lddB",
-                threat_name_.c_str(), *trend_symbol, (unsigned long)mhz, (unsigned long)decimals, (long int)rssi_);
-    }
+    // Formatting with fixed width:
+    // %-5s : string of 5 characters aligned left
+    // %4d  : number of 4 characters aligned right (adds spaces)
+
+    // Was: "MAVIC < 2.4G -60dB" (jumping length)
+    // Became: "MAVIC ^ 2.4G  -60" (monolithic)
+
+    uint32_t mhz = frequency_ / 1000000;
+
+    snprintf(buffer, sizeof(buffer), "%-7s %c %4luM %3ld",
+            threat_name_.substr(0,7).c_str(), // Trim name to 7 characters
+            trend_char,
+            mhz,
+            (long int)rssi_);
+
     return std::string(buffer);
 }
 
@@ -1114,15 +1139,10 @@ Color ThreatCard::get_card_bg_color() const {
 }
 
 Color ThreatCard::get_card_text_color() const {
-    if (!is_active_) return Color::white();
-    switch (threat_) {
-        case ThreatLevel::CRITICAL: return Color::red();
-        case ThreatLevel::HIGH: return Color(255, 140, 0);
-        case ThreatLevel::MEDIUM: return Color::yellow();
-        case ThreatLevel::LOW: return Color::green();
-        case ThreatLevel::NONE:
-        default: return Color::white();
-    }
+    // Always white text, since threat backgrounds (Red, Orange) are dark
+    // Exception: if background Yellow (Medium), text better Black
+    if (threat_ == ThreatLevel::MEDIUM) return Color::black();
+    return Color::white();
 }
 
 void ThreatCard::paint(Painter& painter) {
@@ -1374,16 +1394,44 @@ void DroneDisplayController::sort_drones_by_rssi() {
               });
 }
 
-void DroneDisplayController::update_drones_display(const DroneScanner& /*scanner*/) {
+void DroneDisplayController::update_drones_display(const DroneScanner& scanner) {
+    // STEP 1: Get a safe copy of data
+    // Mutex is locked only for the copying time (microseconds)
+    auto snapshot = scanner.get_tracked_drones_snapshot();
+
+    // STEP 2: Work with local snapshot copy.
+    // Scanner may already be looking for new drones in another thread at this time.
+
     const systime_t STALE_TIMEOUT = 30000;
     systime_t now = chTimeNow();
-    detected_drones_.erase(
-        std::remove_if(detected_drones_.begin(), detected_drones_.end(),
-                      [now, STALE_TIMEOUT](const DisplayDroneEntry& entry) {
-                          return (now - entry.last_seen) > STALE_TIMEOUT;
-                      }),
-        detected_drones_.end());
+
+    // Clear UI list
+    detected_drones_.clear();
+
+    // Fill from snapshot
+    for (size_t i = 0; i < snapshot.count; ++i) {
+        const auto& drone_data = snapshot.drones[i];
+
+        // Stale check (duplicate logic for UI filtering)
+        if ((now - drone_data.last_seen) > STALE_TIMEOUT) continue;
+
+        DisplayDroneEntry entry;
+        entry.frequency = drone_data.frequency;
+        entry.type = static_cast<DroneType>(drone_data.drone_type);
+        entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
+        entry.rssi = drone_data.rssi;
+        entry.last_seen = drone_data.last_seen;
+        entry.type_name = get_drone_type_name(entry.type);
+        entry.display_color = get_drone_type_color(entry.type);
+        entry.trend = drone_data.get_trend(); // Now this is safe to call
+
+        detected_drones_.push_back(entry);
+    }
+
+    // STEP 3: Sorting and rendering
     sort_drones_by_rssi();
+
+    // ... (remaining code for updating display_drones_ and calling render)
     for (auto& drone : displayed_drones_) {
         drone = DisplayDroneEntry{};
     }
@@ -1473,18 +1521,41 @@ bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
 }
 
 void DroneDisplayController::render_mini_spectrum() {
-    if (!validate_spectrum_data()) {
-        clear_spectrum_buffers();
-        return;
+    // 1. Write new line of data to buffer (replace the oldest)
+    for (size_t x = 0; x < SPEC_WIDTH; ++x) {
+        uint8_t power_value = 0;
+        if (x < spectrum_power_levels_.size()) {
+            power_value = spectrum_power_levels_[x];
+        }
+        // Convert power to color index
+        uint8_t color_index = (power_value * spectrum_gradient_.lut.size()) / 256;
+        if (color_index >= spectrum_gradient_.lut.size()) {
+            color_index = spectrum_gradient_.lut.size() - 1;
+        }
+        waterfall_buffer_[waterfall_line_index_][x] = color_index;
     }
-    const Color background_color = spectrum_gradient_.lut.size() > 0 ? spectrum_gradient_.lut[0] : Color::black();
-    std::fill(spectrum_row.begin(), spectrum_row.end(), background_color);
-    if (pixel_index > 0) {
-        display.draw_pixels(
-            {{0, display.scroll(1)}, {screen_width, 1}},
-            spectrum_row
-        );
-        pixel_index = 0;
+
+    // 2. Shift index (ring buffer)
+    waterfall_line_index_ = (waterfall_line_index_ + 1) % SPEC_HEIGHT;
+
+    // 3. Draw buffer to screen (Software Scroll)
+    // Draw lines so that 'waterfall_line_index_' is the newest (bottom)
+    const int start_y = 80; // Y-coordinate of spectrum start on screen
+
+    for (int y = 0; y < SPEC_HEIGHT; ++y) {
+        // Calculate buffer row index
+        // We want (waterfall_line_index_ - 1) to be drawn at bottom (y = SPEC_HEIGHT-1)
+        size_t buf_idx = (waterfall_line_index_ + y) % SPEC_HEIGHT;
+
+        // Prepare pixel row
+        std::array<Color, SPEC_WIDTH> line_colors;
+        for (int x = 0; x < SPEC_WIDTH; ++x) {
+            uint8_t color_index = waterfall_buffer_[buf_idx][x];
+            line_colors[x] = spectrum_gradient_.lut[color_index];
+        }
+
+        // Draw one line
+        display.draw_pixels({{0, start_y + y}, {SPEC_WIDTH, 1}}, line_colors);
     }
 }
 
@@ -1681,11 +1752,11 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       ui_controller_(std::make_unique<DroneUIController>(nav, *hardware_, *scanner_, audio_)),
       display_controller_(std::make_unique<DroneDisplayController>(nav)),
       scanning_coordinator_(std::make_unique<ScanningCoordinator>(nav, *hardware_, *scanner_, *display_controller_, audio_)),
-      smart_header_(std::make_unique<SmartThreatHeader>(Rect{0, 0, screen_width, 48})),
-      status_bar_(std::make_unique<ConsoleStatusBar>(0, Rect{0, screen_height - 32, screen_width, 16})),
+      smart_header_(std::make_unique<SmartThreatHeader>(Rect{0, 0, screen_width, 60})),
+      status_bar_(std::make_unique<ConsoleStatusBar>(0, Rect{0, screen_height - 80, screen_width, 16})),
       threat_cards_(),
-      button_start_stop_({{screen_width - 80, screen_height - 48, 72, 24}, "START/STOP"}),
-      button_menu_({{screen_width - 80, screen_height - 24, 72, 24}, "MENU"}),
+      button_start_stop_({{screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"}),
+      button_menu_({{screen_width - 80, screen_height - 40, 72, 32}, "MENU"}),
       field_scanning_mode_({{10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}}),
       scanning_active_(false),
       settings_()
@@ -1781,7 +1852,7 @@ bool EnhancedDroneSpectrumAnalyzerView::handle_menu_button() {
 void EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout() {
     for (size_t i = 0; i < threat_cards_.size(); ++i) {
         if (threat_cards_[i]) {
-            size_t card_y_pos = 52 + i * 26;
+            size_t card_y_pos = 60 + i * 26;
             threat_cards_[i]->set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
         }
     }
@@ -1843,6 +1914,15 @@ void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
     button_menu_.on_select = [this](Button&) -> void {
         ui_controller_->show_menu();
     };
+    button_audio_.on_select = [this](Button&) {
+        // Toggle audio alerts setting
+        settings_.enable_audio_alerts = !settings_.enable_audio_alerts;
+        // Update button text immediately
+        button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
+        button_audio_.set_style(settings_.enable_audio_alerts ?
+                               Theme::getInstance()->fg_green :
+                               Theme::getInstance()->fg_medium);
+    };
 
     field_scanning_mode_.on_change = [this](size_t index, int32_t value) -> void {
         (void)value;
@@ -1868,7 +1948,7 @@ void EnhancedDroneSpectrumAnalyzerView::add_ui_elements() {
     for (auto& card : threat_cards_) {
         add_child(card.get());
     }
-    add_children({&button_start_stop_, &button_menu_});
+    add_children({&button_start_stop_, &button_menu_, &button_audio_});
 }
 
 LoadingScreenView::LoadingScreenView(NavigationView& nav)
