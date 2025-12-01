@@ -62,6 +62,7 @@
 #include "ui_subghzd.hpp"
 #include "ui_battinfo.hpp"
 #include "ui_external_items_menu_loader.hpp"
+#include "external/enhanced_drone_analyzer/ui_scanner_combined.hpp"
 
 // #include "ais_app.hpp"
 #include "analog_audio_app.hpp"
@@ -132,6 +133,7 @@ const NavigationView::AppList NavigationView::appList = {
     {"radiosonde", "Radiosnde", RX, Color::green(), &bitmap_icon_sonde, new ViewFactory<SondeView>()},
     {"search", "Search", RX, Color::yellow(), &bitmap_icon_search, new ViewFactory<SearchView>()},
     {"subghzd", "SubGhzD", RX, Color::yellow(), &bitmap_icon_remote, new ViewFactory<SubGhzDView>()},
+    {"eda", "EDA Scanner", RX, Color::red(), &bitmap_icon_eda, new ViewFactory<external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>()},
     {"weather", "Weather", RX, Color::green(), &bitmap_icon_thermometer, new ViewFactory<WeatherView>()},
     /* TX ********************************************************************/
     {"aprstx", "APRS TX", TX, ui::Color::green(), &bitmap_icon_aprs, new ViewFactory<APRSTXView>()},
