@@ -1,5 +1,5 @@
 /*
- * Enhanced Drone Analyzer - Main Entry Point
+ * Eenhanced Drone Analyzer - Main Entry Point
  * Fixed: Section name matches external_app.ld (added 'app_' prefix)
  */
 
