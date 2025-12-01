@@ -28,33 +28,33 @@ using namespace tonekey;
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-// Функция парсит строку, меняя её содержимое (вставляет \0 вместо =)
+// Function parses a string, modifying its contents (inserts \0 instead of =)
 void parse_settings_line_inplace(char* line, DroneAnalyzerSettings& settings) {
-    // 1. Пропускаем комментарии
+    // 1. Skip comments
     if (line[0] == '#' || line[0] == 0) return;
 
-    // 2. Ищем разделитель '='
+    // 2. Find separator '='
     char* equals_ptr = strchr(line, '=');
     if (!equals_ptr) return;
 
-    // 3. Разделяем ключ и значение
-    *equals_ptr = 0; // Разрываем строку: "key\0value"
+    // 3. Split key and value
+    *equals_ptr = 0; // Break string: "key\0value"
     char* key = line;
     char* value = equals_ptr + 1;
 
-    // 4. Тримминг пробелов (простой вариант)
-    // Функция trim должна быть легкой, пропускаем leading spaces
+    // 4. Trimming spaces (simple version)
+    // Trim function should be lightweight, skip leading spaces
     while (*key == ' ' || *key == '\t') key++;
     while (*value == ' ' || *value == '\t') value++;
 
-    // Удаление trailing spaces для value (обычно в конце строки может быть \r)
+    // Remove trailing spaces for value (usually \r at end of line)
     size_t val_len = strlen(value);
     while (val_len > 0 && (value[val_len-1] == ' ' || value[val_len-1] == '\t' || value[val_len-1] == '\r')) {
         value[val_len-1] = 0;
         val_len--;
     }
 
-    // 5. Сравнение ключей (используем strcmp вместо string ==)
+    // 5. Compare keys (use strcmp instead of string ==)
     if (strcmp(key, "spectrum_mode") == 0) {
         if (strcmp(value, "NARROW") == 0) settings.spectrum_mode = SpectrumMode::NARROW;
         else if (strcmp(value, "MEDIUM") == 0) settings.spectrum_mode = SpectrumMode::MEDIUM;
@@ -83,44 +83,44 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
     if (error) return false;
 
-    char read_buffer[128];      // Читаем блоками по 128 байт
-    char line_buffer[128];      // Буфер для сборки одной строки
+    char read_buffer[128];      // Read in 128-byte blocks
+    char line_buffer[128];      // Buffer for assembling one line
     size_t line_idx = 0;
 
     while (true) {
-        // Читаем блок
+        // Read block
         auto read_res = settings_file.read(read_buffer, sizeof(read_buffer));
         if (read_res.is_error()) break;
 
         size_t bytes_read = read_res.value();
         if (bytes_read == 0) break; // EOF
 
-        // Обрабатываем прочитанный блок
+        // Process read block
         for (size_t i = 0; i < bytes_read; i++) {
             char c = read_buffer[i];
 
             if (c == '\n') {
-                // Конец строки найден
+                // End of line found
                 line_buffer[line_idx] = 0; // Null-terminate
 
-                // Парсим готовую строку
+                // Parse ready line
                 parse_settings_line_inplace(line_buffer, settings);
 
-                // Сброс для следующей строки
+                // Reset for next line
                 line_idx = 0;
             }
             else if (c != '\r') {
-                // Игнорируем \r, накапливаем остальные символы
+                // Ignore \r, accumulate other characters
                 if (line_idx < sizeof(line_buffer) - 1) {
                     line_buffer[line_idx++] = c;
                 }
-                // Если строка длиннее буфера, лишние символы просто игнорируются
-                // до встречи \n, чтобы не переполнить стек
+                // If line is longer than buffer, extra characters are simply ignored
+                // until \n is encountered to avoid stack overflow
             }
         }
     }
 
-    // Обработка последней строки, если файл не заканчивается на \n
+    // Process last line if file doesn't end with \n
     if (line_idx > 0) {
         line_buffer[line_idx] = 0;
         parse_settings_line_inplace(line_buffer, settings);
@@ -387,7 +387,7 @@ void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32
 
 void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                            int32_t /*original_threshold*/, int32_t wideband_threshold) {
-    // 1. Валидация (без блокировок)
+    // 1. Validation (without locks)
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN) ||
         !SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
         return;
@@ -396,9 +396,9 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     bool should_log = false;
     DetectionLogEntry log_entry_to_write;
     DroneType detected_type = DroneType::UNKNOWN;
-    ThreatLevel threat_level; // ... логика определения threat level ...
+    ThreatLevel threat_level; // ... threat level determination logic ...
 
-    // Логика threat_level (скопировать из оригинала)
+    // Threat_level logic (copy from original)
     if (rssi > -70) threat_level = ThreatLevel::HIGH;
     else if (rssi > -80) threat_level = ThreatLevel::LOW;
     else threat_level = ThreatLevel::UNKNOWN;
@@ -406,11 +406,11 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
         threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
     }
 
-    // --- НАЧАЛО КРИТИЧЕСКОЙ СЕКЦИИ ---
+    // --- CRITICAL SECTION BEGIN ---
     {
         MutexLock lock(data_mutex);
 
-        total_detections_++; // Защищаем счетчик
+        total_detections_++; // Protect counter
 
         size_t freq_hash = entry.frequency_a / 100000;
         int32_t effective_threshold = wideband_threshold;
@@ -440,7 +440,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
                 update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
             }
         } else {
-            // Логика уменьшения счетчика...
+            // "Leaky bucket" logic
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
             int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
             if (current_count > 0) {
@@ -451,9 +451,9 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
             }
         }
     }
-    // --- КОНЕЦ КРИТИЧЕСКОЙ СЕКЦИИ ---
+    // --- CRITICAL SECTION END ---
 
-    // 3. Логирование
+    // 3. Logging
     if (should_log && detection_logger_.is_session_active()) {
         detection_logger_.log_detection(log_entry_to_write);
     }
@@ -468,7 +468,7 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 }
 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
-    // 1. Предварительная фильтрация (не требует блокировок)
+    // 1. Preliminary filtering (does not require locks)
     const int32_t INVALID_RSSI = -128;
     const int32_t MIN_VALID_RSSI = -110;
     const int32_t MAX_VALID_RSSI = 10;
@@ -485,13 +485,13 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
-    // Определяем параметры (локально)
+    // Determine parameters (locally)
     int32_t detection_threshold = -90;
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
 
-    // Простой поиск по БД (если drone_database_ не меняется в рантайме, это безопасно читать без мьютекса,
-    // НО если БД может перезагружаться, здесь нужен reader-lock. Для простоты допустим, что БД статична во время скана)
+    // Simple database search (if drone_database_ is not changed at runtime, it's safe to read without mutex,
+    // BUT if DB can be reloaded, reader-lock is needed. For simplicity, assume DB is static during scan)
     for (const auto& db_entry : drone_database_) {
         if (db_entry && db_entry->frequency_a == entry.frequency_a) {
             detected_type = DroneType::MAVIC;
@@ -504,15 +504,15 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
-    // Флаг и данные для отложенного логирования
+    // Flag and data for deferred logging
     bool should_log = false;
     DetectionLogEntry log_entry_to_write;
 
-    // --- НАЧАЛО КРИТИЧЕСКОЙ СЕКЦИИ ---
+    // --- CRITICAL SECTION BEGIN ---
     {
-        MutexLock lock(data_mutex); // Блокируем доступ UI к данным
+        MutexLock lock(data_mutex); // Block UI access to data
 
-        total_detections_++; // Защищаем счетчик
+        total_detections_++; // Protect counter
 
         size_t freq_hash = entry.frequency_a / 100000;
         int32_t effective_threshold = detection_threshold;
@@ -524,14 +524,14 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
             current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
 
-            // Пишем в буфер (безопасно)
+            // Write to buffer (safe)
             detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
 
             if (current_count >= MIN_DETECTION_COUNT) {
-                // Мы НЕ пишем лог здесь. Мы только готовим данные.
+                // We do NOT write log here. We only prepare data.
                 should_log = true;
 
-                // Подготовка данных для лога
+                // Data preparation for logging
                 log_entry_to_write.timestamp = chTimeNow();
                 log_entry_to_write.frequency_hz = static_cast<uint32_t>(entry.frequency_a);
                 log_entry_to_write.rssi_db = rssi;
@@ -540,11 +540,11 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 log_entry_to_write.detection_count = current_count;
                 log_entry_to_write.confidence_score = 0.85f;
 
-                // Обновляем трекинг дронов для UI (внутренний метод, который НЕ берет мьютекс повторно)
+                // Update drone tracking for UI (internal method that does NOT take mutex again)
                 update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
             }
         } else {
-            // Логика "leaky bucket"
+            // "Leaky bucket" logic
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
             int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
 
@@ -556,16 +556,16 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
             }
         }
     }
-    // --- КОНЕЦ КРИТИЧЕСКОЙ СЕКЦИИ ---
-    // Мьютекс освобожден. UI может перерисовываться.
+    // --- CRITICAL SECTION END ---
+    // Mutex is released. UI can redraw.
 
-    // 3. Выполняем тяжелые операции ввода-вывода
+    // 3. Perform heavy I/O operations
     if (should_log) {
-        // Имитация задержки "анти-дребезга" для логгера, если нужно, но лучше без sleep в цикле скана
+        // Imitation of "anti-bounce" delay for logger if needed, but better without sleep in scan cycle
         // chThdSleepMilliseconds(DETECTION_DELAY);
 
         if (detection_logger_.is_session_active()) {
-            // Это займет время, но UI поток не будет заблокирован, так как data_mutex свободен
+            // This will take time, but UI thread will not be blocked, since data_mutex is free
             detection_logger_.log_detection(log_entry_to_write);
         }
     }
@@ -771,30 +771,30 @@ bool DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
     if (!session_active_) return false;
     if (!ensure_csv_header()) return false;
 
-    // Используем уже существующий в классе line_buffer_ (он там есть, 192 байта)
-    // snprintf пишет сразу в char array, без создания std::string
+    // Use existing line_buffer_ in the class (it's there, 192 bytes)
+    // snprintf writes directly to char array, without creating std::string
     int len = snprintf(line_buffer_, sizeof(line_buffer_),
-             "%lu,%lu,%ld,%u,%u,%u,%ld\n", // %f (float) тяжел для M4, лучше писать int * 100
+             "%lu,%lu,%ld,%u,%u,%u,%ld\n", // %f (float) is heavy for M4, better to write int * 100
              static_cast<unsigned long>(entry.timestamp),
              static_cast<unsigned long>(entry.frequency_hz),
              (long int)entry.rssi_db,
              static_cast<uint8_t>(entry.threat_level),
              static_cast<uint8_t>(entry.drone_type),
              entry.detection_count,
-             (long int)(entry.confidence_score * 100)); // Трюк с float
+             (long int)(entry.confidence_score * 100)); // Float trick
 
-    // Проверка на ошибку форматирования
+    // Formatting error check
     if (len <= 0) return false;
 
     auto error = csv_log_.append(generate_log_filename());
     if (error && !error->ok()) return false;
 
-    // Пишем raw buffer. API Mayhem принимает void* и size
-    // Внимание: метод write_raw в Mayhem обычно принимает строку или буфер.
-    // Если он принимает std::string, придется сделать write_raw(std::string(line_buffer_, len)),
-    // но лучше использовать write(data, len) если доступно.
+    // Write raw buffer. Mayhem API accepts void* and size
+    // Note: write_raw method in Mayhem usually accepts string or buffer.
+    // If it accepts std::string, will have to do write_raw(std::string(line_buffer_, len)),
+    // but better to use write(data, len) if available.
 
-    // Предполагая стандартный API LogFile в Mayhem:
+    // Assuming standard LogFile API in Mayhem:
     error = csv_log_.write_raw(std::string(line_buffer_, len));
 
     if (error && error->ok()) {
@@ -842,47 +842,47 @@ std::string DroneDetectionLogger::generate_log_filename() const {
 std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
     std::string result;
 
-    // 1. Резервируем память в куче ОДИН раз.
-    // 384 байта достаточно для всего текста summary.
+    // 1. Reserve memory in heap ONE time.
+    // 384 bytes is enough for the entire summary text.
     result.reserve(384);
 
     result += "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\n";
 
-    // Вычисляем длительность сессии
+    // Calculate session duration
     uint32_t session_duration_ms = chTimeNow() - session_start_;
-    if (session_duration_ms == 0) session_duration_ms = 1; // Защита от деления на 0
+    if (session_duration_ms == 0) session_duration_ms = 1; // Division by zero protection
 
-    // 2. Форматируем время БЕЗ %f (float). Используем целочисленное деление.
-    // Пример: 1500 мс -> "1.5" сек.
+    // 2. Format time WITHOUT %f (float). Use integer division.
+    // Example: 1500 ms -> "1.5" sec.
     char duration_buf[32];
     snprintf(duration_buf, sizeof(duration_buf), "Duration: %lu.%lu seconds\n",
-             session_duration_ms / 1000,       // Целые секунды
-             (session_duration_ms % 1000) / 100); // Десятые доли секунды
+             session_duration_ms / 1000,       // Whole seconds
+             (session_duration_ms % 1000) / 100); // Tenths of seconds
     result += duration_buf;
 
-    // 3. Добавляем простые числа, используя эффективные функции Mayhem
+    // 3. Add simple numbers, using efficient Mayhem functions
     result += "Scan Cycles: ";
     result += to_string_dec_uint(scan_cycles);
     result += "\nTotal Detections: ";
     result += to_string_dec_uint(total_detections);
     result += "\n\nPERFORMANCE:\n";
 
-    // 4. Вычисляем метрики вручную (избегаем тяжелых float операций в snprintf)
-    // Среднее число детекций на цикл (умножаем на 100 для 2 знаков после запятой)
+    // 4. Calculate metrics manually (avoid heavy float operations in snprintf)
+    // Average detections per cycle (multiply by 100 for 2 decimal places)
     uint32_t avg_det_x100 = (scan_cycles > 0) ? (total_detections * 100) / scan_cycles : 0;
 
-    // Детекций в секунду (умножаем на 10 для 1 знака после запятой)
-    // Формула: (detections * 1000 * 10) / ms
+    // Detections per second (multiply by 10 for 1 decimal place)
+    // Formula: (detections * 1000 * 10) / ms
     uint32_t rate_x10 = (uint64_t)total_detections * 10000 / session_duration_ms;
 
     char perf_buf[64];
     snprintf(perf_buf, sizeof(perf_buf),
              "Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: ",
-             avg_det_x100 / 100, avg_det_x100 % 100, // Целая и дробная части
-             rate_x10 / 10, rate_x10 % 10);          // Целая и дробная части
+             avg_det_x100 / 100, avg_det_x100 % 100, // Integer and fractional parts
+             rate_x10 / 10, rate_x10 % 10);          // Integer and fractional parts
     result += perf_buf;
 
-    // Добавляем количество записей
+    // Add number of entries
     result += to_string_dec_uint(logged_count_);
     result += "\n\nEnhanced Drone Analyzer v0.3";
 
