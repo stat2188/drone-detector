@@ -79,10 +79,19 @@ class TVView : public Widget {
     void paint(Painter& painter) override;
     void on_channel_spectrum(const ChannelSpectrum& spectrum);
     void on_adjust_xcorr(uint8_t xcorr);
+    void on_adjust_contrast(int contrast);
     // ui::Color video_buffer[13312];
     uint8_t video_buffer_int[13312 + 128]{0};  // 128 is for the over length caused by x_correction
+    uint8_t raw_buffer[13312 + 128]{0};
     uint32_t count = 0;
     uint8_t x_correction = 0;
+    int16_t dynamic_offset = 0;
+    int8_t max_indices[52]{0};
+    uint8_t min_lvl = 255;
+    uint8_t max_lvl = 0;
+    float gain = 1.0f;
+    float offset = 0.0f;
+    int contrast = 128;  // 100% as 128
 
    private:
     void clear();
@@ -107,11 +116,11 @@ class TVWidget : public View {
     void show_audio_spectrum_view(const bool show);
 
     void paint(Painter& painter) override;
-    NumberField field_xcorr{
+    NumberField field_contrast{
         {UI_POS_X(0), UI_POS_Y(0)},
         5,
-        {0, 128},
-        1,
+        {0, 255},
+        128,
         ' '};
 
    private:

@@ -102,58 +102,84 @@ void TVView::on_adjust_xcorr(uint8_t xcorr) {
     x_correction = xcorr;
 }
 
+void TVView::on_adjust_contrast(int contrast) {
+    this->contrast = contrast;
+}
+
 void TVView::on_channel_spectrum(
     const ChannelSpectrum& spectrum) {
-    // portapack has limitations
-    //  1.screen resolution (less than 240x320) 2.samples each call back (128 or 256)
-    //  3.memory size (for ui::Color, the buffer size
-    // spectrum.db[i] is 256 long
-    // 768x625 ->128x625 ->128x312 -> 128x104
-    // originally @6MHz sample rate, the PAL should be 768x625
-    // I reduced sample rate to 2MHz(3 times less samples), then calculate mag (effectively decimate by 2)
-    // the resolution is now changed to 128x625. The total decimation factor is 6, which changes how many samples in a line
-    // However 625 is too large for the screen, also interlaced scanning is harder to realize in portapack than normal computer.
-    // So I decided to simply drop half of the lines, once y is larger than 625/2=312.5 or 312, I recognize it as a new frame.
-    // then the resolution is changed to 128x312
-    // 128x312 is now able to put into a 240x320 screen, but the buffer for a whole frame is 128x312=39936, which is too large
-    // according to my test, I can only make a buffer with a length of 13312 of type ui::Color. which is 1/3 of what I wanted.
-    // So now the resolution is changed to 128x104, the height is shrinked to 1/3 of the original height.
-    // I was expecting to see 1/3 height of original video.
+    // Добавляем константы для гистерезиса синхронизации
+    static constexpr int SYNC_SEARCH_WINDOW = 20; // Искать пик в пределах +/- 20 отсчетов
 
-    // Look how nice is that! I am now able to meet the requirements of 1 and 3 for portapack. Also the length of a line is 128
-    // Each call back gives me 256 samples which is exactly 2 lines. What a coincidence!
+    // Поиск синхроимпульса (максимальное значение в spectrum.db, т.к. негативная модуляция)
+    // Мы ищем локальный максимум, чтобы выровнять phase/offset
 
-    // After some experiment, I did some improvements.
-    // 1.I found that instead of 1/3 of the frame is shown, I got 3 whole frames shrinked into one window.
-    // So I made the height twice simply by painting 2 identical lines in the place of original lines
-    // 2.I found sometimes there is an horizontal offset, so I added x_correction to move the frame back to center manually
-    // 3.I changed video_buffer's type, from ui::Color to uint_8, since I don't need 3 digit to represent a grey scale value.
-    // I was hoping that by doing this, I can have a longer buffer like 39936, then the frame will looks better vertically
-    // however this is useless until now.
+    // ПРИМЕЧАНИЕ: Это упрощенная логика. В идеале нужно скользящее окно.
+    // Здесь мы просто наполняем буфер, а анализ делаем перед отрисовкой.
 
     for (size_t i = 0; i < 256; i++) {
-        // video_buffer[i+count*256] = spectrum_rgb4_lut[spectrum.db[i]];
-        video_buffer_int[i + count * 256] = 255 - spectrum.db[i];
+        // Сохраняем "сырые" данные для постобработки
+        raw_buffer[i + count * 256] = spectrum.db[i];
+        // update min/max for AGC
+        min_lvl = std::min(min_lvl, spectrum.db[i]);
+        max_lvl = std::max(max_lvl, spectrum.db[i]);
     }
+
+    // find max_index in current spectrum
+    size_t max_index = 0;
+    uint8_t max_val = spectrum.db[0];
+    for (size_t i = 1; i < 256; i++) {
+        if (spectrum.db[i] > max_val) {
+            max_val = spectrum.db[i];
+            max_index = i;
+        }
+    }
+    max_indices[count] = (int8_t)max_index;
+
     count = count + 1;
-    if (count == 52 - 1) {
+    if (count == 52) {
+        count = 0;
+        // compute average max
+        int32_t sum = 0;
+        for (size_t i = 0; i < 52; i++) sum += max_indices[i];
+        int16_t average_max = sum / 52;
+        int16_t desired_offset = -average_max;
+
+        // smooth the offset
+        dynamic_offset = (dynamic_offset * 15 + desired_offset) / 16;
+
+        // compute AGC factors
+        if (max_lvl > min_lvl) {
+            gain = 255.0f / (max_lvl - min_lvl);
+            offset = (float)min_lvl;
+        } else {
+            gain = 1.0f;
+            offset = 0.0f;
+        }
+        // reset for next frame
+        min_lvl = 255;
+        max_lvl = 0;
+
+        // fill video_buffer_int with corrected data with AGC and contrast
+        for (size_t j = 0; j < 13312; j++) {
+            int32_t idx = (int32_t)j + dynamic_offset;
+            if (idx < 0) idx += 13312;
+            if (idx >= 13312) idx -= 13312;
+            uint8_t raw = raw_buffer[idx];
+            float scaled = (raw - offset) * gain * (contrast / 128.0f);
+            int16_t pixel_val = (int16_t)(scaled + 0.5f);
+            pixel_val = std::max<int>(0, std::min<int>(255, pixel_val));
+            video_buffer_int[j] = 255 - pixel_val;
+        }
+
         ui::Color line_buffer[128];
         Coord line;
         uint32_t bmp_px;
 
-        /*for (line = 0; line < 104; line++)
-                {
-                        for (bmp_px = 0; bmp_px < 128; bmp_px++)
-                        {
-                                //line_buffer[bmp_px] = video_buffer[bmp_px+line*128];
-                                line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px+line*128 + x_correction]];
-                        }
-
-                        display.render_line({ 0, line + 100 }, 128, line_buffer);
-                }*/
+        // Оптимизация: цвет вычисляется один раз на пару линий
         for (line = 0; line < 208; line = line + 2) {
             for (bmp_px = 0; bmp_px < 128; bmp_px++) {
-                // line_buffer[bmp_px] = video_buffer[bmp_px+line*128];
+                // line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px + line/2 * 128]];
                 line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px + line / 2 * 128 + x_correction]];
             }
 
@@ -174,8 +200,8 @@ void TVView::clear() {
 
 TVWidget::TVWidget() {
     add_children({&tv_view,
-                  &field_xcorr});
-    field_xcorr.set_value(10);
+                  &field_contrast});
+    field_contrast.set_value(128);
 }
 
 void TVWidget::on_show() {
@@ -226,7 +252,7 @@ void TVWidget::paint(Painter& painter) {
 
 void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
     tv_view.on_channel_spectrum(spectrum);
-    tv_view.on_adjust_xcorr(field_xcorr.value());
+    tv_view.on_adjust_contrast(field_contrast.value());
     sampling_rate = spectrum.sampling_rate;
 }
 

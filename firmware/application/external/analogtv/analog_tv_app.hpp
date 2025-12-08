@@ -39,6 +39,9 @@ namespace ui::external_app::analogtv {
 
 class AnalogTvView : public View {
    public:
+    enum class Focus { Video, Audio };
+    enum class Standard { PAL_BG, NTSC_M };
+   public:
     AnalogTvView(NavigationView& nav);
     ~AnalogTvView();
 
@@ -51,7 +54,7 @@ class AnalogTvView : public View {
     std::string title() const override { return "AnalogTV RX"; };
 
    private:
-    static constexpr ui::Dim header_height = 3 * 16;
+    static constexpr ui::Dim header_height = 4 * 16;
 
     NavigationView& nav_;
     RxRadioState radio_state_{};
@@ -92,6 +95,22 @@ class AnalogTvView : public View {
     AudioVolumeField field_volume{
         {27 * 8, UI_POS_Y(0)}};
 
+    OptionsField options_focus{
+        {UI_POS_X(0), UI_POS_Y(1)},
+        10,
+        {
+            {"Video Focus", (int)Focus::Video},
+            {"Audio Focus", (int)Focus::Audio},
+        }};
+
+    OptionsField options_standard{
+        {UI_POS_X(0), UI_POS_Y(2)},
+        8,
+        {
+            {"PAL B/G", (int)Standard::PAL_BG},
+            {"NTSC M", (int)Standard::NTSC_M},
+        }};
+
     std::unique_ptr<Widget> options_widget{};
 
     tv::TVWidget tv{};
@@ -101,6 +120,7 @@ class AnalogTvView : public View {
     void on_show_options_frequency();
     void on_show_options_rf_gain();
     void on_show_options_modulation();
+    void on_focus_changed(Focus focus);
     void on_frequency_step_changed(rf::Frequency f);
     void on_reference_ppm_correction_changed(int32_t v);
 
