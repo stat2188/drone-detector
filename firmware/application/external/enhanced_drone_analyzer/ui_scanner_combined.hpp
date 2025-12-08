@@ -79,6 +79,14 @@ static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
 // Constants moved to ui_drone_common_types.hpp to avoid duplicates
 static constexpr uint8_t MIN_DETECTION_COUNT = 3;
 static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
+// Undefine macros from ui_looking_glass_app.hpp to avoid conflicts
+#undef LOOKING_GLASS_SINGLEPASS
+#undef LOOKING_GLASS_FASTSCAN
+#undef LOOKING_GLASS_SLOWSCAN
+#undef SPEC_NB_BINS
+#undef LOOKING_GLASS_SLICE_WIDTH_MAX
+#undef LOOKING_GLASS_MAX_SAMPLERATE
+#undef MHZ_DIV
 static constexpr int LOOKING_GLASS_SINGLEPASS = 0;
 static constexpr int LOOKING_GLASS_FASTSCAN = 1;
 static constexpr int LOOKING_GLASS_SLOWSCAN = 2;
@@ -866,7 +874,6 @@ private:
     void select_spectrum_mode(SpectrumMode mode);
     void on_spectrum_range_config();
     void on_add_preset_quick();
-    void on_hardware_control();
     void show_current_bandwidth();
     void show_current_center_freq();
     void on_set_bandwidth_config();
@@ -879,14 +886,12 @@ private:
     void set_spectrum_mode(SpectrumMode mode);
 
     // Simplified UI methods using basic widgets only
-    void on_audio_settings();
     void on_spectrum_mode();
 
     // Hardware control methods
     void on_set_bandwidth();
     void on_set_center_freq();
     void show_hardware_status();
-    void on_view_logs();
 };
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
