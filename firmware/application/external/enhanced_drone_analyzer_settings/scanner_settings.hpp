@@ -5,6 +5,8 @@
 #include <sstream>
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
+#include <cctype>
 #include "file.hpp"
 #include "ui_drone_common_types.hpp"
 
@@ -19,9 +21,10 @@ namespace ScannerSettingsManager {
 
     // Function declarations
     inline void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
-    inline ::SpectrumMode parse_spectrum_mode(const std::string& value);
+    inline ::SpectrumMode parse_spectrum_mode(const char* value);
     inline std::string trim_line(const std::string& line);
-    inline bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line);
+    inline char* trim_in_place(char* str);
+    inline bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, char* line_buffer);
     inline bool parse_settings_content(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& content);
     inline bool load_from_txt_impl(const std::string& filepath, ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
 
@@ -43,32 +46,67 @@ namespace ScannerSettingsManager {
         while (std::getline(iss, line)) {
             auto trimmed_line = trim_line(line);
             if (trimmed_line.empty() || trimmed_line[0] == '#') continue;
-            if (parse_key_value(settings, trimmed_line)) parsed_count++;
+            char line_buffer[256];
+            strncpy(line_buffer, trimmed_line.c_str(), sizeof(line_buffer) - 1);
+            line_buffer[sizeof(line_buffer) - 1] = 0; // Гарантируем null-terminator
+            if (parse_key_value(settings, line_buffer)) parsed_count++;
         }
         return parsed_count > 3;
     }
 
-    inline bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, const std::string& line) {
-        size_t equals_pos = line.find('=');
-        if (equals_pos == std::string::npos) return false;
-        std::string key = trim_line(line.substr(0, equals_pos));
-        std::string value = trim_line(line.substr(equals_pos + 1));
+    inline bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, char* line_buffer) {
+        char* equals_ptr = strchr(line_buffer, '=');
+        if (!equals_ptr) return false;
 
-        if (key == "spectrum_mode") {
+        *equals_ptr = 0;
+        char* key = trim_in_place(line_buffer);
+        char* value = trim_in_place(equals_ptr + 1);
+
+        if (strcmp(key, "spectrum_mode") == 0) {
             settings.spectrum_mode = parse_spectrum_mode(value);
             return true;
-        } else if (key == "scan_interval_ms") {
+        }
+        else if (strcmp(key, "scan_interval_ms") == 0) {
+            // ИСПРАВЛЕНИЕ: Используем общую константу MAX_SCAN_INTERVAL_MS (10000)
             settings.scan_interval_ms = validate_range<uint32_t>(
-                static_cast<uint32_t>(std::stoul(value)), 100U, 5000U);
-            return true;
-        } else if (key == "rssi_threshold_db") {
-            settings.rssi_threshold_db = validate_range<int32_t>(std::stoi(value), -120, -30);
-            return true;
-        } else if (key == "enable_audio_alerts") {
-            settings.enable_audio_alerts = (value == "true");
+                static_cast<uint32_t>(strtoul(value, nullptr, 10)),
+                MIN_SCAN_INTERVAL_MS, MAX_SCAN_INTERVAL_MS);
             return true;
         }
-        // Additional fields can be added here
+        else if (strcmp(key, "rssi_threshold_db") == 0) {
+            settings.rssi_threshold_db = validate_range<int32_t>(strtol(value, nullptr, 10), -120, -30);
+            return true;
+        }
+        else if (strcmp(key, "enable_audio_alerts") == 0) {
+            settings.enable_audio_alerts = (strcmp(value, "true") == 0);
+            return true;
+        }
+        // --- НОВЫЕ БЛОКИ ---
+        else if (strcmp(key, "audio_alert_frequency_hz") == 0) {
+            settings.audio_alert_frequency_hz = validate_range<uint16_t>(
+                static_cast<uint16_t>(strtoul(value, nullptr, 10)), MIN_AUDIO_FREQ, MAX_AUDIO_FREQ);
+            return true;
+        }
+        else if (strcmp(key, "audio_alert_duration_ms") == 0) {
+            settings.audio_alert_duration_ms = validate_range<uint32_t>(
+                static_cast<uint32_t>(strtoul(value, nullptr, 10)), MIN_AUDIO_DURATION, MAX_AUDIO_DURATION);
+            return true;
+        }
+        else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
+            settings.hardware_bandwidth_hz = strtoul(value, nullptr, 10);
+            return true;
+        }
+        else if (strcmp(key, "enable_real_hardware") == 0) {
+            settings.enable_real_hardware = (strcmp(value, "true") == 0);
+            settings.demo_mode = !settings.enable_real_hardware; // Синхронизация флагов
+            return true;
+        }
+        else if (strcmp(key, "freqman_path") == 0) {
+            settings.freqman_path = value; // Присвоение char* в std::string работает автоматически
+            return true;
+        }
+        // -------------------
+
         return false;
     }
 
@@ -86,11 +124,12 @@ namespace ScannerSettingsManager {
         settings.freqman_path = "DRONES";
     }
 
-    inline ::SpectrumMode parse_spectrum_mode(const std::string& value) {
-        if (value == "NARROW") return ::SpectrumMode::NARROW;
-        if (value == "MEDIUM") return ::SpectrumMode::MEDIUM;
-        if (value == "WIDE") return ::SpectrumMode::WIDE;
-        if (value == "ULTRA_WIDE") return ::SpectrumMode::ULTRA_WIDE;
+    inline ::SpectrumMode parse_spectrum_mode(const char* value) {
+        if (strcmp(value, "NARROW") == 0) return ::SpectrumMode::NARROW;
+        if (strcmp(value, "MEDIUM") == 0) return ::SpectrumMode::MEDIUM;
+        if (strcmp(value, "WIDE") == 0) return ::SpectrumMode::WIDE;
+        if (strcmp(value, "ULTRA_WIDE") == 0) return ::SpectrumMode::ULTRA_WIDE;
+        if (strcmp(value, "ULTRA_NARROW") == 0) return ::SpectrumMode::ULTRA_NARROW;
         return ::SpectrumMode::MEDIUM;
     }
 
@@ -98,6 +137,16 @@ namespace ScannerSettingsManager {
         auto start = std::find_if_not(line.begin(), line.end(), ::isspace);
         auto end = std::find_if_not(line.rbegin(), line.rend(), ::isspace).base();
         return (start < end) ? std::string(start, end) : std::string();
+    }
+
+    inline char* trim_in_place(char* str) {
+        if (!str) return str;
+        while (*str && isspace((unsigned char)*str)) str++;
+        if (*str == 0) return str;
+        char* end = str + strlen(str) - 1;
+        while (end > str && isspace((unsigned char)*end)) end--;
+        *(end + 1) = '\0';
+        return str;
     }
 
     template<typename T>

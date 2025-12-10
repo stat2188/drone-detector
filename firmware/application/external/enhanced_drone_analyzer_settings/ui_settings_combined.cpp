@@ -132,8 +132,29 @@ private:
      */
     static void restore_from_backup(const std::string& filepath) {
         const std::string backup_path = filepath + ".bak";
-        // Simple rename operation (would need OS-level support)
-        // For now, backup remains if restore fails
+
+        // Пытаемся открыть бэкап на чтение
+        File backup_file;
+        if (!backup_file.open(backup_path, true)) return; // Бэкапа нет, выходим
+
+        // Пытаемся открыть оригинал на запись (создаст новый или перезапишет битый)
+        File original_file;
+        if (!original_file.open(filepath, false)) {
+            backup_file.close();
+            return;
+        }
+
+        // Копируем данные блоками
+        std::vector<uint8_t> buffer(512);
+        while (true) {
+            auto read_res = backup_file.read(buffer.data(), buffer.size());
+            if (read_res.is_error() || read_res.value() == 0) break;
+
+            original_file.write(buffer.data(), read_res.value());
+        }
+
+        backup_file.close();
+        original_file.close();
     }
 
     /**

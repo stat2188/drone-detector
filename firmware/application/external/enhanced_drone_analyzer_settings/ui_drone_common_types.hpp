@@ -133,4 +133,12 @@ inline const char* Translator::get_translation(const std::string& key) {
     return key.c_str();
 }
 
+// Константы валидации
+static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
+static constexpr uint32_t MAX_SCAN_INTERVAL_MS = 10000; // Было расхождение 5000 vs 10000
+static constexpr uint16_t MIN_AUDIO_FREQ = 200;
+static constexpr uint16_t MAX_AUDIO_FREQ = 4000;
+static constexpr uint32_t MIN_AUDIO_DURATION = 50;
+static constexpr uint32_t MAX_AUDIO_DURATION = 5000;
+
 #endif // __UI_DRONE_COMMON_TYPES_HPP__
