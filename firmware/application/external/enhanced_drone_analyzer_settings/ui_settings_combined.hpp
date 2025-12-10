@@ -398,6 +398,7 @@ private:
     Button button_advanced_settings_{{136, 72, 120, 32}, "Advanced Settings", false};
 
     Button button_load_defaults_{{8, 112, 120, 32}, "Load Defaults", false};
+    Button button_about_author_{{136, 112, 120, 32}, "About Author", false};
     Button button_manage_db_{{8, 152, 224, 32}, "Manage Frequency DB", false};
 
     Text text_title_{{8, 8, screen_width - 16, 16}, "Enhanced Drone Analyzer Settings"};
@@ -412,6 +413,7 @@ private:
     void show_hardware_settings();
     void show_scanning_settings();
     void show_advanced_settings();
+    void show_about_author();
     void load_default_settings();
 
     DroneAnalyzerSettings current_settings_;

@@ -976,6 +976,7 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav)
         &button_scanning_settings_,
         &button_advanced_settings_,
         &button_load_defaults_,
+        &button_about_author_,
         &button_manage_db_
     });
 
@@ -998,6 +999,10 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav)
 
     button_load_defaults_.on_select = [this](Button&) {
         load_default_settings();
+    };
+
+    button_about_author_.on_select = [this](Button&) {
+        show_about_author();
     };
 
     button_manage_db_.on_select = [this](Button&) {
@@ -1061,6 +1066,30 @@ void DroneAnalyzerSettingsView::load_default_settings() {
     DroneAnalyzerSettingsManager::reset_to_defaults(current_settings_);
     DroneAnalyzerSettingsManager::save(current_settings_);
     nav_.display_modal("Reset", "Settings reset to\ndefaults");
+}
+
+void DroneAnalyzerSettingsView::show_about_author() {
+    std::string message;
+    message += "About the Author\n";
+    message += "================\n\n";
+    message += "Application developed for\n";
+    message += "civilian population safety.\n\n";
+    message += "Author: Kuznetsov Maxim Sergeevich\n";
+    message += "Locksmith at Gazprom Gazoraspredeleniye\n";
+    message += "Orenburg branch\n\n";
+    message += "Development completed in October 2025\n";
+    message += "on voluntary and altruistic principles\n";
+    message += "by one person.\n\n";
+    message += "Greetings to everyone who risks\n";
+    message += "their lives for the safety of others.\n\n";
+    message += "Support the author:\n";
+    message += "Card: 2202 20202 5787 1695\n";
+    message += "YooMoney: 41001810704697\n";
+    message += "TON: UQCdtMxQB5zbQBOICkY90lTQQqcs8V-V28Bf2AGvl8xOc5HR\n\n";
+    message += "Contact:\n";
+    message += "Telegram: @max_ai_master";
+
+    nav_.display_modal("About Author", message);
 }
 
 // ===========================================
