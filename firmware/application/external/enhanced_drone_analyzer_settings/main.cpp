@@ -13,6 +13,9 @@
 
 namespace ui::external_app::enhanced_drone_analyzer_settings {
 void initialize_app(ui::NavigationView& nav) {
+    // Ensure default drone database exists on SD card at startup
+    ui::external_app::enhanced_drone_analyzer::EnhancedSettingsManager::ensure_database_exists();
+
     nav.push<ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettingsView>();
 }
 }  // namespace ui::external_app::enhanced_drone_analyzer_settings

@@ -121,7 +121,7 @@ namespace ScannerSettingsManager {
         settings.hardware_bandwidth_hz = 24000000;
         settings.enable_real_hardware = true;
         settings.demo_mode = false;
-        settings.freqman_path = "DRONES";
+        settings.freqman_path = "DRONES.TXT";
     }
 
     inline ::SpectrumMode parse_spectrum_mode(const char* value) {

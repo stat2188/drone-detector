@@ -29,12 +29,78 @@ using Frequency = uint64_t;
 #include "ui_navigation.hpp"
 #include "ui_tabview.hpp"
 #include "app_settings.hpp"
+#include "ui_freq_field.hpp"  // For FrequencyField
 
 // ===========================================
 // PART 2: CONFIGURATION STRUCTURES (from ui_drone_config.hpp)
 // ===========================================
 
 namespace ui::external_app::enhanced_drone_analyzer {
+
+/**
+ * PHASE 7: ENHANCED SETTINGS MANAGER WITH TXT FILE COMMUNICATION
+ * Uses file.hpp API for robust SD card communication with scanner module
+ */
+class EnhancedSettingsManager {
+public:
+    /**
+     * Ensures that the default drone frequency database exists on the SD card.
+     * If not, it creates it from the embedded list.
+     */
+    static void ensure_database_exists();
+
+    /**
+     * Save settings to TXT file at /sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt
+     * Returns true on successful save, false on error
+     */
+    static bool save_settings_to_txt(const DroneAnalyzerSettings& settings);
+
+    /**
+     * Verify TXT file exists and is readable by scanner module
+     */
+    static bool verify_comm_file_exists();
+
+    /**
+     * Get status string for communication testing
+     */
+    static std::string get_communication_status();
+
+private:
+    /**
+     * Create backup of existing file for atomic writes
+     */
+    static void create_backup_file(const std::string& filepath);
+
+    /**
+     * Restore from backup file on write error
+     */
+    static void restore_from_backup(const std::string& filepath);
+
+    /**
+     * Remove backup file after successful write
+     */
+    static void remove_backup_file(const std::string& filepath);
+
+    /**
+     * Generate standardized file header with timestamp
+     */
+    static std::string generate_file_header();
+
+    /**
+     * Generate complete settings content in key=value format
+     */
+    static std::string generate_settings_content(const DroneAnalyzerSettings& settings);
+
+    /**
+     * Convert spectrum mode enum to string
+     */
+    static std::string spectrum_mode_to_string(SpectrumMode mode);
+
+    /**
+     * Get current timestamp as formatted string
+     */
+    static std::string get_current_timestamp();
+};
 
 enum class Language {
     ENGLISH,
@@ -151,6 +217,22 @@ struct DroneFrequencyEntry {
 };
 
 using DroneFrequencyDatabase = ::std::vector<DroneFrequencyEntry>;
+
+// Структура одной записи
+struct DroneDbEntry {
+    Frequency freq;
+    std::string description;
+};
+
+// Класс менеджера
+class DroneDatabaseManager {
+public:
+    // Читает файл в вектор
+    static std::vector<DroneDbEntry> load_database(const std::string& file_path = "/FREQMAN/DRONES.TXT");
+
+    // Сохраняет вектор обратно в файл
+    static bool save_database(const std::vector<DroneDbEntry>& entries, const std::string& file_path = "/FREQMAN/DRONES.TXT");
+};
 
 // ===========================================
 // PART 3: SETTINGS UI CLASSES (from ui_drone_settings_complete.hpp)
@@ -316,6 +398,7 @@ private:
     Button button_advanced_settings_{{136, 72, 120, 32}, "Advanced Settings", false};
 
     Button button_load_defaults_{{8, 112, 120, 32}, "Load Defaults", false};
+    Button button_manage_db_{{8, 152, 224, 32}, "Manage Frequency DB", false};
 
     Text text_title_{{8, 8, screen_width - 16, 16}, "Enhanced Drone Analyzer Settings"};
 
@@ -385,6 +468,52 @@ private:
     Text loading_text_2_;
     systime_t start_time_ = 0;
     static constexpr uint32_t MIN_LOADING_TIME_MS = 500;
+};
+
+class DroneEntryEditorView : public View {
+public:
+    // Callback возвращает измененную/новую запись. Если freq=0, значит отмена/удаление.
+    using OnSaveCallback = std::function<void(const DroneDbEntry&)>;
+
+    DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, OnSaveCallback callback);
+
+    void focus() override;
+    std::string title() const override { return "Edit Frequency"; }
+
+private:
+    NavigationView& nav_;
+    DroneDbEntry entry_;
+    OnSaveCallback on_save_;
+
+    Text text_freq_{{8, 16, 64, 16}, "Freq:"};
+    FrequencyField field_freq_{{8, 32}}; // Поле частоты
+
+    Text text_desc_{{8, 64, 64, 16}, "Name:"};
+    TextEdit field_desc_{entry_.description, 30, {8, 80}, 28}; // Текстовое поле (вызовет клавиатуру)
+
+    Button button_save_{{8, 128, 100, 32}, "SAVE"};
+    Button button_cancel_{{128, 128, 100, 32}, "CANCEL"};
+
+    void on_save();
+    void on_cancel();
+};
+
+class DroneDatabaseListView : public View {
+public:
+    DroneDatabaseListView(NavigationView& nav);
+    void focus() override;
+    std::string title() const override { return "Manage Database"; }
+
+private:
+    NavigationView& nav_;
+    std::vector<DroneDbEntry> entries_;
+    MenuView menu_view_{{0, 0, 240, 168}}; // Список на весь экран
+
+    void reload_list();
+    void on_entry_selected(size_t index);
+    void save_changes();
+
+    bool on_key(const KeyEvent key) override;
 };
 
 } // namespace ui::external_app::enhanced_drone_analyzer

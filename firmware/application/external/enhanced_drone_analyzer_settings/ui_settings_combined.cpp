@@ -3,12 +3,16 @@
 // Combines implementations from Settings UI classes and manager classes
 
 #include "ui_settings_combined.hpp"
+#include "default_drones_db.hpp"
 #include "file.hpp"          // Portapack file I/O for SD card access
 #include "portapack.hpp"    // Portapack hardware access for navigation
+#include "string_format.hpp" // For frequency formatting
 #include <algorithm>        // For std::find_if_not in trim operations
 #include <sstream>          // For stringstream parsing
 #include <vector>           // For container operations
 #include <memory>           // For unique_ptr management
+#include <cstring>          // For strlen
+#include <cstdlib>          // For strtoull
 
 // Use ScannerSettingsManager for loading settings from TXT
 using ScannerSettingsManager::load_settings_from_txt;
@@ -89,6 +93,32 @@ public:
             return "✓ TXT file found\n✓ Communication ready";
         } else {
             return "✗ No TXT file found\n✗ Save settings first";
+        }
+    }
+
+    /**
+     * Ensures that the default drone frequency database exists on the SD card.
+     * If not, it creates it from the embedded list.
+     */
+    static void ensure_database_exists() {
+        // Путь к файлу. Обычно базы лежат в /FREQMAN/
+        // Мы используем специфичное имя для дронов
+        const std::string file_path = "/FREQMAN/DRONES.TXT";
+
+        // 2. Проверяем, существует ли файл
+        File check_file;
+        if (check_file.open(file_path, true)) {
+            // Файл существует и читается. Ничего делать не нужно.
+            check_file.close();
+            return;
+        }
+
+        // 3. Файла нет. Создаем и пишем дефолтные данные.
+        File create_file;
+        if (create_file.open(file_path, false)) { // false = write/create
+            // Пишем данные из header файла
+            create_file.write(DEFAULT_DRONE_DATABASE_CONTENT, strlen(DEFAULT_DRONE_DATABASE_CONTENT));
+            create_file.close();
         }
     }
 
@@ -285,7 +315,7 @@ void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& sett
     settings.show_detailed_info = true;
     settings.auto_save_logs = true;
     settings.log_file_path = "/eda_logs";
-    settings.freqman_path = "DRONES";
+    settings.freqman_path = "DRONES.TXT";
     settings.settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     settings.hardware_bandwidth_hz = 24000000;
     settings.enable_real_hardware = true;
@@ -668,6 +698,7 @@ bool DroneFrequencyEntry::is_valid() const {
 // ===========================================
 
 #include "ui_widget.hpp"
+#include "ui_menu.hpp"
 #include "app_settings.hpp"
 
 // HardwareSettingsView Implementation
@@ -944,7 +975,8 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav)
         &button_hardware_settings_,
         &button_scanning_settings_,
         &button_advanced_settings_,
-        &button_load_defaults_
+        &button_load_defaults_,
+        &button_manage_db_
     });
 
     // Настройка обработчиков кнопок
@@ -967,6 +999,13 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav)
     button_load_defaults_.on_select = [this](Button&) {
         load_default_settings();
     };
+
+    button_manage_db_.on_select = [this](Button&) {
+        nav_.push<DroneDatabaseListView>();
+    };
+
+    // --- ДОБАВЛЕНО: Проверка и создание базы частот ---
+    EnhancedSettingsManager::ensure_database_exists();
 
     // Загружаем текущие настройки при старте
     DroneAnalyzerSettingsManager::load(current_settings_);
@@ -1022,6 +1061,192 @@ void DroneAnalyzerSettingsView::load_default_settings() {
     DroneAnalyzerSettingsManager::reset_to_defaults(current_settings_);
     DroneAnalyzerSettingsManager::save(current_settings_);
     nav_.display_modal("Reset", "Settings reset to\ndefaults");
+}
+
+// ===========================================
+// PART 4: DRONE DATABASE MANAGER IMPLEMENTATION
+// ===========================================
+
+std::vector<DroneDbEntry> DroneDatabaseManager::load_database(const std::string& file_path) {
+    std::vector<DroneDbEntry> entries;
+    File file;
+    if (!file.open(file_path, true)) return entries; // Ошибка или файла нет
+
+    std::string content;
+    content.resize(file.size());
+    file.read(content.data(), file.size());
+    file.close();
+
+    std::stringstream ss(content);
+    std::string line;
+
+    while (std::getline(ss, line)) {
+        if (line.empty() || line[0] == '#') continue; // Пропуск комментариев
+
+        size_t comma_pos = line.find(',');
+        if (comma_pos != std::string::npos) {
+            std::string freq_str = line.substr(0, comma_pos);
+            std::string desc_str = line.substr(comma_pos + 1);
+
+            // Очистка от \r если есть
+            if (!desc_str.empty() && desc_str.back() == '\r') desc_str.pop_back();
+
+            DroneDbEntry entry;
+            entry.freq = std::strtoull(freq_str.c_str(), nullptr, 10);
+            entry.description = desc_str;
+            entries.push_back(entry);
+        }
+    }
+    return entries;
+}
+
+bool DroneDatabaseManager::save_database(const std::vector<DroneDbEntry>& entries, const std::string& file_path) {
+    std::stringstream ss;
+    // Заголовок
+    ss << "# EDA User Database\n# Format: Freq, Desc\n";
+
+    for (const auto& entry : entries) {
+        ss << entry.freq << "," << entry.description << "\n";
+    }
+
+    std::string content = ss.str();
+
+    // Перезапись файла
+    File file;
+    if (!file.open(file_path, false)) return false; // Ошибка создания
+
+    file.write(content.data(), content.size());
+    file.close();
+    return true;
+}
+
+// ===========================================
+// PART 5: DRONE ENTRY EDITOR VIEW IMPLEMENTATION
+// ===========================================
+
+DroneEntryEditorView::DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, OnSaveCallback callback)
+    : View(), nav_(nav), entry_(entry), on_save_(callback)
+{
+    add_children({
+        &text_freq_,
+        &field_freq_,
+        &text_desc_,
+        &field_desc_,
+        &button_save_,
+        &button_cancel_
+    });
+
+    // Initialize fields with entry data
+    field_freq_.set_value(entry_.freq);
+    // field_desc_ is already bound to entry_.description
+
+    // Set up button handlers
+    button_save_.on_select = [this](Button&) {
+        on_save();
+    };
+
+    button_cancel_.on_select = [this](Button&) {
+        on_cancel();
+    };
+}
+
+void DroneEntryEditorView::focus() {
+    field_freq_.focus();
+}
+
+void DroneEntryEditorView::on_save() {
+    // Create new entry from field values
+    DroneDbEntry new_entry;
+    new_entry.freq = field_freq_.value();
+    new_entry.description = entry_.description; // TextEdit modifies this directly
+
+    // Call callback with new entry
+    if (on_save_) {
+        on_save_(new_entry);
+    }
+
+    // Close the view
+    nav_.pop();
+}
+
+void DroneEntryEditorView::on_cancel() {
+    // Call callback with freq=0 to indicate cancel/delete
+    if (on_save_) {
+        DroneDbEntry cancel_entry{0, ""};
+        on_save_(cancel_entry);
+    }
+
+    // Close the view
+    nav_.pop();
+}
+
+// ===========================================
+// PART 6: DRONE DATABASE LIST VIEW IMPLEMENTATION
+// ===========================================
+
+DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav)
+    : View(), nav_(nav)
+{
+    add_children({&menu_view_});
+
+    entries_ = DroneDatabaseManager::load_database();
+
+    reload_list();
+}
+
+void DroneDatabaseListView::focus() {
+    menu_view_.focus();
+}
+
+void DroneDatabaseListView::reload_list() {
+    menu_view_.clear();
+
+    // Add "ADD NEW FREQUENCY" item
+    menu_view_.add_item({"[ + ADD NEW FREQUENCY ]", Color::white(), nullptr, nullptr});
+
+    // Add existing entries
+    for (const auto& entry : entries_) {
+        std::string freq_str = to_string_short_freq(entry.freq);
+        std::string text = freq_str + ": " + entry.description;
+        menu_view_.add_item({text, Color::white(), nullptr, nullptr});
+    }
+}
+
+void DroneDatabaseListView::on_entry_selected(size_t index) {
+    if (index == 0) {
+        // Add new frequency
+        DroneDbEntry empty_entry{0, ""};
+        nav_.push<DroneEntryEditorView>(empty_entry, [this](const DroneDbEntry& entry) {
+            if (entry.freq != 0) {
+                entries_.push_back(entry);
+                save_changes();
+                reload_list();
+            }
+        });
+    } else {
+        // Edit existing entry
+        size_t entry_index = index - 1;
+        nav_.push<DroneEntryEditorView>(entries_[entry_index], [this, entry_index](const DroneDbEntry& entry) {
+            if (entry.freq != 0) {
+                entries_[entry_index] = entry;
+                save_changes();
+                reload_list();
+            }
+        });
+    }
+}
+
+void DroneDatabaseListView::save_changes() {
+    DroneDatabaseManager::save_database(entries_);
+}
+
+bool DroneDatabaseListView::on_key(const KeyEvent key) {
+    if (key == KeyEvent::Select) {
+        size_t index = menu_view_.highlighted_index();
+        on_entry_selected(index);
+        return true;
+    }
+    return View::on_key(key);
 }
 
 } // namespace ui::external_app::enhanced_drone_analyzer
