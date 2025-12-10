@@ -235,12 +235,24 @@ bool DroneScanner::load_frequency_database() {
         return false;
     }
 
-    drone_database_.clear();
-    for (const auto& entry_ptr : temp_db) {
-        if (entry_ptr) {
-            drone_database_.push_back(std::make_unique<freqman_entry>(*entry_ptr));
+    // Блок критической секции
+    {
+        MutexLock lock(data_mutex); // Захват мьютекса
+
+        drone_database_.clear();
+        for (const auto& entry_ptr : temp_db) {
+            if (entry_ptr) {
+                drone_database_.push_back(std::make_unique<freqman_entry>(*entry_ptr));
+            }
         }
+    } // Мьютекс освобождается здесь автоматически
+
+    // ИСПРАВЛЕНИЕ УТЕЧКИ:
+    // Удаляем оригинальные объекты, созданные load_freqman_file
+    for (auto& entry : temp_db) {
+        delete entry.release();
     }
+    temp_db.clear();
 
     if (drone_database_.size() > 100) {
         handle_scan_error("Large database loaded");
@@ -291,7 +303,12 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    if (drone_database_.size() == 0) {
+    // 1. ЗАХВАТ МЬЮТЕКСА
+    // Используем data_mutex, который уже объявлен в классе
+    MutexLock lock(data_mutex);
+
+    // Теперь безопасно проверяем размер и читаем данные
+    if (drone_database_.empty()) {
         if (scan_cycles_ % 50 == 0) {
             handle_scan_error("No frequency database loaded");
             scanning_active_ = false;

@@ -1070,7 +1070,7 @@ void DroneAnalyzerSettingsView::load_default_settings() {
 std::vector<DroneDbEntry> DroneDatabaseManager::load_database(const std::string& file_path) {
     std::vector<DroneDbEntry> entries;
     File file;
-    if (!file.open(file_path, true)) return entries; // Ошибка или файла нет
+    if (!file.open(file_path, true)) return entries;
 
     std::string content;
     content.resize(file.size());
@@ -1081,19 +1081,39 @@ std::vector<DroneDbEntry> DroneDatabaseManager::load_database(const std::string&
     std::string line;
 
     while (std::getline(ss, line)) {
-        if (line.empty() || line[0] == '#') continue; // Пропуск комментариев
+        // Тримминг строки (удаление \r)
+        if (!line.empty() && line.back() == '\r') line.pop_back();
 
-        size_t comma_pos = line.find(',');
-        if (comma_pos != std::string::npos) {
-            std::string freq_str = line.substr(0, comma_pos);
-            std::string desc_str = line.substr(comma_pos + 1);
+        if (line.empty() || line[0] == '#') continue;
 
-            // Очистка от \r если есть
-            if (!desc_str.empty() && desc_str.back() == '\r') desc_str.pop_back();
+        std::vector<std::string> tokens;
+        std::stringstream line_ss(line);
+        std::string token;
 
-            DroneDbEntry entry;
-            entry.freq = std::strtoull(freq_str.c_str(), nullptr, 10);
-            entry.description = desc_str;
+        // Разбиваем строку по запятым
+        while (std::getline(line_ss, token, ',')) {
+            tokens.push_back(token);
+        }
+
+        DroneDbEntry entry;
+        entry.freq = 0;
+
+        if (tokens.size() >= 3) {
+            // Формат диапазона: StartFreq, EndFreq, Description
+            // Редактор пока не умеет редактировать диапазоны, берем начало
+            entry.freq = std::strtoull(tokens[0].c_str(), nullptr, 10);
+
+            // Собираем описание (оно может само содержать запятые, но в простом случае это tokens[2])
+            // Для надежности склеиваем все, что после второй запятой, но пока берем просто tokens[2]
+            entry.description = tokens[2] + " (R)"; // Помечаем, что это был диапазон
+        }
+        else if (tokens.size() >= 2) {
+            // Формат одиночный: Freq, Description
+            entry.freq = std::strtoull(tokens[0].c_str(), nullptr, 10);
+            entry.description = tokens[1];
+        }
+
+        if (entry.freq > 0) {
             entries.push_back(entry);
         }
     }
@@ -1102,18 +1122,30 @@ std::vector<DroneDbEntry> DroneDatabaseManager::load_database(const std::string&
 
 bool DroneDatabaseManager::save_database(const std::vector<DroneDbEntry>& entries, const std::string& file_path) {
     std::stringstream ss;
-    // Заголовок
-    ss << "# EDA User Database\n# Format: Freq, Desc\n";
+    // Обязательно восстанавливаем заголовок, чтобы Frequency Manager понимал формат
+    ss << "frequency_a,frequency_b,description\n";
+    // или стандартный freqman header, если нужно совместимость, но часто достаточно просто списка
+    // Для совместимости с load_freqman_file лучше не писать заголовок, если он не обрабатывается,
+    // но лучше оставить комментарии.
+    ss << "# EDA User Database\n";
+    ss << "# Format: Freq, Description (Ranges converted to Single)\n";
 
     for (const auto& entry : entries) {
-        ss << entry.freq << "," << entry.description << "\n";
+        if (entry.freq == 0) continue;
+
+        // Санитизация описания: удаляем запятые и переносы строк, чтобы не сломать CSV
+        std::string safe_desc = entry.description;
+        std::replace(safe_desc.begin(), safe_desc.end(), ',', ' ');
+        std::replace(safe_desc.begin(), safe_desc.end(), '\n', ' ');
+        std::replace(safe_desc.begin(), safe_desc.end(), '\r', ' ');
+
+        ss << entry.freq << "," << safe_desc << "\n";
     }
 
     std::string content = ss.str();
 
-    // Перезапись файла
     File file;
-    if (!file.open(file_path, false)) return false; // Ошибка создания
+    if (!file.open(file_path, false)) return false; // false = write/create/truncate
 
     file.write(content.data(), content.size());
     file.close();
