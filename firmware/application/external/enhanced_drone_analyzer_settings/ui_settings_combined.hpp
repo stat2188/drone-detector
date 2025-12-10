@@ -316,7 +316,6 @@ private:
     Button button_advanced_settings_{{136, 72, 120, 32}, "Advanced Settings", false};
 
     Button button_load_defaults_{{8, 112, 120, 32}, "Load Defaults", false};
-    Button button_save_all_{{136, 112, 120, 32}, "Save All Settings", false};
 
     Text text_title_{{8, 8, screen_width - 16, 16}, "Enhanced Drone Analyzer Settings"};
 
@@ -325,14 +324,12 @@ private:
     void on_button_scanning_settings();
     void on_button_advanced_settings();
     void on_button_load_defaults();
-    void on_button_save_all();
 
     void show_audio_settings();
     void show_hardware_settings();
     void show_scanning_settings();
     void show_advanced_settings();
     void load_default_settings();
-    void save_all_settings();
 
     DroneAnalyzerSettings current_settings_;
     bool settings_modified_ = false;

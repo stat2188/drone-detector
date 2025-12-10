@@ -266,28 +266,8 @@ bool DroneAnalyzerSettingsManager::load(DroneAnalyzerSettings& settings) {
 }
 
 bool DroneAnalyzerSettingsManager::save(const DroneAnalyzerSettings& settings) {
-    // Implementation manual forming string, as ScannerSettingsManager
-    // in provided code has only load logic.
-
-    File file;
-    if (!file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt", false)) return false; // create/write
-
-    std::string content = "";
-    content += "spectrum_mode=";
-    switch(settings.spectrum_mode) {
-        case SpectrumMode::NARROW: content += "NARROW\n"; break;
-        case SpectrumMode::MEDIUM: content += "MEDIUM\n"; break;
-        case SpectrumMode::WIDE: content += "WIDE\n"; break;
-        case SpectrumMode::ULTRA_WIDE: content += "ULTRA_WIDE\n"; break;
-        default: content += "MEDIUM\n"; break;
-    }
-
-    content += "scan_interval_ms=" + std::to_string(settings.scan_interval_ms) + "\n";
-    content += "rssi_threshold_db=" + std::to_string(settings.rssi_threshold_db) + "\n";
-    content += "enable_audio_alerts=" + std::string(settings.enable_audio_alerts ? "true" : "false") + "\n";
-
-    file.write(content.data(), content.size());
-    return true;
+    // Используем мощный менеджер с бэкапами и полной сериализацией
+    return EnhancedSettingsManager::save_settings_to_txt(settings);
 }
 
 void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
@@ -697,7 +677,12 @@ HardwareSettingsView::HardwareSettingsView(NavigationView& nav)
     // Using proper PortaPack UI widgets
     add_children({
         &checkbox_real_hardware_,
-        &text_real_hardware_
+        &text_real_hardware_,
+        &field_spectrum_mode_,
+        &number_bandwidth_,
+        &number_min_freq_,
+        &number_max_freq_,
+        &button_save_
     });
 
     load_current_settings();
@@ -726,10 +711,15 @@ void HardwareSettingsView::load_current_settings() {
         case SpectrumMode::MEDIUM: mode_idx = 2; break;
         case SpectrumMode::WIDE: mode_idx = 3; break;
         case SpectrumMode::ULTRA_WIDE: mode_idx = 4; break;
+        default: mode_idx = 2; break;
     }
     field_spectrum_mode_.set_selected_index(mode_idx);
 
-    // Note: Hardware control not available in settings app, settings are passed to scanner
+    // --- ДОБАВЛЕНО: Привязка данных к новым полям ---
+    number_bandwidth_.set_value(settings.hardware_bandwidth_hz);
+    number_min_freq_.set_value(settings.min_frequency_hz);
+    number_max_freq_.set_value(settings.max_frequency_hz);
+    // ------------------------------------------------
 }
 
 void HardwareSettingsView::save_current_settings() {
@@ -747,6 +737,12 @@ void HardwareSettingsView::save_current_settings() {
         case 3: settings.spectrum_mode = SpectrumMode::WIDE; break;
         case 4: settings.spectrum_mode = SpectrumMode::ULTRA_WIDE; break;
     }
+
+    // --- ДОБАВЛЕНО: Сохранение значений из полей ---
+    settings.hardware_bandwidth_hz = number_bandwidth_.value();
+    settings.min_frequency_hz = number_min_freq_.value();
+    settings.max_frequency_hz = number_max_freq_.value();
+    // -----------------------------------------------
 
     DroneAnalyzerSettingsManager::save(settings);
 }
@@ -767,6 +763,16 @@ void HardwareSettingsView::on_save_settings() {
 AudioSettingsView::AudioSettingsView(NavigationView& nav)
     : View(), nav_(nav), audio_settings_{true, 800, 500, 50, false}
 {
+    add_children({
+        &checkbox_audio_enabled_,
+        &text_audio_enabled_,
+        &number_alert_frequency_,
+        &number_alert_duration_,
+        &number_volume_,
+        &checkbox_repeat_,
+        &text_repeat_,
+        &button_save_
+    });
 }
 
 void AudioSettingsView::focus() {
@@ -938,8 +944,7 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav)
         &button_hardware_settings_,
         &button_scanning_settings_,
         &button_advanced_settings_,
-        &button_load_defaults_,
-        &button_save_all_
+        &button_load_defaults_
     });
 
     // Настройка обработчиков кнопок
@@ -961,10 +966,6 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav)
 
     button_load_defaults_.on_select = [this](Button&) {
         load_default_settings();
-    };
-
-    button_save_all_.on_select = [this](Button&) {
-        save_all_settings();
     };
 
     // Загружаем текущие настройки при старте
@@ -1021,14 +1022,6 @@ void DroneAnalyzerSettingsView::load_default_settings() {
     DroneAnalyzerSettingsManager::reset_to_defaults(current_settings_);
     DroneAnalyzerSettingsManager::save(current_settings_);
     nav_.display_modal("Reset", "Settings reset to\ndefaults");
-}
-
-void DroneAnalyzerSettingsView::save_all_settings() {
-    if (DroneAnalyzerSettingsManager::save(current_settings_)) {
-         nav_.display_modal("Success", "All settings saved\nsuccessfully");
-    } else {
-         nav_.display_modal("Error", "Failed to save\nsettings file");
-    }
 }
 
 } // namespace ui::external_app::enhanced_drone_analyzer
