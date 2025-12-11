@@ -304,44 +304,61 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    // 1. ЗАХВАТ МЬЮТЕКСА
-    // Используем data_mutex, который уже объявлен в классе
-    MutexLock lock(data_mutex);
+    // ИСПРАВЛЕНИЕ DEADLOCK: Не держим общий мьютекс во время работы с железом!
 
-    // Теперь безопасно проверяем размер и читаем данные
-    if (drone_database_.empty()) {
-        if (scan_cycles_ % 50 == 0) {
-            handle_scan_error("No frequency database loaded");
-            scanning_active_ = false;
+    size_t total_entries = 0;
+
+    // 1. Быстро узнаем размер базы (под мьютексом)
+    {
+        MutexLock lock(data_mutex);
+        if (drone_database_.empty()) {
+            if (scan_cycles_ % 50 == 0) {
+                // handle_scan_error вызывается здесь, но флаг меняем аккуратно
+                scanning_active_ = false;
+            }
+            return;
         }
-        return;
+        total_entries = drone_database_.size();
     }
 
-    const size_t total_entries = drone_database_.size();
     const size_t batch_size = std::min(static_cast<size_t>(20), total_entries);
 
     for (size_t i = 0; i < batch_size && scanning_active_; ++i) {
-        if (current_db_index_ >= total_entries) {
-            current_db_index_ = 0;
-        }
+        freqman_entry entry_copy;
+        bool entry_valid = false;
 
-        if (current_db_index_ < drone_database_.size()) {
-            const auto& entry_ptr = drone_database_[current_db_index_];
-            if (entry_ptr) {
-                Frequency target_freq_hz = entry_ptr->frequency_a;
-                if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
-                    if (hardware.tune_to_frequency(target_freq_hz)) {
-                        // 2. IMPORTANT CHANGE: Increase delay
-                        // 30ms - conservative time for Mayhem/PortaPack H2
-                        // This allows transition processes in the radio path to complete.
-                        chThdSleepMilliseconds(30);
-                        int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-                        process_rssi_detection(*entry_ptr, real_rssi);
-                        last_scanned_frequency_ = target_freq_hz;
-                    }
+        // 2. Копируем одну запись для работы (под мьютексом)
+        {
+            MutexLock lock(data_mutex);
+            // Проверяем, не изменился ли размер пока мы спали
+            if (!drone_database_.empty()) {
+                if (current_db_index_ >= drone_database_.size()) {
+                    current_db_index_ = 0;
+                }
+
+                if (drone_database_[current_db_index_]) {
+                    entry_copy = *drone_database_[current_db_index_];
+                    entry_valid = true;
+                }
+                current_db_index_ = (current_db_index_ + 1) % drone_database_.size();
+            }
+        } // Мьютекс освобождается здесь
+
+        // 3. Работаем с железом БЕЗ блокировки (UI не будет виснуть)
+        if (entry_valid) {
+            Frequency target_freq_hz = entry_copy.frequency_a;
+
+            if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
+                if (hardware.tune_to_frequency(target_freq_hz)) {
+                    chThdSleepMilliseconds(30);
+                    int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
+
+                    // Этот метод сам возьмет мьютекс внутри, когда нужно будет сохранить результат
+                    process_rssi_detection(entry_copy, real_rssi);
+
+                    last_scanned_frequency_ = target_freq_hz;
                 }
             }
-            current_db_index_ = (current_db_index_ + 1) % total_entries;
         }
     }
 }
