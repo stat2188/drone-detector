@@ -65,6 +65,7 @@ def validate_memory_regions(regions):
     special_sizes = {
         'enhanced_drone_analyzer': 56 * 1024,  # 56k
         'enhanced_drone_analyzer_settings': 10 * 1024,  # 10k
+        'battleship': 2 * 1024,  # 2k
     }
     issues_found = False
     
