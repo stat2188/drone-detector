@@ -66,10 +66,10 @@ set(EXTCPPSRC
 	external/extsensors/ui_extsensors.cpp
 	external/extsensors/ui_extsensors.hpp
 
-	#foxhunt 0
-	external/foxhunt/main.cpp
-	external/foxhunt/ui_foxhunt_rx.cpp
-	external/foxhunt/ui_foxhunt_rx.hpp
+	##foxhunt 0 - commented out
+	#external/foxhunt/main.cpp
+	#external/foxhunt/ui_foxhunt_rx.cpp
+	#external/foxhunt/ui_foxhunt_rx.hpp
 
 	#audio_test 192 byte
 	external/audio_test/main.cpp
@@ -292,7 +292,7 @@ set(EXTAPPLIST
 	keyfob
 	tetris
 	extsensors
-	foxhunt_rx
+	#foxhunt_rx
 	audio_test
 	wardrivemap
 	tpmsrx
