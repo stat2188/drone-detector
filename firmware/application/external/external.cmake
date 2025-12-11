@@ -66,10 +66,10 @@ set(EXTCPPSRC
 	external/extsensors/ui_extsensors.cpp
 	external/extsensors/ui_extsensors.hpp
 
-	##foxhunt 0 - commented out
-	#external/foxhunt/main.cpp
-	#external/foxhunt/ui_foxhunt_rx.cpp
-	#external/foxhunt/ui_foxhunt_rx.hpp
+	#foxhunt 0
+	external/foxhunt/main.cpp
+	external/foxhunt/ui_foxhunt_rx.cpp
+	external/foxhunt/ui_foxhunt_rx.hpp
 
 	#audio_test 192 byte
 	external/audio_test/main.cpp
@@ -79,9 +79,9 @@ set(EXTCPPSRC
 	external/wardrivemap/main.cpp
 	external/wardrivemap/ui_wardrivemap.cpp
 
-	#tpmsrx 920 byte- possible shared part with baseband
-	external/tpmsrx/main.cpp
-	external/tpmsrx/tpms_app.cpp
+	##tpmsrx 920 byte- possible shared part with baseband
+	#external/tpmsrx/main.cpp
+	#external/tpmsrx/tpms_app.cpp
 
 	#protoview 8 byte
 	external/protoview/main.cpp
@@ -292,10 +292,10 @@ set(EXTAPPLIST
 	keyfob
 	tetris
 	extsensors
-	#foxhunt_rx
+	foxhunt_rx
 	audio_test
 	wardrivemap
-	tpmsrx
+	#tpmsrx
 	protoview
 	adsbtx
 	morse_tx
