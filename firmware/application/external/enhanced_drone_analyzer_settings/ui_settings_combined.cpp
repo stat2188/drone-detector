@@ -1,272 +1,200 @@
 // ui_settings_combined.cpp - Unified implementation for Enhanced Drone Analyzer Settings App
-// Phase 7: TXT file communication - settings writes configuration
-// Combines implementations from Settings UI classes and manager classes
 
 #include "ui_settings_combined.hpp"
 #include "default_drones_db.hpp"
-#include "file.hpp"          // Portapack file I/O for SD card access
-#include "portapack.hpp"    // Portapack hardware access for navigation
-#include "string_format.hpp" // For frequency formatting
-#include <algorithm>        // For std::find_if_not in trim operations
-#include <sstream>          // For stringstream parsing
-#include <vector>           // For container operations
-#include <memory>           // For unique_ptr management
-#include <cstring>          // For strlen
-#include <cstdlib>          // For strtoull
+#include "file.hpp"          
+#include "portapack.hpp"    
+#include "string_format.hpp" 
+#include <algorithm>        
+#include <sstream>          
+#include <vector>           
+#include <memory>           
+#include <cstring>          
+#include <cstdlib>          
 
-// Use ScannerSettingsManager for loading settings from TXT
 using ScannerSettingsManager::load_settings_from_txt;
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-/**
- * PHASE 7: ENHANCED SETTINGS MANAGER WITH TXT FILE COMMUNICATION
- * Uses file.hpp API for robust SD card communication with scanner module
- */
-class EnhancedSettingsManager {
-public:
-    /**
-     * Save settings to TXT file at /sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt
-     * Returns true on successful save, false on error
-     */
-    static bool save_settings_to_txt(const DroneAnalyzerSettings& settings) {
-        const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+// ===========================================
+// EnhancedSettingsManager Implementation
+// ===========================================
 
-        // Create backup for atomic write operation
-        create_backup_file(filepath);
+bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& settings) {
+    const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
-        // Attempt to open file for writing
-        File settings_file;
-        if (!settings_file.open(filepath, false)) {
-            // SD card error
-            return false;
-        }
+    // Create backup for atomic write operation
+    create_backup_file(filepath);
 
-        auto& file = settings_file;
-
-        // Write header with timestamp
-        std::string header = generate_file_header();
-        auto header_result = file.write(header.data(), header.size());
-        if (header_result != header.size()) {
-            file.close();
-            // Restore from backup on error
-            restore_from_backup(filepath);
-            return false;
-        }
-
-        // Generate and write all settings
-        std::string content = generate_settings_content(settings);
-        auto content_result = file.write(content.data(), content.size());
-        if (content_result != content.size()) {
-            file.close();
-            // Restore from backup on error
-            restore_from_backup(filepath);
-            return false;
-        }
-
-        file.close();
-
-        // Remove backup on successful write
-        remove_backup_file(filepath);
-
-        return true;
-    }
-
-    /**
-     * Verify TXT file exists and is readable by scanner module
-     */
-    static bool verify_comm_file_exists() {
-        const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-        File txt_file;
-        if (txt_file.open(filepath, true)) {  // true = read_only
-            txt_file.close();
-            return true;
-        }
+    // Attempt to open file for writing
+    File settings_file;
+    if (!settings_file.open(filepath, false)) {
         return false;
     }
 
-    /**
-     * Get status string for communication testing
-     */
-    static std::string get_communication_status() {
-        if (verify_comm_file_exists()) {
-            return "✓ TXT file found\n✓ Communication ready";
-        } else {
-            return "✗ No TXT file found\n✗ Save settings first";
-        }
+    auto& file = settings_file;
+
+    // Write header with timestamp
+    std::string header = generate_file_header();
+    auto header_result = file.write(header.data(), header.size());
+    if (header_result.is_error() || header_result.value() != header.size()) {
+        file.close();
+        restore_from_backup(filepath);
+        return false;
     }
 
-    /**
-     * Ensures that the default drone frequency database exists on the SD card.
-     * If not, it creates it from the embedded list.
-     */
-    static void ensure_database_exists() {
-        // Путь к файлу. Обычно базы лежат в /FREQMAN/
-        // Мы используем специфичное имя для дронов
-        const std::string file_path = "/FREQMAN/DRONES.TXT";
-
-        // 2. Проверяем, существует ли файл
-        File check_file;
-        if (check_file.open(file_path, true)) {
-            // Файл существует и читается. Ничего делать не нужно.
-            check_file.close();
-            return;
-        }
-
-        // 3. Файла нет. Создаем и пишем дефолтные данные.
-        File create_file;
-        if (create_file.open(file_path, false)) { // false = write/create
-            // Пишем данные из header файла
-            create_file.write(DEFAULT_DRONE_DATABASE_CONTENT, strlen(DEFAULT_DRONE_DATABASE_CONTENT));
-            create_file.close();
-        }
+    // Generate and write all settings
+    std::string content = generate_settings_content(settings);
+    auto content_result = file.write(content.data(), content.size());
+    if (content_result.is_error() || content_result.value() != content.size()) {
+        file.close();
+        restore_from_backup(filepath);
+        return false;
     }
 
-private:
-    /**
-     * Create backup of existing file for atomic writes
-     */
-    static void create_backup_file(const std::string& filepath) {
-        const std::string backup_path = filepath + ".bak";
+    file.close();
+    remove_backup_file(filepath);
+    return true;
+}
 
-        File orig_file;
-        if (!orig_file.open(filepath, true)) return; // Error opening original
+bool EnhancedSettingsManager::verify_comm_file_exists() {
+    const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    File txt_file;
+    if (txt_file.open(filepath, true)) {  // true = read_only
+        txt_file.close();
+        return true;
+    }
+    return false;
+}
 
-        File backup_file;
-        if (!backup_file.open(backup_path, false)) {
-            orig_file.close();
-            return; // Error opening backup
-        }
+std::string EnhancedSettingsManager::get_communication_status() {
+    if (verify_comm_file_exists()) {
+        return "✓ TXT file found\n✓ Communication ready";
+    } else {
+        return "✗ No TXT file found\n✗ Save settings first";
+    }
+}
 
-        // Copy content to backup (simplified)
-        std::vector<uint8_t> buffer(1024);
-        size_t total_read = 0;
+void EnhancedSettingsManager::ensure_database_exists() {
+    const std::string file_path = "/FREQMAN/DRONES.TXT";
+    File check_file;
+    if (check_file.open(file_path, true)) {
+        check_file.close();
+        return;
+    }
 
-        while (total_read < orig_file.size()) {
-            size_t to_read = std::min(size_t(1024), static_cast<size_t>(orig_file.size() - total_read));
-            auto read_result = orig_file.read(buffer.data(), to_read);
-            if (read_result != to_read) break;
+    File create_file;
+    if (create_file.open(file_path, false)) { 
+        create_file.write(DEFAULT_DRONE_DATABASE_CONTENT, strlen(DEFAULT_DRONE_DATABASE_CONTENT));
+        create_file.close();
+    }
+}
 
-            auto write_result = backup_file.write(buffer.data(), to_read);
-            if (write_result != to_read) break;
+void EnhancedSettingsManager::create_backup_file(const std::string& filepath) {
+    const std::string backup_path = filepath + ".bak";
+    File orig_file;
+    if (!orig_file.open(filepath, true)) return;
 
-            total_read += read_result;
-        }
-
-        backup_file.close();
+    File backup_file;
+    if (!backup_file.open(backup_path, false)) {
         orig_file.close();
+        return;
     }
 
-    /**
-     * Restore from backup file on write error
-     */
-    static void restore_from_backup(const std::string& filepath) {
-        const std::string backup_path = filepath + ".bak";
+    std::vector<uint8_t> buffer(1024);
+    size_t total_read = 0;
 
-        // Пытаемся открыть бэкап на чтение
-        File backup_file;
-        if (!backup_file.open(backup_path, true)) return; // Бэкапа нет, выходим
+    while (total_read < orig_file.size()) {
+        size_t to_read = std::min(size_t(1024), static_cast<size_t>(orig_file.size() - total_read));
+        auto read_result = orig_file.read(buffer.data(), to_read);
+        if (read_result.is_error() || read_result.value() != to_read) break;
 
-        // Пытаемся открыть оригинал на запись (создаст новый или перезапишет битый)
-        File original_file;
-        if (!original_file.open(filepath, false)) {
-            backup_file.close();
-            return;
-        }
+        auto write_result = backup_file.write(buffer.data(), to_read);
+        if (write_result.is_error() || write_result.value() != to_read) break;
 
-        // Копируем данные блоками
-        std::vector<uint8_t> buffer(512);
-        while (true) {
-            auto read_res = backup_file.read(buffer.data(), buffer.size());
-            if (read_res.is_error() || read_res.value() == 0) break;
+        total_read += read_result.value();
+    }
 
-            original_file.write(buffer.data(), read_res.value());
-        }
+    backup_file.close();
+    orig_file.close();
+}
 
+void EnhancedSettingsManager::restore_from_backup(const std::string& filepath) {
+    const std::string backup_path = filepath + ".bak";
+    File backup_file;
+    if (!backup_file.open(backup_path, true)) return;
+
+    File original_file;
+    if (!original_file.open(filepath, false)) {
         backup_file.close();
-        original_file.close();
+        return;
     }
 
-    /**
-     * Remove backup file after successful write
-     */
-    static void remove_backup_file(const std::string& filepath) {
-        const std::string backup_path = filepath + ".bak";
-        // Remove operation would need system call
+    std::vector<uint8_t> buffer(512);
+    while (true) {
+        auto read_res = backup_file.read(buffer.data(), buffer.size());
+        if (read_res.is_error() || read_res.value() == 0) break;
+        original_file.write(buffer.data(), read_res.value());
     }
 
-    /**
-     * Generate standardized file header with timestamp
-     */
-    static std::string generate_file_header() {
-        std::stringstream ss;
-        ss << "# Enhanced Drone Analyzer Settings v0.3\n";
-        ss << "# Generated by Settings App\n";
-        ss << "# Timestamp: " << get_current_timestamp() << "\n";
-        ss << "# This file is automatically read by Scanner module\n";
-        ss << "\n";
-        return ss.str();
+    backup_file.close();
+    original_file.close();
+}
+
+void EnhancedSettingsManager::remove_backup_file(const std::string& filepath) {
+    (void)filepath; 
+    // Not implemented in file.hpp yet
+}
+
+std::string EnhancedSettingsManager::generate_file_header() {
+    std::stringstream ss;
+    ss << "# Enhanced Drone Analyzer Settings v0.3\n";
+    ss << "# Generated by Settings App\n";
+    ss << "# Timestamp: " << get_current_timestamp() << "\n";
+    ss << "# This file is automatically read by Scanner module\n";
+    ss << "\n";
+    return ss.str();
+}
+
+std::string EnhancedSettingsManager::generate_settings_content(const DroneAnalyzerSettings& settings) {
+    std::stringstream ss;
+
+    ss << "spectrum_mode=" << spectrum_mode_to_string(settings.spectrum_mode) << "\n";
+    ss << "scan_interval_ms=" << settings.scan_interval_ms << "\n";
+    ss << "rssi_threshold_db=" << settings.rssi_threshold_db << "\n";
+    ss << "enable_audio_alerts=" << (settings.enable_audio_alerts ? "true" : "false") << "\n";
+    ss << "audio_alert_frequency_hz=" << settings.audio_alert_frequency_hz << "\n";
+    ss << "audio_alert_duration_ms=" << settings.audio_alert_duration_ms << "\n";
+    ss << "hardware_bandwidth_hz=" << settings.hardware_bandwidth_hz << "\n";
+    ss << "enable_real_hardware=" << (settings.enable_real_hardware ? "true" : "false") << "\n";
+    ss << "demo_mode=" << (settings.demo_mode ? "true" : "false") << "\n";
+    ss << "freqman_path=" << settings.freqman_path << "\n";
+    ss << "settings_version=0.3\n";
+    ss << "last_modified_timestamp=" << chTimeNow() << "\n";
+
+    return ss.str();
+}
+
+std::string EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) {
+    switch (mode) {
+        case SpectrumMode::NARROW: return "NARROW";
+        case SpectrumMode::MEDIUM: return "MEDIUM";
+        case SpectrumMode::WIDE: return "WIDE";
+        case SpectrumMode::ULTRA_WIDE: return "ULTRA_WIDE";
+        case SpectrumMode::ULTRA_NARROW: return "ULTRA_NARROW";
+        default: return "MEDIUM";
     }
+}
 
-    /**
-     * Generate complete settings content in key=value format
-     */
-    static std::string generate_settings_content(const DroneAnalyzerSettings& settings) {
-        std::stringstream ss;
-
-        // Core scanning parameters
-        ss << "spectrum_mode=" << spectrum_mode_to_string(settings.spectrum_mode) << "\n";
-        ss << "scan_interval_ms=" << settings.scan_interval_ms << "\n";
-        ss << "rssi_threshold_db=" << settings.rssi_threshold_db << "\n";
-
-        // Audio settings
-        ss << "enable_audio_alerts=" << (settings.enable_audio_alerts ? "true" : "false") << "\n";
-        ss << "audio_alert_frequency_hz=" << settings.audio_alert_frequency_hz << "\n";
-        ss << "audio_alert_duration_ms=" << settings.audio_alert_duration_ms << "\n";
-
-        // Hardware settings
-        ss << "hardware_bandwidth_hz=" << settings.hardware_bandwidth_hz << "\n";
-        ss << "enable_real_hardware=" << (settings.enable_real_hardware ? "true" : "false") << "\n";
-        ss << "demo_mode=" << (settings.demo_mode ? "true" : "false") << "\n";
-
-        // Data management
-        ss << "freqman_path=" << settings.freqman_path << "\n";
-
-        // Metadata
-        ss << "settings_version=0.3\n";
-        ss << "last_modified_timestamp=" << chTimeNow() << "\n";
-
-        return ss.str();
-    }
-
-    /**
-     * Convert spectrum mode enum to string
-     */
-    static std::string spectrum_mode_to_string(SpectrumMode mode) {
-        switch (mode) {
-            case SpectrumMode::NARROW: return "NARROW";
-            case SpectrumMode::MEDIUM: return "MEDIUM";
-            case SpectrumMode::WIDE: return "WIDE";
-            case SpectrumMode::ULTRA_WIDE: return "ULTRA_WIDE";
-            case SpectrumMode::ULTRA_NARROW: return "ULTRA_NARROW";
-            default: return "MEDIUM";
-        }
-    }
-
-    /**
-     * Get current timestamp as formatted string
-     */
-    static std::string get_current_timestamp() {
-        // Simplified timestamp (would use proper formatting in production)
-        char buffer[32];
-        systime_t now = chTimeNow();
-        snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)now);
-        return std::string(buffer);
-    }
-};
+std::string EnhancedSettingsManager::get_current_timestamp() {
+    char buffer[32];
+    systime_t now = chTimeNow();
+    snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)now);
+    return std::string(buffer);
+}
 
 // ===========================================
-// PART 1: SETTINGS MANAGER IMPLEMENTATION (from ui_drone_config.hpp)
+// DroneAnalyzerSettingsManager Implementation
 // ===========================================
 
 Language DroneAnalyzerSettingsManager::current_language_ = Language::ENGLISH;
@@ -281,13 +209,7 @@ const std::map<std::string, const char*> DroneAnalyzerSettingsManager::translati
     {"spectrum_mode", "Spectrum Mode"}
 };
 
-DroneAnalyzerSettingsManager& get_settings_manager() {
-    static DroneAnalyzerSettingsManager instance;
-    return instance;
-}
-
 bool DroneAnalyzerSettingsManager::load(DroneAnalyzerSettings& settings) {
-    // Use ScannerSettingsManager for loading
     bool loaded = load_settings_from_txt(settings);
     if (!loaded) {
         reset_to_defaults(settings);
@@ -296,7 +218,6 @@ bool DroneAnalyzerSettingsManager::load(DroneAnalyzerSettings& settings) {
 }
 
 bool DroneAnalyzerSettingsManager::save(const DroneAnalyzerSettings& settings) {
-    // Используем мощный менеджер с бэкапами и полной сериализацией
     return EnhancedSettingsManager::save_settings_to_txt(settings);
 }
 
@@ -333,7 +254,6 @@ bool DroneAnalyzerSettingsManager::validate(const DroneAnalyzerSettings& setting
 
 std::string DroneAnalyzerSettingsManager::serialize(const DroneAnalyzerSettings& settings) {
     std::ostringstream oss;
-
     oss << "spectrum_mode=";
     switch (settings.spectrum_mode) {
         case SpectrumMode::NARROW: oss << "NARROW"; break;
@@ -345,22 +265,17 @@ std::string DroneAnalyzerSettingsManager::serialize(const DroneAnalyzerSettings&
     oss << "|scan_interval_ms=" << settings.scan_interval_ms;
     oss << "|rssi_threshold_db=" << settings.rssi_threshold_db;
     oss << "|enable_audio_alerts=" << (settings.enable_audio_alerts ? "true" : "false");
-    // Add more fields as needed...
-
     return oss.str();
 }
 
 bool DroneAnalyzerSettingsManager::deserialize(DroneAnalyzerSettings& settings, const std::string& data) {
     std::istringstream iss(data);
     std::string token;
-
     while (std::getline(iss, token, '|')) {
         size_t equals_pos = token.find('=');
         if (equals_pos != std::string::npos) {
             std::string key = token.substr(0, equals_pos);
             std::string value = token.substr(equals_pos + 1);
-
-            // Parse and apply values
             if (key == "spectrum_mode") {
                 if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
                 else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
@@ -372,7 +287,6 @@ bool DroneAnalyzerSettingsManager::deserialize(DroneAnalyzerSettings& settings, 
             else if (key == "enable_audio_alerts") settings.enable_audio_alerts = (value == "true");
         }
     }
-
     return validate(settings);
 }
 
@@ -381,7 +295,7 @@ const char* DroneAnalyzerSettingsManager::translate(const std::string& key) {
     if (it != translations_english.end()) {
         return it->second;
     }
-    return key.c_str();  // Fallback to the key itself
+    return key.c_str();
 }
 
 const char* DroneAnalyzerSettingsManager::get_translation(const std::string& key) {
@@ -390,31 +304,29 @@ const char* DroneAnalyzerSettingsManager::get_translation(const std::string& key
 
 // ============ ScannerConfig Implementation ============
 
-ScannerConfig::ScannerConfig(ConfigData config)
-    : config_data_(config) {
-}
+ScannerConfig::ScannerConfig(ConfigData config) : config_data_(config) {}
 
 bool ScannerConfig::load_from_file(const std::string& filepath) {
     File file;
-    if (!file.open(filepath, true)) return false;  // true = read_only
+    if (!file.open(filepath, true)) return false;
 
     std::string line;
     char buffer[256];
-    size_t bytes_read;
-    while ((bytes_read = file.read(buffer, sizeof(buffer) - 1)) > 0) {
+    auto read_result = file.read(buffer, sizeof(buffer) - 1);
+    
+    // FIX: Using !is_error() instead of is_valid()
+    while (!read_result.is_error() && read_result.value() > 0) {
+        size_t bytes_read = read_result.value();
         buffer[bytes_read] = '\0';
         line += buffer;
-
         size_t newline_pos;
         while ((newline_pos = line.find('\n')) != std::string::npos) {
             std::string current_line = line.substr(0, newline_pos);
             line = line.substr(newline_pos + 1);
-
             size_t equals_pos = current_line.find('=');
             if (equals_pos != std::string::npos) {
                 std::string key = current_line.substr(0, equals_pos);
                 std::string value = current_line.substr(equals_pos + 1);
-
                 if (key == "spectrum_mode") {
                     if (value == "NARROW") config_data_.spectrum_mode = SpectrumMode::NARROW;
                     else if (value == "MEDIUM") config_data_.spectrum_mode = SpectrumMode::MEDIUM;
@@ -427,15 +339,15 @@ bool ScannerConfig::load_from_file(const std::string& filepath) {
                 else if (key == "freqman_path") config_data_.freqman_path = value;
             }
         }
+        read_result = file.read(buffer, sizeof(buffer) - 1);
     }
-
     file.close();
     return true;
 }
 
 bool ScannerConfig::save_to_file(const std::string& filepath) const {
     File file;
-    if (!file.open(filepath, false)) return false;  // false = write mode
+    if (!file.open(filepath, false)) return false;
 
     std::string content = "spectrum_mode=";
     switch (config_data_.spectrum_mode) {
@@ -446,7 +358,6 @@ bool ScannerConfig::save_to_file(const std::string& filepath) const {
         case SpectrumMode::ULTRA_NARROW: content += "ULTRA_NARROW"; break;
     }
     content += "\n";
-
     content += "rssi_threshold_db=" + std::to_string(config_data_.rssi_threshold_db) + "\n";
     content += "scan_interval_ms=" + std::to_string(config_data_.scan_interval_ms) + "\n";
     content += "enable_audio_alerts=" + std::string(config_data_.enable_audio_alerts ? "true" : "false") + "\n";
@@ -454,36 +365,20 @@ bool ScannerConfig::save_to_file(const std::string& filepath) const {
 
     auto result = file.write(content.data(), content.size());
     file.close();
-    return result == content.size();
+    
+    // FIX: Using !is_error() instead of is_valid()
+    return !result.is_error() && result.value() == content.size();
 }
 
-void ScannerConfig::set_frequency_range(uint32_t min_hz, uint32_t max_hz) {
-    (void)min_hz; (void)max_hz;
-    // Implementation for frequency range setting
-}
-
-void ScannerConfig::set_rssi_threshold(int32_t threshold) {
-    config_data_.rssi_threshold_db = threshold;
-}
-
-void ScannerConfig::set_scan_interval(uint32_t interval_ms) {
-    config_data_.scan_interval_ms = interval_ms;
-}
-
-void ScannerConfig::set_audio_alerts(bool enabled) {
-    config_data_.enable_audio_alerts = enabled;
-}
-
-void ScannerConfig::set_freqman_path(const std::string& path) {
-    config_data_.freqman_path = path;
-}
-
+void ScannerConfig::set_frequency_range(uint32_t min_hz, uint32_t max_hz) { (void)min_hz; (void)max_hz; }
+void ScannerConfig::set_rssi_threshold(int32_t threshold) { config_data_.rssi_threshold_db = threshold; }
+void ScannerConfig::set_scan_interval(uint32_t interval_ms) { config_data_.scan_interval_ms = interval_ms; }
+void ScannerConfig::set_audio_alerts(bool enabled) { config_data_.enable_audio_alerts = enabled; }
+void ScannerConfig::set_freqman_path(const std::string& path) { config_data_.freqman_path = path; }
 void ScannerConfig::set_scanning_mode(const std::string& mode) {
     if (mode == "Database") config_data_.spectrum_mode = SpectrumMode::MEDIUM;
     else if (mode == "Wideband") config_data_.spectrum_mode = SpectrumMode::WIDE;
-    // Add more modes as needed
 }
-
 bool ScannerConfig::is_valid() const {
     return config_data_.rssi_threshold_db >= -120 && config_data_.rssi_threshold_db <= -30 &&
            config_data_.scan_interval_ms >= 100 && config_data_.scan_interval_ms <= 10000;
@@ -499,24 +394,17 @@ static const std::vector<DronePreset> default_presets = {
     {"Military UAV Band", "Military_UAV", 5000000000ULL, ThreatLevel::CRITICAL, DroneType::MILITARY_DRONE}
 };
 
-const std::vector<DronePreset>& DroneFrequencyPresets::get_all_presets() {
-    return default_presets;
-}
-
+const std::vector<DronePreset>& DroneFrequencyPresets::get_all_presets() { return default_presets; }
 std::vector<std::string> DroneFrequencyPresets::get_preset_names() {
     std::vector<std::string> names;
-    for (const auto& preset : default_presets) {
-        names.push_back(preset.display_name);
-    }
+    for (const auto& preset : default_presets) names.push_back(preset.display_name);
     return names;
 }
-
 std::vector<DroneType> DroneFrequencyPresets::get_available_types() {
     return {DroneType::MAVIC, DroneType::PHANTOM, DroneType::DJI_MINI,
             DroneType::PARROT_ANAFI, DroneType::PARROT_BEBOP,
             DroneType::PX4_DRONE, DroneType::MILITARY_DRONE};
 }
-
 std::string DroneFrequencyPresets::get_type_display_name(DroneType type) {
     switch (type) {
         case DroneType::MAVIC: return "DJI Mavic";
@@ -529,17 +417,14 @@ std::string DroneFrequencyPresets::get_type_display_name(DroneType type) {
         default: return "Unknown";
     }
 }
-
 std::vector<DronePreset> DroneFrequencyPresets::get_presets_of_type(const std::vector<DronePreset>& all_presets, DroneType type) {
     std::vector<DronePreset> filtered;
     std::copy_if(all_presets.begin(), all_presets.end(), std::back_inserter(filtered),
                  [type](const DronePreset& preset) { return preset.drone_type == type; });
     return filtered;
 }
-
 bool DroneFrequencyPresets::apply_preset(ScannerConfig& config, const DronePreset& preset) {
     (void)config; (void)preset;
-    // Implementation to apply preset to ScannerConfig
     return true;
 }
 
@@ -558,44 +443,33 @@ void DronePresetSelector::show_preset_menu(NavigationView& nav, PresetMenuView c
                 add_item({name, Color::white(), nullptr, nullptr});
             }
         }
-
     private:
         NavigationView& nav_;
-
         bool on_key(const KeyEvent key) override {
             if (key == KeyEvent::Select) {
                 size_t idx = highlighted_index();
                 if (idx < presets_.size()) {
-                    if (on_selected_fn_) {
-                        on_selected_fn_(presets_[idx]);
-                    }
+                    if (on_selected_fn_) on_selected_fn_(presets_[idx]);
                 }
                 return true;
             }
             return MenuView::on_key(key);
         }
-
-    private:
         std::vector<std::string> names_;
         std::function<void(const DronePreset&)> on_selected_fn_;
         const std::vector<DronePreset>& presets_;
     };
-
     nav.push<PresetMenuView>(preset_names, callback, all_presets);
 }
 
 void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneType type) {
     auto filtered_presets = DroneFrequencyPresets::get_presets_of_type(DroneFrequencyPresets::get_all_presets(), type);
     std::vector<std::string> names;
-    for (const auto& preset : filtered_presets) {
-        names.push_back(preset.display_name);
-    }
+    for (const auto& preset : filtered_presets) names.push_back(preset.display_name);
 
-    // Simplified callback that only takes the selected preset
     auto on_selected = [&nav](const DronePreset& preset) {
-        // Handle preset selection - simplified to avoid signature mismatch
-        (void)preset; // Suppress unused parameter warning
-        nav.pop(); // Just close the menu for now
+        (void)preset;
+        nav.pop();
     };
 
     class FilteredPresetMenuView : public MenuView {
@@ -607,36 +481,27 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
                 add_item({name, Color::white(), nullptr, nullptr});
             }
         }
-
     private:
         NavigationView& nav_;
-
         bool on_key(const KeyEvent key) override {
             if (key == KeyEvent::Select) {
                 size_t idx = highlighted_index();
                 if (idx < presets_.size()) {
-                    if (on_selected_fn_) {
-                        on_selected_fn_(presets_[idx]);
-                    }
+                    if (on_selected_fn_) on_selected_fn_(presets_[idx]);
                 }
                 return true;
             }
             return MenuView::on_key(key);
         }
-
-    private:
         std::vector<std::string> names_;
         std::function<void(const DronePreset&)> on_selected_fn_;
         const std::vector<DronePreset>& presets_;
     };
-
     nav.push<FilteredPresetMenuView>(names, on_selected, filtered_presets);
 }
 
 PresetMenuView DronePresetSelector::create_config_updater(ScannerConfig& config_to_update) {
-    // Return lambda that updates config when preset selected
     return [&config_to_update](const DronePreset& preset) {
-        // Apply preset to config
         DroneFrequencyPresets::apply_preset(config_to_update, preset);
     };
 }
@@ -646,36 +511,25 @@ PresetMenuView DronePresetSelector::create_config_updater(ScannerConfig& config_
 bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
     return freq_hz >= MIN_HARDWARE_FREQ && freq_hz <= MAX_HARDWARE_FREQ;
 }
-
 bool SimpleDroneValidation::validate_rssi_signal(int32_t rssi_db, ThreatLevel threat) {
     (void)threat;
     return rssi_db >= -120 && rssi_db <= 0;
 }
-
 ThreatLevel SimpleDroneValidation::classify_signal_strength(int32_t rssi_db) {
     if (rssi_db >= -70) return ThreatLevel::HIGH;
     if (rssi_db >= -80) return ThreatLevel::MEDIUM;
     return ThreatLevel::LOW;
 }
-
 DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
     (void)rssi_db;
-
-    // Basic frequency-based identification
     if (freq_hz >= 2400000000ULL && freq_hz <= 2500000000ULL) {
-        if (freq_hz >= 2430000000ULL && freq_hz <= 2480000000ULL) {
-            return DroneType::MAVIC;
-        } else if (freq_hz >= 5200000000ULL && freq_hz <= 5800000000ULL) {
-            return DroneType::MILITARY_DRONE;
-        }
+        if (freq_hz >= 2430000000ULL && freq_hz <= 2480000000ULL) return DroneType::MAVIC;
+        else if (freq_hz >= 5200000000ULL && freq_hz <= 5800000000ULL) return DroneType::MILITARY_DRONE;
         return DroneType::PHANTOM;
     }
-
     return DroneType::UNKNOWN;
 }
-
-bool SimpleDroneValidation::validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
-                                                   DroneType type, ThreatLevel threat) {
+bool SimpleDroneValidation::validate_drone_detection(Frequency freq_hz, int32_t rssi_db, DroneType type, ThreatLevel threat) {
     return validate_frequency_range(freq_hz) && validate_rssi_signal(rssi_db, threat) && type != DroneType::UNKNOWN;
 }
 
@@ -684,8 +538,7 @@ bool SimpleDroneValidation::validate_drone_detection(Frequency freq_hz, int32_t 
 DroneFrequencyEntry::DroneFrequencyEntry(Frequency freq, DroneType type, ThreatLevel threat,
                                        int32_t rssi_thresh, uint32_t bw_hz, const char* desc)
     : frequency_hz(freq), drone_type(type), threat_level(threat),
-      rssi_threshold_db(rssi_thresh), bandwidth_hz(bw_hz), description(desc) {
-}
+      rssi_threshold_db(rssi_thresh), bandwidth_hz(bw_hz), description(desc) {}
 
 bool DroneFrequencyEntry::is_valid() const {
     return SimpleDroneValidation::validate_frequency_range(frequency_hz) &&
@@ -694,48 +547,21 @@ bool DroneFrequencyEntry::is_valid() const {
 }
 
 // ===========================================
-// PART 2: UI IMPLEMENTATIONS
+// UI IMPLEMENTATIONS
 // ===========================================
 
-#include "ui_widget.hpp"
-#include "ui_menu.hpp"
-#include "app_settings.hpp"
-
-// HardwareSettingsView Implementation
-HardwareSettingsView::HardwareSettingsView(NavigationView& nav)
-    : nav_(nav)
-{
-    // Using proper PortaPack UI widgets
-    add_children({
-        &checkbox_real_hardware_,
-        &text_real_hardware_,
-        &field_spectrum_mode_,
-        &number_bandwidth_,
-        &number_min_freq_,
-        &number_max_freq_,
-        &button_save_
-    });
-
+// HardwareSettingsView
+HardwareSettingsView::HardwareSettingsView(NavigationView& nav) : nav_(nav) {
+    add_children({&checkbox_real_hardware_, &text_real_hardware_, &field_spectrum_mode_,
+                  &number_bandwidth_, &number_min_freq_, &number_max_freq_, &button_save_});
     load_current_settings();
 }
-
-void HardwareSettingsView::focus() {
-    button_save_.focus();
-}
-
-
-
+void HardwareSettingsView::focus() { button_save_.focus(); }
 void HardwareSettingsView::load_current_settings() {
-    // Load settings from TXT file or defaults
     DroneAnalyzerSettings settings;
-    if (!DroneAnalyzerSettingsManager::load(settings)) {
-        DroneAnalyzerSettingsManager::reset_to_defaults(settings);
-    }
-
-    // Set UI elements
+    if (!DroneAnalyzerSettingsManager::load(settings)) DroneAnalyzerSettingsManager::reset_to_defaults(settings);
     checkbox_real_hardware_.set_value(settings.enable_real_hardware);
-
-    size_t mode_idx = 0;
+    size_t mode_idx = 2;
     switch (settings.spectrum_mode) {
         case SpectrumMode::ULTRA_NARROW: mode_idx = 0; break;
         case SpectrumMode::NARROW: mode_idx = 1; break;
@@ -745,21 +571,15 @@ void HardwareSettingsView::load_current_settings() {
         default: mode_idx = 2; break;
     }
     field_spectrum_mode_.set_selected_index(mode_idx);
-
-    // --- ДОБАВЛЕНО: Привязка данных к новым полям ---
     number_bandwidth_.set_value(settings.hardware_bandwidth_hz);
     number_min_freq_.set_value(settings.min_frequency_hz);
     number_max_freq_.set_value(settings.max_frequency_hz);
-    // ------------------------------------------------
 }
-
 void HardwareSettingsView::save_current_settings() {
     DroneAnalyzerSettings settings;
-    DroneAnalyzerSettingsManager::load(settings); // Load current
-
+    DroneAnalyzerSettingsManager::load(settings);
     settings.enable_real_hardware = checkbox_real_hardware_.value();
     settings.demo_mode = !checkbox_real_hardware_.value();
-
     size_t mode_idx = field_spectrum_mode_.selected_index();
     switch (mode_idx) {
         case 0: settings.spectrum_mode = SpectrumMode::ULTRA_NARROW; break;
@@ -768,515 +588,224 @@ void HardwareSettingsView::save_current_settings() {
         case 3: settings.spectrum_mode = SpectrumMode::WIDE; break;
         case 4: settings.spectrum_mode = SpectrumMode::ULTRA_WIDE; break;
     }
-
-    // --- ДОБАВЛЕНО: Сохранение значений из полей ---
     settings.hardware_bandwidth_hz = number_bandwidth_.value();
     settings.min_frequency_hz = number_min_freq_.value();
     settings.max_frequency_hz = number_max_freq_.value();
-    // -----------------------------------------------
-
     DroneAnalyzerSettingsManager::save(settings);
 }
-
-void HardwareSettingsView::update_ui_from_settings() {
-    load_current_settings();
-}
-
-void HardwareSettingsView::update_settings_from_ui() {
-    save_current_settings();
-}
-
+void HardwareSettingsView::update_ui_from_settings() { load_current_settings(); }
+void HardwareSettingsView::update_settings_from_ui() { save_current_settings(); }
 void HardwareSettingsView::on_save_settings() {
     save_current_settings();
     nav_.display_modal("Success", "Hardware settings saved\nto TXT file");
 }
 
-AudioSettingsView::AudioSettingsView(NavigationView& nav)
-    : View(), nav_(nav), audio_settings_{true, 800, 500, 50, false}
-{
-    add_children({
-        &checkbox_audio_enabled_,
-        &text_audio_enabled_,
-        &number_alert_frequency_,
-        &number_alert_duration_,
-        &number_volume_,
-        &checkbox_repeat_,
-        &text_repeat_,
-        &button_save_
-    });
+// AudioSettingsView
+AudioSettingsView::AudioSettingsView(NavigationView& nav) : View(), nav_(nav), audio_settings_{true, 800, 500, 50, false} {
+    add_children({&checkbox_audio_enabled_, &text_audio_enabled_, &number_alert_frequency_,
+                  &number_alert_duration_, &number_volume_, &checkbox_repeat_, &text_repeat_, &button_save_});
 }
-
-void AudioSettingsView::focus() {
-    button_save_.focus();
-}
-
-
-
+void AudioSettingsView::focus() { button_save_.focus(); }
 void AudioSettingsView::load_current_settings() {
-    // Load from settings TXT
     DroneAnalyzerSettings settings;
-    if (!DroneAnalyzerSettingsManager::load(settings)) {
-        DroneAnalyzerSettingsManager::reset_to_defaults(settings);
-    }
-
+    if (!DroneAnalyzerSettingsManager::load(settings)) DroneAnalyzerSettingsManager::reset_to_defaults(settings);
     checkbox_audio_enabled_.set_value(settings.enable_audio_alerts);
     number_alert_frequency_.set_value(settings.audio_alert_frequency_hz);
     number_alert_duration_.set_value(settings.audio_alert_duration_ms);
-
-    // Volume not implemented yet
-    // Repeat alerts not implemented yet
 }
-
 void AudioSettingsView::save_current_settings() {
     DroneAnalyzerSettings settings;
-    DroneAnalyzerSettingsManager::load(settings); // Load current
-
+    DroneAnalyzerSettingsManager::load(settings);
     settings.enable_audio_alerts = checkbox_audio_enabled_.value();
     settings.audio_alert_frequency_hz = number_alert_frequency_.value();
     settings.audio_alert_duration_ms = number_alert_duration_.value();
-
-    DroneAnalyzerSettingsManager::save(settings); // Save back to TXT
+    DroneAnalyzerSettingsManager::save(settings);
 }
-
-void AudioSettingsView::update_ui_from_settings() {
-    load_current_settings();
-}
-
-void AudioSettingsView::update_settings_from_ui() {
-    save_current_settings();
-}
-
+void AudioSettingsView::update_ui_from_settings() { load_current_settings(); }
+void AudioSettingsView::update_settings_from_ui() { save_current_settings(); }
 void AudioSettingsView::on_save_settings() {
     save_current_settings();
     nav_.display_modal("Success", "Audio settings saved\nto TXT file");
 }
 
-// LoadingView Implementation
+// LoadingView
 LoadingView::LoadingView(NavigationView& nav, const std::string& loading_text)
     : View(), nav_(nav), loading_text_(loading_text),
       loading_text_1_{{screen_width / 2 - 50, screen_height / 2 - 10, 100, 16}, loading_text},
-      loading_text_2_{{screen_width / 2 - 50, screen_height / 2 + 10, 100, 16}, ""}
-{
+      loading_text_2_{{screen_width / 2 - 50, screen_height / 2 + 10, 100, 16}, ""} {
     add_children({&loading_text_1_, &loading_text_2_});
 }
+void LoadingView::focus() {}
+void LoadingView::paint(Painter& painter) { View::paint(painter); }
+void LoadingView::on_show() { start_time_ = chTimeNow(); }
+void LoadingView::on_hide() {}
 
-void LoadingView::focus() {
-    // No focusable elements
-}
-
-
-
-void LoadingView::paint(Painter& painter) {
-    View::paint(painter);
-    // Additional painting if needed
-}
-
-void LoadingView::on_show() {
-    start_time_ = chTimeNow();
-}
-
-void LoadingView::on_hide() {
-    // Cleanup if needed
-}
-
-// ===========================================
-// PART 3: MISSING UI IMPLEMENTATIONS
-// ===========================================
-
-// --- ScanningSettingsView Implementation ---
-
-ScanningSettingsView::ScanningSettingsView(NavigationView& nav)
-    : View(), nav_(nav)
-{
-    add_children({
-        &field_scanning_mode_,
-        &number_scan_interval_,
-        &number_rssi_threshold_,
-        &checkbox_wideband_,
-        &text_wideband_,
-        // &button_presets_, // Пока закомментируем, если пресеты сложны в реализации
-        &button_save_
-    });
-
-    button_save_.on_select = [this](Button&) {
-        on_save_settings();
-    };
-
-    // Добавляем обработчики изменений если нужно
-    checkbox_wideband_.on_select = [this](Checkbox&, bool) {
-        on_wideband_enabled_changed();
-    };
-
+// ScanningSettingsView
+ScanningSettingsView::ScanningSettingsView(NavigationView& nav) : View(), nav_(nav) {
+    add_children({&field_scanning_mode_, &number_scan_interval_, &number_rssi_threshold_,
+                  &checkbox_wideband_, &text_wideband_, &button_save_});
+    button_save_.on_select = [this](Button&) { on_save_settings(); };
+    checkbox_wideband_.on_select = [this](Checkbox&, bool) { on_wideband_enabled_changed(); };
     load_current_settings();
 }
-
-void ScanningSettingsView::focus() {
-    button_save_.focus();
-}
-
+void ScanningSettingsView::focus() { button_save_.focus(); }
 void ScanningSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
-    if (!DroneAnalyzerSettingsManager::load(settings)) {
-        DroneAnalyzerSettingsManager::reset_to_defaults(settings);
-    }
-
-    // Маппинг режима сканирования в индекс (упрощенно)
-    // 0: Database, 1: Wideband, 2: Hybrid
-    field_scanning_mode_.set_selected_index(0); // По умолчанию
-
+    if (!DroneAnalyzerSettingsManager::load(settings)) DroneAnalyzerSettingsManager::reset_to_defaults(settings);
+    field_scanning_mode_.set_selected_index(0);
     number_scan_interval_.set_value(settings.scan_interval_ms);
     number_rssi_threshold_.set_value(settings.rssi_threshold_db);
     checkbox_wideband_.set_value(settings.enable_wideband_scanning);
 }
-
 void ScanningSettingsView::save_current_settings() {
     DroneAnalyzerSettings settings;
     DroneAnalyzerSettingsManager::load(settings);
-
     settings.scan_interval_ms = number_scan_interval_.value();
     settings.rssi_threshold_db = number_rssi_threshold_.value();
     settings.enable_wideband_scanning = checkbox_wideband_.value();
-
-    // Сохранение режима сканирования пропустим для простоты или добавим логику позже
-
     DroneAnalyzerSettingsManager::save(settings);
 }
-
 void ScanningSettingsView::on_save_settings() {
     save_current_settings();
     nav_.display_modal("Success", "Scanning settings\nsaved to TXT");
 }
+void ScanningSettingsView::on_show_presets() { nav_.display_modal("Info", "Presets menu\nnot implemented"); }
+void ScanningSettingsView::on_wideband_enabled_changed() {}
+void ScanningSettingsView::update_ui_from_settings() { load_current_settings(); }
+void ScanningSettingsView::update_settings_from_ui() { save_current_settings(); }
 
-void ScanningSettingsView::on_show_presets() {
-    // Placeholder
-    nav_.display_modal("Info", "Presets menu\nnot implemented");
-}
-
-void ScanningSettingsView::on_wideband_enabled_changed() {
-    // Логика UI обновления при переключении галочки
-}
-
-void ScanningSettingsView::update_ui_from_settings() {
-    load_current_settings();
-}
-
-void ScanningSettingsView::update_settings_from_ui() {
-    save_current_settings();
-}
-
-// --- DroneAnalyzerSettingsView Implementation (MAIN SETTINGS MENU) ---
-
-DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav)
-    : View(), nav_(nav), current_settings_{}
-{
-    add_children({
-        &text_title_,
-        &button_audio_settings_,
-        &button_hardware_settings_,
-        &button_scanning_settings_,
-        &button_advanced_settings_,
-        &button_load_defaults_,
-        &button_about_author_,
-        &button_manage_db_
-    });
-
-    // Настройка обработчиков кнопок
-    button_audio_settings_.on_select = [this](Button&) {
-        show_audio_settings();
-    };
-
-    button_hardware_settings_.on_select = [this](Button&) {
-        show_hardware_settings();
-    };
-
-    button_scanning_settings_.on_select = [this](Button&) {
-        show_scanning_settings();
-    };
-
-    button_advanced_settings_.on_select = [this](Button&) {
-        show_advanced_settings();
-    };
-
-    button_load_defaults_.on_select = [this](Button&) {
-        load_default_settings();
-    };
-
-    button_about_author_.on_select = [this](Button&) {
-        show_about_author();
-    };
-
-    button_manage_db_.on_select = [this](Button&) {
-        nav_.push<DroneDatabaseListView>();
-    };
-
-    // --- ДОБАВЛЕНО: Проверка и создание базы частот ---
+// DroneAnalyzerSettingsView
+DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View(), nav_(nav), current_settings_{} {
+    add_children({&text_title_, &button_audio_settings_, &button_hardware_settings_, &button_scanning_settings_,
+                  &button_advanced_settings_, &button_load_defaults_, &button_about_author_, &button_manage_db_});
+    button_audio_settings_.on_select = [this](Button&) { show_audio_settings(); };
+    button_hardware_settings_.on_select = [this](Button&) { show_hardware_settings(); };
+    button_scanning_settings_.on_select = [this](Button&) { show_scanning_settings(); };
+    button_advanced_settings_.on_select = [this](Button&) { show_advanced_settings(); };
+    button_load_defaults_.on_select = [this](Button&) { load_default_settings(); };
+    button_about_author_.on_select = [this](Button&) { show_about_author(); };
+    button_manage_db_.on_select = [this](Button&) { nav_.push<DroneDatabaseListView>(); };
     EnhancedSettingsManager::ensure_database_exists();
-
-    // Загружаем текущие настройки при старте
     DroneAnalyzerSettingsManager::load(current_settings_);
 }
-
-void DroneAnalyzerSettingsView::focus() {
-    button_audio_settings_.focus();
-}
-
-void DroneAnalyzerSettingsView::paint(Painter& painter) {
-    View::paint(painter);
-    // Можно добавить рамку или фон
-}
-
+void DroneAnalyzerSettingsView::focus() { button_audio_settings_.focus(); }
+void DroneAnalyzerSettingsView::paint(Painter& painter) { View::paint(painter); }
 bool DroneAnalyzerSettingsView::on_key(const KeyEvent key) {
-    if (key == KeyEvent::Back) {
-        nav_.pop();
-        return true;
-    }
+    if (key == KeyEvent::Back) { nav_.pop(); return true; }
     return View::on_key(key);
 }
-
-bool DroneAnalyzerSettingsView::on_touch(const TouchEvent event) {
-    return View::on_touch(event);
-}
-
-void DroneAnalyzerSettingsView::on_show() {
-    View::on_show();
-    // Обновляем состояние если нужно
-}
-
-void DroneAnalyzerSettingsView::on_hide() {
-    View::on_hide();
-}
-
-void DroneAnalyzerSettingsView::show_audio_settings() {
-    nav_.push<AudioSettingsView>();
-}
-
-void DroneAnalyzerSettingsView::show_hardware_settings() {
-    nav_.push<HardwareSettingsView>();
-}
-
-void DroneAnalyzerSettingsView::show_scanning_settings() {
-    nav_.push<ScanningSettingsView>();
-}
-
-void DroneAnalyzerSettingsView::show_advanced_settings() {
-    nav_.display_modal("Info", "Advanced settings\ncoming soon");
-}
-
+bool DroneAnalyzerSettingsView::on_touch(const TouchEvent event) { return View::on_touch(event); }
+void DroneAnalyzerSettingsView::on_show() { View::on_show(); }
+void DroneAnalyzerSettingsView::on_hide() { View::on_hide(); }
+void DroneAnalyzerSettingsView::show_audio_settings() { nav_.push<AudioSettingsView>(); }
+void DroneAnalyzerSettingsView::show_hardware_settings() { nav_.push<HardwareSettingsView>(); }
+void DroneAnalyzerSettingsView::show_scanning_settings() { nav_.push<ScanningSettingsView>(); }
+void DroneAnalyzerSettingsView::show_advanced_settings() { nav_.display_modal("Info", "Advanced settings\ncoming soon"); }
 void DroneAnalyzerSettingsView::load_default_settings() {
     DroneAnalyzerSettingsManager::reset_to_defaults(current_settings_);
     DroneAnalyzerSettingsManager::save(current_settings_);
     nav_.display_modal("Reset", "Settings reset to\ndefaults");
 }
-
 void DroneAnalyzerSettingsView::show_about_author() {
     std::string message;
-    message += "About the Author\n";
-    message += "================\n\n";
-    message += "Application developed for\n";
-    message += "civilian population safety.\n\n";
-    message += "Author: Kuznetsov Maxim Sergeevich\n";
-    message += "Locksmith at Gazprom Gazoraspredeleniye\n";
-    message += "Orenburg branch\n\n";
-    message += "Development completed in October 2025\n";
-    message += "on voluntary and altruistic principles\n";
-    message += "by one person.\n\n";
-    message += "Greetings to everyone who risks\n";
-    message += "their lives for the safety of others.\n\n";
-    message += "Support the author:\n";
-    message += "Card: 2202 20202 5787 1695\n";
-    message += "YooMoney: 41001810704697\n";
-    message += "TON: UQCdtMxQB5zbQBOICkY90lTQQqcs8V-V28Bf2AGvl8xOc5HR\n\n";
-    message += "Contact:\n";
-    message += "Telegram: @max_ai_master";
-
+    message += "About the Author\n================\n\nApplication developed for\ncivilian population safety.\n\n";
+    message += "Author: Kuznetsov Maxim Sergeevich\nLocksmith at Gazprom Gazoraspredeleniye\nOrenburg branch\n\n";
+    message += "Development completed in October 2025\non voluntary and altruistic principles\nby one person.\n\n";
+    message += "Greetings to everyone who risks\ntheir lives for the safety of others.\n\n";
+    message += "Support the author:\nCard: 2202 20202 5787 1695\nYooMoney: 41001810704697\nTON: UQCdtMxQB5zbQBOICkY90lTQQqcs8V-V28Bf2AGvl8xOc5HR\n\n";
+    message += "Contact:\nTelegram: @max_ai_master";
     nav_.display_modal("About Author", message);
 }
 
-// ===========================================
-// PART 4: DRONE DATABASE MANAGER IMPLEMENTATION
-// ===========================================
-
+// DroneDatabaseManager
 std::vector<DroneDbEntry> DroneDatabaseManager::load_database(const std::string& file_path) {
     std::vector<DroneDbEntry> entries;
     File file;
     if (!file.open(file_path, true)) return entries;
-
     std::string content;
     content.resize(file.size());
     file.read(content.data(), file.size());
     file.close();
-
     std::stringstream ss(content);
     std::string line;
-
     while (std::getline(ss, line)) {
-        // Тримминг строки (удаление \r)
         if (!line.empty() && line.back() == '\r') line.pop_back();
-
         if (line.empty() || line[0] == '#') continue;
-
         std::vector<std::string> tokens;
         std::stringstream line_ss(line);
         std::string token;
-
-        // Разбиваем строку по запятым
-        while (std::getline(line_ss, token, ',')) {
-            tokens.push_back(token);
-        }
-
+        while (std::getline(line_ss, token, ',')) tokens.push_back(token);
         DroneDbEntry entry;
-        entry.freq = 0;
-
         if (tokens.size() >= 3) {
-            // Формат диапазона: StartFreq, EndFreq, Description
-            // Редактор пока не умеет редактировать диапазоны, берем начало
             entry.freq = std::strtoull(tokens[0].c_str(), nullptr, 10);
-
-            // Собираем описание (оно может само содержать запятые, но в простом случае это tokens[2])
-            // Для надежности склеиваем все, что после второй запятой, но пока берем просто tokens[2]
-            entry.description = tokens[2] + " (R)"; // Помечаем, что это был диапазон
-        }
-        else if (tokens.size() >= 2) {
-            // Формат одиночный: Freq, Description
+            entry.description = tokens[2] + " (R)";
+        } else if (tokens.size() >= 2) {
             entry.freq = std::strtoull(tokens[0].c_str(), nullptr, 10);
             entry.description = tokens[1];
         }
-
-        if (entry.freq > 0) {
-            entries.push_back(entry);
-        }
+        if (entry.freq > 0) entries.push_back(entry);
     }
     return entries;
 }
-
 bool DroneDatabaseManager::save_database(const std::vector<DroneDbEntry>& entries, const std::string& file_path) {
     std::stringstream ss;
-    // Обязательно восстанавливаем заголовок, чтобы Frequency Manager понимал формат
-    ss << "frequency_a,frequency_b,description\n";
-    // или стандартный freqman header, если нужно совместимость, но часто достаточно просто списка
-    // Для совместимости с load_freqman_file лучше не писать заголовок, если он не обрабатывается,
-    // но лучше оставить комментарии.
-    ss << "# EDA User Database\n";
-    ss << "# Format: Freq, Description (Ranges converted to Single)\n";
-
+    ss << "frequency_a,frequency_b,description\n# EDA User Database\n";
     for (const auto& entry : entries) {
         if (entry.freq == 0) continue;
-
-        // Санитизация описания: удаляем запятые и переносы строк, чтобы не сломать CSV
         std::string safe_desc = entry.description;
         std::replace(safe_desc.begin(), safe_desc.end(), ',', ' ');
         std::replace(safe_desc.begin(), safe_desc.end(), '\n', ' ');
         std::replace(safe_desc.begin(), safe_desc.end(), '\r', ' ');
-
         ss << entry.freq << "," << safe_desc << "\n";
     }
-
     std::string content = ss.str();
-
     File file;
-    if (!file.open(file_path, false)) return false; // false = write/create/truncate
-
+    if (!file.open(file_path, false)) return false;
     file.write(content.data(), content.size());
     file.close();
     return true;
 }
 
-// ===========================================
-// PART 5: DRONE ENTRY EDITOR VIEW IMPLEMENTATION
-// ===========================================
-
+// DroneEntryEditorView
 DroneEntryEditorView::DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, OnSaveCallback callback)
-    : View(), nav_(nav), entry_(entry), on_save_(callback)
-{
-    add_children({
-        &text_freq_,
-        &field_freq_,
-        &text_desc_,
-        &field_desc_,
-        &button_save_,
-        &button_cancel_
-    });
-
-    // Initialize fields with entry data
+    : View(), nav_(nav), entry_(entry), on_save_(callback) {
+    add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
     field_freq_.set_value(entry_.freq);
-    // field_desc_ is already bound to entry_.description
-
-    // Set up button handlers
-    button_save_.on_select = [this](Button&) {
-        on_save();
-    };
-
-    button_cancel_.on_select = [this](Button&) {
-        on_cancel();
-    };
+    button_save_.on_select = [this](Button&) { on_save(); };
+    button_cancel_.on_select = [this](Button&) { on_cancel(); };
 }
-
-void DroneEntryEditorView::focus() {
-    field_freq_.focus();
-}
-
+void DroneEntryEditorView::focus() { field_freq_.focus(); }
 void DroneEntryEditorView::on_save() {
-    // Create new entry from field values
     DroneDbEntry new_entry;
     new_entry.freq = field_freq_.value();
-    new_entry.description = entry_.description; // TextEdit modifies this directly
-
-    // Call callback with new entry
-    if (on_save_) {
-        on_save_(new_entry);
-    }
-
-    // Close the view
+    new_entry.description = entry_.description;
+    if (on_save_) on_save_(new_entry);
     nav_.pop();
 }
-
 void DroneEntryEditorView::on_cancel() {
-    // Call callback with freq=0 to indicate cancel/delete
-    if (on_save_) {
-        DroneDbEntry cancel_entry{0, ""};
-        on_save_(cancel_entry);
-    }
-
-    // Close the view
+    if (on_save_) on_save_({0, ""});
     nav_.pop();
 }
 
-// ===========================================
-// PART 6: DRONE DATABASE LIST VIEW IMPLEMENTATION
-// ===========================================
-
-DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav)
-    : View(), nav_(nav)
-{
+// DroneDatabaseListView
+DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav) : View(), nav_(nav), entries_() {
     add_children({&menu_view_});
-
     entries_ = DroneDatabaseManager::load_database();
-
     reload_list();
 }
-
-void DroneDatabaseListView::focus() {
-    menu_view_.focus();
-}
-
+void DroneDatabaseListView::focus() { menu_view_.focus(); }
 void DroneDatabaseListView::reload_list() {
     menu_view_.clear();
-
-    // Add "ADD NEW FREQUENCY" item
     menu_view_.add_item({"[ + ADD NEW FREQUENCY ]", Color::white(), nullptr, nullptr});
-
-    // Add existing entries
     for (const auto& entry : entries_) {
         std::string freq_str = to_string_short_freq(entry.freq);
         std::string text = freq_str + ": " + entry.description;
         menu_view_.add_item({text, Color::white(), nullptr, nullptr});
     }
 }
-
 void DroneDatabaseListView::on_entry_selected(size_t index) {
     if (index == 0) {
-        // Add new frequency
-        DroneDbEntry empty_entry{0, ""};
+        DroneDbEntry empty_entry;
         nav_.push<DroneEntryEditorView>(empty_entry, [this](const DroneDbEntry& entry) {
             if (entry.freq != 0) {
                 entries_.push_back(entry);
@@ -1285,7 +814,6 @@ void DroneDatabaseListView::on_entry_selected(size_t index) {
             }
         });
     } else {
-        // Edit existing entry
         size_t entry_index = index - 1;
         nav_.push<DroneEntryEditorView>(entries_[entry_index], [this, entry_index](const DroneDbEntry& entry) {
             if (entry.freq != 0) {
@@ -1296,11 +824,7 @@ void DroneDatabaseListView::on_entry_selected(size_t index) {
         });
     }
 }
-
-void DroneDatabaseListView::save_changes() {
-    DroneDatabaseManager::save_database(entries_);
-}
-
+void DroneDatabaseListView::save_changes() { DroneDatabaseManager::save_database(entries_); }
 bool DroneDatabaseListView::on_key(const KeyEvent key) {
     if (key == KeyEvent::Select) {
         size_t index = menu_view_.highlighted_index();
