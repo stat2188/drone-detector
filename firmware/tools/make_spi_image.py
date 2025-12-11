@@ -94,8 +94,9 @@ def validate_memory_regions(regions):
     expected_size = 32 * 1024  # 32k
     # Special sizes for specific apps
     special_sizes = {
-        'enhanced_drone_analyzer': 40 * 1024,  # 40k
+        'enhanced_drone_analyzer': 56 * 1024,  # 56k
         'enhanced_drone_analyzer_settings': 10 * 1024,  # 10k
+        'battleship': 2 * 1024,  # 2k
     }
     issues_found = False
 
