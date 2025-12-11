@@ -7,6 +7,10 @@
 #include "ch.h" // Для типов Mayhem/ChibiOS, если необходимо
 
 // 1. Forward declarations and Enums
+
+// FIX: Перенесено наверх для видимости в структурах
+using Frequency = uint64_t;
+
 enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE, ULTRA_NARROW };
 
 enum class ThreatLevel {
@@ -45,7 +49,7 @@ enum class Language {
 struct DronePreset {
     std::string display_name;
     std::string name_template;
-    Frequency frequency_hz;
+    Frequency frequency_hz; // Теперь Frequency определен выше
     ThreatLevel threat_level;
     DroneType drone_type;
 
@@ -53,8 +57,6 @@ struct DronePreset {
         return !display_name.empty() && frequency_hz > 0;
     }
 };
-
-using Frequency = uint64_t;
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
@@ -89,9 +91,6 @@ struct DroneAnalyzerSettings {
 class DroneAnalyzerSettingsManager {
 public:
     static void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
-    // Функции сохранения и загрузки будут реализованы в ui_settings_combined.cpp,
-    // используя ScannerSettingsManager или локальную логику.
-    // Здесь оставляем только объявления или простые инлайны, если они не зависят от файловой системы.
 };
 
 inline void DroneAnalyzerSettingsManager::reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
@@ -125,7 +124,6 @@ private:
 inline Language Translator::current_language_ = Language::ENGLISH;
 
 inline const char* Translator::get_translation(const std::string& key) {
-    // Simple stub implementation
     if (current_language_ == Language::RUSSIAN) {
         if (key == "save_settings") return "Сохранить";
         if (key == "audio_settings") return "Аудио";
@@ -135,7 +133,7 @@ inline const char* Translator::get_translation(const std::string& key) {
 
 // Константы валидации
 static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
-static constexpr uint32_t MAX_SCAN_INTERVAL_MS = 10000; // Было расхождение 5000 vs 10000
+static constexpr uint32_t MAX_SCAN_INTERVAL_MS = 10000;
 static constexpr uint16_t MIN_AUDIO_FREQ = 200;
 static constexpr uint16_t MAX_AUDIO_FREQ = 4000;
 static constexpr uint32_t MIN_AUDIO_DURATION = 50;
