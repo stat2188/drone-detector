@@ -479,7 +479,7 @@ public:
     // Returns structure with fixed array to avoid malloc/new for std::vector
     struct DroneSnapshot {
         TrackedDrone drones[MAX_TRACKED_DRONES];
-        size_t count;
+        size_t count = 0;
     };
 
     DroneSnapshot get_tracked_drones_snapshot() const;

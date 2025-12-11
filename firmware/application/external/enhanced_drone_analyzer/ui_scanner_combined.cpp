@@ -156,7 +156,8 @@ DroneScanner::DroneScanner()
       wideband_scan_data_(),
       drone_database_(),
       detection_logger_(),
-      data_mutex()
+      data_mutex(),
+      detection_ring_buffer_()
 {
     // IMPORTANT: Initialize mutex before everything else
     chMtxInit(&data_mutex);
@@ -1070,7 +1071,8 @@ SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
     : View(parent_rect),
       threat_progress_bar_({0, 0, screen_width, 16}),
       threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | <0 ~0 >0"),
-      threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING") {
+      threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING"),
+      current_text_() {
     add_children({&threat_progress_bar_, &threat_status_main_, &threat_frequency_});
     update(ThreatLevel::NONE, 0, 0, 0, 2400000000ULL, false);
 }
@@ -1225,7 +1227,8 @@ void SmartThreatHeader::paint(Painter& painter) {
 }
 
 ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
-    : View(parent_rect), card_index_(card_index), parent_rect_(parent_rect) {
+    : View(parent_rect), card_index_(card_index), parent_rect_(parent_rect),
+      current_text_() {
     add_children({&card_text_});
 }
 
@@ -1411,7 +1414,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
       spectrum_gradient_(), spectrum_fifo_(nullptr),
       pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
       marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(LOOKING_GLASS_SINGLEPASS),
-      spectrum_config_(), nav_(nav)
+      spectrum_config_(), nav_(nav), waterfall_buffer_()
 {
     for (auto& drone : displayed_drones_) {
         drone = DisplayDroneEntry{};
@@ -1908,6 +1911,7 @@ void DroneUIController::on_about() {
 DroneSettingsMenuView::DroneSettingsMenuView(NavigationView& nav, DroneUIController& controller)
     : View({0, 0, screen_width, screen_height}), controller_(controller)
 {
+    (void)nav;
     // Добавляем элементы на экран
     add_children({
         &button_load_db_,
@@ -1981,6 +1985,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       button_menu_({{screen_width - 80, screen_height - 40, 72, 32}, "MENU"}),
       field_scanning_mode_({{10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}}),
       scanning_active_(false),
+      button_audio_(),
       settings_()
 {
     for (size_t i = 0; i < threat_cards_.size(); ++i) {
