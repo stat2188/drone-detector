@@ -225,7 +225,7 @@ static constexpr size_t MAX_DISPLAYED_DRONES = 3;
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
 // Constants for spectrum buffer
-static constexpr int SPEC_HEIGHT = 64;
+static constexpr int SPEC_HEIGHT = 32; // Экономия 7.5 КБ RAM!
 static constexpr int SPEC_WIDTH = 240;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
