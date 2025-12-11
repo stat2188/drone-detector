@@ -162,9 +162,9 @@ set(EXTCPPSRC
 	external/app_manager/main.cpp
 	external/app_manager/ui_app_manager.cpp
 
-	#hopper 472 bytes
-	external/hopper/main.cpp
-	external/hopper/ui_hopper.cpp
+	##hopper 472 bytes
+	#external/hopper/main.cpp
+	#external/hopper/ui_hopper.cpp
 
 	# whip calculator  48 bytes
 	external/antenna_length/main.cpp
@@ -315,7 +315,7 @@ set(EXTAPPLIST
 	tuner
 	metronome
 	app_manager
-	hopper
+	#hopper
 	antenna_length
 	view_wav
 	sd_wipe
