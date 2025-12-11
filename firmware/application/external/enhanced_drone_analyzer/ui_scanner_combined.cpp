@@ -838,12 +838,12 @@ bool DroneDetectionLogger::ensure_csv_header() {
 std::string DroneDetectionLogger::format_csv_entry(const DetectionLogEntry& entry) {
     // Use member buffer to avoid stack allocation in deep call chains
     int ret = snprintf(line_buffer_, sizeof(line_buffer_),
-             "%lu,%lu,%ld,%u,%u,%u,%.2f\n",
+             "%lu,%lu,%ld,%u,%u,%u,%ld\n",
              static_cast<unsigned long>(entry.timestamp), static_cast<unsigned long>(entry.frequency_hz),
              (long int)entry.rssi_db,
              static_cast<uint8_t>(entry.threat_level),
              static_cast<uint8_t>(entry.drone_type),
-             entry.detection_count, entry.confidence_score);
+             entry.detection_count, (long int)(entry.confidence_score * 100));
 
     // Ensure null termination if snprintf didn't have enough space
     if (ret >= static_cast<int>(sizeof(line_buffer_))) {
