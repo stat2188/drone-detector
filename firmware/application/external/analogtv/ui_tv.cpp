@@ -108,10 +108,7 @@ void TVView::on_adjust_contrast(int contrast) {
 
 void TVView::on_channel_spectrum(
     const ChannelSpectrum& spectrum) {
-    // Добавляем константы для гистерезиса синхронизации
-    static constexpr int SYNC_SEARCH_WINDOW = 20; // Искать пик в пределах +/- 20 отсчетов
-
-    // Поиск синхроимпульса (максимальное значение в spectrum.db, т.к. негативная модуляция)
+    // Поиск синхроимпульса (максимальное значение in spectrum.db, т.к. негативная модуляция)
     // Мы ищем локальный максимум, чтобы выровнять phase/offset
 
     // ПРИМЕЧАНИЕ: Это упрощенная логика. В идеале нужно скользящее окно.
