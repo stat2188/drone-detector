@@ -78,7 +78,7 @@ MEMORY
     ram_external_app_dinogame   (rwx) : org = 0xADE50000, len = 32k
     ram_external_app_spaceinv   (rwx) : org = 0xADE60000, len = 32k
     ram_external_app_blackjack  (rwx) : org = 0xADE70000, len = 32k
-    ram_external_app_battleship   (rwx) : org = 0xADE80000, len = 32k
+    ram_external_app_battleship   (rwx) : org = 0xADE80000, len = 1k
     ram_external_app_ert        (rwx) : org = 0xADE90000, len = 32k
     ram_external_app_epirb_rx   (rwx) : org = 0xADEA0000, len = 32k
     ram_external_app_soundboard   (rwx) : org = 0xADEB0000, len = 32k
