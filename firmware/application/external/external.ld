@@ -86,7 +86,7 @@ MEMORY
     ram_external_app_bht_tx          (rwx) : org = 0xADED0000, len = 32k
     ram_external_app_morse_practice  (rwx) : org = 0xADEE0000, len = 32k
     ram_external_app_adult_toys_controller  (rwx) : org = 0xADEF0000, len = 32k
-    ram_external_app_enhanced_drone_analyzer (rwx) : org = 0xADF00000, len = 40k
+    ram_external_app_enhanced_drone_analyzer (rwx) : org = 0xADF00000, len = 50k
     ram_external_app_enhanced_drone_analyzer_settings (rwx) : org = 0xADF10000, len = 10k
 
 }
