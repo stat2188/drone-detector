@@ -893,7 +893,7 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
     // Формула: (detections * 1000 * 10) / ms
     uint32_t rate_x10 = (uint64_t)total_detections * 10000 / session_duration_ms;
 
-    char perf_buf[64];
+    char perf_buf[128]; // Increased buffer size to prevent truncation
     snprintf(perf_buf, sizeof(perf_buf),
              "Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: ",
              avg_det_x100 / 100, avg_det_x100 % 100, // Целая и дробная части
@@ -1227,8 +1227,8 @@ void SmartThreatHeader::paint(Painter& painter) {
 }
 
 ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
-    : View(parent_rect), card_index_(card_index), parent_rect_(parent_rect),
-      current_text_() {
+    : View(parent_rect), card_index_(card_index), current_text_(),
+      parent_rect_(parent_rect) {
     add_children({&card_text_});
 }
 
@@ -1411,10 +1411,11 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
       detected_drones_(),
       displayed_drones_(),
       spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
+      waterfall_buffer_(),
       spectrum_gradient_(), spectrum_fifo_(nullptr),
       pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
       marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(LOOKING_GLASS_SINGLEPASS),
-      spectrum_config_(), nav_(nav), waterfall_buffer_()
+      spectrum_config_(), nav_(nav)
 {
     for (auto& drone : displayed_drones_) {
         drone = DisplayDroneEntry{};
@@ -1983,9 +1984,9 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       threat_cards_(),
       button_start_stop_({{screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"}),
       button_menu_({{screen_width - 80, screen_height - 40, 72, 32}, "MENU"}),
+      button_audio_(),
       field_scanning_mode_({{10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}}),
       scanning_active_(false),
-      button_audio_(),
       settings_()
 {
     for (size_t i = 0; i < threat_cards_.size(); ++i) {
