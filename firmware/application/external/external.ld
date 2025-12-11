@@ -78,7 +78,7 @@ MEMORY
     ram_external_app_dinogame   (rwx) : org = 0xADE50000, len = 32k
     ram_external_app_spaceinv   (rwx) : org = 0xADE60000, len = 32k
     ram_external_app_blackjack  (rwx) : org = 0xADE70000, len = 32k
-    ram_external_app_battleship   (rwx) : org = 0xADE80000, len = 2k
+    ram_external_app_battleship   (rwx) : org = 0xADE80000, len = 32k
     ram_external_app_ert        (rwx) : org = 0xADE90000, len = 32k
     ram_external_app_epirb_rx   (rwx) : org = 0xADEA0000, len = 32k
     ram_external_app_soundboard   (rwx) : org = 0xADEB0000, len = 32k
@@ -86,7 +86,7 @@ MEMORY
     ram_external_app_bht_tx          (rwx) : org = 0xADED0000, len = 32k
     ram_external_app_morse_practice  (rwx) : org = 0xADEE0000, len = 32k
     ram_external_app_adult_toys_controller  (rwx) : org = 0xADEF0000, len = 32k
-    ram_external_app_enhanced_drone_analyzer (rwx) : org = 0xADF00000, len = 56k
+    ram_external_app_enhanced_drone_analyzer (rwx) : org = 0xADF00000, len = 50k
     ram_external_app_enhanced_drone_analyzer_settings (rwx) : org = 0xADF10000, len = 10k
 
 }
