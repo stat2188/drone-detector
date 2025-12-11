@@ -31,10 +31,10 @@ MEMORY
     ram_external_app_nrf_rx     (rwx) : org = 0xADB60000, len = 32k
     ram_external_app_coasterp   (rwx) : org = 0xADB70000, len = 32k
     ram_external_app_lge        (rwx) : org = 0xADB80000, len = 32k
-    ram_external_app_lcr        (rwx) : org = 0xADB90000, len = 32k
+    ram_external_app_lcr        (rwx) : org = 0xADB90000, len = 2k
     ram_external_app_jammer     (rwx) : org = 0xADBA0000, len = 32k
     ram_external_app_gpssim     (rwx) : org = 0xADBB0000, len = 32k
-    ram_external_app_spainter   (rwx) : org = 0xADBC0000, len = 32k
+    ram_external_app_spainter   (rwx) : org = 0xADBC0000, len = 2k
     ram_external_app_keyfob     (rwx) : org = 0xADBD0000, len = 32k
     ram_external_app_tetris     (rwx) : org = 0xADBE0000, len = 32k
     ram_external_app_extsensors (rwx) : org = 0xADBF0000, len = 32k
@@ -47,7 +47,7 @@ MEMORY
     ram_external_app_morse_tx   (rwx) : org = 0xADC60000, len = 32k
     ram_external_app_sstvtx     (rwx) : org = 0xADC70000, len = 32k
     ram_external_app_random_password(rwx): org = 0xADC80000, len = 32k
-    ram_external_app_acars_rx   (rwx) : org = 0xADC90000, len = 32k
+    ram_external_app_acars_rx   (rwx) : org = 0xADC90000, len = 2k
     ram_external_app_shoppingcart_lock(rwx): org = 0xADCA0000, len = 32k
     ram_external_app_cvs_spam   (rwx) : org = 0xADCB0000, len = 32k
     ram_external_app_ookbrute   (rwx) : org = 0xADCC0000, len = 32k
@@ -78,7 +78,7 @@ MEMORY
     ram_external_app_dinogame   (rwx) : org = 0xADE50000, len = 32k
     ram_external_app_spaceinv   (rwx) : org = 0xADE60000, len = 32k
     ram_external_app_blackjack  (rwx) : org = 0xADE70000, len = 32k
-    ram_external_app_battleship   (rwx) : org = 0xADE80000, len = 1k
+    ram_external_app_battleship   (rwx) : org = 0xADE80000, len = 2k
     ram_external_app_ert        (rwx) : org = 0xADE90000, len = 32k
     ram_external_app_epirb_rx   (rwx) : org = 0xADEA0000, len = 32k
     ram_external_app_soundboard   (rwx) : org = 0xADEB0000, len = 32k
