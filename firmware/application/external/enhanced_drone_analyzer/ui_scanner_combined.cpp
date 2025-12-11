@@ -241,18 +241,16 @@ bool DroneScanner::load_frequency_database() {
         MutexLock lock(data_mutex); // Захват мьютекса
 
         drone_database_.clear();
-        for (const auto& entry_ptr : temp_db) {
+        // ОПТИМИЗАЦИЯ: Перемещаем указатели вместо копирования и удаления.
+        // Это быстрее и не фрагментирует память.
+        for (auto& entry_ptr : temp_db) {
             if (entry_ptr) {
-                drone_database_.push_back(std::make_unique<freqman_entry>(*entry_ptr));
+                drone_database_.push_back(std::move(entry_ptr));
             }
         }
     } // Мьютекс освобождается здесь автоматически
 
-    // ИСПРАВЛЕНИЕ УТЕЧКИ:
-    // Удаляем оригинальные объекты, созданные load_freqman_file
-    for (auto& entry : temp_db) {
-        delete entry.release();
-    }
+    // Очищаем temp_db, который теперь содержит пустые (moved-from) указатели
     temp_db.clear();
 
     if (drone_database_.size() > 100) {
@@ -323,7 +321,10 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     const size_t batch_size = std::min(static_cast<size_t>(20), total_entries);
 
-    for (size_t i = 0; i < batch_size && scanning_active_; ++i) {
+    for (size_t i = 0; i < batch_size; ++i) {
+        // Проверяем флаг атомарно перед каждой итерацией
+        if (!scanning_active_.load()) break;
+
         freqman_entry entry_copy;
         bool entry_valid = false;
 
@@ -803,7 +804,11 @@ void DroneDetectionLogger::end_session() {
 }
 
 bool DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
+    // Двойная проверка, так как session_active_ не атомарен,
+    // но в рамках одного потока сканера это допустимо.
     if (!session_active_) return false;
+
+    // Пытаемся записать заголовок
     if (!ensure_csv_header()) return false;
 
     // Используем уже существующий в классе line_buffer_ (он там есть, 192 байта)
