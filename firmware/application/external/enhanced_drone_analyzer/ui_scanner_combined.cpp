@@ -882,47 +882,39 @@ std::string DroneDetectionLogger::generate_log_filename() const {
 std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
     std::string result;
 
-    // 1. Резервируем память в куче ОДИН раз.
-    // 384 байта достаточно для всего текста summary.
-    result.reserve(384);
+    // FIX: Резервируем память один раз с запасом.
+    // Избавляет от ~10 malloc/free вызовов при конкатенации.
+    result.reserve(512);
 
     result += "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\n";
 
     // Вычисляем длительность сессии
     uint32_t session_duration_ms = chTimeNow() - session_start_;
-    if (session_duration_ms == 0) session_duration_ms = 1; // Защита от деления на 0
+    if (session_duration_ms == 0) session_duration_ms = 1;
 
-    // 2. Форматируем время БЕЗ %f (float). Используем целочисленное деление.
-    // Пример: 1500 мс -> "1.5" сек.
-    char duration_buf[32];
+    char duration_buf[64]; // Увеличен буфер для безопасности
     snprintf(duration_buf, sizeof(duration_buf), "Duration: %lu.%lu seconds\n",
-             session_duration_ms / 1000,       // Целые секунды
-             (session_duration_ms % 1000) / 100); // Десятые доли секунды
+             session_duration_ms / 1000,
+             (session_duration_ms % 1000) / 100);
     result += duration_buf;
 
-    // 3. Добавляем простые числа, используя эффективные функции Mayhem
     result += "Scan Cycles: ";
     result += to_string_dec_uint(scan_cycles);
     result += "\nTotal Detections: ";
     result += to_string_dec_uint(total_detections);
     result += "\n\nPERFORMANCE:\n";
 
-    // 4. Вычисляем метрики вручную (избегаем тяжелых float операций в snprintf)
-    // Среднее число детекций на цикл (умножаем на 100 для 2 знаков после запятой)
+    // Вычисляем метрики
     uint32_t avg_det_x100 = (scan_cycles > 0) ? (total_detections * 100) / scan_cycles : 0;
-
-    // Детекций в секунду (умножаем на 10 для 1 знака после запятой)
-    // Формула: (detections * 1000 * 10) / ms
     uint32_t rate_x10 = (uint64_t)total_detections * 10000 / session_duration_ms;
 
-    char perf_buf[128]; // Increased buffer size to prevent truncation
+    char perf_buf[128];
     snprintf(perf_buf, sizeof(perf_buf),
              "Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: ",
-             avg_det_x100 / 100, avg_det_x100 % 100, // Целая и дробная части
-             rate_x10 / 10, rate_x10 % 10);          // Целая и дробная части
+             avg_det_x100 / 100, avg_det_x100 % 100,
+             rate_x10 / 10, rate_x10 % 10);
     result += perf_buf;
 
-    // Добавляем количество записей
     result += to_string_dec_uint(logged_count_);
     result += "\n\nEnhanced Drone Analyzer v0.3";
 
@@ -980,25 +972,31 @@ void DroneHardwareController::initialize_radio_state() {
 }
 
 void DroneHardwareController::initialize_spectrum_collector() {
+    // FIX: Передаем лямбду напрямую. Убираем std::move и явный std::function<...>.
+    // Это предотвращает создание сложных VTable переходов, вызывающих warning 0xade...
+
     message_handler_spectrum_config_ = std::make_unique<MessageHandlerRegistration>(
         Message::ID::ChannelSpectrumConfig,
-        std::move(std::function<void(Message* const)>(
-            [this](Message* const p) {
-                this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
-            })));
+        [this](Message* const p) {
+            this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
+        }
+    );
+
     message_handler_frame_sync_ = std::make_unique<MessageHandlerRegistration>(
         Message::ID::DisplayFrameSync,
-        std::move(std::function<void(Message* const)>(
-            [this](Message* const p) {
-                (void)p;
-            })));
+        [this](Message* const p) {
+             (void)p;
+             // Frame sync logic here if needed
+        }
+    );
+
     message_handler_channel_statistics_ = std::make_unique<MessageHandlerRegistration>(
         Message::ID::ChannelStatistics,
-        std::move(std::function<void(Message* const)>(
-            [this](Message* const p) {
-                const auto* statistics_msg = static_cast<const ChannelStatisticsMessage*>(p);
-                this->handle_channel_statistics(statistics_msg->statistics);
-            })));
+        [this](Message* const p) {
+            const auto* statistics_msg = static_cast<const ChannelStatisticsMessage*>(p);
+            this->handle_channel_statistics(statistics_msg->statistics);
+        }
+    );
 }
 
 void DroneHardwareController::cleanup_spectrum_collector() {
@@ -1439,6 +1437,10 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
       marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(LOOKING_GLASS_SINGLEPASS),
       spectrum_config_(), nav_(nav)
 {
+    // FIX: Резервируем память заранее.
+    // MAX_TRACKED_DRONES обычно около 8-10, +2 про запас.
+    detected_drones_.reserve(MAX_TRACKED_DRONES + 2);
+
     for (auto& drone : displayed_drones_) {
         drone = DisplayDroneEntry{};
     }
