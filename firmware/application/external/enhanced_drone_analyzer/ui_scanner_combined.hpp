@@ -13,7 +13,6 @@
 #include <string>
 #include <vector>
 #include <array>
-#include <atomic> // <--- ДОБАВЛЕНО
 
 // Include shared utilities
 #include "ui_drone_common_types.hpp"
@@ -511,14 +510,14 @@ private:
     void update_tracking_counts();
 
     Thread* scanning_thread_ = nullptr;
-    std::atomic<bool> scanning_active_{false}; // <--- ИЗМЕНЕНО на atomic
+    volatile bool scanning_active_{false};
 
     FreqmanDB freq_db_;
     size_t current_db_index_ = 0;
     Frequency last_scanned_frequency_ = 0;
     bool freq_db_loaded_ = false;
 
-    uint32_t scan_cycles_ = 0;
+    volatile uint32_t scan_cycles_ = 0;
     uint32_t total_detections_ = 0;
 
     ScanningMode scanning_mode_ = ScanningMode::DATABASE;

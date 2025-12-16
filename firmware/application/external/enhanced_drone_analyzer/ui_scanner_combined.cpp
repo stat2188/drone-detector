@@ -323,7 +323,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     for (size_t i = 0; i < batch_size; ++i) {
         // Проверяем флаг атомарно перед каждой итерацией
-        if (!scanning_active_.load()) break;
+        if (!scanning_active_) break;
 
         freqman_entry entry_copy;
         bool entry_valid = false;
