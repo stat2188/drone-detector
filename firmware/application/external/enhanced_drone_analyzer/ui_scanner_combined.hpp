@@ -788,25 +788,9 @@ private:
     SpectrumConfig spectrum_config_;
     NavigationView& nav_;
 
-    MessageHandlerRegistration message_handler_spectrum_config_{
-        Message::ID::ChannelSpectrumConfig,
-        [this](const Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
-        }
-    };
-    MessageHandlerRegistration message_handler_frame_sync_{
-        Message::ID::DisplayFrameSync,
-        [this](const Message* const) {
-            if (this->spectrum_fifo_) {
-                ChannelSpectrum channel_spectrum;
-                while (spectrum_fifo_->out(channel_spectrum)) {
-                    this->process_mini_spectrum_data(channel_spectrum);
-                    this->render_mini_spectrum();
-                }
-            }
-        }
-    };
+    // Объявляем только указатели, без инициализации
+    std::unique_ptr<MessageHandlerRegistration> message_handler_spectrum_config_;
+    std::unique_ptr<MessageHandlerRegistration> message_handler_frame_sync_;
 
     // Add missing methods for drone type/color lookup
     const char* get_drone_type_name(DroneType type) const;

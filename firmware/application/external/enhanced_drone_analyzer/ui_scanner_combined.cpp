@@ -969,6 +969,20 @@ void DroneHardwareController::initialize_radio_state() {
     receiver_model.set_sampling_rate(get_configured_sampling_rate());
     receiver_model.set_baseband_bandwidth(get_configured_bandwidth());
     receiver_model.set_squelch_level(0);
+
+    // --- ДОБАВЛЕНО: Установка чувствительности ---
+
+    // 1. RF AMP (Усилитель): Включаем (+14dB).
+    // Если у вас внешняя активная антенна, поставьте false. Для штыревой антенны - true.
+    receiver_model.set_rf_amp(true);
+
+    // 2. LNA Gain (МШУ): 32dB (Диапазон 0-40).
+    // Отвечает за прием слабых сигналов.
+    receiver_model.set_lna(32);
+
+    // 3. VGA Gain (ПП): 32dB (Диапазон 0-62).
+    // Отвечает за громкость сигнала после LNA.
+    receiver_model.set_vga(32);
 }
 
 void DroneHardwareController::initialize_spectrum_collector() {
@@ -1449,6 +1463,32 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
         spectrum_gradient_.set_default();
     }
     initialize_mini_spectrum();
+
+    // --- ДОБАВИТЬ ЭТО В КОНЕЦ КОНСТРУКТОРА ---
+
+    // Инициализация хендлеров в куче (Runtime), что безопасно для адресации
+    message_handler_spectrum_config_ = std::make_unique<MessageHandlerRegistration>(
+        Message::ID::ChannelSpectrumConfig,
+        [this](const Message* const p) {
+            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            this->spectrum_fifo_ = message.fifo;
+        }
+    );
+
+    message_handler_frame_sync_ = std::make_unique<MessageHandlerRegistration>(
+        Message::ID::DisplayFrameSync,
+        [this](const Message* const) {
+            if (this->spectrum_fifo_) {
+                ChannelSpectrum channel_spectrum;
+                while (spectrum_fifo_->out(channel_spectrum)) {
+                    this->process_mini_spectrum_data(channel_spectrum);
+                    this->render_mini_spectrum();
+                }
+            }
+        }
+    );
+
+    // ... остальной код конструктора ...
 }
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
