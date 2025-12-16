@@ -3,7 +3,6 @@
 #pragma once
 
 #include <memory>
-#include <atomic>
 #include "ui_drone_common_types.hpp"
 #include "../../ui_navigation.hpp"
 #include "thread_base.hpp"
@@ -45,7 +44,7 @@ private:
     DroneScanner& scanner_;
     DroneDisplayController& display_controller_;
     ::AudioManager& audio_controller_;
-    std::atomic<bool> scanning_active_{false}; // <--- ИЗМЕНЕНО на atomic
+    volatile bool scanning_active_{false};
     Thread* scanning_thread_ = nullptr;
     uint32_t scan_interval_ms_ = 712;
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 3072;
