@@ -26,8 +26,8 @@ using namespace portapack;
 using namespace tonekey;
 #include <ch.h>
 
-// Выносим переменную наружу, в область видимости файла (static глобальная переменная файла)
-// Это убирает вызов __cxa_guard, так как инициализация происходит на старте, а не при вызове.
+// Move the variable outside, to file scope (static global file variable)
+// This removes the __cxa_guard call, since initialization happens at startup, not on call.
 const TrackedDrone& get_empty_drone() {
     static const TrackedDrone empty{};
     return empty;
@@ -35,33 +35,33 @@ const TrackedDrone& get_empty_drone() {
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
-// Функция парсит строку, меняя её содержимое (вставляет \0 вместо =)
+// Function parses a string, changing its contents (inserts \0 instead of =)
 void parse_settings_line_inplace(char* line, DroneAnalyzerSettings& settings) {
-    // 1. Пропускаем комментарии
+    // 1. Skip comments
     if (line[0] == '#' || line[0] == 0) return;
 
-    // 2. Ищем разделитель '='
+    // 2. Look for separator '='
     char* equals_ptr = strchr(line, '=');
     if (!equals_ptr) return;
 
-    // 3. Разделяем ключ и значение
-    *equals_ptr = 0; // Разрываем строку: "key\0value"
+    // 3. Split key and value
+    *equals_ptr = 0; // Split string: "key\0value"
     char* key = line;
     char* value = equals_ptr + 1;
 
-    // 4. Тримминг пробелов (простой вариант)
-    // Функция trim должна быть легкой, пропускаем leading spaces
+    // 4. Trimming spaces (simple version)
+    // Trim function should be lightweight, skip leading spaces
     while (*key == ' ' || *key == '\t') key++;
     while (*value == ' ' || *value == '\t') value++;
 
-    // Удаление trailing spaces для value (обычно в конце строки может быть \r)
+    // Remove trailing spaces for value (usually \r may be at end of line)
     size_t val_len = strlen(value);
     while (val_len > 0 && (value[val_len-1] == ' ' || value[val_len-1] == '\t' || value[val_len-1] == '\r')) {
         value[val_len-1] = 0;
         val_len--;
     }
 
-    // 5. Сравнение ключей (используем strcmp вместо string ==)
+    // 5. Key comparison (use strcmp instead of string ==)
     if (strcmp(key, "spectrum_mode") == 0) {
         if (strcmp(value, "NARROW") == 0) settings.spectrum_mode = SpectrumMode::NARROW;
         else if (strcmp(value, "MEDIUM") == 0) settings.spectrum_mode = SpectrumMode::MEDIUM;
@@ -2321,8 +2321,6 @@ LoadingScreenView::LoadingScreenView(NavigationView& nav)
     add_child(&text_eda_);
     set_focusable(false);
 }
-
-LoadingScreenView::~LoadingScreenView() {}
 
 void LoadingScreenView::paint(Painter& painter) {
     painter.fill_rectangle(

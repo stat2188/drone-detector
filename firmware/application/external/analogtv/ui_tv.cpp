@@ -108,14 +108,14 @@ void TVView::on_adjust_contrast(int contrast) {
 
 void TVView::on_channel_spectrum(
     const ChannelSpectrum& spectrum) {
-    // Поиск синхроимпульса (максимальное значение in spectrum.db, т.к. негативная модуляция)
-    // Мы ищем локальный максимум, чтобы выровнять phase/offset
+    // Search for sync pulse (maximum value in spectrum.db because negative modulation)
+    // We look for local maximum to align phase/offset
 
-    // ПРИМЕЧАНИЕ: Это упрощенная логика. В идеале нужно скользящее окно.
-    // Здесь мы просто наполняем буфер, а анализ делаем перед отрисовкой.
+    // NOTE: This is simplified logic. Ideally need sliding window.
+    // Here we just fill the buffer, and do analysis before rendering.
 
     for (size_t i = 0; i < 256; i++) {
-        // Сохраняем "сырые" данные для постобработки
+        // Save "raw" data for post-processing
         raw_buffer[i + count * 256] = spectrum.db[i];
         // update min/max for AGC
         min_lvl = std::min(min_lvl, spectrum.db[i]);
@@ -173,7 +173,7 @@ void TVView::on_channel_spectrum(
         Coord line;
         uint32_t bmp_px;
 
-        // Оптимизация: цвет вычисляется один раз на пару линий
+        // Optimization: color is calculated once per pair of lines
         for (line = 0; line < 208; line = line + 2) {
             for (bmp_px = 0; bmp_px < 128; bmp_px++) {
                 // line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px + line/2 * 128]];

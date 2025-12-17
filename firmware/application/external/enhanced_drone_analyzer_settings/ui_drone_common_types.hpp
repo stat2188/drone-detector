@@ -4,11 +4,11 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include "ch.h" // Для типов Mayhem/ChibiOS, если необходимо
+#include "ch.h" // For Mayhem/ChibiOS types if necessary
 
 // 1. Forward declarations and Enums
 
-// FIX: Перенесено наверх для видимости в структурах
+// FIX: Moved up for visibility in structures
 using Frequency = uint64_t;
 
 enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE, ULTRA_NARROW };
@@ -49,7 +49,7 @@ enum class Language {
 struct DronePreset {
     std::string display_name;
     std::string name_template;
-    Frequency frequency_hz; // Теперь Frequency определен выше
+    Frequency frequency_hz; // Now Frequency is defined above
     ThreatLevel threat_level;
     DroneType drone_type;
 
@@ -131,7 +131,7 @@ inline const char* Translator::get_translation(const std::string& key) {
     return key.c_str();
 }
 
-// Константы валидации
+// Validation constants
 static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
 static constexpr uint32_t MAX_SCAN_INTERVAL_MS = 10000;
 static constexpr uint16_t MIN_AUDIO_FREQ = 200;

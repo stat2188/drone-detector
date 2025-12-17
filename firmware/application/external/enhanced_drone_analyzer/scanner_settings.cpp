@@ -62,16 +62,16 @@ namespace ScannerSettingsManager {
     }
 
     bool parse_key_value(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings, char* line_buffer) {
-        // Ищем разделитель
+        // Look for separator
         char* equals_ptr = strchr(line_buffer, '=');
         if (!equals_ptr) return false;
 
-        *equals_ptr = 0; // Разрываем строку на две части: key и value
+        *equals_ptr = 0; // Split string into two parts: key and value
 
         char* key = trim_in_place(line_buffer);
         char* value = trim_in_place(equals_ptr + 1);
 
-        // Сравнение через strcmp (0 аллокаций)
+        // Comparison via strcmp (0 allocations)
         if (strcmp(key, "spectrum_mode") == 0) {
             settings.spectrum_mode = parse_spectrum_mode(value);
             return true;

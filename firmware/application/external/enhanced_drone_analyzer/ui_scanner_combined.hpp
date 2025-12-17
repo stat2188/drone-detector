@@ -225,7 +225,7 @@ static constexpr size_t MAX_DISPLAYED_DRONES = 3;
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
 // Constants for spectrum buffer
-static constexpr int SPEC_HEIGHT = 32; // Экономия 7.5 КБ RAM!
+static constexpr int SPEC_HEIGHT = 32; // Saving 7.5 KB of RAM!
 static constexpr int SPEC_WIDTH = 240;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
@@ -787,7 +787,7 @@ private:
     SpectrumConfig spectrum_config_;
     NavigationView& nav_;
 
-    // Объявляем только указатели, без инициализации
+    // Declare only pointers, without initialization
     MessageHandlerRegistration* message_handler_spectrum_config_ = nullptr;
     MessageHandlerRegistration* message_handler_frame_sync_ = nullptr;
 
@@ -882,6 +882,13 @@ public:
     explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
     ~EnhancedDroneSpectrumAnalyzerView() override;
 
+    // --- ADD THESE LINES ---
+    // Prohibit copying because the class owns raw pointers.
+    // This eliminates the -Weffc++ warning
+    EnhancedDroneSpectrumAnalyzerView(const EnhancedDroneSpectrumAnalyzerView&) = delete;
+    EnhancedDroneSpectrumAnalyzerView& operator=(const EnhancedDroneSpectrumAnalyzerView&) = delete;
+    // ---------------------------
+
     void focus() override;
     std::string title() const override { return "Enhanced Drone Analyzer"; };
 
@@ -946,10 +953,10 @@ private:
     systime_t timer_start_ = 0;
 };
 
-// 1. Объявляем класс меню
+// 1. Declare the menu class
 class DroneSettingsMenuView : public View {
 public:
-    // Конструктор принимает навигацию и контроллер, чтобы вызывать функции
+    // Constructor takes navigation and controller to call functions
     DroneSettingsMenuView(NavigationView& nav, DroneUIController& controller);
 
     void focus() override;
@@ -958,15 +965,15 @@ public:
 private:
     DroneUIController& controller_;
 
-    // Объявляем кнопки. Координаты: {x, y, ширина, высота}
-    // Делаем их большими (40px высотой) для удобства нажатия
+    // Declare buttons. Coordinates: {x, y, width, height}
+    // Make them large (40px height) for easier pressing
     Button button_load_db_   { {16, 16,  208, 40}, "Load Freq Database" };
     Button button_audio_     { {16, 64,  208, 40}, "Audio Alerts: Toggle" };
     Button button_hw_        { {16, 112, 208, 40}, "Hardware Info" };
     Button button_logs_      { {16, 160, 208, 40}, "View CSV Logs" };
     Button button_about_     { {16, 208, 208, 40}, "About EDA" };
 
-    // Текстовая подсказка внизу
+    // Text hint at the bottom
     Text text_info_          { {16, 260, 208, 16}, "Ver: 0.3 | Mayhem" };
 };
 
