@@ -610,7 +610,7 @@ private:
 class SmartThreatHeader : public View {
 public:
     explicit SmartThreatHeader(Rect parent_rect = {0, 0, screen_width, 60});
-    ~SmartThreatHeader() = default;
+    ~SmartThreatHeader();
 
     void update(ThreatLevel max_threat, size_t approaching, size_t static_count,
                 size_t receding, Frequency current_freq, bool is_scanning);
@@ -646,7 +646,7 @@ private:
 class ThreatCard : public View {
 public:
     explicit ThreatCard(size_t card_index = 0, Rect parent_rect = {0, 0, screen_width, 24});
-    ~ThreatCard() = default;
+    ~ThreatCard();
 
     void update_card(const DisplayDroneEntry& drone);
     void clear_card();
@@ -679,7 +679,7 @@ enum class DisplayMode { SCANNING, ALERT, NORMAL };
 class ConsoleStatusBar : public View {
 public:
     explicit ConsoleStatusBar(size_t bar_index = 0, Rect parent_rect = {0, 0, screen_width, 16});
-    ~ConsoleStatusBar() = default;
+    ~ConsoleStatusBar();
 
     void update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles = 0, uint32_t detections = 0);
     void update_alert_status(ThreatLevel threat, size_t total_drones, const std::string& alert_msg);
@@ -880,7 +880,7 @@ private:
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
     explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
-    ~EnhancedDroneSpectrumAnalyzerView() override;
+    ~EnhancedDroneSpectrumAnalyzerView();
 
     void focus() override;
     std::string title() const override { return "Enhanced Drone Analyzer"; };
@@ -936,7 +936,7 @@ private:
 class LoadingScreenView : public View {
 public:
     LoadingScreenView(NavigationView& nav);
-    ~LoadingScreenView() = default;
+    ~LoadingScreenView();
 
     void paint(Painter& painter) override;
 

@@ -1119,12 +1119,14 @@ void DroneHardwareController::update_spectrum_for_scanner() {
 SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
     : View(parent_rect),
       threat_progress_bar_({0, 0, screen_width, 16}),
-      threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | <0 ~0 >0"),
+      threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | ▲0 ■0 ▼0"),
       threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING"),
       current_text_() {
     add_children({&threat_progress_bar_, &threat_status_main_, &threat_frequency_});
     update(ThreatLevel::NONE, 0, 0, 0, 2400000000ULL, false);
 }
+
+SmartThreatHeader::~SmartThreatHeader() {}
 
 void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_t static_count,
                                size_t receding, Frequency current_freq, bool is_scanning) {
@@ -1281,6 +1283,8 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
     add_children({&card_text_});
 }
 
+ThreatCard::~ThreatCard() {}
+
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     // Check if threat level changed (affects background color in paint)
     bool visual_state_changed = (threat_ != drone.threat) || (!is_active_);
@@ -1365,6 +1369,8 @@ ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
     add_children({&progress_text_, &alert_text_, &normal_text_});
     set_display_mode(DisplayMode::NORMAL);
 }
+
+ConsoleStatusBar::~ConsoleStatusBar() {}
 
 void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles, uint32_t detections) {
     set_display_mode(DisplayMode::SCANNING);
@@ -2322,6 +2328,8 @@ LoadingScreenView::LoadingScreenView(NavigationView& nav)
     set_focusable(false);
 }
 
+LoadingScreenView::~LoadingScreenView() {}
+
 void LoadingScreenView::paint(Painter& painter) {
     painter.fill_rectangle(
         {0, 0, portapack::display.width(), portapack::display.height()},
@@ -2455,6 +2463,20 @@ void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
         spectrum_row[pixel_index] = spectrum_gradient_.lut[power];
         pixel_index++;
     }
+}
+
+// Добавьте эти реализации:
+
+SmartThreatHeader::~SmartThreatHeader() {
+}
+
+ThreatCard::~ThreatCard() {
+}
+
+ConsoleStatusBar::~ConsoleStatusBar() {
+}
+
+LoadingScreenView::~LoadingScreenView() {
 }
 
 } // namespace ui::external_app::enhanced_drone_analyzer
