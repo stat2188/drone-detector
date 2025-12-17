@@ -29,7 +29,7 @@ using namespace tonekey;
 // Выносим переменную наружу, в область видимости файла (static глобальная переменная файла)
 // Это убирает вызов __cxa_guard, так как инициализация происходит на старте, а не при вызове.
 const TrackedDrone& get_empty_drone() {
-    static TrackedDrone empty;
+    static const TrackedDrone empty{};
     return empty;
 }
 
