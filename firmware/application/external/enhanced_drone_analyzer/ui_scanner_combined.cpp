@@ -26,6 +26,13 @@ using namespace portapack;
 using namespace tonekey;
 #include <ch.h>
 
+// Выносим переменную наружу, в область видимости файла (static глобальная переменная файла)
+// Это убирает вызов __cxa_guard, так как инициализация происходит на старте, а не при вызове.
+const TrackedDrone& get_empty_drone() {
+    static TrackedDrone empty;
+    return empty;
+}
+
 namespace ui::external_app::enhanced_drone_analyzer {
 
 // Функция парсит строку, меняя её содержимое (вставляет \0 вместо =)
@@ -745,9 +752,7 @@ const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
     if (index < tracked_count_) {
         return tracked_drones_[index];
     }
-    // Создаем статическую переменную внутри функции
-    static const TrackedDrone empty_drone;
-    return empty_drone;
+    return get_empty_drone();
 }
 
 std::string DroneScanner::get_session_summary() const {
