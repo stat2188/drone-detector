@@ -26,12 +26,7 @@ using namespace portapack;
 using namespace tonekey;
 #include <ch.h>
 
-// Выносим переменную наружу, в область видимости файла (static глобальная переменная файла)
-// Это убирает вызов __cxa_guard, так как инициализация происходит на старте, а не при вызове.
-const TrackedDrone& get_empty_drone() {
-    static TrackedDrone empty;
-    return empty;
-}
+static TrackedDrone global_empty_drone;
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
@@ -752,7 +747,7 @@ const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
     if (index < tracked_count_) {
         return tracked_drones_[index];
     }
-    return get_empty_drone();
+    return global_empty_drone;
 }
 
 std::string DroneScanner::get_session_summary() const {
@@ -1447,6 +1442,18 @@ void ConsoleStatusBar::paint(Painter& painter) {
     }
 }
 
+DroneDisplayController::~DroneDisplayController() {
+    // Явное удаление хендлеров
+    if (message_handler_spectrum_config_) {
+        delete message_handler_spectrum_config_;
+        message_handler_spectrum_config_ = nullptr;
+    }
+    if (message_handler_frame_sync_) {
+        delete message_handler_frame_sync_;
+        message_handler_frame_sync_ = nullptr;
+    }
+}
+
 DroneDisplayController::DroneDisplayController(NavigationView& nav)
     : big_display_({4, 6 * 16, 28 * 8, 52}, ""),
       scanning_progress_({0, 7 * 16, screen_width, 8}),
@@ -1482,7 +1489,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
     // --- ДОБАВИТЬ ЭТО В КОНЕЦ КОНСТРУКТОРА ---
 
     // Инициализация хендлеров в куче (Runtime), что безопасно для адресации
-    message_handler_spectrum_config_ = std::make_unique<MessageHandlerRegistration>(
+    message_handler_spectrum_config_ = new MessageHandlerRegistration(
         Message::ID::ChannelSpectrumConfig,
         [this](const Message* const p) {
             const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
@@ -1490,7 +1497,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
         }
     );
 
-    message_handler_frame_sync_ = std::make_unique<MessageHandlerRegistration>(
+    message_handler_frame_sync_ = new MessageHandlerRegistration(
         Message::ID::DisplayFrameSync,
         [this](const Message* const) {
             if (this->spectrum_fifo_) {

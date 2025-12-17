@@ -788,8 +788,8 @@ private:
     NavigationView& nav_;
 
     // Объявляем только указатели, без инициализации
-    std::unique_ptr<MessageHandlerRegistration> message_handler_spectrum_config_;
-    std::unique_ptr<MessageHandlerRegistration> message_handler_frame_sync_;
+    MessageHandlerRegistration* message_handler_spectrum_config_ = nullptr;
+    MessageHandlerRegistration* message_handler_frame_sync_ = nullptr;
 
     // Add missing methods for drone type/color lookup
     const char* get_drone_type_name(DroneType type) const;
