@@ -814,7 +814,7 @@ public:
                      DroneHardwareController& hardware,
                      DroneScanner& scanner,
                      ::AudioManager& audio_mgr);
-    ~DroneUIController() = default;
+    ~DroneUIController();
 
     void on_start_scan();
     void on_stop_scan();
@@ -846,7 +846,7 @@ private:
     DroneScanner& scanner_;
     ::AudioManager& audio_mgr_;
     bool scanning_active_ = false;
-    std::unique_ptr<DroneDisplayController> display_controller_;
+    DroneDisplayController* display_controller_ = nullptr;
     ::ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
     void on_manage_frequencies();
@@ -895,19 +895,19 @@ private:
     NavigationView& nav_;
 
     // Core components
-    std::unique_ptr<DroneHardwareController> hardware_;
-    std::unique_ptr<DroneScanner> scanner_;
+    DroneHardwareController* hardware_ = nullptr;
+    DroneScanner* scanner_ = nullptr;
     ::AudioManager audio_;  // Direct member now
 
     // Forward declare SettingsManager to avoid circular dependency
-    std::unique_ptr<DroneUIController> ui_controller_;
-    std::unique_ptr<DroneDisplayController> display_controller_;
-    std::unique_ptr<ScanningCoordinator> scanning_coordinator_;
+    DroneUIController* ui_controller_ = nullptr;
+    DroneDisplayController* display_controller_ = nullptr;
+    ScanningCoordinator* scanning_coordinator_ = nullptr;
 
     // UI components (modern layout)
-    std::unique_ptr<SmartThreatHeader> smart_header_;
-    std::unique_ptr<ConsoleStatusBar> status_bar_;
-    std::array<std::unique_ptr<ThreatCard>, 3> threat_cards_;
+    SmartThreatHeader* smart_header_ = nullptr;
+    ConsoleStatusBar* status_bar_ = nullptr;
+    std::array<ThreatCard*, 3> threat_cards_ = {nullptr, nullptr, nullptr};
 
     // Simple UI widgets (replacing complex ones)
     Button button_start_stop_;

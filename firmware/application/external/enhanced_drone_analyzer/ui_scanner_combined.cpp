@@ -26,8 +26,6 @@ using namespace portapack;
 using namespace tonekey;
 #include <ch.h>
 
-static TrackedDrone global_empty_drone;
-
 namespace ui::external_app::enhanced_drone_analyzer {
 
 // Функция парсит строку, меняя её содержимое (вставляет \0 вместо =)
@@ -747,7 +745,9 @@ const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
     if (index < tracked_count_) {
         return tracked_drones_[index];
     }
-    return global_empty_drone;
+    // Создаем статическую переменную внутри функции
+    static const TrackedDrone empty_drone;
+    return empty_drone;
 }
 
 std::string DroneScanner::get_session_summary() const {
@@ -1871,13 +1871,21 @@ DroneUIController::DroneUIController(NavigationView& nav,
       scanner_(scanner),
       audio_mgr_(audio_mgr),
       scanning_active_(false),
-      display_controller_(std::make_unique<DroneDisplayController>(nav)),
+      display_controller_(new DroneDisplayController(nav)),
       settings_()
 {
     settings_.spectrum_mode = SpectrumMode::MEDIUM;
     settings_.scan_interval_ms = 1000;
     settings_.rssi_threshold_db = -90;
     settings_.enable_audio_alerts = true;
+}
+
+// --- ДОБАВИТЬ ЭТОТ ДЕСТРУКТОР ---
+DroneUIController::~DroneUIController() {
+    if (display_controller_) {
+        delete display_controller_;
+        display_controller_ = nullptr;
+    }
 }
 
 void DroneUIController::on_start_scan() {
@@ -2059,15 +2067,14 @@ void DroneSettingsMenuView::focus() {
 EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
     : View({0, 0, screen_width, screen_height}),
       nav_(nav),
-      hardware_(std::make_unique<DroneHardwareController>()),
-      scanner_(std::make_unique<DroneScanner>()),
+      hardware_(new DroneHardwareController()),
+      scanner_(new DroneScanner()),
       audio_(),
-      ui_controller_(std::make_unique<DroneUIController>(nav, *hardware_, *scanner_, audio_)),
-      display_controller_(std::make_unique<DroneDisplayController>(nav)),
-      scanning_coordinator_(std::make_unique<ScanningCoordinator>(nav, *hardware_, *scanner_, *display_controller_, audio_)),
-      smart_header_(std::make_unique<SmartThreatHeader>(Rect{0, 0, screen_width, 60})),
-      status_bar_(std::make_unique<ConsoleStatusBar>(0, Rect{0, screen_height - 80, screen_width, 16})),
-      threat_cards_(),
+      ui_controller_(new DroneUIController(nav, *hardware_, *scanner_, audio_)),
+      display_controller_(new DroneDisplayController(nav)),
+      scanning_coordinator_(new ScanningCoordinator(nav, *hardware_, *scanner_, *display_controller_, audio_)),
+      smart_header_(new SmartThreatHeader(Rect{0, 0, screen_width, 60})),
+      status_bar_(new ConsoleStatusBar(0, Rect{0, screen_height - 80, screen_width, 16})),
       button_start_stop_({{screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"}),
       button_menu_({{screen_width - 80, screen_height - 40, 72, 32}, "MENU"}),
       button_audio_(),
@@ -2077,7 +2084,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 {
     for (size_t i = 0; i < threat_cards_.size(); ++i) {
         size_t card_y_pos = 52 + i * 26;
-        threat_cards_[i] = std::make_unique<ThreatCard>(i, Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
+        threat_cards_[i] = new ThreatCard(i, Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
     }
 
     load_settings_from_sd_card(settings_);
@@ -2099,6 +2106,22 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
     stop_scanning_thread();
+
+    // Delete in reverse order of creation
+    if (scanning_coordinator_) delete scanning_coordinator_;
+    if (display_controller_) delete display_controller_;
+    if (ui_controller_) delete ui_controller_;
+    if (scanner_) delete scanner_;
+    if (hardware_) delete hardware_;
+
+    // Delete UI components
+    if (status_bar_) delete status_bar_;
+    if (smart_header_) delete smart_header_;
+
+    // Delete threat cards
+    for (auto& card : threat_cards_) {
+        if (card) delete card;
+    }
 }
 
 void EnhancedDroneSpectrumAnalyzerView::focus() {
@@ -2277,9 +2300,9 @@ void EnhancedDroneSpectrumAnalyzerView::set_scanning_mode_from_index(size_t inde
 }
 
 void EnhancedDroneSpectrumAnalyzerView::add_ui_elements() {
-    add_children({smart_header_.get(), status_bar_.get()});
+    add_children({smart_header_, status_bar_});
     for (auto& card : threat_cards_) {
-        add_child(card.get());
+        if(card) add_child(card);
     }
     add_children({&button_start_stop_, &button_menu_, &button_audio_});
 }
