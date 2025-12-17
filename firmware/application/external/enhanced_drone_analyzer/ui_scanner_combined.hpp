@@ -882,12 +882,9 @@ public:
     explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
     ~EnhancedDroneSpectrumAnalyzerView() override;
 
-    // --- ADD THESE LINES ---
-    // Prohibit copying because the class owns raw pointers.
-    // This eliminates the -Weffc++ warning
+    // ИСПРАВЛЕНИЕ 1: Запрет копирования для устранения warning -Weffc++
     EnhancedDroneSpectrumAnalyzerView(const EnhancedDroneSpectrumAnalyzerView&) = delete;
     EnhancedDroneSpectrumAnalyzerView& operator=(const EnhancedDroneSpectrumAnalyzerView&) = delete;
-    // ---------------------------
 
     void focus() override;
     std::string title() const override { return "Enhanced Drone Analyzer"; };
@@ -926,6 +923,9 @@ private:
 
     bool scanning_active_ = false;
     ::ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
+
+    // ИСПРАВЛЕНИЕ 2: Хендлер для обновления UI (DisplayFrameSync)
+    MessageHandlerRegistration* message_handler_stats_ = nullptr;
 
     void start_scanning_thread();
     void stop_scanning_thread();

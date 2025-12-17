@@ -2104,6 +2104,18 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 
     initialize_modern_layout();
     setup_button_handlers();
+
+    // ИСПРАВЛЕНИЕ 3: Подписка на обновление кадров (~60 FPS) для живого UI
+    message_handler_stats_ = new MessageHandlerRegistration(
+        Message::ID::DisplayFrameSync,
+        [this](const Message* const) {
+            this->handle_scanner_update();
+        }
+    );
+
+    // Первичное обновление
+    update_modern_layout();
+
     initialize_scanning_mode();
     add_ui_elements();
     update_modern_layout();
@@ -2111,6 +2123,9 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
     stop_scanning_thread();
+
+    // ИСПРАВЛЕНИЕ 4: Удаляем хендлер обновления UI
+    if (message_handler_stats_) delete message_handler_stats_;
 
     // Delete in reverse order of creation
     if (scanning_coordinator_) delete scanning_coordinator_;
@@ -2160,11 +2175,9 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
-    // 1. First stop high-level logic (scanning threads)
-    // This will prevent new attempts to access hardware.
-    stop_scanning_thread();
+    // ИСПРАВЛЕНИЕ 5: Явная остановка всех процессов
+    stop_scanning_thread(); // Остановка потока координатора
 
-    // 2. Stop scanner logic (reset states)
     if (scanner_) {
         scanner_->stop_scanning();
     }
