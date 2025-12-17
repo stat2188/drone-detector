@@ -388,7 +388,7 @@ private:
 
 class DroneScanner {
    public:
-    virtual ~DroneScanner();
+    ~DroneScanner();
 
 public:
     enum class ScanningMode {
@@ -591,10 +591,10 @@ private:
     int32_t get_configured_bandwidth() const;
 
     // Direct initialization in constructor
-    std::unique_ptr<MessageHandlerRegistration> message_handler_spectrum_config_;
-    std::unique_ptr<MessageHandlerRegistration> message_handler_frame_sync_;
-    std::unique_ptr<MessageHandlerRegistration> message_handler_spectrum_;
-    std::unique_ptr<MessageHandlerRegistration> message_handler_channel_statistics_;
+    MessageHandlerRegistration* message_handler_spectrum_config_ = nullptr;
+    MessageHandlerRegistration* message_handler_frame_sync_ = nullptr;
+    MessageHandlerRegistration* message_handler_spectrum_ = nullptr;
+    MessageHandlerRegistration* message_handler_channel_statistics_ = nullptr;
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;

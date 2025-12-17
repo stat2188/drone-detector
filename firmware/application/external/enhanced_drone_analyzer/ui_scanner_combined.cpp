@@ -28,7 +28,10 @@ using namespace tonekey;
 
 // Выносим переменную наружу, в область видимости файла (static глобальная переменная файла)
 // Это убирает вызов __cxa_guard, так как инициализация происходит на старте, а не при вызове.
-static TrackedDrone global_empty_drone;
+const TrackedDrone& get_empty_drone() {
+    static TrackedDrone empty;
+    return empty;
+}
 
 namespace ui::external_app::enhanced_drone_analyzer {
 
@@ -749,7 +752,7 @@ const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
     if (index < tracked_count_) {
         return tracked_drones_[index];
     }
-    return global_empty_drone;
+    return get_empty_drone();
 }
 
 std::string DroneScanner::get_session_summary() const {
@@ -992,14 +995,14 @@ void DroneHardwareController::initialize_spectrum_collector() {
     // FIX: Передаем лямбду напрямую. Убираем std::move и явный std::function<...>.
     // Это предотвращает создание сложных VTable переходов, вызывающих warning 0xade...
 
-    message_handler_spectrum_config_ = std::make_unique<MessageHandlerRegistration>(
+    message_handler_spectrum_config_ = new MessageHandlerRegistration(
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
             this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
         }
     );
 
-    message_handler_frame_sync_ = std::make_unique<MessageHandlerRegistration>(
+    message_handler_frame_sync_ = new MessageHandlerRegistration(
         Message::ID::DisplayFrameSync,
         [this](Message* const p) {
              (void)p;
@@ -1007,7 +1010,7 @@ void DroneHardwareController::initialize_spectrum_collector() {
         }
     );
 
-    message_handler_channel_statistics_ = std::make_unique<MessageHandlerRegistration>(
+    message_handler_channel_statistics_ = new MessageHandlerRegistration(
         Message::ID::ChannelStatistics,
         [this](Message* const p) {
             const auto* statistics_msg = static_cast<const ChannelStatisticsMessage*>(p);
@@ -1018,6 +1021,15 @@ void DroneHardwareController::initialize_spectrum_collector() {
 
 void DroneHardwareController::cleanup_spectrum_collector() {
     spectrum_streaming_active_ = false;
+
+    delete message_handler_spectrum_config_;
+    message_handler_spectrum_config_ = nullptr;
+
+    delete message_handler_frame_sync_;
+    message_handler_frame_sync_ = nullptr;
+
+    delete message_handler_channel_statistics_;
+    message_handler_channel_statistics_ = nullptr;
 }
 
 void DroneHardwareController::set_spectrum_mode(SpectrumMode mode) {
