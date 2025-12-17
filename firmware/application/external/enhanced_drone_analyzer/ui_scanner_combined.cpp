@@ -1496,7 +1496,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
     // Инициализация хендлеров в куче (Runtime), что безопасно для адресации
     message_handler_spectrum_config_ = new MessageHandlerRegistration(
         Message::ID::ChannelSpectrumConfig,
-        [this](const Message* const p) {
+        [this](Message* const p) {
             const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
             this->spectrum_fifo_ = message.fifo;
         }
@@ -1504,7 +1504,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
 
     message_handler_frame_sync_ = new MessageHandlerRegistration(
         Message::ID::DisplayFrameSync,
-        [this](const Message* const) {
+        [this](Message* const) {
             if (this->spectrum_fifo_) {
                 ChannelSpectrum channel_spectrum;
                 while (spectrum_fifo_->out(channel_spectrum)) {
@@ -2108,7 +2108,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     // ИСПРАВЛЕНИЕ 3: Подписка на обновление кадров (~60 FPS) для живого UI
     message_handler_stats_ = new MessageHandlerRegistration(
         Message::ID::DisplayFrameSync,
-        [this](const Message* const) {
+        [this](Message* const) {
             this->handle_scanner_update();
         }
     );
