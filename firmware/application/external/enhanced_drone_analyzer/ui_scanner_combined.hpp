@@ -704,7 +704,7 @@ private:
 class DroneDisplayController {
 public:
     explicit DroneDisplayController(NavigationView& nav);
-    ~DroneDisplayController() = default;
+    ~DroneDisplayController();
 
     Text& big_display() { return big_display_; }
     ProgressBar& scanning_progress() { return scanning_progress_; }
