@@ -32,7 +32,7 @@ extern "C" {
 __attribute__((section(".external_app.app_enhanced_drone_analyzer.application_information"), used))
 application_information_t _application_information_enhanced_drone_analyzer = {
     
-    /*.memory_location = */ (uint8_t*)0x00000000,
+    /*.memory_location = */ (uint8_t*)0xADF00000,
     
     /*.externalAppEntry = */ ui::external_app::enhanced_drone_analyzer::initialize_app, 
     
