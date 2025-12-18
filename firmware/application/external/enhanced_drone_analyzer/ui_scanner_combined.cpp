@@ -4,7 +4,6 @@
 
 #include "ui_scanner_combined.hpp"
 #include "ui_drone_audio.hpp"
-#include "shared_settings.hpp"
 #include "gradient.hpp"
 #include "baseband_api.hpp"
 #include "portapack.hpp"

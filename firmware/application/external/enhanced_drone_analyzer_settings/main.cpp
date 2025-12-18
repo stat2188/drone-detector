@@ -5,7 +5,6 @@
 #include "ui_navigation.hpp"
 #include "external_app.hpp"
 #include "ui_settings_combined.hpp"
-#include "../enhanced_drone_analyzer/shared_settings.hpp"
 
 // Define VERSION_MD5 if not defined (build system should provide this)
 #ifndef VERSION_MD5

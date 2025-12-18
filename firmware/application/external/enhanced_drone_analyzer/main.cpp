@@ -8,7 +8,6 @@
 #include "portapack.hpp"
 
 #include "ui_scanner_combined.hpp"
-#include "shared_settings.hpp"
 
 #ifndef VERSION_MD5
 #define VERSION_MD5 1
