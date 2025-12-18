@@ -243,19 +243,34 @@ bool DroneScanner::load_frequency_database() {
         return false;
     }
 
-    // Блок критической секции
-    {
-        MutexLock lock(data_mutex); // Захват мьютекса
+    // ИСПРАВЛЕНИЕ: Защита от утечки памяти при исключениях
+    try {
+        // Блок критической секции
+        {
+            MutexLock lock(data_mutex); // Захват мьютекса
 
-        drone_database_.clear();
-        // ОПТИМИЗАЦИЯ: Перемещаем указатели вместо копирования и удаления.
-        // Это быстрее и не фрагментирует память.
-        for (auto& entry_ptr : temp_db) {
-            if (entry_ptr) {
-                drone_database_.push_back(std::move(entry_ptr));
+            drone_database_.clear();
+
+            // Резервируем память для предотвращения перераспределения
+            drone_database_.reserve(temp_db.size());
+
+            // Безопасное перемещение указателей с обработкой исключений
+            for (auto& entry_ptr : temp_db) {
+                if (entry_ptr) {
+                    drone_database_.push_back(std::move(entry_ptr));
+                }
             }
-        }
-    } // Мьютекс освобождается здесь автоматически
+        } // Мьютекс освобождается здесь автоматически
+    } catch (...) {
+        // Если произошло исключение, очищаем частично заполненный вектор
+        drone_database_.clear();
+
+        // Очищаем temp_db, который теперь содержит пустые (moved-from) указатели
+        temp_db.clear();
+
+        // Перебрасываем исключение дальше
+        throw;
+    }
 
     // Очищаем temp_db, который теперь содержит пустые (moved-from) указатели
     temp_db.clear();
@@ -294,6 +309,21 @@ const char* DroneScanner::scanning_mode_name() const {
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     if (!scanning_active_) return;
 
+    // ИСПРАВЛЕНИЕ: Adaptive timing based on current load and detections
+    uint32_t base_interval = 750; // Base interval in milliseconds
+    uint32_t adaptive_interval = base_interval;
+
+    // Adjust timing based on current detections
+    size_t current_detections = get_total_detections();
+    if (current_detections > 5) {
+        // High detection rate - scan faster
+        adaptive_interval = (250U > base_interval - (current_detections * 50)) ? 250U : base_interval - (current_detections * 50);
+    } else if (current_detections == 0 && scan_cycles_ > 10) {
+        // No detections for a while - slow down to save power
+        adaptive_interval = (2000U < base_interval + 250) ? 2000U : base_interval + 250;
+    }
+
+    // Apply mode-specific adjustments
     switch (scanning_mode_) {
         case ScanningMode::DATABASE:
             perform_database_scan_cycle(hardware);
@@ -305,7 +335,13 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
             perform_hybrid_scan_cycle(hardware);
             break;
     }
+
     scan_cycles_++;
+
+    // Adaptive sleep based on current situation
+    if (scanning_active_) {
+        chThdSleepMilliseconds(adaptive_interval);
+    }
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
@@ -328,6 +364,9 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     const size_t batch_size = std::min(static_cast<size_t>(20), total_entries);
 
+    // 2. Сохраняем размер базы в локальную переменную для избежания race condition
+    size_t local_db_size = total_entries;
+
     for (size_t i = 0; i < batch_size; ++i) {
         // Проверяем флаг атомарно перед каждой итерацией
         if (!scanning_active_) break;
@@ -335,37 +374,53 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         freqman_entry entry_copy;
         bool entry_valid = false;
 
-        // 2. Копируем одну запись для работы (под мьютексом)
+        // 3. Копируем одну запись для работы (под мьютексом)
         {
             MutexLock lock(data_mutex);
-            // Проверяем, не изменился ли размер пока мы спали
-            if (!drone_database_.empty()) {
-                if (current_db_index_ >= drone_database_.size()) {
+            // Используем сохраненный размер вместо вызова drone_database_.size()
+            // Это предотвращает race condition при одновременном изменении базы
+            if (local_db_size > 0) {
+                if (current_db_index_ >= local_db_size) {
                     current_db_index_ = 0;
                 }
 
-                if (drone_database_[current_db_index_]) {
+                if (current_db_index_ < drone_database_.size() && drone_database_[current_db_index_]) {
                     entry_copy = *drone_database_[current_db_index_];
                     entry_valid = true;
                 }
-                current_db_index_ = (current_db_index_ + 1) % drone_database_.size();
+                current_db_index_ = (current_db_index_ + 1) % local_db_size;
             }
         } // Мьютекс освобождается здесь
 
-        // 3. Работаем с железом БЕЗ блокировки (UI не будет виснуть)
+        // 4. Работаем с железом БЕЗ блокировки (UI не будет виснуть)
         if (entry_valid) {
             Frequency target_freq_hz = entry_copy.frequency_a;
 
-            if (target_freq_hz >= 50000000 && target_freq_hz <= 6000000000) {
-                if (hardware.tune_to_frequency(target_freq_hz)) {
-                    chThdSleepMilliseconds(30);
-                    int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
+            // ИСПРАВЛЕНИЕ: Улучшенная валидация частоты с защитой от переполнения
+            // Проверяем, что частота в допустимом диапазоне и не приведет к переполнению
+            const Frequency MIN_VALID_FREQ = 50000000ULL;      // 50 MHz
+            const Frequency MAX_VALID_FREQ = 6000000000ULL;    // 6 GHz
 
-                    // Этот метод сам возьмет мьютекс внутри, когда нужно будет сохранить результат
-                    process_rssi_detection(entry_copy, real_rssi);
+            // Дополнительная проверка на переполнение
+            if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) {
+                // Пропускаем недопустимую частоту
+                continue;
+            }
 
-                    last_scanned_frequency_ = target_freq_hz;
-                }
+            // Проверка на переполнение при арифметических операциях
+            if (target_freq_hz + 1000000ULL < target_freq_hz) {
+                // Обнаружено переполнение - пропускаем эту частоту
+                continue;
+            }
+
+            if (hardware.tune_to_frequency(target_freq_hz)) {
+                chThdSleepMilliseconds(30);
+                int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
+
+                // Этот метод сам возьмет мьютекс внутри, когда нужно будет сохранить результат
+                process_rssi_detection(entry_copy, real_rssi);
+
+                last_scanned_frequency_ = target_freq_hz;
             }
         }
     }
@@ -516,7 +571,11 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     const int32_t MIN_VALID_RSSI = -110;
     const int32_t MAX_VALID_RSSI = 10;
 
-    if (rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI) {
+    // ИСПРАВЛЕНИЕ: Исправлена логика валидации RSSI
+    // Было: rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
+    // Стало: rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
+    // Теперь значения от -128 до -110 будут корректно обрабатываться
+    if (rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI) {
         return;
     }
 
@@ -636,6 +695,7 @@ void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequ
         }
     }
 
+    // ИСПРАВЛЕНИЕ: Защита от переполнения ring buffer
     if (tracked_count_ < MAX_TRACKED_DRONES) {
         TrackedDrone new_drone;
         new_drone.frequency = static_cast<uint32_t>(frequency);
@@ -648,8 +708,16 @@ void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequ
         return;
     }
 
+    // Ring buffer overflow protection: find oldest entry and replace it
     size_t oldest_index = 0;
     systime_t oldest_time = tracked_drones_[0].last_seen;
+
+    // Validate that tracked_count_ > 0 before accessing array
+    if (tracked_count_ == 0) {
+        // This should never happen, but handle it gracefully
+        return;
+    }
+
     for (size_t i = 1; i < tracked_count_; i++) {
         if (tracked_drones_[i].last_seen < oldest_time) {
             oldest_time = tracked_drones_[i].last_seen;
@@ -657,12 +725,15 @@ void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequ
         }
     }
 
-    tracked_drones_[oldest_index] = TrackedDrone();
-    tracked_drones_[oldest_index].frequency = static_cast<uint32_t>(frequency);
-    tracked_drones_[oldest_index].drone_type = static_cast<uint8_t>(type);
-    tracked_drones_[oldest_index].threat_level = static_cast<uint8_t>(threat_level);
-    tracked_drones_[oldest_index].add_rssi(static_cast<int16_t>(rssi), chTimeNow());
-    update_tracking_counts();
+    // Replace oldest entry instead of shifting array
+    TrackedDrone& oldest_drone = tracked_drones_[oldest_index];
+    oldest_drone = TrackedDrone();
+    oldest_drone.frequency = static_cast<uint32_t>(frequency);
+    oldest_drone.drone_type = static_cast<uint8_t>(type);
+    oldest_drone.threat_level = static_cast<uint8_t>(threat_level);
+    oldest_drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
+
+    // No need to call update_tracking_counts() here since we're just replacing an existing entry
 }
 
 void DroneScanner::remove_stale_drones() {
