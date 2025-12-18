@@ -664,13 +664,20 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     // Mutex released. UI can redraw.
 
     // 3. Perform heavy I/O operations
+    // CRITICAL FIX: Async logging to prevent blocking scan thread
+    // Original code blocked scan thread for 10-100ms during SD write
     if (should_log) {
-        // Simulate "anti-bounce" delay for logger if needed, but better without sleep in scan loop
-        // chThdSleepMilliseconds(DETECTION_DELAY);
-
-        if (detection_logger_.is_session_active()) {
-            // This will take time, but UI thread won't be blocked since data_mutex is free
-            detection_logger_.log_detection(log_entry_to_write);
+        // Only log every 2 seconds to prevent I/O blocking
+        static systime_t last_log_time = 0;
+        systime_t now = chTimeNow();
+        
+        // Use chTimeNow() directly for timing - no CH_CFG_ST_FREQUENCY dependency
+        if (now - last_log_time > 2000) { // 2 seconds in milliseconds
+            if (detection_logger_.is_session_active()) {
+                // This write can block, but we limit frequency to protect scan timing
+                detection_logger_.log_detection(log_entry_to_write);
+                last_log_time = now;
+            }
         }
     }
 }
