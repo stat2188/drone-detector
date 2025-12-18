@@ -275,6 +275,36 @@ struct DroneUpdateMessage {
     } data;
 };
 
+// DetectionRingBuffer for safe detection tracking
+class DetectionRingBuffer {
+public:
+    DetectionRingBuffer() = default;
+    
+    void update_detection(size_t freq_hash, uint8_t count, int32_t rssi) {
+        auto& entry = buffer_[freq_hash % BUFFER_SIZE];
+        entry.count = count;
+        entry.rssi = rssi;
+    }
+    
+    uint8_t get_detection_count(size_t freq_hash) const {
+        return buffer_[freq_hash % BUFFER_SIZE].count;
+    }
+    
+    int32_t get_rssi_value(size_t freq_hash) const {
+        return buffer_[freq_hash % BUFFER_SIZE].rssi;
+    }
+    
+private:
+    static constexpr size_t BUFFER_SIZE = 1024;
+    
+    struct DetectionEntry {
+        uint8_t count = 0;
+        int32_t rssi = -120;
+    };
+    
+    DetectionEntry buffer_[BUFFER_SIZE] = {};
+};
+
 // ===========================================
 // PART 2: CONFIGURATION STRUCTURES (Shared with Settings App)
 // ===========================================

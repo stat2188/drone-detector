@@ -163,7 +163,6 @@ DroneScanner::DroneScanner()
       wideband_scan_data_(),
       drone_database_(),
       detection_logger_(),
-      data_mutex(),
       detection_ring_buffer_()
 {
     // IMPORTANT: Initialize mutex before everything else
@@ -174,6 +173,9 @@ DroneScanner::DroneScanner()
 }
 
 DroneScanner::~DroneScanner() {
+    // Clean up mutex - Note: ChibiOS mutexes don't need explicit finalization
+    // The mutex is automatically cleaned up when the object is destroyed
+    
     stop_scanning();
     cleanup_database_and_scanner();
 }
