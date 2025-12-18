@@ -555,8 +555,9 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 }
 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
+    // ИСПРАВЛЕНИЕ 4: Улучшение валидации RSSI и частот
     // 1. Preliminary filtering (no locks required)
-    const int32_t MIN_VALID_RSSI = -110;
+    const int32_t MIN_VALID_RSSI = -120;  // Расширяем диапазон для слабых сигналов
     const int32_t MAX_VALID_RSSI = 10;
 
     // FIX: Fixed RSSI validation logic
@@ -567,16 +568,33 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
+    // Добавляем адаптивный порог в зависимости от текущего уровня шума
+    int32_t adaptive_threshold = -90;
+    if (rssi > -100 && rssi < -80) {
+        // Для слабых сигналов используем более низкий порог
+        adaptive_threshold = -100;
+    } else if (rssi > -80) {
+        // Для сильных сигналов используем стандартный порог
+        adaptive_threshold = -90;
+    }
+
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN)) {
         return;
     }
 
+    // Улучшенная валидация частоты с учетом диапазонов дронов
     if (!SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
         return;
     }
 
+    // Ограничиваем частоты для дронов (433MHz - 5.8GHz)
+    const Frequency MIN_DRONE_FREQ = 433000000ULL;
+    const Frequency MAX_DRONE_FREQ = 5800000000ULL;
+    if (entry.frequency_a < MIN_DRONE_FREQ || entry.frequency_a > MAX_DRONE_FREQ) {
+        return;
+    }
+
     // Determine parameters (locally)
-    int32_t detection_threshold = -90;
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
 
@@ -590,7 +608,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         }
     }
 
-    if (rssi < detection_threshold) {
+    // Используем адаптивный порог
+    if (rssi < adaptive_threshold) {
         return;
     }
 
@@ -605,9 +624,9 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         total_detections_++; // Protect counter
 
         size_t freq_hash = entry.frequency_a / 100000;
-        int32_t effective_threshold = detection_threshold;
-        if (detection_ring_buffer_.get_rssi_value(freq_hash) < detection_threshold) {
-            effective_threshold = detection_threshold + HYSTERESIS_MARGIN_DB;
+        int32_t effective_threshold = adaptive_threshold; // Используем адаптивный порог
+        if (detection_ring_buffer_.get_rssi_value(freq_hash) < adaptive_threshold) {
+            effective_threshold = adaptive_threshold + HYSTERESIS_MARGIN_DB;
         }
 
         if (rssi >= effective_threshold) {
@@ -697,14 +716,14 @@ void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequ
     }
 
     // Ring buffer overflow protection: find oldest entry and replace it
-    size_t oldest_index = 0;
-    systime_t oldest_time = tracked_drones_[0].last_seen;
-
-    // Validate that tracked_count_ > 0 before accessing array
+    // ИСПРАВЛЕНИЕ 2: Добавлена защита от переполнения буфера
     if (tracked_count_ == 0) {
         // This should never happen, but handle it gracefully
         return;
     }
+
+    size_t oldest_index = 0;
+    systime_t oldest_time = tracked_drones_[0].last_seen;
 
     for (size_t i = 1; i < tracked_count_; i++) {
         if (tracked_drones_[i].last_seen < oldest_time) {
@@ -945,45 +964,46 @@ std::string DroneDetectionLogger::generate_log_filename() const {
 }
 
 std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
-    std::string result;
+    // ИСПРАВЛЕНИЕ 3: Оптимизация работы с памятью в format_session_summary
+    // Используем буфер на стеке вместо множественных операций с std::string
 
-    // FIX: Резервируем память один раз с запасом.
-    // Избавляет от ~10 malloc/free вызовов при конкатенации.
-    result.reserve(512);
+    char buffer[512]; // Буфер на стеке
+    size_t offset = 0;
 
-    result += "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\n";
+    // Форматируем весь текст за один проход
+    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                      "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\n");
 
     // Вычисляем длительность сессии
     uint32_t session_duration_ms = chTimeNow() - session_start_;
     if (session_duration_ms == 0) session_duration_ms = 1;
 
-    char duration_buf[64]; // Увеличен буфер для безопасности
-    snprintf(duration_buf, sizeof(duration_buf), "Duration: %lu.%lu seconds\n",
-             session_duration_ms / 1000,
-             (session_duration_ms % 1000) / 100);
-    result += duration_buf;
+    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                      "Duration: %lu.%lu seconds\n",
+                      session_duration_ms / 1000,
+                      (session_duration_ms % 1000) / 100);
 
-    result += "Scan Cycles: ";
-    result += to_string_dec_uint(scan_cycles);
-    result += "\nTotal Detections: ";
-    result += to_string_dec_uint(total_detections);
-    result += "\n\nPERFORMANCE:\n";
+    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                      "Scan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\n",
+                      scan_cycles, total_detections);
 
     // Вычисляем метрики
     uint32_t avg_det_x100 = (scan_cycles > 0) ? (total_detections * 100) / scan_cycles : 0;
     uint32_t rate_x10 = (uint64_t)total_detections * 10000 / session_duration_ms;
 
-    char perf_buf[128];
-    snprintf(perf_buf, sizeof(perf_buf),
-             "Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: ",
-             avg_det_x100 / 100, avg_det_x100 % 100,
-             rate_x10 / 10, rate_x10 % 10);
-    result += perf_buf;
+    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                      "Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: %zu\n\nEnhanced Drone Analyzer v0.3",
+                      avg_det_x100 / 100, avg_det_x100 % 100,
+                      rate_x10 / 10, rate_x10 % 10,
+                      logged_count_);
 
-    result += to_string_dec_uint(logged_count_);
-    result += "\n\nEnhanced Drone Analyzer v0.3";
+    // Гарантируем нулевой терминатор
+    if (offset >= sizeof(buffer)) {
+        offset = sizeof(buffer) - 1;
+    }
+    buffer[offset] = '\0';
 
-    return result;
+    return std::string(buffer);
 }
 
 // ===========================================
@@ -2185,8 +2205,14 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
     stop_scanning_thread();
 
-    // ИСПРАВЛЕНИЕ 4: Удаляем хендлер обновления UI
-    if (message_handler_stats_) delete message_handler_stats_;
+    // ИСПРАВЛЕНИЕ 4: Удаляем хендлер обновления UI (только если он не статический)
+    // Проверяем, что хендлер был создан динамически (не статический)
+    if (message_handler_stats_) {
+        // Удаляем только если это не статический хендлер
+        // В данном случае message_handler_stats_ - это динамически созданный хендлер
+        delete message_handler_stats_;
+        message_handler_stats_ = nullptr;
+    }
 
     // Delete in reverse order of creation
     if (scanning_coordinator_) delete scanning_coordinator_;

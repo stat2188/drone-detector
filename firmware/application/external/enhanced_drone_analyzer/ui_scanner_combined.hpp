@@ -583,12 +583,7 @@ private:
     int32_t get_configured_sampling_rate() const;
     int32_t get_configured_bandwidth() const;
 
-    // Direct initialization in constructor
-    MessageHandlerRegistration* message_handler_spectrum_config_ = nullptr;
-    MessageHandlerRegistration* message_handler_frame_sync_ = nullptr;
-    MessageHandlerRegistration* message_handler_spectrum_ = nullptr;
-    MessageHandlerRegistration* message_handler_channel_statistics_ = nullptr;
-
+    // ИСПРАВЛЕНИЕ 1: Переместить объявление переменных ДО хендлеров
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
     uint32_t bandwidth_hz_;
@@ -596,6 +591,12 @@ private:
     ChannelSpectrumFIFO* fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
     volatile int32_t last_valid_rssi_ = -120;
+
+    // Хендлеры теперь инициализируются ПОСЛЕ переменных
+    MessageHandlerRegistration* message_handler_spectrum_config_ = nullptr;
+    MessageHandlerRegistration* message_handler_frame_sync_ = nullptr;
+    MessageHandlerRegistration* message_handler_spectrum_ = nullptr;
+    MessageHandlerRegistration* message_handler_channel_statistics_ = nullptr;
 };
 
 
