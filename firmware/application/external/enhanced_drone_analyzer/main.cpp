@@ -29,8 +29,8 @@ extern "C" {
 // Added 'app_' prefix after .external_app.
 // Was: .external_app.enhanced_drone_analyzer...
 // Became: .external_app.app_enhanced_drone_analyzer...
-__attribute__((section(".external_app.app_enhanced_drone_analyzer.application_information"), used)) 
-application_information_t enhanced_drone_analyzer_application_information = {
+__attribute__((section(".external_app.app_enhanced_drone_analyzer.application_information"), used))
+application_information_t _application_information_enhanced_drone_analyzer = {
     
     /*.memory_location = */ (uint8_t*)0x00000000,
     

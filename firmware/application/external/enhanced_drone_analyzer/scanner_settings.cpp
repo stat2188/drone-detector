@@ -77,7 +77,7 @@ namespace ScannerSettingsManager {
             return true;
         } else if (strcmp(key, "scan_interval_ms") == 0) {
             settings.scan_interval_ms = validate_range<uint32_t>(
-                static_cast<uint32_t>(strtoul(value, nullptr, 10)), 100U, 5000U);
+                static_cast<uint32_t>(strtoul(value, nullptr, 10)), MIN_SCAN_INTERVAL_MS, MAX_SCAN_INTERVAL_MS);
             return true;
         } else if (strcmp(key, "rssi_threshold_db") == 0) {
             settings.rssi_threshold_db = validate_range<int32_t>(strtol(value, nullptr, 10), -120, -30);
@@ -86,7 +86,31 @@ namespace ScannerSettingsManager {
             settings.enable_audio_alerts = (strcmp(value, "true") == 0);
             return true;
         }
-        // Additional fields can be added here
+        // --- NEW AUDIO FIELDS ---
+        else if (strcmp(key, "audio_alert_frequency_hz") == 0) {
+            settings.audio_alert_frequency_hz = validate_range<uint16_t>(
+                static_cast<uint16_t>(strtoul(value, nullptr, 10)), MIN_AUDIO_FREQ, MAX_AUDIO_FREQ);
+            return true;
+        }
+        else if (strcmp(key, "audio_alert_duration_ms") == 0) {
+            settings.audio_alert_duration_ms = validate_range<uint32_t>(
+                static_cast<uint32_t>(strtoul(value, nullptr, 10)), MIN_AUDIO_DURATION, MAX_AUDIO_DURATION);
+            return true;
+        }
+        // --- NEW HARDWARE FIELDS ---
+        else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
+            settings.hardware_bandwidth_hz = strtoul(value, nullptr, 10);
+            return true;
+        }
+        else if (strcmp(key, "enable_real_hardware") == 0) {
+            settings.enable_real_hardware = (strcmp(value, "true") == 0);
+            settings.demo_mode = !settings.enable_real_hardware; // Sync flags
+            return true;
+        }
+        else if (strcmp(key, "freqman_path") == 0) {
+            settings.freqman_path = value; // char* to std::string assignment
+            return true;
+        }
         return false;
     }
 

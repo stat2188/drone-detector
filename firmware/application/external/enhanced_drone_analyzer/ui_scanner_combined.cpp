@@ -932,12 +932,31 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
 // ===========================================
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
-    : message_handler_spectrum_config_(nullptr), message_handler_frame_sync_(nullptr),
-      message_handler_spectrum_(nullptr), message_handler_channel_statistics_(nullptr),
-      spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
-      radio_state_(), fifo_(nullptr), spectrum_streaming_active_(false), last_valid_rssi_(-120)
+    : spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
+      radio_state_(), fifo_(nullptr), spectrum_streaming_active_(false), last_valid_rssi_(-120),
+      message_handler_spectrum_config_(new MessageHandlerRegistration(
+          Message::ID::ChannelSpectrumConfig,
+          [this](Message* const p) {
+              this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
+          }
+      )),
+      message_handler_frame_sync_(new MessageHandlerRegistration(
+          Message::ID::DisplayFrameSync,
+          [this](Message* const p) {
+               (void)p;
+               // Frame sync logic
+          }
+      )),
+      message_handler_channel_statistics_(new MessageHandlerRegistration(
+          Message::ID::ChannelStatistics,
+          [this](Message* const p) {
+              const auto* statistics_msg = static_cast<const ChannelStatisticsMessage*>(p);
+              this->handle_channel_statistics(statistics_msg->statistics);
+          }
+      )),
+      message_handler_spectrum_(nullptr)
 {
-    // Initialize message handlers - these will be properly set up in initialize_spectrum_collector
+    // FIX: Allocate handlers on heap in constructor to avoid external code address warnings
 }
 
 DroneHardwareController::~DroneHardwareController() {
@@ -954,7 +973,7 @@ void DroneHardwareController::on_hardware_show() {
 }
 
 void DroneHardwareController::on_hardware_hide() {
-    cleanup_spectrum_collector();
+    // Handlers are cleaned up in destructor to avoid double deletion
 }
 
 void DroneHardwareController::shutdown_hardware() {
@@ -992,31 +1011,7 @@ void DroneHardwareController::initialize_radio_state() {
 }
 
 void DroneHardwareController::initialize_spectrum_collector() {
-    // FIX: Передаем лямбду напрямую. Убираем std::move и явный std::function<...>.
-    // Это предотвращает создание сложных VTable переходов, вызывающих warning 0xade...
-
-    message_handler_spectrum_config_ = new MessageHandlerRegistration(
-        Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
-            this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
-        }
-    );
-
-    message_handler_frame_sync_ = new MessageHandlerRegistration(
-        Message::ID::DisplayFrameSync,
-        [this](Message* const p) {
-             (void)p;
-             // Frame sync logic here if needed
-        }
-    );
-
-    message_handler_channel_statistics_ = new MessageHandlerRegistration(
-        Message::ID::ChannelStatistics,
-        [this](Message* const p) {
-            const auto* statistics_msg = static_cast<const ChannelStatisticsMessage*>(p);
-            this->handle_channel_statistics(statistics_msg->statistics);
-        }
-    );
+    // Handlers are now allocated in constructor to avoid external code address warnings
 }
 
 void DroneHardwareController::cleanup_spectrum_collector() {
