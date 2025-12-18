@@ -156,7 +156,7 @@ static void event_loop() {
     EventDispatcher event_dispatcher{&system_view, context};
     static MessageHandlerRegistration message_handler_display_sleep{
         Message::ID::DisplaySleep,
-        [&event_dispatcher](Message* const) {
+        [&event_dispatcher](const Message* const) {
             event_dispatcher.set_display_sleep(true);
         }};
     portapack::setEventDispatcherToUSBSerial(&event_dispatcher);
