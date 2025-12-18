@@ -113,6 +113,7 @@ static constexpr msg_t MSG_OK = 0;
 
 // Validation constants for scanner settings
 static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
+static constexpr uint8_t MIN_DETECTION_COUNT = 3;
 static constexpr uint32_t MAX_SCAN_INTERVAL_MS = 10000;
 static constexpr uint16_t MIN_AUDIO_FREQ = 200;
 static constexpr uint16_t MAX_AUDIO_FREQ = 4000;

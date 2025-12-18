@@ -932,8 +932,7 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
 // ===========================================
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
-    : spectrum_mode_(mode), center_frequency_(2400000000ULL), bandwidth_hz_(24000000),
-      radio_state_(), fifo_(nullptr), spectrum_streaming_active_(false), last_valid_rssi_(-120),
+    : // 1. Сначала инициализируем хендлеры (так как они объявлены первыми в классе)
       message_handler_spectrum_config_(new MessageHandlerRegistration(
           Message::ID::ChannelSpectrumConfig,
           [this](Message* const p) {
@@ -947,6 +946,7 @@ DroneHardwareController::DroneHardwareController(SpectrumMode mode)
                // Frame sync logic
           }
       )),
+      message_handler_spectrum_(nullptr), // Объявлен третьим
       message_handler_channel_statistics_(new MessageHandlerRegistration(
           Message::ID::ChannelStatistics,
           [this](Message* const p) {
@@ -954,9 +954,16 @@ DroneHardwareController::DroneHardwareController(SpectrumMode mode)
               this->handle_channel_statistics(statistics_msg->statistics);
           }
       )),
-      message_handler_spectrum_(nullptr)
+      // 2. Затем переменные настроек и состояния
+      spectrum_mode_(mode),
+      center_frequency_(2400000000ULL),
+      bandwidth_hz_(24000000),
+      radio_state_(),
+      fifo_(nullptr),
+      spectrum_streaming_active_(false),
+      last_valid_rssi_(-120)
 {
-    // FIX: Allocate handlers on heap in constructor to avoid external code address warnings
+    // Тело конструктора пустое
 }
 
 DroneHardwareController::~DroneHardwareController() {
