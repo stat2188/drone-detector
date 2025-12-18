@@ -4,6 +4,7 @@
 
 #include "ui_scanner_combined.hpp"
 #include "ui_drone_audio.hpp"
+#include "shared_settings.hpp"
 #include "gradient.hpp"
 #include "baseband_api.hpp"
 #include "portapack.hpp"
@@ -90,44 +91,44 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
     if (error) return false;
 
-    char read_buffer[128];      // Читаем блоками по 128 байт
-    char line_buffer[128];      // Буфер для сборки одной строки
+    char read_buffer[128];      // Read in 128-byte blocks
+    char line_buffer[128];      // Buffer for assembling one line
     size_t line_idx = 0;
 
     while (true) {
-        // Читаем блок
+        // Read block
         auto read_res = settings_file.read(read_buffer, sizeof(read_buffer));
         if (read_res.is_error()) break;
 
         size_t bytes_read = read_res.value();
         if (bytes_read == 0) break; // EOF
 
-        // Обрабатываем прочитанный блок
+        // Process the read block
         for (size_t i = 0; i < bytes_read; i++) {
             char c = read_buffer[i];
 
             if (c == '\n') {
-                // Конец строки найден
+                // End of line found
                 line_buffer[line_idx] = 0; // Null-terminate
 
-                // Парсим готовую строку
+                // Parse the ready line
                 parse_settings_line_inplace(line_buffer, settings);
 
-                // Сброс для следующей строки
+                // Reset for next line
                 line_idx = 0;
             }
             else if (c != '\r') {
-                // Игнорируем \r, накапливаем остальные символы
+                // Ignore \r, accumulate other characters
                 if (line_idx < sizeof(line_buffer) - 1) {
                     line_buffer[line_idx++] = c;
                 }
-                // Если строка длиннее буфера, лишние символы просто игнорируются
-                // до встречи \n, чтобы не переполнить стек
+                // If line is longer than buffer, extra characters are simply ignored
+                // until \n is encountered to avoid stack overflow
             }
         }
     }
 
-    // Обработка последней строки, если файл не заканчивается на \n
+    // Process last line if file doesn't end with \n
     if (line_idx > 0) {
         line_buffer[line_idx] = 0;
         parse_settings_line_inplace(line_buffer, settings);
@@ -243,17 +244,17 @@ bool DroneScanner::load_frequency_database() {
         return false;
     }
 
-    // ИСПРАВЛЕНИЕ: Безопасная обработка без исключений
-    // Блок критической секции
+    // FIX: Safe processing without exceptions
+    // Critical section block
     {
-        MutexLock lock(data_mutex); // Захват мьютекса
+        MutexLock lock(data_mutex); // Acquire mutex
 
         drone_database_.clear();
 
-        // Резервируем память для предотвращения перераспределения
+        // Reserve memory to prevent reallocation
         drone_database_.reserve(temp_db.size());
 
-        // Безопасное перемещение указателей без исключений
+        // Safe pointer movement without exceptions
         for (auto& entry_ptr : temp_db) {
             if (entry_ptr) {
                 drone_database_.push_back(std::move(entry_ptr));
@@ -298,7 +299,7 @@ const char* DroneScanner::scanning_mode_name() const {
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     if (!scanning_active_) return;
 
-    // ИСПРАВЛЕНИЕ: Adaptive timing based on current load and detections
+    // FIX: Adaptive timing based on current load and detections
     uint32_t base_interval = 750; // Base interval in milliseconds
     uint32_t adaptive_interval = base_interval;
 
@@ -334,16 +335,16 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    // ИСПРАВЛЕНИЕ DEADLOCK: Не держим общий мьютекс во время работы с железом!
+    // FIX: Avoid deadlock - don't hold mutex during hardware operations!
 
     size_t total_entries = 0;
 
-    // 1. Быстро узнаем размер базы (под мьютексом)
+    // 1. Quickly get database size (under mutex)
     {
         MutexLock lock(data_mutex);
         if (drone_database_.empty()) {
             if (scan_cycles_ % 50 == 0) {
-                // handle_scan_error вызывается здесь, но флаг меняем аккуратно
+                // handle_scan_error is called here, but we change the flag carefully
                 scanning_active_ = false;
             }
             return;
@@ -353,21 +354,21 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     const size_t batch_size = std::min(static_cast<size_t>(20), total_entries);
 
-    // 2. Сохраняем размер базы в локальную переменную для избежания race condition
+    // 2. Save database size in local variable to avoid race condition
     size_t local_db_size = total_entries;
 
     for (size_t i = 0; i < batch_size; ++i) {
-        // Проверяем флаг атомарно перед каждой итерацией
+        // Check flag atomically before each iteration
         if (!scanning_active_) break;
 
         freqman_entry entry_copy;
         bool entry_valid = false;
 
-        // 3. Копируем одну запись для работы (под мьютексом)
+        // 3. Copy one entry for processing (under mutex)
         {
             MutexLock lock(data_mutex);
-            // Используем сохраненный размер вместо вызова drone_database_.size()
-            // Это предотвращает race condition при одновременном изменении базы
+            // Use saved size instead of calling drone_database_.size()
+            // This prevents race condition when database is modified
             if (local_db_size > 0) {
                 if (current_db_index_ >= local_db_size) {
                     current_db_index_ = 0;
@@ -379,26 +380,26 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
                 }
                 current_db_index_ = (current_db_index_ + 1) % local_db_size;
             }
-        } // Мьютекс освобождается здесь
+        } // Mutex released here
 
-        // 4. Работаем с железом БЕЗ блокировки (UI не будет виснуть)
+        // 4. Work with hardware WITHOUT locking (UI won't freeze)
         if (entry_valid) {
             Frequency target_freq_hz = entry_copy.frequency_a;
 
-            // ИСПРАВЛЕНИЕ: Улучшенная валидация частоты с защитой от переполнения
-            // Проверяем, что частота в допустимом диапазоне и не приведет к переполнению
+            // FIX: Enhanced frequency validation with overflow protection
+            // Check that frequency is in valid range and won't cause overflow
             const Frequency MIN_VALID_FREQ = 50000000ULL;      // 50 MHz
             const Frequency MAX_VALID_FREQ = 6000000000ULL;    // 6 GHz
 
-            // Дополнительная проверка на переполнение
+            // Additional overflow check
             if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) {
-                // Пропускаем недопустимую частоту
+                // Skip invalid frequency
                 continue;
             }
 
-            // Проверка на переполнение при арифметических операциях
+            // Check for overflow in arithmetic operations
             if (target_freq_hz + 1000000ULL < target_freq_hz) {
-                // Обнаружено переполнение - пропускаем эту частоту
+                // Overflow detected - skip this frequency
                 continue;
             }
 
@@ -406,7 +407,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
                 chThdSleepMilliseconds(30);
                 int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
 
-                // Этот метод сам возьмет мьютекс внутри, когда нужно будет сохранить результат
+        // This method will acquire the mutex internally when needed to save results
                 process_rssi_detection(entry_copy, real_rssi);
 
                 last_scanned_frequency_ = target_freq_hz;
@@ -474,7 +475,7 @@ void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32
 
 void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                            int32_t /*original_threshold*/, int32_t wideband_threshold) {
-    // 1. Валидация (без блокировок)
+    // 1. Validation (without locks)
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN) ||
         !SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
         return;
@@ -485,7 +486,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level; // ... логика определения threat level ...
 
-    // Логика threat_level (скопировать из оригинала)
+    // Threat level logic (copy from original)
     if (rssi > -70) threat_level = ThreatLevel::HIGH;
     else if (rssi > -80) threat_level = ThreatLevel::LOW;
     else threat_level = ThreatLevel::UNKNOWN;
@@ -493,11 +494,11 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
         threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
     }
 
-    // --- НАЧАЛО КРИТИЧЕСКОЙ СЕКЦИИ ---
+    // --- CRITICAL SECTION START ---
     {
         MutexLock lock(data_mutex);
 
-        total_detections_++; // Защищаем счетчик
+        total_detections_++; // Protect counter
 
         size_t freq_hash = entry.frequency_a / 100000;
         int32_t effective_threshold = wideband_threshold;
@@ -527,7 +528,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
                 update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
             }
         } else {
-            // Логика уменьшения счетчика...
+            // Counter decrement logic...
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
             int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
             if (current_count > 0) {
@@ -538,9 +539,9 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
             }
         }
     }
-    // --- КОНЕЦ КРИТИЧЕСКОЙ СЕКЦИИ ---
+    // --- CRITICAL SECTION END ---
 
-    // 3. Логирование
+    // 3. Logging
     if (should_log && detection_logger_.is_session_active()) {
         detection_logger_.log_detection(log_entry_to_write);
     }
@@ -555,14 +556,14 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 }
 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
-    // 1. Предварительная фильтрация (не требует блокировок)
+    // 1. Preliminary filtering (no locks required)
     const int32_t MIN_VALID_RSSI = -110;
     const int32_t MAX_VALID_RSSI = 10;
 
-    // ИСПРАВЛЕНИЕ: Исправлена логика валидации RSSI
-    // Было: rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
-    // Стало: rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
-    // Теперь значения от -128 до -110 будут корректно обрабатываться
+    // FIX: Fixed RSSI validation logic
+    // Was: rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
+    // Now: rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
+    // Now values from -128 to -110 will be processed correctly
     if (rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI) {
         return;
     }
@@ -575,13 +576,13 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
-    // Определяем параметры (локально)
+    // Determine parameters (locally)
     int32_t detection_threshold = -90;
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
 
-    // Простой поиск по БД (если drone_database_ не меняется в рантайме, это безопасно читать без мьютекса,
-    // НО если БД может перезагружаться, здесь нужен reader-lock. Для простоты допустим, что БД статична во время скана)
+    // Simple database search (if drone_database_ doesn't change at runtime, it's safe to read without mutex,
+    // BUT if DB can be reloaded, a reader-lock is needed here. For simplicity, assume DB is static during scan)
     for (const auto& db_entry : drone_database_) {
         if (db_entry && db_entry->frequency_a == entry.frequency_a) {
             detected_type = DroneType::MAVIC;
@@ -594,15 +595,15 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
-    // Флаг и данные для отложенного логирования
+    // Flag and data for deferred logging
     bool should_log = false;
     DetectionLogEntry log_entry_to_write;
 
-    // --- НАЧАЛО КРИТИЧЕСКОЙ СЕКЦИИ ---
+    // --- CRITICAL SECTION START ---
     {
-        MutexLock lock(data_mutex); // Блокируем доступ UI к данным
+        MutexLock lock(data_mutex); // Block UI access to data
 
-        total_detections_++; // Защищаем счетчик
+        total_detections_++; // Protect counter
 
         size_t freq_hash = entry.frequency_a / 100000;
         int32_t effective_threshold = detection_threshold;
@@ -614,14 +615,14 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
             current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
 
-            // Пишем в буфер (безопасно)
+            // Write to buffer (safe)
             detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
 
             if (current_count >= MIN_DETECTION_COUNT) {
-                // Мы НЕ пишем лог здесь. Мы только готовим данные.
+                // We DON'T write log here. We only prepare data.
                 should_log = true;
 
-                // Подготовка данных для лога
+                // Prepare log data
                 log_entry_to_write.timestamp = chTimeNow();
                 log_entry_to_write.frequency_hz = static_cast<uint32_t>(entry.frequency_a);
                 log_entry_to_write.rssi_db = rssi;
@@ -630,11 +631,11 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 log_entry_to_write.detection_count = current_count;
                 log_entry_to_write.confidence_score = 0.85f;
 
-                // Обновляем трекинг дронов для UI (внутренний метод, который НЕ берет мьютекс повторно)
+                // Update drone tracking for UI (internal method that DOESN'T take mutex again)
                 update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
             }
         } else {
-            // Логика "leaky bucket"
+            // "Leaky bucket" logic
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
             int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
 
@@ -646,16 +647,16 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
             }
         }
     }
-    // --- КОНЕЦ КРИТИЧЕСКОЙ СЕКЦИИ ---
-    // Мьютекс освобожден. UI может перерисовываться.
+    // --- CRITICAL SECTION END ---
+    // Mutex released. UI can redraw.
 
-    // 3. Выполняем тяжелые операции ввода-вывода
+    // 3. Perform heavy I/O operations
     if (should_log) {
-        // Имитация задержки "анти-дребезга" для логгера, если нужно, но лучше без sleep в цикле скана
+        // Simulate "anti-bounce" delay for logger if needed, but better without sleep in scan loop
         // chThdSleepMilliseconds(DETECTION_DELAY);
 
         if (detection_logger_.is_session_active()) {
-            // Это займет время, но UI поток не будет заблокирован, так как data_mutex свободен
+            // This will take time, but UI thread won't be blocked since data_mutex is free
             detection_logger_.log_detection(log_entry_to_write);
         }
     }
@@ -683,7 +684,7 @@ void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequ
         }
     }
 
-    // ИСПРАВЛЕНИЕ: Защита от переполнения ring buffer
+    // FIX: Ring buffer overflow protection
     if (tracked_count_ < MAX_TRACKED_DRONES) {
         TrackedDrone new_drone;
         new_drone.frequency = static_cast<uint32_t>(frequency);
@@ -1061,18 +1062,18 @@ void DroneHardwareController::initialize_radio_state() {
     receiver_model.set_baseband_bandwidth(get_configured_bandwidth());
     receiver_model.set_squelch_level(0);
 
-    // --- ДОБАВЛЕНО: Установка чувствительности ---
+    // --- ADDED: Sensitivity settings ---
 
-    // 1. RF AMP (Усилитель): Включаем (+14dB).
-    // Если у вас внешняя активная антенна, поставьте false. Для штыревой антенны - true.
+    // 1. RF AMP (Amplifier): Enable (+14dB).
+    // Set false if you have an external active antenna. For a whip antenna - true.
     receiver_model.set_rf_amp(true);
 
-    // 2. LNA Gain (МШУ): 32dB (Диапазон 0-40).
-    // Отвечает за прием слабых сигналов.
+    // 2. LNA Gain (Low Noise Amplifier): 32dB (Range 0-40).
+    // Responsible for receiving weak signals.
     receiver_model.set_lna(32);
 
-    // 3. VGA Gain (ПП): 32dB (Диапазон 0-62).
-    // Отвечает за громкость сигнала после LNA.
+    // 3. VGA Gain (Variable Gain Amplifier): 32dB (Range 0-62).
+    // Responsible for signal volume after LNA.
     receiver_model.set_vga(32);
 }
 
@@ -1552,9 +1553,9 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
     }
     initialize_mini_spectrum();
 
-    // --- ДОБАВИТЬ ЭТО В КОНЕЦ КОНСТРУКТОРА ---
+    // --- ADD THIS TO THE END OF THE CONSTRUCTOR ---
 
-    // Инициализация хендлеров в куче (Runtime), что безопасно для адресации
+    // Initialize handlers on heap (Runtime), which is safe for addressing
     message_handler_spectrum_config_ = new MessageHandlerRegistration(
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
@@ -1576,7 +1577,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
         }
     );
 
-    // ... остальной код конструктора ...
+    // ... rest of constructor code ...
 }
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
@@ -1946,13 +1947,13 @@ DroneUIController::DroneUIController(NavigationView& nav,
     settings_.enable_audio_alerts = true;
 }
 
-// --- ДОБАВИТЬ ЭТОТ ДЕСТРУКТОР ---
-DroneUIController::~DroneUIController() {
-    if (display_controller_) {
-        delete display_controller_;
-        display_controller_ = nullptr;
+    // --- ADD THIS DESTRUCTOR ---
+    DroneUIController::~DroneUIController() {
+        if (display_controller_) {
+            delete display_controller_;
+            display_controller_ = nullptr;
+        }
     }
-}
 
 void DroneUIController::on_start_scan() {
     if (scanning_active_) return;
@@ -2086,41 +2087,41 @@ DroneSettingsMenuView::DroneSettingsMenuView(NavigationView& nav, DroneUIControl
     // Настраиваем стили (опционально, для красоты)
     text_info_.set_style(Theme::getInstance()->fg_light);
 
-    // --- ПРИВЯЗКА КНОПОК К ФУНКЦИЯМ ---
+    // --- BUTTON FUNCTION ASSIGNMENTS ---
 
-    // 1. Загрузка базы частот
+    // 1. Load frequency database
     button_load_db_.on_select = [&controller](Button&) {
         controller.on_load_frequency_file();
     };
 
-    // 2. Настройка аудио (здесь мы обновляем текст кнопки после нажатия)
+    // 2. Audio settings (update button text after click)
     button_audio_.on_select = [this, &controller](Button&) {
-        controller.on_audio_settings(); // Переключает в контроллере
-        // Обновляем текст кнопки, чтобы показать новое состояние
+        controller.on_audio_settings(); // Toggle in controller
+        // Update button text to show new state
         if (controller.settings().enable_audio_alerts) {
             button_audio_.set_text("Audio Alerts: ON");
         } else {
             button_audio_.set_text("Audio Alerts: OFF");
         }
     };
-    // Устанавливаем начальный текст кнопки аудио
+    // Set initial button text
     if (controller.settings().enable_audio_alerts) {
         button_audio_.set_text("Audio Alerts: ON");
     } else {
         button_audio_.set_text("Audio Alerts: OFF");
     }
 
-    // 3. Информация о железе
+    // 3. Hardware information
     button_hw_.on_select = [&controller](Button&) {
         controller.on_hardware_control();
     };
 
-    // 4. Просмотр логов (открывает файловый менеджер)
+    // 4. View logs (opens file manager)
     button_logs_.on_select = [&controller](Button&) {
         controller.on_view_logs();
     };
 
-    // 5. О программе
+    // 5. About program
     button_about_.on_select = [&controller](Button&) {
         controller.on_about();
     };

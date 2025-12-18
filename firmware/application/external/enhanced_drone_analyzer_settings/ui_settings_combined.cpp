@@ -1,6 +1,7 @@
 // ui_settings_combined.cpp - Unified implementation for Enhanced Drone Analyzer Settings App
 
 #include "ui_settings_combined.hpp"
+#include "../enhanced_drone_analyzer/shared_settings.hpp"
 #include "default_drones_db.hpp"
 #include "file.hpp"          
 #include "portapack.hpp"    
