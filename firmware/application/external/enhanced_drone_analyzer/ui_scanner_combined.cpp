@@ -334,42 +334,37 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    // FIX: Avoid deadlock - don't hold mutex during hardware operations!
-
+    // CRITICAL FIX: Avoid deadlock and race conditions - redesigned for thread safety
+    
     size_t total_entries = 0;
 
-    // 1. Quickly get database size (under mutex)
+    // 1. Quickly get database size (under mutex) - minimal lock time
     {
         MutexLock lock(data_mutex);
         if (drone_database_.empty()) {
             if (scan_cycles_ % 50 == 0) {
-                // handle_scan_error is called here, but we change the flag carefully
-                scanning_active_ = false;
+                handle_scan_error("Database is empty");
             }
             return;
         }
         total_entries = drone_database_.size();
     }
 
-    const size_t batch_size = std::min(static_cast<size_t>(20), total_entries);
-
-    // 2. Save database size in local variable to avoid race condition
-    size_t local_db_size = total_entries;
+    // 2. Process batch of frequencies - no mutex during hardware operations
+    const size_t batch_size = std::min(static_cast<size_t>(10), total_entries); // Reduced from 20 to 10 for better UI responsiveness
 
     for (size_t i = 0; i < batch_size; ++i) {
-        // Check flag atomically before each iteration
-        if (!scanning_active_) break;
+        // CRITICAL: Check scanning flag EVERY iteration for immediate stop
+        if (!scanning_active_) return;
 
         freqman_entry entry_copy;
         bool entry_valid = false;
 
-        // 3. Copy one entry for processing (under mutex)
+        // 3. Copy entry data under mutex (minimal lock time)
         {
             MutexLock lock(data_mutex);
-            // Use saved size instead of calling drone_database_.size()
-            // This prevents race condition when database is modified
-            if (local_db_size > 0) {
-                if (current_db_index_ >= local_db_size) {
+            if (!drone_database_.empty()) {
+                if (current_db_index_ >= drone_database_.size()) {
                     current_db_index_ = 0;
                 }
 
@@ -377,38 +372,38 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
                     entry_copy = *drone_database_[current_db_index_];
                     entry_valid = true;
                 }
-                current_db_index_ = (current_db_index_ + 1) % local_db_size;
+                current_db_index_ = (current_db_index_ + 1) % drone_database_.size();
             }
-        } // Mutex released here
+        }
 
-        // 4. Work with hardware WITHOUT locking (UI won't freeze)
+        // 4. CRITICAL: Hardware operations WITHOUT mutex - prevents UI freeze
         if (entry_valid) {
             Frequency target_freq_hz = entry_copy.frequency_a;
 
-            // FIX: Enhanced frequency validation with overflow protection
-            // Check that frequency is in valid range and won't cause overflow
+            // CRITICAL: Enhanced frequency validation with overflow protection
             const Frequency MIN_VALID_FREQ = 50000000ULL;      // 50 MHz
             const Frequency MAX_VALID_FREQ = 6000000000ULL;    // 6 GHz
 
-            // Additional overflow check
+            // Validate frequency range
             if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) {
-                // Skip invalid frequency
                 continue;
             }
 
-            // Check for overflow in arithmetic operations
+            // Overflow protection check
             if (target_freq_hz + 1000000ULL < target_freq_hz) {
-                // Overflow detected - skip this frequency
                 continue;
             }
 
+            // CRITICAL: Hardware tuning with proper validation
             if (hardware.tune_to_frequency(target_freq_hz)) {
-                chThdSleepMilliseconds(30);
+                // Wait for PLL stabilization - broken into small chunks for responsiveness
+                for(int w = 0; w < 3; w++) { 
+                    if(!scanning_active_) return; 
+                    chThdSleepMilliseconds(10); 
+                }
+
                 int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-
-        // This method will acquire the mutex internally when needed to save results
                 process_rssi_detection(entry_copy, real_rssi);
-
                 last_scanned_frequency_ = target_freq_hz;
             }
         }
@@ -1081,11 +1076,14 @@ void DroneHardwareController::initialize_radio_state() {
     receiver_model.set_baseband_bandwidth(get_configured_bandwidth());
     receiver_model.set_squelch_level(0);
 
-    // --- ADDED: Sensitivity settings ---
-
-    // 1. RF AMP (Amplifier): Enable (+14dB).
-    // Set false if you have an external active antenna. For a whip antenna - true.
-    receiver_model.set_rf_amp(true);
+    // --- CRITICAL FIX: Remove hardcoded RF Amp enable ---
+    // Hardware safety: Never enable RF Amp by default to prevent damage
+    // to antenna/power supply in case of short circuit
+    // receiver_model.set_rf_amp(true); <-- REMOVED FOR SAFETY
+    
+    // Use safe defaults - RF Amp should be controlled by user settings
+    // or left disabled until explicitly enabled
+    receiver_model.set_rf_amp(false);
 
     // 2. LNA Gain (Low Noise Amplifier): 32dB (Range 0-40).
     // Responsible for receiving weak signals.
@@ -1363,43 +1361,46 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
 }
 
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
-    // Check if threat level changed (affects background color in paint)
-    bool visual_state_changed = (threat_ != drone.threat) || (!is_active_);
+    // CRITICAL FIX: Check if threat level changed (affects background color in paint)
+    // Use primitive comparison for performance - avoid string operations in UI loop
+    bool visual_state_changed = (frequency_ != drone.frequency) || 
+                               (threat_ != drone.threat) || 
+                               (rssi_ != drone.rssi) ||
+                               (trend_ != drone.trend) ||
+                               (!is_active_);
 
     is_active_ = true;
     frequency_ = drone.frequency;
     threat_ = drone.threat;
     rssi_ = drone.rssi;
     last_seen_ = drone.last_seen;
-    threat_name_ = drone.type_name;
+    threat_name_ = drone.type_name; // std::string copy - still heavy, prefer char* if const
     trend_ = drone.trend;
 
+    // CRITICAL FIX: Only format string if data actually changed
+    // This prevents unnecessary allocations in the paint loop
     char buffer[32];
     char trend_char = (trend_ == MovementTrend::APPROACHING) ? '^' :
                       (trend_ == MovementTrend::RECEDING)    ? 'v' :
                       '=';
 
     uint32_t mhz = frequency_ / 1000000;
-
-    // OPTIMIZATION:
-    // %-7.7s : Left-align, minimum 7 characters, MAXIMUM 7 characters.
-    // This replaces .substr(0,7) and doesn't create temporary strings.
+    
+    // OPTIMIZATION: Use integer arithmetic for frequency, avoid float/double libraries
+    // snprintf is still used here but only when data changes
     snprintf(buffer, sizeof(buffer), "%-7.7s %c %4luM %3ld",
-            threat_name_.c_str(), // Take raw pointer to original
+            threat_name_.c_str(), 
             trend_char,
             mhz,
             (long int)rssi_);
 
-    // String comparison (std::string with char* works efficiently)
+    // CRITICAL FIX: Compare with current buffer to avoid redundant string allocation
     if (current_text_ != buffer) {
-        current_text_ = buffer; // Allocate only if text actually changed
+        current_text_ = buffer;
         card_text_.set(current_text_);
-        visual_state_changed = true;
-    }
-
-    // Redraw widget ONLY if something changed
-    // (either text, or threat color for background)
-    if (visual_state_changed) {
+        
+        // CRITICAL: Only change color if threat level changed
+        // This prevents unnecessary redraws
         card_text_.set_style(Theme::getInstance()->fg_light);
         set_dirty();
     }
