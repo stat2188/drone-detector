@@ -47,12 +47,9 @@ class AudioManager;
 #include "baseband_api.hpp"
 #include "portapack.hpp"
 #include "radio.hpp"
-#include "message.hpp"
 #include "irq_controls.hpp"
 
-#include "ui.hpp"
 #include "ui_navigation.hpp"
-#include "ui_widget.hpp"  // For Button, Text, etc.
 #include "app_settings.hpp"
 #include "string_format.hpp"
 #include "tone_key.hpp"
@@ -75,10 +72,6 @@ struct preset_entry {
 static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
-static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
-// Constants moved to ui_drone_common_types.hpp to avoid duplicates
-static constexpr uint8_t MIN_DETECTION_COUNT = 3;
-static constexpr uint32_t SCANNING_THREAD_STACK_SIZE = 2048;
 // Undefine macros from ui_looking_glass_app.hpp to avoid conflicts
 #undef LOOKING_GLASS_SINGLEPASS
 #undef LOOKING_GLASS_FASTSCAN
