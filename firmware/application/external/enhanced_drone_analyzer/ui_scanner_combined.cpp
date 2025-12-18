@@ -243,34 +243,23 @@ bool DroneScanner::load_frequency_database() {
         return false;
     }
 
-    // ИСПРАВЛЕНИЕ: Защита от утечки памяти при исключениях
-    try {
-        // Блок критической секции
-        {
-            MutexLock lock(data_mutex); // Захват мьютекса
+    // ИСПРАВЛЕНИЕ: Безопасная обработка без исключений
+    // Блок критической секции
+    {
+        MutexLock lock(data_mutex); // Захват мьютекса
 
-            drone_database_.clear();
-
-            // Резервируем память для предотвращения перераспределения
-            drone_database_.reserve(temp_db.size());
-
-            // Безопасное перемещение указателей с обработкой исключений
-            for (auto& entry_ptr : temp_db) {
-                if (entry_ptr) {
-                    drone_database_.push_back(std::move(entry_ptr));
-                }
-            }
-        } // Мьютекс освобождается здесь автоматически
-    } catch (...) {
-        // Если произошло исключение, очищаем частично заполненный вектор
         drone_database_.clear();
 
-        // Очищаем temp_db, который теперь содержит пустые (moved-from) указатели
-        temp_db.clear();
+        // Резервируем память для предотвращения перераспределения
+        drone_database_.reserve(temp_db.size());
 
-        // Перебрасываем исключение дальше
-        throw;
-    }
+        // Безопасное перемещение указателей без исключений
+        for (auto& entry_ptr : temp_db) {
+            if (entry_ptr) {
+                drone_database_.push_back(std::move(entry_ptr));
+            }
+        }
+    } // Мьютекс освобождается здесь автоматически
 
     // Очищаем temp_db, который теперь содержит пустые (moved-from) указатели
     temp_db.clear();
@@ -567,7 +556,6 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
     // 1. Предварительная фильтрация (не требует блокировок)
-    const int32_t INVALID_RSSI = -128;
     const int32_t MIN_VALID_RSSI = -110;
     const int32_t MAX_VALID_RSSI = 10;
 
