@@ -336,7 +336,8 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    // CRITICAL FIX: Avoid deadlock and race conditions - redesigned for thread safety
+    // ИСПРАВЛЕНИЕ 2: Оптимизация многопоточной синхронизации
+    // Переработанная архитектура для предотвращения deadlock и race conditions
     
     size_t total_entries = 0;
 
@@ -355,59 +356,55 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
     // 2. Process batch of frequencies - no mutex during hardware operations
     const size_t batch_size = std::min(static_cast<size_t>(10), total_entries); // Reduced from 20 to 10 for better UI responsiveness
 
-    for (size_t i = 0; i < batch_size; ++i) {
+    // 3. Копируем данные БЕЗ мьютекса (безопасно, так как база не изменяется во время сканирования)
+    std::vector<freqman_entry> entries_to_scan;
+    entries_to_scan.reserve(batch_size);
+    
+    {
+        MutexLock lock(data_mutex);
+        if (!drone_database_.empty()) {
+            for (size_t i = 0; i < batch_size; ++i) {
+                size_t idx = (current_db_index_ + i) % drone_database_.size();
+                if (drone_database_[idx]) {
+                    entries_to_scan.push_back(*drone_database_[idx]);
+                }
+            }
+            current_db_index_ = (current_db_index_ + batch_size) % drone_database_.size();
+        }
+    }  // <-- Мьютекс освобождается здесь
+
+    // 4. Работаем с КОПИЕЙ данных без блокировок (секунды)
+    for (const auto& entry : entries_to_scan) {
         // CRITICAL: Check scanning flag EVERY iteration for immediate stop
         if (!scanning_active_) return;
 
-        freqman_entry entry_copy;
-        bool entry_valid = false;
+        Frequency target_freq_hz = entry.frequency_a;
 
-        // 3. Copy entry data under mutex (minimal lock time)
-        {
-            MutexLock lock(data_mutex);
-            if (!drone_database_.empty()) {
-                if (current_db_index_ >= drone_database_.size()) {
-                    current_db_index_ = 0;
-                }
+        // CRITICAL: Enhanced frequency validation with overflow protection
+        const Frequency MIN_VALID_FREQ = 50000000ULL;      // 50 MHz
+        const Frequency MAX_VALID_FREQ = 6000000000ULL;    // 6 GHz
 
-                if (current_db_index_ < drone_database_.size() && drone_database_[current_db_index_]) {
-                    entry_copy = *drone_database_[current_db_index_];
-                    entry_valid = true;
-                }
-                current_db_index_ = (current_db_index_ + 1) % drone_database_.size();
-            }
+        // Validate frequency range
+        if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) {
+            continue;
         }
 
-        // 4. CRITICAL: Hardware operations WITHOUT mutex - prevents UI freeze
-        if (entry_valid) {
-            Frequency target_freq_hz = entry_copy.frequency_a;
+        // Overflow protection check
+        if (target_freq_hz + 1000000ULL < target_freq_hz) {
+            continue;
+        }
 
-            // CRITICAL: Enhanced frequency validation with overflow protection
-            const Frequency MIN_VALID_FREQ = 50000000ULL;      // 50 MHz
-            const Frequency MAX_VALID_FREQ = 6000000000ULL;    // 6 GHz
-
-            // Validate frequency range
-            if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) {
-                continue;
+        // CRITICAL: Hardware tuning with proper validation
+        if (hardware.tune_to_frequency(target_freq_hz)) {
+            // Wait for PLL stabilization - broken into small chunks for responsiveness
+            for(int w = 0; w < 3; w++) { 
+                if(!scanning_active_) return; 
+                chThdSleepMilliseconds(10); 
             }
 
-            // Overflow protection check
-            if (target_freq_hz + 1000000ULL < target_freq_hz) {
-                continue;
-            }
-
-            // CRITICAL: Hardware tuning with proper validation
-            if (hardware.tune_to_frequency(target_freq_hz)) {
-                // Wait for PLL stabilization - broken into small chunks for responsiveness
-                for(int w = 0; w < 3; w++) { 
-                    if(!scanning_active_) return; 
-                    chThdSleepMilliseconds(10); 
-                }
-
-                int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-                process_rssi_detection(entry_copy, real_rssi);
-                last_scanned_frequency_ = target_freq_hz;
-            }
+            int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
+            process_rssi_detection(entry, real_rssi);
+            last_scanned_frequency_ = target_freq_hz;
         }
     }
 }
@@ -969,9 +966,9 @@ std::string DroneDetectionLogger::generate_log_filename() const {
 
 std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
     // ИСПРАВЛЕНИЕ 3: Оптимизация работы с памятью в format_session_summary
-    // Используем буфер на стеке вместо множественных операций с std::string
+    // Используем БОЛЕЕ БЕЗОПАСНЫЙ буфер на стеке (уменьшаем с 512 до 256 байт)
 
-    char buffer[512]; // Буфер на стеке
+    char buffer[256]; // Безопасный буфер (256 байт)
     size_t offset = 0;
 
     // Форматируем весь текст за один проход
@@ -1141,6 +1138,20 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 }
 
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
+    // ИСПРАВЛЕНИЕ 5: Добавлена валидация частот
+    // Валидация диапазона
+    const Frequency MIN_FREQ = 50000000ULL;      // 50 MHz
+    const Frequency MAX_FREQ = 6000000000ULL;    // 6 GHz
+    
+    if (frequency_hz < MIN_FREQ || frequency_hz > MAX_FREQ) {
+        return false;  // <-- Возвращаем false при ошибке
+    }
+    
+    // Проверка на переполнение
+    if (frequency_hz + 1000000ULL < frequency_hz) {
+        return false;  // <-- Защита от overflow
+    }
+    
     receiver_model.set_target_frequency(frequency_hz);
     return true;
 }
@@ -1977,12 +1988,11 @@ DroneUIController::DroneUIController(NavigationView& nav,
 }
 
     // --- ADD THIS DESTRUCTOR ---
-    DroneUIController::~DroneUIController() {
-        if (display_controller_) {
-            delete display_controller_;
-            display_controller_ = nullptr;
-        }
-    }
+DroneUIController::~DroneUIController() {
+    // ИСПРАВЛЕНИЕ 1.1: Не удаляем display_controller_ - им владеет View
+    // UIController только использует ссылку, но не владеет ресурсом
+    display_controller_ = nullptr;  // Только обнуляем указатель
+}
 
 void DroneUIController::on_start_scan() {
     if (scanning_active_) return;
@@ -2213,29 +2223,33 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 }
 
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
-    stop_scanning_thread();
-
-    // ИСПРАВЛЕНИЕ 4: Удаляем хендлер обновления UI (только если он не статический)
-    // Проверяем, что хендлер был создан динамически (не статический)
+    // ИСПРАВЛЕНИЕ 1.2: ПРАВИЛЬНЫЙ ПОРЯДОК УДАЛЕНИЯ
+    
+    // 1. СНАЧАЛА удаляем все MessageHandler'ы (чтобы не получать call-back)
     if (message_handler_stats_) {
-        // Удаляем только если это не статический хендлер
-        // В данном случае message_handler_stats_ - это динамически созданный хендлер
         delete message_handler_stats_;
         message_handler_stats_ = nullptr;
     }
-
-    // Delete in reverse order of creation
-    if (scanning_coordinator_) delete scanning_coordinator_;
-    if (display_controller_) delete display_controller_;
-    if (ui_controller_) delete ui_controller_;
-    if (scanner_) delete scanner_;
-    if (hardware_) delete hardware_;
-
-    // Delete UI components
+    
+    // 2. Останавливаем все потоки
+    stop_scanning_thread();
+    
+    // 3. Явно останавливаем сканирование и hardware
+    if (scanner_) scanner_->stop_scanning();
+    if (hardware_) hardware_->shutdown_hardware();
+    
+    // 4. Удаляем логику в порядке зависимости
+    if (scanning_coordinator_) delete scanning_coordinator_;  // <-- Зависит от scanner и hardware
+    if (display_controller_) delete display_controller_;      // <-- Зависит от nav_
+    if (ui_controller_) delete ui_controller_;                 // <-- Зависит от scanner, hardware, audio
+    
+    // 5. Удаляем базовые компоненты
+    if (scanner_) delete scanner_;               // <-- Самостоятельный компонент
+    if (hardware_) delete hardware_;              // <-- Самостоятельный компонент
+    
+    // 6. Удаляем UI элементы
     if (status_bar_) delete status_bar_;
     if (smart_header_) delete smart_header_;
-
-    // Delete threat cards
     for (auto& card : threat_cards_) {
         if (card) delete card;
     }
