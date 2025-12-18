@@ -336,6 +336,15 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
+    // CRITICAL FIX: Safe Baseband/Scanning separation
+    // Check if spectrum streaming is active and stop it before scanning
+    bool was_spectrum_active = hardware.is_spectrum_streaming_active();
+    if (was_spectrum_active) {
+        hardware.stop_spectrum_before_scan();
+        // Give M0 time to process stop command
+        chThdSleepMilliseconds(20);
+    }
+    
     // ИСПРАВЛЕНИЕ 2: Оптимизация многопоточной синхронизации
     // Переработанная архитектура для предотвращения deadlock и race conditions
     
@@ -406,6 +415,11 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
             process_rssi_detection(entry, real_rssi);
             last_scanned_frequency_ = target_freq_hz;
         }
+    }
+    
+    // CRITICAL FIX: Resume spectrum streaming if it was active before scanning
+    if (was_spectrum_active) {
+        hardware.resume_spectrum_after_scan();
     }
 }
 
@@ -1167,6 +1181,27 @@ void DroneHardwareController::stop_spectrum_streaming() {
     baseband::spectrum_streaming_stop();
 }
 
+// CRITICAL FIX: Safe Baseband/Scanning separation methods
+void DroneHardwareController::stop_spectrum_before_scan() {
+    if (spectrum_streaming_active_) {
+        spectrum_streaming_active_ = false;
+        baseband::spectrum_streaming_stop();
+        // Give M0 time to process stop command
+        chThdSleepMilliseconds(10);
+    }
+}
+
+void DroneHardwareController::resume_spectrum_after_scan() {
+    if (!spectrum_streaming_active_) {
+        spectrum_streaming_active_ = true;
+        baseband::spectrum_streaming_start();
+    }
+}
+
+bool DroneHardwareController::is_spectrum_compatible_with_scanning() const {
+    return !spectrum_streaming_active_;
+}
+
 int32_t DroneHardwareController::get_real_rssi_from_hardware(Frequency target_frequency) {
     (void)target_frequency;
     return last_valid_rssi_;
@@ -1550,15 +1585,10 @@ void ConsoleStatusBar::paint(Painter& painter) {
 }
 
 DroneDisplayController::~DroneDisplayController() {
-    // Явное удаление хендлеров
-    if (message_handler_spectrum_config_) {
-        delete message_handler_spectrum_config_;
-        message_handler_spectrum_config_ = nullptr;
-    }
-    if (message_handler_frame_sync_) {
-        delete message_handler_frame_sync_;
-        message_handler_frame_sync_ = nullptr;
-    }
+    // ИСПРАВЛЕНИЕ 1.1: Не удаляем хендлеры - они удалятся в деструкторе DroneHardwareController
+    // UIController только использует ссылку, но не владеет ресурсом
+    message_handler_spectrum_config_ = nullptr;
+    message_handler_frame_sync_ = nullptr;
 }
 
 DroneDisplayController::DroneDisplayController(NavigationView& nav)

@@ -68,6 +68,14 @@ struct preset_entry {
 
 // Audio alert system migrated from Looking Glass - defined in ui_drone_audio.hpp
 
+// Scanner Mode Enumeration - CRITICAL FIX for Baseband/Scanning conflict
+enum class ScannerMode {
+    DATABASE_ONLY,      // Only database scanning, no spectrum streaming
+    WIDEBAND_ONLY,      // Only wideband monitoring, no fast scanning
+    HYBRID,            // Hybrid mode with controlled switching
+    SPECTRUM_VIEW      // Spectrum view only, scanning stopped
+};
+
 // Constants (no duplicates)
 static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
@@ -596,6 +604,11 @@ public:
     bool is_spectrum_streaming_active() const;
     int32_t get_current_rssi() const;
     void update_spectrum_for_scanner();
+
+    // CRITICAL FIX: Methods for safe Baseband/Scanning separation
+    void stop_spectrum_before_scan();
+    void resume_spectrum_after_scan();
+    bool is_spectrum_compatible_with_scanning() const;
 
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_statistics(const ChannelStatistics& statistics);
