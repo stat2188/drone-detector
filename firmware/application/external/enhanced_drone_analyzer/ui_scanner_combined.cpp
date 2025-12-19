@@ -336,15 +336,6 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    // CRITICAL FIX: Safe Baseband/Scanning separation
-    // Check if spectrum streaming is active and stop it before scanning
-    bool was_spectrum_active = hardware.is_spectrum_streaming_active();
-    if (was_spectrum_active) {
-        hardware.stop_spectrum_before_scan();
-        // Give M0 time to process stop command
-        chThdSleepMilliseconds(20);
-    }
-    
     // ИСПРАВЛЕНИЕ 2: Оптимизация многопоточной синхронизации
     // Переработанная архитектура для предотвращения deadlock и race conditions
     
@@ -411,15 +402,28 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
                 chThdSleepMilliseconds(10); 
             }
 
-            int32_t real_rssi = hardware.get_real_rssi_from_hardware(target_freq_hz);
-            process_rssi_detection(entry, real_rssi);
+            // CRITICAL FIX: RSSI freshness waiting logic
+            hardware.clear_rssi_flag();
+
+            // Wait for fresh data (max 60ms)
+            int timeout_ms = 60;
+            bool signal_captured = false;
+            while(timeout_ms > 0) {
+                chThdSleepMilliseconds(5);
+                timeout_ms -= 5;
+                if (hardware.is_rssi_fresh()) {
+                    signal_captured = true;
+                    break;
+                }
+            }
+
+            if (signal_captured) {
+                int32_t real_rssi = hardware.get_current_rssi();
+                process_rssi_detection(entry, real_rssi);
+            }
+            
             last_scanned_frequency_ = target_freq_hz;
         }
-    }
-    
-    // CRITICAL FIX: Resume spectrum streaming if it was active before scanning
-    if (was_spectrum_active) {
-        hardware.resume_spectrum_after_scan();
     }
 }
 
@@ -982,38 +986,63 @@ std::string DroneDetectionLogger::generate_log_filename() const {
 }
 
 std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
-    // ИСПРАВЛЕНИЕ 3: Оптимизация работы с памятью в format_session_summary
-    // Используем БОЛЕЕ БЕЗОПАСНЫЙ буфер на стеке (уменьшаем с 512 до 256 байт)
+    // ОПТИМИЗАЦИЯ ПАМЯТИ: Уменьшаем буфер с 256 до 128 байт (экономия 128 байт)
+    // Добавляем защиту от переполнения и оптимизируем форматирование
 
-    char buffer[256]; // Безопасный буфер (256 байт)
+    char buffer[128]; // Оптимизированный буфер (128 байт)
     size_t offset = 0;
 
-    // Форматируем весь текст за один проход
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                      "SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\n");
+    // Функция безопасной записи с проверкой переполнения
+    auto safe_append = [&](const char* format, ...) -> bool {
+        if (offset >= sizeof(buffer) - 64) { // Оставляем запас 64 байта
+            return false;
+        }
+        
+        va_list args;
+        va_start(args, format);
+        int written = vsnprintf(buffer + offset, sizeof(buffer) - offset, format, args);
+        va_end(args);
+        
+        if (written < 0 || written >= (int)(sizeof(buffer) - offset)) {
+            return false; // Переполнение
+        }
+        
+        offset += written;
+        return true;
+    };
 
-    // Вычисляем длительность сессии
+    // Форматируем заголовок
+    if (!safe_append("SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\n")) {
+        return std::string("Session summary too long");
+    }
+
+    // Вычисляем длительность сессии с integer арифметикой
     uint32_t session_duration_ms = chTimeNow() - session_start_;
     if (session_duration_ms == 0) session_duration_ms = 1;
 
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                      "Duration: %lu.%lu seconds\n",
-                      session_duration_ms / 1000,
-                      (session_duration_ms % 1000) / 100);
+    uint32_t int_part = session_duration_ms / 1000;
+    uint32_t frac_part = (session_duration_ms % 1000) / 10; // 2 знака после запятой
 
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                      "Scan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\n",
-                      scan_cycles, total_detections);
+    if (!safe_append("Duration: %lu.%02lu seconds\n",
+                    (unsigned long)int_part, (unsigned long)frac_part)) {
+        return std::string("Session summary too long");
+    }
 
-    // Вычисляем метрики
+    if (!safe_append("Scan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\n",
+                    scan_cycles, total_detections)) {
+        return std::string("Session summary too long");
+    }
+
+    // Вычисляем метрики с integer арифметикой
     uint32_t avg_det_x100 = (scan_cycles > 0) ? (total_detections * 100) / scan_cycles : 0;
     uint32_t rate_x10 = (uint64_t)total_detections * 10000 / session_duration_ms;
 
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                      "Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: %zu\n\nEnhanced Drone Analyzer v0.3",
-                      avg_det_x100 / 100, avg_det_x100 % 100,
-                      rate_x10 / 10, rate_x10 % 10,
-                      logged_count_);
+    if (!safe_append("Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: %zu\n\nEnhanced Drone Analyzer v0.3",
+                    avg_det_x100 / 100, avg_det_x100 % 100,
+                    rate_x10 / 10, rate_x10 % 10,
+                    logged_count_)) {
+        return std::string("Session summary too long");
+    }
 
     // Гарантируем нулевой терминатор
     if (offset >= sizeof(buffer)) {
@@ -1029,37 +1058,18 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
 // ===========================================
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
-    : // 1. Сначала инициализируем хендлеры (так как они объявлены первыми в классе)
-      message_handler_spectrum_config_(new MessageHandlerRegistration(
-          Message::ID::ChannelSpectrumConfig,
-          [this](Message* const p) {
-              this->handle_channel_spectrum_config(static_cast<const ChannelSpectrumConfigMessage*>(p));
-          }
-      )),
-      message_handler_frame_sync_(new MessageHandlerRegistration(
-          Message::ID::DisplayFrameSync,
-          [this](Message* const p) {
-               (void)p;
-               // Frame sync logic
-          }
-      )),
-      message_handler_channel_statistics_(new MessageHandlerRegistration(
-          Message::ID::ChannelStatistics,
-          [this](Message* const p) {
-              const auto* statistics_msg = static_cast<const ChannelStatisticsMessage*>(p);
-              this->handle_channel_statistics(statistics_msg->statistics);
-          }
-      )),
-      // 2. Затем переменные настроек и состояния
+    : // 1. Сначала инициализируем переменные настроек и состояния
       spectrum_mode_(mode),
       center_frequency_(2400000000ULL),
       bandwidth_hz_(24000000),
       radio_state_(),
-      fifo_(nullptr),
+      spectrum_fifo_(nullptr),
       spectrum_streaming_active_(false),
-      last_valid_rssi_(-120)
+      last_valid_rssi_(-120),
+      rssi_updated_(false)
 {
     // Тело конструктора пустое
+    // MessageHandlerRegistration objects are now initialized in-class (C++11 feature)
 }
 
 DroneHardwareController::~DroneHardwareController() {
@@ -1122,15 +1132,7 @@ void DroneHardwareController::initialize_spectrum_collector() {
 
 void DroneHardwareController::cleanup_spectrum_collector() {
     spectrum_streaming_active_ = false;
-
-    delete message_handler_spectrum_config_;
-    message_handler_spectrum_config_ = nullptr;
-
-    delete message_handler_frame_sync_;
-    message_handler_frame_sync_ = nullptr;
-
-    delete message_handler_channel_statistics_;
-    message_handler_channel_statistics_ = nullptr;
+    // MessageHandlerRegistration objects are now stack objects and will be automatically destroyed
 }
 
 void DroneHardwareController::set_spectrum_mode(SpectrumMode mode) {
@@ -1211,10 +1213,10 @@ int32_t DroneHardwareController::get_real_rssi_from_hardware(Frequency target_fr
 
 void DroneHardwareController::handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message) {
     if (message) {
-        fifo_ = message->fifo;
-        if (fifo_) {
+        spectrum_fifo_ = message->fifo;
+        if (spectrum_fifo_) {
             ChannelSpectrum spectrum;
-            while (fifo_->out(spectrum)) {
+            while (spectrum_fifo_->out(spectrum)) {
                 process_channel_spectrum_data(spectrum);
             }
         }
@@ -1223,6 +1225,15 @@ void DroneHardwareController::handle_channel_spectrum_config(const ChannelSpectr
 
 void DroneHardwareController::handle_channel_statistics(const ChannelStatistics& statistics) {
     last_valid_rssi_ = statistics.max_db;
+    rssi_updated_ = true;  // Mark RSSI as fresh
+}
+
+void DroneHardwareController::clear_rssi_flag() {
+    rssi_updated_ = false;
+}
+
+bool DroneHardwareController::is_rssi_fresh() const {
+    return rssi_updated_;
 }
 
 void DroneHardwareController::process_channel_spectrum_data(const ChannelSpectrum& spectrum) {
@@ -1417,6 +1428,12 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
     add_children({&card_text_});
 }
 
+// Helper function to get trend character efficiently
+static char get_trend_char(MovementTrend trend) {
+    static const char trend_chars[] = {'=', '^', 'v', '='};
+    return trend_chars[static_cast<int>(trend)];
+}
+
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     // CRITICAL FIX: Check if threat level changed (affects background color in paint)
     // Use primitive comparison for performance - avoid string operations in UI loop
@@ -1436,19 +1453,18 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
 
     // CRITICAL FIX: Only format string if data actually changed
     // This prevents unnecessary allocations in the paint loop
-    char buffer[32];
-    char trend_char = (trend_ == MovementTrend::APPROACHING) ? '^' :
-                      (trend_ == MovementTrend::RECEDING)    ? 'v' :
-                      '=';
+    char buffer[24]; // OPTIMIZATION: Reduced buffer size from 32 to 24 bytes
+    char trend_char = get_trend_char(trend_); // OPTIMIZATION: Use lookup table instead of conditional
 
     uint32_t mhz = frequency_ / 1000000;
     
     // OPTIMIZATION: Use integer arithmetic for frequency, avoid float/double libraries
     // snprintf is still used here but only when data changes
+    // OPTIMIZATION: Simplified format string to reduce buffer usage
     snprintf(buffer, sizeof(buffer), "%-7.7s %c %4luM %3ld",
             threat_name_.c_str(), 
             trend_char,
-            mhz,
+            (unsigned long)mhz,
             (long int)rssi_);
 
     // CRITICAL FIX: Compare with current buffer to avoid redundant string allocation

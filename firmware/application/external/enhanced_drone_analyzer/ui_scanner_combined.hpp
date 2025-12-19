@@ -612,6 +612,10 @@ public:
     void stop_spectrum_before_scan();
     void resume_spectrum_after_scan();
     bool is_spectrum_compatible_with_scanning() const;
+    
+    // RSSI freshness tracking methods
+    void clear_rssi_flag();
+    bool is_rssi_fresh() const;
 
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_statistics(const ChannelStatistics& statistics);
@@ -634,14 +638,35 @@ private:
     Frequency center_frequency_;
     uint32_t bandwidth_hz_;
     RxRadioState radio_state_;
-    ChannelSpectrumFIFO* fifo_ = nullptr;
+    ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
     volatile int32_t last_valid_rssi_ = -120;
+    volatile bool rssi_updated_ = false;  // NEW: Track RSSI freshness
 
-    // Хендлеры теперь инициализируются ПОСЛЕ переменных
-    MessageHandlerRegistration* message_handler_spectrum_config_ = nullptr;
-    MessageHandlerRegistration* message_handler_frame_sync_ = nullptr;
-    MessageHandlerRegistration* message_handler_channel_statistics_ = nullptr;
+    // ИСПРАВЛЕНИЕ 2: Convert MessageHandlerRegistration to stack objects (no pointers)
+    // Declare handlers AFTER all member variables they capture
+    MessageHandlerRegistration message_handler_spectrum_config_ {
+        Message::ID::ChannelSpectrumConfig,
+        [this](Message* const p) {
+            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            this->spectrum_fifo_ = message.fifo;
+        }
+    };
+    
+    MessageHandlerRegistration message_handler_frame_sync_ {
+        Message::ID::DisplayFrameSync,
+        [this](Message* const) {
+            // Frame sync logic - empty for now
+        }
+    };
+    
+    MessageHandlerRegistration message_handler_channel_statistics_ {
+        Message::ID::ChannelStatistics,
+        [this](Message* const p) {
+            const auto statistics_msg = static_cast<const ChannelStatisticsMessage*>(p);
+            this->handle_channel_statistics(statistics_msg->statistics);
+        }
+    };
 };
 
 
