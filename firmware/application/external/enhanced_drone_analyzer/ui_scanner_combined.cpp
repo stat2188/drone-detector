@@ -696,12 +696,14 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 }
 
 void DroneScanner::send_drone_detection_message(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
-    update_tracked_drone(type, frequency, rssi, threat_level);
+    // CRITICAL FIX: Don't call UI methods directly from scanning thread
+    // Only update internal data - UI will read via snapshot
+    update_tracked_drone_internal(type, frequency, rssi, threat_level);
 }
 
 void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
-    // Lock access. While we're here, UI will wait.
-    MutexLock lock(data_mutex);
+    // CRITICAL FIX: Don't call UI methods directly from scanning thread
+    // Only update internal data - UI will read via snapshot
     update_tracked_drone_internal(type, frequency, rssi, threat_level);
 }
 
@@ -880,7 +882,8 @@ uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
 
 // DroneDetectionLogger implementations
 DroneDetectionLogger::DroneDetectionLogger()
-    : csv_log_(), session_active_(false), session_start_(0), logged_count_(0), header_written_(false) {
+    : csv_log_(), session_active_(false), session_start_(0), logged_count_(0), header_written_(false),
+      line_buffer_() {
     memset(line_buffer_, 0, sizeof(line_buffer_));
     start_session();
 }
@@ -1040,7 +1043,6 @@ DroneHardwareController::DroneHardwareController(SpectrumMode mode)
                // Frame sync logic
           }
       )),
-      message_handler_spectrum_(nullptr), // Объявлен третьим
       message_handler_channel_statistics_(new MessageHandlerRegistration(
           Message::ID::ChannelStatistics,
           [this](Message* const p) {
@@ -1585,22 +1587,31 @@ void ConsoleStatusBar::paint(Painter& painter) {
 }
 
 DroneDisplayController::~DroneDisplayController() {
-    // ИСПРАВЛЕНИЕ 1.1: Не удаляем хендлеры - они удалятся в деструкторе DroneHardwareController
-    // UIController только использует ссылку, но не владеет ресурсом
-    message_handler_spectrum_config_ = nullptr;
-    message_handler_frame_sync_ = nullptr;
+    // ШАГ 2.2: ИСПРАВЛЕНИЕ MEMORY LEAKS MessageHandler'ов
+    // These handlers were allocated on heap in constructor and must be deleted
+    
+    // Clean up message handlers first (to avoid callbacks during destruction)
+    if (message_handler_spectrum_config_) {
+        delete message_handler_spectrum_config_;
+        message_handler_spectrum_config_ = nullptr;
+    }
+    if (message_handler_frame_sync_) {
+        delete message_handler_frame_sync_;
+        message_handler_frame_sync_ = nullptr;
+    }
 }
 
-DroneDisplayController::DroneDisplayController(NavigationView& nav)
-    : big_display_({4, 6 * 16, 28 * 8, 52}, ""),
-      scanning_progress_({0, 7 * 16, screen_width, 8}),
-      text_threat_summary_({0, 8 * 16, screen_width, 16}, "THREAT: NONE"),
-      text_status_info_({0, 9 * 16, screen_width, 16}, "Ready"),
-      text_scanner_stats_({0, 10 * 16, screen_width, 16}, "No database"),
-      text_trends_compact_({0, 11 * 16, screen_width, 16}, ""),
-      text_drone_1_({screen_width - 120, 12 * 16, 120, 16}, ""),
-      text_drone_2_({screen_width - 120, 13 * 16, 120, 16}, ""),
-      text_drone_3_({screen_width - 120, 14 * 16, 120, 16}, ""),
+DroneDisplayController::DroneDisplayController(Rect parent_rect)
+    : View(parent_rect),
+      big_display_({4, 0, 28 * 8, 52}, ""),           // Относительно parent_rect
+      scanning_progress_({0, 52, screen_width, 8}),
+      text_threat_summary_({0, 70, screen_width, 16}, "THREAT: NONE"),
+      text_status_info_({0, 86, screen_width, 16}, "Ready"),
+      text_scanner_stats_({0, 102, screen_width, 16}, "No database"),
+      text_trends_compact_({0, 118, screen_width, 16}, ""),
+      text_drone_1_({screen_width - 120, 134, 120, 16}, ""),
+      text_drone_2_({screen_width - 120, 150, 120, 16}, ""),
+      text_drone_3_({screen_width - 120, 166, 120, 16}, ""),
       detected_drones_(),
       displayed_drones_(),
       spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
@@ -1608,7 +1619,7 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
       spectrum_gradient_(), spectrum_fifo_(nullptr),
       pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
       marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(LOOKING_GLASS_SINGLEPASS),
-      spectrum_config_(), nav_(nav)
+      spectrum_config_()
 {
     // FIX: Резервируем память заранее.
     // MAX_TRACKED_DRONES обычно около 8-10, +2 про запас.
@@ -1647,7 +1658,18 @@ DroneDisplayController::DroneDisplayController(NavigationView& nav)
         }
     );
 
-    // ... rest of constructor code ...
+    // КРИТИЧНО: Добавляем ВСЕ виджеты в иерархию View
+    add_children({
+        &big_display_,
+        &scanning_progress_,
+        &text_threat_summary_,
+        &text_status_info_,
+        &text_scanner_stats_,
+        &text_trends_compact_,
+        &text_drone_1_,
+        &text_drone_2_,
+        &text_drone_3_
+    });
 }
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
@@ -2002,13 +2024,14 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
 DroneUIController::DroneUIController(NavigationView& nav,
                                    DroneHardwareController& hardware,
                                    DroneScanner& scanner,
-                                   ::AudioManager& audio_mgr)
+                                   ::AudioManager& audio_mgr,
+                                   DroneDisplayController& display_controller)
     : nav_(nav),
       hardware_(hardware),
       scanner_(scanner),
       audio_mgr_(audio_mgr),
       scanning_active_(false),
-      display_controller_(new DroneDisplayController(nav)),
+      display_controller_(&display_controller),
       settings_()
 {
     settings_.spectrum_mode = SpectrumMode::MEDIUM;
@@ -2206,8 +2229,8 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       hardware_(new DroneHardwareController()),
       scanner_(new DroneScanner()),
       audio_(),
-      ui_controller_(new DroneUIController(nav, *hardware_, *scanner_, audio_)),
-      display_controller_(new DroneDisplayController(nav)),
+      display_controller_(new DroneDisplayController({0, 60, screen_width, screen_height - 80})),
+      ui_controller_(new DroneUIController(nav, *hardware_, *scanner_, audio_, *display_controller_)),
       scanning_coordinator_(new ScanningCoordinator(nav, *hardware_, *scanner_, *display_controller_, audio_)),
       smart_header_(new SmartThreatHeader(Rect{0, 0, screen_width, 60})),
       status_bar_(new ConsoleStatusBar(0, Rect{0, screen_height - 80, screen_width, 16})),
@@ -2253,35 +2276,62 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 }
 
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
-    // ИСПРАВЛЕНИЕ 1.2: ПРАВИЛЬНЫЙ ПОРЯДОК УДАЛЕНИЯ
+    // ШАГ 2.1: ИСПРАВЛЕНИЕ ПОРЯДКА УНИЧТОЖЕНИЯ
+    // 1. Останавливаем активность (в порядке зависимости)
+    if (scanning_coordinator_) {
+        scanning_coordinator_->stop_coordinated_scanning();
+    }
+    if (scanner_) {
+        scanner_->stop_scanning();
+    }
+    if (hardware_) {
+        hardware_->shutdown_hardware();
+    }
     
-    // 1. СНАЧАЛА удаляем все MessageHandler'ы (чтобы не получать call-back)
+    // 2. Удаляем High-Level Logic (зависит от Low-Level)
+    if (ui_controller_) {
+        delete ui_controller_;
+        ui_controller_ = nullptr;
+    }
+    if (scanning_coordinator_) {
+        delete scanning_coordinator_;
+        scanning_coordinator_ = nullptr;
+    }
+    
+    // 3. Удаляем Low-Level Logic
+    if (scanner_) {
+        delete scanner_;
+        scanner_ = nullptr;
+    }
+    if (hardware_) {
+        delete hardware_;
+        hardware_ = nullptr;
+    }
+    
+    // 4. Удаляем UI компоненты
+    if (display_controller_) {
+        delete display_controller_;
+        display_controller_ = nullptr;
+    }
+    if (smart_header_) {
+        delete smart_header_;
+        smart_header_ = nullptr;
+    }
+    if (status_bar_) {
+        delete status_bar_;
+        status_bar_ = nullptr;
+    }
+    for (auto& card : threat_cards_) {
+        if (card) {
+            delete card;
+            card = nullptr;
+        }
+    }
+    
+    // 5. Удаляем MessageHandler'ы (последними, чтобы избежать callback'ов)
     if (message_handler_stats_) {
         delete message_handler_stats_;
         message_handler_stats_ = nullptr;
-    }
-    
-    // 2. Останавливаем все потоки
-    stop_scanning_thread();
-    
-    // 3. Явно останавливаем сканирование и hardware
-    if (scanner_) scanner_->stop_scanning();
-    if (hardware_) hardware_->shutdown_hardware();
-    
-    // 4. Удаляем логику в порядке зависимости
-    if (scanning_coordinator_) delete scanning_coordinator_;  // <-- Зависит от scanner и hardware
-    if (display_controller_) delete display_controller_;      // <-- Зависит от nav_
-    if (ui_controller_) delete ui_controller_;                 // <-- Зависит от scanner, hardware, audio
-    
-    // 5. Удаляем базовые компоненты
-    if (scanner_) delete scanner_;               // <-- Самостоятельный компонент
-    if (hardware_) delete hardware_;              // <-- Самостоятельный компонент
-    
-    // 6. Удаляем UI элементы
-    if (status_bar_) delete status_bar_;
-    if (smart_header_) delete smart_header_;
-    for (auto& card : threat_cards_) {
-        if (card) delete card;
     }
 }
 
@@ -2537,7 +2587,8 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() {
     while (scanning_active_) {
         if (scanning_active_) {
             scanner_.perform_scan_cycle(hardware_);
-            // Removed UI update from scanning thread - UI will pull data when needed
+            // CRITICAL FIX: Removed direct UI calls from scanning thread
+            // UI updates now happen only through MessageHandler in handle_scanner_update()
         }
 
         chThdSleepMilliseconds(scan_interval_ms_);

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <atomic>
 
 // Include shared utilities
 #include "ui_drone_common_types.hpp"
@@ -406,6 +407,8 @@ private:
     bool header_written_ = false;
     char line_buffer_[192]; // Buffer moved from stack to class member for safety
 
+    // Async logging support - removed for simplicity
+
 public:
     std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
 private:
@@ -541,18 +544,18 @@ private:
     void update_tracking_counts();
 
     Thread* scanning_thread_ = nullptr;
-    volatile bool scanning_active_{false};
+    std::atomic<bool> scanning_active_{false};
 
     FreqmanDB freq_db_;
     size_t current_db_index_ = 0;
     Frequency last_scanned_frequency_ = 0;
     bool freq_db_loaded_ = false;
 
-    volatile uint32_t scan_cycles_ = 0;
+    std::atomic<uint32_t> scan_cycles_{0};
     uint32_t total_detections_ = 0;
 
     ScanningMode scanning_mode_ = ScanningMode::DATABASE;
-    bool is_real_mode_ = true;
+    std::atomic<bool> is_real_mode_{true};
 
     TrackedDrone tracked_drones_[MAX_TRACKED_DRONES];
     size_t tracked_count_ = 0;
@@ -638,7 +641,6 @@ private:
     // Хендлеры теперь инициализируются ПОСЛЕ переменных
     MessageHandlerRegistration* message_handler_spectrum_config_ = nullptr;
     MessageHandlerRegistration* message_handler_frame_sync_ = nullptr;
-    MessageHandlerRegistration* message_handler_spectrum_ = nullptr;
     MessageHandlerRegistration* message_handler_channel_statistics_ = nullptr;
 };
 
@@ -738,9 +740,9 @@ private:
     void paint(Painter& painter) override;
 };
 
-class DroneDisplayController {
+class DroneDisplayController : public View {
 public:
-    explicit DroneDisplayController(NavigationView& nav);
+    explicit DroneDisplayController(Rect parent_rect = {0, 60, screen_width, screen_height - 80});
     ~DroneDisplayController();
 
     Text& big_display() { return big_display_; }
@@ -786,15 +788,15 @@ public:
     };
 
 private:
-    Text big_display_{{4, 6 * 16, 28 * 8, 52}, ""};
-    ProgressBar scanning_progress_{{0, 7 * 16, screen_width, 8}};
-    Text text_threat_summary_{{0, 8 * 16, screen_width, 16}, "THREAT: NONE"};
-    Text text_status_info_{{0, 9 * 16, screen_width, 16}, "Ready"};
-    Text text_scanner_stats_{{0, 10 * 16, screen_width, 16}, "No database"};
-    Text text_trends_compact_{{0, 11 * 16, screen_width, 16}, ""};
-    Text text_drone_1_{{screen_width - 120, 12 * 16, 120, 16}, ""};
-    Text text_drone_2_{{screen_width - 120, 13 * 16, 120, 16}, ""};
-    Text text_drone_3_{{screen_width - 120, 14 * 16, 120, 16}, ""};
+    Text big_display_{{4, 0, 28 * 8, 52}, ""};           // Относительно parent_rect
+    ProgressBar scanning_progress_{{0, 52, screen_width, 8}};
+    Text text_threat_summary_{{0, 70, screen_width, 16}, "THREAT: NONE"};
+    Text text_status_info_{{0, 86, screen_width, 16}, "Ready"};
+    Text text_scanner_stats_{{0, 102, screen_width, 16}, "No database"};
+    Text text_trends_compact_{{0, 118, screen_width, 16}, ""};
+    Text text_drone_1_{{screen_width - 120, 134, 120, 16}, ""};
+    Text text_drone_2_{{screen_width - 120, 150, 120, 16}, ""};
+    Text text_drone_3_{{screen_width - 120, 166, 120, 16}, ""};
 
     std::vector<DisplayDroneEntry> detected_drones_;
     std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES> displayed_drones_;
@@ -822,7 +824,6 @@ private:
     int mode = 0;
 
     SpectrumConfig spectrum_config_;
-    NavigationView& nav_;
 
     // Declare only pointers, without initialization
     MessageHandlerRegistration* message_handler_spectrum_config_ = nullptr;
@@ -850,7 +851,8 @@ public:
     DroneUIController(NavigationView& nav,
                      DroneHardwareController& hardware,
                      DroneScanner& scanner,
-                     ::AudioManager& audio_mgr);
+                     ::AudioManager& audio_mgr,
+                     DroneDisplayController& display_controller);
     ~DroneUIController();
 
     void on_start_scan();
