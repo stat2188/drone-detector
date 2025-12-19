@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
+#include <cstdarg>
 
 using namespace portapack;
 using namespace tonekey;
@@ -143,7 +144,8 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
 // ===========================================
 
 DroneScanner::DroneScanner()
-    : scanning_thread_(nullptr),
+    : data_mutex(),  // Initialize mutex first
+      scanning_thread_(nullptr),
       scanning_active_(false),
       freq_db_(),
       current_db_index_(0),
@@ -165,8 +167,8 @@ DroneScanner::DroneScanner()
       detection_logger_(),
       detection_ring_buffer_()
 {
-    // IMPORTANT: Initialize mutex before everything else
-    chMtxInit(&data_mutex);
+    // Initialize mutex (already done in member initialization list)
+    // chMtxInit(&data_mutex);  // Removed from here
 
     initialize_database_and_scanner();
     initialize_wideband_scanning();
@@ -602,7 +604,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     // Ограничиваем частоты для дронов (433MHz - 5.8GHz)
     const Frequency MIN_DRONE_FREQ = 433000000ULL;
     const Frequency MAX_DRONE_FREQ = 5800000000ULL;
-    if (entry.frequency_a < MIN_DRONE_FREQ || entry.frequency_a > MAX_DRONE_FREQ) {
+    if (static_cast<uint64_t>(entry.frequency_a) < MIN_DRONE_FREQ || 
+        static_cast<uint64_t>(entry.frequency_a) > MAX_DRONE_FREQ) {
         return;
     }
 
@@ -1435,14 +1438,6 @@ static char get_trend_char(MovementTrend trend) {
 }
 
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
-    // CRITICAL FIX: Check if threat level changed (affects background color in paint)
-    // Use primitive comparison for performance - avoid string operations in UI loop
-    bool visual_state_changed = (frequency_ != drone.frequency) || 
-                               (threat_ != drone.threat) || 
-                               (rssi_ != drone.rssi) ||
-                               (trend_ != drone.trend) ||
-                               (!is_active_);
-
     is_active_ = true;
     frequency_ = drone.frequency;
     threat_ = drone.threat;

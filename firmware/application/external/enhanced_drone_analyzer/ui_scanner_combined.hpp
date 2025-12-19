@@ -968,8 +968,8 @@ private:
     ::AudioManager audio_;  // Direct member now
 
     // Forward declare SettingsManager to avoid circular dependency
-    DroneUIController* ui_controller_ = nullptr;
     DroneDisplayController* display_controller_ = nullptr;
+    DroneUIController* ui_controller_ = nullptr;
     ScanningCoordinator* scanning_coordinator_ = nullptr;
 
     // UI components (modern layout)
