@@ -127,8 +127,8 @@ void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx)
         return;
     }
 
-    // Генерируем строку и добавляем в буфер
-    for (int i = 0; i < TV_LINE_WIDTH; i++) {
+    // Генерируем строку из 192 пикселей (вместо 128)
+    for (int i = 0; i < 192; i++) {
         int source_idx = offset_idx + i + x_correction_;
         if (source_idx < 0) source_idx = 0;
         if (source_idx > 255) source_idx = 255;
@@ -149,12 +149,12 @@ void TVView::render_buffer_batch() {
         scan_line = 0;
     }
 
-    // Рендерим все строки из буфера
+    // Рендерим все строки из буфера (теперь 192 пикселей)
     for (int i = 0; i < buffer_line_count; i++) {
         display.render_line({rect.left(), rect.top() + scan_line + i * 2}, 
-                           TV_LINE_WIDTH, line_buffer_[i].data());
+                           192, line_buffer_[i].data());
         display.render_line({rect.left(), rect.top() + scan_line + i * 2 + 1}, 
-                           TV_LINE_WIDTH, line_buffer_[i].data());
+                           192, line_buffer_[i].data());
     }
 
     // Обновляем позицию сканирования

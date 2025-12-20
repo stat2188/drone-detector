@@ -81,7 +81,7 @@ class TVView : public Widget {
     void set_x_correction(int32_t value);
 
    private:
-    static constexpr int TV_LINE_WIDTH = 128;
+    static constexpr int TV_LINE_WIDTH = 192;
     static constexpr int SAMPLES_PER_PACKET = 256;
     static constexpr int LINE_BUFFER_SIZE = 16;
     static constexpr int RENDER_THRESHOLD = 8;
