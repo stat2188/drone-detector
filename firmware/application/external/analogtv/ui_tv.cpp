@@ -20,6 +20,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
+// "Well, so what if it looks like shit. Does it work? Yeah, it works!"
+
 #include "ui_tv.hpp"
 
 #include "spectrum_color_lut.hpp"
@@ -98,93 +100,72 @@ void TVView::paint(Painter& painter) {
     (void)painter;
 }
 
-void TVView::on_adjust_xcorr(uint8_t xcorr) {
-    x_correction = xcorr;
+void TVView::set_x_correction(int32_t value) {
+    x_correction_ = value;
 }
 
-void TVView::on_adjust_contrast(int contrast) {
-    this->contrast = contrast;
+
+void TVView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
+    add_line_to_buffer(spectrum, 0);    // Первая строка (сэмплы 0..127)
+    add_line_to_buffer(spectrum, 128);  // Вторая строка (сэмплы 128..255)
+    
+    // Проверяем, нужно ли рендерить
+    if (buffer_line_count >= RENDER_THRESHOLD) {
+        render_buffer_batch();
+    }
 }
 
-void TVView::on_channel_spectrum(
-    const ChannelSpectrum& spectrum) {
-    // Search for sync pulse (maximum value in spectrum.db because negative modulation)
-    // We look for local maximum to align phase/offset
+void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx) {
+    const auto rect = screen_rect();
+    const int max_y = rect.height();
 
-    // NOTE: This is simplified logic. Ideally need sliding window.
-    // Here we just fill the buffer, and do analysis before rendering.
-
-    for (size_t i = 0; i < 256; i++) {
-        // Save "raw" data for post-processing
-        raw_buffer[i + count * 256] = spectrum.db[i];
-        // update min/max for AGC
-        min_lvl = std::min(min_lvl, spectrum.db[i]);
-        max_lvl = std::max(max_lvl, spectrum.db[i]);
+    // Проверка переполнения буфера
+    if (buffer_line_count >= LINE_BUFFER_SIZE) {
+        process_buffer_overflow();
+        return;
     }
 
-    // find max_index in current spectrum
-    size_t max_index = 0;
-    uint8_t max_val = spectrum.db[0];
-    for (size_t i = 1; i < 256; i++) {
-        if (spectrum.db[i] > max_val) {
-            max_val = spectrum.db[i];
-            max_index = i;
-        }
+    // Генерируем строку и добавляем в буфер
+    for (int i = 0; i < TV_LINE_WIDTH; i++) {
+        int source_idx = offset_idx + i + x_correction_;
+        if (source_idx < 0) source_idx = 0;
+        if (source_idx > 255) source_idx = 255;
+
+        uint8_t db_val = 255 - spectrum.db[source_idx];
+        line_buffer_[buffer_line_count][i] = spectrum_rgb4_lut[db_val];
     }
-    max_indices[count] = (int8_t)max_index;
+    
+    buffer_line_count++;
+}
 
-    count = count + 1;
-    if (count == 52) {
-        count = 0;
-        // compute average max
-        int32_t sum = 0;
-        for (size_t i = 0; i < 52; i++) sum += max_indices[i];
-        int16_t average_max = sum / 52;
-        int16_t desired_offset = -average_max;
+void TVView::render_buffer_batch() {
+    const auto rect = screen_rect();
+    const int max_y = rect.height();
 
-        // smooth the offset
-        dynamic_offset = (dynamic_offset * 15 + desired_offset) / 16;
-
-        // compute AGC factors
-        if (max_lvl > min_lvl) {
-            gain = 255.0f / (max_lvl - min_lvl);
-            offset = (float)min_lvl;
-        } else {
-            gain = 1.0f;
-            offset = 0.0f;
-        }
-        // reset for next frame
-        min_lvl = 255;
-        max_lvl = 0;
-
-        // fill video_buffer_int with corrected data with AGC and contrast
-        for (size_t j = 0; j < 13312; j++) {
-            int32_t idx = (int32_t)j + dynamic_offset;
-            if (idx < 0) idx += 13312;
-            if (idx >= 13312) idx -= 13312;
-            uint8_t raw = raw_buffer[idx];
-            float scaled = (raw - offset) * gain * (contrast / 128.0f);
-            int16_t pixel_val = (int16_t)(scaled + 0.5f);
-            pixel_val = std::max<int>(0, std::min<int>(255, pixel_val));
-            video_buffer_int[j] = 255 - pixel_val;
-        }
-
-        ui::Color line_buffer[128];
-        Coord line;
-        uint32_t bmp_px;
-
-        // Optimization: color is calculated once per pair of lines
-        for (line = 0; line < 208; line = line + 2) {
-            for (bmp_px = 0; bmp_px < 128; bmp_px++) {
-                // line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px + line/2 * 128]];
-                line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px + line / 2 * 128 + x_correction]];
-            }
-
-            display.render_line({0, line + 100}, 128, line_buffer);
-            display.render_line({0, line + 101}, 128, line_buffer);
-        }
-        count = 0;
+    // Проверяем, не выйдем ли за пределы экрана
+    if (scan_line + (buffer_line_count * 2) >= max_y) {
+        scan_line = 0;
     }
+
+    // Рендерим все строки из буфера
+    for (int i = 0; i < buffer_line_count; i++) {
+        display.render_line({rect.left(), rect.top() + scan_line + i * 2}, 
+                           TV_LINE_WIDTH, line_buffer_[i].data());
+        display.render_line({rect.left(), rect.top() + scan_line + i * 2 + 1}, 
+                           TV_LINE_WIDTH, line_buffer_[i].data());
+    }
+
+    // Обновляем позицию сканирования
+    scan_line += buffer_line_count * 2;
+    
+    // Очищаем буфер
+    buffer_line_count = 0;
+}
+
+void TVView::process_buffer_overflow() {
+    // При переполнении буфера - сбрасываем и начинаем с новой позиции
+    buffer_line_count = 0;
+    scan_line = 0; // Сброс позиции сканирования для избежания артефактов
 }
 
 void TVView::clear() {
@@ -197,8 +178,12 @@ void TVView::clear() {
 
 TVWidget::TVWidget() {
     add_children({&tv_view,
-                  &field_contrast});
-    field_contrast.set_value(128);
+                  &field_xcorr});
+    
+    field_xcorr.on_change = [this](int32_t value) {
+        tv_view.set_x_correction(value);
+    };
+    field_xcorr.set_value(0);
 }
 
 void TVWidget::on_show() {
@@ -249,7 +234,6 @@ void TVWidget::paint(Painter& painter) {
 
 void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
     tv_view.on_channel_spectrum(spectrum);
-    tv_view.on_adjust_contrast(field_contrast.value());
     sampling_rate = spectrum.sampling_rate;
 }
 

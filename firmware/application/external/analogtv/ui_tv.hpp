@@ -78,20 +78,24 @@ class TVView : public Widget {
 
     void paint(Painter& painter) override;
     void on_channel_spectrum(const ChannelSpectrum& spectrum);
-    void on_adjust_xcorr(uint8_t xcorr);
-    void on_adjust_contrast(int contrast);
-    // ui::Color video_buffer[13312];
-    uint8_t video_buffer_int[13312 + 128]{0};  // 128 is for the over length caused by x_correction
-    uint8_t raw_buffer[13312 + 128]{0};
-    uint32_t count = 0;
-    uint8_t x_correction = 0;
-    int16_t dynamic_offset = 0;
-    int8_t max_indices[52]{0};
-    uint8_t min_lvl = 255;
-    uint8_t max_lvl = 0;
-    float gain = 1.0f;
-    float offset = 0.0f;
-    int contrast = 128;  // 100% as 128
+    void set_x_correction(int32_t value);
+
+   private:
+    static constexpr int TV_LINE_WIDTH = 128;
+    static constexpr int SAMPLES_PER_PACKET = 256;
+    static constexpr int LINE_BUFFER_SIZE = 16;
+    static constexpr int RENDER_THRESHOLD = 8;
+    
+    int scan_line{0};
+    int32_t x_correction_{0};
+    
+    // Буфер для строк
+    std::array<std::array<ui::Color, TV_LINE_WIDTH>, LINE_BUFFER_SIZE> line_buffer_;
+    int buffer_line_count{0};
+
+    void add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx);
+    void render_buffer_batch();
+    void process_buffer_overflow();
 
    private:
     void clear();
@@ -116,11 +120,11 @@ class TVWidget : public View {
     void show_audio_spectrum_view(const bool show);
 
     void paint(Painter& painter) override;
-    NumberField field_contrast{
+    NumberField field_xcorr{
         {UI_POS_X(0), UI_POS_Y(0)},
         5,
-        {0, 255},
-        128,
+        {0, 128},
+        1,
         ' '};
 
    private:
