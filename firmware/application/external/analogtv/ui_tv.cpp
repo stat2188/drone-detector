@@ -20,7 +20,7 @@
  * Boston, MA 02110-1301, USA.
  */
 
-// "Well, so what if it looks like shit. Does it work? Yeah, it works!"
+// "Well, so what if it looks like shit. Does it work? Yeah, it works!.Are you seriously planning to watch Netflix on this piece of junk?"
 // 
 // Signed-off-by: syber
 
