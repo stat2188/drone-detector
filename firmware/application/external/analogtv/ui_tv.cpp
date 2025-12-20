@@ -21,6 +21,8 @@
  */
 
 // "Well, so what if it looks like shit. Does it work? Yeah, it works!"
+// 
+// Signed-off-by: syber
 
 #include "ui_tv.hpp"
 
