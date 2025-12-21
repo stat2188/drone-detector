@@ -36,6 +36,9 @@
 #include "tv_signal_detector.hpp"
 
 namespace ui::external_app::analogtv {
+
+class TVSignalDetector;
+
 namespace tv {
 
 class TimeScopeView : public View {
