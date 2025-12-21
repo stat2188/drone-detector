@@ -237,6 +237,13 @@ void TVWidget::paint(Painter& painter) {
 void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
     tv_view.on_channel_spectrum(spectrum);
     sampling_rate = spectrum.sampling_rate;
+    
+    // Детекция TV сигнала
+    auto detection_result = signal_detector.detect_tv_signal(spectrum, receiver_model.target_frequency());
+    
+    if (detection_result.is_tv_signal && on_tv_signal_detected) {
+        on_tv_signal_detected(detection_result);
+    }
 }
 
 void TVWidget::on_audio_spectrum() {

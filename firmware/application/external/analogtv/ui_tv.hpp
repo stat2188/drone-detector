@@ -32,6 +32,8 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <array>
+#include "tv_signal_detector.hpp"
 
 namespace ui::external_app::analogtv {
 namespace tv {
@@ -104,6 +106,7 @@ class TVView : public Widget {
 class TVWidget : public View {
    public:
     std::function<void(int32_t offset)> on_select{};
+    std::function<void(const TVSignalDetector::DetectionResult&)> on_tv_signal_detected{};
 
     TVWidget();
 
@@ -135,6 +138,7 @@ class TVWidget : public View {
     static constexpr Dim scale_height = 20;
 
     TVView tv_view{};
+    TVSignalDetector signal_detector{};
 
     ChannelSpectrumFIFO* channel_fifo{nullptr};
     AudioSpectrum* audio_spectrum_data{nullptr};
