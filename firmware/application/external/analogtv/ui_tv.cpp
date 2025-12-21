@@ -127,11 +127,12 @@ void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx)
         return;
     }
 
-    // Генерируем строку из 192 пикселей (вместо 128)
-    for (int i = 0; i < 192; i++) {
+    // Генерируем строку из TV_LINE_WIDTH пикселей (оптимизированная ширина)
+    for (int i = 0; i < TV_LINE_WIDTH; i++) {
         int source_idx = offset_idx + i + x_correction_;
+        // Оптимизированная проверка границ
         if (source_idx < 0) source_idx = 0;
-        if (source_idx > 255) source_idx = 255;
+        else if (source_idx > 255) source_idx = 255;
 
         uint8_t db_val = 255 - spectrum.db[source_idx];
         line_buffer_[buffer_line_count][i] = spectrum_rgb4_lut[db_val];
@@ -145,29 +146,28 @@ void TVView::render_buffer_batch() {
     const int max_y = rect.height();
 
     // Проверяем, не выйдем ли за пределы экрана
-    if (scan_line + (buffer_line_count * 2) >= max_y) {
+    if (scan_line + buffer_line_count >= max_y) {
         scan_line = 0;
     }
 
-    // Рендерим все строки из буфера (теперь 192 пикселей)
+    // Рендерим все строки из буфера (оптимизированная ширина)
     for (int i = 0; i < buffer_line_count; i++) {
-        display.render_line({rect.left(), rect.top() + scan_line + i * 2}, 
-                           192, line_buffer_[i].data());
-        display.render_line({rect.left(), rect.top() + scan_line + i * 2 + 1}, 
-                           192, line_buffer_[i].data());
+        display.render_line({rect.left(), rect.top() + scan_line + i},
+                           TV_LINE_WIDTH, line_buffer_[i].data());
     }
 
     // Обновляем позицию сканирования
-    scan_line += buffer_line_count * 2;
+    scan_line += buffer_line_count;
     
     // Очищаем буфер
     buffer_line_count = 0;
 }
 
 void TVView::process_buffer_overflow() {
-    // При переполнении буфера - сбрасываем и начинаем с новой позиции
-    buffer_line_count = 0;
-    scan_line = 0; // Сброс позиции сканирования для избежания артефактов
+    // При переполнении буфера - рендерим текущий буфер и начинаем с новой позиции
+    render_buffer_batch();
+    // Сброс позиции сканирования для избежания артефактов
+    scan_line = 0;
 }
 
 void TVView::clear() {
@@ -240,7 +240,10 @@ void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
 }
 
 void TVWidget::on_audio_spectrum() {
-    audio_spectrum_view->on_audio_spectrum(audio_spectrum_data);
+    // Обрабатываем аудио спектр только если он активен
+    if (audio_spectrum_view && audio_spectrum_data) {
+        audio_spectrum_view->on_audio_spectrum(audio_spectrum_data);
+    }
 }
 
 } /* namespace tv */
