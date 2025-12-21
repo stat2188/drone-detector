@@ -144,8 +144,8 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
 // ===========================================
 
 DroneScanner::DroneScanner()
-    : data_mutex(),  // Initialize mutex first
-      scanning_thread_(nullptr),
+    : scanning_thread_(nullptr),
+      data_mutex(),  // Initialize mutex after thread pointer
       scanning_active_(false),
       freq_db_(),
       current_db_index_(0),
