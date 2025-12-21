@@ -266,12 +266,12 @@ set(CPPSRC
 	ui/ui_tone_key.cpp
 	ui/ui_transmitter.cpp
 	ui/ui_bmpview.cpp
-	# apps/ais_app.cpp
+	apps/ais_app.cpp
 	apps/analog_audio_app.cpp
-	# apps/ble_rx_app.cpp
-	# apps/ble_tx_app.cpp
+	apps/ble_rx_app.cpp
+	apps/ble_tx_app.cpp
 	apps/capture_app.cpp
-	# apps/pocsag_app.cpp
+	apps/pocsag_app.cpp
 	apps/ui_about_simple.cpp
 	apps/ui_adsb_rx.cpp
 	apps/ui_aprs_rx.cpp
@@ -292,7 +292,7 @@ set(CPPSRC
 	apps/ui_mictx.cpp
 	apps/ui_modemsetup.cpp
 	apps/ui_playlist.cpp
-	# apps/ui_pocsag_tx.cpp
+	apps/ui_pocsag_tx.cpp
 	apps/ui_rds.cpp
 	apps/ui_recon_settings.cpp
 	apps/ui_recon.cpp
@@ -366,7 +366,6 @@ set(INCDIR ${CMAKE_CURRENT_BINARY_DIR} ${COMMON} ${PORTINC} ${KERNINC} ${TESTINC
 	apps
 	protocols
 	bmps
-	external
 )
 
 #

@@ -34,10 +34,6 @@
 #include "radio_state.hpp"
 
 #include "tone_key.hpp"
-#include "tv_signal_detector.hpp"
-
-#include <vector>
-#include <string>
 
 namespace ui::external_app::analogtv {
 
@@ -99,53 +95,6 @@ class AnalogTvView : public View {
     std::unique_ptr<Widget> options_widget{};
 
     tv::TVWidget tv{};
-    
-    // UI элементы для сканирования
-    Button button_scan_start{ {UI_POS_X(0), UI_POS_Y(1), 8 * 8, 2 * 8}, "SCAN" };
-    Button button_scan_stop{ {UI_POS_X(1), UI_POS_Y(1), 8 * 8, 2 * 8}, "STOP" };
-    Button button_manual{ {UI_POS_X(2), UI_POS_Y(1), 8 * 8, 2 * 8}, "MANUAL" };
-    
-    Text text_scan_status{ {UI_POS_X(0), UI_POS_Y(2), 20 * 8, 1 * 8}, "Status: Ready" };
-    Text text_found_channels{ {UI_POS_X(0), UI_POS_Y(3), 20 * 8, 1 * 8}, "Channels: 0" };
-    Text text_current_channel{ {UI_POS_X(0), UI_POS_Y(4), 20 * 8, 1 * 8}, "Current: -" };
-    Text text_progress{ {UI_POS_X(0), UI_POS_Y(5), 20 * 8, 1 * 8}, "Progress: 0%" };
-    
-    // Поля для настройки диапазона
-    NumberField field_scan_start{ {UI_POS_X(0), UI_POS_Y(7)}, 9, {10000000, 1000000000}, 1000000, ' ' };
-    NumberField field_scan_end{ {UI_POS_X(1), UI_POS_Y(7)}, 9, {10000000, 1000000000}, 1000000, ' ' };
-    NumberField field_scan_step{ {UI_POS_X(0), UI_POS_Y(8)}, 6, {50000, 1000000}, 10000, ' ' };
-    NumberField field_min_signal{ {UI_POS_X(1), UI_POS_Y(8)}, 4, {-100, -20}, 1, ' ' };
-    NumberField field_scan_timeout{ {UI_POS_X(0), UI_POS_Y(9)}, 4, {100, 2000}, 10, ' ' };
-    
-    // Структуры для сканирования
-    struct ScanParameters {
-        int64_t start_freq = 100000000;    // 100 МГц
-        int64_t end_freq = 800000000;      // 800 МГц
-        int64_t step = 200000;             // 200 кГц
-        int min_signal_db = -60;           // Минимальный уровень сигнала
-        int scan_timeout_ms = 500;         // Таймаут на каждой частоте
-    };
-    
-    struct FoundChannel {
-        int64_t frequency{0};
-        std::string name{""};
-        int signal_strength{0};
-        std::string modulation_type{""};
-        bool is_valid{false};
-        
-        FoundChannel() = default;
-        
-        FoundChannel(int64_t freq, const std::string& mod_type, int strength, bool valid = false)
-            : frequency(freq), name("TV_" + to_string_short_freq(freq)), 
-              signal_strength(strength), modulation_type(mod_type), is_valid(valid) {}
-    };
-    
-    ScanParameters scan_params{};
-    std::vector<FoundChannel> found_channels{};
-    bool is_scanning = false;
-    bool scan_paused = false;
-    size_t current_channel_index = 0;
-    int64_t current_scan_freq = 0;
 
     void on_baseband_bandwidth_changed(uint32_t bandwidth_hz);
     void on_modulation_changed(const ReceiverModel::Mode modulation);
@@ -168,25 +117,6 @@ class AnalogTvView : public View {
         }};
 
     void on_freqchg(int64_t freq);
-    
-    // Обработка управления стиками
-    void on_left();
-    void on_right();
-    
-    void on_frequency_changed(rf::Frequency f);
-    
-    // Методы для сканирования
-    void start_scan();
-    void stop_scan();
-    void pause_scan();
-    void resume_scan();
-    msg_t scan_worker_thread();
-    void update_scan_progress();
-    void add_found_channel(const TVSignalDetector::DetectionResult& result);
-    void switch_to_channel(size_t index);
-    void save_found_channels();
-    void load_scan_settings();
-    void save_scan_settings();
 };
 
 }  // namespace ui::external_app::analogtv

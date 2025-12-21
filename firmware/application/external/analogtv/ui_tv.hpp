@@ -32,13 +32,8 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <array>
-#include "tv_signal_detector.hpp"
 
 namespace ui::external_app::analogtv {
-
-class TVSignalDetector;
-
 namespace tv {
 
 class TimeScopeView : public View {
@@ -78,36 +73,16 @@ class TimeScopeView : public View {
 
 class TVView : public Widget {
    public:
-    TVView() : scan_line(0), x_correction_(0), line_buffer_{}, buffer_line_count(0) {
-        // Initialize line_buffer_ with black color
-        for (auto& line : line_buffer_) {
-            line.fill(Color::black());
-        }
-    }
-
     void on_show() override;
     void on_hide() override;
 
     void paint(Painter& painter) override;
     void on_channel_spectrum(const ChannelSpectrum& spectrum);
-    void set_x_correction(int32_t value);
-
-   private:
-    static constexpr int TV_LINE_WIDTH = 128;
-    static constexpr int SAMPLES_PER_PACKET = 256;
-    static constexpr int LINE_BUFFER_SIZE = 32;
-    static constexpr int RENDER_THRESHOLD = 16;
-    
-    int scan_line;
-    int32_t x_correction_;
-    
-    // Буфер для строк
-    std::array<std::array<ui::Color, TV_LINE_WIDTH>, LINE_BUFFER_SIZE> line_buffer_;
-    int buffer_line_count;
-
-    void add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx);
-    void render_buffer_batch();
-    void process_buffer_overflow();
+    void on_adjust_xcorr(uint8_t xcorr);
+    // ui::Color video_buffer[13312];
+    uint8_t video_buffer_int[13312 + 128]{0};  // 128 is for the over length caused by x_correction
+    uint32_t count = 0;
+    uint8_t x_correction = 0;
 
    private:
     void clear();
@@ -116,7 +91,6 @@ class TVView : public Widget {
 class TVWidget : public View {
    public:
     std::function<void(int32_t offset)> on_select{};
-    std::function<void(const TVSignalDetector::DetectionResult&)> on_tv_signal_detected{};
 
     TVWidget();
 
@@ -148,7 +122,6 @@ class TVWidget : public View {
     static constexpr Dim scale_height = 20;
 
     TVView tv_view{};
-    TVSignalDetector signal_detector{};
 
     ChannelSpectrumFIFO* channel_fifo{nullptr};
     AudioSpectrum* audio_spectrum_data{nullptr};
