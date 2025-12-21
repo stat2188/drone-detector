@@ -23,10 +23,5 @@
 
 # external app address ranges below must match those in linker file "external.ld"
 maximum_application_size = 32*1024
-# Special sizes for specific apps
-special_app_sizes = {
-    'enhanced_drone_analyzer': 48*1024,
-    'enhanced_drone_analyzer_settings': 8*1024,
-}
 external_apps_address_start = 0xADB00000
 external_apps_address_end = 0xADF00000

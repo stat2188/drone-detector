@@ -319,25 +319,25 @@ set(MODE_FLAGS "-O3")
 
 ### ADS-B RX
 
-# set(MODE_CPPSRC
-# 	proc_adsbrx.cpp
-# )
-# DeclareTargets(PADR adsbrx)
+set(MODE_CPPSRC
+	proc_adsbrx.cpp
+)
+DeclareTargets(PADR adsbrx)
 
 
 ### AFSK TX
 
-# set(MODE_CPPSRC
-# 	proc_afsk.cpp
-# )
-# DeclareTargets(PAFT afsktx)
+set(MODE_CPPSRC
+	proc_afsk.cpp
+)
+DeclareTargets(PAFT afsktx)
 
 ### APRS RX
 
-# set(MODE_CPPSRC
-# 	proc_aprsrx.cpp
-# )
-# DeclareTargets(PAPR aprsrx)
+set(MODE_CPPSRC
+	proc_aprsrx.cpp
+)
+DeclareTargets(PAPR aprsrx)
 
 
 ### BTLE RX
@@ -356,10 +356,10 @@ DeclareTargets(PBTT btletx)
 
 ### AIS
 
-# set(MODE_CPPSRC
-# 	proc_ais.cpp
-# )
-# DeclareTargets(PAIS ais)
+set(MODE_CPPSRC
+	proc_ais.cpp
+)
+DeclareTargets(PAIS ais)
 
 ### AM Audio
 
@@ -378,17 +378,17 @@ DeclareTargets(PCAP capture)
 
 ### ERT
 
-# set(MODE_CPPSRC
-# 	proc_ert.cpp
-# )
-# DeclareTargets(PERT ert)
+set(MODE_CPPSRC
+	proc_ert.cpp
+)
+DeclareTargets(PERT ert)
 
 ### Radiosonde
 
-# set(MODE_CPPSRC
-# 	proc_sonde.cpp
-# )
-# DeclareTargets(PSON sonde)
+set(MODE_CPPSRC
+	proc_sonde.cpp
+)
+DeclareTargets(PSON sonde)
 
 ### FSK RX
 
@@ -428,10 +428,10 @@ DeclareTargets(POOK ook)
 
 ### POCSAG2 RX
 
-# set(MODE_CPPSRC
-# 	proc_pocsag2.cpp
-# )
-# DeclareTargets(PPO2 pocsag2)
+set(MODE_CPPSRC
+	proc_pocsag2.cpp
+)
+DeclareTargets(PPO2 pocsag2)
 
 ### RDS
 
@@ -556,6 +556,13 @@ DeclareTargets(PUSB sd_over_usb)
 set(add_to_firmware FALSE)
 set(MODE_FLAGS "-O3")
 
+### FLEX RX
+
+set(MODE_CPPSRC
+	proc_flex.cpp
+)
+DeclareTargets(PFLX flex)
+
 ### ACARS RX
 
 set(MODE_CPPSRC
@@ -644,6 +651,13 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PSTX sstvtx)
 
+### SSTV RX
+
+set(MODE_CPPSRC
+	proc_sstvrx.cpp
+)
+DeclareTargets(PSRX sstvrx)
+
 ### TPMS
 
 set(MODE_CPPSRC
@@ -689,6 +703,13 @@ set(MODE_CPPSRC
 	proc_audiotx.cpp
 )
 DeclareTargets(PATX audio_tx)
+
+### SubCar Decoders
+
+set(MODE_CPPSRC
+	proc_subcar.cpp
+)
+DeclareTargets(PSCD subcar)
 
 
 ### HackRF "factory" firmware
