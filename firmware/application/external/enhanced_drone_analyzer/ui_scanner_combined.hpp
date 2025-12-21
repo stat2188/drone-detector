@@ -544,6 +544,7 @@ private:
     void update_tracking_counts();
 
     Thread* scanning_thread_ = nullptr;
+    mutable Mutex data_mutex;
     std::atomic<bool> scanning_active_{false};
 
     FreqmanDB freq_db_;
@@ -571,10 +572,6 @@ private:
     WidebandScanData wideband_scan_data_;
     std::vector<std::unique_ptr<freqman_entry>> drone_database_;
     DroneDetectionLogger detection_logger_;
-
-    // Add Mutex.
-    // mutable allows locking even inside const methods (like get_snapshot)
-    mutable Mutex data_mutex;
 
     // ADD HERE:
     DetectionRingBuffer detection_ring_buffer_; // Now the buffer lives inside the class instance
