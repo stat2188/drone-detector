@@ -75,6 +75,13 @@ class TimeScopeView : public View {
 
 class TVView : public Widget {
    public:
+    TVView() : scan_line(0), x_correction_(0), buffer_line_count(0) {
+        // Initialize line_buffer_ with black color
+        for (auto& line : line_buffer_) {
+            line.fill(Color::black());
+        }
+    }
+
     void on_show() override;
     void on_hide() override;
 
@@ -88,12 +95,12 @@ class TVView : public Widget {
     static constexpr int LINE_BUFFER_SIZE = 32;
     static constexpr int RENDER_THRESHOLD = 16;
     
-    int scan_line{0};
-    int32_t x_correction_{0};
+    int scan_line;
+    int32_t x_correction_;
     
     // Буфер для строк
     std::array<std::array<ui::Color, TV_LINE_WIDTH>, LINE_BUFFER_SIZE> line_buffer_;
-    int buffer_line_count{0};
+    int buffer_line_count;
 
     void add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx);
     void render_buffer_batch();

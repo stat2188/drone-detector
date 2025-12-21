@@ -119,7 +119,6 @@ void TVView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
 
 void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx) {
     const auto rect = screen_rect();
-    const int max_y = rect.height();
 
     // Проверка переполнения буфера
     if (buffer_line_count >= LINE_BUFFER_SIZE) {
@@ -143,10 +142,9 @@ void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx)
 
 void TVView::render_buffer_batch() {
     const auto rect = screen_rect();
-    const int max_y = rect.height();
 
     // Проверяем, не выйдем ли за пределы экрана
-    if (scan_line + buffer_line_count >= max_y) {
+    if (scan_line + buffer_line_count >= rect.height()) {
         scan_line = 0;
     }
 

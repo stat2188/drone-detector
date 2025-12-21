@@ -127,11 +127,17 @@ class AnalogTvView : public View {
     };
     
     struct FoundChannel {
-        int64_t frequency;
-        std::string name;
-        int signal_strength;
-        std::string modulation_type;
-        bool is_valid;
+        int64_t frequency{0};
+        std::string name{""};
+        int signal_strength{0};
+        std::string modulation_type{""};
+        bool is_valid{false};
+        
+        FoundChannel() = default;
+        
+        FoundChannel(int64_t freq, const std::string& mod_type, int strength, bool valid = false)
+            : frequency(freq), name("TV_" + to_string_short_freq(freq)), 
+              signal_strength(strength), modulation_type(mod_type), is_valid(valid) {}
     };
     
     ScanParameters scan_params{};
