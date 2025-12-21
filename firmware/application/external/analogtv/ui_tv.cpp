@@ -118,8 +118,6 @@ void TVView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
 }
 
 void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx) {
-    const auto rect = screen_rect();
-
     // Проверка переполнения буфера
     if (buffer_line_count >= LINE_BUFFER_SIZE) {
         process_buffer_overflow();
