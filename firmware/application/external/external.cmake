@@ -19,6 +19,7 @@ set(EXTCPPSRC
 	external/analogtv/main.cpp
 	external/analogtv/analog_tv_app.cpp
 	external/analogtv/ui_tv.cpp
+	external/analogtv/tv_signal_detector.cpp
 
 	#nrf_rx  40 byte
 	external/nrf_rx/main.cpp

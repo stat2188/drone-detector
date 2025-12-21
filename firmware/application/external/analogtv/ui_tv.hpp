@@ -75,7 +75,7 @@ class TimeScopeView : public View {
 
 class TVView : public Widget {
    public:
-    TVView() : scan_line(0), x_correction_(0), buffer_line_count(0), line_buffer_{} {
+    TVView() : scan_line(0), x_correction_(0), line_buffer_{}, buffer_line_count(0) {
         // Initialize line_buffer_ with black color
         for (auto& line : line_buffer_) {
             line.fill(Color::black());
