@@ -54,7 +54,6 @@ jobs:
         run: |
           chmod +x firmware/tools/make_spi_image.py
           chmod +x firmware/tools/check_external_app_linker_script_correct_improved.py
-          chmod +x firmware/tools/diagnose_external_addresses.py
           chmod +x firmware/tools/fix_external_addresses.py
           chmod +x firmware/tools/export_external_apps.py
       - name: Build the Docker image
@@ -68,15 +67,6 @@ jobs:
       - name: Validate external app linker script (improved)
         run: |
           python3 firmware/tools/check_external_app_linker_script_correct_improved.py firmware/application/external/external.ld
-      - name: Diagnose external addresses
-        run: |
-          # Проверяем все собранные приложения на наличие проблемных адресов
-          for app in build/firmware/application/*.himg; do
-            if [ -f "$app" ]; then
-              echo "Checking $app"
-              python3 firmware/tools/diagnose_external_addresses.py "$app"
-            fi
-          done
       - name: Fix external addresses if needed
         run: |
           python3 firmware/tools/fix_external_addresses.py firmware/application/external/external.ld
