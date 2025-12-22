@@ -68,7 +68,8 @@ def fix_external_addresses(ld_file_path):
     current_address = 0xADB10000
     new_regions = []
     
-    for region in regions:
+    print("Calculating new addresses for dense packing:")
+    for i, region in enumerate(regions):
         new_region = {
             'app_name': region['app_name'],
             'old_address': region['address'],
@@ -76,6 +77,9 @@ def fix_external_addresses(ld_file_path):
             'length': region['length']
         }
         new_regions.append(new_region)
+        
+        print(f"  {i+1:2d}. {region['app_name']:25s} | {hex(region['address']):10s} -> {hex(current_address):10s} | {region['length']//1024:2d}KB")
+        
         current_address += region['length']
     
     # Validate that we don't exceed memory limits
@@ -83,10 +87,13 @@ def fix_external_addresses(ld_file_path):
     if current_address > max_address:
         print(f"ERROR: Memory layout would exceed maximum address {hex(max_address)}")
         print(f"Total required memory: {hex(current_address - 0xADB10000)}")
+        print(f"Last region would end at: {hex(current_address)}")
         return []
     
     # Create backup
-    backup_path = ld_file_path + ".backup"
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = ld_file_path + f".backup_{timestamp}"
     with open(backup_path, 'w') as f:
         f.write(content)
     print(f"Created backup: {backup_path}")
@@ -94,6 +101,8 @@ def fix_external_addresses(ld_file_path):
     # Update the content
     modified_content = content
     changes_made = 0
+    
+    print("Updating linker script with new addresses...")
     
     for region in new_regions:
         old_addr_hex = hex(region['old_address'])
@@ -119,8 +128,13 @@ def fix_external_addresses(ld_file_path):
     
     # Print summary
     print(f"SUCCESS: Fixed {changes_made} external app addresses for dense packing:")
+    print("New memory layout:")
     for region in new_regions:
         print(f"  {region['app_name']}: {hex(region['old_address'])} -> {hex(region['new_address'])}")
+    
+    total_memory = current_address - 0xADB10000
+    print(f"Total memory used: {total_memory} bytes ({total_memory//1024}KB)")
+    print(f"Memory efficiency: {total_memory / (0xADEF0000 - 0xADB10000) * 100:.1f}%")
     
     return new_regions
 

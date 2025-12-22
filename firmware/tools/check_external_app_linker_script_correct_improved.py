@@ -67,13 +67,49 @@ def validate_memory_regions(regions):
     
     print("\n")
     print(f"checking {len(regions)} external apps address memory regions")
+    print("=" * 60)
     
+    # Print detailed memory layout
+    print("Current Memory Layout:")
+    for i, region in enumerate(regions):
+        end_addr = region['address'] + region['length']
+        print(f"  {i+1:2d}. {region['app_name']:25s} | {hex(region['address']):10s} - {hex(end_addr):10s} | {region['length']//1024:2d}KB")
+    
+    print("=" * 60)
+    
+    # Check if first region starts at expected base
     if regions[0]['address'] != expected_base:
         print(f"ERROR: external app first region should start at {hex(expected_base)}, but starts at {hex(regions[0]['address'])}")
         issues_found = True
     
+    # Check for overlaps and gaps
     for i, region in enumerate(regions):
-        # address count - check if address is correct based on previous region
+        # Check size validity
+        expected_sizes = [8 * 1024, 32 * 1024, 48 * 1024]  # 8KB, 32KB, and 48KB
+        if region['length'] not in expected_sizes:
+            print(f"ERROR: external app region '{region['app_name']}' has incorrect size")
+            print(f"     want: 8KB, 32KB, or 48KB, Found: {region['length']//1024}KB")
+            issues_found = True
+        
+        # Check for overlaps with next region
+        if i < len(regions) - 1:
+            next_region = regions[i + 1]
+            current_end = region['address'] + region['length']
+            next_start = next_region['address']
+            
+            if current_end > next_start:
+                overlap = current_end - next_start
+                print(f"ERROR: external app region '{region['app_name']}' overlaps with '{next_region['app_name']}' by {overlap} bytes")
+                print(f"     {region['app_name']} ends at: {hex(current_end)}")
+                print(f"     {next_region['app_name']} starts at: {hex(next_start)}")
+                issues_found = True
+            elif current_end < next_start:
+                gap = next_start - current_end
+                print(f"WARNING: external app region '{region['app_name']}' has gap of {gap} bytes before '{next_region['app_name']}'")
+                print(f"     {region['app_name']} ends at: {hex(current_end)}")
+                print(f"     {next_region['app_name']} starts at: {hex(next_start)}")
+        
+        # Check if address is correct based on previous region (for dense packing)
         if i == 0:
             expected_address = expected_base
         else:
@@ -82,25 +118,24 @@ def validate_memory_regions(regions):
         
         if region['address'] != expected_address:
             print(f"ERROR: external app region '{region['app_name']}' has incorrect address")
-            print(f"want: {hex(expected_address)}, Found: {hex(region['address'])}")
+            print(f"     want: {hex(expected_address)}, Found: {hex(region['address'])}")
             issues_found = True
-        
-        # size - allow 8KB, 32KB, and 48KB regions
-        expected_sizes = [8 * 1024, 32 * 1024, 48 * 1024]  # 8KB, 32KB, and 48KB
-        if region['length'] not in expected_sizes:
-            print(f"ERROR: external app region '{region['app_name']}' has incorrect size")
-            print(f"want: 8KB, 32KB, or 48KB, Found: {region['length']//1024}KB")
+    
+    # Check memory limit
+    max_address = 0xADEF0000
+    if regions:
+        last_region = regions[-1]
+        last_end = last_region['address'] + last_region['length']
+        if last_end > max_address:
+            print(f"ERROR: Memory layout exceeds maximum address {hex(max_address)}")
+            print(f"     Last region ends at: {hex(last_end)}")
+            print(f"     Exceeds by: {last_end - max_address} bytes")
             issues_found = True
-        
-        # overlap - check if current region overlaps with next
-        if i < len(regions) - 1:
-            next_region = regions[i + 1]
-            if region['address'] + region['length'] > next_region['address']:
-                print(f"ERROR: external app region '{region['app_name']}' overlapped with '{next_region['app_name']}'")
-                issues_found = True
+    
+    print("=" * 60)
     
     if issues_found:
-        print("\nERROR: Memory address validation failed. Fix the issues before proceeding.")
+        print("ERROR: Memory address validation failed. Fix the issues before proceeding.")
         return False
     else:
         print("SUCCESS: All external app addresses are correct.")

@@ -70,11 +70,10 @@ jobs:
             echo "⚠️ Memory layout validation FAILED - will attempt to fix"
           fi
       
-      - name: Fix external addresses if needed (with safety checks)
-        if: steps.validate_addresses.outputs.addresses_need_fix == 'true'
+      - name: Fix external addresses for optimal packing (always run)
         run: |
-          echo "=== Fixing Memory Addresses ==="
-          echo "Creating backup and attempting to fix addresses..."
+          echo "=== Fixing Memory Addresses for Optimal Packing ==="
+          echo "Creating backup and optimizing address layout..."
           
           # Проверяем, что файл существует и не пустой
           if [ ! -f "firmware/application/external/external.ld" ]; then
@@ -101,7 +100,6 @@ jobs:
           echo "✅ Address fixing completed successfully"
       
       - name: Final validation after fixes (with strict checking)
-        if: steps.validate_addresses.outputs.addresses_need_fix == 'true'
         run: |
           echo "=== Post-Fix Validation ==="
           python3 firmware/tools/check_external_app_linker_script_correct_improved.py firmware/application/external/external.ld
