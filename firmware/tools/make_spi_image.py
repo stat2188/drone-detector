@@ -88,7 +88,6 @@ def validate_memory_regions(regions):
     if not regions:
         return False
     
-    expected_step = 0x10000  # 64k as step (not sure why)
     expected_base = 0xADB10000 # the start (not sure why this one)
     issues_found = False
     
@@ -100,22 +99,28 @@ def validate_memory_regions(regions):
         issues_found = True
     
     for i, region in enumerate(regions):
-        expected_address = expected_base + (i * expected_step)
+        # address count - check if address is correct based on previous region
+        if i == 0:
+            expected_address = expected_base
+        else:
+            prev_region = regions[i - 1]
+            expected_address = prev_region['address'] + prev_region['length']
+            # Round up to next 64KB boundary if not already aligned
+            expected_address = ((expected_address + 0xFFFF) & ~0xFFFF)
         
-        # address count
         if region['address'] != expected_address:
             print(f"WARNING: external app region '{region['app_name']}' has incorrect address")
             print(f"want: {hex(expected_address)}, Found: {hex(region['address'])}")
             issues_found = True
         
-        # size - allow both 32KB and 48KB regions
-        expected_sizes = [32 * 1024, 48 * 1024]  # 32KB and 48KB
+        # size - allow 8KB, 32KB, and 48KB regions
+        expected_sizes = [8 * 1024, 32 * 1024, 48 * 1024]  # 8KB, 32KB, and 48KB
         if region['length'] not in expected_sizes:
             print(f"WARNING: external app region '{region['app_name']}' has incorrect size")
-            print(f"want: 32KB or 48KB, Found: {region['length']//1024}KB")
+            print(f"want: 8KB, 32KB, or 48KB, Found: {region['length']//1024}KB")
             issues_found = True
         
-        # overlap
+        # overlap - check if current region overlaps with next
         if i < len(regions) - 1:
             next_region = regions[i + 1]
             if region['address'] + region['length'] > next_region['address']:
