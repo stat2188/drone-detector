@@ -468,6 +468,19 @@ add_custom_command(
 	DEPENDS ${HACKRF_CPLD_TOOL} ${HACKRF_CPLD_XSVF_PATH}
 )
 
+# Generate conditional external linker script based on enabled applications
+set(GENERATE_EXTERNAL_LINKER_SCRIPT ${PROJECT_SOURCE_DIR}/tools/generate_external_linker_script.py)
+set(CONDITIONAL_EXTERNAL_LD ${CMAKE_CURRENT_BINARY_DIR}/external_conditional.ld)
+
+add_custom_command(
+	OUTPUT ${CONDITIONAL_EXTERNAL_LD}
+	COMMAND ${PYTHON_EXECUTABLE} ${GENERATE_EXTERNAL_LINKER_SCRIPT} ${CMAKE_CURRENT_SOURCE_DIR}/external/external.cmake ${CONDITIONAL_EXTERNAL_LD}
+	DEPENDS ${GENERATE_EXTERNAL_LINKER_SCRIPT} ${CMAKE_CURRENT_SOURCE_DIR}/external/external.cmake
+)
+
+# Update LDSCRIPT to use the conditional linker script
+set(LDSCRIPT ${PORTLD}/LPC43xx_M0.ld ${CONDITIONAL_EXTERNAL_LD})
+
 add_executable(${PROJECT_NAME}.elf ${CSRC} ${CPPSRC} ${ASMSRC})
 set_target_properties(${PROJECT_NAME}.elf PROPERTIES LINK_DEPENDS ${LDSCRIPT})
 add_definitions(${DEFS})
@@ -481,7 +494,7 @@ add_custom_command(
 	OUTPUT ${PROJECT_NAME}.bin
 	COMMAND ${CMAKE_OBJCOPY} -v -O binary ${PROJECT_NAME}.elf ${PROJECT_NAME}.bin --remove-section=.external_app_*
 	COMMAND ${EXPORT_EXTERNAL_APP_IMAGES} ${PROJECT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_OBJCOPY} ${EXTAPPLIST}
-	DEPENDS ${PROJECT_NAME}.elf
+	DEPENDS ${PROJECT_NAME}.elf ${CONDITIONAL_EXTERNAL_LD}
 )
 
 add_custom_target(
