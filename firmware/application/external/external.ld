@@ -23,76 +23,88 @@ MEMORY
      * Also need to consider processor memory map - reading 0xADxxxxxx generates a fault which may be better than unexpected behavior.
      * External app address ranges below must match those in python file "external_app_info.py".
      */
-    ram_external_app_afsk_rx    (rwx) : org = 0xADB10000, len = 32k
-    ram_external_app_calculator (rwx) : org = 0xADB20000, len = 32k
-    ram_external_app_font_viewer(rwx) : org = 0xADB30000, len = 32k
-    ram_external_app_blespam    (rwx) : org = 0xADB40000, len = 32k
-    ram_external_app_analogtv   (rwx) : org = 0xADB50000, len = 32k
-    ram_external_app_nrf_rx     (rwx) : org = 0xADB60000, len = 32k
-    ram_external_app_coasterp   (rwx) : org = 0xADB70000, len = 32k
-    ram_external_app_lge        (rwx) : org = 0xADB80000, len = 32k
-    ram_external_app_lcr        (rwx) : org = 0xADB90000, len = 32k
-    ram_external_app_jammer     (rwx) : org = 0xADBA0000, len = 32k
-    ram_external_app_gpssim     (rwx) : org = 0xADBB0000, len = 32k
-    ram_external_app_spainter   (rwx) : org = 0xADBC0000, len = 32k
-    ram_external_app_keyfob     (rwx) : org = 0xADBD0000, len = 32k
-    ram_external_app_tetris     (rwx) : org = 0xADBE0000, len = 32k
-    ram_external_app_extsensors (rwx) : org = 0xADBF0000, len = 32k
-    ram_external_app_foxhunt_rx (rwx) : org = 0xADC00000, len = 32k
-    ram_external_app_audio_test (rwx) : org = 0xADC10000, len = 32k
-    ram_external_app_wardrivemap(rwx) : org = 0xADC20000, len = 32k
-    ram_external_app_tpmsrx     (rwx) : org = 0xADC30000, len = 32k
-    ram_external_app_protoview  (rwx) : org = 0xADC40000, len = 32k
-    ram_external_app_adsbtx     (rwx) : org = 0xADC50000, len = 32k
-    ram_external_app_morse_tx   (rwx) : org = 0xADC60000, len = 32k
-    ram_external_app_sstvtx     (rwx) : org = 0xADC70000, len = 32k
-    ram_external_app_random_password(rwx): org = 0xADC80000, len = 32k
-    ram_external_app_acars_rx   (rwx) : org = 0xADC90000, len = 32k
-    ram_external_app_shoppingcart_lock(rwx): org = 0xADCA0000, len = 32k
-    ram_external_app_cvs_spam   (rwx) : org = 0xADCB0000, len = 32k
-    ram_external_app_ookbrute   (rwx) : org = 0xADCC0000, len = 32k
-    ram_external_app_flippertx  (rwx) : org = 0xADCD0000, len = 32k
-    ram_external_app_ook_editor (rwx) : org = 0xADCE0000, len = 32k
-    ram_external_app_remote     (rwx) : org = 0xADCF0000, len = 32k
-    ram_external_app_mcu_temperature(rwx): org = 0xADD00000, len = 32k
-    ram_external_app_fmradio    (rwx) : org = 0xADD10000, len = 32k
-    ram_external_app_tuner      (rwx) : org = 0xADD20000, len = 32k
-    ram_external_app_metronome  (rwx) : org = 0xADD30000, len = 32k
-    ram_external_app_app_manager(rwx) : org = 0xADD40000, len = 32k
-    ram_external_app_hopper     (rwx) : org = 0xADD50000, len = 32k
-    ram_external_app_antenna_length(rwx): org = 0xADD60000, len = 32k
-    ram_external_app_view_wav   (rwx) : org = 0xADD70000, len = 32k
-    ram_external_app_sd_wipe    (rwx) : org = 0xADD80000, len = 32k
-    ram_external_app_playlist_editor(rwx): org = 0xADD90000, len = 32k
-    ram_external_app_snake      (rwx) : org = 0xADDA0000, len = 32k
-    ram_external_app_stopwatch  (rwx) : org = 0xADDB0000, len = 32k
-    ram_external_app_wefax_rx   (rwx) : org = 0xADDC0000, len = 32k
-    ram_external_app_breakout   (rwx) : org = 0xADDD0000, len = 32k
-    ram_external_app_doom       (rwx) : org = 0xADDE0000, len = 32k
-    ram_external_app_debug_pmem (rwx) : org = 0xADDF0000, len = 32k
-    ram_external_app_scanner    (rwx) : org = 0xADE00000, len = 32k
-    ram_external_app_level      (rwx) : org = 0xADE10000, len = 32k
-    ram_external_app_gfxeq      (rwx) : org = 0xADE20000, len = 32k
-    ram_external_app_noaaapt_rx   (rwx) : org = 0xADE30000, len = 32k
-    ram_external_app_detector_rx   (rwx) : org = 0xADE40000, len = 32k
-    ram_external_app_dinogame   (rwx) : org = 0xADE50000, len = 32k
-    ram_external_app_spaceinv   (rwx) : org = 0xADE60000, len = 32k
-    ram_external_app_blackjack  (rwx) : org = 0xADE70000, len = 32k
-    ram_external_app_battleship   (rwx) : org = 0xADE80000, len = 32k
-    ram_external_app_ert        (rwx) : org = 0xADE90000, len = 32k
-    ram_external_app_epirb_rx   (rwx) : org = 0xADEA0000, len = 32k
-    ram_external_app_soundboard   (rwx) : org = 0xADEB0000, len = 32k
-    ram_external_app_game2048     (rwx) : org = 0xADEC0000, len = 32k
-    ram_external_app_bht_tx          (rwx) : org = 0xADED0000, len = 32k
-    ram_external_app_morse_practice  (rwx) : org = 0xADEE0000, len = 32k
-    ram_external_app_adult_toys_controller  (rwx) : org = 0xADEF0000, len = 32k
-    ram_external_app_enhanced_drone_analyzer (rwx) : org = 0xADF00000, len = 48k
-    ram_external_app_enhanced_drone_analyzer_settings (rwx) : org = 0xADF10000, len = 8k
+    ram_external_app_enhanced_drone_analyzer (rwx) : org = 0xadb10000, len = 48k
+    ram_external_app_enhanced_drone_analyzer_settings (rwx) : org = 0xadb1c000, len = 8k
+    ram_external_app_afsk_rx    (rwx) : org = 0xadb1e000, len = 32k
+    ram_external_app_calculator (rwx) : org = 0xadb26000, len = 32k
+    ram_external_app_font_viewer(rwx) : org = 0xadb2e000, len = 32k
+    ram_external_app_blespam    (rwx) : org = 0xadb36000, len = 32k
+    ram_external_app_analogtv   (rwx) : org = 0xadb3e000, len = 32k
+    ram_external_app_nrf_rx     (rwx) : org = 0xadb46000, len = 32k
+    ram_external_app_coasterp   (rwx) : org = 0xadb4e000, len = 32k
+    ram_external_app_lge        (rwx) : org = 0xadb56000, len = 32k
+    ram_external_app_lcr        (rwx) : org = 0xadb5e000, len = 32k
+    ram_external_app_jammer     (rwx) : org = 0xadb66000, len = 32k
+    ram_external_app_gpssim     (rwx) : org = 0xadb6e000, len = 32k
+    ram_external_app_spainter   (rwx) : org = 0xadb76000, len = 32k
+    ram_external_app_keyfob     (rwx) : org = 0xadb7e000, len = 32k
+    ram_external_app_tetris     (rwx) : org = 0xadb86000, len = 32k
+    ram_external_app_extsensors (rwx) : org = 0xadb8e000, len = 32k
+    ram_external_app_foxhunt_rx (rwx) : org = 0xadb96000, len = 32k
+    ram_external_app_audio_test (rwx) : org = 0xadb9e000, len = 32k
+    ram_external_app_wardrivemap(rwx) : org = 0xadba6000, len = 32k
+    ram_external_app_tpmsrx     (rwx) : org = 0xadbae000, len = 32k
+    ram_external_app_protoview  (rwx) : org = 0xadbb6000, len = 32k
+    ram_external_app_adsbtx     (rwx) : org = 0xadbbe000, len = 32k
+    ram_external_app_morse_tx   (rwx) : org = 0xadbc6000, len = 32k
+    ram_external_app_sstvtx     (rwx) : org = 0xadbce000, len = 32k
+    ram_external_app_random_password(rwx): org = 0xadbd6000, len = 32k
+    ram_external_app_acars_rx   (rwx) : org = 0xadbde000, len = 32k
+    ram_external_app_shoppingcart_lock(rwx): org = 0xadbe6000, len = 32k
+    ram_external_app_cvs_spam   (rwx) : org = 0xadbee000, len = 32k
+    ram_external_app_ookbrute   (rwx) : org = 0xadbf6000, len = 32k
+    ram_external_app_flippertx  (rwx) : org = 0xadbfe000, len = 32k
+    ram_external_app_ook_editor (rwx) : org = 0xadc06000, len = 32k
+    ram_external_app_remote     (rwx) : org = 0xadc0e000, len = 32k
+    ram_external_app_mcu_temperature(rwx): org = 0xadc16000, len = 32k
+    ram_external_app_fmradio    (rwx) : org = 0xadc1e000, len = 32k
+    ram_external_app_tuner      (rwx) : org = 0xadc26000, len = 32k
+    ram_external_app_metronome  (rwx) : org = 0xadc2e000, len = 32k
+    ram_external_app_app_manager(rwx) : org = 0xadc36000, len = 32k
+    ram_external_app_hopper     (rwx) : org = 0xadc3e000, len = 32k
+    ram_external_app_antenna_length(rwx): org = 0xadc46000, len = 32k
+    ram_external_app_view_wav   (rwx) : org = 0xadc4e000, len = 32k
+    ram_external_app_sd_wipe    (rwx) : org = 0xadc56000, len = 32k
+    ram_external_app_playlist_editor(rwx): org = 0xadc5e000, len = 32k
+    ram_external_app_snake      (rwx) : org = 0xadc66000, len = 32k
+    ram_external_app_stopwatch  (rwx) : org = 0xadc6e000, len = 32k
+    ram_external_app_wefax_rx   (rwx) : org = 0xadc76000, len = 32k
+    ram_external_app_breakout   (rwx) : org = 0xadc7e000, len = 32k
+    ram_external_app_doom       (rwx) : org = 0xadc86000, len = 32k
+    ram_external_app_debug_pmem (rwx) : org = 0xadc8e000, len = 32k
+    ram_external_app_scanner    (rwx) : org = 0xadc96000, len = 32k
+    ram_external_app_level      (rwx) : org = 0xadc9e000, len = 32k
+    ram_external_app_gfxeq      (rwx) : org = 0xadca6000, len = 32k
+    ram_external_app_noaaapt_rx   (rwx) : org = 0xadcae000, len = 32k
+    ram_external_app_detector_rx   (rwx) : org = 0xadcb6000, len = 32k
+    ram_external_app_dinogame   (rwx) : org = 0xadcbe000, len = 32k
+    ram_external_app_spaceinv   (rwx) : org = 0xadcc6000, len = 32k
+    ram_external_app_blackjack  (rwx) : org = 0xadcce000, len = 32k
+    ram_external_app_battleship   (rwx) : org = 0xadcd6000, len = 32k
+    ram_external_app_ert        (rwx) : org = 0xadcde000, len = 32k
+    ram_external_app_epirb_rx   (rwx) : org = 0xadce6000, len = 32k
+    ram_external_app_soundboard   (rwx) : org = 0xadcee000, len = 32k
+    ram_external_app_game2048     (rwx) : org = 0xadcf6000, len = 32k
+    ram_external_app_bht_tx          (rwx) : org = 0xadcfe000, len = 32k
+    ram_external_app_morse_practice  (rwx) : org = 0xadd06000, len = 32k
+    ram_external_app_adult_toys_controller  (rwx) : org = 0xadd0e000, len = 32k
 
 }
 
 SECTIONS
 {
+    .external_app_enhanced_drone_analyzer : ALIGN(4) SUBALIGN(4)
+    {
+        KEEP(*(.external_app.app_enhanced_drone_analyzer.application_information));
+        *(*ui*external_app*enhanced_drone_analyzer*);
+    } > ram_external_app_enhanced_drone_analyzer
+
+    .external_app_enhanced_drone_analyzer_settings : ALIGN(4) SUBALIGN(4)
+    {
+        KEEP(*(.external_app.app_enhanced_drone_analyzer_settings.application_information));
+        *(*ui*external_app*enhanced_drone_analyzer_settings*);
+    } > ram_external_app_enhanced_drone_analyzer_settings
+
     .external_app_afsk_rx : ALIGN(4) SUBALIGN(4)
     {
         KEEP(*(.external_app.app_afsk_rx.application_information));
@@ -472,17 +484,5 @@ SECTIONS
         KEEP(*(.external_app.app_adult_toys_controller.application_information));
         *(*ui*external_app*adult_toys_controller*);
     } > ram_external_app_adult_toys_controller
-
-    .external_app_enhanced_drone_analyzer : ALIGN(4) SUBALIGN(4)
-    {
-        KEEP(*(.external_app.app_enhanced_drone_analyzer.application_information));
-        *(*ui*external_app*enhanced_drone_analyzer*);
-    } > ram_external_app_enhanced_drone_analyzer
-
-    .external_app_enhanced_drone_analyzer_settings : ALIGN(4) SUBALIGN(4)
-    {
-        KEEP(*(.external_app.app_enhanced_drone_analyzer_settings.application_information));
-        *(*ui*external_app*enhanced_drone_analyzer_settings*);
-    } > ram_external_app_enhanced_drone_analyzer_settings
 
 }
