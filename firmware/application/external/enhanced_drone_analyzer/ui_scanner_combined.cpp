@@ -1300,7 +1300,8 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         snprintf(buffer, sizeof(buffer), "READY");
     }
     threat_status_main_.set(buffer);
-    threat_status_main_.set_style(Theme::getInstance()->fg_red);
+    static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
+    threat_status_main_.set_style(&red_style);
     current_text_ = buffer;
 
     if (current_freq > 0) {
@@ -1328,20 +1329,24 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
 
     switch (max_threat) {
         case ThreatLevel::CRITICAL:
-            threat_frequency_.set_style(Theme::getInstance()->fg_red);
+            threat_frequency_.set_style(&Style{font::fixed_8x16, Color::black(), Color::red()});
             break;
         case ThreatLevel::HIGH:
-            threat_frequency_.set_style(Theme::getInstance()->fg_yellow);
+            static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
+            threat_frequency_.set_style(&yellow_style);
             break;
         case ThreatLevel::MEDIUM:
-            threat_frequency_.set_style(Theme::getInstance()->fg_yellow);
+            static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
+            threat_frequency_.set_style(&yellow_style);
             break;
         case ThreatLevel::LOW:
-            threat_frequency_.set_style(Theme::getInstance()->fg_green);
+            static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
+            threat_frequency_.set_style(&green_style);
             break;
         case ThreatLevel::NONE:
         default:
-            threat_frequency_.set_style(Theme::getInstance()->fg_light);
+            static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
+            threat_frequency_.set_style(&light_style);
             break;
     }
     set_dirty();
@@ -1422,7 +1427,8 @@ void SmartThreatHeader::paint(Painter& painter) {
     const int center_x = (screen_width - text_width) / 2;
     const int center_y = (60 - text_height) / 2; // Header height is 60px
     Point text_pos = {center_x, center_y};
-    painter.draw_string(text_pos, font::fixed_8x16, Color::white(), bg_color, current_text_);
+    auto style = Style{font::fixed_8x16, bg_color, Color::white()};
+    painter.draw_string(text_pos, style, current_text_);
 }
 
 ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
@@ -1469,7 +1475,8 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
         
         // CRITICAL: Only change color if threat level changed
         // This prevents unnecessary redraws
-        card_text_.set_style(Theme::getInstance()->fg_light);
+        static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
+        card_text_.set_style(&light_style);
         set_dirty();
     }
 }
@@ -1529,14 +1536,16 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
     snprintf(buffer, sizeof(buffer), "%s %lu%% C:%lu D:%lu",
             progress_bar, (unsigned long)progress_percent, (unsigned long)total_cycles, (unsigned long)detections);
     progress_text_.set(buffer);
-    progress_text_.set_style(Theme::getInstance()->fg_blue);
+    static Style blue_style{font::fixed_8x16, Color::black(), Color::blue()};
+    progress_text_.set_style(&blue_style);
 
     if (detections > 0) {
         set_display_mode(DisplayMode::ALERT);
         char alert_buffer[64];
         snprintf(alert_buffer, sizeof(alert_buffer), "[!] DETECTED: %lu threats found!", static_cast<unsigned long>(detections));
         alert_text_.set(alert_buffer);
-        alert_text_.set_style(Theme::getInstance()->fg_red);
+        static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
+        alert_text_.set_style(&red_style);
     }
     set_dirty();
 }
@@ -1553,9 +1562,11 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
 
     alert_text_.set(buffer);
     if (threat >= ThreatLevel::CRITICAL) {
-        alert_text_.set_style(Theme::getInstance()->fg_red);
+        static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
+        alert_text_.set_style(&red_style);
     } else {
-        alert_text_.set_style(Theme::getInstance()->fg_yellow);
+        static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
+        alert_text_.set_style(&yellow_style);
     }
     set_dirty();
 }
@@ -1570,7 +1581,8 @@ void ConsoleStatusBar::update_normal_status(const std::string& primary, const st
         snprintf(buffer, sizeof(buffer), "%s | %s", primary.c_str(), secondary.c_str());
     }
     normal_text_.set(buffer);
-    normal_text_.set_style(Theme::getInstance()->fg_light);
+    static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
+    normal_text_.set_style(&light_style);
     set_dirty();
 }
 
@@ -1713,10 +1725,12 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
                 threat_name.c_str(), scanner.get_approaching_count(),
                 scanner.get_static_count(), scanner.get_receding_count());
         text_threat_summary_.set(summary_buffer);
-        text_threat_summary_.set_style(Theme::getInstance()->fg_red);
+        static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
+        text_threat_summary_.set_style(&red_style);
     } else {
         text_threat_summary_.set("THREAT: NONE | All clear");
-        text_threat_summary_.set_style(Theme::getInstance()->fg_green);
+        static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
+        text_threat_summary_.set_style(&green_style);
     }
 
     char status_buffer[64];
@@ -1743,15 +1757,20 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     text_scanner_stats_.set(stats_buffer);
 
     if (max_threat >= ThreatLevel::HIGH) {
-        big_display_.set_style(Theme::getInstance()->fg_red);
+        static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
+        big_display_.set_style(&red_style);
     } else if (max_threat >= ThreatLevel::MEDIUM) {
-        big_display_.set_style(Theme::getInstance()->fg_yellow);
+        static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
+        big_display_.set_style(&yellow_style);
     } else if (has_detections) {
-        big_display_.set_style(Theme::getInstance()->fg_orange);
+        static Style orange_style{font::fixed_8x16, Color::black(), Color(255, 165, 0)};
+        big_display_.set_style(&orange_style);
     } else if (scanner.is_scanning_active()) {
-        big_display_.set_style(Theme::getInstance()->fg_green);
+        static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
+        big_display_.set_style(&green_style);
     } else {
-        big_display_.set_style(Theme::getInstance()->bg_darkest);
+        static Style dark_style{font::fixed_8x16, Color::black(), Color::dark_grey()};
+        big_display_.set_style(&dark_style);
     }
 }
 
@@ -1761,11 +1780,13 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
 void DroneDisplayController::set_scanning_status(bool active, const std::string& message) {
     if (active) {
         text_status_info_.set("SCAN: " + message);
-        text_status_info_.set_style(Theme::getInstance()->fg_green);
+        static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
+        text_status_info_.set_style(&green_style);
     } else {
         text_status_info_.set("STOP: " + message);
         // Use a color that exists in Theme, falling back to white/light
-        text_status_info_.set_style(Theme::getInstance()->fg_light);
+        static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
+        text_status_info_.set_style(&light_style);
     }
 }
 
@@ -2495,9 +2516,9 @@ void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
         settings_.enable_audio_alerts = !settings_.enable_audio_alerts;
         // Update button text immediately
         button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
-        button_audio_.set_style(settings_.enable_audio_alerts ?
-                               Theme::getInstance()->fg_green :
-                               Theme::getInstance()->fg_medium);
+        static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
+        static Style grey_style{font::fixed_8x16, Color::black(), Color::grey()};
+        button_audio_.set_style(settings_.enable_audio_alerts ? &green_style : &grey_style);
     };
 
     field_scanning_mode_.on_change = [this](size_t index, int32_t value) -> void {
@@ -2532,7 +2553,8 @@ LoadingScreenView::LoadingScreenView(NavigationView& nav)
       text_eda_(Rect{108, 213, 24, 16}, "EDA"),
       timer_start_(chTimeNow())
 {
-    text_eda_.set_style(Theme::getInstance()->fg_red);
+    static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
+    text_eda_.set_style(&red_style);
     add_child(&text_eda_);
     set_focusable(false);
 }
