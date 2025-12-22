@@ -99,14 +99,12 @@ def validate_memory_regions(regions):
         issues_found = True
     
     for i, region in enumerate(regions):
-        # address count - check if address is correct based on previous region
+        # address count - check if address is correct based on previous region (dense packing)
         if i == 0:
             expected_address = expected_base
         else:
             prev_region = regions[i - 1]
             expected_address = prev_region['address'] + prev_region['length']
-            # Round up to next 64KB boundary if not already aligned
-            expected_address = ((expected_address + 0xFFFF) & ~0xFFFF)
         
         if region['address'] != expected_address:
             print(f"WARNING: external app region '{region['app_name']}' has incorrect address")

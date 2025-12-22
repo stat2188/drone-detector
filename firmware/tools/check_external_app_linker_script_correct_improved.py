@@ -109,7 +109,7 @@ def validate_memory_regions(regions):
                 print(f"     {region['app_name']} ends at: {hex(current_end)}")
                 print(f"     {next_region['app_name']} starts at: {hex(next_start)}")
         
-        # Check if address is correct based on previous region (for dense packing)
+        # Check if address is correct based on previous region (dense packing)
         if i == 0:
             expected_address = expected_base
         else:
