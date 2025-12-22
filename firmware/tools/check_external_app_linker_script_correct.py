@@ -60,6 +60,7 @@ def validate_memory_regions(regions):
     
     expected_step = 0x10000  # 64k as step (not sure why)
     expected_base = 0xADB10000 # the start (not sure why this one)
+    expected_size = 32 * 1024  # 32k
     issues_found = False
     
     print("\n")
@@ -78,11 +79,10 @@ def validate_memory_regions(regions):
             print(f"want: {hex(expected_address)}, Found: {hex(region['address'])}")
             issues_found = True
         
-        # size - allow 8KB, 32KB, and 48KB regions
-        expected_sizes = [8 * 1024, 32 * 1024, 48 * 1024]  # 8KB, 32KB, and 48KB
-        if region['length'] not in expected_sizes:
+        # size
+        if region['length'] != expected_size:
             print(f"WARNING: external app region '{region['app_name']}' has incorrect size")
-            print(f"want: 8KB, 32KB, or 48KB, Found: {region['length']//1024}KB")
+            print(f"want: {expected_size//1024}KB, Found: {region['length']//1024}KB")
             issues_found = True
         
         # overlap

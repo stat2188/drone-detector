@@ -19,7 +19,6 @@ set(EXTCPPSRC
 	external/analogtv/main.cpp
 	external/analogtv/analog_tv_app.cpp
 	external/analogtv/ui_tv.cpp
-	external/analogtv/tv_signal_detector.cpp
 
 	#nrf_rx  40 byte
 	external/nrf_rx/main.cpp
@@ -34,9 +33,9 @@ set(EXTCPPSRC
 	external/lge/lge_app.cpp
 	external/lge/rfm69.cpp
 
-	##lcr - 460 byte flash - uses AFSK TX which is disabled
-	#external/lcr/main.cpp
-	#external/lcr/ui_lcr.cpp
+	#lcr - 460 byte flash
+	external/lcr/main.cpp
+	external/lcr/ui_lcr.cpp
 
 	#jammer 144 byte
 	external/jammer/main.cpp
@@ -46,11 +45,11 @@ set(EXTCPPSRC
 	external/gpssim/main.cpp
 	external/gpssim/gps_sim_app.cpp
 
-	##spainter   464 byte - disabled
-	#external/spainter/main.cpp
-	#external/spainter/ui_spectrum_painter.cpp
-	#external/spainter/ui_spectrum_painter_text.cpp
-	#external/spainter/ui_spectrum_painter_image.cpp
+	#spainter   464 byte
+	external/spainter/main.cpp
+	external/spainter/ui_spectrum_painter.cpp
+	external/spainter/ui_spectrum_painter_text.cpp
+	external/spainter/ui_spectrum_painter_image.cpp
 
 	#keyfob 216 byte
 	external/keyfob/main.cpp
@@ -80,9 +79,9 @@ set(EXTCPPSRC
 	external/wardrivemap/main.cpp
 	external/wardrivemap/ui_wardrivemap.cpp
 
-	##tpmsrx 920 byte- possible shared part with baseband
-	#external/tpmsrx/main.cpp
-	#external/tpmsrx/tpms_app.cpp
+	#tpmsrx 920 byte- possible shared part with baseband
+	external/tpmsrx/main.cpp
+	external/tpmsrx/tpms_app.cpp
 
 	#protoview 8 byte
 	external/protoview/main.cpp
@@ -99,6 +98,10 @@ set(EXTCPPSRC
 	#sstvtx 456 bytes
 	external/sstvtx/main.cpp
 	external/sstvtx/ui_sstvtx.cpp
+
+	#sstvrx
+	external/sstvrx/main.cpp
+	external/sstvrx/ui_sstvrx.cpp
 
 	#random 464  bytes.
 	external/random_password/main.cpp
@@ -163,9 +166,9 @@ set(EXTCPPSRC
 	external/app_manager/main.cpp
 	external/app_manager/ui_app_manager.cpp
 
-	##hopper 472 bytes
-	#external/hopper/main.cpp
-	#external/hopper/ui_hopper.cpp
+	#hopper 472 bytes
+	external/hopper/main.cpp
+	external/hopper/ui_hopper.cpp
 
 	# whip calculator  48 bytes
 	external/antenna_length/main.cpp
@@ -233,13 +236,13 @@ set(EXTCPPSRC
 	external/blackjack/main.cpp
 	external/blackjack/ui_blackjack.cpp
 
-	##battleship  256 byte - disabled
-	#external/battleship/main.cpp
-	#external/battleship/ui_battleship.cpp
+	#battleship  256 byte
+	external/battleship/main.cpp
+	external/battleship/ui_battleship.cpp
 
-	##ert 3040 bytes - baseband ERT disabled, so app also disabled
-	#external/ert/main.cpp
-	#external/ert/ert_app.cpp
+	#ert 3040 bytes - has common with baseband, could be renamed the namespace, so both could have it, but not kept in fw.
+	external/ert/main.cpp
+	external/ert/ert_app.cpp
 
 	#epirb_rx 168 byte flash 
 	external/epirb_rx/main.cpp
@@ -262,19 +265,17 @@ set(EXTCPPSRC
 	external/morse_practice/main.cpp
 	external/morse_practice/ui_morse_practice.cpp
 
-	#adult_toys_controller  144 bytes
+	#adult_toys_controller  144 bytes 
 	external/adult_toys_controller/main.cpp
 	external/adult_toys_controller/ui_adult_toys_controller.cpp
 
-	#enhanced_drone_analyzer - Enhanced Drone Analyzer application
-	external/enhanced_drone_analyzer/main.cpp
-	external/enhanced_drone_analyzer/ui_scanner_combined.cpp
-	external/enhanced_drone_analyzer/ui_spectrum_settings.cpp
-	external/enhanced_drone_analyzer/ui_signal_processing.cpp
+	#flex_rx
+	external/flex_rx/main.cpp
+	external/flex_rx/ui_flex_rx.cpp	
 
-	#enhanced_drone_analyzer_settings - Enhanced Drone Analyzer Settings application
-	external/enhanced_drone_analyzer_settings/main.cpp
-	external/enhanced_drone_analyzer_settings/ui_settings_combined.cpp
+	#subcarrx
+	external/subcarrx/main.cpp
+	external/subcarrx/ui_subcar.cpp
 )
 
 set(EXTAPPLIST
@@ -286,21 +287,22 @@ set(EXTAPPLIST
 	nrf_rx
 	coasterp
 	lge
-	#lcr
+	lcr
 	jammer
 	gpssim
-	#spainter
+	spainter
 	keyfob
 	tetris
 	extsensors
 	foxhunt_rx
 	audio_test
 	wardrivemap
-	#tpmsrx
+	tpmsrx
 	protoview
 	adsbtx
 	morse_tx
 	sstvtx
+	sstvrx
 	random_password
 	# acars_rx --not working
 	wefax_rx
@@ -316,7 +318,7 @@ set(EXTAPPLIST
 	tuner
 	metronome
 	app_manager
-	#hopper
+	hopper
 	antenna_length
 	view_wav
 	sd_wipe
@@ -333,14 +335,14 @@ set(EXTAPPLIST
 	detector_rx
 	spaceinv
 	blackjack
-	#battleship
-	#ert
+	battleship
+	ert
 	epirb_rx
 	soundboard
 	game2048
 	bht_tx
 	morse_practice
 	adult_toys_controller
-	enhanced_drone_analyzer
-	enhanced_drone_analyzer_settings
+	flex_rx
+	subcarrx
 )

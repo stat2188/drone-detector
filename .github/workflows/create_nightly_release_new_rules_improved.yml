@@ -57,28 +57,65 @@ jobs:
           chmod +x firmware/tools/fix_external_addresses.py
           chmod +x firmware/tools/export_external_apps.py
       
-      # === НОВЫЕ ПРОВЕРКИ ПАМЯТИ И АДРЕСОВ (ДО СБОРКИ) ===
-      - name: Validate external app linker script (improved)
+      # === УЛУЧШЕННЫЕ ПРОВЕРКИ ПАМЯТИ И АДРЕСОВ (ДО СБОРКИ) ===
+      - name: Validate external app linker script (enhanced)
         id: validate_addresses
         run: |
-          python3 firmware/tools/check_external_app_linker_script_correct_improved.py firmware/application/external/external.ld
-          if [ $? -ne 0 ]; then
-            echo "addresses_need_fix=true" >> $GITHUB_OUTPUT
-          else
+          echo "=== Enhanced Memory Layout Validation ==="
+          python3 firmware/tools/check_external_app_linker_script_correct_enhanced.py firmware/application/external/external.ld
+          VALIDATION_RESULT=$?
+          
+          if [ $VALIDATION_RESULT -eq 0 ]; then
             echo "addresses_need_fix=false" >> $GITHUB_OUTPUT
+            echo "✅ Memory layout validation PASSED"
+          else
+            echo "addresses_need_fix=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Memory layout validation FAILED - will attempt to fix"
           fi
       
-      - name: Fix external addresses if needed
-        if: steps.validate_addresses.outputs.addresses_need_fix == 'true'
+      - name: Fix external addresses for optimal packing (always run)
         run: |
-          echo "Fixing external app addresses..."
+          echo "=== Fixing Memory Addresses for Optimal Packing ==="
+          echo "Creating backup and optimizing address layout..."
+          
+          # Проверяем, что файл существует и не пустой
+          if [ ! -f "firmware/application/external/external.ld" ]; then
+            echo "ERROR: external.ld file not found"
+            exit 1
+          fi
+          
+          # Проверяем размер файла (не должен быть слишком большим или маленьким)
+          FILE_SIZE=$(stat -c%s "firmware/application/external/external.ld")
+          if [ $FILE_SIZE -lt 1000 ] || [ $FILE_SIZE -gt 100000 ]; then
+            echo "ERROR: external.ld file size suspicious: ${FILE_SIZE} bytes"
+            exit 1
+          fi
+          
+          # Запускаем исправление с проверкой результата
           python3 firmware/tools/fix_external_addresses.py firmware/application/external/external.ld
+          FIX_RESULT=$?
+          
+          if [ $FIX_RESULT -ne 0 ]; then
+            echo "ERROR: Address fixing failed"
+            exit 1
+          fi
+          
+          echo "✅ Address fixing completed successfully"
       
-      - name: Final validation after fixes
-        if: steps.validate_addresses.outputs.addresses_need_fix == 'true'
+      - name: Final validation after fixes (with strict checking)
         run: |
-          echo "Validating fixed addresses..."
-          python3 firmware/tools/check_external_app_linker_script_correct_improved.py firmware/application/external/external.ld
+          echo "=== Post-Fix Validation ==="
+          python3 firmware/tools/check_external_app_linker_script_correct_enhanced.py firmware/application/external/external.ld
+          FINAL_VALIDATION_RESULT=$?
+          
+          if [ $FINAL_VALIDATION_RESULT -ne 0 ]; then
+            echo "ERROR: Memory layout still invalid after fixes"
+            echo "Showing current memory layout:"
+            grep -A 100 "MEMORY" firmware/application/external/external.ld | head -50
+            exit 1
+          fi
+          
+          echo "✅ Final validation PASSED"
       
       - name: Build the Docker image
         run: docker build -t portapack-dev -f dockerfile-nogit . --tag my-image-name:$(date +%s)
