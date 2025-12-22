@@ -20,6 +20,10 @@
  * Boston, MA 02110-1301, USA.
  */
 
+// "Well, so what if it looks like shit. Does it work? Yeah, it works!.Are you seriously planning to watch Netflix on this piece of junk?"
+// 
+// Signed-off-by: syber
+
 #include "ui_tv.hpp"
 
 #include "spectrum_color_lut.hpp"
@@ -98,70 +102,68 @@ void TVView::paint(Painter& painter) {
     (void)painter;
 }
 
-void TVView::on_adjust_xcorr(uint8_t xcorr) {
-    x_correction = xcorr;
+void TVView::set_x_correction(int32_t value) {
+    x_correction_ = value;
 }
 
-void TVView::on_channel_spectrum(
-    const ChannelSpectrum& spectrum) {
-    // portapack has limitations
-    //  1.screen resolution (less than 240x320) 2.samples each call back (128 or 256)
-    //  3.memory size (for ui::Color, the buffer size
-    // spectrum.db[i] is 256 long
-    // 768x625 ->128x625 ->128x312 -> 128x104
-    // originally @6MHz sample rate, the PAL should be 768x625
-    // I reduced sample rate to 2MHz(3 times less samples), then calculate mag (effectively decimate by 2)
-    // the resolution is now changed to 128x625. The total decimation factor is 6, which changes how many samples in a line
-    // However 625 is too large for the screen, also interlaced scanning is harder to realize in portapack than normal computer.
-    // So I decided to simply drop half of the lines, once y is larger than 625/2=312.5 or 312, I recognize it as a new frame.
-    // then the resolution is changed to 128x312
-    // 128x312 is now able to put into a 240x320 screen, but the buffer for a whole frame is 128x312=39936, which is too large
-    // according to my test, I can only make a buffer with a length of 13312 of type ui::Color. which is 1/3 of what I wanted.
-    // So now the resolution is changed to 128x104, the height is shrinked to 1/3 of the original height.
-    // I was expecting to see 1/3 height of original video.
 
-    // Look how nice is that! I am now able to meet the requirements of 1 and 3 for portapack. Also the length of a line is 128
-    // Each call back gives me 256 samples which is exactly 2 lines. What a coincidence!
-
-    // After some experiment, I did some improvements.
-    // 1.I found that instead of 1/3 of the frame is shown, I got 3 whole frames shrinked into one window.
-    // So I made the height twice simply by painting 2 identical lines in the place of original lines
-    // 2.I found sometimes there is an horizontal offset, so I added x_correction to move the frame back to center manually
-    // 3.I changed video_buffer's type, from ui::Color to uint_8, since I don't need 3 digit to represent a grey scale value.
-    // I was hoping that by doing this, I can have a longer buffer like 39936, then the frame will looks better vertically
-    // however this is useless until now.
-
-    for (size_t i = 0; i < 256; i++) {
-        // video_buffer[i+count*256] = spectrum_rgb4_lut[spectrum.db[i]];
-        video_buffer_int[i + count * 256] = 255 - spectrum.db[i];
+void TVView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
+    add_line_to_buffer(spectrum, 0);    // Первая строка (сэмплы 0..127)
+    add_line_to_buffer(spectrum, 128);  // Вторая строка (сэмплы 128..255)
+    
+    // Проверяем, нужно ли рендерить
+    if (buffer_line_count >= RENDER_THRESHOLD) {
+        render_buffer_batch();
     }
-    count = count + 1;
-    if (count == 52 - 1) {
-        ui::Color line_buffer[128];
-        Coord line;
-        uint32_t bmp_px;
+}
 
-        /*for (line = 0; line < 104; line++)
-                {
-                        for (bmp_px = 0; bmp_px < 128; bmp_px++)
-                        {
-                                //line_buffer[bmp_px] = video_buffer[bmp_px+line*128];
-                                line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px+line*128 + x_correction]];
-                        }
-
-                        display.render_line({ 0, line + 100 }, 128, line_buffer);
-                }*/
-        for (line = 0; line < 208; line = line + 2) {
-            for (bmp_px = 0; bmp_px < 128; bmp_px++) {
-                // line_buffer[bmp_px] = video_buffer[bmp_px+line*128];
-                line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px + line / 2 * 128 + x_correction]];
-            }
-
-            display.render_line({0, line + 100}, 128, line_buffer);
-            display.render_line({0, line + 101}, 128, line_buffer);
-        }
-        count = 0;
+void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx) {
+    // Проверка переполнения буфера
+    if (buffer_line_count >= LINE_BUFFER_SIZE) {
+        process_buffer_overflow();
+        return;
     }
+
+    // Генерируем строку из TV_LINE_WIDTH пикселей (оптимизированная ширина)
+    for (int i = 0; i < TV_LINE_WIDTH; i++) {
+        int source_idx = offset_idx + i + x_correction_;
+        // Оптимизированная проверка границ
+        if (source_idx < 0) source_idx = 0;
+        else if (source_idx > 255) source_idx = 255;
+
+        uint8_t db_val = 255 - spectrum.db[source_idx];
+        line_buffer_[buffer_line_count][i] = spectrum_rgb4_lut[db_val];
+    }
+    
+    buffer_line_count++;
+}
+
+void TVView::render_buffer_batch() {
+    const auto rect = screen_rect();
+
+    // Проверяем, не выйдем ли за пределы экрана
+    if (scan_line + buffer_line_count >= rect.height()) {
+        scan_line = 0;
+    }
+
+    // Рендерим все строки из буфера (оптимизированная ширина)
+    for (int i = 0; i < buffer_line_count; i++) {
+        display.render_line({rect.left(), rect.top() + scan_line + i},
+                           TV_LINE_WIDTH, line_buffer_[i].data());
+    }
+
+    // Обновляем позицию сканирования
+    scan_line += buffer_line_count;
+    
+    // Очищаем буфер
+    buffer_line_count = 0;
+}
+
+void TVView::process_buffer_overflow() {
+    // При переполнении буфера - рендерим текущий буфер и начинаем с новой позиции
+    render_buffer_batch();
+    // Сброс позиции сканирования для избежания артефактов
+    scan_line = 0;
 }
 
 void TVView::clear() {
@@ -175,7 +177,11 @@ void TVView::clear() {
 TVWidget::TVWidget() {
     add_children({&tv_view,
                   &field_xcorr});
-    field_xcorr.set_value(10);
+    
+    field_xcorr.on_change = [this](int32_t value) {
+        tv_view.set_x_correction(value);
+    };
+    field_xcorr.set_value(0);
 }
 
 void TVWidget::on_show() {
@@ -226,12 +232,21 @@ void TVWidget::paint(Painter& painter) {
 
 void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
     tv_view.on_channel_spectrum(spectrum);
-    tv_view.on_adjust_xcorr(field_xcorr.value());
     sampling_rate = spectrum.sampling_rate;
+    
+    // Детекция TV сигнала
+    auto detection_result = signal_detector.detect_tv_signal(spectrum, receiver_model.target_frequency());
+    
+    if (detection_result.is_tv_signal && on_tv_signal_detected) {
+        on_tv_signal_detected(detection_result);
+    }
 }
 
 void TVWidget::on_audio_spectrum() {
-    audio_spectrum_view->on_audio_spectrum(audio_spectrum_data);
+    // Обрабатываем аудио спектр только если он активен
+    if (audio_spectrum_view && audio_spectrum_data) {
+        audio_spectrum_view->on_audio_spectrum(audio_spectrum_data);
+    }
 }
 
 } /* namespace tv */
