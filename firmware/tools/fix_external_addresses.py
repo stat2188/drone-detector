@@ -29,6 +29,8 @@ def fix_external_addresses(ld_file_path):
     """
     Automatically fix external app addresses for dense packing.
     """
+    print("Starting external app address fix...")
+    
     with open(ld_file_path, 'r') as f:
         content = f.read()
     
@@ -47,8 +49,20 @@ def fix_external_addresses(ld_file_path):
             'length': length
         })
     
+    if not regions:
+        print("ERROR: No external app regions found to fix")
+        return []
+    
     # Sort by current address
     regions.sort(key=lambda x: x['address'])
+    
+    # Validate that all regions have valid sizes
+    valid_sizes = [8 * 1024, 32 * 1024, 48 * 1024]
+    for region in regions:
+        if region['length'] not in valid_sizes:
+            print(f"ERROR: Region '{region['app_name']}' has invalid size: {region['length']//1024}KB")
+            print("Only 8KB, 32KB, and 48KB sizes are supported")
+            return []
     
     # Calculate new addresses for dense packing
     current_address = 0xADB10000
@@ -64,7 +78,23 @@ def fix_external_addresses(ld_file_path):
         new_regions.append(new_region)
         current_address += region['length']
     
+    # Validate that we don't exceed memory limits
+    max_address = 0xADEF0000  # Maximum allowed address
+    if current_address > max_address:
+        print(f"ERROR: Memory layout would exceed maximum address {hex(max_address)}")
+        print(f"Total required memory: {hex(current_address - 0xADB10000)}")
+        return []
+    
+    # Create backup
+    backup_path = ld_file_path + ".backup"
+    with open(backup_path, 'w') as f:
+        f.write(content)
+    print(f"Created backup: {backup_path}")
+    
     # Update the content
+    modified_content = content
+    changes_made = 0
+    
     for region in new_regions:
         old_addr_hex = hex(region['old_address'])
         new_addr_hex = hex(region['new_address'])
@@ -78,16 +108,17 @@ def fix_external_addresses(ld_file_path):
         ]
         
         for pattern in patterns_to_replace:
-            if pattern in content:
-                content = content.replace(pattern, f"org = {new_addr_hex}, len = {region['length']//1024}k")
+            if pattern in modified_content:
+                modified_content = modified_content.replace(pattern, f"org = {new_addr_hex}, len = {region['length']//1024}k")
+                changes_made += 1
                 break
     
     # Write back to file
     with open(ld_file_path, 'w') as f:
-        f.write(content)
+        f.write(modified_content)
     
     # Print summary
-    print("Fixed external app addresses for dense packing:")
+    print(f"SUCCESS: Fixed {changes_made} external app addresses for dense packing:")
     for region in new_regions:
         print(f"  {region['app_name']}: {hex(region['old_address'])} -> {hex(region['new_address'])}")
     

@@ -59,6 +59,7 @@ def parse_memory_regions(ld_file_path):
 
 def validate_memory_regions(regions):
     if not regions:
+        print("ERROR: No external app regions found")
         return False
     
     expected_base = 0xADB10000 # the start (not sure why this one)
@@ -68,7 +69,7 @@ def validate_memory_regions(regions):
     print(f"checking {len(regions)} external apps address memory regions")
     
     if regions[0]['address'] != expected_base:
-        print(f"WARNING: external app first region should start at {hex(expected_base)}, but starts at {hex(regions[0]['address'])}")
+        print(f"ERROR: external app first region should start at {hex(expected_base)}, but starts at {hex(regions[0]['address'])}")
         issues_found = True
     
     for i, region in enumerate(regions):
@@ -80,14 +81,14 @@ def validate_memory_regions(regions):
             expected_address = prev_region['address'] + prev_region['length']
         
         if region['address'] != expected_address:
-            print(f"WARNING: external app region '{region['app_name']}' has incorrect address")
+            print(f"ERROR: external app region '{region['app_name']}' has incorrect address")
             print(f"want: {hex(expected_address)}, Found: {hex(region['address'])}")
             issues_found = True
         
         # size - allow 8KB, 32KB, and 48KB regions
         expected_sizes = [8 * 1024, 32 * 1024, 48 * 1024]  # 8KB, 32KB, and 48KB
         if region['length'] not in expected_sizes:
-            print(f"WARNING: external app region '{region['app_name']}' has incorrect size")
+            print(f"ERROR: external app region '{region['app_name']}' has incorrect size")
             print(f"want: 8KB, 32KB, or 48KB, Found: {region['length']//1024}KB")
             issues_found = True
         
@@ -95,10 +96,15 @@ def validate_memory_regions(regions):
         if i < len(regions) - 1:
             next_region = regions[i + 1]
             if region['address'] + region['length'] > next_region['address']:
-                print(f"WARNING: external app region '{region['app_name']}' overlapped with '{next_region['app_name']}'")
+                print(f"ERROR: external app region '{region['app_name']}' overlapped with '{next_region['app_name']}'")
                 issues_found = True
     
-    return not issues_found
+    if issues_found:
+        print("\nERROR: Memory address validation failed. Fix the issues before proceeding.")
+        return False
+    else:
+        print("SUCCESS: All external app addresses are correct.")
+        return True
 
 def main():
     if len(sys.argv) > 1:
