@@ -69,7 +69,7 @@ def patch_image(path, image_data, search_address, replace_address):
 		val = int.from_bytes(snippet, byteorder='little')
 
 		# in firmware/application/external/external.ld the origin is set to something like search_address=0xADB00000
-		# if the value is above the search_address and inside a 32kb window (maximum size of an app) we replace it
+		# if the value is above the search_address and inside a 48kb window (maximum size of an app) we replace it
 		# with replace_address=(0x1008000 + m4 size) where the app will actually be located. The reason we do this instead just
 		# using the right address in external.ld is gcc does not permit to use the same memory range multiple times.
 		if val > search_address and (val - search_address) < maximum_application_size:
@@ -144,7 +144,7 @@ for external_image_prefix in sys.argv[4:]:
 	external_application_image[m4_app_offset_header_position:m4_app_offset_header_position+4] = app_image_len.to_bytes(4, byteorder='little')
 
 	if (len(external_application_image) > maximum_application_size) != 0:
-		print("application {} can not exceed 32kb: {} bytes used".format(external_image_prefix, len(external_application_image)))
+		print("application {} can not exceed 48kb: {} bytes used".format(external_image_prefix, len(external_application_image)))
 		sys.exit(-1)
 
 	checksum = 0

@@ -90,7 +90,7 @@ def validate_memory_regions(regions):
     
     expected_step = 0x10000  # 64k as step (not sure why)
     expected_base = 0xADB10000 # the start (not sure why this one)
-    expected_size = 32 * 1024  # 32k
+    expected_size = 48 * 1024  # 48k
     issues_found = False
     
     print("\n")
@@ -283,5 +283,3 @@ if not os.path.exists(flash_py_path):
     import shutil
     print(f"\ncopy {source_file} to {flash_py_path}\n")
     shutil.copy2(source_file, flash_py_path)
-
-
