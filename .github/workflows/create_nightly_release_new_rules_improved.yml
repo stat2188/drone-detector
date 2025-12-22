@@ -53,8 +53,6 @@ jobs:
       - name: Fix permissions for build scripts
         run: |
           chmod +x firmware/tools/make_spi_image.py
-          chmod +x firmware/tools/make_spi_image_improved.py
-          chmod +x firmware/tools/check_external_app_linker_script_correct.py
           chmod +x firmware/tools/check_external_app_linker_script_correct_improved.py
           chmod +x firmware/tools/diagnose_external_addresses.py
           chmod +x firmware/tools/fix_external_addresses.py
