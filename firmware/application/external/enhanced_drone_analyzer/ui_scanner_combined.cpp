@@ -1278,6 +1278,12 @@ SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
 
 void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_t static_count,
                                size_t receding, Frequency current_freq, bool is_scanning) {
+    // Define all static styles at the beginning of the function to avoid redeclaration errors
+    static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
+    static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
+    static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
+    static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
+
     current_threat_ = max_threat;
     is_scanning_ = is_scanning;
     current_freq_ = current_freq;
@@ -1300,7 +1306,6 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         snprintf(buffer, sizeof(buffer), "READY");
     }
     threat_status_main_.set(buffer);
-    static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
     threat_status_main_.set_style(&red_style);
     current_text_ = buffer;
 
@@ -1326,12 +1331,6 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     } else {
         threat_frequency_.set("NO SIGNAL");
     }
-
-    // Define static styles outside switch statement to avoid C++ syntax error
-    static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
-    static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
-    static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
-    static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
 
     switch (max_threat) {
         case ThreatLevel::CRITICAL:
