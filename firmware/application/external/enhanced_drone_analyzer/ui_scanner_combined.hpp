@@ -1,13 +1,5 @@
-// ui_scanner_combined.hpp - Unified header for Enhanced Drone Analyzer Scanner App
-// Combines: ui_drone_common_types.hpp, ui_drone_scanner.hpp, ui_drone_hardware.hpp, ui_drone_ui.hpp
-// Created during migration: Split monolithic app into focused Scanner application
-
 #ifndef __UI_SCANNER_COMBINED_HPP__
 #define __UI_SCANNER_COMBINED_HPP__
-
-// ===========================================
-// PART 1: COMMON TYPES AND IMPORTS
-// ===========================================
 
 #include <cstdint>
 #include <string>
@@ -15,31 +7,24 @@
 #include <array>
 #include <atomic>
 
-// Include shared utilities
 #include "ui_drone_common_types.hpp"
 #include "ui_signal_processing.hpp"
 #include "scanner_settings.hpp"
-// Ensure SpectrumMode enum is available
 enum class SpectrumMode;
 
 #include "gradient.hpp"
-
-// Fixed include paths for proper compilation
 #include <memory>
 
 #include "ui_drone_audio.hpp"
 #include "scanning_coordinator.hpp"
 
-// Forward declaration for AudioManager (defined in ui_drone_audio.hpp)
 class AudioManager;
 
-// Include necessary headers for Color and MessageHandlerRegistration - Fixed paths
-#include "ui.hpp"  // for Color
-#include "../event_m0.hpp"   // for MessageHandlerRegistration
-#include "ui_widget.hpp"  // for Button, Text, OptionsField
-#include "message.hpp"  // for Message::ID etc
+#include "ui.hpp"
+#include "../event_m0.hpp"
+#include "ui_widget.hpp"
+#include "message.hpp"
 
-// Move includes outside namespace to avoid std pollution
 #include "freqman_db.hpp"
 #include "log_file.hpp"
 #include <ch.h>
@@ -60,35 +45,21 @@ class LogFile;
 
 using Frequency = uint64_t;
 
-// Preset entry for frequency ranges
 struct preset_entry {
     Frequency min = 0;
     Frequency max = 0;
     std::string label;
 };
 
-// Audio alert system migrated from Looking Glass - defined in ui_drone_audio.hpp
-
-// Scanner Mode Enumeration - CRITICAL FIX for Baseband/Scanning conflict
 enum class ScannerMode {
-    DATABASE_ONLY,      // Only database scanning, no spectrum streaming
-    WIDEBAND_ONLY,      // Only wideband monitoring, no fast scanning
-    HYBRID,            // Hybrid mode with controlled switching
-    SPECTRUM_VIEW      // Spectrum view only, scanning stopped
+    DATABASE_ONLY,
+    WIDEBAND_ONLY,
+    HYBRID,
+    SPECTRUM_VIEW
 };
 
-// Constants (no duplicates)
-static constexpr uint8_t LOOKING_GLASS_MAX_IQ_PHASE_CAL = 63;
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
-// Undefine macros from ui_looking_glass_app.hpp to avoid conflicts
-#undef LOOKING_GLASS_SINGLEPASS
-#undef LOOKING_GLASS_FASTSCAN
-#undef LOOKING_GLASS_SLOWSCAN
-#undef SPEC_NB_BINS
-#undef LOOKING_GLASS_SLICE_WIDTH_MAX
-#undef LOOKING_GLASS_MAX_SAMPLERATE
-#undef MHZ_DIV
 static constexpr int LOOKING_GLASS_SINGLEPASS = 0;
 static constexpr int LOOKING_GLASS_FASTSCAN = 1;
 static constexpr int LOOKING_GLASS_SLOWSCAN = 2;
@@ -97,7 +68,63 @@ static constexpr uint32_t LOOKING_GLASS_SLICE_WIDTH_MAX = 24000000;
 static constexpr uint32_t LOOKING_GLASS_MAX_SAMPLERATE = 24000000;
 static constexpr uint32_t MHZ_DIV = 1000000;
 
-// Audio alert system migrated from Looking Glass - defined in ui_drone_audio.hpp
+namespace UIStyles {
+    static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
+    static constexpr Style YELLOW_STYLE{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
+    static constexpr Style GREEN_STYLE{font::fixed_8x16, Color::black(), Color::green()};
+    static constexpr Style LIGHT_STYLE{font::fixed_8x16, Color::black(), Color::white()};
+    static constexpr Style DARK_STYLE{font::fixed_8x16, Color::black(), Color::dark_grey()};
+    static constexpr Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color(255, 165, 0)};
+}
+
+// Utility functions namespace to avoid duplication
+namespace DroneUtils {
+    // Helper function to get trend character efficiently
+    static char get_trend_char(MovementTrend trend) {
+        static const char trend_chars[] = {'=', '^', 'v', '='};
+        return trend_chars[static_cast<int>(trend)];
+    }
+
+    // Common drone type name lookup
+    static const char* get_drone_type_name(DroneType type) {
+        switch (type) {
+            case DroneType::MAVIC: return "MAVIC";
+            case DroneType::DJI_P34: return "DJI P34";
+            case DroneType::UNKNOWN: default: return "UNKNOWN";
+        }
+    }
+
+    // Common drone type color lookup
+    static Color get_drone_type_color(DroneType type) {
+        switch (type) {
+            case DroneType::MAVIC: return Color::red();
+            case DroneType::DJI_P34: return Color::orange();
+            case DroneType::UNKNOWN: default: return Color::white();
+        }
+    }
+
+    // Common threat level name lookup
+    static const char* get_threat_level_name(ThreatLevel level) {
+        switch (level) {
+            case ThreatLevel::CRITICAL: return "CRITICAL";
+            case ThreatLevel::HIGH: return "HIGH";
+            case ThreatLevel::MEDIUM: return "MEDIUM";
+            case ThreatLevel::LOW: return "LOW";
+            default: return "NONE";
+        }
+    }
+
+    // Common threat level color lookup
+    static Color get_threat_level_color(ThreatLevel level) {
+        switch (level) {
+            case ThreatLevel::CRITICAL: return Color::red();
+            case ThreatLevel::HIGH: return Color::orange();
+            case ThreatLevel::MEDIUM: return Color::yellow();
+            case ThreatLevel::LOW: return Color::green();
+            default: return Color::grey();
+        }
+    }
+}
 
 
 class TrackedDrone {
@@ -405,7 +432,7 @@ private:
     systime_t session_start_ = 0;
     uint32_t logged_count_ = 0;
     bool header_written_ = false;
-    char line_buffer_[192]; // Buffer moved from stack to class member for safety
+    char line_buffer_[128]; // Reduced from 192 to 128 bytes to save 64 bytes
 
     // Async logging support - removed for simplicity
 
@@ -847,9 +874,22 @@ private:
 
     SpectrumConfig spectrum_config_;
 
-    // Declare only pointers, without initialization
-    MessageHandlerRegistration* message_handler_spectrum_config_ = nullptr;
-    MessageHandlerRegistration* message_handler_frame_sync_ = nullptr;
+    // ИСПРАВЛЕНИЕ 2: Convert MessageHandlerRegistration to stack objects (no pointers)
+    // Declare handlers AFTER all member variables they capture
+    MessageHandlerRegistration message_handler_spectrum_config_ {
+        Message::ID::ChannelSpectrumConfig,
+        [this](Message* const p) {
+            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            this->spectrum_fifo_ = message.fifo;
+        }
+    };
+    
+    MessageHandlerRegistration message_handler_frame_sync_ {
+        Message::ID::DisplayFrameSync,
+        [this](Message* const) {
+            // Frame sync logic - empty for now
+        }
+    };
 
     // Add missing methods for drone type/color lookup
     const char* get_drone_type_name(DroneType type) const;
@@ -985,8 +1025,14 @@ private:
     bool scanning_active_ = false;
     ::ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
-    // ИСПРАВЛЕНИЕ 2: Хендлер для обновления UI (DisplayFrameSync)
-    MessageHandlerRegistration* message_handler_stats_ = nullptr;
+    // ИСПРАВЛЕНИЕ 2: Convert MessageHandlerRegistration to stack objects (no pointers)
+    // Declare handlers AFTER all member variables they capture
+    MessageHandlerRegistration message_handler_stats_ {
+        Message::ID::DisplayFrameSync,
+        [this](Message* const) {
+            this->handle_scanner_update();
+        }
+    };
 
     void start_scanning_thread();
     void stop_scanning_thread();

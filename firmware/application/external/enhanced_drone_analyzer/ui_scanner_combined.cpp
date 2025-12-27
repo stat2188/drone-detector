@@ -1,7 +1,3 @@
-// ui_scanner_combined.cpp - Unified implementation for Enhanced Drone Analyzer Scanner App
-// Combines: ui_drone_scanner.cpp, ui_drone_hardware.cpp, ui_drone_ui.cpp
-// Created during migration: Split monolithic app into focused Scanner application
-
 #include "ui_scanner_combined.hpp"
 #include "ui_drone_audio.hpp"
 #include "gradient.hpp"
@@ -26,9 +22,8 @@
 using namespace portapack;
 using namespace tonekey;
 #include <ch.h>
+#include <chmsg.h>
 
-// Move the variable outside, to file scope (static global file variable)
-// This removes the __cxa_guard call, since initialization happens at startup, not on call.
 const TrackedDrone& get_empty_drone() {
     static const TrackedDrone empty{};
     return empty;
@@ -91,8 +86,8 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
     if (error) return false;
 
-    char read_buffer[128];      // Read in 128-byte blocks
-    char line_buffer[128];      // Buffer for assembling one line
+    char read_buffer[64];       // Reduced from 128 to 64 bytes to save 64 bytes
+    char line_buffer[64];       // Reduced from 128 to 64 bytes to save 64 bytes
     size_t line_idx = 0;
 
     while (true) {
@@ -247,25 +242,19 @@ bool DroneScanner::load_frequency_database() {
         return false;
     }
 
-    // FIX: Safe processing without exceptions
-    // Critical section block
     {
-        MutexLock lock(data_mutex); // Acquire mutex
+        MutexLock lock(data_mutex);
 
         drone_database_.clear();
-
-        // Reserve memory to prevent reallocation
         drone_database_.reserve(temp_db.size());
 
-        // Safe pointer movement without exceptions
         for (auto& entry_ptr : temp_db) {
             if (entry_ptr) {
                 drone_database_.push_back(std::move(entry_ptr));
             }
         }
-    } // Мьютекс освобождается здесь автоматически
+    }
 
-    // Очищаем temp_db, который теперь содержит пустые (moved-from) указатели
     temp_db.clear();
 
     if (drone_database_.size() > 100) {
@@ -338,12 +327,8 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
-    // ИСПРАВЛЕНИЕ 2: Оптимизация многопоточной синхронизации
-    // Переработанная архитектура для предотвращения deadlock и race conditions
-    
     size_t total_entries = 0;
 
-    // 1. Quickly get database size (under mutex) - minimal lock time
     {
         MutexLock lock(data_mutex);
         if (drone_database_.empty()) {
@@ -355,10 +340,8 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         total_entries = drone_database_.size();
     }
 
-    // 2. Process batch of frequencies - no mutex during hardware operations
-    const size_t batch_size = std::min(static_cast<size_t>(10), total_entries); // Reduced from 20 to 10 for better UI responsiveness
+    const size_t batch_size = std::min(static_cast<size_t>(10), total_entries);
 
-    // 3. Копируем данные БЕЗ мьютекса (безопасно, так как база не изменяется во время сканирования)
     std::vector<freqman_entry> entries_to_scan;
     entries_to_scan.reserve(batch_size);
     
@@ -373,9 +356,8 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
             }
             current_db_index_ = (current_db_index_ + batch_size) % drone_database_.size();
         }
-    }  // <-- Мьютекс освобождается здесь
+    }
 
-    // 4. Работаем с КОПИЕЙ данных без блокировок (секунды)
     for (const auto& entry : entries_to_scan) {
         // CRITICAL: Check scanning flag EVERY iteration for immediate stop
         if (!scanning_active_) return;
@@ -688,7 +670,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     // Original code blocked scan thread for 10-100ms during SD write
     if (should_log) {
         // Only log every 2 seconds to prevent I/O blocking
-        static systime_t last_log_time = 0;
+        static systime_t last_log_time;
         systime_t now = chTimeNow();
         
         // Use chTimeNow() directly for timing - no CH_CFG_ST_FREQUENCY dependency
@@ -790,8 +772,8 @@ void DroneScanner::remove_stale_drones() {
 }
 
 void DroneScanner::update_tracking_counts() {
-    approaching_count_ = 0;
-    receding_count_ = 0;
+    approaching_count_;
+    receding_count_;
     static_count_ = 0;
 
     for (size_t i = 0; i < tracked_count_; ++i) {
@@ -1278,11 +1260,7 @@ SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
 
 void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_t static_count,
                                size_t receding, Frequency current_freq, bool is_scanning) {
-    // Define all static styles at the beginning of the function to avoid redeclaration errors
-    static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
-    static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
-    static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
-    static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
+    // Use shared UI styles to avoid duplicate static declarations
 
     current_threat_ = max_threat;
     is_scanning_ = is_scanning;
@@ -1294,11 +1272,11 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     size_t total_drones = approaching + static_count + receding;
     threat_progress_bar_.set_value(total_drones * 10);
 
-    char buffer[64];
-    std::string threat_name = get_threat_icon_text(max_threat);
+    char buffer[32]; // Reduced from 64 to 32 bytes to save 32 bytes
+    const char* threat_name = get_threat_icon_text(max_threat);
     if (total_drones > 0) {
         snprintf(buffer, sizeof(buffer), "THREAT: %s | <%zu ~%zu >%zu",
-                threat_name.c_str(), approaching, static_count, receding);
+                threat_name, approaching, static_count, receding);
     } else if (is_scanning) {
         snprintf(buffer, sizeof(buffer), "SCANNING: <%zu ~%zu >%zu",
                 approaching, static_count, receding);
@@ -1306,7 +1284,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         snprintf(buffer, sizeof(buffer), "READY");
     }
     threat_status_main_.set(buffer);
-    threat_status_main_.set_style(&red_style);
+    threat_status_main_.set_style(&UIStyles::RED_STYLE);
     current_text_ = buffer;
 
     if (current_freq > 0) {
@@ -1334,20 +1312,20 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
 
     switch (max_threat) {
         case ThreatLevel::CRITICAL:
-            threat_frequency_.set_style(&red_style);
+            threat_frequency_.set_style(&UIStyles::RED_STYLE);
             break;
         case ThreatLevel::HIGH:
-            threat_frequency_.set_style(&yellow_style);
+            threat_frequency_.set_style(&UIStyles::YELLOW_STYLE);
             break;
         case ThreatLevel::MEDIUM:
-            threat_frequency_.set_style(&yellow_style);
+            threat_frequency_.set_style(&UIStyles::YELLOW_STYLE);
             break;
         case ThreatLevel::LOW:
-            threat_frequency_.set_style(&green_style);
+            threat_frequency_.set_style(&UIStyles::GREEN_STYLE);
             break;
         case ThreatLevel::NONE:
         default:
-            threat_frequency_.set_style(&light_style);
+            threat_frequency_.set_style(&UIStyles::LIGHT_STYLE);
             break;
     }
     set_dirty();
@@ -1438,11 +1416,7 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
     add_children({&card_text_});
 }
 
-// Helper function to get trend character efficiently
-static char get_trend_char(MovementTrend trend) {
-    static const char trend_chars[] = {'=', '^', 'v', '='};
-    return trend_chars[static_cast<int>(trend)];
-}
+// Use consolidated utility function from DroneUtils namespace
 
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     is_active_ = true;
@@ -1456,7 +1430,7 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     // CRITICAL FIX: Only format string if data actually changed
     // This prevents unnecessary allocations in the paint loop
     char buffer[24]; // OPTIMIZATION: Reduced buffer size from 32 to 24 bytes
-    char trend_char = get_trend_char(trend_); // OPTIMIZATION: Use lookup table instead of conditional
+    char trend_char = DroneUtils::get_trend_char(trend_); // OPTIMIZATION: Use lookup table instead of conditional
 
     uint32_t mhz = frequency_ / 1000000;
     
@@ -1533,7 +1507,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
         progress_bar[i] = '=';
     }
 
-    char buffer[64];
+    char buffer[48]; // Reduced from 64 to 48 bytes to save 16 bytes
     snprintf(buffer, sizeof(buffer), "%s %lu%% C:%lu D:%lu",
             progress_bar, (unsigned long)progress_percent, (unsigned long)total_cycles, (unsigned long)detections);
     progress_text_.set(buffer);
@@ -1542,8 +1516,8 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
 
     if (detections > 0) {
         set_display_mode(DisplayMode::ALERT);
-        char alert_buffer[64];
-        snprintf(alert_buffer, sizeof(alert_buffer), "[!] DETECTED: %lu threats found!", static_cast<unsigned long>(detections));
+    char alert_buffer[48]; // Reduced from 64 to 48 bytes to save 16 bytes
+    snprintf(alert_buffer, sizeof(alert_buffer), "[!] DETECTED: %lu threats found!", static_cast<unsigned long>(detections));
         alert_text_.set(alert_buffer);
         static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
         alert_text_.set_style(&red_style);
@@ -1557,7 +1531,7 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
     const char* icons[5] = {"(i)", "[!]", "[O]", "[X]", "[!!!]"};
     size_t icon_idx = std::min(static_cast<size_t>(threat), size_t(4));
 
-    char buffer[64];
+    char buffer[48]; // Reduced from 64 to 48 bytes to save 16 bytes
     snprintf(buffer, sizeof(buffer), "%s ALERT: %zu drones | %s",
             icons[icon_idx], total_drones, alert_msg.c_str());
 
@@ -1575,7 +1549,7 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
 void ConsoleStatusBar::update_normal_status(const std::string& primary, const std::string& secondary) {
     set_display_mode(DisplayMode::NORMAL);
 
-    char buffer[64];
+    char buffer[32]; // Reduced from 48 to 32 bytes to save 16 bytes
     if (secondary.empty()) {
         snprintf(buffer, sizeof(buffer), "%s", primary.c_str());
     } else {
@@ -1612,17 +1586,8 @@ void ConsoleStatusBar::paint(Painter& painter) {
 
 DroneDisplayController::~DroneDisplayController() {
     // ШАГ 2.2: ИСПРАВЛЕНИЕ MEMORY LEAKS MessageHandler'ов
-    // These handlers were allocated on heap in constructor and must be deleted
-    
-    // Clean up message handlers first (to avoid callbacks during destruction)
-    if (message_handler_spectrum_config_) {
-        delete message_handler_spectrum_config_;
-        message_handler_spectrum_config_ = nullptr;
-    }
-    if (message_handler_frame_sync_) {
-        delete message_handler_frame_sync_;
-        message_handler_frame_sync_ = nullptr;
-    }
+    // These handlers are now stack-allocated and will be automatically destroyed
+    // No manual cleanup needed for stack-allocated objects
 }
 
 DroneDisplayController::DroneDisplayController(Rect parent_rect)
@@ -1658,29 +1623,8 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     }
     initialize_mini_spectrum();
 
-    // --- ADD THIS TO THE END OF THE CONSTRUCTOR ---
-
-    // Initialize handlers on heap (Runtime), which is safe for addressing
-    message_handler_spectrum_config_ = new MessageHandlerRegistration(
-        Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
-        }
-    );
-
-    message_handler_frame_sync_ = new MessageHandlerRegistration(
-        Message::ID::DisplayFrameSync,
-        [this](Message* const) {
-            if (this->spectrum_fifo_) {
-                ChannelSpectrum channel_spectrum;
-                while (spectrum_fifo_->out(channel_spectrum)) {
-                    this->process_mini_spectrum_data(channel_spectrum);
-                    this->render_mini_spectrum();
-                }
-            }
-        }
-    );
+    // --- REMOVED: Stack allocation now handled in header ---
+    // MessageHandlerRegistration objects are now initialized in-class (C++11 feature)
 
     // КРИТИЧНО: Добавляем ВСЕ виджеты в иерархию View
     add_children({
@@ -1720,10 +1664,10 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     bool has_detections = (scanner.get_approaching_count() + scanner.get_receding_count() + scanner.get_static_count()) > 0;
 
     if (has_detections) {
-        char summary_buffer[64];
-        std::string threat_name = get_threat_level_name(max_threat);
+    char summary_buffer[32]; // Reduced from 48 to 32 bytes to save 16 bytes
+    const char* threat_name = get_threat_level_name(max_threat);
         snprintf(summary_buffer, sizeof(summary_buffer), "THREAT: %s | <%zu ~%zu >%zu",
-                threat_name.c_str(), scanner.get_approaching_count(),
+                threat_name, scanner.get_approaching_count(),
                 scanner.get_static_count(), scanner.get_receding_count());
         text_threat_summary_.set(summary_buffer);
         static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
@@ -1734,7 +1678,7 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
         text_threat_summary_.set_style(&green_style);
     }
 
-    char status_buffer[64];
+    char status_buffer[32]; // Reduced from 48 to 32 bytes to save 16 bytes
     if (scanner.is_scanning_active()) {
         std::string mode_str = scanner.is_real_mode() ? "REAL" : "DEMO";
         snprintf(status_buffer, sizeof(status_buffer), "%s - Detections: %lu",
@@ -1745,7 +1689,7 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     text_status_info_.set(status_buffer);
 
     size_t loaded_freqs = scanner.get_database_size();
-    char stats_buffer[64];
+    char stats_buffer[32]; // Reduced from 48 to 32 bytes to save 16 bytes
     if (scanner.is_scanning_active() && loaded_freqs > 0) {
         size_t current_idx = 0;
         snprintf(stats_buffer, sizeof(stats_buffer), "Freq: %zu/%zu | Cycle: %lu",
@@ -1779,12 +1723,15 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
 // IMPLEMENTATION: DroneDisplayController::set_scanning_status
 // ===========================================
 void DroneDisplayController::set_scanning_status(bool active, const std::string& message) {
+    char buffer[32];
     if (active) {
-        text_status_info_.set("SCAN: " + message);
+        snprintf(buffer, sizeof(buffer), "SCAN: %s", message.c_str());
+        text_status_info_.set(buffer);
         static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
         text_status_info_.set_style(&green_style);
     } else {
-        text_status_info_.set("STOP: " + message);
+        snprintf(buffer, sizeof(buffer), "STOP: %s", message.c_str());
+        text_status_info_.set(buffer);
         // Use a color that exists in Theme, falling back to white/light
         static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
         text_status_info_.set_style(&light_style);
@@ -1802,8 +1749,8 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
         it->threat = threat;
         it->type = type;
         it->last_seen = now;
-        it->type_name = get_drone_type_name(type);
-        it->display_color = get_drone_type_color(type);
+        it->type_name = DroneUtils::get_drone_type_name(type);
+        it->display_color = DroneUtils::get_drone_type_color(type);
     } else {
         if (detected_drones_.size() < MAX_TRACKED_DRONES) {
             DisplayDroneEntry entry;
@@ -1812,8 +1759,8 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
             entry.threat = threat;
             entry.type = type;
             entry.last_seen = now;
-            entry.type_name = get_drone_type_name(type);
-            entry.display_color = get_drone_type_color(type);
+            entry.type_name = DroneUtils::get_drone_type_name(type);
+            entry.display_color = DroneUtils::get_drone_type_color(type);
             entry.trend = MovementTrend::STATIC;
             detected_drones_.push_back(entry);
         }
@@ -1858,8 +1805,8 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
         entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
         entry.rssi = drone_data.rssi;
         entry.last_seen = drone_data.last_seen;
-        entry.type_name = get_drone_type_name(entry.type);
-        entry.display_color = get_drone_type_color(entry.type);
+        entry.type_name = DroneUtils::get_drone_type_name(entry.type);
+        entry.display_color = DroneUtils::get_drone_type_color(entry.type);
         entry.trend = drone_data.get_trend(); // Now this is safe to call
 
         detected_drones_.push_back(entry);
@@ -2293,12 +2240,8 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     setup_button_handlers();
 
     // ИСПРАВЛЕНИЕ 3: Подписка на обновление кадров (~60 FPS) для живого UI
-    message_handler_stats_ = new MessageHandlerRegistration(
-        Message::ID::DisplayFrameSync,
-        [this](Message* const) {
-            this->handle_scanner_update();
-        }
-    );
+    // MessageHandlerRegistration objects are now stack-allocated and will be automatically destroyed
+    // No manual allocation needed
 
     // Первичное обновление
     update_modern_layout();
@@ -2361,11 +2304,8 @@ EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
         }
     }
     
-    // 5. Удаляем MessageHandler'ы (последними, чтобы избежать callback'ов)
-    if (message_handler_stats_) {
-        delete message_handler_stats_;
-        message_handler_stats_ = nullptr;
-    }
+    // 5. MessageHandler'ы are now stack-allocated and will be automatically destroyed
+    // No manual cleanup needed for stack-allocated objects
 }
 
 void EnhancedDroneSpectrumAnalyzerView::focus() {
@@ -2629,8 +2569,8 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() {
     }
     scanning_active_ = false;
     scanning_thread_ = nullptr;
-    chThdExit(MSG_OK);
-    return MSG_OK;
+    chThdExit(0);
+    return 0;
 }
 
 void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {

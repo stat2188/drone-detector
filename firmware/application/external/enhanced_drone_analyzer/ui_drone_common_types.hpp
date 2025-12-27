@@ -109,7 +109,6 @@ private:
 // Implementations moved to ui_drone_common_types.cpp
 
 static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-static constexpr msg_t MSG_OK = 0;
 
 // Validation constants for scanner settings
 static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
