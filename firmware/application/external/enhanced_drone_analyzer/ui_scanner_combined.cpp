@@ -1327,25 +1327,27 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         threat_frequency_.set("NO SIGNAL");
     }
 
+    // Define static styles outside switch statement to avoid C++ syntax error
+    static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
+    static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
+    static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
+    static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
+
     switch (max_threat) {
         case ThreatLevel::CRITICAL:
-            threat_frequency_.set_style(&Style{font::fixed_8x16, Color::black(), Color::red()});
+            threat_frequency_.set_style(&red_style);
             break;
         case ThreatLevel::HIGH:
-            static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
             threat_frequency_.set_style(&yellow_style);
             break;
         case ThreatLevel::MEDIUM:
-            static Style yellow_style{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
             threat_frequency_.set_style(&yellow_style);
             break;
         case ThreatLevel::LOW:
-            static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
             threat_frequency_.set_style(&green_style);
             break;
         case ThreatLevel::NONE:
         default:
-            static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
             threat_frequency_.set_style(&light_style);
             break;
     }
