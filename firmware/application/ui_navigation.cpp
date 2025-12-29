@@ -62,6 +62,7 @@
 #include "ui_subghzd.hpp"
 #include "ui_battinfo.hpp"
 #include "ui_external_items_menu_loader.hpp"
+#include "external/enhanced_drone_analyzer/ui_scanner_combined.hpp"
 
 #include "ais_app.hpp"
 #include "analog_audio_app.hpp"
@@ -86,7 +87,7 @@ using portapack::transmitter_model;
 namespace pmem = portapack::persistent_memory;
 
 // Forward declaration for Enhanced Drone Analyzer
-namespace ui::apps::enhanced_drone_analyzer {
+namespace ui::external_app::enhanced_drone_analyzer {
     class EnhancedDroneSpectrumAnalyzerView;
 }
 
@@ -124,7 +125,7 @@ const NavigationView::AppList NavigationView::appList = {
     {"capture", "Capture", HOME, Color::red(), &bitmap_icon_capture, new ViewFactory<CaptureAppView>()},
     {"replay", "Replay", HOME, Color::green(), &bitmap_icon_replay, new ViewFactory<PlaylistView>()},
     {"lookingglass", "Looking Glass", HOME, Color::green(), &bitmap_icon_looking, new ViewFactory<GlassView>()},
-    {"enhanced_drone_analyzer", "Enhanced Drone Analyzer", HOME, Color::green(), &bitmap_icon_drone, new ViewFactory<ui::apps::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>()},
+    {"enhanced_drone_analyzer", "Enhanced Drone Analyzer", HOME, Color::green(), &bitmap_icon_drone, new ViewFactory<ui::external_app::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>()},
     {nullptr, "Utilities", HOME, Color::cyan(), &bitmap_icon_utilities, new ViewFactory<UtilitiesMenuView>()},
     {nullptr, "Games", HOME, Color::cyan(), &bitmap_icon_games, new ViewFactory<GamesMenuView>()},
     {nullptr, "Settings", HOME, Color::cyan(), &bitmap_icon_setup, new ViewFactory<SettingsMenuView>()},
