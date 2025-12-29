@@ -1607,7 +1607,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
       waterfall_buffer_(),
       spectrum_gradient_(), spectrum_fifo_(nullptr),
       pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
-      marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(LOOKING_GLASS_SINGLEPASS),
+      marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(2),
       spectrum_config_()
 {
     // FIX: Резервируем память заранее.

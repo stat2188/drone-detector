@@ -60,13 +60,6 @@ enum class ScannerMode {
 
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
-static constexpr int LOOKING_GLASS_SINGLEPASS = 0;
-static constexpr int LOOKING_GLASS_FASTSCAN = 1;
-static constexpr int LOOKING_GLASS_SLOWSCAN = 2;
-static constexpr size_t SPEC_NB_BINS = 256;
-static constexpr uint32_t LOOKING_GLASS_SLICE_WIDTH_MAX = 24000000;
-static constexpr uint32_t LOOKING_GLASS_MAX_SAMPLERATE = 24000000;
-static constexpr uint32_t MHZ_DIV = 1000000;
 
 namespace UIStyles {
     static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
