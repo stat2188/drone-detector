@@ -11,6 +11,7 @@
 #include "tone_key.hpp"
 #include "rtc_time.hpp"
 #include "ui_fileman.hpp"
+#include "ui_drone_common_types.hpp"
 
 #include <algorithm>
 #include <sstream>

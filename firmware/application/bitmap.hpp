@@ -1485,6 +1485,44 @@ static constexpr Bitmap bitmap_icon_downconvert{
     {16, 16},
     bitmap_icon_downconvert_data};
 
+static constexpr uint8_t bitmap_icon_drone_data[] = {
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+};
+static constexpr Bitmap bitmap_icon_drone{
+    {16, 16},
+    bitmap_icon_drone_data};
+
 static constexpr uint8_t bitmap_icon_ert_data[] = {
     0x00,
     0x00,

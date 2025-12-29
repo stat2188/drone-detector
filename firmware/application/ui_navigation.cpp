@@ -85,15 +85,15 @@ using portapack::receiver_model;
 using portapack::transmitter_model;
 namespace pmem = portapack::persistent_memory;
 
+// Forward declaration for Enhanced Drone Analyzer
+namespace ui::apps::enhanced_drone_analyzer {
+    class EnhancedDroneSpectrumAnalyzerView;
+}
+
 namespace ui {
 
 bool CstrCmp::operator()(const char* a, const char* b) const {
     return strcmp(a, b) < 0;
-}
-
-// Forward declaration for Enhanced Drone Analyzer
-namespace apps::enhanced_drone_analyzer {
-    class EnhancedDroneSpectrumAnalyzerView;
 }
 
 static NavigationView::AppMap generate_app_map(const NavigationView::AppList& appList) {
