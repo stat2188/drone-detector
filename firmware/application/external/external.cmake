@@ -278,13 +278,6 @@ set(EXTCPPSRC
 	external/subcarrx/main.cpp
 	external/subcarrx/ui_subcar.cpp
 
-	#enhanced_drone_analyzer  - 47712 bytes And nothing fucking fits. I'll have to rewrite the firmware. Fuck. I haven't even written half of what I planned.
-	external/enhanced_drone_analyzer/main.cpp
-	external/enhanced_drone_analyzer/ui_scanner_combined.cpp
-	external/enhanced_drone_analyzer/ui_spectrum_settings.cpp
-	external/enhanced_drone_analyzer/ui_signal_processing.cpp
-	external/enhanced_drone_analyzer/scanner_settings.cpp
-
 	#enhanced_drone_analyzer_settings
 	external/enhanced_drone_analyzer_settings/main.cpp
 	external/enhanced_drone_analyzer_settings/ui_settings_combined.cpp
@@ -357,6 +350,5 @@ set(EXTAPPLIST
 	adult_toys_controller
 	flex_rx
 	subcarrx
-	enhanced_drone_analyzer
 	enhanced_drone_analyzer_settings
 )
