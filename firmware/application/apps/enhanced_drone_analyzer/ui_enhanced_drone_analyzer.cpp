@@ -1,4 +1,4 @@
-#include "ui_scanner_combined.hpp"
+#include "ui_enhanced_drone_analyzer.hpp"
 #include "ui_drone_audio.hpp"
 #include "gradient.hpp"
 #include "baseband_api.hpp"
@@ -30,7 +30,7 @@ const TrackedDrone& get_empty_drone() {
     return empty;
 }
 
-namespace ui::external_app::enhanced_drone_analyzer {
+namespace ui::apps::enhanced_drone_analyzer {
 
 // Function parses a string, changing its contents (inserts \0 instead of =)
 void parse_settings_line_inplace(char* line, DroneAnalyzerSettings& settings) {
@@ -130,6 +130,115 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
         parse_settings_line_inplace(line_buffer, settings);
     }
 
+    return true;
+}
+
+// SimpleDroneValidation implementations
+bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
+    // Validate frequency range for drone detection
+    const Frequency MIN_DRONE_FREQ = 433000000ULL;
+    const Frequency MAX_DRONE_FREQ = 5800000000ULL;
+    
+    if (freq_hz < MIN_DRONE_FREQ || freq_hz > MAX_DRONE_FREQ) {
+        return false;
+    }
+    
+    // Additional validation for common drone bands
+    // 433MHz ISM band
+    if ((freq_hz >= 433000000ULL && freq_hz <= 434000000ULL)) {
+        return true;
+    }
+    // 868MHz ISM band (Europe)
+    if ((freq_hz >= 868000000ULL && freq_hz <= 868600000ULL)) {
+        return true;
+    }
+    // 915MHz ISM band (US)
+    if ((freq_hz >= 902000000ULL && freq_hz <= 928000000ULL)) {
+        return true;
+    }
+    // 2.4GHz WiFi/Bluetooth/Drone band
+    if ((freq_hz >= 2400000000ULL && freq_hz <= 2500000000ULL)) {
+        return true;
+    }
+    // 5.8GHz WiFi/Drone band
+    if ((freq_hz >= 5725000000ULL && freq_hz <= 5875000000ULL)) {
+        return true;
+    }
+    
+    return false;
+}
+
+bool SimpleDroneValidation::validate_rssi_signal(int32_t rssi_db, ThreatLevel threat) {
+    // RSSI validation based on threat level
+    switch (threat) {
+        case ThreatLevel::CRITICAL:
+            return rssi_db >= -70;
+        case ThreatLevel::HIGH:
+            return rssi_db >= -80;
+        case ThreatLevel::MEDIUM:
+            return rssi_db >= -90;
+        case ThreatLevel::LOW:
+            return rssi_db >= -100;
+        case ThreatLevel::NONE:
+        default:
+            return rssi_db >= -120;
+    }
+}
+
+ThreatLevel SimpleDroneValidation::classify_signal_strength(int32_t rssi_db) {
+    if (rssi_db >= -50) {
+        return ThreatLevel::CRITICAL;
+    } else if (rssi_db >= -70) {
+        return ThreatLevel::HIGH;
+    } else if (rssi_db >= -85) {
+        return ThreatLevel::MEDIUM;
+    } else if (rssi_db >= -100) {
+        return ThreatLevel::LOW;
+    } else {
+        return ThreatLevel::NONE;
+    }
+}
+
+DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
+    // Frequency-based drone type identification
+    if (freq_hz >= 2400000000ULL && freq_hz <= 2500000000ULL) {
+        // 2.4GHz band - most common for DJI drones
+        if (rssi_db >= -60) {
+            return DroneType::MAVIC;
+        } else {
+            return DroneType::DJI_P34;
+        }
+    } else if (freq_hz >= 5725000000ULL && freq_hz <= 5875000000ULL) {
+        // 5.8GHz band - newer DJI drones
+        return DroneType::MAVIC;
+    } else if (freq_hz >= 433000000ULL && freq_hz <= 434000000ULL) {
+        // 433MHz ISM band - various drones
+        return DroneType::DJI_P34;
+    }
+    
+    return DroneType::UNKNOWN;
+}
+
+bool SimpleDroneValidation::validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
+                                                   DroneType type, ThreatLevel threat) {
+    // Comprehensive validation
+    if (!validate_frequency_range(freq_hz)) {
+        return false;
+    }
+    
+    if (!validate_rssi_signal(rssi_db, threat)) {
+        return false;
+    }
+    
+    // Additional validation based on drone type
+    if (type == DroneType::MAVIC) {
+        // Mavic drones typically operate in 2.4GHz or 5.8GHz
+        if (!(freq_hz >= 2400000000ULL && freq_hz <= 2500000000ULL) &&
+            !(freq_hz >= 5725000000ULL && freq_hz <= 5875000000ULL)) {
+            return false;
+        }
+    }
+    
     return true;
 }
 

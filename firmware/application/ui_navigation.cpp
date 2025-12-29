@@ -62,7 +62,7 @@
 #include "ui_subghzd.hpp"
 #include "ui_battinfo.hpp"
 #include "ui_external_items_menu_loader.hpp"
-#include "external/enhanced_drone_analyzer/ui_scanner_combined.hpp"
+#include "apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.hpp"
 
 #include "ais_app.hpp"
 #include "analog_audio_app.hpp"
