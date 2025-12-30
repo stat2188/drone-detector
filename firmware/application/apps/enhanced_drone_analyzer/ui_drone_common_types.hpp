@@ -78,7 +78,9 @@ enum class DroneType {
     PARROT_ANAFI = 5,
     PARROT_BEBOP = 6,
     PX4_DRONE = 7,
-    MILITARY_DRONE = 8
+    MILITARY_DRONE = 8,
+    DIY_DRONE = 9,
+    FPV_RACING = 10
 };
 
 enum class MovementTrend {

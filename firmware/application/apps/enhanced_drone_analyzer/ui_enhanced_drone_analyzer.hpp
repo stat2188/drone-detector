@@ -327,6 +327,17 @@ private:
 
 class DroneScanner {
 public:
+    // Built-in database structure for frequencies
+    struct BuiltinDroneFreq {
+        Frequency freq;
+        const char* desc;
+        DroneType type;
+    };
+
+    // Complete built-in database of known drone frequencies (2025)
+    static const std::vector<BuiltinDroneFreq> BUILTIN_DRONE_DB;
+
+public:
     enum class ScanningMode {
         DATABASE,
         WIDEBAND_CONTINUOUS,

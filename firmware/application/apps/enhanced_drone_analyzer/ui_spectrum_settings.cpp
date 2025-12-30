@@ -12,7 +12,7 @@
 #include <cstring>
 #include <cctype>
 
-namespace ui::external_app::enhanced_drone_analyzer {
+namespace ui::apps::enhanced_drone_analyzer {
 
 // SpectrumPresetLoader implementation
 SpectrumPresetLoader::SpectrumPresetLoader(const std::string& preset_path)
@@ -26,38 +26,44 @@ SpectrumPresetLoader::~SpectrumPresetLoader() {
 }
 
 void SpectrumPresetLoader::initialize_default_presets() {
-    // Add common drone frequency ranges from Looking Glass pattern
-    // Migrated and adapted for EDA focus
+    // 1. Самый популярный: Mavic / WiFi
     settings_.add_preset({
-        2410000000ULL,  // 2.41 GHz (DJI/Mavic)
-        2460000000ULL,  // 2.46 GHz
-        "DJI/Mavic Band",
-        SpectrumMode::MEDIUM,
+        2400000000ULL, 2483500000ULL,
+        "2.4GHz Control/Video",
+        SpectrumMode::WIDE,
         ThreatLevel::HIGH
     });
 
+    // 2. FPV Аналог и Цифра (DJI FPV)
     settings_.add_preset({
-        2425000000ULL,  // 2.425 GHz (Parrot)
-        2475000000ULL,  // 2.475 GHz
-        "Parrot Band",
-        SpectrumMode::MEDIUM,
+        5645000000ULL, 5945000000ULL,
+        "5.8GHz FPV Band",
+        SpectrumMode::ULTRA_WIDE,
         ThreatLevel::MEDIUM
     });
 
+    // 3. Дальнобойные системы (TBS/ELRS)
     settings_.add_preset({
-        5705000000ULL,  // 5.705 GHz (Experimental)
-        5905000000ULL,  // 5.905 GHz
-        "5.8GHz Band",
+        860000000ULL, 930000000ULL,
+        "868/915MHz LRS",
         SpectrumMode::WIDE,
-        ThreatLevel::LOW
+        ThreatLevel::CRITICAL // LRS часто означает дрон, летящий издалека
     });
 
+    // 4. Старый диапазон
     settings_.add_preset({
-        915000000ULL,   // 915 MHz (US drones)
-        928000000ULL,   // 928 MHz
-        "915MHz Band",
+        433000000ULL, 435000000ULL,
+        "433MHz LRS",
         SpectrumMode::MEDIUM,
-        ThreatLevel::LOW
+        ThreatLevel::MEDIUM
+    });
+    
+    // 5. Видео 1.2 ГГц (для дальних полетов)
+    settings_.add_preset({
+        1080000000ULL, 1360000000ULL,
+        "1.2GHz Long Range Video",
+        SpectrumMode::WIDE,
+        ThreatLevel::HIGH
     });
 }
 
@@ -196,4 +202,4 @@ bool SpectrumPresetLoader::add_custom_preset(const FrequencyPreset& preset) {
     return false;
 }
 
-} // namespace ui::external_app::enhanced_drone_analyzer
+} // namespace ui::apps::enhanced_drone_analyzer

@@ -99,20 +99,29 @@ ThreatLevel SimpleDroneValidation::classify_signal_strength(int32_t rssi_db) {
 }
 
 DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
-    // Frequency-based drone type identification
-    if (freq_hz >= 2400000000ULL && freq_hz <= 2500000000ULL) {
-        // 2.4GHz band - most common for DJI drones
-        if (rssi_db >= -60) {
-            return DroneType::MAVIC;
-        } else {
-            return DroneType::DJI_P34;
-        }
-    } else if (freq_hz >= 5725000000ULL && freq_hz <= 5875000000ULL) {
-        // 5.8GHz band - newer DJI drones
-        return DroneType::MAVIC;
-    } else if (freq_hz >= 433000000ULL && freq_hz <= 434000000ULL) {
-        // 433MHz ISM band - various drones
-        return DroneType::DJI_P34;
+    // 1. Low Frequency Long Range (868/915 MHz)
+    if ((freq_hz >= 860000000ULL && freq_hz <= 870000000ULL) || 
+        (freq_hz >= 900000000ULL && freq_hz <= 930000000ULL)) {
+        return DroneType::MILITARY_DRONE; // Или DIY_DRONE, часто используется в "серьезных" самосборах
+    }
+    
+    // 2. Стандартный 433 MHz
+    if (freq_hz >= 433000000ULL && freq_hz <= 435000000ULL) {
+        return DroneType::DIY_DRONE;
+    }
+
+    // 3. 2.4 GHz Band
+    if (freq_hz >= 2400000000ULL && freq_hz <= 2483500000ULL) {
+        // Здесь сложнее всего, так как это и WiFi.
+        // Эвристика: DJI дроны часто имеют очень мощный сигнал по сравнению с фоновым WiFi
+        if (rssi_db > -50) return DroneType::MAVIC; // Очень близко/мощно
+        return DroneType::PARROT_ANAFI; // Generic WiFi drone
+    }
+
+    // 4. 5.8 GHz Band (Video/Control)
+    if (freq_hz >= 5600000000ULL && freq_hz <= 5900000000ULL) {
+        // RaceBand диапазон
+        return DroneType::FPV_RACING; 
     }
     
     return DroneType::UNKNOWN;
@@ -245,6 +254,52 @@ bool load_settings_from_sd_card(ui::apps::enhanced_drone_analyzer::DroneAnalyzer
 
 
 
+// Built-in database of known drone frequencies (2025)
+const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB = {
+    // --- LRS / Control (Long Range) ---
+    { 868000000, "TBS Crossfire EU", DroneType::MILITARY_DRONE }, // Часто используется в FPV/DIY
+    { 915000000, "TBS Crossfire US", DroneType::MILITARY_DRONE },
+    { 866000000, "ELRS 868", DroneType::PX4_DRONE },
+    { 915000000, "ELRS 915", DroneType::PX4_DRONE },
+
+    // --- Legacy / Telemetry ---
+    { 433050000, "LRS 433 Ch1", DroneType::UNKNOWN },
+    { 434790000, "LRS 433 Ch2", DroneType::UNKNOWN },
+
+    // --- DJI OcuSync / Lightbridge (2.4 GHz) ---
+    // Основные несущие частоты DJI
+    { 2406500000, "DJI OcuSync 1", DroneType::MAVIC },
+    { 2411500000, "DJI OcuSync 2", DroneType::MAVIC },
+    { 2416500000, "DJI OcuSync 3", DroneType::MAVIC },
+    { 2421500000, "DJI OcuSync 4", DroneType::MAVIC },
+    { 2426500000, "DJI OcuSync 5", DroneType::MAVIC },
+    { 2431500000, "DJI OcuSync 6", DroneType::MAVIC },
+    { 2436500000, "DJI OcuSync 7", DroneType::MAVIC },
+    { 2441500000, "DJI OcuSync 8", DroneType::MAVIC },
+    // ... DJI часто прыгает по всему диапазону, но эти - опорные
+
+    // --- FPV Video (5.8 GHz Analog/Digital) ---
+    // RaceBand (Самая популярная сетка)
+    { 5658000000, "RaceBand 1", DroneType::UNKNOWN },
+    { 5695000000, "RaceBand 2", DroneType::UNKNOWN },
+    { 5732000000, "RaceBand 3", DroneType::UNKNOWN },
+    { 5769000000, "RaceBand 4", DroneType::UNKNOWN },
+    { 5806000000, "RaceBand 5", DroneType::UNKNOWN },
+    { 5843000000, "RaceBand 6", DroneType::UNKNOWN },
+    { 5880000000, "RaceBand 7", DroneType::UNKNOWN },
+    { 5917000000, "RaceBand 8", DroneType::UNKNOWN },
+
+    // DJI FPV System (Digital)
+    { 5735000000, "DJI FPV Ch1", DroneType::MAVIC },
+    { 5774000000, "DJI FPV Ch2", DroneType::MAVIC },
+    { 5814000000, "DJI FPV Ch3", DroneType::MAVIC },
+
+    // --- WiFi Drones (Parrot, Ryze Tello) ---
+    { 2412000000, "WiFi Ch1", DroneType::PARROT_ANAFI },
+    { 2437000000, "WiFi Ch6", DroneType::PARROT_ANAFI },
+    { 2462000000, "WiFi Ch11", DroneType::PARROT_ANAFI }
+};
+
 // ===========================================
 // PART 2: DRONE SCANNER IMPLEMENTATION
 // ===========================================
@@ -349,19 +404,35 @@ bool DroneScanner::load_frequency_database() {
     options.load_repeaters = true;
 
     freqman_db temp_db;
-    if (!load_freqman_file("DRONES", temp_db, options)) {
-        return false;
-    }
+    bool sd_loaded = load_freqman_file("DRONES", temp_db, options);
 
     {
         MutexLock lock(data_mutex);
 
         drone_database_.clear();
-        drone_database_.reserve(temp_db.size());
 
-        for (auto& entry_ptr : temp_db) {
-            if (entry_ptr) {
-                drone_database_.push_back(std::move(entry_ptr));
+        // If SD card loading failed or returned empty database, use built-in database
+        if (!sd_loaded || temp_db.empty()) {
+            // Load built-in database
+            drone_database_.reserve(BUILTIN_DRONE_DB.size());
+            for (const auto& item : BUILTIN_DRONE_DB) {
+                auto entry = std::make_unique<freqman_entry>();
+                entry->frequency_a = item.freq;
+                entry->description = item.desc;
+                entry->type = freqman_type::Single;
+                entry->modulation = freqman_invalid_index;
+                entry->bandwidth = freqman_invalid_index;
+                entry->step = freqman_invalid_index;
+                entry->tone = freqman_invalid_index;
+                drone_database_.push_back(std::move(entry));
+            }
+        } else {
+            // Use data from SD card
+            drone_database_.reserve(temp_db.size());
+            for (auto& entry_ptr : temp_db) {
+                if (entry_ptr) {
+                    drone_database_.push_back(std::move(entry_ptr));
+                }
             }
         }
     }
@@ -2707,6 +2778,8 @@ const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
     switch (type) {
         case DroneType::MAVIC: return "MAVIC";
         case DroneType::DJI_P34: return "DJI P34";
+        case DroneType::DIY_DRONE: return "DIY DRONE";
+        case DroneType::FPV_RACING: return "FPV RACING";
         case DroneType::UNKNOWN: default: return "UNKNOWN";
     }
 }
@@ -2715,6 +2788,8 @@ Color DroneDisplayController::get_drone_type_color(DroneType type) const {
     switch (type) {
         case DroneType::MAVIC: return Color::red();
         case DroneType::DJI_P34: return Color::orange();
+        case DroneType::DIY_DRONE: return Color::blue();
+        case DroneType::FPV_RACING: return Color::purple();
         case DroneType::UNKNOWN: default: return Color::white();
     }
 }
