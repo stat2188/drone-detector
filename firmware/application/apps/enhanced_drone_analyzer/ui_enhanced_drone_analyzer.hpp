@@ -850,17 +850,18 @@ public:
 private:
     NavigationView& nav_;
 
-    DroneHardwareController* hardware_ = nullptr;
-    DroneScanner* scanner_ = nullptr;
+    // Stack-allocated objects following Mayhem pattern
+    DroneHardwareController hardware_;
+    DroneScanner scanner_;
     ::AudioManager audio_;
 
-    DroneDisplayController* display_controller_ = nullptr;
-    DroneUIController* ui_controller_ = nullptr;
-    ScanningCoordinator* scanning_coordinator_ = nullptr;
+    DroneDisplayController display_controller_;
+    DroneUIController ui_controller_;
+    ScanningCoordinator scanning_coordinator_;
 
-    SmartThreatHeader* smart_header_ = nullptr;
-    ConsoleStatusBar* status_bar_ = nullptr;
-    std::array<ThreatCard*, 3> threat_cards_ = {nullptr, nullptr, nullptr};
+    SmartThreatHeader smart_header_;
+    ConsoleStatusBar status_bar_;
+    std::array<ThreatCard, 3> threat_cards_;
 
     Button button_start_stop_;
     Button button_menu_;
