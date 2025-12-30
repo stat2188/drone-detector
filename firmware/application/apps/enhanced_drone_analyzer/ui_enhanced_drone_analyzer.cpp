@@ -1297,8 +1297,10 @@ uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
 // DroneDetectionLogger implementations
 DroneDetectionLogger::DroneDetectionLogger()
     : csv_log_(), session_active_(false), session_start_(0), logged_count_(0), dropped_logs_(0), header_written_(false),
-      ring_buffer_(), head_(0), tail_(0), is_full_(false), worker_thread_(nullptr), mutex_(), worker_should_run_(false),
-      line_buffer_(), data_ready_() {
+      ring_buffer_(), head_(0), tail_(0), is_full_(false), worker_thread_(nullptr), mutex_(), 
+      data_ready_(), // <--- ПЕРЕМЕЩЕНО СЮДА (перед worker_should_run_)
+      worker_should_run_(false),
+      line_buffer_() { // <--- line_buffer_ идет последним, как в .hpp
     memset(line_buffer_, 0, sizeof(line_buffer_));
     
     // Инициализация бинарного семафора (not taken = false)
@@ -1971,9 +1973,9 @@ void SmartThreatHeader::paint(Painter& painter) {
 
 ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
     : View(parent_rect), card_index_(card_index),
-      parent_rect_(parent_rect), last_frequency_(0), last_threat_(ThreatLevel::NONE),
-      last_trend_(MovementTrend::UNKNOWN), last_rssi_(-120), last_threat_name_(""),
-      is_active_(false) {
+      parent_rect_(parent_rect), is_active_(false), // <--- ПЕРЕМЕЩЕНО СЮДА (после parent_rect_, перед last_frequency_)
+      last_frequency_(0), last_threat_(ThreatLevel::NONE),
+      last_trend_(MovementTrend::UNKNOWN), last_rssi_(-120), last_threat_name_("") {
     add_children({&card_text_});
 }
 
