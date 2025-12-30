@@ -883,8 +883,8 @@ void DroneScanner::remove_stale_drones() {
 }
 
 void DroneScanner::update_tracking_counts() {
-    approaching_count_;
-    receding_count_;
+    approaching_count_ = 0;
+    receding_count_ = 0;
     static_count_ = 0;
 
     for (size_t i = 0; i < tracked_count_; ++i) {
