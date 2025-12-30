@@ -616,13 +616,14 @@ private:
 
     void paint(Painter& painter) override;
 
-    ThreatLevel current_threat_ = ThreatLevel::NONE;
-    bool is_scanning_ = false;
-    Frequency current_freq_ = 2400000000ULL;
-    size_t approaching_count_ = 0;
-    size_t static_count_ = 0;
-    size_t receding_count_ = 0;
-    std::string current_text_;
+    // Cached previous values for Check-Before-Update optimization
+    ThreatLevel last_threat_ = ThreatLevel::NONE;
+    bool last_is_scanning_ = false;
+    Frequency last_freq_ = 0;
+    size_t last_approaching_ = 0;
+    size_t last_static_ = 0;
+    size_t last_receding_ = 0;
+    std::string last_text_;
 };
 
 class ThreatCard : public View {
@@ -642,17 +643,15 @@ public:
 private:
     size_t card_index_;
     Text card_text_ {{0, 2, screen_width, 20}, ""};
-    std::string current_text_;
     bool is_active_ = false;
     Rect parent_rect_;
 
-    Frequency frequency_ = 0;
-    ThreatLevel threat_ = ThreatLevel::NONE;
-    MovementTrend trend_ = MovementTrend::STATIC;
-    int32_t rssi_ = -120;
-    uint8_t detection_count_ = 0;
-    systime_t last_seen_ = 0;
-    std::string threat_name_ = "UNKNOWN";
+    // Cached previous values for Check-Before-Update optimization
+    Frequency last_frequency_ = 0;
+    ThreatLevel last_threat_ = ThreatLevel::NONE;
+    MovementTrend last_trend_ = MovementTrend::UNKNOWN;
+    int32_t last_rssi_ = -120;
+    std::string last_threat_name_;
 
     void paint(Painter& painter) override;
 };

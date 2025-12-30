@@ -1513,26 +1513,39 @@ SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
       threat_progress_bar_({0, 0, screen_width, 16}),
       threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | <0 ~0 >0"),
       threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING"),
-      current_text_() {
+      last_text_() {
     add_children({&threat_progress_bar_, &threat_status_main_, &threat_frequency_});
+    // Initialize with empty string to ensure proper initialization
+    last_text_ = "";
     update(ThreatLevel::NONE, 0, 0, 0, 2400000000ULL, false);
 }
 
 void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_t static_count,
                                size_t receding, Frequency current_freq, bool is_scanning) {
-    // Use shared UI styles to avoid duplicate static declarations
+    // Check-Before-Update Pattern: Only update if data actually changed
+    bool data_changed = (max_threat != last_threat_) ||
+                        (is_scanning != last_is_scanning_) ||
+                        (current_freq != last_freq_) ||
+                        (approaching != last_approaching_) ||
+                        (static_count != last_static_) ||
+                        (receding != last_receding_);
 
-    current_threat_ = max_threat;
-    is_scanning_ = is_scanning;
-    current_freq_ = current_freq;
-    approaching_count_ = approaching;
-    static_count_ = static_count;
-    receding_count_ = receding;
+    if (!data_changed) {
+        return; // Exit early, no need to redraw
+    }
+
+    // Update cached values
+    last_threat_ = max_threat;
+    last_is_scanning_ = is_scanning;
+    last_freq_ = current_freq;
+    last_approaching_ = approaching;
+    last_static_ = static_count;
+    last_receding_ = receding;
 
     size_t total_drones = approaching + static_count + receding;
     threat_progress_bar_.set_value(total_drones * 10);
 
-    char buffer[32]; // Reduced from 64 to 32 bytes to save 32 bytes
+    char buffer[64]; // Increased buffer size to prevent overflow
     const char* threat_name = get_threat_icon_text(max_threat);
     if (total_drones > 0) {
         snprintf(buffer, sizeof(buffer), "THREAT: %s | <%zu ~%zu >%zu",
@@ -1545,7 +1558,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     }
     threat_status_main_.set(buffer);
     threat_status_main_.set_style(&UIStyles::RED_STYLE);
-    current_text_ = buffer;
+    last_text_ = buffer;
 
     if (current_freq > 0) {
         if (current_freq >= 1000000000ULL) {
@@ -1592,28 +1605,28 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
 }
 
 void SmartThreatHeader::set_max_threat(ThreatLevel threat) {
-    if (threat != current_threat_) {
-        update(threat, approaching_count_, static_count_, receding_count_,
-               current_freq_, is_scanning_);
+    if (threat != last_threat_) {
+        update(threat, last_approaching_, last_static_, last_receding_,
+               last_freq_, last_is_scanning_);
     }
 }
 
 void SmartThreatHeader::set_movement_counts(size_t approaching, size_t static_count, size_t receding) {
-    update(current_threat_, approaching, static_count, receding,
-           current_freq_, is_scanning_);
+    update(last_threat_, approaching, static_count, receding,
+           last_freq_, last_is_scanning_);
 }
 
 void SmartThreatHeader::set_current_frequency(Frequency freq) {
-    if (freq != current_freq_) {
-        update(current_threat_, approaching_count_, static_count_, receding_count_,
-               freq, is_scanning_);
+    if (freq != last_freq_) {
+        update(last_threat_, last_approaching_, last_static_, last_receding_,
+               freq, last_is_scanning_);
     }
 }
 
 void SmartThreatHeader::set_scanning_state(bool is_scanning) {
-    if (is_scanning != is_scanning_) {
-        update(current_threat_, approaching_count_, static_count_, receding_count_,
-               current_freq_, is_scanning);
+    if (is_scanning != last_is_scanning_) {
+        update(last_threat_, last_approaching_, last_static_, last_receding_,
+               last_freq_, is_scanning);
     }
 }
 
@@ -1656,22 +1669,22 @@ const char* SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
 
 void SmartThreatHeader::paint(Painter& painter) {
     // 1. Fill the entire background with threat color
-    Color bg_color = get_threat_bar_color(current_threat_);
+    Color bg_color = get_threat_bar_color(last_threat_);
     painter.fill_rectangle(screen_rect(), bg_color);
 
     // 2. Draw large centered text with white color on colored background
     // Calculate centered position
-    const int text_width = current_text_.length() * 8; // fixed_8x16 is 8px per char
+    const int text_width = last_text_.length() * 8; // fixed_8x16 is 8px per char
     const int text_height = 16;
     const int center_x = (screen_width - text_width) / 2;
     const int center_y = (60 - text_height) / 2; // Header height is 60px
     Point text_pos = {center_x, center_y};
     auto style = Style{font::fixed_8x16, bg_color, Color::white()};
-    painter.draw_string(text_pos, style, current_text_);
+    painter.draw_string(text_pos, style, last_text_);
 }
 
 ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
-    : View(parent_rect), card_index_(card_index), current_text_(),
+    : View(parent_rect), card_index_(card_index),
       parent_rect_(parent_rect) {
     add_children({&card_text_});
 }
@@ -1679,19 +1692,29 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
 // Use consolidated utility function from DroneUtils namespace
 
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
-    is_active_ = true;
-    frequency_ = drone.frequency;
-    threat_ = drone.threat;
-    rssi_ = drone.rssi;
-    last_seen_ = drone.last_seen;
-    threat_name_ = drone.type_name; // std::string copy - still heavy, prefer char* if const
-    trend_ = drone.trend;
+    // Check-Before-Update Pattern: Only update if data actually changed
+    bool data_changed = (drone.frequency != last_frequency_) ||
+                        (drone.threat != last_threat_) ||
+                        (drone.trend != last_trend_) ||
+                        (std::abs(drone.rssi - last_rssi_) > 1) || // RSSI hysteresis
+                        (drone.type_name != last_threat_name_);
 
-    // CRITICAL FIX: Only format string if data actually changed
-    // This prevents unnecessary allocations in the paint loop
-    char buffer[24]; // OPTIMIZATION: Reduced buffer size from 32 to 24 bytes
+    if (!data_changed && is_active_) {
+        return; // Exit early, no need to redraw
+    }
+
+    // Update cached values
+    last_frequency_ = drone.frequency;
+    last_threat_ = drone.threat;
+    last_trend_ = drone.trend;
+    last_rssi_ = drone.rssi;
+    last_threat_name_ = drone.type_name;
+    is_active_ = true;
+
+    // Use stack buffer instead of std::string operations for performance
+    char buffer[48]; // Increased buffer size to prevent overflow
     char trend_char;
-    switch (trend_) {
+    switch (drone.trend) {
         case MovementTrend::APPROACHING: trend_char = '^'; break;
         case MovementTrend::RECEDING: trend_char = 'v'; break;
         case MovementTrend::STATIC:
@@ -1699,33 +1722,25 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
         default: trend_char = '='; break;
     }
 
-    uint32_t mhz = frequency_ / 1000000;
+    uint32_t mhz = drone.frequency / 1000000;
     
-    // OPTIMIZATION: Use Mayhem's lightweight string utilities instead of snprintf
-    // Use integer arithmetic and string concatenation for better performance
-    std::string mhz_str = to_string_dec_uint(mhz, 4);
-    std::string rssi_str = to_string_dec_int(rssi_, 3);
-    std::string trend_str(1, trend_char);
-    
-    // Build string using concatenation instead of snprintf
-    current_text_ = threat_name_ + " " + trend_str + " " + mhz_str + "M " + rssi_str;
+    // Use stack buffer with snprintf for efficient string formatting
+    // This avoids heap allocations from std::string operations
+    snprintf(buffer, sizeof(buffer), "%s %c %luM %ld",
+             drone.type_name.c_str(), trend_char, 
+             (unsigned long)mhz, (long)drone.rssi);
 
-    // CRITICAL FIX: Compare with current buffer to avoid redundant string allocation
-    if (current_text_ != buffer) {
-        current_text_ = buffer;
-        card_text_.set(current_text_);
-        
-        // CRITICAL: Only change color if threat level changed
-        // This prevents unnecessary redraws
-        static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
-        card_text_.set_style(&light_style);
-        set_dirty();
-    }
+    card_text_.set(buffer);
+    
+    // Only change color if threat level changed to avoid unnecessary redraws
+    static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
+    card_text_.set_style(&light_style);
+    
+    set_dirty(); // Only call set_dirty() when content actually changes
 }
 
 void ThreatCard::clear_card() {
     is_active_ = false;
-    current_text_ = "";
     card_text_.set("");
     set_dirty();
 }
@@ -1734,7 +1749,7 @@ void ThreatCard::clear_card() {
 
 Color ThreatCard::get_card_bg_color() const {
     if (!is_active_) return Color::black();
-    switch (threat_) {
+    switch (last_threat_) {
         case ThreatLevel::CRITICAL: return Color(64, 0, 0);
         case ThreatLevel::HIGH: return Color(64, 32, 0);
         case ThreatLevel::MEDIUM: return Color(32, 32, 0);
@@ -1747,7 +1762,7 @@ Color ThreatCard::get_card_bg_color() const {
 Color ThreatCard::get_card_text_color() const {
     // Always white text, since threat backgrounds (Red, Orange) are dark
     // Exception: if background Yellow (Medium), text better Black
-    if (threat_ == ThreatLevel::MEDIUM) return Color::black();
+    if (last_threat_ == ThreatLevel::MEDIUM) return Color::black();
     return Color::white();
 }
 
