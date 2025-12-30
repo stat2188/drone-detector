@@ -32,107 +32,6 @@ const TrackedDrone& get_empty_drone() {
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// Function parses a string, changing its contents (inserts \0 instead of =)
-void parse_settings_line_inplace(char* line, DroneAnalyzerSettings& settings) {
-    // 1. Skip comments
-    if (line[0] == '#' || line[0] == 0) return;
-
-    // 2. Look for separator '='
-    char* equals_ptr = strchr(line, '=');
-    if (!equals_ptr) return;
-
-    // 3. Split key and value
-    *equals_ptr = 0; // Split string: "key\0value"
-    char* key = line;
-    char* value = equals_ptr + 1;
-
-    // 4. Trimming spaces (simple version)
-    // Trim function should be lightweight, skip leading spaces
-    while (*key == ' ' || *key == '\t') key++;
-    while (*value == ' ' || *value == '\t') value++;
-
-    // Remove trailing spaces for value (usually \r may be at end of line)
-    size_t val_len = strlen(value);
-    while (val_len > 0 && (value[val_len-1] == ' ' || value[val_len-1] == '\t' || value[val_len-1] == '\r')) {
-        value[val_len-1] = 0;
-        val_len--;
-    }
-
-    // 5. Key comparison (use strcmp instead of string ==)
-    if (strcmp(key, "spectrum_mode") == 0) {
-        if (strcmp(value, "NARROW") == 0) settings.spectrum_mode = SpectrumMode::NARROW;
-        else if (strcmp(value, "MEDIUM") == 0) settings.spectrum_mode = SpectrumMode::MEDIUM;
-        else if (strcmp(value, "WIDE") == 0) settings.spectrum_mode = SpectrumMode::WIDE;
-        else if (strcmp(value, "ULTRA_WIDE") == 0) settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-    }
-    else if (strcmp(key, "scan_interval_ms") == 0) {
-        settings.scan_interval_ms = strtoul(value, nullptr, 10);
-    }
-    else if (strcmp(key, "rssi_threshold_db") == 0) {
-        settings.rssi_threshold_db = strtol(value, nullptr, 10);
-    }
-    else if (strcmp(key, "enable_audio_alerts") == 0) {
-        settings.enable_audio_alerts = (strcmp(value, "true") == 0);
-    }
-    else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
-        settings.hardware_bandwidth_hz = strtoul(value, nullptr, 10);
-    }
-    else if (strcmp(key, "enable_real_hardware") == 0) {
-        settings.enable_real_hardware = (strcmp(value, "true") == 0);
-    }
-}
-
-bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
-    File settings_file;
-    auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
-    if (error) return false;
-
-    char read_buffer[64];       // Reduced from 128 to 64 bytes to save 64 bytes
-    char line_buffer[64];       // Reduced from 128 to 64 bytes to save 64 bytes
-    size_t line_idx = 0;
-
-    while (true) {
-        // Read block
-        auto read_res = settings_file.read(read_buffer, sizeof(read_buffer));
-        if (read_res.is_error()) break;
-
-        size_t bytes_read = read_res.value();
-        if (bytes_read == 0) break; // EOF
-
-        // Process the read block
-        for (size_t i = 0; i < bytes_read; i++) {
-            char c = read_buffer[i];
-
-            if (c == '\n') {
-                // End of line found
-                line_buffer[line_idx] = 0; // Null-terminate
-
-                // Parse the ready line
-                parse_settings_line_inplace(line_buffer, settings);
-
-                // Reset for next line
-                line_idx = 0;
-            }
-            else if (c != '\r') {
-                // Ignore \r, accumulate other characters
-                if (line_idx < sizeof(line_buffer) - 1) {
-                    line_buffer[line_idx++] = c;
-                }
-                // If line is longer than buffer, extra characters are simply ignored
-                // until \n is encountered to avoid stack overflow
-            }
-        }
-    }
-
-    // Process last line if file doesn't end with \n
-    if (line_idx > 0) {
-        line_buffer[line_idx] = 0;
-        parse_settings_line_inplace(line_buffer, settings);
-    }
-
-    return true;
-}
-
 // SimpleDroneValidation implementations
 bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
     // Validate frequency range for drone detection
@@ -241,6 +140,108 @@ bool SimpleDroneValidation::validate_drone_detection(Frequency freq_hz, int32_t 
     
     return true;
 }
+
+// Function parses a string, changing its contents (inserts \0 instead of =)
+void parse_settings_line_inplace(char* line, DroneAnalyzerSettings& settings) {
+    // 1. Skip comments
+    if (line[0] == '#' || line[0] == 0) return;
+
+    // 2. Look for separator '='
+    char* equals_ptr = strchr(line, '=');
+    if (!equals_ptr) return;
+
+    // 3. Split key and value
+    *equals_ptr = 0; // Split string: "key\0value"
+    char* key = line;
+    char* value = equals_ptr + 1;
+
+    // 4. Trimming spaces (simple version)
+    // Trim function should be lightweight, skip leading spaces
+    while (*key == ' ' || *key == '\t') key++;
+    while (*value == ' ' || *value == '\t') value++;
+
+    // Remove trailing spaces for value (usually \r may be at end of line)
+    size_t val_len = strlen(value);
+    while (val_len > 0 && (value[val_len-1] == ' ' || value[val_len-1] == '\t' || value[val_len-1] == '\r')) {
+        value[val_len-1] = 0;
+        val_len--;
+    }
+
+    // 5. Key comparison (use strcmp instead of string ==)
+    if (strcmp(key, "spectrum_mode") == 0) {
+        if (strcmp(value, "NARROW") == 0) settings.spectrum_mode = SpectrumMode::NARROW;
+        else if (strcmp(value, "MEDIUM") == 0) settings.spectrum_mode = SpectrumMode::MEDIUM;
+        else if (strcmp(value, "WIDE") == 0) settings.spectrum_mode = SpectrumMode::WIDE;
+        else if (strcmp(value, "ULTRA_WIDE") == 0) settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+    }
+    else if (strcmp(key, "scan_interval_ms") == 0) {
+        settings.scan_interval_ms = strtoul(value, nullptr, 10);
+    }
+    else if (strcmp(key, "rssi_threshold_db") == 0) {
+        settings.rssi_threshold_db = strtol(value, nullptr, 10);
+    }
+    else if (strcmp(key, "enable_audio_alerts") == 0) {
+        settings.enable_audio_alerts = (strcmp(value, "true") == 0);
+    }
+    else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
+        settings.hardware_bandwidth_hz = strtoul(value, nullptr, 10);
+    }
+    else if (strcmp(key, "enable_real_hardware") == 0) {
+        settings.enable_real_hardware = (strcmp(value, "true") == 0);
+    }
+}
+
+bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
+    File settings_file;
+    auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
+    if (error) return false;
+
+    char read_buffer[64];       // Reduced from 128 to 64 bytes to save 64 bytes
+    char line_buffer[64];       // Reduced from 128 to 64 bytes to save 64 bytes
+    size_t line_idx = 0;
+
+    while (true) {
+        // Read block
+        auto read_res = settings_file.read(read_buffer, sizeof(read_buffer));
+        if (read_res.is_error()) break;
+
+        size_t bytes_read = read_res.value();
+        if (bytes_read == 0) break; // EOF
+
+        // Process the read block
+        for (size_t i = 0; i < bytes_read; i++) {
+            char c = read_buffer[i];
+
+            if (c == '\n') {
+                // End of line found
+                line_buffer[line_idx] = 0; // Null-terminate
+
+                // Parse the ready line
+                parse_settings_line_inplace(line_buffer, settings);
+
+                // Reset for next line
+                line_idx = 0;
+            }
+            else if (c != '\r') {
+                // Ignore \r, accumulate other characters
+                if (line_idx < sizeof(line_buffer) - 1) {
+                    line_buffer[line_idx++] = c;
+                }
+                // If line is longer than buffer, extra characters are simply ignored
+                // until \n is encountered to avoid stack overflow
+            }
+        }
+    }
+
+    // Process last line if file doesn't end with \n
+    if (line_idx > 0) {
+        line_buffer[line_idx] = 0;
+        parse_settings_line_inplace(line_buffer, settings);
+    }
+
+    return true;
+}
+
 
 
 
