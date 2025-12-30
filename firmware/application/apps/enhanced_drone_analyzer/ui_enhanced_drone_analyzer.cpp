@@ -410,32 +410,33 @@ bool DroneScanner::load_frequency_database() {
     {
         MutexLock lock(data_mutex);
 
-        drone_database_.clear();
+        db_entry_count_ = 0;
 
-        // If SD card loading failed or returned empty database, use built-in database
-        if (!sd_loaded || temp_db.empty()) {
-            // Load built-in database
-            drone_database_.reserve(BUILTIN_DRONE_DB.size());
-            for (const auto& item : BUILTIN_DRONE_DB) {
-                auto entry = std::make_unique<freqman_entry>();
-                entry->frequency_a = item.freq;
-                entry->description = item.desc;
-                entry->type = freqman_type::Single;
-                entry->modulation = freqman_invalid_index;
-                entry->bandwidth = freqman_invalid_index;
-                entry->step = freqman_invalid_index;
-                entry->tone = freqman_invalid_index;
-                drone_database_.push_back(std::move(entry));
-            }
-        } else {
-            // Use data from SD card
-            drone_database_.reserve(temp_db.size());
-            for (auto& entry_ptr : temp_db) {
-                if (entry_ptr) {
-                    drone_database_.push_back(std::move(entry_ptr));
-                }
+    // If SD card loading failed or returned empty database, use built-in database
+    if (!sd_loaded || temp_db.empty()) {
+        // Load built-in database
+        for (const auto& item : BUILTIN_DRONE_DB) {
+            if (db_entry_count_ >= MAX_DB_ENTRIES) break;
+
+            auto& entry = drone_database_[db_entry_count_];
+            entry.frequency_a = item.freq;
+            entry.description = item.desc;
+            entry.type = freqman_type::Single;
+            entry.modulation = freqman_invalid_index;
+            entry.bandwidth = freqman_invalid_index;
+            entry.step = freqman_invalid_index;
+            entry.tone = freqman_invalid_index;
+            db_entry_count_++;
+        }
+    } else {
+        // Use data from SD card
+        for (auto& entry_ptr : temp_db) {
+            if (entry_ptr && db_entry_count_ < MAX_DB_ENTRIES) {
+                drone_database_[db_entry_count_] = *entry_ptr;
+                db_entry_count_++;
             }
         }
+    }
     }
 
     temp_db.clear();
@@ -530,14 +531,14 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
     
     {
         MutexLock lock(data_mutex);
-        if (!drone_database_.empty()) {
+        if (db_entry_count_ > 0) {
             for (size_t i = 0; i < batch_size; ++i) {
-                size_t idx = (current_db_index_ + i) % drone_database_.size();
-                if (drone_database_[idx]) {
-                    entries_to_scan.push_back(*drone_database_[idx]);
+                size_t idx = (current_db_index_ + i) % db_entry_count_;
+                if (idx < db_entry_count_) {
+                    entries_to_scan.push_back(drone_database_[idx]);
                 }
             }
-            current_db_index_ = (current_db_index_ + batch_size) % drone_database_.size();
+            current_db_index_ = (current_db_index_ + batch_size) % db_entry_count_;
         }
     }
 
@@ -626,7 +627,6 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         // OPTIMIZED WAITING: Use adaptive timeout based on M0 packet rate
         // M0 sends spectrum data ~60 times/sec (every ~16ms)
         // We wait max 2 packets (32ms) but check every 2ms for responsiveness
-        int timeout_ms = 32; // Max wait time
         int check_interval = 2; // Check every 2ms
         bool spectrum_received = false;
         int retries = 0;
@@ -648,7 +648,11 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         // 4. Perform spectral analysis if data was received
         if (spectrum_received) {
             // Analyze the spectrum using our new SpectralAnalyzer
-            auto analysis_result = SpectralAnalyzer::analyze(spectrum_data, hardware.get_spectrum_bandwidth());
+            auto analysis_result = SpectralAnalyzer::analyze(
+                spectrum_data, 
+                hardware.get_spectrum_bandwidth(),
+                current_slice.center_frequency // Pass center frequency for context
+            );
             
             // 5. Process detection based on spectral analysis
             if (analysis_result.is_valid && analysis_result.signature != SignalSignature::NOISE) {
@@ -862,7 +866,10 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
                     threat_level,
                     detected_type,
                     current_count,
-                    85  // 85% confidence as integer
+                    85,  // 85% confidence as integer
+                    0,   // width_bins - default value
+                    0,   // signal_width_hz - default value
+                    0    // snr - default value
                 };
 
                 update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
@@ -1012,8 +1019,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 
     // Simple database search (if drone_database_ doesn't change at runtime, it's safe to read without mutex,
     // BUT if DB can be reloaded, a reader-lock is needed here. For simplicity, assume DB is static during scan)
-    for (const auto& db_entry : drone_database_) {
-        if (db_entry && db_entry->frequency_a == entry.frequency_a) {
+    for (size_t i = 0; i < db_entry_count_; ++i) {
+        if (drone_database_[i].frequency_a == entry.frequency_a) {
             detected_type = DroneType::MAVIC;
             threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
             break;
@@ -1240,8 +1247,8 @@ bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
-    if (!drone_database_.empty() && current_db_index_ < drone_database_.size() && drone_database_[current_db_index_]) {
-        return drone_database_[current_db_index_]->frequency_a;
+    if (db_entry_count_ > 0 && current_db_index_ < db_entry_count_) {
+        return drone_database_[current_db_index_].frequency_a;
     }
     return 433000000;
 }
@@ -1291,7 +1298,7 @@ uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
 DroneDetectionLogger::DroneDetectionLogger()
     : csv_log_(), session_active_(false), session_start_(0), logged_count_(0), dropped_logs_(0), header_written_(false),
       ring_buffer_(), head_(0), tail_(0), is_full_(false), worker_thread_(nullptr), mutex_(), worker_should_run_(false),
-      line_buffer_() {
+      line_buffer_(), data_ready_() {
     memset(line_buffer_, 0, sizeof(line_buffer_));
     
     // Инициализация бинарного семафора (not taken = false)
@@ -1550,7 +1557,10 @@ DroneHardwareController::DroneHardwareController(SpectrumMode mode)
       spectrum_fifo_(nullptr),
       spectrum_streaming_active_(false),
       last_valid_rssi_(-120),
-      rssi_updated_(false)
+      rssi_updated_(false),
+      last_spectrum_db_(),
+      spectrum_mutex_(),
+      spectrum_updated_(false)
 {
     // Тело конструктора пустое
     // MessageHandlerRegistration objects are now initialized in-class (C++11 feature)
@@ -1961,7 +1971,9 @@ void SmartThreatHeader::paint(Painter& painter) {
 
 ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
     : View(parent_rect), card_index_(card_index),
-      parent_rect_(parent_rect) {
+      parent_rect_(parent_rect), last_frequency_(0), last_threat_(ThreatLevel::NONE),
+      last_trend_(MovementTrend::UNKNOWN), last_rssi_(-120), last_threat_name_(""),
+      is_active_(false) {
     add_children({&card_text_});
 }
 
@@ -2176,7 +2188,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
 {
     // FIX: Reserve memory in advance.
     // MAX_TRACKED_DRONES is usually around 8-10, +2 as reserve.
-    detected_drones_.reserve(MAX_TRACKED_DRONES + 2);
+    detected_drones_count_ = 0;
 
     for (auto& drone : displayed_drones_) {
         drone = DisplayDroneEntry{};
@@ -2304,30 +2316,34 @@ void DroneDisplayController::set_scanning_status(bool active, const std::string&
 
 void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi) {
     systime_t now = chTimeNow();
-    auto it = std::find_if(detected_drones_.begin(), detected_drones_.end(),
-                          [freq](const DisplayDroneEntry& entry) {
-                              return entry.frequency == freq;
-                          });
-    if (it != detected_drones_.end()) {
-        it->rssi = rssi;
-        it->threat = threat;
-        it->type = type;
-        it->last_seen = now;
-        it->type_name = get_drone_type_name(type);
-        it->display_color = get_drone_type_color(type);
-    } else {
-        if (detected_drones_.size() < MAX_TRACKED_DRONES) {
-            DisplayDroneEntry entry;
-            entry.frequency = freq;
-            entry.rssi = rssi;
-            entry.threat = threat;
-            entry.type = type;
-            entry.last_seen = now;
-            entry.type_name = get_drone_type_name(type);
-            entry.display_color = get_drone_type_color(type);
-            entry.trend = MovementTrend::STATIC;
-            detected_drones_.push_back(entry);
+    
+    // Find existing drone by frequency
+    for (size_t i = 0; i < detected_drones_count_; ++i) {
+        if (detected_drones_[i].frequency == freq) {
+            detected_drones_[i].rssi = rssi;
+            detected_drones_[i].threat = threat;
+            detected_drones_[i].type = type;
+            detected_drones_[i].last_seen = now;
+            detected_drones_[i].type_name = get_drone_type_name(type);
+            detected_drones_[i].display_color = get_drone_type_color(type);
+            sort_drones_by_rssi();
+            render_drone_text_display();
+            return;
         }
+    }
+    
+    // Add new drone if space available
+    if (detected_drones_count_ < MAX_UI_DRONES) {
+        auto& entry = detected_drones_[detected_drones_count_];
+        entry.frequency = freq;
+        entry.rssi = rssi;
+        entry.threat = threat;
+        entry.type = type;
+        entry.last_seen = now;
+        entry.type_name = get_drone_type_name(type);
+        entry.display_color = get_drone_type_color(type);
+        entry.trend = MovementTrend::STATIC;
+        detected_drones_count_++;
     }
     sort_drones_by_rssi();
     render_drone_text_display();
@@ -2354,7 +2370,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     systime_t now = chTimeNow();
 
     // Clear UI list
-    detected_drones_.clear();
+    detected_drones_count_ = 0;
 
     // Fill from snapshot
     for (size_t i = 0; i < snapshot.count; ++i) {
@@ -2363,17 +2379,18 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
         // Stale check (duplicate logic for UI filtering)
         if ((now - drone_data.last_seen) > STALE_TIMEOUT) continue;
 
-        DisplayDroneEntry entry;
-        entry.frequency = drone_data.frequency;
-        entry.type = static_cast<DroneType>(drone_data.drone_type);
-        entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
-        entry.rssi = drone_data.rssi;
-        entry.last_seen = drone_data.last_seen;
-        entry.type_name = get_drone_type_name(entry.type);
-        entry.display_color = get_drone_type_color(entry.type);
-        entry.trend = drone_data.get_trend(); // Now this is safe to call
-
-        detected_drones_.push_back(entry);
+        if (detected_drones_count_ < MAX_UI_DRONES) {
+            auto& entry = detected_drones_[detected_drones_count_];
+            entry.frequency = drone_data.frequency;
+            entry.type = static_cast<DroneType>(drone_data.drone_type);
+            entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
+            entry.rssi = drone_data.rssi;
+            entry.last_seen = drone_data.last_seen;
+            entry.type_name = get_drone_type_name(entry.type);
+            entry.display_color = get_drone_type_color(entry.type);
+            entry.trend = drone_data.get_trend(); // Now this is safe to call
+            detected_drones_count_++;
+        }
     }
 
     // STEP 3: Sorting and rendering
@@ -2383,7 +2400,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     for (auto& drone : displayed_drones_) {
         drone = DisplayDroneEntry{};
     }
-    size_t count = std::min(detected_drones_.size(), MAX_DISPLAYED_DRONES);
+    size_t count = std::min(detected_drones_count_, MAX_DISPLAYED_DRONES);
     for (size_t i = 0; i < count; ++i) {
         displayed_drones_[i] = detected_drones_[i];
     }
@@ -2966,14 +2983,21 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
 
     display_controller_.update_detection_display(scanner_);
     
-    // Update signal type display based on current scanning mode
+    // Update signal type display based on current scanning mode and signal analysis
     std::string signal_type = "UNKNOWN";
     switch (scanner_.get_scanning_mode()) {
         case DroneScanner::ScanningMode::DATABASE:
             signal_type = "RSSI";
             break;
         case DroneScanner::ScanningMode::WIDEBAND_CONTINUOUS:
-            signal_type = "SPECTRAL";
+            // Check if we have any digital FPV signals detected
+            if (scanner_.get_max_detected_threat() >= ThreatLevel::MEDIUM) {
+                // For now, we'll use SPECTRAL as the base, but the actual signal type
+                // will be determined by the spectral analysis in the scanner
+                signal_type = "SPECTRAL";
+            } else {
+                signal_type = "SPECTRAL";
+            }
             break;
         case DroneScanner::ScanningMode::HYBRID:
             signal_type = "HYBRID";
@@ -3179,4 +3203,4 @@ void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
 
 
 
-} // namespace ui::external_app::enhanced_drone_analyzer
+} // namespace ui::apps::enhanced_drone_analyzer

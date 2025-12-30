@@ -17,7 +17,8 @@ namespace ui::apps::enhanced_drone_analyzer {
 enum class SignalSignature {
     NOISE,
     WIDEBAND_WIFI,  // Широкое "плато" (> 5-10 МГц)
-    NARROWBAND_DRONE // Узкий пик (< 2-3 МГц)
+    NARROWBAND_DRONE, // Узкий пик (< 2-3 МГц)
+    DIGITAL_FPV      // Цифровое FPV видео (DJI O3, Vista и др.)
 };
 
 // Spectral analysis configuration
@@ -83,7 +84,8 @@ public:
 class SpectralAnalyzer {
 public:
     static SpectralAnalysisResult analyze(const std::array<uint8_t, 256>& db_buffer, 
-                                        uint32_t slice_bandwidth_hz) {
+                                        uint32_t slice_bandwidth_hz,
+                                        Frequency center_freq_hz) {
         SpectralAnalysisResult result;
         
         // 1. Calculate noise floor using median filter
@@ -148,15 +150,22 @@ public:
             result.signal_width_hz = result.width_bins * bin_width_hz;
         }
 
-        // 7. Classify signal based on width
-        if (result.signal_width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {
-            result.signature = SignalSignature::WIDEBAND_WIFI;
+        // 7. Classify signal based on width and context
+        if (result.signal_width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) { // Ширина > 10 MHz
+            // Контекстный анализ по диапазону частот
+            if (center_freq_hz >= 5000000000ULL) {
+                // На 5.8 ГГц широкий сигнал с высокой вероятностью является цифровым FPV (DJI O3, Vista)
+                // WiFi на 5.8 тоже есть, но в полевых условиях это чаще дрон
+                result.signature = SignalSignature::DIGITAL_FPV;
+            } else {
+                // На 2.4 ГГц это скорее всего WiFi (хотя DJI O3 тоже бывает, но WiFi чаще)
+                result.signature = SignalSignature::WIDEBAND_WIFI;
+            }
         } else if (result.signal_width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
-            result.signature = SignalSignature::NARROWBAND_DRONE;
+            result.signature = SignalSignature::NARROWBAND_DRONE; // Аналог, ELRS, TBS
         } else {
-            // Signal width is between drone and WiFi thresholds - classify as drone
-            // (most drones have narrow bandwidth, WiFi is typically wider)
-            result.signature = SignalSignature::NARROWBAND_DRONE;
+            // "Серая зона" 3-10 МГц. Часто это плохое аналоговое видео. Считаем дроном для безопасности.
+            result.signature = SignalSignature::NARROWBAND_DRONE; 
         }
 
         result.is_valid = true;
@@ -166,6 +175,12 @@ public:
     // Helper method to get threat level from signal signature
     static ThreatLevel get_threat_level(SignalSignature signature, uint8_t snr) {
         switch (signature) {
+            case SignalSignature::DIGITAL_FPV:
+                // Цифра передает HD видео, это современный и опасный дрон
+                if (snr >= 15) return ThreatLevel::CRITICAL;
+                if (snr >= 5)  return ThreatLevel::HIGH;
+                return ThreatLevel::MEDIUM;
+
             case SignalSignature::NARROWBAND_DRONE:
                 if (snr >= 20) return ThreatLevel::CRITICAL;
                 if (snr >= 15) return ThreatLevel::HIGH;
@@ -186,11 +201,19 @@ public:
 
     // Helper method to get drone type from frequency and signal characteristics
     static DroneType get_drone_type(Frequency frequency_hz, SignalSignature signature) {
-        if (signature != SignalSignature::NARROWBAND_DRONE) {
+        if (signature != SignalSignature::NARROWBAND_DRONE && 
+            signature != SignalSignature::DIGITAL_FPV) {
             return DroneType::UNKNOWN;
         }
 
-        // Frequency-based drone type detection
+        // For digital FPV signals, map to appropriate drone type
+        if (signature == SignalSignature::DIGITAL_FPV) {
+            if (frequency_hz >= 5725000000ULL && frequency_hz <= 5875000000ULL) {
+                return DroneType::FPV_RACING; // DJI O3, Vista, etc.
+            }
+        }
+
+        // Frequency-based drone type detection for narrowband signals
         if (frequency_hz >= 2400000000ULL && frequency_hz <= 2483500000ULL) {
             return DroneType::MAVIC; // DJI typically uses 2.4GHz
         } else if (frequency_hz >= 5725000000ULL && frequency_hz <= 5875000000ULL) {

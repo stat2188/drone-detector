@@ -518,7 +518,9 @@ private:
 
     static constexpr uint8_t DETECTION_DELAY = 2;
     WidebandScanData wideband_scan_data_;
-    std::vector<std::unique_ptr<freqman_entry>> drone_database_;
+    static constexpr size_t MAX_DB_ENTRIES = 128;
+    std::array<freqman_entry, MAX_DB_ENTRIES> drone_database_;
+    size_t db_entry_count_ = 0;
     DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
 
@@ -781,7 +783,9 @@ private:
     Text text_drone_3_{{screen_width - 120, 166, 120, 16}, ""};
     Text text_signal_type_{{screen_width - 80, 80, 80, 16}, "SIGNAL: --"};  // Debug: Signal type marker
 
-    std::vector<DisplayDroneEntry> detected_drones_;
+    static constexpr size_t MAX_UI_DRONES = 16;
+    std::array<DisplayDroneEntry, MAX_UI_DRONES> detected_drones_;
+    size_t detected_drones_count_ = 0;
     std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES> displayed_drones_;
 
     std::array<Color, 240u> spectrum_row;

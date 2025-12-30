@@ -51,4 +51,4 @@ private:
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 4096;
 };
 
-} // namespace ui::external_app::enhanced_drone_analyzer
+} // namespace ui::apps::enhanced_drone_analyzer

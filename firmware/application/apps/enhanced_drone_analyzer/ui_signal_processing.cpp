@@ -1,6 +1,6 @@
 #include "ui_signal_processing.hpp"
 
-namespace ui::external_app::enhanced_drone_analyzer {
+namespace ui::apps::enhanced_drone_analyzer {
 
 // Global Definitions removed - DetectionRingBuffer now lives inside DroneScanner instances
 
@@ -73,4 +73,4 @@ void DetectionRingBuffer::clear() {
     head_ = 0;
 }
 
-} // namespace ui::external_app::enhanced_drone_analyzer
+} // namespace ui::apps::enhanced_drone_analyzer
