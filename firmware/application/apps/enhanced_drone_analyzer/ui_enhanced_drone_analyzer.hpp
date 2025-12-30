@@ -71,54 +71,6 @@ namespace UIStyles {
     static constexpr Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color(255, 165, 0)};
 }
 
-// Utility functions namespace to avoid duplication
-namespace DroneUtils {
-    // Helper function to get trend character efficiently
-    static char get_trend_char(MovementTrend trend) {
-        static const char trend_chars[] = {'=', '^', 'v', '='};
-        return trend_chars[static_cast<int>(trend)];
-    }
-
-    // Common drone type name lookup
-    static const char* get_drone_type_name(DroneType type) {
-        switch (type) {
-            case DroneType::MAVIC: return "MAVIC";
-            case DroneType::DJI_P34: return "DJI P34";
-            case DroneType::UNKNOWN: default: return "UNKNOWN";
-        }
-    }
-
-    // Common drone type color lookup
-    static Color get_drone_type_color(DroneType type) {
-        switch (type) {
-            case DroneType::MAVIC: return Color::red();
-            case DroneType::DJI_P34: return Color::orange();
-            case DroneType::UNKNOWN: default: return Color::white();
-        }
-    }
-
-    // Common threat level name lookup
-    static const char* get_threat_level_name(ThreatLevel level) {
-        switch (level) {
-            case ThreatLevel::CRITICAL: return "CRITICAL";
-            case ThreatLevel::HIGH: return "HIGH";
-            case ThreatLevel::MEDIUM: return "MEDIUM";
-            case ThreatLevel::LOW: return "LOW";
-            default: return "NONE";
-        }
-    }
-
-    // Common threat level color lookup
-    static Color get_threat_level_color(ThreatLevel level) {
-        switch (level) {
-            case ThreatLevel::CRITICAL: return Color::red();
-            case ThreatLevel::HIGH: return Color::orange();
-            case ThreatLevel::MEDIUM: return Color::yellow();
-            case ThreatLevel::LOW: return Color::green();
-            default: return Color::grey();
-        }
-    }
-}
 
 
 class TrackedDrone {

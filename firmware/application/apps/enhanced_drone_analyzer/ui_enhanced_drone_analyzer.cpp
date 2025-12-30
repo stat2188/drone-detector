@@ -1540,7 +1540,14 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     // CRITICAL FIX: Only format string if data actually changed
     // This prevents unnecessary allocations in the paint loop
     char buffer[24]; // OPTIMIZATION: Reduced buffer size from 32 to 24 bytes
-    char trend_char = DroneUtils::get_trend_char(trend_); // OPTIMIZATION: Use lookup table instead of conditional
+    char trend_char;
+    switch (trend_) {
+        case MovementTrend::APPROACHING: trend_char = '^'; break;
+        case MovementTrend::RECEDING: trend_char = 'v'; break;
+        case MovementTrend::STATIC:
+        case MovementTrend::UNKNOWN:
+        default: trend_char = '='; break;
+    }
 
     uint32_t mhz = frequency_ / 1000000;
     
@@ -1717,7 +1724,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
       waterfall_buffer_(),
       spectrum_gradient_(), spectrum_fifo_(nullptr),
       pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
-      marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(LOOKING_GLASS_SINGLEPASS),
+      marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
       spectrum_config_()
 {
     // FIX: Резервируем память заранее.
@@ -1859,8 +1866,8 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
         it->threat = threat;
         it->type = type;
         it->last_seen = now;
-        it->type_name = DroneUtils::get_drone_type_name(type);
-        it->display_color = DroneUtils::get_drone_type_color(type);
+        it->type_name = get_drone_type_name(type);
+        it->display_color = get_drone_type_color(type);
     } else {
         if (detected_drones_.size() < MAX_TRACKED_DRONES) {
             DisplayDroneEntry entry;
@@ -1869,8 +1876,8 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
             entry.threat = threat;
             entry.type = type;
             entry.last_seen = now;
-            entry.type_name = DroneUtils::get_drone_type_name(type);
-            entry.display_color = DroneUtils::get_drone_type_color(type);
+            entry.type_name = get_drone_type_name(type);
+            entry.display_color = get_drone_type_color(type);
             entry.trend = MovementTrend::STATIC;
             detected_drones_.push_back(entry);
         }
@@ -1915,8 +1922,8 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
         entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
         entry.rssi = drone_data.rssi;
         entry.last_seen = drone_data.last_seen;
-        entry.type_name = DroneUtils::get_drone_type_name(entry.type);
-        entry.display_color = DroneUtils::get_drone_type_color(entry.type);
+        entry.type_name = get_drone_type_name(entry.type);
+        entry.display_color = get_drone_type_color(entry.type);
         entry.trend = drone_data.get_trend(); // Now this is safe to call
 
         detected_drones_.push_back(entry);
