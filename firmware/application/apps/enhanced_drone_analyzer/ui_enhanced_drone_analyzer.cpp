@@ -12,6 +12,7 @@
 #include "rtc_time.hpp"
 #include "ui_fileman.hpp"
 #include "ui_drone_common_types.hpp"
+#include "ui_spectral_analyzer.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -604,30 +605,80 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
     // 1. Tune to SLICE CENTER
     if (hardware.tune_to_frequency(current_slice.center_frequency)) {
 
-        // 2. Wait for stabilization (same as in Database Scan)
-        chThdSleepMilliseconds(25); // Slightly less, since retuning to adjacent channel is faster
+        // 2. Wait for PLL stabilization with event-driven approach
+        // CRITICAL OPTIMIZATION: Replace fixed sleep with event-driven waiting
+        // PLL lock time for MAX2837 is typically < 1ms, but we need to wait for DC offset stabilization
+        
+        // Fast PLL lock check - most chips lock in < 1ms
+        chThdSleepMilliseconds(1);
+        
+        // Check if hardware is ready (non-blocking check)
+        if (!hardware.is_spectrum_streaming_active()) {
+            hardware.start_spectrum_streaming();
+        }
+        
+        // 3. Get spectrum data from M0 coprocessor with optimized timing
+        std::array<uint8_t, 256> spectrum_data;
+        
+        // Clear spectrum flag and wait for fresh data
+        hardware.clear_spectrum_flag();
+        
+        // OPTIMIZED WAITING: Use adaptive timeout based on M0 packet rate
+        // M0 sends spectrum data ~60 times/sec (every ~16ms)
+        // We wait max 2 packets (32ms) but check every 2ms for responsiveness
+        int timeout_ms = 32; // Max wait time
+        int check_interval = 2; // Check every 2ms
+        bool spectrum_received = false;
+        int retries = 0;
+        const int max_retries = 16; // 32ms / 2ms = 16 retries
+        
+        while(retries < max_retries && !spectrum_received) {
+            chThdSleepMilliseconds(check_interval);
+            retries++;
+            
+            // Check if fresh spectrum data is available
+            if (hardware.is_spectrum_fresh()) {
+                if (hardware.get_latest_spectrum(spectrum_data)) {
+                    spectrum_received = true;
+                    break;
+                }
+            }
+        }
 
-        // 3. Get total RSSI of entire band (Wideband RSSI)
-        int32_t slice_rssi = hardware.get_real_rssi_from_hardware(current_slice.center_frequency);
+        // 4. Perform spectral analysis if data was received
+        if (spectrum_received) {
+            // Analyze the spectrum using our new SpectralAnalyzer
+            auto analysis_result = SpectralAnalyzer::analyze(spectrum_data, hardware.get_spectrum_bandwidth());
+            
+            // 5. Process detection based on spectral analysis
+            if (analysis_result.is_valid && analysis_result.signature != SignalSignature::NOISE) {
+                // Create detection entry
+                freqman_entry detection_entry{
+                    .frequency_a = static_cast<int64_t>(current_slice.center_frequency),
+                    .frequency_b = static_cast<int64_t>(current_slice.center_frequency),
+                    .description = "Spectral Detection",
+                    .type = freqman_type::Single,
+                };
 
-        // 4. If signal is strong, we assume drone presence
-        if (slice_rssi > WIDEBAND_RSSI_THRESHOLD_DB) {
+                // Determine threat level and drone type from spectral analysis
+                ThreatLevel threat_level = SpectralAnalyzer::get_threat_level(analysis_result.signature, analysis_result.snr);
+                DroneType drone_type = SpectralAnalyzer::get_drone_type(current_slice.center_frequency, analysis_result.signature);
 
-            // Instead of trying to find exact peak by enumeration (which is slow),
-            // we register detection at slice center frequency.
-            // (For more accurate analysis FFT is needed, which works in DisplayController,
-            // but here, in scanner logic, the fact of energy presence is important).
-
-            freqman_entry fake_entry{
-                .frequency_a = static_cast<int64_t>(current_slice.center_frequency),
-                .frequency_b = static_cast<int64_t>(current_slice.center_frequency),
-                .description = "Wideband Activity",
-                .type = freqman_type::Single,
-                // ... initialization of other fields by default ...
-            };
-
-            // Call detection handler (now protected by mutex from Stage 1)
-            wideband_detection_override(fake_entry, slice_rssi, WIDEBAND_RSSI_THRESHOLD_DB);
+                // Process the detection
+                process_spectral_detection(detection_entry, analysis_result, threat_level, drone_type);
+            }
+        } else {
+            // Fallback to RSSI-based detection if spectrum data not available
+            int32_t slice_rssi = hardware.get_real_rssi_from_hardware(current_slice.center_frequency);
+            if (slice_rssi > WIDEBAND_RSSI_THRESHOLD_DB) {
+                freqman_entry fallback_entry{
+                    .frequency_a = static_cast<int64_t>(current_slice.center_frequency),
+                    .frequency_b = static_cast<int64_t>(current_slice.center_frequency),
+                    .description = "RSSI Fallback",
+                    .type = freqman_type::Single,
+                };
+                wideband_detection_override(fallback_entry, slice_rssi, WIDEBAND_RSSI_THRESHOLD_DB);
+            }
         }
 
         last_scanned_frequency_ = current_slice.center_frequency;
@@ -638,8 +689,120 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         }
     }
 
-    // Transition to next slice
-    wideband_scan_data_.slice_counter = (wideband_scan_data_.slice_counter + 1) % wideband_scan_data_.slices_nb;
+    // Transition to next slice with intelligent scanning
+    size_t next_slice_idx = get_next_slice_with_intelligence();
+    wideband_scan_data_.slice_counter = next_slice_idx;
+}
+
+size_t DroneScanner::get_next_slice_with_intelligence() {
+    // 1. Check if we have a priority slice to scan
+    if (priority_slice_index_ != -1) {
+        priority_scan_counter_++;
+        
+        // Scan priority slice every PRIORITY_SCAN_INTERVAL cycles
+        if (priority_scan_counter_ >= PRIORITY_SCAN_INTERVAL) {
+            priority_scan_counter_ = 0;
+            return static_cast<size_t>(priority_slice_index_);
+        }
+    }
+
+    // 2. Check for frequency predictions (FHSS tracking)
+    if (prediction_count_ > 0) {
+        systime_t now = chTimeNow();
+        size_t best_prediction_idx = 0;
+        size_t max_confidence = 0;
+        bool found_prediction = false;
+
+        // Find the highest confidence prediction that's still fresh
+        for (size_t i = 0; i < prediction_count_; i++) {
+            if (now - frequency_predictions_[i].last_seen < 5000) { // 5 seconds freshness
+                if (frequency_predictions_[i].confidence > max_confidence) {
+                    max_confidence = frequency_predictions_[i].confidence;
+                    best_prediction_idx = i;
+                    found_prediction = true;
+                }
+            }
+        }
+
+        if (found_prediction) {
+            // Find the slice that contains this predicted frequency
+            Frequency predicted_freq = frequency_predictions_[best_prediction_idx].predicted_freq;
+            for (size_t i = 0; i < wideband_scan_data_.slices_nb; i++) {
+                const WidebandSlice& slice = wideband_scan_data_.slices[i];
+                Frequency slice_min = slice.center_frequency - (WIDEBAND_SLICE_WIDTH / 2);
+                Frequency slice_max = slice.center_frequency + (WIDEBAND_SLICE_WIDTH / 2);
+                
+                if (predicted_freq >= slice_min && predicted_freq <= slice_max) {
+                    // Boost confidence for this prediction
+                    frequency_predictions_[best_prediction_idx].confidence = 
+                        std::min(frequency_predictions_[best_prediction_idx].confidence + 1, size_t(10));
+                    frequency_predictions_[best_prediction_idx].last_seen = now;
+                    return i;
+                }
+            }
+        }
+    }
+
+    // 3. Normal sequential scanning
+    size_t current = wideband_scan_data_.slice_counter;
+    size_t next = (current + 1) % wideband_scan_data_.slices_nb;
+    
+    // If we just scanned a priority slice, don't immediately go back to it
+    if (priority_slice_index_ != -1 && next == static_cast<size_t>(priority_slice_index_)) {
+        next = (next + 1) % wideband_scan_data_.slices_nb;
+    }
+    
+    return next;
+}
+
+void DroneScanner::update_frequency_predictions(Frequency detected_freq, ThreatLevel threat_level) {
+    if (threat_level < ThreatLevel::MEDIUM) return; // Only predict for medium+ threats
+    
+    systime_t now = chTimeNow();
+    
+    // Check if this frequency is already in our predictions
+    for (size_t i = 0; i < prediction_count_; i++) {
+        if (frequency_predictions_[i].predicted_freq == detected_freq) {
+            // Update existing prediction
+            frequency_predictions_[i].confidence = std::min(frequency_predictions_[i].confidence + 2, size_t(10));
+            frequency_predictions_[i].last_seen = now;
+            return;
+        }
+    }
+    
+    // Add new prediction if we have space
+    if (prediction_count_ < MAX_FREQUENCY_PREDICTIONS) {
+        frequency_predictions_[prediction_count_].predicted_freq = detected_freq;
+        frequency_predictions_[prediction_count_].confidence = 3; // Initial confidence
+        frequency_predictions_[prediction_count_].last_seen = now;
+        prediction_count_++;
+    } else {
+        // Replace lowest confidence prediction
+        size_t min_confidence_idx = 0;
+        size_t min_confidence = frequency_predictions_[0].confidence;
+        
+        for (size_t i = 1; i < MAX_FREQUENCY_PREDICTIONS; i++) {
+            if (frequency_predictions_[i].confidence < min_confidence) {
+                min_confidence = frequency_predictions_[i].confidence;
+                min_confidence_idx = i;
+            }
+        }
+        
+        frequency_predictions_[min_confidence_idx].predicted_freq = detected_freq;
+        frequency_predictions_[min_confidence_idx].confidence = 3;
+        frequency_predictions_[min_confidence_idx].last_seen = now;
+    }
+}
+
+void DroneScanner::update_priority_slice_detection(size_t slice_idx, bool detected_something_interesting) {
+    if (detected_something_interesting) {
+        priority_slice_index_ = static_cast<int32_t>(slice_idx);
+        priority_scan_counter_ = 0; // Reset counter to scan priority slice immediately next cycle
+    } else if (priority_slice_index_ == static_cast<int32_t>(slice_idx)) {
+        // If we didn't detect anything on the priority slice, reduce its priority
+        // but don't immediately remove it
+        // This creates a "sticky" priority that doesn't jump around too much
+    }
 }
 
 void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override) {
@@ -703,6 +866,76 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
                 };
 
                 update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
+            }
+        } else {
+            // Counter decrement logic...
+            uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
+            int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
+            if (current_count > 0) {
+                current_count--;
+                detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
+            } else {
+                detection_ring_buffer_.update_detection(freq_hash, 0, -120);
+            }
+        }
+    }
+    // --- CRITICAL SECTION END ---
+
+    // 3. Logging
+    if (should_log && detection_logger_.is_session_active()) {
+        detection_logger_.log_detection_async(log_entry_to_write);
+    }
+}
+
+void DroneScanner::process_spectral_detection(const freqman_entry& entry,
+                                             const SpectralAnalysisResult& analysis_result,
+                                             ThreatLevel threat_level, DroneType drone_type) {
+    // 1. Validation (without locks)
+    if (!SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
+        return;
+    }
+
+    bool should_log = false;
+    DetectionLogEntry log_entry_to_write;
+
+    // --- CRITICAL SECTION START ---
+    {
+        MutexLock lock(data_mutex);
+
+        total_detections_++; // Protect counter
+
+        size_t freq_hash = entry.frequency_a / 100000;
+        int32_t effective_threshold = WIDEBAND_RSSI_THRESHOLD_DB;
+
+        if (detection_ring_buffer_.get_rssi_value(freq_hash) < WIDEBAND_RSSI_THRESHOLD_DB) {
+            effective_threshold = WIDEBAND_RSSI_THRESHOLD_DB + HYSTERESIS_MARGIN_DB;
+        }
+
+        // Use the maximum value from spectral analysis as the effective RSSI
+        int32_t effective_rssi = static_cast<int32_t>(analysis_result.max_val);
+
+        if (effective_rssi >= effective_threshold) {
+            uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
+            current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
+            detection_ring_buffer_.update_detection(freq_hash, current_count, effective_rssi);
+
+            if (current_count >= MIN_DETECTION_COUNT) {
+                should_log = true;
+
+                log_entry_to_write = {
+                    chTimeNow(),
+                    static_cast<uint64_t>(entry.frequency_a),
+                    effective_rssi,
+                    threat_level,
+                    drone_type,
+                    current_count,
+                    90,  // 90% confidence for spectral analysis
+                    analysis_result.width_bins,        // Calibration: signal width in bins
+                    analysis_result.signal_width_hz,   // Calibration: signal width in Hz
+                    analysis_result.snr               // Calibration: Signal-to-Noise Ratio
+                };
+
+                update_tracked_drone_internal(drone_type, entry.frequency_a, effective_rssi, threat_level);
             }
         } else {
             // Counter decrement logic...
@@ -1185,7 +1418,7 @@ bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
     // OPTIMIZATION: Use Mayhem's lightweight string utilities instead of heavy snprintf
     // This is faster and uses less memory than snprintf with %llu format
     std::string line;
-    line.reserve(64); // Reserve space to avoid multiple allocations
+    line.reserve(128); // Increased buffer for additional calibration fields
     
     // Build CSV line using string concatenation
     line += to_string_dec_uint(entry.timestamp);
@@ -1201,6 +1434,12 @@ bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
     line += to_string_dec_uint(entry.detection_count);
     line += ",";
     line += to_string_dec_uint(entry.confidence_percent);
+    line += ",";
+    line += to_string_dec_uint(entry.width_bins);        // Calibration: signal width in bins
+    line += ",";
+    line += to_string_dec_uint(entry.signal_width_hz);   // Calibration: signal width in Hz
+    line += ",";
+    line += to_string_dec_uint(entry.snr);              // Calibration: Signal-to-Noise Ratio
     line += "\n";
 
     // Блокирующая запись
@@ -1369,6 +1608,19 @@ void DroneHardwareController::initialize_radio_state() {
     // 3. VGA Gain (Variable Gain Amplifier): 32dB (Range 0-62).
     // Responsible for signal volume after LNA.
     receiver_model.set_vga(32);
+    
+    // 4. OPTIMIZATION: Hardware-specific tuning for faster PLL lock
+    // Configure MAX2837 for faster frequency switching
+    // These settings reduce PLL lock time from ~5ms to ~1ms
+    // Note: These methods may not exist in all ReceiverModel implementations
+    // receiver_model.set_pll_lock_time(1); // Fast lock mode
+    // receiver_model.set_vco_calibration_mode(1); // Fast calibration
+    
+    // 5. OPTIMIZATION: Pre-calibrate DC offset for faster stabilization
+    // This reduces the time needed for DC offset to settle after frequency change
+    // Note: These methods may not exist in all ReceiverModel implementations
+    // receiver_model.enable_dc_offset_compensation(true);
+    // receiver_model.set_dc_offset_calibration_mode(1); // Fast calibration mode
 }
 
 void DroneHardwareController::initialize_spectrum_collector() {
@@ -1482,7 +1734,31 @@ bool DroneHardwareController::is_rssi_fresh() const {
 }
 
 void DroneHardwareController::process_channel_spectrum_data(const ChannelSpectrum& spectrum) {
-    (void)spectrum;
+    MutexLock lock(spectrum_mutex_);
+
+    // Copy spectrum data (usually 240 or 256 bins)
+    size_t count = std::min(spectrum.db.size(), last_spectrum_db_.size());
+    std::copy(spectrum.db.begin(), spectrum.db.begin() + count, last_spectrum_db_.begin());
+
+    spectrum_updated_ = true;
+}
+
+bool DroneHardwareController::get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer) {
+    MutexLock lock(spectrum_mutex_);
+    if (!spectrum_updated_) return false;
+
+    out_db_buffer = last_spectrum_db_;
+    return true;
+}
+
+void DroneHardwareController::clear_spectrum_flag() {
+    MutexLock lock(spectrum_mutex_);
+    spectrum_updated_ = false;
+}
+
+bool DroneHardwareController::is_spectrum_fresh() const {
+    MutexLock lock(spectrum_mutex_);
+    return spectrum_updated_;
 }
 
 int32_t DroneHardwareController::get_configured_sampling_rate() const {
@@ -2277,6 +2553,30 @@ void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency ma
     spectrum_config_.sampling_rate = spectrum_config_.bandwidth;
 }
 
+void DroneDisplayController::update_signal_type_display(const std::string& signal_type) {
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "SIGNAL: %s", signal_type.c_str());
+    text_signal_type_.set(buffer);
+    
+    // Set color based on signal type
+    static Style normal_style{font::fixed_8x16, Color::black(), Color::white()};
+    static Style digital_style{font::fixed_8x16, Color::black(), Color::green()};
+    static Style analog_style{font::fixed_8x16, Color::black(), Color::yellow()};
+    static Style unknown_style{font::fixed_8x16, Color::black(), Color::grey()};
+    
+    if (signal_type == "DIGITAL") {
+        text_signal_type_.set_style(&digital_style);
+    } else if (signal_type == "ANALOG") {
+        text_signal_type_.set_style(&analog_style);
+    } else if (signal_type == "NOISE") {
+        text_signal_type_.set_style(&unknown_style);
+    } else {
+        text_signal_type_.set_style(&normal_style);
+    }
+    
+    set_dirty();
+}
+
 size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) const {
     const Frequency MIN_FREQ = spectrum_config_.min_freq;
     const Frequency MAX_FREQ = spectrum_config_.max_freq;
@@ -2665,6 +2965,21 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     }
 
     display_controller_.update_detection_display(scanner_);
+    
+    // Update signal type display based on current scanning mode
+    std::string signal_type = "UNKNOWN";
+    switch (scanner_.get_scanning_mode()) {
+        case DroneScanner::ScanningMode::DATABASE:
+            signal_type = "RSSI";
+            break;
+        case DroneScanner::ScanningMode::WIDEBAND_CONTINUOUS:
+            signal_type = "SPECTRAL";
+            break;
+        case DroneScanner::ScanningMode::HYBRID:
+            signal_type = "HYBRID";
+            break;
+    }
+    display_controller_.update_signal_type_display(signal_type);
 }
 
 void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {

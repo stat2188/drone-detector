@@ -14,6 +14,7 @@
 #include "scanning_coordinator.hpp"
 #include "gradient.hpp"
 #include "ui_drone_audio.hpp"
+#include "ui_spectral_analyzer.hpp"
 
 #include "ui.hpp"
 #include "../event_m0.hpp"
@@ -184,7 +185,7 @@ static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
-static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 25'000'000;
+static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 22'000'000; // Optimized for 2.4GHz band coverage
 static constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
 static constexpr size_t DETECTION_TABLE_SIZE = 256;
 
@@ -216,6 +217,9 @@ struct DetectionLogEntry {
     DroneType drone_type;
     uint8_t detection_count;
     uint8_t confidence_percent; // Используем 0-100% вместо float для экономии памяти и тактов
+    uint8_t width_bins;         // Ширина сигнала в бинах (для калибровки)
+    uint32_t signal_width_hz;   // Ширина сигнала в Гц (для калибровки)
+    uint8_t snr;               // Signal-to-Noise Ratio (для калибровки)
 };
 
 struct DroneDetectionMessage {
@@ -460,7 +464,11 @@ private:
     void setup_wideband_range(Frequency min_freq, Frequency max_freq);
     void wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override);
     void process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
-                                                 int32_t original_threshold, int32_t wideband_threshold);
+                                                   int32_t original_threshold, int32_t wideband_threshold);
+
+    void process_spectral_detection(const freqman_entry& entry, 
+                                   const SpectralAnalysisResult& analysis_result,
+                                   ThreatLevel threat_level, DroneType drone_type);
 
     void update_trends_compact_display();
     bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
@@ -477,6 +485,11 @@ private:
     void perform_hybrid_scan_cycle(DroneHardwareController& hardware);
 
     void update_tracking_counts();
+
+    // Intelligent scanning methods
+    size_t get_next_slice_with_intelligence();
+    void update_frequency_predictions(Frequency detected_freq, ThreatLevel threat_level);
+    void update_priority_slice_detection(size_t slice_idx, bool detected_something_interesting);
 
     Thread* scanning_thread_ = nullptr;
     mutable Mutex data_mutex;
@@ -508,6 +521,21 @@ private:
     std::vector<std::unique_ptr<freqman_entry>> drone_database_;
     DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
+
+    // Intelligent scanning features
+    int32_t priority_slice_index_ = -1;  // For priority scanning
+    size_t priority_scan_counter_ = 0;   // Counter for priority slice scanning
+    static constexpr size_t PRIORITY_SCAN_INTERVAL = 3; // Scan priority slice every N cycles
+    static constexpr size_t MAX_FREQUENCY_PREDICTIONS = 5; // Max predicted frequencies to track
+    
+    // Frequency prediction for FHSS drones
+    struct FrequencyPrediction {
+        Frequency predicted_freq;
+        size_t confidence;
+        systime_t last_seen;
+    };
+    std::array<FrequencyPrediction, MAX_FREQUENCY_PREDICTIONS> frequency_predictions_{};
+    size_t prediction_count_ = 0;
 };
 
 class DroneHardwareController {
@@ -541,6 +569,11 @@ public:
     void clear_rssi_flag();
     bool is_rssi_fresh() const;
 
+    // NEW: Spectrum data access methods for spectral analysis
+    bool get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer);
+    void clear_spectrum_flag();
+    bool is_spectrum_fresh() const;
+
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_statistics(const ChannelStatistics& statistics);
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
@@ -565,6 +598,11 @@ private:
     bool spectrum_streaming_active_ = false;
     volatile int32_t last_valid_rssi_ = -120;
     volatile bool rssi_updated_ = false;
+
+    // NEW: Spectrum data buffer and synchronization
+    std::array<uint8_t, 256> last_spectrum_db_;
+    mutable Mutex spectrum_mutex_;
+    volatile bool spectrum_updated_ = false;
 
     MessageHandlerRegistration message_handler_spectrum_config_ {
         Message::ID::ChannelSpectrumConfig,
@@ -718,6 +756,7 @@ public:
     size_t get_safe_spectrum_index(size_t x, size_t y) const;
 
     void set_spectrum_range(Frequency min_freq, Frequency max_freq);
+    void update_signal_type_display(const std::string& signal_type);
 
     DroneDisplayController(const DroneDisplayController&) = delete;
     DroneDisplayController& operator=(const DroneDisplayController&) = delete;
@@ -740,6 +779,7 @@ private:
     Text text_drone_1_{{screen_width - 120, 134, 120, 16}, ""};
     Text text_drone_2_{{screen_width - 120, 150, 120, 16}, ""};
     Text text_drone_3_{{screen_width - 120, 166, 120, 16}, ""};
+    Text text_signal_type_{{screen_width - 80, 80, 80, 16}, "SIGNAL: --"};  // Debug: Signal type marker
 
     std::vector<DisplayDroneEntry> detected_drones_;
     std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES> displayed_drones_;
