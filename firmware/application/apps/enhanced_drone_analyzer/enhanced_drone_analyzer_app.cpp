@@ -23,4 +23,4 @@ void initialize_app(ui::NavigationView& nav) {
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
-// Удаляем extern "C" секцию так как это теперь внутреннее приложение
+// Remove extern "C" section as this is now an internal application

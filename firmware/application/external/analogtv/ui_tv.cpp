@@ -108,26 +108,26 @@ void TVView::set_x_correction(int32_t value) {
 
 
 void TVView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
-    add_line_to_buffer(spectrum, 0);    // Первая строка (сэмплы 0..127)
-    add_line_to_buffer(spectrum, 128);  // Вторая строка (сэмплы 128..255)
+    add_line_to_buffer(spectrum, 0);    // First line (samples 0..127)
+    add_line_to_buffer(spectrum, 128);  // Second line (samples 128..255)
     
-    // Проверяем, нужно ли рендерить
+    // Check if we need to render
     if (buffer_line_count >= RENDER_THRESHOLD) {
         render_buffer_batch();
     }
 }
 
 void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx) {
-    // Проверка переполнения буфера
+    // Check buffer overflow
     if (buffer_line_count >= LINE_BUFFER_SIZE) {
         process_buffer_overflow();
         return;
     }
 
-    // Генерируем строку из TV_LINE_WIDTH пикселей (оптимизированная ширина)
+    // Generate line of TV_LINE_WIDTH pixels (optimized width)
     for (int i = 0; i < TV_LINE_WIDTH; i++) {
         int source_idx = offset_idx + i + x_correction_;
-        // Оптимизированная проверка границ
+        // Optimized boundary check
         if (source_idx < 0) source_idx = 0;
         else if (source_idx > 255) source_idx = 255;
 
@@ -141,28 +141,28 @@ void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx)
 void TVView::render_buffer_batch() {
     const auto rect = screen_rect();
 
-    // Проверяем, не выйдем ли за пределы экрана
+    // Check if we'll go beyond screen boundaries
     if (scan_line + buffer_line_count >= rect.height()) {
         scan_line = 0;
     }
 
-    // Рендерим все строки из буфера (оптимизированная ширина)
+    // Render all lines from buffer (optimized width)
     for (int i = 0; i < buffer_line_count; i++) {
         display.render_line({rect.left(), rect.top() + scan_line + i},
                            TV_LINE_WIDTH, line_buffer_[i].data());
     }
 
-    // Обновляем позицию сканирования
+    // Update scan position
     scan_line += buffer_line_count;
     
-    // Очищаем буфер
+    // Clear buffer
     buffer_line_count = 0;
 }
 
 void TVView::process_buffer_overflow() {
-    // При переполнении буфера - рендерим текущий буфер и начинаем с новой позиции
+    // On buffer overflow - render current buffer and start from new position
     render_buffer_batch();
-    // Сброс позиции сканирования для избежания артефактов
+    // Reset scan position to avoid artifacts
     scan_line = 0;
 }
 

@@ -24,7 +24,7 @@
 namespace ui::external_app::analogtv {
 
 TVSignalDetector::TVSignalDetector() {
-    // Конструктор
+    // Constructor
 }
 
 TVSignalDetector::DetectionResult TVSignalDetector::detect_tv_signal(
@@ -42,12 +42,12 @@ TVSignalDetector::DetectionResult TVSignalDetector::detect_tv_signal(
     }
     result.signal_strength = max_db;
     
-    // Проверка уровня сигнала
+    // Check signal level
     if (!check_signal_strength(spectrum)) {
         return result;
     }
     
-    // Поиск несущих
+    // Find carriers
     int video_offset = 0;
     int audio_offset = 0;
     
@@ -55,17 +55,17 @@ TVSignalDetector::DetectionResult TVSignalDetector::detect_tv_signal(
         return result;
     }
     
-    // Проверка расстояния между несущими
+    // Validate carrier spacing
     if (!validate_carrier_spacing(video_offset, audio_offset)) {
         return result;
     }
     
-    // Проверка формы спектра
+    // Check spectrum shape
     if (!check_spectrum_shape(spectrum)) {
         return result;
     }
     
-    // Определение типа модуляции
+    // Determine modulation type
     result.modulation_type = determine_modulation_type(spectrum);
     result.video_carrier_offset = video_offset;
     result.audio_carrier_offset = audio_offset;
@@ -88,12 +88,12 @@ bool TVSignalDetector::check_signal_strength(const ChannelSpectrum& spectrum) {
     
     int avg_db = sum_db / 256;
     
-    // Проверка минимального уровня сигнала
+    // Check minimum signal level
     if (max_db < MIN_SIGNAL_DB) {
         return false;
     }
     
-    // Проверка разницы между максимумом и средним
+    // Check difference between max and average
     int signal_to_noise = max_db - avg_db;
     if (signal_to_noise < CARRIER_THRESHOLD) {
         return false;
@@ -104,13 +104,13 @@ bool TVSignalDetector::check_signal_strength(const ChannelSpectrum& spectrum) {
 
 bool TVSignalDetector::find_carriers(const ChannelSpectrum& spectrum, 
                                    int& video_offset, int& audio_offset) {
-    // Поиск видео несущей в нижней части спектра
+    // Find video carrier in lower part of spectrum
     video_offset = find_peak_in_range(spectrum, 0, 64);
     if (video_offset == -1 || spectrum.db[video_offset] < MIN_CARRIER_DB) {
         return false;
     }
     
-    // Поиск аудио несущей в верхней части спектра
+    // Find audio carrier in upper part of spectrum
     audio_offset = find_peak_in_range(spectrum, 192, 256);
     if (audio_offset == -1 || spectrum.db[audio_offset] < MIN_CARRIER_DB) {
         return false;
@@ -126,8 +126,8 @@ bool TVSignalDetector::validate_carrier_spacing(int video_offset, int audio_offs
     
     int spacing = audio_offset - video_offset;
     
-    // Для PAL: ~176 сэмплов (4.5 МГц)
-    // Для NTSC: ~180 сэмплов (4.5 МГц)
+    // For PAL: ~176 samples (4.5 MHz)
+    // For NTSC: ~180 samples (4.5 MHz)
     if (spacing < 160 || spacing > 200) {
         return false;
     }
@@ -136,13 +136,13 @@ bool TVSignalDetector::validate_carrier_spacing(int video_offset, int audio_offs
 }
 
 bool TVSignalDetector::check_spectrum_shape(const ChannelSpectrum& spectrum) {
-    // Проверка ширины канала (должна быть около 6-8 МГц)
+    // Check channel width (should be around 6-8 MHz)
     int bandwidth = calculate_signal_bandwidth(spectrum);
     if (bandwidth < 180 || bandwidth > 240) {
         return false;
     }
     
-    // Проверка асимметрии TV сигнала
+    // Check TV signal asymmetry
     int left_power = 0;
     int right_power = 0;
     
@@ -151,7 +151,7 @@ bool TVSignalDetector::check_spectrum_shape(const ChannelSpectrum& spectrum) {
         right_power += spectrum.db[255 - i];
     }
     
-    // TV сигнал обычно асимметричный из-за AM видео и FM аудио
+    // TV signal is usually asymmetric due to AM video and FM audio
     int asymmetry = abs(left_power - right_power);
     if (asymmetry < 500) {
         return false;
@@ -161,18 +161,18 @@ bool TVSignalDetector::check_spectrum_shape(const ChannelSpectrum& spectrum) {
 }
 
 std::string TVSignalDetector::determine_modulation_type(const ChannelSpectrum& spectrum) {
-    // Простое определение по положению несущих
+    // Simple determination by carrier positions
     int video_offset = find_peak_in_range(spectrum, 0, 64);
     int audio_offset = find_peak_in_range(spectrum, 192, 256);
     
     if (video_offset != -1 && audio_offset != -1) {
         int spacing = audio_offset - video_offset;
         
-        // PAL: видео несущая ближе к краю канала
+        // PAL: video carrier is closer to channel edge
         if (video_offset < 30 && spacing > 170) {
             return "PAL";
         }
-        // NTSC: видео несущая немного дальше от края
+        // NTSC: video carrier is slightly farther from edge
         else if (video_offset > 15 && video_offset < 40 && spacing > 170) {
             return "NTSC";
         }
@@ -200,7 +200,7 @@ int TVSignalDetector::calculate_signal_bandwidth(const ChannelSpectrum& spectrum
     int first_edge = -1;
     int last_edge = -1;
     
-    // Найти левый край сигнала
+    // Find left edge of signal
     for (int i = 0; i < 256; i++) {
         if (spectrum.db[i] > MIN_SIGNAL_DB) {
             first_edge = i;
@@ -208,7 +208,7 @@ int TVSignalDetector::calculate_signal_bandwidth(const ChannelSpectrum& spectrum
         }
     }
     
-    // Найти правый край сигнала
+    // Find right edge of signal
     for (int i = 255; i >= 0; i--) {
         if (spectrum.db[i] > MIN_SIGNAL_DB) {
             last_edge = i;

@@ -102,7 +102,7 @@ DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t 
     // 1. Low Frequency Long Range (868/915 MHz)
     if ((freq_hz >= 860000000ULL && freq_hz <= 870000000ULL) || 
         (freq_hz >= 900000000ULL && freq_hz <= 930000000ULL)) {
-        return DroneType::MILITARY_DRONE; // Или DIY_DRONE, часто используется в "серьезных" самосборах
+        return DroneType::MILITARY_DRONE; // Or DIY_DRONE, often used in "serious" custom builds
     }
     
     // 2. Стандартный 433 MHz
@@ -112,9 +112,9 @@ DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t 
 
     // 3. 2.4 GHz Band
     if (freq_hz >= 2400000000ULL && freq_hz <= 2483500000ULL) {
-        // Здесь сложнее всего, так как это и WiFi.
-        // Эвристика: DJI дроны часто имеют очень мощный сигнал по сравнению с фоновым WiFi
-        if (rssi_db > -50) return DroneType::MAVIC; // Очень близко/мощно
+        // Here it's more complex, as this is also WiFi.
+        // Heuristic: DJI drones often have a very strong signal compared to background WiFi
+        if (rssi_db > -50) return DroneType::MAVIC; // Very close/powerful
         return DroneType::PARROT_ANAFI; // Generic WiFi drone
     }
 
@@ -257,7 +257,7 @@ bool load_settings_from_sd_card(ui::apps::enhanced_drone_analyzer::DroneAnalyzer
 // Built-in database of known drone frequencies (2025)
 const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB = {
     // --- LRS / Control (Long Range) ---
-    { 868000000, "TBS Crossfire EU", DroneType::MILITARY_DRONE }, // Часто используется в FPV/DIY
+    { 868000000, "TBS Crossfire EU", DroneType::MILITARY_DRONE }, // Often used in FPV/DIY
     { 915000000, "TBS Crossfire US", DroneType::MILITARY_DRONE },
     { 866000000, "ELRS 868", DroneType::PX4_DRONE },
     { 915000000, "ELRS 915", DroneType::PX4_DRONE },
@@ -267,7 +267,7 @@ const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB
     { 434790000, "LRS 433 Ch2", DroneType::UNKNOWN },
 
     // --- DJI OcuSync / Lightbridge (2.4 GHz) ---
-    // Основные несущие частоты DJI
+    // Main DJI carrier frequencies
     { 2406500000, "DJI OcuSync 1", DroneType::MAVIC },
     { 2411500000, "DJI OcuSync 2", DroneType::MAVIC },
     { 2416500000, "DJI OcuSync 3", DroneType::MAVIC },
@@ -276,10 +276,10 @@ const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB
     { 2431500000, "DJI OcuSync 6", DroneType::MAVIC },
     { 2436500000, "DJI OcuSync 7", DroneType::MAVIC },
     { 2441500000, "DJI OcuSync 8", DroneType::MAVIC },
-    // ... DJI часто прыгает по всему диапазону, но эти - опорные
+    // ... DJI often jumps across the entire range, but these are reference points
 
     // --- FPV Video (5.8 GHz Analog/Digital) ---
-    // RaceBand (Самая популярная сетка)
+    // RaceBand (Most popular grid)
     { 5658000000, "RaceBand 1", DroneType::UNKNOWN },
     { 5695000000, "RaceBand 2", DroneType::UNKNOWN },
     { 5732000000, "RaceBand 3", DroneType::UNKNOWN },
@@ -733,9 +733,9 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 }
 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
-    // ИСПРАВЛЕНИЕ 4: Улучшение валидации RSSI и частот
+    // FIX 4: Improved RSSI and frequency validation
     // 1. Preliminary filtering (no locks required)
-    const int32_t MIN_VALID_RSSI = -120;  // Расширяем диапазон для слабых сигналов
+    const int32_t MIN_VALID_RSSI = -120;  // Extended range for weak signals
     const int32_t MAX_VALID_RSSI = 10;
 
     // FIX: Fixed RSSI validation logic
@@ -746,13 +746,13 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
-    // Добавляем адаптивный порог в зависимости от текущего уровня шума
+    // Add adaptive threshold based on current noise level
     int32_t adaptive_threshold = -90;
     if (rssi > -100 && rssi < -80) {
-        // Для слабых сигналов используем более низкий порог
+        // For weak signals, use a lower threshold
         adaptive_threshold = -100;
     } else if (rssi > -80) {
-        // Для сильных сигналов используем стандартный порог
+        // For strong signals, use standard threshold
         adaptive_threshold = -90;
     }
 
@@ -760,12 +760,12 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
-    // Улучшенная валидация частоты с учетом диапазонов дронов
+    // Enhanced frequency validation considering drone ranges
     if (!SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
         return;
     }
 
-    // Ограничиваем частоты для дронов (433MHz - 5.8GHz)
+    // Limit frequencies for drones (433MHz - 5.8GHz)
     const Frequency MIN_DRONE_FREQ = 433000000ULL;
     const Frequency MAX_DRONE_FREQ = 5800000000ULL;
     if (static_cast<uint64_t>(entry.frequency_a) < MIN_DRONE_FREQ || 
@@ -787,7 +787,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         }
     }
 
-    // Используем адаптивный порог
+    // Use adaptive threshold
     if (rssi < adaptive_threshold) {
         return;
     }
@@ -1323,18 +1323,18 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 }
 
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
-    // ИСПРАВЛЕНИЕ 5: Добавлена валидация частот
-    // Валидация диапазона
+    // FIX 5: Added frequency validation
+    // Range validation
     const Frequency MIN_FREQ = 50000000ULL;      // 50 MHz
     const Frequency MAX_FREQ = 6000000000ULL;    // 6 GHz
     
     if (frequency_hz < MIN_FREQ || frequency_hz > MAX_FREQ) {
-        return false;  // <-- Возвращаем false при ошибке
+        return false;  // <-- Return false on error
     }
     
-    // Проверка на переполнение
+    // Overflow check
     if (frequency_hz + 1000000ULL < frequency_hz) {
-        return false;  // <-- Защита от overflow
+        return false;  // <-- Protection against overflow
     }
     
     receiver_model.set_target_frequency(frequency_hz);
@@ -1774,7 +1774,7 @@ void ConsoleStatusBar::paint(Painter& painter) {
 }
 
 DroneDisplayController::~DroneDisplayController() {
-    // ШАГ 2.2: ИСПРАВЛЕНИЕ MEMORY LEAKS MessageHandler'ов
+    // STEP 2.2: FIX MEMORY LEAKS MessageHandler's
     // These handlers are now stack-allocated and will be automatically destroyed
     // No manual cleanup needed for stack-allocated objects
 }
@@ -1799,8 +1799,8 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
       marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
       spectrum_config_()
 {
-    // FIX: Резервируем память заранее.
-    // MAX_TRACKED_DRONES обычно около 8-10, +2 про запас.
+    // FIX: Reserve memory in advance.
+    // MAX_TRACKED_DRONES is usually around 8-10, +2 as reserve.
     detected_drones_.reserve(MAX_TRACKED_DRONES + 2);
 
     for (auto& drone : displayed_drones_) {
@@ -1815,7 +1815,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     // --- REMOVED: Stack allocation now handled in header ---
     // MessageHandlerRegistration objects are now initialized in-class (C++11 feature)
 
-    // КРИТИЧНО: Добавляем ВСЕ виджеты в иерархию View
+    // CRITICAL: Add ALL widgets to View hierarchy
     add_children({
         &big_display_,
         &scanning_progress_,
@@ -2441,8 +2441,8 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 }
 
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
-    // ШАГ 2.1: ИСПРАВЛЕНИЕ ПОРЯДКА УНИЧТОЖЕНИЯ
-    // 1. Останавливаем активность (в порядке зависимости)
+    // STEP 2.1: FIX DESTRUCTION ORDER
+    // 1. Stop activity (in dependency order)
     if (scanning_coordinator_) {
         scanning_coordinator_->stop_coordinated_scanning();
     }
@@ -2453,7 +2453,7 @@ EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
         hardware_->shutdown_hardware();
     }
     
-    // 2. Удаляем High-Level Logic (зависит от Low-Level)
+    // 2. Delete High-Level Logic (depends on Low-Level)
     if (ui_controller_) {
         delete ui_controller_;
         ui_controller_ = nullptr;
@@ -2463,7 +2463,7 @@ EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
         scanning_coordinator_ = nullptr;
     }
     
-    // 3. Удаляем Low-Level Logic
+    // 3. Delete Low-Level Logic
     if (scanner_) {
         delete scanner_;
         scanner_ = nullptr;
@@ -2473,7 +2473,7 @@ EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
         hardware_ = nullptr;
     }
     
-    // 4. Удаляем UI компоненты
+    // 4. Delete UI components
     if (display_controller_) {
         delete display_controller_;
         display_controller_ = nullptr;
@@ -2493,7 +2493,7 @@ EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
         }
     }
     
-    // 5. MessageHandler'ы are now stack-allocated and will be automatically destroyed
+    // 5. MessageHandler's are now stack-allocated and will be automatically destroyed
     // No manual cleanup needed for stack-allocated objects
 }
 
@@ -2528,8 +2528,8 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
-    // ИСПРАВЛЕНИЕ 5: Явная остановка всех процессов
-    stop_scanning_thread(); // Остановка потока координатора
+    // FIX 5: Explicit stop of all processes
+    stop_scanning_thread(); // Stop coordinator thread
 
     if (scanner_) {
         scanner_->stop_scanning();

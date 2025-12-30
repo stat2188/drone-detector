@@ -125,8 +125,8 @@ inline Language Translator::current_language_ = Language::ENGLISH;
 
 inline const char* Translator::get_translation(const std::string& key) {
     if (current_language_ == Language::RUSSIAN) {
-        if (key == "save_settings") return "Сохранить";
-        if (key == "audio_settings") return "Аудио";
+        if (key == "save_settings") return "Save Settings";
+        if (key == "audio_settings") return "Audio";
     }
     return key.c_str();
 }

@@ -46,9 +46,9 @@ namespace ScannerSettingsManager {
         while (std::getline(iss, line)) {
             auto trimmed_line = trim_line(line);
             if (trimmed_line.empty() || trimmed_line[0] == '#') continue;
-            char line_buffer[256];
-            strncpy(line_buffer, trimmed_line.c_str(), sizeof(line_buffer) - 1);
-            line_buffer[sizeof(line_buffer) - 1] = 0; // Гарантируем null-terminator
+        char line_buffer[256];
+        strncpy(line_buffer, trimmed_line.c_str(), sizeof(line_buffer) - 1);
+        line_buffer[sizeof(line_buffer) - 1] = 0; // Ensure null-terminator
             if (parse_key_value(settings, line_buffer)) parsed_count++;
         }
         return parsed_count > 3;
@@ -67,10 +67,10 @@ namespace ScannerSettingsManager {
             return true;
         }
         else if (strcmp(key, "scan_interval_ms") == 0) {
-            // ИСПРАВЛЕНИЕ: Используем общую константу MAX_SCAN_INTERVAL_MS (10000)
-            settings.scan_interval_ms = validate_range<uint32_t>(
-                static_cast<uint32_t>(strtoul(value, nullptr, 10)),
-                MIN_SCAN_INTERVAL_MS, MAX_SCAN_INTERVAL_MS);
+        // FIX: Use common constant MAX_SCAN_INTERVAL_MS (10000)
+        settings.scan_interval_ms = validate_range<uint32_t>(
+            static_cast<uint32_t>(strtoul(value, nullptr, 10)),
+            MIN_SCAN_INTERVAL_MS, MAX_SCAN_INTERVAL_MS);
             return true;
         }
         else if (strcmp(key, "rssi_threshold_db") == 0) {
@@ -98,11 +98,11 @@ namespace ScannerSettingsManager {
         }
         else if (strcmp(key, "enable_real_hardware") == 0) {
             settings.enable_real_hardware = (strcmp(value, "true") == 0);
-            settings.demo_mode = !settings.enable_real_hardware; // Синхронизация флагов
+            settings.demo_mode = !settings.enable_real_hardware; // Synchronize flags
             return true;
         }
         else if (strcmp(key, "freqman_path") == 0) {
-            settings.freqman_path = value; // Присвоение char* в std::string работает автоматически
+            settings.freqman_path = value; // Assignment from char* to std::string works automatically
             return true;
         }
         // -------------------

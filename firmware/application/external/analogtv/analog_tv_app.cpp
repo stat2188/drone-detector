@@ -82,14 +82,14 @@ AnalogTvView::AnalogTvView(
         field_frequency.set_value(receiver_model.target_frequency() + offset);
     };
 
-    // Подключаем callback для детекции TV сигнала
+    // Connect callback for TV signal detection
     tv.on_tv_signal_detected = [this](const TVSignalDetector::DetectionResult& result) {
         if (is_scanning) {
             add_found_channel(result);
         }
     };
 
-    // Настройка кнопок сканирования
+    // Setup scanning buttons
     button_scan_start.on_select = [this](Button&) {
         start_scan();
     };
@@ -105,7 +105,7 @@ AnalogTvView::AnalogTvView(
         text_scan_status.set("Status: Manual");
     };
     
-    // Настройка полей для параметров сканирования
+    // Setup fields for scanning parameters
     field_scan_start.on_change = [this](int32_t v) {
         scan_params.start_freq = v;
     };
@@ -256,10 +256,10 @@ void AnalogTvView::on_frequency_changed(rf::Frequency f) {
     receiver_model.set_target_frequency(f);
 }
 
-// Обработка управления стиками
+// Handle stick controls
 void AnalogTvView::on_left() {
     if (!is_scanning && !found_channels.empty()) {
-        // Переключение на предыдущий канал
+        // Switch to previous channel
         if (current_channel_index > 0) {
             current_channel_index--;
             switch_to_channel(current_channel_index);
@@ -269,7 +269,7 @@ void AnalogTvView::on_left() {
 
 void AnalogTvView::on_right() {
     if (!is_scanning && !found_channels.empty()) {
-        // Переключение на следующий канал
+        // Switch to next channel
         if (current_channel_index < found_channels.size() - 1) {
             current_channel_index++;
             switch_to_channel(current_channel_index);
@@ -277,7 +277,7 @@ void AnalogTvView::on_right() {
     }
 }
 
-// Реализация методов сканирования
+// Implementation of scanning methods
 void AnalogTvView::start_scan() {
     if (is_scanning) return;
     
@@ -286,12 +286,12 @@ void AnalogTvView::start_scan() {
     found_channels.clear();
     current_scan_freq = scan_params.start_freq;
     
-    // Обновляем UI
+    // Update UI
     text_scan_status.set("Status: Scanning...");
     text_found_channels.set("Channels: 0");
     text_progress.set("Progress: 0%");
     
-    // Запускаем асинхронное сканирование
+    // Start asynchronous scanning
     chThdCreateFromHeap(nullptr, 2048, NORMALPRIO + 10, 
                        [](void* arg) -> msg_t {
                            auto self = static_cast<AnalogTvView*>(arg);
@@ -310,13 +310,13 @@ msg_t AnalogTvView::scan_worker_thread() {
             text_scan_status.set("Status: Scanning...");
         }
         
-        // Устанавливаем частоту
+        // Set frequency
         receiver_model.set_target_frequency(current_scan_freq);
         
-        // Ждем стабилизации сигнала
+        // Wait for signal stabilization
         chThdSleepMilliseconds(scan_params.scan_timeout_ms);
         
-        // Обновляем прогресс
+        // Update progress
         update_scan_progress();
         
         current_scan_freq += scan_params.step;
@@ -362,17 +362,17 @@ void AnalogTvView::add_found_channel(const TVSignalDetector::DetectionResult& re
     channel.modulation_type = result.modulation_type;
     channel.is_valid = result.is_tv_signal;
     
-    // Генерируем имя канала
+    // Generate channel name
     channel.name = "TV_" + to_string_short_freq(result.frequency);
     
     found_channels.push_back(channel);
     
-    // Обновляем UI
+    // Update UI
     text_found_channels.set("Channels: " + std::to_string(found_channels.size()));
     text_current_channel.set("Current: " + channel.name + 
                            " (" + to_string_short_freq(channel.frequency) + ")");
     
-    // Сохраняем канал автоматически
+    // Save channel automatically
     save_found_channels();
 }
 
@@ -382,7 +382,7 @@ void AnalogTvView::switch_to_channel(size_t index) {
     auto& channel = found_channels[index];
     current_channel_index = index;
     
-    // Устанавливаем частоту
+    // Set frequency
     receiver_model.set_target_frequency(channel.frequency);
     field_frequency.set_value(channel.frequency);
     
@@ -394,18 +394,18 @@ void AnalogTvView::switch_to_channel(size_t index) {
 void AnalogTvView::save_found_channels() {
     if (found_channels.empty()) return;
     
-    // Создаем файл для сохранения найденных каналов
+    // Create file to save found channels
     std::string filename = "TV_CHANNELS.txt";
     
     File file;
     auto error = file.create(filename);
     if (error) return;
     
-    // Записываем заголовок
+    // Write header
     std::string header = "Found TV Channels\n==================\n\n";
     file.write(header.c_str(), header.length());
     
-    // Записываем каждый канал
+    // Write each channel
     for (const auto& channel : found_channels) {
         std::string line = to_string_short_freq(channel.frequency) + " MHz | " +
                           channel.modulation_type + " | " +
@@ -417,15 +417,15 @@ void AnalogTvView::save_found_channels() {
 }
 
 void AnalogTvView::load_scan_settings() {
-    // Загрузка настроек сканирования из persistent memory
-    // Используем стандартные значения по умолчанию
-    scan_params.start_freq = 100000000;  // 100 МГц
-    scan_params.end_freq = 800000000;    // 800 МГц
-    scan_params.step = 200000;           // 200 кГц
+    // Load scanning settings from persistent memory
+    // Use standard default values
+    scan_params.start_freq = 100000000;  // 100 MHz
+    scan_params.end_freq = 800000000;    // 800 MHz
+    scan_params.step = 200000;           // 200 kHz
     scan_params.min_signal_db = -60;     // -60 dB
-    scan_params.scan_timeout_ms = 500;   // 500 мс
+    scan_params.scan_timeout_ms = 500;   // 500 ms
     
-    // Обновляем UI поля
+    // Update UI fields
     field_scan_start.set_value(scan_params.start_freq);
     field_scan_end.set_value(scan_params.end_freq);
     field_scan_step.set_value(scan_params.step);
@@ -434,8 +434,8 @@ void AnalogTvView::load_scan_settings() {
 }
 
 void AnalogTvView::save_scan_settings() {
-    // Сохранение настроек сканирования (заглушка)
-    // В реальной реализации нужно добавить соответствующие функции в persistent_memory
+    // Save scanning settings (stub)
+    // In real implementation, need to add corresponding functions to persistent_memory
 }
 
 }  // namespace ui::external_app::analogtv

@@ -77,16 +77,16 @@ const char* Translator::get_english(const std::string& key) {
 }
 
 const char* Translator::get_russian(const std::string& key) {
-    if (key == "load_database") return "Загрузить БД";
-    if (key == "save_frequency") return "Сохранить частоту";
-    if (key == "advanced") return "Расширенные";
-    if (key == "constant_settings") return "Постоянные настройки";
-    if (key == "select_language") return "Выбрать язык";
-    if (key == "about_author") return "Об авторе";
-    if (key == "english") return "Английский";
-    if (key == "russian") return "Русский";
+    if (key == "load_database") return "Load Database";
+    if (key == "save_frequency") return "Save Frequency";
+    if (key == "advanced") return "Advanced";
+    if (key == "constant_settings") return "Constant Settings";
+    if (key == "select_language") return "Select Language";
+    if (key == "about_author") return "About Author";
+    if (key == "english") return "English";
+    if (key == "russian") return "Russian";
     if (key == "english_selected") return "Language updated to English";
-    if (key == "russian_selected") return "Язык изменен на русский";
+    if (key == "russian_selected") return "Language updated to Russian";
     return key.c_str();
 }
 

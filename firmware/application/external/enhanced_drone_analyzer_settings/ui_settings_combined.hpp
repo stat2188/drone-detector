@@ -152,13 +152,13 @@ struct DroneFrequencyEntry {
 
 using DroneFrequencyDatabase = std::vector<DroneFrequencyEntry>;
 
-// Структура одной записи
+// Structure of one entry
 struct DroneDbEntry {
     Frequency freq = 0;              // Init to 0
     std::string description = "";    // Init to empty string
 };
 
-// Класс менеджера БД
+// Database manager class
 class DroneDatabaseManager {
 public:
     static std::vector<DroneDbEntry> load_database(const std::string& file_path = "/FREQMAN/DRONES.TXT");

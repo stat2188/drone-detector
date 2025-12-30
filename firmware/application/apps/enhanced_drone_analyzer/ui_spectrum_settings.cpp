@@ -26,7 +26,7 @@ SpectrumPresetLoader::~SpectrumPresetLoader() {
 }
 
 void SpectrumPresetLoader::initialize_default_presets() {
-    // 1. Самый популярный: Mavic / WiFi
+    // 1. Most popular: Mavic / WiFi
     settings_.add_preset({
         2400000000ULL, 2483500000ULL,
         "2.4GHz Control/Video",
@@ -34,7 +34,7 @@ void SpectrumPresetLoader::initialize_default_presets() {
         ThreatLevel::HIGH
     });
 
-    // 2. FPV Аналог и Цифра (DJI FPV)
+    // 2. FPV Analog and Digital (DJI FPV)
     settings_.add_preset({
         5645000000ULL, 5945000000ULL,
         "5.8GHz FPV Band",
@@ -42,15 +42,15 @@ void SpectrumPresetLoader::initialize_default_presets() {
         ThreatLevel::MEDIUM
     });
 
-    // 3. Дальнобойные системы (TBS/ELRS)
+    // 3. Long Range Systems (TBS/ELRS)
     settings_.add_preset({
         860000000ULL, 930000000ULL,
         "868/915MHz LRS",
         SpectrumMode::WIDE,
-        ThreatLevel::CRITICAL // LRS часто означает дрон, летящий издалека
+        ThreatLevel::CRITICAL // LRS often means a drone flying from afar
     });
 
-    // 4. Старый диапазон
+    // 4. Old range
     settings_.add_preset({
         433000000ULL, 435000000ULL,
         "433MHz LRS",
@@ -58,7 +58,7 @@ void SpectrumPresetLoader::initialize_default_presets() {
         ThreatLevel::MEDIUM
     });
     
-    // 5. Видео 1.2 ГГц (для дальних полетов)
+    // 5. Video 1.2 GHz (for long range flights)
     settings_.add_preset({
         1080000000ULL, 1360000000ULL,
         "1.2GHz Long Range Video",
