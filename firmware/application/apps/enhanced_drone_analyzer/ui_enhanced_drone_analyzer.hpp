@@ -347,6 +347,9 @@ private:
     mutable Mutex mutex_;           // Защита кольцевого буфера
     Semaphore data_ready_;          // Сигнал "есть данные для записи" (C-API)
     volatile bool worker_should_run_ = false;
+    
+    // Вспомогательный буфер для форматирования строки (чтобы не аллоцировать в куче)
+    char line_buffer_[128];
 
     // --- INTERNAL METHODS ---
     static msg_t worker_thread_entry(void* arg);
@@ -354,9 +357,6 @@ private:
     bool write_entry_to_sd(const DetectionLogEntry& entry);
     bool ensure_csv_header();
     std::string generate_log_filename() const;
-    
-    // Вспомогательный буфер для форматирования строки (чтобы не аллоцировать в куче)
-    char line_buffer_[128]; 
 
     DroneDetectionLogger(const DroneDetectionLogger&) = delete;
     DroneDetectionLogger& operator=(const DroneDetectionLogger&) = delete;
@@ -683,8 +683,8 @@ public:
 private:
     size_t card_index_;
     Text card_text_ {{0, 2, screen_width, 20}, ""};
-    bool is_active_ = false;
     Rect parent_rect_;
+    bool is_active_ = false;
 
     // Cached previous values for Check-Before-Update optimization
     Frequency last_frequency_ = 0;

@@ -2819,6 +2819,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       scanning_coordinator_(nav, hardware_, scanner_, display_controller_, audio_),
       smart_header_(Rect{0, 0, screen_width, 60}),
       status_bar_(0, Rect{0, screen_height - 80, screen_width, 16}),
+      threat_cards_(),
       button_start_stop_({{screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"}),
       button_menu_({{screen_width - 80, screen_height - 40, 72, 32}, "MENU"}),
       button_audio_(),
