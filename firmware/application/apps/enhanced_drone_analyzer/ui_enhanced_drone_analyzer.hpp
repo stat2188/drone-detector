@@ -23,6 +23,7 @@
 #include "freqman_db.hpp"
 #include "log_file.hpp"
 #include <ch.h>
+#include <chtypes.h>
 
 #include "radio_state.hpp"
 #include "baseband_api.hpp"
@@ -209,12 +210,12 @@ struct WidebandScanData {
 
 struct DetectionLogEntry {
     uint32_t timestamp;
-    uint32_t frequency_hz;
+    uint64_t frequency_hz; // uint64_t для частот > 4ГГц
     int32_t rssi_db;
     ThreatLevel threat_level;
     DroneType drone_type;
     uint8_t detection_count;
-    float confidence_score;
+    uint8_t confidence_percent; // Используем 0-100% вместо float для экономии памяти и тактов
 };
 
 struct DroneDetectionMessage {
@@ -302,24 +303,56 @@ public:
     DroneDetectionLogger();
     ~DroneDetectionLogger();
 
+    // Producer method - called by scanner thread (non-blocking)
+    bool log_detection_async(const DetectionLogEntry& entry);
+    
+    // Consumer lifecycle methods
+    void start_worker();
+    void stop_worker();
+    
+    // Session management
     void start_session();
     void end_session();
-    bool log_detection(const DetectionLogEntry& entry);
-    std::string get_log_filename() const;
     bool is_session_active() const { return session_active_; }
+    
+    // Statistics for monitoring
+    uint32_t get_dropped_logs_count() const { return dropped_logs_; }
+    uint32_t get_logged_count() const { return logged_count_; }
 
+    std::string get_log_filename() const;
     std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
+    
 private:
+    // --- FILE I/O ---
     LogFile csv_log_;
     bool session_active_ = false;
     systime_t session_start_ = 0;
     uint32_t logged_count_ = 0;
+    uint32_t dropped_logs_ = 0;
     bool header_written_ = false;
-    char line_buffer_[128];
+    
+    // --- ASYNC BUFFERING ---
+    static constexpr size_t BUFFER_SIZE = 32; // Хватит на ~5-10 сек задержки SD карты
+    std::array<DetectionLogEntry, BUFFER_SIZE> ring_buffer_;
+    size_t head_ = 0; // Куда писать (Scanner)
+    size_t tail_ = 0; // Откуда читать (Worker)
+    bool is_full_ = false;
 
+    // --- THREADING PRIMITIVES ---
+    Thread* worker_thread_ = nullptr;
+    mutable Mutex mutex_;           // Защита кольцевого буфера
+    Semaphore data_ready_;          // Сигнал "есть данные для записи" (C-API)
+    volatile bool worker_should_run_ = false;
+
+    // --- INTERNAL METHODS ---
+    static msg_t worker_thread_entry(void* arg);
+    void worker_loop();
+    bool write_entry_to_sd(const DetectionLogEntry& entry);
     bool ensure_csv_header();
-    std::string format_csv_entry(const DetectionLogEntry& entry);
     std::string generate_log_filename() const;
+    
+    // Вспомогательный буфер для форматирования строки (чтобы не аллоцировать в куче)
+    char line_buffer_[128]; 
 
     DroneDetectionLogger(const DroneDetectionLogger&) = delete;
     DroneDetectionLogger& operator=(const DroneDetectionLogger&) = delete;
@@ -601,6 +634,7 @@ public:
     void clear_card();
     Color get_card_bg_color() const;
     Color get_card_text_color() const;
+    void set_parent_rect(const Rect& rect);
 
     ThreatCard(const ThreatCard&) = delete;
     ThreatCard& operator=(const ThreatCard&) = delete;

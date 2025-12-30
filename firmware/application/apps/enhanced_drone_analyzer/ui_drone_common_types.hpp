@@ -120,3 +120,15 @@ static constexpr uint16_t MIN_AUDIO_FREQ = 200;
 static constexpr uint16_t MAX_AUDIO_FREQ = 4000;
 static constexpr uint32_t MIN_AUDIO_DURATION = 50;
 static constexpr uint32_t MAX_AUDIO_DURATION = 5000;
+
+// DetectionLogEntry structure for asynchronous logging
+// This is a POD (Plain Old Data) structure for safe memory copying
+struct DetectionLogEntry {
+    uint32_t timestamp;
+    uint64_t frequency_hz; // uint64_t для частот > 4ГГц
+    int32_t rssi_db;
+    ThreatLevel threat_level;
+    DroneType drone_type;
+    uint8_t detection_count;
+    uint8_t confidence_percent; // Используем 0-100% вместо float для экономии памяти и тактов
+};

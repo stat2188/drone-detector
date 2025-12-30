@@ -694,12 +694,12 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
 
                 log_entry_to_write = {
                     chTimeNow(),
-                    static_cast<uint32_t>(entry.frequency_a),
+                    static_cast<uint64_t>(entry.frequency_a),
                     rssi,
                     threat_level,
                     detected_type,
                     current_count,
-                    0.6f
+                    85  // 85% confidence as integer
                 };
 
                 update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
@@ -720,7 +720,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
 
     // 3. Logging
     if (should_log && detection_logger_.is_session_active()) {
-        detection_logger_.log_detection(log_entry_to_write);
+        detection_logger_.log_detection_async(log_entry_to_write);
     }
 }
 
@@ -826,7 +826,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 log_entry_to_write.threat_level = threat_level;
                 log_entry_to_write.drone_type = detected_type;
                 log_entry_to_write.detection_count = current_count;
-                log_entry_to_write.confidence_score = 0.85f;
+                log_entry_to_write.confidence_percent = 85;
 
                 // Update drone tracking for UI (internal method that DOESN'T take mutex again)
                 update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
@@ -859,7 +859,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         if (now - last_log_time > 2000) { // 2 seconds in milliseconds
             if (detection_logger_.is_session_active()) {
                 // This write can block, but we limit frequency to protect scan timing
-                detection_logger_.log_detection(log_entry_to_write);
+                detection_logger_.log_detection_async(log_entry_to_write);
                 last_log_time = now;
             }
         }
@@ -1053,13 +1053,19 @@ uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
 
 // DroneDetectionLogger implementations
 DroneDetectionLogger::DroneDetectionLogger()
-    : csv_log_(), session_active_(false), session_start_(0), logged_count_(0), header_written_(false),
+    : csv_log_(), session_active_(false), session_start_(0), logged_count_(0), dropped_logs_(0), header_written_(false),
+      ring_buffer_(), head_(0), tail_(0), is_full_(false), worker_thread_(nullptr), mutex_(), worker_should_run_(false),
       line_buffer_() {
     memset(line_buffer_, 0, sizeof(line_buffer_));
+    
+    // Инициализация бинарного семафора (not taken = false)
+    chSemInit(&data_ready_, 0);
+    
     start_session();
 }
 
 DroneDetectionLogger::~DroneDetectionLogger() {
+    stop_worker();
     end_session();
 }
 
@@ -1068,6 +1074,7 @@ void DroneDetectionLogger::start_session() {
     session_active_ = true;
     session_start_ = chTimeNow();
     logged_count_ = 0;
+    dropped_logs_ = 0;
     header_written_ = false;
 }
 
@@ -1076,40 +1083,118 @@ void DroneDetectionLogger::end_session() {
     session_active_ = false;
 }
 
-bool DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
-    // Двойная проверка, так как session_active_ не атомарен,
-    // но в рамках одного потока сканера это допустимо.
-    if (!session_active_) return false;
+// Producer method - called by scanner thread (non-blocking)
+bool DroneDetectionLogger::log_detection_async(const DetectionLogEntry& entry) {
+    MutexLock lock(mutex_); // Блокировка на микросекунды
 
-    // Пытаемся записать заголовок
+    if (is_full_) {
+        // Буфер полон (SD карта зависла надолго).
+        // Стратегия: отбрасываем новые данные, сохраняем старые (или наоборот).
+        // Здесь: отбрасываем новые, чтобы не ждать освобождения.
+        dropped_logs_++;
+        return false; 
+    }
+
+    // Копируем данные в буфер
+    ring_buffer_[head_] = entry;
+    head_ = (head_ + 1) % BUFFER_SIZE;
+    
+    if (head_ == tail_) {
+        is_full_ = true;
+    }
+
+    // Сигнализируем рабочему потоку
+    chSemSignal(&data_ready_);
+    return true;
+}
+
+// Consumer lifecycle methods
+void DroneDetectionLogger::start_worker() {
+    if (worker_thread_) return;
+
+    worker_should_run_ = true;
+    // Создаем поток с НИЗКИМ приоритетом, чтобы не мешать UI и Радио
+    // NORMALPRIO - 1 или IDLEPRIO + 10
+    worker_thread_ = chThdCreateFromHeap(NULL, 2048, NORMALPRIO - 1, worker_thread_entry, this);
+    
+    start_session(); // Открываем файл/сессию
+}
+
+void DroneDetectionLogger::stop_worker() {
+    if (!worker_thread_) return;
+
+    worker_should_run_ = false;
+    chSemSignal(&data_ready_); // Будим поток, чтобы он вышел из wait
+    
+    chThdWait(worker_thread_); // Ждем завершения
+    worker_thread_ = nullptr;
+    
+    end_session(); // Закрываем файл
+}
+
+msg_t DroneDetectionLogger::worker_thread_entry(void* arg) {
+    static_cast<DroneDetectionLogger*>(arg)->worker_loop();
+    return 0;
+}
+
+void DroneDetectionLogger::worker_loop() {
+    while (worker_should_run_) {
+        // 1. Ждем данных (блокируемся, не потребляем CPU)
+        // Таймаут нужен, чтобы проверять флаг worker_should_run_ при остановке
+        chSemWaitTimeout(&data_ready_, MS2ST(1000));
+
+        if (!worker_should_run_) break;
+
+        // 2. Извлекаем данные (во временную переменную, чтобы быстро отпустить мьютекс)
+        DetectionLogEntry entry_to_write;
+        bool has_data = false;
+
+        {
+            MutexLock lock(mutex_);
+            if (head_ != tail_ || is_full_) {
+                entry_to_write = ring_buffer_[tail_];
+                tail_ = (tail_ + 1) % BUFFER_SIZE;
+                is_full_ = false; // Освободили место
+                has_data = true;
+            }
+        }
+        
+        // 3. Если есть данные - пишем на SD (БЕЗ МЬЮТЕКСА!)
+        // Это самая долгая операция
+        if (has_data) {
+            write_entry_to_sd(entry_to_write);
+            
+            // Проверяем, есть ли еще данные, чтобы не уходить в sleep сразу
+            // (оптимизация пакетной записи)
+            {
+                MutexLock lock(mutex_);
+                if (head_ != tail_ || is_full_) {
+                    chSemSignal(&data_ready_); // Сами себе сигналим, чтобы сразу обработать следующий
+                }
+            }
+        }
+    }
+}
+
+bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
     if (!ensure_csv_header()) return false;
 
-    // Используем уже существующий в классе line_buffer_ (он там есть, 192 байта)
-    // snprintf пишет сразу в char array, без создания std::string
+    // Форматирование
     int len = snprintf(line_buffer_, sizeof(line_buffer_),
-             "%lu,%lu,%ld,%u,%u,%u,%ld\n", // %f (float) тяжел для M4, лучше писать int * 100
-             static_cast<unsigned long>(entry.timestamp),
-             static_cast<unsigned long>(entry.frequency_hz),
-             (long int)entry.rssi_db,
-             static_cast<uint8_t>(entry.threat_level),
-             static_cast<uint8_t>(entry.drone_type),
+             "%lu,%llu,%ld,%u,%u,%u,%u\n",
+             entry.timestamp,
+             entry.frequency_hz,
+             entry.rssi_db,
+             (uint8_t)entry.threat_level,
+             (uint8_t)entry.drone_type,
              entry.detection_count,
-             (long int)(entry.confidence_score * 100)); // Трюк с float
+             entry.confidence_percent);
 
-    // Проверка на ошибку форматирования
     if (len <= 0) return false;
 
-    auto error = csv_log_.append(generate_log_filename());
-    if (error && !error->ok()) return false;
-
-    // Пишем raw buffer. API Mayhem принимает void* и size
-    // Внимание: метод write_raw в Mayhem обычно принимает строку или буфер.
-    // Если он принимает std::string, придется сделать write_raw(std::string(line_buffer_, len)),
-    // но лучше использовать write(data, len) если доступно.
-
-    // Предполагая стандартный API LogFile в Mayhem:
-    error = csv_log_.write_raw(std::string(line_buffer_, len));
-
+    // Блокирующая запись
+    auto error = csv_log_.write_raw(std::string(line_buffer_, len));
+    
     if (error && error->ok()) {
         logged_count_++;
         return true;
@@ -1119,7 +1204,7 @@ bool DroneDetectionLogger::log_detection(const DetectionLogEntry& entry) {
 
 bool DroneDetectionLogger::ensure_csv_header() {
     if (header_written_) return true;
-    const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence\n";
+    const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence_percent\n";
     auto error = csv_log_.append(generate_log_filename());
     if (error && !error->ok()) return false;
     error = csv_log_.write_raw(header);
@@ -1128,24 +1213,6 @@ bool DroneDetectionLogger::ensure_csv_header() {
         return true;
     }
     return false;
-}
-
-std::string DroneDetectionLogger::format_csv_entry(const DetectionLogEntry& entry) {
-    // Use member buffer to avoid stack allocation in deep call chains
-    int ret = snprintf(line_buffer_, sizeof(line_buffer_),
-             "%lu,%lu,%ld,%u,%u,%u,%ld\n",
-             static_cast<unsigned long>(entry.timestamp), static_cast<unsigned long>(entry.frequency_hz),
-             (long int)entry.rssi_db,
-             static_cast<uint8_t>(entry.threat_level),
-             static_cast<uint8_t>(entry.drone_type),
-             entry.detection_count, (long int)(entry.confidence_score * 100));
-
-    // Ensure null termination if snprintf didn't have enough space
-    if (ret >= static_cast<int>(sizeof(line_buffer_))) {
-        line_buffer_[sizeof(line_buffer_) - 1] = '\0';
-    }
-
-    return std::string(line_buffer_);
 }
 
 std::string DroneDetectionLogger::generate_log_filename() const {
@@ -1623,14 +1690,14 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
 
     uint32_t mhz = frequency_ / 1000000;
     
-    // OPTIMIZATION: Use integer arithmetic for frequency, avoid float/double libraries
-    // snprintf is still used here but only when data changes
-    // OPTIMIZATION: Simplified format string to reduce buffer usage
-    snprintf(buffer, sizeof(buffer), "%-7.7s %c %4luM %3ld",
-            threat_name_.c_str(), 
-            trend_char,
-            (unsigned long)mhz,
-            (long int)rssi_);
+    // OPTIMIZATION: Use Mayhem's lightweight string utilities instead of snprintf
+    // Use integer arithmetic and string concatenation for better performance
+    std::string mhz_str = to_string_dec_uint(mhz, 4);
+    std::string rssi_str = to_string_dec_int(rssi_, 3);
+    std::string trend_str(1, trend_char);
+    
+    // Build string using concatenation instead of snprintf
+    current_text_ = threat_name_ + " " + trend_str + " " + mhz_str + "M " + rssi_str;
 
     // CRITICAL FIX: Compare with current buffer to avoid redundant string allocation
     if (current_text_ != buffer) {
@@ -1679,6 +1746,12 @@ void ThreatCard::paint(Painter& painter) {
         Color bg_color = get_card_bg_color();
         painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect().width(), 2}, bg_color);
     }
+}
+
+void ThreatCard::set_parent_rect(const Rect& rect) {
+    parent_rect_ = rect;
+    View::set_parent_rect(rect);
+    set_dirty();
 }
 
 ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
@@ -2417,6 +2490,12 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 
     // Update coordinator parameters
     scanning_coordinator_.update_runtime_parameters(settings_);
+
+    // Initialize threat cards with proper positions
+    for (size_t i = 0; i < threat_cards_.size(); ++i) {
+        size_t card_y_pos = 60 + i * 26;
+        threat_cards_[i].set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
+    }
 
     initialize_modern_layout();
     setup_button_handlers();
