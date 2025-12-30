@@ -847,20 +847,23 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     // --- CRITICAL SECTION END ---
     // Mutex released. UI can redraw.
 
-    // 3. Perform heavy I/O operations
+        // 3. Perform heavy I/O operations
     // CRITICAL FIX: Async logging to prevent blocking scan thread
     // Original code blocked scan thread for 10-100ms during SD write
     if (should_log) {
-        // Only log every 2 seconds to prevent I/O blocking
+        // Only log every 200ms to prevent I/O blocking while maintaining responsiveness
+        // Async logging means IO is no longer the bottleneck, so we can log more frequently
         static systime_t last_log_time;
         systime_t now = chTimeNow();
         
         // Use chTimeNow() directly for timing - no CH_CFG_ST_FREQUENCY dependency
-        if (now - last_log_time > 2000) { // 2 seconds in milliseconds
+        if (now - last_log_time > 200) { // 200ms delay (10x more frequent than before)
             if (detection_logger_.is_session_active()) {
-                // This write can block, but we limit frequency to protect scan timing
-                detection_logger_.log_detection_async(log_entry_to_write);
-                last_log_time = now;
+                // log_detection_async returns false if buffer is full, 
+                // so built-in protection against hanging is already inside the logger.
+                if (detection_logger_.log_detection_async(log_entry_to_write)) {
+                    last_log_time = now;
+                }
             }
         }
     }
@@ -1179,21 +1182,29 @@ void DroneDetectionLogger::worker_loop() {
 bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
     if (!ensure_csv_header()) return false;
 
-    // Форматирование
-    int len = snprintf(line_buffer_, sizeof(line_buffer_),
-             "%lu,%llu,%ld,%u,%u,%u,%u\n",
-             entry.timestamp,
-             entry.frequency_hz,
-             entry.rssi_db,
-             (uint8_t)entry.threat_level,
-             (uint8_t)entry.drone_type,
-             entry.detection_count,
-             entry.confidence_percent);
-
-    if (len <= 0) return false;
+    // OPTIMIZATION: Use Mayhem's lightweight string utilities instead of heavy snprintf
+    // This is faster and uses less memory than snprintf with %llu format
+    std::string line;
+    line.reserve(64); // Reserve space to avoid multiple allocations
+    
+    // Build CSV line using string concatenation
+    line += to_string_dec_uint(entry.timestamp);
+    line += ",";
+    line += to_string_dec_uint(entry.frequency_hz);
+    line += ",";
+    line += to_string_dec_int(entry.rssi_db);
+    line += ",";
+    line += to_string_dec_uint(static_cast<uint8_t>(entry.threat_level));
+    line += ",";
+    line += to_string_dec_uint(static_cast<uint8_t>(entry.drone_type));
+    line += ",";
+    line += to_string_dec_uint(entry.detection_count);
+    line += ",";
+    line += to_string_dec_uint(entry.confidence_percent);
+    line += "\n";
 
     // Блокирующая запись
-    auto error = csv_log_.write_raw(std::string(line_buffer_, len));
+    auto error = csv_log_.write_raw(line);
     
     if (error && error->ok()) {
         logged_count_++;
