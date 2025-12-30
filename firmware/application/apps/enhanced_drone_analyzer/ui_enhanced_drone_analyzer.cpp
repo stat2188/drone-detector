@@ -25,12 +25,12 @@ using namespace tonekey;
 #include <ch.h>
 #include <chmsg.h>
 
+namespace ui::apps::enhanced_drone_analyzer {
+
 const TrackedDrone& get_empty_drone() {
     static const TrackedDrone empty{};
     return empty;
 }
-
-namespace ui::apps::enhanced_drone_analyzer {
 
 // SimpleDroneValidation implementations
 bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
