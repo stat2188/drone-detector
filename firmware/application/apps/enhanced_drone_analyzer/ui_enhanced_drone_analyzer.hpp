@@ -6,20 +6,14 @@
 #include <vector>
 #include <array>
 #include <atomic>
+#include <memory>
 
 #include "ui_drone_common_types.hpp"
 #include "ui_signal_processing.hpp"
 #include "scanner_settings.hpp"
 #include "scanning_coordinator.hpp"
-enum class SpectrumMode;
-
 #include "gradient.hpp"
-#include <memory>
-
 #include "ui_drone_audio.hpp"
-#include "scanning_coordinator.hpp"
-
-class AudioManager;
 
 #include "ui.hpp"
 #include "../event_m0.hpp"
@@ -46,17 +40,21 @@ class LogFile;
 
 using Frequency = uint64_t;
 
-struct preset_entry {
-    Frequency min = 0;
-    Frequency max = 0;
-    std::string label;
-};
-
+// Enum for scanner modes
 enum class ScannerMode {
     DATABASE_ONLY,
     WIDEBAND_ONLY,
     HYBRID,
     SPECTRUM_VIEW
+};
+
+// Application specific namespace starts here to ensure all classes are properly scoped
+namespace ui::apps::enhanced_drone_analyzer {
+
+struct preset_entry {
+    Frequency min = 0;
+    Frequency max = 0;
+    std::string label;
 };
 
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
@@ -70,8 +68,6 @@ namespace UIStyles {
     static constexpr Style DARK_STYLE{font::fixed_8x16, Color::black(), Color::dark_grey()};
     static constexpr Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color(255, 165, 0)};
 }
-
-
 
 class TrackedDrone {
 public:
@@ -90,7 +86,6 @@ public:
             update_count = other.update_count;
             last_seen = other.last_seen;
             rssi = other.rssi;
-            // Copy arrays manually or via std::copy
             for(size_t i=0; i<MAX_HISTORY; i++) {
                 rssi_history_[i] = other.rssi_history_[i];
                 timestamp_history_[i] = other.timestamp_history_[i];
@@ -107,34 +102,22 @@ public:
 
         this->rssi = new_rssi;
 
-        // Update last_seen only if this is actually a new event
         if (timestamp > last_seen) {
             last_seen = timestamp;
-            // Overflow protection for update_count is not necessary for uint8, but logical
             if (update_count < 255) update_count++;
         }
     }
 
     MovementTrend get_trend() const {
-        // Need at least 4 measurements for adequate trend
         if (update_count < 4) return MovementTrend::UNKNOWN;
 
         int32_t recent_sum = 0;
         int32_t older_sum = 0;
         size_t half_window = MAX_HISTORY / 2;
 
-        // Go through buffer in chronological order
-        // i=0 - oldest, i=MAX-1 - newest
         for (size_t i = 0; i < MAX_HISTORY; i++) {
-            // Calculate physical index in ring buffer
-            // (history_index_ points to NEXT write position,
-            // so history_index_ - 1 is the most recent).
-            // Formula for getting index from oldest to newest:
             size_t logical_idx = (history_index_ + i) % MAX_HISTORY;
-
             int16_t val = rssi_history_[logical_idx];
-
-            // Ignore "empty" initialization values if buffer is not yet full
             if (val <= -110) continue;
 
             if (i < half_window) {
@@ -144,17 +127,12 @@ public:
             }
         }
 
-        // Simplified average: divide by 4 (since MAX_HISTORY=8, half=4)
-        // If update_count < 8, division will not be entirely accurate but acceptable for trend
         int32_t avg_old = older_sum / (int32_t)half_window;
         int32_t avg_new = recent_sum / (int32_t)half_window;
-
         int32_t diff = avg_new - avg_old;
 
-        // Sensitivity threshold: 3dB (5dB might be too much for smooth approaching)
         if (diff > 3) return MovementTrend::APPROACHING;
         if (diff < -3) return MovementTrend::RECEDING;
-
         return MovementTrend::STATIC;
     }
 
@@ -167,7 +145,7 @@ public:
 
 private:
     static constexpr size_t MAX_HISTORY = 8;
-    int16_t rssi_history_[MAX_HISTORY]; // Initialized in constructor
+    int16_t rssi_history_[MAX_HISTORY];
     systime_t timestamp_history_[MAX_HISTORY] = {0};
     size_t history_index_ = 0;
 };
@@ -199,8 +177,7 @@ static constexpr size_t MAX_TRACKED_DRONES = 8;
 static constexpr size_t MAX_DISPLAYED_DRONES = 3;
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
-// Constants for spectrum buffer
-static constexpr int SPEC_HEIGHT = 32; // Saving 7.5 KB of RAM!
+static constexpr int SPEC_HEIGHT = 32;
 static constexpr int SPEC_WIDTH = 240;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
@@ -240,7 +217,6 @@ struct DetectionLogEntry {
     float confidence_score;
 };
 
-// Message structures for thread-safe communication
 struct DroneDetectionMessage {
     DroneType type;
     Frequency frequency;
@@ -256,40 +232,6 @@ struct DroneUpdateMessage {
         systime_t scan_complete_timestamp;
     } data;
 };
-
-// DetectionRingBuffer for safe detection tracking
-class DetectionRingBuffer {
-public:
-    DetectionRingBuffer() = default;
-    
-    void update_detection(size_t freq_hash, uint8_t count, int32_t rssi) {
-        auto& entry = buffer_[freq_hash % BUFFER_SIZE];
-        entry.count = count;
-        entry.rssi = rssi;
-    }
-    
-    uint8_t get_detection_count(size_t freq_hash) const {
-        return buffer_[freq_hash % BUFFER_SIZE].count;
-    }
-    
-    int32_t get_rssi_value(size_t freq_hash) const {
-        return buffer_[freq_hash % BUFFER_SIZE].rssi;
-    }
-    
-private:
-    static constexpr size_t BUFFER_SIZE = 1024;
-    
-    struct DetectionEntry {
-        uint8_t count = 0;
-        int32_t rssi = -120;
-    };
-    
-    DetectionEntry buffer_[BUFFER_SIZE] = {};
-};
-
-// ===========================================
-// PART 2: CONFIGURATION STRUCTURES (Shared with Settings App)
-// ===========================================
 
 struct ConfigData {
     SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
@@ -326,6 +268,7 @@ private:
     ConfigData config_data_;
 };
 
+// Moved inside namespace to fix compilation error
 class SimpleDroneValidation {
 public:
     static bool validate_frequency_range(Frequency freq_hz);
@@ -335,12 +278,6 @@ public:
     static bool validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
                                        DroneType type, ThreatLevel threat);
 };
-
-// ===========================================
-// PART 3: SCANNER CLASSES (from ui_drone_scanner.hpp)
-// ===========================================
-
-namespace ui::apps::enhanced_drone_analyzer {
 
 // RAII wrapper for ChibiOS mutexes
 class MutexLock {
@@ -353,7 +290,6 @@ public:
         chMtxUnlock();
     }
 
-    // Disable copying
     MutexLock(const MutexLock&) = delete;
     MutexLock& operator=(const MutexLock&) = delete;
 
@@ -372,19 +308,15 @@ public:
     std::string get_log_filename() const;
     bool is_session_active() const { return session_active_; }
 
+    std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
 private:
     LogFile csv_log_;
     bool session_active_ = false;
     systime_t session_start_ = 0;
     uint32_t logged_count_ = 0;
     bool header_written_ = false;
-    char line_buffer_[128]; // Reduced from 192 to 128 bytes to save 64 bytes
+    char line_buffer_[128];
 
-    // Async logging support - removed for simplicity
-
-public:
-    std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
-private:
     bool ensure_csv_header();
     std::string format_csv_entry(const DetectionLogEntry& entry);
     std::string generate_log_filename() const;
@@ -394,9 +326,6 @@ private:
 };
 
 class DroneScanner {
-   public:
-    ~DroneScanner();
-
 public:
     enum class ScanningMode {
         DATABASE,
@@ -405,6 +334,7 @@ public:
     };
 
     DroneScanner();
+    ~DroneScanner();
 
     void start_scanning();
     void stop_scanning();
@@ -419,26 +349,18 @@ public:
     void switch_to_real_mode();
     void switch_to_demo_mode();
 
-    // Public method for updating scan range
     void update_scan_range(Frequency min_freq, Frequency max_freq) {
-        // Protection from invalid data
         if (min_freq >= max_freq) return;
         if (min_freq < 1000000) min_freq = 1000000;
         if (max_freq > 7200000000ULL) max_freq = 7200000000ULL;
-
         setup_wideband_range(min_freq, max_freq);
     }
 
-    // Add public method for safe reading by UI controller
-    // Returns RSSI by frequency hash (used for rendering)
     int32_t get_detection_rssi_safe(size_t freq_hash) const;
-
-    // Method for getting detection count
     uint8_t get_detection_count_safe(size_t freq_hash) const;
 
     void perform_scan_cycle(DroneHardwareController& hardware);
     void process_rssi_detection(const freqman_entry& entry, int32_t rssi);
-    // Message queue for thread-safe UI updates
     void send_drone_detection_message(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
 
     void update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
@@ -457,14 +379,13 @@ public:
     uint32_t get_total_detections() const { return total_detections_; }
     uint32_t get_scan_cycles() const { return scan_cycles_; }
     bool is_real_mode() const { return is_real_mode_; }
-    size_t get_total_memory_usage() const { return 0; } // placeholder
+    size_t get_total_memory_usage() const { return 0; }
 
     DroneScanner(const DroneScanner&) = delete;
     DroneScanner(DroneScanner&&) = delete;
     DroneScanner& operator=(const DroneScanner&) = delete;
     DroneScanner& operator=(DroneScanner&&) = delete;
 
-    // Utility functions for UI
     const char* get_drone_type_name(DroneType type) const {
         switch (type) {
             case DroneType::MAVIC: return "MAVIC";
@@ -482,8 +403,6 @@ public:
 
     Frequency get_current_radio_frequency() const;
 
-    // NEW METHOD: Get safe data copy for UI
-    // Returns structure with fixed array to avoid malloc/new for std::vector
     struct DroneSnapshot {
         TrackedDrone drones[MAX_TRACKED_DRONES];
         size_t count = 0;
@@ -492,7 +411,6 @@ public:
     DroneSnapshot get_tracked_drones_snapshot() const;
 
 private:
-    // Declare missing methods
     void reset_scan_cycles();
     void initialize_wideband_scanning();
     void setup_wideband_range(Frequency min_freq, Frequency max_freq);
@@ -545,14 +463,8 @@ private:
     WidebandScanData wideband_scan_data_;
     std::vector<std::unique_ptr<freqman_entry>> drone_database_;
     DroneDetectionLogger detection_logger_;
-
-    // ADD HERE:
-    DetectionRingBuffer detection_ring_buffer_; // Now the buffer lives inside the class instance
+    DetectionRingBuffer detection_ring_buffer_;
 };
-
-// ===========================================
-// PART 3: HARDWARE CLASSES (from ui_drone_hardware.hpp)
-// ===========================================
 
 class DroneHardwareController {
 public:
@@ -578,12 +490,10 @@ public:
     int32_t get_current_rssi() const;
     void update_spectrum_for_scanner();
 
-    // CRITICAL FIX: Methods for safe Baseband/Scanning separation
     void stop_spectrum_before_scan();
     void resume_spectrum_after_scan();
     bool is_spectrum_compatible_with_scanning() const;
     
-    // RSSI freshness tracking methods
     void clear_rssi_flag();
     bool is_rssi_fresh() const;
 
@@ -603,7 +513,6 @@ private:
     int32_t get_configured_sampling_rate() const;
     int32_t get_configured_bandwidth() const;
 
-    // ИСПРАВЛЕНИЕ 1: Переместить объявление переменных ДО хендлеров
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
     uint32_t bandwidth_hz_;
@@ -611,10 +520,8 @@ private:
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
     volatile int32_t last_valid_rssi_ = -120;
-    volatile bool rssi_updated_ = false;  // NEW: Track RSSI freshness
+    volatile bool rssi_updated_ = false;
 
-    // ИСПРАВЛЕНИЕ 2: Convert MessageHandlerRegistration to stack objects (no pointers)
-    // Declare handlers AFTER all member variables they capture
     MessageHandlerRegistration message_handler_spectrum_config_ {
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
@@ -626,7 +533,6 @@ private:
     MessageHandlerRegistration message_handler_frame_sync_ {
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
-            // Frame sync logic - empty for now
         }
     };
     
@@ -638,8 +544,6 @@ private:
         }
     };
 };
-
-
 
 class SmartThreatHeader : public View {
 public:
@@ -693,7 +597,7 @@ public:
 private:
     size_t card_index_;
     Text card_text_ {{0, 2, screen_width, 20}, ""};
-    std::string current_text_;  // Store current text for change detection
+    std::string current_text_;
     bool is_active_ = false;
     Rect parent_rect_;
 
@@ -783,7 +687,7 @@ public:
     };
 
 private:
-    Text big_display_{{4, 0, 28 * 8, 52}, ""};           // Относительно parent_rect
+    Text big_display_{{4, 0, 28 * 8, 52}, ""};
     ProgressBar scanning_progress_{{0, 52, screen_width, 8}};
     Text text_threat_summary_{{0, 70, screen_width, 16}, "THREAT: NONE"};
     Text text_status_info_{{0, 86, screen_width, 16}, "Ready"};
@@ -802,7 +706,6 @@ private:
     std::array<ThreatBin, MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
 
-    // Waterfall spectrum buffer in RAM
     std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT> waterfall_buffer_;
     size_t waterfall_line_index_ = 0;
 
@@ -820,8 +723,6 @@ private:
 
     SpectrumConfig spectrum_config_;
 
-    // ИСПРАВЛЕНИЕ 2: Convert MessageHandlerRegistration to stack objects (no pointers)
-    // Declare handlers AFTER all member variables they capture
     MessageHandlerRegistration message_handler_spectrum_config_ {
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
@@ -833,11 +734,9 @@ private:
     MessageHandlerRegistration message_handler_frame_sync_ {
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
-            // Frame sync logic - empty for now
         }
     };
 
-    // Add missing methods for drone type/color lookup
     const char* get_drone_type_name(DroneType type) const;
     Color get_drone_type_color(DroneType type) const;
     Color get_threat_level_color(ThreatLevel level) const;
@@ -847,7 +746,6 @@ private:
     void add_spectrum_pixel(uint8_t power);
 };
 
-// Missing constants referenced in implementation
 static constexpr const char* DEFAULT_CONFIG_PATH = "DRONES/DATA.CFG";
 static constexpr const char* FALLBACK_CONFIG_PATH = "APP/SETTINGS/DRONES.CFG";
 static constexpr uint32_t DEFAULT_BANDWIDTH = 24000000UL;
@@ -915,21 +813,17 @@ private:
     void on_save_settings();
     void on_load_settings();
     void set_spectrum_mode(SpectrumMode mode);
-
-    // Simplified UI methods using basic widgets only
     void on_spectrum_mode();
-
-    // Hardware control methods
     void on_set_bandwidth();
     void on_set_center_freq();
     void show_hardware_status();
 };
+
 class EnhancedDroneSpectrumAnalyzerView : public View {
 public:
     explicit EnhancedDroneSpectrumAnalyzerView(NavigationView& nav);
     ~EnhancedDroneSpectrumAnalyzerView() override;
 
-    // ИСПРАВЛЕНИЕ 1: Запрет копирования для устранения warning -Weffc++
     EnhancedDroneSpectrumAnalyzerView(const EnhancedDroneSpectrumAnalyzerView&) = delete;
     EnhancedDroneSpectrumAnalyzerView& operator=(const EnhancedDroneSpectrumAnalyzerView&) = delete;
 
@@ -945,34 +839,27 @@ public:
 private:
     NavigationView& nav_;
 
-    // Core components
     DroneHardwareController* hardware_ = nullptr;
     DroneScanner* scanner_ = nullptr;
-    ::AudioManager audio_;  // Direct member now
+    ::AudioManager audio_;
 
-    // Forward declare SettingsManager to avoid circular dependency
     DroneDisplayController* display_controller_ = nullptr;
     DroneUIController* ui_controller_ = nullptr;
     ScanningCoordinator* scanning_coordinator_ = nullptr;
 
-    // UI components (modern layout)
     SmartThreatHeader* smart_header_ = nullptr;
     ConsoleStatusBar* status_bar_ = nullptr;
     std::array<ThreatCard*, 3> threat_cards_ = {nullptr, nullptr, nullptr};
 
-    // Simple UI widgets (replacing complex ones)
     Button button_start_stop_;
     Button button_menu_;
     Button button_audio_;
 
-    // Options field for scanning mode - simplified
     OptionsField field_scanning_mode_;
 
     bool scanning_active_ = false;
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
-    // ИСПРАВЛЕНИЕ 2: Convert MessageHandlerRegistration to stack objects (no pointers)
-    // Declare handlers AFTER all member variables they capture
     MessageHandlerRegistration message_handler_stats_ {
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
@@ -1006,10 +893,8 @@ private:
     systime_t timer_start_ = 0;
 };
 
-// 1. Declare the menu class
 class DroneSettingsMenuView : public View {
 public:
-    // Constructor takes navigation and controller to call functions
     DroneSettingsMenuView(NavigationView& nav, DroneUIController& controller);
 
     void focus() override;
@@ -1018,20 +903,15 @@ public:
 private:
     DroneUIController& controller_;
 
-    // Declare buttons. Coordinates: {x, y, width, height}
-    // Make them large (40px height) for easier pressing
     Button button_load_db_   { {16, 16,  208, 40}, "Load Freq Database" };
     Button button_audio_     { {16, 64,  208, 40}, "Audio Alerts: Toggle" };
     Button button_hw_        { {16, 112, 208, 40}, "Hardware Info" };
     Button button_logs_      { {16, 160, 208, 40}, "View CSV Logs" };
     Button button_about_     { {16, 208, 208, 40}, "About EDA" };
 
-    // Text hint at the bottom
     Text text_info_          { {16, 260, 208, 16}, "Ver: 0.3 | Mayhem" };
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer
-
-
 
 #endif // __UI_SCANNER_COMBINED_HPP__
