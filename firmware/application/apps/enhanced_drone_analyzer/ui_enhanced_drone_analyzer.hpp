@@ -75,9 +75,10 @@ class TrackedDrone {
 public:
     TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
-                     last_seen(0) {
+                     last_seen(0), rssi(-120), history_index_(0) {
         // Initialize array with "silence" (-120 dBm), not zeros
         for(auto& r : rssi_history_) r = -120;
+        for(auto& t : timestamp_history_) t = 0;  // Explicit initialization
     }
 
     TrackedDrone& operator=(const TrackedDrone& other) {
@@ -501,7 +502,7 @@ private:
     bool freq_db_loaded_ = false;
 
     std::atomic<uint32_t> scan_cycles_{0};
-    uint32_t total_detections_ = 0;
+    std::atomic<uint32_t> total_detections_{0};
 
     ScanningMode scanning_mode_ = ScanningMode::DATABASE;
     std::atomic<bool> is_real_mode_{true};

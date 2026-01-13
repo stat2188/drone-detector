@@ -307,7 +307,6 @@ const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB
 
 DroneScanner::DroneScanner()
     : scanning_thread_(nullptr),
-      data_mutex(),  // Initialize mutex after thread pointer
       scanning_active_(false),
       freq_db_(),
       current_db_index_(0),
@@ -329,8 +328,8 @@ DroneScanner::DroneScanner()
       detection_logger_(),
       detection_ring_buffer_()
 {
-    // Initialize mutex (already done in member initialization list)
-    // chMtxInit(&data_mutex);  // Removed from here
+    // Initialize mutex properly to fix race condition
+    chMtxInit(&data_mutex);
 
     initialize_database_and_scanner();
     initialize_wideband_scanning();
@@ -391,6 +390,13 @@ void DroneScanner::stop_scanning() {
     if (!scanning_active_) return;
 
     scanning_active_ = false;
+
+    // Ожидаем завершения потока сканирования
+    if (scanning_thread_ != nullptr) {
+        chThdWait(scanning_thread_);
+        scanning_thread_ = nullptr;
+    }
+
     remove_stale_drones();
 }
 
@@ -1384,39 +1390,34 @@ msg_t DroneDetectionLogger::worker_thread_entry(void* arg) {
 
 void DroneDetectionLogger::worker_loop() {
     while (worker_should_run_) {
-        // 1. Ждем данных (блокируемся, не потребляем CPU)
-        // Таймаут нужен, чтобы проверять флаг worker_should_run_ при остановке
         chSemWaitTimeout(&data_ready_, MS2ST(1000));
-
         if (!worker_should_run_) break;
 
-        // 2. Извлекаем данные (во временную переменную, чтобы быстро отпустить мьютекс)
         DetectionLogEntry entry_to_write;
         bool has_data = false;
+        bool has_more_data = false;
 
         {
             MutexLock lock(mutex_);
             if (head_ != tail_ || is_full_) {
                 entry_to_write = ring_buffer_[tail_];
                 tail_ = (tail_ + 1) % BUFFER_SIZE;
-                is_full_ = false; // Освободили место
+                is_full_ = false;
                 has_data = true;
+
+                // Проверяем есть ли ещё данные
+                has_more_data = (head_ != tail_);
             }
         }
-        
-        // 3. Если есть данные - пишем на SD (БЕЗ МЬЮТЕКСА!)
-        // Это самая долгая операция
+        // Мьютекс освобождён
+
         if (has_data) {
             write_entry_to_sd(entry_to_write);
-            
-            // Проверяем, есть ли еще данные, чтобы не уходить в sleep сразу
-            // (оптимизация пакетной записи)
-            {
-                MutexLock lock(mutex_);
-                if (head_ != tail_ || is_full_) {
-                    chSemSignal(&data_ready_); // Сами себе сигналим, чтобы сразу обработать следующий
-                }
-            }
+        }
+
+        // Сигнализируем ВНЕ мьютекса
+        if (has_more_data) {
+            chSemSignal(&data_ready_);
         }
     }
 }
@@ -1759,7 +1760,19 @@ bool DroneHardwareController::get_latest_spectrum(std::array<uint8_t, 256>& out_
     MutexLock lock(spectrum_mutex_);
     if (!spectrum_updated_) return false;
 
+    // Валидация данных перед копированием
+    bool has_valid_data = false;
+    for (size_t i = 0; i < last_spectrum_db_.size(); i++) {
+        if (last_spectrum_db_[i] != 0) {
+            has_valid_data = true;
+            break;
+        }
+    }
+
+    if (!has_valid_data) return false;
+
     out_db_buffer = last_spectrum_db_;
+    spectrum_updated_ = false;  // Сбрасываем флаг после чтения
     return true;
 }
 
