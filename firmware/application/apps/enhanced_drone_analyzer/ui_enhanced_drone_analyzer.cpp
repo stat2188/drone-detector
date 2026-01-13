@@ -307,8 +307,8 @@ const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB
 
 DroneScanner::DroneScanner()
     : scanning_thread_(nullptr),
-      scanning_active_(false),
       data_mutex(),
+      scanning_active_(false),
       freq_db_(),
       current_db_index_(0),
       last_scanned_frequency_(0),
