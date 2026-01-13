@@ -27,11 +27,10 @@ set(COMMON ${PROJECT_SOURCE_DIR}/common)
 set(CHIBIOS ${PROJECT_SOURCE_DIR}/chibios)
 set(CHIBIOS_PORTAPACK ${PROJECT_SOURCE_DIR}/chibios-portapack)
 
-# Use file(TO_CMAKE_PATH ...) to ensure proper path resolution across platforms
-file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/tools/extract_cpld_data.py" EXTRACT_CPLD_DATA)
-file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/tools/export_external_apps.py" EXPORT_EXTERNAL_APP_IMAGES)
-file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/tools/make_spi_image.py" MAKE_SPI_IMAGE)
-file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/tools/make_image_chunk.py" MAKE_IMAGE_CHUNK)
+set(EXTRACT_CPLD_DATA ${PROJECT_SOURCE_DIR}/tools/extract_cpld_data.py)
+set(EXPORT_EXTERNAL_APP_IMAGES ${PROJECT_SOURCE_DIR}/tools/export_external_apps.py)
+set(MAKE_SPI_IMAGE ${PROJECT_SOURCE_DIR}/tools/make_spi_image.py)
+set(MAKE_IMAGE_CHUNK ${PROJECT_SOURCE_DIR}/tools/make_image_chunk.py)
 set(LZ4 lz4)
 
 set(FIRMWARE_NAME portapack-mayhem-firmware)
@@ -142,3 +141,4 @@ add_custom_target(
 	release
 	DEPENDS MD5SUMS SHA256SUMS
 )
+
