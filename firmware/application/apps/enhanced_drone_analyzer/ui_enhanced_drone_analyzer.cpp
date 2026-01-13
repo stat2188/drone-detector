@@ -15,7 +15,6 @@
 #include "ui_spectral_analyzer.hpp"
 
 #include <algorithm>
-#include <sstream>
 #include <cstdlib>
 #include <cctype>
 #include <cstring>

@@ -1,6 +1,5 @@
 #include "scanner_settings.hpp"
 #include <string>
-#include <sstream>
 #include <algorithm>
 #include <cstdint>
 #include <cstring>

@@ -2,7 +2,6 @@
 #define __SCANNER_SETTINGS_HPP__
 
 #include <string>
-#include <sstream>
 #include <algorithm>
 #include <cstdint>
 #include "file.hpp"
