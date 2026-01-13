@@ -89,16 +89,16 @@ set(EXTCPPSRC
 	external/protoview/ui_protoview.cpp
 
 	#adsbtx  3544 byte - adsb shared part
-	external/adsbtx/main.cpp
-	external/adsbtx/ui_adsb_tx.cpp
+	#external/adsbtx/main.cpp
+	#external/adsbtx/ui_adsb_tx.cpp
 
 	#morse_tx 768 bytes
 	external/morse_tx/main.cpp
 	external/morse_tx/ui_morse.cpp
 
 	#sstvtx 456 bytes
-	external/sstvtx/main.cpp
-	external/sstvtx/ui_sstvtx.cpp
+	#external/sstvtx/main.cpp
+	#external/sstvtx/ui_sstvtx.cpp
 
 	#sstvrx
 	external/sstvrx/main.cpp
@@ -304,9 +304,9 @@ set(EXTAPPLIST
 	wardrivemap
 	tpmsrx
 	protoview
-	adsbtx
+	#adsbtx
 	morse_tx
-	sstvtx
+	#sstvtx
 	sstvrx
 	random_password
 	# acars_rx --not working
