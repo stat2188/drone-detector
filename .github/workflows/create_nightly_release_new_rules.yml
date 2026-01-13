@@ -50,8 +50,10 @@ jobs:
       - name: Git Sumbodule Update
         run: |
           git submodule update --init --recursive
-      - name: Fix permissions for build script
-        run: chmod +x firmware/tools/make_spi_image.py
+      - name: Fix permissions for build scripts
+        run: |
+         chmod +x firmware/tools/make_spi_image.py
+         chmod +x firmware/tools/export_external_apps.py
       - name: Build the Docker image
         run: docker build -t portapack-dev -f dockerfile-nogit . --tag my-image-name:$(date +%s)
       - name: Make build folder
