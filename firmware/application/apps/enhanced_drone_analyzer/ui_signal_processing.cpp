@@ -16,7 +16,7 @@ int16_t WidebandMedianFilter::get_median_threshold() const {
 
     auto temp = window_;
     for (size_t i = 0; i < WINDOW_SIZE / 2 + 1; ++i) {
-        for (size_t j = 0; j < WINDOW_SIZE - 1; ++j) {
+        for (size_t j = 0; j < WINDOW_SIZE - i - 1; ++j) {
             if (temp[j] > temp[j + 1]) std::swap(temp[j], temp[j + 1]);
         }
     }

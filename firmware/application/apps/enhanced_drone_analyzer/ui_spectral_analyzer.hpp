@@ -61,10 +61,10 @@ public:
     uint8_t get_median() const {
         if (!full_) return 0;
         
-        // Simple bubble sort for small array
+        // Optimized partial bubble sort - reduces comparisons by skipping sorted tail
         std::array<uint8_t, WINDOW_SIZE> temp = window_;
         for (size_t i = 0; i < WINDOW_SIZE / 2 + 1; ++i) {
-            for (size_t j = 0; j < WINDOW_SIZE - 1; ++j) {
+            for (size_t j = 0; j < WINDOW_SIZE - i - 1; ++j) {
                 if (temp[j] > temp[j + 1]) {
                     std::swap(temp[j], temp[j + 1]);
                 }
