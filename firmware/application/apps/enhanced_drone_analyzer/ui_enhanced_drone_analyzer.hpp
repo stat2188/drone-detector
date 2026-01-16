@@ -328,6 +328,12 @@ public:
     std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
     
 private:
+    // --- THREADING PRIMITIVES ---
+    Thread* worker_thread_ = nullptr;
+    mutable Mutex mutex_;           // Защита кольцевого буфера
+    Semaphore data_ready_;          // Сигнал "есть данные для записи" (initialized in ctor via chSemInit)
+    volatile bool worker_should_run_ = false;
+    
     // --- FILE I/O ---
     LogFile csv_log_;
     bool session_active_ = false;
@@ -342,12 +348,6 @@ private:
     size_t head_ = 0; // Куда писать (Scanner)
     size_t tail_ = 0; // Откуда читать (Worker)
     bool is_full_ = false;
-
-    // --- THREADING PRIMITIVES ---
-    Thread* worker_thread_ = nullptr;
-    mutable Mutex mutex_;           // Защита кольцевого буфера
-    Semaphore data_ready_;          // Сигнал "есть данные для записи" (initialized in ctor via chSemInit)
-    volatile bool worker_should_run_ = false;
     
     // Вспомогательный буфер для форматирования строки (чтобы не аллоцировать в куче)
     char line_buffer_[128];
@@ -592,6 +592,11 @@ private:
     int32_t get_configured_sampling_rate() const;
     int32_t get_configured_bandwidth() const;
 
+    // NEW: Spectrum data buffer and synchronization
+    std::array<uint8_t, 256> last_spectrum_db_;
+    mutable Mutex spectrum_mutex_;
+    volatile bool spectrum_updated_ = false;
+
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
     uint32_t bandwidth_hz_;
@@ -600,11 +605,6 @@ private:
     bool spectrum_streaming_active_ = false;
     volatile int32_t last_valid_rssi_ = -120;
     volatile bool rssi_updated_ = false;
-
-    // NEW: Spectrum data buffer and synchronization
-    std::array<uint8_t, 256> last_spectrum_db_;
-    mutable Mutex spectrum_mutex_;
-    volatile bool spectrum_updated_ = false;
 
     MessageHandlerRegistration message_handler_spectrum_config_ {
         Message::ID::ChannelSpectrumConfig,
