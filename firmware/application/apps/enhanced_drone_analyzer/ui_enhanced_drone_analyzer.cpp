@@ -1300,7 +1300,7 @@ uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
 
 // DroneDetectionLogger implementations
 DroneDetectionLogger::DroneDetectionLogger()
-    : csv_log_(), session_active_(false), session_start_(0), logged_count_(0), dropped_logs_(0), header_written_(false),
+    : mutex_(), csv_log_(), session_active_(false), session_start_(0), logged_count_(0), dropped_logs_(0), header_written_(false),
       ring_buffer_(), head_(0), tail_(0), is_full_(false), worker_thread_(nullptr), 
       data_ready_(), // <--- ПЕРЕМЕЩЕНО СЮДА (перед worker_should_run_)
       worker_should_run_(false),
@@ -1552,6 +1552,7 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
     : // 1. Сначала инициализируем переменные настроек и состояния
+      spectrum_mutex_(),
       spectrum_mode_(mode),
       center_frequency_(2400000000ULL),
        bandwidth_hz_(24000000),
