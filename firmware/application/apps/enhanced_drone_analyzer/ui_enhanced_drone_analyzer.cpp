@@ -1300,11 +1300,21 @@ uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
 
 // DroneDetectionLogger implementations
 DroneDetectionLogger::DroneDetectionLogger()
-    : mutex_(), csv_log_(), session_active_(false), session_start_(0), logged_count_(0), dropped_logs_(0), header_written_(false),
-      ring_buffer_(), head_(0), tail_(0), is_full_(false), worker_thread_(nullptr), 
-      data_ready_(), // <--- ПЕРЕМЕЩЕНО СЮДА (перед worker_should_run_)
+    : worker_thread_(nullptr),
+      mutex_(),
+      data_ready_(),
       worker_should_run_(false),
-      line_buffer_() { // <--- line_buffer_ идет последним, как в .hpp
+      csv_log_(),
+      session_active_(false),
+      session_start_(0),
+      logged_count_(0),
+      dropped_logs_(0),
+      header_written_(false),
+      ring_buffer_(),
+      head_(0),
+      tail_(0),
+      is_full_(false),
+      line_buffer_() {
     chMtxInit(&mutex_);
     memset(line_buffer_, 0, sizeof(line_buffer_));
     
