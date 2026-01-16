@@ -1769,11 +1769,6 @@ bool DroneHardwareController::is_spectrum_fresh() const {
     return spectrum_updated_;
 }
 
-bool DroneHardwareController::is_spectrum_fresh() const {
-    MutexLock lock(spectrum_mutex_);
-    return spectrum_updated_;
-}
-
 bool DroneHardwareController::wait_for_spectrum_update(systime_t timeout) {
     msg_t result = chSemWaitTimeout(&spectrum_event_sem_, timeout);
     return (result != RDY_TIMEOUT);
