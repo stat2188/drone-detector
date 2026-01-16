@@ -603,8 +603,8 @@ private:
     RxRadioState radio_state_;
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
-    volatile int32_t last_valid_rssi_ = -120;
     volatile bool rssi_updated_ = false;
+    volatile int32_t last_valid_rssi_ = -120;
 
     MessageHandlerRegistration message_handler_spectrum_config_ {
         Message::ID::ChannelSpectrumConfig,
