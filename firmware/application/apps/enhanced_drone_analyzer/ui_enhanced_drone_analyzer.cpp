@@ -1551,17 +1551,17 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
 // ===========================================
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
-    : // 1. Сначала инициализируем переменные настроек и состояния
-      spectrum_mutex_(),
-      spectrum_mode_(mode),
+    : last_spectrum_db_(),          // Declared 1st (top of private section)
+      spectrum_mutex_(),            // Declared 2nd
+      // spectrum_updated_ initialized in-class
+      spectrum_mode_(mode),         // Declared 4th
       center_frequency_(2400000000ULL),
-       bandwidth_hz_(24000000),
-       radio_state_(),
-       spectrum_fifo_(nullptr),
-       spectrum_streaming_active_(false),
-       last_valid_rssi_(-120),
-       rssi_updated_(false),
-       last_spectrum_db_()
+      bandwidth_hz_(24000000),
+      radio_state_(),
+      spectrum_fifo_(nullptr),
+      spectrum_streaming_active_(false),
+      rssi_updated_(false),         // Declared before last_valid_rssi_
+      last_valid_rssi_(-120)        // Declared last
 {
     chMtxInit(&spectrum_mutex_);
     spectrum_updated_ = false;

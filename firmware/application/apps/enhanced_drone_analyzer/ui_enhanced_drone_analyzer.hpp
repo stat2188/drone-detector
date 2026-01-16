@@ -329,28 +329,28 @@ public:
     
 private:
     // --- THREADING PRIMITIVES ---
-    Thread* worker_thread_ = nullptr;
-    mutable Mutex mutex_;           // Защита кольцевого буфера
-    Semaphore data_ready_;          // Сигнал "есть данные для записи" (initialized in ctor via chSemInit)
-    volatile bool worker_should_run_ = false;
+    Thread* worker_thread_ = nullptr;           // Declared 1st
+    mutable Mutex mutex_;                       // Declared 2nd
+    Semaphore data_ready_;                      // Declared 3rd
+    volatile bool worker_should_run_ = false;   // Declared 4th
     
     // --- FILE I/O ---
-    LogFile csv_log_;
-    bool session_active_ = false;
-    systime_t session_start_ = 0;
-    uint32_t logged_count_ = 0;
-    uint32_t dropped_logs_ = 0;
-    bool header_written_ = false;
+    LogFile csv_log_;                           // Declared 5th
+    bool session_active_ = false;               // Declared 6th
+    systime_t session_start_ = 0;               // Declared 7th
+    uint32_t logged_count_ = 0;                 // Declared 8th
+    uint32_t dropped_logs_ = 0;                 // Declared 9th
+    bool header_written_ = false;               // Declared 10th
     
     // --- ASYNC BUFFERING ---
-    static constexpr size_t BUFFER_SIZE = 32; // Хватит на ~5-10 сек задержки SD карты
-    std::array<DetectionLogEntry, BUFFER_SIZE> ring_buffer_;
-    size_t head_ = 0; // Куда писать (Scanner)
-    size_t tail_ = 0; // Откуда читать (Worker)
-    bool is_full_ = false;
+    static constexpr size_t BUFFER_SIZE = 32;   // Declared 11th
+    std::array<DetectionLogEntry, BUFFER_SIZE> ring_buffer_; // Declared 12th
+    size_t head_ = 0;                           // Declared 13th
+    size_t tail_ = 0;                           // Declared 14th
+    bool is_full_ = false;                      // Declared 15th
     
     // Вспомогательный буфер для форматирования строки (чтобы не аллоцировать в куче)
-    char line_buffer_[128];
+    char line_buffer_[128];                     // Declared last
 
     // --- INTERNAL METHODS ---
     static msg_t worker_thread_entry(void* arg);
