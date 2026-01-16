@@ -642,12 +642,10 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
             chThdSleepMilliseconds(check_interval);
             retries++;
             
-            // Check if fresh spectrum data is available
-            if (hardware.is_spectrum_fresh()) {
-                if (hardware.get_latest_spectrum(spectrum_data)) {
-                    spectrum_received = true;
-                    break;
-                }
+            // Atomic check-and-fetch to avoid TOCTOU race
+            if (hardware.get_latest_spectrum_if_fresh(spectrum_data)) {
+                spectrum_received = true;
+                break;
             }
         }
 
@@ -1759,34 +1757,19 @@ void DroneHardwareController::process_channel_spectrum_data(const ChannelSpectru
     spectrum_updated_ = true;
 }
 
-bool DroneHardwareController::get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer) {
+bool DroneHardwareController::get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer) {
     MutexLock lock(spectrum_mutex_);
-    if (!spectrum_updated_) return false;
-
-    // Валидация данных перед копированием
-    bool has_valid_data = false;
-    for (size_t i = 0; i < last_spectrum_db_.size(); i++) {
-        if (last_spectrum_db_[i] != 0) {
-            has_valid_data = true;
-            break;
-        }
+    if (spectrum_updated_) {
+        out_db_buffer = last_spectrum_db_;
+        spectrum_updated_ = false;
+        return true;
     }
-
-    if (!has_valid_data) return false;
-
-    out_db_buffer = last_spectrum_db_;
-    spectrum_updated_ = false;  // Сбрасываем флаг после чтения
-    return true;
+    return false;
 }
 
 void DroneHardwareController::clear_spectrum_flag() {
     MutexLock lock(spectrum_mutex_);
     spectrum_updated_ = false;
-}
-
-bool DroneHardwareController::is_spectrum_fresh() const {
-    MutexLock lock(spectrum_mutex_);
-    return spectrum_updated_;
 }
 
 int32_t DroneHardwareController::get_configured_sampling_rate() const {

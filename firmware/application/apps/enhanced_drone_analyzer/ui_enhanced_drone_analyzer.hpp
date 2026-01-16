@@ -572,10 +572,9 @@ public:
     void clear_rssi_flag();
     bool is_rssi_fresh() const;
 
-    // NEW: Spectrum data access methods for spectral analysis
-    bool get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer);
+    // NEW: Spectrum data access method (atomic check-and-fetch to avoid TOCTOU race)
+    bool get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer);
     void clear_spectrum_flag();
-    bool is_spectrum_fresh() const;
 
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_statistics(const ChannelStatistics& statistics);
