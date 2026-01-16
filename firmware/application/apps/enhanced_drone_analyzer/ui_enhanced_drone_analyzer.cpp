@@ -1033,28 +1033,31 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         }
     }
 
-    // Use adaptive threshold
-    if (rssi < adaptive_threshold) {
-        return;
-    }
-
     // Flag and data for deferred logging
     bool should_log = false;
     DetectionLogEntry log_entry_to_write;
 
     // --- CRITICAL SECTION START ---
     {
-        MutexLock lock(data_mutex); // Block UI access to data
+        MutexLock lock(data_mutex);
 
-        total_detections_++; // Protect counter
+        total_detections_++;
 
         size_t freq_hash = entry.frequency_a / 100000;
-        int32_t effective_threshold = adaptive_threshold; // Используем адаптивный порог
-        if (detection_ring_buffer_.get_rssi_value(freq_hash) < adaptive_threshold) {
-            effective_threshold = adaptive_threshold + HYSTERESIS_MARGIN_DB;
+        int32_t prev_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
+        int32_t base_threshold = -90;
+
+        if (rssi > -100 && rssi < -80) {
+            base_threshold = -100;
+        } else if (rssi > -80) {
+            base_threshold = -90;
         }
 
-        if (rssi >= effective_threshold) {
+        if (prev_rssi < base_threshold) {
+            base_threshold += HYSTERESIS_MARGIN_DB;
+        }
+
+        if (rssi >= base_threshold) {
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
             current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
 
