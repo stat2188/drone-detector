@@ -1,0 +1,48 @@
+name: Code Quality & Mutex Check
+
+on:
+  # Запускать при пуше в ветку main/next
+  push:
+    branches: [ "main", "next", "master" ]
+    # И ТОЛЬКО если изменились файлы в вашей папке (чтобы не спамить проверками при изменении других частей)
+    paths:
+      - 'firmware/application/apps/enhanced_drone_analyzer/**'
+  # Запускать при создании Pull Request
+  pull_request:
+    paths:
+      - 'firmware/application/apps/enhanced_drone_analyzer/**'
+  # Возможность ручного запуска
+  workflow_dispatch:
+
+jobs:
+  static_analysis:
+    name: Cppcheck Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run Cppcheck (Strict)
+        run: |
+          # Запуск анализатора
+          # --enable=warning,style,performance,portability:
+          #    warning: предупреждения о логике
+          #    style: находит ошибки порядка инициализации (те самые Reorder) и неиспользуемые функции
+          #    performance: находит неоптимальный код
+          # --error-exitcode=1: падать, если найдена хоть одна ошибка
+          # --suppress=missingInclude: игнорировать отсутствие системных хедеров (ch.h, portapack.hpp), т.к. мы не компилируем всё ядро
+          
+          echo "Checking directory: firmware/application/apps/enhanced_drone_analyzer/"
+          
+          cppcheck --enable=warning,style,performance,portability \
+                   --language=c++ \
+                   --std=c++17 \
+                   --error-exitcode=1 \
+                   --inline-suppr \
+                   --suppress=missingInclude \
+                   --force \
+                   -j 4 \
+                   firmware/application/apps/enhanced_drone_analyzer/
