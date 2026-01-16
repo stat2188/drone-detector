@@ -205,9 +205,10 @@ bool load_settings_from_sd_card(ui::apps::enhanced_drone_analyzer::DroneAnalyzer
     auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
     if (error) return false;
 
-    char read_buffer[64];       // Reduced from 128 to 64 bytes to save 64 bytes
-    char line_buffer[64];       // Reduced from 128 to 64 bytes to save 64 bytes
+    char read_buffer[256];       // Increased buffer size for safety
+    char line_buffer[256];       // Increased buffer size to handle long lines
     size_t line_idx = 0;
+    size_t discarded_bytes = 0;  // Counter for dropped bytes
 
     while (true) {
         // Read block
@@ -235,9 +236,10 @@ bool load_settings_from_sd_card(ui::apps::enhanced_drone_analyzer::DroneAnalyzer
                 // Ignore \r, accumulate other characters
                 if (line_idx < sizeof(line_buffer) - 1) {
                     line_buffer[line_idx++] = c;
+                } else {
+                    // Count discarded bytes when line exceeds buffer
+                    discarded_bytes++;
                 }
-                // If line is longer than buffer, extra characters are simply ignored
-                // until \n is encountered to avoid stack overflow
             }
         }
     }
@@ -247,6 +249,9 @@ bool load_settings_from_sd_card(ui::apps::enhanced_drone_analyzer::DroneAnalyzer
         line_buffer[line_idx] = 0;
         parse_settings_line_inplace(line_buffer, settings);
     }
+
+    // Log discarded bytes for debugging (could be expanded to actual logging)
+    (void)discarded_bytes;
 
     return true;
 }
@@ -456,7 +461,7 @@ bool DroneScanner::load_frequency_database() {
 }
 
 size_t DroneScanner::get_database_size() const {
-    return freq_db_.entry_count();
+    return db_entry_count_;
 }
 
 void DroneScanner::set_scanning_mode(ScanningMode mode) {
@@ -832,7 +837,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     bool should_log = false;
     DetectionLogEntry log_entry_to_write;
     DroneType detected_type = DroneType::UNKNOWN;
-    ThreatLevel threat_level; // ... логика определения threat level ...
+    ThreatLevel threat_level = ThreatLevel::UNKNOWN;
 
     // Threat level logic (copy from original)
     if (rssi > -70) threat_level = ThreatLevel::HIGH;
@@ -990,16 +995,6 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
-    // Add adaptive threshold based on current noise level
-    int32_t adaptive_threshold = -90;
-    if (rssi > -100 && rssi < -80) {
-        // For weak signals, use a lower threshold
-        adaptive_threshold = -100;
-    } else if (rssi > -80) {
-        // For strong signals, use standard threshold
-        adaptive_threshold = -90;
-    }
-
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN)) {
         return;
     }
@@ -1021,13 +1016,15 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
 
-    // Simple database search (if drone_database_ doesn't change at runtime, it's safe to read without mutex,
-    // BUT if DB can be reloaded, a reader-lock is needed here. For simplicity, assume DB is static during scan)
-    for (size_t i = 0; i < db_entry_count_; ++i) {
-        if (drone_database_[i].frequency_a == entry.frequency_a) {
-            detected_type = DroneType::MAVIC;
-            threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
-            break;
+    // Simple database search (with mutex protection to prevent race with load_frequency_database)
+    {
+        MutexLock lock(data_mutex);
+        for (size_t i = 0; i < db_entry_count_; ++i) {
+            if (drone_database_[i].frequency_a == entry.frequency_a) {
+                detected_type = DroneType::MAVIC;
+                threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
+                break;
+            }
         }
     }
 

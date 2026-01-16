@@ -346,7 +346,7 @@ private:
     // --- THREADING PRIMITIVES ---
     Thread* worker_thread_ = nullptr;
     mutable Mutex mutex_;           // Защита кольцевого буфера
-    Semaphore data_ready_;          // Сигнал "есть данные для записи" (C-API)
+    Semaphore data_ready_;          // Сигнал "есть данные для записи" (initialized in ctor via chSemInit)
     volatile bool worker_should_run_ = false;
     
     // Вспомогательный буфер для форматирования строки (чтобы не аллоцировать в куче)
