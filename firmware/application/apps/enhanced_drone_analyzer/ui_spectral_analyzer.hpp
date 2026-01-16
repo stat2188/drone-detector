@@ -95,11 +95,9 @@ public:
         
         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
-            if (i < db_buffer.size()) {
-                median_filter.add_sample(db_buffer[i]);
-                sum += db_buffer[i];
-                valid_bins++;
-            }
+            median_filter.add_sample(db_buffer[i]);
+            sum += db_buffer[i];
+            valid_bins++;
         }
         
         if (valid_bins == 0) {
@@ -114,7 +112,7 @@ public:
         result.max_val = 0;
         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
-            if (i < db_buffer.size() && db_buffer[i] > result.max_val) {
+            if (db_buffer[i] > result.max_val) {
                 result.max_val = db_buffer[i];
             }
         }
@@ -137,7 +135,7 @@ public:
         result.width_bins = 0;
         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
-            if (i < db_buffer.size() && db_buffer[i] >= threshold) {
+            if (db_buffer[i] >= threshold) {
                 result.width_bins++;
             }
         }
@@ -145,10 +143,9 @@ public:
         // 6. Convert bins to Hz
         uint32_t total_valid_bins = SpectralAnalysisConfig::VALID_BIN_END - 
                                    SpectralAnalysisConfig::VALID_BIN_START;
-        if (total_valid_bins > 0) {
-            uint32_t bin_width_hz = slice_bandwidth_hz / total_valid_bins;
-            result.signal_width_hz = result.width_bins * bin_width_hz;
-        }
+        // total_valid_bins всегда > 0 (константа 232)
+        uint32_t bin_width_hz = slice_bandwidth_hz / total_valid_bins;
+        result.signal_width_hz = result.width_bins * bin_width_hz;
 
         // 7. Classify signal based on width and context
         if (result.signal_width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) { // Ширина > 10 MHz

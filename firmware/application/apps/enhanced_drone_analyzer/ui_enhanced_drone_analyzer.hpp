@@ -971,7 +971,7 @@ private:
 
 class LoadingScreenView : public View {
 public:
-    LoadingScreenView(NavigationView& nav);
+    explicit LoadingScreenView(NavigationView& nav);
     ~LoadingScreenView() = default;
 
     void paint(Painter& painter) override;

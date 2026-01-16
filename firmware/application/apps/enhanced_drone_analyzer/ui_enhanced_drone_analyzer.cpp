@@ -44,7 +44,7 @@ bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
     
     // Additional validation for common drone bands
     // 433MHz ISM band
-    if ((freq_hz >= 433000000ULL && freq_hz <= 434000000ULL)) {
+    if (freq_hz <= 434000000ULL) {
         return true;
     }
     // 868MHz ISM band (Europe)
@@ -1071,6 +1071,10 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 log_entry_to_write.drone_type = detected_type;
                 log_entry_to_write.detection_count = current_count;
                 log_entry_to_write.confidence_percent = 85;
+                // Инициализация полей спектрального анализа (недоступны в RSSI режиме)
+                log_entry_to_write.width_bins = 0;
+                log_entry_to_write.signal_width_hz = 0;
+                log_entry_to_write.snr = 0;
 
                 // Update drone tracking for UI (internal method that DOESN'T take mutex again)
                 update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
@@ -3130,11 +3134,9 @@ msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
 
 msg_t ScanningCoordinator::coordinated_scanning_thread() {
     while (scanning_active_) {
-        if (scanning_active_) {
-            scanner_.perform_scan_cycle(hardware_);
-            // CRITICAL FIX: Removed direct UI calls from scanning thread
-            // UI updates now happen only through MessageHandler in handle_scanner_update()
-        }
+        scanner_.perform_scan_cycle(hardware_);
+        // CRITICAL FIX: Removed direct UI calls from scanning thread
+        // UI updates now happen only through MessageHandler in handle_scanner_update()
 
         chThdSleepMilliseconds(scan_interval_ms_);
     }
