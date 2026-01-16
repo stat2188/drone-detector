@@ -481,20 +481,6 @@ const char* DroneScanner::scanning_mode_name() const {
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     if (!scanning_active_) return;
 
-    // FIX: Adaptive timing based on current load and detections
-    uint32_t base_interval = 750; // Base interval in milliseconds
-    uint32_t adaptive_interval = base_interval;
-
-    // Adjust timing based on current detections
-    size_t current_detections = get_total_detections();
-    if (current_detections > 5) {
-        // High detection rate - scan faster
-        adaptive_interval = (250U > base_interval - (current_detections * 50)) ? 250U : base_interval - (current_detections * 50);
-    } else if (current_detections == 0 && scan_cycles_ > 10) {
-        // No detections for a while - slow down to save power
-        adaptive_interval = (2000U < base_interval + 250) ? 2000U : base_interval + 250;
-    }
-
     // Apply mode-specific adjustments
     switch (scanning_mode_) {
         case ScanningMode::DATABASE:
@@ -512,7 +498,8 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 
     // Adaptive sleep based on current situation
     if (scanning_active_) {
-        chThdSleepMilliseconds(adaptive_interval);
+        timing_.update_interval(get_total_detections(), chTimeNow());
+        chThdSleepMilliseconds(timing_.current_interval_ms);
     }
 }
 
@@ -593,7 +580,12 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
             if (signal_captured) {
                 int32_t real_rssi = hardware.get_current_rssi();
-                process_rssi_detection(entry, real_rssi);
+                
+                // Pre-validate before expensive processing
+                const int32_t MIN_USEFUL_RSSI = -105;  // Filter noise floor
+                if (real_rssi >= MIN_USEFUL_RSSI) {
+                    process_rssi_detection(entry, real_rssi);
+                }
             }
             
             last_scanned_frequency_ = target_freq_hz;
@@ -627,27 +619,17 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         // 3. Get spectrum data from M0 coprocessor with optimized timing
         std::array<uint8_t, 256> spectrum_data;
         
-        // Clear spectrum flag and wait for fresh data
+        // Clear spectrum flag and wait for fresh data using event-driven approach
         hardware.clear_spectrum_flag();
         
-        // OPTIMIZED WAITING: Use adaptive timeout based on M0 packet rate
+        // EVENT-DRIVEN WAITING: Use semaphore instead of busy-waiting
         // M0 sends spectrum data ~60 times/sec (every ~16ms)
-        // We wait max 2 packets (32ms) but check every 2ms for responsiveness
-        int check_interval = 2; // Check every 2ms
+        // We wait max 35ms for data to arrive
         bool spectrum_received = false;
-        int retries = 0;
-        const int max_retries = 16; // 32ms / 2ms = 16 retries
         
-        while(retries < max_retries && !spectrum_received) {
-            chThdSleepMilliseconds(check_interval);
-            retries++;
-            
-            // Check if fresh spectrum data is available
-            if (hardware.is_spectrum_fresh()) {
-                if (hardware.get_latest_spectrum(spectrum_data)) {
-                    spectrum_received = true;
-                    break;
-                }
+        if (hardware.wait_for_spectrum_update(MS2ST(35))) {  // Max 35ms timeout
+            if (hardware.get_latest_spectrum(spectrum_data)) {
+                spectrum_received = true;
             }
         }
 
@@ -850,7 +832,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
 
         total_detections_++; // Protect counter
 
-        size_t freq_hash = entry.frequency_a / 100000;
+        size_t freq_hash = (entry.frequency_a / 50000) % HASH_TABLE_SIZE;  // 50kHz resolution
         int32_t effective_threshold = wideband_threshold;
 
         if (detection_ring_buffer_.get_rssi_value(freq_hash) < wideband_threshold) {
@@ -917,7 +899,7 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
 
         total_detections_++; // Protect counter
 
-        size_t freq_hash = entry.frequency_a / 100000;
+        size_t freq_hash = (entry.frequency_a / 50000) % HASH_TABLE_SIZE;  // 50kHz resolution
         int32_t effective_threshold = WIDEBAND_RSSI_THRESHOLD_DB;
 
         if (detection_ring_buffer_.get_rssi_value(freq_hash) < WIDEBAND_RSSI_THRESHOLD_DB) {
@@ -984,22 +966,19 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     const int32_t MIN_VALID_RSSI = -120;  // Extended range for weak signals
     const int32_t MAX_VALID_RSSI = 10;
 
-    // FIX: Fixed RSSI validation logic
-    // Was: rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
-    // Now: rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
-    // Now values from -128 to -110 will be processed correctly
     if (rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI) {
         return;
     }
 
-    // Add adaptive threshold based on current noise level
-    int32_t adaptive_threshold = -90;
-    if (rssi > -100 && rssi < -80) {
-        // For weak signals, use a lower threshold
-        adaptive_threshold = -100;
-    } else if (rssi > -80) {
-        // For strong signals, use standard threshold
-        adaptive_threshold = -90;
+    // Single threshold calculation, used consistently
+    int32_t base_threshold = -90;
+    int32_t hysteresis = HYSTERESIS_MARGIN_DB;
+
+    // Get previous RSSI (if exists) - we need to do this before the main lock
+    int32_t prev_rssi = detection_ring_buffer_.get_rssi_value((entry.frequency_a / 50000) % HASH_TABLE_SIZE);
+    if (prev_rssi > base_threshold) {
+        // Hysteresis: require stronger signal to maintain detection
+        base_threshold += hysteresis;
     }
 
     if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN)) {
@@ -1023,8 +1002,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
 
-    // Simple database search (if drone_database_ doesn't change at runtime, it's safe to read without mutex,
-    // BUT if DB can be reloaded, a reader-lock is needed here. For simplicity, assume DB is static during scan)
+    // Simple database search
     for (size_t i = 0; i < db_entry_count_; ++i) {
         if (drone_database_[i].frequency_a == entry.frequency_a) {
             detected_type = DroneType::MAVIC;
@@ -1033,8 +1011,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         }
     }
 
-    // Use adaptive threshold
-    if (rssi < adaptive_threshold) {
+    // Single check with hysteresis
+    if (rssi < base_threshold) {
         return;
     }
 
@@ -1048,11 +1026,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 
         total_detections_++; // Protect counter
 
-        size_t freq_hash = entry.frequency_a / 100000;
-        int32_t effective_threshold = adaptive_threshold; // Используем адаптивный порог
-        if (detection_ring_buffer_.get_rssi_value(freq_hash) < adaptive_threshold) {
-            effective_threshold = adaptive_threshold + HYSTERESIS_MARGIN_DB;
-        }
+        size_t freq_hash = (entry.frequency_a / 50000) % HASH_TABLE_SIZE;  // 50kHz resolution
+        int32_t effective_threshold = base_threshold;  // Single threshold
 
         if (rssi >= effective_threshold) {
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
@@ -1171,11 +1146,12 @@ void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequ
 
     // Replace oldest entry instead of shifting array
     TrackedDrone& oldest_drone = tracked_drones_[oldest_index];
-    oldest_drone = TrackedDrone();
+    oldest_drone = TrackedDrone();  // Reset all fields
     oldest_drone.frequency = static_cast<uint32_t>(frequency);
     oldest_drone.drone_type = static_cast<uint8_t>(type);
     oldest_drone.threat_level = static_cast<uint8_t>(threat_level);
     oldest_drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
+    oldest_drone.update_count = 1;  // CRITICAL: Set initial count
 
     // No need to call update_tracking_counts() here since we're just replacing an existing entry
 }
@@ -1364,9 +1340,13 @@ void DroneDetectionLogger::start_worker() {
     if (worker_thread_) return;
 
     worker_should_run_ = true;
-    // Создаем поток с НИЗКИМ приоритетом, чтобы не мешать UI и Радио
-    // NORMALPRIO - 1 или IDLEPRIO + 10
-    worker_thread_ = chThdCreateFromHeap(NULL, 2048, NORMALPRIO - 1, worker_thread_entry, this);
+    // Calculate required stack:
+    // - Function call overhead: 512 bytes
+    // - LogFile::write_raw() internals: ~1024 bytes
+    // - std::string operations (reserve + concatenation): ~768 bytes
+    // - Safety margin: 512 bytes
+    constexpr size_t WORKER_STACK_SIZE = 2816;  // 2.75KB
+    worker_thread_ = chThdCreateFromHeap(NULL, WORKER_STACK_SIZE, NORMALPRIO - 1, worker_thread_entry, this);
     
     start_session(); // Открываем файл/сессию
 }
@@ -1565,6 +1545,7 @@ DroneHardwareController::DroneHardwareController(SpectrumMode mode)
       spectrum_mutex_(),
       spectrum_updated_(false)
 {
+    chSemInit(&spectrum_event_sem_, 0);  // Initialize semaphore with 0 count
     // Тело конструктора пустое
     // MessageHandlerRegistration objects are now initialized in-class (C++11 feature)
 }
@@ -1754,26 +1735,28 @@ void DroneHardwareController::process_channel_spectrum_data(const ChannelSpectru
     std::copy(spectrum.db.begin(), spectrum.db.begin() + count, last_spectrum_db_.begin());
 
     spectrum_updated_ = true;
+    chSemSignal(&spectrum_event_sem_);  // Signal waiting thread
 }
 
 bool DroneHardwareController::get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer) {
     MutexLock lock(spectrum_mutex_);
-    if (!spectrum_updated_) return false;
+    if (spectrum_updated_) {
+        // Валидация данных перед копированием
+        bool has_valid_data = false;
+        for (size_t i = 0; i < last_spectrum_db_.size(); i++) {
+            if (last_spectrum_db_[i] != 0) {
+                has_valid_data = true;
+                break;
+            }
+        }
 
-    // Валидация данных перед копированием
-    bool has_valid_data = false;
-    for (size_t i = 0; i < last_spectrum_db_.size(); i++) {
-        if (last_spectrum_db_[i] != 0) {
-            has_valid_data = true;
-            break;
+        if (has_valid_data) {
+            out_db_buffer = last_spectrum_db_;
+            spectrum_updated_ = false;
+            return true;
         }
     }
-
-    if (!has_valid_data) return false;
-
-    out_db_buffer = last_spectrum_db_;
-    spectrum_updated_ = false;  // Сбрасываем флаг после чтения
-    return true;
+    return false;
 }
 
 void DroneHardwareController::clear_spectrum_flag() {
@@ -1784,6 +1767,16 @@ void DroneHardwareController::clear_spectrum_flag() {
 bool DroneHardwareController::is_spectrum_fresh() const {
     MutexLock lock(spectrum_mutex_);
     return spectrum_updated_;
+}
+
+bool DroneHardwareController::is_spectrum_fresh() const {
+    MutexLock lock(spectrum_mutex_);
+    return spectrum_updated_;
+}
+
+bool DroneHardwareController::wait_for_spectrum_update(systime_t timeout) {
+    msg_t result = chSemWaitTimeout(&spectrum_event_sem_, timeout);
+    return (result != RDY_TIMEOUT);
 }
 
 int32_t DroneHardwareController::get_configured_sampling_rate() const {

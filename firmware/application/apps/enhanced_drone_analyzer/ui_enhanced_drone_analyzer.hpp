@@ -189,6 +189,7 @@ static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
 static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 22'000'000; // Optimized for 2.4GHz band coverage
 static constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
 static constexpr size_t DETECTION_TABLE_SIZE = 256;
+static constexpr size_t HASH_TABLE_SIZE = 256;
 
 struct WidebandSlice {
     Frequency center_frequency;
@@ -539,6 +540,35 @@ private:
     };
     std::array<FrequencyPrediction, MAX_FREQUENCY_PREDICTIONS> frequency_predictions_{};
     size_t prediction_count_ = 0;
+
+    // Adaptive scan timing
+    struct ScanTiming {
+        uint32_t current_interval_ms = 750;
+        uint32_t last_detection_time = 0;
+        uint8_t consecutive_empty_scans = 0;
+        
+        void update_interval(uint32_t total_detections, systime_t now) {
+            const uint32_t MIN_INTERVAL = 250;   // Fast when active
+            const uint32_t MAX_INTERVAL = 2000;  // Slow when idle
+            const uint32_t BASE_INTERVAL = 750;
+            
+            if (total_detections > 0) {
+                // Activity detected - speed up
+                current_interval_ms = MIN_INTERVAL;
+                consecutive_empty_scans = 0;
+            } else {
+                // No detections - gradually slow down
+                consecutive_empty_scans++;
+                if (consecutive_empty_scans > 5) {
+                    current_interval_ms = std::min(
+                        current_interval_ms + 100, 
+                        MAX_INTERVAL
+                    );
+                }
+            }
+        }
+    };
+    ScanTiming timing_;
 };
 
 class DroneHardwareController {
@@ -576,6 +606,7 @@ public:
     bool get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer);
     void clear_spectrum_flag();
     bool is_spectrum_fresh() const;
+    bool wait_for_spectrum_update(systime_t timeout);
 
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_statistics(const ChannelStatistics& statistics);
@@ -606,6 +637,7 @@ private:
     std::array<uint8_t, 256> last_spectrum_db_;
     mutable Mutex spectrum_mutex_;
     volatile bool spectrum_updated_ = false;
+    Semaphore spectrum_event_sem_;  // Event flag for spectrum updates
 
     MessageHandlerRegistration message_handler_spectrum_config_ {
         Message::ID::ChannelSpectrumConfig,
