@@ -93,17 +93,19 @@ jobs:
         run: |
           echo "=== Running Clang-Tidy (Thread Safety) ==="
 
-          # Focus on thread safety and concurrency issues
-          clang-tidy \
-            firmware/application/apps/enhanced_drone_analyzer/*.cpp \
-            -checks=-*,thread-*,bugprone-*,deadcode-*,-bugprone-narrowing-conversions,-bugprone-signed-char-bitfield \
-            -header-filter='.*enhanced_drone_analyzer.*' \
-            -- \
-            -std=c++17 \
-            -I. \
-            -Ifirmware/ \
-            -DFIRMWARE_APPLICATION \
-            2>&1 | tee clang_tidy_output.txt || true
+           # Focus on thread safety and concurrency issues
+           clang-tidy \
+             firmware/application/apps/enhanced_drone_analyzer/*.cpp \
+             -checks=-*,thread-*,bugprone-*,deadcode-*,-bugprone-narrowing-conversions,-bugprone-signed-char-bitfield \
+             -header-filter='.*enhanced_drone_analyzer.*' \
+             -- \
+             -std=c++17 \
+             -I. \
+             -Ifirmware/ \
+             -Ifirmware/chibios/os/kernel/include \
+             -Ifirmware/chibios-portapack/ext/fatfs/src \
+             -DFIRMWARE_APPLICATION \
+             2>&1 | tee clang_tidy_output.txt || true
 
           # Check for actual warnings
           if grep -q 'warning:' clang_tidy_output.txt 2>/dev/null; then
