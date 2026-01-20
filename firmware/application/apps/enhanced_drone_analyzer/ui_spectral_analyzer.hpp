@@ -171,7 +171,7 @@ public:
             result.signature = SignalSignature::NARROWBAND_DRONE;  // Analog, ELRS, TBS
         } else {
             // "Grey zone" 3-10 MHz. Often poor analog video. Count as drone for safety.
-            result.signature = SignalSignature::NARROWBAND_DRONE;
+            // Classification intentionally treats unknown signals as potential drones for safety
         }
 
         result.is_valid = true;

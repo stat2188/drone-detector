@@ -59,6 +59,11 @@ struct preset_entry {
     std::string label;
 };
 
+struct RssiMeasurement {
+    int16_t rssi_db;
+    systime_t timestamp_ms;
+};
+
 static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
 static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 
@@ -98,15 +103,15 @@ public:
         return *this;
     }
 
-    void add_rssi(int16_t new_rssi, systime_t timestamp) {
-        rssi_history_[history_index_] = new_rssi;
-        timestamp_history_[history_index_] = timestamp;
+    void add_rssi(const RssiMeasurement& measurement) {
+        rssi_history_[history_index_] = measurement.rssi_db;
+        timestamp_history_[history_index_] = measurement.timestamp_ms;
         history_index_ = (history_index_ + 1) % MAX_HISTORY;
 
-        this->rssi = new_rssi;
+        this->rssi = measurement.rssi_db;
 
-        if (timestamp > last_seen) {
-            last_seen = timestamp;
+        if (measurement.timestamp_ms > last_seen) {
+            last_seen = measurement.timestamp_ms;
             if (update_count < 255) update_count++;
         }
     }

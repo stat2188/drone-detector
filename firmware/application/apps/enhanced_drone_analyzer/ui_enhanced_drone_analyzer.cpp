@@ -427,6 +427,8 @@ bool DroneScanner::load_frequency_database() {
 
         db_entry_count_ = 0;
 
+    // NOLINTNEXTLINE(bugprone-branch-clone)
+    // Different data sources: built-in database vs SD card
     // If SD card loading failed or returned empty database, use built-in database
     if (!sd_loaded || temp_db.empty()) {
         // Load built-in database
@@ -1143,7 +1145,7 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
     // @invariant Assumes exclusive access to tracked_drones_ array.
     for (size_t i = 0; i < tracked_count_; ++i) {
         if (tracked_drones_[i].frequency == static_cast<uint32_t>(frequency) && tracked_drones_[i].update_count > 0) {
-            tracked_drones_[i].add_rssi(static_cast<int16_t>(rssi), chTimeNow());
+            tracked_drones_[i].add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
             tracked_drones_[i].drone_type = static_cast<uint8_t>(type);
             tracked_drones_[i].threat_level = static_cast<uint8_t>(threat_level);
             update_tracking_counts();
@@ -1157,7 +1159,7 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
         new_drone.frequency = static_cast<uint32_t>(frequency);
         new_drone.drone_type = static_cast<uint8_t>(type);
         new_drone.threat_level = static_cast<uint8_t>(threat_level);
-        new_drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
+        new_drone.add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
         tracked_drones_[tracked_count_] = new_drone;
         tracked_count_++;
         update_tracking_counts();
@@ -1187,7 +1189,7 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
     oldest_drone.frequency = static_cast<uint32_t>(frequency);
     oldest_drone.drone_type = static_cast<uint8_t>(type);
     oldest_drone.threat_level = static_cast<uint8_t>(threat_level);
-    oldest_drone.add_rssi(static_cast<int16_t>(rssi), chTimeNow());
+    oldest_drone.add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
 
     // No need to call update_tracking_counts() here since we're just replacing an existing entry
 }
@@ -2297,6 +2299,8 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
     if (scanner.is_scanning_active()) {
         Frequency current_freq = scanner.get_current_scanning_frequency();
+        // NOLINTNEXTLINE(bugprone-branch-clone)
+        // Different display values: actual frequency vs default placeholder
         if (current_freq > 0) {
             big_display_.set(to_string_short_freq(current_freq));
         } else {
@@ -2514,6 +2518,8 @@ void DroneDisplayController::render_drone_text_display() {
                 freq_str.c_str(),
                 (long int)drone.rssi,
                 trend_symbol);
+        // NOLINTNEXTLINE(bugprone-branch-clone)
+        // Each case updates different UI element (different drone display slots)
         switch(i) {
             case 0:
                 text_drone_1_.set(buffer);
@@ -2661,6 +2667,8 @@ void DroneDisplayController::update_signal_type_display(const std::string& signa
     static Style analog_style{font::fixed_8x16, Color::black(), Color::yellow()};
     static Style unknown_style{font::fixed_8x16, Color::black(), Color::grey()};
     
+    // NOLINTNEXTLINE(bugprone-branch-clone)
+    // Each branch sets different color style for different signal types
     if (signal_type == "DIGITAL") {
         text_signal_type_.set_style(&digital_style);
     } else if (signal_type == "ANALOG") {
@@ -2862,6 +2870,8 @@ DroneSettingsMenuView::DroneSettingsMenuView(NavigationView& nav, DroneUIControl
         }
     };
     // Set initial button text
+    // NOLINTNEXTLINE(bugprone-branch-clone)
+    // Different button text based on audio alert setting
     if (controller.settings().enable_audio_alerts) {
         button_audio_.set_text("Audio Alerts: ON");
     } else {
