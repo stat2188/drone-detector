@@ -1,4 +1,5 @@
-#pragma once
+#ifndef __UI_DRONE_COMMON_TYPES_HPP__
+#define __UI_DRONE_COMMON_TYPES_HPP__
 
 #include <cstdint>
 #include <string>
@@ -131,3 +132,5 @@ struct DetectionLogEntry {
     uint8_t detection_count;
     uint8_t confidence_percent; // Используем 0-100% вместо float для экономии памяти и тактов
 };
+
+#endif // __UI_DRONE_COMMON_TYPES_HPP__
