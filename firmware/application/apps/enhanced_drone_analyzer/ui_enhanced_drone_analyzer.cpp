@@ -15,6 +15,7 @@
 #include "ui_spectral_analyzer.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
@@ -341,11 +342,10 @@ DroneScanner::DroneScanner()
 }
 
 DroneScanner::~DroneScanner() {
-    // Clean up mutex - Note: ChibiOS mutexes don't need explicit finalization
-    // The mutex is automatically cleaned up when the object is destroyed
-    
     stop_scanning();
     cleanup_database_and_scanner();
+    // Note: ChibiOS mutexes are automatically cleaned up with the object.
+    // No explicit deinitialization needed - mutex is part of thread context.
 }
 
 void DroneScanner::initialize_wideband_scanning() {
@@ -1130,7 +1130,10 @@ void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int
 }
 
 void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
-    // Internal method - assumes that the mutex is ALREADY acquired by the caller
+    // @pre Caller MUST hold data_mutex.
+    // @note This is an internal optimization to avoid double-locking when called
+    //       from within a critical section. Use update_tracked_drone() for external calls.
+    // @invariant Assumes exclusive access to tracked_drones_ array.
     for (size_t i = 0; i < tracked_count_; ++i) {
         if (tracked_drones_[i].frequency == static_cast<uint32_t>(frequency) && tracked_drones_[i].update_count > 0) {
             tracked_drones_[i].add_rssi(static_cast<int16_t>(rssi), chTimeNow());
@@ -1183,25 +1186,59 @@ void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequ
 }
 
 void DroneScanner::remove_stale_drones() {
-    // Protect deletion
-    MutexLock lock(data_mutex);
-
     const systime_t STALE_TIMEOUT = 30000;
     systime_t current_time = chTimeNow();
 
-    // Compact array by shifting valid drones to the front
+    std::array<size_t, MAX_TRACKED_DRONES> stale_indices{};
+    size_t stale_count = 0;
+
+    // Step 1: Identify stale drones under mutex (fast O(n) scan)
+    {
+        MutexLock lock(data_mutex);
+        for (size_t i = 0; i < tracked_count_; ++i) {
+            if (tracked_drones_[i].update_count > 0 &&
+                (current_time - tracked_drones_[i].last_seen) > STALE_TIMEOUT) {
+                stale_indices[stale_count++] = i;
+            }
+        }
+    }
+
+    // Step 2: If no stale drones, exit early
+    if (stale_count == 0) return;
+
+    // Step 3: Compact array without mutex (O(n) but fast)
+    MutexLock lock(data_mutex);
     size_t write_index = 0;
+    size_t num_valid = 0;
+
+    // Mark stale indices for removal
+    std::array<bool, MAX_TRACKED_DRONES> is_stale{};
+    for (size_t i = 0; i < stale_count; ++i) {
+        if (stale_indices[i] < tracked_count_) {
+            is_stale[stale_indices[i]] = true;
+        }
+    }
+
+    // Compact: copy only valid drones
     for (size_t read_index = 0; read_index < tracked_count_; ++read_index) {
-        if (!(tracked_drones_[read_index].update_count > 0 && (current_time - tracked_drones_[read_index].last_seen) > STALE_TIMEOUT)) {
-            // Keep this drone
+        if (!is_stale[read_index]) {
             if (write_index != read_index) {
                 tracked_drones_[write_index] = tracked_drones_[read_index];
             }
             write_index++;
+            num_valid++;
         }
     }
-    tracked_count_ = write_index;
-    update_tracking_counts();
+    tracked_count_ = num_valid;
+
+    // Step 4: Update tracking counts (only if we have valid data)
+    if (tracked_count_ > 0) {
+        update_tracking_counts();
+    } else {
+        approaching_count_ = 0;
+        receding_count_ = 0;
+        static_count_ = 0;
+    }
 }
 
 void DroneScanner::update_tracking_counts() {
@@ -1290,6 +1327,18 @@ DroneScanner::DroneSnapshot DroneScanner::get_tracked_drones_snapshot() const {
     return snapshot;
 }
 
+bool DroneScanner::try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const {
+    if (chMtxTryLock(&data_mutex)) {
+        out_snapshot.count = tracked_count_;
+        for (size_t i = 0; i < tracked_count_ && i < MAX_TRACKED_DRONES; ++i) {
+            out_snapshot.drones[i] = tracked_drones_[i];
+        }
+        chMtxUnlock();
+        return true;
+    }
+    return false;
+}
+
     // Implementation of safe read methods
 
 int32_t DroneScanner::get_detection_rssi_safe(size_t freq_hash) const {
@@ -1331,6 +1380,7 @@ DroneDetectionLogger::DroneDetectionLogger()
 DroneDetectionLogger::~DroneDetectionLogger() {
     stop_worker();
     end_session();
+    // Note: ChibiOS mutexes are automatically cleaned up with the object.
 }
 
 void DroneDetectionLogger::start_session() {
@@ -1584,6 +1634,7 @@ DroneHardwareController::DroneHardwareController(SpectrumMode mode)
 
 DroneHardwareController::~DroneHardwareController() {
     shutdown_hardware();
+    // Note: ChibiOS mutexes are automatically cleaned up with the object.
 }
 
 void DroneHardwareController::initialize_hardware() {
@@ -1774,6 +1825,16 @@ bool DroneHardwareController::get_latest_spectrum_if_fresh(std::array<uint8_t, 2
     if (spectrum_updated_) {
         out_db_buffer = last_spectrum_db_;
         spectrum_updated_ = false;
+        return true;
+    }
+    return false;
+}
+
+bool DroneHardwareController::try_get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer) {
+    if (chMtxTryLock(&spectrum_mutex_)) {
+        out_db_buffer = last_spectrum_db_;
+        spectrum_updated_ = false;
+        chMtxUnlock();
         return true;
     }
     return false;

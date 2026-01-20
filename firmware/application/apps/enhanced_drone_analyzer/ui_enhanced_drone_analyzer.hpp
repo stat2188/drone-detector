@@ -413,7 +413,10 @@ public:
     void send_drone_detection_message(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
 
     void update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
+
     void update_tracked_drone_internal(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
+    // @note: Caller MUST hold data_mutex. This method assumes the mutex is already acquired.
+
     void remove_stale_drones();
 
     Frequency get_current_scanning_frequency() const;
@@ -458,6 +461,8 @@ public:
     };
 
     DroneSnapshot get_tracked_drones_snapshot() const;
+
+    bool try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const;
 
 private:
     void reset_scan_cycles();
@@ -574,6 +579,7 @@ public:
 
     // NEW: Spectrum data access method (atomic check-and-fetch to avoid TOCTOU race)
     bool get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer);
+    bool try_get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer);
     void clear_spectrum_flag();
 
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
