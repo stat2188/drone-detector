@@ -2,8 +2,8 @@
 // Contains DetectionRingBuffer, WidebandMedianFilter, and other signal processing components
 // Based on Looking Glass migration
 
-#ifndef __UI_SIGNAL_PROCESSING_HPP__
-#define __UI_SIGNAL_PROCESSING_HPP__
+#ifndef UI_SIGNAL_PROCESSING_HPP_
+#define UI_SIGNAL_PROCESSING_HPP_
 
 #include <array>
 #include <cstdint>

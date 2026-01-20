@@ -1,5 +1,5 @@
-#ifndef __UI_DRONE_COMMON_TYPES_HPP__
-#define __UI_DRONE_COMMON_TYPES_HPP__
+#ifndef UI_DRONE_COMMON_TYPES_HPP_
+#define UI_DRONE_COMMON_TYPES_HPP_
 
 #include <cstdint>
 #include <string>

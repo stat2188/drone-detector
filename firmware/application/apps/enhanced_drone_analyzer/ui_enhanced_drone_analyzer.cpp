@@ -2219,6 +2219,8 @@ void ConsoleStatusBar::set_display_mode(DisplayMode mode) {
     alert_text_.hidden(true);
     normal_text_.hidden(true);
 
+    // cppcheck-suppress branch-clone
+    // Note: Each mode controls different UI element (progress/alert/normal)
     switch (mode) {
         case DisplayMode::SCANNING: progress_text_.hidden(false); break;
         case DisplayMode::ALERT: alert_text_.hidden(false); break;
@@ -2517,6 +2519,8 @@ void DroneDisplayController::render_drone_text_display() {
                 break;
             case 2:
                 text_drone_3_.set(buffer);
+                break;
+            default:
                 break;
         }
     }
@@ -3228,6 +3232,8 @@ const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
 }
 
 Color DroneDisplayController::get_drone_type_color(DroneType type) const {
+    // cppcheck-suppress branch-clone
+    // Note: Each drone type has distinct color by design
     switch (type) {
         case DroneType::MAVIC: return Color::red();
         case DroneType::DJI_P34: return Color::orange();

@@ -1,7 +1,7 @@
 // scanning_coordinator.hpp - Coordinate scanning operations for EDA
 
-#ifndef __SCANNING_COORDINATOR_HPP__
-#define __SCANNING_COORDINATOR_HPP__
+#ifndef SCANNING_COORDINATOR_HPP_
+#define SCANNING_COORDINATOR_HPP_
 
 #include <memory>
 #include <atomic>
@@ -54,4 +54,4 @@ private:
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
-#endif // __SCANNING_COORDINATOR_HPP__
+#endif // SCANNING_COORDINATOR_HPP_

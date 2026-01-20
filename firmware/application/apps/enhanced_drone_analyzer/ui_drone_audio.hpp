@@ -17,7 +17,7 @@ struct AudioAlertManager {
         switch (level) {
             case ThreatLevel::NONE: return; // No alert
             case ThreatLevel::LOW: freq_hz = 800; break;
-            case ThreatLevel::MEDIUM: freq_hz = 1200; break;
+            case ThreatLevel::MEDIUM: freq_hz = 1000; break;
             case ThreatLevel::HIGH: freq_hz = 1200; break;
             case ThreatLevel::CRITICAL: freq_hz = 2000; break;
             default: freq_hz = 800; break;

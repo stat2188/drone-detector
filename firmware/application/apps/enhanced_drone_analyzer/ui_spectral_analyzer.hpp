@@ -1,8 +1,8 @@
 // ui_spectral_analyzer.hpp - Spectral Analysis for Enhanced Drone Analyzer
 // Implements intelligent signal classification using M0 FFT data
 
-#ifndef __UI_SPECTRAL_ANALYZER_HPP__
-#define __UI_SPECTRAL_ANALYZER_HPP__
+#ifndef UI_SPECTRAL_ANALYZER_HPP_
+#define UI_SPECTRAL_ANALYZER_HPP_
 
 #include <cstdint>
 #include <array>
@@ -158,6 +158,8 @@ public:
                 // На 2.4 ГГц это скорее всего WiFi (хотя DJI O3 тоже бывает, но WiFi чаще)
                 result.signature = SignalSignature::WIDEBAND_WIFI;
             }
+        // cppcheck-suppress branch-clone
+        // Note: "Grey zone" 3-10 MHz is intentionally classified as drone for safety
         } else if (result.signal_width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
             result.signature = SignalSignature::NARROWBAND_DRONE; // Аналог, ELRS, TBS
         } else {

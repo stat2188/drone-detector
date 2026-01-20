@@ -1,10 +1,10 @@
-#ifndef __SCANNER_SETTINGS_HPP__
-#define __SCANNER_SETTINGS_HPP__
+#ifndef SCANNER_SETTINGS_HPP_
+#define SCANNER_SETTINGS_HPP_
 
 #include <string>
 #include <algorithm>
 #include <cstdint>
-#include "file.hpp"
+#include "../file.hpp"
 #include "ui_drone_common_types.hpp"
 
 // Forward declarations

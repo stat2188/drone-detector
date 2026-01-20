@@ -1,5 +1,5 @@
-#ifndef __UI_SCANNER_COMBINED_HPP__
-#define __UI_SCANNER_COMBINED_HPP__
+#ifndef UI_SCANNER_COMBINED_HPP_
+#define UI_SCANNER_COMBINED_HPP_
 
 #include <cstdint>
 #include <string>
