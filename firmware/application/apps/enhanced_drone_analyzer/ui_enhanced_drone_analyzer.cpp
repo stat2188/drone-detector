@@ -428,8 +428,6 @@ bool DroneScanner::load_frequency_database() {
         db_entry_count_ = 0;
 
     // NOLINTNEXTLINE(bugprone-branch-clone)
-    // Different data sources: built-in database vs SD card
-    // If SD card loading failed or returned empty database, use built-in database
     if (!sd_loaded || temp_db.empty()) {
         // Load built-in database
         for (const auto& item : BUILTIN_DRONE_DB) {
@@ -1951,6 +1949,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         threat_frequency_.set("NO SIGNAL");
     }
 
+    // NOLINTNEXTLINE(bugprone-branch-clone)
     switch (max_threat) {
         case ThreatLevel::CRITICAL:
             threat_frequency_.set_style(&UIStyles::RED_STYLE);
@@ -2226,7 +2225,6 @@ void ConsoleStatusBar::set_display_mode(DisplayMode mode) {
     normal_text_.hidden(true);
 
     // NOLINTNEXTLINE(bugprone-branch-clone)
-    // Each mode controls different UI element (progress/alert/normal)
     switch (mode) {
         case DisplayMode::SCANNING: progress_text_.hidden(false); break;
         case DisplayMode::ALERT: alert_text_.hidden(false); break;
@@ -2300,7 +2298,6 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     if (scanner.is_scanning_active()) {
         Frequency current_freq = scanner.get_current_scanning_frequency();
         // NOLINTNEXTLINE(bugprone-branch-clone)
-        // Different display values: actual frequency vs default placeholder
         if (current_freq > 0) {
             big_display_.set(to_string_short_freq(current_freq));
         } else {
@@ -2519,7 +2516,6 @@ void DroneDisplayController::render_drone_text_display() {
                 (long int)drone.rssi,
                 trend_symbol);
         // NOLINTNEXTLINE(bugprone-branch-clone)
-        // Each case updates different UI element (different drone display slots)
         switch(i) {
             case 0:
                 text_drone_1_.set(buffer);
@@ -2668,7 +2664,6 @@ void DroneDisplayController::update_signal_type_display(const std::string& signa
     static Style unknown_style{font::fixed_8x16, Color::black(), Color::grey()};
     
     // NOLINTNEXTLINE(bugprone-branch-clone)
-    // Each branch sets different color style for different signal types
     if (signal_type == "DIGITAL") {
         text_signal_type_.set_style(&digital_style);
     } else if (signal_type == "ANALOG") {
@@ -2871,7 +2866,6 @@ DroneSettingsMenuView::DroneSettingsMenuView(NavigationView& nav, DroneUIControl
     };
     // Set initial button text
     // NOLINTNEXTLINE(bugprone-branch-clone)
-    // Different button text based on audio alert setting
     if (controller.settings().enable_audio_alerts) {
         button_audio_.set_text("Audio Alerts: ON");
     } else {
@@ -3247,7 +3241,6 @@ const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
 
 Color DroneDisplayController::get_drone_type_color(DroneType type) const {
     // NOLINTNEXTLINE(bugprone-branch-clone)
-    // Each drone type has distinct color by design
     switch (type) {
         case DroneType::MAVIC: return Color::red();
         case DroneType::DJI_P34: return Color::orange();

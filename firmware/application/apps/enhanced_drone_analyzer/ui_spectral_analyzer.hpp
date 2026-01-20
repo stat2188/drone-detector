@@ -166,7 +166,6 @@ public:
             result.signature = SignalSignature::WIDEBAND_WIFI;
         }
         // NOLINTNEXTLINE(bugprone-branch-clone)
-        // Note: "Grey zone" 3-10 MHz is intentionally classified as drone for safety
         } else if (result.signal_width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
             result.signature = SignalSignature::NARROWBAND_DRONE;  // Analog, ELRS, TBS
         } else {
