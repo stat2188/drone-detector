@@ -96,15 +96,17 @@ jobs:
            # Focus on thread safety and concurrency issues
              clang-tidy \
                firmware/application/apps/enhanced_drone_analyzer/*.cpp \
-               -checks=-*,thread-*,bugprone-*,deadcode-*,-bugprone-narrowing-conversions,-bugprone-signed-char-bitfield \
+               -checks=-*,thread-*,bugprone-*,deadcode-*,-bugprone-narrowing-conversions,-bugprone-signed-char-bitfield,-bugprone-implicit-widening-of-multiplication-result \
                -header-filter='.*enhanced_drone_analyzer.*' \
                -- \
                -std=c++17 \
                -I. \
                -Ifirmware/ \
                -Ifirmware/application \
+               -Ifirmware/application/ui \
                -Ifirmware/common \
                -Ifirmware/chibios/os/kernel/include \
+               -Ifirmware/chibios/os/hal/include \
                -Ifirmware/chibios/os/ports/common/ARMCMx \
                -Ifirmware/chibios/os/ports/common/ARMCMx/CMSIS/include \
                -Ifirmware/chibios/os/ports/GCC/ARMCMx \

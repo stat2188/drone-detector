@@ -1,8 +1,8 @@
 // ui_drone_audio.hpp - Audio Alert Manager for Enhanced Drone Analyzer
 // Migrated from detector_app patterns, simplified for mayhem-firmware integration
 
-#ifndef __UI_DRONE_AUDIO_HPP__
-#define __UI_DRONE_AUDIO_HPP__
+#ifndef UI_DRONE_AUDIO_HPP_
+#define UI_DRONE_AUDIO_HPP_
 
 #include <stdint.h>
 #include "baseband_api.hpp"
@@ -47,9 +47,9 @@ public:
 
     // Legacy API for compatibility
     uint16_t get_alert_frequency() const { return 800; }
-    void set_alert_frequency(uint16_t freq) { (void)freq; /* Fixed to 800Hz like detector_app */ }
+    void set_alert_frequency([[maybe_unused]] uint16_t freq) { (void)freq; /* Fixed to 800Hz like detector_app */ }
     uint32_t get_alert_duration_ms() const { return 200; }
-    void set_alert_duration_ms(uint32_t duration) { (void)duration; /* Fixed 200ms like detector_app */ }
+    void set_alert_duration_ms([[maybe_unused]] uint32_t duration) { (void)duration; /* Fixed 200ms like detector_app */ }
 
 private:
     bool audio_enabled_; // Not used - using global static
@@ -60,4 +60,4 @@ struct DroneAudioSettings {
     ThreatLevel test_threat_level = ThreatLevel::HIGH;
 };
 
-#endif // __UI_DRONE_AUDIO_HPP__
+#endif // UI_DRONE_AUDIO_HPP_

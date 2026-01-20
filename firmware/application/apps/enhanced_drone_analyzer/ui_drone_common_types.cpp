@@ -18,8 +18,7 @@ bool DroneAnalyzerSettingsManager::load_settings(ui::apps::enhanced_drone_analyz
     return true;
 }
 
-bool DroneAnalyzerSettingsManager::save_settings(const ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
-    (void)settings;
+bool DroneAnalyzerSettingsManager::save_settings([[maybe_unused]] const ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
     return false;
 }
 

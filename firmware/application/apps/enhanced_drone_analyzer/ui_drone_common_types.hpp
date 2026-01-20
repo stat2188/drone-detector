@@ -125,12 +125,12 @@ static constexpr uint32_t MAX_AUDIO_DURATION = 5000;
 // This is a POD (Plain Old Data) structure for safe memory copying
 struct DetectionLogEntry {
     uint32_t timestamp;
-    uint64_t frequency_hz; // uint64_t для частот > 4ГГц
+    uint64_t frequency_hz;  // uint64_t for frequencies > 4GHz
     int32_t rssi_db;
     ThreatLevel threat_level;
     DroneType drone_type;
     uint8_t detection_count;
-    uint8_t confidence_percent; // Используем 0-100% вместо float для экономии памяти и тактов
+    uint8_t confidence_percent;  // Integer 0-100% instead of float for memory efficiency
 };
 
 #endif // __UI_DRONE_COMMON_TYPES_HPP__

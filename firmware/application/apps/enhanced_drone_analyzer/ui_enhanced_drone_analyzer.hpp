@@ -212,15 +212,15 @@ struct WidebandScanData {
 
 struct DetectionLogEntry {
     uint32_t timestamp;
-    uint64_t frequency_hz; // uint64_t для частот > 4ГГц
+    uint64_t frequency_hz;  // uint64_t for frequencies > 4GHz
     int32_t rssi_db;
     ThreatLevel threat_level;
     DroneType drone_type;
     uint8_t detection_count;
-    uint8_t confidence_percent; // Используем 0-100% вместо float для экономии памяти и тактов
-    uint8_t width_bins;         // Ширина сигнала в бинах (для калибровки)
-    uint32_t signal_width_hz;   // Ширина сигнала в Гц (для калибровки)
-    uint8_t snr;               // Signal-to-Noise Ratio (для калибровки)
+    uint8_t confidence_percent;  // Integer 0-100% instead of float for memory efficiency
+    uint8_t width_bins;           // Signal width in bins (for calibration)
+    uint32_t signal_width_hz;     // Signal width in Hz (for calibration)
+    uint8_t snr;                  // Signal-to-Noise Ratio (for calibration)
 };
 
 struct DroneDetectionMessage {
@@ -274,15 +274,21 @@ private:
     ConfigData config_data_;
 };
 
+// Struct for drone signal parameters (prevents easily-swappable-parameters warning)
+struct DroneSignal {
+    Frequency frequency_hz;
+    int32_t rssi_db;
+};
+
 // Moved inside namespace to fix compilation error
 class SimpleDroneValidation {
 public:
     static bool validate_frequency_range(Frequency freq_hz);
     static bool validate_rssi_signal(int32_t rssi_db, ThreatLevel threat);
     static ThreatLevel classify_signal_strength(int32_t rssi_db);
-    static DroneType identify_drone_type(Frequency freq_hz, int32_t rssi_db);
-    static bool validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
-                                       DroneType type, ThreatLevel threat);
+    static DroneType identify_drone_type(const DroneSignal& signal);
+    static bool validate_drone_detection(const DroneSignal& signal,
+                                        DroneType type, ThreatLevel threat);
 };
 
 // RAII wrapper for ChibiOS mutexes
@@ -348,8 +354,8 @@ private:
     size_t head_ = 0;                           // Declared 13th
     size_t tail_ = 0;                           // Declared 14th
     bool is_full_ = false;                      // Declared 15th
-    
-    // Вспомогательный буфер для форматирования строки (чтобы не аллоцировать в куче)
+
+    // Helper buffer for string formatting (avoid heap allocation)
     char line_buffer_[128];                     // Declared last
 
     // --- INTERNAL METHODS ---
@@ -408,13 +414,21 @@ public:
     int32_t get_detection_rssi_safe(size_t freq_hash) const;
     uint8_t get_detection_count_safe(size_t freq_hash) const;
 
+// Struct for drone detection parameters (prevents easily-swappable-parameters warning)
+struct DetectionParams {
+    DroneType type;
+    Frequency frequency_hz;
+    int32_t rssi_db;
+    ThreatLevel threat_level;
+};
+
     void perform_scan_cycle(DroneHardwareController& hardware);
     void process_rssi_detection(const freqman_entry& entry, int32_t rssi);
-    void send_drone_detection_message(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
+    void send_drone_detection_message(const DetectionParams& params);
 
-    void update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
+    void update_tracked_drone(const DetectionParams& params);
 
-    void update_tracked_drone_internal(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level);
+    void update_tracked_drone_internal(const DetectionParams& params);
     // @note: Caller MUST hold data_mutex. This method assumes the mutex is already acquired.
 
     void remove_stale_drones();

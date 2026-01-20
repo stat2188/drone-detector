@@ -16,19 +16,19 @@ namespace ui::apps::enhanced_drone_analyzer {
 // Signal classification results
 enum class SignalSignature {
     NOISE,
-    WIDEBAND_WIFI,  // Широкое "плато" (> 5-10 МГц)
-    NARROWBAND_DRONE, // Узкий пик (< 2-3 МГц)
-    DIGITAL_FPV      // Цифровое FPV видео (DJI O3, Vista и др.)
+    WIDEBAND_WIFI,   // Wide "plateau" (> 5-10 MHz)
+    NARROWBAND_DRONE, // Narrow peak (< 2-3 MHz)
+    DIGITAL_FPV      // Digital FPV video (DJI O3, Vista, etc.)
 };
 
 // Spectral analysis configuration
 struct SpectralAnalysisConfig {
-    static constexpr uint8_t SNR_THRESHOLD = 10;        // Сигнал должен быть на 10dB выше шума
-    static constexpr uint8_t PEAK_THRESHOLD_DB = 6;     // Порог для измерения ширины (Пик - 6dB)
-    static constexpr uint32_t DRONE_MAX_WIDTH_HZ = 2500000; // ~2.5 MHz для дронов
-    static constexpr uint32_t WIFI_MIN_WIDTH_HZ = 10000000;  // ~10 MHz для WiFi
-    static constexpr size_t VALID_BIN_START = 8;        // Пропускаем первые бины (DC и края)
-    static constexpr size_t VALID_BIN_END = 240;        // Пропускаем последние бины
+    static constexpr uint8_t SNR_THRESHOLD = 10;         // Signal must be 10dB above noise
+    static constexpr uint8_t PEAK_THRESHOLD_DB = 6;      // Threshold for width measurement (Peak - 6dB)
+    static constexpr uint32_t DRONE_MAX_WIDTH_HZ = 2500000;  // ~2.5 MHz for drones
+    static constexpr uint32_t WIFI_MIN_WIDTH_HZ = 10000000;  // ~10 MHz for WiFi
+    static constexpr size_t VALID_BIN_START = 8;         // Skip first bins (DC and edges)
+    static constexpr size_t VALID_BIN_END = 240;         // Skip last bins
 };
 
 // Spectral analysis statistics
@@ -80,12 +80,19 @@ public:
     }
 };
 
+// Parameters for spectral analysis (prevents easily-swappable-parameters warning)
+struct SpectralAnalysisParams {
+    uint32_t slice_bandwidth_hz;
+    Frequency center_freq_hz;
+};
+
 // Main spectral analyzer class
 class SpectralAnalyzer {
 public:
-    static SpectralAnalysisResult analyze(const std::array<uint8_t, 256>& db_buffer, 
-                                        uint32_t slice_bandwidth_hz,
-                                        Frequency center_freq_hz) {
+    static SpectralAnalysisResult analyze(const std::array<uint8_t, 256>& db_buffer,
+                                          const SpectralAnalysisParams& params) {
+        uint32_t slice_bandwidth_hz = params.slice_bandwidth_hz;
+        Frequency center_freq_hz = params.center_freq_hz;
         SpectralAnalysisResult result;
         
         // 1. Calculate noise floor using median filter
@@ -141,30 +148,30 @@ public:
         }
 
         // 6. Convert bins to Hz
-        uint32_t total_valid_bins = SpectralAnalysisConfig::VALID_BIN_END - 
+        uint32_t total_valid_bins = SpectralAnalysisConfig::VALID_BIN_END -
                                    SpectralAnalysisConfig::VALID_BIN_START;
-        // total_valid_bins всегда > 0 (константа 232)
+        // total_valid_bins always > 0 (constant 232)
         uint32_t bin_width_hz = slice_bandwidth_hz / total_valid_bins;
         result.signal_width_hz = result.width_bins * bin_width_hz;
 
         // 7. Classify signal based on width and context
-        if (result.signal_width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) { // Ширина > 10 MHz
-            // Контекстный анализ по диапазону частот
+        if (result.signal_width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {  // Width > 10 MHz
+            // Context analysis based on frequency range
             if (center_freq_hz >= 5000000000ULL) {
-                // На 5.8 ГГц широкий сигнал с высокой вероятностью является цифровым FPV (DJI O3, Vista)
-                // WiFi на 5.8 тоже есть, но в полевых условиях это чаще дрон
-                result.signature = SignalSignature::DIGITAL_FPV;
-            } else {
-                // На 2.4 ГГц это скорее всего WiFi (хотя DJI O3 тоже бывает, но WiFi чаще)
-                result.signature = SignalSignature::WIDEBAND_WIFI;
-            }
-        // cppcheck-suppress branch-clone
+            // On 5.8 GHz wide signal is likely digital FPV (DJI O3, Vista)
+            // WiFi on 5.8 also exists, but in field conditions it's more likely a drone
+            result.signature = SignalSignature::DIGITAL_FPV;
+        } else {
+            // On 2.4 GHz this is more likely WiFi (though DJI O3 also exists, but WiFi is more common)
+            result.signature = SignalSignature::WIDEBAND_WIFI;
+        }
+        // NOLINTNEXTLINE(bugprone-branch-clone)
         // Note: "Grey zone" 3-10 MHz is intentionally classified as drone for safety
         } else if (result.signal_width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
-            result.signature = SignalSignature::NARROWBAND_DRONE; // Аналог, ELRS, TBS
+            result.signature = SignalSignature::NARROWBAND_DRONE;  // Analog, ELRS, TBS
         } else {
-            // "Серая зона" 3-10 МГц. Часто это плохое аналоговое видео. Считаем дроном для безопасности.
-            result.signature = SignalSignature::NARROWBAND_DRONE; 
+            // "Grey zone" 3-10 MHz. Often poor analog video. Count as drone for safety.
+            result.signature = SignalSignature::NARROWBAND_DRONE;
         }
 
         result.is_valid = true;
@@ -175,7 +182,7 @@ public:
     static ThreatLevel get_threat_level(SignalSignature signature, uint8_t snr) {
         switch (signature) {
             case SignalSignature::DIGITAL_FPV:
-                // Цифра передает HD видео, это современный и опасный дрон
+                // Digital transmits HD video, this is a modern and dangerous drone
                 if (snr >= 15) return ThreatLevel::CRITICAL;
                 if (snr >= 5)  return ThreatLevel::HIGH;
                 return ThreatLevel::MEDIUM;

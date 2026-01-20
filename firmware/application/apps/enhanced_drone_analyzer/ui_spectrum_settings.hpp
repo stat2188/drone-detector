@@ -1,8 +1,8 @@
 // ui_spectrum_settings.hpp - Advanced spectrum settings for EDA (Migrated from Looking Glass)
 // Provides presets, IQ calibration, and amplifier controls
 
-#ifndef __UI_SPECTRUM_SETTINGS_HPP__
-#define __UI_SPECTRUM_SETTINGS_HPP__
+#ifndef UI_SPECTRUM_SETTINGS_HPP_
+#define UI_SPECTRUM_SETTINGS_HPP_
 
 #include <string>
 #include <vector>
@@ -66,21 +66,27 @@ struct AmplifierControl {
 };
 
 // Range locking mechanism (migrated from Looking Glass)
+struct FrequencyRange {
+    Frequency min_hz;
+    Frequency max_hz;
+
+    bool is_valid() const {
+        return min_hz > 0 && max_hz > min_hz;
+    }
+};
+
 struct RangeLockSettings {
     bool locked_range = false;  // Prevent changes during scanning
-    Frequency locked_min_freq = 0;
-    Frequency locked_max_freq = 0;
+    FrequencyRange locked_range_values;
 
-    void lock_range(Frequency min, Frequency max) {
+    void lock_range(const FrequencyRange& range) {
         locked_range = true;
-        locked_min_freq = min;
-        locked_max_freq = max;
+        locked_range_values = range;
     }
 
     void unlock_range() {
         locked_range = false;
-        locked_min_freq = 0;
-        locked_max_freq = 0;
+        locked_range_values = {0, 0};
     }
 
     bool is_in_locked_range() const {
@@ -133,10 +139,10 @@ struct SpectrumAnalyzerSettings {
         }
     }
 
-    void set_frequency_range(Frequency min, Frequency max) {
+    void set_frequency_range(const FrequencyRange& range) {
         if (!range_lock.is_in_locked_range()) {
-            current_min_freq = min;
-            current_max_freq = max;
+            current_min_freq = range.min_hz;
+            current_max_freq = range.max_hz;
         }
     }
 
@@ -185,4 +191,4 @@ private:
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
-#endif // __UI_SPECTRUM_SETTINGS_HPP__
+#endif // UI_SPECTRUM_SETTINGS_HPP_

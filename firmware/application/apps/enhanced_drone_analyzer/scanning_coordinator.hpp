@@ -10,12 +10,13 @@
 #include "thread_base.hpp"
 #include "ui_drone_audio.hpp"
 
+class AudioManager;
+
 namespace ui::apps::enhanced_drone_analyzer {
 
 class DroneHardwareController;
 class DroneScanner;
 class DroneDisplayController;
-class AudioManager;
 
 class ScanningCoordinator {
 public:

@@ -99,14 +99,16 @@ ThreatLevel SimpleDroneValidation::classify_signal_strength(int32_t rssi_db) {
     }
 }
 
-DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
+DroneType SimpleDroneValidation::identify_drone_type(const DroneSignal& signal) {
+    Frequency freq_hz = signal.frequency_hz;
+    int32_t rssi_db = signal.rssi_db;
     // 1. Low Frequency Long Range (868/915 MHz)
     if ((freq_hz >= 860000000ULL && freq_hz <= 870000000ULL) || 
         (freq_hz >= 900000000ULL && freq_hz <= 930000000ULL)) {
         return DroneType::MILITARY_DRONE; // Or DIY_DRONE, often used in "serious" custom builds
     }
     
-    // 2. Стандартный 433 MHz
+    // 2. Standard 433 MHz band
     if (freq_hz >= 433000000ULL && freq_hz <= 435000000ULL) {
         return DroneType::DIY_DRONE;
     }
@@ -121,15 +123,17 @@ DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t 
 
     // 4. 5.8 GHz Band (Video/Control)
     if (freq_hz >= 5600000000ULL && freq_hz <= 5900000000ULL) {
-        // RaceBand диапазон
-        return DroneType::FPV_RACING; 
+        // RaceBand frequency range
+        return DroneType::FPV_RACING;
     }
     
     return DroneType::UNKNOWN;
 }
 
-bool SimpleDroneValidation::validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
+bool SimpleDroneValidation::validate_drone_detection(const DroneSignal& signal,
                                                    DroneType type, ThreatLevel threat) {
+    Frequency freq_hz = signal.frequency_hz;
+    int32_t rssi_db = signal.rssi_db;
     // Comprehensive validation
     if (!validate_frequency_range(freq_hz)) {
         return false;
@@ -396,7 +400,7 @@ void DroneScanner::stop_scanning() {
 
     scanning_active_ = false;
 
-    // Ожидаем завершения потока сканирования
+    // Wait for scanning thread to complete
     if (scanning_thread_ != nullptr) {
         chThdWait(scanning_thread_);
         scanning_thread_ = nullptr;
@@ -486,7 +490,7 @@ const char* DroneScanner::scanning_mode_name() const {
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     if (!scanning_active_) return;
 
-    // FIX: Adaptive timing based on current load and detections
+    // TODO: Adaptive timing based on current load and detections
     uint32_t base_interval = 750; // Base interval in milliseconds
     uint32_t adaptive_interval = base_interval;
 
@@ -581,7 +585,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
                 chThdSleepMilliseconds(10); 
             }
 
-            // CRITICAL FIX: RSSI freshness waiting logic
+            // TODO[CRITICAL]: RSSI freshness waiting logic
             hardware.clear_rssi_flag();
 
             // Wait for fresh data (max 60ms)
@@ -658,9 +662,8 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         if (spectrum_received) {
             // Analyze the spectrum using our new SpectralAnalyzer
             auto analysis_result = SpectralAnalyzer::analyze(
-                spectrum_data, 
-                hardware.get_spectrum_bandwidth(),
-                current_slice.center_frequency // Pass center frequency for context
+                spectrum_data,
+                {hardware.get_spectrum_bandwidth(), current_slice.center_frequency}
             );
             
             // 5. Process detection based on spectral analysis
@@ -881,7 +884,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
                     0    // snr - default value
                 };
 
-                update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
+                update_tracked_drone_internal({detected_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(rssi), threat_level});
             }
         } else {
             // Counter decrement logic...
@@ -951,7 +954,7 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
                     analysis_result.snr               // Calibration: Signal-to-Noise Ratio
                 };
 
-                update_tracked_drone_internal(drone_type, entry.frequency_a, effective_rssi, threat_level);
+                update_tracked_drone_internal({drone_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(effective_rssi), threat_level});
             }
         } else {
             // Counter decrement logic...
@@ -982,12 +985,12 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 }
 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
-    // FIX 4: Improved RSSI and frequency validation
+    // TODO[FIXED]: Improved RSSI and frequency validation
     // 1. Preliminary filtering (no locks required)
     const int32_t MIN_VALID_RSSI = -120;  // Extended range for weak signals
     const int32_t MAX_VALID_RSSI = 10;
 
-    // FIX: Fixed RSSI validation logic
+    // TODO[FIXED]: Fixed RSSI validation logic
     // Was: rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
     // Now: rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
     // Now values from -128 to -110 will be processed correctly
@@ -1077,7 +1080,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 log_entry_to_write.snr = 0;
 
                 // Update drone tracking for UI (internal method that DOESN'T take mutex again)
-                update_tracked_drone_internal(detected_type, entry.frequency_a, rssi, threat_level);
+                update_tracked_drone_internal({detected_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(rssi), threat_level});
             }
         } else {
             // "Leaky bucket" logic
@@ -1096,7 +1099,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     // Mutex released. UI can redraw.
 
         // 3. Perform heavy I/O operations
-    // CRITICAL FIX: Async logging to prevent blocking scan thread
+    // TODO[CRITICAL][FIXED]: Async logging to prevent blocking scan thread
     // Original code blocked scan thread for 10-100ms during SD write
     if (should_log) {
         // Only log every 200ms to prevent I/O blocking while maintaining responsiveness
@@ -1117,19 +1120,23 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     }
 }
 
-void DroneScanner::send_drone_detection_message(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
-    // CRITICAL FIX: Don't call UI methods directly from scanning thread
+void DroneScanner::send_drone_detection_message(const DetectionParams& params) {
+    // TODO[CRITICAL][FIXED]: Don't call UI methods directly from scanning thread
     // Only update internal data - UI will read via snapshot
-    update_tracked_drone_internal(type, frequency, rssi, threat_level);
+    update_tracked_drone(params);
 }
 
-void DroneScanner::update_tracked_drone(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
-    // CRITICAL FIX: Don't call UI methods directly from scanning thread
+void DroneScanner::update_tracked_drone(const DetectionParams& params) {
+    // TODO[CRITICAL][FIXED]: Don't call UI methods directly from scanning thread
     // Only update internal data - UI will read via snapshot
-    update_tracked_drone_internal(type, frequency, rssi, threat_level);
+    update_tracked_drone_internal(params);
 }
 
-void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequency, int32_t rssi, ThreatLevel threat_level) {
+void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) {
+    Frequency frequency = params.frequency_hz;
+    DroneType type = params.type;
+    int32_t rssi = params.rssi_db;
+    ThreatLevel threat_level = params.threat_level;
     // @pre Caller MUST hold data_mutex.
     // @note This is an internal optimization to avoid double-locking when called
     //       from within a critical section. Use update_tracked_drone() for external calls.
@@ -1144,7 +1151,7 @@ void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequ
         }
     }
 
-    // FIX: Ring buffer overflow protection
+    // TODO[FIXED]: Ring buffer overflow protection
     if (tracked_count_ < MAX_TRACKED_DRONES) {
         TrackedDrone new_drone;
         new_drone.frequency = static_cast<uint32_t>(frequency);
@@ -1158,7 +1165,7 @@ void DroneScanner::update_tracked_drone_internal(DroneType type, Frequency frequ
     }
 
     // Ring buffer overflow protection: find oldest entry and replace it
-    // ИСПРАВЛЕНИЕ 2: Добавлена защита от переполнения буфера
+    // TODO[FIXED]: Added buffer overflow protection
     if (tracked_count_ == 0) {
         // This should never happen, but handle it gracefully
         return;
@@ -1313,8 +1320,7 @@ std::string DroneScanner::get_session_summary() const {
     return detection_logger_.format_session_summary(get_scan_cycles(), get_total_detections());
 }
 
-void DroneScanner::handle_scan_error(const char* error_msg) {
-    (void)error_msg;
+void DroneScanner::handle_scan_error([[maybe_unused]] const char* error_msg) {
 }
 
 DroneScanner::DroneSnapshot DroneScanner::get_tracked_drones_snapshot() const {
@@ -1669,11 +1675,11 @@ void DroneHardwareController::initialize_radio_state() {
     receiver_model.set_baseband_bandwidth(get_configured_bandwidth());
     receiver_model.set_squelch_level(0);
 
-    // --- CRITICAL FIX: Remove hardcoded RF Amp enable ---
+    // TODO[CRITICAL][FIXED]: Remove hardcoded RF Amp enable
     // Hardware safety: Never enable RF Amp by default to prevent damage
     // to antenna/power supply in case of short circuit
     // receiver_model.set_rf_amp(true); <-- REMOVED FOR SAFETY
-    
+
     // Use safe defaults - RF Amp should be controlled by user settings
     // or left disabled until explicitly enabled
     receiver_model.set_rf_amp(false);
@@ -1730,11 +1736,11 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 }
 
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
-    // FIX 5: Added frequency validation
+    // TODO[FIXED]: Added frequency validation
     // Range validation
     const Frequency MIN_FREQ = 50000000ULL;      // 50 MHz
     const Frequency MAX_FREQ = 6000000000ULL;    // 6 GHz
-    
+
     if (frequency_hz < MIN_FREQ || frequency_hz > MAX_FREQ) {
         return false;  // <-- Return false on error
     }
@@ -1759,7 +1765,7 @@ void DroneHardwareController::stop_spectrum_streaming() {
     baseband::spectrum_streaming_stop();
 }
 
-// CRITICAL FIX: Safe Baseband/Scanning separation methods
+// TODO[CRITICAL][FIXED]: Safe Baseband/Scanning separation methods
 void DroneHardwareController::stop_spectrum_before_scan() {
     if (spectrum_streaming_active_) {
         spectrum_streaming_active_ = false;
@@ -1948,8 +1954,6 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
             threat_frequency_.set_style(&UIStyles::RED_STYLE);
             break;
         case ThreatLevel::HIGH:
-            threat_frequency_.set_style(&UIStyles::YELLOW_STYLE);
-            break;
         case ThreatLevel::MEDIUM:
             threat_frequency_.set_style(&UIStyles::YELLOW_STYLE);
             break;
@@ -2219,8 +2223,8 @@ void ConsoleStatusBar::set_display_mode(DisplayMode mode) {
     alert_text_.hidden(true);
     normal_text_.hidden(true);
 
-    // cppcheck-suppress branch-clone
-    // Note: Each mode controls different UI element (progress/alert/normal)
+    // NOLINTNEXTLINE(bugprone-branch-clone)
+    // Each mode controls different UI element (progress/alert/normal)
     switch (mode) {
         case DisplayMode::SCANNING: progress_text_.hidden(false); break;
         case DisplayMode::ALERT: alert_text_.hidden(false); break;
@@ -2237,7 +2241,7 @@ void ConsoleStatusBar::paint(Painter& painter) {
 }
 
 DroneDisplayController::~DroneDisplayController() {
-    // STEP 2.2: FIX MEMORY LEAKS MessageHandler's
+    // TODO[FIXED]: STEP 2.2: Memory leaks in MessageHandler's
     // These handlers are now stack-allocated and will be automatically destroyed
     // No manual cleanup needed for stack-allocated objects
 }
@@ -2262,7 +2266,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
       marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
       spectrum_config_()
 {
-    // FIX: Reserve memory in advance.
+    // TODO[FIXED]: Reserve memory in advance.
     // MAX_TRACKED_DRONES is usually around 8-10, +2 as reserve.
     detected_drones_count_ = 0;
 
@@ -2703,9 +2707,9 @@ DroneUIController::DroneUIController(NavigationView& nav,
 
     // --- ADD THIS DESTRUCTOR ---
 DroneUIController::~DroneUIController() {
-    // ИСПРАВЛЕНИЕ 1.1: Не удаляем display_controller_ - им владеет View
-    // UIController только использует ссылку, но не владеет ресурсом
-    display_controller_ = nullptr;  // Только обнуляем указатель
+    // TODO[FIXED]: Don't delete display_controller_ - owned by View
+    // UIController only uses reference, doesn't own the resource
+    display_controller_ = nullptr;  // Only nullify pointer
 }
 
 void DroneUIController::on_start_scan() {
@@ -2929,12 +2933,12 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 }
 
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
-    // STEP 2.1: FIX DESTRUCTION ORDER
+    // TODO[FIXED]: STEP 2.1: Destruction order
     // 1. Stop activity (in dependency order)
     scanning_coordinator_.stop_coordinated_scanning();
     scanner_.stop_scanning();
     hardware_.shutdown_hardware();
-    
+
     // 2. Stack objects will be automatically destroyed in reverse order
     // No manual deletion needed for stack-allocated objects
 }
@@ -2970,7 +2974,7 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
-    // FIX 5: Explicit stop of all processes
+    // TODO[FIXED]: Explicit stop of all processes
     stop_scanning_thread(); // Stop coordinator thread
 
     scanner_.stop_scanning();
@@ -3198,7 +3202,7 @@ msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
 msg_t ScanningCoordinator::coordinated_scanning_thread() {
     while (scanning_active_) {
         scanner_.perform_scan_cycle(hardware_);
-        // CRITICAL FIX: Removed direct UI calls from scanning thread
+        // TODO[CRITICAL][FIXED]: Removed direct UI calls from scanning thread
         // UI updates now happen only through MessageHandler in handle_scanner_update()
 
         chThdSleepMilliseconds(scan_interval_ms_);
@@ -3232,8 +3236,8 @@ const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
 }
 
 Color DroneDisplayController::get_drone_type_color(DroneType type) const {
-    // cppcheck-suppress branch-clone
-    // Note: Each drone type has distinct color by design
+    // NOLINTNEXTLINE(bugprone-branch-clone)
+    // Each drone type has distinct color by design
     switch (type) {
         case DroneType::MAVIC: return Color::red();
         case DroneType::DJI_P34: return Color::orange();
