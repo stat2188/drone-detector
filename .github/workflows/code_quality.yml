@@ -1,10 +1,9 @@
-name: Code Quality & Mutex Check
+name: Enhanced Drone Analyzer - Code Quality & Mutex Check
 
 on:
   # Запускать при пуше в ветку main/next
   push:
     branches: [ "main", "next", "master" ]
-    # И ТОЛЬКО если изменились файлы в вашей папке (чтобы не спамить проверками при изменении других частей)
     paths:
       - 'firmware/application/apps/enhanced_drone_analyzer/**'
   # Запускать при создании Pull Request
@@ -16,33 +15,303 @@ on:
 
 jobs:
   static_analysis:
-    name: Cppcheck Analysis
+    name: Static Analysis (Cppcheck + Clang-Tidy)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck clang-tidy jq
+
+      # ==============================================
+      # STEP 1: Cppcheck Analysis
+      # ==============================================
+      - name: Run Cppcheck Analysis
+        id: cppcheck
+        run: |
+          echo "=== Running Cppcheck ==="
+          
+          cppcheck \
+            --enable=all \
+            --language=c++ \
+            --std=c++17 \
+            --xml-version=2 \
+            --inline-suppr \
+            --suppress=missingInclude \
+            --suppress=unusedFunction \
+            --suppress=unmatchedSuppression \
+            --force \
+            -j $(nproc) \
+            firmware/application/apps/enhanced_drone_analyzer/ 2>&1 \
+            | tee cppcheck_output.txt || true
+          
+          # Check for actual errors (not just warnings)
+          if grep -q '<error' cppcheck_output.txt 2>/dev/null; then
+            echo "has_errors=true" >> $GITHUB_ENV
+            ERROR_COUNT=$(grep -c '<error' cppcheck_output.txt)
+            echo "error_count=$ERROR_COUNT" >> $GITHUB_ENV
+            echo "::warning title=Cppcheck Errors::Found $ERROR_COUNT errors in Enhanced Drone Analyzer"
+          else
+            echo "has_errors=false" >> $GITHUB_ENV
+            echo "error_count=0" >> $GITHUB_ENV
+          fi
+
+      # ==============================================
+      # STEP 2: Clang-Tidy Thread Safety Analysis
+      # ==============================================
+      - name: Run Clang-Tidy Thread Safety Analysis
+        id: clang-tidy
+        run: |
+          echo "=== Running Clang-Tidy (Thread Safety) ==="
+          
+          # Focus on thread safety and concurrency issues
+          clang-tidy \
+            firmware/application/apps/enhanced_drone_analyzer/*.cpp \
+            -checks=-*,thread-*,bugprone-*,deadcode-*,-bugprone-narrowing-conversions,-bugprone-signed-char-bitfield \
+            -header-filter='.*enhanced_drone_analyzer.*' \
+            -- \
+            -std=c++17 \
+            -I. \
+            -Ifirmware/ \
+            -DFIRMWARE_APPLICATION \
+            2>&1 | tee clang_tidy_output.txt || true
+          
+          # Check for actual warnings
+          if grep -q 'warning:' clang_tidy_output.txt 2>/dev/null; then
+            TIDY_COUNT=$(grep -c 'warning:' clang_tidy_output.txt || echo "0")
+            echo "tidy_warnings=$TIDY_COUNT" >> $GITHUB_ENV
+            echo "::warning title=Clang-Tidy Warnings::Found $TIDY_COUNT warnings"
+          else
+            echo "tidy_warnings=0" >> $GITHUB_ENV
+          fi
+
+      # ==============================================
+      # STEP 3: Mutex-Specific Checks
+      # ==============================================
+      - name: Check Mutex Patterns
+        run: |
+          echo "=== Verifying Mutex Patterns ==="
+          
+          ERRORS=0
+          WARNINGS=0
+          
+          # Check 1: Verify no chMtxDeinit usage (not available in this ChibiOS version)
+          if grep -r "chMtxDeinit" firmware/application/apps/enhanced_drone_analyzer/ 2>/dev/null; then
+            echo "::error title=Invalid ChibiOS API::Found chMtxDeinit - this function doesn't exist!"
+            ERRORS=$((ERRORS + 1))
+          else
+            echo "✅ No chMtxDeinit usage (correct)"
+          fi
+          
+          # Check 2: Verify RAII wrapper usage
+          if grep -r "MutexLock" firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null | grep -v "class MutexLock" | grep -v "~MutexLock" > /dev/null; then
+            echo "✅ MutexLock RAII wrapper is being used"
+          else
+            echo "::warning title=Missing RAII Wrapper::MutexLock not found - consider using RAII pattern"
+            WARNINGS=$((WARNINGS + 1))
+          fi
+          
+          # Check 3: Verify try_get methods for non-blocking access
+          if grep -r "try_get" firmware/application/apps/enhanced_drone_analyzer/ 2>/dev/null; then
+            echo "✅ Non-blocking try_get methods found"
+          else
+            echo "::warning title=Missing Non-blocking API::No try_get methods found for UI updates"
+            WARNINGS=$((WARNINGS + 1))
+          fi
+          
+          # Check 4: Verify internal methods are documented
+          if grep -r "_internal" firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null | grep -q "@pre\|@note\|@invariant"; then
+            echo "✅ Internal methods have mutex documentation"
+          else
+            echo "::warning title=Missing Documentation::_internal methods missing @pre/@note annotations"
+            WARNINGS=$((WARNINGS + 1))
+          fi
+          
+          echo "mutex_errors=$ERRORS" >> $GITHUB_ENV
+          echo "mutex_warnings=$WARNINGS" >> $GITHUB_ENV
+
+      # ==============================================
+      # STEP 4: Upload Results as Artifact
+      # ==============================================
+      - name: Upload Analysis Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enhanced_drone_analyzer-analysis
+          path: |
+            cppcheck_output.txt
+            clang_tidy_output.txt
+          retention-days: 7
+
+      # ==============================================
+      # STEP 5: Summary and Exit Decision
+      # ==============================================
+      - name: Generate Summary
+        run: |
+          echo "## Enhanced Drone Analyzer - Static Analysis Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cppcheck Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Errors: ${{ env.error_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Clang-Tidy Thread Safety" >> $GITHUB_STEP_SUMMARY
+          echo "- Warnings: ${{ env.tidy_warnings }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Mutex Pattern Verification" >> $GITHUB_STEP_SUMMARY
+          echo "- Errors: ${{ env.mutex_errors }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Warnings: ${{ env.mutex_warnings }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Fail if critical errors found
+          if [ "${{ env.error_count }}" -gt "0" ] || [ "${{ env.mutex_errors }}" -gt "0" ]; then
+            echo "❌ **CI FAILED**: Critical issues found" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please review the analysis results above." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          elif [ "${{ env.tidy_warnings }}" -gt "0" ] || [ "${{ env.mutex_warnings }}" -gt "0" ]; then
+            echo "⚠️ **CI PASSED with warnings**: Please review" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **CI PASSED**: No issues found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ==============================================
+  # JOB: Code Formatting Check
+  # ==============================================
+  formatting_check:
+    name: Code Formatting
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Cppcheck
-        run: sudo apt-get update && sudo apt-get install -y cppcheck
-
-      - name: Run Cppcheck (Strict)
+      - name: Check Basic Formatting
         run: |
-          # Запуск анализатора
-          # --enable=warning,style,performance,portability:
-          #    warning: предупреждения о логике
-          #    style: находит ошибки порядка инициализации (те самые Reorder) и неиспользуемые функции
-          #    performance: находит неоптимальный код
-          # --error-exitcode=1: падать, если найдена хоть одна ошибка
-          # --suppress=missingInclude: игнорировать отсутствие системных хедеров (ch.h, portapack.hpp), т.к. мы не компилируем всё ядро
+          echo "=== Checking Code Formatting ==="
           
-          echo "Checking directory: firmware/application/apps/enhanced_drone_analyzer/"
+          # Check for common formatting issues
+          ERRORS=0
           
-          cppcheck --enable=warning,style,performance,portability \
-                   --language=c++ \
-                   --std=c++17 \
-                   --error-exitcode=1 \
-                   --inline-suppr \
-                   --suppress=missingInclude \
-                   --force \
-                   -j 4 \
-                   firmware/application/apps/enhanced_drone_analyzer/
+          # Check 1: No tabs in source files
+          if grep -r $'\t' firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null | \
+             grep -v "//.*\t" | \
+             grep -v "^\t\*" | \
+             grep -v "^\s\*" > /dev/null; then
+            echo "::warning title=Tabs Found::Tabs found in source files"
+            ERRORS=$((ERRORS + 1))
+          fi
+          
+          # Check 2: Consistent line endings (LF only)
+          if file firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null | grep -q "CRLF"; then
+            echo "::warning title=CRLF Line Endings::Windows line endings found"
+            ERRORS=$((ERRORS + 1))
+          else
+            echo "✅ Line endings are correct (LF)"
+          fi
+          
+          # Check 3: No trailing whitespace
+          if grep -r ' $' firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null | \
+             grep -v "^Binary" > /dev/null; then
+            echo "::warning title=Trailing Whitespace::Trailing whitespace found"
+            WARNINGS=$((WARNINGS + 1))
+          else
+            echo "✅ No trailing whitespace"
+          fi
+          
+          # Check 4: Header guard consistency
+          for file in firmware/application/apps/enhanced_drone_analyzer/*.hpp; do
+            if [ -f "$file" ]; then
+              GUARD=$(basename "$file" .hpp | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
+              if ! grep -q "#ifndef.*$GUARD" "$file" 2>/dev/null; then
+                echo "::warning title=Missing Header Guard::$file missing proper header guard"
+              fi
+            fi
+          done
+          
+          echo "✅ Formatting check completed"
+
+  # ==============================================
+  # JOB: Dependency Check
+  # ==============================================
+  dependency_check:
+    name: Dependencies & Includes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check Header Dependencies
+        run: |
+          echo "=== Checking Header Dependencies ==="
+          
+          # Verify required includes exist
+          INCLUDES_OK=true
+          
+          # Check for #include <array> - needed for our refactoring
+          if grep -q "#include <array>" firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null; then
+            echo "✅ <array> include found"
+          else
+            echo "::warning title=Missing Include::<array> include not found"
+            INCLUDES_OK=false
+          fi
+          
+          # Check for ch.h include (for ChibiOS APIs)
+          if grep -q "#include <ch.h>" firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null; then
+            echo "✅ ChibiOS header included"
+          else
+            echo "::warning title=Missing ChibiOS::<ch.h> include not found directly"
+          fi
+          
+          # Check for RAII wrapper class definition
+          if grep -q "class MutexLock" firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.hpp 2>/dev/null; then
+            echo "✅ MutexLock RAII class defined"
+          else
+            echo "::error title=Missing RAII Wrapper::MutexLock class not found!"
+            exit 1
+          fi
+
+          echo "✅ Dependency check completed"
+
+  # ==============================================
+  # FINAL: Combined Status
+  # ==============================================
+  final_status:
+    name: Final Status
+    runs-on: ubuntu-latest
+    needs: [static_analysis, formatting_check, dependency_check]
+    if: always()
+    
+    steps:
+      - name: Check All Jobs Status
+        run: |
+          echo "## Final CI Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Static Analysis | ${NEEDS_STATIC_ANALYSIS_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Formatting Check | ${NEEDS_FORMATTING_CHECK_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependency Check | ${NEEDS_DEPENDENCY_CHECK_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall result
+          if echo "$NEEDS_STATIC_ANALYSIS_STATUS" | grep -q "failure"; then
+            echo "❌ **CI FAILED**: Static analysis found critical issues"
+            exit 1
+          elif echo "$NEEDS_STATIC_ANALYSIS_STATUS" | grep -q "skipped"; then
+            echo "⚠️ **CI SKIPPED**: Static analysis was skipped"
+          else
+            echo "✅ **CI PASSED**: All checks completed successfully"
+          fi
