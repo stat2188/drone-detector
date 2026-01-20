@@ -4,7 +4,7 @@
 #include <string>
 #include <algorithm>
 #include <cstdint>
-#include "../file.hpp"
+#include "file.hpp"
 #include "ui_drone_common_types.hpp"
 
 // Forward declarations

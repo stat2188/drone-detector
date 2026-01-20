@@ -6,7 +6,7 @@
 #include <memory>
 #include <atomic>
 #include "ui_drone_common_types.hpp"
-#include "../../ui_navigation.hpp"
+#include "ui_navigation.hpp"
 #include "thread_base.hpp"
 #include "ui_drone_audio.hpp"
 

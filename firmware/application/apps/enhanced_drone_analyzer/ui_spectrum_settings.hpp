@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-#include "../application/freqman.hpp"
+#include "freqman.hpp"
 #include "ui_drone_common_types.hpp"
 #include "radio.hpp"
 

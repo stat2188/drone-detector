@@ -17,7 +17,7 @@
 #include "ui_spectral_analyzer.hpp"
 
 #include "ui.hpp"
-#include "../event_m0.hpp"
+#include "event_m0.hpp"
 #include "ui_widget.hpp"
 #include "message.hpp"
 
