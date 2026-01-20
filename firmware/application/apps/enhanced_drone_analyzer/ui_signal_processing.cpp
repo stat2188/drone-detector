@@ -1,4 +1,5 @@
 #include "ui_signal_processing.hpp"
+#include <algorithm>
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -49,27 +50,31 @@ void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detect
 }
 
 uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const {
-    for (const auto& entry : entries_) {
-        if (entry.frequency_hash == frequency_hash) {
-            return entry.detection_count;
-        }
+    const auto it = std::find_if(entries_.begin(), entries_.end(),
+        [frequency_hash](const DetectionEntry& entry) {
+            return entry.frequency_hash == frequency_hash;
+        });
+    
+    if (it != entries_.end()) {
+        return it->detection_count;
     }
     return 0;
 }
 
 int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const {
-    for (const auto& entry : entries_) {
-        if (entry.frequency_hash == frequency_hash) {
-            return entry.rssi_value;
-        }
+    const auto it = std::find_if(entries_.begin(), entries_.end(),
+        [frequency_hash](const DetectionEntry& entry) {
+            return entry.frequency_hash == frequency_hash;
+        });
+
+    if (it != entries_.end()) {
+        return it->rssi_value;
     }
     return -120;
 }
 
 void DetectionRingBuffer::clear() {
-    for (auto& entry : entries_) {
-        entry = DetectionEntry{0, 0, -120, 0};
-    }
+    std::fill(entries_.begin(), entries_.end(), DetectionEntry{0, 0, -120, 0});
     head_ = 0;
 }
 

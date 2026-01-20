@@ -2203,9 +2203,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     // MAX_TRACKED_DRONES is usually around 8-10, +2 as reserve.
     detected_drones_count_ = 0;
 
-    for (auto& drone : displayed_drones_) {
-        drone = DisplayDroneEntry{};
-    }
+    std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{});
 
     if (!spectrum_gradient_.load_file(default_gradient_file)) {
         spectrum_gradient_.set_default();

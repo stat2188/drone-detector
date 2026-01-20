@@ -77,8 +77,8 @@ public:
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
                      last_seen(0), rssi(-120), history_index_(0) {
         // Initialize array with "silence" (-120 dBm), not zeros
-        for(auto& r : rssi_history_) r = -120;
-        for(auto& t : timestamp_history_) t = 0;  // Explicit initialization
+        std::fill(std::begin(rssi_history_), std::end(rssi_history_), -120);
+        std::fill(std::begin(timestamp_history_), std::end(timestamp_history_), 0);
     }
 
     TrackedDrone& operator=(const TrackedDrone& other) {

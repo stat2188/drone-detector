@@ -53,8 +53,7 @@ public:
     static void reset_to_defaults(ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
 
 private:
-    static std::string get_settings_path();
-    static bool parse_line(const std::string& line, ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+    // Unused helper functions removed
 };
 
 // Implementations moved to ui_drone_common_types.cpp

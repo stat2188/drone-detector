@@ -181,9 +181,6 @@ private:
     SpectrumAnalyzerSettings settings_;
 
     void initialize_default_presets();
-    bool parse_preset_line(const std::string& line, FrequencyPreset& preset);
-    std::string serialize_preset(const FrequencyPreset& preset) const;
-    std::string get_preset_filename() const;
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer
