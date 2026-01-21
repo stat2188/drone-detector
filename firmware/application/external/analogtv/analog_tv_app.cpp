@@ -55,7 +55,19 @@ AnalogTvView::AnalogTvView(
                   &field_vga,
                   &options_modulation,
                   &field_volume,
-                  &tv});
+                  &tv,
+                  &button_scan_start,
+                  &button_scan_stop,
+                  &button_manual,
+                  &text_scan_status,
+                  &text_found_channels,
+                  &text_current_channel,
+                  &text_progress,
+                  &field_scan_start,
+                  &field_scan_end,
+                  &field_scan_step,
+                  &field_min_signal,
+                  &field_scan_timeout});
 
     field_frequency.updated = [this](rf::Frequency f) {
         this->on_frequency_changed(f);
@@ -131,6 +143,8 @@ AnalogTvView::AnalogTvView(
 }
 
 AnalogTvView::~AnalogTvView() {
+    view_destroying = true;
+    thread_terminate = true;
     audio::output::stop();
     receiver_model.disable();
     baseband::shutdown();
@@ -283,6 +297,7 @@ void AnalogTvView::start_scan() {
     
     is_scanning = true;
     scan_paused = false;
+    thread_terminate = false;
     found_channels.clear();
     current_scan_freq = scan_params.start_freq;
     
@@ -300,36 +315,48 @@ void AnalogTvView::start_scan() {
 }
 
 msg_t AnalogTvView::scan_worker_thread() {
-    while (is_scanning && current_scan_freq <= scan_params.end_freq) {
+    while (is_scanning && current_scan_freq <= scan_params.end_freq && !thread_terminate) {
         if (scan_paused) {
             text_scan_status.set("Status: Paused");
-            while (scan_paused && is_scanning) {
+            while (scan_paused && is_scanning && !thread_terminate) {
                 chThdSleepMilliseconds(100);
             }
-            if (!is_scanning) break;
+            if (!is_scanning || thread_terminate) break;
             text_scan_status.set("Status: Scanning...");
         }
-        
-        // Set frequency
+
+        if (view_destroying) {
+            is_scanning = false;
+            break;
+        }
+
         receiver_model.set_target_frequency(current_scan_freq);
-        
-        // Wait for signal stabilization
+
         chThdSleepMilliseconds(scan_params.scan_timeout_ms);
-        
-        // Update progress
+
+        if (view_destroying) {
+            is_scanning = false;
+            break;
+        }
+
         update_scan_progress();
-        
+
         current_scan_freq += scan_params.step;
     }
-    
-    if (is_scanning) {
+
+    if (is_scanning && !thread_terminate) {
         is_scanning = false;
         text_scan_status.set("Status: Complete");
+        save_found_channels();
         if (!found_channels.empty()) {
             switch_to_channel(0);
         }
+    } else if (thread_terminate) {
+        is_scanning = false;
+        text_scan_status.set("Status: Stopped");
+        save_found_channels();
     }
-    
+
     return 0;
 }
 
@@ -345,6 +372,7 @@ void AnalogTvView::update_scan_progress() {
 void AnalogTvView::stop_scan() {
     is_scanning = false;
     scan_paused = false;
+    thread_terminate = true;
 }
 
 void AnalogTvView::pause_scan() {
@@ -361,19 +389,14 @@ void AnalogTvView::add_found_channel(const TVSignalDetector::DetectionResult& re
     channel.signal_strength = result.signal_strength;
     channel.modulation_type = result.modulation_type;
     channel.is_valid = result.is_tv_signal;
-    
-    // Generate channel name
+
     channel.name = "TV_" + to_string_short_freq(result.frequency);
-    
+
     found_channels.push_back(channel);
-    
-    // Update UI
+
     text_found_channels.set("Channels: " + std::to_string(found_channels.size()));
-    text_current_channel.set("Current: " + channel.name + 
+    text_current_channel.set("Current: " + channel.name +
                            " (" + to_string_short_freq(channel.frequency) + ")");
-    
-    // Save channel automatically
-    save_found_channels();
 }
 
 void AnalogTvView::switch_to_channel(size_t index) {

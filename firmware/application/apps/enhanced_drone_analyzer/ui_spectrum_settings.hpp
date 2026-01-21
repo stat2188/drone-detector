@@ -67,8 +67,8 @@ struct AmplifierControl {
 
 // Range locking mechanism (migrated from Looking Glass)
 struct FrequencyRange {
-    Frequency min_hz;
-    Frequency max_hz;
+    Frequency min_hz = 0;
+    Frequency max_hz = 0;
 
     bool is_valid() const {
         return min_hz > 0 && max_hz > min_hz;
@@ -76,7 +76,12 @@ struct FrequencyRange {
 };
 
 struct RangeLockSettings {
-    bool locked_range = false;  // Prevent changes during scanning
+    RangeLockSettings()
+        : locked_range(false),
+          locked_range_values{}
+    {}
+
+    bool locked_range;
     FrequencyRange locked_range_values;
 
     void lock_range(const FrequencyRange& range) {

@@ -142,10 +142,12 @@ class AnalogTvView : public View {
     
     ScanParameters scan_params{};
     std::vector<FoundChannel> found_channels{};
-    bool is_scanning = false;
-    bool scan_paused = false;
+    volatile bool is_scanning = false;
+    volatile bool scan_paused = false;
+    volatile bool thread_terminate = false;
     size_t current_channel_index = 0;
     int64_t current_scan_freq = 0;
+    bool view_destroying = false;
 
     void on_baseband_bandwidth_changed(uint32_t bandwidth_hz);
     void on_modulation_changed(const ReceiverModel::Mode modulation);
