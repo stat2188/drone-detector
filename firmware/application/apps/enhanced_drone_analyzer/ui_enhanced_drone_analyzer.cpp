@@ -1945,23 +1945,24 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
         threat_frequency_.set("NO SIGNAL");
     }
 
-    // NOLINTNEXTLINE(bugprone-branch-clone)
+    const Style* new_style = &UIStyles::LIGHT_STYLE;
     switch (max_threat) {
         case ThreatLevel::CRITICAL:
-            threat_frequency_.set_style(&UIStyles::RED_STYLE);
+            new_style = &UIStyles::RED_STYLE;
             break;
         case ThreatLevel::HIGH:
         case ThreatLevel::MEDIUM:
-            threat_frequency_.set_style(&UIStyles::YELLOW_STYLE);
+            new_style = &UIStyles::YELLOW_STYLE;
             break;
         case ThreatLevel::LOW:
-            threat_frequency_.set_style(&UIStyles::GREEN_STYLE);
+            new_style = &UIStyles::GREEN_STYLE;
             break;
         case ThreatLevel::NONE:
         default:
-            threat_frequency_.set_style(&UIStyles::LIGHT_STYLE);
+            new_style = &UIStyles::LIGHT_STYLE;
             break;
     }
+    threat_frequency_.set_style(new_style);
     set_dirty();
 }
 
@@ -2220,12 +2221,12 @@ void ConsoleStatusBar::set_display_mode(DisplayMode mode) {
     alert_text_.hidden(true);
     normal_text_.hidden(true);
 
-    // NOLINTNEXTLINE(bugprone-branch-clone)
-    switch (mode) {
-        case DisplayMode::SCANNING: progress_text_.hidden(false); break;
-        case DisplayMode::ALERT: alert_text_.hidden(false); break;
-        case DisplayMode::NORMAL: default: normal_text_.hidden(false); break;
-    }
+    const bool show_progress = (mode == DisplayMode::SCANNING);
+    const bool show_alert = (mode == DisplayMode::ALERT);
+    const bool show_normal = !show_progress && !show_alert;
+    progress_text_.hidden(!show_progress);
+    alert_text_.hidden(!show_alert);
+    normal_text_.hidden(!show_normal);
     set_dirty();
 }
 
@@ -2511,19 +2512,15 @@ void DroneDisplayController::render_drone_text_display() {
                 freq_str.c_str(),
                 (long int)drone.rssi,
                 trend_symbol);
-        // NOLINTNEXTLINE(bugprone-branch-clone)
+        Text* target_text = nullptr;
         switch(i) {
-            case 0:
-                text_drone_1_.set(buffer);
-                break;
-            case 1:
-                text_drone_2_.set(buffer);
-                break;
-            case 2:
-                text_drone_3_.set(buffer);
-                break;
-            default:
-                break;
+            case 0: target_text = &text_drone_1_; break;
+            case 1: target_text = &text_drone_2_; break;
+            case 2: target_text = &text_drone_3_; break;
+            default: break;
+        }
+        if (target_text) {
+            target_text->set(buffer);
         }
     }
 }
