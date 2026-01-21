@@ -93,32 +93,37 @@ jobs:
         run: |
           echo "=== Running Clang-Tidy (Thread Safety) ==="
 
-           # Focus on thread safety and concurrency issues
-           # Add ALL include paths from CMakeLists.txt to avoid 'board.h not found' error
-           clang-tidy \
-             firmware/application/apps/enhanced_drone_analyzer/*.cpp \
-             -checks=-*,thread-*,bugprone-*,deadcode-*,-bugprone-narrowing-conversions,-bugprone-signed-char-bitfield,-bugprone-implicit-widening-of-multiplication-result,-clang-diagnostic-error,-clang-diagnostic-warning \
-             -header-filter='.*enhanced_drone_analyzer.*' \
-             -- \
-             -std=c++17 \
-             -I. \
-             -Ifirmware/ \
-             -Ifirmware/application \
-             -Ifirmware/application/ui \
-             -Ifirmware/common \
-             -Ifirmware/chibios/os/kernel/include \
-             -Ifirmware/chibios/os/hal/include \
-             -Ifirmware/chibios/os/ports/common/ARMCMx \
-             -Ifirmware/chibios/os/ports/common/ARMCMx/CMSIS/include \
-             -Ifirmware/chibios/os/ports/GCC/ARMCMx \
-             -Ifirmware/chibios/test \
-             -Ifirmware/chibios-portapack/os/ports/GCC/ARMCMx/LPC43xx_M0 \
-             -Ifirmware/chibios-portapack/os/hal/platforms/LPC43xx_M0 \
-             -Ifirmware/chibios-portapack/os/hal/platforms/LPC43xx \
-             -Ifirmware/chibios-portapack/ext/fatfs/src \
-             -Ifirmware/chibios-portapack/boards/PORTAPACK_APPLICATION \
-             -DFIRMWARE_APPLICATION \
-             2>&1 | tee clang_tidy_output.txt || true
+          # Focus on thread safety and concurrency issues
+          # Add ALL include paths from CMakeLists.txt to avoid 'board.h not found' error
+          clang-tidy \
+            firmware/application/apps/enhanced_drone_analyzer/*.cpp \
+            -checks=-*,thread-*,bugprone-*,deadcode-*,-bugprone-narrowing-conversions,-bugprone-signed-char-bitfield,-bugprone-implicit-widening-of-multiplication-result,-clang-diagnostic-error,-clang-diagnostic-warning \
+            -header-filter='.*enhanced_drone_analyzer.*' \
+            -- \
+            -std=c++17 \
+            -I. \
+            -Ifirmware/ \
+            -Ifirmware/application \
+            -Ifirmware/application/ui \
+            -Ifirmware/common \
+            -Ifirmware/chibios/os/kernel/include \
+            -Ifirmware/chibios/os/hal/include \
+            -Ifirmware/chibios/os/ports/common/ARMCMx \
+            -Ifirmware/chibios/os/ports/common/ARMCMx/CMSIS/include \
+            -Ifirmware/chibios/os/ports/GCC/ARMCMx \
+            -Ifirmware/chibios/test \
+            -Ifirmware/chibios-portapack/os/ports/GCC/ARMCMx/LPC43xx_M0 \
+            -Ifirmware/chibios-portapack/os/hal/platforms/LPC43xx_M0 \
+            -Ifirmware/chibios-portapack/os/hal/platforms/LPC43xx \
+            -Ifirmware/chibios-portapack/ext/fatfs/src \
+            -Ifirmware/chibios-portapack/boards/PORTAPACK_APPLICATION \
+            -Ifirmware/application/hw \
+            -Ifirmware/ui \
+            -Ifirmware/apps \
+            -Ifirmware/protocols \
+            -Ifirmware/bmps \
+            -DFIRMWARE_APPLICATION \
+            2>&1 | tee clang_tidy_output.txt || true
 
           # Check for actual warnings
           if grep -q 'warning:' clang_tidy_output.txt 2>/dev/null; then
