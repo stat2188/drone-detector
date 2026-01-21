@@ -20,6 +20,7 @@
 #include <cctype>
 #include <cstring>
 #include <cstdarg>
+#include <cinttypes>
 
 using namespace portapack;
 using namespace tonekey;
@@ -1495,11 +1496,9 @@ void DroneDetectionLogger::worker_loop() {
 bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
     if (!ensure_csv_header()) return false;
 
-    // FIX: Use stack-allocated char buffer, then construct std::string with SSO (Small String Optimization)
-    // Most modern C++ implementations store short strings (< 15-22 chars) in SSO on stack
     char line_buffer[128];
     int len = snprintf(line_buffer, sizeof(line_buffer),
-        "%u,%u,%d,%u,%u,%u,%u,%u,%u,%u\n",
+        "%" PRIu32 ",%" PRIu32 ",%" PRId32 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu32 ",%" PRIu8 "\n",
         entry.timestamp,
         (uint32_t)(entry.frequency_hz),
         entry.rssi_db,
@@ -1529,7 +1528,7 @@ bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
 
 bool DroneDetectionLogger::ensure_csv_header() {
     if (header_written_) return true;
-    const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence_percent\n";
+    const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence_percent,width_bins,signal_width_hz,snr\n";
     auto error = csv_log_.append(generate_log_filename());
     if (error && !error->ok()) return false;
     error = csv_log_.write_raw(header);
