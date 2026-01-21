@@ -120,7 +120,7 @@ jobs:
             -Ifirmware/application/hw \
             -Ifirmware/ui \
             -Ifirmware/apps \
-            -Ifirmware/protocols \
+            -Ifirmware/application/protocols \
             -Ifirmware/bmps \
             -DFIRMWARE_APPLICATION \
             2>&1 | tee clang_tidy_output.txt || true
