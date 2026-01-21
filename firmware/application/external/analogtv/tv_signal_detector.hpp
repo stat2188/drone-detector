@@ -32,37 +32,30 @@ public:
         bool is_tv_signal;
         int64_t frequency;
         int signal_strength;
-        std::string modulation_type;
+        char modulation_type[8];
         int video_carrier_offset;
         int audio_carrier_offset;
-        
-        DetectionResult() : is_tv_signal(false), frequency(0), signal_strength(0), 
-                           modulation_type("UNKNOWN"), video_carrier_offset(0), audio_carrier_offset(0) {}
+
+        DetectionResult() : is_tv_signal(false), frequency(0), signal_strength(0),
+                           video_carrier_offset(0), audio_carrier_offset(0) {
+            modulation_type[0] = '\0';
+        }
     };
 
     TVSignalDetector();
-    
+
     DetectionResult detect_tv_signal(const ChannelSpectrum& spectrum, int64_t current_frequency);
-    
+
 private:
     static constexpr int TV_CHANNEL_WIDTH_SAMPLES = 256;
     static constexpr int MIN_SIGNAL_DB = -60;
     static constexpr int CARRIER_THRESHOLD = 20;
     static constexpr int MIN_CARRIER_DB = -50;
-    
-    // TV стандарты
-    static constexpr int PAL_VIDEO_OFFSET = 16;      // ~1.25 МГц
-    static constexpr int PAL_AUDIO_OFFSET = 192;     // ~4.5 МГц
-    static constexpr int NTSC_VIDEO_OFFSET = 20;     // ~1.25 МГц  
-    static constexpr int NTSC_AUDIO_OFFSET = 200;    // ~4.5 МГц
-    
-    bool check_signal_strength(const ChannelSpectrum& spectrum);
-    bool find_carriers(const ChannelSpectrum& spectrum, int& video_offset, int& audio_offset);
-    bool validate_carrier_spacing(int video_offset, int audio_offset);
-    bool check_spectrum_shape(const ChannelSpectrum& spectrum);
-    std::string determine_modulation_type(const ChannelSpectrum& spectrum);
-    int find_peak_in_range(const ChannelSpectrum& spectrum, int start_idx, int end_idx);
-    int calculate_signal_bandwidth(const ChannelSpectrum& spectrum);
+
+    static constexpr int PAL_VIDEO_OFFSET = 16;
+    static constexpr int PAL_AUDIO_OFFSET = 192;
+    static constexpr int NTSC_VIDEO_OFFSET = 20;
+    static constexpr int NTSC_AUDIO_OFFSET = 200;
 };
 
 } // namespace ui::external_app::analogtv

@@ -23,6 +23,8 @@
 
 #include "analog_tv_app.hpp"
 
+#include <cstring>
+
 #include "baseband_api.hpp"
 
 #include "portapack.hpp"
@@ -270,10 +272,8 @@ void AnalogTvView::on_frequency_changed(rf::Frequency f) {
     receiver_model.set_target_frequency(f);
 }
 
-// Handle stick controls
 void AnalogTvView::on_left() {
-    if (!is_scanning && !found_channels.empty()) {
-        // Switch to previous channel
+    if (!is_scanning && found_channels_count > 0) {
         if (current_channel_index > 0) {
             current_channel_index--;
             switch_to_channel(current_channel_index);
@@ -282,9 +282,8 @@ void AnalogTvView::on_left() {
 }
 
 void AnalogTvView::on_right() {
-    if (!is_scanning && !found_channels.empty()) {
-        // Switch to next channel
-        if (current_channel_index < found_channels.size() - 1) {
+    if (!is_scanning && found_channels_count > 0) {
+        if (current_channel_index < found_channels_count - 1) {
             current_channel_index++;
             switch_to_channel(current_channel_index);
         }
@@ -294,20 +293,20 @@ void AnalogTvView::on_right() {
 // Implementation of scanning methods
 void AnalogTvView::start_scan() {
     if (is_scanning) return;
-    
+
     is_scanning = true;
     scan_paused = false;
     thread_terminate = false;
-    found_channels.clear();
+    found_channels_count = 0;
     current_scan_freq = scan_params.start_freq;
-    
-    // Update UI
+    ui_update_counter = 0;
+    last_added_freq = 0;
+
     text_scan_status.set("Status: Scanning...");
     text_found_channels.set("Channels: 0");
     text_progress.set("Progress: 0%");
-    
-    // Start asynchronous scanning
-    chThdCreateFromHeap(nullptr, 2048, NORMALPRIO + 10, 
+
+    chThdCreateFromHeap(nullptr, 2048, NORMALPRIO + 10,
                        [](void* arg) -> msg_t {
                            auto self = static_cast<AnalogTvView*>(arg);
                            return self->scan_worker_thread();
@@ -348,7 +347,7 @@ msg_t AnalogTvView::scan_worker_thread() {
         is_scanning = false;
         text_scan_status.set("Status: Complete");
         save_found_channels();
-        if (!found_channels.empty()) {
+        if (found_channels_count > 0) {
             switch_to_channel(0);
         }
     } else if (thread_terminate) {
@@ -361,11 +360,21 @@ msg_t AnalogTvView::scan_worker_thread() {
 }
 
 void AnalogTvView::update_scan_progress() {
+    ui_update_counter++;
+    if (ui_update_counter < UI_UPDATE_SKIP) {
+        return;
+    }
+    ui_update_counter = 0;
+
     if (scan_params.end_freq > scan_params.start_freq) {
         int64_t total_range = scan_params.end_freq - scan_params.start_freq;
         int64_t current_pos = current_scan_freq - scan_params.start_freq;
-        int percentage = (current_pos * 100) / total_range;
-        text_progress.set("Progress: " + std::to_string(percentage) + "%");
+        int percentage = static_cast<int>((current_pos * 100) / total_range);
+        percentage = (percentage > 100) ? 100 : (percentage < 0) ? 0 : percentage;
+
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "Progress: %d%%", percentage);
+        text_progress.set(buffer);
     }
 }
 
@@ -384,58 +393,78 @@ void AnalogTvView::resume_scan() {
 }
 
 void AnalogTvView::add_found_channel(const TVSignalDetector::DetectionResult& result) {
-    FoundChannel channel;
-    channel.frequency = result.frequency;
-    channel.signal_strength = result.signal_strength;
-    channel.modulation_type = result.modulation_type;
-    channel.is_valid = result.is_tv_signal;
+    if (!result.is_tv_signal) return;
 
-    channel.name = "TV_" + to_string_short_freq(result.frequency);
+    if (result.frequency == last_added_freq) return;
 
-    found_channels.push_back(channel);
+    for (size_t i = 0; i < found_channels_count; i++) {
+        if (abs(found_channels[i].frequency - result.frequency) < FREQUENCY_TOLERANCE_HZ) {
+            return;
+        }
+    }
 
-    text_found_channels.set("Channels: " + std::to_string(found_channels.size()));
-    text_current_channel.set("Current: " + channel.name +
-                           " (" + to_string_short_freq(channel.frequency) + ")");
+    if (found_channels_count >= MAX_FOUND_CHANNELS) return;
+
+    found_channels[found_channels_count].set_from_detector(result);
+    found_channels_count++;
+    last_added_freq = result.frequency;
+
+    ui_update_counter++;
+    if (ui_update_counter >= UI_UPDATE_SKIP || found_channels_count == 1) {
+        ui_update_counter = 0;
+
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "Channels: %u", static_cast<unsigned>(found_channels_count));
+        text_found_channels.set(buffer);
+
+        snprintf(buffer, sizeof(buffer), "Current: %s (%s)",
+                 found_channels[found_channels_count - 1].name,
+                 to_string_short_freq(found_channels[found_channels_count - 1].frequency).c_str());
+        text_current_channel.set(buffer);
+    }
 }
 
 void AnalogTvView::switch_to_channel(size_t index) {
-    if (index >= found_channels.size()) return;
-    
+    if (index >= found_channels_count) return;
+
     auto& channel = found_channels[index];
     current_channel_index = index;
-    
-    // Set frequency
+
     receiver_model.set_target_frequency(channel.frequency);
     field_frequency.set_value(channel.frequency);
-    
-    text_current_channel.set("Current: " + channel.name + 
-                           " (" + to_string_short_freq(channel.frequency) + ")");
-    text_scan_status.set("Watching: " + channel.name);
+
+    char buffer[64];
+    snprintf(buffer, sizeof(buffer), "Current: %s (%s)",
+             channel.name,
+             to_string_short_freq(channel.frequency).c_str());
+    text_current_channel.set(buffer);
+
+    snprintf(buffer, sizeof(buffer), "Watching: %s", channel.name);
+    text_scan_status.set(buffer);
 }
 
 void AnalogTvView::save_found_channels() {
-    if (found_channels.empty()) return;
-    
-    // Create file to save found channels
+    if (found_channels_count == 0) return;
+
     std::string filename = "TV_CHANNELS.txt";
-    
+
     File file;
     auto error = file.create(filename);
     if (error) return;
-    
-    // Write header
+
     std::string header = "Found TV Channels\n==================\n\n";
     file.write(header.c_str(), header.length());
-    
-    // Write each channel
-    for (const auto& channel : found_channels) {
-        std::string line = to_string_short_freq(channel.frequency) + " MHz | " +
-                          channel.modulation_type + " | " +
-                          to_string_dec_int(channel.signal_strength) + " dB\n";
-        file.write(line.c_str(), line.length());
+
+    char line_buffer[64];
+    for (size_t i = 0; i < found_channels_count; i++) {
+        const auto& channel = found_channels[i];
+        snprintf(line_buffer, sizeof(line_buffer), "%s MHz | %s | %d dB\n",
+                 to_string_short_freq(channel.frequency).c_str(),
+                 channel.modulation_type,
+                 channel.signal_strength);
+        file.write(line_buffer, strlen(line_buffer));
     }
-    
+
     file.close();
 }
 

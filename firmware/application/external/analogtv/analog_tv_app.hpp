@@ -118,36 +118,62 @@ class AnalogTvView : public View {
     NumberField field_scan_timeout{ {UI_POS_X(0), UI_POS_Y(9)}, 4, {100, 2000}, 10, ' ' };
     
     // Структуры для сканирования
-    struct ScanParameters {
-        int64_t start_freq = 100000000;    // 100 МГц
-        int64_t end_freq = 800000000;      // 800 МГц
-        int64_t step = 200000;             // 200 кГц
-        int min_signal_db = -60;           // Минимальный уровень сигнала
-        int scan_timeout_ms = 500;         // Таймаут на каждой частоте
-    };
-    
+    static constexpr size_t MAX_FOUND_CHANNELS = 50;
+    static constexpr int64_t FREQUENCY_TOLERANCE_HZ = 50000;
+
     struct FoundChannel {
-        int64_t frequency{0};
-        std::string name{""};
-        int signal_strength{0};
-        std::string modulation_type{""};
-        bool is_valid{false};
-        
-        FoundChannel() = default;
-        
-        FoundChannel(int64_t freq, const std::string& mod_type, int strength, bool valid = false)
-            : frequency(freq), name("TV_" + to_string_short_freq(freq)), 
-              signal_strength(strength), modulation_type(mod_type), is_valid(valid) {}
+        int64_t frequency;
+        char name[20];
+        int8_t signal_strength;
+        char modulation_type[8];
+        bool is_valid;
+
+        FoundChannel() : frequency(0), signal_strength(0), is_valid(false) {
+            name[0] = '\0';
+            modulation_type[0] = '\0';
+        }
+
+        void set_from_detector(const TVSignalDetector::DetectionResult& result) {
+            frequency = result.frequency;
+            signal_strength = static_cast<int8_t>(result.signal_strength);
+            is_valid = result.is_tv_signal;
+
+            auto freq_str = to_string_short_freq(frequency);
+            size_t len = freq_str.length();
+            if (len > 19) len = 19;
+            memcpy(name, freq_str.c_str(), len);
+            name[len] = '\0';
+
+            size_t mod_len = 0;
+            while (result.modulation_type[mod_len] && mod_len < 7) {
+                modulation_type[mod_len] = result.modulation_type[mod_len];
+                mod_len++;
+            }
+            modulation_type[mod_len] = '\0';
+        }
     };
-    
-    ScanParameters scan_params{};
-    std::vector<FoundChannel> found_channels{};
+
+    std::array<FoundChannel, MAX_FOUND_CHANNELS> found_channels{};
+    size_t found_channels_count{0};
     volatile bool is_scanning = false;
     volatile bool scan_paused = false;
     volatile bool thread_terminate = false;
     size_t current_channel_index = 0;
     int64_t current_scan_freq = 0;
     bool view_destroying = false;
+    int ui_update_counter{0};
+    static constexpr int UI_UPDATE_SKIP = 10;
+    int64_t last_added_freq{0};
+
+    struct ScanParameters {
+        int64_t start_freq = 100000000;
+        int64_t end_freq = 800000000;
+        int64_t step = 200000;
+        int min_signal_db = -60;
+        int scan_timeout_ms = 500;
+    };
+
+    ScanParameters scan_params{};
 
     void on_baseband_bandwidth_changed(uint32_t bandwidth_hz);
     void on_modulation_changed(const ReceiverModel::Mode modulation);

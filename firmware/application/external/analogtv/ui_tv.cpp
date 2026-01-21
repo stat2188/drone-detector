@@ -41,6 +41,20 @@ using namespace portapack;
 namespace ui::external_app::analogtv {
 namespace tv {
 
+static int8_t x_offset_table[129][128];
+
+__attribute__((constructor))
+static void init_offset_table() {
+    for (int corr = 0; corr < 129; corr++) {
+        for (int i = 0; i < 128; i++) {
+            int idx = i + corr;
+            if (idx < 0) idx = 0;
+            else if (idx > 255) idx = 255;
+            x_offset_table[corr][i] = static_cast<int8_t>(idx);
+        }
+    }
+}
+
 /* TimeScopeView******************************************************/
 
 TimeScopeView::TimeScopeView(
@@ -118,44 +132,37 @@ void TVView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
 }
 
 void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx) {
-    // Check buffer overflow
     if (buffer_line_count >= LINE_BUFFER_SIZE) {
         process_buffer_overflow();
         return;
     }
 
-    // Generate line of TV_LINE_WIDTH pixels (optimized width)
-    for (int i = 0; i < TV_LINE_WIDTH; i++) {
-        int source_idx = offset_idx + i + x_correction_;
-        // Optimized boundary check
-        if (source_idx < 0) source_idx = 0;
-        else if (source_idx > 255) source_idx = 255;
+    const int* db = spectrum.db;
+    const int8_t* offset_row = x_offset_table[x_correction_ + 64];
+    const Color* lut = spectrum_rgb4_lut;
 
-        uint8_t db_val = 255 - spectrum.db[source_idx];
-        line_buffer_[buffer_line_count][i] = spectrum_rgb4_lut[db_val];
+    for (int i = 0; i < 128; i++) {
+        uint8_t db_val = 255 - db[offset_row[i]];
+        line_buffer_[buffer_line_count][i] = lut[db_val];
     }
-    
+
     buffer_line_count++;
 }
 
 void TVView::render_buffer_batch() {
     const auto rect = screen_rect();
 
-    // Check if we'll go beyond screen boundaries
     if (scan_line + buffer_line_count >= rect.height()) {
         scan_line = 0;
     }
 
-    // Render all lines from buffer (optimized width)
     for (int i = 0; i < buffer_line_count; i++) {
         display.render_line({rect.left(), rect.top() + scan_line + i},
                            TV_LINE_WIDTH, line_buffer_[i].data());
     }
 
-    // Update scan position
     scan_line += buffer_line_count;
-    
-    // Clear buffer
+
     buffer_line_count = 0;
 }
 
@@ -233,12 +240,19 @@ void TVWidget::paint(Painter& painter) {
 void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
     tv_view.on_channel_spectrum(spectrum);
     sampling_rate = spectrum.sampling_rate;
-    
-    // Детекция TV сигнала
-    auto detection_result = signal_detector.detect_tv_signal(spectrum, receiver_model.target_frequency());
-    
-    if (detection_result.is_tv_signal && on_tv_signal_detected) {
-        on_tv_signal_detected(detection_result);
+
+    frame_counter++;
+    if (frame_counter >= DETECTION_SKIP_FRAMES) {
+        frame_counter = 0;
+        auto detection_result = signal_detector.detect_tv_signal(spectrum, receiver_model.target_frequency());
+
+        bool was_tv_signal = cached_detection.is_tv_signal;
+        cached_detection = detection_result;
+        has_cached_detection = true;
+
+        if (detection_result.is_tv_signal && on_tv_signal_detected) {
+            on_tv_signal_detected(detection_result);
+        }
     }
 }
 
