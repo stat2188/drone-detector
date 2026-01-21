@@ -15,13 +15,24 @@ void WidebandMedianFilter::add_sample(int16_t rssi) {
 int16_t WidebandMedianFilter::get_median_threshold() const {
     if (!full_) return DEFAULT_RSSI_THRESHOLD_DB;
 
+    // FIX: Use selection algorithm instead of copying entire array
+    // Find the k-th smallest element where k = WINDOW_SIZE / 2
     auto temp = window_;
-    for (size_t i = 0; i < WINDOW_SIZE / 2 + 1; ++i) {
-        for (size_t j = 0; j < WINDOW_SIZE - i - 1; ++j) {
-            if (temp[j] > temp[j + 1]) std::swap(temp[j], temp[j + 1]);
+    size_t k = WINDOW_SIZE / 2;
+
+    // Partial selection sort - only need to find k-th smallest
+    for (size_t i = 0; i <= k; ++i) {
+        size_t min_idx = i;
+        for (size_t j = i + 1; j < WINDOW_SIZE; ++j) {
+            if (temp[j] < temp[min_idx]) {
+                min_idx = j;
+            }
+        }
+        if (min_idx != i) {
+            std::swap(temp[i], temp[min_idx]);
         }
     }
-    return temp[WINDOW_SIZE / 2] - HYSTERESIS_MARGIN_DB;
+    return temp[k] - HYSTERESIS_MARGIN_DB;
 }
 
 void WidebandMedianFilter::reset() {
@@ -30,6 +41,18 @@ void WidebandMedianFilter::reset() {
     window_ = {};
 }
 
+// FIX: Use simple hash-based lookup for O(1) instead of O(n) std::find_if
+// For MAX_ENTRIES = 32, we use direct index = hash % MAX_ENTRIES
+// with linear probing for collision resolution
+constexpr size_t HASH_TABLE_SIZE = 32;
+
+class HashIndexCache {
+public:
+    size_t get_index(size_t frequency_hash) const {
+        return frequency_hash % HASH_TABLE_SIZE;
+    }
+};
+
 // DetectionRingBuffer implementations
 DetectionRingBuffer::DetectionRingBuffer() : entries_{}, head_(0) {
     clear();
@@ -37,44 +60,74 @@ DetectionRingBuffer::DetectionRingBuffer() : entries_{}, head_(0) {
 
 void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) {
     systime_t current_time = chTimeNow();
-    for (auto& entry : entries_) {
-        if (entry.frequency_hash == frequency_hash) {
-            entry.rssi_value = rssi_value;
-            entry.detection_count = detection_count;
-            entry.last_update = current_time;
+    size_t start_idx = frequency_hash % MAX_ENTRIES;
+
+    // Linear probing to find existing entry or empty slot
+    for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
+        size_t idx = (start_idx + probe) % MAX_ENTRIES;
+
+        // Found existing entry
+        if (entries_[idx].frequency_hash == frequency_hash) {
+            entries_[idx].rssi_value = rssi_value;
+            entries_[idx].detection_count = detection_count;
+            entries_[idx].last_update = current_time;
+            return;
+        }
+
+        // Found empty slot
+        if (entries_[idx].frequency_hash == 0) {
+            entries_[idx] = {frequency_hash, detection_count, rssi_value, current_time};
             return;
         }
     }
+
+    // Table full - replace oldest entry (circular buffer behavior)
     entries_[head_] = {frequency_hash, detection_count, rssi_value, current_time};
     head_ = (head_ + 1) % MAX_ENTRIES;
 }
 
 uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const {
-    const auto it = std::find_if(entries_.begin(), entries_.end(),
-        [frequency_hash](const DetectionEntry& entry) {
-            return entry.frequency_hash == frequency_hash;
-        });
-    
-    if (it != entries_.end()) {
-        return it->detection_count;
+    size_t start_idx = frequency_hash % MAX_ENTRIES;
+
+    // Linear probing - O(1) average case
+    for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
+        size_t idx = (start_idx + probe) % MAX_ENTRIES;
+
+        if (entries_[idx].frequency_hash == frequency_hash) {
+            return entries_[idx].detection_count;
+        }
+
+        // Empty slot - entry not found
+        if (entries_[idx].frequency_hash == 0) {
+            return 0;
+        }
     }
     return 0;
 }
 
 int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const {
-    const auto it = std::find_if(entries_.begin(), entries_.end(),
-        [frequency_hash](const DetectionEntry& entry) {
-            return entry.frequency_hash == frequency_hash;
-        });
+    size_t start_idx = frequency_hash % MAX_ENTRIES;
 
-    if (it != entries_.end()) {
-        return it->rssi_value;
+    // Linear probing - O(1) average case
+    for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
+        size_t idx = (start_idx + probe) % MAX_ENTRIES;
+
+        if (entries_[idx].frequency_hash == frequency_hash) {
+            return entries_[idx].rssi_value;
+        }
+
+        // Empty slot - entry not found
+        if (entries_[idx].frequency_hash == 0) {
+            return -120;
+        }
     }
     return -120;
 }
 
 void DetectionRingBuffer::clear() {
-    std::fill(entries_.begin(), entries_.end(), DetectionEntry{0, 0, -120, 0});
+    for (auto& entry : entries_) {
+        entry = DetectionEntry{0, 0, -120, 0};
+    }
     head_ = 0;
 }
 

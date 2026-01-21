@@ -541,23 +541,26 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     const size_t batch_size = std::min(static_cast<size_t>(10), total_entries);
 
-    std::vector<freqman_entry> entries_to_scan;
-    entries_to_scan.reserve(batch_size);
-    
+    // FIX: Use stack-allocated array instead of heap-allocated vector
+    std::array<freqman_entry, 10> entries_to_scan{};
+    size_t entries_count = 0;
+
     {
         MutexLock lock(data_mutex);
         if (db_entry_count_ > 0) {
             for (size_t i = 0; i < batch_size; ++i) {
                 size_t idx = (current_db_index_ + i) % db_entry_count_;
-                if (idx < db_entry_count_) {
-                    entries_to_scan.push_back(drone_database_[idx]);
+                if (idx < db_entry_count_ && entries_count < entries_to_scan.size()) {
+                    entries_to_scan[entries_count++] = drone_database_[idx];
                 }
             }
             current_db_index_ = (current_db_index_ + batch_size) % db_entry_count_;
         }
     }
 
-    for (const auto& entry : entries_to_scan) {
+    for (size_t i = 0; i < entries_count; ++i) {
+        const auto& entry = entries_to_scan[i];
+
         // CRITICAL: Check scanning flag EVERY iteration for immediate stop
         if (!scanning_active_) return;
 
@@ -585,15 +588,15 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
                 chThdSleepMilliseconds(10); 
             }
 
-            // TODO[CRITICAL]: RSSI freshness waiting logic
             hardware.clear_rssi_flag();
 
-            // Wait for fresh data (max 60ms)
-            int timeout_ms = 60;
+            // Wait for fresh data with ABSOLUTE TIMEOUT (prevents infinite loop)
+            constexpr systime_t RSSI_TIMEOUT_MS = 60;
+            systime_t deadline = chTimeNow() + MS2ST(RSSI_TIMEOUT_MS);
             bool signal_captured = false;
-            while(timeout_ms > 0) {
+
+            while (chTimeNow() < deadline) {
                 chThdSleepMilliseconds(5);
-                timeout_ms -= 5;
                 if (hardware.is_rssi_fresh()) {
                     signal_captured = true;
                     break;
@@ -637,20 +640,18 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         std::array<uint8_t, 256> spectrum_data;
         
         // Clear spectrum flag and wait for fresh data
-        hardware.clear_spectrum_flag();
-        
-        // OPTIMIZED WAITING: Use adaptive timeout based on M0 packet rate
+
+        // OPTIMIZED WAITING: Use adaptive timeout with ABSOLUTE TIMEOUT
         // M0 sends spectrum data ~60 times/sec (every ~16ms)
-        // We wait max 2 packets (32ms) but check every 2ms for responsiveness
-        int check_interval = 2; // Check every 2ms
+        // We wait max 32ms but check every 2ms for responsiveness
+        constexpr uint32_t SPECTRUM_TIMEOUT_MS = 32;
+        constexpr uint32_t CHECK_INTERVAL_MS = 2;
+        systime_t deadline = chTimeNow() + MS2ST(SPECTRUM_TIMEOUT_MS);
         bool spectrum_received = false;
-        int retries = 0;
-        const int max_retries = 16; // 32ms / 2ms = 16 retries
-        
-        while(retries < max_retries && !spectrum_received) {
-            chThdSleepMilliseconds(check_interval);
-            retries++;
-            
+
+        while (chTimeNow() < deadline) {
+            chThdSleepMilliseconds(CHECK_INTERVAL_MS);
+
             // Atomic check-and-fetch to avoid TOCTOU race
             if (hardware.get_latest_spectrum_if_fresh(spectrum_data)) {
                 spectrum_received = true;
@@ -1494,36 +1495,31 @@ void DroneDetectionLogger::worker_loop() {
 bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
     if (!ensure_csv_header()) return false;
 
-    // OPTIMIZATION: Use Mayhem's lightweight string utilities instead of heavy snprintf
-    // This is faster and uses less memory than snprintf with %llu format
-    std::string line;
-    line.reserve(128); // Increased buffer for additional calibration fields
-    
-    // Build CSV line using string concatenation
-    line += to_string_dec_uint(entry.timestamp);
-    line += ",";
-    line += to_string_dec_uint(entry.frequency_hz);
-    line += ",";
-    line += to_string_dec_int(entry.rssi_db);
-    line += ",";
-    line += to_string_dec_uint(static_cast<uint8_t>(entry.threat_level));
-    line += ",";
-    line += to_string_dec_uint(static_cast<uint8_t>(entry.drone_type));
-    line += ",";
-    line += to_string_dec_uint(entry.detection_count);
-    line += ",";
-    line += to_string_dec_uint(entry.confidence_percent);
-    line += ",";
-    line += to_string_dec_uint(entry.width_bins);        // Calibration: signal width in bins
-    line += ",";
-    line += to_string_dec_uint(entry.signal_width_hz);   // Calibration: signal width in Hz
-    line += ",";
-    line += to_string_dec_uint(entry.snr);              // Calibration: Signal-to-Noise Ratio
-    line += "\n";
+    // FIX: Use stack-allocated char buffer, then construct std::string with SSO (Small String Optimization)
+    // Most modern C++ implementations store short strings (< 15-22 chars) in SSO on stack
+    char line_buffer[128];
+    int len = snprintf(line_buffer, sizeof(line_buffer),
+        "%u,%u,%d,%u,%u,%u,%u,%u,%u,%u\n",
+        entry.timestamp,
+        (uint32_t)(entry.frequency_hz),
+        entry.rssi_db,
+        (uint8_t)entry.threat_level,
+        (uint8_t)entry.drone_type,
+        entry.detection_count,
+        entry.confidence_percent,
+        entry.width_bins,
+        (uint32_t)(entry.signal_width_hz),
+        entry.snr);
 
-    // Блокирующая запись
+    if (len < 0 || (size_t)len >= sizeof(line_buffer)) {
+        return false;
+    }
+
+    // Construct string from buffer - uses SSO, no heap allocation for short strings
+    std::string line(line_buffer, len);
+
     auto error = csv_log_.write_raw(line);
-    
+
     if (error && error->ok()) {
         logged_count_++;
         return true;

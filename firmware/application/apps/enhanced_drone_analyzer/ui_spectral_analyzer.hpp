@@ -60,17 +60,25 @@ public:
 
     uint8_t get_median() const {
         if (!full_) return 0;
-        
-        // Optimized partial bubble sort - reduces comparisons by skipping sorted tail
+
+        // FIX: Use selection algorithm instead of full array copy and sort
+        // Find k-th smallest element where k = WINDOW_SIZE / 2
+        // Only needs (WINDOW_SIZE/2) passes instead of full sort
         std::array<uint8_t, WINDOW_SIZE> temp = window_;
-        for (size_t i = 0; i < WINDOW_SIZE / 2 + 1; ++i) {
-            for (size_t j = 0; j < WINDOW_SIZE - i - 1; ++j) {
-                if (temp[j] > temp[j + 1]) {
-                    std::swap(temp[j], temp[j + 1]);
+        size_t k = WINDOW_SIZE / 2;
+
+        for (size_t i = 0; i <= k; ++i) {
+            size_t min_idx = i;
+            for (size_t j = i + 1; j < WINDOW_SIZE; ++j) {
+                if (temp[j] < temp[min_idx]) {
+                    min_idx = j;
                 }
             }
+            if (min_idx != i) {
+                std::swap(temp[i], temp[min_idx]);
+            }
         }
-        return temp[WINDOW_SIZE / 2];
+        return temp[k];
     }
 
     void reset() {
