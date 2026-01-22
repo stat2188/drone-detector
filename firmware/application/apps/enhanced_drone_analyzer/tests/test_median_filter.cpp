@@ -4,7 +4,7 @@
 struct FastMedianFilter {
 private:
     static constexpr size_t WINDOW_SIZE = 11;
-    unsigned char window_[WINDOW_SIZE];
+    unsigned char window_[WINDOW_SIZE] = {};
     size_t head_ = 0;
     bool full_ = false;
 

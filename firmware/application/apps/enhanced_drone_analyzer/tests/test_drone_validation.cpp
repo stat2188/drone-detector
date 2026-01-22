@@ -29,7 +29,7 @@ enum class DroneType {
 
 struct DroneSignal {
     Frequency frequency_hz;
-    int32_t rssi_db;
+    [[maybe_unused]] int32_t rssi_db;
 };
 
 namespace DroneConstants {
