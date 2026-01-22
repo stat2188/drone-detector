@@ -1,0 +1,10 @@
+name: "CodeQL Configuration"
+paths:
+  - firmware/application/apps/enhanced_drone_analyzer
+paths-ignore:
+  - tests/
+  - mocks/
+
+packs:
+  cpp:
+    - codeql/cpp-queries:codeql-suites/cpp-security-and-quality.qls

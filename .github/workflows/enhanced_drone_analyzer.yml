@@ -238,10 +238,10 @@ jobs:
           fi
 
   # ==============================================
-  # JOB: Code Formatting Check
+  # JOB: Code Formatting Check (Clang-Format)
   # ==============================================
-  formatting_check:
-    name: Code Formatting
+  clang_format_check:
+    name: Code Formatting (Clang-Format)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -250,50 +250,54 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Check Basic Formatting
+      - name: Install clang-format
         run: |
-          echo "=== Checking Code Formatting ==="
+          sudo apt-get update
+          sudo apt-get install -y clang-format
 
-          # Check for common formatting issues
-          ERRORS=0
+      - name: Run Clang-Format Check
+        run: |
+          echo "=== Running Clang-Format Check ==="
 
-          # Check 1: No tabs in source files
-          if grep -r $'\t' firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null | \
-             grep -v "//.*\t" | \
-             grep -v "^\t\*" | \
-             grep -v "^\s\*" > /dev/null; then
-            echo "::warning title=Tabs Found::Tabs found in source files"
-            ERRORS=$((ERRORS + 1))
-          fi
+          FORMAT_ISSUES=0
 
-          # Check 2: Consistent line endings (LF only)
-          if file firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null | grep -q "CRLF"; then
-            echo "::warning title=CRLF Line Endings::Windows line endings found"
-            ERRORS=$((ERRORS + 1))
-          else
-            echo "✅ Line endings are correct (LF)"
-          fi
-
-          # Check 3: No trailing whitespace
-          if grep -r ' $' firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null | \
-             grep -v "^Binary" > /dev/null; then
-            echo "::warning title=Trailing Whitespace::Trailing whitespace found"
-            WARNINGS=$((WARNINGS + 1))
-          else
-            echo "✅ No trailing whitespace"
-          fi
-
-          # Check 4: Header guard consistency
-          for file in firmware/application/apps/enhanced_drone_analyzer/*.hpp; do
+          # Check each .cpp file
+          for file in firmware/application/apps/enhanced_drone_analyzer/*.cpp; do
             if [ -f "$file" ]; then
-              GUARD=$(basename "$file" .hpp | tr '[:lower:]' '[:upper:]' | tr '-' '_' | tr '.' '_')
-              if ! grep -q "#ifndef.*$GUARD" "$file" 2>/dev/null; then
-                echo "::warning title=Missing Header Guard::$file missing proper header guard"
+              # Create temporary file with formatted content
+              TEMP_FILE=$(mktemp)
+              clang-format "$file" > "$TEMP_FILE"
+
+              # Compare with original
+              if ! diff -q "$file" "$TEMP_FILE" >/dev/null 2>&1; then
+                echo "::warning title=Formatting Issue::$file is not properly formatted"
+                FORMAT_ISSUES=$((FORMAT_ISSUES + 1))
               fi
+              rm -f "$TEMP_FILE"
             fi
           done
 
-          echo "✅ Formatting check completed"
+          # Check each .hpp file
+          for file in firmware/application/apps/enhanced_drone_analyzer/*.hpp; do
+            if [ -f "$file" ]; then
+              TEMP_FILE=$(mktemp)
+              clang-format "$file" > "$TEMP_FILE"
+
+              if ! diff -q "$file" "$TEMP_FILE" >/dev/null 2>&1; then
+                echo "::warning title=Formatting Issue::$file is not properly formatted"
+                FORMAT_ISSUES=$((FORMAT_ISSUES + 1))
+              fi
+              rm -f "$TEMP_FILE"
+            fi
+          done
+
+          if [ "$FORMAT_ISSUES" -gt 0 ]; then
+            echo "::error title=Formatting Failed::Found $FORMAT_ISSUES files with formatting issues"
+            echo "Run 'clang-format -i <file>' to fix formatting issues"
+            exit 1
+          else
+            echo "✅ All files are properly formatted"
+          fi
 
   # ==============================================
   # JOB: Dependency Check
@@ -341,12 +345,337 @@ jobs:
           echo "✅ Dependency check completed"
 
   # ==============================================
+  # JOB: Stack Usage Analysis
+  # ==============================================
+  stack_usage_check:
+    name: Stack Usage Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Analyze Stack Usage
+        run: |
+          echo "=== Analyzing Stack Usage ==="
+
+          LARGE_STACK=0
+          MAX_STACK_SIZE=512
+
+          # Check for large stack arrays (> 512 bytes)
+          grep -rn 'std::array.*\[' firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null | \
+            grep -oP '\[\d+\]' | \
+            while read size; do
+              NUM=$(echo "$size" | tr -d '[]')
+              if [ "$NUM" -gt "$MAX_STACK_SIZE" ]; then
+                echo "::warning title=Large Stack Array::Found std::array of size $NUM bytes"
+                LARGE_STACK=$((LARGE_STACK + 1))
+              fi
+            done || true
+
+          # Check for char buffers on stack
+          grep -rn 'char.*\[.*\]' firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null | \
+            while read line; do
+              FILE=$(echo "$line" | cut -d: -f1)
+              LINE_NUM=$(echo "$line" | cut -d: -f2)
+              CONTENT=$(echo "$line" | cut -d: -f3-)
+
+              if echo "$CONTENT" | grep -qP 'char\s+\w+\s*\[\s*\d+\s*\]'; then
+                SIZE=$(echo "$CONTENT" | grep -oP '\[\s*\d+\s*\]' | tr -d '[]' | head -1)
+                if [ -n "$SIZE" ] && [ "$SIZE" -gt 128 ]; then
+                  echo "::warning title=Large Char Buffer::$FILE:$LINE_NUM Found char[$SIZE] buffer"
+                fi
+              fi
+            done || true
+
+          # Check for waterfall buffer specifically
+          if grep -q 'waterfall_buffer_\[.*\]\[.*\]' firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null; then
+            echo "::warning title=Large Waterfall Buffer::Found multi-dimensional array - consider moving to heap or static storage"
+          fi
+
+          echo "✅ Stack usage analysis completed"
+
+  # ==============================================
+  # JOB: Heap Usage Analysis
+  # ==============================================
+  heap_usage_check:
+    name: Heap Usage Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check Heap Usage
+        run: |
+          echo "=== Checking Heap-Allocating Types ==="
+
+          HEAP_WARNINGS=0
+
+          # Check for std::vector usage
+          if grep -r 'std::vector' firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null; then
+            echo "::warning title=Heap Allocation::Found std::vector usage - consider std::array for fixed-size containers"
+            HEAP_WARNINGS=$((HEAP_WARNINGS + 1))
+          fi
+
+          # Check for std::map usage
+          if grep -r 'std::map' firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null; then
+            echo "::warning title=Heap Allocation::Found std::map usage - consider std::array or constexpr maps"
+            HEAP_WARNINGS=$((HEAP_WARNINGS + 1))
+          fi
+
+          # Check for std::string usage (can allocate)
+          if grep -r 'std::string' firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null | \
+             grep -v 'const std::string\|&' > /dev/null; then
+            echo "::warning title=Heap Allocation::Found std::string members - consider char arrays or string_view"
+            HEAP_WARNINGS=$((HEAP_WARNINGS + 1))
+          fi
+
+          # Check for std::unique_ptr / std::shared_ptr
+          if grep -r 'std::unique_ptr\|std::shared_ptr' firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null; then
+            echo "::warning title=Heap Allocation::Found smart pointers - consider stack allocation"
+            HEAP_WARNINGS=$((HEAP_WARNINGS + 1))
+          fi
+
+          # Check for dynamic allocation (new/delete)
+          if grep -rn '\bnew \|\bdelete ' firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null | \
+             grep -v '//.*new\|//.*delete' > /dev/null; then
+            echo "::error title=Dynamic Allocation::Found manual new/delete - prefer RAII and smart pointers"
+          fi
+
+          if [ "$HEAP_WARNINGS" -gt 0 ]; then
+            echo "::warning title=Heap Usage Summary::Found $HEAP_WARNINGS heap-allocating patterns"
+          else
+            echo "✅ No heap-allocating patterns found"
+          fi
+
+  # ==============================================
+  # JOB: Magic Numbers Check
+  # ==============================================
+  magic_numbers_check:
+    name: Magic Numbers Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check Magic Numbers
+        run: |
+          echo "=== Checking for Magic Numbers ==="
+
+          MAGIC_ERRORS=0
+
+          # Check for hardcoded frequency values (large numbers > 1000000)
+          grep -rnE '(\b[1-9][0-9]{6,}(?![;]))' \
+            firmware/application/apps/enhanced_drone_analyzer/*.cpp \
+            firmware/application/apps/enhanced_drone_analyzer/*.hpp 2>/dev/null | \
+            grep -v '//' | \
+            grep -v 'constexpr' | \
+            grep -v 'namespace' | \
+            while read line; do
+              FILE=$(echo "$line" | cut -d: -f1)
+              LINE_NUM=$(echo "$line" | cut -d: -f2)
+              CONTENT=$(echo "$line" | cut -d: -f3-)
+
+              # Check if it looks like a frequency (Hz)
+              if echo "$CONTENT" | grep -qE '[0-9]{6,}ULL?'; then
+                echo "::warning title=Magic Frequency Number::$FILE:$LINE_NUM Found hardcoded frequency - move to DroneConstants"
+                MAGIC_ERRORS=$((MAGIC_ERRORS + 1))
+              fi
+            done || true
+
+          # Check for hardcoded RSSI thresholds
+          grep -rnE '(\b-[0-9]{2,}\b)' \
+            firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null | \
+            grep -v '//' | \
+            grep -v 'constexpr' | \
+            grep -v 'rssi_threshold' | \
+            while read line; do
+              FILE=$(echo "$line" | cut -d: -f1)
+              LINE_NUM=$(echo "$line" | cut -d: -f2)
+              CONTENT=$(echo "$line" | cut -d: -f3-)
+
+              if echo "$CONTENT" | grep -qE '\b-[0-9]{2,}\b'; then
+                echo "::warning title=Magic RSSI Value::$FILE:$LINE_NUM Found hardcoded RSSI - move to DroneConstants"
+              fi
+            done || true
+
+          # Check for hardcoded time intervals
+          grep -rnE '(\b[0-9]{3,}(?![;])\s*\*\s*1000\b)' \
+            firmware/application/apps/enhanced_drone_analyzer/*.cpp 2>/dev/null | \
+            while read line; do
+              FILE=$(echo "$line" | cut -d: -f1)
+              LINE_NUM=$(echo "$line" | cut -d: -f2)
+              echo "::warning title=Magic Time Interval::$FILE:$LINE_NUM Found hardcoded ms value - use constant"
+            done || true
+
+          if [ "$MAGIC_ERRORS" -gt 0 ]; then
+            echo "::warning title=Magic Numbers Summary::Found $MAGIC_ERRORS magic numbers"
+          else
+            echo "✅ No magic numbers found"
+          fi
+
+  # ==============================================
+  # JOB: Binary Size Analysis
+  # ==============================================
+  binary_size_check:
+    name: Binary Size Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check Binary Sizes
+        run: |
+          echo "=== Checking Binary Sizes ==="
+
+          # Find all .o files in enhanced_drone_analyzer
+          if find firmware/application/apps/enhanced_drone_analyzer -name '*.o' 2>/dev/null | head -n1 > /dev/null; then
+            TOTAL_SIZE=0
+            MAX_SIZE=0
+
+            for obj in firmware/application/apps/enhanced_drone_analyzer/*.o; do
+              if [ -f "$obj" ]; then
+                SIZE=$(stat -c%s "$obj" 2>/dev/null || stat -f%z "$obj" 2>/dev/null || echo "0")
+                SIZE_KB=$((SIZE / 1024))
+                TOTAL_SIZE=$((TOTAL_SIZE + SIZE))
+
+                if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+                  MAX_SIZE=$SIZE
+                  MAX_FILE=$obj
+                fi
+
+                echo "$(basename $obj): ${SIZE_KB}KB"
+
+                # Warn for large files (> 50KB)
+                if [ "$SIZE_KB" -gt 50 ]; then
+                  echo "::warning title=Large Object File::$obj is ${SIZE_KB}KB"
+                fi
+              fi
+            done
+
+            TOTAL_KB=$((TOTAL_SIZE / 1024))
+            echo "Total size: ${TOTAL_KB}KB"
+
+            # Fail if total > 500KB
+            if [ "$TOTAL_KB" -gt 500 ]; then
+              echo "::error title=Binary Size Too Large::Total size ${TOTAL_KB}KB exceeds 500KB limit"
+              exit 1
+            fi
+          else
+            echo "⚠️ No object files found - may need to build first"
+          fi
+
+  # ==============================================
+  # JOB: Host Build Check
+  # ==============================================
+  host_build:
+    name: Host Build Check (GCC)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ make
+
+      - name: Build Pure Logic Classes
+        run: |
+          echo "=== Building Pure Logic Classes for Unit Testing ==="
+
+          # Create build directory
+          mkdir -p build/tests
+
+          # Compile test files (standalone)
+          cd firmware/application/apps/enhanced_drone_analyzer/tests
+          g++ -std=c++17 -O2 -Wall -Wextra test_median_filter.cpp -o build/test_median_filter || true
+          g++ -std=c++17 -O2 -Wall -Wextra test_spectral_analyzer.cpp -o build/test_spectral_analyzer || true
+          g++ -std=c++17 -O2 -Wall -Wextra test_drone_validation.cpp -o build/test_drone_validation || true
+
+          echo "✅ Host build check completed"
+
+  # ==============================================
+  # JOB: Unit Tests
+  # ==============================================
+  unit_tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ make
+
+      - name: Build and Run Tests
+        run: |
+          echo "=== Running Unit Tests ==="
+
+          cd firmware/application/apps/enhanced_drone_analyzer/tests
+
+          # Build tests directory
+          mkdir -p build
+
+          # Compile test_median_filter
+          echo "Compiling test_median_filter..."
+          g++ -std=c++17 -O2 -Wall -Wextra test_median_filter.cpp -o build/test_median_filter
+          if [ -f build/test_median_filter ]; then
+            echo "Running test_median_filter..."
+            ./build/test_median_filter
+          fi
+
+          # Compile test_spectral_analyzer
+          echo "Compiling test_spectral_analyzer..."
+          g++ -std=c++17 -O2 -Wall -Wextra test_spectral_analyzer.cpp -o build/test_spectral_analyzer
+          if [ -f build/test_spectral_analyzer ]; then
+            echo "Running test_spectral_analyzer..."
+            ./build/test_spectral_analyzer
+          fi
+
+          # Compile test_drone_validation
+          echo "Compiling test_drone_validation..."
+          g++ -std=c++17 -O2 -Wall -Wextra test_drone_validation.cpp -o build/test_drone_validation
+          if [ -f build/test_drone_validation ]; then
+            echo "Running test_drone_validation..."
+            ./build/test_drone_validation
+          fi
+
+          echo "✅ All unit tests passed"
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: firmware/application/apps/enhanced_drone_analyzer/tests/build/
+
+  # ==============================================
   # FINAL: Combined Status
   # ==============================================
   final_status:
     name: Final Status
     runs-on: ubuntu-latest
-    needs: [static_analysis, formatting_check, dependency_check]
+    needs: [static_analysis, clang_format_check, dependency_check, stack_usage_check, heap_usage_check, magic_numbers_check, binary_size_check, host_build, unit_tests]
     if: always()
 
     steps:
@@ -357,13 +686,25 @@ jobs:
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Static Analysis | ${NEEDS_STATIC_ANALYSIS_STATUS} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Formatting Check | ${NEEDS_FORMATTING_CHECK_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Clang-Format Check | ${NEEDS_CLANG_FORMAT_CHECK_STATUS} |" >> $GITHUB_STEP_SUMMARY
           echo "| Dependency Check | ${NEEDS_DEPENDENCY_CHECK_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Stack Usage Check | ${NEEDS_STACK_USAGE_CHECK_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Heap Usage Check | ${NEEDS_HEAP_USAGE_CHECK_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Magic Numbers Check | ${NEEDS_MAGIC_NUMBERS_CHECK_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Binary Size Check | ${NEEDS_BINARY_SIZE_CHECK_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Host Build Check | ${NEEDS_HOST_BUILD_STATUS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${NEEDS_UNIT_TESTS_STATUS} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Overall result
           if echo "$NEEDS_STATIC_ANALYSIS_STATUS" | grep -q "failure"; then
             echo "❌ **CI FAILED**: Static analysis found critical issues"
+            exit 1
+          elif echo "$NEEDS_UNIT_TESTS_STATUS" | grep -q "failure"; then
+            echo "❌ **CI FAILED**: Unit tests failed"
+            exit 1
+          elif echo "$NEEDS_CLANG_FORMAT_CHECK_STATUS" | grep -q "failure"; then
+            echo "❌ **CI FAILED**: Code formatting issues found"
             exit 1
           elif echo "$NEEDS_STATIC_ANALYSIS_STATUS" | grep -q "skipped"; then
             echo "⚠️ **CI SKIPPED**: Static analysis was skipped"
