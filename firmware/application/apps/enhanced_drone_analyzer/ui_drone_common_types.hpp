@@ -35,6 +35,20 @@ struct DroneAnalyzerSettings {
     bool auto_save_logs = true;
     std::string log_file_path = "/eda_logs";
 
+    // --- НОВЫЕ ПОЛЯ (Вставьте в конец структуры) ---
+    
+    // Пользовательский диапазон сканирования
+    // Дефолтные: 50 МГц - 6000 МГц (полный функционал)
+    uint64_t user_min_freq_hz = 50000000ULL;   
+    uint64_t user_max_freq_hz = 6000000000ULL; 
+    
+    // Ширина "реза" (среза) в режимах Wideband/Hybrid
+    // Чем меньше это число, тем детальнее спектр, но медленнее сканирование
+    uint32_t wideband_slice_width_hz = 24000000; // 24 MHz
+    
+    // Сохранять ли полный спектр (true) или только найденное (false)
+    bool panoramic_mode_enabled = true; 
+
     // Save settings to TXT file
     bool save() const {
         const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";

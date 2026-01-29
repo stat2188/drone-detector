@@ -34,39 +34,25 @@ const TrackedDrone& get_empty_drone() {
     return empty;
 }
 
+// Static member definition for SimpleDroneValidation
+DroneConstants::ScanningMode SimpleDroneValidation::scanning_mode_ = DroneConstants::ScanningMode::STRICT_DRONE;
+
 // SimpleDroneValidation implementations
 bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
-    // Validate frequency range for drone detection
-    const Frequency MIN_DRONE_FREQ = 433000000ULL;
-    const Frequency MAX_DRONE_FREQ = 5800000000ULL;
+    // 1. Absolute hardware limits HackRF One: 1 MHz - 6 GHz (officially) 
+    // but firmware Mayhem port sometimes works up to 7.2 GHz with LNA losses.
+    // Set safety limit to 7.2 GHz as requested.
+    const Frequency MIN_HARDWARE_FREQ = 1000000ULL;    // 1 MHz
+    const Frequency MAX_HARDWARE_FREQ = 7200000000ULL; // 7200 MHz (7.2 GHz)
     
-    if (freq_hz < MIN_DRONE_FREQ || freq_hz > MAX_DRONE_FREQ) {
-        return false;
+    if (freq_hz < MIN_HARDWARE_FREQ || freq_hz > MAX_HARDWARE_FREQ) {
+        return false; // Frequency not supported by hardware
     }
+
+    // 2. If needed, add checks for prohibited ranges (GPS/GSM), 
+    // but for panoramic analyzer we return true for everything.
     
-    // Additional validation for common drone bands
-    // 433MHz ISM band
-    if (freq_hz <= 434000000ULL) {
-        return true;
-    }
-    // 868MHz ISM band (Europe)
-    if ((freq_hz >= 868000000ULL && freq_hz <= 868600000ULL)) {
-        return true;
-    }
-    // 915MHz ISM band (US)
-    if ((freq_hz >= 902000000ULL && freq_hz <= 928000000ULL)) {
-        return true;
-    }
-    // 2.4GHz WiFi/Bluetooth/Drone band
-    if ((freq_hz >= 2400000000ULL && freq_hz <= 2500000000ULL)) {
-        return true;
-    }
-    // 5.8GHz WiFi/Drone band
-    if ((freq_hz >= 5725000000ULL && freq_hz <= 5875000000ULL)) {
-        return true;
-    }
-    
-    return false;
+    return true;
 }
 
 bool SimpleDroneValidation::validate_rssi_signal(int32_t rssi_db, ThreatLevel threat) {
@@ -315,7 +301,7 @@ const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB
 // PART 2: DRONE SCANNER IMPLEMENTATION
 // ===========================================
 
-DroneScanner::DroneScanner()
+DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
     : scanning_thread_(nullptr),
       data_mutex(),
       scanning_active_(false),
@@ -337,7 +323,8 @@ DroneScanner::DroneScanner()
       wideband_scan_data_(),
       drone_database_(),
       detection_logger_(),
-      detection_ring_buffer_()
+      detection_ring_buffer_(),
+      settings_(settings)
 {
     // Initialize mutex properly to fix race condition
     chMtxInit(&data_mutex);
@@ -359,10 +346,20 @@ void DroneScanner::initialize_wideband_scanning() {
 }
 
 void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) {
-    wideband_scan_data_.min_freq = min_freq;
-    wideband_scan_data_.max_freq = max_freq;
+    // Use unified frequency limits from DroneConstants
+    Frequency safe_min = std::max(min_freq, DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ);
+    Frequency safe_max = std::min(max_freq, DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ);
+    
+    // Ensure min < max and apply hardware constraints
+    if (safe_min >= safe_max) {
+        safe_min = DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ;
+        safe_max = DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ;
+    }
+    
+    wideband_scan_data_.min_freq = safe_min;
+    wideband_scan_data_.max_freq = safe_max;
 
-    Frequency scanning_range = max_freq - min_freq;
+    Frequency scanning_range = safe_max - safe_min;
     if (scanning_range > WIDEBAND_SLICE_WIDTH) {
         wideband_scan_data_.slices_nb = (scanning_range + WIDEBAND_SLICE_WIDTH - 1) / WIDEBAND_SLICE_WIDTH;
         if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
@@ -370,7 +367,7 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
         }
         Frequency slices_span = wideband_scan_data_.slices_nb * WIDEBAND_SLICE_WIDTH;
         Frequency offset = ((scanning_range - slices_span) / 2) + (WIDEBAND_SLICE_WIDTH / 2);
-        Frequency center_frequency = min_freq + offset;
+        Frequency center_frequency = safe_min + offset;
 
         std::generate_n(wideband_scan_data_.slices,
                        wideband_scan_data_.slices_nb,
@@ -382,7 +379,7 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
                            return slice;
                        });
     } else {
-        wideband_scan_data_.slices[0].center_frequency = (max_freq + min_freq) / 2;
+        wideband_scan_data_.slices[0].center_frequency = (safe_max + safe_min) / 2;
         wideband_scan_data_.slices_nb = 1;
     }
     wideband_scan_data_.slice_counter = 0;
@@ -568,8 +565,8 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         Frequency target_freq_hz = entry.frequency_a;
 
         // CRITICAL: Enhanced frequency validation with overflow protection
-        const Frequency MIN_VALID_FREQ = 50000000ULL;      // 50 MHz
-        const Frequency MAX_VALID_FREQ = 6000000000ULL;    // 6 GHz
+        const Frequency MIN_VALID_FREQ = 1000000ULL;       // 1 MHz
+        const Frequency MAX_VALID_FREQ = 7200000000ULL;    // 7200 MHz (7.2 GHz)
 
         // Validate frequency range
         if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) {
@@ -1271,6 +1268,11 @@ void DroneScanner::update_tracking_counts() {
 }
 
 void DroneScanner::update_trends_compact_display() {
+}
+
+void DroneScanner::update_scan_range(Frequency min_freq, Frequency max_freq) {
+    if (min_freq >= max_freq) return;
+    setup_wideband_range(min_freq, max_freq);
 }
 
 void DroneScanner::reset_scan_cycles() {
@@ -2700,11 +2702,18 @@ DroneUIController::DroneUIController(NavigationView& nav,
     settings_.enable_audio_alerts = true;
 }
 
-    // --- ADD THIS DESTRUCTOR ---
 DroneUIController::~DroneUIController() {
     // TODO[FIXED]: Don't delete display_controller_ - owned by View
     // UIController only uses reference, doesn't own the resource
     display_controller_ = nullptr;  // Only nullify pointer
+}
+
+const DroneAnalyzerSettings& DroneUIController::settings() const {
+    return settings_;
+}
+
+DroneAnalyzerSettings& DroneUIController::settings() {
+    return settings_;
 }
 
 void DroneUIController::on_start_scan() {
@@ -2821,16 +2830,125 @@ void DroneUIController::on_about() {
     nav_.display_modal("EDA v1.0", "Enhanced Drone Analyzer\nMayhem Firmware Integration\nBased on Recon & Looking Glass");
 }
 
+void DroneUIController::update_scanner_range(Frequency min_freq, Frequency max_freq) {
+    scanner_.update_scan_range(min_freq, max_freq);
+    display_controller_->set_spectrum_range(min_freq, max_freq);
+}
+
+// --- РЕАЛИЗАЦИЯ FrequencyRangeSetupView ---
+
+FrequencyRangeSetupView::FrequencyRangeSetupView(NavigationView& nav, DroneUIController& controller)
+    : View({0, 0, screen_width, screen_height}), 
+      nav_(nav), 
+      controller_(controller),
+      // Properly initialize TextField objects with required parameters
+      field_min_({88, 36, 160, 16}, "2400.000000"), 
+      field_max_({88, 68, 160, 16}, "2500.000000"),
+      field_slice_({88, 100, 160, 16}, "24 MHz"),
+      text_title_({4, 4, 224, 16}, "Panoramic Spectrum") {
+    
+    add_children({
+        &text_title_,
+        &label_min_, &field_min_,
+        &label_max_, &field_max_,
+        &label_slice_, &field_slice_,
+        &button_save_, &button_cancel_
+    });
+    
+    // Set up button handlers
+    button_save_.on_select = [this](Button&) {
+        on_save();
+    };
+    
+    button_cancel_.on_select = [this](Button&) {
+        on_cancel();
+    };
+}
+
+void FrequencyRangeSetupView::focus() {
+    // При фокусе загружаем текущие настройки в поля ввода
+    const auto& settings = controller_.settings();
+    
+    // Format frequencies as MHz with 6 decimal places
+    char min_buffer[32];
+    char max_buffer[32];
+    snprintf(min_buffer, sizeof(min_buffer), "%.6f", settings.wideband_min_freq_hz / 1000000.0);
+    snprintf(max_buffer, sizeof(max_buffer), "%.6f", settings.wideband_max_freq_hz / 1000000.0);
+    
+    field_min_.set_text(min_buffer);
+    field_max_.set_text(max_buffer);
+    
+    // Set resolution text
+    char slice_buffer[32];
+    uint64_t slice_mhz = settings.wideband_slice_width_hz / 1000000;
+    snprintf(slice_buffer, sizeof(slice_buffer), "%lu MHz", (unsigned long)slice_mhz);
+    field_slice_.set(slice_buffer);
+    
+    button_save_.focus();
+}
+
+void FrequencyRangeSetupView::on_save() {
+    // Получаем значения из полей
+    const std::string min_str = field_min_.get_text();
+    const std::string max_str = field_max_.get_text();
+    
+    // Parse frequencies (MHz to Hz)
+    double min_mhz = strtod(min_str.c_str(), nullptr);
+    double max_mhz = strtod(max_str.c_str(), nullptr);
+    
+    Frequency new_min = static_cast<Frequency>(min_mhz * 1000000.0);
+    Frequency new_max = static_cast<Frequency>(max_mhz * 1000000.0);
+    uint64_t new_slice_width = 24000000; // Default to 24 MHz
+    
+    // Валидация
+    if (new_min >= new_max) {
+        nav_.display_modal("Error", "Min freq must be < Max freq");
+        return;
+    }
+    
+    if (new_min < 1000000 || new_max > 7200000000) {
+        nav_.display_modal("Error", "Frequency out of range (1MHz - 7.2GHz)");
+        return;
+    }
+    
+    // Сохранение настроек
+    auto& settings = controller_.settings();
+    settings.wideband_min_freq_hz = new_min;
+    settings.wideband_max_freq_hz = new_max;
+    settings.wideband_slice_width_hz = new_slice_width;
+    
+    // Сохранение в файл
+    settings.save();
+    
+    // Обновление сканера
+    controller_.update_scanner_range(new_min, new_max);
+    
+    // Показываем подтверждение
+    char buffer[64];
+    snprintf(buffer, sizeof(buffer), 
+             "Range updated:\n%.3f - %.3f MHz\nBW: %lu MHz", 
+             min_mhz, max_mhz, (unsigned long)(new_slice_width / 1000000));
+    
+    nav_.display_modal("Success", buffer);
+    nav_.pop();
+}
+
+void FrequencyRangeSetupView::on_cancel() {
+    nav_.pop();
+}
+
 // 2. Реализация меню
 DroneSettingsMenuView::DroneSettingsMenuView(NavigationView& nav, DroneUIController& controller)
-    : View({0, 0, screen_width, screen_height}), controller_(controller)
+    : View({0, 0, screen_width, screen_height}),
+      nav_(nav),
+      controller_(controller)
 {
-    (void)nav;
     // Добавляем элементы на экран
     add_children({
         &button_load_db_,
         &button_audio_,
         &button_hw_,
+        &button_freq_range_,
         &button_logs_,
         &button_about_,
         &text_info_
@@ -2864,17 +2982,22 @@ DroneSettingsMenuView::DroneSettingsMenuView(NavigationView& nav, DroneUIControl
         button_audio_.set_text("Audio Alerts: OFF");
     }
 
-    // 3. Hardware information
+    // 3. Frequency range setup
+    button_freq_range_.on_select = [this](Button&) {
+        nav_.push<FrequencyRangeSetupView>(controller_);
+    };
+
+    // 4. Hardware information
     button_hw_.on_select = [&controller](Button&) {
         controller.on_hardware_control();
     };
 
-    // 4. View logs (opens file manager)
+    // 5. View logs (opens file manager)
     button_logs_.on_select = [&controller](Button&) {
         controller.on_view_logs();
     };
 
-    // 5. About program
+    // 6. About program
     button_about_.on_select = [&controller](Button&) {
         controller.on_about();
     };
@@ -2888,7 +3011,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     : View({0, 0, screen_width, screen_height}),
       nav_(nav),
       hardware_(SpectrumMode::MEDIUM),
-      scanner_(),
+      scanner_(settings_),
       audio_(),
       display_controller_({0, 60, screen_width, screen_height - 80}),
       ui_controller_(nav, hardware_, scanner_, audio_, display_controller_),

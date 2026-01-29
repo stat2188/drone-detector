@@ -110,6 +110,20 @@ namespace ScannerSettingsManager {
             settings.freqman_path = value; // char* to std::string assignment
             return true;
         }
+        // --- НОВЫЕ БЛОКИ ПАРСИНГА (Вставьте сюда) ---
+
+        else if (strcmp(key, "user_min_freq_hz") == 0) {
+            settings.user_min_freq_hz = strtoul(value, nullptr, 10);
+            return true;
+        }
+        else if (strcmp(key, "user_max_freq_hz") == 0) {
+            settings.user_max_freq_hz = strtoul(value, nullptr, 10);
+            return true;
+        }
+        else if (strcmp(key, "wideband_slice_width_hz") == 0) {
+            settings.wideband_slice_width_hz = strtoul(value, nullptr, 10);
+            return true;
+        }
         return false;
     }
 
@@ -160,7 +174,7 @@ namespace ScannerSettingsManager {
         txt_file.close();
 
         if (read_result.is_error()) {
-             reset_to_defaults(settings);
+             DroneAnalyzerSettingsManager::reset_to_defaults(settings);
              return false;
         }
 

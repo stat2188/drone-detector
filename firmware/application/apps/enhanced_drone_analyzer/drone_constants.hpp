@@ -7,7 +7,24 @@ using Frequency = uint64_t;
 
 namespace DroneConstants {
 
-// ===== FREQUENCY RANGES =====
+// ===== FREQUENCY LIMITS =====
+namespace FrequencyLimits {
+    // Absolute hardware limits for HackRF One (MAX2837)
+    constexpr Frequency MIN_HARDWARE_FREQ =     1'000'000ULL; // 1 MHz
+    constexpr Frequency MAX_HARDWARE_FREQ =  7'200'000'000ULL; // 7.2 GHz (hardware maximum)
+    
+    // Safe operational limits to protect PLL and ensure stability
+    constexpr Frequency MIN_SAFE_FREQ =        50'000'000ULL; // 50 MHz (PLL stability)
+    constexpr Frequency MAX_SAFE_FREQ =     6'000'000'000ULL; // 6 GHz (PLL stability)
+}
+
+// ===== SCANNING MODES =====
+enum class ScanningMode {
+    STRICT_DRONE,    // Only validate known drone frequency bands
+    FULL_SPECTRUM    // Accept all frequencies within hardware limits
+};
+
+// ===== FREQUENCY RANGES (Legacy compatibility) =====
 constexpr Frequency MIN_HARDWARE_FREQ = 1'000'000ULL;
 constexpr Frequency MAX_HARDWARE_FREQ = 7'200'000'000ULL;
 

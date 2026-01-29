@@ -83,6 +83,20 @@ struct DroneAnalyzerSettings {
     bool show_detailed_info = true;
     bool auto_save_logs = true;
     std::string log_file_path = "/eda_logs";
+
+    // --- НОВЫЕ ПОЛЯ (Вставьте в конец структуры) ---
+    
+    // Пользовательский диапазон сканирования
+    // Дефолтные: 50 МГц - 6000 МГц (полный функционал)
+    uint64_t user_min_freq_hz = 50000000ULL;   
+    uint64_t user_max_freq_hz = 6000000000ULL; 
+    
+    // Ширина "реза" (среза) в режимах Wideband/Hybrid
+    // Чем меньше это число, тем детальнее спектр, но медленнее сканирование
+    uint32_t wideband_slice_width_hz = 24000000; // 24 MHz
+    
+    // Сохранять ли полный спектр (true) или только найденное (false)
+    bool panoramic_mode_enabled = true; 
 };
 
 } // namespace ui::external_app::enhanced_drone_analyzer
@@ -91,6 +105,7 @@ struct DroneAnalyzerSettings {
 class DroneAnalyzerSettingsManager {
 public:
     static void reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+    static const ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& get_current_settings();
 };
 
 inline void DroneAnalyzerSettingsManager::reset_to_defaults(ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
@@ -103,6 +118,11 @@ inline void DroneAnalyzerSettingsManager::reset_to_defaults(ui::external_app::en
     settings.hardware_bandwidth_hz = 24000000;
     settings.enable_real_hardware = true;
     settings.demo_mode = false;
+}
+
+inline const ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings& DroneAnalyzerSettingsManager::get_current_settings() {
+    static ui::external_app::enhanced_drone_analyzer::DroneAnalyzerSettings current_settings;
+    return current_settings;
 }
 
 // 4. Helper Constants

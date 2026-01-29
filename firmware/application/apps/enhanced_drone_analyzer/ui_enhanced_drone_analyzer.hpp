@@ -15,6 +15,7 @@
 #include "gradient.hpp"
 #include "ui_drone_audio.hpp"
 #include "ui_spectral_analyzer.hpp"
+#include "drone_constants.hpp"
 
 #include "ui.hpp"
 #include "event_m0.hpp"
@@ -293,7 +294,19 @@ public:
     static ThreatLevel classify_signal_strength(int32_t rssi_db);
     static DroneType identify_drone_type(const DroneSignal& signal);
     static bool validate_drone_detection(const DroneSignal& signal,
-                                        DroneType type, ThreatLevel threat);
+                                       DroneType type, ThreatLevel threat);
+    
+    // Mode for frequency validation
+    static void set_scanning_mode(DroneConstants::ScanningMode mode) {
+        scanning_mode_ = mode;
+    }
+    
+    static DroneConstants::ScanningMode get_scanning_mode() {
+        return scanning_mode_;
+    }
+
+private:
+    static DroneConstants::ScanningMode scanning_mode_;
 };
 
 // RAII wrapper for ChibiOS mutexes
@@ -393,7 +406,7 @@ public:
         HYBRID
     };
 
-    DroneScanner();
+    DroneScanner(const DroneAnalyzerSettings& settings);
     ~DroneScanner();
 
     void start_scanning();
@@ -563,6 +576,9 @@ private:
     };
     std::array<FrequencyPrediction, MAX_FREQUENCY_PREDICTIONS> frequency_predictions_{};
     size_t prediction_count_ = 0;
+
+    // Settings for user-defined frequency ranges
+    const DroneAnalyzerSettings& settings_;
 };
 
 class DroneHardwareController {
@@ -890,6 +906,7 @@ public:
     void on_audio_settings();
     void on_hardware_control();
     void on_view_logs();
+    void update_scanner_range(Frequency min_freq, Frequency max_freq);
 
     bool is_scanning() const { return scanning_active_; }
     DroneAnalyzerSettings& settings() { return settings_; }
@@ -1007,6 +1024,36 @@ private:
     systime_t timer_start_ = 0;
 };
 
+// --- НОВЫЙ КЛАСС ДЛЯ НАСТРОЙКИ ДИАПАЗОНА ---
+class FrequencyRangeSetupView : public View {
+public:
+    FrequencyRangeSetupView(NavigationView& nav, DroneUIController& controller);
+    
+    void focus() override;
+
+private:
+    NavigationView& nav_;
+    DroneUIController& controller_;
+    
+    // Виджеты интерфейса
+    Text text_title_ { { 4, 4, 224, 16 }, "Panoramic Spectrum" };
+    
+    Text label_min_ { { 4, 36, 80, 16 }, "Start Freq:" };
+    TextField field_min_ { { 88, 36, 160, 16 }, "2400.000000" };
+    
+    Text label_max_ { { 4, 68, 80, 16 }, "End Freq:" };
+    TextField field_max_ { { 88, 68, 160, 16 }, "2500.000000" };
+    
+    Text label_slice_ { { 4, 100, 80, 16 }, "Res (BW):" };
+    Text field_slice_ { { 88, 100, 160, 16 }, "24 MHz" };
+
+    Button button_save_ { { 4, 140, 224, 40 }, "Apply Range" };
+    Button button_cancel_ { { 4, 190, 224, 40 }, "Cancel" };
+
+    void on_save();
+    void on_cancel();
+};
+
 class DroneSettingsMenuView : public View {
 public:
     DroneSettingsMenuView(NavigationView& nav, DroneUIController& controller);
@@ -1015,15 +1062,17 @@ public:
     std::string title() const override { return "Settings"; };
 
 private:
+    NavigationView& nav_;  // Added NavigationView reference
     DroneUIController& controller_;
 
     Button button_load_db_   { {16, 16,  208, 40}, "Load Freq Database" };
     Button button_audio_     { {16, 64,  208, 40}, "Audio Alerts: Toggle" };
     Button button_hw_        { {16, 112, 208, 40}, "Hardware Info" };
-    Button button_logs_      { {16, 160, 208, 40}, "View CSV Logs" };
-    Button button_about_     { {16, 208, 208, 40}, "About EDA" };
+    Button button_freq_range_{ {16, 160, 208, 40}, "Set Freq Range" };
+    Button button_logs_      { {16, 208, 208, 40}, "View CSV Logs" };
+    Button button_about_     { {16, 256, 208, 40}, "About EDA" };
 
-    Text text_info_          { {16, 260, 208, 16}, "Ver: 0.3 | Mayhem" };
+    Text text_info_          { {16, 304, 208, 16}, "Ver: 0.3 | Mayhem" };
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer
