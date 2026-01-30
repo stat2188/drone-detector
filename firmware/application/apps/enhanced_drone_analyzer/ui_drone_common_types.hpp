@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "ch.h"
+#include "drone_constants.hpp"
 
 // SpectrumMode forward declare
 enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE, ULTRA_NARROW };
