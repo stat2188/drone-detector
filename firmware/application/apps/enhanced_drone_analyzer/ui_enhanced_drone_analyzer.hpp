@@ -170,18 +170,6 @@ struct DisplayDroneEntry {
     MovementTrend trend = MovementTrend::UNKNOWN;
 };
 
-struct DronePreset {
-    std::string display_name;
-    std::string name_template;
-    Frequency frequency_hz;
-    ThreatLevel threat_level;
-    DroneType drone_type;
-
-    bool is_valid() const {
-        return !display_name.empty() && frequency_hz > 0;
-    }
-};
-
 static constexpr size_t MAX_TRACKED_DRONES = 8;
 static constexpr size_t MAX_DISPLAYED_DRONES = 3;
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
@@ -303,6 +291,16 @@ public:
     
     static DroneConstants::ScanningMode get_scanning_mode() {
         return scanning_mode_;
+    }
+    
+    // Inline перегрузки для удобства использования в UI (обратная совместимость)
+    static inline DroneType identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
+        return identify_drone_type(DroneSignal{freq_hz, rssi_db});
+    }
+    
+    static inline bool validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
+                                                  DroneType type, ThreatLevel threat) {
+        return validate_drone_detection(DroneSignal{freq_hz, rssi_db}, type, threat);
     }
 
 private:
@@ -1090,26 +1088,8 @@ private:
     void on_cancel();
 };
 
-class DroneSettingsMenuView : public View {
-public:
-    DroneSettingsMenuView(NavigationView& nav, DroneUIController& controller);
-
-    void focus() override;
-    std::string title() const override { return "Settings"; };
-
-private:
-    NavigationView& nav_;  // Added NavigationView reference
-    DroneUIController& controller_;
-
-    Button button_load_db_   { {16, 16,  208, 40}, "Load Freq Database" };
-    Button button_audio_     { {16, 64,  208, 40}, "Audio Alerts: Toggle" };
-    Button button_hw_        { {16, 112, 208, 40}, "Hardware Info" };
-    Button button_freq_range_{ {16, 160, 208, 40}, "Set Freq Range" };
-    Button button_logs_      { {16, 208, 208, 40}, "View CSV Logs" };
-    Button button_about_     { {16, 256, 208, 40}, "About EDA" };
-
-    Text text_info_          { {16, 304, 208, 16}, "Ver: 0.3 | Mayhem" };
-};
+// Forward declaration of integrated settings view
+class DroneAnalyzerSettingsView;
 
 } // namespace ui::apps::enhanced_drone_analyzer
 

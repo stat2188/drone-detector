@@ -311,6 +311,7 @@ set(CPPSRC
 	apps/ui_weatherstation.cpp
 	apps/enhanced_drone_analyzer/enhanced_drone_analyzer_app.cpp
 	apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.cpp
+	apps/enhanced_drone_analyzer/ui_enhanced_drone_settings.cpp
 	apps/enhanced_drone_analyzer/ui_drone_common_types.cpp
 	apps/enhanced_drone_analyzer/scanner_settings.cpp
 	apps/enhanced_drone_analyzer/ui_signal_processing.cpp

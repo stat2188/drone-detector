@@ -2836,11 +2836,8 @@ void DroneUIController::on_toggle_mode() {
 }
 
 void DroneUIController::show_menu() {
-    // БЫЛО: nav_.display_modal("EDA Menu", "Available: ...");
-
-    // СТАЛО: Открываем наш новый класс меню
-    // *this передается как ссылка на контроллер, чтобы меню могло вызывать функции
-    nav_.push<DroneSettingsMenuView>(*this);
+    // СТАЛО: Открываем полноценное меню настроек EDA
+    nav_.push<DroneAnalyzerSettingsView>();
 }
 
 void DroneUIController::on_load_frequency_file() {
@@ -2925,15 +2922,15 @@ void DroneUIController::update_scanner_range(Frequency min_freq, Frequency max_f
 // --- РЕАЛИЗАЦИЯ FrequencyRangeSetupView ---
 
 FrequencyRangeSetupView::FrequencyRangeSetupView(NavigationView& nav, DroneUIController& controller)
-    : View({0, 0, screen_width, screen_height}), 
-      nav_(nav), 
+    : View({0, 0, screen_width, screen_height}),
+      nav_(nav),
       controller_(controller),
       // Properly initialize TextField objects with required parameters
-      field_min_({88, 36, 160, 16}, "2400.000000"), 
+      field_min_({88, 36, 160, 16}, "2400.000000"),
       field_max_({88, 68, 160, 16}, "2500.000000"),
       field_slice_({88, 100, 160, 16}, "24 MHz"),
       text_title_({4, 4, 224, 16}, "Panoramic Spectrum") {
-    
+
     add_children({
         &text_title_,
         &label_min_, &field_min_,
@@ -2941,7 +2938,7 @@ FrequencyRangeSetupView::FrequencyRangeSetupView(NavigationView& nav, DroneUICon
         &label_slice_, &field_slice_,
         &button_save_, &button_cancel_
     });
-    
+
     // Set up button handlers
     button_save_.on_select = [this](Button&) {
         on_save();
@@ -3037,75 +3034,7 @@ void FrequencyRangeSetupView::on_cancel() {
     nav_.pop();
 }
 
-// 2. Реализация меню
-DroneSettingsMenuView::DroneSettingsMenuView(NavigationView& nav, DroneUIController& controller)
-    : View({0, 0, screen_width, screen_height}),
-      nav_(nav),
-      controller_(controller)
-{
-    // Добавляем элементы на экран
-    add_children({
-        &button_load_db_,
-        &button_audio_,
-        &button_hw_,
-        &button_freq_range_,
-        &button_logs_,
-        &button_about_,
-        &text_info_
-    });
-
-    // Настраиваем стили (опционально, для красоты)
-    text_info_.set_style(Theme::getInstance()->fg_light);
-
-    // --- BUTTON FUNCTION ASSIGNMENTS ---
-
-    // 1. Load frequency database
-    button_load_db_.on_select = [&controller](Button&) {
-        controller.on_load_frequency_file();
-    };
-
-    // 2. Audio settings (update button text after click)
-    button_audio_.on_select = [this, &controller](Button&) {
-        controller.on_audio_settings(); // Toggle in controller
-        // Update button text to show new state
-        if (controller.settings().enable_audio_alerts) {
-            button_audio_.set_text("Audio Alerts: ON");
-        } else {
-            button_audio_.set_text("Audio Alerts: OFF");
-        }
-    };
-    // Set initial button text
-    // NOLINTNEXTLINE(bugprone-branch-clone)
-    if (controller.settings().enable_audio_alerts) {
-        button_audio_.set_text("Audio Alerts: ON");
-    } else {
-        button_audio_.set_text("Audio Alerts: OFF");
-    }
-
-    // 3. Frequency range setup
-    button_freq_range_.on_select = [this](Button&) {
-        nav_.push<FrequencyRangeSetupView>(controller_);
-    };
-
-    // 4. Hardware information
-    button_hw_.on_select = [&controller](Button&) {
-        controller.on_hardware_control();
-    };
-
-    // 5. View logs (opens file manager)
-    button_logs_.on_select = [&controller](Button&) {
-        controller.on_view_logs();
-    };
-
-    // 6. About program
-    button_about_.on_select = [&controller](Button&) {
-        controller.on_about();
-    };
-}
-
-void DroneSettingsMenuView::focus() {
-    button_load_db_.focus();
-}
+// 2. Реализация меню удалена - теперь используем DroneAnalyzerSettingsView из ui_enhanced_drone_settings.cpp
 
 EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
     : View({0, 0, screen_width, screen_height}),

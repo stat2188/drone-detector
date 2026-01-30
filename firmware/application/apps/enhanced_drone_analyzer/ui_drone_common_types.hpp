@@ -71,7 +71,17 @@ private:
     // Unused helper functions removed
 };
 
+// Forward declarations for integrated settings
+namespace ScannerSettingsManager {
+    bool save_settings_to_txt(const ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+    bool load_settings_from_txt(ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+}
+
 // Implementations moved to ui_drone_common_types.cpp
+
+// Default wideband constants for scanner settings
+static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2400000000ULL;
+static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2500000000ULL;
 
 // Enhanced enums for EDA
 enum class ThreatLevel {
@@ -120,6 +130,18 @@ private:
     static Language current_language_;
     static const char* get_english(const std::string& key);
     static const char* get_russian(const std::string& key);
+};
+
+struct DronePreset {
+    std::string display_name;
+    std::string name_template;
+    Frequency frequency_hz;
+    ThreatLevel threat_level;
+    DroneType drone_type;
+
+    bool is_valid() const {
+        return !display_name.empty() && frequency_hz > 0;
+    }
 };
 
 // Implementations moved to ui_drone_common_types.cpp
