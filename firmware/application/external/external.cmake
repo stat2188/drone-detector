@@ -278,9 +278,7 @@ set(EXTCPPSRC
 	external/subcarrx/main.cpp
 	external/subcarrx/ui_subcar.cpp
 
-	#enhanced_drone_analyzer_settings (DEPRECATED - integrated into main EDA app)
-	#external/enhanced_drone_analyzer_settings/main.cpp
-	#external/enhanced_drone_analyzer_settings/ui_settings_combined.cpp
+
 )
 
 set(EXTAPPLIST
@@ -350,5 +348,4 @@ set(EXTAPPLIST
 	adult_toys_controller
 	flex_rx
 	subcarrx
-	enhanced_drone_analyzer_settings
 )

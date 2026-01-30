@@ -21,6 +21,61 @@ namespace ScannerSettingsManager {
         return value;
     }
 
+    // Safe string to number conversion with error checking
+    static bool safe_parse_uint32(const char* str, uint32_t* result) {
+        if (!str || !result) return false;
+        char* endptr = nullptr;
+        unsigned long val = strtoul(str, &endptr, 10);
+        
+        // Check for conversion errors
+        if (endptr == str || *endptr != '\0') {
+            return false;  // No valid digits or trailing garbage
+        }
+        
+        if (val == ULONG_MAX && errno == ERANGE) {
+            return false;  // Overflow
+        }
+        
+        *result = static_cast<uint32_t>(val);
+        return true;
+    }
+
+    static bool safe_parse_int32(const char* str, int32_t* result) {
+        if (!str || !result) return false;
+        char* endptr = nullptr;
+        long val = strtol(str, &endptr, 10);
+        
+        // Check for conversion errors
+        if (endptr == str || *endptr != '\0') {
+            return false;
+        }
+        
+        if ((val == LONG_MAX || val == LONG_MIN) && errno == ERANGE) {
+            return false;  // Overflow/underflow
+        }
+        
+        *result = static_cast<int32_t>(val);
+        return true;
+    }
+
+    static bool safe_parse_uint64(const char* str, uint64_t* result) {
+        if (!str || !result) return false;
+        char* endptr = nullptr;
+        unsigned long long val = strtoull(str, &endptr, 10);
+        
+        // Check for conversion errors
+        if (endptr == str || *endptr != '\0') {
+            return false;
+        }
+        
+        if (val == ULLONG_MAX && errno == ERANGE) {
+            return false;  // Overflow
+        }
+        
+        *result = val;
+        return true;
+    }
+
     // Function implementations
     void reset_to_defaults(ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
         // Reset to reasonable defaults
@@ -75,11 +130,14 @@ namespace ScannerSettingsManager {
             settings.spectrum_mode = parse_spectrum_mode(value);
             return true;
         } else if (strcmp(key, "scan_interval_ms") == 0) {
-            settings.scan_interval_ms = validate_range<uint32_t>(
-                static_cast<uint32_t>(strtoul(value, nullptr, 10)), MIN_SCAN_INTERVAL_MS, MAX_SCAN_INTERVAL_MS);
+            uint32_t temp;
+            if (!safe_parse_uint32(value, &temp)) return false;
+            settings.scan_interval_ms = validate_range<uint32_t>(temp, MIN_SCAN_INTERVAL_MS, MAX_SCAN_INTERVAL_MS);
             return true;
         } else if (strcmp(key, "rssi_threshold_db") == 0) {
-            settings.rssi_threshold_db = validate_range<int32_t>(strtol(value, nullptr, 10), -120, -30);
+            int32_t temp;
+            if (!safe_parse_int32(value, &temp)) return false;
+            settings.rssi_threshold_db = validate_range<int32_t>(temp, -120, -30);
             return true;
         } else if (strcmp(key, "enable_audio_alerts") == 0) {
             settings.enable_audio_alerts = (strcmp(value, "true") == 0);
@@ -87,18 +145,22 @@ namespace ScannerSettingsManager {
         }
         // --- NEW AUDIO FIELDS ---
         else if (strcmp(key, "audio_alert_frequency_hz") == 0) {
-            settings.audio_alert_frequency_hz = validate_range<uint16_t>(
-                static_cast<uint16_t>(strtoul(value, nullptr, 10)), MIN_AUDIO_FREQ, MAX_AUDIO_FREQ);
+            uint32_t temp;
+            if (!safe_parse_uint32(value, &temp)) return false;
+            settings.audio_alert_frequency_hz = validate_range<uint16_t>(static_cast<uint16_t>(temp), MIN_AUDIO_FREQ, MAX_AUDIO_FREQ);
             return true;
         }
         else if (strcmp(key, "audio_alert_duration_ms") == 0) {
-            settings.audio_alert_duration_ms = validate_range<uint32_t>(
-                static_cast<uint32_t>(strtoul(value, nullptr, 10)), MIN_AUDIO_DURATION, MAX_AUDIO_DURATION);
+            uint32_t temp;
+            if (!safe_parse_uint32(value, &temp)) return false;
+            settings.audio_alert_duration_ms = validate_range<uint32_t>(temp, MIN_AUDIO_DURATION, MAX_AUDIO_DURATION);
             return true;
         }
         // --- NEW HARDWARE FIELDS ---
         else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
-            settings.hardware_bandwidth_hz = strtoul(value, nullptr, 10);
+            uint32_t temp;
+            if (!safe_parse_uint32(value, &temp)) return false;
+            settings.hardware_bandwidth_hz = validate_range<uint32_t>(temp, DroneConstants::MIN_BANDWIDTH, DroneConstants::MAX_BANDWIDTH);
             return true;
         }
         else if (strcmp(key, "enable_real_hardware") == 0) {
@@ -113,15 +175,25 @@ namespace ScannerSettingsManager {
         // --- НОВЫЕ БЛОКИ ПАРСИНГА (Вставьте сюда) ---
 
         else if (strcmp(key, "user_min_freq_hz") == 0) {
-            settings.user_min_freq_hz = strtoul(value, nullptr, 10);
+            uint64_t temp;
+            if (!safe_parse_uint64(value, &temp)) return false;
+            settings.user_min_freq_hz = temp;
             return true;
         }
         else if (strcmp(key, "user_max_freq_hz") == 0) {
-            settings.user_max_freq_hz = strtoul(value, nullptr, 10);
+            uint64_t temp;
+            if (!safe_parse_uint64(value, &temp)) return false;
+            // Validate that max > min
+            if (temp <= settings.user_min_freq_hz) {
+                return false;
+            }
+            settings.user_max_freq_hz = temp;
             return true;
         }
         else if (strcmp(key, "wideband_slice_width_hz") == 0) {
-            settings.wideband_slice_width_hz = strtoul(value, nullptr, 10);
+            uint32_t temp;
+            if (!safe_parse_uint32(value, &temp)) return false;
+            settings.wideband_slice_width_hz = temp;
             return true;
         }
         return false;

@@ -50,13 +50,7 @@ struct DroneAnalyzerSettings {
     // Сохранять ли полный спектр (true) или только найденное (false)
     bool panoramic_mode_enabled = true; 
 
-    // Save settings to TXT file
-    bool save() const {
-        const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-        // Implementation would require File API - for now just return false
-        (void)filepath;
-        return false;
-    }
+
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer

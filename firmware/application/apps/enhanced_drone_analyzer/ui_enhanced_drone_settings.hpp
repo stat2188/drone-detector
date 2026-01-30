@@ -280,7 +280,7 @@ private:
 
 class LoadingView : public View {
 public:
-    LoadingView(NavigationView& nav, const std::string& loading_text = "Loading...");
+    explicit LoadingView(NavigationView& nav, const std::string& loading_text = "Loading...");
     ~LoadingView() = default;
     void focus() override;
     std::string title() const override { return "Loading"; }
@@ -299,7 +299,7 @@ private:
 class DroneEntryEditorView : public View {
 public:
     using OnSaveCallback = std::function<void(const DroneDbEntry&)>;
-    DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, OnSaveCallback callback);
+    explicit DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, OnSaveCallback callback);
     void focus() override;
     std::string title() const override { return "Edit Frequency"; }
 

@@ -225,6 +225,10 @@ bool DroneAnalyzerSettingsManager::load(DroneAnalyzerSettings& settings) {
 }
 
 bool DroneAnalyzerSettingsManager::save(const DroneAnalyzerSettings& settings) {
+    // Validate settings before saving
+    if (!validate(settings)) {
+        return false;
+    }
     return EnhancedSettingsManager::save_settings_to_txt(settings);
 }
 
@@ -573,6 +577,13 @@ void HardwareSettingsView::save_current_settings() {
     settings.hardware_bandwidth_hz = number_bandwidth_.value();
     settings.user_min_freq_hz = number_min_freq_.value();
     settings.user_max_freq_hz = number_max_freq_.value();
+    
+    // Validate settings before saving
+    if (!DroneAnalyzerSettingsManager::validate(settings)) {
+        nav_.display_modal("Error", "Invalid settings detected");
+        return;
+    }
+    
     DroneAnalyzerSettingsManager::save(settings);
 }
 void HardwareSettingsView::update_ui_from_settings() { load_current_settings(); }
@@ -601,6 +612,13 @@ void AudioSettingsView::save_current_settings() {
     settings.enable_audio_alerts = checkbox_audio_enabled_.value();
     settings.audio_alert_frequency_hz = number_alert_frequency_.value();
     settings.audio_alert_duration_ms = number_alert_duration_.value();
+    
+    // Validate settings before saving
+    if (!DroneAnalyzerSettingsManager::validate(settings)) {
+        nav_.display_modal("Error", "Invalid settings detected");
+        return;
+    }
+    
     DroneAnalyzerSettingsManager::save(settings);
 }
 void AudioSettingsView::update_ui_from_settings() { load_current_settings(); }
@@ -645,6 +663,13 @@ void ScanningSettingsView::save_current_settings() {
     settings.scan_interval_ms = number_scan_interval_.value();
     settings.rssi_threshold_db = number_rssi_threshold_.value();
     settings.enable_wideband_scanning = checkbox_wideband_.value();
+    
+    // Validate settings before saving
+    if (!DroneAnalyzerSettingsManager::validate(settings)) {
+        nav_.display_modal("Error", "Invalid settings detected");
+        return;
+    }
+    
     DroneAnalyzerSettingsManager::save(settings);
 }
 void ScanningSettingsView::on_save_settings() {
