@@ -309,6 +309,33 @@ private:
     static DroneConstants::ScanningMode scanning_mode_;
 };
 
+// 🔴 NEW: Enhanced Settings Validation with detailed checks
+class EnhancedDroneSettingsValidator {
+public:
+    struct ValidationResult {
+        bool is_valid;
+        std::string error_message;
+        uint32_t warning_count;
+        
+        ValidationResult() : is_valid(true), warning_count(0) {}
+    };
+    
+    static ValidationResult validate_all(const DroneAnalyzerSettings& settings);
+    
+private:
+    static bool validate_frequency(Frequency freq, std::string& error);
+    static bool validate_rssi_threshold(int32_t rssi, std::string& error);
+    static bool validate_scan_interval(uint32_t interval_ms, std::string& error);
+    static bool validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, std::string& error);
+    static bool validate_bandwidth(uint32_t bandwidth_hz, std::string& error);
+    static bool validate_frequency_range(Frequency min_hz, Frequency max_hz, std::string& error);
+    
+    // Enhanced frequency validation with drone band checks
+    static bool is_known_drone_band(Frequency freq);
+    static bool is_ism_band(Frequency freq);
+    static std::string format_frequency_hz(Frequency freq);
+};
+
 // RAII wrapper for ChibiOS mutexes
 class MutexLock {
 public:
@@ -453,7 +480,7 @@ struct DetectionParams {
 
     Frequency get_current_scanning_frequency() const;
     ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
-    const TrackedDrone& getTrackedDrone(size_t index) const;
+    const TrackedDrone& getTrackedDrone(size_t index) const;  // 🔴 FIX: Protected with mutex
     void handle_scan_error(const char* error_msg);
 
     std::string get_session_summary() const;
@@ -564,6 +591,7 @@ private:
 
     // Intelligent scanning features
     int32_t priority_slice_index_ = -1;  // For priority scanning
+    mutable Mutex priority_slice_mutex_;  // 🔴 FIX: Race condition protection
     size_t priority_scan_counter_ = 0;   // Counter for priority slice scanning
     static constexpr size_t PRIORITY_SCAN_INTERVAL = 3; // Scan priority slice every N cycles
     static constexpr size_t MAX_FREQUENCY_PREDICTIONS = 5; // Max predicted frequencies to track
@@ -575,6 +603,7 @@ private:
         systime_t last_seen;
     };
     std::array<FrequencyPrediction, MAX_FREQUENCY_PREDICTIONS> frequency_predictions_{};
+    mutable Mutex predictions_mutex_;  // 🔴 FIX: Race condition protection
     size_t prediction_count_ = 0;
 
     // Settings for user-defined frequency ranges
@@ -611,6 +640,9 @@ public:
     
     void clear_rssi_flag();
     bool is_rssi_fresh() const;
+    
+    // 🔴 FIX: TOCTOU race condition - atomic check-and-fetch method
+    bool get_rssi_if_fresh(int32_t& out_rssi);
 
     // NEW: Spectrum data access method (atomic check-and-fetch to avoid TOCTOU race)
     bool get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer);
@@ -632,11 +664,13 @@ private:
 
     int32_t get_configured_sampling_rate() const;
     int32_t get_configured_bandwidth() const;
-
-    // NEW: Spectrum data buffer and synchronization
+    
+    // 🔴 FIX: Spectrum data buffer and synchronization
     std::array<uint8_t, 256> last_spectrum_db_;
     mutable Mutex spectrum_mutex_;
-    volatile bool spectrum_updated_ = false;
+    
+    // 🔴 FIX: Replace volatile with atomic with explicit memory ordering
+    std::atomic<bool> spectrum_updated_{false};
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
@@ -644,8 +678,10 @@ private:
     RxRadioState radio_state_;
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
-    volatile bool rssi_updated_ = false;
-    volatile int32_t last_valid_rssi_ = -120;
+    
+    // 🔴 FIX: Replace volatile with atomic with explicit memory ordering
+    std::atomic<bool> rssi_updated_{false};
+    std::atomic<int32_t> last_valid_rssi_{-120};
 
     MessageHandlerRegistration message_handler_spectrum_config_ {
         Message::ID::ChannelSpectrumConfig,

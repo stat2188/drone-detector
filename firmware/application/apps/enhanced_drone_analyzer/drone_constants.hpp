@@ -62,6 +62,13 @@ constexpr int32_t HIGH_RSSI_DB = -60;
 constexpr int32_t MEDIUM_RSSI_DB = -70;
 constexpr int32_t LOW_RSSI_DB = -80;
 
+// RSSI Validation thresholds
+// RF receiver noise floor is typically -128 to -110 dBm
+// Values below -110 dBm are considered pure noise
+constexpr int32_t NOISE_FLOOR_RSSI = -110;        // Below this is noise
+constexpr int32_t MIN_VALID_RSSI = -110;          // Minimum valid signal level
+constexpr int32_t MAX_VALID_RSSI = 10;            // Maximum realistic RSSI
+
 // ===== SPECTRAL ANALYSIS =====
 constexpr uint8_t SPECTRAL_SNR_THRESHOLD = 10;
 constexpr uint8_t SPECTRAL_PEAK_THRESHOLD_DB = 6;
@@ -76,12 +83,29 @@ constexpr uint32_t DEFAULT_SCAN_INTERVAL_MS = 1000;
 constexpr uint8_t MIN_DETECTION_COUNT = 3;
 constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 
+// ===== INTELLIGENT SCANNING (New constants for Portapack optimization) =====
+constexpr uint32_t PRIORITY_SLICE_SKIP_THRESHOLD = 10; // Skip slice if clean for N cycles
+constexpr uint32_t PREDICTION_FRESHNESS_MS = 5000;  // 5 seconds
+constexpr uint32_t FHSS_TRACKING_CONFIDENCE_MAX = 10;
+
 // ===== MEMORY =====
 constexpr size_t MAX_TRACKED_DRONES = 8;
 constexpr size_t MAX_DISPLAYED_DRONES = 3;
 constexpr size_t DETECTION_TABLE_SIZE = 256;
 constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
+
+// ===== AUDIO ALERT PARAMETERS =====
+constexpr uint32_t MIN_AUDIO_FREQ = 200;       // 200 Hz minimum
+constexpr uint32_t MAX_AUDIO_FREQ = 20000;     // 20 kHz maximum
+
+// ===== AUDIO DURATION PARAMETERS =====
+constexpr uint32_t MIN_AUDIO_DURATION = 50;    // 50 ms minimum
+constexpr uint32_t MAX_AUDIO_DURATION = 5000;  // 5000 ms maximum
+
+// ===== BANDWIDTH PARAMETERS =====
+constexpr uint32_t MIN_BANDWIDTH = 10000;     // 10 kHz minimum
+constexpr uint32_t MAX_BANDWIDTH = 28000000;  // 28 MHz maximum (HackRF limit)
 
 } // namespace DroneConstants
 

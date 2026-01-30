@@ -3,17 +3,12 @@ BasedOnStyle: Chromium
 IndentWidth: '4'
 SortIncludes: 'false'
 AllowAllArgumentsOnNextLine: 'true'
-ColumnLimit: 120
+ColumnLimit: 0
 Cpp11BracedListStyle: 'true'
 AllowShortLoopsOnASingleLine: 'true'
 AllowShortIfStatementsOnASingleLine: 'true'
 SpacesInLineCommentPrefix:
   Minimum: 1
   Maximum: 1
-PointerAlignment: Left
-SpaceAfterCStyleCast: false
-SpaceBeforeParens: ControlStatements
-AllowShortFunctionsOnASingleLine: Inline
-MaxEmptyLinesToKeep: 1
-KeepEmptyLinesAtTheStartOfBlocks: false
+
 ...

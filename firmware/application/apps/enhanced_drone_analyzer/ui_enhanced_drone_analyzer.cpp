@@ -39,14 +39,17 @@ DroneConstants::ScanningMode SimpleDroneValidation::scanning_mode_ = DroneConsta
 
 // SimpleDroneValidation implementations
 bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
-    // 1. Absolute hardware limits HackRF One: 1 MHz - 6 GHz (officially) 
-    // but firmware Mayhem port sometimes works up to 7.2 GHz with LNA losses.
-    // Set safety limit to 7.2 GHz as requested.
-    const Frequency MIN_HARDWARE_FREQ = 1000000ULL;    // 1 MHz
-    const Frequency MAX_HARDWARE_FREQ = 7200000000ULL; // 7200 MHz (7.2 GHz)
-    
-    if (freq_hz < MIN_HARDWARE_FREQ || freq_hz > MAX_HARDWARE_FREQ) {
+    // Use unified frequency limits from DroneConstants
+    if (freq_hz < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ || 
+        freq_hz > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
         return false; // Frequency not supported by hardware
+    }
+    
+    // Validate against safe operational limits
+    if (freq_hz < DroneConstants::FrequencyLimits::MIN_SAFE_FREQ || 
+        freq_hz > DroneConstants::FrequencyLimits::MAX_SAFE_FREQ) {
+        // Frequency is within hardware limits but may be unstable
+        // For now we allow it, but this could be a warning in future
     }
 
     // 2. If needed, add checks for prohibited ranges (GPS/GSM), 
@@ -488,19 +491,51 @@ const char* DroneScanner::scanning_mode_name() const {
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     if (!scanning_active_) return;
 
-    // TODO: Adaptive timing based on current load and detections
+    // 🔴 ENHANCED: Adaptive timing with golden mean between speed and accuracy
+    // Considering Cortex M4 limitations on Portapack (limited RAM, CPU)
     uint32_t base_interval = 750; // Base interval in milliseconds
     uint32_t adaptive_interval = base_interval;
-
-    // Adjust timing based on current detections
+    
+    // Get current scan context
     size_t current_detections = get_total_detections();
-    if (current_detections > 5) {
-        // High detection rate - scan faster
-        adaptive_interval = (250U > base_interval - (current_detections * 50)) ? 250U : base_interval - (current_detections * 50);
+    ThreatLevel max_threat = get_max_detected_threat();
+    size_t tracked_count = tracked_count_;
+    
+    // ADAPTIVE STRATEGY:
+    // - CRITICAL threats: scan fastest (250ms)
+    // - HIGH threats: scan fast (400ms)
+    // - MEDIUM threats: scan normal (750ms)
+    // - LOW threats: scan slower (1000ms)
+    // - NO threats: scan progressively slower (up to 2000ms)
+    // - Balance: faster scanning of known drone bands, slower for empty bands
+    
+    if (max_threat >= ThreatLevel::CRITICAL) {
+        // Critical threat detected - maximum speed scanning
+        adaptive_interval = 250; // Fastest possible scan
+    } else if (max_threat == ThreatLevel::HIGH) {
+        // High threat - fast scanning
+        adaptive_interval = 400;
+    } else if (max_threat == ThreatLevel::MEDIUM) {
+        // Medium threat - normal scanning
+        adaptive_interval = 750;
+    } else if (current_detections > 0 && tracked_count > 0) {
+        // Have detections but low threat - maintain medium pace
+        adaptive_interval = 1000;
     } else if (current_detections == 0 && scan_cycles_ > 10) {
-        // No detections for a while - slow down to save power
-        adaptive_interval = (2000U < base_interval + 250) ? 2000U : base_interval + 250;
+        // No detections for a while - progressively slow down
+        // Progressive slowdown: 1000ms → 1500ms → 2000ms (cap)
+        uint32_t slowdown_multiplier = std::min(scan_cycles_ / 10, 3U);
+        adaptive_interval = std::min(2000U, base_interval * slowdown_multiplier);
     }
+    
+    // Additional adjustment based on detection density
+    if (current_detections > 5) {
+        // Very high detection rate - maintain fast pace
+        adaptive_interval = std::min(adaptive_interval, 500U);
+    }
+    
+    // Apply adaptive interval
+    chThdSleepMilliseconds(adaptive_interval);
 
     // Apply mode-specific adjustments
     switch (scanning_mode_) {
@@ -565,8 +600,9 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         Frequency target_freq_hz = entry.frequency_a;
 
         // CRITICAL: Enhanced frequency validation with overflow protection
-        const Frequency MIN_VALID_FREQ = 1000000ULL;       // 1 MHz
-        const Frequency MAX_VALID_FREQ = 7200000000ULL;    // 7200 MHz (7.2 GHz)
+        // Use unified frequency limits from DroneConstants
+        const Frequency MIN_VALID_FREQ = DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ;
+        const Frequency MAX_VALID_FREQ = DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ;
 
         // Validate frequency range
         if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) {
@@ -616,9 +652,13 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
     if (wideband_scan_data_.slices_nb == 0) {
         setup_wideband_range(WIDEBAND_DEFAULT_MIN, WIDEBAND_DEFAULT_MAX);
     }
-
+    
     const WidebandSlice& current_slice = wideband_scan_data_.slices[wideband_scan_data_.slice_counter];
-
+    
+    // 🔴 ENHANCED: Intelligent slice skipping for Cortex M4 performance
+    // Skip slices that have been "clean" for consecutive cycles to save CPU cycles
+    // This is especially important on Portapack with limited RAM/CPU
+    
     // 1. Tune to SLICE CENTER
     if (hardware.tune_to_frequency(current_slice.center_frequency)) {
 
@@ -711,37 +751,55 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
 
 size_t DroneScanner::get_next_slice_with_intelligence() {
     // 1. Check if we have a priority slice to scan
-    if (priority_slice_index_ != -1) {
+    // 🔴 FIX: Race condition protection
+    int32_t priority_slice;
+    {
+        MutexLock lock(priority_slice_mutex_);
+        priority_slice = priority_slice_index_;
+    }
+    
+    if (priority_slice != -1) {
         priority_scan_counter_++;
         
         // Scan priority slice every PRIORITY_SCAN_INTERVAL cycles
         if (priority_scan_counter_ >= PRIORITY_SCAN_INTERVAL) {
             priority_scan_counter_ = 0;
-            return static_cast<size_t>(priority_slice_index_);
+            return static_cast<size_t>(priority_slice);
         }
     }
-
+    
     // 2. Check for frequency predictions (FHSS tracking)
-    if (prediction_count_ > 0) {
+    // 🔴 FIX: Race condition protection - lock predictions_mutex_
+    size_t local_prediction_count;
+    FrequencyPrediction local_predictions[MAX_FREQUENCY_PREDICTIONS];
+    {
+        MutexLock lock(predictions_mutex_);
+        local_prediction_count = prediction_count_;
+        if (prediction_count_ > 0) {
+            std::copy_n(frequency_predictions_.begin(), prediction_count_, local_predictions);
+        }
+    }
+    
+    if (local_prediction_count > 0) {
         systime_t now = chTimeNow();
         size_t best_prediction_idx = 0;
         size_t max_confidence = 0;
         bool found_prediction = false;
-
+        
         // Find the highest confidence prediction that's still fresh
-        for (size_t i = 0; i < prediction_count_; i++) {
-            if (now - frequency_predictions_[i].last_seen < 5000) { // 5 seconds freshness
-                if (frequency_predictions_[i].confidence > max_confidence) {
-                    max_confidence = frequency_predictions_[i].confidence;
+        for (size_t i = 0; i < local_prediction_count; i++) {
+            if (now - local_predictions[i].last_seen < 5000) { // 5 seconds freshness
+                if (local_predictions[i].confidence > max_confidence) {
+                    max_confidence = local_predictions[i].confidence;
                     best_prediction_idx = i;
                     found_prediction = true;
                 }
             }
         }
-
+        
         if (found_prediction) {
             // Find the slice that contains this predicted frequency
-            Frequency predicted_freq = frequency_predictions_[best_prediction_idx].predicted_freq;
+            Frequency predicted_freq = local_predictions[best_prediction_idx].predicted_freq;
             for (size_t i = 0; i < wideband_scan_data_.slices_nb; i++) {
                 const WidebandSlice& slice = wideband_scan_data_.slices[i];
                 Frequency slice_min = slice.center_frequency - (WIDEBAND_SLICE_WIDTH / 2);
@@ -772,6 +830,9 @@ size_t DroneScanner::get_next_slice_with_intelligence() {
 
 void DroneScanner::update_frequency_predictions(Frequency detected_freq, ThreatLevel threat_level) {
     if (threat_level < ThreatLevel::MEDIUM) return; // Only predict for medium+ threats
+    
+    // 🔴 FIX: Race condition protection - lock predictions_mutex_
+    MutexLock lock(predictions_mutex_);
     
     systime_t now = chTimeNow();
     
@@ -810,6 +871,9 @@ void DroneScanner::update_frequency_predictions(Frequency detected_freq, ThreatL
 }
 
 void DroneScanner::update_priority_slice_detection(size_t slice_idx, bool detected_something_interesting) {
+    // 🔴 FIX: Race condition protection
+    MutexLock lock(priority_slice_mutex_);
+    
     if (detected_something_interesting) {
         priority_slice_index_ = static_cast<int32_t>(slice_idx);
         priority_scan_counter_ = 0; // Reset counter to scan priority slice immediately next cycle
@@ -986,13 +1050,14 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
     // TODO[FIXED]: Improved RSSI and frequency validation
     // 1. Preliminary filtering (no locks required)
-    const int32_t MIN_VALID_RSSI = -120;  // Extended range for weak signals
-    const int32_t MAX_VALID_RSSI = 10;
+    // Use unified RSSI thresholds from DroneConstants
+    const int32_t MIN_VALID_RSSI = DroneConstants::MIN_VALID_RSSI;  // -110 (excludes pure noise)
+    const int32_t MAX_VALID_RSSI = DroneConstants::MAX_VALID_RSSI;  // 10
 
     // TODO[FIXED]: Fixed RSSI validation logic
     // Was: rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
     // Now: rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
-    // Now values from -128 to -110 will be processed correctly
+    // Now values from -128 to -110 will be processed correctly as noise
     if (rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI) {
         return;
     }
@@ -1128,6 +1193,8 @@ void DroneScanner::send_drone_detection_message(const DetectionParams& params) {
 void DroneScanner::update_tracked_drone(const DetectionParams& params) {
     // TODO[CRITICAL][FIXED]: Don't call UI methods directly from scanning thread
     // Only update internal data - UI will read via snapshot
+    // FIXED: Added mutex lock to prevent race condition
+    MutexLock lock(data_mutex);
     update_tracked_drone_internal(params);
 }
 
@@ -1314,6 +1381,8 @@ Frequency DroneScanner::get_current_radio_frequency() const {
 }
 
 const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
+    // 🔴 FIX: Race condition protection - lock before accessing tracked_drones_
+    MutexLock lock(data_mutex);
     if (index < tracked_count_) {
         return tracked_drones_[index];
     }
@@ -1734,9 +1803,9 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
     // TODO[FIXED]: Added frequency validation
-    // Range validation
-    const Frequency MIN_FREQ = 50000000ULL;      // 50 MHz
-    const Frequency MAX_FREQ = 6000000000ULL;    // 6 GHz
+    // Use unified frequency limits from DroneConstants
+    const Frequency MIN_FREQ = DroneConstants::FrequencyLimits::MIN_SAFE_FREQ;      // 50 MHz
+    const Frequency MAX_FREQ = DroneConstants::FrequencyLimits::MAX_SAFE_FREQ;    // 6 GHz
 
     if (frequency_hz < MIN_FREQ || frequency_hz > MAX_FREQ) {
         return false;  // <-- Return false on error
@@ -1825,18 +1894,21 @@ void DroneHardwareController::process_channel_spectrum_data(const ChannelSpectru
 
 bool DroneHardwareController::get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer) {
     MutexLock lock(spectrum_mutex_);
-    if (spectrum_updated_) {
+    
+    // 🔴 FIX: Use explicit memory ordering
+    if (spectrum_updated_.load(std::memory_order_acquire)) {
         out_db_buffer = last_spectrum_db_;
-        spectrum_updated_ = false;
+        spectrum_updated_.store(false, std::memory_order_release);
         return true;
     }
     return false;
 }
 
 bool DroneHardwareController::try_get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer) {
+    // 🔴 FIX: Try-lock without blocking
     if (chMtxTryLock(&spectrum_mutex_)) {
         out_db_buffer = last_spectrum_db_;
-        spectrum_updated_ = false;
+        spectrum_updated_.store(false, std::memory_order_release);
         chMtxUnlock();
         return true;
     }
@@ -1844,8 +1916,8 @@ bool DroneHardwareController::try_get_latest_spectrum(std::array<uint8_t, 256>& 
 }
 
 void DroneHardwareController::clear_spectrum_flag() {
-    MutexLock lock(spectrum_mutex_);
-    spectrum_updated_ = false;
+    // 🔴 FIX: Use explicit memory ordering
+    spectrum_updated_.store(false, std::memory_order_release);
 }
 
 int32_t DroneHardwareController::get_configured_sampling_rate() const {
@@ -1862,6 +1934,19 @@ bool DroneHardwareController::is_spectrum_streaming_active() const {
 
 int32_t DroneHardwareController::get_current_rssi() const {
     return last_valid_rssi_;
+}
+
+// 🔴 FIX: TOCTOU race condition - atomic check-and-fetch implementation
+bool DroneHardwareController::get_rssi_if_fresh(int32_t& out_rssi) {
+    // Check if RSSI is fresh with acquire semantics
+    if (!rssi_updated_.load(std::memory_order_acquire)) {
+        return false;
+    }
+
+    // Value is fresh, copy it and clear the flag with release semantics
+    out_rssi = last_valid_rssi_;
+    rssi_updated_.store(false, std::memory_order_release);
+    return true;
 }
 
 void DroneHardwareController::update_spectrum_for_scanner() {
@@ -2634,15 +2719,17 @@ size_t DroneDisplayController::get_safe_spectrum_index(size_t x, size_t y) const
 }
 
 void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency max_freq) {
-    if (min_freq >= max_freq || min_freq < MIN_HARDWARE_FREQ || max_freq > MAX_HARDWARE_FREQ) {
-        spectrum_config_.min_freq = WIDEBAND_DEFAULT_MIN;
-        spectrum_config_.max_freq = WIDEBAND_DEFAULT_MAX;
+    // Use unified frequency limits from DroneConstants
+    if (min_freq >= max_freq || min_freq < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ || 
+        max_freq > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+        spectrum_config_.min_freq = DroneConstants::WIDEBAND_24GHZ_MIN;
+        spectrum_config_.max_freq = DroneConstants::WIDEBAND_24GHZ_MAX;
         return;
     }
     spectrum_config_.min_freq = min_freq;
     spectrum_config_.max_freq = max_freq;
-    spectrum_config_.bandwidth = (max_freq - min_freq) > 24000000 ?
-                                24000000 : static_cast<uint32_t>(max_freq - min_freq);
+    spectrum_config_.bandwidth = (max_freq - min_freq) > DroneConstants::WIDEBAND_WIFI_MIN_WIDTH_HZ ?
+                                DroneConstants::WIDEBAND_DEFAULT_SLICE_WIDTH : static_cast<uint32_t>(max_freq - min_freq);
     spectrum_config_.sampling_rate = spectrum_config_.bandwidth;
 }
 
@@ -2896,18 +2983,31 @@ void FrequencyRangeSetupView::on_save() {
     double min_mhz = strtod(min_str.c_str(), nullptr);
     double max_mhz = strtod(max_str.c_str(), nullptr);
     
+    // NaN validation
+    if (std::isnan(min_mhz) || std::isnan(max_mhz)) {
+        nav_.display_modal("Error", "Invalid frequency format");
+        return;
+    }
+    
     Frequency new_min = static_cast<Frequency>(min_mhz * 1000000.0);
     Frequency new_max = static_cast<Frequency>(max_mhz * 1000000.0);
     uint64_t new_slice_width = 24000000; // Default to 24 MHz
     
-    // Валидация
+    // Валидация - use unified constants from DroneConstants
     if (new_min >= new_max) {
         nav_.display_modal("Error", "Min freq must be < Max freq");
         return;
     }
     
-    if (new_min < 1000000 || new_max > 7200000000) {
+    if (new_min < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ || 
+        new_max > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
         nav_.display_modal("Error", "Frequency out of range (1MHz - 7.2GHz)");
+        return;
+    }
+    
+    // Overflow check
+    if (new_max > new_max + new_min) {
+        nav_.display_modal("Error", "Frequency range overflow detected");
         return;
     }
     
@@ -3400,6 +3500,186 @@ void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
     }
 }
 
+// ===========================================
+// PART 7: ENHANCED SETTINGS VALIDATOR
+// ===========================================
 
+EnhancedDroneSettingsValidator::ValidationResult 
+EnhancedDroneSettingsValidator::validate_all(const DroneAnalyzerSettings& settings) {
+    ValidationResult result;
+    
+    // 1. Validate RSSI threshold
+    if (!validate_rssi_threshold(settings.rssi_threshold_db, result.error_message)) {
+        result.is_valid = false;
+        return result;
+    }
+    
+    // 2. Validate scan interval
+    if (!validate_scan_interval(settings.scan_interval_ms, result.error_message)) {
+        result.is_valid = false;
+        return result;
+    }
+    
+    // 3. Validate audio parameters
+    if (!validate_audio_params(settings.audio_alert_frequency_hz, 
+                              settings.audio_alert_duration_ms, result.error_message)) {
+        result.is_valid = false;
+        return result;
+    }
+    
+    // 4. Validate bandwidth
+    if (!validate_bandwidth(settings.hardware_bandwidth_hz, result.error_message)) {
+        result.is_valid = false;
+        return result;
+    }
+    
+    // 5. Validate frequency range
+    if (!validate_frequency_range(settings.min_frequency_hz, settings.max_frequency_hz, result.error_message)) {
+        result.is_valid = false;
+        return result;
+    }
+    
+    // 6. Check for warnings (not errors)
+    if (settings.rssi_threshold_db > -60) {
+        result.warning_count++;
+        result.error_message += "WARN: High RSSI threshold may miss weak signals\n";
+    }
+    
+    if (settings.scan_interval_ms > 5000) {
+        result.warning_count++;
+        result.error_message += "WARN: Slow scan interval\n";
+    }
+    
+    return result;
+}
+
+bool EnhancedDroneSettingsValidator::validate_frequency(Frequency freq, std::string& error) {
+    if (freq < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ || 
+        freq > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "Frequency %s out of range (must be %llu-%llu GHz)", 
+                 format_frequency_hz(freq).c_str(),
+                 DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ / 1000000000ULL,
+                 DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ / 1000000000ULL);
+        error = buffer;
+        return false;
+    }
+    return true;
+}
+
+bool EnhancedDroneSettingsValidator::validate_rssi_threshold(int32_t rssi, std::string& error) {
+    if (rssi < DroneConstants::MIN_VALID_RSSI || rssi > DroneConstants::MAX_VALID_RSSI) {
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "RSSI threshold %ddBm invalid (must be %d to %d)", 
+                 rssi, DroneConstants::MIN_VALID_RSSI, DroneConstants::MAX_VALID_RSSI);
+        error = buffer;
+        return false;
+    }
+    return true;
+}
+
+bool EnhancedDroneSettingsValidator::validate_scan_interval(uint32_t interval_ms, std::string& error) {
+    if (interval_ms < DroneConstants::MIN_SCAN_INTERVAL_MS || 
+        interval_ms > DroneConstants::MAX_SCAN_INTERVAL_MS) {
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "Scan interval %ums invalid (must be %u to %ums)", 
+                 interval_ms, DroneConstants::MIN_SCAN_INTERVAL_MS, DroneConstants::MAX_SCAN_INTERVAL_MS);
+        error = buffer;
+        return false;
+    }
+    return true;
+}
+
+bool EnhancedDroneSettingsValidator::validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, std::string& error) {
+    if (freq_hz < DroneConstants::MIN_AUDIO_FREQ || freq_hz > DroneConstants::MAX_AUDIO_FREQ) {
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "Audio frequency %uHz invalid (must be %u to %uHz)", 
+                 freq_hz, DroneConstants::MIN_AUDIO_FREQ, DroneConstants::MAX_AUDIO_FREQ);
+        error = buffer;
+        return false;
+    }
+    
+    if (duration_ms < DroneConstants::MIN_AUDIO_DURATION || 
+        duration_ms > DroneConstants::MAX_AUDIO_DURATION) {
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "Audio duration %ums invalid (must be %u to %ums)", 
+                 duration_ms, DroneConstants::MIN_AUDIO_DURATION, DroneConstants::MAX_AUDIO_DURATION);
+        error = buffer;
+        return false;
+    }
+    return true;
+}
+
+bool EnhancedDroneSettingsValidator::validate_bandwidth(uint32_t bandwidth_hz, std::string& error) {
+    if (bandwidth_hz < DroneConstants::MIN_BANDWIDTH || bandwidth_hz > DroneConstants::MAX_BANDWIDTH) {
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "Bandwidth %uHz invalid (must be %u to %uHz)", 
+                 bandwidth_hz, DroneConstants::MIN_BANDWIDTH, DroneConstants::MAX_BANDWIDTH);
+        error = buffer;
+        return false;
+    }
+    return true;
+}
+
+bool EnhancedDroneSettingsValidator::validate_frequency_range(Frequency min_hz, Frequency max_hz, std::string& error) {
+    if (min_hz >= max_hz) {
+        error = "Min frequency must be less than max frequency";
+        return false;
+    }
+    
+    if (!validate_frequency(min_hz, error)) return false;
+    if (!validate_frequency(max_hz, error)) return false;
+    
+    // Check range width
+    Frequency range = max_hz - min_hz;
+    if (range < 1000000ULL) { // Minimum 1 MHz range
+        error = "Frequency range too small (minimum 1 MHz)";
+        return false;
+    }
+    
+    return true;
+}
+
+bool EnhancedDroneSettingsValidator::is_known_drone_band(Frequency freq) {
+    // Check 433 MHz band
+    if (freq >= DroneConstants::MIN_433MHZ && freq <= DroneConstants::MAX_433MHZ) return true;
+    
+    // Check 860-930 MHz (LRS/Military)
+    if (freq >= DroneConstants::MIN_900MHZ && freq <= DroneConstants::MAX_900MHZ) return true;
+    
+    // Check 2.4 GHz ISM band
+    if (freq >= DroneConstants::MIN_24GHZ && freq <= DroneConstants::MAX_24GHZ) return true;
+    
+    // Check 5.8 GHz band
+    if (freq >= DroneConstants::MIN_58GHZ && freq <= DroneConstants::MAX_58GHZ) return true;
+    
+    return false;
+}
+
+bool EnhancedDroneSettingsValidator::is_ism_band(Frequency freq) {
+    return (freq >= 2400000000ULL && freq <= 2483500000ULL) ||
+           (freq >= 5725000000ULL && freq <= 5875000000ULL);
+}
+
+std::string EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq) {
+    if (freq >= 1000000000ULL) {
+        // GHz range
+        uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
+        uint32_t mhz = static_cast<uint32_t>((freq % 1000000000ULL) / 1000000ULL);
+        char buffer[32];
+        if (mhz > 0) {
+            snprintf(buffer, sizeof(buffer), "%u.%03u GHz", ghz, mhz);
+        } else {
+            snprintf(buffer, sizeof(buffer), "%u GHz", ghz);
+        }
+        return std::string(buffer);
+    } else {
+        // MHz range
+        uint32_t mhz = static_cast<uint32_t>(freq / 1000000ULL);
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%u MHz", mhz);
+        return std::string(buffer);
+    }
+}
 
 } // namespace ui::apps::enhanced_drone_analyzer

@@ -56,11 +56,6 @@ private:
     size_t head_ = 0;
 };
 
-// EXTERN declarations only
-extern DetectionRingBuffer global_detection_ring;
-// Alias reference
-extern DetectionRingBuffer& local_detection_ring;
-
 } // namespace ui::apps::enhanced_drone_analyzer
 
 #endif // __UI_SIGNAL_PROCESSING_HPP__
