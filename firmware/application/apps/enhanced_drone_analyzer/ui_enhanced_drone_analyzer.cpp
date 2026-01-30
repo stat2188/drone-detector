@@ -2877,7 +2877,10 @@ void DroneUIController::on_load_frequency_file() {
 }
 
 void DroneUIController::on_save_settings() {
-    settings_.save();
+    if (!DroneAnalyzerSettingsManager::save(settings_)) {
+        nav_.display_modal("Error", "Failed to save settings");
+        return;
+    }
     nav_.display_modal("Success", "Settings saved");
 }
 
