@@ -7,10 +7,8 @@
 
 #include <array>
 #include <cstdint>
-#include <ch.h>  // for systime_t
+#include <ch.h>  // for time_t
 #include "ui_drone_common_types.hpp"
-
-namespace ui::apps::enhanced_drone_analyzer {
 
 // Signal processing constants
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
@@ -33,7 +31,7 @@ struct DetectionEntry {
     size_t frequency_hash;
     uint8_t detection_count;
     int32_t rssi_value;
-    systime_t last_update;
+    time_t last_update;
 };
 
 class DetectionRingBuffer {
@@ -55,7 +53,5 @@ private:
     std::array<DetectionEntry, MAX_ENTRIES> entries_{};
     size_t head_ = 0;
 };
-
-} // namespace ui::apps::enhanced_drone_analyzer
 
 #endif // __UI_SIGNAL_PROCESSING_HPP__

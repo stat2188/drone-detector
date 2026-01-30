@@ -24,6 +24,11 @@
 #include "ui_drone_common_types.hpp"
 #include "scanner_settings.hpp"
 
+// Include new unified settings
+#include "eda_unified_settings.hpp"
+#include "eda_unified_settings_manager.hpp"
+#include "eda_tabbed_settings_view.hpp"
+
 namespace ui::apps::enhanced_drone_analyzer {
 
 /**
@@ -259,21 +264,20 @@ public:
 
 private:
     NavigationView& nav_;
-    Button button_audio_settings_{{8, 32, 120, 32}, "Audio Settings", false};
-    Button button_hardware_settings_{{136, 32, 120, 32}, "Hardware Settings", false};
-    Button button_scanning_settings_{{8, 72, 120, 32}, "Scanning Settings", false};
-    Button button_advanced_settings_{{136, 72, 120, 32}, "Advanced Settings", false};
-    Button button_load_defaults_{{8, 112, 120, 32}, "Load Defaults", false};
-    Button button_about_author_{{136, 112, 120, 32}, "About Author", false};
-    Button button_manage_db_{{8, 152, 224, 32}, "Manage Frequency DB", false};
+    Button button_tabbed_settings_{{8, 32, 224, 32}, "Tabbed Settings", false};
+    Button button_audio_settings_{{8, 72, 224, 32}, "Audio Settings", false};
+    Button button_hardware_settings_{{8, 112, 224, 32}, "Hardware Settings", false};
+    Button button_scanning_settings_{{8, 152, 224, 32}, "Scanning Settings", false};
+    Button button_load_defaults_{{8, 192, 120, 32}, "Load Defaults", false};
+    Button button_about_author_{{136, 192, 120, 32}, "About Author", false};
     Text text_title_{{8, 8, screen_width - 16, 16}, "Enhanced Drone Analyzer Settings"};
 
     void show_audio_settings();
     void show_hardware_settings();
     void show_scanning_settings();
-    void show_advanced_settings();
     void show_about_author();
     void load_default_settings();
+    void show_tabbed_settings();
 
     DroneAnalyzerSettings current_settings_;
 };

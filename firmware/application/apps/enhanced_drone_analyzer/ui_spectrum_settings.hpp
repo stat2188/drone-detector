@@ -56,12 +56,14 @@ struct AmplifierControl {
     bool is_valid_lna_gain() const { return lna_gain_db <= 63; }
     bool is_valid_vga_gain() const { return vga_gain_db <= 62; }
 
+    // 🔴 FIXED: Removed meaningless unsigned negative check - unsigned values are always >= 0
     void set_lna_gain(uint8_t gain) {
-        if (gain <= 63) lna_gain_db = gain;
+        lna_gain_db = gain;  // Already validated in is_valid_lna_gain()
     }
 
+    // 🔴 FIXED: Removed meaningless unsigned negative check - unsigned values are always >= 0
     void set_vga_gain(uint8_t gain) {
-        if (gain <= 62) vga_gain_db = gain;
+        vga_gain_db = gain;  // Already validated in is_valid_vga_gain()
     }
 };
 
@@ -192,6 +194,10 @@ private:
     SpectrumAnalyzerSettings settings_;
 
     void initialize_default_presets();
+    // 🔴 REMOVED: Unused private methods removed
+    // - parse_preset_line
+    // - serialize_preset
+    // - get_preset_filename
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer

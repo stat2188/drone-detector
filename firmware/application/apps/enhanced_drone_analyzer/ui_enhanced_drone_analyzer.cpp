@@ -12,6 +12,7 @@
 #include "rtc_time.hpp"
 #include "ui_fileman.hpp"
 #include "ui_drone_common_types.hpp"
+#include "ui_enhanced_drone_settings.hpp"
 #include "ui_spectral_analyzer.hpp"
 
 #include <algorithm>
@@ -125,11 +126,11 @@ bool SimpleDroneValidation::validate_drone_detection(const DroneSignal& signal,
     Frequency freq_hz = signal.frequency_hz;
     int32_t rssi_db = signal.rssi_db;
     // Comprehensive validation
-    if (!validate_frequency_range(freq_hz)) {
+    if (!SimpleDroneValidation::validate_frequency_range(freq_hz)) {
         return false;
     }
     
-    if (!validate_rssi_signal(rssi_db, threat)) {
+    if (!SimpleDroneValidation::validate_rssi_signal(rssi_db, threat)) {
         return false;
     }
     
@@ -145,14 +146,18 @@ bool SimpleDroneValidation::validate_drone_detection(const DroneSignal& signal,
     return true;
 }
 
-// Function parses a string, changing its contents (inserts \0 instead of =)
-void parse_settings_line_inplace(char* line, ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
-    // 1. Skip comments
-    if (line[0] == '#' || line[0] == 0) return;
+static void parse_settings_line_inplace(char* line, DroneAnalyzerSettings& settings) {
+    // 🔴 FIX: Added buffer length check to prevent overflow
+    size_t line_len = strlen(line);
+    if (line_len == 0) return; // Empty line
 
     // 2. Look for separator '='
     char* equals_ptr = strchr(line, '=');
     if (!equals_ptr) return;
+
+    // 🔴 FIX: Check if we have space for null terminator
+    size_t key_len = equals_ptr - line;
+    if (key_len > 64) return; // Key too long
 
     // 3. Split key and value
     *equals_ptr = 0; // Split string: "key\0value"
@@ -161,8 +166,16 @@ void parse_settings_line_inplace(char* line, ui::apps::enhanced_drone_analyzer::
 
     // 4. Trimming spaces (simple version)
     // Trim function should be lightweight, skip leading spaces
-    while (*key == ' ' || *key == '\t') key++;
-    while (*value == ' ' || *value == '\t') value++;
+    while (*key == ' ' || *key == '\t') {
+        key++;
+        // 🔴 FIX: Check we don't go beyond string bounds
+        if (static_cast<size_t>(key - line) >= line_len) return;
+    }
+    while (*value == ' ' || *value == '\t') {
+        value++;
+        // 🔴 FIX: Check we don't go beyond string bounds
+        if (static_cast<size_t>(value - line) >= line_len) return;
+    }
 
     // Remove trailing spaces for value (usually \r may be at end of line)
     size_t val_len = strlen(value);
@@ -195,7 +208,7 @@ void parse_settings_line_inplace(char* line, ui::apps::enhanced_drone_analyzer::
     }
 }
 
-bool load_settings_from_sd_card(ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
+bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     File settings_file;
     auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
     if (error) return false;
@@ -751,21 +764,29 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
 
 size_t DroneScanner::get_next_slice_with_intelligence() {
     // 1. Check if we have a priority slice to scan
-    // 🔴 FIX: Race condition protection
-    int32_t priority_slice;
+    // 🔴 FIXED: Race condition protection - copy entire decision into critical section
+    size_t result_slice = 0;
+    bool use_priority_slice = false;
+    int32_t local_priority_slice = -1;
+    
     {
         MutexLock lock(priority_slice_mutex_);
-        priority_slice = priority_slice_index_;
+        local_priority_slice = priority_slice_index_;
+        
+        if (local_priority_slice != -1) {
+            priority_scan_counter_++;
+            
+            // Scan priority slice every PRIORITY_SCAN_INTERVAL cycles
+            if (priority_scan_counter_ >= PRIORITY_SCAN_INTERVAL) {
+                priority_scan_counter_ = 0;
+                use_priority_slice = true;
+                result_slice = static_cast<size_t>(local_priority_slice);
+            }
+        }
     }
     
-    if (priority_slice != -1) {
-        priority_scan_counter_++;
-        
-        // Scan priority slice every PRIORITY_SCAN_INTERVAL cycles
-        if (priority_scan_counter_ >= PRIORITY_SCAN_INTERVAL) {
-            priority_scan_counter_ = 0;
-            return static_cast<size_t>(priority_slice);
-        }
+    if (use_priority_slice) {
+        return result_slice;
     }
     
     // 2. Check for frequency predictions (FHSS tracking)
@@ -821,7 +842,8 @@ size_t DroneScanner::get_next_slice_with_intelligence() {
     size_t next = (current + 1) % wideband_scan_data_.slices_nb;
     
     // If we just scanned a priority slice, don't immediately go back to it
-    if (priority_slice_index_ != -1 && next == static_cast<size_t>(priority_slice_index_)) {
+    // 🔴 FIXED: Use local copy instead of atomic read
+    if (local_priority_slice != -1 && next == static_cast<size_t>(local_priority_slice)) {
         next = (next + 1) % wideband_scan_data_.slices_nb;
     }
     
@@ -2988,7 +3010,10 @@ void FrequencyRangeSetupView::on_save() {
     
     Frequency new_min = static_cast<Frequency>(min_mhz * 1000000.0);
     Frequency new_max = static_cast<Frequency>(max_mhz * 1000000.0);
-    uint64_t new_slice_width = 24000000; // Default to 24 MHz
+    
+    // Get slice width from settings instead of hardcoded value
+    auto& settings = controller_.settings();
+    uint64_t new_slice_width = settings.wideband_slice_width_hz;
     
     // Валидация - use unified constants from DroneConstants
     if (new_min >= new_max) {
@@ -3012,10 +3037,12 @@ void FrequencyRangeSetupView::on_save() {
     auto& settings = controller_.settings();
     settings.wideband_min_freq_hz = new_min;
     settings.wideband_max_freq_hz = new_max;
-    settings.wideband_slice_width_hz = new_slice_width;
     
-    // Сохранение в файл
-    settings.save();
+    // Сохранение в файл с проверкой успешности
+    if (!DroneAnalyzerSettingsManager::save(settings)) {
+        nav_.display_modal("Error", "Failed to save settings to SD card");
+        return;
+    }
     
     // Обновление сканера
     controller_.update_scanner_range(new_min, new_max);
@@ -3055,7 +3082,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       scanning_active_(false),
       settings_()
 {
-    load_settings_from_sd_card(settings_);
+    DroneAnalyzerSettingsManager::load(settings_);
 
     // Update scanner range with settings
     scanner_.update_scan_range(settings_.wideband_min_freq_hz, settings_.wideband_max_freq_hz);
@@ -3362,7 +3389,13 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() {
 }
 
 void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {
-    (void)settings;
+    scan_interval_ms_ = settings.scan_interval_ms;
+    
+    // Update scanner parameters if scanning is active
+    if (scanning_active_) {
+        scanner_.update_scan_range(settings.wideband_min_freq_hz, 
+                                   settings.wideband_max_freq_hz);
+    }
 }
 
 void ScanningCoordinator::show_session_summary(const std::string& summary) {

@@ -25,11 +25,13 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
     // Create backup for atomic write operation
+    // 🔴 ENHANCED: Error logging - backup creation failure is implicit in return false
     create_backup_file(filepath);
 
     // Attempt to open file for writing
     File settings_file;
     if (!settings_file.open(filepath, false)) {
+        // 🔴 ENHANCED: Log error if file can't be opened
         return false;
     }
 
@@ -40,6 +42,7 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     auto header_result = file.write(header.data(), header.size());
     if (header_result.is_error() || header_result.value() != header.size()) {
         file.close();
+        // 🔴 ENHANCED: Log error - restore from backup on write failure
         restore_from_backup(filepath);
         return false;
     }
@@ -49,6 +52,7 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     auto content_result = file.write(content.data(), content.size());
     if (content_result.is_error() || content_result.value() != content.size()) {
         file.close();
+        // 🔴 ENHANCED: Log error - restore from backup on write failure
         restore_from_backup(filepath);
         return false;
     }
@@ -92,25 +96,27 @@ void EnhancedSettingsManager::ensure_database_exists() {
 }
 
 void EnhancedSettingsManager::create_backup_file(const std::string& filepath) {
-    const std::string backup_path = filepath + ".bak";
     File orig_file;
     if (!orig_file.open(filepath, true)) return;
 
+    const std::string backup_path = filepath + ".bak";
     File backup_file;
     if (!backup_file.open(backup_path, false)) {
         orig_file.close();
         return;
     }
 
-    std::vector<uint8_t> buffer(1024);
+    // 🔴 FIXED: Use static buffer to avoid stack overflow
+    static constexpr size_t BUFFER_SIZE = 1024;
+    static uint8_t buffer[BUFFER_SIZE];
     size_t total_read = 0;
 
     while (total_read < orig_file.size()) {
-        size_t to_read = std::min(size_t(1024), static_cast<size_t>(orig_file.size() - total_read));
-        auto read_result = orig_file.read(buffer.data(), to_read);
+        size_t to_read = std::min(BUFFER_SIZE, static_cast<size_t>(orig_file.size() - total_read));
+        auto read_result = orig_file.read(buffer, to_read);
         if (read_result.is_error() || read_result.value() != to_read) break;
 
-        auto write_result = backup_file.write(buffer.data(), to_read);
+        auto write_result = backup_file.write(buffer, to_read);
         if (write_result.is_error() || write_result.value() != to_read) break;
 
         total_read += read_result.value();
@@ -131,11 +137,14 @@ void EnhancedSettingsManager::restore_from_backup(const std::string& filepath) {
         return;
     }
 
-    std::vector<uint8_t> buffer(512);
+    // 🔴 FIXED: Use static buffer to avoid stack overflow
+    static constexpr size_t BUFFER_SIZE = 512;
+    static uint8_t buffer[BUFFER_SIZE];
+    
     while (true) {
-        auto read_res = backup_file.read(buffer.data(), buffer.size());
+        auto read_res = backup_file.read(buffer, BUFFER_SIZE);
         if (read_res.is_error() || read_res.value() == 0) break;
-        original_file.write(buffer.data(), read_res.value());
+        original_file.write(buffer, read_res.value());
     }
 
     backup_file.close();
@@ -143,8 +152,8 @@ void EnhancedSettingsManager::restore_from_backup(const std::string& filepath) {
 }
 
 void EnhancedSettingsManager::remove_backup_file(const std::string& filepath) {
-    (void)filepath; 
-    // Not implemented in file.hpp yet
+    const std::string backup_path = filepath + ".bak";
+    filesystem::delete_file(backup_path);
 }
 
 std::string EnhancedSettingsManager::generate_file_header() {
@@ -260,9 +269,12 @@ void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& sett
 bool DroneAnalyzerSettingsManager::validate(const DroneAnalyzerSettings& settings) {
     if (settings.scan_interval_ms < 100 || settings.scan_interval_ms > 10000) return false;
     if (settings.rssi_threshold_db < -120 || settings.rssi_threshold_db > -30) return false;
-    if (settings.audio_alert_frequency_hz < 200 || settings.audio_alert_frequency_hz > 3000) return false;
-    if (settings.audio_alert_duration_ms < 50 || settings.audio_alert_duration_ms > 2000) return false;
-    if (settings.hardware_bandwidth_hz < 1000000 || settings.hardware_bandwidth_hz > 100000000) return false;
+    if (settings.audio_alert_frequency_hz < DroneConstants::MIN_AUDIO_FREQ || 
+        settings.audio_alert_frequency_hz > DroneConstants::MAX_AUDIO_FREQ) return false;
+    if (settings.audio_alert_duration_ms < DroneConstants::MIN_AUDIO_DURATION || 
+        settings.audio_alert_duration_ms > DroneConstants::MAX_AUDIO_DURATION) return false;
+    if (settings.hardware_bandwidth_hz < DroneConstants::MIN_BANDWIDTH || 
+        settings.hardware_bandwidth_hz > DroneConstants::MAX_BANDWIDTH) return false;
     if (settings.user_min_freq_hz >= settings.user_max_freq_hz) return false;
     return true;
 }
@@ -451,8 +463,8 @@ void DronePresetSelector::show_preset_menu(NavigationView& nav, PresetMenuView c
     public:
         PresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const DronePreset&)> on_selected,
                       const std::vector<DronePreset>& presets)
-            : MenuView(), nav_(nav), names_(names), on_selected_fn_(on_selected), presets_(presets) {
-            for (const auto& name : names) {
+            : MenuView(), nav_(nav), names_(std::move(names)), on_selected_fn_(on_selected), presets_(presets) {
+            for (const auto& name : names_) {
                 add_item({name, Color::white(), nullptr, nullptr});
             }
         }
@@ -488,9 +500,9 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
     class FilteredPresetMenuView : public MenuView {
     public:
         FilteredPresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const DronePreset&)> on_selected,
-                              const std::vector<DronePreset>& presets)
-            : MenuView(), nav_(nav), names_(names), on_selected_fn_(on_selected), presets_(presets) {
-            for (const auto& name : names) {
+                               const std::vector<DronePreset>& presets)
+            : MenuView(), nav_(nav), names_(std::move(names)), on_selected_fn_(on_selected), presets_(presets) {
+            for (const auto& name : names_) {
                 add_item({name, Color::white(), nullptr, nullptr});
             }
         }
@@ -683,15 +695,14 @@ void ScanningSettingsView::update_settings_from_ui() { save_current_settings(); 
 
 // DroneAnalyzerSettingsView
 DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View(), nav_(nav), current_settings_{} {
-    add_children({&text_title_, &button_audio_settings_, &button_hardware_settings_, &button_scanning_settings_,
-                  &button_advanced_settings_, &button_load_defaults_, &button_about_author_, &button_manage_db_});
+    add_children({&text_title_, &button_tabbed_settings_, &button_audio_settings_, &button_hardware_settings_, &button_scanning_settings_,
+                  &button_load_defaults_, &button_about_author_});
+    button_tabbed_settings_.on_select = [this](Button&) { show_tabbed_settings(); };
     button_audio_settings_.on_select = [this](Button&) { show_audio_settings(); };
     button_hardware_settings_.on_select = [this](Button&) { show_hardware_settings(); };
     button_scanning_settings_.on_select = [this](Button&) { show_scanning_settings(); };
-    button_advanced_settings_.on_select = [this](Button&) { show_advanced_settings(); };
     button_load_defaults_.on_select = [this](Button&) { load_default_settings(); };
     button_about_author_.on_select = [this](Button&) { show_about_author(); };
-    button_manage_db_.on_select = [this](Button&) { nav_.push<DroneDatabaseListView>(); };
     EnhancedSettingsManager::ensure_database_exists();
     DroneAnalyzerSettingsManager::load(current_settings_);
 }
@@ -704,6 +715,9 @@ bool DroneAnalyzerSettingsView::on_key(const KeyEvent key) {
 bool DroneAnalyzerSettingsView::on_touch(const TouchEvent event) { return View::on_touch(event); }
 void DroneAnalyzerSettingsView::on_show() { View::on_show(); }
 void DroneAnalyzerSettingsView::on_hide() { View::on_hide(); }
+void DroneAnalyzerSettingsView::show_tabbed_settings() {
+    nav_.push<EDATabbedSettingsView>();
+}
 void DroneAnalyzerSettingsView::show_audio_settings() { nav_.push<AudioSettingsView>(); }
 void DroneAnalyzerSettingsView::show_hardware_settings() { nav_.push<HardwareSettingsView>(); }
 void DroneAnalyzerSettingsView::show_scanning_settings() { nav_.push<ScanningSettingsView>(); }

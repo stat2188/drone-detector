@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include "ch.h"
 #include "drone_constants.hpp"
 
 // SpectrumMode forward declare

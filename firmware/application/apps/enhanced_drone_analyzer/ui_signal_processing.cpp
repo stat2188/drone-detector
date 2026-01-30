@@ -13,25 +13,17 @@ void WidebandMedianFilter::add_sample(int16_t rssi) {
 }
 
 int16_t WidebandMedianFilter::get_median_threshold() const {
-    if (!full_) return DEFAULT_RSSI_THRESHOLD_DB;
+    if (!full_) return DEFAULT_RSSI_THRESHOLD_DB; 
 
-    // FIX: Use selection algorithm instead of copying entire array
-    // Find the k-th smallest element where k = WINDOW_SIZE / 2
+    // 🔴 OPTIMIZED: Use std::nth_element for O(n) median calculation
+    // This is much more efficient than the previous O(n²) partial selection sort
     auto temp = window_;
     size_t k = WINDOW_SIZE / 2;
 
-    // Partial selection sort - only need to find k-th smallest
-    for (size_t i = 0; i <= k; ++i) {
-        size_t min_idx = i;
-        for (size_t j = i + 1; j < WINDOW_SIZE; ++j) {
-            if (temp[j] < temp[min_idx]) {
-                min_idx = j;
-            }
-        }
-        if (min_idx != i) {
-            std::swap(temp[i], temp[min_idx]);
-        }
-    }
+    // std::nth_element rearranges elements so that the element at position k is the k-th smallest
+    // This is O(n) average complexity instead of O(n²)
+    std::nth_element(temp.begin(), temp.begin() + k, temp.end());
+
     return temp[k] - HYSTERESIS_MARGIN_DB;
 }
 

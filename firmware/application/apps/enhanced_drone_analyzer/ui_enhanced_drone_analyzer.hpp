@@ -54,6 +54,9 @@ enum class ScannerMode {
 // Application specific namespace starts here to ensure all classes are properly scoped
 namespace ui::apps::enhanced_drone_analyzer {
 
+// Signal processing utilities
+#include "ui_signal_processing.hpp"
+
 struct preset_entry {
     Frequency min = 0;
     Frequency max = 0;
@@ -639,13 +642,34 @@ public:
     void clear_rssi_flag();
     bool is_rssi_fresh() const;
     
-    // 🔴 FIX: TOCTOU race condition - atomic check-and-fetch method
-    bool get_rssi_if_fresh(int32_t& out_rssi);
+    // 🔴 FIXED: TOCTOU race condition - atomic check-and-fetch method
+    bool get_rssi_if_fresh(int32_t& out_rssi) {
+        // Atomic check-and-fetch to prevent TOCTOU race
+        bool was_fresh = rssi_updated_.exchange(false, std::memory_order_acq_rel);
+        if (was_fresh) {
+            out_rssi = last_valid_rssi_.load(std::memory_order_acquire);
+        }
+        return was_fresh;
+    }
 
     // NEW: Spectrum data access method (atomic check-and-fetch to avoid TOCTOU race)
-    bool get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer);
-    bool try_get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer);
-    void clear_spectrum_flag();
+    bool get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer) {
+        // Atomic check-and-fetch to prevent TOCTOU race
+        bool was_fresh = spectrum_updated_.exchange(false, std::memory_order_acq_rel);
+        if (was_fresh) {
+            MutexLock lock(spectrum_mutex_);
+            out_db_buffer = last_spectrum_db_;
+        }
+        return was_fresh;
+    }
+    bool try_get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer) {
+        MutexLock lock(spectrum_mutex_);
+        out_db_buffer = last_spectrum_db_;
+        return true;
+    }
+    void clear_spectrum_flag() {
+        spectrum_updated_.store(false, std::memory_order_release);
+    }
 
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_statistics(const ChannelStatistics& statistics);

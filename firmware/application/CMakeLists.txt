@@ -316,6 +316,7 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/scanner_settings.cpp
 	apps/enhanced_drone_analyzer/ui_signal_processing.cpp
 	apps/enhanced_drone_analyzer/ui_spectrum_settings.cpp
+	apps/enhanced_drone_analyzer/eda_settings_manager.cpp
 	protocols/aprs.cpp
 	protocols/ax25.cpp
 	protocols/dcs.cpp
