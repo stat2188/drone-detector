@@ -3,15 +3,17 @@
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "default_drones_db.hpp"
-#include "file.hpp"          
-#include "portapack.hpp"    
-#include "string_format.hpp" 
-#include <algorithm>        
-#include <sstream>          
-#include <vector>           
-#include <memory>           
-#include <cstring>          
-#include <cstdlib>          
+#include "file.hpp"
+#include "portapack.hpp"
+#include "string_format.hpp"
+#include <algorithm>
+#include <sstream>
+#include <vector>
+#include <memory>
+#include <cstring>
+#include <cstdlib>
+
+namespace fs = std::filesystem;
 
 using ScannerSettingsManager::load_settings_from_txt;
 
@@ -153,7 +155,7 @@ void EnhancedSettingsManager::restore_from_backup(const std::string& filepath) {
 
 void EnhancedSettingsManager::remove_backup_file(const std::string& filepath) {
     const std::string backup_path = filepath + ".bak";
-    filesystem::delete_file(backup_path);
+    std::filesystem::delete_file(std::filesystem::path{backup_path});
 }
 
 std::string EnhancedSettingsManager::generate_file_header() {
@@ -668,7 +670,6 @@ void DroneAnalyzerSettingsView::show_tabbed_settings() {
 void DroneAnalyzerSettingsView::show_audio_settings() { nav_.push<AudioSettingsView>(); }
 void DroneAnalyzerSettingsView::show_hardware_settings() { nav_.push<HardwareSettingsView>(); }
 void DroneAnalyzerSettingsView::show_scanning_settings() { nav_.push<ScanningSettingsView>(); }
-void DroneAnalyzerSettingsView::show_advanced_settings() { nav_.display_modal("Info", "Advanced settings coming soon"); }
 void DroneAnalyzerSettingsView::load_default_settings() {
     DroneAnalyzerSettingsManager::reset_to_defaults(current_settings_);
     DroneAnalyzerSettingsManager::save(current_settings_);
