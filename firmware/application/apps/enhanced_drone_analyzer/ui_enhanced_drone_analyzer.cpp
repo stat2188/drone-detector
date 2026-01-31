@@ -320,6 +320,8 @@ const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB
 DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
     : scanning_thread_(nullptr),
       data_mutex(),
+      priority_slice_mutex_(),
+      predictions_mutex_(),
       scanning_active_(false),
       freq_db_(),
       current_db_index_(0),
@@ -537,14 +539,14 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     } else if (current_detections == 0 && scan_cycles_ > 10) {
         // No detections for a while - progressively slow down
         // Progressive slowdown: 1000ms → 1500ms → 2000ms (cap)
-        uint32_t slowdown_multiplier = std::min(scan_cycles_ / 10, 3U);
-        adaptive_interval = std::min(2000U, base_interval * slowdown_multiplier);
+        uint32_t slowdown_multiplier = std::min(scan_cycles_ / 10, static_cast<uint32_t>(3));
+        adaptive_interval = std::min(static_cast<uint32_t>(2000), base_interval * slowdown_multiplier);
     }
-    
+
     // Additional adjustment based on detection density
     if (current_detections > 5) {
         // Very high detection rate - maintain fast pace
-        adaptive_interval = std::min(adaptive_interval, 500U);
+        adaptive_interval = std::min(adaptive_interval, static_cast<uint32_t>(500));
     }
     
     // Apply adaptive interval
@@ -1356,14 +1358,6 @@ void DroneScanner::update_tracking_counts() {
     update_trends_compact_display();
 }
 
-void DroneScanner::update_trends_compact_display() {
-}
-
-void DroneScanner::update_scan_range(Frequency min_freq, Frequency max_freq) {
-    if (min_freq >= max_freq) return;
-    setup_wideband_range(min_freq, max_freq);
-}
-
 void DroneScanner::reset_scan_cycles() {
     scan_cycles_ = 0;
 }
@@ -1914,34 +1908,6 @@ void DroneHardwareController::process_channel_spectrum_data(const ChannelSpectru
     spectrum_updated_ = true;
 }
 
-bool DroneHardwareController::get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer) {
-    MutexLock lock(spectrum_mutex_);
-    
-    // 🔴 FIX: Use explicit memory ordering
-    if (spectrum_updated_.load(std::memory_order_acquire)) {
-        out_db_buffer = last_spectrum_db_;
-        spectrum_updated_.store(false, std::memory_order_release);
-        return true;
-    }
-    return false;
-}
-
-bool DroneHardwareController::try_get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer) {
-    // 🔴 FIX: Try-lock without blocking
-    if (chMtxTryLock(&spectrum_mutex_)) {
-        out_db_buffer = last_spectrum_db_;
-        spectrum_updated_.store(false, std::memory_order_release);
-        chMtxUnlock();
-        return true;
-    }
-    return false;
-}
-
-void DroneHardwareController::clear_spectrum_flag() {
-    // 🔴 FIX: Use explicit memory ordering
-    spectrum_updated_.store(false, std::memory_order_release);
-}
-
 int32_t DroneHardwareController::get_configured_sampling_rate() const {
     return bandwidth_hz_;
 }
@@ -1956,19 +1922,6 @@ bool DroneHardwareController::is_spectrum_streaming_active() const {
 
 int32_t DroneHardwareController::get_current_rssi() const {
     return last_valid_rssi_;
-}
-
-// 🔴 FIX: TOCTOU race condition - atomic check-and-fetch implementation
-bool DroneHardwareController::get_rssi_if_fresh(int32_t& out_rssi) {
-    // Check if RSSI is fresh with acquire semantics
-    if (!rssi_updated_.load(std::memory_order_acquire)) {
-        return false;
-    }
-
-    // Value is fresh, copy it and clear the flag with release semantics
-    out_rssi = last_valid_rssi_;
-    rssi_updated_.store(false, std::memory_order_release);
-    return true;
 }
 
 void DroneHardwareController::update_spectrum_for_scanner() {
@@ -2817,14 +2770,6 @@ DroneUIController::~DroneUIController() {
     display_controller_ = nullptr;  // Only nullify pointer
 }
 
-const DroneAnalyzerSettings& DroneUIController::settings() const {
-    return settings_;
-}
-
-DroneAnalyzerSettings& DroneUIController::settings() {
-    return settings_;
-}
-
 void DroneUIController::on_start_scan() {
     if (scanning_active_) return;
     scanning_active_ = true;
@@ -2950,11 +2895,15 @@ FrequencyRangeSetupView::FrequencyRangeSetupView(NavigationView& nav, DroneUICon
     : View({0, 0, screen_width, screen_height}),
       nav_(nav),
       controller_(controller),
-      // Properly initialize TextField objects with required parameters
+      text_title_({4, 4, 224, 16}, "Panoramic Spectrum"),
+      label_min_({4, 36, 80, 16}, "Start Freq:"),
       field_min_({88, 36, 160, 16}, "2400.000000"),
+      label_max_({4, 68, 80, 16}, "End Freq:"),
       field_max_({88, 68, 160, 16}, "2500.000000"),
+      label_slice_({4, 100, 80, 16}, "Res (BW):"),
       field_slice_({88, 100, 160, 16}, "24 MHz"),
-      text_title_({4, 4, 224, 16}, "Panoramic Spectrum") {
+      button_save_({4, 140, 224, 40}, "Apply Range"),
+      button_cancel_({4, 190, 224, 40}, "Cancel") {
 
     add_children({
         &text_title_,
@@ -3035,12 +2984,11 @@ void FrequencyRangeSetupView::on_save() {
         nav_.display_modal("Error", "Frequency range overflow detected");
         return;
     }
-    
-    // Сохранение настроек
-    auto& settings = controller_.settings();
+
+    // Сохранение настроек (use existing settings reference from line 2961)
     settings.wideband_min_freq_hz = new_min;
     settings.wideband_max_freq_hz = new_max;
-    
+
     // Сохранение в файл с проверкой успешности
     if (!DroneAnalyzerSettingsManager::save(settings)) {
         nav_.display_modal("Error", "Failed to save settings to SD card");
@@ -3535,8 +3483,10 @@ bool EnhancedDroneSettingsValidator::validate_frequency(Frequency freq, std::str
 bool EnhancedDroneSettingsValidator::validate_rssi_threshold(int32_t rssi, std::string& error) {
     if (rssi < DroneConstants::MIN_VALID_RSSI || rssi > DroneConstants::MAX_VALID_RSSI) {
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "RSSI threshold %ddBm invalid (must be %d to %d)", 
-                 rssi, DroneConstants::MIN_VALID_RSSI, DroneConstants::MAX_VALID_RSSI);
+        snprintf(buffer, sizeof(buffer), "RSSI threshold %lddBm invalid (must be %ld to %ld)",
+                 static_cast<long>(rssi),
+                 static_cast<long>(DroneConstants::MIN_VALID_RSSI),
+                 static_cast<long>(DroneConstants::MAX_VALID_RSSI));
         error = buffer;
         return false;
     }
@@ -3544,11 +3494,13 @@ bool EnhancedDroneSettingsValidator::validate_rssi_threshold(int32_t rssi, std::
 }
 
 bool EnhancedDroneSettingsValidator::validate_scan_interval(uint32_t interval_ms, std::string& error) {
-    if (interval_ms < DroneConstants::MIN_SCAN_INTERVAL_MS || 
+    if (interval_ms < DroneConstants::MIN_SCAN_INTERVAL_MS ||
         interval_ms > DroneConstants::MAX_SCAN_INTERVAL_MS) {
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "Scan interval %ums invalid (must be %u to %ums)", 
-                 interval_ms, DroneConstants::MIN_SCAN_INTERVAL_MS, DroneConstants::MAX_SCAN_INTERVAL_MS);
+        snprintf(buffer, sizeof(buffer), "Scan interval %lums invalid (must be %lu to %lums)",
+                 static_cast<unsigned long>(interval_ms),
+                 static_cast<unsigned long>(DroneConstants::MIN_SCAN_INTERVAL_MS),
+                 static_cast<unsigned long>(DroneConstants::MAX_SCAN_INTERVAL_MS));
         error = buffer;
         return false;
     }
@@ -3558,17 +3510,21 @@ bool EnhancedDroneSettingsValidator::validate_scan_interval(uint32_t interval_ms
 bool EnhancedDroneSettingsValidator::validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, std::string& error) {
     if (freq_hz < DroneConstants::MIN_AUDIO_FREQ || freq_hz > DroneConstants::MAX_AUDIO_FREQ) {
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "Audio frequency %uHz invalid (must be %u to %uHz)", 
-                 freq_hz, DroneConstants::MIN_AUDIO_FREQ, DroneConstants::MAX_AUDIO_FREQ);
+        snprintf(buffer, sizeof(buffer), "Audio frequency %luHz invalid (must be %lu to %luHz)",
+                 static_cast<unsigned long>(freq_hz),
+                 static_cast<unsigned long>(DroneConstants::MIN_AUDIO_FREQ),
+                 static_cast<unsigned long>(DroneConstants::MAX_AUDIO_FREQ));
         error = buffer;
         return false;
     }
-    
-    if (duration_ms < DroneConstants::MIN_AUDIO_DURATION || 
+
+    if (duration_ms < DroneConstants::MIN_AUDIO_DURATION ||
         duration_ms > DroneConstants::MAX_AUDIO_DURATION) {
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "Audio duration %ums invalid (must be %u to %ums)", 
-                 duration_ms, DroneConstants::MIN_AUDIO_DURATION, DroneConstants::MAX_AUDIO_DURATION);
+        snprintf(buffer, sizeof(buffer), "Audio duration %lums invalid (must be %lu to %lums)",
+                 static_cast<unsigned long>(duration_ms),
+                 static_cast<unsigned long>(DroneConstants::MIN_AUDIO_DURATION),
+                 static_cast<unsigned long>(DroneConstants::MAX_AUDIO_DURATION));
         error = buffer;
         return false;
     }
@@ -3578,8 +3534,10 @@ bool EnhancedDroneSettingsValidator::validate_audio_params(uint32_t freq_hz, uin
 bool EnhancedDroneSettingsValidator::validate_bandwidth(uint32_t bandwidth_hz, std::string& error) {
     if (bandwidth_hz < DroneConstants::MIN_BANDWIDTH || bandwidth_hz > DroneConstants::MAX_BANDWIDTH) {
         char buffer[128];
-        snprintf(buffer, sizeof(buffer), "Bandwidth %uHz invalid (must be %u to %uHz)", 
-                 bandwidth_hz, DroneConstants::MIN_BANDWIDTH, DroneConstants::MAX_BANDWIDTH);
+        snprintf(buffer, sizeof(buffer), "Bandwidth %luHz invalid (must be %lu to %luHz)",
+                 static_cast<unsigned long>(bandwidth_hz),
+                 static_cast<unsigned long>(DroneConstants::MIN_BANDWIDTH),
+                 static_cast<unsigned long>(DroneConstants::MAX_BANDWIDTH));
         error = buffer;
         return false;
     }
@@ -3633,16 +3591,20 @@ std::string EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq) 
         uint32_t mhz = static_cast<uint32_t>((freq % 1000000000ULL) / 1000000ULL);
         char buffer[32];
         if (mhz > 0) {
-            snprintf(buffer, sizeof(buffer), "%u.%03u GHz", ghz, mhz);
+            snprintf(buffer, sizeof(buffer), "%u.%03u GHz",
+                     static_cast<unsigned int>(ghz),
+                     static_cast<unsigned int>(mhz));
         } else {
-            snprintf(buffer, sizeof(buffer), "%u GHz", ghz);
+            snprintf(buffer, sizeof(buffer), "%u GHz",
+                     static_cast<unsigned int>(ghz));
         }
         return std::string(buffer);
     } else {
         // MHz range
         uint32_t mhz = static_cast<uint32_t>(freq / 1000000ULL);
         char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%u MHz", mhz);
+        snprintf(buffer, sizeof(buffer), "%u MHz",
+                 static_cast<unsigned int>(mhz));
         return std::string(buffer);
     }
 }

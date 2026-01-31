@@ -236,41 +236,6 @@ struct DroneUpdateMessage {
     } data;
 };
 
-struct ConfigData {
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    int32_t rssi_threshold_db = -90;
-    uint32_t scan_interval_ms = 1000;
-    bool enable_audio_alerts = true;
-    std::string freqman_path = "DRONES";
-};
-
-class ScannerConfig {
-public:
-    explicit ScannerConfig(ConfigData config = {});
-    ~ScannerConfig() = default;
-
-    bool load_from_file(const std::string& filepath);
-    bool save_to_file(const std::string& filepath) const;
-
-    const ConfigData& get_data() const { return config_data_; }
-    ConfigData& get_data() { return config_data_; }
-
-    void set_frequency_range(uint32_t min_hz, uint32_t max_hz);
-    void set_rssi_threshold(int32_t threshold);
-    void set_scan_interval(uint32_t interval_ms);
-    void set_audio_alerts(bool enabled);
-    void set_freqman_path(const std::string& path);
-
-    void set_scanning_mode(const std::string& mode);
-    bool is_valid() const;
-
-    ScannerConfig(const ScannerConfig&) = delete;
-    ScannerConfig& operator=(const ScannerConfig&) = delete;
-
-private:
-    ConfigData config_data_;
-};
-
 // Struct for drone signal parameters (prevents easily-swappable-parameters warning)
 struct DroneSignal {
     Frequency frequency_hz;
