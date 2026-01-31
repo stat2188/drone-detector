@@ -329,86 +329,6 @@ const char* DroneAnalyzerSettingsManager::get_translation(const std::string& key
     return translate(key);
 }
 
-// ============ ScannerConfig Implementation ============
-
-ScannerConfig::ScannerConfig(ConfigData config) : config_data_(config) {}
-
-bool ScannerConfig::load_from_file(const std::string& filepath) {
-    File file;
-    if (!file.open(filepath, true)) return false;
-
-    std::string line;
-    char buffer[256];
-    auto read_result = file.read(buffer, sizeof(buffer) - 1);
-    
-    while (!read_result.is_error() && read_result.value() > 0) {
-        size_t bytes_read = read_result.value();
-        buffer[bytes_read] = '\0';
-        line += buffer;
-        size_t newline_pos;
-        while ((newline_pos = line.find('\n')) != std::string::npos) {
-            std::string current_line = line.substr(0, newline_pos);
-            line = line.substr(newline_pos + 1);
-            size_t equals_pos = current_line.find('=');
-            if (equals_pos != std::string::npos) {
-                std::string key = current_line.substr(0, equals_pos);
-                std::string value = current_line.substr(equals_pos + 1);
-                if (key == "spectrum_mode") {
-                    if (value == "NARROW") config_data_.spectrum_mode = SpectrumMode::NARROW;
-                    else if (value == "MEDIUM") config_data_.spectrum_mode = SpectrumMode::MEDIUM;
-                    else if (value == "WIDE") config_data_.spectrum_mode = SpectrumMode::WIDE;
-                    else if (value == "ULTRA_WIDE") config_data_.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-                }
-                else if (key == "rssi_threshold_db") config_data_.rssi_threshold_db = std::stoi(value);
-                else if (key == "scan_interval_ms") config_data_.scan_interval_ms = std::stoul(value);
-                else if (key == "enable_audio_alerts") config_data_.enable_audio_alerts = (value == "true");
-                else if (key == "freqman_path") config_data_.freqman_path = value;
-            }
-        }
-        read_result = file.read(buffer, sizeof(buffer) - 1);
-    }
-    file.close();
-    return true;
-}
-
-bool ScannerConfig::save_to_file(const std::string& filepath) const {
-    File file;
-    if (!file.open(filepath, false)) return false;
-
-    std::string content = "spectrum_mode=";
-    switch (config_data_.spectrum_mode) {
-        case SpectrumMode::NARROW: content += "NARROW"; break;
-        case SpectrumMode::MEDIUM: content += "MEDIUM"; break;
-        case SpectrumMode::WIDE: content += "WIDE"; break;
-        case SpectrumMode::ULTRA_WIDE: content += "ULTRA_WIDE"; break;
-        case SpectrumMode::ULTRA_NARROW: content += "ULTRA_NARROW"; break;
-    }
-    content += "\n";
-    content += "rssi_threshold_db=" + std::to_string(config_data_.rssi_threshold_db) + "\n";
-    content += "scan_interval_ms=" + std::to_string(config_data_.scan_interval_ms) + "\n";
-    content += "enable_audio_alerts=" + std::string(config_data_.enable_audio_alerts ? "true" : "false") + "\n";
-    content += "freqman_path=" + config_data_.freqman_path + "\n";
-
-    auto result = file.write(content.data(), content.size());
-    file.close();
-    
-    return !result.is_error() && result.value() == content.size();
-}
-
-void ScannerConfig::set_frequency_range(uint32_t min_hz, uint32_t max_hz) { (void)min_hz; (void)max_hz; }
-void ScannerConfig::set_rssi_threshold(int32_t threshold) { config_data_.rssi_threshold_db = threshold; }
-void ScannerConfig::set_scan_interval(uint32_t interval_ms) { config_data_.scan_interval_ms = interval_ms; }
-void ScannerConfig::set_audio_alerts(bool enabled) { config_data_.enable_audio_alerts = enabled; }
-void ScannerConfig::set_freqman_path(const std::string& path) { config_data_.freqman_path = path; }
-void ScannerConfig::set_scanning_mode(const std::string& mode) {
-    if (mode == "Database") config_data_.spectrum_mode = SpectrumMode::MEDIUM;
-    else if (mode == "Wideband") config_data_.spectrum_mode = SpectrumMode::WIDE;
-}
-bool ScannerConfig::is_valid() const {
-    return config_data_.rssi_threshold_db >= -120 && config_data_.rssi_threshold_db <= -30 &&
-           config_data_.scan_interval_ms >= 100 && config_data_.scan_interval_ms <= 10000;
-}
-
 // ============ DroneFrequencyPresets Implementation ============
 
 static const std::vector<DronePreset> default_presets = {
@@ -448,8 +368,35 @@ std::vector<DronePreset> DroneFrequencyPresets::get_presets_of_type(const std::v
                  [type](const DronePreset& preset) { return preset.drone_type == type; });
     return filtered;
 }
-bool DroneFrequencyPresets::apply_preset(ScannerConfig& config, const DronePreset& preset) {
-    (void)config; (void)preset;
+bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset) {
+    if (!preset.is_valid()) {
+        return false;
+    }
+
+    config.spectrum_mode = SpectrumMode::MEDIUM;
+    config.scan_interval_ms = 1000;
+    config.rssi_threshold_db = static_cast<int32_t>(preset.threat_level) >= static_cast<int32_t>(ThreatLevel::HIGH) ? -80 : -90;
+    config.enable_audio_alerts = true;
+
+    if (preset.frequency_hz >= 2400000000ULL && preset.frequency_hz <= 2500000000ULL) {
+        config.enable_wideband_scanning = true;
+        config.wideband_min_freq_hz = 2400000000ULL;
+        config.wideband_max_freq_hz = 2500000000ULL;
+    }
+
+    config.min_frequency_hz = preset.frequency_hz - 10000000ULL;
+    config.max_frequency_hz = preset.frequency_hz + 10000000ULL;
+
+    if (config.min_frequency_hz < 50000000ULL) {
+        config.min_frequency_hz = 50000000ULL;
+    }
+    if (config.max_frequency_hz > 6000000000ULL) {
+        config.max_frequency_hz = 6000000000ULL;
+    }
+
+    config.freqman_path = "DRONES";
+    config.show_detailed_info = true;
+
     return true;
 }
 
@@ -525,7 +472,7 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
     nav.push<FilteredPresetMenuView>(names, on_selected, filtered_presets);
 }
 
-PresetMenuView DronePresetSelector::create_config_updater(ScannerConfig& config_to_update) {
+PresetMenuView DronePresetSelector::create_config_updater(DroneAnalyzerSettings& config_to_update) {
     return [&config_to_update](const DronePreset& preset) {
         DroneFrequencyPresets::apply_preset(config_to_update, preset);
     };

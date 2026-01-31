@@ -83,7 +83,7 @@ public:
     static std::vector<DroneType> get_available_types();
     static std::string get_type_display_name(DroneType type);
     static std::vector<DronePreset> get_presets_of_type(const std::vector<DronePreset>& all_presets, DroneType type);
-    static bool apply_preset(ScannerConfig& config, const DronePreset& preset);
+    static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset);
 
 private:
     static const std::vector<DronePreset> standard_presets_;
@@ -93,7 +93,7 @@ class DronePresetSelector {
 public:
     static void show_preset_menu(NavigationView& nav, PresetMenuView callback);
     static void show_type_filtered_presets(NavigationView& nav, DroneType type);
-    static PresetMenuView create_config_updater(ScannerConfig& config_to_update);
+    static PresetMenuView create_config_updater(DroneAnalyzerSettings& config_to_update);
 };
 
 // Forward declaration - SimpleDroneValidation определен в ui_enhanced_drone_analyzer.hpp

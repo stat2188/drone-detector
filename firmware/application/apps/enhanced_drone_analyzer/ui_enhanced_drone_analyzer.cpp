@@ -320,8 +320,6 @@ const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB
 DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
     : scanning_thread_(nullptr),
       data_mutex(),
-      priority_slice_mutex_(),
-      predictions_mutex_(),
       scanning_active_(false),
       freq_db_(),
       current_db_index_(0),
@@ -340,8 +338,15 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
       last_valid_rssi_(-120),
       wideband_scan_data_(),
       drone_database_(),
+      db_entry_count_(0),
       detection_logger_(),
       detection_ring_buffer_(),
+      priority_slice_index_(-1),
+      priority_slice_mutex_(),
+      priority_scan_counter_(0),
+      frequency_predictions_(),
+      predictions_mutex_(),
+      prediction_count_(0),
       settings_(settings)
 {
     // Initialize mutex properly to fix race condition
