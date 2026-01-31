@@ -35,7 +35,7 @@ private:
         {16, 16, 224, 16},
         "Audio Alerts"
     };
-    Checkbox checkbox_enable_{Rect{16, 48, 160, 16}, "Enable Alerts", false};
+    Checkbox checkbox_enable_{{16, 48}, 20, "Enable Alerts", false};
     Text text_enable_{
         {40, 64, 160, 16},
         "Sound on detection"
@@ -59,14 +59,225 @@ private:
     };
     NumberField field_volume_{{16, 208}, 3, {0, 100}, 5, ' ', false};
 
-    Checkbox checkbox_repeat_{Rect{16, 240}, 14, "Repeat Alerts", false};
+    Checkbox checkbox_repeat_{{16, 240}, 14, "Repeat Alerts", false};
     Text text_repeat_{
         {40, 256, 160, 16},
         "Repeat until acknowledged"
     };
 
-    Button button_save_{Rect{16, 240, 224, 32}, "Save", false};
-    Button button_cancel_{Rect{144, 240, 96, 32}, "Back", false};
+    Button button_save_{{16, 288, 224, 32}, "Save", false};
+    Button button_cancel_{{16, 328, 96, 32}, "Back", false};
+};
+
+class HardwareSettingsTab : public View {
+public:
+    explicit HardwareSettingsTab(NavigationView& nav);
+    ~HardwareSettingsTab() = default;
+
+    void focus() override;
+    std::string title() const override { return "Hardware"; }
+
+    void load_from_settings(const HardwareSettings& settings);
+    HardwareSettings save_to_settings();
+
+private:
+    NavigationView& nav_;
+
+    Text text_hardware_{
+        {16, 16, 200, 16},
+        "Hardware Settings"
+    };
+
+    Checkbox checkbox_real_hw_{{16, 48}, 18, "Use Real Hardware", false};
+    Text text_real_hw_{
+        {40, 64, 160, 16},
+        "Use Real Hardware (Disable for Demo)"
+    };
+
+    Text text_spectrum_mode_{
+        {16, 96, 120, 16},
+        "Spectrum Mode:"
+    };
+    OptionsField field_spectrum_mode_{{16, 112}, 15,
+        {{"Narrow", 0}, {"Medium", 1}, {"Wide", 2}, {"Ultra Wide", 3}}};
+
+    Text text_bandwidth_{
+        {16, 144, 120, 16},
+        "Bandwidth (Hz):"
+    };
+    NumberField field_bandwidth_{{16, 160}, 8, {1000000, 24000000}, 1000000, ' ', false};
+
+    Text text_min_freq_{
+        {16, 192, 120, 16},
+        "Min Freq (Hz):"
+    };
+    NumberField field_min_freq_{{16, 208}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
+
+    Text text_max_freq_{
+        {16, 240, 120, 16},
+        "Max Freq (Hz):"
+    };
+    NumberField field_max_freq_{{16, 256}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
+
+    Button button_save_{{16, 288, 224, 32}, "Save", false};
+    Button button_cancel_{{16, 328, 96, 32}, "Back", false};
+};
+
+class ScanningSettingsTab : public View {
+public:
+    explicit ScanningSettingsTab(NavigationView& nav);
+    ~ScanningSettingsTab() = default;
+
+    void focus() override;
+    std::string title() const override { return "Scanning"; }
+
+    void load_from_settings(const ScanningSettings& settings);
+    ScanningSettings save_to_settings();
+
+private:
+    NavigationView& nav_;
+
+    Text text_scanning_{
+        {16, 16, 200, 16},
+        "Scanning Settings"
+    };
+
+    Text text_scan_interval_{
+        {16, 48, 120, 16},
+        "Scan Interval (ms):"
+    };
+    NumberField field_scan_interval_{{16, 64}, 5, {100, 10000}, 100, ' ', false};
+
+    Text text_rssi_threshold_{
+        {16, 96, 120, 16},
+        "RSSI Threshold (dB):"
+    };
+    NumberField field_rssi_threshold_{{16, 112}, 4, {-120, 0}, 5, ' ', false};
+
+    Checkbox checkbox_wideband_{{16, 144}, 20, "Enable Wideband Scanning", false};
+    Text text_wideband_{
+        {40, 160, 160, 16},
+        "Enable Wideband Scanning"
+    };
+
+    Text text_wb_min_{
+        {16, 192, 120, 16},
+        "Wideband Min (Hz):"
+    };
+    NumberField field_wb_min_{{16, 208}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
+
+    Text text_wb_max_{
+        {16, 240, 120, 16},
+        "Wideband Max (Hz):"
+    };
+    NumberField field_wb_max_{{16, 256}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
+
+    Checkbox checkbox_panoramic_{{16, 288}, 20, "Enable Panoramic Mode", false};
+    Text text_panoramic_{
+        {40, 304, 160, 16},
+        "Show full spectrum"
+    };
+
+    Button button_save_{{16, 336, 224, 32}, "Save", false};
+    Button button_cancel_{{16, 376, 96, 32}, "Back", false};
+};
+
+class DetectionSettingsTab : public View {
+public:
+    explicit DetectionSettingsTab(NavigationView& nav);
+    ~DetectionSettingsTab() = default;
+
+    void focus() override;
+    std::string title() const override { return "Detection"; }
+
+    void load_from_settings(const DetectionSettings& settings);
+    DetectionSettings save_to_settings();
+
+private:
+    NavigationView& nav_;
+
+    Text text_detection_{
+        {16, 16, 200, 16},
+        "Detection Settings"
+    };
+
+    Checkbox checkbox_fhss_{{16, 48}, 20, "Enable FHSS Detection", false};
+    Text text_fhss_{
+        {40, 64, 160, 16},
+        "Detect frequency hopping"
+    };
+
+    Text text_sensitivity_{
+        {16, 96, 120, 16},
+        "Movement Sensitivity:"
+    };
+    OptionsField field_sensitivity_{{16, 112}, 15,
+        {{"Low", 0}, {"Medium", 1}, {"High", 2}, {"Very High", 3}}};
+
+    Text text_threat_{
+        {16, 144, 120, 16},
+        "Threat Level Filter:"
+    };
+    OptionsField field_threat_{{16, 160}, 15,
+        {{"All", 0}, {"Low Only", 1}, {"Medium+", 2}, {"High+", 3}}};
+
+    Checkbox checkbox_intelligent_{{16, 192}, 20, "Intelligent Scanning", false};
+    Text text_intelligent_{
+        {40, 208, 160, 16},
+        "Auto-track active frequencies"
+    };
+
+    Button button_save_{{16, 240, 224, 32}, "Save", false};
+    Button button_cancel_{{16, 280, 96, 32}, "Back", false};
+};
+
+class LoggingSettingsTab : public View {
+public:
+    explicit LoggingSettingsTab(NavigationView& nav);
+    ~LoggingSettingsTab() = default;
+
+    void focus() override;
+    std::string title() const override { return "Logging"; }
+
+    void load_from_settings(const LoggingSettings& settings);
+    LoggingSettings save_to_settings();
+
+private:
+    NavigationView& nav_;
+    std::string path_buffer_ = "/eda_logs";
+
+    Text text_logging_{
+        {16, 16, 200, 16},
+        "Logging Settings"
+    };
+
+    Checkbox checkbox_autosave_{{16, 48}, 20, "Auto-save Logs", false};
+    Text text_autosave_{
+        {40, 64, 160, 16},
+        "Save detections immediately"
+    };
+
+    Text text_format_{
+        {16, 96, 120, 16},
+        "Log Format:"
+    };
+    OptionsField field_format_{{16, 112}, 15,
+        {{"CSV", 0}, {"JSON", 1}, {"TXT", 2}}};
+
+    Text text_max_size_{
+        {16, 144, 120, 16},
+        "Max Log Size (KB):"
+    };
+    NumberField field_max_size_{{16, 160}, 6, {100, 10240}, 100, ' ', false};
+
+    Text text_path_{
+        {16, 192, 120, 16},
+        "Log Path:"
+    };
+    TextEdit field_path_{path_buffer_, 200, {16, 208}, 28};
+
+    Button button_save_{{16, 256, 224, 32}, "Save", false};
+    Button button_cancel_{{16, 296, 96, 32}, "Back", false};
 };
 
 class DisplaySettingsTab : public View {
@@ -115,14 +326,14 @@ private:
     };
     NumberField field_waterfall_{{16, 208}, 2, {1, 10}, 1, ' ', false};
 
-    Checkbox checkbox_detailed_{Rect{16, 240}, 15, "Detailed Info", false};
+    Checkbox checkbox_detailed_{{16, 240}, 20, "Detailed Info", false};
     Text text_detailed_{
         {40, 256, 200, 16},
         "Show full drone info"
     };
 
-    Button button_save_{Rect{16, 288, 224, 32}, "Save", false};
-    Button button_cancel_{Rect{144, 288, 96, 32}, "Back", false};
+    Button button_save_{{16, 288, 224, 32}, "Save", false};
+    Button button_cancel_{{16, 328, 96, 32}, "Back", false};
 };
 
 class EDATabbedSettingsView : public View {

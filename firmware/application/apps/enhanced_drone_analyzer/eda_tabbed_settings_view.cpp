@@ -68,6 +68,7 @@ HardwareSettingsTab::HardwareSettingsTab(NavigationView& nav)
                   &text_min_freq_, &field_min_freq_,
                   &text_max_freq_, &field_max_freq_,
                   &button_save_, &button_cancel_});
+}
 
     button_save_.on_select = [this](Button&) {
         auto settings = save_to_settings();
@@ -119,6 +120,7 @@ ScanningSettingsTab::ScanningSettingsTab(NavigationView& nav)
                   &text_wb_max_, &field_wb_max_,
                   &checkbox_panoramic_, &text_panoramic_,
                   &button_save_, &button_cancel_});
+}
 
     button_save_.on_select = [this](Button&) {
         auto settings = save_to_settings();
@@ -166,6 +168,7 @@ DetectionSettingsTab::DetectionSettingsTab(NavigationView& nav)
                   &text_threat_, &field_threat_,
                   &checkbox_intelligent_, &text_intelligent_,
                   &button_save_, &button_cancel_});
+}
 
     button_save_.on_select = [this](Button&) {
         auto settings = save_to_settings();
@@ -207,6 +210,7 @@ LoggingSettingsTab::LoggingSettingsTab(NavigationView& nav)
                   &text_max_size_, &field_max_size_,
                   &text_path_, &field_path_,
                   &button_save_, &button_cancel_});
+}
 
     button_save_.on_select = [this](Button&) {
         auto settings = save_to_settings();

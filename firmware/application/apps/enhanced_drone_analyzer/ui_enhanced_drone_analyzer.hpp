@@ -313,13 +313,13 @@ private:
 // 🔴 NEW: Enhanced Settings Validation with detailed checks
 class EnhancedDroneSettingsValidator {
 public:
-    struct ValidationResult {
-        bool is_valid;
-        std::string error_message;
-        uint32_t warning_count;
+struct ValidationResult {
+    bool is_valid;
+    uint32_t warning_count;
+    std::string error_message;
 
-        ValidationResult() : is_valid(true), warning_count(0), error_message{} {}
-    };
+    ValidationResult() : is_valid(true), warning_count(0), error_message{} {}
+};
     
     static ValidationResult validate_all(const DroneAnalyzerSettings& settings);
     
