@@ -155,7 +155,7 @@ void EnhancedSettingsManager::restore_from_backup(const std::string& filepath) {
 
 void EnhancedSettingsManager::remove_backup_file(const std::string& filepath) {
     const std::string backup_path = filepath + ".bak";
-    std::filesystem::delete_file(std::filesystem::path{backup_path});
+    delete_file(std::filesystem::path{backup_path});
 }
 
 std::string EnhancedSettingsManager::generate_file_header() {

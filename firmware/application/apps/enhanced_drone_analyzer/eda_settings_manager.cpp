@@ -410,7 +410,7 @@ std::vector<std::string> EDASettingsManager::list_presets() const {
 
 bool EDASettingsManager::delete_preset(const std::string& preset_name) {
     auto path = get_preset_path(preset_name);
-    return filesystem::delete_file(path);
+    return delete_file(path);
 }
 
 // ==========================================
