@@ -317,8 +317,8 @@ public:
         bool is_valid;
         std::string error_message;
         uint32_t warning_count;
-        
-        ValidationResult() : is_valid(true), warning_count(0) {}
+
+        ValidationResult() : is_valid(true), warning_count(0), error_message{} {}
     };
     
     static ValidationResult validate_all(const DroneAnalyzerSettings& settings);
