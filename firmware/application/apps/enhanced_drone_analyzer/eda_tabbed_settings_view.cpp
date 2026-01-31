@@ -68,7 +68,6 @@ HardwareSettingsTab::HardwareSettingsTab(NavigationView& nav)
                   &text_min_freq_, &field_min_freq_,
                   &text_max_freq_, &field_max_freq_,
                   &button_save_, &button_cancel_});
-}
 
     button_save_.on_select = [this](Button&) {
         auto settings = save_to_settings();
@@ -120,7 +119,6 @@ ScanningSettingsTab::ScanningSettingsTab(NavigationView& nav)
                   &text_wb_max_, &field_wb_max_,
                   &checkbox_panoramic_, &text_panoramic_,
                   &button_save_, &button_cancel_});
-}
 
     button_save_.on_select = [this](Button&) {
         auto settings = save_to_settings();
@@ -168,7 +166,6 @@ DetectionSettingsTab::DetectionSettingsTab(NavigationView& nav)
                   &text_threat_, &field_threat_,
                   &checkbox_intelligent_, &text_intelligent_,
                   &button_save_, &button_cancel_});
-}
 
     button_save_.on_select = [this](Button&) {
         auto settings = save_to_settings();
@@ -210,7 +207,6 @@ LoggingSettingsTab::LoggingSettingsTab(NavigationView& nav)
                   &text_max_size_, &field_max_size_,
                   &text_path_, &field_path_,
                   &button_save_, &button_cancel_});
-}
 
     button_save_.on_select = [this](Button&) {
         auto settings = save_to_settings();
@@ -252,6 +248,10 @@ DisplaySettingsTab::DisplaySettingsTab(NavigationView& nav)
                   &text_font_size_, &field_font_size_,
                   &text_spectrum_density_, &field_density_,
                   &text_waterfall_speed_, &field_waterfall_,
+                  &checkbox_show_ruler_, &text_show_ruler_,
+                  &text_ruler_style_, &field_ruler_style_,
+                  &checkbox_auto_style_, &text_auto_style_,
+                  &text_tick_count_, &field_tick_count_,
                   &checkbox_detailed_, &text_detailed_,
                   &button_save_, &button_cancel_});
 
@@ -275,6 +275,10 @@ void DisplaySettingsTab::load_from_settings(const DisplaySettings& settings) {
     field_font_size_.set_selected_index(settings.font_size);
     field_density_.set_selected_index(settings.spectrum_density);
     field_waterfall_.set_value(settings.waterfall_speed);
+    checkbox_show_ruler_.set_value(settings.show_frequency_ruler);
+    field_ruler_style_.set_selected_index(settings.frequency_ruler_style);
+    checkbox_auto_style_.set_value(settings.auto_ruler_style);
+    field_tick_count_.set_selected_index(settings.compact_ruler_tick_count - 3);
     checkbox_detailed_.set_value(settings.show_detailed_info);
 }
 
@@ -284,6 +288,10 @@ DisplaySettings DisplaySettingsTab::save_to_settings() {
     settings.font_size = field_font_size_.selected_index();
     settings.spectrum_density = field_density_.selected_index();
     settings.waterfall_speed = field_waterfall_.value();
+    settings.show_frequency_ruler = checkbox_show_ruler_.value();
+    settings.frequency_ruler_style = field_ruler_style_.selected_index();
+    settings.auto_ruler_style = checkbox_auto_style_.value();
+    settings.compact_ruler_tick_count = field_tick_count_.selected_index() + 3;
     settings.show_detailed_info = checkbox_detailed_.value();
     return settings;
 }

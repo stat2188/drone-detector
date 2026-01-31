@@ -2311,15 +2311,17 @@ DroneDisplayController::~DroneDisplayController() {
 
 DroneDisplayController::DroneDisplayController(Rect parent_rect)
     : View(parent_rect),
-      big_display_({4, 0, 28 * 8, 52}, ""),           // Относительно parent_rect
+      big_display_({4, 0, 28 * 8, 52}, ""),
       scanning_progress_({0, 52, screen_width, 8}),
-      text_threat_summary_({0, 70, screen_width, 16}, "THREAT: NONE"),
-      text_status_info_({0, 86, screen_width, 16}, "Ready"),
-      text_scanner_stats_({0, 102, screen_width, 16}, "No database"),
-      text_trends_compact_({0, 118, screen_width, 16}, ""),
-      text_drone_1_({screen_width - 120, 134, 120, 16}, ""),
-      text_drone_2_({screen_width - 120, 150, 120, 16}, ""),
-      text_drone_3_({screen_width - 120, 166, 120, 16}, ""),
+      text_threat_summary_({0, 82, screen_width, 16}, "THREAT: NONE"),
+      text_status_info_({0, 98, screen_width, 16}, "Ready"),
+      text_scanner_stats_({0, 114, screen_width, 16}, "No database"),
+      text_trends_compact_({0, 130, screen_width, 16}, ""),
+      text_drone_1_({screen_width - 120, 146, 120, 16}, ""),
+      text_drone_2_({screen_width - 120, 162, 120, 16}, ""),
+      text_drone_3_({screen_width - 120, 178, 120, 16}, ""),
+      compact_frequency_ruler_({0, 68, screen_width, 12}),
+      frequency_ruler_({0, 68, screen_width, 12}),
       detected_drones_(),
       displayed_drones_(),
       spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
@@ -2347,6 +2349,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     add_children({
         &big_display_,
         &scanning_progress_,
+        &compact_frequency_ruler_,
         &text_threat_summary_,
         &text_status_info_,
         &text_scanner_stats_,
@@ -2355,6 +2358,9 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
         &text_drone_2_,
         &text_drone_3_
     });
+
+    // Hide the old ruler, use compact by default
+    frequency_ruler_.set_visible(false);
 }
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
@@ -2596,6 +2602,7 @@ void DroneDisplayController::initialize_mini_spectrum() {
         spectrum_gradient_.set_default();
     }
     clear_spectrum_buffers();
+    update_frequency_ruler();
 }
 
 void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& spectrum) {
@@ -2645,7 +2652,7 @@ void DroneDisplayController::render_mini_spectrum() {
     waterfall_line_index_ = (waterfall_line_index_ + 1) % SPEC_HEIGHT;
 
     // 2. Rendering (OPTIMIZED)
-    const int start_y = 80;
+    const int start_y = 92;
 
     // Line buffer on stack (moved outside loop to avoid recreating)
     std::array<Color, SPEC_WIDTH> line_colors;
@@ -2700,10 +2707,11 @@ size_t DroneDisplayController::get_safe_spectrum_index(size_t x, size_t y) const
 
 void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency max_freq) {
     // Use unified frequency limits from DroneConstants
-    if (min_freq >= max_freq || min_freq < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ || 
+    if (min_freq >= max_freq || min_freq < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ ||
         max_freq > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
         spectrum_config_.min_freq = DroneConstants::WIDEBAND_24GHZ_MIN;
         spectrum_config_.max_freq = DroneConstants::WIDEBAND_24GHZ_MAX;
+        update_frequency_ruler();
         return;
     }
     spectrum_config_.min_freq = min_freq;
@@ -2711,6 +2719,7 @@ void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency ma
     spectrum_config_.bandwidth = (max_freq - min_freq) > DroneConstants::WIDEBAND_WIFI_MIN_WIDTH_HZ ?
                                 DroneConstants::WIDEBAND_DEFAULT_SLICE_WIDTH : static_cast<uint32_t>(max_freq - min_freq);
     spectrum_config_.sampling_rate = spectrum_config_.bandwidth;
+    update_frequency_ruler();
 }
 
 void DroneDisplayController::update_signal_type_display(const std::string& signal_type) {
@@ -3611,6 +3620,473 @@ std::string EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq) 
         snprintf(buffer, sizeof(buffer), "%u MHz",
                  static_cast<unsigned int>(mhz));
         return std::string(buffer);
+    }
+}
+
+// ===========================================
+// PART 6.5: COMPACT FREQUENCY RULER IMPLEMENTATION
+// ===========================================
+
+CompactFrequencyRuler::CompactFrequencyRuler(Rect parent_rect)
+    : View(parent_rect),
+      min_freq_(2400000000ULL),
+      max_freq_(2500000000ULL),
+      spectrum_width_(240),
+      visible_(true),
+      ruler_style_(RulerStyle::COMPACT_GHZ),
+      target_tick_count_(DEFAULT_TICK_COUNT) {
+}
+
+void CompactFrequencyRuler::set_frequency_range(Frequency min_freq, Frequency max_freq) {
+    min_freq_ = min_freq;
+    max_freq_ = max_freq;
+    set_dirty();
+}
+
+void CompactFrequencyRuler::set_spectrum_width(int width) {
+    spectrum_width_ = width;
+    set_dirty();
+}
+
+void CompactFrequencyRuler::set_visible(bool visible) {
+    visible_ = visible;
+    hidden(!visible);
+}
+
+void CompactFrequencyRuler::set_ruler_style(RulerStyle style) {
+    ruler_style_ = style;
+    set_dirty();
+}
+
+void CompactFrequencyRuler::set_tick_count(int num_ticks) {
+    if (num_ticks >= 3 && num_ticks <= 8) {
+        target_tick_count_ = num_ticks;
+    }
+    set_dirty();
+}
+
+void CompactFrequencyRuler::paint(Painter& painter) {
+    const auto r = screen_rect();
+
+    painter.fill_rectangle(r, Color::black());
+
+    if (!visible_) return;
+
+    draw_compact_ticks(painter, r);
+}
+
+void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
+    Frequency range = max_freq_ - min_freq_;
+    if (range == 0) return;
+
+    Frequency tick_interval = calculate_optimal_tick_interval();
+    if (tick_interval == 0) return;
+
+    bool use_mhz = should_use_mhz_labels();
+
+    static Style compact_style_mhz{font::fixed_5x8, Color::grey(), Color::black()};
+    static Style compact_style_ghz{font::fixed_5x8, Color::grey(), Color::black()};
+    Style* label_style = use_mhz ? &compact_style_mhz : &compact_style_ghz;
+
+    display.draw_line(
+        {r.left(), r.top() + RULER_HEIGHT - 1},
+        {r.right(), r.top() + RULER_HEIGHT - 1},
+        Theme::getInstance()->fg_light->foreground
+    );
+
+    Frequency first_tick = (min_freq_ / tick_interval) * tick_interval;
+    if (first_tick < min_freq_) {
+        first_tick += tick_interval;
+    }
+
+    for (Frequency tick = first_tick; tick <= max_freq_; tick += tick_interval) {
+        int x = r.left() + static_cast<int>(((tick - min_freq_) * spectrum_width_) / range);
+
+        if (x < r.left() || x > r.right()) {
+            continue;
+        }
+
+        display.draw_line(
+            {x, r.top()},
+            {x, r.top() + TICK_HEIGHT_MAJOR},
+            Theme::getInstance()->fg_light->foreground
+        );
+
+        std::string label = format_compact_label(tick);
+
+        auto text_size = label_style->font.size_of(label);
+        int text_x = x - text_size.width() / 2;
+        int text_y = r.top() + 1;
+
+        if (text_x < r.left() + 2) text_x = r.left() + 2;
+        if (text_x + text_size.width() > r.right() - 2) {
+            text_x = r.right() - text_size.width() - 2;
+        }
+
+        painter.draw_string({text_x, text_y}, *label_style, label);
+
+        if (!use_mhz && tick_interval >= 100000000ULL) {
+            for (int sub = 1; sub < 5; sub++) {
+                Frequency sub_tick = tick + (tick_interval * sub) / 5;
+                int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
+
+                if (sub_x > r.left() && sub_x < r.right()) {
+                    display.draw_line(
+                        {sub_x, r.top()},
+                        {sub_x, r.top() + TICK_HEIGHT_MINOR},
+                        Theme::getInstance()->fg_light->foreground
+                    );
+                }
+            }
+        }
+    }
+}
+
+std::string CompactFrequencyRuler::format_compact_label(Frequency freq) {
+    char buffer[16];
+
+    switch (ruler_style_) {
+        case RulerStyle::COMPACT_GHZ: {
+            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
+            uint32_t decimal = static_cast<uint32_t>(((freq % 1000000000ULL) / 100000000ULL));
+            if (decimal > 0) {
+                snprintf(buffer, sizeof(buffer), "%lu.%luG",
+                         static_cast<unsigned long>(ghz),
+                         static_cast<unsigned long>(decimal));
+            } else {
+                snprintf(buffer, sizeof(buffer), "%luG", static_cast<unsigned long>(ghz));
+            }
+            break;
+        }
+        case RulerStyle::COMPACT_MHZ: {
+            uint32_t mhz = static_cast<uint32_t>((freq + 500000) / 1000000);
+            snprintf(buffer, sizeof(buffer), "%u", mhz);
+            break;
+        }
+        case RulerStyle::STANDARD_GHZ: {
+            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
+            uint32_t decimal = static_cast<uint32_t>(((freq % 1000000000ULL) / 100000000ULL));
+            if (decimal > 0) {
+                snprintf(buffer, sizeof(buffer), "%lu.%luGHz",
+                         static_cast<unsigned long>(ghz),
+                         static_cast<unsigned long>(decimal));
+            } else {
+                snprintf(buffer, sizeof(buffer), "%luGHz", static_cast<unsigned long>(ghz));
+            }
+            break;
+        }
+        case RulerStyle::STANDARD_MHZ: {
+            uint32_t mhz = static_cast<uint32_t>((freq + 500000) / 1000000);
+            snprintf(buffer, sizeof(buffer), "%uMHz", mhz);
+            break;
+        }
+        case RulerStyle::DETAILED: {
+            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
+            uint32_t decimal = static_cast<uint32_t>(((freq % 1000000000ULL) / 10000000ULL));
+            snprintf(buffer, sizeof(buffer), "%lu.%03luGHz",
+                     static_cast<unsigned long>(ghz),
+                     static_cast<unsigned long>(decimal));
+            break;
+        }
+        default: {
+            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
+            snprintf(buffer, sizeof(buffer), "%luG", static_cast<unsigned long>(ghz));
+            break;
+        }
+    }
+
+    return std::string(buffer);
+}
+
+Frequency CompactFrequencyRuler::calculate_optimal_tick_interval() {
+    Frequency range = max_freq_ - min_freq_;
+    if (range == 0) return 0;
+
+    Frequency intervals[] = {
+        4000000000ULL,  2000000000ULL,  1000000000ULL,
+        500000000ULL,   200000000ULL,   100000000ULL,
+        50000000ULL,    20000000ULL,    10000000ULL,
+        5000000ULL,     2000000ULL,     1000000ULL,
+        500000ULL,      200000ULL,      100000ULL
+    };
+
+    for (auto interval : intervals) {
+        int ticks = static_cast<int>(range / interval);
+        if (ticks >= target_tick_count_ - 1 && ticks <= target_tick_count_ + 1) {
+            return interval;
+        }
+    }
+
+    return range / target_tick_count_;
+}
+
+RulerStyle CompactFrequencyRuler::determine_auto_style() {
+    Frequency range = max_freq_ - min_freq_;
+    bool use_mhz = should_use_mhz_labels();
+
+    if (use_mhz) {
+        if (range < 100000000ULL) {
+            return RulerStyle::DETAILED;
+        } else {
+            return RulerStyle::STANDARD_MHZ;
+        }
+    } else {
+        if (range < 500000000ULL) {
+            return RulerStyle::STANDARD_GHZ;
+        } else {
+            return RulerStyle::COMPACT_GHZ;
+        }
+    }
+}
+
+bool CompactFrequencyRuler::should_use_mhz_labels() const {
+    Frequency range = max_freq_ - min_freq_;
+
+    if (range < 50000000ULL) {
+        return true;
+    }
+
+    Frequency center = (min_freq_ + max_freq_) / 2;
+    if (center < 1000000000ULL) {
+        return true;
+    }
+
+    if (ruler_style_ == RulerStyle::COMPACT_MHZ ||
+        ruler_style_ == RulerStyle::STANDARD_MHZ) {
+        return true;
+    }
+
+    return false;
+}
+
+// ===========================================
+// PART 7: FREQUENCY RULER IMPLEMENTATION
+// ===========================================
+
+FrequencyRuler::FrequencyRuler(Rect parent_rect)
+    : View(parent_rect),
+      min_freq_(2400000000ULL),
+      max_freq_(2500000000ULL),
+      spectrum_width_(240),
+      visible_(true) {
+}
+
+void FrequencyRuler::set_frequency_range(Frequency min_freq, Frequency max_freq) {
+    min_freq_ = min_freq;
+    max_freq_ = max_freq;
+    set_dirty();
+}
+
+void FrequencyRuler::set_spectrum_width(int width) {
+    spectrum_width_ = width;
+    set_dirty();
+}
+
+void FrequencyRuler::set_visible(bool visible) {
+    visible_ = visible;
+    if (!visible) {
+        hidden(true);
+    } else {
+        hidden(false);
+    }
+}
+
+Frequency FrequencyRuler::calculate_tick_interval() {
+    Frequency freq_range = max_freq_ - min_freq_;
+    if (freq_range == 0) {
+        return 1000000000ULL;  // Default: 1 GHz
+    }
+
+    // Possible intervals in Hz (from largest to smallest)
+    Frequency intervals[] = {
+        4000000000ULL,  // 4 GHz
+        2000000000ULL,  // 2 GHz
+        1000000000ULL,  // 1 GHz
+        500000000ULL,   // 500 MHz
+        200000000ULL,   // 200 MHz
+        100000000ULL,   // 100 MHz
+        50000000ULL,    // 50 MHz
+        20000000ULL,    // 20 MHz
+        10000000ULL,    // 10 MHz
+        5000000ULL,     // 5 MHz
+        2000000ULL,     // 2 MHz
+        1000000ULL      // 1 MHz
+    };
+
+    size_t num_intervals = sizeof(intervals) / sizeof(intervals[0]);
+
+    // Select interval so that we have 4-8 ticks on screen
+    for (size_t i = 0; i < num_intervals; i++) {
+        if (freq_range / intervals[i] <= 8 && freq_range / intervals[i] >= 4) {
+            return intervals[i];
+        }
+    }
+
+    // Fallback: use 6 ticks evenly distributed
+    return freq_range / 6;
+}
+
+std::string FrequencyRuler::format_frequency_label(Frequency freq, const std::string& unit) {
+    char buffer[32];
+
+    if (unit == "G") {
+        uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
+        uint32_t decimal = static_cast<uint32_t>((freq % 1000000000ULL) / 100000000ULL);
+        if (decimal > 0) {
+            snprintf(buffer, sizeof(buffer), "%lu.%luG",
+                     static_cast<unsigned long>(ghz),
+                     static_cast<unsigned long>(decimal));
+        } else {
+            snprintf(buffer, sizeof(buffer), "%luG", static_cast<unsigned long>(ghz));
+        }
+    } else if (unit == "M") {
+        uint32_t mhz = static_cast<uint32_t>((freq + 500000) / 1000000);
+        uint32_t decimal = static_cast<uint32_t>(((freq + 50000) % 1000000) / 100000);
+        if (decimal > 0 && unit != "Mcompact") {
+            snprintf(buffer, sizeof(buffer), "%lu.%luM",
+                     static_cast<unsigned long>(mhz),
+                     static_cast<unsigned long>(decimal));
+        } else {
+            snprintf(buffer, sizeof(buffer), "%luM", static_cast<unsigned long>(mhz));
+        }
+    } else {
+        // Fallback
+        uint32_t mhz = static_cast<uint32_t>(freq / 1000000);
+        snprintf(buffer, sizeof(buffer), "%luM", static_cast<unsigned long>(mhz));
+    }
+
+    return std::string(buffer);
+}
+
+void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
+    Frequency tick_interval = calculate_tick_interval();
+    Frequency range = max_freq_ - min_freq_;
+    if (range == 0) return;
+
+    // Determine measurement unit
+    std::string unit;
+    if (tick_interval >= 1000000000ULL) {
+        unit = "G";
+    } else if (tick_interval >= 1000000ULL) {
+        unit = "M";
+    } else {
+        unit = "Mcompact";
+    }
+
+    // Style for tick labels (small font 5x8)
+    static Style ruler_style{font::fixed_5x8, Color::grey(), Color::black()};
+
+    // Draw horizontal line at bottom of ruler
+    display.draw_line(
+        {r.left(), r.top() + RULER_HEIGHT - 1},
+        {r.right(), r.top() + RULER_HEIGHT - 1},
+        Theme::getInstance()->bg_darkest->foreground
+    );
+
+    // Find first tick
+    Frequency first_tick = (min_freq_ / tick_interval) * tick_interval;
+    if (first_tick < min_freq_) {
+        first_tick += tick_interval;
+    }
+
+    // Draw ticks and labels
+    for (Frequency tick = first_tick; tick <= max_freq_; tick += tick_interval) {
+        // Convert frequency to x position
+        int x = r.left() + static_cast<int>(((tick - min_freq_) * spectrum_width_) / range);
+
+        if (x < r.left() || x > r.right()) {
+            continue;
+        }
+
+        // Draw major tick (tall)
+        display.draw_line(
+            {x, r.top()},
+            {x, r.top() + TICK_HEIGHT_MAJOR},
+            Theme::getInstance()->bg_darkest->foreground
+        );
+
+        // Format and draw text label
+        std::string label = format_frequency_label(tick, unit);
+
+        auto text_size = ruler_style.font.size_of(label);
+        int text_x = x - text_size.width() / 2;
+        int text_y = r.top() + 1;
+
+        // Clamp text position to screen bounds
+        if (text_x < r.left() + 2) text_x = r.left() + 2;
+        if (text_x + text_size.width() > r.right() - 2) {
+            text_x = r.right() - text_size.width() - 2;
+        }
+
+        painter.draw_string({text_x, text_y}, ruler_style, label);
+
+        // Add intermediate ticks if interval is large
+        if (tick_interval >= 100000000ULL) {  // >= 100 MHz
+            for (int sub = 1; sub < 5; sub++) {
+                Frequency sub_tick = tick + (tick_interval * sub) / 5;
+                int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
+
+                if (sub_x > r.left() && sub_x < r.right()) {
+                    display.draw_line(
+                        {sub_x, r.top()},
+                        {sub_x, r.top() + TICK_HEIGHT_MINOR},
+                        Theme::getInstance()->bg_darkest->foreground
+                    );
+                }
+            }
+        }
+    }
+}
+
+void FrequencyRuler::paint(Painter& painter) {
+    const auto r = screen_rect();
+
+    // Fill background
+    painter.fill_rectangle(r, Color::black());
+
+    // Draw frequency ticks and labels
+    if (visible_) {
+        draw_frequency_ticks(painter, r);
+    }
+}
+
+void DroneDisplayController::update_frequency_ruler() {
+    compact_frequency_ruler_.set_frequency_range(spectrum_config_.min_freq, spectrum_config_.max_freq);
+    compact_frequency_ruler_.set_spectrum_width(SPEC_WIDTH);
+    compact_frequency_ruler_.set_dirty();
+}
+
+void DroneDisplayController::set_ruler_style(RulerStyle style) {
+    compact_frequency_ruler_.set_ruler_style(style);
+    compact_frequency_ruler_.set_visible(true);
+    frequency_ruler_.set_visible(false);
+}
+
+void DroneDisplayController::apply_display_settings(const DisplaySettings& settings) {
+    if (settings.show_frequency_ruler) {
+        compact_frequency_ruler_.set_visible(true);
+        frequency_ruler_.set_visible(false);
+
+        if (settings.auto_ruler_style) {
+            compact_frequency_ruler_.set_ruler_style(RulerStyle::COMPACT_GHZ);
+        } else {
+            RulerStyle style;
+            switch (settings.frequency_ruler_style) {
+                case 0: style = RulerStyle::COMPACT_GHZ; break;
+                case 1: style = RulerStyle::COMPACT_GHZ; break;
+                case 2: style = RulerStyle::COMPACT_MHZ; break;
+                case 3: style = RulerStyle::STANDARD_GHZ; break;
+                case 4: style = RulerStyle::STANDARD_MHZ; break;
+                case 5: style = RulerStyle::DETAILED; break;
+                default: style = RulerStyle::COMPACT_GHZ; break;
+            }
+            compact_frequency_ruler_.set_ruler_style(style);
+        }
+
+        compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);
+    } else {
+        compact_frequency_ruler_.set_visible(false);
+        frequency_ruler_.set_visible(false);
     }
 }
 

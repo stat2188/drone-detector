@@ -133,6 +133,14 @@ bool EDAUnifiedSettingsManager::load(EDAUnifiedSettings& settings) {
                 settings.display.spectrum_density = static_cast<uint8_t>(std::stoul(value));
             } else if (key == "waterfall_speed") {
                 settings.display.waterfall_speed = static_cast<uint8_t>(std::stoul(value));
+            } else if (key == "show_frequency_ruler") {
+                settings.display.show_frequency_ruler = (value == "1" || value == "true");
+            } else if (key == "frequency_ruler_style") {
+                settings.display.frequency_ruler_style = static_cast<uint8_t>(std::stoul(value));
+            } else if (key == "compact_ruler_tick_count") {
+                settings.display.compact_ruler_tick_count = static_cast<uint8_t>(std::stoul(value));
+            } else if (key == "auto_ruler_style") {
+                settings.display.auto_ruler_style = (value == "1" || value == "true");
             }
 
             else if (key == "settings_version") {
@@ -239,6 +247,10 @@ bool EDAUnifiedSettingsManager::save(const EDAUnifiedSettings& settings) {
     write_setting(settings_file, "font_size", settings.display.font_size);
     write_setting(settings_file, "spectrum_density", settings.display.spectrum_density);
     write_setting(settings_file, "waterfall_speed", settings.display.waterfall_speed);
+    write_setting(settings_file, "show_frequency_ruler", settings.display.show_frequency_ruler);
+    write_setting(settings_file, "frequency_ruler_style", settings.display.frequency_ruler_style);
+    write_setting(settings_file, "compact_ruler_tick_count", settings.display.compact_ruler_tick_count);
+    write_setting(settings_file, "auto_ruler_style", settings.display.auto_ruler_style);
 
     write_section_header(settings_file, "Profile Settings");
     write_setting(settings_file, "current_profile_name", settings.profile.current_profile_name);

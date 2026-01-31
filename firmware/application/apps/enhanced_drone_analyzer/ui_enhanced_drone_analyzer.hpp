@@ -823,6 +823,11 @@ public:
 
     void set_spectrum_range(Frequency min_freq, Frequency max_freq);
     void update_signal_type_display(const std::string& signal_type);
+    void update_frequency_ruler();
+    void set_ruler_style(RulerStyle style);
+    void apply_display_settings(const DisplaySettings& settings);
+    CompactFrequencyRuler& compact_frequency_ruler() { return compact_frequency_ruler_; }
+    FrequencyRuler& frequency_ruler() { return frequency_ruler_; }
 
     DroneDisplayController(const DroneDisplayController&) = delete;
     DroneDisplayController& operator=(const DroneDisplayController&) = delete;
@@ -838,14 +843,17 @@ public:
 private:
     Text big_display_{{4, 0, 28 * 8, 52}, ""};
     ProgressBar scanning_progress_{{0, 52, screen_width, 8}};
-    Text text_threat_summary_{{0, 70, screen_width, 16}, "THREAT: NONE"};
-    Text text_status_info_{{0, 86, screen_width, 16}, "Ready"};
-    Text text_scanner_stats_{{0, 102, screen_width, 16}, "No database"};
-    Text text_trends_compact_{{0, 118, screen_width, 16}, ""};
-    Text text_drone_1_{{screen_width - 120, 134, 120, 16}, ""};
-    Text text_drone_2_{{screen_width - 120, 150, 120, 16}, ""};
-    Text text_drone_3_{{screen_width - 120, 166, 120, 16}, ""};
+    Text text_threat_summary_{{0, 82, screen_width, 16}, "THREAT: NONE"};
+    Text text_status_info_{{0, 98, screen_width, 16}, "Ready"};
+    Text text_scanner_stats_{{0, 114, screen_width, 16}, "No database"};
+    Text text_trends_compact_{{0, 130, screen_width, 16}, ""};
+    Text text_drone_1_{{screen_width - 120, 146, 120, 16}, ""};
+    Text text_drone_2_{{screen_width - 120, 162, 120, 16}, ""};
+    Text text_drone_3_{{screen_width - 120, 178, 120, 16}, ""};
     Text text_signal_type_{{screen_width - 80, 80, 80, 16}, "SIGNAL: --"};  // Debug: Signal type marker
+
+    CompactFrequencyRuler compact_frequency_ruler_{{0, 68, screen_width, 12}};
+    FrequencyRuler frequency_ruler_{{0, 68, screen_width, 12}};
 
     static constexpr size_t MAX_UI_DRONES = 16;
     std::array<DisplayDroneEntry, MAX_UI_DRONES> detected_drones_;
@@ -896,6 +904,77 @@ private:
 
     void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power);
     void add_spectrum_pixel(uint8_t power);
+};
+
+enum class RulerStyle {
+    COMPACT_GHZ,       // Compact labels: "2.4G", "2.5G" (for GHz ranges)
+    COMPACT_MHZ,       // Compact labels: "2430", "2440" (for MHz ranges)
+    STANDARD_GHZ,      // Standard: "2.4GHz", "2.5GHz"
+    STANDARD_MHZ,      // Standard: "2430MHz", "2440MHz"
+    DETAILED           // Full precision: "2.435GHz" with subticks
+};
+
+class CompactFrequencyRuler : public View {
+public:
+    explicit CompactFrequencyRuler(Rect parent_rect = {0, 0, screen_width, 12});
+    ~CompactFrequencyRuler() override = default;
+
+    void set_frequency_range(Frequency min_freq, Frequency max_freq);
+    void set_spectrum_width(int width);
+    void set_visible(bool visible);
+    void set_ruler_style(RulerStyle style);
+    void set_tick_count(int num_ticks);
+    void paint(Painter& painter) override;
+
+    CompactFrequencyRuler(const CompactFrequencyRuler&) = delete;
+    CompactFrequencyRuler& operator=(const CompactFrequencyRuler&) = delete;
+
+private:
+    Frequency min_freq_;
+    Frequency max_freq_;
+    int spectrum_width_;
+    bool visible_;
+    RulerStyle ruler_style_;
+    int target_tick_count_;
+
+    static constexpr int RULER_HEIGHT = 12;
+    static constexpr int TICK_HEIGHT_MAJOR = 8;
+    static constexpr int TICK_HEIGHT_MINOR = 4;
+    static constexpr int DEFAULT_TICK_COUNT = 4;
+
+    void draw_compact_ticks(Painter& painter, const Rect r);
+    std::string format_compact_label(Frequency freq);
+    Frequency calculate_optimal_tick_interval();
+    RulerStyle determine_auto_style();
+    bool should_use_mhz_labels() const;
+};
+
+class FrequencyRuler : public View {
+public:
+    explicit FrequencyRuler(Rect parent_rect = {0, 0, screen_width, 12});
+    ~FrequencyRuler() override = default;
+
+    void set_frequency_range(Frequency min_freq, Frequency max_freq);
+    void set_spectrum_width(int width);
+    void set_visible(bool visible);
+    void paint(Painter& painter) override;
+
+    FrequencyRuler(const FrequencyRuler&) = delete;
+    FrequencyRuler& operator=(const FrequencyRuler&) = delete;
+
+private:
+    Frequency min_freq_;
+    Frequency max_freq_;
+    int spectrum_width_;
+    bool visible_;
+
+    static constexpr int RULER_HEIGHT = 12;
+    static constexpr int TICK_HEIGHT_MAJOR = 10;
+    static constexpr int TICK_HEIGHT_MINOR = 6;
+
+    void draw_frequency_ticks(Painter& painter, const Rect r);
+    Frequency calculate_tick_interval();
+    std::string format_frequency_label(Frequency freq, const std::string& unit);
 };
 
 static constexpr const char* DEFAULT_CONFIG_PATH = "DRONES/DATA.CFG";

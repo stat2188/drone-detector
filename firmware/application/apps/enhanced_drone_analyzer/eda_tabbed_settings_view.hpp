@@ -326,14 +326,41 @@ private:
     };
     NumberField field_waterfall_{{16, 208}, 2, {1, 10}, 1, ' ', false};
 
-    Checkbox checkbox_detailed_{{16, 240}, 20, "Detailed Info", false};
-    Text text_detailed_{
+    Checkbox checkbox_show_ruler_{{16, 240}, 20, "Freq Ruler", false};
+    Text text_show_ruler_{
         {40, 256, 200, 16},
+        "Show frequency scale"
+    };
+
+    Text text_ruler_style_{
+        {16, 288, 120, 16},
+        "Ruler Style:"
+    };
+    OptionsField field_ruler_style_{{16, 304}, 15,
+        {{"Auto", 0}, {"Compact GHz", 1}, {"Compact MHz", 2},
+         {"Standard GHz", 3}, {"Standard MHz", 4}, {"Detailed", 5}}};
+
+    Checkbox checkbox_auto_style_{{16, 336}, 14, "Auto Style", false};
+    Text text_auto_style_{
+        {40, 352, 160, 16},
+        "Auto-select based on range"
+    };
+
+    Text text_tick_count_{
+        {16, 384, 120, 16},
+        "Tick Count:"
+    };
+    OptionsField field_tick_count_{{16, 400}, 15,
+        {{"3 ticks", 3}, {"4 ticks", 4}, {"5 ticks", 5}}};
+
+    Checkbox checkbox_detailed_{{16, 432}, 20, "Detailed Info", false};
+    Text text_detailed_{
+        {40, 448, 200, 16},
         "Show full drone info"
     };
 
-    Button button_save_{{16, 288, 224, 32}, "Save", false};
-    Button button_cancel_{{16, 328, 96, 32}, "Back", false};
+    Button button_save_{{16, 480, 224, 32}, "Save", false};
+    Button button_cancel_{{16, 520, 96, 32}, "Back", false};
 };
 
 class EDATabbedSettingsView : public View {

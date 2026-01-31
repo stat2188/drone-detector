@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
+#include <climits>
 #include "file.hpp"
 #include "ui_drone_common_types.hpp"
 
