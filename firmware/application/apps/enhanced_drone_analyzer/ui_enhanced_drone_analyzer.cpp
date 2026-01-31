@@ -3788,6 +3788,11 @@ std::string CompactFrequencyRuler::format_compact_label(Frequency freq) {
                      static_cast<unsigned long>(decimal));
             break;
         }
+        case RulerStyle::SPACED_GHZ: {
+            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
+            snprintf(buffer, sizeof(buffer), "%uGHz", static_cast<unsigned int>(ghz));
+            break;
+        }
         default: {
             uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
             snprintf(buffer, sizeof(buffer), "%luG", static_cast<unsigned long>(ghz));
@@ -3802,12 +3807,16 @@ Frequency CompactFrequencyRuler::calculate_optimal_tick_interval() {
     Frequency range = max_freq_ - min_freq_;
     if (range == 0) return 0;
 
+    // Optimized intervals for PortaPack's small screen
+    // Prioritize GHz intervals for SPACED_GHZ style
     Frequency intervals[] = {
-        4000000000ULL,  2000000000ULL,  1000000000ULL,
-        500000000ULL,   200000000ULL,   100000000ULL,
-        50000000ULL,    20000000ULL,    10000000ULL,
-        5000000ULL,     2000000ULL,     1000000ULL,
-        500000ULL,      200000ULL,      100000ULL
+        5000000000ULL,  4000000000ULL,  3000000000ULL, 2000000000ULL,  // 5G, 4G, 3G, 2G
+        1000000000ULL,  // 1G (key for SPACED_GHZ)
+        500000000ULL,   250000000ULL,   200000000ULL,            // 500M, 250M, 200M
+        100000000ULL,   50000000ULL,    25000000ULL,            // 100M, 50M, 25M
+        20000000ULL,    10000000ULL,    5000000ULL,             // 20M, 10M, 5M
+        2000000ULL,     1000000ULL,     500000ULL,              // 2M, 1M, 500k
+        200000ULL,      100000ULL                                // 200k, 100k
     };
 
     for (auto interval : intervals) {
@@ -3831,7 +3840,10 @@ RulerStyle CompactFrequencyRuler::determine_auto_style() {
             return RulerStyle::STANDARD_MHZ;
         }
     } else {
-        if (range < 500000000ULL) {
+        // Optimal for PortaPack: Use SPACED_GHZ for wide ranges (>1GHz)
+        if (range >= 1000000000ULL) {
+            return RulerStyle::SPACED_GHZ;
+        } else if (range >= 500000000ULL) {
             return RulerStyle::STANDARD_GHZ;
         } else {
             return RulerStyle::COMPACT_GHZ;
@@ -4078,6 +4090,7 @@ void DroneDisplayController::apply_display_settings(const DisplaySettings& setti
                 case 3: style = RulerStyle::STANDARD_GHZ; break;
                 case 4: style = RulerStyle::STANDARD_MHZ; break;
                 case 5: style = RulerStyle::DETAILED; break;
+                case 6: style = RulerStyle::SPACED_GHZ; break;  // New SPACED_GHZ
                 default: style = RulerStyle::COMPACT_GHZ; break;
             }
             compact_frequency_ruler_.set_ruler_style(style);

@@ -338,7 +338,7 @@ private:
     };
     OptionsField field_ruler_style_{{16, 304}, 15,
         {{"Auto", 0}, {"Compact GHz", 1}, {"Compact MHz", 2},
-         {"Standard GHz", 3}, {"Standard MHz", 4}, {"Detailed", 5}}};
+         {"Standard GHz", 3}, {"Standard MHz", 4}, {"Detailed", 5}, {"SPACED GHz", 6}}};
 
     Checkbox checkbox_auto_style_{{16, 336}, 14, "Auto Style", false};
     Text text_auto_style_{

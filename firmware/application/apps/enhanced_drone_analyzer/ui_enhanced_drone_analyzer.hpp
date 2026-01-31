@@ -911,7 +911,8 @@ enum class RulerStyle {
     COMPACT_MHZ,       // Compact labels: "2430", "2440" (for MHz ranges)
     STANDARD_GHZ,      // Standard: "2.4GHz", "2.5GHz"
     STANDARD_MHZ,      // Standard: "2430MHz", "2440MHz"
-    DETAILED           // Full precision: "2.435GHz" with subticks
+    DETAILED,          // Full precision: "2.435GHz" with subticks
+    SPACED_GHZ        // Spaced: "1GHz", "2GHz", "3GHz" (optimal for PortaPack)
 };
 
 class CompactFrequencyRuler : public View {

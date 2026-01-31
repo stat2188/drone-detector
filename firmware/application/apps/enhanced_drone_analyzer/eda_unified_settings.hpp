@@ -75,7 +75,7 @@ struct DisplaySettings {
     bool show_mini_spectrum = true;
     bool show_rssi_history = true;
     bool show_frequency_ruler = true;
-    uint8_t frequency_ruler_style = 0;
+    uint8_t frequency_ruler_style = 5;  // SPACED_GHZ as optimal default
     uint8_t compact_ruler_tick_count = 4;
     bool auto_ruler_style = true;
 };
