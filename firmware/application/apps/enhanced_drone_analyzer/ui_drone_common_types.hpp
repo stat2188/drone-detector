@@ -162,6 +162,9 @@ struct DetectionLogEntry {
     DroneType drone_type;
     uint8_t detection_count;
     uint8_t confidence_percent;  // Integer 0-100% instead of float for memory efficiency
+    uint8_t width_bins;           // Signal width in bins (for calibration)
+    uint32_t signal_width_hz;     // Signal width in Hz (for calibration)
+    uint8_t snr;                  // Signal-to-Noise Ratio (for calibration)
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer

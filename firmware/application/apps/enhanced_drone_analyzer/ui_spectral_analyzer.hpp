@@ -166,7 +166,7 @@ public:
         // 7. Classify signal based on width and context
         if (result.signal_width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {  // Width > 10 MHz
             // Context analysis based on frequency range
-            if (center_freq_hz >= 5000000000ULL) {
+            if (center_freq_hz >= 5000000000LL) {
             // On 5.8 GHz wide signal is likely digital FPV (DJI O3, Vista)
             // WiFi on 5.8 also exists, but in field conditions it's more likely a drone
             result.signature = SignalSignature::DIGITAL_FPV;
@@ -222,19 +222,19 @@ public:
 
         // For digital FPV signals, map to appropriate drone type
         if (signature == SignalSignature::DIGITAL_FPV) {
-            if (frequency_hz >= 5725000000ULL && frequency_hz <= 5875000000ULL) {
+            if (frequency_hz >= 5725000000LL && frequency_hz <= 5875000000LL) {
                 return DroneType::FPV_RACING; // DJI O3, Vista, etc.
             }
         }
 
         // Frequency-based drone type detection for narrowband signals
-        if (frequency_hz >= 2400000000ULL && frequency_hz <= 2483500000ULL) {
+        if (frequency_hz >= 2400000000LL && frequency_hz <= 2483500000LL) {
             return DroneType::MAVIC; // DJI typically uses 2.4GHz
-        } else if (frequency_hz >= 5725000000ULL && frequency_hz <= 5875000000ULL) {
+        } else if (frequency_hz >= 5725000000LL && frequency_hz <= 5875000000LL) {
             return DroneType::FPV_RACING; // 5.8GHz is common for FPV
-        } else if (frequency_hz >= 860000000ULL && frequency_hz <= 930000000ULL) {
+        } else if (frequency_hz >= 860000000LL && frequency_hz <= 930000000LL) {
             return DroneType::MILITARY_DRONE; // Long range systems
-        } else if (frequency_hz >= 433000000ULL && frequency_hz <= 435000000ULL) {
+        } else if (frequency_hz >= 433000000LL && frequency_hz <= 435000000LL) {
             return DroneType::DIY_DRONE; // 433MHz ISM band
         }
 

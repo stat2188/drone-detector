@@ -182,8 +182,6 @@ static constexpr int SPEC_HEIGHT = 32;
 static constexpr int SPEC_WIDTH = 240;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
-static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
-static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
 static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 22'000'000; // Optimized for 2.4GHz band coverage
 static constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
 static constexpr size_t DETECTION_TABLE_SIZE = 256;
@@ -206,19 +204,6 @@ struct WidebandScanData {
         slices_nb = 0;
         slice_counter = 0;
     }
-};
-
-struct DetectionLogEntry {
-    uint32_t timestamp;
-    uint64_t frequency_hz;  // uint64_t for frequencies > 4GHz
-    int32_t rssi_db;
-    ThreatLevel threat_level;
-    DroneType drone_type;
-    uint8_t detection_count;
-    uint8_t confidence_percent;  // Integer 0-100% instead of float for memory efficiency
-    uint8_t width_bins;           // Signal width in bins (for calibration)
-    uint32_t signal_width_hz;     // Signal width in Hz (for calibration)
-    uint8_t snr;                  // Signal-to-Noise Ratio (for calibration)
 };
 
 struct DroneDetectionMessage {
@@ -419,7 +404,7 @@ public:
     void update_scan_range(Frequency min_freq, Frequency max_freq) {
         if (min_freq >= max_freq) return;
         if (min_freq < 1000000) min_freq = 1000000;
-        if (max_freq > 7200000000ULL) max_freq = 7200000000ULL;
+        if (max_freq > 7200000000LL) max_freq = 7200000000LL;
         setup_wideband_range(min_freq, max_freq);
     }
 
@@ -907,8 +892,8 @@ public:
 
     static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %-4lddB %c";
     struct SpectrumConfig {
-        Frequency min_freq = 2400000000ULL;
-        Frequency max_freq = 2500000000ULL;
+        Frequency min_freq = 2400000000LL;
+        Frequency max_freq = 2500000000LL;
         uint32_t bandwidth = 24000000;
         uint32_t sampling_rate = 24000000;
     };
@@ -982,7 +967,7 @@ private:
 static constexpr const char* DEFAULT_CONFIG_PATH = "DRONES/DATA.CFG";
 static constexpr const char* FALLBACK_CONFIG_PATH = "APP/SETTINGS/DRONES.CFG";
 static constexpr uint32_t DEFAULT_BANDWIDTH = 24000000UL;
-static constexpr Frequency DEFAULT_CENTER_FREQUENCY = 2400000000ULL;
+static constexpr Frequency DEFAULT_CENTER_FREQUENCY = 2400000000LL;
 static constexpr const char* DEFAULT_SPECTRUM_FILE = "DEFAULT";
 
 class DroneUIController {

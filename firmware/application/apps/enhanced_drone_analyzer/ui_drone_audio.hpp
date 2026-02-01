@@ -10,16 +10,16 @@
 
 // Simplified migraine to detector_app patterns - no static initialization issues
 struct AudioAlertManager {
-    static void play_alert(ThreatLevel level) {
+    static void play_alert(ui::apps::enhanced_drone_analyzer::ThreatLevel level) {
         if (!audio_enabled_) return;
 
         uint16_t freq_hz = 800;
         switch (level) {
-            case ThreatLevel::NONE: return; // No alert
-            case ThreatLevel::LOW: freq_hz = 800; break;
-            case ThreatLevel::MEDIUM: freq_hz = 1000; break;
-            case ThreatLevel::HIGH: freq_hz = 1200; break;
-            case ThreatLevel::CRITICAL: freq_hz = 2000; break;
+            case ui::apps::enhanced_drone_analyzer::ThreatLevel::NONE: return; // No alert
+            case ui::apps::enhanced_drone_analyzer::ThreatLevel::LOW: freq_hz = 800; break;
+            case ui::apps::enhanced_drone_analyzer::ThreatLevel::MEDIUM: freq_hz = 1000; break;
+            case ui::apps::enhanced_drone_analyzer::ThreatLevel::HIGH: freq_hz = 1200; break;
+            case ui::apps::enhanced_drone_analyzer::ThreatLevel::CRITICAL: freq_hz = 2000; break;
             default: freq_hz = 800; break;
         }
         baseband::request_audio_beep(freq_hz, 24000, 200);
@@ -42,7 +42,7 @@ public:
 
     bool is_audio_enabled() const { return AudioAlertManager::is_enabled(); }
     void toggle_audio() { AudioAlertManager::set_enabled(!AudioAlertManager::is_enabled()); }
-    void play_detection_beep(ThreatLevel threat) { AudioAlertManager::play_alert(threat); }
+    void play_detection_beep(ui::apps::enhanced_drone_analyzer::ThreatLevel threat) { AudioAlertManager::play_alert(threat); }
     void stop_audio() { /* Simple beeps don't persist - no stop needed */ }
 
     // Legacy API for compatibility
@@ -57,7 +57,7 @@ private:
 
 struct DroneAudioSettings {
     bool audio_enabled = true;
-    ThreatLevel test_threat_level = ThreatLevel::HIGH;
+    ui::apps::enhanced_drone_analyzer::ThreatLevel test_threat_level = ui::apps::enhanced_drone_analyzer::ThreatLevel::HIGH;
 };
 
 #endif // UI_DRONE_AUDIO_HPP_
