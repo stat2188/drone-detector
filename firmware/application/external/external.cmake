@@ -35,8 +35,8 @@ set(EXTCPPSRC
 	external/lge/rfm69.cpp
 
 	#lcr - 460 byte flash
-	external/lcr/main.cpp
-	external/lcr/ui_lcr.cpp
+	#external/lcr/main.cpp
+	#external/lcr/ui_lcr.cpp
 
 	#jammer 144 byte
 	external/jammer/main.cpp
@@ -53,9 +53,9 @@ set(EXTCPPSRC
 	external/spainter/ui_spectrum_painter_image.cpp
 
 	#keyfob 216 byte
-	external/keyfob/main.cpp
-	external/keyfob/ui_keyfob.cpp
-	external/keyfob/ui_keyfob.hpp
+	#external/keyfob/main.cpp
+	#external/keyfob/ui_keyfob.cpp
+	#external/keyfob/ui_keyfob.hpp
 
 	#tetris 88 byte
 	#external/tetris/main.cpp
@@ -68,9 +68,9 @@ set(EXTCPPSRC
 	external/extsensors/ui_extsensors.hpp
 
 	#foxhunt 0
-	external/foxhunt/main.cpp
-	external/foxhunt/ui_foxhunt_rx.cpp
-	external/foxhunt/ui_foxhunt_rx.hpp
+	#external/foxhunt/main.cpp
+	#external/foxhunt/ui_foxhunt_rx.cpp
+	#external/foxhunt/ui_foxhunt_rx.hpp
 
 	#audio_test 192 byte
 	external/audio_test/main.cpp
@@ -81,12 +81,12 @@ set(EXTCPPSRC
 	external/wardrivemap/ui_wardrivemap.cpp
 
 	#tpmsrx 920 byte- possible shared part with baseband
-	external/tpmsrx/main.cpp
-	external/tpmsrx/tpms_app.cpp
+	#external/tpmsrx/main.cpp
+	#external/tpmsrx/tpms_app.cpp
 
 	#protoview 8 byte
-	external/protoview/main.cpp
-	external/protoview/ui_protoview.cpp
+	#external/protoview/main.cpp
+	#external/protoview/ui_protoview.cpp
 
 	#adsbtx  3544 byte - adsb shared part
 	#external/adsbtx/main.cpp
@@ -101,8 +101,8 @@ set(EXTCPPSRC
 	#external/sstvtx/ui_sstvtx.cpp
 
 	#sstvrx
-	external/sstvrx/main.cpp
-	external/sstvrx/ui_sstvrx.cpp
+	#external/sstvrx/main.cpp
+	#external/sstvrx/ui_sstvrx.cpp
 
 	#random 464  bytes.
 	external/random_password/main.cpp
@@ -114,13 +114,13 @@ set(EXTCPPSRC
 	#external/acars_rx/acars_app.cpp
 
 	#wefax_rx 192 bytes
-	external/wefax_rx/main.cpp
-	external/wefax_rx/ui_wefax_rx.cpp
+	#external/wefax_rx/main.cpp
+	#external/wefax_rx/ui_wefax_rx.cpp
 
 
 	#noaaapt_rx  72 bytes
-	external/noaaapt_rx/main.cpp
-	external/noaaapt_rx/ui_noaaapt_rx.cpp
+	#external/noaaapt_rx/main.cpp
+	#external/noaaapt_rx/ui_noaaapt_rx.cpp
 
 	#shoppingcart_lock 272 bytes
 	external/shoppingcart_lock/main.cpp
@@ -128,12 +128,12 @@ set(EXTCPPSRC
 
 
 	#ookbrute  80 byte
-	external/ookbrute/main.cpp
-	external/ookbrute/ui_ookbrute.cpp
+	#external/ookbrute/main.cpp
+	#external/ookbrute/ui_ookbrute.cpp
 
 	#ook_editor  1808 bytes
-	external/ook_editor/main.cpp
-	external/ook_editor/ui_ook_editor.cpp
+	#external/ook_editor/main.cpp
+	#external/ook_editor/ui_ook_editor.cpp
 
 	#cvs_spam 24 byte
 	#external/cvs_spam/main.cpp
@@ -242,12 +242,12 @@ set(EXTCPPSRC
 	#external/battleship/ui_battleship.cpp
 
 	#ert 3040 bytes - has common with baseband, could be renamed the namespace, so both could have it, but not kept in fw.
-	external/ert/main.cpp
-	external/ert/ert_app.cpp
+	#external/ert/main.cpp
+	#external/ert/ert_app.cpp
 
 	#epirb_rx 168 byte flash 
-	external/epirb_rx/main.cpp
-	external/epirb_rx/ui_epirb_rx.cpp
+	#external/epirb_rx/main.cpp
+	#external/epirb_rx/ui_epirb_rx.cpp
 
 	#soundboard  272byte  - 1236 bytes
 	external/soundboard/main.cpp
@@ -290,29 +290,29 @@ set(EXTAPPLIST
 	nrf_rx
 	coasterp
 	lge
-	lcr
+	#lcr
 	jammer
 	gpssim
 	spainter
-	keyfob
+	#keyfob
 	#tetris
 	extsensors
-	foxhunt_rx
+	#foxhunt_rx
 	audio_test
 	wardrivemap
-	tpmsrx
-	protoview
+	#tpmsrx
+	#protoview
 	#adsbtx
 	morse_tx
 	#sstvtx
-	sstvrx
+	#sstvrx
 	random_password
 	# acars_rx --not working
-	wefax_rx
-	noaaapt_rx
+	#wefax_rx
+	#noaaapt_rx
 	shoppingcart_lock
-	ookbrute
-	ook_editor
+	#ookbrute
+	#ook_editor
 	#cvs_spam
 	flippertx
 	#remote
@@ -339,8 +339,8 @@ set(EXTAPPLIST
 	#spaceinv
 	#blackjack
 	#battleship
-	ert
-	epirb_rx
+	#ert
+	#epirb_rx
 	soundboard
 	#game2048
 	#bht_tx
