@@ -3760,7 +3760,7 @@ std::string CompactFrequencyRuler::format_compact_label(Frequency freq) {
         }
         case RulerStyle::COMPACT_MHZ: {
             uint32_t mhz = static_cast<uint32_t>((freq + 500000) / 1000000);
-            snprintf(buffer, sizeof(buffer), "%u", mhz);
+            snprintf(buffer, sizeof(buffer), "%lu", static_cast<unsigned long>(mhz));
             break;
         }
         case RulerStyle::STANDARD_GHZ: {
@@ -3777,7 +3777,7 @@ std::string CompactFrequencyRuler::format_compact_label(Frequency freq) {
         }
         case RulerStyle::STANDARD_MHZ: {
             uint32_t mhz = static_cast<uint32_t>((freq + 500000) / 1000000);
-            snprintf(buffer, sizeof(buffer), "%uMHz", mhz);
+            snprintf(buffer, sizeof(buffer), "%luMHz", static_cast<unsigned long>(mhz));
             break;
         }
         case RulerStyle::DETAILED: {

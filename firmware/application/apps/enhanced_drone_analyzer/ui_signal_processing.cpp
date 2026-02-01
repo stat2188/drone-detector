@@ -3,8 +3,6 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// Global Definitions removed - DetectionRingBuffer now lives inside DroneScanner instances
-
 // WidebandMedianFilter implementations
 void WidebandMedianFilter::add_sample(int16_t rssi) {
     window_[head_] = rssi;
@@ -13,7 +11,7 @@ void WidebandMedianFilter::add_sample(int16_t rssi) {
 }
 
 int16_t WidebandMedianFilter::get_median_threshold() const {
-    if (!full_) return DEFAULT_RSSI_THRESHOLD_DB; 
+    if (!full_) return DroneConstants::DEFAULT_RSSI_THRESHOLD_DB; 
 
     // 🔴 OPTIMIZED: Use std::nth_element for O(n) median calculation
     // This is much more efficient than the previous O(n²) partial selection sort

@@ -10,6 +10,8 @@
 #include <ch.h>  // for time_t
 #include "ui_drone_common_types.hpp"
 
+namespace ui::apps::enhanced_drone_analyzer {
+
 // Signal processing constants
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 
@@ -54,4 +56,6 @@ private:
     size_t head_ = 0;
 };
 
-#endif // __UI_SIGNAL_PROCESSING_HPP__
+} // namespace ui::apps::enhanced_drone_analyzer
+
+#endif // UI_SIGNAL_PROCESSING_HPP_
