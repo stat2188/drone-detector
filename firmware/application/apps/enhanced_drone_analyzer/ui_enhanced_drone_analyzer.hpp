@@ -38,6 +38,7 @@
 #include "string_format.hpp"
 #include "tone_key.hpp"
 #include "message_queue.hpp"
+#include "eda_unified_settings.hpp"
 
 class LogFile;
 
@@ -787,6 +788,78 @@ private:
     void paint(Painter& painter) override;
 };
 
+enum class RulerStyle {
+    COMPACT_GHZ,
+    COMPACT_MHZ,
+    STANDARD_GHZ,
+    STANDARD_MHZ,
+    DETAILED,
+    SPACED_GHZ
+};
+
+class CompactFrequencyRuler : public View {
+public:
+    explicit CompactFrequencyRuler(Rect parent_rect = {0, 0, screen_width, 12});
+    ~CompactFrequencyRuler() override = default;
+
+    void set_frequency_range(Frequency min_freq, Frequency max_freq);
+    void set_spectrum_width(int width);
+    void set_visible(bool visible);
+    void set_ruler_style(RulerStyle style);
+    void set_tick_count(int num_ticks);
+    void paint(Painter& painter) override;
+
+    CompactFrequencyRuler(const CompactFrequencyRuler&) = delete;
+    CompactFrequencyRuler& operator=(const CompactFrequencyRuler&) = delete;
+
+private:
+    Frequency min_freq_;
+    Frequency max_freq_;
+    int spectrum_width_;
+    bool visible_;
+    RulerStyle ruler_style_;
+    int target_tick_count_;
+
+    static constexpr int RULER_HEIGHT = 12;
+    static constexpr int TICK_HEIGHT_MAJOR = 8;
+    static constexpr int TICK_HEIGHT_MINOR = 4;
+    static constexpr int DEFAULT_TICK_COUNT = 4;
+
+    void draw_compact_ticks(Painter& painter, const Rect r);
+    std::string format_compact_label(Frequency freq);
+    Frequency calculate_optimal_tick_interval();
+    RulerStyle determine_auto_style();
+    bool should_use_mhz_labels() const;
+};
+
+class FrequencyRuler : public View {
+public:
+    explicit FrequencyRuler(Rect parent_rect = {0, 0, screen_width, 12});
+    ~FrequencyRuler() override = default;
+
+    void set_frequency_range(Frequency min_freq, Frequency max_freq);
+    void set_spectrum_width(int width);
+    void set_visible(bool visible);
+    void paint(Painter& painter) override;
+
+    FrequencyRuler(const FrequencyRuler&) = delete;
+    FrequencyRuler& operator=(const FrequencyRuler&) = delete;
+
+private:
+    Frequency min_freq_;
+    Frequency max_freq_;
+    int spectrum_width_;
+    bool visible_;
+
+    static constexpr int RULER_HEIGHT = 12;
+    static constexpr int TICK_HEIGHT_MAJOR = 10;
+    static constexpr int TICK_HEIGHT_MINOR = 6;
+
+    void draw_frequency_ticks(Painter& painter, const Rect r);
+    Frequency calculate_tick_interval();
+    std::string format_frequency_label(Frequency freq, const std::string& unit);
+};
+
 class DroneDisplayController : public View {
 public:
     explicit DroneDisplayController(Rect parent_rect = {0, 60, screen_width, screen_height - 80});
@@ -904,78 +977,6 @@ private:
 
     void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power);
     void add_spectrum_pixel(uint8_t power);
-};
-
-enum class RulerStyle {
-    COMPACT_GHZ,       // Compact labels: "2.4G", "2.5G" (for GHz ranges)
-    COMPACT_MHZ,       // Compact labels: "2430", "2440" (for MHz ranges)
-    STANDARD_GHZ,      // Standard: "2.4GHz", "2.5GHz"
-    STANDARD_MHZ,      // Standard: "2430MHz", "2440MHz"
-    DETAILED,          // Full precision: "2.435GHz" with subticks
-    SPACED_GHZ        // Spaced: "1GHz", "2GHz", "3GHz" (optimal for PortaPack)
-};
-
-class CompactFrequencyRuler : public View {
-public:
-    explicit CompactFrequencyRuler(Rect parent_rect = {0, 0, screen_width, 12});
-    ~CompactFrequencyRuler() override = default;
-
-    void set_frequency_range(Frequency min_freq, Frequency max_freq);
-    void set_spectrum_width(int width);
-    void set_visible(bool visible);
-    void set_ruler_style(RulerStyle style);
-    void set_tick_count(int num_ticks);
-    void paint(Painter& painter) override;
-
-    CompactFrequencyRuler(const CompactFrequencyRuler&) = delete;
-    CompactFrequencyRuler& operator=(const CompactFrequencyRuler&) = delete;
-
-private:
-    Frequency min_freq_;
-    Frequency max_freq_;
-    int spectrum_width_;
-    bool visible_;
-    RulerStyle ruler_style_;
-    int target_tick_count_;
-
-    static constexpr int RULER_HEIGHT = 12;
-    static constexpr int TICK_HEIGHT_MAJOR = 8;
-    static constexpr int TICK_HEIGHT_MINOR = 4;
-    static constexpr int DEFAULT_TICK_COUNT = 4;
-
-    void draw_compact_ticks(Painter& painter, const Rect r);
-    std::string format_compact_label(Frequency freq);
-    Frequency calculate_optimal_tick_interval();
-    RulerStyle determine_auto_style();
-    bool should_use_mhz_labels() const;
-};
-
-class FrequencyRuler : public View {
-public:
-    explicit FrequencyRuler(Rect parent_rect = {0, 0, screen_width, 12});
-    ~FrequencyRuler() override = default;
-
-    void set_frequency_range(Frequency min_freq, Frequency max_freq);
-    void set_spectrum_width(int width);
-    void set_visible(bool visible);
-    void paint(Painter& painter) override;
-
-    FrequencyRuler(const FrequencyRuler&) = delete;
-    FrequencyRuler& operator=(const FrequencyRuler&) = delete;
-
-private:
-    Frequency min_freq_;
-    Frequency max_freq_;
-    int spectrum_width_;
-    bool visible_;
-
-    static constexpr int RULER_HEIGHT = 12;
-    static constexpr int TICK_HEIGHT_MAJOR = 10;
-    static constexpr int TICK_HEIGHT_MINOR = 6;
-
-    void draw_frequency_ticks(Painter& painter, const Rect r);
-    Frequency calculate_tick_interval();
-    std::string format_frequency_label(Frequency freq, const std::string& unit);
 };
 
 static constexpr const char* DEFAULT_CONFIG_PATH = "DRONES/DATA.CFG";
