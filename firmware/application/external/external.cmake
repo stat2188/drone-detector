@@ -16,10 +16,10 @@ set(EXTCPPSRC
 	external/blespam/ui_blespam.cpp
 
 	#analogtv 552 bytes 
-	external/analogtv/main.cpp
-	external/analogtv/analog_tv_app.cpp
-	external/analogtv/ui_tv.cpp
-	external/analogtv/tv_signal_detector.cpp
+	#external/analogtv/main.cpp
+	#external/analogtv/analog_tv_app.cpp
+	#external/analogtv/ui_tv.cpp
+	#external/analogtv/tv_signal_detector.cpp
 
 	#nrf_rx  40 byte
 	external/nrf_rx/main.cpp
@@ -286,7 +286,7 @@ set(EXTAPPLIST
 	calculator
 	font_viewer
 	blespam
-	analogtv
+	#analogtv
 	nrf_rx
 	coasterp
 	lge
