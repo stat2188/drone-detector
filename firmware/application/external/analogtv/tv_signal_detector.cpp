@@ -34,7 +34,7 @@ TVSignalDetector::DetectionResult TVSignalDetector::detect_tv_signal(
     DetectionResult result;
     result.frequency = current_frequency;
 
-    const int* db = spectrum.db;
+    const auto* db = spectrum.db.data();
 
     int max_db = -127;
     int avg_db = 0;
