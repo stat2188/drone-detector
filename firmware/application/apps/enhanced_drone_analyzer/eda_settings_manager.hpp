@@ -105,7 +105,7 @@ public:
         uint32_t warning_count;
         std::vector<std::string> warnings;
 
-        ValidationResult() : is_valid(true), warning_count(0) {}
+        ValidationResult() : is_valid(true), error_message{}, warning_count(0), warnings{} {}
     };
 
     ValidationResult validate() const;

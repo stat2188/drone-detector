@@ -7,11 +7,19 @@
 #include "file_path.hpp"
 #include "string_format.hpp"
 #include "file_reader.hpp"
+#include "convert.hpp"
+#include "ui_enhanced_drone_analyzer.hpp"
 
 #include <algorithm>
 #include <cstring>
 
 namespace fs = std::filesystem;
+
+namespace {
+fs::path get_settings_path(const std::string& app_name) {
+    return settings_dir / std::string{app_name} + u".ini";
+}
+}  // namespace
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -204,7 +212,7 @@ bool EDASettingsManager::save() {
         return false;
 
     // Header
-    auto header = "# Enhanced Drone Analyzer Settings v1.0\n";
+    auto header = std::string{"# Enhanced Drone Analyzer Settings v1.0\n"};
     settings_file.write(header.data(), header.length());
 
     // Audio settings
@@ -295,6 +303,7 @@ bool EDASettingsManager::save_legacy(const DroneAnalyzerSettings& legacy_setting
 
     // Apply legacy settings to current
     // (Conversion logic goes here)
+    (void)legacy_settings;
 
     return save();
 }
@@ -410,7 +419,7 @@ std::vector<std::string> EDASettingsManager::list_presets() const {
 
 bool EDASettingsManager::delete_preset(const std::string& preset_name) {
     auto path = get_preset_path(preset_name);
-    return delete_file(path);
+    return delete_file(path).ok();
 }
 
 // ==========================================
@@ -428,7 +437,7 @@ EDASettingsManager::ValidationResult EDASettingsManager::validate() const {
     }
 
     // Validate RSSI threshold
-    if (eda_settings_.rssi_threshold_db < NOISE_FLOOR_RSSI ||
+    if (eda_settings_.rssi_threshold_db < DroneConstants::NOISE_FLOOR_RSSI ||
         eda_settings_.rssi_threshold_db > -30) {
         if (result.is_valid) {
             result.is_valid = false;
