@@ -483,11 +483,10 @@ private:
     void process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                    int32_t original_threshold, int32_t wideband_threshold);
 
-    void process_spectral_detection(const freqman_entry& entry, 
+    void process_spectral_detection(const freqman_entry& entry,
                                    const SpectralAnalysisResult& analysis_result,
                                    ThreatLevel threat_level, DroneType drone_type);
 
-    void update_trends_compact_display();
     bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
 
     static msg_t scanning_thread_function(void* arg);
@@ -1148,4 +1147,4 @@ class DroneAnalyzerSettingsView;
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
-#endif // __UI_SCANNER_COMBINED_HPP__
+#endif // UI_SCANNER_COMBINED_HPP_

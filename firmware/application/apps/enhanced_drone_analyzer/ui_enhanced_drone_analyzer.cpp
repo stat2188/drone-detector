@@ -1360,7 +1360,6 @@ void DroneScanner::update_tracking_counts() {
             default: static_count_++; break;
         }
     }
-    update_trends_compact_display();
 }
 
 void DroneScanner::reset_scan_cycles() {
