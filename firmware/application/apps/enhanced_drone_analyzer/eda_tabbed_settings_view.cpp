@@ -304,9 +304,9 @@ EDATabbedSettingsView::EDATabbedSettingsView(NavigationView& nav)
       tab_detection_(nav_),
       tab_logging_(nav_),
       tab_display_(nav_),
-      button_defaults_{Rect{UI_POS_X(2), UI_POS_Y(0), UI_WIDTH(12), 16}, "Defaults"},
-      button_import_{Rect{UI_POS_X(14), UI_POS_Y(0), UI_WIDTH(12), 16}, "Import"},
-      button_export_{Rect{UI_POS_X(26), UI_POS_Y(0), UI_WIDTH(12), 16}, "Export"} {
+      button_defaults_{Rect{UI_POS_X(2), UI_POS_Y(0), UI_POS_WIDTH(12), 16}, "Defaults"},
+      button_import_{Rect{UI_POS_X(14), UI_POS_Y(0), UI_POS_WIDTH(12), 16}, "Import"},
+      button_export_{Rect{UI_POS_X(26), UI_POS_Y(0), UI_POS_WIDTH(12), 16}, "Export"} {
 
     add_children({&tab_audio_, &tab_hardware_, &tab_scanning_,
                   &tab_detection_, &tab_logging_, &tab_display_});
