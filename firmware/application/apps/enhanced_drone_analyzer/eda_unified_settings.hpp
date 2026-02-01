@@ -98,6 +98,18 @@ struct EDAUnifiedSettings {
     uint32_t settings_version = 1;
     std::string settings_file_path = "/sdcard/EDA_UNIFIED_SETTINGS.txt";
 
+    EDAUnifiedSettings()
+        : audio{}
+        , hardware{}
+        , scanning{}
+        , detection{}
+        , logging{}
+        , display{}
+        , profile{}
+        , settings_version{1}
+        , settings_file_path{"/sdcard/EDA_UNIFIED_SETTINGS.txt"}
+    {}
+
     bool is_valid() const;
     void reset_to_defaults();
 };
