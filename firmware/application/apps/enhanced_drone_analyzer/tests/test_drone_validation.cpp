@@ -1,8 +1,9 @@
 #include <iostream>
 #include <cassert>
 #include <cstdint>
+#include "../../../rf_path.hpp"
 
-using Frequency = uint64_t;
+using rf::Frequency;
 
 enum class ThreatLevel {
     NONE = 0,

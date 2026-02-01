@@ -4,8 +4,9 @@
 #include <cstdint>
 #include <array>
 #include <string>
+#include "../../../rf_path.hpp"
 
-using Frequency = uint64_t;
+using rf::Frequency;
 
 struct Rect {
     int16_t x, y;

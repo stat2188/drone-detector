@@ -2,20 +2,19 @@
 #define DRONE_CONSTANTS_HPP_
 
 #include <cstdint>
-
-using Frequency = uint64_t;
+#include "rf_path.hpp"
 
 namespace DroneConstants {
 
 // ===== FREQUENCY LIMITS =====
 namespace FrequencyLimits {
     // Absolute hardware limits for HackRF One (MAX2837)
-    constexpr Frequency MIN_HARDWARE_FREQ =     1'000'000ULL; // 1 MHz
-    constexpr Frequency MAX_HARDWARE_FREQ =  7'200'000'000ULL; // 7.2 GHz (hardware maximum)
-    
+    constexpr rf::Frequency MIN_HARDWARE_FREQ =     1'000'000ULL; // 1 MHz
+    constexpr rf::Frequency MAX_HARDWARE_FREQ =  7'200'000'000ULL; // 7.2 GHz (hardware maximum)
+
     // Safe operational limits to protect PLL and ensure stability
-    constexpr Frequency MIN_SAFE_FREQ =        50'000'000ULL; // 50 MHz (PLL stability)
-    constexpr Frequency MAX_SAFE_FREQ =     6'000'000'000ULL; // 6 GHz (PLL stability)
+    constexpr rf::Frequency MIN_SAFE_FREQ =        50'000'000ULL; // 50 MHz (PLL stability)
+    constexpr rf::Frequency MAX_SAFE_FREQ =     6'000'000'000ULL; // 6 GHz (PLL stability)
 }
 
 // ===== SCANNING MODES =====
@@ -25,36 +24,36 @@ enum class ScanningMode {
 };
 
 // ===== FREQUENCY RANGES (Legacy compatibility) =====
-constexpr Frequency MIN_HARDWARE_FREQ = 1'000'000ULL;
-constexpr Frequency MAX_HARDWARE_FREQ = 7'200'000'000ULL;
+constexpr rf::Frequency MIN_HARDWARE_FREQ = 1'000'000ULL;
+constexpr rf::Frequency MAX_HARDWARE_FREQ = 7'200'000'000ULL;
 
 // 433 MHz ISM band (DIY drones)
-constexpr Frequency MIN_433MHZ = 433'000'000ULL;
-constexpr Frequency MAX_433MHZ = 435'000'000ULL;
+constexpr rf::Frequency MIN_433MHZ = 433'000'000ULL;
+constexpr rf::Frequency MAX_433MHZ = 435'000'000ULL;
 
 // 860-930 MHz (Long range, Military)
-constexpr Frequency MIN_900MHZ = 860'000'000ULL;
-constexpr Frequency MAX_900MHZ = 930'000'000ULL;
+constexpr rf::Frequency MIN_900MHZ = 860'000'000ULL;
+constexpr rf::Frequency MAX_900MHZ = 930'000'000ULL;
 
 // 2.4 GHz ISM band (DJI, consumer drones)
-constexpr Frequency MIN_24GHZ = 2'400'000'000ULL;
-constexpr Frequency MAX_24GHZ = 2'483'500'000ULL;
-constexpr Frequency DEFAULT_24GHZ_CENTER = 2'450'000'000ULL;
-constexpr Frequency WIDEBAND_24GHZ_MIN = 2'400'000'000ULL;
-constexpr Frequency WIDEBAND_24GHZ_MAX = 2'500'000'000ULL;
+constexpr rf::Frequency MIN_24GHZ = 2'400'000'000ULL;
+constexpr rf::Frequency MAX_24GHZ = 2'483'500'000ULL;
+constexpr rf::Frequency DEFAULT_24GHZ_CENTER = 2'450'000'000ULL;
+constexpr rf::Frequency WIDEBAND_24GHZ_MIN = 2'400'000'000ULL;
+constexpr rf::Frequency WIDEBAND_24GHZ_MAX = 2'500'000'000ULL;
 
 // 5.8 GHz band (FPV racing, DJI O3)
-constexpr Frequency MIN_58GHZ = 5'725'000'000ULL;
-constexpr Frequency MAX_58GHZ = 5'875'000'000ULL;
-constexpr Frequency DEFAULT_58GHZ_CENTER = 5'800'000'000ULL;
+constexpr rf::Frequency MIN_58GHZ = 5'725'000'000ULL;
+constexpr rf::Frequency MAX_58GHZ = 5'875'000'000ULL;
+constexpr rf::Frequency DEFAULT_58GHZ_CENTER = 5'800'000'000ULL;
 
 // ===== SIGNAL WIDTHS =====
 constexpr uint32_t NARROWBAND_DRONE_MAX_WIDTH_HZ = 2'500'000ULL;
 constexpr uint32_t WIDEBAND_WIFI_MIN_WIDTH_HZ = 10'000'000ULL;
 constexpr uint32_t WIDEBAND_DEFAULT_SLICE_WIDTH = 22'000'000ULL;
 constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
-constexpr Frequency WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;  // 2.4 GHz
-constexpr Frequency WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;  // 2.5 GHz
+constexpr rf::Frequency WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;  // 2.4 GHz
+constexpr rf::Frequency WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;  // 2.5 GHz
 
 // ===== RSSI THRESHOLDS =====
 constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;

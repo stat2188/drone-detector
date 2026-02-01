@@ -11,9 +11,9 @@
 #include "ui_drone_common_types.hpp"
 #include "radio.hpp"
 
-using rf::Frequency;
-
 namespace ui::apps::enhanced_drone_analyzer {
+
+using rf::Frequency;
 
 // Enhanced frequency range preset system (migrated from Looking Glass)
 struct FrequencyPreset {

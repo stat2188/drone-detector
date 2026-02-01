@@ -28,6 +28,9 @@
 #include "eda_unified_settings.hpp"
 #include "eda_unified_settings_manager.hpp"
 #include "eda_tabbed_settings_view.hpp"
+#include "radio.hpp"
+
+using rf::Frequency;
 
 namespace ui::apps::enhanced_drone_analyzer {
 

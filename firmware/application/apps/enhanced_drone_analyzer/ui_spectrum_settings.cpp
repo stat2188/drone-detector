@@ -4,6 +4,7 @@
 #include "ui_spectrum_settings.hpp"
 #include "file.hpp"
 #include "string_format.hpp" // Important for to_string_dec_uint
+#include "radio.hpp"
 
 // <sstream> no longer needed!
 #include <algorithm>

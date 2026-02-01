@@ -5,11 +5,14 @@
 #include <string>
 #include <vector>
 #include "drone_constants.hpp"
+#include "radio.hpp"
 
 // SpectrumMode forward declare
 enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE, ULTRA_NARROW };
 
 namespace ui::apps::enhanced_drone_analyzer {
+
+using rf::Frequency;
 
 // DroneAnalyzerSettings struct
 struct DroneAnalyzerSettings {
@@ -47,12 +50,10 @@ struct DroneAnalyzerSettings {
     uint32_t wideband_slice_width_hz = 24000000; // 24 MHz
     
     // Сохранять ли полный спектр (true) или только найденное (false)
-    bool panoramic_mode_enabled = true; 
+    bool panoramic_mode_enabled = true;
 
 
 };
-
-} // namespace ui::apps::enhanced_drone_analyzer
 
 // DroneAnalyzerSettingsManager class
 class DroneAnalyzerSettingsManager {
@@ -162,5 +163,7 @@ struct DetectionLogEntry {
     uint8_t detection_count;
     uint8_t confidence_percent;  // Integer 0-100% instead of float for memory efficiency
 };
+
+} // namespace ui::apps::enhanced_drone_analyzer
 
 #endif // __UI_DRONE_COMMON_TYPES_HPP__

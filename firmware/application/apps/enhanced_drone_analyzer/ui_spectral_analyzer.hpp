@@ -8,8 +8,9 @@
 #include <array>
 #include <algorithm>
 #include "ui_drone_common_types.hpp"
+#include "radio.hpp"
 
-using Frequency = uint64_t;
+using rf::Frequency;
 
 namespace ui::apps::enhanced_drone_analyzer {
 

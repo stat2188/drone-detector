@@ -33,6 +33,8 @@
 #include "radio.hpp"
 #include "irq_controls.hpp"
 
+using rf::Frequency;
+
 #include "ui_navigation.hpp"
 #include "app_settings.hpp"
 #include "string_format.hpp"
@@ -41,8 +43,6 @@
 #include "eda_unified_settings.hpp"
 
 class LogFile;
-
-using Frequency = uint64_t;
 
 // Enum for scanner modes
 enum class ScannerMode {
