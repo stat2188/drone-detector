@@ -94,18 +94,18 @@ DroneType SimpleDroneValidation::identify_drone_type(const DroneSignal& signal) 
     Frequency freq_hz = signal.frequency_hz;
     int32_t rssi_db = signal.rssi_db;
     // 1. Low Frequency Long Range (868/915 MHz)
-    if ((freq_hz >= 860000000ULL && freq_hz <= 870000000ULL) || 
-        (freq_hz >= 900000000ULL && freq_hz <= 930000000ULL)) {
+    if ((static_cast<uint64_t>(freq_hz) >= 860000000ULL && static_cast<uint64_t>(freq_hz) <= 870000000ULL) ||
+        (static_cast<uint64_t>(freq_hz) >= 900000000ULL && static_cast<uint64_t>(freq_hz) <= 930000000ULL)) {
         return DroneType::MILITARY_DRONE; // Or DIY_DRONE, often used in "serious" custom builds
     }
-    
+
     // 2. Standard 433 MHz band
-    if (freq_hz >= 433000000ULL && freq_hz <= 435000000ULL) {
+    if (static_cast<uint64_t>(freq_hz) >= 433000000ULL && static_cast<uint64_t>(freq_hz) <= 435000000ULL) {
         return DroneType::DIY_DRONE;
     }
 
     // 3. 2.4 GHz Band
-    if (freq_hz >= 2400000000ULL && freq_hz <= 2483500000ULL) {
+    if (static_cast<uint64_t>(freq_hz) >= 2400000000ULL && static_cast<uint64_t>(freq_hz) <= 2483500000ULL) {
         // Here it's more complex, as this is also WiFi.
         // Heuristic: DJI drones often have a very strong signal compared to background WiFi
         if (rssi_db > -50) return DroneType::MAVIC; // Very close/powerful
@@ -113,7 +113,7 @@ DroneType SimpleDroneValidation::identify_drone_type(const DroneSignal& signal) 
     }
 
     // 4. 5.8 GHz Band (Video/Control)
-    if (freq_hz >= 5600000000ULL && freq_hz <= 5900000000ULL) {
+    if (static_cast<uint64_t>(freq_hz) >= 5600000000ULL && static_cast<uint64_t>(freq_hz) <= 5900000000ULL) {
         // RaceBand frequency range
         return DroneType::FPV_RACING;
     }
@@ -137,8 +137,8 @@ bool SimpleDroneValidation::validate_drone_detection(const DroneSignal& signal,
     // Additional validation based on drone type
     if (type == DroneType::MAVIC) {
         // Mavic drones typically operate in 2.4GHz or 5.8GHz
-        if (!(freq_hz >= 2400000000ULL && freq_hz <= 2500000000ULL) &&
-            !(freq_hz >= 5725000000ULL && freq_hz <= 5875000000ULL)) {
+        if (!(static_cast<uint64_t>(freq_hz) >= 2400000000ULL && static_cast<uint64_t>(freq_hz) <= 2500000000ULL) &&
+            !(static_cast<uint64_t>(freq_hz) >= 5725000000ULL && static_cast<uint64_t>(freq_hz) <= 5875000000ULL)) {
             return false;
         }
     }
@@ -630,7 +630,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         }
 
         // Overflow protection check
-        if (target_freq_hz + 1000000ULL < target_freq_hz) {
+        if (static_cast<uint64_t>(target_freq_hz) + 1000000ULL < static_cast<uint64_t>(target_freq_hz)) {
             continue;
         }
 
@@ -1833,7 +1833,7 @@ bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
     }
     
     // Overflow check
-    if (frequency_hz + 1000000ULL < frequency_hz) {
+    if (static_cast<uint64_t>(frequency_hz) + 1000000ULL < static_cast<uint64_t>(frequency_hz)) {
         return false;  // <-- Protection against overflow
     }
     
@@ -1989,17 +1989,17 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     last_text_ = buffer;
 
     if (current_freq > 0) {
-        if (current_freq >= 1000000000ULL) {
-            uint32_t ghz = current_freq / 1000000000ULL;
-            uint32_t decimals = ((current_freq % 1000000000ULL) / 10000000ULL);
+        if (static_cast<uint64_t>(current_freq) >= 1000000000ULL) {
+            uint32_t ghz = static_cast<uint64_t>(current_freq) / 1000000000ULL;
+            uint32_t decimals = ((static_cast<uint64_t>(current_freq) % 1000000000ULL) / 10000000ULL);
             if (is_scanning) {
                 snprintf(buffer, sizeof(buffer), "%lu.%02luGHz SCANNING", (unsigned long)ghz, (unsigned long)decimals);
             } else {
                 snprintf(buffer, sizeof(buffer), "%lu.%02luGHz READY", (unsigned long)ghz, (unsigned long)decimals);
             }
         } else {
-            uint32_t mhz = current_freq / 1000000ULL;
-            uint32_t decimals = (current_freq % 1000000ULL) / 100000ULL;
+            uint32_t mhz = static_cast<uint64_t>(current_freq) / 1000000ULL;
+            uint32_t decimals = (static_cast<uint64_t>(current_freq) % 1000000ULL) / 100000ULL;
             if (is_scanning) {
                 snprintf(buffer, sizeof(buffer), "%lu.%01luMHz SCANNING", (unsigned long)mhz, (unsigned long)decimals);
             } else {
@@ -3569,7 +3569,7 @@ bool EnhancedDroneSettingsValidator::validate_frequency_range(Frequency min_hz, 
     
     // Check range width
     Frequency range = max_hz - min_hz;
-    if (range < 1000000ULL) { // Minimum 1 MHz range
+    if (static_cast<uint64_t>(range) < 1000000ULL) { // Minimum 1 MHz range
         error = "Frequency range too small (minimum 1 MHz)";
         return false;
     }
@@ -3594,8 +3594,8 @@ bool EnhancedDroneSettingsValidator::is_known_drone_band(Frequency freq) {
 }
 
 bool EnhancedDroneSettingsValidator::is_ism_band(Frequency freq) {
-    return (freq >= 2400000000ULL && freq <= 2483500000ULL) ||
-           (freq >= 5725000000ULL && freq <= 5875000000ULL);
+    return (static_cast<uint64_t>(freq) >= 2400000000ULL && static_cast<uint64_t>(freq) <= 2483500000ULL) ||
+           (static_cast<uint64_t>(freq) >= 5725000000ULL && static_cast<uint64_t>(freq) <= 5875000000ULL);
 }
 
 std::string EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq) {

@@ -26,6 +26,7 @@ namespace ScannerSettingsManager {
 
     // Public interface
     bool load_settings_from_txt(ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
+    bool save_settings_to_txt(const ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
 
 }  // namespace ScannerSettingsManager
 

@@ -133,7 +133,7 @@ namespace ScannerSettingsManager {
         } else if (strcmp(key, "scan_interval_ms") == 0) {
             uint32_t temp;
             if (!safe_parse_uint32(value, &temp)) return false;
-            settings.scan_interval_ms = validate_range<uint32_t>(temp, MIN_SCAN_INTERVAL_MS, MAX_SCAN_INTERVAL_MS);
+            settings.scan_interval_ms = validate_range<uint32_t>(temp, DroneConstants::MIN_SCAN_INTERVAL_MS, DroneConstants::MAX_SCAN_INTERVAL_MS);
             return true;
         } else if (strcmp(key, "rssi_threshold_db") == 0) {
             int32_t temp;
@@ -148,13 +148,13 @@ namespace ScannerSettingsManager {
         else if (strcmp(key, "audio_alert_frequency_hz") == 0) {
             uint32_t temp;
             if (!safe_parse_uint32(value, &temp)) return false;
-            settings.audio_alert_frequency_hz = validate_range<uint16_t>(static_cast<uint16_t>(temp), MIN_AUDIO_FREQ, MAX_AUDIO_FREQ);
+            settings.audio_alert_frequency_hz = validate_range<uint16_t>(static_cast<uint16_t>(temp), DroneConstants::MIN_AUDIO_FREQ, DroneConstants::MAX_AUDIO_FREQ);
             return true;
         }
         else if (strcmp(key, "audio_alert_duration_ms") == 0) {
             uint32_t temp;
             if (!safe_parse_uint32(value, &temp)) return false;
-            settings.audio_alert_duration_ms = validate_range<uint32_t>(temp, MIN_AUDIO_DURATION, MAX_AUDIO_DURATION);
+            settings.audio_alert_duration_ms = validate_range<uint32_t>(temp, DroneConstants::MIN_AUDIO_DURATION, DroneConstants::MAX_AUDIO_DURATION);
             return true;
         }
         // --- NEW HARDWARE FIELDS ---
@@ -247,7 +247,7 @@ namespace ScannerSettingsManager {
         txt_file.close();
 
         if (read_result.is_error()) {
-             DroneAnalyzerSettingsManager::reset_to_defaults(settings);
+             reset_to_defaults(settings);
              return false;
         }
 
@@ -262,6 +262,115 @@ namespace ScannerSettingsManager {
             reset_to_defaults(settings);
         }
         return settings_loaded;
+    }
+
+    bool save_settings_to_txt(const ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
+        // Simple implementation - write all settings to file
+        File file;
+        if (!file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt", false)) {
+            return false;
+        }
+
+        // Header
+        std::string header = "# Enhanced Drone Analyzer Settings\n";
+        auto result = file.write(header.data(), header.size());
+        if (result.is_error() || result.value() != header.size()) {
+            file.close();
+            return false;
+        }
+
+        // Write each setting
+        char buffer[256];
+
+        // Spectrum mode
+        snprintf(buffer, sizeof(buffer), "spectrum_mode=%d\n", static_cast<int>(settings.spectrum_mode));
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Scan interval
+        snprintf(buffer, sizeof(buffer), "scan_interval_ms=%u\n", settings.scan_interval_ms);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // RSSI threshold
+        snprintf(buffer, sizeof(buffer), "rssi_threshold_db=%d\n", settings.rssi_threshold_db);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Audio alerts
+        snprintf(buffer, sizeof(buffer), "enable_audio_alerts=%s\n", settings.enable_audio_alerts ? "true" : "false");
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Audio frequency
+        snprintf(buffer, sizeof(buffer), "audio_alert_frequency_hz=%u\n", settings.audio_alert_frequency_hz);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Audio duration
+        snprintf(buffer, sizeof(buffer), "audio_alert_duration_ms=%u\n", settings.audio_alert_duration_ms);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Hardware bandwidth
+        snprintf(buffer, sizeof(buffer), "hardware_bandwidth_hz=%u\n", settings.hardware_bandwidth_hz);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Real hardware
+        snprintf(buffer, sizeof(buffer), "enable_real_hardware=%s\n", settings.enable_real_hardware ? "true" : "false");
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Demo mode
+        snprintf(buffer, sizeof(buffer), "demo_mode=%s\n", settings.demo_mode ? "true" : "false");
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Wideband scanning
+        snprintf(buffer, sizeof(buffer), "enable_wideband_scanning=%s\n", settings.enable_wideband_scanning ? "true" : "false");
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Wideband frequencies
+        snprintf(buffer, sizeof(buffer), "wideband_min_freq_hz=%llu\n", settings.wideband_min_freq_hz);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        snprintf(buffer, sizeof(buffer), "wideband_max_freq_hz=%llu\n", settings.wideband_max_freq_hz);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Min/max frequencies
+        snprintf(buffer, sizeof(buffer), "min_frequency_hz=%llu\n", settings.min_frequency_hz);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        snprintf(buffer, sizeof(buffer), "max_frequency_hz=%llu\n", settings.max_frequency_hz);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // User defined frequencies
+        snprintf(buffer, sizeof(buffer), "user_min_freq_hz=%llu\n", settings.user_min_freq_hz);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        snprintf(buffer, sizeof(buffer), "user_max_freq_hz=%llu\n", settings.user_max_freq_hz);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Wideband slice width
+        snprintf(buffer, sizeof(buffer), "wideband_slice_width_hz=%u\n", settings.wideband_slice_width_hz);
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        // Panoramic mode
+        snprintf(buffer, sizeof(buffer), "panoramic_mode_enabled=%s\n", settings.panoramic_mode_enabled ? "true" : "false");
+        result = file.write(buffer, strlen(buffer));
+        if (result.is_error()) { file.close(); return false; }
+
+        file.close();
+        return true;
     }
 
 }  // namespace ScannerSettingsManager

@@ -55,17 +55,6 @@ struct DroneAnalyzerSettings {
 
 };
 
-// DroneAnalyzerSettingsManager class
-class DroneAnalyzerSettingsManager {
-public:
-    static bool load_settings(ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
-    static bool save_settings(const ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
-    static void reset_to_defaults(ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);
-
-private:
-    // Unused helper functions removed
-};
-
 // Forward declarations for integrated settings
 namespace ScannerSettingsManager {
     bool save_settings_to_txt(const ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings);

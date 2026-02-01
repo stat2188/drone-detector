@@ -243,6 +243,14 @@ bool DroneAnalyzerSettingsManager::save(const DroneAnalyzerSettings& settings) {
     return EnhancedSettingsManager::save_settings_to_txt(settings);
 }
 
+bool DroneAnalyzerSettingsManager::load_settings(DroneAnalyzerSettings& settings) {
+    return load(settings);
+}
+
+bool DroneAnalyzerSettingsManager::save_settings(const DroneAnalyzerSettings& settings) {
+    return save(settings);
+}
+
 void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
     settings.spectrum_mode = SpectrumMode::MEDIUM;
     settings.scan_interval_ms = 1000;

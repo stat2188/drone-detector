@@ -64,6 +64,10 @@ public:
     static std::string serialize(const DroneAnalyzerSettings& settings);
     static bool deserialize(DroneAnalyzerSettings& settings, const std::string& data);
 
+    // Legacy compatibility methods
+    static bool load_settings(DroneAnalyzerSettings& settings);
+    static bool save_settings(const DroneAnalyzerSettings& settings);
+
     static void set_language(Language lang) { current_language_ = lang; }
     static Language get_language() { return current_language_; }
     static const char* translate(const std::string& key);
