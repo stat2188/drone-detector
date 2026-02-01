@@ -132,14 +132,15 @@ void TVView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
 }
 
 void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx) {
+    (void)offset_idx;
     if (buffer_line_count >= LINE_BUFFER_SIZE) {
         process_buffer_overflow();
         return;
     }
 
-    const int* db = spectrum.db;
+    const auto* db = spectrum.db.data();
     const int8_t* offset_row = x_offset_table[x_correction_ + 64];
-    const Color* lut = spectrum_rgb4_lut;
+    const auto* lut = spectrum_rgb4_lut.data();
 
     for (int i = 0; i < 128; i++) {
         uint8_t db_val = 255 - db[offset_row[i]];
@@ -246,7 +247,6 @@ void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
         frame_counter = 0;
         auto detection_result = signal_detector.detect_tv_signal(spectrum, receiver_model.target_frequency());
 
-        bool was_tv_signal = cached_detection.is_tv_signal;
         cached_detection = detection_result;
         has_cached_detection = true;
 
