@@ -43,11 +43,9 @@ MEMORY
     ram_external_app_wardrivemap(rwx): org = 0xADC20000, len = 32k
     #ram_external_app_tpmsrx     (rwx) : org = 0xADC30000, len = 32k
     #ram_external_app_protoview  (rwx) : org = 0xADC40000, len = 32k
-    #ram_external_app_adsbtx     (rwx) : org = 0xADC50000, len = 32k
     ram_external_app_morse_tx   (rwx) : org = 0xADC60000, len = 32k
     ram_external_app_sstvtx     (rwx) : org = 0xADC70000, len = 32k
     ram_external_app_random_password(rwx): org = 0xADC80000, len = 32k
-    #ram_external_app_acars_rx   (rwx) : org = 0xADC90000, len = 32k
     ram_external_app_shoppingcart_lock(rwx): org = 0xADCA0000, len = 32k
     #ram_external_app_cvs_spam   (rwx) : org = 0xADCB0000, len = 32k
     #ram_external_app_ookbrute   (rwx) : org = 0xADCC0000, len = 32k
@@ -71,9 +69,8 @@ MEMORY
     #ram_external_app_doom       (rwx) : org = 0xADDE0000, len = 32k
     ram_external_app_debug_pmem (rwx) : org = 0xADDF0000, len = 32k
     ram_external_app_scanner    (rwx) : org = 0xADE00000, len = 32k
-    ram_external_app_level      (rwx) : org = 0xADE10000, len = 32k
-    #ram_external_app_wefax_rx   (rwx) : org = 0xADDC0000, len = 32k
-    ram_external_app_gfxeq      (rwx) : org = 0xADE20000, len = 32k
+     ram_external_app_level      (rwx) : org = 0xADE10000, len = 32k
+     ram_external_app_gfxeq      (rwx) : org = 0xADE20000, len = 32k
     #ram_external_app_noaaapt_rx   (rwx) : org = 0xADE30000, len = 32k
     ram_external_app_detector_rx   (rwx) : org = 0xADE40000, len = 32k
     #ram_external_app_dinogame   (rwx) : org = 0xADE50000, len = 32k
@@ -209,23 +206,13 @@ SECTIONS
    #    *(*ui*external_app*tpmsrx*);
    #} > ram_external_app_tpmsrx
 
-   #.external_app_protoview : ALIGN(4) SUBALIGN(4)
-   #{
-   #    KEEP(*(.external_app.app_protoview.application_information));
-   #    *(*ui*external_app*protoview*);
-   #} > ram_external_app_protoview
-   # {
-   #    KEEP(*(.external_app.app_protoview.application_information));
-   #    *(*ui*external_app*protoview*);
-   #} > ram_external_app_protoview
-
-    #.external_app_adsbtx : ALIGN(4) SUBALIGN(4)
+    #.external_app_protoview : ALIGN(4) SUBALIGN(4)
     #{
-    #    KEEP(*(.external_app.app_adsbtx.application_information));
-    #    *(*ui*external_app*adsbtx*);
-    #} > ram_external_app_adsbtx
+    #    KEEP(*(.external_app.app_protoview.application_information));
+    #    *(*ui*external_app*protoview*);
+    #} > ram_external_app_protoview
 
-   .external_app_morse_tx : ALIGN(4) SUBALIGN(4)
+    .external_app_morse_tx : ALIGN(4) SUBALIGN(4)
     {
         KEEP(*(.external_app.app_morse_tx.application_information));
         *(*ui*external_app*morse_tx*);
@@ -249,12 +236,6 @@ SECTIONS
         *(*ui*external_app*random_password*);
     } > ram_external_app_random_password
 
-    #.external_app_acars_rx : ALIGN(4) SUBALIGN(4)
-    #{
-    #    KEEP(*(.external_app.app_acars_rx.application_information));
-    #    *(*ui*external_app*acars_rx*);
-    #} > ram_external_app_acars_rx
-
    .external_app_shoppingcart_lock : ALIGN(4) SUBALIGN(4)
     {
         KEEP(*(.external_app.app_shoppingcart_lock.application_information));
@@ -273,15 +254,11 @@ SECTIONS
    #    *(*ui*external_app*ookbrute*);
    #} > ram_external_app_ookbrute
 
-     #.external_app_ook_editor : ALIGN(4) SUBALIGN(4)
-     #{
-     #    KEEP(*(.external_app.app_ook_editor.application_information));
-     #    *(*ui*external_app*ook_editor*);
-     #} > ram_external_app_ook_editor
-   # {
-   #    KEEP(*(.external_app.app_ook_editor.application_information));
-   #    *(*ui*external_app*ook_editor*);
-   #} > ram_external_app_ook_editor
+      #.external_app_ook_editor : ALIGN(4) SUBALIGN(4)
+      #{
+      #    KEEP(*(.external_app.app_ook_editor.application_information));
+      #    *(*ui*external_app*ook_editor*);
+      #} > ram_external_app_ook_editor
 
    .external_app_flippertx : ALIGN(4) SUBALIGN(4)
     {
@@ -451,15 +428,11 @@ SECTIONS
     #    *(*ui*external_app*ert*);
     #} > ram_external_app_ert
 
-     #.external_app_epirb_rx : ALIGN(4) SUBALIGN(4)
-     #{
-     #    KEEP(*(.external_app.app_epirb_rx.application_information));
-     #    *(*ui*external_app*epirb_rx*);
-     #} > ram_external_app_epirb_rx
-   # {
-   #    KEEP(*(.external_app.app_epirb_rx.application_information));
-   #    *(*ui*external_app*epirb_rx*);
-   #} > ram_external_app_epirb_rx
+      #.external_app_epirb_rx : ALIGN(4) SUBALIGN(4)
+      #{
+      #    KEEP(*(.external_app.app_epirb_rx.application_information));
+      #    *(*ui*external_app*epirb_rx*);
+      #} > ram_external_app_epirb_rx
 
      .external_app_soundboard : ALIGN(4) SUBALIGN(4)
     {
