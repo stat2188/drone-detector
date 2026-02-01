@@ -3599,7 +3599,7 @@ bool EnhancedDroneSettingsValidator::is_ism_band(Frequency freq) {
 }
 
 std::string EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq) {
-    if (freq >= 1000000000ULL) {
+    if (static_cast<uint64_t>(freq) >= 1000000000ULL) {
         // GHz range
         uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
         uint32_t mhz = static_cast<uint32_t>((freq % 1000000000ULL) / 1000000ULL);
@@ -3725,7 +3725,7 @@ void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
 
         painter.draw_string({text_x, text_y}, *label_style, label);
 
-        if (!use_mhz && tick_interval >= 100000000ULL) {
+        if (!use_mhz && static_cast<uint64_t>(tick_interval) >= 100000000ULL) {
             for (int sub = 1; sub < 5; sub++) {
                 Frequency sub_tick = tick + (tick_interval * sub) / 5;
                 int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
@@ -3834,16 +3834,16 @@ RulerStyle CompactFrequencyRuler::determine_auto_style() {
     bool use_mhz = should_use_mhz_labels();
 
     if (use_mhz) {
-        if (range < 100000000ULL) {
+        if (static_cast<uint64_t>(range) < 100000000ULL) {
             return RulerStyle::DETAILED;
         } else {
             return RulerStyle::STANDARD_MHZ;
         }
     } else {
         // Optimal for PortaPack: Use SPACED_GHZ for wide ranges (>1GHz)
-        if (range >= 1000000000ULL) {
+        if (static_cast<uint64_t>(range) >= 1000000000ULL) {
             return RulerStyle::SPACED_GHZ;
-        } else if (range >= 500000000ULL) {
+        } else if (static_cast<uint64_t>(range) >= 500000000ULL) {
             return RulerStyle::STANDARD_GHZ;
         } else {
             return RulerStyle::COMPACT_GHZ;
@@ -3854,12 +3854,12 @@ RulerStyle CompactFrequencyRuler::determine_auto_style() {
 bool CompactFrequencyRuler::should_use_mhz_labels() const {
     Frequency range = max_freq_ - min_freq_;
 
-    if (range < 50000000ULL) {
+    if (static_cast<uint64_t>(range) < 50000000ULL) {
         return true;
     }
 
     Frequency center = (min_freq_ + max_freq_) / 2;
-    if (center < 1000000000ULL) {
+    if (static_cast<uint64_t>(center) < 1000000000ULL) {
         return true;
     }
 
@@ -3977,9 +3977,9 @@ void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
 
     // Determine measurement unit
     std::string unit;
-    if (tick_interval >= 1000000000ULL) {
+    if (static_cast<uint64_t>(tick_interval) >= 1000000000ULL) {
         unit = "G";
-    } else if (tick_interval >= 1000000ULL) {
+    } else if (static_cast<uint64_t>(tick_interval) >= 1000000ULL) {
         unit = "M";
     } else {
         unit = "Mcompact";
@@ -4033,7 +4033,7 @@ void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
         painter.draw_string({text_x, text_y}, ruler_style, label);
 
         // Add intermediate ticks if interval is large
-        if (tick_interval >= 100000000ULL) {  // >= 100 MHz
+        if (static_cast<uint64_t>(tick_interval) >= 100000000ULL) {  // >= 100 MHz
             for (int sub = 1; sub < 5; sub++) {
                 Frequency sub_tick = tick + (tick_interval * sub) / 5;
                 int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);

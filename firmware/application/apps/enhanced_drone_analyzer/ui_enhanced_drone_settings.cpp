@@ -388,7 +388,7 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const Dr
     config.rssi_threshold_db = static_cast<int32_t>(preset.threat_level) >= static_cast<int32_t>(ThreatLevel::HIGH) ? -80 : -90;
     config.enable_audio_alerts = true;
 
-    if (preset.frequency_hz >= 2400000000ULL && preset.frequency_hz <= 2500000000ULL) {
+    if (static_cast<uint64_t>(preset.frequency_hz) >= 2400000000ULL && static_cast<uint64_t>(preset.frequency_hz) <= 2500000000ULL) {
         config.enable_wideband_scanning = true;
         config.wideband_min_freq_hz = 2400000000ULL;
         config.wideband_max_freq_hz = 2500000000ULL;

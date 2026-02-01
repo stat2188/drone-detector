@@ -7,6 +7,7 @@
 #include <climits>
 #include "file.hpp"
 #include "ui_drone_common_types.hpp"
+#include "string_format.hpp"
 
 // Forward declarations
 enum class SpectrumMode;
@@ -264,110 +265,44 @@ namespace ScannerSettingsManager {
         return settings_loaded;
     }
 
+    void write_setting_line(File& file, const std::string& key, const std::string& value) {
+        file.write(key.data(), key.length());
+        file.write("=", 1);
+        file.write(value.data(), value.length());
+        file.write("\r\n", 2);
+    }
+
     bool save_settings_to_txt(const ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
-        // Simple implementation - write all settings to file
         File file;
         if (!file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt", false)) {
             return false;
         }
 
-        // Header
-        std::string header = "# Enhanced Drone Analyzer Settings\n";
+        std::string header = "# Enhanced Drone Analyzer Settings\r\n";
         auto result = file.write(header.data(), header.size());
         if (result.is_error() || result.value() != header.size()) {
             file.close();
             return false;
         }
 
-        // Write each setting
-        char buffer[256];
-
-        // Spectrum mode
-        snprintf(buffer, sizeof(buffer), "spectrum_mode=%d\n", static_cast<int>(settings.spectrum_mode));
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Scan interval
-        snprintf(buffer, sizeof(buffer), "scan_interval_ms=%u\n", settings.scan_interval_ms);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // RSSI threshold
-        snprintf(buffer, sizeof(buffer), "rssi_threshold_db=%d\n", settings.rssi_threshold_db);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Audio alerts
-        snprintf(buffer, sizeof(buffer), "enable_audio_alerts=%s\n", settings.enable_audio_alerts ? "true" : "false");
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Audio frequency
-        snprintf(buffer, sizeof(buffer), "audio_alert_frequency_hz=%u\n", settings.audio_alert_frequency_hz);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Audio duration
-        snprintf(buffer, sizeof(buffer), "audio_alert_duration_ms=%u\n", settings.audio_alert_duration_ms);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Hardware bandwidth
-        snprintf(buffer, sizeof(buffer), "hardware_bandwidth_hz=%u\n", settings.hardware_bandwidth_hz);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Real hardware
-        snprintf(buffer, sizeof(buffer), "enable_real_hardware=%s\n", settings.enable_real_hardware ? "true" : "false");
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Demo mode
-        snprintf(buffer, sizeof(buffer), "demo_mode=%s\n", settings.demo_mode ? "true" : "false");
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Wideband scanning
-        snprintf(buffer, sizeof(buffer), "enable_wideband_scanning=%s\n", settings.enable_wideband_scanning ? "true" : "false");
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Wideband frequencies
-        snprintf(buffer, sizeof(buffer), "wideband_min_freq_hz=%llu\n", settings.wideband_min_freq_hz);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        snprintf(buffer, sizeof(buffer), "wideband_max_freq_hz=%llu\n", settings.wideband_max_freq_hz);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Min/max frequencies
-        snprintf(buffer, sizeof(buffer), "min_frequency_hz=%llu\n", settings.min_frequency_hz);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        snprintf(buffer, sizeof(buffer), "max_frequency_hz=%llu\n", settings.max_frequency_hz);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // User defined frequencies
-        snprintf(buffer, sizeof(buffer), "user_min_freq_hz=%llu\n", settings.user_min_freq_hz);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        snprintf(buffer, sizeof(buffer), "user_max_freq_hz=%llu\n", settings.user_max_freq_hz);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Wideband slice width
-        snprintf(buffer, sizeof(buffer), "wideband_slice_width_hz=%u\n", settings.wideband_slice_width_hz);
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
-
-        // Panoramic mode
-        snprintf(buffer, sizeof(buffer), "panoramic_mode_enabled=%s\n", settings.panoramic_mode_enabled ? "true" : "false");
-        result = file.write(buffer, strlen(buffer));
-        if (result.is_error()) { file.close(); return false; }
+        write_setting_line(file, "spectrum_mode", std::to_string(static_cast<int>(settings.spectrum_mode)));
+        write_setting_line(file, "scan_interval_ms", to_string_dec_uint(settings.scan_interval_ms));
+        write_setting_line(file, "rssi_threshold_db", to_string_dec_int(settings.rssi_threshold_db));
+        write_setting_line(file, "enable_audio_alerts", settings.enable_audio_alerts ? "true" : "false");
+        write_setting_line(file, "audio_alert_frequency_hz", to_string_dec_uint(settings.audio_alert_frequency_hz));
+        write_setting_line(file, "audio_alert_duration_ms", to_string_dec_uint(settings.audio_alert_duration_ms));
+        write_setting_line(file, "hardware_bandwidth_hz", to_string_dec_uint(settings.hardware_bandwidth_hz));
+        write_setting_line(file, "enable_real_hardware", settings.enable_real_hardware ? "true" : "false");
+        write_setting_line(file, "demo_mode", settings.demo_mode ? "true" : "false");
+        write_setting_line(file, "enable_wideband_scanning", settings.enable_wideband_scanning ? "true" : "false");
+        write_setting_line(file, "wideband_min_freq_hz", to_string_dec_uint(settings.wideband_min_freq_hz));
+        write_setting_line(file, "wideband_max_freq_hz", to_string_dec_uint(settings.wideband_max_freq_hz));
+        write_setting_line(file, "min_frequency_hz", to_string_dec_uint(settings.min_frequency_hz));
+        write_setting_line(file, "max_frequency_hz", to_string_dec_uint(settings.max_frequency_hz));
+        write_setting_line(file, "user_min_freq_hz", to_string_dec_uint(settings.user_min_freq_hz));
+        write_setting_line(file, "user_max_freq_hz", to_string_dec_uint(settings.user_max_freq_hz));
+        write_setting_line(file, "wideband_slice_width_hz", to_string_dec_uint(settings.wideband_slice_width_hz));
+        write_setting_line(file, "panoramic_mode_enabled", settings.panoramic_mode_enabled ? "true" : "false");
 
         file.close();
         return true;
