@@ -43,9 +43,11 @@ MEMORY
     ram_external_app_wardrivemap(rwx): org = 0xADC20000, len = 32k
     #ram_external_app_tpmsrx     (rwx) : org = 0xADC30000, len = 32k
     #ram_external_app_protoview  (rwx) : org = 0xADC40000, len = 32k
+    /* ram_external_app_adsbtx     (rwx) : org = 0xADC50000, len = 32k */
     ram_external_app_morse_tx   (rwx) : org = 0xADC60000, len = 32k
     ram_external_app_sstvtx     (rwx) : org = 0xADC70000, len = 32k
     ram_external_app_random_password(rwx): org = 0xADC80000, len = 32k
+    /* ram_external_app_acars_rx   (rwx) : org = 0xADC90000, len = 32k */
     ram_external_app_shoppingcart_lock(rwx): org = 0xADCA0000, len = 32k
     #ram_external_app_cvs_spam   (rwx) : org = 0xADCB0000, len = 32k
     #ram_external_app_ookbrute   (rwx) : org = 0xADCC0000, len = 32k
