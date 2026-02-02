@@ -266,49 +266,49 @@ set(CPPSRC
 	ui/ui_tone_key.cpp
 	ui/ui_transmitter.cpp
 	ui/ui_bmpview.cpp
-	#apps/ais_app.cpp
-	#apps/analog_audio_app.cpp
-	#apps/ble_rx_app.cpp
-	#apps/ble_tx_app.cpp
+	apps/ais_app.cpp
+	apps/analog_audio_app.cpp
+	apps/ble_rx_app.cpp
+	apps/ble_tx_app.cpp
 	apps/capture_app.cpp
-	#apps/pocsag_app.cpp
+	apps/pocsag_app.cpp
 	apps/ui_about_simple.cpp
-	#apps/ui_adsb_rx.cpp
-	#apps/ui_aprs_rx.cpp
-	#apps/ui_aprs_tx.cpp
-	#apps/ui_battinfo.cpp
-	#apps/ui_bmp_file_viewer.cpp
-	#apps/ui_btle_rx.cpp
-	#apps/ui_debug.cpp
-	#apps/ui_debug_max17055.cpp
+	apps/ui_adsb_rx.cpp
+	apps/ui_aprs_rx.cpp
+	apps/ui_aprs_tx.cpp
+	apps/ui_battinfo.cpp
+	apps/ui_bmp_file_viewer.cpp
+	apps/ui_btle_rx.cpp
+	apps/ui_debug.cpp
+	apps/ui_debug_max17055.cpp
 	apps/ui_dfu_menu.cpp
-	#apps/ui_encoders.cpp
+	apps/ui_encoders.cpp
 	apps/ui_external_module_view.cpp
 	apps/ui_fileman.cpp
-	#apps/ui_flash_utility.cpp
+	apps/ui_flash_utility.cpp
 	apps/ui_freqman.cpp
-	#apps/ui_iq_trim.cpp
-	#apps/ui_looking_glass_app.cpp
-	#apps/ui_mictx.cpp
-	#apps/ui_modemsetup.cpp
-	#apps/ui_playlist.cpp
-	#apps/ui_pocsag_tx.cpp
+	apps/ui_iq_trim.cpp
+	apps/ui_looking_glass_app.cpp
+	apps/ui_mictx.cpp
+	apps/ui_modemsetup.cpp
+	apps/ui_playlist.cpp
+	apps/ui_pocsag_tx.cpp
 	apps/ui_rds.cpp
 	apps/ui_recon_settings.cpp
 	apps/ui_recon.cpp
-	#apps/ui_sd_over_usb.cpp
-	#apps/ui_search.cpp
+	apps/ui_sd_over_usb.cpp
+	apps/ui_search.cpp
 	apps/ui_settings.cpp
 	apps/ui_siggen.cpp
-	#apps/ui_sonde.cpp
-	#apps/ui_ss_viewer.cpp
-	#apps/ui_standalone_view.cpp
+	apps/ui_sonde.cpp
+	apps/ui_ss_viewer.cpp
+	apps/ui_standalone_view.cpp
 	apps/ui_subghzd.cpp
-	# apps/ui_test.cpp
-	#apps/ui_text_editor.cpp
+	apps/ui_test.cpp
+	apps/ui_text_editor.cpp
 	apps/ui_touch_calibration.cpp
-	#apps/ui_touchtunes.cpp
-	#apps/ui_weatherstation.cpp
+	apps/ui_touchtunes.cpp
+	apps/ui_weatherstation.cpp
 	apps/enhanced_drone_analyzer/enhanced_drone_analyzer_app.cpp
 	apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.cpp
 	apps/enhanced_drone_analyzer/ui_enhanced_drone_settings.cpp
