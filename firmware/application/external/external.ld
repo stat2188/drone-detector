@@ -25,40 +25,40 @@ MEMORY
      * External app address ranges below must match those in python file "external_app_info.py".
      */
     ram_external_app_afsk_rx (rwx) : org = 0xadb10000, len = 32k
-    ram_external_app_calculator (rwx) : org = 0xadb18000, len = 32k
-    ram_external_app_font_viewer (rwx) : org = 0xadb20000, len = 32k
-    ram_external_app_nrf_rx (rwx) : org = 0xadb28000, len = 32k
-    ram_external_app_coasterp (rwx) : org = 0xadb30000, len = 32k
-    ram_external_app_lge (rwx) : org = 0xadb38000, len = 32k
-    ram_external_app_jammer (rwx) : org = 0xadb40000, len = 32k
-    ram_external_app_gpssim (rwx) : org = 0xadb48000, len = 32k
-    ram_external_app_spainter (rwx) : org = 0xadb50000, len = 32k
-    ram_external_app_extsensors (rwx) : org = 0xadb58000, len = 32k
-    ram_external_app_audio_test (rwx) : org = 0xadb60000, len = 32k
-    ram_external_app_wardrivemap (rwx) : org = 0xadb68000, len = 32k
-    ram_external_app_morse_tx (rwx) : org = 0xadb70000, len = 32k
-    ram_external_app_random_password (rwx) : org = 0xadb78000, len = 32k
-    ram_external_app_shoppingcart_lock (rwx) : org = 0xadb80000, len = 32k
-    ram_external_app_flippertx (rwx) : org = 0xadb88000, len = 32k
-    ram_external_app_mcu_temperature (rwx) : org = 0xadb90000, len = 32k
-    ram_external_app_fmradio (rwx) : org = 0xadb98000, len = 32k
-    ram_external_app_tuner (rwx) : org = 0xadba0000, len = 32k
-    ram_external_app_metronome (rwx) : org = 0xadba8000, len = 32k
-    ram_external_app_app_manager (rwx) : org = 0xadbb0000, len = 32k
-    ram_external_app_hopper (rwx) : org = 0xadbb8000, len = 32k
-    ram_external_app_antenna_length (rwx) : org = 0xadbc0000, len = 32k
-    ram_external_app_view_wav (rwx) : org = 0xadbc8000, len = 32k
-    ram_external_app_sd_wipe (rwx) : org = 0xadbd0000, len = 32k
-    ram_external_app_playlist_editor (rwx) : org = 0xadbd8000, len = 32k
-    ram_external_app_debug_pmem (rwx) : org = 0xadbe0000, len = 32k
-    ram_external_app_scanner (rwx) : org = 0xadbe8000, len = 32k
-    ram_external_app_level (rwx) : org = 0xadbf0000, len = 32k
-    ram_external_app_gfxeq (rwx) : org = 0xadbf8000, len = 32k
-    ram_external_app_detector_rx (rwx) : org = 0xadc00000, len = 32k
-    ram_external_app_soundboard (rwx) : org = 0xadc08000, len = 32k
-    ram_external_app_morse_practice (rwx) : org = 0xadc10000, len = 32k
-    ram_external_app_flex_rx (rwx) : org = 0xadc18000, len = 32k
-    ram_external_app_subcarrx (rwx) : org = 0xadc20000, len = 32k
+    ram_external_app_calculator (rwx) : org = 0xadb20000, len = 32k
+    ram_external_app_font_viewer (rwx) : org = 0xadb30000, len = 32k
+    ram_external_app_nrf_rx (rwx) : org = 0xadb40000, len = 32k
+    ram_external_app_coasterp (rwx) : org = 0xadb50000, len = 32k
+    ram_external_app_lge (rwx) : org = 0xadb60000, len = 32k
+    ram_external_app_jammer (rwx) : org = 0xadb70000, len = 32k
+    ram_external_app_gpssim (rwx) : org = 0xadb80000, len = 32k
+    ram_external_app_spainter (rwx) : org = 0xadb90000, len = 32k
+    ram_external_app_extsensors (rwx) : org = 0xadba0000, len = 32k
+    ram_external_app_audio_test (rwx) : org = 0xadbb0000, len = 32k
+    ram_external_app_wardrivemap (rwx) : org = 0xadbc0000, len = 32k
+    ram_external_app_morse_tx (rwx) : org = 0xadbd0000, len = 32k
+    ram_external_app_random_password (rwx) : org = 0xadbe0000, len = 32k
+    ram_external_app_shoppingcart_lock (rwx) : org = 0xadbf0000, len = 32k
+    ram_external_app_flippertx (rwx) : org = 0xadc00000, len = 32k
+    ram_external_app_mcu_temperature (rwx) : org = 0xadc10000, len = 32k
+    ram_external_app_fmradio (rwx) : org = 0xadc20000, len = 32k
+    ram_external_app_tuner (rwx) : org = 0xadc30000, len = 32k
+    ram_external_app_metronome (rwx) : org = 0xadc40000, len = 32k
+    ram_external_app_app_manager (rwx) : org = 0xadc50000, len = 32k
+    ram_external_app_hopper (rwx) : org = 0xadc60000, len = 32k
+    ram_external_app_antenna_length (rwx) : org = 0xadc70000, len = 32k
+    ram_external_app_view_wav (rwx) : org = 0xadc80000, len = 32k
+    ram_external_app_sd_wipe (rwx) : org = 0xadc90000, len = 32k
+    ram_external_app_playlist_editor (rwx) : org = 0xadca0000, len = 32k
+    ram_external_app_debug_pmem (rwx) : org = 0xadcb0000, len = 32k
+    ram_external_app_scanner (rwx) : org = 0xadcc0000, len = 32k
+    ram_external_app_level (rwx) : org = 0xadcd0000, len = 32k
+    ram_external_app_gfxeq (rwx) : org = 0xadce0000, len = 32k
+    ram_external_app_detector_rx (rwx) : org = 0xadcf0000, len = 32k
+    ram_external_app_soundboard (rwx) : org = 0xadd00000, len = 32k
+    ram_external_app_morse_practice (rwx) : org = 0xadd10000, len = 32k
+    ram_external_app_flex_rx (rwx) : org = 0xadd20000, len = 32k
+    ram_external_app_subcarrx (rwx) : org = 0xadd30000, len = 32k
 }
 
 SECTIONS
