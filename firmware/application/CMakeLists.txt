@@ -268,8 +268,8 @@ set(CPPSRC
 	ui/ui_bmpview.cpp
 	apps/ais_app.cpp
 	apps/analog_audio_app.cpp
-	apps/ble_rx_app.cpp
-	apps/ble_tx_app.cpp
+	#apps/ble_rx_app.cpp
+	#apps/ble_tx_app.cpp
 	apps/capture_app.cpp
 	apps/pocsag_app.cpp
 	apps/ui_about_simple.cpp
@@ -308,7 +308,7 @@ set(CPPSRC
 	apps/ui_text_editor.cpp
 	apps/ui_touch_calibration.cpp
 	apps/ui_touchtunes.cpp
-	apps/ui_weatherstation.cpp
+	#apps/ui_weatherstation.cpp
 	apps/enhanced_drone_analyzer/enhanced_drone_analyzer_app.cpp
 	apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.cpp
 	apps/enhanced_drone_analyzer/ui_enhanced_drone_settings.cpp
