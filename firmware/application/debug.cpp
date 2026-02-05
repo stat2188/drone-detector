@@ -35,7 +35,7 @@
 
 using namespace ui;
 
-#define DEBUG_LOG_FILE "debug_log.txt"
+#define DEBUG_LOG_FILE std::filesystem::path{u"debug_log.txt"}
 LogFile* pg_debug_log = nullptr;
 void __debug_log(const std::string& msg) {
     static LogFile s_log;
@@ -273,7 +273,7 @@ bool memory_dump(uint32_t* addr_start, uint32_t num_words, bool stack_flag) {
     bool data_found{false};
 
     ensure_directory(debug_dir);
-    filename = next_filename_matching_pattern(debug_dir + (stack_flag ? u"/STACK" : u"/MEMORY") + u"_DUMP_????.TXT");
+    filename = next_filename_matching_pattern(debug_dir + std::filesystem::path{stack_flag ? u"/STACK" : u"/MEMORY"} + std::filesystem::path{u"_DUMP_????.TXT"});
     error = filename.empty();
     if (!error)
         error = dump_file.create(filename) != 0;
