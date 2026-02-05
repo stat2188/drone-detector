@@ -1,0 +1,37 @@
+// Suppressions for cppcheck
+// Format: error_id:file:line
+
+// Ignore CMake-generated files
+*:CMakeFiles/*
+
+// Ignore third-party libraries
+*:ff.h
+*:ch.h
+
+// Ignore template metaprogramming (false positives)
+noExplicitConstructor:firmware/application/file.hpp
+toomanyconfigs:CMakeCCompilerId.c
+toomanyconfigs:CMakeCXXCompilerId.cpp
+
+// Known conditions - these are intentional (hardware tuning with error checking)
+knownConditionTrueFalse:firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.cpp:638
+knownConditionTrueFalse:firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.cpp:683
+
+// Local classes are intentionally defined inline
+noConstructor:firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_settings.cpp:419
+noConstructor:firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_settings.cpp:457
+
+// Hash-based lookup is intentionally linear probing (optimized for embedded)
+useStlAlgorithm:firmware/application/apps/enhanced_drone_analyzer/ui_signal_processing.cpp:56
+useStlAlgorithm:firmware/application/apps/enhanced_drone_analyzer/ui_signal_processing.cpp:83
+useStlAlgorithm:firmware/application/apps/enhanced_drone_analyzer/ui_signal_processing.cpp:102
+
+// Value-initialization is correct for DisplayDroneEntry
+useInitializationList:firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.cpp:2337
+
+// backup_path is used for file operations
+unreadVariable:firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_settings.cpp:132
+unreadVariable:firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_settings.cpp:157
+
+// Normal branch limit - exhaustive check is too slow
+normalCheckLevelMaxBranches:*

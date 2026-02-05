@@ -2322,7 +2322,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
       compact_frequency_ruler_({0, 68, screen_width, 12}),
       frequency_ruler_({0, 68, screen_width, 12}),
       detected_drones_(),
-      displayed_drones_(),
+      displayed_drones_{},
       spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
       waterfall_buffer_(),
       spectrum_gradient_(), spectrum_fifo_(nullptr),
@@ -2333,8 +2333,6 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     // TODO[FIXED]: Reserve memory in advance.
     // MAX_TRACKED_DRONES is usually around 8-10, +2 as reserve.
     detected_drones_count_ = 0;
-
-    std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{});
 
     if (!spectrum_gradient_.load_file(default_gradient_file)) {
         spectrum_gradient_.set_default();
