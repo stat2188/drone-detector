@@ -42,12 +42,12 @@ namespace filesystem {
 struct filesystem_error {
     constexpr filesystem_error() = default;
 
-    explicit constexpr filesystem_error(
+    constexpr filesystem_error(
         FRESULT fatfs_error)
         : err{fatfs_error} {
     }
 
-    explicit constexpr filesystem_error(
+    constexpr filesystem_error(
         unsigned int other_error)
         : err{other_error} {
     }
@@ -85,17 +85,17 @@ struct path {
     }
 
     template <class Source>
-    explicit path(const Source& source)
+    path(const Source& source)
         : path{std::begin(source), std::end(source)} {
     }
 
     template <class InputIt>
-    explicit path(InputIt first,
+    path(InputIt first,
          InputIt last)
         : _s{first, last} {
     }
 
-    explicit path(const char16_t* const s)
+    path(const char16_t* const s)
         : _s{s} {
     }
 

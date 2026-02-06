@@ -210,7 +210,7 @@ static void parse_settings_line_inplace(char* line, DroneAnalyzerSettings& setti
 
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     File settings_file;
-    auto error = settings_file.open(std::filesystem::path{"/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"});
+    auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
     if (error) return false;
 
     char read_buffer[256];       // Increased buffer size for safety
@@ -1620,7 +1620,7 @@ bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
 bool DroneDetectionLogger::ensure_csv_header() {
     if (header_written_) return true;
     const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence_percent,width_bins,signal_width_hz,snr\n";
-    auto error = csv_log_.append(std::filesystem::path{generate_log_filename()});
+    auto error = csv_log_.append(generate_log_filename());
     if (error && !error->ok()) return false;
     error = csv_log_.write_raw(header);
     if (error && error->ok()) {
@@ -2322,7 +2322,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
       compact_frequency_ruler_({0, 68, screen_width, 12}),
       frequency_ruler_({0, 68, screen_width, 12}),
       detected_drones_(),
-      displayed_drones_{},
+      displayed_drones_(),
       spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
       waterfall_buffer_(),
       spectrum_gradient_(), spectrum_fifo_(nullptr),
@@ -2333,6 +2333,8 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     // TODO[FIXED]: Reserve memory in advance.
     // MAX_TRACKED_DRONES is usually around 8-10, +2 as reserve.
     detected_drones_count_ = 0;
+
+    std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{});
 
     if (!spectrum_gradient_.load_file(default_gradient_file)) {
         spectrum_gradient_.set_default();
@@ -2888,7 +2890,7 @@ void DroneUIController::show_hardware_status() {
 
 void DroneUIController::on_view_logs() {
     auto open_view = nav_.push<FileLoadView>(".CSV");
-    open_view->push_dir(std::filesystem::path{"/LOGS/EDA"});
+    open_view->push_dir("/LOGS/EDA");
 }
 
 void DroneUIController::on_about() {
