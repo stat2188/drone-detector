@@ -503,6 +503,14 @@ private:
 
     void update_tracking_counts();
 
+    // Helper for heap-allocated tracked_drones_ access
+    std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>& tracked_drones() {
+        return *tracked_drones_ptr_;
+    }
+    const std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>& tracked_drones() const {
+        return *tracked_drones_ptr_;
+    }
+
     // Intelligent scanning methods
     size_t get_next_slice_with_intelligence();
     void update_frequency_predictions(Frequency detected_freq, ThreatLevel threat_level);
@@ -523,7 +531,7 @@ private:
     ScanningMode scanning_mode_ = ScanningMode::DATABASE;
     std::atomic<bool> is_real_mode_{true};
 
-    TrackedDrone tracked_drones_[DroneConstants::MAX_TRACKED_DRONES];
+    std::unique_ptr<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>> tracked_drones_ptr_;
     size_t tracked_count_ = 0;
 
     size_t approaching_count_ = 0;
@@ -851,6 +859,12 @@ public:
     Text& text_drone_2() { return text_drone_2_; }
     Text& text_drone_3() { return text_drone_3_; }
 
+    static constexpr size_t MAX_UI_DRONES = 16;
+
+    std::array<DisplayDroneEntry, MAX_UI_DRONES>& detected_drones() {
+        return *detected_drones_ptr_;
+    }
+
     void update_detection_display(const DroneScanner& scanner);
     void update_trends_display(size_t approaching, size_t static_count, size_t receding);
     void set_scanning_status(bool active, const std::string& message);
@@ -905,8 +919,7 @@ private:
     CompactFrequencyRuler compact_frequency_ruler_{{0, 68, screen_width, 12}};
     FrequencyRuler frequency_ruler_{{0, 68, screen_width, 12}};
 
-    static constexpr size_t MAX_UI_DRONES = 16;
-    std::array<DisplayDroneEntry, MAX_UI_DRONES> detected_drones_;
+    std::unique_ptr<std::array<DisplayDroneEntry, MAX_UI_DRONES>> detected_drones_ptr_;
     size_t detected_drones_count_ = 0;
     std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
 

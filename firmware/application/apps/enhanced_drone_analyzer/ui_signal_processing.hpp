@@ -59,11 +59,19 @@ public:
     int32_t get_rssi_value(size_t frequency_hash) const;
     void clear();
 
+    // Helper for heap-allocated entries_ access
+    std::array<DetectionEntry, MAX_ENTRIES>& entries() {
+        return *entries_ptr_;
+    }
+    const std::array<DetectionEntry, MAX_ENTRIES>& entries() const {
+        return *entries_ptr_;
+    }
+
     DetectionRingBuffer(const DetectionRingBuffer&) = delete;
     DetectionRingBuffer& operator=(const DetectionRingBuffer&) = delete;
 
 private:
-    std::array<DetectionEntry, MAX_ENTRIES> entries_{};
+    std::unique_ptr<std::array<DetectionEntry, MAX_ENTRIES>> entries_ptr_;
     size_t head_ = 0;
 };
 

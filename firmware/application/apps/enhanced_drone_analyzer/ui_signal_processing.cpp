@@ -44,7 +44,9 @@ public:
 };
 
 // DetectionRingBuffer implementations
-DetectionRingBuffer::DetectionRingBuffer() : entries_{}, head_(0) {
+DetectionRingBuffer::DetectionRingBuffer()
+    : entries_ptr_(std::make_unique<std::array<DetectionEntry, MAX_ENTRIES>>()),
+      head_(0) {
     clear();
 }
 
@@ -57,22 +59,22 @@ void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detect
         size_t idx = (start_idx + probe) % MAX_ENTRIES;
 
         // Found existing entry
-        if (entries_[idx].frequency_hash == frequency_hash) {
-            entries_[idx].rssi_value = rssi_value;
-            entries_[idx].detection_count = detection_count;
-            entries_[idx].last_update = current_time;
+        if (entries()[idx].frequency_hash == frequency_hash) {
+            entries()[idx].rssi_value = rssi_value;
+            entries()[idx].detection_count = detection_count;
+            entries()[idx].last_update = current_time;
             return;
         }
 
         // Found empty slot
-        if (entries_[idx].frequency_hash == 0) {
-            entries_[idx] = {frequency_hash, detection_count, rssi_value, current_time};
+        if (entries()[idx].frequency_hash == 0) {
+            entries()[idx] = {frequency_hash, detection_count, rssi_value, current_time};
             return;
         }
     }
 
     // Table full - replace oldest entry (circular buffer behavior)
-    entries_[head_] = {frequency_hash, detection_count, rssi_value, current_time};
+    entries()[head_] = {frequency_hash, detection_count, rssi_value, current_time};
     head_ = (head_ + 1) % MAX_ENTRIES;
 }
 
@@ -83,12 +85,12 @@ uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const {
     for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
         size_t idx = (start_idx + probe) % MAX_ENTRIES;
 
-        if (entries_[idx].frequency_hash == frequency_hash) {
-            return entries_[idx].detection_count;
+        if (entries()[idx].frequency_hash == frequency_hash) {
+            return entries()[idx].detection_count;
         }
 
         // Empty slot - entry not found
-        if (entries_[idx].frequency_hash == 0) {
+        if (entries()[idx].frequency_hash == 0) {
             return 0;
         }
     }
@@ -102,12 +104,12 @@ int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const {
     for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
         size_t idx = (start_idx + probe) % MAX_ENTRIES;
 
-        if (entries_[idx].frequency_hash == frequency_hash) {
-            return entries_[idx].rssi_value;
+        if (entries()[idx].frequency_hash == frequency_hash) {
+            return entries()[idx].rssi_value;
         }
 
         // Empty slot - entry not found
-        if (entries_[idx].frequency_hash == 0) {
+        if (entries()[idx].frequency_hash == 0) {
             return -120;
         }
     }
@@ -115,7 +117,7 @@ int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const {
 }
 
 void DetectionRingBuffer::clear() {
-    for (auto& entry : entries_) {
+    for (auto& entry : entries()) {
         entry = DetectionEntry{0, 0, -120, 0};
     }
     head_ = 0;

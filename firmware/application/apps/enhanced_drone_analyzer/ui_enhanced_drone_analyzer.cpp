@@ -344,25 +344,25 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
       freq_db_loaded_(false),
       scan_cycles_(0),
       total_detections_(0),
-      scanning_mode_(ScanningMode::DATABASE),
-      is_real_mode_(true),
-      tracked_drones_(),
-      tracked_count_(0),
-      approaching_count_(0),
-      receding_count_(0),
-      static_count_(0),
-      max_detected_threat_(ThreatLevel::NONE),
-      last_valid_rssi_(-120),
-      wideband_scan_data_(),
-      freq_db_(),
-      detection_logger_(),
-      detection_ring_buffer_(),
-      priority_slice_index_(-1),
-      priority_scan_counter_(0),
-      frequency_predictions_(),
-      predictions_mutex_(),
-      prediction_count_(0),
-      settings_(settings)
+       scanning_mode_(ScanningMode::DATABASE),
+       is_real_mode_(true),
+       tracked_drones_ptr_(std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>()),
+       tracked_count_(0),
+       approaching_count_(0),
+       receding_count_(0),
+       static_count_(0),
+       max_detected_threat_(ThreatLevel::NONE),
+       last_valid_rssi_(-120),
+       wideband_scan_data_(),
+       freq_db_(),
+       detection_logger_(),
+       detection_ring_buffer_(),
+       priority_slice_index_(-1),
+       priority_scan_counter_(0),
+       frequency_predictions_(),
+       predictions_mutex_(),
+       prediction_count_(0),
+       settings_(settings)
 {
     // Initialize mutex properly to fix race condition
     chMtxInit(&data_mutex);
@@ -1239,10 +1239,10 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
     //       from within a critical section. Use update_tracked_drone() for external calls.
     // @invariant Assumes exclusive access to tracked_drones_ array.
     for (size_t i = 0; i < tracked_count_; ++i) {
-        if (tracked_drones_[i].frequency == static_cast<uint32_t>(frequency) && tracked_drones_[i].update_count > 0) {
-            tracked_drones_[i].add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
-            tracked_drones_[i].drone_type = static_cast<uint8_t>(type);
-            tracked_drones_[i].threat_level = static_cast<uint8_t>(threat_level);
+        if (tracked_drones()[i].frequency == static_cast<uint32_t>(frequency) && tracked_drones()[i].update_count > 0) {
+            tracked_drones()[i].add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
+            tracked_drones()[i].drone_type = static_cast<uint8_t>(type);
+            tracked_drones()[i].threat_level = static_cast<uint8_t>(threat_level);
             update_tracking_counts();
             return;
         }
@@ -1255,7 +1255,7 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
         new_drone.drone_type = static_cast<uint8_t>(type);
         new_drone.threat_level = static_cast<uint8_t>(threat_level);
         new_drone.add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
-        tracked_drones_[tracked_count_] = new_drone;
+        tracked_drones()[tracked_count_] = new_drone;
         tracked_count_++;
         update_tracking_counts();
         return;
@@ -1263,17 +1263,17 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
 
     // Ring buffer overflow: find oldest entry and replace it
     size_t oldest_index = 0;
-    systime_t oldest_time = tracked_drones_[0].last_seen;
+    systime_t oldest_time = tracked_drones()[0].last_seen;
 
     for (size_t i = 1; i < tracked_count_; i++) {
-        if (tracked_drones_[i].last_seen < oldest_time) {
-            oldest_time = tracked_drones_[i].last_seen;
+        if (tracked_drones()[i].last_seen < oldest_time) {
+            oldest_time = tracked_drones()[i].last_seen;
             oldest_index = i;
         }
     }
 
     // Replace oldest entry instead of shifting array
-    TrackedDrone& oldest_drone = tracked_drones_[oldest_index];
+    TrackedDrone& oldest_drone = tracked_drones()[oldest_index];
     oldest_drone = TrackedDrone();
     oldest_drone.frequency = static_cast<uint32_t>(frequency);
     oldest_drone.drone_type = static_cast<uint8_t>(type);
@@ -1294,8 +1294,8 @@ void DroneScanner::remove_stale_drones() {
     {
         MutexLock lock(data_mutex);
         for (size_t i = 0; i < tracked_count_; ++i) {
-            if (tracked_drones_[i].update_count > 0 &&
-                (current_time - tracked_drones_[i].last_seen) > STALE_TIMEOUT) {
+            if (tracked_drones()[i].update_count > 0 &&
+                (current_time - tracked_drones()[i].last_seen) > STALE_TIMEOUT) {
                 stale_indices[stale_count++] = i;
             }
         }
@@ -1303,7 +1303,6 @@ void DroneScanner::remove_stale_drones() {
 
     // Step 2: If no stale drones, exit early
     if (stale_count == 0) return;
-
     // Step 3: Compact array without mutex (O(n) but fast)
     MutexLock lock(data_mutex);
     size_t write_index = 0;
@@ -1321,7 +1320,7 @@ void DroneScanner::remove_stale_drones() {
     for (size_t read_index = 0; read_index < tracked_count_; ++read_index) {
         if (!is_stale[read_index]) {
             if (write_index != read_index) {
-                tracked_drones_[write_index] = tracked_drones_[read_index];
+                tracked_drones()[write_index] = tracked_drones()[read_index];
             }
             write_index++;
             num_valid++;
@@ -1345,9 +1344,9 @@ void DroneScanner::update_tracking_counts() {
     static_count_ = 0;
 
     for (size_t i = 0; i < tracked_count_; ++i) {
-        if (tracked_drones_[i].update_count < 2) continue;
+        if (tracked_drones()[i].update_count < 2) continue;
 
-        MovementTrend trend = tracked_drones_[i].get_trend();
+        MovementTrend trend = tracked_drones()[i].get_trend();
         switch (trend) {
             case MovementTrend::APPROACHING: approaching_count_++; break;
             case MovementTrend::RECEDING: receding_count_++; break;
@@ -1430,7 +1429,7 @@ const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
     // 🔴 FIX: Race condition protection - lock before accessing tracked_drones_
     MutexLock lock(data_mutex);
     if (index < tracked_count_) {
-        return tracked_drones_[index];
+        return tracked_drones()[index];
     }
     return get_empty_drone();
 }
@@ -1447,7 +1446,7 @@ DroneScanner::DroneSnapshot DroneScanner::get_tracked_drones_snapshot() const {
     MutexLock lock(data_mutex);
     snapshot.count = tracked_count_;
     for (size_t i = 0; i < tracked_count_ && i < MAX_TRACKED_DRONES; ++i) {
-        snapshot.drones[i] = tracked_drones_[i];
+        snapshot.drones[i] = tracked_drones()[i];
     }
     return snapshot;
 }
@@ -1456,7 +1455,7 @@ bool DroneScanner::try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) 
     if (chMtxTryLock(&data_mutex)) {
         out_snapshot.count = tracked_count_;
         for (size_t i = 0; i < tracked_count_ && i < MAX_TRACKED_DRONES; ++i) {
-            out_snapshot.drones[i] = tracked_drones_[i];
+            out_snapshot.drones[i] = tracked_drones()[i];
         }
         chMtxUnlock();
         return true;
@@ -2346,15 +2345,15 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
       text_drone_2_({screen_width - 120, 162, 120, 16}, ""),
       text_drone_3_({screen_width - 120, 178, 120, 16}, ""),
        compact_frequency_ruler_({0, 68, screen_width, 12}),
-      frequency_ruler_({0, 68, screen_width, 12}),
-      detected_drones_(),
-      displayed_drones_(),
-      spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
-      waterfall_buffer_ptr_(std::make_unique<std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>>()),
-      spectrum_gradient_(), spectrum_fifo_(nullptr),
-      pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
-      marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
-      spectrum_config_()
+       frequency_ruler_({0, 68, screen_width, 12}),
+       detected_drones_ptr_(std::make_unique<std::array<DisplayDroneEntry, MAX_UI_DRONES>>()),
+       displayed_drones_(),
+       spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
+       waterfall_buffer_ptr_(std::make_unique<std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>>()),
+       spectrum_gradient_(), spectrum_fifo_(nullptr),
+       pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
+       marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
+       spectrum_config_()
 {
     // TODO[FIXED]: Reserve memory in advance.
     // MAX_TRACKED_DRONES is usually around 8-10, +2 as reserve.
@@ -2492,25 +2491,25 @@ void DroneDisplayController::set_scanning_status(bool active, const std::string&
 
 void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi) {
     systime_t now = chTimeNow();
-    
+
     // Find existing drone by frequency
     for (size_t i = 0; i < detected_drones_count_; ++i) {
-        if (detected_drones_[i].frequency == freq) {
-            detected_drones_[i].rssi = rssi;
-            detected_drones_[i].threat = threat;
-            detected_drones_[i].type = type;
-            detected_drones_[i].last_seen = now;
-            detected_drones_[i].type_name = get_drone_type_name(type);
-            detected_drones_[i].display_color = get_drone_type_color(type);
+        if (detected_drones()[i].frequency == freq) {
+            detected_drones()[i].rssi = rssi;
+            detected_drones()[i].threat = threat;
+            detected_drones()[i].type = type;
+            detected_drones()[i].last_seen = now;
+            detected_drones()[i].type_name = get_drone_type_name(type);
+            detected_drones()[i].display_color = get_drone_type_color(type);
             sort_drones_by_rssi();
             render_drone_text_display();
             return;
         }
     }
-    
+
     // Add new drone if space available
     if (detected_drones_count_ < MAX_UI_DRONES) {
-        auto& entry = detected_drones_[detected_drones_count_];
+        auto& entry = detected_drones()[detected_drones_count_];
         entry.frequency = freq;
         entry.rssi = rssi;
         entry.threat = threat;
@@ -2526,7 +2525,7 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
 }
 
 void DroneDisplayController::sort_drones_by_rssi() {
-    std::sort(detected_drones_.begin(), detected_drones_.end(),
+    std::sort(detected_drones().begin(), detected_drones().end(),
               [](const DisplayDroneEntry& a, const DisplayDroneEntry& b) {
                   if (a.rssi != b.rssi) return a.rssi > b.rssi;
                   if (a.threat != b.threat) return static_cast<int>(a.threat) > static_cast<int>(b.threat);
@@ -2556,7 +2555,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
         if ((now - drone_data.last_seen) > STALE_TIMEOUT) continue;
 
         if (detected_drones_count_ < MAX_UI_DRONES) {
-            auto& entry = detected_drones_[detected_drones_count_];
+            auto& entry = detected_drones()[detected_drones_count_];
             entry.frequency = drone_data.frequency;
             entry.type = static_cast<DroneType>(drone_data.drone_type);
             entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
@@ -2578,7 +2577,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     }
     size_t count = std::min(detected_drones_count_, MAX_DISPLAYED_DRONES);
     for (size_t i = 0; i < count; ++i) {
-        displayed_drones_[i] = detected_drones_[i];
+        displayed_drones_[i] = detected_drones()[i];
     }
     highlight_threat_zones_in_spectrum(displayed_drones_);
     render_drone_text_display();
