@@ -178,8 +178,8 @@ static constexpr size_t MAX_TRACKED_DRONES = 8;
 static constexpr size_t MAX_DISPLAYED_DRONES = 3;
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
-static constexpr int SPEC_HEIGHT = 32;
-static constexpr int SPEC_WIDTH = 240;
+    static constexpr int SPEC_HEIGHT = 16;
+    static constexpr int SPEC_WIDTH = 240;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
 static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 22'000'000; // Optimized for 2.4GHz band coverage
@@ -663,12 +663,6 @@ private:
         }
     };
     
-    MessageHandlerRegistration message_handler_frame_sync_ {
-        Message::ID::DisplayFrameSync,
-        [this](Message* const) {
-        }
-    };
-    
     MessageHandlerRegistration message_handler_channel_statistics_ {
         Message::ID::ChannelStatistics,
         [this](Message* const p) {
@@ -939,20 +933,6 @@ private:
     int mode = 0;
 
     SpectrumConfig spectrum_config_;
-
-    MessageHandlerRegistration message_handler_spectrum_config_ {
-        Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
-        }
-    };
-    
-    MessageHandlerRegistration message_handler_frame_sync_ {
-        Message::ID::DisplayFrameSync,
-        [this](Message* const) {
-        }
-    };
 
     const char* get_drone_type_name(DroneType type) const;
     Color get_drone_type_color(DroneType type) const;
