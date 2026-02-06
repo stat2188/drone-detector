@@ -46,6 +46,8 @@ using namespace tonekey;
 
 namespace ui::apps::enhanced_drone_analyzer {
 
+using namespace DroneConstants;
+
 const TrackedDrone& get_empty_drone() {
     static const TrackedDrone empty{};
     return empty;
@@ -337,7 +339,6 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
     : scanning_thread_(nullptr),
       data_mutex(),
       scanning_active_(false),
-      freq_db_(),
       current_db_index_(0),
       last_scanned_frequency_(0),
       freq_db_loaded_(false),
@@ -353,12 +354,10 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
       max_detected_threat_(ThreatLevel::NONE),
       last_valid_rssi_(-120),
       wideband_scan_data_(),
-      drone_database_(),
-      db_entry_count_(0),
+      freq_db_(),
       detection_logger_(),
       detection_ring_buffer_(),
       priority_slice_index_(-1),
-      priority_slice_mutex_(),
       priority_scan_counter_(0),
       frequency_predictions_(),
       predictions_mutex_(),
@@ -464,40 +463,30 @@ bool DroneScanner::load_frequency_database() {
     options.load_hamradios = true;
     options.load_repeaters = true;
 
-    freqman_db temp_db;
-    bool sd_loaded = load_freqman_file("DRONES", temp_db, options);
+    // Use file-based FreqmanDB instead of stack-allocated array (saves ~3KB stack)
+    auto db_path = get_freqman_path("DRONES");
+    bool sd_loaded = freq_db_.open(db_path);
 
     {
         MutexLock lock(data_mutex);
 
-    // NOLINTNEXTLINE(bugprone-branch-clone)
-    if (!sd_loaded || temp_db.empty()) {
-        // Use built-in database that was already loaded during initialization
-        // No need to reload - database is already valid
-    } else {
-        // Use data from SD card
-        db_entry_count_ = 0;
-        for (auto& entry_ptr : temp_db) {
-            if (entry_ptr && db_entry_count_ < MAX_DB_ENTRIES) {
-                drone_database_[db_entry_count_] = *entry_ptr;
-                db_entry_count_++;
-            }
+        if (!sd_loaded || freq_db_.empty()) {
+            // Try to create the file if it doesn't exist
+            freq_db_.open(db_path, true);
+            sd_loaded = !freq_db_.empty();
         }
     }
-    }
 
-    temp_db.clear();
-
-    if (drone_database_.size() > 100) {
+    if (freq_db_.entry_count() > 100) {
         handle_scan_error("Large database loaded");
     }
 
     freq_db_loaded_ = true;
-    return drone_database_.size() > 0;
+    return !freq_db_.empty();
 }
 
 size_t DroneScanner::get_database_size() const {
-    return db_entry_count_;
+    return freq_db_.entry_count();
 }
 
 void DroneScanner::set_scanning_mode(ScanningMode mode) {
@@ -595,13 +584,13 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     {
         MutexLock lock(data_mutex);
-        if (drone_database_.empty()) {
+        if (freq_db_.empty()) {
             if (scan_cycles_ % 50 == 0) {
                 handle_scan_error("Database is empty");
             }
             return;
         }
-        total_entries = drone_database_.size();
+        total_entries = freq_db_.entry_count();
     }
 
     const size_t batch_size = std::min(static_cast<size_t>(10), total_entries);
@@ -612,14 +601,15 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     {
         MutexLock lock(data_mutex);
-        if (db_entry_count_ > 0) {
+        size_t db_entry_count = freq_db_.entry_count();
+        if (db_entry_count > 0) {
             for (size_t i = 0; i < batch_size; ++i) {
-                size_t idx = (current_db_index_ + i) % db_entry_count_;
-                if (idx < db_entry_count_ && entries_count < entries_to_scan.size()) {
-                    entries_to_scan[entries_count++] = drone_database_[idx];
+                size_t idx = (current_db_index_ + i) % db_entry_count;
+                if (idx < db_entry_count && entries_count < entries_to_scan.size()) {
+                    entries_to_scan[entries_count++] = freq_db_[idx];
                 }
             }
-            current_db_index_ = (current_db_index_ + batch_size) % db_entry_count_;
+            current_db_index_ = (current_db_index_ + batch_size) % db_entry_count;
         }
     }
 
@@ -1127,8 +1117,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     // Simple database search (with mutex protection to prevent race with load_frequency_database)
     {
         MutexLock lock(data_mutex);
-        for (size_t i = 0; i < db_entry_count_; ++i) {
-            if (drone_database_[i].frequency_a == entry.frequency_a) {
+        for (size_t i = 0; i < freq_db_.entry_count(); ++i) {
+            if (freq_db_[i].frequency_a == entry.frequency_a) {
                 detected_type = DroneType::MAVIC;
                 threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
                 break;
@@ -1386,21 +1376,27 @@ void DroneScanner::initialize_database_and_scanner() {
     {
         MutexLock lock(data_mutex);
 
-        db_entry_count_ = 0;
+        // Try to open DRONES database first
+        auto db_path = get_freqman_path("DRONES");
+        bool db_opened = freq_db_.open(db_path);
 
-        // Load built-in database as default
-        for (const auto& item : BUILTIN_DRONE_DB) {
-            if (db_entry_count_ >= MAX_DB_ENTRIES) break;
+        if (!db_opened || freq_db_.empty()) {
+            // If database doesn't exist or is empty, try to create it with built-in frequencies
+            freq_db_.open(db_path, true);
 
-            auto& entry = drone_database_[db_entry_count_];
-            entry.frequency_a = item.freq;
-            entry.description = item.desc;
-            entry.type = freqman_type::Single;
-            entry.modulation = freqman_invalid_index;
-            entry.bandwidth = freqman_invalid_index;
-            entry.step = freqman_invalid_index;
-            entry.tone = freqman_invalid_index;
-            db_entry_count_++;
+            for (const auto& item : BUILTIN_DRONE_DB) {
+                freqman_entry entry{};
+                entry.frequency_a = item.freq;
+                entry.description = item.desc;
+                entry.type = freqman_type::Single;
+                entry.modulation = freqman_invalid_index;
+                entry.bandwidth = freqman_invalid_index;
+                entry.step = freqman_invalid_index;
+                entry.tone = freqman_invalid_index;
+                freq_db_.append_entry(entry);
+            }
+
+            current_db_index_ = 0;
         }
 
         freq_db_loaded_ = true;
@@ -1419,8 +1415,9 @@ bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
-    if (db_entry_count_ > 0 && current_db_index_ < db_entry_count_) {
-        return drone_database_[current_db_index_].frequency_a;
+    size_t db_entry_count = freq_db_.entry_count();
+    if (db_entry_count > 0 && current_db_index_ < db_entry_count) {
+        return freq_db_[current_db_index_].frequency_a;
     }
     return 433000000;
 }
@@ -2348,12 +2345,12 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
       text_drone_1_({screen_width - 120, 146, 120, 16}, ""),
       text_drone_2_({screen_width - 120, 162, 120, 16}, ""),
       text_drone_3_({screen_width - 120, 178, 120, 16}, ""),
-      compact_frequency_ruler_({0, 68, screen_width, 12}),
+       compact_frequency_ruler_({0, 68, screen_width, 12}),
       frequency_ruler_({0, 68, screen_width, 12}),
       detected_drones_(),
       displayed_drones_(),
-      spectrum_row(), spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
-      waterfall_buffer_(),
+      spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
+      waterfall_buffer_ptr_(std::make_unique<std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>>()),
       spectrum_gradient_(), spectrum_fifo_(nullptr),
       pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
       marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
@@ -2364,6 +2361,10 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     detected_drones_count_ = 0;
 
     std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{});
+
+    // Initialize heap-allocated spectrum row buffer (~960 bytes saved from stack)
+    spectrum_row_ptr_ = std::make_unique<std::array<Color, 240u>>();
+    render_line_buffer_ptr_ = std::make_unique<std::array<Color, SPEC_WIDTH>>();
 
     // CRITICAL FIX: Don't perform blocking I/O in View constructor
     // Use default gradient immediately, load from file in on_show()
@@ -2686,32 +2687,30 @@ void DroneDisplayController::render_mini_spectrum() {
         if (color_index >= spectrum_gradient_.lut.size()) {
             color_index = spectrum_gradient_.lut.size() - 1;
         }
-        waterfall_buffer_[waterfall_line_index_][x] = color_index;
+        (*waterfall_buffer_ptr_)[waterfall_line_index_][x] = color_index;
     }
 
     // 2. Shift index (ring buffer)
     waterfall_line_index_ = (waterfall_line_index_ + 1) % SPEC_HEIGHT;
 
     // 2. Rendering (OPTIMIZED)
-    const int start_y = 92;
+    const int start_y = 81;
 
-    // Line buffer on stack (moved outside loop to avoid recreating)
-    std::array<Color, SPEC_WIDTH> line_colors;
-
+    // Line buffer moved to heap (~960 bytes saved from stack per 60FPS call)
     for (int y = 0; y < SPEC_HEIGHT; ++y) {
         // Correct index calculation for "flowing down"
         // Newest line (waterfall_line_index_ - 1) should be at y=0
         size_t buf_idx = (waterfall_line_index_ + SPEC_HEIGHT - 1 - y) % SPEC_HEIGHT;
 
-        const auto& src_row = waterfall_buffer_[buf_idx];
+        const auto& src_row = (*waterfall_buffer_ptr_)[buf_idx];
 
         // Convert indices to colors
         for (int x = 0; x < SPEC_WIDTH; ++x) {
-            line_colors[x] = spectrum_gradient_.lut[src_row[x]];
+            (*render_line_buffer_ptr_)[x] = spectrum_gradient_.lut[src_row[x]];
         }
 
         // Draw line
-        display.draw_pixels({{0, start_y + y}, {SPEC_WIDTH, 1}}, line_colors);
+        display.draw_pixels({{0, start_y + y}, {SPEC_WIDTH, 1}}, *render_line_buffer_ptr_);
     }
 }
 
@@ -3465,8 +3464,8 @@ void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum
 }
 
 void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
-    if (pixel_index < spectrum_row.size()) {
-        spectrum_row[pixel_index] = spectrum_gradient_.lut[power];
+    if (pixel_index < spectrum_row_ptr_->size()) {
+        (*spectrum_row_ptr_)[pixel_index] = spectrum_gradient_.lut[power];
         pixel_index++;
     }
 }

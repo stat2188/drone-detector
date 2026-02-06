@@ -23,6 +23,7 @@
 #include "message.hpp"
 
 #include "freqman_db.hpp"
+#include "freqman.hpp"
 #include "log_file.hpp"
 #include <ch.h>
 #include <chtypes.h>
@@ -174,12 +175,12 @@ struct DisplayDroneEntry {
     MovementTrend trend = MovementTrend::UNKNOWN;
 };
 
-static constexpr size_t MAX_TRACKED_DRONES = 8;
-static constexpr size_t MAX_DISPLAYED_DRONES = 3;
+// Removed duplicate constants - using from drone_constants.hpp
+// MAX_TRACKED_DRONES, MAX_DISPLAYED_DRONES defined in drone_constants.hpp
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
-    static constexpr int SPEC_HEIGHT = 16;
-    static constexpr int SPEC_WIDTH = 240;
+static constexpr int SPEC_HEIGHT = 8;  // Reduced from 16 to save stack memory
+static constexpr int SPEC_WIDTH = 240;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
 static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 22'000'000; // Optimized for 2.4GHz band coverage
@@ -534,9 +535,8 @@ private:
 
     static constexpr uint8_t DETECTION_DELAY = 2;
     WidebandScanData wideband_scan_data_;
-    static constexpr size_t MAX_DB_ENTRIES = 128;
-    std::array<freqman_entry, MAX_DB_ENTRIES> drone_database_;
-    size_t db_entry_count_ = 0;
+    // Replaced stack-allocated database with file-based FreqmanDB (saves ~3KB stack)
+    FreqmanDB freq_db_;
     DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
 
@@ -912,13 +912,14 @@ private:
     size_t detected_drones_count_ = 0;
     std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES> displayed_drones_;
 
-    std::array<Color, 240u> spectrum_row;
+    std::unique_ptr<std::array<Color, 240u>> spectrum_row_ptr_;  // Moved to heap (~960 bytes saved)
+    std::unique_ptr<std::array<Color, SPEC_WIDTH>> render_line_buffer_ptr_;  // Moved to heap (~960 bytes saved from 60FPS loop)
     std::array<uint8_t, 200> spectrum_power_levels_;
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
 
-    std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT> waterfall_buffer_;
+    std::unique_ptr<std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>> waterfall_buffer_ptr_;
     size_t waterfall_line_index_ = 0;
 
     Gradient spectrum_gradient_;
