@@ -324,11 +324,11 @@ set(MODE_FLAGS "-O3")
 #DeclareTargets(PADR adsbrx)
 
 
-### AFSK TX - DISABLED (UI already commented, no usage)
-#set(MODE_CPPSRC
-#	proc_afsk.cpp
-#)
-#DeclareTargets(PAFT afsktx)
+### AFSK TX
+set(MODE_CPPSRC
+	proc_afsk.cpp
+)
+DeclareTargets(PAFT afsktx)
 
 ### APRS RX - DISABLED (UI already commented, no usage)
 #set(MODE_CPPSRC
