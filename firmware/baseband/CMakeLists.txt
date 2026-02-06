@@ -456,12 +456,11 @@ DeclareTargets(PSIG siggen)
 
 
 
-### Tones
-
-set(MODE_CPPSRC
-	proc_tones.cpp
-)
-DeclareTargets(PTON tones)
+### Tones - DISABLED (UI already commented, saves ~5.5 KB)
+# set(MODE_CPPSRC
+# 	proc_tones.cpp
+# )
+# DeclareTargets(PTON tones)
 
 
 ### Wideband Spectrum
@@ -478,15 +477,18 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PWFM wfm_audio)
 
-### SubGhz Decoders
+### SubGhz Decoders - DISABLED (UI already commented, saves ~14.4 KB)
+# set(MODE_CPPSRC
+# 	proc_subghzd.cpp
+# )
+# DeclareTargets(PSGD subghzd)
 
-set(MODE_CPPSRC
-	proc_subghzd.cpp
-)
-DeclareTargets(PSGD subghzd)
 
-
-### Weather Stations
+### Weather Stations - DISABLED (UI already commented, saves ~6.4 KB)
+# set(MODE_CPPSRC
+# 	proc_weather.cpp
+# )
+# DeclareTargets(PWTH weather)
 set(MODE_CPPSRC
 	proc_weather.cpp
 )
@@ -704,12 +706,11 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PATX audio_tx)
 
-### SubCar Decoders
-
-set(MODE_CPPSRC
-	proc_subcar.cpp
-)
-DeclareTargets(PSCD subcar)
+### SubCar Decoders - DISABLED (UI already commented, part of SubGhzD, saves ~8.5 KB)
+# set(MODE_CPPSRC
+# 	proc_subcar.cpp
+# )
+# DeclareTargets(PSCD subcar)
 
 
 ### HackRF "factory" firmware
