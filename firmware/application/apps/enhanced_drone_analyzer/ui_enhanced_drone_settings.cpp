@@ -60,19 +60,19 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     // 🔴 OPTIMIZATION: Generate settings content using snprintf (no heap allocations)
     // This replaces the entire generate_settings_content() function
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "spectrum_mode=%s\n", spectrum_mode_to_string(settings.spectrum_mode));
+                      "spectrum_mode=%s\n", spectrum_mode_to_string(settings.spectrum_mode).c_str());
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "scan_interval_ms=%u\n", settings.scan_interval_ms);
+                      "scan_interval_ms=%lu\n", (unsigned long)settings.scan_interval_ms);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "rssi_threshold_db=%d\n", settings.rssi_threshold_db);
+                      "rssi_threshold_db=%ld\n", (long)settings.rssi_threshold_db);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "enable_audio_alerts=%s\n", settings.enable_audio_alerts ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "audio_alert_frequency_hz=%u\n", settings.audio_alert_frequency_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "audio_alert_duration_ms=%u\n", settings.audio_alert_duration_ms);
+                      "audio_alert_duration_ms=%lu\n", (unsigned long)settings.audio_alert_duration_ms);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "hardware_bandwidth_hz=%u\n", settings.hardware_bandwidth_hz);
+                      "hardware_bandwidth_hz=%lu\n", (unsigned long)settings.hardware_bandwidth_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "enable_real_hardware=%s\n", settings.enable_real_hardware ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
@@ -84,7 +84,7 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "user_max_freq_hz=%llu\n", (unsigned long long)settings.user_max_freq_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "wideband_slice_width_hz=%u\n", settings.wideband_slice_width_hz);
+                      "wideband_slice_width_hz=%lu\n", (unsigned long)settings.wideband_slice_width_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "panoramic_mode_enabled=%s\n", settings.panoramic_mode_enabled ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
@@ -474,7 +474,7 @@ void DronePresetSelector::show_preset_menu(NavigationView& nav, PresetMenuView c
     class PresetMenuView : public MenuView {
     public:
         PresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const DronePreset&)> on_selected,
-                      const std::vector<DronePreset>& presets)
+                      const std::array<DronePreset, 5>& presets)
             : MenuView(), nav_(nav), names_(std::move(names)), on_selected_fn_(on_selected), presets_(presets) {
             for (const auto& name : names_) {
                 add_item({name, Color::white(), nullptr, nullptr});
@@ -494,7 +494,7 @@ void DronePresetSelector::show_preset_menu(NavigationView& nav, PresetMenuView c
         }
         std::vector<std::string> names_;
         std::function<void(const DronePreset&)> on_selected_fn_;
-        const std::vector<DronePreset>& presets_;
+        const std::array<DronePreset, 5>& presets_;
     };
     nav.push<PresetMenuView>(preset_names, callback, all_presets);
 }

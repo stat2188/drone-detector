@@ -340,13 +340,14 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
     : scanning_thread_(nullptr),
        data_mutex(),
        scanning_active_(false),
+       freq_db_(),
        current_db_index_(0),
        last_scanned_frequency_(0),
        freq_db_loaded_(false),
        scan_cycles_(0),
        total_detections_(0),
         scanning_mode_(DroneScanner::ScanningMode::DATABASE),
-        is_real_mode_(true),
+         is_real_mode_(true),
        tracked_drones_ptr_(std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>()),
        tracked_count_(0),
        approaching_count_(0),
@@ -354,11 +355,11 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
        static_count_(0),
        max_detected_threat_(ThreatLevel::NONE),
        last_valid_rssi_(-120),
-       wideband_scan_data_(),
-       freq_db_(),
+        wideband_scan_data_(),
        detection_logger_(),
        detection_ring_buffer_(),
        priority_slice_index_(-1),
+       priority_slice_mutex_(),
        priority_scan_counter_(0),
        frequency_predictions_(),
        predictions_mutex_(),
@@ -388,25 +389,26 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
     // Use unified frequency limits from DroneConstants
     Frequency safe_min = std::max(min_freq, DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ);
     Frequency safe_max = std::min(max_freq, DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ);
-    
+
     // Ensure min < max and apply hardware constraints
     if (safe_min >= safe_max) {
         safe_min = DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ;
         safe_max = DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ;
     }
-    
+
     wideband_scan_data_.min_freq = safe_min;
     wideband_scan_data_.max_freq = safe_max;
 
     Frequency scanning_range = safe_max - safe_min;
     if (scanning_range > WIDEBAND_SLICE_WIDTH) {
         // Check for integer overflow before calculating slices
-        uint64_t range_plus_width = scanning_range + WIDEBAND_SLICE_WIDTH;
+        // Use int64_t to match rf::Frequency type and avoid sign comparison warning
+        int64_t range_plus_width = static_cast<int64_t>(scanning_range) + static_cast<int64_t>(WIDEBAND_SLICE_WIDTH);
         if (range_plus_width < scanning_range) {
             // Overflow detected - handle gracefully with single slice
             wideband_scan_data_.slices_nb = 1;
         } else {
-            wideband_scan_data_.slices_nb = (range_plus_width - 1) / WIDEBAND_SLICE_WIDTH;
+            wideband_scan_data_.slices_nb = (static_cast<uint64_t>(range_plus_width) - 1) / WIDEBAND_SLICE_WIDTH;
         }
 
         if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
@@ -2349,6 +2351,8 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
        frequency_ruler_({0, 68, screen_width, 12}),
        detected_drones_ptr_(std::make_unique<std::array<DisplayDroneEntry, MAX_UI_DRONES>>()),
        displayed_drones_(),
+       spectrum_row_ptr_(std::make_unique<std::array<Color, 240u>>()),
+       render_line_buffer_ptr_(std::make_unique<std::array<Color, SPEC_WIDTH>>()),
        spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
        waterfall_buffer_ptr_(std::make_unique<std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>>()),
        spectrum_gradient_(), spectrum_fifo_(nullptr),
@@ -2361,10 +2365,6 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     detected_drones_count_ = 0;
 
     std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{});
-
-    // Initialize heap-allocated spectrum row buffer (~960 bytes saved from stack)
-    spectrum_row_ptr_ = std::make_unique<std::array<Color, 240u>>();
-    render_line_buffer_ptr_ = std::make_unique<std::array<Color, SPEC_WIDTH>>();
 
     // CRITICAL FIX: Don't perform blocking I/O in View constructor
     // Use default gradient immediately, load from file in on_show()
@@ -3085,6 +3085,7 @@ void FrequencyRangeSetupView::on_cancel() {
 EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
     : View({0, 0, screen_width, screen_height}),
       nav_(nav),
+      settings_(),
       hardware_(SpectrumMode::MEDIUM),
       scanner_(settings_),
       audio_(),
@@ -3098,8 +3099,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       button_menu_({{screen_width - 80, screen_height - 40, 72, 32}, "MENU"}),
       button_audio_(),
       field_scanning_mode_({{10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}}),
-      scanning_active_(false),
-      settings_()
+      scanning_active_(false)
 {
     DroneAnalyzerSettingsManager::load(settings_);
 
