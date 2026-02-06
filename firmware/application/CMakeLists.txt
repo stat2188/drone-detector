@@ -278,7 +278,7 @@ set(CPPSRC
 	#apps/ui_aprs_tx.cpp
 	apps/ui_battinfo.cpp
 	apps/ui_bmp_file_viewer.cpp
-	apps/ui_btle_rx.cpp
+	#apps/ui_btle_rx.cpp
 	apps/ui_debug.cpp
 	apps/ui_debug_max17055.cpp
 	apps/ui_dfu_menu.cpp
