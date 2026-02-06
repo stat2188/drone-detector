@@ -179,7 +179,7 @@ struct DisplayDroneEntry {
 // MAX_TRACKED_DRONES, MAX_DISPLAYED_DRONES defined in drone_constants.hpp
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
-static constexpr int SPEC_HEIGHT = 8;  // Reduced from 16 to save stack memory
+static constexpr int SPEC_HEIGHT = 80;  // Optimized: 8 -> 80 with hardware scroll
 static constexpr int SPEC_WIDTH = 240;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
@@ -941,6 +941,32 @@ private:
 
     void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power);
     void add_spectrum_pixel(uint8_t power);
+    
+    void handle_channel_spectrum(const ChannelSpectrum& spectrum);
+    void analyze_spectrum_for_threats(const ChannelSpectrum& spectrum);
+    Frequency spectrum_bin_to_frequency(size_t bin) const;
+    void update_or_create_drone_from_spectrum(Frequency freq_hz, uint8_t power);
+
+    MessageHandlerRegistration message_handler_channel_spectrum_config_ {
+        Message::ID::ChannelSpectrumConfig,
+        [this](Message* const p) {
+            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            spectrum_fifo_ = message.fifo;
+        }
+    };
+
+    MessageHandlerRegistration message_handler_frame_sync_ {
+        Message::ID::DisplayFrameSync,
+        [this](Message* const) {
+            if (spectrum_fifo_) {
+                ChannelSpectrum spectrum;
+                while (spectrum_fifo_->out(spectrum)) {
+                    this->process_mini_spectrum_data(spectrum);
+                    this->analyze_spectrum_for_threats(spectrum);
+                }
+            }
+        }
+    };
 };
 
 static constexpr const char* DEFAULT_CONFIG_PATH = "DRONES/DATA.CFG";

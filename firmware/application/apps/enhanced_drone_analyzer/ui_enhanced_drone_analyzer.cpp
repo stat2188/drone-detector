@@ -2676,42 +2676,21 @@ bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
 }
 
 void DroneDisplayController::render_mini_spectrum() {
-    // 1. Write new line of data to buffer (replace the oldest)
+    display.scroll(1);
+    
+    std::array<Color, SPEC_WIDTH> new_line{};
     for (size_t x = 0; x < SPEC_WIDTH; ++x) {
-        uint8_t power_value = 0;
-        if (x < spectrum_power_levels_.size()) {
-            power_value = spectrum_power_levels_[x];
-        }
-        // Convert power to color index
+        uint8_t power_value = (x < spectrum_power_levels_.size()) ? 
+                             spectrum_power_levels_[x] : 0;
         uint8_t color_index = (power_value * spectrum_gradient_.lut.size()) / 256;
         if (color_index >= spectrum_gradient_.lut.size()) {
             color_index = spectrum_gradient_.lut.size() - 1;
         }
-        (*waterfall_buffer_ptr_)[waterfall_line_index_][x] = color_index;
+        new_line[x] = spectrum_gradient_.lut[color_index];
     }
-
-    // 2. Shift index (ring buffer)
-    waterfall_line_index_ = (waterfall_line_index_ + 1) % SPEC_HEIGHT;
-
-    // 2. Rendering (OPTIMIZED)
-    const int start_y = 81;
-
-    // Line buffer moved to heap (~960 bytes saved from stack per 60FPS call)
-    for (int y = 0; y < SPEC_HEIGHT; ++y) {
-        // Correct index calculation for "flowing down"
-        // Newest line (waterfall_line_index_ - 1) should be at y=0
-        size_t buf_idx = (waterfall_line_index_ + SPEC_HEIGHT - 1 - y) % SPEC_HEIGHT;
-
-        const auto& src_row = (*waterfall_buffer_ptr_)[buf_idx];
-
-        // Convert indices to colors
-        for (int x = 0; x < SPEC_WIDTH; ++x) {
-            (*render_line_buffer_ptr_)[x] = spectrum_gradient_.lut[src_row[x]];
-        }
-
-        // Draw line
-        display.draw_pixels({{0, start_y + y}, {SPEC_WIDTH, 1}}, *render_line_buffer_ptr_);
-    }
+    
+    const int waterfall_y_start = 81;
+    display.draw_pixels({{0, waterfall_y_start}, {SPEC_WIDTH, 1}}, new_line);
 }
 
 void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES>& drones) {
@@ -2794,9 +2773,47 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
     if (freq_hz < MIN_FREQ || freq_hz > MAX_FREQ || FREQ_RANGE == 0) {
         return MINI_SPECTRUM_WIDTH;
     }
-    Frequency relative_freq = freq_hz - MIN_FREQ;
-    size_t bin = (relative_freq * MINI_SPECTRUM_WIDTH) / FREQ_RANGE;
+    float relative_freq = static_cast<float>(freq_hz - MIN_FREQ);
+    float float_bin = relative_freq * MINI_SPECTRUM_WIDTH / static_cast<float>(FREQ_RANGE);
+    size_t bin = static_cast<size_t>(float_bin);
     return std::min(bin, MINI_SPECTRUM_WIDTH - 1);
+}
+
+void DroneDisplayController::handle_channel_spectrum(const ChannelSpectrum& spectrum) {
+    process_mini_spectrum_data(spectrum);
+}
+
+void DroneDisplayController::analyze_spectrum_for_threats(const ChannelSpectrum& spectrum) {
+    for (size_t i = 0; i < spectrum.db.size(); ++i) {
+        uint8_t power = spectrum.db[i];
+        
+        const uint8_t THREAT_THRESHOLD = 100;
+        
+        if (power > THREAT_THRESHOLD) {
+            Frequency freq_hz = spectrum_bin_to_frequency(i);
+            update_or_create_drone_from_spectrum(freq_hz, power);
+        }
+    }
+}
+
+Frequency DroneDisplayController::spectrum_bin_to_frequency(size_t bin) const {
+    const Frequency MIN_FREQ = spectrum_config_.min_freq;
+    const Frequency MAX_FREQ = spectrum_config_.max_freq;
+    const Frequency FREQ_RANGE = MAX_FREQ - MIN_FREQ;
+    
+    if (FREQ_RANGE == 0 || bin >= MINI_SPECTRUM_WIDTH) {
+        return MIN_FREQ;
+    }
+    
+    float relative_freq = static_cast<float>(bin) * FREQ_RANGE / MINI_SPECTRUM_WIDTH;
+    return MIN_FREQ + static_cast<Frequency>(relative_freq);
+}
+
+void DroneDisplayController::update_or_create_drone_from_spectrum(Frequency freq_hz, uint8_t power) {
+    int32_t rssi = static_cast<int32_t>(power) - 150;
+    ThreatLevel threat = SimpleDroneValidation::classify_signal_strength(rssi);
+    DroneType type = SimpleDroneValidation::identify_drone_type(freq_hz, rssi);
+    add_detected_drone(freq_hz, type, threat, rssi);
 }
 
 DroneUIController::DroneUIController(NavigationView& nav,
@@ -3086,17 +3103,9 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 {
     DroneAnalyzerSettingsManager::load(settings_);
 
-    // Update scanner range with settings
     scanner_.update_scan_range(settings_.wideband_min_freq_hz, settings_.wideband_max_freq_hz);
 
-    // Update coordinator parameters
     scanning_coordinator_.update_runtime_parameters(settings_);
-
-    // Initialize threat cards with proper positions
-    for (size_t i = 0; i < threat_cards_.size(); ++i) {
-        size_t card_y_pos = 60 + i * 26;
-        threat_cards_[i].set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
-    }
 
     setup_button_handlers();
 
@@ -3147,31 +3156,27 @@ bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
 
 void EnhancedDroneSpectrumAnalyzerView::on_show() {
     View::on_show();
-    display.scroll_set_area(109, screen_height - 1);
+    
+    // Waterfall area: Header(60) + Ruler(12) + padding(9) = 81
+    // Waterfall height: SPEC_HEIGHT (80 pixels)
+    const int waterfall_y_start = 81;
+    const int waterfall_height = SPEC_HEIGHT;
+    const int waterfall_y_end = waterfall_y_start + waterfall_height - 1;
+    display.scroll_set_area(waterfall_y_start, waterfall_y_end);
 
-    // CRITICAL FIX: Lazy gradient initialization to prevent blocking I/O on startup
-    // Call this AFTER display is ready to avoid hanging during constructor
     display_controller_.lazy_initialize_gradient();
-
     hardware_.on_hardware_show();
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
-    // TODO[FIXED]: Explicit stop of all processes
-    stop_scanning_thread(); // Stop coordinator thread
-
+    stop_scanning_thread();
     scanner_.stop_scanning();
-
-    // 3. Disable "hardware"
-    // Stop spectrum streaming (Baseband)
     hardware_.stop_spectrum_streaming();
-    // Completely disable radio module
     hardware_.shutdown_hardware();
-
-    // Call on_hardware_hide (if there is specific logic there)
     hardware_.on_hardware_hide();
-
-    // 4. Pass control to base class (hide widgets)
+    
+    display.scroll_disable();
+    
     View::on_hide();
 }
 
@@ -3203,7 +3208,10 @@ bool EnhancedDroneSpectrumAnalyzerView::handle_menu_button() {
 
 void EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout() {
     for (size_t i = 0; i < threat_cards_.size(); ++i) {
-        size_t card_y_pos = 60 + i * 26;
+        size_t card_y_pos = 165 + i * 20;
+        
+        if (card_y_pos + 24 > 224) break;
+        
         threat_cards_[i].set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
     }
     handle_scanner_update();
