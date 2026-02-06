@@ -31,8 +31,8 @@
 
 #include "ui_about_simple.hpp"
 // #include "ui_adsb_rx.hpp"
-// #include "ui_aprs_rx.hpp"
-#include "ui_aprs_tx.hpp"
+//#include "ui_aprs_rx.hpp"
+// #include "ui_aprs_tx.hpp"
 #include "ui_btle_rx.hpp"
 #include "ui_debug.hpp"
 #include "ui_encoders.hpp"
@@ -46,7 +46,7 @@
 
 #include "ui_playlist.hpp"
 // #include "ui_pocsag_tx.hpp"
-#include "ui_rds.hpp"
+// #include "ui_rds.hpp"
 #include "ui_recon.hpp"
 // #include "ui_scanner.hpp"
 #include "ui_sd_over_usb.hpp"
@@ -141,11 +141,11 @@ const NavigationView::AppList NavigationView::appList = {
 	//{"subghzd", "SubGhzD", RX, Color::yellow(), &bitmap_icon_remote, new ViewFactory<SubGhzDView>()},
 	//{"weather", "Weather", RX, Color::green(), &bitmap_icon_thermometer, new ViewFactory<WeatherView>()},
 	/* TX ********************************************************************/
-	{"aprstx", "APRS TX", TX, ui::Color::green(), &bitmap_icon_aprs, new ViewFactory<APRSTXView>()},
+	//{"aprstx", "APRS TX", TX, ui::Color::green(), &bitmap_icon_aprs, new ViewFactory<APRSTXView>()},
 	//{"bletx", "BLE Tx", TX, ui::Color::green(), &bitmap_icon_btle, new ViewFactory<BLETxView>()},
 	{"ooktx", "OOK", TX, ui::Color::yellow(), &bitmap_icon_remote, new ViewFactory<EncodersView>()},
-    // {"pocsagtx", "POCSAG TX", TX, ui::Color::green(), &bitmap_icon_pocsag, new ViewFactory<POCSAGTXView>()},
-    {"rdstx", "RDS", TX, ui::Color::green(), &bitmap_icon_rds, new ViewFactory<RDSView>()},
+     // {"pocsagtx", "POCSAG TX", TX, ui::Color::green(), &bitmap_icon_pocsag, new ViewFactory<POCSAGTXView>()},
+     //{"rdstx", "RDS", TX, ui::Color::green(), &bitmap_icon_rds, new ViewFactory<RDSView>()},
     {"touchtune", "TouchTune", TX, ui::Color::green(), &bitmap_icon_touchtunes, new ViewFactory<TouchTunesView>()},
     {"signalgen", "SignalGen", TX, Color::green(), &bitmap_icon_cwgen, new ViewFactory<SigGenView>()},
     /* TRX ********************************************************************/
