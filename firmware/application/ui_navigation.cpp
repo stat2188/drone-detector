@@ -125,7 +125,7 @@ const NavigationView::AppList NavigationView::appList = {
     {"capture", "Capture", HOME, Color::red(), &bitmap_icon_capture, new ViewFactory<CaptureAppView>()},
     // {"replay", "Replay", HOME, Color::green(), &bitmap_icon_replay, new ViewFactory<PlaylistView>()},
     // {"lookingglass", "Looking Glass", HOME, Color::green(), &bitmap_icon_looking, new ViewFactory<GlassView>()},
-    {"enhanced_drone_analyzer", "Enhanced Drone Analyzer", HOME, Color::green(), &bitmap_icon_drone, new ViewFactory<ui::apps::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>()},
+    {"enhanced_drone_analyzer", "EDA", HOME, Color::green(), &bitmap_icon_drone, new ViewFactory<ui::apps::enhanced_drone_analyzer::EnhancedDroneSpectrumAnalyzerView>()},
     {nullptr, "Utilities", HOME, Color::cyan(), &bitmap_icon_utilities, new ViewFactory<UtilitiesMenuView>()},
     {nullptr, "Games", HOME, Color::cyan(), &bitmap_icon_games, new ViewFactory<GamesMenuView>()},
     {nullptr, "Settings", HOME, Color::cyan(), &bitmap_icon_setup, new ViewFactory<SettingsMenuView>()},

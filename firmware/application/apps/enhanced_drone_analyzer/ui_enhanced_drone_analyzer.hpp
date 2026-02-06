@@ -875,6 +875,7 @@ public:
     void set_spectrum_range(Frequency min_freq, Frequency max_freq);
     void update_signal_type_display(const std::string& signal_type);
     void update_frequency_ruler();
+    void lazy_initialize_gradient();  // CRITICAL FIX: Prevent blocking I/O on startup
     void set_ruler_style(RulerStyle style);
     void apply_display_settings(const DisplaySettings& settings);
     CompactFrequencyRuler& compact_frequency_ruler() { return compact_frequency_ruler_; }
@@ -988,7 +989,7 @@ private:
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
     ::AudioManager& audio_mgr_;
-    bool scanning_active_ = false;
+    std::atomic<bool> scanning_active_{false};
     DroneDisplayController* display_controller_ = nullptr;
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
@@ -1026,7 +1027,7 @@ public:
     EnhancedDroneSpectrumAnalyzerView& operator=(const EnhancedDroneSpectrumAnalyzerView&) = delete;
 
     void focus() override;
-    std::string title() const override { return "Enhanced Drone Analyzer"; };
+    std::string title() const override { return "EDA"; };
 
     void paint(Painter& painter) override;
     bool on_key(const KeyEvent key) override;
@@ -1034,8 +1035,13 @@ public:
     void on_show() override;
     void on_hide() override;
 
-private:
+ private:
     NavigationView& nav_;
+
+    // CRITICAL FIX: settings_ MUST be declared BEFORE all members that use it
+    // C++ initialization order: members are initialized in declaration order, not init-list order
+    // Scott Meyers Effective C++ Item 12: Never change the order of member initialization
+    ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
     // Stack-allocated objects following Mayhem pattern
     DroneHardwareController hardware_;
@@ -1057,7 +1063,6 @@ private:
     OptionsField field_scanning_mode_;
 
     bool scanning_active_ = false;
-    ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
     MessageHandlerRegistration message_handler_stats_ {
         Message::ID::DisplayFrameSync,

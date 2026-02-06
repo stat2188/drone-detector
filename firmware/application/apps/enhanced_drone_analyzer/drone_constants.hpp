@@ -84,6 +84,12 @@ constexpr uint32_t DEFAULT_SCAN_INTERVAL_MS = 1000;
 constexpr uint8_t MIN_DETECTION_COUNT = 3;
 constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 
+// ===== ADAPTIVE SCAN INTERVALS (in milliseconds) =====
+constexpr uint32_t FAST_SCAN_INTERVAL_MS = 250;
+constexpr uint32_t NORMAL_SCAN_INTERVAL_MS = 750;
+constexpr uint32_t SLOW_SCAN_INTERVAL_MS = 1000;
+constexpr uint32_t VERY_SLOW_SCAN_INTERVAL_MS = 2000;
+
 // ===== INTELLIGENT SCANNING (New constants for Portapack optimization) =====
 constexpr uint32_t PRIORITY_SLICE_SKIP_THRESHOLD = 10; // Skip slice if clean for N cycles
 constexpr uint32_t PREDICTION_FRESHNESS_MS = 5000;  // 5 seconds

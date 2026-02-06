@@ -44,7 +44,18 @@ public:
     ~DetectionRingBuffer() = default;
 
     void update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value);
+
+    /**
+     * @brief Get detection count for a frequency hash
+     * @param frequency_hash Hash of frequency to look up
+     * @return Detection count (0 if not found)
+     *
+     * @note Time complexity: O(1) average case, O(MAX_ENTRIES) worst case
+     *       Linear probing hash table with 32 entries. Average probes: 1-2,
+     *       worst case: 32 probes when all entries collide.
+     */
     uint8_t get_detection_count(size_t frequency_hash) const;
+
     int32_t get_rssi_value(size_t frequency_hash) const;
     void clear();
 

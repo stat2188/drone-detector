@@ -1,3 +1,19 @@
+/**
+ * Enhanced Drone Analyzer - Thread Safety Notes
+ *
+ * Locking Order (to prevent deadlocks):
+ * 1. scanning_active_ (std::atomic<bool>) - No lock needed
+ * 2. data_mutex (DroneScanner::tracked_drones_)
+ * 3. spectrum_mutex (DroneHardwareController::spectrum_buffer_)
+ * 4. logger_mutex (DroneDetectionLogger::mutex_)
+ *
+ * Rules:
+ * - Always acquire locks in order 1->2->3->4
+ * - Never acquire a lower-numbered lock while holding a higher-numbered lock
+ * - Use MutexLock RAII wrapper for automatic unlock
+ * - Keep critical sections as short as possible
+ */
+
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "ui_drone_audio.hpp"
 #include "gradient.hpp"
@@ -384,7 +400,15 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
 
     Frequency scanning_range = safe_max - safe_min;
     if (scanning_range > WIDEBAND_SLICE_WIDTH) {
-        wideband_scan_data_.slices_nb = (scanning_range + WIDEBAND_SLICE_WIDTH - 1) / WIDEBAND_SLICE_WIDTH;
+        // Check for integer overflow before calculating slices
+        uint64_t range_plus_width = scanning_range + WIDEBAND_SLICE_WIDTH;
+        if (range_plus_width < scanning_range) {
+            // Overflow detected - handle gracefully with single slice
+            wideband_scan_data_.slices_nb = 1;
+        } else {
+            wideband_scan_data_.slices_nb = (range_plus_width - 1) / WIDEBAND_SLICE_WIDTH;
+        }
+
         if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
             wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
         }
@@ -409,17 +433,17 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
 }
 
 void DroneScanner::start_scanning() {
-    if (scanning_active_) return;
+    if (scanning_active_.load(std::memory_order_acquire)) return;
 
-    scanning_active_ = true;
+    scanning_active_.store(true, std::memory_order_release);
     scan_cycles_ = 0;
     total_detections_ = 0;
 }
 
 void DroneScanner::stop_scanning() {
-    if (!scanning_active_) return;
+    if (!scanning_active_.load(std::memory_order_acquire)) return;
 
-    scanning_active_ = false;
+    scanning_active_.store(false, std::memory_order_release);
 
     // Wait for scanning thread to complete
     if (scanning_thread_ != nullptr) {
@@ -446,26 +470,13 @@ bool DroneScanner::load_frequency_database() {
     {
         MutexLock lock(data_mutex);
 
-        db_entry_count_ = 0;
-
     // NOLINTNEXTLINE(bugprone-branch-clone)
     if (!sd_loaded || temp_db.empty()) {
-        // Load built-in database
-        for (const auto& item : BUILTIN_DRONE_DB) {
-            if (db_entry_count_ >= MAX_DB_ENTRIES) break;
-
-            auto& entry = drone_database_[db_entry_count_];
-            entry.frequency_a = item.freq;
-            entry.description = item.desc;
-            entry.type = freqman_type::Single;
-            entry.modulation = freqman_invalid_index;
-            entry.bandwidth = freqman_invalid_index;
-            entry.step = freqman_invalid_index;
-            entry.tone = freqman_invalid_index;
-            db_entry_count_++;
-        }
+        // Use built-in database that was already loaded during initialization
+        // No need to reload - database is already valid
     } else {
         // Use data from SD card
+        db_entry_count_ = 0;
         for (auto& entry_ptr : temp_db) {
             if (entry_ptr && db_entry_count_ < MAX_DB_ENTRIES) {
                 drone_database_[db_entry_count_] = *entry_ptr;
@@ -509,18 +520,19 @@ const char* DroneScanner::scanning_mode_name() const {
 }
 
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
-    if (!scanning_active_) return;
+    if (!scanning_active_.load(std::memory_order_acquire)) return;
 
     // 🔴 ENHANCED: Adaptive timing with golden mean between speed and accuracy
     // Considering Cortex M4 limitations on Portapack (limited RAM, CPU)
-    uint32_t base_interval = 750; // Base interval in milliseconds
+    using namespace DroneConstants;
+    uint32_t base_interval = DEFAULT_SCAN_INTERVAL_MS; // Base interval in milliseconds
     uint32_t adaptive_interval = base_interval;
-    
+
     // Get current scan context
     size_t current_detections = get_total_detections();
     ThreatLevel max_threat = get_max_detected_threat();
     size_t tracked_count = tracked_count_;
-    
+
     // ADAPTIVE STRATEGY:
     // - CRITICAL threats: scan fastest (250ms)
     // - HIGH threats: scan fast (400ms)
@@ -528,24 +540,24 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     // - LOW threats: scan slower (1000ms)
     // - NO threats: scan progressively slower (up to 2000ms)
     // - Balance: faster scanning of known drone bands, slower for empty bands
-    
+
     if (max_threat >= ThreatLevel::CRITICAL) {
         // Critical threat detected - maximum speed scanning
-        adaptive_interval = 250; // Fastest possible scan
+        adaptive_interval = FAST_SCAN_INTERVAL_MS; // Fastest possible scan
     } else if (max_threat == ThreatLevel::HIGH) {
         // High threat - fast scanning
         adaptive_interval = 400;
     } else if (max_threat == ThreatLevel::MEDIUM) {
         // Medium threat - normal scanning
-        adaptive_interval = 750;
+        adaptive_interval = NORMAL_SCAN_INTERVAL_MS;
     } else if (current_detections > 0 && tracked_count > 0) {
         // Have detections but low threat - maintain medium pace
-        adaptive_interval = 1000;
+        adaptive_interval = SLOW_SCAN_INTERVAL_MS;
     } else if (current_detections == 0 && scan_cycles_ > 10) {
         // No detections for a while - progressively slow down
         // Progressive slowdown: 1000ms → 1500ms → 2000ms (cap)
         uint32_t slowdown_multiplier = std::min(scan_cycles_ / 10, static_cast<uint32_t>(3));
-        adaptive_interval = std::min(static_cast<uint32_t>(2000), base_interval * slowdown_multiplier);
+        adaptive_interval = std::min(VERY_SLOW_SCAN_INTERVAL_MS, base_interval * slowdown_multiplier);
     }
 
     // Additional adjustment based on detection density
@@ -573,7 +585,7 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     scan_cycles_++;
 
     // Adaptive sleep based on current situation
-    if (scanning_active_) {
+    if (scanning_active_.load(std::memory_order_acquire)) {
         chThdSleepMilliseconds(adaptive_interval);
     }
 }
@@ -615,7 +627,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         const auto& entry = entries_to_scan[i];
 
         // CRITICAL: Check scanning flag EVERY iteration for immediate stop
-        if (!scanning_active_) return;
+        if (!scanning_active_.load(std::memory_order_acquire)) return;
 
         Frequency target_freq_hz = entry.frequency_a;
 
@@ -637,9 +649,9 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         // CRITICAL: Hardware tuning with proper validation
         if (hardware.tune_to_frequency(target_freq_hz)) {
             // Wait for PLL stabilization - broken into small chunks for responsiveness
-            for(int w = 0; w < 3; w++) { 
-                if(!scanning_active_) return; 
-                chThdSleepMilliseconds(10); 
+            for(int w = 0; w < 3; w++) {
+                if(!scanning_active_.load(std::memory_order_acquire)) return;
+                chThdSleepMilliseconds(10);
             }
 
             hardware.clear_rssi_flag();
@@ -1259,13 +1271,7 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
         return;
     }
 
-    // Ring buffer overflow protection: find oldest entry and replace it
-    // TODO[FIXED]: Added buffer overflow protection
-    if (tracked_count_ == 0) {
-        // This should never happen, but handle it gracefully
-        return;
-    }
-
+    // Ring buffer overflow: find oldest entry and replace it
     size_t oldest_index = 0;
     systime_t oldest_time = tracked_drones_[0].last_seen;
 
@@ -1375,7 +1381,30 @@ void DroneScanner::switch_to_demo_mode() {
 }
 
 void DroneScanner::initialize_database_and_scanner() {
-    // Initialization logic
+    // Initialize database with built-in frequencies as fallback
+    // This ensures scanner has valid data even if SD card is not ready
+    {
+        MutexLock lock(data_mutex);
+
+        db_entry_count_ = 0;
+
+        // Load built-in database as default
+        for (const auto& item : BUILTIN_DRONE_DB) {
+            if (db_entry_count_ >= MAX_DB_ENTRIES) break;
+
+            auto& entry = drone_database_[db_entry_count_];
+            entry.frequency_a = item.freq;
+            entry.description = item.desc;
+            entry.type = freqman_type::Single;
+            entry.modulation = freqman_invalid_index;
+            entry.bandwidth = freqman_invalid_index;
+            entry.step = freqman_invalid_index;
+            entry.tone = freqman_invalid_index;
+            db_entry_count_++;
+        }
+
+        freq_db_loaded_ = true;
+    }
 }
 
 void DroneScanner::cleanup_database_and_scanner() {
@@ -2336,10 +2365,9 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
 
     std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{});
 
-    if (!spectrum_gradient_.load_file(default_gradient_file)) {
-        spectrum_gradient_.set_default();
-    }
-    initialize_mini_spectrum();
+    // CRITICAL FIX: Don't perform blocking I/O in View constructor
+    // Use default gradient immediately, load from file in on_show()
+    spectrum_gradient_.set_default();
 
     // --- REMOVED: Stack allocation now handled in header ---
     // MessageHandlerRegistration objects are now initialized in-class (C++11 feature)
@@ -2604,6 +2632,20 @@ void DroneDisplayController::initialize_mini_spectrum() {
     update_frequency_ruler();
 }
 
+void DroneDisplayController::lazy_initialize_gradient() {
+    static bool initialized = false;
+    if (initialized) return;
+    initialized = true;
+
+    // Try to load gradient file, use default if fails
+    // This is now called from on_show() instead of constructor to avoid blocking I/O
+    if (!spectrum_gradient_.load_file(default_gradient_file)) {
+        spectrum_gradient_.set_default();
+    }
+    clear_spectrum_buffers();
+    update_frequency_ruler();
+}
+
 void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& spectrum) {
     uint8_t current_bin_power = 0;
     for (size_t bin = 0; bin < MINI_SPECTRUM_WIDTH; bin++) {
@@ -2759,15 +2801,15 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
 }
 
 DroneUIController::DroneUIController(NavigationView& nav,
-                                   DroneHardwareController& hardware,
-                                   DroneScanner& scanner,
-                                   ::AudioManager& audio_mgr,
-                                   DroneDisplayController& display_controller)
+                                         DroneHardwareController& hardware,
+                                         DroneScanner& scanner,
+                                         ::AudioManager& audio_mgr,
+                                         DroneDisplayController& display_controller)
     : nav_(nav),
       hardware_(hardware),
       scanner_(scanner),
       audio_mgr_(audio_mgr),
-      scanning_active_(false),
+      scanning_active_{false},
       display_controller_(&display_controller),
       settings_()
 {
@@ -2784,15 +2826,15 @@ DroneUIController::~DroneUIController() {
 }
 
 void DroneUIController::on_start_scan() {
-    if (scanning_active_) return;
-    scanning_active_ = true;
+    if (scanning_active_.load(std::memory_order_acquire)) return;
+    scanning_active_.store(true, std::memory_order_release);
     scanner_.start_scanning();
     display_controller_->set_scanning_status(true, "Scanning Active");
     display_controller_->update_detection_display(scanner_);
 }
 
 void DroneUIController::on_stop_scan() {
-    scanning_active_ = false;
+    scanning_active_.store(false, std::memory_order_release);
     scanner_.stop_scanning();
     audio_mgr_.stop_audio();
     display_controller_->set_scanning_status(false, "Stopped");
@@ -2811,7 +2853,7 @@ void DroneUIController::on_toggle_mode() {
             hardware_.start_spectrum_streaming();
         }
     }
-    display_controller_->set_scanning_status(scanning_active_,
+    display_controller_->set_scanning_status(scanning_active_.load(std::memory_order_acquire),
                                            scanner_.is_real_mode() ? "Real Mode" : "Demo Mode");
 }
 
@@ -2824,10 +2866,7 @@ void DroneUIController::on_load_frequency_file() {
     if (scanner_.load_frequency_database()) {
         size_t count = scanner_.get_database_size();
         char buffer[64];
-        auto s = to_string_dec_uint(count);
-        strcpy(buffer, "Loaded ");
-        strcat(buffer, s.c_str());
-        strcat(buffer, " frequencies");
+        snprintf(buffer, sizeof(buffer), "Loaded %zu frequencies", count);
         nav_.display_modal("Success", buffer);
     } else {
         nav_.display_modal("Error", "Failed to load database");
@@ -3060,14 +3099,15 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
         threat_cards_[i].set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
     }
 
-    initialize_modern_layout();
     setup_button_handlers();
 
-    // Первичное обновление
-    update_modern_layout();
+    // Initial layout setup
+    initialize_modern_layout();
 
     initialize_scanning_mode();
     add_ui_elements();
+
+    // Initial update after all elements are added
     update_modern_layout();
 }
 
@@ -3109,6 +3149,11 @@ bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
 void EnhancedDroneSpectrumAnalyzerView::on_show() {
     View::on_show();
     display.scroll_set_area(109, screen_height - 1);
+
+    // CRITICAL FIX: Lazy gradient initialization to prevent blocking I/O on startup
+    // Call this AFTER display is ready to avoid hanging during constructor
+    display_controller_.lazy_initialize_gradient();
+
     hardware_.on_hardware_show();
 }
 
@@ -3308,22 +3353,22 @@ ScanningCoordinator::~ScanningCoordinator() {
 }
 
 void ScanningCoordinator::start_coordinated_scanning() {
-    if (scanning_active_) return;
-    scanning_active_ = true;
+    if (scanning_active_.load(std::memory_order_acquire)) return;
+    scanning_active_.store(true, std::memory_order_release);
 
     scanning_thread_ = chThdCreateFromHeap(NULL, COORDINATOR_THREAD_STACK_SIZE,
                                          NORMALPRIO,
                                          scanning_thread_function, this);
     if (!scanning_thread_) {
-        scanning_active_ = false;
+        scanning_active_.store(false, std::memory_order_release);
     }
 }
 
 void ScanningCoordinator::stop_coordinated_scanning() {
-    // 1. First check if thread is active at all
-    if (scanning_active_) {
+    //1. First check if thread is active at all
+    if (scanning_active_.load(std::memory_order_acquire)) {
         // 2. Reset flag. Thread will see this in while(scanning_active_) loop and exit.
-        scanning_active_ = false;
+        scanning_active_.store(false, std::memory_order_release);
 
         // 3. If thread pointer exists, wait for its completion.
         if (scanning_thread_) {
@@ -3339,14 +3384,14 @@ msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
 }
 
 msg_t ScanningCoordinator::coordinated_scanning_thread() {
-    while (scanning_active_) {
+    while (scanning_active_.load(std::memory_order_acquire)) {
         scanner_.perform_scan_cycle(hardware_);
         // TODO[CRITICAL][FIXED]: Removed direct UI calls from scanning thread
         // UI updates now happen only through MessageHandler in handle_scanner_update()
 
         chThdSleepMilliseconds(scan_interval_ms_);
     }
-    scanning_active_ = false;
+    scanning_active_.store(false, std::memory_order_release);
     scanning_thread_ = nullptr;
     chThdExit(0);
     return 0;
@@ -3354,10 +3399,10 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() {
 
 void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {
     scan_interval_ms_ = settings.scan_interval_ms;
-    
+
     // Update scanner parameters if scanning is active
-    if (scanning_active_) {
-        scanner_.update_scan_range(settings.wideband_min_freq_hz, 
+    if (scanning_active_.load(std::memory_order_acquire)) {
+        scanner_.update_scan_range(settings.wideband_min_freq_hz,
                                    settings.wideband_max_freq_hz);
     }
 }
