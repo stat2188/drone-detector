@@ -317,35 +317,31 @@ set(add_to_firmware TRUE)
 set(MODE_FLAGS "-O3")
 
 
-### ADS-B RX
-
-set(MODE_CPPSRC
-	proc_adsbrx.cpp
-)
-DeclareTargets(PADR adsbrx)
-
-
-### AFSK TX
-
-set(MODE_CPPSRC
-	proc_afsk.cpp
-)
-DeclareTargets(PAFT afsktx)
-
-### APRS RX
-
-set(MODE_CPPSRC
-	proc_aprsrx.cpp
-)
-DeclareTargets(PAPR aprsrx)
+### ADS-B RX - DISABLED (UI already commented, no usage)
+#set(MODE_CPPSRC
+#	proc_adsbrx.cpp
+#)
+#DeclareTargets(PADR adsbrx)
 
 
-### BTLE RX
+### AFSK TX - DISABLED (UI already commented, no usage)
+#set(MODE_CPPSRC
+#	proc_afsk.cpp
+#)
+#DeclareTargets(PAFT afsktx)
 
-set(MODE_CPPSRC
-	proc_btlerx.cpp
-)
-DeclareTargets(PBTR btlerx)
+### APRS RX - DISABLED (UI already commented, no usage)
+#set(MODE_CPPSRC
+#	proc_aprsrx.cpp
+#)
+#DeclareTargets(PAPR aprsrx)
+
+
+### BTLE RX - DISABLED (UI already commented, no usage)
+#set(MODE_CPPSRC
+#	proc_btlerx.cpp
+#)
+#DeclareTargets(PBTR btlerx)
 
 ### BTLE TX
 
@@ -354,12 +350,11 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PBTT btletx)
 
-### AIS
-
-set(MODE_CPPSRC
-	proc_ais.cpp
-)
-DeclareTargets(PAIS ais)
+### AIS - DISABLED (UI already commented, no usage)
+#set(MODE_CPPSRC
+#	proc_ais.cpp
+#)
+#DeclareTargets(PAIS ais)
 
 ### AM Audio
 
@@ -383,19 +378,17 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PERT ert)
 
-### Radiosonde
+### Radiosonde - DISABLED (UI already commented, no usage)
+#set(MODE_CPPSRC
+#	proc_sonde.cpp
+#)
+#DeclareTargets(PSON sonde)
 
-set(MODE_CPPSRC
-	proc_sonde.cpp
-)
-DeclareTargets(PSON sonde)
-
-### FSK RX
-
-set(MODE_CPPSRC
-	proc_fsk_rx.cpp
-)
-DeclareTargets(PFSR fskrx)
+### FSK RX - DISABLED (No external apps use this)
+#set(MODE_CPPSRC
+#	proc_fsk_rx.cpp
+#)
+#DeclareTargets(PFSR fskrx)
 
 ### FSK TX
 
@@ -433,12 +426,11 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PPO2 pocsag2)
 
-### RDS
-
-set(MODE_CPPSRC
-	proc_rds.cpp
-)
-DeclareTargets(PRDS rds)
+### RDS - DISABLED (UI already commented, no usage)
+#set(MODE_CPPSRC
+#	proc_rds.cpp
+#)
+#DeclareTargets(PRDS rds)
 
 ### Replay
 
@@ -486,13 +478,12 @@ set(MODE_CPPSRC
 DeclareTargets(PSGD subghzd)
 
 
-### Weather Stations
-set(MODE_CPPSRC
-	proc_weather.cpp
-)
-DeclareTargets(PWTH weather)
-
-set(MODE_FLAGS "-Os")
+### Weather Stations - DISABLED (UI already commented, no usage)
+#set(MODE_CPPSRC
+#	proc_weather.cpp
+#)
+#DeclareTargets(PWTH weather)
+#set(MODE_FLAGS "-Os")
 
 ### Flash Utility
 

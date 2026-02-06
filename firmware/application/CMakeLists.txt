@@ -134,10 +134,10 @@ file(GLOB I2CDEV_SOURCES ${COMMON}/i2cdev_*.cpp)
 set(CPPSRC
 	main.cpp
 	shell.cpp
-	${COMMON}/adsb.cpp
-	${COMMON}/adsb_frame.cpp
-	${COMMON}/ais_baseband.cpp
-	${COMMON}/ais_packet.cpp
+	#${COMMON}/adsb.cpp
+	#${COMMON}/adsb_frame.cpp
+	#${COMMON}/ais_baseband.cpp
+	#${COMMON}/ais_packet.cpp
 	${COMMON}/ak4951.cpp
 	${COMMON}/backlight.cpp
 	${COMMON}/baseband_cpld.cpp
@@ -164,11 +164,11 @@ set(CPPSRC
 	${COMMON}/png_writer.cpp
 	${COMMON}/pocsag.cpp
 	${COMMON}/pocsag_packet.cpp
-	${COMMON}/aprs_packet.cpp
+	#${COMMON}/aprs_packet.cpp
 	${COMMON}/portapack_io.cpp
 	${COMMON}/portapack_persistent_memory.cpp
 	${COMMON}/portapack_shared_memory.cpp
-	${COMMON}/sonde_packet.cpp
+	#${COMMON}/sonde_packet.cpp
 	# ${COMMON}/test_packet.cpp
 	${COMMON}/tpms_packet.cpp
 	${COMMON}/ui.cpp
