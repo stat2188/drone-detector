@@ -289,7 +289,7 @@ set(CPPSRC
 	apps/ui_freqman.cpp
 	apps/ui_iq_trim.cpp
 	#apps/ui_looking_glass_app.cpp
-	#apps/ui_mictx.cpp
+	apps/ui_mictx.cpp
 	apps/ui_modemsetup.cpp
 	apps/ui_playlist.cpp
 	#apps/ui_pocsag_tx.cpp
@@ -305,7 +305,7 @@ set(CPPSRC
 	apps/ui_standalone_view.cpp
 	#apps/ui_subghzd.cpp
 	# apps/ui_test.cpp
-	#apps/ui_text_editor.cpp
+	apps/ui_text_editor.cpp
 	apps/ui_touch_calibration.cpp
 	apps/ui_touchtunes.cpp
 	#apps/ui_weatherstation.cpp
