@@ -468,7 +468,7 @@ struct DetectionParams {
     Frequency get_current_radio_frequency() const;
 
     struct DroneSnapshot {
-        TrackedDrone drones[MAX_TRACKED_DRONES];
+        TrackedDrone drones[DroneConstants::MAX_TRACKED_DRONES];
         size_t count = 0;
     };
 
@@ -523,7 +523,7 @@ private:
     ScanningMode scanning_mode_ = ScanningMode::DATABASE;
     std::atomic<bool> is_real_mode_{true};
 
-    TrackedDrone tracked_drones_[MAX_TRACKED_DRONES];
+    TrackedDrone tracked_drones_[DroneConstants::MAX_TRACKED_DRONES];
     size_t tracked_count_ = 0;
 
     size_t approaching_count_ = 0;
@@ -535,8 +535,6 @@ private:
 
     static constexpr uint8_t DETECTION_DELAY = 2;
     WidebandScanData wideband_scan_data_;
-    // Replaced stack-allocated database with file-based FreqmanDB (saves ~3KB stack)
-    FreqmanDB freq_db_;
     DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
 
@@ -866,7 +864,7 @@ public:
     void process_mini_spectrum_data(const ChannelSpectrum& spectrum);
     bool process_bins(uint8_t* power_level);
     void render_mini_spectrum();
-    void highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES>& drones);
+    void highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES>& drones);
     size_t frequency_to_spectrum_bin(Frequency freq_hz) const;
     void clear_spectrum_buffers();
     bool validate_spectrum_data() const;
@@ -910,13 +908,13 @@ private:
     static constexpr size_t MAX_UI_DRONES = 16;
     std::array<DisplayDroneEntry, MAX_UI_DRONES> detected_drones_;
     size_t detected_drones_count_ = 0;
-    std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES> displayed_drones_;
+    std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
 
     std::unique_ptr<std::array<Color, 240u>> spectrum_row_ptr_;  // Moved to heap (~960 bytes saved)
     std::unique_ptr<std::array<Color, SPEC_WIDTH>> render_line_buffer_ptr_;  // Moved to heap (~960 bytes saved from 60FPS loop)
     std::array<uint8_t, 200> spectrum_power_levels_;
     struct ThreatBin { size_t bin; ThreatLevel threat; };
-    std::array<ThreatBin, MAX_DISPLAYED_DRONES> threat_bins_;
+    std::array<ThreatBin, DroneConstants::MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
 
     std::unique_ptr<std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>> waterfall_buffer_ptr_;
