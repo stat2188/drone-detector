@@ -50,10 +50,10 @@
 #include "ui_recon.hpp"
 // #include "ui_scanner.hpp"
 #include "ui_sd_over_usb.hpp"
-#include "ui_search.hpp"
+//#include "ui_search.hpp"
 #include "ui_settings.hpp"
 #include "ui_siggen.hpp"
-#include "ui_sonde.hpp"
+//#include "ui_sonde.hpp"
 #include "ui_ss_viewer.hpp"
 // #include "ui_test.hpp"
 	#include "ui_text_editor.hpp"
@@ -70,7 +70,7 @@
 	//#include "ble_rx_app.hpp"
 	//#include "ble_tx_app.hpp"
 	#include "capture_app.hpp"
-#include "pocsag_app.hpp"
+//#include "pocsag_app.hpp"
 
 #include "core_control.hpp"
 #include "file.hpp"
@@ -135,9 +135,9 @@ const NavigationView::AppList NavigationView::appList = {
 	//{"aprsrx", "APRS", RX, Color::green(), &bitmap_icon_aprs, new ViewFactory<APRSRXView>()},
 	{"audio", "Audio", RX, Color::green(), &bitmap_icon_speaker, new ViewFactory<AnalogAudioView>()},
 	//{"blerx", "BLE Rx", RX, Color::green(), &bitmap_icon_btle, new ViewFactory<BLERxView>()},
-	{"pocsag", "POCSAG", RX, Color::green(), &bitmap_icon_pocsag, new ViewFactory<POCSAGAppView>()},
-     {"radiosonde", "Radiosnde", RX, Color::green(), &bitmap_icon_sonde, new ViewFactory<SondeView>()},
-	{"search", "Search", RX, Color::yellow(), &bitmap_icon_search, new ViewFactory<SearchView>()},
+	//{"pocsag", "POCSAG", RX, Color::green(), &bitmap_icon_pocsag, new ViewFactory<POCSAGAppView>()},
+      //{"radiosonde", "Radiosnde", RX, Color::green(), &bitmap_icon_sonde, new ViewFactory<SondeView>()},
+	//{"search", "Search", RX, Color::yellow(), &bitmap_icon_search, new ViewFactory<SearchView>()},
 	//{"subghzd", "SubGhzD", RX, Color::yellow(), &bitmap_icon_remote, new ViewFactory<SubGhzDView>()},
 	//{"weather", "Weather", RX, Color::green(), &bitmap_icon_thermometer, new ViewFactory<WeatherView>()},
 	/* TX ********************************************************************/
