@@ -85,15 +85,14 @@ using FilteredPresetMenuView = std::function<void(const DronePreset&, const std:
 
 class DroneFrequencyPresets {
 public:
-    static const std::vector<DronePreset>& get_all_presets();
+    static constexpr size_t PRESETS_COUNT = 5;
+    // Note: Cannot use constexpr because DronePreset contains std::string
+    static const std::array<DronePreset, PRESETS_COUNT>& get_all_presets();
     static std::vector<std::string> get_preset_names();
     static std::vector<DroneType> get_available_types();
     static std::string get_type_display_name(DroneType type);
-    static std::vector<DronePreset> get_presets_of_type(const std::vector<DronePreset>& all_presets, DroneType type);
+    static std::vector<DronePreset> get_presets_of_type(const std::array<DronePreset, PRESETS_COUNT>& all_presets, DroneType type);
     static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset);
-
-private:
-    static const std::vector<DronePreset> standard_presets_;
 };
 
 class DronePresetSelector {

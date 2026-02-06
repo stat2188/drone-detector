@@ -285,8 +285,9 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
 
 
 
+// 🔴 OPTIMIZATION: static const array instead of vector to avoid heap allocation
 // Built-in database of known drone frequencies (2025)
-const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB = {
+const std::array<DroneScanner::BuiltinDroneFreq, DroneScanner::BUILTIN_DB_SIZE> DroneScanner::BUILTIN_DRONE_DB = {{
     // --- LRS / Control (Long Range) ---
     { 868000000, "TBS Crossfire EU", DroneType::MILITARY_DRONE }, // Often used in FPV/DIY
     { 915000000, "TBS Crossfire US", DroneType::MILITARY_DRONE },
@@ -329,7 +330,7 @@ const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB
     { 2412000000, "WiFi Ch1", DroneType::PARROT_ANAFI },
     { 2437000000, "WiFi Ch6", DroneType::PARROT_ANAFI },
     { 2462000000, "WiFi Ch11", DroneType::PARROT_ANAFI }
-};
+}};
 
 // ===========================================
 // PART 2: DRONE SCANNER IMPLEMENTATION
@@ -337,15 +338,15 @@ const std::vector<DroneScanner::BuiltinDroneFreq> DroneScanner::BUILTIN_DRONE_DB
 
 DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
     : scanning_thread_(nullptr),
-      data_mutex(),
-      scanning_active_(false),
-      current_db_index_(0),
-      last_scanned_frequency_(0),
-      freq_db_loaded_(false),
-      scan_cycles_(0),
-      total_detections_(0),
-       scanning_mode_(ScanningMode::DATABASE),
-       is_real_mode_(true),
+       data_mutex(),
+       scanning_active_(false),
+       current_db_index_(0),
+       last_scanned_frequency_(0),
+       freq_db_loaded_(false),
+       scan_cycles_(0),
+       total_detections_(0),
+        scanning_mode_(DroneScanner::ScanningMode::DATABASE),
+        is_real_mode_(true),
        tracked_drones_ptr_(std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>()),
        tracked_count_(0),
        approaching_count_(0),

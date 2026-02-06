@@ -12,6 +12,7 @@
 #include <memory>
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
 
 namespace fs = std::filesystem;
 
@@ -39,8 +40,15 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
 
     auto& file = settings_file;
 
+    // 🔴 OPTIMIZATION: Pre-allocated buffer for settings content
+    // Scott Meyers Item 29: Use object pools to reduce allocation overhead
+    // This replaces ~20 std::string allocations with a single char array
+    static constexpr size_t SETTINGS_BUFFER_SIZE = 4096;
+    char settings_buffer[SETTINGS_BUFFER_SIZE];
+    size_t offset = 0;
+
     // Write header with timestamp
-    std::string header = generate_file_header();
+    auto header = generate_file_header();
     auto header_result = file.write(header.data(), header.size());
     if (header_result.is_error() || header_result.value() != header.size()) {
         file.close();
@@ -49,10 +57,48 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
         return false;
     }
 
-    // Generate and write all settings
-    std::string content = generate_settings_content(settings);
-    auto content_result = file.write(content.data(), content.size());
-    if (content_result.is_error() || content_result.value() != content.size()) {
+    // 🔴 OPTIMIZATION: Generate settings content using snprintf (no heap allocations)
+    // This replaces the entire generate_settings_content() function
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "spectrum_mode=%s\n", spectrum_mode_to_string(settings.spectrum_mode));
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "scan_interval_ms=%u\n", settings.scan_interval_ms);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "rssi_threshold_db=%d\n", settings.rssi_threshold_db);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "enable_audio_alerts=%s\n", settings.enable_audio_alerts ? "true" : "false");
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "audio_alert_frequency_hz=%u\n", settings.audio_alert_frequency_hz);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "audio_alert_duration_ms=%u\n", settings.audio_alert_duration_ms);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "hardware_bandwidth_hz=%u\n", settings.hardware_bandwidth_hz);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "enable_real_hardware=%s\n", settings.enable_real_hardware ? "true" : "false");
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "demo_mode=%s\n", settings.demo_mode ? "true" : "false");
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "freqman_path=%s\n", settings.freqman_path.c_str());
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "user_min_freq_hz=%llu\n", (unsigned long long)settings.user_min_freq_hz);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "user_max_freq_hz=%llu\n", (unsigned long long)settings.user_max_freq_hz);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "wideband_slice_width_hz=%u\n", settings.wideband_slice_width_hz);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "panoramic_mode_enabled=%s\n", settings.panoramic_mode_enabled ? "true" : "false");
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "wideband_min_freq_hz=%llu\n", (unsigned long long)settings.wideband_min_freq_hz);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "wideband_max_freq_hz=%llu\n", (unsigned long long)settings.wideband_max_freq_hz);
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "settings_version=0.4\n");
+    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+                      "last_modified_timestamp=%lu\n", (unsigned long)chTimeNow());
+
+    // Write settings content
+    auto content_result = file.write(settings_buffer, offset);
+    if (content_result.is_error() || content_result.value() != offset) {
         file.close();
         // 🔴 ENHANCED: Log error - restore from backup on write failure
         restore_from_backup(filepath);
@@ -159,13 +205,19 @@ void EnhancedSettingsManager::remove_backup_file(const std::string& filepath) {
 }
 
 std::string EnhancedSettingsManager::generate_file_header() {
-    std::stringstream ss;
-    ss << "# Enhanced Drone Analyzer Settings v0.4\n";
-    ss << "# Generated by EDA App (Integrated Settings)\n";
-    ss << "# Timestamp: " << get_current_timestamp() << "\n";
-    ss << "# This file is automatically read by EDA module\n";
-    ss << "\n";
-    return ss.str();
+    // 🔴 OPTIMIZATION: Use char array instead of stringstream to avoid heap allocations
+    static constexpr size_t HEADER_BUFFER_SIZE = 256;
+    static char header_buffer[HEADER_BUFFER_SIZE];
+
+    snprintf(header_buffer, HEADER_BUFFER_SIZE,
+             "# Enhanced Drone Analyzer Settings v0.4\n"
+             "# Generated by EDA App (Integrated Settings)\n"
+             "# Timestamp: %s\n"
+             "# This file is automatically read by EDA module\n"
+             "\n",
+             get_current_timestamp().c_str());
+
+    return std::string(header_buffer);
 }
 
 std::string EnhancedSettingsManager::generate_settings_content(const DroneAnalyzerSettings& settings) {
@@ -341,15 +393,18 @@ const char* DroneAnalyzerSettingsManager::get_translation(const std::string& key
 
 // ============ DroneFrequencyPresets Implementation ============
 
-static const std::vector<DronePreset> default_presets = {
+// 🔴 OPTIMIZATION: static const array instead of vector to avoid heap allocation
+// Scott Meyers Item 15: Prefer static const to #define
+// Note: Cannot use constexpr because DronePreset contains std::string (not constexpr-constructible)
+static const std::array<DronePreset, 5> default_presets = {{
     {"2.4GHz Band Scan", "Drone_2_4GHz", 2400000000ULL, ThreatLevel::MEDIUM, DroneType::MAVIC},
     {"2.5GHz Band Scan", "Drone_2_5GHz", 2500000000ULL, ThreatLevel::HIGH, DroneType::PHANTOM},
     {"DJI Mavic Series", "DJI_Mavic", 2437000000ULL, ThreatLevel::HIGH, DroneType::DJI_MINI},
     {"Parrot Anafi", "Parrot_Anafi", 2450000000ULL, ThreatLevel::MEDIUM, DroneType::PARROT_ANAFI},
     {"Military UAV Band", "Military_UAV", 5000000000ULL, ThreatLevel::CRITICAL, DroneType::MILITARY_DRONE}
-};
+}};
 
-const std::vector<DronePreset>& DroneFrequencyPresets::get_all_presets() { return default_presets; }
+const std::array<DronePreset, 5>& DroneFrequencyPresets::get_all_presets() { return default_presets; }
 std::vector<std::string> DroneFrequencyPresets::get_preset_names() {
     std::vector<std::string> names;
     for (const auto& preset : default_presets) names.push_back(preset.display_name);
@@ -372,7 +427,7 @@ std::string DroneFrequencyPresets::get_type_display_name(DroneType type) {
         default: return "Unknown";
     }
 }
-std::vector<DronePreset> DroneFrequencyPresets::get_presets_of_type(const std::vector<DronePreset>& all_presets, DroneType type) {
+std::vector<DronePreset> DroneFrequencyPresets::get_presets_of_type(const std::array<DronePreset, PRESETS_COUNT>& all_presets, DroneType type) {
     std::vector<DronePreset> filtered;
     std::copy_if(all_presets.begin(), all_presets.end(), std::back_inserter(filtered),
                  [type](const DronePreset& preset) { return preset.drone_type == type; });

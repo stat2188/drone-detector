@@ -7,6 +7,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <cstdio>
 
 #include "ui_drone_common_types.hpp"
 #include "ui_signal_processing.hpp"
@@ -179,7 +180,7 @@ struct DisplayDroneEntry {
 // MAX_TRACKED_DRONES, MAX_DISPLAYED_DRONES defined in drone_constants.hpp
 static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
 static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
-static constexpr int SPEC_HEIGHT = 80;  // Optimized: 8 -> 80 with hardware scroll
+static constexpr int SPEC_HEIGHT = 40;  // Heap optimization: 80 -> 40 (saves 9.6KB)
 static constexpr int SPEC_WIDTH = 240;
 static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
 static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
@@ -307,6 +308,43 @@ private:
     Mutex& mtx_;
 };
 
+// 🔴 OPTIMIZATION: String Pool for heap fragmentation reduction
+// Scott Meyers Item 29: Consider using object pools for frequently allocated objects
+class StringPool {
+public:
+    static constexpr size_t POOL_SIZE = 2048;
+    static constexpr size_t MAX_STRING_LENGTH = 256;
+
+    StringPool() : offset_(0) {
+    }
+
+    char* allocate(size_t length) {
+        if (length >= MAX_STRING_LENGTH) return nullptr;
+
+        // Check if we have enough space
+        if (offset_ + length + 1 >= POOL_SIZE) {
+            // Pool full - reset to beginning (simple circular buffer)
+            offset_ = 0;
+        }
+
+        char* result = pool_ + offset_;
+        offset_ += length + 1;
+        pool_[offset_ - 1] = '\0';  // Null-terminate
+        return result;
+    }
+
+    void reset() {
+        offset_ = 0;
+    }
+
+    StringPool(const StringPool&) = delete;
+    StringPool& operator=(const StringPool&) = delete;
+
+private:
+    char pool_[POOL_SIZE];
+    size_t offset_;
+};
+
 class DroneDetectionLogger {
 public:
     DroneDetectionLogger();
@@ -376,15 +414,20 @@ public:
         DroneType type;
     };
 
-    // Complete built-in database of known drone frequencies (2025)
-    static const std::vector<BuiltinDroneFreq> BUILTIN_DRONE_DB;
+    // 🔴 OPTIMIZATION: constexpr array instead of vector to avoid heap allocation
+    // Scott Meyers Item 15: Prefer constexpr to #define and const
+    static constexpr size_t BUILTIN_DB_SIZE = 31;
+    static const std::array<BuiltinDroneFreq, BUILTIN_DB_SIZE> BUILTIN_DRONE_DB;
 
-public:
+    // Scanning modes for DroneScanner (different from DroneConstants::ScanningMode)
     enum class ScanningMode {
         DATABASE,
         WIDEBAND_CONTINUOUS,
         HYBRID
     };
+
+    // Alias to avoid ambiguity with DroneConstants::ScanningMode
+    using ScannerMode = ScanningMode;
 
     DroneScanner(const DroneAnalyzerSettings& settings);
     ~DroneScanner();
@@ -528,7 +571,7 @@ private:
     std::atomic<uint32_t> scan_cycles_{0};
     std::atomic<uint32_t> total_detections_{0};
 
-    ScanningMode scanning_mode_ = ScanningMode::DATABASE;
+    ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
     std::atomic<bool> is_real_mode_{true};
 
     std::unique_ptr<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>> tracked_drones_ptr_;

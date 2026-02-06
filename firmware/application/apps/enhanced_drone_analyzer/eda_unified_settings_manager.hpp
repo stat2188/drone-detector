@@ -7,6 +7,8 @@
 
 #include "eda_unified_settings.hpp"
 #include <string>
+#include <cstddef>
+#include <cstdio>
 
 class File;
 
@@ -31,6 +33,11 @@ private:
     static void write_setting(File& file, const char* key, int32_t value);
     static void write_setting(File& file, const char* key, bool value);
     static void write_setting(File& file, const char* key, uint64_t value);
+
+    // 🔴 OPTIMIZATION: Pre-allocated buffer to avoid heap fragmentation
+    static constexpr size_t WRITE_BUFFER_SIZE = 2048;
+    static void write_setting_buffered(File& file, const char* key, const char* value,
+                                       char* buffer, size_t buffer_size);
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer
