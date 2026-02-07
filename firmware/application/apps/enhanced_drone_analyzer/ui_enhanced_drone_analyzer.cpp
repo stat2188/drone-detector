@@ -2399,11 +2399,13 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
        frequency_ruler_({0, 68, screen_width, 12}),
        detected_drones_ptr_(std::make_unique<std::array<DisplayDroneEntry, MAX_UI_DRONES>>()),
        displayed_drones_(),
-       // 🔴 FIX: Static buffers initialized immediately (no heap allocation)
-       spectrum_row_buffer_{{}},
-       render_line_buffer_{{}},
-       waterfall_buffer_{{}},
-       spectrum_power_levels_(), threat_bins_(), threat_bins_count_(0),
+       // 🔴 FIX: Initialize pointer members as nullptr (deferred allocation)
+       spectrum_row_buffer_ptr_(nullptr),
+       render_line_buffer_ptr_(nullptr),
+       waterfall_buffer_ptr_(nullptr),
+       spectrum_power_levels_ptr_(nullptr),
+       threat_bins_(), threat_bins_count_(0),
+       waterfall_line_index_(0),
        spectrum_gradient_(), spectrum_fifo_(nullptr),
        pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
        marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
@@ -2415,8 +2417,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
 
     std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{});
 
-    // CRITICAL FIX: Don't perform blocking I/O in View constructor
-    // Use default gradient immediately, load from file in on_show()
+    // CRITICAL FIX: Use default gradient immediately
     spectrum_gradient_.set_default();
 
     // --- REMOVED: Stack allocation now handled in header ---
@@ -2436,8 +2437,37 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
         &text_drone_3_
     });
 
-    // Hide the old ruler, use compact by default
+    // Hide old ruler, use compact by default
     frequency_ruler_.set_visible(false);
+}
+
+// 🔴 FIX: Deferred buffer allocation to prevent stack overflow
+void DroneDisplayController::allocate_buffers() {
+    if (!waterfall_buffer_ptr_) {
+        waterfall_buffer_ptr_ = std::make_unique<
+            std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>>();
+    }
+    if (!spectrum_row_buffer_ptr_) {
+        spectrum_row_buffer_ptr_ = std::make_unique<
+            std::array<Color, SPECTRUM_ROW_SIZE>>();
+    }
+    if (!render_line_buffer_ptr_) {
+        render_line_buffer_ptr_ = std::make_unique<
+            std::array<Color, RENDER_LINE_SIZE>>();
+    }
+    if (!spectrum_power_levels_ptr_) {
+        spectrum_power_levels_ptr_ = std::make_unique<
+            std::array<uint8_t, 200>>();
+    }
+    
+    waterfall_line_index_ = 0;
+}
+
+void DroneDisplayController::deallocate_buffers() {
+    waterfall_buffer_ptr_.reset();
+    spectrum_row_buffer_ptr_.reset();
+    render_line_buffer_ptr_.reset();
+    spectrum_power_levels_ptr_.reset();
 }
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
@@ -2727,10 +2757,15 @@ bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
 void DroneDisplayController::render_mini_spectrum() {
     display.scroll(1);
     
+    // 🔴 FIX: Safety check for nullptr
+    if (!spectrum_power_levels_ptr_) {
+        return;
+    }
+    
     std::array<Color, SPEC_WIDTH> new_line{};
     for (size_t x = 0; x < SPEC_WIDTH; ++x) {
-        uint8_t power_value = (x < spectrum_power_levels_.size()) ? 
-                             spectrum_power_levels_[x] : 0;
+        uint8_t power_value = (x < spectrum_power_levels().size()) ?
+                              spectrum_power_levels()[x] : 0;
         uint8_t color_index = (power_value * spectrum_gradient_.lut.size()) / 256;
         if (color_index >= spectrum_gradient_.lut.size()) {
             color_index = spectrum_gradient_.lut.size() - 1;
@@ -2757,11 +2792,19 @@ void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array
 }
 
 void DroneDisplayController::clear_spectrum_buffers() {
-    std::fill(spectrum_power_levels_.begin(), spectrum_power_levels_.end(), 0);
+    // 🔴 FIX: Safety check for nullptr
+    if (!spectrum_power_levels_ptr_) {
+        return;
+    }
+    std::fill(spectrum_power_levels().begin(), spectrum_power_levels().end(), 0);
 }
 
 bool DroneDisplayController::validate_spectrum_data() const {
-    if (spectrum_power_levels_.size() != MINI_SPECTRUM_WIDTH) return false;
+    // 🔴 FIX: Safety check for nullptr
+    if (!spectrum_power_levels_ptr_) {
+        return false;
+    }
+    if (spectrum_power_levels().size() != MINI_SPECTRUM_WIDTH) return false;
     if (spectrum_gradient_.lut.empty()) return false;
     return true;
 }
@@ -3178,6 +3221,9 @@ EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
     scanner_.stop_scanning();
     hardware_.shutdown_hardware();
 
+    // 🔴 FIX: Explicit buffer deallocation (before stack objects destroyed)
+    display_controller_.deallocate_buffers();
+
     // 2. Stack objects will be automatically destroyed in reverse order
     // No manual deletion needed for stack-allocated objects
 }
@@ -3216,6 +3262,9 @@ void EnhancedDroneSpectrumAnalyzerView::update_init_progress_display() {
         case InitState::CONSTRUCTED:
             status_bar_.update_normal_status("INIT", "Starting up...");
             break;
+        case InitState::BUFFERS_ALLOCATED:
+            status_bar_.update_normal_status("INIT", "Buffers ready");
+            break;
         case InitState::DATABASE_LOADED:
             status_bar_.update_normal_status("INIT", "Database ready");
             break;
@@ -3241,8 +3290,24 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
     initialization_in_progress_ = true;
     systime_t now = chTimeNow();
 
-    // === PHASE 1: Load database (100ms after on_show) ===
+    // === PHASE 1: Allocate display buffers (50ms after on_show) ===
     if (init_state_ == InitState::CONSTRUCTED &&
+        (now - init_start_time_ > 50)) {
+
+        status_bar_.update_normal_status("INIT", "Allocating buffers...");
+
+        // 🔴 CRITICAL: Heap-allocate large buffers (saves ~10.8KB stack)
+        display_controller_.allocate_buffers();
+
+        init_state_ = InitState::BUFFERS_ALLOCATED;
+        last_init_progress_ = now;
+
+        initialization_in_progress_ = false;
+        return;
+    }
+
+    // === PHASE 2: Load database (100ms after on_show) ===
+    if (init_state_ == InitState::BUFFERS_ALLOCATED &&
         (now - init_start_time_ > 100)) {
 
         status_bar_.update_normal_status("INIT", "Loading database...");
@@ -3265,7 +3330,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         return;
     }
 
-    // === PHASE 2: Initialize hardware (200ms after on_show) ===
+    // === PHASE 3: Initialize hardware (200ms after on_show) ===
     if (init_state_ == InitState::DATABASE_LOADED &&
         (now - init_start_time_ > 200)) {
 
@@ -3281,7 +3346,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         return;
     }
 
-    // === PHASE 3: Setup UI Layout (300ms after on_show) ===
+    // === PHASE 4: Setup UI Layout (300ms after on_show) ===
     if (init_state_ == InitState::HARDWARE_READY &&
         (now - init_start_time_ > 300)) {
 
@@ -3297,7 +3362,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         return;
     }
 
-    // === PHASE 4: Load settings (400ms after on_show) ===
+    // === PHASE 5: Load settings (400ms after on_show) ===
     if (init_state_ == InitState::UI_LAYOUT_READY &&
         (now - init_start_time_ > 400)) {
 
@@ -3317,7 +3382,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         return;
     }
 
-    // === PHASE 5: Coordinator prepared (500ms after on_show) ===
+    // === PHASE 6: Coordinator prepared (500ms after on_show) ===
     if (init_state_ == InitState::COORDINATOR_READY &&
         (now - init_start_time_ > 500)) {
 
@@ -3678,9 +3743,12 @@ void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum
 }
 
 void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
-    // 🔴 FIX: Use static buffer instead of unique_ptr
-    if (pixel_index < spectrum_row_buffer_.size()) {
-        spectrum_row_buffer_[pixel_index] = spectrum_gradient_.lut[power];
+    // 🔴 FIX: Safety check for nullptr (buffers not allocated yet)
+    if (!spectrum_row_buffer_ptr_) {
+        return;
+    }
+    if (pixel_index < spectrum_row_buffer().size()) {
+        spectrum_row_buffer()[pixel_index] = spectrum_gradient_.lut[power];
         pixel_index++;
     }
 }

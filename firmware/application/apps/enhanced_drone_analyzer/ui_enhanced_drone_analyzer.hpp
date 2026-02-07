@@ -946,6 +946,20 @@ public:
     CompactFrequencyRuler& compact_frequency_ruler() { return compact_frequency_ruler_; }
     FrequencyRuler& frequency_ruler() { return frequency_ruler_; }
 
+    // 🔴 FIX: Buffer allocation/deallocation (deferred from constructor)
+    void allocate_buffers();
+    void deallocate_buffers();
+
+    // 🔴 FIX: Safe buffer accessors (both const and non-const)
+    auto& spectrum_row_buffer() { return *spectrum_row_buffer_ptr_; }
+    const auto& spectrum_row_buffer() const { return *spectrum_row_buffer_ptr_; }
+    auto& render_line_buffer() { return *render_line_buffer_ptr_; }
+    const auto& render_line_buffer() const { return *render_line_buffer_ptr_; }
+    auto& waterfall_buffer() { return *waterfall_buffer_ptr_; }
+    const auto& waterfall_buffer() const { return *waterfall_buffer_ptr_; }
+    auto& spectrum_power_levels() { return *spectrum_power_levels_ptr_; }
+    const auto& spectrum_power_levels() const { return *spectrum_power_levels_ptr_; }
+
     // 🔴 FIX: Public methods for parent View message delegation
     void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
         spectrum_fifo_ = fifo;
@@ -983,11 +997,11 @@ private:
     size_t detected_drones_count_ = 0;
     std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
 
-    // 🔴 OPTIMIZATION: Static buffers instead of unique_ptr (saves ~11KB heap + reduces fragmentation)
-    std::array<Color, SPECTRUM_ROW_SIZE> spectrum_row_buffer_;
-    std::array<Color, RENDER_LINE_SIZE> render_line_buffer_;
-    std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT> waterfall_buffer_;
-    std::array<uint8_t, 200> spectrum_power_levels_;
+    // 🔴 FIX: Heap-allocated buffers to prevent stack overflow (saves ~10.8KB stack)
+    std::unique_ptr<std::array<Color, SPECTRUM_ROW_SIZE>> spectrum_row_buffer_ptr_;
+    std::unique_ptr<std::array<Color, RENDER_LINE_SIZE>> render_line_buffer_ptr_;
+    std::unique_ptr<std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>> waterfall_buffer_ptr_;
+    std::unique_ptr<std::array<uint8_t, 200>> spectrum_power_levels_ptr_;
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, DroneConstants::MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
@@ -1115,11 +1129,12 @@ public:
     // 🔴 ФАЗА 2.1: Deferred initialization state machine
     enum class InitState {
         CONSTRUCTED,           // 0: Constructor completed
-        DATABASE_LOADED,       // 1: scanner_.initialize_database_and_scanner() completed
-        HARDWARE_READY,        // 2: hardware_.on_hardware_show() completed
-        UI_LAYOUT_READY,       // 3: initialize_modern_layout() completed
-        COORDINATOR_READY,    // 4: coordinator thread creation prepared
-        FULLY_INITIALIZED     // 5: Ready for operation
+        BUFFERS_ALLOCATED,     // 1: display buffers heap-allocated
+        DATABASE_LOADED,       // 2: scanner_.initialize_database_and_scanner() completed
+        HARDWARE_READY,        // 3: hardware_.on_hardware_show() completed
+        UI_LAYOUT_READY,       // 4: initialize_modern_layout() completed
+        COORDINATOR_READY,    // 5: coordinator thread creation prepared
+        FULLY_INITIALIZED     // 6: Ready for operation
     };
 
  private:
