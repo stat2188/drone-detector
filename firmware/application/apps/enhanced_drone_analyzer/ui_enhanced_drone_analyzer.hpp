@@ -519,6 +519,11 @@ struct DetectionParams {
 
     bool try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const;
 
+    // 🔴 FIX: Public API for safe initialization
+    // These methods must be public to allow lazy initialization after constructor
+    void initialize_database_and_scanner();
+    void cleanup_database_and_scanner();
+
 private:
     void reset_scan_cycles();
     void initialize_wideband_scanning();
@@ -536,8 +541,6 @@ private:
     static msg_t scanning_thread_function(void* arg);
     msg_t scanning_thread();
 
-    void initialize_database_and_scanner();
-    void cleanup_database_and_scanner();
     void scan_init_from_loaded_frequencies();
 
     void perform_database_scan_cycle(DroneHardwareController& hardware);

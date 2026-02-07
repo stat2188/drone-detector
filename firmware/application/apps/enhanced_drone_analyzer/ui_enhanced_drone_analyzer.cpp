@@ -3156,14 +3156,17 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 
     setup_button_handlers();
 
-    // Initial layout setup
-    initialize_modern_layout();
+    // 🔴 CRITICAL FIX: Don't call initialize_modern_layout() or update_modern_layout()
+    // These call handle_scanner_update() which accesses freq_db_ptr_
+    // which is NOT initialized yet (deferred to on_show() to prevent stack overflow)
+    // initialize_modern_layout();  // REMOVED - calls handle_scanner_update()
 
     initialize_scanning_mode();
     add_ui_elements();
 
-    // Initial update after all elements are added
-    update_modern_layout();
+    // 🔴 CRITICAL FIX: Don't call update_modern_layout() in constructor
+    // This calls handle_scanner_update() which accesses freq_db_ptr_
+    // update_modern_layout();  // REMOVED - calls handle_scanner_update()
 }
 
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
@@ -3204,6 +3207,11 @@ bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
 void EnhancedDroneSpectrumAnalyzerView::on_show() {
     View::on_show();
 
+    // 🔴 CRITICAL FIX: Initialize scanner database and tracked_drones HERE
+    // AFTER constructor completes and stack unwinds
+    // This prevents stack overflow in constructor!
+    scanner_.initialize_database_and_scanner();
+
     // 🔴 FIX: Load settings with timeout protection to prevent blocking
     // Use defaults if file loading fails or times out
     if (!DroneAnalyzerSettingsManager::load(settings_)) {
@@ -3230,6 +3238,11 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
 
     // Initialize hardware with error handling
     hardware_.on_hardware_show();
+
+    // 🔴 FIX: NOW safe to initialize layout and update UI
+    // scanner_ is fully initialized (freq_db_ptr_ and tracked_drones_ptr_ are ready)
+    initialize_modern_layout();
+    handle_scanner_update();
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
@@ -3271,14 +3284,18 @@ bool EnhancedDroneSpectrumAnalyzerView::handle_menu_button() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout() {
+    // 🔴 FIX: Don't call handle_scanner_update() in constructor!
+    // scanner_ may not be fully initialized yet (freq_db_ptr_ is nullptr)
+    // This prevents segfault/black screen during startup
+
     for (size_t i = 0; i < threat_cards_.size(); ++i) {
         size_t card_y_pos = 165 + i * 20;
-        
+
         if (card_y_pos + 24 > 224) break;
-        
+
         threat_cards_[i].set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
     }
-    handle_scanner_update();
+    // REMOVED: handle_scanner_update();  // Moved to on_show() after full initialization
 }
 
 void EnhancedDroneSpectrumAnalyzerView::update_modern_layout() {
