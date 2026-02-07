@@ -1782,13 +1782,6 @@ void DroneHardwareController::shutdown_hardware() {
     cleanup_spectrum_collector();
 }
 
-// ===========================================
-// IMPLEMENTATION: set_spectrum_fifo
-// ===========================================
-void DroneHardwareController::set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
-    spectrum_fifo_ = fifo;
-}
-
 void DroneHardwareController::initialize_radio_state() {
     receiver_model.enable();
     receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
@@ -2341,13 +2334,6 @@ DroneDisplayController::~DroneDisplayController() {
     // TODO[FIXED]: STEP 2.2: Memory leaks in MessageHandler's
     // These handlers are now stack-allocated and will be automatically destroyed
     // No manual cleanup needed for stack-allocated objects
-}
-
-// ===========================================
-// IMPLEMENTATION: set_spectrum_fifo
-// ===========================================
-void DroneDisplayController::set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
-    spectrum_fifo_ = fifo;
 }
 
 // ===========================================
