@@ -14,45 +14,87 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 using rf::Frequency;
 
-// DroneAnalyzerSettings struct
+// ===========================================
+// DroneAnalyzerSettings - UNIFIED SETTINGS STRUCTURE
+// Single source of truth for all EDA settings
+// Merged from: EDAUnifiedSettings, EDAAppSettings, DroneAnalyzerSettings, etc.
+// ===========================================
 struct DroneAnalyzerSettings {
-    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
-    uint32_t scan_interval_ms = 1000;
-    int32_t rssi_threshold_db = -90;
+    // ===== AUDIO SETTINGS =====
     bool enable_audio_alerts = true;
-    uint16_t audio_alert_frequency_hz = 800;
+    uint32_t audio_alert_frequency_hz = 800;
     uint32_t audio_alert_duration_ms = 500;
+    uint8_t audio_volume_level = 50;
+    bool audio_repeat_alerts = false;
+
+    // ===== HARDWARE SETTINGS =====
+    SpectrumMode spectrum_mode = SpectrumMode::MEDIUM;
     uint32_t hardware_bandwidth_hz = 24000000;
     bool enable_real_hardware = true;
     bool demo_mode = false;
+    
+    // IQ Calibration (merged from IQCalibrationSettings)
+    bool iq_calibration_enabled = false;
+    uint8_t rx_phase_value = 15;
+    
+    // Amplifier Controls (merged from AmplifierControl)
+    uint8_t lna_gain_db = 32;
+    uint8_t vga_gain_db = 20;
+    bool rf_amp_enabled = false;
+    
+    // Frequency ranges
+    uint64_t user_min_freq_hz = 50000000ULL;
+    uint64_t user_max_freq_hz = 6000000000ULL;
 
-    // Additional members required by settings parser
-    std::string freqman_path = "DRONES";
-    std::string settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    // ===== SCANNING SETTINGS =====
+    uint32_t scan_interval_ms = 1000;
+    int32_t rssi_threshold_db = -90;
     bool enable_wideband_scanning = false;
     uint64_t wideband_min_freq_hz = 2400000000ULL;
     uint64_t wideband_max_freq_hz = 2500000000ULL;
-    uint64_t min_frequency_hz = 2400000000ULL;
-    uint64_t max_frequency_hz = 2500000000ULL;
-    bool show_detailed_info = true;
+    uint32_t wideband_slice_width_hz = 24000000;
+    bool panoramic_mode_enabled = true;
+    bool enable_intelligent_scanning = true;
+
+    // ===== DETECTION SETTINGS =====
+    bool enable_fhss_detection = true;
+    uint8_t movement_sensitivity = 3;
+    uint32_t threat_level_threshold = 2;
+    uint8_t min_detection_count = 3;
+    uint32_t alert_persistence_threshold = 3;
+    bool enable_intelligent_tracking = true;
+
+    // ===== LOGGING SETTINGS =====
     bool auto_save_logs = true;
     std::string log_file_path = "/eda_logs";
+    std::string log_format = "CSV";
+    uint32_t max_log_file_size_kb = 1024;
+    bool enable_session_logging = true;
+    bool include_timestamp = true;
+    bool include_rssi_values = true;
 
-    // --- НОВЫЕ ПОЛЯ (Вставьте в конец структуры) ---
-    
-    // Пользовательский диапазон сканирования
-    // Дефолтные: 50 МГц - 6000 МГц (полный функционал)
-    uint64_t user_min_freq_hz = 50000000ULL;   
-    uint64_t user_max_freq_hz = 6000000000ULL; 
-    
-    // Ширина "реза" (среза) в режимах Wideband/Hybrid
-    // Чем меньше это число, тем детальнее спектр, но медленнее сканирование
-    uint32_t wideband_slice_width_hz = 24000000; // 24 MHz
-    
-    // Сохранять ли полный спектр (true) или только найденное (false)
-    bool panoramic_mode_enabled = true;
+    // ===== DISPLAY SETTINGS =====
+    std::string color_scheme = "DARK";
+    uint8_t font_size = 0;
+    uint8_t spectrum_density = 1;
+    uint8_t waterfall_speed = 5;
+    bool show_detailed_info = true;
+    bool show_mini_spectrum = true;
+    bool show_rssi_history = true;
+    bool show_frequency_ruler = true;
+    uint8_t frequency_ruler_style = 5;
+    uint8_t compact_ruler_tick_count = 4;
+    bool auto_ruler_style = true;
 
+    // ===== PROFILE SETTINGS =====
+    std::string current_profile_name = "Default";
+    bool enable_quick_profiles = true;
+    bool auto_save_on_change = false;
 
+    // ===== SYSTEM SETTINGS =====
+    std::string freqman_path = "DRONES";
+    std::string settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    uint32_t settings_version = 2;
 };
 
 // Forward declarations for integrated settings

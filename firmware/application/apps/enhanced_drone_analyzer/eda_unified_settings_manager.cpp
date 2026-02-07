@@ -1,6 +1,20 @@
 /*
- * EDA Unified Settings Manager Implementation
+ * ========================================
+ * LEGACY FILE - DEPRECATED
+ * ========================================
+ * This file has been DEPRECATED in favor of using
+ * ScannerSettingsManager as the unified settings manager.
+ * All persistence functions now work with
+ * DroneAnalyzerSettings.
+ *
+ * Migration: Use ScannerSettingsManager::load/save
+ * for DroneAnalyzerSettings instead.
+ *
+ * Status: Fully deprecated - implementation disabled
+ * ========================================
  */
+
+#if 0  // DEPRECATED - All code disabled
 
 #include "eda_unified_settings_manager.hpp"
 #include "file.hpp"
@@ -397,3 +411,6 @@ bool EDAUnifiedSettingsManager::validate(const EDAUnifiedSettings& settings) {
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer
+
+#endif // 0 - DEPRECATED
+

@@ -1,3 +1,18 @@
+/*
+ * ========================================
+ * LEGACY FILE - DEPRECATED
+ * ========================================
+ * This file has been DEPRECATED.
+ *
+ * All features from this file have been merged
+ * into DroneAnalyzerSettings.
+ *
+ * Status: Fully deprecated - all code disabled
+ * ========================================
+ */
+
+#if 0  // DEPRECATED - All code disabled
+
 // ui_spectrum_settings.cpp - Implementation for advanced spectrum settings
 // Migrated preset loading from Looking Glass, adapted for EDA
 
@@ -98,3 +113,6 @@ bool SpectrumPresetLoader::add_custom_preset(const FrequencyPreset& preset) {
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer
+
+#endif // 0 - DEPRECATED
+

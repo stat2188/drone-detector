@@ -304,40 +304,121 @@ bool DroneAnalyzerSettingsManager::save_settings(const DroneAnalyzerSettings& se
 }
 
 void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
-    settings.spectrum_mode = SpectrumMode::MEDIUM;
-    settings.scan_interval_ms = 1000;
-    settings.rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    // ===== AUDIO SETTINGS =====
     settings.enable_audio_alerts = true;
     settings.audio_alert_frequency_hz = 800;
     settings.audio_alert_duration_ms = 500;
-    settings.enable_wideband_scanning = false;
-    settings.wideband_min_freq_hz = WIDEBAND_DEFAULT_MIN;
-    settings.wideband_max_freq_hz = WIDEBAND_DEFAULT_MAX;
-    settings.min_frequency_hz = 2400000000ULL;
-    settings.max_frequency_hz = 2500000000ULL;
-    settings.show_detailed_info = true;
-    settings.auto_save_logs = true;
-    settings.log_file_path = "/eda_logs";
-    settings.freqman_path = "DRONES.TXT";
+    settings.audio_volume_level = 50;
+    settings.audio_repeat_alerts = false;
+
+    // ===== HARDWARE SETTINGS =====
+    settings.spectrum_mode = SpectrumMode::MEDIUM;
     settings.hardware_bandwidth_hz = 24000000;
     settings.enable_real_hardware = true;
     settings.demo_mode = false;
+    settings.iq_calibration_enabled = false;
+    settings.rx_phase_value = 15;
+    settings.lna_gain_db = 32;
+    settings.vga_gain_db = 20;
+    settings.rf_amp_enabled = false;
     settings.user_min_freq_hz = 50000000ULL;
     settings.user_max_freq_hz = 6000000000ULL;
+
+    // ===== SCANNING SETTINGS =====
+    settings.scan_interval_ms = 1000;
+    settings.rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
+    settings.enable_wideband_scanning = false;
+    settings.wideband_min_freq_hz = WIDEBAND_DEFAULT_MIN;
+    settings.wideband_max_freq_hz = WIDEBAND_DEFAULT_MAX;
     settings.wideband_slice_width_hz = 24000000;
     settings.panoramic_mode_enabled = true;
+    settings.enable_intelligent_scanning = true;
+    settings.min_frequency_hz = 2400000000ULL;
+    settings.max_frequency_hz = 2500000000ULL;
+
+    // ===== DETECTION SETTINGS =====
+    settings.enable_fhss_detection = true;
+    settings.movement_sensitivity = 3;
+    settings.threat_level_threshold = 2;
+    settings.min_detection_count = 3;
+    settings.alert_persistence_threshold = 3;
+    settings.enable_intelligent_tracking = true;
+
+    // ===== LOGGING SETTINGS =====
+    settings.auto_save_logs = true;
+    settings.log_file_path = "/eda_logs";
+    settings.log_format = "CSV";
+    settings.max_log_file_size_kb = 1024;
+    settings.enable_session_logging = true;
+    settings.include_timestamp = true;
+    settings.include_rssi_values = true;
+
+    // ===== DISPLAY SETTINGS =====
+    settings.color_scheme = "DARK";
+    settings.font_size = 0;
+    settings.spectrum_density = 1;
+    settings.waterfall_speed = 5;
+    settings.show_detailed_info = true;
+    settings.show_mini_spectrum = true;
+    settings.show_rssi_history = true;
+    settings.show_frequency_ruler = true;
+    settings.frequency_ruler_style = 5;
+    settings.compact_ruler_tick_count = 4;
+    settings.auto_ruler_style = true;
+
+    // ===== PROFILE SETTINGS =====
+    settings.current_profile_name = "Default";
+    settings.enable_quick_profiles = true;
+    settings.auto_save_on_change = false;
+
+    // ===== SYSTEM SETTINGS =====
+    settings.freqman_path = "DRONES";
+    settings.settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    settings.settings_version = 2;
 }
 
 bool DroneAnalyzerSettingsManager::validate(const DroneAnalyzerSettings& settings) {
-    if (settings.scan_interval_ms < 100 || settings.scan_interval_ms > 10000) return false;
-    if (settings.rssi_threshold_db < -120 || settings.rssi_threshold_db > -30) return false;
-    if (settings.audio_alert_frequency_hz < DroneConstants::MIN_AUDIO_FREQ || 
+    // ===== AUDIO VALIDATION =====
+    if (settings.audio_alert_frequency_hz < DroneConstants::MIN_AUDIO_FREQ ||
         settings.audio_alert_frequency_hz > DroneConstants::MAX_AUDIO_FREQ) return false;
-    if (settings.audio_alert_duration_ms < DroneConstants::MIN_AUDIO_DURATION || 
+    if (settings.audio_alert_duration_ms < DroneConstants::MIN_AUDIO_DURATION ||
         settings.audio_alert_duration_ms > DroneConstants::MAX_AUDIO_DURATION) return false;
-    if (settings.hardware_bandwidth_hz < DroneConstants::MIN_BANDWIDTH || 
+    if (settings.audio_volume_level > 100) return false;
+
+    // ===== HARDWARE VALIDATION =====
+    if (settings.hardware_bandwidth_hz < DroneConstants::MIN_BANDWIDTH ||
         settings.hardware_bandwidth_hz > DroneConstants::MAX_BANDWIDTH) return false;
+    if (settings.rx_phase_value > 63) return false;
+    if (settings.lna_gain_db > 63) return false;
+    if (settings.vga_gain_db > 62) return false;
     if (settings.user_min_freq_hz >= settings.user_max_freq_hz) return false;
+
+    // ===== SCANNING VALIDATION =====
+    if (settings.scan_interval_ms < DroneConstants::MIN_SCAN_INTERVAL_MS ||
+        settings.scan_interval_ms > DroneConstants::MAX_SCAN_INTERVAL_MS) return false;
+    if (settings.rssi_threshold_db < DroneConstants::NOISE_FLOOR_RSSI ||
+        settings.rssi_threshold_db > -30) return false;
+    if (settings.wideband_min_freq_hz >= settings.wideband_max_freq_hz) return false;
+    if (settings.wideband_slice_width_hz < 1000000 ||
+        settings.wideband_slice_width_hz > 28000000) return false;
+
+    // ===== DETECTION VALIDATION =====
+    if (settings.movement_sensitivity > 3) return false;
+    if (settings.threat_level_threshold > 4) return false;
+    if (settings.min_detection_count == 0 || settings.min_detection_count > 10) return false;
+    if (settings.alert_persistence_threshold == 0 || settings.alert_persistence_threshold > 10) return false;
+
+    // ===== LOGGING VALIDATION =====
+    if (settings.log_format != "CSV" && settings.log_format != "JSON" && settings.log_format != "TXT") return false;
+    if (settings.max_log_file_size_kb < 100 || settings.max_log_file_size_kb > 10240) return false;
+
+    // ===== DISPLAY VALIDATION =====
+    if (settings.font_size > 2) return false;
+    if (settings.spectrum_density > 2) return false;
+    if (settings.waterfall_speed == 0 || settings.waterfall_speed > 10) return false;
+    if (settings.frequency_ruler_style > 6) return false;
+    if (settings.compact_ruler_tick_count < 3 || settings.compact_ruler_tick_count > 5) return false;
+
     return true;
 }
 
@@ -601,13 +682,13 @@ void HardwareSettingsView::save_current_settings() {
     settings.hardware_bandwidth_hz = number_bandwidth_.value();
     settings.user_min_freq_hz = number_min_freq_.value();
     settings.user_max_freq_hz = number_max_freq_.value();
-    
+
     // Validate settings before saving
     if (!DroneAnalyzerSettingsManager::validate(settings)) {
         nav_.display_modal("Error", "Invalid settings detected");
         return;
     }
-    
+
     DroneAnalyzerSettingsManager::save(settings);
 }
 void HardwareSettingsView::update_ui_from_settings() { load_current_settings(); }
@@ -618,7 +699,7 @@ void HardwareSettingsView::on_save_settings() {
 }
 
 // AudioSettingsView
-AudioSettingsView::AudioSettingsView(NavigationView& nav) : View(), nav_(nav), audio_settings_{true, 800, 500, 50, false} {
+AudioSettingsView::AudioSettingsView(NavigationView& nav) : View(), nav_(nav) {
     add_children({&checkbox_audio_enabled_, &text_audio_enabled_, &number_alert_frequency_,
                   &number_alert_duration_, &number_volume_, &checkbox_repeat_, &text_repeat_, &button_save_});
 }
@@ -629,6 +710,8 @@ void AudioSettingsView::load_current_settings() {
     checkbox_audio_enabled_.set_value(settings.enable_audio_alerts);
     number_alert_frequency_.set_value(settings.audio_alert_frequency_hz);
     number_alert_duration_.set_value(settings.audio_alert_duration_ms);
+    number_volume_.set_value(settings.audio_volume_level);
+    checkbox_repeat_.set_value(settings.audio_repeat_alerts);
 }
 void AudioSettingsView::save_current_settings() {
     DroneAnalyzerSettings settings;
@@ -636,13 +719,15 @@ void AudioSettingsView::save_current_settings() {
     settings.enable_audio_alerts = checkbox_audio_enabled_.value();
     settings.audio_alert_frequency_hz = number_alert_frequency_.value();
     settings.audio_alert_duration_ms = number_alert_duration_.value();
-    
+    settings.audio_volume_level = number_volume_.value();
+    settings.audio_repeat_alerts = checkbox_repeat_.value();
+
     // Validate settings before saving
     if (!DroneAnalyzerSettingsManager::validate(settings)) {
         nav_.display_modal("Error", "Invalid settings detected");
         return;
     }
-    
+
     DroneAnalyzerSettingsManager::save(settings);
 }
 void AudioSettingsView::update_ui_from_settings() { load_current_settings(); }
@@ -667,9 +752,10 @@ void LoadingView::on_hide() {}
 // ScanningSettingsView
 ScanningSettingsView::ScanningSettingsView(NavigationView& nav) : View(), nav_(nav) {
     add_children({&field_scanning_mode_, &number_scan_interval_, &number_rssi_threshold_,
-                  &checkbox_wideband_, &text_wideband_, &button_save_});
+                  &checkbox_wideband_, &text_wideband_, &button_presets_, &button_save_});
     button_save_.on_select = [this](Button&) { on_save_settings(); };
     checkbox_wideband_.on_select = [this](Checkbox&, bool) { on_wideband_enabled_changed(); };
+    button_presets_.on_select = [this](Button&) { on_show_presets(); };
     load_current_settings();
 }
 void ScanningSettingsView::focus() { button_save_.focus(); }
@@ -687,29 +773,45 @@ void ScanningSettingsView::save_current_settings() {
     settings.scan_interval_ms = number_scan_interval_.value();
     settings.rssi_threshold_db = number_rssi_threshold_.value();
     settings.enable_wideband_scanning = checkbox_wideband_.value();
-    
+
     // Validate settings before saving
     if (!DroneAnalyzerSettingsManager::validate(settings)) {
         nav_.display_modal("Error", "Invalid settings detected");
         return;
     }
-    
+
     DroneAnalyzerSettingsManager::save(settings);
 }
 void ScanningSettingsView::on_save_settings() {
     save_current_settings();
     nav_.display_modal("Success", "Scanning settings saved");
 }
-void ScanningSettingsView::on_show_presets() { nav_.display_modal("Info", "Presets menu not implemented"); }
+void ScanningSettingsView::on_show_presets() {
+    // Show presets menu using DronePresetSelector
+    // Create callback that updates settings when preset is selected
+    auto on_preset_selected = [this](const DronePreset& preset) {
+        DroneAnalyzerSettings settings;
+        DroneAnalyzerSettingsManager::load(settings);
+        if (DroneFrequencyPresets::apply_preset(settings, preset)) {
+            DroneAnalyzerSettingsManager::save(settings);
+            nav_.display_modal("Success", std::string("Preset applied: ") + preset.display_name);
+            load_current_settings();
+        } else {
+            nav_.display_modal("Error", "Failed to apply preset");
+        }
+    };
+    DronePresetSelector::show_preset_menu(nav_, on_preset_selected);
+}
 void ScanningSettingsView::on_wideband_enabled_changed() {}
 void ScanningSettingsView::update_ui_from_settings() { load_current_settings(); }
 void ScanningSettingsView::update_settings_from_ui() { save_current_settings(); }
 
 // DroneAnalyzerSettingsView
 DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View(), nav_(nav), current_settings_{} {
-    add_children({&text_title_, &button_tabbed_settings_, &button_audio_settings_, &button_hardware_settings_, &button_scanning_settings_,
+    add_children({&text_title_, &button_audio_settings_, &button_hardware_settings_, &button_scanning_settings_,
                   &button_load_defaults_, &button_about_author_});
-    button_tabbed_settings_.on_select = [this](Button&) { show_tabbed_settings(); };
+    // DEPRECATED: button_tabbed_settings_ removed - use individual settings views
+    // button_tabbed_settings_.on_select = [this](Button&) { show_tabbed_settings(); };
     button_audio_settings_.on_select = [this](Button&) { show_audio_settings(); };
     button_hardware_settings_.on_select = [this](Button&) { show_hardware_settings(); };
     button_scanning_settings_.on_select = [this](Button&) { show_scanning_settings(); };
@@ -727,9 +829,10 @@ bool DroneAnalyzerSettingsView::on_key(const KeyEvent key) {
 bool DroneAnalyzerSettingsView::on_touch(const TouchEvent event) { return View::on_touch(event); }
 void DroneAnalyzerSettingsView::on_show() { View::on_show(); }
 void DroneAnalyzerSettingsView::on_hide() { View::on_hide(); }
-void DroneAnalyzerSettingsView::show_tabbed_settings() {
-    nav_.push<EDATabbedSettingsView>();
-}
+// DEPRECATED: show_tabbed_settings() removed - EDATabbedSettingsView no longer available
+// void DroneAnalyzerSettingsView::show_tabbed_settings() {
+//     nav_.push<EDATabbedSettingsView>();
+// }
 void DroneAnalyzerSettingsView::show_audio_settings() { nav_.push<AudioSettingsView>(); }
 void DroneAnalyzerSettingsView::show_hardware_settings() { nav_.push<HardwareSettingsView>(); }
 void DroneAnalyzerSettingsView::show_scanning_settings() { nav_.push<ScanningSettingsView>(); }

@@ -24,10 +24,10 @@
 #include "ui_drone_common_types.hpp"
 #include "scanner_settings.hpp"
 
-// Include new unified settings
-#include "eda_unified_settings.hpp"
-#include "eda_unified_settings_manager.hpp"
-#include "eda_tabbed_settings_view.hpp"
+// DEPRECATED: Old unified settings files removed
+// #include "eda_unified_settings.hpp"
+// #include "eda_unified_settings_manager.hpp"
+// #include "eda_tabbed_settings_view.hpp"
 #include "radio.hpp"
 
 using rf::Frequency;
@@ -81,7 +81,7 @@ private:
 };
 
 using PresetMenuView = std::function<void(const DronePreset&)>;
-using FilteredPresetMenuView = std::function<void(const DronePreset&, const std::vector<DronePreset>&)>;
+// using FilteredPresetMenuView = std::function<void(const DronePreset&, const std::vector<DronePreset>&)>; // DEPRECATED - not used
 
 class DroneFrequencyPresets {
 public:
@@ -138,13 +138,22 @@ public:
 // PART 3: SETTINGS UI CLASSES
 // ===========================================
 
-struct DroneAudioSettings {
-    bool audio_enabled = true;
-    uint16_t alert_frequency_hz = 800;
-    uint32_t alert_duration_ms = 500;
-    uint8_t volume_level = 50;
-    bool repeat_alerts = false;
-};
+// ===== DEPRECATED: DroneAudioSettings =====
+// All audio settings now part of DroneAnalyzerSettings:
+// - enable_audio_alerts
+// - audio_alert_frequency_hz
+// - audio_alert_duration_ms
+// - audio_volume_level
+// - audio_repeat_alerts
+// ===========================================
+
+// struct DroneAudioSettings {
+//     bool audio_enabled = true;
+//     uint16_t alert_frequency_hz = 800;
+//     uint32_t alert_duration_ms = 500;
+//     uint8_t volume_level = 50;
+//     bool repeat_alerts = false;
+// };
 
 class AudioSettingsView : public View {
 public:
@@ -155,7 +164,7 @@ public:
 
 private:
     NavigationView& nav_;
-    DroneAudioSettings audio_settings_;
+    // DroneAudioSettings audio_settings_;  // DEPRECATED - now using DroneAnalyzerSettings directly
     Checkbox checkbox_audio_enabled_{{8, 8}, 20, "Enable Audio Alerts", false};
     Text text_audio_enabled_{{28, 8, 200, 16}, "Enable Audio Alerts"};
     NumberField number_alert_frequency_{{8, 32}, 5, {200, 2000}, 50, ' ', false};
@@ -234,14 +243,15 @@ public:
     void on_show() override;
     void on_hide() override;
 
-private:
+ private:
     NavigationView& nav_;
-    Button button_tabbed_settings_{{8, 32, 224, 32}, "Tabbed Settings", false};
-    Button button_audio_settings_{{8, 72, 224, 32}, "Audio Settings", false};
-    Button button_hardware_settings_{{8, 112, 224, 32}, "Hardware Settings", false};
-    Button button_scanning_settings_{{8, 152, 224, 32}, "Scanning Settings", false};
-    Button button_load_defaults_{{8, 192, 120, 32}, "Load Defaults", false};
-    Button button_about_author_{{136, 192, 120, 32}, "About Author", false};
+    // DEPRECATED: Tabbed settings view removed - use individual settings views instead
+    // Button button_tabbed_settings_{{8, 32, 224, 32}, "Tabbed Settings", false};
+    Button button_audio_settings_{{8, 32, 224, 32}, "Audio Settings", false};
+    Button button_hardware_settings_{{8, 72, 224, 32}, "Hardware Settings", false};
+    Button button_scanning_settings_{{8, 112, 224, 32}, "Scanning Settings", false};
+    Button button_load_defaults_{{8, 152, 120, 32}, "Load Defaults", false};
+    Button button_about_author_{{136, 152, 120, 32}, "About Author", false};
     Text text_title_{{8, 8, screen_width - 16, 16}, "Enhanced Drone Analyzer Settings"};
 
     void show_audio_settings();
@@ -249,7 +259,7 @@ private:
     void show_scanning_settings();
     void show_about_author();
     void load_default_settings();
-    void show_tabbed_settings();
+    // DEPRECATED: show_tabbed_settings() removed - tabbed view no longer available
 
     DroneAnalyzerSettings current_settings_;
 };

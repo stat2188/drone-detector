@@ -1,10 +1,22 @@
 /*
- * EDA Tabbed Settings View - Unified settings interface with optimized layout
- * Following Mayhem UI patterns and positioning helpers
+ * ========================================
+ * LEGACY FILE - DEPRECATED
+ * ========================================
+ * This file has been DEPRECATED in favor of using
+ * DroneAnalyzerSettings and individual settings views
+ * (AudioSettingsView, HardwareSettingsView, ScanningSettingsView).
+ *
+ * Migration: Use individual settings views instead
+ * of tabbed view.
+ *
+ * Status: Fully deprecated - all code disabled
+ * ========================================
  */
 
 #ifndef __EDA_TABBED_SETTINGS_VIEW_HPP__
 #define __EDA_TABBED_SETTINGS_VIEW_HPP__
+
+#if 0  // DEPRECATED - All code disabled
 
 #include "eda_unified_settings.hpp"
 #include "ui.hpp"
@@ -395,4 +407,7 @@ private:
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
+#endif // 0 - DEPRECATED
+
 #endif // __EDA_TABBED_SETTINGS_VIEW_HPP__
+

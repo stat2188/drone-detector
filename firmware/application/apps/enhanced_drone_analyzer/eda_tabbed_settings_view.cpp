@@ -1,6 +1,19 @@
 /*
- * EDA Tabbed Settings View Implementation
+ * ========================================
+ * LEGACY FILE - DEPRECATED
+ * ========================================
+ * This file has been DEPRECATED in favor of using
+ * individual settings views (AudioSettingsView,
+ * HardwareSettingsView, ScanningSettingsView).
+ *
+ * Migration: Use individual settings views
+ * instead of tabbed interface.
+ *
+ * Status: Fully deprecated - all code disabled
+ * ========================================
  */
+
+#if 0  // DEPRECATED - All code disabled
 
 #include "eda_tabbed_settings_view.hpp"
 #include "eda_unified_settings.hpp"
@@ -356,3 +369,6 @@ void EDATabbedSettingsView::on_export() {
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer
+
+#endif // 0 - DEPRECATED
+

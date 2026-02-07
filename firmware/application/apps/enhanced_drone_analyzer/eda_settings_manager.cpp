@@ -1,6 +1,20 @@
 /*
- * Enhanced Drone Analyzer - Unified Settings Manager Implementation
+ * ========================================
+ * LEGACY FILE - DEPRECATED
+ * ========================================
+ * This file has been DEPRECATED in favor of using
+ * DroneAnalyzerSettings as single source of truth.
+ * All EDAAppSettings fields have been merged
+ * into DroneAnalyzerSettings.
+ *
+ * Migration: Use ScannerSettingsManager for
+ * all settings operations.
+ *
+ * Status: Fully deprecated - implementation disabled
+ * ========================================
  */
+
+#if 0  // DEPRECATED - All code disabled
 
 #include "eda_settings_manager.hpp"
 #include "file.hpp"
@@ -493,3 +507,6 @@ bool EDASettingsManager::migrate_settings() {
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer
+
+#endif // 0 - DEPRECATED
+

@@ -1,3 +1,21 @@
+/*
+ * ========================================
+ * LEGACY FILE - DEPRECATED
+ * ========================================
+ * This file has been DEPRECATED.
+ *
+ * All features from this file have been merged
+ * into DroneAnalyzerSettings:
+ * - IQ calibration: iq_calibration_enabled, rx_phase_value
+ * - Amplifier control: lna_gain_db, vga_gain_db, rf_amp_enabled
+ * - Frequency presets: Use DroneFrequencyPresets instead
+ *
+ * Status: Fully deprecated - all code disabled
+ * ========================================
+ */
+
+#if 0  // DEPRECATED - All code disabled
+
 // ui_spectrum_settings.hpp - Advanced spectrum settings for EDA (Migrated from Looking Glass)
 // Provides presets, IQ calibration, and amplifier controls
 
@@ -203,3 +221,6 @@ private:
 } // namespace ui::apps::enhanced_drone_analyzer
 
 #endif // UI_SPECTRUM_SETTINGS_HPP_
+
+#endif // 0 - DEPRECATED
+
