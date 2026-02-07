@@ -559,22 +559,24 @@ private:
     void update_frequency_predictions(Frequency detected_freq, ThreatLevel threat_level);
     void update_priority_slice_detection(size_t slice_idx, bool detected_something_interesting);
 
-    Thread* scanning_thread_ = nullptr;
-    mutable Mutex data_mutex;
-    std::atomic<bool> scanning_active_{false};
+     Thread* scanning_thread_ = nullptr;
+     mutable Mutex data_mutex;
+     std::atomic<bool> scanning_active_{false};
 
-    FreqmanDB freq_db_;
-    size_t current_db_index_ = 0;
-    Frequency last_scanned_frequency_ = 0;
-    bool freq_db_loaded_ = false;
+     // 🔴 OPTIMIZATION: Heap-allocated FreqmanDB (saves ~2KB stack in constructor)
+     std::unique_ptr<FreqmanDB> freq_db_ptr_;
+     size_t current_db_index_ = 0;
+     Frequency last_scanned_frequency_ = 0;
+     bool freq_db_loaded_ = false;
 
-    std::atomic<uint32_t> scan_cycles_{0};
-    std::atomic<uint32_t> total_detections_{0};
+     std::atomic<uint32_t> scan_cycles_{0};
+     std::atomic<uint32_t> total_detections_{0};
 
-    ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
-    std::atomic<bool> is_real_mode_{true};
+     ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
+     std::atomic<bool> is_real_mode_{true};
 
-    std::unique_ptr<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>> tracked_drones_ptr_;
+     // 🔴 OPTIMIZATION: Heap-allocated tracked_drones (reduces stack usage)
+     std::unique_ptr<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>> tracked_drones_ptr_;
     size_t tracked_count_ = 0;
 
     size_t approaching_count_ = 0;
@@ -889,6 +891,11 @@ private:
 
 class DroneDisplayController : public View {
 public:
+    // 🔴 OPTIMIZATION: Static buffer sizes to prevent heap allocation in constructor
+    static constexpr size_t SPECTRUM_ROW_SIZE = 240;
+    static constexpr size_t RENDER_LINE_SIZE = 240;
+    static constexpr size_t WATERFALL_SIZE = 40 * 240;  // 9.6KB waterfall buffer
+    
     explicit DroneDisplayController(Rect parent_rect = {0, 60, screen_width, screen_height - 80});
     ~DroneDisplayController();
 
@@ -973,14 +980,14 @@ private:
     size_t detected_drones_count_ = 0;
     std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
 
-    std::unique_ptr<std::array<Color, 240u>> spectrum_row_ptr_;  // Moved to heap (~960 bytes saved)
-    std::unique_ptr<std::array<Color, SPEC_WIDTH>> render_line_buffer_ptr_;  // Moved to heap (~960 bytes saved from 60FPS loop)
+    // 🔴 OPTIMIZATION: Static buffers instead of unique_ptr (saves ~11KB heap + reduces fragmentation)
+    std::array<Color, SPECTRUM_ROW_SIZE> spectrum_row_buffer_;
+    std::array<Color, RENDER_LINE_SIZE> render_line_buffer_;
+    std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT> waterfall_buffer_;
     std::array<uint8_t, 200> spectrum_power_levels_;
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, DroneConstants::MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
-
-    std::unique_ptr<std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>> waterfall_buffer_ptr_;
     size_t waterfall_line_index_ = 0;
 
     Gradient spectrum_gradient_;
