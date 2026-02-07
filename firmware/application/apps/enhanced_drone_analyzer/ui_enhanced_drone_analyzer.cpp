@@ -1383,20 +1383,21 @@ void DroneScanner::switch_to_demo_mode() {
 void DroneScanner::initialize_database_and_scanner() {
     // 🔴 FIX: Allocate on heap (prevents stack overflow in constructor)
     // This is safe because constructor has already returned
+    // NO EXCEPTIONS - use simple pointer checks
 
     // Allocate FreqmanDB
-    try {
-        freq_db_ptr_ = std::make_unique<FreqmanDB>();
-    } catch (const std::bad_alloc&) {
-        // Fallback to empty DB if allocation fails
-        freq_db_ptr_ = std::make_unique<FreqmanDB>();
+    freq_db_ptr_ = std::make_unique<FreqmanDB>();
+    if (!freq_db_ptr_) {
+        // Allocation failed - critical error, but continue anyway
+        // Scanner will be in non-functional state
+        return;
     }
 
     // Allocate tracked_drones array
-    try {
-        tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
-    } catch (const std::bad_alloc&) {
-        tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
+    tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
+    if (!tracked_drones_ptr_) {
+        // Allocation failed - critical error, but continue anyway
+        return;
     }
 
     // Initialize database with built-in frequencies as fallback
