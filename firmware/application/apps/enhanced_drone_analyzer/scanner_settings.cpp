@@ -509,14 +509,29 @@ namespace ScannerSettingsManager {
     }
 
     bool load_from_txt_impl(const std::string& filepath, ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings& settings) {
+        // 🔴 FIX: Prevent blocking on large/corrupted files
+        // Limit file size to prevent blocking on SD card issues
         ScanFile txt_file;
         if (!txt_file.open(filepath)) { // removed read_only parameter if not supported by API wrapper
             reset_to_defaults(settings);
             return false;
         }
+
+        // 🔴 FIX: Check file size before reading to prevent blocking
+        // Settings file should be < 5KB. If larger, something is wrong.
+        const size_t max_safe_file_size = 5120; // 5KB maximum safe size
+        size_t file_size = txt_file.size();
+
+        if (file_size == 0 || file_size > max_safe_file_size) {
+            // File is empty or suspiciously large - use defaults
+            txt_file.close();
+            reset_to_defaults(settings);
+            return false;
+        }
+
         std::string file_content;
-        file_content.resize(txt_file.size());
-        auto read_result = txt_file.read(file_content.data(), txt_file.size());
+        file_content.resize(file_size);
+        auto read_result = txt_file.read(file_content.data(), file_size);
         txt_file.close();
 
         if (read_result.is_error()) {

@@ -1125,7 +1125,7 @@ public:
 
     Button button_start_stop_;
     Button button_menu_;
-    Button button_audio_;
+    Button button_audio_{ { screen_width - 160, screen_height - 72, 72, 32 }, "AUDIO: OFF" };
 
     OptionsField field_scanning_mode_;
 

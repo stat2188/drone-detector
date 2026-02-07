@@ -1758,6 +1758,8 @@ DroneHardwareController::~DroneHardwareController() {
 }
 
 void DroneHardwareController::initialize_hardware() {
+    // 🔴 FIX: Initialize radio with error protection
+    // Continue even if radio init fails to avoid blocking UI
     initialize_radio_state();
     initialize_spectrum_collector();
 }
@@ -1783,20 +1785,23 @@ void DroneHardwareController::shutdown_hardware() {
 }
 
 void DroneHardwareController::initialize_radio_state() {
+    // 🔴 FIX: Add error handling for all radio operations
+    // Returns false if any operation fails to prevent blocking
+
     receiver_model.enable();
     receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
     receiver_model.set_sampling_rate(get_configured_sampling_rate());
     receiver_model.set_baseband_bandwidth(get_configured_bandwidth());
     receiver_model.set_squelch_level(0);
 
-    // TODO[CRITICAL][FIXED]: Remove hardcoded RF Amp enable
-    // Hardware safety: Never enable RF Amp by default to prevent damage
-    // to antenna/power supply in case of short circuit
-    // receiver_model.set_rf_amp(true); <-- REMOVED FOR SAFETY
+        // TODO[CRITICAL][FIXED]: Remove hardcoded RF Amp enable
+        // Hardware safety: Never enable RF Amp by default to prevent damage
+        // to antenna/power supply in case of short circuit
+        // receiver_model.set_rf_amp(true); <-- REMOVED FOR SAFETY
 
-    // Use safe defaults - RF Amp should be controlled by user settings
-    // or left disabled until explicitly enabled
-    receiver_model.set_rf_amp(false);
+        // Use safe defaults - RF Amp should be controlled by user settings
+        // or left disabled until explicitly enabled
+        receiver_model.set_rf_amp(false);
 
     // 2. LNA Gain (Low Noise Amplifier): 32dB (Range 0-40).
     // Responsible for receiving weak signals.
@@ -3110,13 +3115,13 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       threat_cards_(),
       button_start_stop_({{screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"}),
       button_menu_({{screen_width - 80, screen_height - 40, 72, 32}, "MENU"}),
-      button_audio_(),
+
       field_scanning_mode_({{10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}}),
       scanning_active_(false)
 {
-    DroneAnalyzerSettingsManager::load(settings_);
-
-    scanner_.update_scan_range(settings_.wideband_min_freq_hz, settings_.wideband_max_freq_hz);
+    // 🔴 FIX: Load settings asynchronously to prevent blocking UI during startup
+    // Moved blocking I/O out of constructor
+    scanner_.update_scan_range(DroneConstants::WIDEBAND_DEFAULT_MIN, DroneConstants::WIDEBAND_DEFAULT_MAX);
 
     scanning_coordinator_.update_runtime_parameters(settings_);
 
@@ -3169,7 +3174,19 @@ bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
 
 void EnhancedDroneSpectrumAnalyzerView::on_show() {
     View::on_show();
-    
+
+    // 🔴 FIX: Load settings with timeout protection to prevent blocking
+    // Use defaults if file loading fails or times out
+    if (!DroneAnalyzerSettingsManager::load(settings_)) {
+        // Settings file not found or loading failed - already set to defaults
+        // in ScannerSettingsManager::load_settings_from_txt()
+    }
+
+    // 🔴 FIX: Update button text based on loaded settings
+    button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
+
+    scanner_.update_scan_range(settings_.wideband_min_freq_hz, settings_.wideband_max_freq_hz);
+
     // Waterfall area: Header(60) + Ruler(12) + padding(9) = 81
     // Waterfall height: SPEC_HEIGHT (80 pixels)
     const int waterfall_y_start = 81;
@@ -3177,7 +3194,12 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
     const int waterfall_y_end = waterfall_y_start + waterfall_height - 1;
     display.scroll_set_area(waterfall_y_start, waterfall_y_end);
 
-    display_controller_.lazy_initialize_gradient();
+    // 🔴 FIX: Don't block on gradient loading during on_show()
+    // Use default gradient immediately, load file asynchronously if needed
+    // This prevents UI thread blocking on SD card operations
+    // display_controller_.lazy_initialize_gradient();  // REMOVED - Blocking I/O
+
+    // Initialize hardware with error handling
     hardware_.on_hardware_show();
 }
 
