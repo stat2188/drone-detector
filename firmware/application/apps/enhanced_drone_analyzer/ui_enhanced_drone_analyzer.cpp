@@ -15,6 +15,7 @@
  */
 
 #include "ui_enhanced_drone_analyzer.hpp"
+#include "ui_enhanced_drone_memory_pool.hpp"
 #include "ui_drone_audio.hpp"
 #include "gradient.hpp"
 #include "baseband_api.hpp"
@@ -3143,31 +3144,31 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       smart_header_(Rect{0, 0, screen_width, 60}),
       status_bar_(0, Rect{0, screen_height - 80, screen_width, 16}),
       threat_cards_(),
-      button_start_stop_({{screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"}),
-      button_menu_({{screen_width - 80, screen_height - 40, 72, 32}, "MENU"}),
+      button_start_stop_({screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"),
+      button_menu_({screen_width - 80, screen_height - 40, 72, 32}, "MENU"),
 
-      field_scanning_mode_({{10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}}),
       scanning_active_(false)
 {
-    // 🔴 FIX: Load settings asynchronously to prevent blocking UI during startup
-    // Moved blocking I/O out of constructor
+    // 🔴 ФАЗА 2.8: МИНИМАЛЬНЫЙ конструктор
+    // Только простая инициализация, без blocking I/O
+    // Без вызовов методов scanner_/hardware_/scanning_coordinator_
+
+    // Настройка по умолчанию (безопасно)
     scanner_.update_scan_range(DroneConstants::WIDEBAND_DEFAULT_MIN, DroneConstants::WIDEBAND_DEFAULT_MAX);
 
+    // Обновление параметров coordinator (безопасно)
     scanning_coordinator_.update_runtime_parameters(settings_);
 
     setup_button_handlers();
 
-    // 🔴 CRITICAL FIX: Don't call initialize_modern_layout() or update_modern_layout()
-    // These call handle_scanner_update() which accesses freq_db_ptr_
-    // which is NOT initialized yet (deferred to on_show() to prevent stack overflow)
-    // initialize_modern_layout();  // REMOVED - calls handle_scanner_update()
+    // 🔴 УДАЛЕНО:
+    // - initialize_modern_layout()  (перенесено в step_deferred_initialization())
+    // - update_modern_layout()     (перенесено в step_deferred_initialization())
+    // - scanner_.initialize_database_and_scanner() (перенесено в step_deferred_initialization())
+    // - hardware_.on_hardware_show()                   (перенесено в step_deferred_initialization())
 
     initialize_scanning_mode();
     add_ui_elements();
-
-    // 🔴 CRITICAL FIX: Don't call update_modern_layout() in constructor
-    // This calls handle_scanner_update() which accesses freq_db_ptr_
-    // update_modern_layout();  // REMOVED - calls handle_scanner_update()
 }
 
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
@@ -3205,45 +3206,168 @@ bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
     return View::on_touch(event);
 }
 
+// ===========================================
+// ФАЗА 2.5: Deferred Initialization Implementation
+// ===========================================
+
+void EnhancedDroneSpectrumAnalyzerView::update_init_progress_display() {
+    // Update status bar with current initialization phase
+    switch (init_state_) {
+        case InitState::CONSTRUCTED:
+            status_bar_.update_normal_status("INIT", "Starting up...");
+            break;
+        case InitState::DATABASE_LOADED:
+            status_bar_.update_normal_status("INIT", "Database ready");
+            break;
+        case InitState::HARDWARE_READY:
+            status_bar_.update_normal_status("INIT", "Hardware ready");
+            break;
+        case InitState::UI_LAYOUT_READY:
+            status_bar_.update_normal_status("INIT", "UI ready");
+            break;
+        case InitState::COORDINATOR_READY:
+            status_bar_.update_normal_status("INIT", "Coordinator ready");
+            break;
+        case InitState::FULLY_INITIALIZED:
+            status_bar_.update_normal_status("EDA Ready", "All systems go");
+            break;
+    }
+}
+
+void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
+    // 🔴 SAFETY: Prevent re-entrancy
+    if (initialization_in_progress_) return;
+
+    initialization_in_progress_ = true;
+    systime_t now = chTimeNow();
+
+    // === PHASE 1: Load database (100ms after on_show) ===
+    if (init_state_ == InitState::CONSTRUCTED &&
+        (now - init_start_time_ > 100)) {
+
+        status_bar_.update_normal_status("INIT", "Loading database...");
+
+        // CRITICAL: heap allocation (~3KB)
+        scanner_.initialize_database_and_scanner();
+
+        // Check success
+        if (scanner_.get_database_size() > 0) {
+            init_state_ = InitState::DATABASE_LOADED;
+            last_init_progress_ = now;
+        } else {
+            // Fallback: continue even with error
+            status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Database load failed");
+            init_state_ = InitState::DATABASE_LOADED;
+            last_init_progress_ = now;
+        }
+
+        initialization_in_progress_ = false;
+        return;
+    }
+
+    // === PHASE 2: Initialize hardware (200ms after on_show) ===
+    if (init_state_ == InitState::DATABASE_LOADED &&
+        (now - init_start_time_ > 200)) {
+
+        status_bar_.update_normal_status("INIT", "Initializing hardware...");
+
+        // Executed on UI thread (~2KB stack)
+        hardware_.on_hardware_show();
+
+        init_state_ = InitState::HARDWARE_READY;
+        last_init_progress_ = now;
+
+        initialization_in_progress_ = false;
+        return;
+    }
+
+    // === PHASE 3: Setup UI Layout (300ms after on_show) ===
+    if (init_state_ == InitState::HARDWARE_READY &&
+        (now - init_start_time_ > 300)) {
+
+        status_bar_.update_normal_status("INIT", "Setup UI...");
+
+        // Safe: scanner is initialized
+        initialize_modern_layout();
+
+        init_state_ = InitState::UI_LAYOUT_READY;
+        last_init_progress_ = now;
+
+        initialization_in_progress_ = false;
+        return;
+    }
+
+    // === PHASE 4: Load settings (400ms after on_show) ===
+    if (init_state_ == InitState::UI_LAYOUT_READY &&
+        (now - init_start_time_ > 400)) {
+
+        status_bar_.update_normal_status("INIT", "Loading settings...");
+
+        // Safe: non-blocking (has timeout)
+        DroneAnalyzerSettingsManager::load(settings_);
+
+        button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
+        scanner_.update_scan_range(settings_.wideband_min_freq_hz,
+                                settings_.wideband_max_freq_hz);
+
+        init_state_ = InitState::COORDINATOR_READY;
+        last_init_progress_ = now;
+
+        initialization_in_progress_ = false;
+        return;
+    }
+
+    // === PHASE 5: Coordinator prepared (500ms after on_show) ===
+    if (init_state_ == InitState::COORDINATOR_READY &&
+        (now - init_start_time_ > 500)) {
+
+        status_bar_.update_normal_status("INIT", "Ready to scan");
+
+        // CRITICAL: Coordinator thread created on-demand
+        // NOT created automatically to save 8KB stack until needed!
+        // Thread will be created when user presses START button
+
+        init_state_ = InitState::FULLY_INITIALIZED;
+        last_init_progress_ = now;
+
+        status_bar_.update_normal_status("EDA Ready", "All systems go");
+
+        // Final UI update
+        handle_scanner_update();
+
+        initialization_in_progress_ = false;
+        return;
+    }
+
+    initialization_in_progress_ = false;
+}
+
 void EnhancedDroneSpectrumAnalyzerView::on_show() {
     View::on_show();
 
-    // 🔴 CRITICAL FIX: Initialize scanner database and tracked_drones HERE
-    // AFTER constructor completes and stack unwinds
-    // This prevents stack overflow in constructor!
-    scanner_.initialize_database_and_scanner();
+    // 🔴 ФАЗА 2.6: МИНИМАЛЬНАЯ инициализация в on_show()
+    // НЕ вызываем scanner_.initialize_database_and_scanner() здесь!
+    // НЕ вызываем hardware_.on_hardware_show() здесь!
+    // НЕ вызываем initialize_modern_layout() здесь!
+    // Все эти вызовы отложены до step_deferred_initialization()
 
-    // 🔴 FIX: Load settings with timeout protection to prevent blocking
-    // Use defaults if file loading fails or times out
-    if (!DroneAnalyzerSettingsManager::load(settings_)) {
-        // Settings file not found or loading failed - already set to defaults
-        // in ScannerSettingsManager::load_settings_from_txt()
-    }
-
-    // 🔴 FIX: Update button text based on loaded settings
-    button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
-
-    scanner_.update_scan_range(settings_.wideband_min_freq_hz, settings_.wideband_max_freq_hz);
-
-    // Waterfall area: Header(60) + Ruler(12) + padding(9) = 81
-    // Waterfall height: SPEC_HEIGHT (80 pixels)
+    // 1. Только настройка waterfall области (безопасно)
     const int waterfall_y_start = 81;
     const int waterfall_height = SPEC_HEIGHT;
     const int waterfall_y_end = waterfall_y_start + waterfall_height - 1;
     display.scroll_set_area(waterfall_y_start, waterfall_y_end);
 
-    // 🔴 FIX: Don't block on gradient loading during on_show()
-    // Use default gradient immediately, load file asynchronously if needed
-    // This prevents UI thread blocking on SD card operations
-    // display_controller_.lazy_initialize_gradient();  // REMOVED - Blocking I/O
+    // 2. Инициализация таймеров для пошаговой инициализации
+    init_state_ = InitState::CONSTRUCTED;
+    init_start_time_ = chTimeNow();
+    last_init_progress_ = 0;
+    initialization_in_progress_ = false;
 
-    // Initialize hardware with error handling
-    hardware_.on_hardware_show();
+    // 3. Показать статус инициализации
+    status_bar_.update_normal_status("INIT", "Starting up...");
 
-    // 🔴 FIX: NOW safe to initialize layout and update UI
-    // scanner_ is fully initialized (freq_db_ptr_ and tracked_drones_ptr_ are ready)
-    initialize_modern_layout();
-    handle_scanner_update();
+    // 4. Фоновая инициализация начнется в первом DisplayFrameSync
+    // Это позволяет UI thread остаться responsive!
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
@@ -3285,9 +3409,10 @@ bool EnhancedDroneSpectrumAnalyzerView::handle_menu_button() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout() {
-    // 🔴 FIX: Don't call handle_scanner_update() in constructor!
-    // scanner_ may not be fully initialized yet (freq_db_ptr_ is nullptr)
+    // 🔴 ФАЗА 2.7: Don't call handle_scanner_update() here!
+    // scanner_ may not be fully initialized yet
     // This prevents segfault/black screen during startup
+    // handle_scanner_update() will be called after FULLY_INITIALIZED state
 
     for (size_t i = 0; i < threat_cards_.size(); ++i) {
         size_t card_y_pos = 165 + i * 20;
@@ -3296,7 +3421,6 @@ void EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout() {
 
         threat_cards_[i].set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
     }
-    // REMOVED: handle_scanner_update();  // Moved to on_show() after full initialization
 }
 
 void EnhancedDroneSpectrumAnalyzerView::update_modern_layout() {

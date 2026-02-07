@@ -1112,6 +1112,16 @@ public:
     void on_show() override;
     void on_hide() override;
 
+    // 🔴 ФАЗА 2.1: Deferred initialization state machine
+    enum class InitState {
+        CONSTRUCTED,           // 0: Constructor completed
+        DATABASE_LOADED,       // 1: scanner_.initialize_database_and_scanner() completed
+        HARDWARE_READY,        // 2: hardware_.on_hardware_show() completed
+        UI_LAYOUT_READY,       // 3: initialize_modern_layout() completed
+        COORDINATOR_READY,    // 4: coordinator thread creation prepared
+        FULLY_INITIALIZED     // 5: Ready for operation
+    };
+
  private:
     NavigationView& nav_;
 
@@ -1137,7 +1147,7 @@ public:
     Button button_menu_;
     Button button_audio_{ { screen_width - 160, screen_height - 72, 72, 32 }, "AUDIO: OFF" };
 
-    OptionsField field_scanning_mode_;
+    OptionsField field_scanning_mode_{{10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}};
 
     bool scanning_active_ = false;
 
@@ -1157,9 +1167,18 @@ public:
     MessageHandlerRegistration message_handler_frame_sync_ {
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
+            // 🔴 ФАЗА 2.4: Check and execute deferred initialization
+            // Executed every frame (~16ms at 60 FPS)
+            if (init_state_ != InitState::FULLY_INITIALIZED) {
+                step_deferred_initialization();
+                // Return early if not fully initialized
+                return;
+            }
+
+            // Normal operation mode
             // 1. Process spectrum data in display controller
             display_controller_.process_frame_sync();
-            
+
             // 2. Handle scanner updates in main view
             this->handle_scanner_update();
         }
@@ -1176,6 +1195,16 @@ public:
     void initialize_scanning_mode();
     void set_scanning_mode_from_index(size_t index);
     void add_ui_elements();
+
+    // 🔴 ФАЗА 2.2: Deferred initialization methods
+    void step_deferred_initialization();
+    void update_init_progress_display();
+
+    // 🔴 ФАЗА 2.3: Initialization state variables
+    InitState init_state_ = InitState::CONSTRUCTED;
+    systime_t init_start_time_ = 0;
+    systime_t last_init_progress_ = 0;
+    bool initialization_in_progress_ = false;
 };
 
 class LoadingScreenView : public View {
