@@ -333,8 +333,6 @@ void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& sett
     settings.wideband_slice_width_hz = 24000000;
     settings.panoramic_mode_enabled = true;
     settings.enable_intelligent_scanning = true;
-    settings.min_frequency_hz = 2400000000ULL;
-    settings.max_frequency_hz = 2500000000ULL;
 
     // ===== DETECTION SETTINGS =====
     settings.enable_fhss_detection = true;
@@ -530,14 +528,14 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const Dr
         config.wideband_max_freq_hz = 2500000000ULL;
     }
 
-    config.min_frequency_hz = preset.frequency_hz - 10000000ULL;
-    config.max_frequency_hz = preset.frequency_hz + 10000000ULL;
+    config.user_min_freq_hz = preset.frequency_hz - 10000000ULL;
+    config.user_max_freq_hz = preset.frequency_hz + 10000000ULL;
 
-    if (config.min_frequency_hz < 50000000ULL) {
-        config.min_frequency_hz = 50000000ULL;
+    if (config.user_min_freq_hz < 50000000ULL) {
+        config.user_min_freq_hz = 50000000ULL;
     }
-    if (config.max_frequency_hz > 6000000000ULL) {
-        config.max_frequency_hz = 6000000000ULL;
+    if (config.user_max_freq_hz > 6000000000ULL) {
+        config.user_max_freq_hz = 6000000000ULL;
     }
 
     config.freqman_path = "DRONES";

@@ -3512,7 +3512,7 @@ EnhancedDroneSettingsValidator::validate_all(const DroneAnalyzerSettings& settin
     }
     
     // 5. Validate frequency range
-    if (!validate_frequency_range(settings.min_frequency_hz, settings.max_frequency_hz, result.error_message)) {
+    if (!validate_frequency_range(settings.user_min_freq_hz, settings.user_max_freq_hz, result.error_message)) {
         result.is_valid = false;
         return result;
     }
