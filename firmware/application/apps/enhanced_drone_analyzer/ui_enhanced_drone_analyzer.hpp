@@ -42,7 +42,7 @@ using rf::Frequency;
 #include "string_format.hpp"
 #include "tone_key.hpp"
 #include "message_queue.hpp"
-#include "eda_unified_settings.hpp"
+// #include "eda_unified_settings.hpp"  // DEPRECATED - removed, use DroneAnalyzerSettings instead
 
 class LogFile;
 

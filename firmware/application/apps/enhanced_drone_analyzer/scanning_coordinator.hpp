@@ -53,6 +53,6 @@ private:
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 6144; // 6 KB (increased from 4 KB for safety)
 };
 
-} // namespace ui::apps::enhanced_drone_analyzer
+}  // namespace ui::apps::enhanced_drone_analyzer
 
-#endif // SCANNING_COORDINATOR_HPP_
+#endif  // __SCANNING_COORDINATOR_HPP__

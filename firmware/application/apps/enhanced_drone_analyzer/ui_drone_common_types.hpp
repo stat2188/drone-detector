@@ -198,6 +198,6 @@ struct DetectionLogEntry {
     uint8_t snr;                  // Signal-to-Noise Ratio (for calibration)
 };
 
-} // namespace ui::apps::enhanced_drone_analyzer
+}  // namespace ui::apps::enhanced_drone_analyzer
 
 #endif // __UI_DRONE_COMMON_TYPES_HPP__
