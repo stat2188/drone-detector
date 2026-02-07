@@ -670,6 +670,11 @@ public:
         spectrum_updated_.store(false, std::memory_order_release);
     }
 
+    // 🔴 FIX: Public method to set spectrum FIFO (called from parent View)
+    void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
+        spectrum_fifo_ = fifo;
+    }
+
     void handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message);
     void handle_channel_statistics(const ChannelStatistics& statistics);
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
@@ -703,14 +708,9 @@ private:
     // 🔴 FIX: Replace volatile with atomic with explicit memory ordering
     std::atomic<bool> rssi_updated_{false};
     std::atomic<int32_t> last_valid_rssi_{-120};
-
-    MessageHandlerRegistration message_handler_spectrum_config_ {
-        Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
-        }
-    };
+    
+    // 🔴 FIX: Moved message handlers to parent View to prevent MsgDblReg
+    // Only ChannelStatistics handler remains here as it's unique
     
     MessageHandlerRegistration message_handler_channel_statistics_ {
         Message::ID::ChannelStatistics,
@@ -936,6 +936,13 @@ public:
     CompactFrequencyRuler& compact_frequency_ruler() { return compact_frequency_ruler_; }
     FrequencyRuler& frequency_ruler() { return frequency_ruler_; }
 
+    // 🔴 FIX: Public methods for parent View message delegation
+    void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
+        spectrum_fifo_ = fifo;
+    }
+
+    void process_frame_sync();
+
     DroneDisplayController(const DroneDisplayController&) = delete;
     DroneDisplayController& operator=(const DroneDisplayController&) = delete;
 
@@ -1002,27 +1009,6 @@ private:
     void analyze_spectrum_for_threats(const ChannelSpectrum& spectrum);
     Frequency spectrum_bin_to_frequency(size_t bin) const;
     void update_or_create_drone_from_spectrum(Frequency freq_hz, uint8_t power);
-
-    MessageHandlerRegistration message_handler_channel_spectrum_config_ {
-        Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            spectrum_fifo_ = message.fifo;
-        }
-    };
-
-    MessageHandlerRegistration message_handler_frame_sync_ {
-        Message::ID::DisplayFrameSync,
-        [this](Message* const) {
-            if (spectrum_fifo_) {
-                ChannelSpectrum spectrum;
-                while (spectrum_fifo_->out(spectrum)) {
-                    this->process_mini_spectrum_data(spectrum);
-                    this->analyze_spectrum_for_threats(spectrum);
-                }
-            }
-        }
-    };
 };
 
 static constexpr const char* DEFAULT_CONFIG_PATH = "DRONES/DATA.CFG";
@@ -1145,9 +1131,26 @@ public:
 
     bool scanning_active_ = false;
 
-    MessageHandlerRegistration message_handler_stats_ {
+    // 🔴 FIX: Unified message handlers to prevent MsgDblReg
+    // These handlers delegate to controllers and internal methods
+    
+    MessageHandlerRegistration message_handler_spectrum_config_ {
+        Message::ID::ChannelSpectrumConfig,
+        [this](Message* const p) {
+            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            // Delegate FIFO pointer to both controllers that need it
+            hardware_.set_spectrum_fifo(message.fifo);
+            display_controller_.set_spectrum_fifo(message.fifo);
+        }
+    };
+
+    MessageHandlerRegistration message_handler_frame_sync_ {
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
+            // 1. Process spectrum data in display controller
+            display_controller_.process_frame_sync();
+            
+            // 2. Handle scanner updates in main view
             this->handle_scanner_update();
         }
     };
