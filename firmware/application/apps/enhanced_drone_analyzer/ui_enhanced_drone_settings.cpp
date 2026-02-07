@@ -1,5 +1,7 @@
 // ui_enhanced_drone_settings.cpp - Unified implementation for Enhanced Drone Analyzer Settings
 
+#include "ui_drone_common_types.hpp"
+#include "scanner_settings.hpp"
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "default_drones_db.hpp"
@@ -19,6 +21,7 @@ namespace fs = std::filesystem;
 using ScannerSettingsManager::load_settings_from_txt;
 
 namespace ui::apps::enhanced_drone_analyzer {
+
 
 // ===========================================
 // EnhancedSettingsManager Implementation
@@ -475,7 +478,7 @@ const char* DroneAnalyzerSettingsManager::get_translation(const std::string& key
 // 🔴 OPTIMIZATION: static const array instead of vector to avoid heap allocation
 // Scott Meyers Item 15: Prefer static const to #define
 // Note: Cannot use constexpr because DronePreset contains std::string (not constexpr-constructible)
-static const std::array<DronePreset, 5> default_presets = {{
+static const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5> default_presets = {{
     {"2.4GHz Band Scan", "Drone_2_4GHz", 2400000000ULL, ThreatLevel::MEDIUM, DroneType::MAVIC},
     {"2.5GHz Band Scan", "Drone_2_5GHz", 2500000000ULL, ThreatLevel::HIGH, DroneType::PHANTOM},
     {"DJI Mavic Series", "DJI_Mavic", 2437000000ULL, ThreatLevel::HIGH, DroneType::DJI_MINI},
@@ -483,7 +486,7 @@ static const std::array<DronePreset, 5> default_presets = {{
     {"Military UAV Band", "Military_UAV", 5000000000ULL, ThreatLevel::CRITICAL, DroneType::MILITARY_DRONE}
 }};
 
-const std::array<DronePreset, 5>& DroneFrequencyPresets::get_all_presets() { return default_presets; }
+const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5>& DroneFrequencyPresets::get_all_presets() { return default_presets; }
 std::vector<std::string> DroneFrequencyPresets::get_preset_names() {
     std::vector<std::string> names;
     for (const auto& preset : default_presets) names.push_back(preset.display_name);
@@ -506,13 +509,13 @@ std::string DroneFrequencyPresets::get_type_display_name(DroneType type) {
         default: return "Unknown";
     }
 }
-std::vector<DronePreset> DroneFrequencyPresets::get_presets_of_type(const std::array<DronePreset, PRESETS_COUNT>& all_presets, DroneType type) {
-    std::vector<DronePreset> filtered;
+std::vector<ui::apps::enhanced_drone_analyzer::DronePreset> DroneFrequencyPresets::get_presets_of_type(const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, PRESETS_COUNT>& all_presets, DroneType type) {
+    std::vector<ui::apps::enhanced_drone_analyzer::DronePreset> filtered;
     std::copy_if(all_presets.begin(), all_presets.end(), std::back_inserter(filtered),
-                 [type](const DronePreset& preset) { return preset.drone_type == type; });
+                 [type](const ui::apps::enhanced_drone_analyzer::DronePreset& preset) { return preset.drone_type == type; });
     return filtered;
 }
-bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset) {
+bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
     if (!preset.is_valid()) {
         return false;
     }
@@ -552,8 +555,8 @@ void DronePresetSelector::show_preset_menu(NavigationView& nav, PresetMenuView c
 
     class PresetMenuView : public MenuView {
     public:
-        PresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const DronePreset&)> on_selected,
-                      const std::array<DronePreset, 5>& presets)
+        PresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected,
+                      const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5>& presets)
             : MenuView(), nav_(nav), names_(std::move(names)), on_selected_fn_(on_selected), presets_(presets) {
             for (const auto& name : names_) {
                 add_item({name, Color::white(), nullptr, nullptr});
@@ -572,8 +575,8 @@ void DronePresetSelector::show_preset_menu(NavigationView& nav, PresetMenuView c
             return MenuView::on_key(key);
         }
         std::vector<std::string> names_;
-        std::function<void(const DronePreset&)> on_selected_fn_;
-        const std::array<DronePreset, 5>& presets_;
+        std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected_fn_;
+        const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5>& presets_;
     };
     nav.push<PresetMenuView>(preset_names, callback, all_presets);
 }
@@ -583,15 +586,15 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
     std::vector<std::string> names;
     for (const auto& preset : filtered_presets) names.push_back(preset.display_name);
 
-    auto on_selected = [&nav](const DronePreset& preset) {
+    auto on_selected = [&nav](const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
         (void)preset;
         nav.pop();
     };
 
     class FilteredPresetMenuView : public MenuView {
     public:
-        FilteredPresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const DronePreset&)> on_selected,
-                               const std::vector<DronePreset>& presets)
+        FilteredPresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected,
+                               const std::vector<ui::apps::enhanced_drone_analyzer::DronePreset>& presets)
             : MenuView(), nav_(nav), names_(std::move(names)), on_selected_fn_(on_selected), presets_(presets) {
             for (const auto& name : names_) {
                 add_item({name, Color::white(), nullptr, nullptr});
@@ -610,14 +613,14 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
             return MenuView::on_key(key);
         }
         std::vector<std::string> names_;
-        std::function<void(const DronePreset&)> on_selected_fn_;
-        const std::vector<DronePreset>& presets_;
+        std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected_fn_;
+        const std::vector<ui::apps::enhanced_drone_analyzer::DronePreset>& presets_;
     };
     nav.push<FilteredPresetMenuView>(names, on_selected, filtered_presets);
 }
 
 PresetMenuView DronePresetSelector::create_config_updater(DroneAnalyzerSettings& config_to_update) {
-    return [&config_to_update](const DronePreset& preset) {
+    return [&config_to_update](const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
         DroneFrequencyPresets::apply_preset(config_to_update, preset);
     };
 }
@@ -787,7 +790,7 @@ void ScanningSettingsView::on_save_settings() {
 void ScanningSettingsView::on_show_presets() {
     // Show presets menu using DronePresetSelector
     // Create callback that updates settings when preset is selected
-    auto on_preset_selected = [this](const DronePreset& preset) {
+    auto on_preset_selected = [this](const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
         DroneAnalyzerSettings settings;
         DroneAnalyzerSettingsManager::load(settings);
         if (DroneFrequencyPresets::apply_preset(settings, preset)) {
