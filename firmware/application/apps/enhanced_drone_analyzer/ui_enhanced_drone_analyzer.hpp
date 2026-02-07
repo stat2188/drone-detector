@@ -951,14 +951,14 @@ public:
     void deallocate_buffers();
 
     // 🔴 FIX: Safe buffer accessors (both const and non-const)
-    auto& spectrum_row_buffer() { return *spectrum_row_buffer_ptr_; }
-    const auto& spectrum_row_buffer() const { return *spectrum_row_buffer_ptr_; }
-    auto& render_line_buffer() { return *render_line_buffer_ptr_; }
-    const auto& render_line_buffer() const { return *render_line_buffer_ptr_; }
-    auto& waterfall_buffer() { return *waterfall_buffer_ptr_; }
-    const auto& waterfall_buffer() const { return *waterfall_buffer_ptr_; }
-    auto& spectrum_power_levels() { return *spectrum_power_levels_ptr_; }
-    const auto& spectrum_power_levels() const { return *spectrum_power_levels_ptr_; }
+    std::array<Color, SPECTRUM_ROW_SIZE>& spectrum_row_buffer() { return *spectrum_row_buffer_ptr_; }
+    const std::array<Color, SPECTRUM_ROW_SIZE>& spectrum_row_buffer() const { return *spectrum_row_buffer_ptr_; }
+    std::array<Color, RENDER_LINE_SIZE>& render_line_buffer() { return *render_line_buffer_ptr_; }
+    const std::array<Color, RENDER_LINE_SIZE>& render_line_buffer() const { return *render_line_buffer_ptr_; }
+    std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>& waterfall_buffer() { return *waterfall_buffer_ptr_; }
+    const std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>& waterfall_buffer() const { return *waterfall_buffer_ptr_; }
+    std::array<uint8_t, 200>& spectrum_power_levels() { return *spectrum_power_levels_ptr_; }
+    const std::array<uint8_t, 200>& spectrum_power_levels() const { return *spectrum_power_levels_ptr_; }
 
     // 🔴 FIX: Public methods for parent View message delegation
     void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
