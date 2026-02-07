@@ -42,14 +42,13 @@ public:
 
         // Инициализация free list
         for (size_t i = 0; i < PoolSize; ++i) {
-            free_list_[i] = static_cast<T*>(pool_ + i * ELEMENT_SIZE);
+            free_list_[i] = reinterpret_cast<T*>(pool_ + i * ELEMENT_SIZE);
         }
     }
 
     ~FixedSizeMemoryPool() {
-        chMtxLock(&mutex_);
         // Pool автоматически уничтожается при выходе из области видимости
-        chMtxUnlock(&mutex_);
+        // Mutex уничтожается автоматически (ChibiOS)
     }
 
     // 🔴 ФАЗА 3.3: Thread-safe allocation
@@ -58,14 +57,14 @@ public:
 
         if (free_count_ == 0) {
             // Pool exhausted - return nullptr
-            chMtxUnlock(&mutex_);
+            chMtxUnlock();
             return nullptr;
         }
 
         T* ptr = free_list_[--free_count_];
         ++allocation_count_;
 
-        chMtxUnlock(&mutex_);
+        chMtxUnlock();
 
         // Placement new для вызова конструктора
         new(ptr) T();
@@ -89,7 +88,7 @@ public:
 
         --allocation_count_;
 
-        chMtxUnlock(&mutex_);
+        chMtxUnlock();
     }
 
     // 🔴 ФАЗА 3.5: Status functions
@@ -207,8 +206,10 @@ public:
     EDAMemoryPools(const EDAMemoryPools&) = delete;
     EDAMemoryPools& operator=(const EDAMemoryPools&) = delete;
 
-private:
-    EDAMemoryPools() = default;
+ private:
+    EDAMemoryPools()  // Explicit initialization to fix -Weffc++ warning
+        : detection_log_pool_(),
+          display_drone_pool_() {}
     ~EDAMemoryPools() = default;
 
     DetectionLogPool detection_log_pool_;
