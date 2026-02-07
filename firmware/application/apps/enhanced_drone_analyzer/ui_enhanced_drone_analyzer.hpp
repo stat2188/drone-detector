@@ -932,7 +932,7 @@ public:
     void update_frequency_ruler();
     void lazy_initialize_gradient();  // CRITICAL FIX: Prevent blocking I/O on startup
     void set_ruler_style(RulerStyle style);
-    void apply_display_settings(const DisplaySettings& settings);
+    void apply_display_settings(const DroneAnalyzerSettings& settings);
     CompactFrequencyRuler& compact_frequency_ruler() { return compact_frequency_ruler_; }
     FrequencyRuler& frequency_ruler() { return frequency_ruler_; }
 

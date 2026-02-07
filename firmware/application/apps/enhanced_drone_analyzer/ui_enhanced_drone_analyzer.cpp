@@ -4125,7 +4125,7 @@ void DroneDisplayController::set_ruler_style(RulerStyle style) {
     frequency_ruler_.set_visible(false);
 }
 
-void DroneDisplayController::apply_display_settings(const DisplaySettings& settings) {
+void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings& settings) {
     if (settings.show_frequency_ruler) {
         compact_frequency_ruler_.set_visible(true);
         frequency_ruler_.set_visible(false);
