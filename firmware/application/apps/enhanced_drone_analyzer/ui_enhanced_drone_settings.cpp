@@ -65,17 +65,17 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "spectrum_mode=%s\n", spectrum_mode_to_string(settings.spectrum_mode).c_str());
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "scan_interval_ms=%lu\n", (unsigned long)settings.scan_interval_ms);
+                      "scan_interval_ms=%u\n", (unsigned int)settings.scan_interval_ms);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "rssi_threshold_db=%ld\n", (long)settings.rssi_threshold_db);
+                      "rssi_threshold_db=%d\n", (int)settings.rssi_threshold_db);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "enable_audio_alerts=%s\n", settings.enable_audio_alerts ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "audio_alert_frequency_hz=%u\n", settings.audio_alert_frequency_hz);
+                      "audio_alert_frequency_hz=%u\n", (unsigned int)settings.audio_alert_frequency_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "audio_alert_duration_ms=%lu\n", (unsigned long)settings.audio_alert_duration_ms);
+                      "audio_alert_duration_ms=%u\n", (unsigned int)settings.audio_alert_duration_ms);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "hardware_bandwidth_hz=%lu\n", (unsigned long)settings.hardware_bandwidth_hz);
+                      "hardware_bandwidth_hz=%u\n", (unsigned int)settings.hardware_bandwidth_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "enable_real_hardware=%s\n", settings.enable_real_hardware ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
@@ -87,7 +87,7 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "user_max_freq_hz=%llu\n", (unsigned long long)settings.user_max_freq_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "wideband_slice_width_hz=%lu\n", (unsigned long)settings.wideband_slice_width_hz);
+                      "wideband_slice_width_hz=%u\n", (unsigned int)settings.wideband_slice_width_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "panoramic_mode_enabled=%s\n", settings.panoramic_mode_enabled ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
@@ -97,7 +97,7 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "settings_version=0.4\n");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "last_modified_timestamp=%lu\n", (unsigned long)chTimeNow());
+                      "last_modified_timestamp=%u\n", (unsigned int)chTimeNow());
 
     // Write settings content
     auto content_result = file.write(settings_buffer, offset);
