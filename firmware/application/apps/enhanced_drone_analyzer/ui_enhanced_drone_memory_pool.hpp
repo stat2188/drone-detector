@@ -34,13 +34,11 @@ public:
     static constexpr size_t ELEMENT_SIZE = sizeof(T);
     static constexpr size_t POOL_SIZE_BYTES = PoolSize * ELEMENT_SIZE;
 
-    // Constructor
     FixedSizeMemoryPool()
         : allocation_count_(0),
           free_count_(PoolSize) {
         chMtxInit(&mutex_);
 
-        // Инициализация free list
         for (size_t i = 0; i < PoolSize; ++i) {
             free_list_[i] = reinterpret_cast<T*>(pool_ + i * ELEMENT_SIZE);
         }

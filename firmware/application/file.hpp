@@ -84,6 +84,10 @@ struct path {
         : _s{std::move(p._s)} {
     }
 
+    path(const char* const s)
+        : path{reinterpret_cast<const TCHAR*>(s)} {
+    }
+
     template <class Source>
     path(const Source& source)
         : path{std::begin(source), std::end(source)} {

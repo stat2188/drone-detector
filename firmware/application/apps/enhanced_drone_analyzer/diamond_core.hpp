@@ -65,22 +65,15 @@ public:
 // Centralized threat level lookups
 
 struct ThreatUtils {
-    // Color values as uint32_t (RGB format: 0xRRGGBB)
     static constexpr uint32_t COLOR_VALUES[5] = {
-        0xFF0000,   // NONE (0) → Blue
-        0x00FF00,   // LOW (1) → Green
-        0xFFFF00,   // MEDIUM (2) → Yellow
-        0xFFA500,   // HIGH (3) → Orange
-        0x0000FF    // CRITICAL (4) → Red
+        0xFF0000, 0x00FF00, 0xFFFF00, 0xFFA500, 0x0000FF
     };
 
     static constexpr const char* NAMES[5] = {
-        "CLEAR",
-        "LOW",
-        "MEDIUM",
-        "HIGH",
-        "CRITICAL"
+        "CLEAR", "LOW", "MEDIUM", "HIGH", "CRITICAL"
     };
+
+    static constexpr char SYMBOLS[5] = { '-', 'i', 'O', '!', '!' };
 
     static inline uint32_t color_value(uint8_t threat_idx) {
         return (threat_idx < 5) ? COLOR_VALUES[threat_idx] : COLOR_VALUES[0];
@@ -91,11 +84,7 @@ struct ThreatUtils {
     }
 
     static inline char symbol(uint8_t threat_idx) {
-        if (threat_idx >= 4) return '!';  // CRITICAL
-        if (threat_idx == 3) return '[!';  // HIGH
-        if (threat_idx == 2) return '[O';   // MEDIUM
-        if (threat_idx == 1) return '(i';   // LOW
-        return '-';                             // NONE
+        return (threat_idx < 5) ? SYMBOLS[threat_idx] : SYMBOLS[0];
     }
 };
 

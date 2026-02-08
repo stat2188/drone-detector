@@ -118,6 +118,7 @@ bool SimpleDroneValidation::validate_drone_detection(const DroneSignal& signal,
 // Scott Meyers Item 11: Handle assignment to self in operator=
 
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
+    (void)settings;  // Suppress unused parameter warning
     File settings_file;
     auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
     if (error) return false;
@@ -2002,6 +2003,7 @@ Color SmartThreatHeader::get_threat_bar_color(ThreatLevel level) const {
 }
 
 Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
+    (void)level;  // Suppress unused parameter warning
     return Color::white();  // Always white text on colored backgrounds
 }
 
