@@ -960,6 +960,11 @@ public:
     // 🔴 FIX: Buffer allocation/deallocation (deferred from constructor)
     void allocate_buffers();
     void deallocate_buffers();
+    
+    // 🔴 DIAMOND OPTIMIZATION: Buffer validation methods (защита от UB)
+    bool are_buffers_allocated() const;
+    bool are_buffers_valid() const;
+    bool allocate_buffers_from_pool();
 
     // 🔴 FIX: Safe buffer accessors (без waterfall_buffer - не используется)
     std::array<Color, SPECTRUM_ROW_SIZE>& spectrum_row_buffer() { return *spectrum_row_buffer_ptr_; }
@@ -1232,30 +1237,73 @@ public:
     void on_hide() override;
 
     // 🔴 ФАЗА 2.1: Deferred initialization state machine
-    enum class InitState {
-        CONSTRUCTED,           // 0: Constructor completed
-        BUFFERS_ALLOCATED,     // 1: display buffers heap-allocated
-        DATABASE_LOADED,       // 2: scanner_.initialize_database_and_scanner() completed
-        HARDWARE_READY,        // 3: hardware_.on_hardware_show() completed
-        UI_LAYOUT_READY,       // 4: initialize_modern_layout() completed
-        COORDINATOR_READY,    // 5: coordinator thread creation prepared
-        FULLY_INITIALIZED     // 6: Ready for operation
+    enum class InitState : uint8_t {
+        CONSTRUCTED = 0,           // Constructor completed
+        BUFFERS_ALLOCATED,         // display buffers heap-allocated
+        DATABASE_LOADED,           // scanner_.initialize_database_and_scanner() completed
+        HARDWARE_READY,            // hardware_.on_hardware_show() completed
+        UI_LAYOUT_READY,           // initialize_modern_layout() completed
+        SETTINGS_LOADED,           // SettingsPersistence::load() completed
+        COORDINATOR_READY,         // coordinator thread creation prepared
+        FULLY_INITIALIZED = 7,     // Ready for operation
+        INITIALIZATION_ERROR = 8   // Timeout or critical error (NEW!)
     };
+
+    // 🔴 DIAMOND OPTIMIZATION: Initialization timeout constants
+    static constexpr uint32_t INIT_TIMEOUT_MS = 5000;  // 5 секунд на всю инициализацию
+    static constexpr uint8_t MAX_INIT_PHASES = 6;
+
+    // 🔴 DIAMOND OPTIMIZATION: Forward declarations for phase initialization methods
+    // Scott Meyers Item 11: Handle assignment to self in operator=
+    // Эти методы объявлены здесь для использования в constexpr LUT
+    void init_phase_allocate_buffers();
+    void init_phase_load_database();
+    void init_phase_init_hardware();
+    void init_phase_setup_ui();
+    void init_phase_load_settings();
+    void init_phase_finalize();
 
     // DIAMOND OPTIMIZATION: constexpr LUT для сообщений инициализации в Flash
     static constexpr const char* const INIT_STATUS_MESSAGES[] = {
-        "Starting up...",      // CONSTRUCTED
-        "Buffers ready",       // BUFFERS_ALLOCATED
-        "Database ready",      // DATABASE_LOADED
-        "Hardware ready",      // HARDWARE_READY
-        "UI ready",            // UI_LAYOUT_READY
-        "Coordinator ready",   // COORDINATOR_READY
-        "All systems go"       // FULLY_INITIALIZED
+        "Starting up...",      // CONSTRUCTED = 0
+        "Buffers ready",       // BUFFERS_ALLOCATED = 1
+        "Database ready",      // DATABASE_LOADED = 2
+        "Hardware ready",      // HARDWARE_READY = 3
+        "UI ready",            // UI_LAYOUT_READY = 4
+        "Settings loaded",     // SETTINGS_LOADED = 5 (NEW!)
+        "Coordinator ready",   // COORDINATOR_READY = 6
+        "All systems go"       // FULLY_INITIALIZED = 7
     };
     static constexpr const char* const INIT_STATUS_TITLES[] = {
-        "INIT",               // CONSTRUCTED through COORDINATOR_READY
-        "EDA Ready"           // FULLY_INITIALIZED
+        "INIT",               // CONSTRUCTED through COORDINATOR_READY (0-6)
+        "EDA Ready"           // FULLY_INITIALIZED (7)
     };
+    
+    // 🔴 DIAMOND OPTIMIZATION: constexpr LUT для фаз инициализации (хранится во Flash)
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    struct InitPhaseConfig {
+        const char* const name;           // Строка во Flash (const char*)
+        uint32_t delay_ms;               // Задержка в мс
+        void (EnhancedDroneSpectrumAnalyzerView::*init_func)();  // Сырой указатель на метод
+    };
+    
+    static constexpr InitPhaseConfig INIT_PHASES[] = {
+        {"Allocating buffers...",   50,  &EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers},
+        {"Loading database...",     100, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_database},
+        {"Initializing hardware...", 200, &EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware},
+        {"Setting up UI...",        300, &EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui},
+        {"Loading settings...",     400, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings},
+        {"Finalizing...",           500, &EnhancedDroneSpectrumAnalyzerView::init_phase_finalize}
+    };
+    static_assert(sizeof(INIT_PHASES) / sizeof(InitPhaseConfig) == 6, "INIT_PHASES size");
+    
+    // 🔴 DIAMOND OPTIMIZATION: constexpr массив для сообщений об ошибках (Flash)
+    static constexpr const char* const ERROR_MESSAGES[] = {
+        "Init timeout",      // GENERAL_TIMEOUT = 0
+        "Allocation failed",  // ALLOCATION_FAILED = 1
+        "Database error"      // DATABASE_ERROR = 2
+    };
+    static_assert(sizeof(ERROR_MESSAGES) / sizeof(const char*) == 3, "ERROR_MESSAGES size");
 
  private:
     NavigationView& nav_;
@@ -1302,11 +1350,21 @@ public:
     MessageHandlerRegistration message_handler_frame_sync_ {
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
-            // 🔴 ФАЗА 2.4: Check and execute deferred initialization
+            // 🔴 DIAMOND OPTIMIZATION: Enhanced initialization with timeout protection
             // Executed every frame (~16ms at 60 FPS)
+            if (init_state_ == InitState::INITIALIZATION_ERROR) {
+                // Не обновляем UI, ошибка уже показана
+                return;
+            }
+            
             if (init_state_ != InitState::FULLY_INITIALIZED) {
                 step_deferred_initialization();
                 // Return early if not fully initialized
+                return;
+            }
+
+            // 🔴 SAFETY: Проверка валидности буферов перед операциями
+            if (!display_controller_.are_buffers_valid()) {
                 return;
             }
 
@@ -1340,7 +1398,17 @@ public:
     systime_t init_start_time_ = 0;
     systime_t last_init_progress_ = 0;
     bool initialization_in_progress_ = false;
+    
+    // 🔴 DIAMOND OPTIMIZATION: Error handling enum
+    enum class InitError : uint8_t {
+        NONE = 0,
+        GENERAL_TIMEOUT = 1,
+        ALLOCATION_FAILED = 2,
+        DATABASE_ERROR = 3
+    };
+    InitError init_error_ = InitError::NONE;
 };
+
 
 class LoadingScreenView : public View {
 public:
