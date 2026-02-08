@@ -32,6 +32,16 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
+// COMPILE-TIME STRING LENGTH METAFUNCTION
+// ===========================================
+// Вычисляет длину строкового литерала на этапе компиляции
+// Scott Meyers Item 15: Prefer constexpr to #define
+template<size_t N>
+constexpr size_t StringLength(const char (&)[N]) {
+    return N - 1;  // Вычитаем нуль-терминатор
+}
+
+// ===========================================
 // FORWARD DECLARATIONS
 // ===========================================
 struct DroneAnalyzerSettings;
@@ -41,12 +51,12 @@ struct DroneAnalyzerSettings;
 // ===========================================
 
 struct SettingMetadata {
-    const char* key;                    // Setting name (e.g., "enable_audio_alerts")
-    size_t offset;                     // Byte offset in DroneAnalyzerSettings
-    uint8_t type;                      // Type code: 0=bool, 1=uint32, 2=int32, 3=str
-    uint32_t min_val;                   // Minimum value (for uint32/int32)
-    uint32_t max_val;                   // Maximum value (for uint32/int32)
-    const char* default_str;             // Default value for string types
+    const char* key;
+    size_t offset;
+    uint8_t type;
+    int64_t min_val;  // DIAMOND FIX: int64_t для поддержки отрицательных RSSI и частот > 4GHz
+    int64_t max_val;  // DIAMOND FIX: int64_t для поддержки отрицательных RSSI и частот > 4GHz
+    const char* default_str;
 };
 
 // Type codes for compile-time dispatch
@@ -137,19 +147,19 @@ constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
     {"settings_version", offsetof(DroneAnalyzerSettings, settings_version), TYPE_UINT32, 1, 999, "2"}
 };
 
-// Compile-time buffer size calculation
-constexpr size_t CALCULATE_MAX_LINE_LENGTH() {
+// DIAMOND FIX: Runtime buffer size calculation (strlen на этапе инициализации)
+inline size_t CALCULATE_MAX_LINE_LENGTH() {
     size_t max_len = 0;
     for (size_t i = 0; i < SETTINGS_COUNT; i++) {
         size_t key_len = strlen(SETTINGS_LUT[i].key);
         size_t val_len = strlen(SETTINGS_LUT[i].default_str);
-        size_t total = key_len + 1 + val_len + 2; // key + "=" + value + "\n"
+        size_t total = key_len + 1 + val_len + 2;
         max_len = (total > max_len) ? total : max_len;
     }
     return max_len;
 }
 
-constexpr size_t MAX_LINE_LENGTH = CALCULATE_MAX_LINE_LENGTH();
+static const size_t MAX_LINE_LENGTH = CALCULATE_MAX_LINE_LENGTH();
 
 // Compile-time buffer size for single-pass serialization
 constexpr size_t SETTINGS_TEMPLATE_SIZE = 4096;
@@ -406,7 +416,7 @@ bool SettingsPersistence<T>::save(const T& settings) {
         return false;
     }
     
-    auto write_result = file.write_raw(std::string(buffer, len));
+    auto write_result = file.write(std::string(buffer, len));
     return !write_result.is_error();
 }
 

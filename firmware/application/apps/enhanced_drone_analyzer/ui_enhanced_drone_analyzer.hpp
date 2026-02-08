@@ -226,72 +226,20 @@ struct DroneSignal {
     int32_t rssi_db;
 };
 
-// DIAMOND OPTIMIZATION: Unified validation using eda_optimized_utils.hpp
-// SimpleDroneValidation now delegates to FrequencyValidator, ThreatClassifier, and DroneTypeDetector
+// SimpleDroneValidation - standalone validation class
+// Note: Duplicate logic exists in eda_optimized_utils.hpp but kept for backward compatibility
 class SimpleDroneValidation {
 public:
-    // DIAMOND OPTIMIZATION: Delegation to unified FrequencyValidator
-    static bool validate_frequency_range(Frequency freq_hz) {
-        return FrequencyValidator::is_valid_frequency(freq_hz);
-    }
-
-    // DIAMOND OPTIMIZATION: Delegation to unified ThreatClassifier
-    static ThreatLevel classify_signal_strength(int32_t rssi_db) {
-        return ThreatClassifier::from_rssi(rssi_db);
-    }
-
-    // DIAMOND OPTIMIZATION: Delegation to unified DroneTypeDetector
-    static DroneType identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
-        (void)rssi_db;  // RSSI not used in type detection
-        uint8_t type_code = DroneTypeDetector::from_frequency(freq_hz);
-        return static_cast<DroneType>(type_code);
-    }
-
-    // DIAMOND OPTIMIZATION: Struct wrapper for backward compatibility
-    static DroneType identify_drone_type(const DroneSignal& signal) {
-        return identify_drone_type(signal.frequency_hz, signal.rssi_db);
-    }
-
-    // Combined detection validation using unified classifiers
+    static bool validate_frequency_range(Frequency freq_hz);
+    static ThreatLevel classify_signal_strength(int32_t rssi_db);
+    static DroneType identify_drone_type(const DroneSignal& signal);
+    static DroneType identify_drone_type(Frequency freq_hz, int32_t rssi_db);
     static bool validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
-                                       DroneType type, ThreatLevel threat) {
-        // Validate frequency range
-        if (!FrequencyValidator::is_valid_frequency(freq_hz)) {
-            return false;
-        }
-        
-        // Validate RSSI signal against threat level
-        if (!validate_rssi_signal(rssi_db, threat)) {
-            return false;
-        }
-        
-        return true;
-    }
-
-    // DIAMOND OPTIMIZATION: Struct wrapper for backward compatibility
+                                       DroneType /* type */, ThreatLevel threat);
     static bool validate_drone_detection(const DroneSignal& signal,
-                                       DroneType type, ThreatLevel threat) {
-        return validate_drone_detection(signal.frequency_hz, signal.rssi_db, type, threat);
-    }
-
-    // RSSI validation (kept locally as it's UI-specific)
-    static bool validate_rssi_signal(int32_t rssi_db, ThreatLevel threat) {
-        // Different thresholds for different threat levels
-        switch (threat) {
-            case ThreatLevel::CRITICAL:
-                return rssi_db >= -60;
-            case ThreatLevel::HIGH:
-                return rssi_db >= -75;
-            case ThreatLevel::MEDIUM:
-                return rssi_db >= -85;
-            case ThreatLevel::LOW:
-                return rssi_db >= -95;
-            default:
-                return rssi_db >= -100;
-        }
-    }
-
-    // Mode for frequency validation - stored locally as FrequencyValidator doesn't expose this
+                                       DroneType type, ThreatLevel threat);
+    static bool validate_rssi_signal(int32_t rssi_db, ThreatLevel threat);
+    
     static void set_scanning_mode(DroneConstants::ScanningMode mode) {
         scanning_mode_ = mode;
     }

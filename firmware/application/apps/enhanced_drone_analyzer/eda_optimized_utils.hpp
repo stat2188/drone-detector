@@ -42,8 +42,7 @@ namespace ui::apps::enhanced_drone_analyzer {
 template<typename T, size_t N = 11>
 class MedianFilter {
 public:
-    MedianFilter() : head_(0), full_(false) {
-        window_.fill(static_cast<T>(0));
+    MedianFilter() : head_(0), full_(false), window_{} {
     }
 
     void add(T value) {
