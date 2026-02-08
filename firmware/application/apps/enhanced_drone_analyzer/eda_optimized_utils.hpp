@@ -19,6 +19,7 @@
  *           - Frequency type (int64_t)
  *           - Color, DroneType, ThreatLevel enums
  *           - to_string_dec_int() function
+ * 
  */
 
 #ifndef EDA_OPTIMIZED_UTILS_HPP_

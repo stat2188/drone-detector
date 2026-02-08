@@ -12,6 +12,9 @@
  * - Never acquire a lower-numbered lock while holding a higher-numbered lock
  * - Use MutexLock RAII wrapper for automatic unlock
  * - Keep critical sections as short as possible
+ * 
+ * If something doesn't load at all, at least it doesn't freeze and immediately crash. Which means the code is potentially alive. You all know perfectly well that running so many lines of code is already an achievement.
+ * 
  */
 
 #include "ui_enhanced_drone_analyzer.hpp"
