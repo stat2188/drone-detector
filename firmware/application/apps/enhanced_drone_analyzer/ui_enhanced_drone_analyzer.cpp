@@ -15,6 +15,8 @@
  * 
  * If something doesn't load at all, at least it doesn't freeze and immediately crash. Which means the code is potentially alive. You all know perfectly well that running so many lines of code is already an achievement.
  * 
+ * I'm just here for fun. I had this idea to cram 8,000 lines into an outdated controller and that's it. Code for me is like painting a picture. I want it abstract, extensive, and yet solid.
+ * 
  */
 
 #include "ui_enhanced_drone_analyzer.hpp"
