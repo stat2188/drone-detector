@@ -354,4 +354,5 @@ private:
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
-#endif // __UI_ENHANCED_DRONE_SETTINGS_HPP__
+#endif // UI_ENHANCED_DRONE_SETTINGS_HPP_
+

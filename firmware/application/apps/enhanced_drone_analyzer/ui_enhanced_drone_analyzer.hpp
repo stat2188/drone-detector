@@ -480,7 +480,7 @@ struct DetectionParams {
     void initialize_database_and_scanner();
     void cleanup_database_and_scanner();
 
-private:
+ private:
     void reset_scan_cycles();
     void initialize_wideband_scanning();
     void setup_wideband_range(Frequency min_freq, Frequency max_freq);
@@ -569,6 +569,29 @@ private:
 
     // Settings for user-defined frequency ranges
     const DroneAnalyzerSettings& settings_;
+
+    // ===========================================
+    // DIAMOND OPTIMIZATION: LUTs в конце класса (после всех объявлений)
+    // ===========================================
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    // Все LUT объявлены здесь для доступа к private членам/методам
+    
+    // LUT для MovementTrend счётчиков (указатели на члены класса)
+    static constexpr size_t DroneScanner::* const TREND_COUNTERS[] = {
+        &DroneScanner::static_count_,      // STATIC = 0
+        &DroneScanner::approaching_count_, // APPROACHING = 1
+        &DroneScanner::receding_count_,    // RECEDING = 2
+        &DroneScanner::static_count_       // UNKNOWN = 3 (fallback)
+    };
+    static_assert(sizeof(TREND_COUNTERS) / sizeof(size_t DroneScanner::*) == 4, "TREND_COUNTERS size");
+    
+    // LUT для функций сканирования (указатели на методы класса)
+    static constexpr void (DroneScanner::* const SCAN_FUNCTIONS[])(DroneHardwareController&) = {
+        &DroneScanner::perform_database_scan_cycle,    // DATABASE = 0
+        &DroneScanner::perform_wideband_scan_cycle,   // WIDEBAND_CONTINUOUS = 1
+        &DroneScanner::perform_hybrid_scan_cycle        // HYBRID = 2
+    };
+    static_assert(sizeof(SCAN_FUNCTIONS) / sizeof(void (DroneScanner::*)(DroneHardwareController&)) == 3, "SCAN_FUNCTIONS size");
 };
 
 class DroneHardwareController {

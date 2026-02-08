@@ -24,7 +24,7 @@
 #define SETTINGS_PERSISTENCE_HPP_
 
 #include <cstdint>
-#include <cstring>
+#include <cstring>  // Для strlen, strchr, strcmp
 #include <cstdio>
 #include <string>
 #include "ui_drone_common_types.hpp"
@@ -507,7 +507,7 @@ bool SettingsPersistence<T>::validate(const T& settings) {
     
     if (settings.user_min_freq_hz >= settings.user_max_freq_hz) return false;
     if (settings.wideband_min_freq_hz >= settings.wideband_max_freq_hz) return false;
-    
+
     return true;
 }
 

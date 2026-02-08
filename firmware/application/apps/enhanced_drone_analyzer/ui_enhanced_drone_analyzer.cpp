@@ -52,7 +52,7 @@ namespace ui::apps::enhanced_drone_analyzer {
 using namespace DroneConstants;
 
 // ===========================================
-// DIAMOND OPTIMIZATION: ScanningMode LUT
+// DIAMOND OPTIMIZATION: ScanningMode LUT (namespace scope)
 // ===========================================
 // Scott Meyers Item 15: Prefer constexpr to #define
 // Все строки хранятся во Flash, RAM не тратится
@@ -63,30 +63,8 @@ static constexpr const char* const SCANNING_MODE_NAMES[] = {
 };
 static_assert(sizeof(SCANNING_MODE_NAMES) / sizeof(const char*) == 3, "SCANNING_MODE_NAMES size");
 
-// ===========================================
-// DIAMOND OPTIMIZATION: MovementTrend Counter LUT
-// ===========================================
-// Scott Meyers Item 20: Prefer pass-by-reference-to-const to pass-by-value
-// Указатели на члены класса для O(1) доступа
-static constexpr size_t DroneScanner::* const TREND_COUNTERS[] = {
-    &DroneScanner::static_count_,      // STATIC = 0
-    &DroneScanner::approaching_count_, // APPROACHING = 1
-    &DroneScanner::receding_count_,    // RECEDING = 2
-    &DroneScanner::static_count_       // UNKNOWN = 3 (fallback to static)
-};
-static_assert(sizeof(TREND_COUNTERS) / sizeof(size_t DroneScanner::*) == 4, "TREND_COUNTERS size");
-
-// ===========================================
-// DIAMOND OPTIMIZATION: Scan Function Pointer LUT
-// ===========================================
-// Scott Meyers Item 36: Never redefine an inherited non-virtual function
-// Используем сырые указатели на методы (не std::function!)
-static constexpr void (DroneScanner::* const SCAN_FUNCTIONS[])(DroneHardwareController&) = {
-    &DroneScanner::perform_database_scan_cycle,    // DATABASE = 0
-    &DroneScanner::perform_wideband_scan_cycle,   // WIDEBAND_CONTINUOUS = 1
-    &DroneScanner::perform_hybrid_scan_cycle        // HYBRID = 2
-};
-static_assert(sizeof(SCAN_FUNCTIONS) / sizeof(void (DroneScanner::*)(DroneHardwareController&)) == 3, "SCAN_FUNCTIONS size");
+// Примечание: TREND_COUNTERS и SCAN_FUNCTIONS перемащены в класс DroneScanner
+// (ui_enhanced_drone_analyzer.hpp) для доступа к private членам
 
 const TrackedDrone& get_empty_drone() {
     static const TrackedDrone empty{};
@@ -449,7 +427,8 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     // Apply mode-specific adjustments
     uint8_t mode_idx = static_cast<uint8_t>(scanning_mode_);
     if (mode_idx < 3) {
-        (this->*SCAN_FUNCTIONS[mode_idx])(hardware);  // Вызов метода через указатель
+        // Используем классный LUT DroneScanner::SCAN_FUNCTIONS для доступа к private методам
+        (this->*DroneScanner::SCAN_FUNCTIONS[mode_idx])(hardware);  // Вызов метода через указатель
     }
 
     scan_cycles_++;
@@ -1222,9 +1201,11 @@ void DroneScanner::update_tracking_counts() {
 
         MovementTrend trend = tracked_drones()[i].get_trend();
         // LUT lookup вместо switch - O(1) время, ноль RAM
+        // Используем классный LUT DroneScanner::TREND_COUNTERS для доступа к private членам
         uint8_t idx = static_cast<uint8_t>(trend);
         if (idx < 4) {
-            this->*TREND_COUNTERS[idx]++;  // Увеличиваем нужный счётчик через указатель на член
+            // Скобки обязательны для правильного приоритета операций (постфиксный ++ имеет выше приоритет чем ->*)
+            (this->*DroneScanner::TREND_COUNTERS[idx])++;
         }
     }
 }
