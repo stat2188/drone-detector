@@ -48,11 +48,11 @@ using rf::Frequency;
 class LogFile;
 
 // Enum for scanner modes
-enum class ScannerMode {
-    DATABASE_ONLY,
-    WIDEBAND_ONLY,
-    HYBRID,
-    SPECTRUM_VIEW
+enum class ScannerMode : uint8_t {
+    DATABASE_ONLY = 0,
+    WIDEBAND_ONLY = 1,
+    HYBRID = 2,
+    SPECTRUM_VIEW = 3
 };
 
 // Application specific namespace starts here to ensure all classes are properly scoped
@@ -76,11 +76,11 @@ struct RssiMeasurement {
 
 namespace UIStyles {
     static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
-    static constexpr Style YELLOW_STYLE{font::fixed_8x16, Color::black(), Color(255, 255, 0)};
+    static constexpr Style YELLOW_STYLE{font::fixed_8x16, Color::black(), Color::yellow()};
     static constexpr Style GREEN_STYLE{font::fixed_8x16, Color::black(), Color::green()};
     static constexpr Style LIGHT_STYLE{font::fixed_8x16, Color::black(), Color::white()};
     static constexpr Style DARK_STYLE{font::fixed_8x16, Color::black(), Color::dark_grey()};
-    static constexpr Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color(255, 165, 0)};
+    static constexpr Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color::orange()};
 }
 
 class TrackedDrone {
@@ -737,11 +737,11 @@ private:
         const Style* style_ptr;
         Color bar_color;
     } HEADER_STYLES[] = {
-        {&UIStyles::LIGHT_STYLE,  Color(0x0000FF)}, // NONE (0) - Blue
-        {&UIStyles::GREEN_STYLE,   Color(0x00FF00)}, // LOW (1) - Green
-        {&UIStyles::YELLOW_STYLE,  Color(0xFFFF00)}, // MEDIUM (2) - Yellow
-        {&UIStyles::YELLOW_STYLE,  Color(0xFFA500)}, // HIGH (3) - Orange
-        {&UIStyles::RED_STYLE,      Color(0xFF0000)} // CRITICAL (4) - Red
+        {&UIStyles::LIGHT_STYLE,  Color::blue()},   // NONE (0) - Blue
+        {&UIStyles::GREEN_STYLE,   Color::green()},  // LOW (1) - Green
+        {&UIStyles::YELLOW_STYLE,  Color::yellow()}, // MEDIUM (2) - Yellow
+        {&UIStyles::YELLOW_STYLE,  Color::orange()}, // HIGH (3) - Orange
+        {&UIStyles::RED_STYLE,      Color::red()}     // CRITICAL (4) - Red
     };
     static_assert(sizeof(HEADER_STYLES) == sizeof(HeaderStyleConfig) * 5, "HEADER_STYLES size");
 
@@ -798,7 +798,7 @@ private:
     static_assert(sizeof(CARD_STYLES) == sizeof(CardStyleConfig) * 5, "CARD_STYLES size");
 };
 
-enum class DisplayMode { SCANNING, ALERT, NORMAL };
+enum class DisplayMode : uint8_t { SCANNING = 0, ALERT = 1, NORMAL = 2 };
 
 class ConsoleStatusBar : public View {
 public:
@@ -825,13 +825,13 @@ private:
     void paint(Painter& painter) override;
 };
 
-enum class RulerStyle {
-    COMPACT_GHZ,
-    COMPACT_MHZ,
-    STANDARD_GHZ,
-    STANDARD_MHZ,
-    DETAILED,
-    SPACED_GHZ
+enum class RulerStyle : uint8_t {
+    COMPACT_GHZ = 0,
+    COMPACT_MHZ = 1,
+    STANDARD_GHZ = 2,
+    STANDARD_MHZ = 3,
+    DETAILED = 4,
+    SPACED_GHZ = 5
 };
 
 class CompactFrequencyRuler : public View {
@@ -999,19 +999,19 @@ public:
         Color color;
     } SIGNAL_TYPE_CONFIG[] = {
         {"--",       Color::white()},           // DEFAULT/Unknown
-        {"DIGITAL",  Color(0, 255, 0)},       // Digital (Green)
-        {"ANALOG",   Color(255, 255, 0)},     // Analog (Yellow)
-        {"NOISE",    Color(128, 128, 128)}    // Noise (Grey)
+        {"DIGITAL",  Color::green()},          // Digital (Green)
+        {"ANALOG",   Color::yellow()},         // Analog (Yellow)
+        {"NOISE",    Color::grey()}           // Noise (Grey)
     };
     static_assert(sizeof(SIGNAL_TYPE_CONFIG) == sizeof(SignalTypeConfig) * 4, "SIGNAL_TYPE_CONFIG size");
 
     // DIAMOND OPTIMизация: constexpr LUT для цветов big_display (без каскадного if-else)
     static constexpr const Color BIG_DISPLAY_COLORS[] = {
         Color::dark_grey(),      // Idle/Default
-        Color(0, 255, 0),        // Scanning (Green)
-        Color(255, 165, 0),      // Has detections (Orange)
-        Color(255, 255, 0),      // Medium threat (Yellow)
-        Color(255, 0, 0)         // High+ threat (Red)
+        Color::green(),          // Scanning (Green)
+        Color::orange(),         // Has detections (Orange)
+        Color::yellow(),         // Medium threat (Yellow)
+        Color::red()            // High+ threat (Red)
     };
 
     // DIAMOND OPTIMIZATION: конфигурация для bar spectrum (заменяет waterfall)
@@ -1023,9 +1023,9 @@ public:
 
         // Цвета для bar spectrum (в Flash)
         static constexpr Color BAR_COLORS[] = {
-            Color(0, 0, 255),        // 0: Wideband/Plateau (WiFi, Video) - Blue
-            Color(255, 0, 0),        // 1: Sharp Peak (Drone Control) - Red
-            Color(128, 128, 128)     // 2: Unknown/Noise - Grey
+            Color::blue(),          // 0: Wideband/Plateau (WiFi, Video) - Blue
+            Color::red(),           // 1: Sharp Peak (Drone Control) - Red
+            Color::grey()           // 2: Unknown/Noise - Grey
         };
     };
 

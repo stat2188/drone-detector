@@ -2097,9 +2097,8 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
         StatusFormatter::format_to(alert_buffer, "[!] DETECTED: %lu threats found!",
                                   static_cast<unsigned long>(detections));
         alert_text_.set(alert_buffer);
-        // DIAMOND OPTIMIZATION: Use RGB565 values instead of RGB888
-        // Color конструктор ожидает uint16_t (RGB565 формат)
-        static Style red_style{font::fixed_8x16, Color::black(), Color(0xF800)}; // Red in RGB565
+        // DIAMOND OPTIMIZATION: Use Color::red() instead of RGB565
+        static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
         alert_text_.set_style(&red_style);
     }
     set_dirty();
@@ -2118,10 +2117,9 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
                              ALERT_ICONS[icon_idx], total_drones, alert_msg.c_str());
     alert_text_.set(buffer);
 
-    // DIAMOND OPTIMIZATION: Use RGB565 values instead of RGB888
-    // Color конструктор ожидает uint16_t (RGB565 формат: rrrrrGGGGGGbbbbb)
-    static Style red_style{font::fixed_8x16, Color::black(), Color(0xF800)};    // Red (CRITICAL)
-    static Style yellow_style{font::fixed_8x16, Color::black(), Color(0xFFE0)}; // Yellow (MEDIUM)
+    // DIAMOND OPTIMIZATION: Use Color::red() and Color::yellow()
+    static Style red_style{font::fixed_8x16, Color::black(), Color::red()};      // Red (CRITICAL)
+    static Style yellow_style{font::fixed_8x16, Color::black(), Color::yellow()}; // Yellow (MEDIUM)
 
     alert_text_.set_style(threat >= ThreatLevel::CRITICAL ? &red_style : &yellow_style);
     set_dirty();
@@ -2163,7 +2161,7 @@ void ConsoleStatusBar::set_display_mode(DisplayMode mode) {
 void ConsoleStatusBar::paint(Painter& painter) {
     View::paint(painter);
     if (mode_ == DisplayMode::ALERT) {
-        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect().width(), 2}, Color(32, 0, 0));
+        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect().width(), 2}, Color::dark_red());
     }
 }
 
@@ -2304,13 +2302,13 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
                                   threat_name, scanner.get_approaching_count(),
                                   scanner.get_static_count(), scanner.get_receding_count());
         text_threat_summary_.set(summary_buffer);
-        // DIAMOND OPTIMIZATION: RGB565 values (0xF800 = Red)
-        static Style red_style{font::fixed_8x16, Color::black(), Color(0xF800)};
+        // DIAMOND OPTIMIZATION: Use Color::red()
+        static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
         text_threat_summary_.set_style(&red_style);
     } else {
         text_threat_summary_.set("THREAT: NONE | All clear");
-        // DIAMOND OPTIMIZATION: RGB565 values (0x07E0 = Green)
-        static Style green_style{font::fixed_8x16, Color::black(), Color(0x07E0)};
+        // DIAMOND OPTIMIZATION: Use Color::green()
+        static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
         text_threat_summary_.set_style(&green_style);
     }
 
@@ -2360,8 +2358,8 @@ void DroneDisplayController::set_scanning_status(bool active, const std::string&
     if (active) {
         StatusFormatter::format_to(buffer, "SCAN: %s", message.c_str());
         text_status_info_.set(buffer);
-        // DIAMOND OPTIMIZATION: RGB565 values (0x07E0 = Green)
-        static Style green_style{font::fixed_8x16, Color::black(), Color(0x07E0)};
+        // DIAMOND OPTIMIZATION: Use Color::green()
+        static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
         text_status_info_.set_style(&green_style);
     } else {
         StatusFormatter::format_to(buffer, "STOP: %s", message.c_str());

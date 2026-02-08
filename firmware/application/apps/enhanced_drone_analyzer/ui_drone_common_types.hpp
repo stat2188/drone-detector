@@ -9,7 +9,7 @@
 #include "file.hpp"
 
 // SpectrumMode forward declare
-enum class SpectrumMode { NARROW, MEDIUM, WIDE, ULTRA_WIDE, ULTRA_NARROW };
+enum class SpectrumMode : uint8_t { NARROW = 0, MEDIUM = 1, WIDE = 2, ULTRA_WIDE = 3, ULTRA_NARROW = 4 };
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -105,16 +105,16 @@ static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2400000000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2500000000ULL;
 
 // Enhanced enums for EDA
-enum class ThreatLevel {
+enum class ThreatLevel : uint8_t {
     NONE = 0,
-    LOW = 1,
+    LOW =1,
     MEDIUM = 2,
     HIGH = 3,
     CRITICAL = 4,
     UNKNOWN = 5
 };
 
-enum class DroneType {
+enum class DroneType : uint8_t {
     UNKNOWN = 0,
     MAVIC = 1,
     DJI_P34 = 2,
@@ -128,16 +128,16 @@ enum class DroneType {
     FPV_RACING = 10
 };
 
-enum class MovementTrend {
+enum class MovementTrend : uint8_t {
     STATIC = 0,
     APPROACHING = 1,
     RECEDING = 2,
     UNKNOWN = 3
 };
 
-enum class Language {
-    ENGLISH,
-    RUSSIAN
+enum class Language : uint8_t {
+    ENGLISH = 0,
+    RUSSIAN = 1
 };
 
 class Translator {

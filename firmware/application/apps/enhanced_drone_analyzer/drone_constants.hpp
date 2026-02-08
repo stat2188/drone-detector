@@ -18,9 +18,9 @@ namespace FrequencyLimits {
 }
 
 // ===== SCANNING MODES =====
-enum class ScanningMode {
-    STRICT_DRONE,    // Only validate known drone frequency bands
-    FULL_SPECTRUM    // Accept all frequencies within hardware limits
+enum class ScanningMode : uint8_t {
+    STRICT_DRONE = 0,    // Only validate known drone frequency bands
+    FULL_SPECTRUM = 1    // Accept all frequencies within hardware limits
 };
 
 // ===== FREQUENCY RANGES (Legacy compatibility) =====
