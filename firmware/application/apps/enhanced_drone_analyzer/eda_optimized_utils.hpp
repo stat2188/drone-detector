@@ -372,37 +372,37 @@ struct FrequencyFormatter {
 // REQUIRES: ThreatLevel, DroneType enums
 struct ThreatClassifier {
     // Classify threat by RSSI (simple version)
-    static constexpr uint8_t from_rssi(int32_t rssi_db) {
-        if (rssi_db >= -50) return 4;  // CRITICAL
-        if (rssi_db >= -60) return 3;  // HIGH
-        if (rssi_db >= -70) return 2;  // MEDIUM
-        if (rssi_db >= -80) return 1;  // LOW
-        return 0;  // NONE
+    static constexpr ThreatLevel from_rssi(int32_t rssi_db) {
+        if (rssi_db >= -50) return static_cast<ThreatLevel>(4);  // CRITICAL
+        if (rssi_db >= -60) return static_cast<ThreatLevel>(3);  // HIGH
+        if (rssi_db >= -70) return static_cast<ThreatLevel>(2);  // MEDIUM
+        if (rssi_db >= -80) return static_cast<ThreatLevel>(1);  // LOW
+        return static_cast<ThreatLevel>(0);  // NONE
     }
 
     // Classify threat by SNR and signal type (advanced version)
-    static constexpr uint8_t from_snr_and_type(uint8_t snr, uint8_t type) {
+    static constexpr ThreatLevel from_snr_and_type(uint8_t snr, uint8_t type) {
         // Military drones (type=6) = always high threat
         if (type == 6) {
-            if (snr >= 15) return 4;  // CRITICAL
-            if (snr >= 10) return 3;  // HIGH
-            return 2;  // MEDIUM
+            if (snr >= 15) return static_cast<ThreatLevel>(4);  // CRITICAL
+            if (snr >= 10) return static_cast<ThreatLevel>(3);  // HIGH
+            return static_cast<ThreatLevel>(2);  // MEDIUM
         }
 
         // FPV racing (type=4) = variable threat
         if (type == 4) {
-            if (snr >= 20) return 3;  // HIGH
-            if (snr >= 10) return 2;  // MEDIUM
-            if (snr >= 5) return 1;  // LOW
-            return 0;  // NONE
+            if (snr >= 20) return static_cast<ThreatLevel>(3);  // HIGH
+            if (snr >= 10) return static_cast<ThreatLevel>(2);  // MEDIUM
+            if (snr >= 5) return static_cast<ThreatLevel>(1);  // LOW
+            return static_cast<ThreatLevel>(0);  // NONE
         }
 
         // Commercial drones (MAVIC=1, PHANTOM=3) = moderate threat
-        if (snr >= 25) return 4;  // CRITICAL
-        if (snr >= 15) return 3;  // HIGH
-        if (snr >= 10) return 2;  // MEDIUM
-        if (snr >= 5) return 1;  // LOW
-        return 0;  // NONE
+        if (snr >= 25) return static_cast<ThreatLevel>(4);  // CRITICAL
+        if (snr >= 15) return static_cast<ThreatLevel>(3);  // HIGH
+        if (snr >= 10) return static_cast<ThreatLevel>(2);  // MEDIUM
+        if (snr >= 5) return static_cast<ThreatLevel>(1);  // LOW
+        return static_cast<ThreatLevel>(0);  // NONE
     }
 };
 

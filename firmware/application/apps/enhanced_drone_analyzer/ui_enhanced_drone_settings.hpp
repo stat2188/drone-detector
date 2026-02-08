@@ -22,7 +22,7 @@
 
 // Include common types from local header
 #include "ui_drone_common_types.hpp"
-#include "scanner_settings.hpp"
+#include "settings_persistence.hpp"
 
 // DEPRECATED: Old unified settings files removed
 // #include "eda_unified_settings.hpp"

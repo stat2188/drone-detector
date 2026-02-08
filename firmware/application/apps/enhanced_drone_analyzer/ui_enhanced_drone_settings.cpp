@@ -1,7 +1,7 @@
 // ui_enhanced_drone_settings.cpp - Unified implementation for Enhanced Drone Analyzer Settings
 
 #include "ui_drone_common_types.hpp"
-#include "scanner_settings.hpp"
+#include "settings_persistence.hpp"
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "default_drones_db.hpp"
@@ -17,8 +17,6 @@
 #include <cstdio>
 
 namespace fs = std::filesystem;
-
-using ScannerSettingsManager::load_settings_from_txt;
 
 namespace ui::apps::enhanced_drone_analyzer {
 

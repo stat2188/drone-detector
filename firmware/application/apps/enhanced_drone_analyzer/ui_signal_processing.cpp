@@ -3,34 +3,6 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// WidebandMedianFilter implementations
-void WidebandMedianFilter::add_sample(int16_t rssi) {
-    window_[head_] = rssi;
-    head_ = (head_ + 1) % WINDOW_SIZE;
-    if (head_ == 0) full_ = true;
-}
-
-int16_t WidebandMedianFilter::get_median_threshold() const {
-    if (!full_) return DroneConstants::DEFAULT_RSSI_THRESHOLD_DB; 
-
-    // 🔴 OPTIMIZED: Use std::nth_element for O(n) median calculation
-    // This is much more efficient than the previous O(n²) partial selection sort
-    auto temp = window_;
-    size_t k = WINDOW_SIZE / 2;
-
-    // std::nth_element rearranges elements so that the element at position k is the k-th smallest
-    // This is O(n) average complexity instead of O(n²)
-    std::nth_element(temp.begin(), temp.begin() + k, temp.end());
-
-    return temp[k] - HYSTERESIS_MARGIN_DB;
-}
-
-void WidebandMedianFilter::reset() {
-    full_ = false;
-    head_ = 0;
-    window_ = {};
-}
-
 // FIX: Use simple hash-based lookup for O(1) instead of O(n) std::find_if
 // For MAX_ENTRIES = 32, we use direct index = hash % MAX_ENTRIES
 // with linear probing for collision resolution

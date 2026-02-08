@@ -11,7 +11,7 @@
 
 #include "ui_drone_common_types.hpp"
 #include "ui_signal_processing.hpp"
-#include "scanner_settings.hpp"
+#include "settings_persistence.hpp"
 #include "scanning_coordinator.hpp"
 #include "gradient.hpp"
 #include "ui_drone_audio.hpp"

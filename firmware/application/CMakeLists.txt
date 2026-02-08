@@ -313,7 +313,7 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.cpp
 	apps/enhanced_drone_analyzer/ui_enhanced_drone_settings.cpp
 	apps/enhanced_drone_analyzer/ui_drone_common_types.cpp
-	apps/enhanced_drone_analyzer/scanner_settings.cpp
+	apps/enhanced_drone_analyzer/settings_persistence.cpp
 	apps/enhanced_drone_analyzer/ui_signal_processing.cpp
 	# DEPRECATED: Legacy files moved to "Legacy settings/" folder - replaced by unified DroneAnalyzerSettings
 	# apps/enhanced_drone_analyzer/eda_settings_manager.cpp
