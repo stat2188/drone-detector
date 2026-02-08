@@ -1,5 +1,8 @@
 // ui_spectral_analyzer.hpp - Spectral Analysis for Enhanced Drone Analyzer
 // Implements intelligent signal classification using M0 FFT data
+//
+// DIAMOND OPTIMIZATION: FastMedianFilter replaced with MedianFilter<uint8_t>
+// from eda_optimized_utils.hpp to eliminate code duplication
 
 #ifndef UI_SPECTRAL_ANALYZER_HPP_
 #define UI_SPECTRAL_ANALYZER_HPP_
@@ -9,6 +12,7 @@
 #include <algorithm>
 #include "ui_drone_common_types.hpp"
 #include "radio.hpp"
+#include "eda_optimized_utils.hpp"
 
 using rf::Frequency;
 
@@ -44,50 +48,10 @@ struct SpectralAnalysisResult {
     bool is_valid = false;
 };
 
-// Fast median calculation for noise floor estimation
-class FastMedianFilter {
-private:
-    static constexpr size_t WINDOW_SIZE = 11;
-    std::array<uint8_t, WINDOW_SIZE> window_{};
-    size_t head_ = 0;
-    bool full_ = false;
-
-public:
-    void add_sample(uint8_t value) {
-        window_[head_] = value;
-        head_ = (head_ + 1) % WINDOW_SIZE;
-        if (head_ == 0) full_ = true;
-    }
-
-    uint8_t get_median() const {
-        if (!full_) return 0;
-
-        // FIX: Use selection algorithm instead of full array copy and sort
-        // Find k-th smallest element where k = WINDOW_SIZE / 2
-        // Only needs (WINDOW_SIZE/2) passes instead of full sort
-        std::array<uint8_t, WINDOW_SIZE> temp = window_;
-        size_t k = WINDOW_SIZE / 2;
-
-        for (size_t i = 0; i <= k; ++i) {
-            size_t min_idx = i;
-            for (size_t j = i + 1; j < WINDOW_SIZE; ++j) {
-                if (temp[j] < temp[min_idx]) {
-                    min_idx = j;
-                }
-            }
-            if (min_idx != i) {
-                std::swap(temp[i], temp[min_idx]);
-            }
-        }
-        return temp[k];
-    }
-
-    void reset() {
-        full_ = false;
-        head_ = 0;
-        window_ = {};
-    }
-};
+// DIAMOND OPTIMIZATION: Using unified MedianFilter template
+// Eliminates duplicate median filter implementation (~40 lines removed)
+// Scott Meyers Item 22: Declare data members private
+using FastMedianFilter = MedianFilter<uint8_t, 11>;
 
 // Parameters for spectral analysis (prevents easily-swappable-parameters warning)
 struct SpectralAnalysisParams {
@@ -111,7 +75,7 @@ public:
         
         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
-            median_filter.add_sample(db_buffer[i]);
+            median_filter.add(db_buffer[i]);
             sum += db_buffer[i];
             valid_bins++;
         }
@@ -186,59 +150,39 @@ public:
         return result;
     }
 
-    // Helper method to get threat level from signal signature
+    // DIAMOND OPTIMIZATION: Delegation to unified ThreatClassifier from eda_optimized_utils.hpp
     static ThreatLevel get_threat_level(SignalSignature signature, uint8_t snr) {
+        // Map SignalSignature to DroneType for unified classification
+        uint8_t drone_type = 0;
         switch (signature) {
             case SignalSignature::DIGITAL_FPV:
-                // Digital transmits HD video, this is a modern and dangerous drone
-                if (snr >= 15) return ThreatLevel::CRITICAL;
-                if (snr >= 5)  return ThreatLevel::HIGH;
-                return ThreatLevel::MEDIUM;
-
+                drone_type = static_cast<uint8_t>(DroneType::FPV_RACING);
+                break;
             case SignalSignature::NARROWBAND_DRONE:
-                if (snr >= 20) return ThreatLevel::CRITICAL;
-                if (snr >= 15) return ThreatLevel::HIGH;
-                if (snr >= 10) return ThreatLevel::MEDIUM;
-                return ThreatLevel::LOW;
-                
+                drone_type = static_cast<uint8_t>(DroneType::MAVIC); // Default type for narrowband
+                break;
             case SignalSignature::WIDEBAND_WIFI:
-                // WiFi signals are usually not threats, but could indicate drone video
-                if (snr >= 25) return ThreatLevel::MEDIUM;
-                if (snr >= 15) return ThreatLevel::LOW;
-                return ThreatLevel::NONE;
-                
+                drone_type = static_cast<uint8_t>(DroneType::UNKNOWN);
+                break;
             case SignalSignature::NOISE:
             default:
                 return ThreatLevel::NONE;
         }
+        // Use unified ThreatClassifier from eda_optimized_utils.hpp
+        return static_cast<ThreatLevel>(ThreatClassifier::from_snr_and_type(snr, drone_type));
     }
 
-    // Helper method to get drone type from frequency and signal characteristics
+    // DIAMOND OPTIMIZATION: Delegation to unified DroneTypeDetector from eda_optimized_utils.hpp
     static DroneType get_drone_type(Frequency frequency_hz, SignalSignature signature) {
+        // For non-drone signatures, return UNKNOWN early
         if (signature != SignalSignature::NARROWBAND_DRONE && 
             signature != SignalSignature::DIGITAL_FPV) {
             return DroneType::UNKNOWN;
         }
-
-        // For digital FPV signals, map to appropriate drone type
-        if (signature == SignalSignature::DIGITAL_FPV) {
-            if (frequency_hz >= 5725000000LL && frequency_hz <= 5875000000LL) {
-                return DroneType::FPV_RACING; // DJI O3, Vista, etc.
-            }
-        }
-
-        // Frequency-based drone type detection for narrowband signals
-        if (frequency_hz >= 2400000000LL && frequency_hz <= 2483500000LL) {
-            return DroneType::MAVIC; // DJI typically uses 2.4GHz
-        } else if (frequency_hz >= 5725000000LL && frequency_hz <= 5875000000LL) {
-            return DroneType::FPV_RACING; // 5.8GHz is common for FPV
-        } else if (frequency_hz >= 860000000LL && frequency_hz <= 930000000LL) {
-            return DroneType::MILITARY_DRONE; // Long range systems
-        } else if (frequency_hz >= 433000000LL && frequency_hz <= 435000000LL) {
-            return DroneType::DIY_DRONE; // 433MHz ISM band
-        }
-
-        return DroneType::UNKNOWN;
+        // Use unified DroneTypeDetector from eda_optimized_utils.hpp
+        // Returns uint8_t, cast to DroneType enum
+        uint8_t type_code = DroneTypeDetector::from_frequency(frequency_hz);
+        return static_cast<DroneType>(type_code);
     }
 };
 

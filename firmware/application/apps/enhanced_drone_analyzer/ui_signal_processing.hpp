@@ -1,6 +1,9 @@
 // ui_signal_processing.hpp - Signal processing utilities for Enhanced Drone Analyzer
-// Contains DetectionRingBuffer, WidebandMedianFilter, and other signal processing components
+// Contains DetectionRingBuffer and other signal processing components
 // Based on Looking Glass migration
+//
+// DIAMOND OPTIMIZATION: WidebandMedianFilter replaced with MedianFilter<int16_t>
+// from eda_optimized_utils.hpp to eliminate code duplication
 
 #ifndef UI_SIGNAL_PROCESSING_HPP_
 #define UI_SIGNAL_PROCESSING_HPP_
@@ -9,13 +12,23 @@
 #include <cstdint>
 #include <ch.h>  // for time_t
 #include "ui_drone_common_types.hpp"
+#include "eda_optimized_utils.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
 // Signal processing constants
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 
-// WidebandMedianFilter for noise reduction
+// DIAMOND OPTIMIZATION: Using unified MedianFilter template
+// Replaces old WidebandMedianFilter class (now commented out below)
+using WidebandMedianFilter = MedianFilter<int16_t, 11>;
+
+// ========================================
+// DEPRECATED: Old WidebandMedianFilter
+// Replaced by MedianFilter<int16_t, 11> from eda_optimized_utils.hpp
+// Kept for reference during migration period
+// ========================================
+/*
 class WidebandMedianFilter {
 private:
     static constexpr size_t WINDOW_SIZE = 11;
@@ -28,6 +41,7 @@ public:
     int16_t get_median_threshold() const;
     void reset();
 };
+*/
 
 struct DetectionEntry {
     size_t frequency_hash;

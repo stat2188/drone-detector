@@ -17,6 +17,7 @@
 #include "ui_drone_audio.hpp"
 #include "ui_spectral_analyzer.hpp"
 #include "drone_constants.hpp"
+#include "eda_optimized_utils.hpp"
 
 #include "ui.hpp"
 #include "event_m0.hpp"
@@ -71,8 +72,7 @@ struct RssiMeasurement {
     systime_t timestamp_ms;
 };
 
-static constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;
-static constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
+// Constants moved to drone_constants.hpp - single source of truth
 
 namespace UIStyles {
     static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
@@ -178,15 +178,11 @@ struct DisplayDroneEntry {
 
 // Removed duplicate constants - using from drone_constants.hpp
 // MAX_TRACKED_DRONES, MAX_DISPLAYED_DRONES defined in drone_constants.hpp
-static constexpr size_t MINI_SPECTRUM_WIDTH = 200;
-static constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
-static constexpr int SPEC_HEIGHT = 40;  // Heap optimization: 80 -> 40 (saves 9.6KB)
+// Constants moved to drone_constants.hpp - single source of truth
+
+// Local constants for DroneDisplayController (not in drone_constants.hpp)
 static constexpr int SPEC_WIDTH = 240;
-static constexpr uint32_t MIN_HARDWARE_FREQ = 1'000'000;
-static constexpr uint64_t MAX_HARDWARE_FREQ = 7'200'000'000ULL;
-static constexpr uint32_t WIDEBAND_SLICE_WIDTH = 22'000'000; // Optimized for 2.4GHz band coverage
-static constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
-static constexpr size_t DETECTION_TABLE_SIZE = 256;
+static constexpr int SPEC_HEIGHT = 40;  // Heap optimization: 80 -> 40 (saves 9.6KB)
 
 struct WidebandSlice {
     Frequency center_frequency;
@@ -230,17 +226,72 @@ struct DroneSignal {
     int32_t rssi_db;
 };
 
-// Moved inside namespace to fix compilation error
+// DIAMOND OPTIMIZATION: Unified validation using eda_optimized_utils.hpp
+// SimpleDroneValidation now delegates to FrequencyValidator, ThreatClassifier, and DroneTypeDetector
 class SimpleDroneValidation {
 public:
-    static bool validate_frequency_range(Frequency freq_hz);
-    static bool validate_rssi_signal(int32_t rssi_db, ThreatLevel threat);
-    static ThreatLevel classify_signal_strength(int32_t rssi_db);
-    static DroneType identify_drone_type(const DroneSignal& signal);
+    // DIAMOND OPTIMIZATION: Delegation to unified FrequencyValidator
+    static bool validate_frequency_range(Frequency freq_hz) {
+        return FrequencyValidator::is_valid_frequency(freq_hz);
+    }
+
+    // DIAMOND OPTIMIZATION: Delegation to unified ThreatClassifier
+    static ThreatLevel classify_signal_strength(int32_t rssi_db) {
+        return ThreatClassifier::from_rssi(rssi_db);
+    }
+
+    // DIAMOND OPTIMIZATION: Delegation to unified DroneTypeDetector
+    static DroneType identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
+        (void)rssi_db;  // RSSI not used in type detection
+        uint8_t type_code = DroneTypeDetector::from_frequency(freq_hz);
+        return static_cast<DroneType>(type_code);
+    }
+
+    // DIAMOND OPTIMIZATION: Struct wrapper for backward compatibility
+    static DroneType identify_drone_type(const DroneSignal& signal) {
+        return identify_drone_type(signal.frequency_hz, signal.rssi_db);
+    }
+
+    // Combined detection validation using unified classifiers
+    static bool validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
+                                       DroneType type, ThreatLevel threat) {
+        // Validate frequency range
+        if (!FrequencyValidator::is_valid_frequency(freq_hz)) {
+            return false;
+        }
+        
+        // Validate RSSI signal against threat level
+        if (!validate_rssi_signal(rssi_db, threat)) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    // DIAMOND OPTIMIZATION: Struct wrapper for backward compatibility
     static bool validate_drone_detection(const DroneSignal& signal,
-                                       DroneType type, ThreatLevel threat);
-    
-    // Mode for frequency validation
+                                       DroneType type, ThreatLevel threat) {
+        return validate_drone_detection(signal.frequency_hz, signal.rssi_db, type, threat);
+    }
+
+    // RSSI validation (kept locally as it's UI-specific)
+    static bool validate_rssi_signal(int32_t rssi_db, ThreatLevel threat) {
+        // Different thresholds for different threat levels
+        switch (threat) {
+            case ThreatLevel::CRITICAL:
+                return rssi_db >= -60;
+            case ThreatLevel::HIGH:
+                return rssi_db >= -75;
+            case ThreatLevel::MEDIUM:
+                return rssi_db >= -85;
+            case ThreatLevel::LOW:
+                return rssi_db >= -95;
+            default:
+                return rssi_db >= -100;
+        }
+    }
+
+    // Mode for frequency validation - stored locally as FrequencyValidator doesn't expose this
     static void set_scanning_mode(DroneConstants::ScanningMode mode) {
         scanning_mode_ = mode;
     }
@@ -249,16 +300,6 @@ public:
         return scanning_mode_;
     }
     
-    // Inline перегрузки для удобства использования в UI (обратная совместимость)
-    static inline DroneType identify_drone_type(Frequency freq_hz, int32_t rssi_db) {
-        return identify_drone_type(DroneSignal{freq_hz, rssi_db});
-    }
-    
-    static inline bool validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
-                                                  DroneType type, ThreatLevel threat) {
-        return validate_drone_detection(DroneSignal{freq_hz, rssi_db}, type, threat);
-    }
-
 private:
     static DroneConstants::ScanningMode scanning_mode_;
 };
@@ -474,7 +515,7 @@ struct DetectionParams {
 
     void remove_stale_drones();
 
-    Frequency get_current_scanning_frequency() const;
+    rf::Frequency get_current_scanning_frequency() const;
     ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
     const TrackedDrone& getTrackedDrone(size_t index) const;  // 🔴 FIX: Protected with mutex
     void handle_scan_error(const char* error_msg);
@@ -493,19 +534,12 @@ struct DetectionParams {
     DroneScanner& operator=(const DroneScanner&) = delete;
     DroneScanner& operator=(DroneScanner&&) = delete;
 
+    // DIAMOND OPTIMIZATION: Unified lookup from eda_optimized_utils.hpp
     const char* get_drone_type_name(DroneType type) const {
-        switch (type) {
-            case DroneType::MAVIC: return "MAVIC";
-            case DroneType::DJI_P34: return "DJI P34";
-            case DroneType::UNKNOWN: default: return "UNKNOWN";
-        }
+        return StringMappings::get_drone_type_name(static_cast<uint8_t>(type));
     }
     Color get_drone_type_color(DroneType type) const {
-        switch (type) {
-            case DroneType::MAVIC: return Color::red();
-            case DroneType::DJI_P34: return Color::orange();
-            case DroneType::UNKNOWN: default: return Color::white();
-        }
+        return Color(ColorMappings::get_drone_color_value(static_cast<uint8_t>(type)));
     }
 
     Frequency get_current_radio_frequency() const;
@@ -1071,6 +1105,8 @@ public:
     bool is_scanning() const { return scanning_active_; }
     DroneAnalyzerSettings& settings() { return settings_; }
     const DroneAnalyzerSettings& settings() const { return settings_; }
+    DroneAnalyzerSettings& settings_ref() { return settings_; }
+    const DroneAnalyzerSettings& settings_ref() const { return settings_; }
 
     DroneUIController(const DroneUIController&) = delete;
     DroneUIController& operator=(const DroneUIController&) = delete;

@@ -55,6 +55,9 @@ constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
 constexpr rf::Frequency WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;  // 2.4 GHz
 constexpr rf::Frequency WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;  // 2.5 GHz
 
+// Alias for backward compatibility (Scott Meyers Item 1: View C++ as a federation of languages)
+constexpr uint32_t WIDEBAND_SLICE_WIDTH = WIDEBAND_DEFAULT_SLICE_WIDTH;
+
 // ===== RSSI THRESHOLDS =====
 constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
 constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;

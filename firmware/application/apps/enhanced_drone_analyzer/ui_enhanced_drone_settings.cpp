@@ -267,7 +267,63 @@ std::string EnhancedSettingsManager::get_current_timestamp() {
 }
 
 // ===========================================
-// DroneAnalyzerSettingsManager Implementation
+// ACTIVE: Translation Functions Implementation
+// ===========================================
+// Translation functions are kept separate as they provide unique UI localization
+// functionality not covered by SettingsPersistence<T>
+
+Language DroneAnalyzerSettingsManager_Translations::current_language_ = Language::ENGLISH;
+
+const std::map<std::string, const char*> DroneAnalyzerSettingsManager_Translations::translations_english = {
+    {"save_settings", "Save Settings"},
+    {"load_settings", "Load Settings"},
+    {"audio_settings", "Audio Settings"},
+    {"hardware_settings", "Hardware Settings"},
+    {"scan_interval", "Scan Interval"},
+    {"rssi_threshold", "RSSI Threshold"},
+    {"spectrum_mode", "Spectrum Mode"}
+};
+
+const char* DroneAnalyzerSettingsManager_Translations::translate(const std::string& key) {
+    auto it = translations_english.find(key);
+    if (it != translations_english.end()) {
+        return it->second;
+    }
+    return key.c_str();
+}
+
+const char* DroneAnalyzerSettingsManager_Translations::get_translation(const std::string& key) {
+    return translate(key);
+}
+
+// ===========================================
+// DEPRECATED CODE: DroneAnalyzerSettingsManager
+// ===========================================
+// This namespace has been REPLACED by SettingsPersistence<T> in settings_persistence.hpp
+//
+// REASONS FOR DEPRECATION:
+// - ~200 lines of duplicate load/save/validation logic
+// - Manual parsing instead of unified serialization
+// - Separate validation instead of centralized validation
+//
+// REPLACEMENT: SettingsPersistence<DroneAnalyzerSettings>
+// - Unified template for all settings operations
+// - Compile-time LUT for O(1) parsing
+// - Centralized validation and error handling
+//
+// MIGRATION:
+// Replace:
+//   DroneAnalyzerSettingsManager::load(settings)
+//   DroneAnalyzerSettingsManager::save(settings)
+//
+// With:
+//   SettingsPersistence<DroneAnalyzerSettings>::load(settings)
+//   SettingsPersistence<DroneAnalyzerSettings>::save(settings)
+//
+#if 0  // DISABLED - Use settings_persistence.hpp instead
+
+// ===========================================
+// DEPRECATED IMPLEMENTATION STARTS HERE
 // ===========================================
 
 Language DroneAnalyzerSettingsManager::current_language_ = Language::ENGLISH;
@@ -473,7 +529,11 @@ const char* DroneAnalyzerSettingsManager::get_translation(const std::string& key
     return translate(key);
 }
 
-// ============ DroneFrequencyPresets Implementation ============
+#endif  // END OF DEPRECATED DroneAnalyzerSettingsManager
+
+// ===========================================
+// DroneFrequencyPresets Implementation (ACTIVE)
+// ===========================================
 
 // 🔴 OPTIMIZATION: static const array instead of vector to avoid heap allocation
 // Scott Meyers Item 15: Prefer static const to #define
@@ -651,7 +711,7 @@ HardwareSettingsView::HardwareSettingsView(NavigationView& nav) : nav_(nav) {
 void HardwareSettingsView::focus() { button_save_.focus(); }
 void HardwareSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
-    if (!DroneAnalyzerSettingsManager::load(settings)) DroneAnalyzerSettingsManager::reset_to_defaults(settings);
+    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     checkbox_real_hardware_.set_value(settings.enable_real_hardware);
     size_t mode_idx = 2;
     switch (settings.spectrum_mode) {
@@ -669,7 +729,7 @@ void HardwareSettingsView::load_current_settings() {
 }
 void HardwareSettingsView::save_current_settings() {
     DroneAnalyzerSettings settings;
-    DroneAnalyzerSettingsManager::load(settings);
+    SettingsPersistence<DroneAnalyzerSettings>::load(settings);
     settings.enable_real_hardware = checkbox_real_hardware_.value();
     settings.demo_mode = !checkbox_real_hardware_.value();
     size_t mode_idx = field_spectrum_mode_.selected_index();
@@ -685,12 +745,12 @@ void HardwareSettingsView::save_current_settings() {
     settings.user_max_freq_hz = number_max_freq_.value();
 
     // Validate settings before saving
-    if (!DroneAnalyzerSettingsManager::validate(settings)) {
+    if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
         nav_.display_modal("Error", "Invalid settings detected");
         return;
     }
 
-    DroneAnalyzerSettingsManager::save(settings);
+    SettingsPersistence<DroneAnalyzerSettings>::save(settings);
 }
 void HardwareSettingsView::update_ui_from_settings() { load_current_settings(); }
 void HardwareSettingsView::update_settings_from_ui() { save_current_settings(); }
@@ -707,7 +767,7 @@ AudioSettingsView::AudioSettingsView(NavigationView& nav) : View(), nav_(nav) {
 void AudioSettingsView::focus() { button_save_.focus(); }
 void AudioSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
-    if (!DroneAnalyzerSettingsManager::load(settings)) DroneAnalyzerSettingsManager::reset_to_defaults(settings);
+    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     checkbox_audio_enabled_.set_value(settings.enable_audio_alerts);
     number_alert_frequency_.set_value(settings.audio_alert_frequency_hz);
     number_alert_duration_.set_value(settings.audio_alert_duration_ms);
@@ -716,7 +776,7 @@ void AudioSettingsView::load_current_settings() {
 }
 void AudioSettingsView::save_current_settings() {
     DroneAnalyzerSettings settings;
-    DroneAnalyzerSettingsManager::load(settings);
+    SettingsPersistence<DroneAnalyzerSettings>::load(settings);
     settings.enable_audio_alerts = checkbox_audio_enabled_.value();
     settings.audio_alert_frequency_hz = number_alert_frequency_.value();
     settings.audio_alert_duration_ms = number_alert_duration_.value();
@@ -724,12 +784,12 @@ void AudioSettingsView::save_current_settings() {
     settings.audio_repeat_alerts = checkbox_repeat_.value();
 
     // Validate settings before saving
-    if (!DroneAnalyzerSettingsManager::validate(settings)) {
+    if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
         nav_.display_modal("Error", "Invalid settings detected");
         return;
     }
 
-    DroneAnalyzerSettingsManager::save(settings);
+    SettingsPersistence<DroneAnalyzerSettings>::save(settings);
 }
 void AudioSettingsView::update_ui_from_settings() { load_current_settings(); }
 void AudioSettingsView::update_settings_from_ui() { save_current_settings(); }
@@ -762,7 +822,7 @@ ScanningSettingsView::ScanningSettingsView(NavigationView& nav) : View(), nav_(n
 void ScanningSettingsView::focus() { button_save_.focus(); }
 void ScanningSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
-    if (!DroneAnalyzerSettingsManager::load(settings)) DroneAnalyzerSettingsManager::reset_to_defaults(settings);
+    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     field_scanning_mode_.set_selected_index(0);
     number_scan_interval_.set_value(settings.scan_interval_ms);
     number_rssi_threshold_.set_value(settings.rssi_threshold_db);
@@ -770,18 +830,18 @@ void ScanningSettingsView::load_current_settings() {
 }
 void ScanningSettingsView::save_current_settings() {
     DroneAnalyzerSettings settings;
-    DroneAnalyzerSettingsManager::load(settings);
+    SettingsPersistence<DroneAnalyzerSettings>::load(settings);
     settings.scan_interval_ms = number_scan_interval_.value();
     settings.rssi_threshold_db = number_rssi_threshold_.value();
     settings.enable_wideband_scanning = checkbox_wideband_.value();
 
     // Validate settings before saving
-    if (!DroneAnalyzerSettingsManager::validate(settings)) {
+    if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
         nav_.display_modal("Error", "Invalid settings detected");
         return;
     }
 
-    DroneAnalyzerSettingsManager::save(settings);
+    SettingsPersistence<DroneAnalyzerSettings>::save(settings);
 }
 void ScanningSettingsView::on_save_settings() {
     save_current_settings();
@@ -792,9 +852,9 @@ void ScanningSettingsView::on_show_presets() {
     // Create callback that updates settings when preset is selected
     auto on_preset_selected = [this](const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
         DroneAnalyzerSettings settings;
-        DroneAnalyzerSettingsManager::load(settings);
+        SettingsPersistence<DroneAnalyzerSettings>::load(settings);
         if (DroneFrequencyPresets::apply_preset(settings, preset)) {
-            DroneAnalyzerSettingsManager::save(settings);
+            SettingsPersistence<DroneAnalyzerSettings>::save(settings);
             nav_.display_modal("Success", std::string("Preset applied: ") + preset.display_name);
             load_current_settings();
         } else {
@@ -819,7 +879,7 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View
     button_load_defaults_.on_select = [this](Button&) { load_default_settings(); };
     button_about_author_.on_select = [this](Button&) { show_about_author(); };
     EnhancedSettingsManager::ensure_database_exists();
-    DroneAnalyzerSettingsManager::load(current_settings_);
+    SettingsPersistence<DroneAnalyzerSettings>::load(current_settings_);
 }
 void DroneAnalyzerSettingsView::focus() { button_audio_settings_.focus(); }
 void DroneAnalyzerSettingsView::paint(Painter& painter) { View::paint(painter); }
@@ -838,8 +898,8 @@ void DroneAnalyzerSettingsView::show_audio_settings() { nav_.push<AudioSettingsV
 void DroneAnalyzerSettingsView::show_hardware_settings() { nav_.push<HardwareSettingsView>(); }
 void DroneAnalyzerSettingsView::show_scanning_settings() { nav_.push<ScanningSettingsView>(); }
 void DroneAnalyzerSettingsView::load_default_settings() {
-    DroneAnalyzerSettingsManager::reset_to_defaults(current_settings_);
-    DroneAnalyzerSettingsManager::save(current_settings_);
+    SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(current_settings_);
+    SettingsPersistence<DroneAnalyzerSettings>::save(current_settings_);
     nav_.display_modal("Reset", "Settings reset to defaults");
 }
 void DroneAnalyzerSettingsView::show_about_author() {

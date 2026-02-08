@@ -17,6 +17,7 @@
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "ui_enhanced_drone_memory_pool.hpp"
 #include "ui_drone_audio.hpp"
+#include "eda_optimized_utils.hpp"
 #include "gradient.hpp"
 #include "baseband_api.hpp"
 #include "portapack.hpp"
@@ -165,67 +166,9 @@ bool SimpleDroneValidation::validate_drone_detection(const DroneSignal& signal,
     return true;
 }
 
-static void parse_settings_line_inplace(char* line, DroneAnalyzerSettings& settings) {
-    // 🔴 FIX: Added buffer length check to prevent overflow
-    size_t line_len = strlen(line);
-    if (line_len == 0) return; // Empty line
-
-    // 2. Look for separator '='
-    char* equals_ptr = strchr(line, '=');
-    if (!equals_ptr) return;
-
-    // 🔴 FIX: Check if we have space for null terminator
-    size_t key_len = equals_ptr - line;
-    if (key_len > 64) return; // Key too long
-
-    // 3. Split key and value
-    *equals_ptr = 0; // Split string: "key\0value"
-    char* key = line;
-    char* value = equals_ptr + 1;
-
-    // 4. Trimming spaces (simple version)
-    // Trim function should be lightweight, skip leading spaces
-    while (*key == ' ' || *key == '\t') {
-        key++;
-        // 🔴 FIX: Check we don't go beyond string bounds
-        if (static_cast<size_t>(key - line) >= line_len) return;
-    }
-    while (*value == ' ' || *value == '\t') {
-        value++;
-        // 🔴 FIX: Check we don't go beyond string bounds
-        if (static_cast<size_t>(value - line) >= line_len) return;
-    }
-
-    // Remove trailing spaces for value (usually \r may be at end of line)
-    size_t val_len = strlen(value);
-    while (val_len > 0 && (value[val_len-1] == ' ' || value[val_len-1] == '\t' || value[val_len-1] == '\r')) {
-        value[val_len-1] = 0;
-        val_len--;
-    }
-
-    // 5. Key comparison (use strcmp instead of string ==)
-    if (strcmp(key, "spectrum_mode") == 0) {
-        if (strcmp(value, "NARROW") == 0) settings.spectrum_mode = SpectrumMode::NARROW;
-        else if (strcmp(value, "MEDIUM") == 0) settings.spectrum_mode = SpectrumMode::MEDIUM;
-        else if (strcmp(value, "WIDE") == 0) settings.spectrum_mode = SpectrumMode::WIDE;
-        else if (strcmp(value, "ULTRA_WIDE") == 0) settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-    }
-    else if (strcmp(key, "scan_interval_ms") == 0) {
-        settings.scan_interval_ms = strtoul(value, nullptr, 10);
-    }
-    else if (strcmp(key, "rssi_threshold_db") == 0) {
-        settings.rssi_threshold_db = strtol(value, nullptr, 10);
-    }
-    else if (strcmp(key, "enable_audio_alerts") == 0) {
-        settings.enable_audio_alerts = (strcmp(value, "true") == 0);
-    }
-    else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
-        settings.hardware_bandwidth_hz = strtoul(value, nullptr, 10);
-    }
-    else if (strcmp(key, "enable_real_hardware") == 0) {
-        settings.enable_real_hardware = (strcmp(value, "true") == 0);
-    }
-}
+// DIAMOND OPTIMIZATION: Deprecated parse_settings_line_inplace removed (~60 lines)
+// Now using SettingsPersistence<T> from settings_persistence.hpp
+// Scott Meyers Item 11: Handle assignment to self in operator=
 
 bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
     File settings_file;
@@ -253,11 +196,14 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
                 // End of line found
                 line_buffer[line_idx] = 0; // Null-terminate
 
-                // Parse the ready line
-                parse_settings_line_inplace(line_buffer, settings);
+                // ===========================================
+                // DEPRECATED: parse_settings_line_inplace REPLACED
+                // Use SettingsPersistence<DroneAnalyzerSettings>::load(settings) instead
+                // ===========================================
+                // parse_settings_line_inplace(line_buffer, settings);
 
-                // Reset for next line
-                line_idx = 0;
+        // Reset for next line
+        line_idx = 0;
             }
             else if (c != '\r') {
                 // Ignore \r, accumulate other characters
@@ -271,10 +217,14 @@ bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
         }
     }
 
+    // ===========================================
+    // DEPRECATED: parse_settings_line_inplace REPLACED
+    // Use SettingsPersistence<DroneAnalyzerSettings>::load(settings) instead
+    // ===========================================
     // Process last line if file doesn't end with \n
     if (line_idx > 0) {
         line_buffer[line_idx] = 0;
-        parse_settings_line_inplace(line_buffer, settings);
+        // parse_settings_line_inplace(line_buffer, settings);
     }
 
     // Log discarded bytes for debugging (could be expanded to actual logging)
@@ -403,31 +353,31 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
     wideband_scan_data_.max_freq = safe_max;
 
     Frequency scanning_range = safe_max - safe_min;
-    if (scanning_range > WIDEBAND_SLICE_WIDTH) {
+    if (scanning_range > static_cast<Frequency>(settings_.wideband_slice_width_hz)) {
         // Check for integer overflow before calculating slices
         // Use int64_t to match rf::Frequency type and avoid sign comparison warning
-        int64_t range_plus_width = static_cast<int64_t>(scanning_range) + static_cast<int64_t>(WIDEBAND_SLICE_WIDTH);
+        int64_t range_plus_width = static_cast<int64_t>(scanning_range) + static_cast<int64_t>(settings_.wideband_slice_width_hz);
         if (range_plus_width < scanning_range) {
             // Overflow detected - handle gracefully with single slice
             wideband_scan_data_.slices_nb = 1;
         } else {
-            wideband_scan_data_.slices_nb = (static_cast<uint64_t>(range_plus_width) - 1) / WIDEBAND_SLICE_WIDTH;
+            wideband_scan_data_.slices_nb = (static_cast<uint64_t>(range_plus_width) - 1) / settings_.wideband_slice_width_hz;
         }
 
         if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
             wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
         }
-        Frequency slices_span = wideband_scan_data_.slices_nb * WIDEBAND_SLICE_WIDTH;
-        Frequency offset = ((scanning_range - slices_span) / 2) + (WIDEBAND_SLICE_WIDTH / 2);
+        Frequency slices_span = wideband_scan_data_.slices_nb * settings_.wideband_slice_width_hz;
+        Frequency offset = ((scanning_range - slices_span) / 2) + (settings_.wideband_slice_width_hz / 2);
         Frequency center_frequency = safe_min + offset;
 
         std::generate_n(wideband_scan_data_.slices,
                        wideband_scan_data_.slices_nb,
-                       [&center_frequency, slice_index = 0]() mutable -> WidebandSlice {
+                       [&center_frequency, slice_index = 0, this]() mutable -> WidebandSlice {
                            WidebandSlice slice;
                            slice.center_frequency = center_frequency;
                            slice.index = slice_index++;
-                           center_frequency += WIDEBAND_SLICE_WIDTH;
+                           center_frequency += settings_.wideband_slice_width_hz;
                            return slice;
                        });
     } else {
@@ -842,8 +792,8 @@ size_t DroneScanner::get_next_slice_with_intelligence() {
             Frequency predicted_freq = local_predictions[best_prediction_idx].predicted_freq;
             for (size_t i = 0; i < wideband_scan_data_.slices_nb; i++) {
                 const WidebandSlice& slice = wideband_scan_data_.slices[i];
-                Frequency slice_min = slice.center_frequency - (WIDEBAND_SLICE_WIDTH / 2);
-                Frequency slice_max = slice.center_frequency + (WIDEBAND_SLICE_WIDTH / 2);
+                Frequency slice_min = slice.center_frequency - (static_cast<Frequency>(settings_.wideband_slice_width_hz) / 2);
+                Frequency slice_max = slice.center_frequency + (static_cast<Frequency>(settings_.wideband_slice_width_hz) / 2);
                 
                 if (predicted_freq >= slice_min && predicted_freq <= slice_max) {
                     // Boost confidence for this prediction
@@ -2434,7 +2384,8 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
         &text_trends_compact_,
         &text_drone_1_,
         &text_drone_2_,
-        &text_drone_3_
+        &text_drone_3_,
+        &text_signal_type_
     });
 
     // Hide old ruler, use compact by default
@@ -2904,7 +2855,10 @@ Frequency DroneDisplayController::spectrum_bin_to_frequency(size_t bin) const {
 void DroneDisplayController::update_or_create_drone_from_spectrum(Frequency freq_hz, uint8_t power) {
     int32_t rssi = static_cast<int32_t>(power) - 150;
     ThreatLevel threat = SimpleDroneValidation::classify_signal_strength(rssi);
-    DroneType type = SimpleDroneValidation::identify_drone_type(freq_hz, rssi);
+    // DIAMOND OPTIMIZATION: Use DroneTypeDetector from eda_optimized_utils.hpp
+    // Note: DroneTypeDetector::from_frequency ignores RSSI (by design)
+    uint8_t type_code = DroneTypeDetector::from_frequency(freq_hz);
+    DroneType type = static_cast<DroneType>(type_code);
     add_detected_drone(freq_hz, type, threat, rssi);
 }
 
@@ -2982,7 +2936,7 @@ void DroneUIController::on_load_frequency_file() {
 }
 
 void DroneUIController::on_save_settings() {
-    if (!DroneAnalyzerSettingsManager::save(settings_)) {
+    if (!SettingsPersistence<DroneAnalyzerSettings>::save(settings_)) {
         nav_.display_modal("Error", "Failed to save settings");
         return;
     }
@@ -3124,8 +3078,7 @@ void FrequencyRangeSetupView::on_save() {
     Frequency new_max = static_cast<Frequency>(max_mhz * 1000000.0);
     
     // Get slice width from settings instead of hardcoded value
-    auto& settings = controller_.settings();
-    uint64_t new_slice_width = settings.wideband_slice_width_hz;
+    uint64_t new_slice_width = controller_.settings().wideband_slice_width_hz;
     
     // Валидация - use unified constants from DroneConstants
     if (new_min >= new_max) {
@@ -3145,12 +3098,12 @@ void FrequencyRangeSetupView::on_save() {
         return;
     }
 
-    // Сохранение настроек (use existing settings reference from line 2961)
-    settings.wideband_min_freq_hz = new_min;
-    settings.wideband_max_freq_hz = new_max;
+    // Сохранение настроек (use existing settings reference)
+    controller_.settings().wideband_min_freq_hz = new_min;
+    controller_.settings().wideband_max_freq_hz = new_max;
 
     // Сохранение в файл с проверкой успешности
-    if (!DroneAnalyzerSettingsManager::save(settings)) {
+    if (!SettingsPersistence<DroneAnalyzerSettings>::save(controller_.settings())) {
         nav_.display_modal("Error", "Failed to save settings to SD card");
         return;
     }
@@ -3369,7 +3322,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         status_bar_.update_normal_status("INIT", "Loading settings...");
 
         // Safe: non-blocking (has timeout)
-        DroneAnalyzerSettingsManager::load(settings_);
+        SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
 
         button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
         scanner_.update_scan_range(settings_.wideband_min_freq_hz,
@@ -3692,46 +3645,27 @@ void ScanningCoordinator::show_session_summary(const std::string& summary) {
 // ===========================================
 // PART 6: DISPLAY HELPER IMPLEMENTATIONS
 // ===========================================
+// DIAMOND OPTIMIZATION: Unified mappings from eda_optimized_utils.hpp
+// Eliminates ~80 lines of duplicate switch statements
+// Scott Meyers Item 15: Prefer constexpr to #define
 
 const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
-    switch (type) {
-        case DroneType::MAVIC: return "MAVIC";
-        case DroneType::DJI_P34: return "DJI P34";
-        case DroneType::DIY_DRONE: return "DIY DRONE";
-        case DroneType::FPV_RACING: return "FPV RACING";
-        case DroneType::UNKNOWN: default: return "UNKNOWN";
-    }
+    return StringMappings::get_drone_type_name(static_cast<uint8_t>(type));
 }
 
 Color DroneDisplayController::get_drone_type_color(DroneType type) const {
-    // NOLINTNEXTLINE(bugprone-branch-clone)
-    switch (type) {
-        case DroneType::MAVIC: return Color::red();
-        case DroneType::DJI_P34: return Color::orange();
-        case DroneType::DIY_DRONE: return Color::blue();
-        case DroneType::FPV_RACING: return Color::purple();
-        case DroneType::UNKNOWN: default: return Color::white();
-    }
+    // Convert uint32_t RGB to Color (RGB format is 0xBBGGRR)
+    uint32_t rgb_value = ColorMappings::get_drone_color_value(static_cast<uint8_t>(type));
+    return Color(rgb_value);
 }
 
 Color DroneDisplayController::get_threat_level_color(ThreatLevel level) const {
-     switch (level) {
-        case ThreatLevel::CRITICAL: return Color::red();
-        case ThreatLevel::HIGH: return Color::orange();
-        case ThreatLevel::MEDIUM: return Color::yellow();
-        case ThreatLevel::LOW: return Color::green();
-        default: return Color::grey();
-    }
+    uint32_t rgb_value = ColorMappings::get_threat_color_value(static_cast<uint8_t>(level));
+    return Color(rgb_value);
 }
 
 const char* DroneDisplayController::get_threat_level_name(ThreatLevel level) const {
-    switch (level) {
-        case ThreatLevel::CRITICAL: return "CRITICAL";
-        case ThreatLevel::HIGH: return "HIGH";
-        case ThreatLevel::MEDIUM: return "MEDIUM";
-        case ThreatLevel::LOW: return "LOW";
-        default: return "NONE";
-    }
+    return StringMappings::get_threat_name(static_cast<uint8_t>(level));
 }
 
 void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
@@ -3924,28 +3858,14 @@ bool EnhancedDroneSettingsValidator::is_ism_band(Frequency freq) {
            (static_cast<uint64_t>(freq) >= 5725000000ULL && static_cast<uint64_t>(freq) <= 5875000000ULL);
 }
 
+// DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
+// Eliminates ~30 lines of duplicate formatting code
+// Scott Meyers Item 25: Consider support for implicit interfaces
 std::string EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq) {
     if (static_cast<uint64_t>(freq) >= 1000000000ULL) {
-        // GHz range
-        uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
-        uint32_t mhz = static_cast<uint32_t>((freq % 1000000000ULL) / 1000000ULL);
-        char buffer[32];
-        if (mhz > 0) {
-            snprintf(buffer, sizeof(buffer), "%u.%03u GHz",
-                     static_cast<unsigned int>(ghz),
-                     static_cast<unsigned int>(mhz));
-        } else {
-            snprintf(buffer, sizeof(buffer), "%u GHz",
-                     static_cast<unsigned int>(ghz));
-        }
-        return std::string(buffer);
+        return FrequencyFormatter::format(freq, FrequencyFormatter::Format::DETAILED_GHZ);
     } else {
-        // MHz range
-        uint32_t mhz = static_cast<uint32_t>(freq / 1000000ULL);
-        char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%u MHz",
-                 static_cast<unsigned int>(mhz));
-        return std::string(buffer);
+        return FrequencyFormatter::format(freq, FrequencyFormatter::Format::STANDARD_MHZ);
     }
 }
 
@@ -4014,10 +3934,10 @@ void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
     static Style compact_style_ghz{font::fixed_5x8, Color::grey(), Color::black()};
     Style* label_style = use_mhz ? &compact_style_mhz : &compact_style_ghz;
 
-    display.draw_line(
-        {r.left(), r.top() + RULER_HEIGHT - 1},
-        {r.right(), r.top() + RULER_HEIGHT - 1},
-        Theme::getInstance()->fg_light->foreground
+    // Draw horizontal line at bottom of ruler (using 1-pixel rectangle)
+    painter.fill_rectangle(
+        {r.left(), r.top() + RULER_HEIGHT - 1, r.width(), 1},
+        Theme::getInstance()->bg_darkest->foreground
     );
 
     Frequency first_tick = (min_freq_ / tick_interval) * tick_interval;
@@ -4032,10 +3952,10 @@ void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
             continue;
         }
 
-        display.draw_line(
-            {x, r.top()},
-            {x, r.top() + TICK_HEIGHT_MAJOR},
-            Theme::getInstance()->fg_light->foreground
+        // Draw major tick (tall) - using 1-pixel rectangle
+        painter.fill_rectangle(
+            {x, r.top(), 1, TICK_HEIGHT_MAJOR},
+            Theme::getInstance()->bg_darkest->foreground
         );
 
         std::string label = format_compact_label(tick);
@@ -4057,10 +3977,9 @@ void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
                 int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
 
                 if (sub_x > r.left() && sub_x < r.right()) {
-                    display.draw_line(
-                        {sub_x, r.top()},
-                        {sub_x, r.top() + TICK_HEIGHT_MINOR},
-                        Theme::getInstance()->fg_light->foreground
+                    painter.fill_rectangle(
+                        {sub_x, r.top(), 1, TICK_HEIGHT_MINOR},
+                        Theme::getInstance()->bg_darkest->foreground
                     );
                 }
             }
@@ -4068,65 +3987,23 @@ void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
     }
 }
 
+// DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
+// Eliminates ~60 lines of duplicate formatting code
+// Scott Meyers Item 2: Prefer consts, enums, and inlines to #defines
 std::string CompactFrequencyRuler::format_compact_label(Frequency freq) {
-    char buffer[16];
-
+    // Map ruler styles to formatter formats
+    FrequencyFormatter::Format fmt;
     switch (ruler_style_) {
-        case RulerStyle::COMPACT_GHZ: {
-            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
-            uint32_t decimal = static_cast<uint32_t>(((freq % 1000000000ULL) / 100000000ULL));
-            if (decimal > 0) {
-                snprintf(buffer, sizeof(buffer), "%lu.%luG",
-                         static_cast<unsigned long>(ghz),
-                         static_cast<unsigned long>(decimal));
-            } else {
-                snprintf(buffer, sizeof(buffer), "%luG", static_cast<unsigned long>(ghz));
-            }
-            break;
-        }
-        case RulerStyle::COMPACT_MHZ: {
-            uint32_t mhz = static_cast<uint32_t>((freq + 500000) / 1000000);
-            snprintf(buffer, sizeof(buffer), "%lu", static_cast<unsigned long>(mhz));
-            break;
-        }
-        case RulerStyle::STANDARD_GHZ: {
-            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
-            uint32_t decimal = static_cast<uint32_t>(((freq % 1000000000ULL) / 100000000ULL));
-            if (decimal > 0) {
-                snprintf(buffer, sizeof(buffer), "%lu.%luGHz",
-                         static_cast<unsigned long>(ghz),
-                         static_cast<unsigned long>(decimal));
-            } else {
-                snprintf(buffer, sizeof(buffer), "%luGHz", static_cast<unsigned long>(ghz));
-            }
-            break;
-        }
-        case RulerStyle::STANDARD_MHZ: {
-            uint32_t mhz = static_cast<uint32_t>((freq + 500000) / 1000000);
-            snprintf(buffer, sizeof(buffer), "%luMHz", static_cast<unsigned long>(mhz));
-            break;
-        }
-        case RulerStyle::DETAILED: {
-            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
-            uint32_t decimal = static_cast<uint32_t>(((freq % 1000000000ULL) / 10000000ULL));
-            snprintf(buffer, sizeof(buffer), "%lu.%03luGHz",
-                     static_cast<unsigned long>(ghz),
-                     static_cast<unsigned long>(decimal));
-            break;
-        }
-        case RulerStyle::SPACED_GHZ: {
-            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
-            snprintf(buffer, sizeof(buffer), "%uGHz", static_cast<unsigned int>(ghz));
-            break;
-        }
-        default: {
-            uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
-            snprintf(buffer, sizeof(buffer), "%luG", static_cast<unsigned long>(ghz));
-            break;
-        }
+        case RulerStyle::COMPACT_GHZ:   fmt = FrequencyFormatter::Format::COMPACT_GHZ; break;
+        case RulerStyle::COMPACT_MHZ:   fmt = FrequencyFormatter::Format::COMPACT_MHZ; break;
+        case RulerStyle::STANDARD_GHZ:  fmt = FrequencyFormatter::Format::STANDARD_GHZ; break;
+        case RulerStyle::STANDARD_MHZ:  fmt = FrequencyFormatter::Format::STANDARD_MHZ; break;
+        case RulerStyle::DETAILED:      fmt = FrequencyFormatter::Format::DETAILED_GHZ; break;
+        case RulerStyle::SPACED_GHZ:    fmt = FrequencyFormatter::Format::SPACED_GHZ; break;
+        default: fmt = FrequencyFormatter::Format::COMPACT_GHZ; break;
     }
-
-    return std::string(buffer);
+    
+    return FrequencyFormatter::format(freq, fmt);
 }
 
 Frequency CompactFrequencyRuler::calculate_optimal_tick_interval() {
@@ -4264,36 +4141,25 @@ Frequency FrequencyRuler::calculate_tick_interval() {
     return freq_range / 6;
 }
 
+// DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
+// Eliminates ~40 lines of duplicate formatting code
 std::string FrequencyRuler::format_frequency_label(Frequency freq, const std::string& unit) {
-    char buffer[32];
-
+    // Map unit strings to formatter formats
+    FrequencyFormatter::Format fmt;
+    
     if (unit == "G") {
-        uint32_t ghz = static_cast<uint32_t>(freq / 1000000000ULL);
-        uint32_t decimal = static_cast<uint32_t>((freq % 1000000000ULL) / 100000000ULL);
-        if (decimal > 0) {
-            snprintf(buffer, sizeof(buffer), "%lu.%luG",
-                     static_cast<unsigned long>(ghz),
-                     static_cast<unsigned long>(decimal));
-        } else {
-            snprintf(buffer, sizeof(buffer), "%luG", static_cast<unsigned long>(ghz));
-        }
+        fmt = FrequencyFormatter::Format::STANDARD_GHZ;
     } else if (unit == "M") {
-        uint32_t mhz = static_cast<uint32_t>((freq + 500000) / 1000000);
-        uint32_t decimal = static_cast<uint32_t>(((freq + 50000) % 1000000) / 100000);
-        if (decimal > 0 && unit != "Mcompact") {
-            snprintf(buffer, sizeof(buffer), "%lu.%luM",
-                     static_cast<unsigned long>(mhz),
-                     static_cast<unsigned long>(decimal));
+        if (unit == "Mcompact") {
+            fmt = FrequencyFormatter::Format::COMPACT_MHZ;
         } else {
-            snprintf(buffer, sizeof(buffer), "%luM", static_cast<unsigned long>(mhz));
+            fmt = FrequencyFormatter::Format::STANDARD_MHZ;
         }
     } else {
-        // Fallback
-        uint32_t mhz = static_cast<uint32_t>(freq / 1000000);
-        snprintf(buffer, sizeof(buffer), "%luM", static_cast<unsigned long>(mhz));
+        fmt = FrequencyFormatter::Format::COMPACT_MHZ;
     }
-
-    return std::string(buffer);
+    
+    return FrequencyFormatter::format(freq, fmt);
 }
 
 void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
@@ -4314,10 +4180,9 @@ void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
     // Style for tick labels (small font 5x8)
     static Style ruler_style{font::fixed_5x8, Color::grey(), Color::black()};
 
-    // Draw horizontal line at bottom of ruler
-    display.draw_line(
-        {r.left(), r.top() + RULER_HEIGHT - 1},
-        {r.right(), r.top() + RULER_HEIGHT - 1},
+    // Draw horizontal line at bottom of ruler (using 1-pixel rectangle)
+    painter.fill_rectangle(
+        {r.left(), r.top() + RULER_HEIGHT - 1, r.width(), 1},
         Theme::getInstance()->bg_darkest->foreground
     );
 
@@ -4336,10 +4201,9 @@ void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
             continue;
         }
 
-        // Draw major tick (tall)
-        display.draw_line(
-            {x, r.top()},
-            {x, r.top() + TICK_HEIGHT_MAJOR},
+        // Draw major tick (tall) - using 1-pixel rectangle
+        painter.fill_rectangle(
+            {x, r.top(), 1, TICK_HEIGHT_MAJOR},
             Theme::getInstance()->bg_darkest->foreground
         );
 
@@ -4365,9 +4229,8 @@ void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
                 int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
 
                 if (sub_x > r.left() && sub_x < r.right()) {
-                    display.draw_line(
-                        {sub_x, r.top()},
-                        {sub_x, r.top() + TICK_HEIGHT_MINOR},
+                    painter.fill_rectangle(
+                        {sub_x, r.top(), 1, TICK_HEIGHT_MINOR},
                         Theme::getInstance()->bg_darkest->foreground
                     );
                 }

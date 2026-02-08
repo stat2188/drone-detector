@@ -28,6 +28,10 @@
 // #include "eda_unified_settings.hpp"
 // #include "eda_unified_settings_manager.hpp"
 // #include "eda_tabbed_settings_view.hpp"
+
+// DIAMOND OPTIMIZATION: Unified settings persistence
+#include "settings_persistence.hpp"
+
 #include "radio.hpp"
 
 using rf::Frequency;
@@ -55,6 +59,20 @@ private:
     static std::string get_current_timestamp();
 };
 
+// ===========================================
+// DEPRECATED: DroneAnalyzerSettingsManager
+// ===========================================
+// This class has been REPLACED by SettingsPersistence<T>
+// Most methods are now in settings_persistence.hpp
+// Only translation functions are kept here as they provide unique functionality
+//
+// MIGRATION: Replace
+//   DroneAnalyzerSettingsManager::load/save/validate/settings/defaults
+// With:
+//   SettingsPersistence<DroneAnalyzerSettings>::load/save/validate/settings/defaults
+//
+#if 0  // DISABLED - Use SettingsPersistence<T> from settings_persistence.hpp
+
 class DroneAnalyzerSettingsManager {
 public:
     static bool load(DroneAnalyzerSettings& settings);
@@ -78,6 +96,22 @@ public:
 
 private:
     static Language current_language_;
+};
+
+#endif  // END OF DEPRECATED DroneAnalyzerSettingsManager
+
+// ===========================================
+// ACTIVE: Translation Functions (Kept for UI)
+// ===========================================
+class DroneAnalyzerSettingsManager_Translations {
+public:
+    static Language current_language_;
+    static const std::map<std::string, const char*> translations_english;
+    
+    static void set_language(Language lang) { current_language_ = lang; }
+    static Language get_language() { return current_language_; }
+    static const char* translate(const std::string& key);
+    static const char* get_translation(const std::string& key);
 };
 
 using PresetMenuView = std::function<void(const DronePreset&)>;
