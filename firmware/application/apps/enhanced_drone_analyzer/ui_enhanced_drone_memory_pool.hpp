@@ -34,9 +34,16 @@ public:
     static constexpr size_t ELEMENT_SIZE = sizeof(T);
     static constexpr size_t POOL_SIZE_BYTES = PoolSize * ELEMENT_SIZE;
 
+    // DIAMOND OPTIMIZATION: Initialize mutex_ in initializer list to fix -Weffc++ warning
+    // Scott Meyers Item 12: Understand the order of member initialization
     FixedSizeMemoryPool()
         : allocation_count_(0),
-          free_count_(PoolSize) {
+          free_count_(PoolSize),
+          mutex_{} {  // Value-initialization to fix warning
+        // Explicit ChibiOS Mutex initialization (required for thread-safe operation)
+        chMtxInit(&mutex_);
+        
+        // Initialize free list pointers
         for (size_t i = 0; i < PoolSize; ++i) {
             free_list_[i] = reinterpret_cast<T*>(pool_ + i * ELEMENT_SIZE);
         }

@@ -86,6 +86,25 @@ private:
 };
 
 // ===========================================
+// SPECTRUM MODE LOOKUP TABLES
+// ===========================================
+// Eliminates duplicate spectrum_mode switches
+// Scott Meyers Item 15: Prefer constexpr to #define
+struct SpectrumModeMappings {
+    static constexpr const char* const NAMES[] = {
+        "NARROW",       // NARROW = 0
+        "MEDIUM",       // MEDIUM = 1
+        "WIDE",         // WIDE = 2
+        "ULTRA_WIDE",   // ULTRA_WIDE = 3
+        "ULTRA_NARROW"  // ULTRA_NARROW = 4
+    };
+    
+    static constexpr const char* get_name(uint8_t mode) {
+        return (mode < 5) ? NAMES[mode] : "MEDIUM";
+    }
+};
+
+// ===========================================
 // COLOR LOOKUP TABLES
 // ===========================================
 // Eliminates 150+ lines of switch-case statements
@@ -453,10 +472,10 @@ struct StatusFormatter {
         snprintf(buffer, N, fmt, std::forward<Args>(args)...);
     }
 
-    template<size_t N>
-    static std::string make_string(const char* fmt, auto&&... args) {
+    template<size_t N, typename... Args>
+    static std::string make_string(const char* fmt, Args&&... args) {
         char buffer[N];
-        snprintf(buffer, N, fmt, std::forward<decltype(args)>(args)...);
+        snprintf(buffer, N, fmt, std::forward<Args>(args)...);
         return std::string(buffer);
     }
 };

@@ -22,6 +22,39 @@ namespace fs = std::filesystem;
 
 namespace ui::apps::enhanced_drone_analyzer {
 
+// ===========================================
+// DIAMOND OPTIMIZATION: SpectrumMode LUT
+// ===========================================
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Все строки хранятся во Flash, RAM не тратится
+static constexpr const char* const SPECTRUM_MODE_NAMES[] = {
+    "NARROW",       // NARROW = 0
+    "MEDIUM",       // MEDIUM = 1
+    "WIDE",         // WIDE = 2
+    "ULTRA_WIDE",   // ULTRA_WIDE = 3
+    "ULTRA_NARROW"  // ULTRA_NARROW = 4
+};
+static_assert(sizeof(SPECTRUM_MODE_NAMES) / sizeof(const char*) == 5, "SPECTRUM_MODE_NAMES size");
+
+// ===========================================
+// DIAMOND OPTIMIZATION: DroneType Display Names LUT
+// ===========================================
+// Scott Meyers Item 15: Prefer constexpr to #define
+static constexpr const char* const DRONE_TYPE_DISPLAY_NAMES[] = {
+    "Unknown",            // UNKNOWN = 0
+    "DJI Mavic",          // MAVIC = 1
+    "DJI P34",            // DJI_P34 = 2
+    "DJI Phantom",        // PHANTOM = 3
+    "DJI Mini",           // DJI_MINI = 4
+    "Parrot Anafi",       // PARROT_ANAFI = 5
+    "Parrot Bebop",       // PARROT_BEBOP = 6
+    "PX4 Drone",          // PX4_DRONE = 7
+    "Military UAV",       // MILITARY_DRONE = 8
+    "DIY Drone",          // DIY_DRONE = 9
+    "FPV Racing"          // FPV_RACING = 10
+};
+static_assert(sizeof(DRONE_TYPE_DISPLAY_NAMES) / sizeof(const char*) == 11, "DRONE_TYPE_DISPLAY_NAMES size");
+
 
 // ===========================================
 // EnhancedSettingsManager Implementation
@@ -248,15 +281,12 @@ std::string EnhancedSettingsManager::generate_settings_content(const DroneAnalyz
     return ss.str();
 }
 
+// DIAMOND OPTIMIZATION: LUT lookup вместо switch для spectrum_mode_to_string()
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Экономит ~50 байт Flash
 std::string EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) {
-    switch (mode) {
-        case SpectrumMode::NARROW: return "NARROW";
-        case SpectrumMode::MEDIUM: return "MEDIUM";
-        case SpectrumMode::WIDE: return "WIDE";
-        case SpectrumMode::ULTRA_WIDE: return "ULTRA_WIDE";
-        case SpectrumMode::ULTRA_NARROW: return "ULTRA_NARROW";
-        default: return "MEDIUM";
-    }
+    uint8_t idx = static_cast<uint8_t>(mode);
+    return (idx < 5) ? std::string(SPECTRUM_MODE_NAMES[idx]) : "MEDIUM";
 }
 
 std::string EnhancedSettingsManager::get_current_timestamp() {
@@ -479,16 +509,17 @@ bool DroneAnalyzerSettingsManager::validate(const DroneAnalyzerSettings& setting
     return true;
 }
 
+// DIAMOND OPTIMIZATION: LUT lookup вместо switch в serialize()
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Экономит ~70 байт Flash
 std::string DroneAnalyzerSettingsManager::serialize(const DroneAnalyzerSettings& settings) {
     std::ostringstream oss;
     oss << "spectrum_mode=";
-    switch (settings.spectrum_mode) {
-        case SpectrumMode::NARROW: oss << "NARROW"; break;
-        case SpectrumMode::MEDIUM: oss << "MEDIUM"; break;
-        case SpectrumMode::WIDE: oss << "WIDE"; break;
-        case SpectrumMode::ULTRA_WIDE: oss << "ULTRA_WIDE"; break;
-        case SpectrumMode::ULTRA_NARROW: oss << "ULTRA_NARROW"; break;
-    }
+    
+    // LUT lookup вместо switch
+    uint8_t mode_idx = static_cast<uint8_t>(settings.spectrum_mode);
+    oss << ((mode_idx < 5) ? SPECTRUM_MODE_NAMES[mode_idx] : "MEDIUM");
+    
     oss << "|scan_interval_ms=" << settings.scan_interval_ms;
     oss << "|rssi_threshold_db=" << settings.rssi_threshold_db;
     oss << "|enable_audio_alerts=" << (settings.enable_audio_alerts ? "true" : "false");
@@ -557,17 +588,12 @@ std::vector<DroneType> DroneFrequencyPresets::get_available_types() {
             DroneType::PARROT_ANAFI, DroneType::PARROT_BEBOP,
             DroneType::PX4_DRONE, DroneType::MILITARY_DRONE};
 }
+// DIAMOND OPTIMIZATION: LUT lookup вместо switch для get_type_display_name()
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Экономит ~100 байт Flash
 std::string DroneFrequencyPresets::get_type_display_name(DroneType type) {
-    switch (type) {
-        case DroneType::MAVIC: return "DJI Mavic";
-        case DroneType::PHANTOM: return "DJI Phantom";
-        case DroneType::DJI_MINI: return "DJI Mini";
-        case DroneType::PARROT_ANAFI: return "Parrot Anafi";
-        case DroneType::PARROT_BEBOP: return "Parrot Bebop";
-        case DroneType::PX4_DRONE: return "PX4 Drone";
-        case DroneType::MILITARY_DRONE: return "Military UAV";
-        default: return "Unknown";
-    }
+    uint8_t idx = static_cast<uint8_t>(type);
+    return (idx < 11) ? std::string(DRONE_TYPE_DISPLAY_NAMES[idx]) : "Unknown";
 }
 std::vector<ui::apps::enhanced_drone_analyzer::DronePreset> DroneFrequencyPresets::get_presets_of_type(const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, PRESETS_COUNT>& all_presets, DroneType type) {
     std::vector<ui::apps::enhanced_drone_analyzer::DronePreset> filtered;

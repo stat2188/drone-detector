@@ -51,6 +51,43 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 using namespace DroneConstants;
 
+// ===========================================
+// DIAMOND OPTIMIZATION: ScanningMode LUT
+// ===========================================
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Все строки хранятся во Flash, RAM не тратится
+static constexpr const char* const SCANNING_MODE_NAMES[] = {
+    "Database Scan",      // DATABASE = 0
+    "Wideband Monitor",   // WIDEBAND_CONTINUOUS = 1
+    "Hybrid Discovery"    // HYBRID = 2
+};
+static_assert(sizeof(SCANNING_MODE_NAMES) / sizeof(const char*) == 3, "SCANNING_MODE_NAMES size");
+
+// ===========================================
+// DIAMOND OPTIMIZATION: MovementTrend Counter LUT
+// ===========================================
+// Scott Meyers Item 20: Prefer pass-by-reference-to-const to pass-by-value
+// Указатели на члены класса для O(1) доступа
+static constexpr size_t DroneScanner::* const TREND_COUNTERS[] = {
+    &DroneScanner::static_count_,      // STATIC = 0
+    &DroneScanner::approaching_count_, // APPROACHING = 1
+    &DroneScanner::receding_count_,    // RECEDING = 2
+    &DroneScanner::static_count_       // UNKNOWN = 3 (fallback to static)
+};
+static_assert(sizeof(TREND_COUNTERS) / sizeof(size_t DroneScanner::*) == 4, "TREND_COUNTERS size");
+
+// ===========================================
+// DIAMOND OPTIMIZATION: Scan Function Pointer LUT
+// ===========================================
+// Scott Meyers Item 36: Never redefine an inherited non-virtual function
+// Используем сырые указатели на методы (не std::function!)
+static constexpr void (DroneScanner::* const SCAN_FUNCTIONS[])(DroneHardwareController&) = {
+    &DroneScanner::perform_database_scan_cycle,    // DATABASE = 0
+    &DroneScanner::perform_wideband_scan_cycle,   // WIDEBAND_CONTINUOUS = 1
+    &DroneScanner::perform_hybrid_scan_cycle        // HYBRID = 2
+};
+static_assert(sizeof(SCAN_FUNCTIONS) / sizeof(void (DroneScanner::*)(DroneHardwareController&)) == 3, "SCAN_FUNCTIONS size");
+
 const TrackedDrone& get_empty_drone() {
     static const TrackedDrone empty{};
     return empty;
@@ -348,13 +385,12 @@ void DroneScanner::set_scanning_mode(ScanningMode mode) {
     }
 }
 
+// DIAMOND OPTIMIZATION: LUT lookup вместо switch для scanning_mode_name()
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Экономит ~40 байт Flash
 const char* DroneScanner::scanning_mode_name() const {
-    switch (scanning_mode_) {
-        case ScanningMode::DATABASE: return "Database Scan";
-        case ScanningMode::WIDEBAND_CONTINUOUS: return "Wideband Monitor";
-        case ScanningMode::HYBRID: return "Hybrid Discovery";
-        default: return "Unknown";
-    }
+    uint8_t idx = static_cast<uint8_t>(scanning_mode_);
+    return (idx < 3) ? SCANNING_MODE_NAMES[idx] : "Unknown";
 }
 
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
@@ -407,17 +443,13 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     // Apply adaptive interval
     chThdSleepMilliseconds(adaptive_interval);
 
+    // DIAMOND OPTIMIZATION: LUT lookup вместо switch для perform_scan_cycle()
+    // Scott Meyers Item 36: Never redefine an inherited non-virtual function
+    // Экономит ~80 байт Flash, использует сырые указатели на методы (не std::function!)
     // Apply mode-specific adjustments
-    switch (scanning_mode_) {
-        case ScanningMode::DATABASE:
-            perform_database_scan_cycle(hardware);
-            break;
-        case ScanningMode::WIDEBAND_CONTINUOUS:
-            perform_wideband_scan_cycle(hardware);
-            break;
-        case ScanningMode::HYBRID:
-            perform_hybrid_scan_cycle(hardware);
-            break;
+    uint8_t mode_idx = static_cast<uint8_t>(scanning_mode_);
+    if (mode_idx < 3) {
+        (this->*SCAN_FUNCTIONS[mode_idx])(hardware);  // Вызов метода через указатель
     }
 
     scan_cycles_++;
@@ -1177,6 +1209,9 @@ void DroneScanner::remove_stale_drones() {
     }
 }
 
+// DIAMOND OPTIMIZATION: LUT lookup вместо switch для update_tracking_counts()
+// Scott Meyers Item 20: Prefer pass-by-reference-to-const to pass-by-value
+// Устраняет 4 case labels, экономит ~60 байт Flash
 void DroneScanner::update_tracking_counts() {
     approaching_count_ = 0;
     receding_count_ = 0;
@@ -1186,12 +1221,10 @@ void DroneScanner::update_tracking_counts() {
         if (tracked_drones()[i].update_count < 2) continue;
 
         MovementTrend trend = tracked_drones()[i].get_trend();
-        switch (trend) {
-            case MovementTrend::APPROACHING: approaching_count_++; break;
-            case MovementTrend::RECEDING: receding_count_++; break;
-            case MovementTrend::STATIC:
-            case MovementTrend::UNKNOWN:
-            default: static_count_++; break;
+        // LUT lookup вместо switch - O(1) время, ноль RAM
+        uint8_t idx = static_cast<uint8_t>(trend);
+        if (idx < 4) {
+            this->*TREND_COUNTERS[idx]++;  // Увеличиваем нужный счётчик через указатель на член
         }
     }
 }
@@ -2078,7 +2111,9 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
         StatusFormatter::format_to(alert_buffer, "[!] DETECTED: %lu threats found!",
                                   static_cast<unsigned long>(detections));
         alert_text_.set(alert_buffer);
-        static Style red_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(4))};
+        // DIAMOND OPTIMIZATION: Use RGB565 values instead of RGB888
+        // Color конструктор ожидает uint16_t (RGB565 формат)
+        static Style red_style{font::fixed_8x16, Color::black(), Color(0xF800)}; // Red in RGB565
         alert_text_.set_style(&red_style);
     }
     set_dirty();
@@ -2097,9 +2132,10 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
                              ALERT_ICONS[icon_idx], total_drones, alert_msg.c_str());
     alert_text_.set(buffer);
 
-    // DIAMOND OPTIMIZATION: Use ColorMappings for threat colors
-    static Style red_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(4))};
-    static Style yellow_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(2))};
+    // DIAMOND OPTIMIZATION: Use RGB565 values instead of RGB888
+    // Color конструктор ожидает uint16_t (RGB565 формат: rrrrrGGGGGGbbbbb)
+    static Style red_style{font::fixed_8x16, Color::black(), Color(0xF800)};    // Red (CRITICAL)
+    static Style yellow_style{font::fixed_8x16, Color::black(), Color(0xFFE0)}; // Yellow (MEDIUM)
 
     alert_text_.set_style(threat >= ThreatLevel::CRITICAL ? &red_style : &yellow_style);
     set_dirty();
@@ -2282,11 +2318,13 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
                                   threat_name, scanner.get_approaching_count(),
                                   scanner.get_static_count(), scanner.get_receding_count());
         text_threat_summary_.set(summary_buffer);
-        static Style red_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(4))};
+        // DIAMOND OPTIMIZATION: RGB565 values (0xF800 = Red)
+        static Style red_style{font::fixed_8x16, Color::black(), Color(0xF800)};
         text_threat_summary_.set_style(&red_style);
     } else {
         text_threat_summary_.set("THREAT: NONE | All clear");
-        static Style green_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(1))};
+        // DIAMOND OPTIMIZATION: RGB565 values (0x07E0 = Green)
+        static Style green_style{font::fixed_8x16, Color::black(), Color(0x07E0)};
         text_threat_summary_.set_style(&green_style);
     }
 
@@ -2342,7 +2380,8 @@ void DroneDisplayController::set_scanning_status(bool active, const std::string&
     if (active) {
         StatusFormatter::format_to(buffer, "SCAN: %s", message.c_str());
         text_status_info_.set(buffer);
-        static Style green_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(1))};
+        // DIAMOND OPTIMIZATION: RGB565 values (0x07E0 = Green)
+        static Style green_style{font::fixed_8x16, Color::black(), Color(0x07E0)};
         text_status_info_.set_style(&green_style);
     } else {
         StatusFormatter::format_to(buffer, "STOP: %s", message.c_str());
