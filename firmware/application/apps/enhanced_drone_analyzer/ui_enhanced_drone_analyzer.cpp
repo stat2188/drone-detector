@@ -18,6 +18,7 @@
 #include "ui_enhanced_drone_memory_pool.hpp"
 #include "ui_drone_audio.hpp"
 #include "eda_optimized_utils.hpp"
+#include "diamond_core.hpp"
 #include "gradient.hpp"
 #include "baseband_api.hpp"
 #include "portapack.hpp"
@@ -59,106 +60,52 @@ const TrackedDrone& get_empty_drone() {
 DroneConstants::ScanningMode SimpleDroneValidation::scanning_mode_ = DroneConstants::ScanningMode::STRICT_DRONE;
 
 // SimpleDroneValidation implementations
+// DIAMOND OPTIMIZATION: Using DiamondCore validation instead of duplicate code
 bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
-    // Use unified frequency limits from DroneConstants
-    if (freq_hz < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ || 
-        freq_hz > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
-        return false; // Frequency not supported by hardware
-    }
-    
-    // Validate against safe operational limits
-    if (freq_hz < DroneConstants::FrequencyLimits::MIN_SAFE_FREQ || 
-        freq_hz > DroneConstants::FrequencyLimits::MAX_SAFE_FREQ) {
-        // Frequency is within hardware limits but may be unstable
-        // For now we allow it, but this could be a warning in future
-    }
-
-    // 2. If needed, add checks for prohibited ranges (GPS/GSM), 
-    // but for panoramic analyzer we return true for everything.
-    
-    return true;
+    return DiamondCore::ValidationUtils::validate_frequency(freq_hz);
 }
 
+// DIAMOND OPTIMIZATION: Using DiamondCore RSSI validation
 bool SimpleDroneValidation::validate_rssi_signal(int32_t rssi_db, ThreatLevel threat) {
-    // RSSI validation based on threat level
-    switch (threat) {
-        case ThreatLevel::CRITICAL:
-            return rssi_db >= -70;
-        case ThreatLevel::HIGH:
-            return rssi_db >= -80;
-        case ThreatLevel::MEDIUM:
-            return rssi_db >= -90;
-        case ThreatLevel::LOW:
-            return rssi_db >= -100;
-        case ThreatLevel::NONE:
-        default:
-            return rssi_db >= -120;
-    }
+    return DiamondCore::RSSIUtils::validate_rssi(rssi_db, static_cast<uint8_t>(threat));
 }
 
+// DIAMOND OPTIMIZATION: Using ThreatClassifier from eda_optimized_utils.hpp
 ThreatLevel SimpleDroneValidation::classify_signal_strength(int32_t rssi_db) {
-    if (rssi_db >= -50) {
-        return ThreatLevel::CRITICAL;
-    } else if (rssi_db >= -70) {
-        return ThreatLevel::HIGH;
-    } else if (rssi_db >= -85) {
-        return ThreatLevel::MEDIUM;
-    } else if (rssi_db >= -100) {
-        return ThreatLevel::LOW;
-    } else {
-        return ThreatLevel::NONE;
-    }
+    return ThreatClassifier::from_rssi(rssi_db);
 }
 
+// DIAMOND OPTIMIZATION: Using DroneTypeDetector from eda_optimized_utils.hpp
 DroneType SimpleDroneValidation::identify_drone_type(const DroneSignal& signal) {
-    Frequency freq_hz = signal.frequency_hz;
-    int32_t rssi_db = signal.rssi_db;
-    // 1. Low Frequency Long Range (868/915 MHz)
-    if ((static_cast<uint64_t>(freq_hz) >= 860000000ULL && static_cast<uint64_t>(freq_hz) <= 870000000ULL) ||
-        (static_cast<uint64_t>(freq_hz) >= 900000000ULL && static_cast<uint64_t>(freq_hz) <= 930000000ULL)) {
-        return DroneType::MILITARY_DRONE; // Or DIY_DRONE, often used in "serious" custom builds
-    }
-
-    // 2. Standard 433 MHz band
-    if (static_cast<uint64_t>(freq_hz) >= 433000000ULL && static_cast<uint64_t>(freq_hz) <= 435000000ULL) {
-        return DroneType::DIY_DRONE;
-    }
-
-    // 3. 2.4 GHz Band
-    if (static_cast<uint64_t>(freq_hz) >= 2400000000ULL && static_cast<uint64_t>(freq_hz) <= 2483500000ULL) {
-        // Here it's more complex, as this is also WiFi.
-        // Heuristic: DJI drones often have a very strong signal compared to background WiFi
-        if (rssi_db > -50) return DroneType::MAVIC; // Very close/powerful
-        return DroneType::PARROT_ANAFI; // Generic WiFi drone
-    }
-
-    // 4. 5.8 GHz Band (Video/Control)
-    if (static_cast<uint64_t>(freq_hz) >= 5600000000ULL && static_cast<uint64_t>(freq_hz) <= 5900000000ULL) {
-        // RaceBand frequency range
-        return DroneType::FPV_RACING;
-    }
-    
-    return DroneType::UNKNOWN;
+    uint8_t type_code = DroneTypeDetector::from_frequency(signal.frequency_hz);
+    return static_cast<DroneType>(type_code);
 }
 
+// DIAMOND OPTIMIZATION: Forward to frequency-only version
+DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t /* rssi_db */) {
+    uint8_t type_code = DroneTypeDetector::from_frequency(freq_hz);
+    return static_cast<DroneType>(type_code);
+}
+
+// DIAMOND OPTIMIZATION: Using DiamondCore validation with band checking
 bool SimpleDroneValidation::validate_drone_detection(const DroneSignal& signal,
                                                    DroneType type, ThreatLevel threat) {
     Frequency freq_hz = signal.frequency_hz;
     int32_t rssi_db = signal.rssi_db;
-    // Comprehensive validation
-    if (!SimpleDroneValidation::validate_frequency_range(freq_hz)) {
+    
+    // Core validation using DiamondCore utilities
+    if (!DiamondCore::ValidationUtils::validate_frequency(freq_hz)) {
         return false;
     }
     
-    if (!SimpleDroneValidation::validate_rssi_signal(rssi_db, threat)) {
+    if (!DiamondCore::RSSIUtils::validate_rssi(rssi_db, static_cast<uint8_t>(threat))) {
         return false;
     }
     
-    // Additional validation based on drone type
+    // Type-specific band validation (MAVIC drones in 2.4GHz or 5.8GHz)
     if (type == DroneType::MAVIC) {
-        // Mavic drones typically operate in 2.4GHz or 5.8GHz
-        if (!(static_cast<uint64_t>(freq_hz) >= 2400000000ULL && static_cast<uint64_t>(freq_hz) <= 2500000000ULL) &&
-            !(static_cast<uint64_t>(freq_hz) >= 5725000000ULL && static_cast<uint64_t>(freq_hz) <= 5875000000ULL)) {
+        if (!DiamondCore::ValidationUtils::is_2_4ghz_band(freq_hz) &&
+            !DiamondCore::ValidationUtils::is_5_8ghz_band(freq_hz)) {
             return false;
         }
     }
@@ -1039,40 +986,28 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 }
 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
-    // TODO[FIXED]: Improved RSSI and frequency validation
-    // 1. Preliminary filtering (no locks required)
-    // Use unified RSSI thresholds from DroneConstants
-    const int32_t MIN_VALID_RSSI = DroneConstants::MIN_VALID_RSSI;  // -110 (excludes pure noise)
-    const int32_t MAX_VALID_RSSI = DroneConstants::MAX_VALID_RSSI;  // 10
-
-    // TODO[FIXED]: Fixed RSSI validation logic
-    // Was: rssi <= INVALID_RSSI || rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
-    // Now: rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI
-    // Now values from -128 to -110 will be processed correctly as noise
-    if (rssi < MIN_VALID_RSSI || rssi > MAX_VALID_RSSI) {
+    // DIAMOND OPTIMIZATION: Using DiamondCore validation utilities
+    // 1. RSSI validation (using DiamondCore RSSI utilities)
+    if (!DiamondCore::ValidationUtils::validate_rssi(rssi)) {
         return;
     }
 
-    if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN)) {
+    // 2. Frequency validation (using DiamondCore validation)
+    if (!DiamondCore::ValidationUtils::validate_frequency(entry.frequency_a)) {
         return;
     }
 
-    // Enhanced frequency validation considering drone ranges
-    if (!SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
-        return;
-    }
-
-    // Limit frequencies for drones (433MHz - 5.8GHz)
-    const Frequency MIN_DRONE_FREQ = 433000000ULL;
-    const Frequency MAX_DRONE_FREQ = 5800000000ULL;
-    if (static_cast<uint64_t>(entry.frequency_a) < MIN_DRONE_FREQ || 
-        static_cast<uint64_t>(entry.frequency_a) > MAX_DRONE_FREQ) {
+    // 3. Drone band filtering (433MHz - 5.8GHz)
+    if (!DiamondCore::ValidationUtils::is_433mhz_band(entry.frequency_a) &&
+        !DiamondCore::ValidationUtils::is_2_4ghz_band(entry.frequency_a) &&
+        !DiamondCore::ValidationUtils::is_5_8ghz_band(entry.frequency_a) &&
+        !DiamondCore::ValidationUtils::is_military_band(entry.frequency_a)) {
         return;
     }
 
     // Determine parameters (locally)
     DroneType detected_type = DroneType::UNKNOWN;
-    ThreatLevel threat_level = SimpleDroneValidation::classify_signal_strength(rssi);
+    ThreatLevel threat_level = ThreatClassifier::from_rssi(rssi);
 
     // Simple database search (with mutex protection to prevent race with load_frequency_database)
     {
@@ -1834,19 +1769,16 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
     center_frequency_ = center_freq;
 }
 
+// DIAMOND OPTIMIZATION: Using DiamondCore validation with overflow protection
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
-    // TODO[FIXED]: Added frequency validation
-    // Use unified frequency limits from DroneConstants
-    const Frequency MIN_FREQ = DroneConstants::FrequencyLimits::MIN_SAFE_FREQ;      // 50 MHz
-    const Frequency MAX_FREQ = DroneConstants::FrequencyLimits::MAX_SAFE_FREQ;    // 6 GHz
-
-    if (frequency_hz < MIN_FREQ || frequency_hz > MAX_FREQ) {
-        return false;  // <-- Return false on error
+    // Validate frequency range using DiamondCore utilities
+    if (!DiamondCore::ValidationUtils::validate_frequency(frequency_hz)) {
+        return false;
     }
     
-    // Overflow check
+    // Overflow check for +1MHz offset
     if (static_cast<uint64_t>(frequency_hz) + 1000000ULL < static_cast<uint64_t>(frequency_hz)) {
-        return false;  // <-- Protection against overflow
+        return false;
     }
     
     receiver_model.set_target_frequency(frequency_hz);
@@ -2000,23 +1932,13 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     threat_status_main_.set_style(&UIStyles::RED_STYLE);
     last_text_ = buffer;
 
+    // DIAMOND OPTIMIZATION: Using FrequencyFormatter from eda_optimized_utils.hpp
     if (current_freq > 0) {
-        if (static_cast<uint64_t>(current_freq) >= 1000000000ULL) {
-            uint32_t ghz = static_cast<uint64_t>(current_freq) / 1000000000ULL;
-            uint32_t decimals = ((static_cast<uint64_t>(current_freq) % 1000000000ULL) / 10000000ULL);
-            if (is_scanning) {
-                snprintf(buffer, sizeof(buffer), "%lu.%02luGHz SCANNING", (unsigned long)ghz, (unsigned long)decimals);
-            } else {
-                snprintf(buffer, sizeof(buffer), "%lu.%02luGHz READY", (unsigned long)ghz, (unsigned long)decimals);
-            }
+        std::string freq_str = FrequencyFormatter::to_string_short_freq(current_freq);
+        if (is_scanning) {
+            snprintf(buffer, sizeof(buffer), "%s SCANNING", freq_str.c_str());
         } else {
-            uint32_t mhz = static_cast<uint64_t>(current_freq) / 1000000ULL;
-            uint32_t decimals = (static_cast<uint64_t>(current_freq) % 1000000ULL) / 100000ULL;
-            if (is_scanning) {
-                snprintf(buffer, sizeof(buffer), "%lu.%01luMHz SCANNING", (unsigned long)mhz, (unsigned long)decimals);
-            } else {
-                snprintf(buffer, sizeof(buffer), "%lu.%01luMHz READY", (unsigned long)mhz, (unsigned long)decimals);
-            }
+            snprintf(buffer, sizeof(buffer), "%s READY", freq_str.c_str());
         }
         threat_frequency_.set(buffer);
     } else {
@@ -2074,37 +1996,17 @@ void SmartThreatHeader::set_color_scheme(bool use_dark_theme) {
     (void)use_dark_theme;
 }
 
+// DIAMOND OPTIMIZATION: Using DiamondCore ThreatUtils for O(1) lookups
 Color SmartThreatHeader::get_threat_bar_color(ThreatLevel level) const {
-    switch (level) {
-        case ThreatLevel::CRITICAL: return Color::red();
-        case ThreatLevel::HIGH: return Color(255, 140, 0);
-        case ThreatLevel::MEDIUM: return Color::yellow();
-        case ThreatLevel::LOW: return Color::green();
-        case ThreatLevel::NONE:
-        default: return Color::blue();
-    }
+    return Color(DiamondCore::ThreatUtils::color_value(static_cast<uint8_t>(level)));
 }
 
 Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
-    switch (level) {
-        case ThreatLevel::CRITICAL: return Color::red();
-        case ThreatLevel::HIGH: return Color(255, 165, 0);
-        case ThreatLevel::MEDIUM: return Color::yellow();
-        case ThreatLevel::LOW: return Color::green();
-        case ThreatLevel::NONE:
-        default: return Color::white();
-    }
+    return Color::white();  // Always white text on colored backgrounds
 }
 
 const char* SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
-    switch (level) {
-        case ThreatLevel::CRITICAL: return "CRITICAL";
-        case ThreatLevel::HIGH: return "HIGH";
-        case ThreatLevel::MEDIUM: return "MEDIUM";
-        case ThreatLevel::LOW: return "LOW";
-        case ThreatLevel::NONE:
-        default: return "CLEAR";
-    }
+    return DiamondCore::ThreatUtils::name(static_cast<uint8_t>(level));
 }
 
 void SmartThreatHeader::paint(Painter& painter) {
@@ -2189,21 +2091,23 @@ void ThreatCard::clear_card() {
 
 
 
+// DIAMOND OPTIMIZATION: Simplified color logic with DiamondCore threat names
 Color ThreatCard::get_card_bg_color() const {
     if (!is_active_) return Color::black();
+    
+    // Darkened threat colors for card background
     switch (last_threat_) {
-        case ThreatLevel::CRITICAL: return Color(64, 0, 0);
-        case ThreatLevel::HIGH: return Color(64, 32, 0);
-        case ThreatLevel::MEDIUM: return Color(32, 32, 0);
-        case ThreatLevel::LOW: return Color(0, 32, 0);
+        case ThreatLevel::CRITICAL: return Color(64, 0, 0);    // Dark red
+        case ThreatLevel::HIGH: return Color(64, 32, 0);    // Dark orange
+        case ThreatLevel::MEDIUM: return Color(32, 32, 0);  // Dark yellow
+        case ThreatLevel::LOW: return Color(0, 32, 0);      // Dark green
         case ThreatLevel::NONE:
-        default: return Color(0, 0, 64);
+        default: return Color(0, 0, 64);                // Dark blue
     }
 }
 
 Color ThreatCard::get_card_text_color() const {
-    // Always white text, since threat backgrounds (Red, Orange) are dark
-    // Exception: if background Yellow (Medium), text better Black
+    // White text for dark backgrounds, black for yellow (MEDIUM)
     if (last_threat_ == ThreatLevel::MEDIUM) return Color::black();
     return Color::white();
 }
