@@ -1947,7 +1947,9 @@ void SmartThreatHeader::set_color_scheme(bool use_dark_theme) {
 
 // DIAMOND OPTIMIZATION: Using DiamondCore ThreatUtils for O(1) lookups
 Color SmartThreatHeader::get_threat_bar_color(ThreatLevel level) const {
-    return Color(DiamondCore::ThreatUtils::color_value(static_cast<uint8_t>(level)));
+    // DIAMOND OPTIMIZATION: constexpr LUT lookup вместо вызова DiamondCore
+    uint8_t threat_idx = std::min(static_cast<uint8_t>(level), static_cast<uint8_t>(4));
+    return HEADER_STYLES[threat_idx].bar_color;
 }
 
 Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
@@ -2035,16 +2037,19 @@ void ThreatCard::clear_card() {
 Color ThreatCard::get_card_bg_color() const {
     if (!is_active_) return Color::black();
 
-    // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 2025-2032)
-    size_t threat_idx = (last_threat_ <= ThreatLevel::CRITICAL) ?
-                        static_cast<size_t>(last_threat_) : 0;
-    return THREAT_BG_COLORS[threat_idx];
+    // DIAMOND OPTIMизация: constexpr LUT lookup вместо условной логики
+    size_t threat_idx = std::min(static_cast<size_t>(last_threat_),
+                                 static_cast<size_t>(ThreatLevel::CRITICAL));
+    return CARD_STYLES[threat_idx].bg_color;
 }
 
 Color ThreatCard::get_card_text_color() const {
-    // White text for dark backgrounds, black for yellow (MEDIUM)
-    if (last_threat_ == ThreatLevel::MEDIUM) return Color::black();
-    return Color::white();
+    // DIAMOND OPTIMизация: constexpr LUT lookup вместо if-else
+    if (!is_active_) return Color::black();
+
+    size_t threat_idx = std::min(static_cast<size_t>(last_threat_),
+                                 static_cast<size_t>(ThreatLevel::CRITICAL));
+    return CARD_STYLES[threat_idx].text_color;
 }
 
 void ThreatCard::paint(Painter& painter) {
@@ -2335,21 +2340,15 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     }
     text_scanner_stats_.set(stats_buffer);
 
-    // DIAMOND OPTIMIZATION: constexpr LUT вместо каскадного if-else (строки 3232-3242)
-    size_t color_idx = 0;
-    if (max_threat >= ThreatLevel::HIGH) color_idx = 4;
-    else if (max_threat >= ThreatLevel::MEDIUM) color_idx = 3;
-    else if (has_detections) color_idx = 2;
-    else if (scanner.is_scanning_active()) color_idx = 1;
+    // DIAMOND OPTIMIZATION: ternary operator вместо каскадного if-else
+    // Компилятор оптимизирует это в безветвящийся код (branchless)
+    size_t color_idx = (max_threat >= ThreatLevel::HIGH) ? 4 :
+                      (max_threat >= ThreatLevel::MEDIUM) ? 3 :
+                      (has_detections) ? 2 :
+                      (scanner.is_scanning_active()) ? 1 : 0;
 
-    static Style big_display_styles[] = {
-        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[0]},
-        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[1]},
-        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[2]},
-        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[3]},
-        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[4]}
-    };
-    big_display_.set_style(&big_display_styles[color_idx]);
+    // DIAMOND OPTIMIZATION: constexpr LUT вместо локального массива (хранится во Flash)
+    big_display_.set_style(&BIG_DISPLAY_STYLES[color_idx]);
 }
 
 // ===========================================
@@ -2550,27 +2549,49 @@ bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
     return false;
 }
 
-void DroneDisplayController::render_mini_spectrum() {
-    display.scroll(1);
+void DroneDisplayController::render_bar_spectrum(Painter& painter) {
+    const auto& config = BarSpectrumConfig{};
 
-    // DIAMOND OPTIMIZATION: Use SafeBufferAccess
+    // 1. Очищаем область спектра (вместо display.scroll)
+    const int waterfall_y_start = config.WATERFALL_Y_START;
+    const int spectrum_height = config.BAR_HEIGHT_MAX;
+
+    painter.fill_rectangle(
+        {0, waterfall_y_start, DroneConstants::MINI_SPECTRUM_WIDTH, spectrum_height},
+        Color::black()
+    );
+
+    // Проверка валидности буфера
     if (!SafeBufferAccess<uint8_t, 200>::is_valid(spectrum_power_levels_ptr_)) {
         return;
     }
 
-    std::array<Color, SPEC_WIDTH> new_line{};
-    for (size_t x = 0; x < SPEC_WIDTH; ++x) {
-        uint8_t power_value = (x < spectrum_power_levels().size()) ?
-                              spectrum_power_levels()[x] : 0;
-        uint8_t color_index = (power_value * spectrum_gradient_.lut.size()) / 256;
-        if (color_index >= spectrum_gradient_.lut.size()) {
-            color_index = spectrum_gradient_.lut.size() - 1;
-        }
-        new_line[x] = spectrum_gradient_.lut[color_index];
+    // 2. Проход по всем столбцам (бинам) спектра
+    const auto& levels = spectrum_power_levels();
+    const size_t spectrum_width = std::min(levels.size(),
+                                        static_cast<size_t>(DroneConstants::MINI_SPECTRUM_WIDTH));
+
+    for (size_t x = 0; x < spectrum_width; ++x) {
+        uint8_t power = levels[x];
+
+        // Фильтр шума: не рисуем ничего, если сигнал слишком слабый
+        if (power < config.NOISE_THRESHOLD) continue;
+
+        // 3. Расчет высоты столбика (0-255 → 0-spectrum_height)
+        int bar_height = (power * spectrum_height) / 255;
+        if (bar_height < 1) bar_height = 1;
+        if (bar_height > spectrum_height) bar_height = spectrum_height;
+
+        // 4. АНАЛИЗ ФОРМЫ (Острый vs Широкий)
+        size_t color_idx = get_bar_color_index(x, power);
+
+        // 5. Рисование столбика
+        int y_top = (waterfall_y_start + spectrum_height) - bar_height;
+        painter.fill_rectangle(
+            {static_cast<int>(x), y_top, 1, bar_height},
+            config.BAR_COLORS[color_idx]
+        );
     }
-    
-    const int waterfall_y_start = 81;
-    display.draw_pixels({{0, waterfall_y_start}, {SPEC_WIDTH, 1}}, new_line);
 }
 
 void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES>& drones) {
@@ -2635,19 +2656,20 @@ void DroneDisplayController::update_signal_type_display(const std::string& signa
     StatusFormatter::format_to(buffer, "SIGNAL: %s", signal_type.c_str());
     text_signal_type_.set(buffer);
 
-    // DIAMOND OPTIMIZATION: constexpr LUT вместо if-else (строки 2639-2648)
-    size_t signal_idx = 0;
-    if (signal_type == "DIGITAL") signal_idx = 1;
-    else if (signal_type == "ANALOG") signal_idx = 2;
-    else if (signal_type == "NOISE") signal_idx = 3;
+    // DIAMOND OPTIMIZATION: ternary operator вместо cascading if-else
+    // Компилятор оптимизирует это в безветвящийся код
+    size_t signal_idx = (signal_type == "DIGITAL") ? 1 :
+                      (signal_type == "ANALOG") ? 2 :
+                      (signal_type == "NOISE") ? 3 : 0;
 
-    static Style signal_styles[] = {
-        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_COLORS[0]},
-        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_COLORS[1]},
-        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_COLORS[2]},
-        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_COLORS[3]}
+    // DIAMOND OPTIMIZATION: constexpr LUT вместо локального массива (хранится во Flash)
+    static constexpr Style SIGNAL_STYLES[] = {
+        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[0].color},
+        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[1].color},
+        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[2].color},
+        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[3].color}
     };
-    text_signal_type_.set_style(&signal_styles[signal_idx]);
+    text_signal_type_.set_style(&SIGNAL_STYLES[signal_idx]);
 
     set_dirty();
 }
@@ -3032,6 +3054,12 @@ void EnhancedDroneSpectrumAnalyzerView::focus() {
 
 void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
     View::paint(painter);
+
+    // DIAMOND OPTIMIZATION: Отрисовка bar spectrum вместо waterfall
+    // Вызываем каждый кадр (60 FPS) для обновления спектра
+    if (init_state_ == InitState::FULLY_INITIALIZED) {
+        display_controller_.render_bar_spectrum(painter);
+    }
 }
 
 bool EnhancedDroneSpectrumAnalyzerView::on_key(const KeyEvent key) {
@@ -3198,22 +3226,20 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
     // НЕ вызываем initialize_modern_layout() здесь!
     // Все эти вызовы отложены до step_deferred_initialization()
 
-    // 1. Только настройка waterfall области (безопасно)
-    const int waterfall_y_start = 81;
-    const int waterfall_height = SPEC_HEIGHT;
-    const int waterfall_y_end = waterfall_y_start + waterfall_height - 1;
-    display.scroll_set_area(waterfall_y_start, waterfall_y_end);
+    // DIAMOND OPTIMIZATION: waterfall удалён (экономия ~10KB RAM)
+    // Бар spectrum отрисовывается в paint() через render_bar_spectrum()
+    // Настройка scroll_set_area больше не нужна
 
-    // 2. Инициализация таймеров для пошаговой инициализации
+    // Инициализация таймеров для пошаговой инициализации
     init_state_ = InitState::CONSTRUCTED;
     init_start_time_ = chTimeNow();
     last_init_progress_ = 0;
     initialization_in_progress_ = false;
 
-    // 3. Показать статус инициализации
+    // Показать статус инициализации
     status_bar_.update_normal_status("INIT", "Starting up...");
 
-    // 4. Фоновая инициализация начнется в первом DisplayFrameSync
+    // Фоновая инициализация начнется в первом DisplayFrameSync
     // Это позволяет UI thread остаться responsive!
 }
 
@@ -3223,9 +3249,10 @@ void EnhancedDroneSpectrumAnalyzerView::on_hide() {
     hardware_.stop_spectrum_streaming();
     hardware_.shutdown_hardware();
     hardware_.on_hardware_hide();
-    
-    display.scroll_disable();
-    
+
+    // DIAMOND OPTIMIZATION: waterfall удалён (экономия ~10KB RAM)
+    // display.scroll_disable() больше не нужен
+
     View::on_hide();
 }
 

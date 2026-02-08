@@ -732,6 +732,19 @@ private:
 
     void paint(Painter& painter) override;
 
+    // DIAMOND OPTIMIZATION: constexpr LUT для цветов заголовка угроз в Flash
+    static constexpr struct HeaderStyleConfig {
+        const Style* style_ptr;
+        Color bar_color;
+    } HEADER_STYLES[] = {
+        {&UIStyles::LIGHT_STYLE,  Color(0x0000FF)}, // NONE (0) - Blue
+        {&UIStyles::GREEN_STYLE,   Color(0x00FF00)}, // LOW (1) - Green
+        {&UIStyles::YELLOW_STYLE,  Color(0xFFFF00)}, // MEDIUM (2) - Yellow
+        {&UIStyles::YELLOW_STYLE,  Color(0xFFA500)}, // HIGH (3) - Orange
+        {&UIStyles::RED_STYLE,      Color(0xFF0000)} // CRITICAL (4) - Red
+    };
+    static_assert(sizeof(HEADER_STYLES) == sizeof(HeaderStyleConfig) * 5, "HEADER_STYLES size");
+
     // Cached previous values for Check-Before-Update optimization
     ThreatLevel last_threat_ = ThreatLevel::NONE;
     bool last_is_scanning_ = false;
@@ -771,15 +784,18 @@ private:
 
     void paint(Painter& painter) override;
 
-    // DIAMOND OPTIMIZATION: constexpr LUT для цветов угроз в Flash
-    static constexpr const Color THREAT_BG_COLORS[] = {
-        Color(0, 0, 64),      // NONE - Dark blue
-        Color(0, 32, 0),      // LOW - Dark green
-        Color(32, 32, 0),     // MEDIUM - Dark yellow
-        Color(64, 32, 0),     // HIGH - Dark orange
-        Color(64, 0, 0)       // CRITICAL - Dark red
+    // DIAMOND OPTIMIZATION: constexpr LUT для цветов угроз в Flash (фона + текст)
+    static constexpr struct CardStyleConfig {
+        Color bg_color;
+        Color text_color;
+    } CARD_STYLES[] = {
+        {Color(0, 0, 64),      Color::white()},      // NONE - Dark blue bg, white text
+        {Color(0, 32, 0),       Color::white()},      // LOW - Dark green bg, white text
+        {Color(32, 32, 0),      Color::black()},      // MEDIUM - Dark yellow bg, black text
+        {Color(64, 32, 0),      Color::white()},      // HIGH - Dark orange bg, white text
+        {Color(64, 0, 0),       Color::white()}       // CRITICAL - Dark red bg, white text
     };
-    static_assert(sizeof(THREAT_BG_COLORS) == sizeof(Color) * 5, "THREAT_BG_COLORS size");
+    static_assert(sizeof(CARD_STYLES) == sizeof(CardStyleConfig) * 5, "CARD_STYLES size");
 };
 
 enum class DisplayMode { SCANNING, ALERT, NORMAL };
@@ -924,7 +940,8 @@ public:
     void initialize_mini_spectrum();
     void process_mini_spectrum_data(const ChannelSpectrum& spectrum);
     bool process_bins(uint8_t* power_level);
-    void render_mini_spectrum();
+
+    void render_bar_spectrum(Painter& painter);
     void highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES>& drones);
     size_t frequency_to_spectrum_bin(Frequency freq_hz) const;
     void clear_spectrum_buffers();
@@ -968,13 +985,25 @@ public:
         RulerStyle::SPACED_GHZ    // 6
     };
 
-    // DIAMOND OPTIMIZATION: constexpr LUT для стилей сигналов (без if-else)
-    static constexpr const Color SIGNAL_TYPE_COLORS[] = {
-        Color::white(),           // Default/Unknown
-        Color(0, 255, 0),        // Digital (Green)
-        Color(255, 255, 0),      // Analog (Yellow)
-        Color(128, 128, 128)     // Noise (Grey)
+    // DIAMOND OPTIMIZATION: enum class для типов сигналов (вместо string comparison)
+    enum class SignalType : uint8_t {
+        DEFAULT = 0,
+        DIGITAL = 1,
+        ANALOG = 2,
+        NOISE = 3
     };
+
+    // DIAMOND OPTIMIZATION: constexpr LUT для типов сигналов (без if-else)
+    static constexpr struct SignalTypeConfig {
+        const char* name;
+        Color color;
+    } SIGNAL_TYPE_CONFIG[] = {
+        {"--",       Color::white()},           // DEFAULT/Unknown
+        {"DIGITAL",  Color(0, 255, 0)},       // Digital (Green)
+        {"ANALOG",   Color(255, 255, 0)},     // Analog (Yellow)
+        {"NOISE",    Color(128, 128, 128)}    // Noise (Grey)
+    };
+    static_assert(sizeof(SIGNAL_TYPE_CONFIG) == sizeof(SignalTypeConfig) * 4, "SIGNAL_TYPE_CONFIG size");
 
     // DIAMOND OPTIMизация: constexpr LUT для цветов big_display (без каскадного if-else)
     static constexpr const Color BIG_DISPLAY_COLORS[] = {
@@ -985,12 +1014,37 @@ public:
         Color(255, 0, 0)         // High+ threat (Red)
     };
 
+    // DIAMOND OPTIMIZATION: конфигурация для bar spectrum (заменяет waterfall)
+    struct BarSpectrumConfig {
+        static constexpr int WATERFALL_Y_START = 81;
+        static constexpr int BAR_HEIGHT_MAX = DroneConstants::MINI_SPECTRUM_HEIGHT;
+        static constexpr uint8_t NOISE_THRESHOLD = 10;
+        static constexpr uint8_t PEAK_SHARPNESS_THRESHOLD = 15; // Баланс: 15 единиц
+
+        // Цвета для bar spectrum (в Flash)
+        static constexpr Color BAR_COLORS[] = {
+            Color(0, 0, 255),        // 0: Wideband/Plateau (WiFi, Video) - Blue
+            Color(255, 0, 0),        // 1: Sharp Peak (Drone Control) - Red
+            Color(128, 128, 128)     // 2: Unknown/Noise - Grey
+        };
+    };
+
     void process_frame_sync();
 
     DroneDisplayController(const DroneDisplayController&) = delete;
     DroneDisplayController& operator=(const DroneDisplayController&) = delete;
 
     static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %-4lddB %c";
+
+    // DIAMOND OPTIMIZATION: constexpr Style для big_display (вместо локальных массивов)
+    static constexpr Style BIG_DISPLAY_STYLES[] = {
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[0]},
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[1]},
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[2]},
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[3]},
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[4]}
+    };
+
     struct SpectrumConfig {
         Frequency min_freq = 2400000000LL;
         Frequency max_freq = 2500000000LL;
@@ -1053,7 +1107,31 @@ private:
 
     void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power);
     void add_spectrum_pixel(uint8_t power);
-    
+
+    // DIAMOND OPTIMIZATION: анализ формы сигнала для bar spectrum (без SpectralAnalyzer)
+    inline size_t get_bar_color_index(size_t x, uint8_t power) const {
+        if (!SafeBufferAccess<uint8_t, 200>::is_valid(spectrum_power_levels_ptr_)) {
+            return 2; // Unknown/Noise (Grey)
+        }
+
+        // Острый пик (narrowband drone control): текущее > соседей на 15+
+        // Широкий сигнал (wideband video/WiFi): все примерно равны
+        const auto& levels = spectrum_power_levels();
+        if (x > 0 && x < levels.size() - 1) {
+            uint8_t prev = levels[x - 1];
+            uint8_t next = levels[x + 1];
+
+            // Логика "Острого пика": текущий ВЫШЕ соседей на 15+ единиц
+            if (power > prev + BarSpectrumConfig::PEAK_SHARPNESS_THRESHOLD &&
+                power > next + BarSpectrumConfig::PEAK_SHARPNESS_THRESHOLD) {
+                return 1; // Sharp Peak (Red)
+            }
+        }
+
+        // Широкий сигнал: Blue
+        return 0; // Wideband (Blue)
+    }
+
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
     void analyze_spectrum_for_threats(const ChannelSpectrum& spectrum);
     Frequency spectrum_bin_to_frequency(size_t bin) const;
