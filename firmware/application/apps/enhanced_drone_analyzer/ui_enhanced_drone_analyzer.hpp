@@ -87,7 +87,7 @@ class TrackedDrone {
 public:
     TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
-                     last_seen(0), rssi(-120), history_index_(0) {
+                     last_seen(0), rssi(-120), rssi_history_{}, timestamp_history_{}, history_index_(0) {
         // Initialize array with "silence" (-120 dBm), not zeros
         std::fill(std::begin(rssi_history_), std::end(rssi_history_), -120);
         std::fill(std::begin(timestamp_history_), std::end(timestamp_history_), 0);
@@ -304,7 +304,7 @@ public:
     static constexpr size_t POOL_SIZE = 2048;
     static constexpr size_t MAX_STRING_LENGTH = 256;
 
-    StringPool() : offset_(0) {
+    StringPool() : pool_{}, offset_(0) {
     }
 
     char* allocate(size_t length) {
