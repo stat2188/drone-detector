@@ -2087,7 +2087,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
     }
 
     // DIAMOND OPTIMIZATION: Use StatusFormatter for unified formatting
-    char buffer[48];
+    char buffer[64];
     StatusFormatter::format_to(buffer, "%s %lu%% C:%lu D:%lu",
                              progress_bar, (unsigned long)progress_percent,
                              (unsigned long)total_cycles, (unsigned long)detections);
@@ -2098,7 +2098,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
     if (detections > 0) {
         set_display_mode(DisplayMode::ALERT);
         // DIAMOND OPTIMIZATION: Use StatusFormatter
-        char alert_buffer[48];
+        char alert_buffer[64];
         StatusFormatter::format_to(alert_buffer, "[!] DETECTED: %lu threats found!",
                                   static_cast<unsigned long>(detections));
         alert_text_.set(alert_buffer);
@@ -2117,7 +2117,7 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
     size_t icon_idx = std::min(static_cast<size_t>(threat), size_t(4));
 
     // DIAMOND OPTIMIZATION: Use StatusFormatter
-    char buffer[48];
+    char buffer[64];
     StatusFormatter::format_to(buffer, "%s ALERT: %zu drones | %s",
                              ALERT_ICONS[icon_idx], total_drones, alert_msg.c_str());
     alert_text_.set(buffer);
@@ -2338,7 +2338,7 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     bool has_detections = (scanner.get_approaching_count() + scanner.get_receding_count() + scanner.get_static_count()) > 0;
 
     if (has_detections) {
-    char summary_buffer[32];
+    char summary_buffer[48];
     const char* threat_name = StringMappings::get_threat_name(static_cast<uint8_t>(max_threat));
         // DIAMOND OPTIMIZATION: Use StatusFormatter
         StatusFormatter::format_to(summary_buffer, "THREAT: %s | <%zu ~%zu >%zu",
@@ -2355,7 +2355,7 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
         text_threat_summary_.set_style(&green_style);
     }
 
-    char status_buffer[32];
+    char status_buffer[48];
     if (scanner.is_scanning_active()) {
         std::string mode_str = scanner.is_real_mode() ? "REAL" : "DEMO";
         // DIAMOND OPTIMIZATION: Use StatusFormatter
@@ -2367,12 +2367,12 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     text_status_info_.set(status_buffer);
 
     size_t loaded_freqs = scanner.get_database_size();
-    char stats_buffer[32];
+    char stats_buffer[48];
     if (scanner.is_scanning_active() && loaded_freqs > 0) {
         size_t current_idx = 0;
         // DIAMOND OPTIMIZATION: Use StatusFormatter
         StatusFormatter::format_to(stats_buffer, "Freq: %zu/%zu | Cycle: %lu",
-                                  current_idx + 1, loaded_freqs,
+                                  current_idx +1, loaded_freqs,
                                   static_cast<unsigned long>(scanner.get_scan_cycles()));
     } else if (loaded_freqs > 0) {
         StatusFormatter::format_to(stats_buffer, "Loaded: %zu frequencies", loaded_freqs);
@@ -2397,7 +2397,7 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
 // ===========================================
 void DroneDisplayController::set_scanning_status(bool active, const std::string& message) {
     // DIAMOND OPTIMIZATION: Use StatusFormatter
-    char buffer[32];
+    char buffer[48];
     if (active) {
         StatusFormatter::format_to(buffer, "SCAN: %s", message.c_str());
         text_status_info_.set(buffer);
@@ -2511,7 +2511,7 @@ void DroneDisplayController::render_drone_text_display() {
     text_drone_3_.set("");
     for (size_t i = 0; i < std::min(displayed_drones_.size(), size_t(3)); ++i) {
         const auto& drone = displayed_drones_[i];
-        char buffer[32];
+        char buffer[64];
 
         // DIAMOND OPTIMIZATION: Use TrendSymbols for O(1) lookup
         char trend_symbol = TrendSymbols::from_trend(static_cast<uint8_t>(drone.trend));
@@ -2530,8 +2530,8 @@ void DroneDisplayController::render_drone_text_display() {
         StatusFormatter::format_to(buffer, DRONE_DISPLAY_FORMAT,
                                  drone.type_name.c_str(),
                                  freq_str.c_str(),
-                                  (long int)drone.rssi,
-                                  trend_symbol);
+                                   (long int)drone.rssi,
+                                   trend_symbol);
 
         // DIAMOND OPTIMизация: хелпер для индексного доступа (строки 2486-2491)
         if (Text* target = drone_text_widget(i)) {
@@ -2693,7 +2693,7 @@ void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency ma
 
 void DroneDisplayController::update_signal_type_display(const std::string& signal_type) {
     // DIAMOND OPTIMIZATION: Use StatusFormatter
-    char buffer[32];
+    char buffer[48];
     StatusFormatter::format_to(buffer, "SIGNAL: %s", signal_type.c_str());
     text_signal_type_.set(buffer);
 
@@ -2701,7 +2701,7 @@ void DroneDisplayController::update_signal_type_display(const std::string& signa
     // Компилятор оптимизирует это в безветвящийся код
     size_t signal_idx = (signal_type == "DIGITAL") ? 1 :
                       (signal_type == "ANALOG") ? 2 :
-                      (signal_type == "NOISE") ? 3 : 0;
+                      (signal_type == "NOISE") ?3 : 0;
 
     // DIAMOND OPTIMIZATION: constexpr LUT вместо локального массива (хранится во Flash)
     static constexpr Style SIGNAL_STYLES[] = {
@@ -2850,7 +2850,7 @@ void DroneUIController::on_save_settings() {
 
 void DroneUIController::on_audio_settings() {
     settings_.enable_audio_alerts = !settings_.enable_audio_alerts;
-    char buffer[32];
+    char buffer[48];
     const char* status = settings_.enable_audio_alerts ? "ENABLED" : "DISABLED";
     strcpy(buffer, "Alerts ");
     strcat(buffer, status);
@@ -2872,7 +2872,7 @@ void DroneUIController::on_hardware_control() {
 
 void DroneUIController::on_set_bandwidth() {
     uint32_t current_bw = hardware_.get_spectrum_bandwidth();
-    char buffer[32];
+    char buffer[48];
     snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)current_bw);
     nav_.display_modal("Set Bandwidth (MHz)", buffer);
 }
@@ -3158,11 +3158,15 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         return;
     }
     
+    // 🔴 SAFETY: Установка флага (для защиты от re-entrancy)
+    initialization_in_progress_ = true;
+    
     // 🔴 SAFETY: Проверка таймаута (защита от зависаний)
     systime_t elapsed = chTimeNow() - init_start_time_;
     if (elapsed > MS2ST(INIT_TIMEOUT_MS)) {
         init_state_ = InitState::INITIALIZATION_ERROR;
         init_error_ = InitError::GENERAL_TIMEOUT;
+        initialization_in_progress_ = false;
         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init timeout!");
         return;
     }
@@ -3185,6 +3189,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
             
             // Если произошла ошибка - выходим
             if (init_state_ == InitState::INITIALIZATION_ERROR) {
+                initialization_in_progress_ = false;
                 return;
             }
             
@@ -3192,6 +3197,9 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
             status_bar_.update_normal_status("INIT", phase.name);
         }
     }
+    
+    // 🔴 SAFETY: Сброс флага (разрешаем повторный вызов)
+    initialization_in_progress_ = false;
 }
 
 // ================================================================
@@ -3401,13 +3409,18 @@ namespace {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
+    // 🔴 SAFETY: Early exit if buffers are not valid
+    if (!display_controller_.are_buffers_valid()) {
+        return;
+    }
+    
     // Early exit if scanner not active
     if (!scanner_.is_scanning_active() &&
         scanner_.get_approaching_count() == 0 &&
         scanner_.get_static_count() == 0 &&
         scanner_.get_receding_count() == 0) {
         const char* primary_msg = "EDA Ready";
-        char secondary_buffer[32];
+        char secondary_buffer[48];
         uint32_t total_detections = scanner_.get_total_detections();
         if (total_detections > 0) {
             StatusFormatter::format_to(secondary_buffer, "Total detections: %lu",
