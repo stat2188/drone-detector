@@ -2020,16 +2020,11 @@ void ThreatCard::clear_card() {
 // DIAMOND OPTIMIZATION: Simplified color logic with DiamondCore threat names
 Color ThreatCard::get_card_bg_color() const {
     if (!is_active_) return Color::black();
-    
-    // Darkened threat colors for card background
-    switch (last_threat_) {
-        case ThreatLevel::CRITICAL: return Color(64, 0, 0);    // Dark red
-        case ThreatLevel::HIGH: return Color(64, 32, 0);    // Dark orange
-        case ThreatLevel::MEDIUM: return Color(32, 32, 0);  // Dark yellow
-        case ThreatLevel::LOW: return Color(0, 32, 0);      // Dark green
-        case ThreatLevel::NONE:
-        default: return Color(0, 0, 64);                // Dark blue
-    }
+
+    // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 2025-2032)
+    size_t threat_idx = (last_threat_ <= ThreatLevel::CRITICAL) ?
+                        static_cast<size_t>(last_threat_) : 0;
+    return THREAT_BG_COLORS[threat_idx];
 }
 
 Color ThreatCard::get_card_text_color() const {
@@ -2187,7 +2182,6 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
        // 🔴 FIX: Initialize pointer members as nullptr (deferred allocation)
        spectrum_row_buffer_ptr_(nullptr),
        render_line_buffer_ptr_(nullptr),
-       waterfall_buffer_ptr_(nullptr),
        spectrum_power_levels_ptr_(nullptr),
        threat_bins_(), threat_bins_count_(0),
        waterfall_line_index_(0),
@@ -2229,10 +2223,9 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
 
 // 🔴 FIX: Deferred buffer allocation to prevent stack overflow
 void DroneDisplayController::allocate_buffers() {
-    if (!waterfall_buffer_ptr_) {
-        waterfall_buffer_ptr_ = std::make_unique<
-            std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>>();
-    }
+    // DIAMOND OPTIMIZATION: waterfall_buffer удалён (не нужен, экономия ~9.6KB RAM)
+    // render_mini_spectrum использует display.scroll() и локальный массив new_line
+
     if (!spectrum_row_buffer_ptr_) {
         spectrum_row_buffer_ptr_ = std::make_unique<
             std::array<Color, SPECTRUM_ROW_SIZE>>();
@@ -2245,12 +2238,13 @@ void DroneDisplayController::allocate_buffers() {
         spectrum_power_levels_ptr_ = std::make_unique<
             std::array<uint8_t, 200>>();
     }
-    
+
     waterfall_line_index_ = 0;
 }
 
 void DroneDisplayController::deallocate_buffers() {
-    waterfall_buffer_ptr_.reset();
+    // DIAMOND OPTIMIZATION: waterfall_buffer удалён (не нужен, экономия ~9.6KB RAM)
+
     spectrum_row_buffer_ptr_.reset();
     render_line_buffer_ptr_.reset();
     spectrum_power_levels_ptr_.reset();
@@ -2322,24 +2316,21 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     }
     text_scanner_stats_.set(stats_buffer);
 
-    // DIAMOND OPTIMIZATION: Unified color/style mapping
-    static Style red_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(4))};
-    static Style yellow_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(2))};
-    static Style orange_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(3))};
-    static Style green_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(1))};
-    static Style dark_style{font::fixed_8x16, Color::black(), Color::dark_grey()};
+    // DIAMOND OPTIMIZATION: constexpr LUT вместо каскадного if-else (строки 3232-3242)
+    size_t color_idx = 0;
+    if (max_threat >= ThreatLevel::HIGH) color_idx = 4;
+    else if (max_threat >= ThreatLevel::MEDIUM) color_idx = 3;
+    else if (has_detections) color_idx = 2;
+    else if (scanner.is_scanning_active()) color_idx = 1;
 
-    if (max_threat >= ThreatLevel::HIGH) {
-        big_display_.set_style(&red_style);
-    } else if (max_threat >= ThreatLevel::MEDIUM) {
-        big_display_.set_style(&yellow_style);
-    } else if (has_detections) {
-        big_display_.set_style(&orange_style);
-    } else if (scanner.is_scanning_active()) {
-        big_display_.set_style(&green_style);
-    } else {
-        big_display_.set_style(&dark_style);
-    }
+    static Style big_display_styles[] = {
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[0]},
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[1]},
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[2]},
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[3]},
+        {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[4]}
+    };
+    big_display_.set_style(&big_display_styles[color_idx]);
 }
 
 // ===========================================
@@ -2479,18 +2470,12 @@ void DroneDisplayController::render_drone_text_display() {
         StatusFormatter::format_to(buffer, DRONE_DISPLAY_FORMAT,
                                  drone.type_name.c_str(),
                                  freq_str.c_str(),
-                                 (long int)drone.rssi,
-                                 trend_symbol);
+                                  (long int)drone.rssi,
+                                  trend_symbol);
 
-        Text* target_text = nullptr;
-        switch(i) {
-            case 0: target_text = &text_drone_1_; break;
-            case 1: target_text = &text_drone_2_; break;
-            case 2: target_text = &text_drone_3_; break;
-            default: break;
-        }
-        if (target_text) {
-            target_text->set(buffer);
+        // DIAMOND OPTIMизация: хелпер для индексного доступа (строки 2486-2491)
+        if (Text* target = drone_text_widget(i)) {
+            target->set(buffer);
         }
     }
 }
@@ -2630,22 +2615,19 @@ void DroneDisplayController::update_signal_type_display(const std::string& signa
     StatusFormatter::format_to(buffer, "SIGNAL: %s", signal_type.c_str());
     text_signal_type_.set(buffer);
 
-    // DIAMOND OPTIMIZATION: Unified style mapping
-    static Style normal_style{font::fixed_8x16, Color::black(), Color::white()};
-    static Style digital_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(1))};
-    static Style analog_style{font::fixed_8x16, Color::black(), Color(ColorMappings::get_threat_color_value(2))};
-    static Style unknown_style{font::fixed_8x16, Color::black(), Color::grey()};
+    // DIAMOND OPTIMIZATION: constexpr LUT вместо if-else (строки 2639-2648)
+    size_t signal_idx = 0;
+    if (signal_type == "DIGITAL") signal_idx = 1;
+    else if (signal_type == "ANALOG") signal_idx = 2;
+    else if (signal_type == "NOISE") signal_idx = 3;
 
-    // NOLINTNEXTLINE(bugprone-branch-clone)
-    if (signal_type == "DIGITAL") {
-        text_signal_type_.set_style(&digital_style);
-    } else if (signal_type == "ANALOG") {
-        text_signal_type_.set_style(&analog_style);
-    } else if (signal_type == "NOISE") {
-        text_signal_type_.set_style(&unknown_style);
-    } else {
-        text_signal_type_.set_style(&normal_style);
-    }
+    static Style signal_styles[] = {
+        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_COLORS[0]},
+        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_COLORS[1]},
+        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_COLORS[2]},
+        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_COLORS[3]}
+    };
+    text_signal_type_.set_style(&signal_styles[signal_idx]);
 
     set_dirty();
 }
@@ -3053,30 +3035,14 @@ bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
 // ===========================================
 
 void EnhancedDroneSpectrumAnalyzerView::update_init_progress_display() {
-    // Update status bar with current initialization phase
-    switch (init_state_) {
-        case InitState::CONSTRUCTED:
-            status_bar_.update_normal_status("INIT", "Starting up...");
-            break;
-        case InitState::BUFFERS_ALLOCATED:
-            status_bar_.update_normal_status("INIT", "Buffers ready");
-            break;
-        case InitState::DATABASE_LOADED:
-            status_bar_.update_normal_status("INIT", "Database ready");
-            break;
-        case InitState::HARDWARE_READY:
-            status_bar_.update_normal_status("INIT", "Hardware ready");
-            break;
-        case InitState::UI_LAYOUT_READY:
-            status_bar_.update_normal_status("INIT", "UI ready");
-            break;
-        case InitState::COORDINATOR_READY:
-            status_bar_.update_normal_status("INIT", "Coordinator ready");
-            break;
-        case InitState::FULLY_INITIALIZED:
-            status_bar_.update_normal_status("EDA Ready", "All systems go");
-            break;
-    }
+    // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 3057-3077)
+    size_t state_idx = static_cast<size_t>(init_state_);
+    size_t title_idx = (state_idx < static_cast<size_t>(InitState::FULLY_INITIALIZED)) ? 0 : 1;
+
+    status_bar_.update_normal_status(
+        INIT_STATUS_TITLES[title_idx],
+        (state_idx < 7) ? INIT_STATUS_MESSAGES[state_idx] : INIT_STATUS_MESSAGES[6]
+    );
 }
 
 void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
@@ -4131,18 +4097,10 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
         if (settings.auto_ruler_style) {
             compact_frequency_ruler_.set_ruler_style(RulerStyle::COMPACT_GHZ);
         } else {
-            RulerStyle style;
-            switch (settings.frequency_ruler_style) {
-                case 0: style = RulerStyle::COMPACT_GHZ; break;
-                case 1: style = RulerStyle::COMPACT_GHZ; break;
-                case 2: style = RulerStyle::COMPACT_MHZ; break;
-                case 3: style = RulerStyle::STANDARD_GHZ; break;
-                case 4: style = RulerStyle::STANDARD_MHZ; break;
-                case 5: style = RulerStyle::DETAILED; break;
-                case 6: style = RulerStyle::SPACED_GHZ; break;  // New SPACED_GHZ
-                default: style = RulerStyle::COMPACT_GHZ; break;
-            }
-            compact_frequency_ruler_.set_ruler_style(style);
+            // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 4135-4144)
+            uint8_t style_idx = (settings.frequency_ruler_style < 7) ?
+                                settings.frequency_ruler_style : 0;
+            compact_frequency_ruler_.set_ruler_style(RULER_STYLE_LUT[style_idx]);
         }
 
         compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);

@@ -20,6 +20,8 @@ using rf::Frequency;
 // Single source of truth for all EDA settings
 // Merged from: EDAUnifiedSettings, EDAAppSettings, DroneAnalyzerSettings, etc.
 // ===========================================
+// DIAMOND OPTIMIZATION: bitfield packing для экономии RAM (смотри settings_bitfields.hpp)
+// bool flags заменены на bitfields в будущем, пока совместимость сохранена
 struct DroneAnalyzerSettings {
     // ===== AUDIO SETTINGS =====
     bool enable_audio_alerts = true;
@@ -33,16 +35,16 @@ struct DroneAnalyzerSettings {
     uint32_t hardware_bandwidth_hz = 24000000;
     bool enable_real_hardware = true;
     bool demo_mode = false;
-    
+
     // IQ Calibration (merged from IQCalibrationSettings)
     bool iq_calibration_enabled = false;
     uint8_t rx_phase_value = 15;
-    
+
     // Amplifier Controls (merged from AmplifierControl)
     uint8_t lna_gain_db = 32;
     uint8_t vga_gain_db = 20;
     bool rf_amp_enabled = false;
-    
+
     // Frequency ranges
     uint64_t user_min_freq_hz = 50000000ULL;
     uint64_t user_max_freq_hz = 6000000000ULL;

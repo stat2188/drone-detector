@@ -747,6 +747,16 @@ private:
     std::string last_threat_name_;
 
     void paint(Painter& painter) override;
+
+    // DIAMOND OPTIMIZATION: constexpr LUT для цветов угроз в Flash
+    static constexpr const Color THREAT_BG_COLORS[] = {
+        Color(0, 0, 64),      // NONE - Dark blue
+        Color(0, 32, 0),      // LOW - Dark green
+        Color(32, 32, 0),     // MEDIUM - Dark yellow
+        Color(64, 32, 0),     // HIGH - Dark orange
+        Color(64, 0, 0)       // CRITICAL - Dark red
+    };
+    static_assert(sizeof(THREAT_BG_COLORS) == sizeof(Color) * 5, "THREAT_BG_COLORS size");
 };
 
 enum class DisplayMode { SCANNING, ALERT, NORMAL };
@@ -870,6 +880,9 @@ public:
     Text& text_drone_2() { return text_drone_2_; }
     Text& text_drone_3() { return text_drone_3_; }
 
+    // DIAMOND OPTIMIZATION: прямой доступ к массиву вместо switch (строки 2486-2491)
+    static constexpr size_t NUM_DRONE_TEXT_WIDGETS = 3;
+
     static constexpr size_t MAX_UI_DRONES = 16;
 
     std::array<DisplayDroneEntry, MAX_UI_DRONES>& detected_drones() {
@@ -908,13 +921,11 @@ public:
     void allocate_buffers();
     void deallocate_buffers();
 
-    // 🔴 FIX: Safe buffer accessors (both const and non-const)
+    // 🔴 FIX: Safe buffer accessors (без waterfall_buffer - не используется)
     std::array<Color, SPECTRUM_ROW_SIZE>& spectrum_row_buffer() { return *spectrum_row_buffer_ptr_; }
     const std::array<Color, SPECTRUM_ROW_SIZE>& spectrum_row_buffer() const { return *spectrum_row_buffer_ptr_; }
     std::array<Color, RENDER_LINE_SIZE>& render_line_buffer() { return *render_line_buffer_ptr_; }
     const std::array<Color, RENDER_LINE_SIZE>& render_line_buffer() const { return *render_line_buffer_ptr_; }
-    std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>& waterfall_buffer() { return *waterfall_buffer_ptr_; }
-    const std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>& waterfall_buffer() const { return *waterfall_buffer_ptr_; }
     std::array<uint8_t, 200>& spectrum_power_levels() { return *spectrum_power_levels_ptr_; }
     const std::array<uint8_t, 200>& spectrum_power_levels() const { return *spectrum_power_levels_ptr_; }
 
@@ -922,6 +933,34 @@ public:
     void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
         spectrum_fifo_ = fifo;
     }
+
+    // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch/if-else (экономия ROM)
+    static constexpr RulerStyle RULER_STYLE_LUT[] = {
+        RulerStyle::COMPACT_GHZ,  // 0
+        RulerStyle::COMPACT_GHZ,  // 1
+        RulerStyle::COMPACT_MHZ,  // 2
+        RulerStyle::STANDARD_GHZ, // 3
+        RulerStyle::STANDARD_MHZ, // 4
+        RulerStyle::DETAILED,     // 5
+        RulerStyle::SPACED_GHZ    // 6
+    };
+
+    // DIAMOND OPTIMIZATION: constexpr LUT для стилей сигналов (без if-else)
+    static constexpr const Color SIGNAL_TYPE_COLORS[] = {
+        Color::white(),           // Default/Unknown
+        Color(0, 255, 0),        // Digital (Green)
+        Color(255, 255, 0),      // Analog (Yellow)
+        Color(128, 128, 128)     // Noise (Grey)
+    };
+
+    // DIAMOND OPTIMизация: constexpr LUT для цветов big_display (без каскадного if-else)
+    static constexpr const Color BIG_DISPLAY_COLORS[] = {
+        Color::dark_grey(),      // Idle/Default
+        Color(0, 255, 0),        // Scanning (Green)
+        Color(255, 165, 0),      // Has detections (Orange)
+        Color(255, 255, 0),      // Medium threat (Yellow)
+        Color(255, 0, 0)         // High+ threat (Red)
+    };
 
     void process_frame_sync();
 
@@ -948,6 +987,12 @@ private:
     Text text_drone_3_{{screen_width - 120, 178, 120, 16}, ""};
     Text text_signal_type_{{screen_width - 80, 80, 80, 16}, "SIGNAL: --"};  // Debug: Signal type marker
 
+    // DIAMOND OPTIMизация: хелпер для индексного доступа к виджетам (без switch)
+    Text* drone_text_widget(size_t index) {
+        static Text* const widgets[] = {&text_drone_1_, &text_drone_2_, &text_drone_3_};
+        return (index < NUM_DRONE_TEXT_WIDGETS) ? widgets[index] : nullptr;
+    }
+
     CompactFrequencyRuler compact_frequency_ruler_{{0, 68, screen_width, 12}};
     FrequencyRuler frequency_ruler_{{0, 68, screen_width, 12}};
 
@@ -955,10 +1000,9 @@ private:
     size_t detected_drones_count_ = 0;
     std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
 
-    // 🔴 FIX: Heap-allocated buffers to prevent stack overflow (saves ~10.8KB stack)
+    // 🔴 FIX: Heap-allocated buffers (waterfall_buffer удалён - не нужен, экономия ~9.6KB RAM)
     std::unique_ptr<std::array<Color, SPECTRUM_ROW_SIZE>> spectrum_row_buffer_ptr_;
     std::unique_ptr<std::array<Color, RENDER_LINE_SIZE>> render_line_buffer_ptr_;
-    std::unique_ptr<std::array<std::array<uint8_t, SPEC_WIDTH>, SPEC_HEIGHT>> waterfall_buffer_ptr_;
     std::unique_ptr<std::array<uint8_t, 200>> spectrum_power_levels_ptr_;
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, DroneConstants::MAX_DISPLAYED_DRONES> threat_bins_;
@@ -1095,6 +1139,21 @@ public:
         UI_LAYOUT_READY,       // 4: initialize_modern_layout() completed
         COORDINATOR_READY,    // 5: coordinator thread creation prepared
         FULLY_INITIALIZED     // 6: Ready for operation
+    };
+
+    // DIAMOND OPTIMIZATION: constexpr LUT для сообщений инициализации в Flash
+    static constexpr const char* const INIT_STATUS_MESSAGES[] = {
+        "Starting up...",      // CONSTRUCTED
+        "Buffers ready",       // BUFFERS_ALLOCATED
+        "Database ready",      // DATABASE_LOADED
+        "Hardware ready",      // HARDWARE_READY
+        "UI ready",            // UI_LAYOUT_READY
+        "Coordinator ready",   // COORDINATOR_READY
+        "All systems go"       // FULLY_INITIALIZED
+    };
+    static constexpr const char* const INIT_STATUS_TITLES[] = {
+        "INIT",               // CONSTRUCTED through COORDINATOR_READY
+        "EDA Ready"           // FULLY_INITIALIZED
     };
 
  private:
