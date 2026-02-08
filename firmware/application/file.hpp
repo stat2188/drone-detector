@@ -84,8 +84,11 @@ struct path {
         : _s{std::move(p._s)} {
     }
 
-    path(const char* const s)
-        : path{reinterpret_cast<const TCHAR*>(s)} {
+    path(const char* const s) {
+        const char* p = s;
+        while (*p) {
+            _s += static_cast<char16_t>(*p++);
+        }
     }
 
     template <class Source>
