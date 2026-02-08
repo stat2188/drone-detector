@@ -54,8 +54,8 @@ struct SettingMetadata {
     const char* key;
     size_t offset;
     uint8_t type;
-    int64_t min_val;  // DIAMOND FIX: int64_t для поддержки отрицательных RSSI и частот > 4GHz
-    int64_t max_val;  // DIAMOND FIX: int64_t для поддержки отрицательных RSSI и частот > 4GHz
+    int64_t min_val;
+    int64_t max_val;
     const char* default_str;
 };
 
@@ -470,22 +470,20 @@ bool SettingsPersistence<T>::validate_setting(const SettingMetadata& meta, uint3
 // ===========================================
 template<typename T>
 bool SettingsPersistence<T>::validate(const T& settings) {
-    // Validate all settings against metadata constraints
     for (size_t i = 0; i < SETTINGS_COUNT; i++) {
         const auto& meta = SETTINGS_LUT[i];
         const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&settings) + meta.offset;
         
         switch (meta.type) {
             case TYPE_BOOL:
-                // Bool always valid
                 break;
             case TYPE_UINT32: {
                 uint32_t val = *reinterpret_cast<const uint32_t*>(data_ptr);
-                if (val < meta.min_val || val > meta.max_val) return false;
+                int32_t val_signed = static_cast<int32_t>(val);
+                if (val_signed < meta.min_val || val_signed > meta.max_val) return false;
                 break;
             }
             case TYPE_INT32: {
-                // Note: int32 validation using uint32 bounds (sign handling needed)
                 int32_t val = *reinterpret_cast<const int32_t*>(data_ptr);
                 int32_t min_val = static_cast<int32_t>(meta.min_val);
                 int32_t max_val = static_cast<int32_t>(meta.max_val);
@@ -494,20 +492,19 @@ bool SettingsPersistence<T>::validate(const T& settings) {
             }
             case TYPE_UINT64: {
                 uint64_t val = *reinterpret_cast<const uint64_t*>(data_ptr);
-                if (val < meta.min_val || val > meta.max_val) return false;
+                if (val > 0x7FFFFFFFFFFFFFFFULL) return false;
+                int64_t val_signed = static_cast<int64_t>(val);
+                if (val_signed < meta.min_val || val_signed > meta.max_val) return false;
                 break;
             }
             case TYPE_STR:
-                // String validation (could add length checks here)
                 if (reinterpret_cast<const std::string*>(data_ptr)->empty()) {
-                    return false;  // Empty strings invalid
+                    return false;
                 }
                 break;
         }
     }
     
-    // Additional cross-field validation
-    // Frequency ranges must be valid
     if (settings.user_min_freq_hz >= settings.user_max_freq_hz) return false;
     if (settings.wideband_min_freq_hz >= settings.wideband_max_freq_hz) return false;
     

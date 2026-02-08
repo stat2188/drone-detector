@@ -226,32 +226,6 @@ struct DroneSignal {
     int32_t rssi_db;
 };
 
-// SimpleDroneValidation - standalone validation class
-// Note: Duplicate logic exists in eda_optimized_utils.hpp but kept for backward compatibility
-class SimpleDroneValidation {
-public:
-    static bool validate_frequency_range(Frequency freq_hz);
-    static ThreatLevel classify_signal_strength(int32_t rssi_db);
-    static DroneType identify_drone_type(const DroneSignal& signal);
-    static DroneType identify_drone_type(Frequency freq_hz, int32_t rssi_db);
-    static bool validate_drone_detection(Frequency freq_hz, int32_t rssi_db,
-                                       DroneType /* type */, ThreatLevel threat);
-    static bool validate_drone_detection(const DroneSignal& signal,
-                                       DroneType type, ThreatLevel threat);
-    static bool validate_rssi_signal(int32_t rssi_db, ThreatLevel threat);
-    
-    static void set_scanning_mode(DroneConstants::ScanningMode mode) {
-        scanning_mode_ = mode;
-    }
-    
-    static DroneConstants::ScanningMode get_scanning_mode() {
-        return scanning_mode_;
-    }
-    
-private:
-    static DroneConstants::ScanningMode scanning_mode_;
-};
-
 // 🔴 NEW: Enhanced Settings Validation with detailed checks
 class EnhancedDroneSettingsValidator {
 public:

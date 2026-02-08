@@ -136,9 +136,6 @@ public:
     static PresetMenuView create_config_updater(DroneAnalyzerSettings& config_to_update);
 };
 
-// Forward declaration - SimpleDroneValidation определен в ui_enhanced_drone_analyzer.hpp
-class SimpleDroneValidation;
-
 struct DroneFrequencyEntry {
     Frequency frequency_hz;
     DroneType drone_type;

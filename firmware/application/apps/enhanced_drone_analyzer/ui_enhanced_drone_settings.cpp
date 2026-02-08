@@ -5,6 +5,8 @@
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "default_drones_db.hpp"
+#include "diamond_core.hpp"
+#include "eda_optimized_utils.hpp"
 #include "file.hpp"
 #include "portapack.hpp"
 #include "string_format.hpp"
@@ -691,7 +693,7 @@ DroneFrequencyEntry::DroneFrequencyEntry(Frequency freq, DroneType type, ThreatL
       rssi_threshold_db(rssi_thresh), bandwidth_hz(bw_hz), description(desc) {}
 
 bool DroneFrequencyEntry::is_valid() const {
-    return SimpleDroneValidation::validate_frequency_range(frequency_hz) &&
+    return DiamondCore::ValidationUtils::validate_frequency(frequency_hz) &&
            rssi_threshold_db >= -120 && rssi_threshold_db <= 0 &&
            bandwidth_hz > 0;
 }

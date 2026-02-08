@@ -56,63 +56,6 @@ const TrackedDrone& get_empty_drone() {
     return empty;
 }
 
-// Static member definition for SimpleDroneValidation
-DroneConstants::ScanningMode SimpleDroneValidation::scanning_mode_ = DroneConstants::ScanningMode::STRICT_DRONE;
-
-// SimpleDroneValidation implementations
-// DIAMOND OPTIMIZATION: Using DiamondCore validation instead of duplicate code
-bool SimpleDroneValidation::validate_frequency_range(Frequency freq_hz) {
-    return DiamondCore::ValidationUtils::validate_frequency(freq_hz);
-}
-
-// DIAMOND OPTIMIZATION: Using DiamondCore RSSI validation
-bool SimpleDroneValidation::validate_rssi_signal(int32_t rssi_db, ThreatLevel threat) {
-    return DiamondCore::RSSIUtils::validate_rssi(rssi_db, static_cast<uint8_t>(threat));
-}
-
-// DIAMOND OPTIMIZATION: Using ThreatClassifier from eda_optimized_utils.hpp
-ThreatLevel SimpleDroneValidation::classify_signal_strength(int32_t rssi_db) {
-    return ThreatClassifier::from_rssi(rssi_db);
-}
-
-// DIAMOND OPTIMIZATION: Using DroneTypeDetector from eda_optimized_utils.hpp
-DroneType SimpleDroneValidation::identify_drone_type(const DroneSignal& signal) {
-    uint8_t type_code = DroneTypeDetector::from_frequency(signal.frequency_hz);
-    return static_cast<DroneType>(type_code);
-}
-
-// DIAMOND OPTIMIZATION: Forward to frequency-only version
-DroneType SimpleDroneValidation::identify_drone_type(Frequency freq_hz, int32_t /* rssi_db */) {
-    uint8_t type_code = DroneTypeDetector::from_frequency(freq_hz);
-    return static_cast<DroneType>(type_code);
-}
-
-// DIAMOND OPTIMIZATION: Using DiamondCore validation with band checking
-bool SimpleDroneValidation::validate_drone_detection(const DroneSignal& signal,
-                                                   DroneType type, ThreatLevel threat) {
-    Frequency freq_hz = signal.frequency_hz;
-    int32_t rssi_db = signal.rssi_db;
-    
-    // Core validation using DiamondCore utilities
-    if (!DiamondCore::ValidationUtils::validate_frequency(freq_hz)) {
-        return false;
-    }
-    
-    if (!DiamondCore::RSSIUtils::validate_rssi(rssi_db, static_cast<uint8_t>(threat))) {
-        return false;
-    }
-    
-    // Type-specific band validation (MAVIC drones in 2.4GHz or 5.8GHz)
-    if (type == DroneType::MAVIC) {
-        if (!DiamondCore::ValidationUtils::is_2_4ghz_band(freq_hz) &&
-            !DiamondCore::ValidationUtils::is_5_8ghz_band(freq_hz)) {
-            return false;
-        }
-    }
-    
-    return true;
-}
-
 // DIAMOND OPTIMIZATION: Deprecated parse_settings_line_inplace removed (~60 lines)
 // Now using SettingsPersistence<T> from settings_persistence.hpp
 // Scott Meyers Item 11: Handle assignment to self in operator=
@@ -833,9 +776,8 @@ void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32
 
 void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                            int32_t /*original_threshold*/, int32_t wideband_threshold) {
-    // 1. Validation (without locks)
-    if (!SimpleDroneValidation::validate_rssi_signal(rssi, ThreatLevel::UNKNOWN) ||
-        !SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
+    if (!DiamondCore::ValidationUtils::validate_rssi(rssi) ||
+        !DiamondCore::ValidationUtils::validate_frequency(entry.frequency_a)) {
         return;
     }
 
@@ -911,8 +853,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
 void DroneScanner::process_spectral_detection(const freqman_entry& entry,
                                              const SpectralAnalysisResult& analysis_result,
                                              ThreatLevel threat_level, DroneType drone_type) {
-    // 1. Validation (without locks)
-    if (!SimpleDroneValidation::validate_frequency_range(entry.frequency_a)) {
+    if (!DiamondCore::ValidationUtils::validate_frequency(entry.frequency_a)) {
         return;
     }
 
@@ -1327,7 +1268,7 @@ void DroneScanner::scan_init_from_loaded_frequencies() {
 }
 
 bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat) {
-    return SimpleDroneValidation::validate_rssi_signal(rssi_db, threat);
+    return DiamondCore::RSSIUtils::validate_rssi(rssi_db, static_cast<uint8_t>(threat));
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
@@ -2760,9 +2701,7 @@ Frequency DroneDisplayController::spectrum_bin_to_frequency(size_t bin) const {
 
 void DroneDisplayController::update_or_create_drone_from_spectrum(Frequency freq_hz, uint8_t power) {
     int32_t rssi = static_cast<int32_t>(power) - 150;
-    ThreatLevel threat = SimpleDroneValidation::classify_signal_strength(rssi);
-    // DIAMOND OPTIMIZATION: Use DroneTypeDetector from eda_optimized_utils.hpp
-    // Note: DroneTypeDetector::from_frequency ignores RSSI (by design)
+    ThreatLevel threat = ThreatClassifier::from_rssi(rssi);
     uint8_t type_code = DroneTypeDetector::from_frequency(freq_hz);
     DroneType type = static_cast<DroneType>(type_code);
     add_detected_drone(freq_hz, type, threat, rssi);

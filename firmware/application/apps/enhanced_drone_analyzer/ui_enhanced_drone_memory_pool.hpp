@@ -37,8 +37,6 @@ public:
     FixedSizeMemoryPool()
         : allocation_count_(0),
           free_count_(PoolSize) {
-        chMtxInit(&mutex_);
-
         for (size_t i = 0; i < PoolSize; ++i) {
             free_list_[i] = reinterpret_cast<T*>(pool_ + i * ELEMENT_SIZE);
         }
