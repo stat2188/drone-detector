@@ -84,11 +84,8 @@ struct path {
         : _s{std::move(p._s)} {
     }
 
-    path(const char* const s) {
-        const char* p = s;
-        while (*p) {
-            _s += static_cast<char16_t>(*p++);
-        }
+    path(const char* const s)
+        : _s{convert_from_char(s)} {
     }
 
     template <class Source>
@@ -165,6 +162,15 @@ struct path {
     path& append_filename(const string_type& str);
 
    private:
+    static string_type convert_from_char(const char* s) {
+        string_type result;
+        const char* p = s;
+        while (*p) {
+            result += static_cast<char16_t>(*p++);
+        }
+        return result;
+    }
+
     string_type _s;
 };
 
