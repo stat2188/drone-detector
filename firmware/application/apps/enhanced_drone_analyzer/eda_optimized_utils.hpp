@@ -405,6 +405,94 @@ struct ThreatClassifier {
     }
 };
 
+// ===========================================
+// TREND SYMBOL LOOKUP
+// ===========================================
+// Eliminates duplicate switch statements for trend symbols
+struct TrendSymbols {
+    static constexpr char SYMBOLS[4] = {
+        '=',  // STATIC (0)
+        '^',  // APPROACHING (1)
+        'v',  // RECEDING (2)
+        '~'   // UNKNOWN (3)
+    };
+
+    static constexpr char from_trend(uint8_t trend) {
+        return (trend < 4) ? SYMBOLS[trend] : SYMBOLS[3];
+    }
+};
+
+// ===========================================
+// SAFE BUFFER ACCESS HELPER
+// ===========================================
+// Eliminates duplicate nullptr checks for heap-allocated buffers
+// Scott Meyers Item 17: Understand special member function generation
+template<typename T, size_t N>
+struct SafeBufferAccess {
+    static constexpr T& get(std::unique_ptr<std::array<T, N>>& ptr, size_t idx, T& fallback) {
+        return ptr ? (*ptr)[idx] : fallback;
+    }
+
+    static constexpr const T& get(const std::unique_ptr<std::array<T, N>>& ptr, size_t idx, const T& fallback) {
+        return ptr ? (*ptr)[idx] : fallback;
+    }
+
+    static constexpr bool is_valid(const std::unique_ptr<std::array<T, N>>& ptr) {
+        return ptr != nullptr;
+    }
+};
+
+// ===========================================
+// STATUS FORMATTING HELPER
+// ===========================================
+// Eliminates repeated snprintf + widget.set patterns
+// Scott Meyers Item 25: Consider support for implicit interfaces
+struct StatusFormatter {
+    template<size_t N, typename... Args>
+    static void format_to(char (&buffer)[N], const char* fmt, Args&&... args) {
+        snprintf(buffer, N, fmt, std::forward<Args>(args)...);
+    }
+
+    template<size_t N>
+    static std::string make_string(const char* fmt, auto&&... args) {
+        char buffer[N];
+        snprintf(buffer, N, fmt, std::forward<decltype(args)>(args)...);
+        return std::string(buffer);
+    }
+};
+
+// ===========================================
+// VALIDATOR ERROR FORMATTER
+// ===========================================
+// Eliminates duplicate error formatting in validators
+struct ValidatorFormatter {
+    static constexpr size_t ERROR_BUFFER_SIZE = 128;
+
+    static std::string out_of_range(const char* name, int64_t value, int64_t min, int64_t max) {
+        char buffer[ERROR_BUFFER_SIZE];
+        snprintf(buffer, ERROR_BUFFER_SIZE, "%s %lld invalid (must be %lld to %lld)",
+                 name, static_cast<long long>(value),
+                 static_cast<long long>(min), static_cast<long long>(max));
+        return buffer;
+    }
+
+    static std::string out_of_range(const char* name, uint64_t value, uint64_t min, uint64_t max) {
+        char buffer[ERROR_BUFFER_SIZE];
+        snprintf(buffer, ERROR_BUFFER_SIZE, "%s %llu invalid (must be %llu to %llu)",
+                 name, static_cast<unsigned long long>(value),
+                 static_cast<unsigned long long>(min), static_cast<unsigned long long>(max));
+        return buffer;
+    }
+
+    static std::string out_of_range(const char* name, int32_t value, int32_t min, int32_t max) {
+        return out_of_range(name, static_cast<int64_t>(value), static_cast<int64_t>(min), static_cast<int64_t>(max));
+    }
+
+    static std::string out_of_range(const char* name, uint32_t value, uint32_t min, uint32_t max) {
+        return out_of_range(name, static_cast<uint64_t>(value), static_cast<uint64_t>(min), static_cast<uint64_t>(max));
+    }
+};
+
 } // namespace ui::apps::enhanced_drone_analyzer
 
 #endif // EDA_OPTIMIZED_UTILS_HPP_

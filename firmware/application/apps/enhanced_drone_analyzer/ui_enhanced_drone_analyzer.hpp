@@ -845,7 +845,9 @@ private:
 
     void draw_frequency_ticks(Painter& painter, const Rect r);
     Frequency calculate_tick_interval();
-    std::string format_frequency_label(Frequency freq, const std::string& unit);
+    // DIAMOND OPTIMIZATION: Changed signature to use tick_interval instead of unit string
+    // Eliminates std::string allocation, uses LUT lookup instead
+    std::string format_frequency_label(Frequency freq, Frequency tick_interval);
 };
 
 class DroneDisplayController : public View {
