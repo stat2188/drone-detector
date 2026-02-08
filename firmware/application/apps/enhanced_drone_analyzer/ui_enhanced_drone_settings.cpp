@@ -1,4 +1,4 @@
-// ui_enhanced_drone_settings.cpp - Unified implementation for Enhanced Drone Analyzer Settings
+// ui_enhanced_drone_settings.cpp - Unified implementation for Enhanced Drone Analyzer Settings / There are the first signs of life The app tries to load the interface but doesn't crash in hard failure mode for 5 minutes.
 
 #include "ui_drone_common_types.hpp"
 #include "settings_persistence.hpp"
