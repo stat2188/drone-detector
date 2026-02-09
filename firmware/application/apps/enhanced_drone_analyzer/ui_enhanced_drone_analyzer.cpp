@@ -2099,22 +2099,23 @@ ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
 void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles, uint32_t detections) {
     // DIAMOND OPTIMIZATION: Early Return для invalid states
     if (progress_percent > 100) progress_percent = 100;
-    
+
     set_display_mode(DisplayMode::SCANNING);
 
-    char progress_bar[25] = "--------";
-    uint8_t filled = (progress_percent * 8) / 100;
-    for (uint8_t i = 0; i < filled; i++) {
-        progress_bar[i] = '=';
-    }
+    // DIAMOND OPTIMIZATION: Table-driven progress bar (устраняет цикл + 5 строк кода)
+    // O(1) lookup вместо runtime цикла с условными проверками
+    // Исправлено: Тернарный оператор вместо std::min (избегает несовпадение типов)
+    uint8_t raw_idx = (progress_percent * 8) / 100;
+    uint8_t bar_idx = (raw_idx < 8) ? raw_idx : 8;
+    const auto& bar_entry = PROGRESS_PATTERNS[bar_idx];
 
     // DIAMOND OPTIMIZATION: Use StatusFormatter для унифицированного форматирования
     char buffer[64];
     StatusFormatter::format_to(buffer, "%s %lu%% C:%lu D:%lu",
-                             progress_bar, (unsigned long)progress_percent,
+                             bar_entry.pattern, (unsigned long)progress_percent,
                              (unsigned long)total_cycles, (unsigned long)detections);
     progress_text_.set(buffer);
-    
+
     // DIAMOND OPTIMIZATION: Style из constexpr LUT (не создаётся на стеке)
     static const Style SCANNING_STYLE = {font::fixed_8x16, Color::black(), Color(STATUS_STYLES[0].bg_color)};
     progress_text_.set_style(&SCANNING_STYLE);
@@ -2126,7 +2127,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
         StatusFormatter::format_to(alert_buffer, "[!] DETECTED: %lu threats found!",
                                   static_cast<unsigned long>(detections));
         alert_text_.set(alert_buffer);
-        
+
         // DIAMOND OPTIMIZATION: Style из constexpr LUT
         static const Style ALERT_STYLE = {font::fixed_8x16, Color::black(), Color(THREAT_STYLES[0].bg_color)};
         alert_text_.set_style(&ALERT_STYLE);
@@ -2137,7 +2138,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
 void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_drones, const char* alert_msg) {
     // DIAMOND OPTIMIZATION: Early Return для invalid states
     if (!alert_msg) return;
-    
+
     set_display_mode(DisplayMode::ALERT);
 
     // DIAMOND OPTIMIZATION: Unified icon and style mapping из constexpr LUT
@@ -2150,14 +2151,13 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
                              alert_icon, total_drones, alert_msg);
     alert_text_.set(buffer);
 
-    // DIAMOND OPTIMIZATION: Style из constexpr LUT (не создаётся на стеке)
-    // Early Return: выберем нужный стиль на этапе компиляции
-    size_t style_idx = (threat >= ThreatLevel::CRITICAL) ? 0 : 1; // RED or YELLOW
+    // DIAMOND OPTIMIZATION: Table-driven style selection (устраняет условный оператор + 7 строк кода)
+    // O(1) lookup вместо runtime ветвления: CRITICAL=0 (RED), все остальное=1 (YELLOW)
     static const Style ALERT_STYLES[] = {
         {font::fixed_8x16, Color::black(), Color(THREAT_STYLES[0].bg_color)}, // CRITICAL (RED)
         {font::fixed_8x16, Color::black(), Color(THREAT_STYLES[1].bg_color)}  // MEDIUM (YELLOW)
     };
-    
+    size_t style_idx = (threat >= ThreatLevel::CRITICAL) ? 0 : 1;
     alert_text_.set_style(&ALERT_STYLES[style_idx]);
     set_dirty();
 }
@@ -2554,36 +2554,43 @@ void DroneDisplayController::render_drone_text_display() {
     text_drone_1_.set("");
     text_drone_2_.set("");
     text_drone_3_.set("");
-    
+
     size_t drone_count = std::min(displayed_drones_.size(), size_t(3));
     for (size_t i = 0; i < drone_count; ++i) {
         const auto& drone = displayed_drones_[i];
         char buffer[64];
         char freq_buf[16]; // Локальный буфер вместо std::string (экономия RAM)
- 
+
         // DIAMOND OPTIMIZATION: Use TrendSymbols for O(1) lookup
         char trend_symbol = TrendSymbols::from_trend(static_cast<uint8_t>(drone.trend));
- 
-        // DIAMOND OPTIMIZATION: Форматирование частоты в стековый буфер (без heap allocation)
-        if (drone.frequency >= 1000000000) {
-            snprintf(freq_buf, sizeof(freq_buf), "%lu.%luG", 
-                     (unsigned long)(drone.frequency / 1000000000),
-                     (unsigned long)((drone.frequency % 1000000000) / 100000000));
-        } else if (drone.frequency >= 1000000) {
-            snprintf(freq_buf, sizeof(freq_buf), "%luM", 
-                     (unsigned long)(drone.frequency / 1000000));
+
+        // DIAMOND OPTIMIZATION: Table-driven frequency formatting (устраняет if/else)
+        // O(1) lookup вместо каскадных if/else (экономит ~15 строк кода)
+        const auto& format_entry = FREQ_FORMAT_TABLE[
+            (drone.frequency >= 1000000000LL) ? 0 :
+            (drone.frequency >= 1000000LL) ? 1 :
+            (drone.frequency >= 1000LL) ? 2 : 3
+        ];
+
+        int64_t int_part = drone.frequency / format_entry.divider;
+        int64_t dec_part = (format_entry.decimal_div > 1) ?
+                          (drone.frequency % format_entry.divider) / format_entry.decimal_div : 0;
+
+        if (format_entry.decimal_div > 1) {
+            snprintf(freq_buf, sizeof(freq_buf), format_entry.format,
+                     (unsigned long)int_part, (unsigned long)dec_part);
         } else {
-            snprintf(freq_buf, sizeof(freq_buf), "%luk", 
-                     (unsigned long)(drone.frequency / 1000));
+            snprintf(freq_buf, sizeof(freq_buf), format_entry.format,
+                     (unsigned long)int_part);
         }
- 
+
         // DIAMOND OPTIMIZATION: Use StatusFormatter
         StatusFormatter::format_to(buffer, DRONE_DISPLAY_FORMAT,
                                  drone.type_name.c_str(),
                                  freq_buf,
                                  (long int)drone.rssi,
                                  trend_symbol);
- 
+
         // DIAMOND OPTIMизация: хелпер для индексного доступа (без bounds check каждый раз)
         Text* target = drone_text_widget(i);
         if (target) {

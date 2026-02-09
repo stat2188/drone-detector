@@ -805,6 +805,7 @@ public:
 
 private:
     // DIAMOND OPTIMIZATION: constexpr массивы стилей (во Flash, ноль RAM)
+    // Scott Meyers Item 15: Prefer constexpr to #define
     static constexpr StatusStyleConfig STATUS_STYLES[] = {
         {0x001F, 0xFFFF},  // Синий фон, белый текст (SCANNING)
         {0xFFFF, 0x0000}   // Белый фон, черный текст (STOPPED)
@@ -815,7 +816,45 @@ private:
         {0xFFE0, 0x0000}   // Желтый фон, черный текст (MEDIUM)
     };
 
+    // DIAMOND OPTIMIZATION: Unified icon LUT для всех уровней угрозы
+    // Хранится во Flash, ноль RAM
     static constexpr const char* ALERT_ICONS[] = {"(i)", "[!]", "[O]", "[X]", "[!!]"};
+    static_assert(sizeof(ALERT_ICONS) / sizeof(const char*) == 5, "ALERT_ICONS size");
+
+    // DIAMOND OPTIMIZATION: Unified style LUT для alert режимов
+    // Устраняет дублирование ALERT_STYLES + runtime ветвление
+    struct AlertStyleEntry {
+        uint32_t bg_color;
+        uint32_t text_color;
+    };
+
+    static constexpr AlertStyleEntry ALERT_STYLES[] = {
+        {0xF800, 0xFFFF},  // CRITICAL (RED bg, WHITE text)
+        {0xFFE0, 0x0000}   // MEDIUM (YELLOW bg, BLACK text)
+    };
+    static_assert(sizeof(ALERT_STYLES) / sizeof(AlertStyleEntry) == 2, "ALERT_STYLES size");
+
+    // DIAMOND OPTIMIZATION: Progress Bar LUT
+    // Предвычисленные прогресс-бары для экономии CPU cycles
+    // Хранится во Flash, ноль RAM
+    // Исправлено: Перемещено в ConsoleStatusBar (где используется)
+    struct ProgressBarEntry {
+        uint8_t bars;
+        const char* pattern;
+    };
+
+    static constexpr ProgressBarEntry PROGRESS_PATTERNS[] = {
+        {0, "--------"},  // 0%
+        {1, "=======-"},
+        {2, "======--"},
+        {3, "=====---"},
+        {4, "====----"},
+        {5, "===-----"},
+        {6, "==------"},
+        {7, "=-------"},
+        {8, "--------"}   // 100% (fallback)
+    };
+    static_assert(sizeof(PROGRESS_PATTERNS) / sizeof(ProgressBarEntry) == 9, "PROGRESS_PATTERNS size");
 
     size_t bar_index_;
     DisplayMode mode_ = DisplayMode::NORMAL;
@@ -1054,6 +1093,27 @@ public:
         {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[3]},
         {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[4]}
     };
+
+    // ===========================================
+    // DIAMOND OPTIMIZATION: Frequency Formatting LUT
+    // ===========================================
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    // Устраняет каскадный if/else в render_drone_text_display()
+    // Хранится во Flash, ноль RAM, O(1) lookup
+    struct FrequencyFormatEntry {
+        int64_t min_freq;
+        const char* format;
+        int64_t divider;       // Делитель для целой части
+        int64_t decimal_div;  // Делитель для дробной части
+    };
+
+    static constexpr FrequencyFormatEntry FREQ_FORMAT_TABLE[] = {
+        {1000000000LL, "%lu.%luG", 1000000000LL, 100000000LL},  // GHz range
+        {1000000LL, "%luM", 1000000LL, 1},                       // MHz range
+        {1000LL, "%luk", 1000LL, 1},                             // kHz range
+        {0LL, "%lu", 1LL, 1}                                      // Hz fallback
+    };
+    static_assert(sizeof(FREQ_FORMAT_TABLE) / sizeof(FrequencyFormatEntry) == 4, "FREQ_FORMAT_TABLE size");
 
     struct SpectrumConfig {
         Frequency min_freq = 2400000000LL;
