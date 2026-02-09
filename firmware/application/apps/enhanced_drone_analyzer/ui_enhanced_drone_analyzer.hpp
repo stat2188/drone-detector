@@ -1236,6 +1236,9 @@ public:
     void on_show() override;
     void on_hide() override;
 
+    // ===========================================
+    // INITIALIZATION STATE
+    // ===========================================
     // 🔴 ФАЗА 2.1: Deferred initialization state machine
     enum class InitState : uint8_t {
         CONSTRUCTED = 0,           // Constructor completed
@@ -1244,24 +1247,38 @@ public:
         HARDWARE_READY,            // hardware_.on_hardware_show() completed
         UI_LAYOUT_READY,           // initialize_modern_layout() completed
         SETTINGS_LOADED,           // SettingsPersistence::load() completed
-        COORDINATOR_READY,         // coordinator thread creation prepared
-        FULLY_INITIALIZED = 7,     // Ready for operation
-        INITIALIZATION_ERROR = 8   // Timeout or critical error (NEW!)
-    };
+         COORDINATOR_READY,         // coordinator thread creation prepared
+         FULLY_INITIALIZED = 7,     // Ready for operation
+         INITIALIZATION_ERROR = 8   // Timeout or critical error (NEW!)
+     };
 
-    // 🔴 DIAMOND OPTIMIZATION: Initialization timeout constants
-    static constexpr uint32_t INIT_TIMEOUT_MS = 5000;  // 5 секунд на всю инициализацию
-    static constexpr uint8_t MAX_INIT_PHASES = 6;
-
+ private:
     // 🔴 DIAMOND OPTIMIZATION: Forward declarations for phase initialization methods
     // Scott Meyers Item 11: Handle assignment to self in operator=
-    // Эти методы объявлены здесь для использования в constexpr LUT
+    // These methods declared here for use in constexpr LUT
     void init_phase_allocate_buffers();
     void init_phase_load_database();
     void init_phase_init_hardware();
     void init_phase_setup_ui();
     void init_phase_load_settings();
     void init_phase_finalize();
+
+    // ===========================================
+    // INITIALIZATION TIMING CONSTANTS
+    // ===========================================
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    // Eliminates magic numbers, improves maintainability
+    struct InitTiming {
+        static constexpr uint32_t TIMEOUT_MS = 5000;           // 5 seconds for total initialization
+        static constexpr uint32_t PHASE_INTERVAL_MS = 50;       // Base interval between phases
+        static constexpr uint32_t PHASE_DELAY_1_MS = 50;      // Phase 1: Buffer allocation
+        static constexpr uint32_t PHASE_DELAY_2_MS = 100;     // Phase 2: Database loading
+        static constexpr uint32_t PHASE_DELAY_3_MS = 200;     // Phase 3: Hardware init
+        static constexpr uint32_t PHASE_DELAY_4_MS = 300;     // Phase 4: UI setup
+        static constexpr uint32_t PHASE_DELAY_5_MS = 400;     // Phase 5: Settings loading
+        static constexpr uint32_t PHASE_DELAY_6_MS = 500;     // Phase 6: Finalization
+        static constexpr uint8_t MAX_PHASES = 6;
+    };
 
     // DIAMOND OPTIMIZATION: constexpr LUT для сообщений инициализации в Flash
     static constexpr const char* const INIT_STATUS_MESSAGES[] = {
@@ -1276,27 +1293,33 @@ public:
     };
     static constexpr const char* const INIT_STATUS_TITLES[] = {
         "INIT",               // CONSTRUCTED through COORDINATOR_READY (0-6)
-        "EDA Ready"           // FULLY_INITIALIZED (7)
+        "EDA Ready"           // FULLY_INITIALIZED = 7
     };
-    
+
     // 🔴 DIAMOND OPTIMIZATION: constexpr LUT для фаз инициализации (хранится во Flash)
     // Scott Meyers Item 15: Prefer constexpr to #define
+    // Phase dependencies documented:
+    //   Phase 0 (Allocate): No dependencies
+    //   Phase 1 (Database):  Requires Phase 0 (buffers)
+    //   Phase 2 (Hardware):  Requires Phase 1 (database)
+    //   Phase 3 (UI Setup):   Requires Phase 2 (hardware)
+    //   Phase 4 (Settings):   Requires Phase 3 (UI layout)
+    //   Phase 5 (Finalize):   Requires Phase 4 (settings)
     struct InitPhaseConfig {
         const char* const name;           // Строка во Flash (const char*)
         uint32_t delay_ms;               // Задержка в мс
         void (EnhancedDroneSpectrumAnalyzerView::*init_func)();  // Сырой указатель на метод
     };
-    
+
     static constexpr InitPhaseConfig INIT_PHASES[] = {
-        {"Allocating buffers...",   50,  &EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers},
-        {"Loading database...",     100, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_database},
-        {"Initializing hardware...", 200, &EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware},
-        {"Setting up UI...",        300, &EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui},
-        {"Loading settings...",     400, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings},
-        {"Finalizing...",           500, &EnhancedDroneSpectrumAnalyzerView::init_phase_finalize}
+        {"Allocating buffers...",   InitTiming::PHASE_DELAY_1_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers},
+        {"Loading database...",     InitTiming::PHASE_DELAY_2_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_database},
+        {"Initializing hardware...", InitTiming::PHASE_DELAY_3_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware},
+        {"Setting up UI...",        InitTiming::PHASE_DELAY_4_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui},
+        {"Loading settings...",     InitTiming::PHASE_DELAY_5_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings},
+        {"Finalizing...",           InitTiming::PHASE_DELAY_6_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_finalize}
     };
-    static_assert(sizeof(INIT_PHASES) / sizeof(InitPhaseConfig) == 6, "INIT_PHASES size");
-    
+
     // 🔴 DIAMOND OPTIMIZATION: constexpr массив для сообщений об ошибках (Flash)
     static constexpr const char* const ERROR_MESSAGES[] = {
         "Init timeout",      // GENERAL_TIMEOUT = 0
@@ -1308,9 +1331,28 @@ public:
  private:
     NavigationView& nav_;
 
-    // CRITICAL FIX: settings_ MUST be declared BEFORE all members that use it
-    // C++ initialization order: members are initialized in declaration order, not init-list order
+    // ===========================================
+    // MEMBER DECLARATION ORDER (CRITICAL)
+    // ===========================================
     // Scott Meyers Effective C++ Item 12: Never change the order of member initialization
+    // C++ initialization order: members are initialized in DECLARATION order, NOT init-list order
+    //
+    // Dependencies:
+    //   settings_               - No dependencies (declared first)
+    //   hardware_               - No dependencies
+    //   scanner_                - Depends on settings_
+    //   audio_                  - No dependencies
+    //   display_controller_      - No dependencies
+    //   ui_controller_           - Depends on hardware_, scanner_, audio_, display_controller_
+    //   scanning_coordinator_   - Depends on hardware_, scanner_, display_controller_, audio_
+    //   smart_header_            - No dependencies
+    //   status_bar_              - No dependencies
+    //   threat_cards_            - No dependencies
+    //   button_*                 - No dependencies (initialized in constructor)
+    //   field_scanning_mode_     - No dependencies (initialized in constructor)
+    //   scanning_active_         - No dependencies (initialized last)
+    // ===========================================
+
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
     // Stack-allocated objects following Mayhem pattern
@@ -1328,9 +1370,9 @@ public:
 
     Button button_start_stop_;
     Button button_menu_;
-    Button button_audio_{ { screen_width - 160, screen_height - 72, 72, 32 }, "AUDIO: OFF" };
+    Button button_audio_;
 
-    OptionsField field_scanning_mode_{{10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}};
+    OptionsField field_scanning_mode_;
 
     bool scanning_active_ = false;
 

@@ -3045,7 +3045,8 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       threat_cards_(),
       button_start_stop_({screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"),
       button_menu_({screen_width - 80, screen_height - 40, 72, 32}, "MENU"),
-
+      button_audio_({screen_width - 160, screen_height - 72, 72, 32}, "AUDIO: OFF"),
+      field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
       scanning_active_(false)
 {
     // 🔴 ФАЗА 2.8: МИНИМАЛЬНЫЙ конструктор
@@ -3158,16 +3159,16 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
     
     // 🔴 SAFETY: Проверка таймаута (защита от зависаний)
     systime_t elapsed = chTimeNow() - init_start_time_;
-    if (elapsed > MS2ST(INIT_TIMEOUT_MS)) {
+    if (elapsed > MS2ST(InitTiming::TIMEOUT_MS)) {
         init_state_ = InitState::INITIALIZATION_ERROR;
         init_error_ = InitError::GENERAL_TIMEOUT;
         initialization_in_progress_ = false;
         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init timeout!");
         return;
     }
-    
+
     // 🟢 MAIN LOOP: Проходим по фазам инициализации
-    for (uint8_t i = 0; i < MAX_INIT_PHASES; ++i) {
+    for (uint8_t i = 0; i < InitTiming::MAX_PHASES; ++i) {
         // DIAMOND OPTIMIZATION: LUT lookup вместо switch (O(1) lookup)
         const auto& phase = INIT_PHASES[i];
         
