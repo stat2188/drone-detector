@@ -735,20 +735,42 @@ HardwareSettingsView::HardwareSettingsView(NavigationView& nav) : nav_(nav) {
     load_current_settings();
 }
 void HardwareSettingsView::focus() { button_save_.focus(); }
+// DIAMOND OPTIMIZATION: constexpr LUT для SpectrumMode → index conversion
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Экономия RAM: LUT хранится во Flash, ноль heap allocation
+// Ускорение: O(1) lookup вместо 5-branch switch
+static constexpr uint8_t SPECTRUM_MODE_TO_INDEX_LUT[] = {
+    0,  // ULTRA_NARROW = 0
+    1,  // NARROW = 1
+    2,  // MEDIUM = 2
+    3,  // WIDE = 3
+    4   // ULTRA_WIDE = 4
+};
+static_assert(sizeof(SPECTRUM_MODE_TO_INDEX_LUT) == 5, "SPECTRUM_MODE_TO_INDEX_LUT size");
+
+// DIAMOND OPTIMIZATION: constexpr LUT для index → SpectrumMode conversion
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Экономия RAM: LUT хранится во Flash, ноль heap allocation
+// Ускорение: O(1) lookup вместо 5-branch switch
+static constexpr SpectrumMode INDEX_TO_SPECTRUM_MODE_LUT[] = {
+    SpectrumMode::ULTRA_NARROW,  // index 0
+    SpectrumMode::NARROW,        // index 1
+    SpectrumMode::MEDIUM,         // index 2
+    SpectrumMode::WIDE,           // index 3
+    SpectrumMode::ULTRA_WIDE      // index 4
+};
+static_assert(sizeof(INDEX_TO_SPECTRUM_MODE_LUT) / sizeof(SpectrumMode) == 5, "INDEX_TO_SPECTRUM_MODE_LUT size");
+
 void HardwareSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     checkbox_real_hardware_.set_value(settings.enable_real_hardware);
-    size_t mode_idx = 2;
-    switch (settings.spectrum_mode) {
-        case SpectrumMode::ULTRA_NARROW: mode_idx = 0; break;
-        case SpectrumMode::NARROW: mode_idx = 1; break;
-        case SpectrumMode::MEDIUM: mode_idx = 2; break;
-        case SpectrumMode::WIDE: mode_idx = 3; break;
-        case SpectrumMode::ULTRA_WIDE: mode_idx = 4; break;
-        default: mode_idx = 2; break;
-    }
-    field_spectrum_mode_.set_selected_index(mode_idx);
+    
+    // DIAMOND OPTIMIZATION: LUT lookup вместо switch (O(1) lookup)
+    uint8_t mode_idx = static_cast<uint8_t>(settings.spectrum_mode);
+    if (mode_idx >= 5) mode_idx = 2;  // Fallback to MEDIUM
+    
+    field_spectrum_mode_.set_selected_index(SPECTRUM_MODE_TO_INDEX_LUT[mode_idx]);
     number_bandwidth_.set_value(settings.hardware_bandwidth_hz);
     number_min_freq_.set_value(settings.user_min_freq_hz);
     number_max_freq_.set_value(settings.user_max_freq_hz);
@@ -759,13 +781,15 @@ void HardwareSettingsView::save_current_settings() {
     settings.enable_real_hardware = checkbox_real_hardware_.value();
     settings.demo_mode = !checkbox_real_hardware_.value();
     size_t mode_idx = field_spectrum_mode_.selected_index();
-    switch (mode_idx) {
-        case 0: settings.spectrum_mode = SpectrumMode::ULTRA_NARROW; break;
-        case 1: settings.spectrum_mode = SpectrumMode::NARROW; break;
-        case 2: settings.spectrum_mode = SpectrumMode::MEDIUM; break;
-        case 3: settings.spectrum_mode = SpectrumMode::WIDE; break;
-        case 4: settings.spectrum_mode = SpectrumMode::ULTRA_WIDE; break;
+    
+    // DIAMOND OPTIMIZATION: LUT lookup вместо switch (O(1) lookup)
+    // Защита от выхода за пределы массива
+    if (mode_idx < 5) {
+        settings.spectrum_mode = INDEX_TO_SPECTRUM_MODE_LUT[mode_idx];
+    } else {
+        settings.spectrum_mode = SpectrumMode::MEDIUM;  // Fallback
     }
+    
     settings.hardware_bandwidth_hz = number_bandwidth_.value();
     settings.user_min_freq_hz = number_min_freq_.value();
     settings.user_max_freq_hz = number_max_freq_.value();

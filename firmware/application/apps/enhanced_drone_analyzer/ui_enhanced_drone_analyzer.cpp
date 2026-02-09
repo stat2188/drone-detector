@@ -2375,10 +2375,12 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
 
     char status_buffer[48];
     if (scanner.is_scanning_active()) {
-        std::string mode_str = scanner.is_real_mode() ? "REAL" : "DEMO";
-        // DIAMOND OPTIMIZATION: Use StatusFormatter
+        // DIAMOND OPTIMIZATION: const char* вместо std::string (экономия RAM)
+        // Scott Meyers Item 1: View C++ as a federation of languages
+        // const char* указывает на Flash, std::string выделяет RAM
+        const char* mode_str = scanner.is_real_mode() ? "REAL" : "DEMO";
         StatusFormatter::format_to(status_buffer, "%s - Detections: %lu",
-                                  mode_str.c_str(), static_cast<unsigned long>(scanner.get_total_detections()));
+                                  mode_str, static_cast<unsigned long>(scanner.get_total_detections()));
     } else {
         StatusFormatter::format_to(status_buffer, "Ready - Enhanced Drone Analyzer");
     }
