@@ -1981,31 +1981,6 @@ void SmartThreatHeader::paint(Painter& painter) {
     painter.draw_string(text_pos, style, last_text_);
 }
 
-Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
-    (void)level;  // Suppress unused parameter warning
-    return Color::white();  // Always white text on colored backgrounds
-}
-
-const char* SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
-    return DiamondCore::ThreatUtils::name(static_cast<uint8_t>(level));
-}
-
-void SmartThreatHeader::paint(Painter& painter) {
-    // 1. Fill the entire background with threat color
-    Color bg_color = get_threat_bar_color(last_threat_);
-    painter.fill_rectangle(screen_rect(), bg_color);
-
-    // 2. Draw large centered text with white color on colored background
-    // Calculate centered position
-    const int text_width = last_text_.length() * 8; // fixed_8x16 is 8px per char
-    const int text_height = 16;
-    const int center_x = (screen_width - text_width) / 2;
-    const int center_y = (60 - text_height) / 2; // Header height is 60px
-    Point text_pos = {center_x, center_y};
-    auto style = Style{font::fixed_8x16, bg_color, Color::white()};
-    painter.draw_string(text_pos, style, last_text_);
-}
-
 ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
     : View(parent_rect), card_index_(card_index),
       parent_rect_(parent_rect), is_active_(false), // <--- ПЕРЕМЕЩЕНО СЮДА (после parent_rect_, перед last_frequency_)
