@@ -800,20 +800,42 @@ private:
 
 enum class DisplayMode : uint8_t { SCANNING = 0, ALERT = 1, NORMAL = 2 };
 
+// DIAMOND OPTIMIZATION: constexpr Style LUTs для ConsoleStatusBar (хранятся во Flash)
+// Scott Meyers Item 15: Prefer constexpr to #define
+struct StatusStyleConfig {
+    uint32_t bg_color;
+    uint32_t text_color;
+};
+
 class ConsoleStatusBar : public View {
 public:
     explicit ConsoleStatusBar(size_t bar_index = 0, Rect parent_rect = {0, 0, screen_width, 16});
     ~ConsoleStatusBar() = default;
 
+    // DIAMOND OPTIMIZATION: const char* вместо const std::string& для экономии RAM
+    // Scott Meyers Item 1: View C++ as a federation of languages
     void update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles = 0, uint32_t detections = 0);
-    void update_alert_status(ThreatLevel threat, size_t total_drones, const std::string& alert_msg);
-    void update_normal_status(const std::string& primary, const std::string& secondary);
+    void update_alert_status(ThreatLevel threat, size_t total_drones, const char* alert_msg);
+    void update_normal_status(const char* primary, const char* secondary);
     void set_display_mode(DisplayMode mode);
 
     ConsoleStatusBar(const ConsoleStatusBar&) = delete;
     ConsoleStatusBar& operator=(const ConsoleStatusBar&) = delete;
 
 private:
+    // DIAMOND OPTIMIZATION: constexpr массивы стилей (во Flash, ноль RAM)
+    static constexpr StatusStyleConfig STATUS_STYLES[] = {
+        {0x001F, 0xFFFF},  // Синий фон, белый текст (SCANNING)
+        {0xFFFF, 0x0000}   // Белый фон, черный текст (STOPPED)
+    };
+
+    static constexpr StatusStyleConfig THREAT_STYLES[] = {
+        {0xF800, 0xFFFF},  // Красный фон, белый текст (CRITICAL)
+        {0xFFE0, 0x0000}   // Желтый фон, черный текст (MEDIUM)
+    };
+
+    static constexpr const char* ALERT_ICONS[] = {"(i)", "[!]", "[O]", "[X]", "[!!]"};
+
     size_t bar_index_;
     DisplayMode mode_ = DisplayMode::NORMAL;
     Rect parent_rect_;
@@ -930,7 +952,8 @@ public:
 
     void update_detection_display(const DroneScanner& scanner);
     void update_trends_display(size_t approaching, size_t static_count, size_t receding);
-    void set_scanning_status(bool active, const std::string& message);
+    // DIAMOND OPTIMIZATION: const char* вместо const std::string& для экономии RAM
+    void set_scanning_status(bool active, const char* message);
     void set_frequency_display(Frequency freq);
     void add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi);
     void update_drones_display(const DroneScanner& scanner);
@@ -949,7 +972,8 @@ public:
     size_t get_safe_spectrum_index(size_t x, size_t y) const;
 
     void set_spectrum_range(Frequency min_freq, Frequency max_freq);
-    void update_signal_type_display(const std::string& signal_type);
+    // DIAMOND OPTIMIZATION: const char* вместо const std::string& для экономии RAM
+    void update_signal_type_display(const char* signal_type);
     void update_frequency_ruler();
     void lazy_initialize_gradient();  // CRITICAL FIX: Prevent blocking I/O on startup
     void set_ruler_style(RulerStyle style);

@@ -140,17 +140,25 @@ enum class Language : uint8_t {
     RUSSIAN = 1
 };
 
+// DIAMOND OPTIMIZATION: constexpr LUTs вместо std::string сравнений
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Экономия RAM: все строки хранятся во Flash, ноль heap allocation
+struct TranslationEntry {
+    const char* key;
+    const char* value;
+};
+
 class Translator {
 public:
     static void set_language(Language lang);
     static Language get_language();
-    static const char* translate(const std::string& key);
-    static const char* get_translation(const std::string& key);
+    static const char* translate(const char* key);
+    static const char* get_translation(const char* key);
 
 private:
     static Language current_language_;
-    static const char* get_english(const std::string& key);
-    static const char* get_russian(const std::string& key);
+    static const char* get_english(const char* key);
+    static const char* get_russian(const char* key);
 };
 
 struct DronePreset {

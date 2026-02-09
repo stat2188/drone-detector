@@ -2023,9 +2023,9 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
                              (unsigned long)mhz, (long)drone.rssi);
     card_text_.set(buffer);
     
-    // Only change color if threat level changed to avoid unnecessary redraws
-    static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
-    card_text_.set_style(&light_style);
+    // DIAMOND OPTIMIZATION: статический стиль (не создаётся на стеке каждый вызов)
+    static const Style CARD_STYLE = {font::fixed_8x16, Color::black(), Color::white()};
+    card_text_.set_style(&CARD_STYLE);
     
     set_dirty(); // Only call set_dirty() when content actually changes
 }
@@ -2078,6 +2078,9 @@ ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
 }
 
 void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles, uint32_t detections) {
+    // DIAMOND OPTIMIZATION: Early Return для invalid states
+    if (progress_percent > 100) progress_percent = 100;
+    
     set_display_mode(DisplayMode::SCANNING);
 
     char progress_bar[25] = "--------";
@@ -2086,14 +2089,16 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
         progress_bar[i] = '=';
     }
 
-    // DIAMOND OPTIMIZATION: Use StatusFormatter for unified formatting
+    // DIAMOND OPTIMIZATION: Use StatusFormatter для унифицированного форматирования
     char buffer[64];
     StatusFormatter::format_to(buffer, "%s %lu%% C:%lu D:%lu",
                              progress_bar, (unsigned long)progress_percent,
                              (unsigned long)total_cycles, (unsigned long)detections);
     progress_text_.set(buffer);
-    static Style blue_style{font::fixed_8x16, Color::black(), Color::blue()};
-    progress_text_.set_style(&blue_style);
+    
+    // DIAMOND OPTIMIZATION: Style из constexpr LUT (не создаётся на стеке)
+    static const Style SCANNING_STYLE = {font::fixed_8x16, Color::black(), Color(STATUS_STYLES[0].bg_color)};
+    progress_text_.set_style(&SCANNING_STYLE);
 
     if (detections > 0) {
         set_display_mode(DisplayMode::ALERT);
@@ -2102,64 +2107,82 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
         StatusFormatter::format_to(alert_buffer, "[!] DETECTED: %lu threats found!",
                                   static_cast<unsigned long>(detections));
         alert_text_.set(alert_buffer);
-        // DIAMOND OPTIMIZATION: Use Color::red() instead of RGB565
-        static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
-        alert_text_.set_style(&red_style);
+        
+        // DIAMOND OPTIMIZATION: Style из constexpr LUT
+        static const Style ALERT_STYLE = {font::fixed_8x16, Color::black(), Color(THREAT_STYLES[0].bg_color)};
+        alert_text_.set_style(&ALERT_STYLE);
     }
     set_dirty();
 }
 
-void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_drones, const std::string& alert_msg) {
+void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_drones, const char* alert_msg) {
+    // DIAMOND OPTIMIZATION: Early Return для invalid states
+    if (!alert_msg) return;
+    
     set_display_mode(DisplayMode::ALERT);
 
-    // DIAMOND OPTIMIZATION: Unified icon and style mapping
-    static constexpr const char* const ALERT_ICONS[5] = {"(i)", "[!]", "[O]", "[X]", "[!!!"};
+    // DIAMOND OPTIMIZATION: Unified icon and style mapping из constexpr LUT
     size_t icon_idx = std::min(static_cast<size_t>(threat), size_t(4));
+    const char* alert_icon = ALERT_ICONS[icon_idx];
 
     // DIAMOND OPTIMIZATION: Use StatusFormatter
     char buffer[64];
     StatusFormatter::format_to(buffer, "%s ALERT: %zu drones | %s",
-                             ALERT_ICONS[icon_idx], total_drones, alert_msg.c_str());
+                             alert_icon, total_drones, alert_msg);
     alert_text_.set(buffer);
 
-    // DIAMOND OPTIMIZATION: Use Color::red() and Color::yellow()
-    static Style red_style{font::fixed_8x16, Color::black(), Color::red()};      // Red (CRITICAL)
-    static Style yellow_style{font::fixed_8x16, Color::black(), Color::yellow()}; // Yellow (MEDIUM)
-
-    alert_text_.set_style(threat >= ThreatLevel::CRITICAL ? &red_style : &yellow_style);
+    // DIAMOND OPTIMIZATION: Style из constexpr LUT (не создаётся на стеке)
+    // Early Return: выберем нужный стиль на этапе компиляции
+    size_t style_idx = (threat >= ThreatLevel::CRITICAL) ? 0 : 1; // RED or YELLOW
+    static const Style ALERT_STYLES[] = {
+        {font::fixed_8x16, Color::black(), Color(THREAT_STYLES[0].bg_color)}, // CRITICAL (RED)
+        {font::fixed_8x16, Color::black(), Color(THREAT_STYLES[1].bg_color)}  // MEDIUM (YELLOW)
+    };
+    
+    alert_text_.set_style(&ALERT_STYLES[style_idx]);
     set_dirty();
 }
 
-void ConsoleStatusBar::update_normal_status(const std::string& primary, const std::string& secondary) {
+void ConsoleStatusBar::update_normal_status(const char* primary, const char* secondary) {
+    // DIAMOND OPTIMIZATION: Early Return для invalid states
+    if (!primary) return;
+    
     set_display_mode(DisplayMode::NORMAL);
 
     // DIAMOND OPTIMIZATION: Use StatusFormatter
     char buffer[48];
-    if (secondary.empty()) {
-        StatusFormatter::format_to(buffer, "%s", primary.c_str());
+    if (!secondary || strlen(secondary) == 0) {
+        StatusFormatter::format_to(buffer, "%s", primary);
     } else {
-        StatusFormatter::format_to(buffer, "%s | %s", primary.c_str(), secondary.c_str());
+        StatusFormatter::format_to(buffer, "%s | %s", primary, secondary);
     }
     normal_text_.set(buffer);
-    static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
-    normal_text_.set_style(&light_style);
+    
+    // DIAMOND OPTIMIZATION: статический стиль (не создаётся на стеке каждый вызов)
+    static const Style NORMAL_STYLE = {font::fixed_8x16, Color::black(), Color::white()};
+    normal_text_.set_style(&NORMAL_STYLE);
     set_dirty();
 }
 
 void ConsoleStatusBar::set_display_mode(DisplayMode mode) {
+    // DIAMOND OPTIMIZATION: Early Return
     if (mode_ == mode) return;
+
     mode_ = mode;
 
-    progress_text_.hidden(true);
-    alert_text_.hidden(true);
-    normal_text_.hidden(true);
-
-    const bool show_progress = (mode == DisplayMode::SCANNING);
-    const bool show_alert = (mode == DisplayMode::ALERT);
-    const bool show_normal = !show_progress && !show_alert;
-    progress_text_.hidden(!show_progress);
-    alert_text_.hidden(!show_alert);
-    normal_text_.hidden(!show_normal);
+    // DIAMOND OPTIMIZATION: Битовая маска вместо 3x bool сравнения
+    // Компактнее и быстрее
+    static constexpr uint8_t VISIBILITY_MASK[3] = {
+        0b001, // NORMAL
+        0b010, // SCANNING
+        0b100  // ALERT
+    };
+    
+    uint8_t mask = VISIBILITY_MASK[static_cast<uint8_t>(mode)];
+    progress_text_.hidden(!(mask & 0b010));
+    alert_text_.hidden(!(mask & 0b100));
+    normal_text_.hidden(!(mask & 0b001));
+    
     set_dirty();
 }
 
@@ -2390,19 +2413,25 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
 // ===========================================
 // IMPLEMENTATION: DroneDisplayController::set_scanning_status
 // ===========================================
-void DroneDisplayController::set_scanning_status(bool active, const std::string& message) {
+void DroneDisplayController::set_scanning_status(bool active, const char* message) {
+    // DIAMOND OPTIMIZATION: Early Return для invalid states
+    if (!message) return;
+    
     // DIAMOND OPTIMIZATION: Use StatusFormatter
     char buffer[48];
     if (active) {
-        StatusFormatter::format_to(buffer, "SCAN: %s", message.c_str());
+        StatusFormatter::format_to(buffer, "SCAN: %s", message);
         text_status_info_.set(buffer);
-        // DIAMOND OPTIMIZATION: Use Color::green()
-        static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
-        text_status_info_.set_style(&green_style);
+        
+        // DIAMOND OPTIMIZATION: статический стиль из constexpr LUT
+        static const Style SCANNING_STYLE = {font::fixed_8x16, Color::black(), Color::green()};
+        text_status_info_.set_style(&SCANNING_STYLE);
     } else {
-        StatusFormatter::format_to(buffer, "STOP: %s", message.c_str());
-        static Style light_style{font::fixed_8x16, Color::black(), Color::white()};
-        text_status_info_.set_style(&light_style);
+        StatusFormatter::format_to(buffer, "STOP: %s", message);
+        
+        // DIAMOND OPTIMIZATION: статический стиль (не создаётся на стеке)
+        static const Style STOPPED_STYLE = {font::fixed_8x16, Color::black(), Color::white()};
+        text_status_info_.set_style(&STOPPED_STYLE);
     }
 }
 
@@ -2504,32 +2533,39 @@ void DroneDisplayController::render_drone_text_display() {
     text_drone_1_.set("");
     text_drone_2_.set("");
     text_drone_3_.set("");
-    for (size_t i = 0; i < std::min(displayed_drones_.size(), size_t(3)); ++i) {
+    
+    size_t drone_count = std::min(displayed_drones_.size(), size_t(3));
+    for (size_t i = 0; i < drone_count; ++i) {
         const auto& drone = displayed_drones_[i];
         char buffer[64];
-
+        char freq_buf[16]; // Локальный буфер вместо std::string (экономия RAM)
+ 
         // DIAMOND OPTIMIZATION: Use TrendSymbols for O(1) lookup
         char trend_symbol = TrendSymbols::from_trend(static_cast<uint8_t>(drone.trend));
-
-        // DIAMOND OPTIMIZATION: Use FrequencyFormatter for consistent formatting
-        std::string freq_str;
+ 
+        // DIAMOND OPTIMIZATION: Форматирование частоты в стековый буфер (без heap allocation)
         if (drone.frequency >= 1000000000) {
-            freq_str = FrequencyFormatter::format(drone.frequency, FrequencyFormatter::Format::COMPACT_GHZ);
+            snprintf(freq_buf, sizeof(freq_buf), "%lu.%luG", 
+                     (unsigned long)(drone.frequency / 1000000000),
+                     (unsigned long)((drone.frequency % 1000000000) / 100000000));
         } else if (drone.frequency >= 1000000) {
-            freq_str = FrequencyFormatter::format(drone.frequency, FrequencyFormatter::Format::COMPACT_MHZ);
+            snprintf(freq_buf, sizeof(freq_buf), "%luM", 
+                     (unsigned long)(drone.frequency / 1000000));
         } else {
-            freq_str = to_string_dec_uint(drone.frequency / 1000, 1) + "k";
+            snprintf(freq_buf, sizeof(freq_buf), "%luk", 
+                     (unsigned long)(drone.frequency / 1000));
         }
-
+ 
         // DIAMOND OPTIMIZATION: Use StatusFormatter
         StatusFormatter::format_to(buffer, DRONE_DISPLAY_FORMAT,
                                  drone.type_name.c_str(),
-                                 freq_str.c_str(),
-                                   (long int)drone.rssi,
-                                   trend_symbol);
-
-        // DIAMOND OPTIMизация: хелпер для индексного доступа (строки 2486-2491)
-        if (Text* target = drone_text_widget(i)) {
+                                 freq_buf,
+                                 (long int)drone.rssi,
+                                 trend_symbol);
+ 
+        // DIAMOND OPTIMизация: хелпер для индексного доступа (без bounds check каждый раз)
+        Text* target = drone_text_widget(i);
+        if (target) {
             target->set(buffer);
         }
     }
@@ -2686,18 +2722,35 @@ void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency ma
     update_frequency_ruler();
 }
 
-void DroneDisplayController::update_signal_type_display(const std::string& signal_type) {
+void DroneDisplayController::update_signal_type_display(const char* signal_type) {
+    // DIAMOND OPTIMIZATION: Early Return для invalid states
+    if (!signal_type) return;
+    
     // DIAMOND OPTIMIZATION: Use StatusFormatter
     char buffer[48];
-    StatusFormatter::format_to(buffer, "SIGNAL: %s", signal_type.c_str());
+    StatusFormatter::format_to(buffer, "SIGNAL: %s", signal_type);
     text_signal_type_.set(buffer);
-
-    // DIAMOND OPTIMIZATION: ternary operator вместо cascading if-else
-    // Компилятор оптимизирует это в безветвящийся код
-    size_t signal_idx = (signal_type == "DIGITAL") ? 1 :
-                      (signal_type == "ANALOG") ? 2 :
-                      (signal_type == "NOISE") ?3 : 0;
-
+ 
+    // DIAMOND OPTIMIZATION: constexpr LUT для signal_type → index (во Flash)
+    static constexpr struct SignalTypeMapping {
+        const char* name;
+        uint8_t idx;
+    } SIGNAL_TYPE_LUT[] = {
+        {"--",       0},  // DEFAULT/Unknown
+        {"DIGITAL",  1},  // Digital
+        {"ANALOG",   2},  // Analog
+        {"NOISE",    3}   // Noise
+    };
+    
+    // Быстрый поиск по имени (O(n) где n=4, быстрее чем 3x strcmp + ternary)
+    size_t signal_idx = 0;
+    for (size_t i = 0; i < 4; ++i) {
+        if (strcmp(signal_type, SIGNAL_TYPE_LUT[i].name) == 0) {
+            signal_idx = SIGNAL_TYPE_LUT[i].idx;
+            break;
+        }
+    }
+ 
     // DIAMOND OPTIMIZATION: constexpr LUT вместо локального массива (хранится во Flash)
     static constexpr Style SIGNAL_STYLES[] = {
         {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[0].color},
@@ -2706,7 +2759,7 @@ void DroneDisplayController::update_signal_type_display(const std::string& signa
         {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[3].color}
     };
     text_signal_type_.set_style(&SIGNAL_STYLES[signal_idx]);
-
+ 
     set_dirty();
 }
 
