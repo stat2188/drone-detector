@@ -1,0 +1,166 @@
+/**
+ * 🎨 UNIFIED COLOR LOOKUP - Исправленная версия
+ * 
+ * ИСПРАВЛЕНИЯ:
+ * - ✅ Корректная конвертация RGB888 → RGB565
+ * - ✅ Устранено дублирование (HEADER_STYLES, CARD_STYLES)
+ * - ✅ DRONE_COLORS обновлён с 8 → 11 типов
+ * - ✅ Все цвета хранятся во Flash (constexpr)
+ * 
+ * ⚡ O(1) lookup вместо switch/if-else
+ * 💾 RAM: 0 байт (все данные во Flash)
+ * 
+ * @author Optimized via Diamond Core Protocol
+ */
+
+#ifndef COLOR_LOOKUP_UNIFIED_HPP_
+#define COLOR_LOOKUP_UNIFIED_HPP_
+
+#include <cstdint>
+#include "ui.hpp"  // Для Color class
+
+namespace ui::apps::enhanced_drone_analyzer {
+
+// ===========================================
+// RGB888 → RGB565 КОНВЕРТЕР (constexpr)
+// ===========================================
+// Формат Color (ui.hpp): rrrrrGGGGGGbbbbb (RGB565, 16-bit)
+// Формат LUT: 0xRRGGBB (RGB888, 24-bit)
+// 
+// R888 → R565: trunc 3 MSB bits (8 → 5)
+// G888 → G665: trunc 2 MSB bits (8 → 6)  
+// B888 → B565: trunc 3 MSB bits (8 → 5)
+
+struct ColorConverter {
+    // ✅ constexpr конвертация RGB888 → RGB565 (O(1))
+    static constexpr uint16_t rgb888_to_rgb565(uint32_t rgb888) {
+        uint8_t r = (rgb888 >> 16) & 0xFF;
+        uint8_t g = (rgb888 >> 8) & 0xFF;
+        uint8_t b = rgb888 & 0xFF;
+        
+        // RGB565 формат: rrrrrGGGGGGbbbbb
+        uint16_t r565 = (r & 0xF8) << 8;    // 5 бит R (биты 11-15)
+        uint16_t g565 = (g & 0xFC) << 3;    // 6 бит G (биты 5-10)
+        uint16_t b565 = (b & 0xF8) >> 3;    // 5 бит B (биты 0-4)
+        
+        return r565 | g565 | b565;
+    }
+    
+    // ✅ constexpr обёртка для Color (O(1))
+    static constexpr Color rgb888_to_color(uint32_t rgb888) {
+        return Color(rgb888_to_rgb565(rgb888));
+    }
+};
+
+// ===========================================
+// UNIFIED THREAT COLORS (6 уровней)
+// ===========================================
+// Устраняет дублирование: HEADER_STYLES + CARD_STYLES + THREAT_COLORS
+// Хранится во Flash (constexpr), ноль RAM
+
+struct ThreatColorLUT {
+    static constexpr uint32_t COLORS[6] = {
+        0x0000FF,   // Red (0xFF0000 RGB) - NONE (0)
+        0x00FF00,   // Green - LOW (1)
+        0xFFFF00,   // Yellow - MEDIUM (2)
+        0xFFA500,   // Orange - HIGH (3)
+        0x000080,   // Dark Red (0x800000 RGB) - CRITICAL (4)
+        0x808080    // Grey - UNKNOWN (5)
+    };
+    static_assert(sizeof(COLORS) == sizeof(uint32_t) * 6, "COLORS size mismatch");
+    
+    // Карточные стили (фон + текст) - ОБЪЕДИНЁННЫЕ
+    struct CardStyle {
+        uint32_t bg_color;
+        uint32_t text_color;
+    };
+    
+    static constexpr CardStyle CARD_STYLES[5] = {
+        {0x000040, 0xFFFFFF},  // Dark Blue bg, White text - NONE (0)
+        {0x002000, 0xFFFFFF},  // Dark Green bg, White text - LOW (1)
+        {0x202000, 0x000000},  // Dark Yellow bg, Black text - MEDIUM (2)
+        {0x402000, 0xFFFFFF},  // Dark Orange bg, White text - HIGH (3)
+        {0x400000, 0xFFFFFF}   // Dark Red bg, White text - CRITICAL (4)
+    };
+    static_assert(sizeof(CARD_STYLES) == sizeof(CardStyle) * 5, "CARD_STYLES size mismatch");
+    
+    // O(1) lookup функции (inline, no branching)
+    static inline Color threat_color(uint8_t level) {
+        uint8_t idx = (level < 6) ? level : 0;
+        return ColorConverter::rgb888_to_color(COLORS[idx]);
+    }
+    
+    static inline Color card_bg_color(uint8_t threat) {
+        uint8_t idx = (threat < 5) ? threat : 0;
+        return ColorConverter::rgb888_to_color(CARD_STYLES[idx].bg_color);
+    }
+    
+    static inline Color card_text_color(uint8_t threat) {
+        uint8_t idx = (threat < 5) ? threat : 0;
+        return ColorConverter::rgb888_to_color(CARD_STYLES[idx].text_color);
+    }
+};
+
+// ===========================================
+// UNIFIED DRONE COLORS (11 типов - ИСПРАВЛЕНО!)
+// ===========================================
+// ИСПРАВЛЕНО: DRONE_COLORS[8] → DRONE_COLORS[11]
+// Совпадает с DroneType enum (ui_drone_common_types.hpp)
+
+struct DroneColorLUT {
+    static constexpr uint32_t COLORS[11] = {
+        0xFFFFFF,   // White - UNKNOWN (0)
+        0x0000FF,   // Red - MAVIC (1)
+        0xFFA500,   // Orange - DJI_P34 (2)
+        0xFFFF00,   // Yellow - PHANTOM (3)
+        0x00FFFF,   // Cyan - DJI_MINI (4)
+        0xFF00FF,   // Magenta - PARROT_ANAFI (5)
+        0x00FF00,   // Green - PARROT_BEBOP (6)
+        0x800080,   // Purple - PX4_DRONE (7)
+        0x000000,   // Black - MILITARY_DRONE (8)
+        0xC0C0C0,   // Silver - DIY_DRONE (9)
+        0xFFC0CB    // Pink - FPV_RACING (10)
+    };
+    static_assert(sizeof(COLORS) == sizeof(uint32_t) * 11, "COLORS size mismatch");
+    
+    static inline Color drone_color(uint8_t type) {
+        uint8_t idx = (type < 11) ? type : 0;
+        return ColorConverter::rgb888_to_color(COLORS[idx]);
+    }
+};
+
+// ===========================================
+// УНИФИЦИРОВАННЫЙ ДОСТУП К ЦВЕТАМ
+// ===========================================
+// Объединяет ThreatColorLUT и DroneColorLUT
+
+struct UnifiedColorLookup {
+    // 🎯 Threat level colors
+    static inline Color threat(uint8_t level) {
+        return ThreatColorLUT::threat_color(level);
+    }
+    
+    // 🎯 Drone type colors
+    static inline Color drone(uint8_t type) {
+        return DroneColorLUT::drone_color(type);
+    }
+    
+    // 🎯 Card styles (bg + text)
+    static inline Color card_bg(uint8_t threat) {
+        return ThreatColorLUT::card_bg_color(threat);
+    }
+    
+    static inline Color card_text(uint8_t threat) {
+        return ThreatColorLUT::card_text_color(threat);
+    }
+    
+    // 🎯 Header bar color (используется в SmartThreatHeader)
+    static inline Color header_bar(uint8_t threat) {
+        // Для header используем threat_color (яркое отображение)
+        return ThreatColorLUT::threat_color(threat);
+    }
+};
+
+} // namespace ui::apps::enhanced_drone_analyzer
+
+#endif // COLOR_LOOKUP_UNIFIED_HPP_

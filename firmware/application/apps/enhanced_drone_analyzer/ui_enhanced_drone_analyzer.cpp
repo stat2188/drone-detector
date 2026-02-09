@@ -1950,11 +1950,35 @@ void SmartThreatHeader::set_color_scheme(bool use_dark_theme) {
     (void)use_dark_theme;
 }
 
-// DIAMOND OPTIMIZATION: Using DiamondCore ThreatUtils for O(1) lookups
+// ✅ ОПТИМИЗАЦИЯ: UnifiedColorLookup - O(1) lookup вместо 2 функций
 Color SmartThreatHeader::get_threat_bar_color(ThreatLevel level) const {
-    // DIAMOND OPTIMIZATION: constexpr LUT lookup вместо вызова DiamondCore
-    uint8_t threat_idx = std::min(static_cast<uint8_t>(level), static_cast<uint8_t>(4));
-    return HEADER_STYLES[threat_idx].bar_color;
+    // ✅ UnifiedColorLookup устраняет дублирование
+    return UnifiedColorLookup::header_bar(static_cast<uint8_t>(level));
+}
+
+Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
+    (void)level;  // Suppress unused parameter warning
+    return Color::white();  // Always white text on colored backgrounds
+}
+
+const char* SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
+    return DiamondCore::ThreatUtils::name(static_cast<uint8_t>(level));
+}
+
+void SmartThreatHeader::paint(Painter& painter) {
+    // 1. Fill entire background with threat color
+    Color bg_color = UnifiedColorLookup::header_bar(static_cast<uint8_t>(last_threat_));
+    painter.fill_rectangle(screen_rect(), bg_color);
+
+    // 2. Draw large centered text with white color on colored background
+    // Calculate centered position
+    const int text_width = last_text_.length() * 8; // fixed_8x16 is 8px per char
+    const int text_height = 16;
+    const int center_x = (screen_width - text_width) / 2;
+    const int center_y = (60 - text_height) / 2; // Header height is 60px
+    Point text_pos = {center_x, center_y};
+    auto style = Style{font::fixed_8x16, bg_color, Color::white()};
+    painter.draw_string(text_pos, style, last_text_);
 }
 
 Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
@@ -2038,29 +2062,24 @@ void ThreatCard::clear_card() {
 
 
 
-// DIAMOND OPTIMIZATION: Simplified color logic with DiamondCore threat names
+// ✅ ОПТИМИЗАЦИЯ: UnifiedColorLookup - O(1) lookup вместо 2 функций
 Color ThreatCard::get_card_bg_color() const {
     if (!is_active_) return Color::black();
 
-    // DIAMOND OPTIMизация: constexpr LUT lookup вместо условной логики
-    size_t threat_idx = std::min(static_cast<size_t>(last_threat_),
-                                 static_cast<size_t>(ThreatLevel::CRITICAL));
-    return CARD_STYLES[threat_idx].bg_color;
+    // ✅ UnifiedColorLookup устраняет дублирование
+    return UnifiedColorLookup::card_bg(static_cast<uint8_t>(last_threat_));
 }
 
 Color ThreatCard::get_card_text_color() const {
-    // DIAMOND OPTIMизация: constexpr LUT lookup вместо if-else
+    // ✅ UnifiedColorLookup устраняет дублирование
     if (!is_active_) return Color::black();
-
-    size_t threat_idx = std::min(static_cast<size_t>(last_threat_),
-                                 static_cast<size_t>(ThreatLevel::CRITICAL));
-    return CARD_STYLES[threat_idx].text_color;
+    return UnifiedColorLookup::card_text(static_cast<uint8_t>(last_threat_));
 }
 
 void ThreatCard::paint(Painter& painter) {
     View::paint(painter);
     if (is_active_) {
-        Color bg_color = get_card_bg_color();
+        Color bg_color = UnifiedColorLookup::card_bg(static_cast<uint8_t>(last_threat_));
         painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect().width(), 2}, bg_color);
     }
 }
@@ -3663,15 +3682,15 @@ const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
     return StringMappings::get_drone_type_name(static_cast<uint8_t>(type));
 }
 
+// ✅ ИСПРАВЛЕНО: Корректная конвертация RGB888 → RGB565
 Color DroneDisplayController::get_drone_type_color(DroneType type) const {
-    // Convert uint32_t RGB to Color (RGB format is 0xBBGGRR)
-    uint32_t rgb_value = ColorMappings::get_drone_color_value(static_cast<uint8_t>(type));
-    return Color(rgb_value);
+    // ✅ UnifiedColorLookup выполняет корректную конвертацию
+    return UnifiedColorLookup::drone(static_cast<uint8_t>(type));
 }
 
 Color DroneDisplayController::get_threat_level_color(ThreatLevel level) const {
-    uint32_t rgb_value = ColorMappings::get_threat_color_value(static_cast<uint8_t>(level));
-    return Color(rgb_value);
+    // ✅ UnifiedColorLookup выполняет корректную конвертацию
+    return UnifiedColorLookup::threat(static_cast<uint8_t>(level));
 }
 
 const char* DroneDisplayController::get_threat_level_name(ThreatLevel level) const {

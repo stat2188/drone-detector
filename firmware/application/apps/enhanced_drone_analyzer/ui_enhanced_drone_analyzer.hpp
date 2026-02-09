@@ -18,6 +18,7 @@
 #include "ui_spectral_analyzer.hpp"
 #include "drone_constants.hpp"
 #include "eda_optimized_utils.hpp"
+#include "color_lookup_unified.hpp"
 
 #include "ui.hpp"
 #include "event_m0.hpp"
@@ -732,18 +733,8 @@ private:
 
     void paint(Painter& painter) override;
 
-    // DIAMOND OPTIMIZATION: constexpr LUT для цветов заголовка угроз в Flash
-    static constexpr struct HeaderStyleConfig {
-        const Style* style_ptr;
-        Color bar_color;
-    } HEADER_STYLES[] = {
-        {&UIStyles::LIGHT_STYLE,  Color::blue()},   // NONE (0) - Blue
-        {&UIStyles::GREEN_STYLE,   Color::green()},  // LOW (1) - Green
-        {&UIStyles::YELLOW_STYLE,  Color::yellow()}, // MEDIUM (2) - Yellow
-        {&UIStyles::YELLOW_STYLE,  Color::orange()}, // HIGH (3) - Orange
-        {&UIStyles::RED_STYLE,      Color::red()}     // CRITICAL (4) - Red
-    };
-    static_assert(sizeof(HEADER_STYLES) == sizeof(HeaderStyleConfig) * 5, "HEADER_STYLES size");
+    // ✅ ОПТИМИЗАЦИЯ: Использует UnifiedColorLookup вместо дублирующего LUT
+    // Все threat colours хранятся во Flash (color_lookup_unified.hpp)
 
     // Cached previous values for Check-Before-Update optimization
     ThreatLevel last_threat_ = ThreatLevel::NONE;
@@ -784,18 +775,8 @@ private:
 
     void paint(Painter& painter) override;
 
-    // DIAMOND OPTIMIZATION: constexpr LUT для цветов угроз в Flash (фона + текст)
-    static constexpr struct CardStyleConfig {
-        Color bg_color;
-        Color text_color;
-    } CARD_STYLES[] = {
-        {Color(0, 0, 64),      Color::white()},      // NONE - Dark blue bg, white text
-        {Color(0, 32, 0),       Color::white()},      // LOW - Dark green bg, white text
-        {Color(32, 32, 0),      Color::black()},      // MEDIUM - Dark yellow bg, black text
-        {Color(64, 32, 0),      Color::white()},      // HIGH - Dark orange bg, white text
-        {Color(64, 0, 0),       Color::white()}       // CRITICAL - Dark red bg, white text
-    };
-    static_assert(sizeof(CARD_STYLES) == sizeof(CardStyleConfig) * 5, "CARD_STYLES size");
+    // ✅ ОПТИМИЗАЦИЯ: Использует UnifiedColorLookup вместо дублирующего LUT
+    // Все threat colours хранятся во Flash (color_lookup_unified.hpp)
 };
 
 enum class DisplayMode : uint8_t { SCANNING = 0, ALERT = 1, NORMAL = 2 };
