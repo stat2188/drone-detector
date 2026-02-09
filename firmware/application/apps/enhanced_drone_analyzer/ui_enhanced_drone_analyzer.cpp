@@ -2300,16 +2300,11 @@ bool DroneDisplayController::allocate_buffers_from_pool() {
     // TODO: В будущем использовать bump allocator или StringPool
     // Для сейчас используем make_unique (но с защитой от повторного выделения)
     
-    try {
-        spectrum_row_buffer_ptr_ = std::make_unique<std::array<Color, SPECTRUM_ROW_SIZE>>();
-        render_line_buffer_ptr_ = std::make_unique<std::array<Color, RENDER_LINE_SIZE>>();
-        spectrum_power_levels_ptr_ = std::make_unique<std::array<uint8_t, 200>>();
-        waterfall_line_index_ = 0;
-        return true;
-    } catch (...) {
-        // Allocation failed
-        return false;
-    }
+    spectrum_row_buffer_ptr_ = std::make_unique<std::array<Color, SPECTRUM_ROW_SIZE>>();
+    render_line_buffer_ptr_ = std::make_unique<std::array<Color, RENDER_LINE_SIZE>>();
+    spectrum_power_levels_ptr_ = std::make_unique<std::array<uint8_t, 200>>();
+    waterfall_line_index_ = 0;
+    return true;
 }
 
 
@@ -3232,23 +3227,16 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_database() {
         return;
     }
     
-    // DIAMOND OPTIMIZATION: Try-catch эквивалент (без exceptions для embedded)
-    // Проверяем результат выделения памяти
-    try {
-        scanner_.initialize_database_and_scanner();
-        
-        // Проверяем, что база данных загружена
-        if (scanner_.get_database_size() == 0) {
-            // Некритическая ошибка: продолжаем, но используем встроенную базу данных
-            // Не переходим в ERROR state, просто продолжаем
-        }
-        
-        init_state_ = InitState::DATABASE_LOADED;
-    } catch (...) {
-        // Allocation failed or database error
-        init_error_ = InitError::DATABASE_ERROR;
-        init_state_ = InitState::INITIALIZATION_ERROR;
+    // Инициализация базы данных и сканера
+    scanner_.initialize_database_and_scanner();
+
+    // Проверяем, что база данных загружена
+    if (scanner_.get_database_size() == 0) {
+        // Некритическая ошибка: продолжаем, но используем встроенную базу данных
+        // Не переходим в ERROR state, просто продолжаем
     }
+
+    init_state_ = InitState::DATABASE_LOADED;
 }
 
 // ФАЗА 3: Initialize hardware
