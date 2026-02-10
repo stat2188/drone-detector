@@ -583,6 +583,9 @@ struct DetectionParams {
 
     // Settings for user-defined frequency ranges
     const DroneAnalyzerSettings& settings_;
+    
+    // Last scan error for diagnostics
+    const char* last_scan_error_ = nullptr;
 
     // ===========================================
     // DIAMOND OPTIMIZATION: LUTs в конце класса (после всех объявлений)
@@ -1400,11 +1403,12 @@ public:
 
     // 🔴 DIAMOND OPTIMIZATION: constexpr массив для сообщений об ошибках (Flash)
     static constexpr const char* const ERROR_MESSAGES[] = {
-        "Init timeout",      // GENERAL_TIMEOUT = 0
-        "Allocation failed",  // ALLOCATION_FAILED = 1
-        "Database error"      // DATABASE_ERROR = 2
+        "No error",           // NONE = 0
+        "Init timeout",       // GENERAL_TIMEOUT = 1
+        "Allocation failed",  // ALLOCATION_FAILED = 2
+        "Database error"      // DATABASE_ERROR = 3
     };
-    static_assert(sizeof(ERROR_MESSAGES) / sizeof(const char*) == 3, "ERROR_MESSAGES size");
+    static_assert(sizeof(ERROR_MESSAGES) / sizeof(const char*) == 4, "ERROR_MESSAGES size");
 
  private:
     NavigationView& nav_;

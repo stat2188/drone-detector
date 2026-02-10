@@ -1331,11 +1331,14 @@ msg_t DroneScanner::db_loading_thread_entry(void* arg) {
 void DroneScanner::db_loading_thread_loop() {
     freq_db_ptr_ = std::make_unique<FreqmanDB>();
     if (!freq_db_ptr_) {
+        db_loading_active_.store(false, std::memory_order_release);
         return;
     }
 
     tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
     if (!tracked_drones_ptr_) {
+        db_loading_active_.store(false, std::memory_order_release);
+        freq_db_ptr_.reset();
         return;
     }
 
@@ -1352,6 +1355,8 @@ void DroneScanner::db_loading_thread_loop() {
             if (load_time > MS2ST(DB_LOAD_TIMEOUT_MS)) {
                 handle_scan_error("Database load timeout");
                 db_loading_active_.store(false, std::memory_order_release);
+                freq_db_ptr_.reset();
+                tracked_drones_ptr_.reset();
                 return;
             }
         }
@@ -1447,6 +1452,10 @@ std::string DroneScanner::get_session_summary() const {
 }
 
 void DroneScanner::handle_scan_error([[maybe_unused]] const char* error_msg) {
+    // Store last error for diagnostics (accessed via get_last_scan_error if needed)
+    if (error_msg) {
+        last_scan_error_ = error_msg;
+    }
 }
 
 DroneScanner::DroneSnapshot DroneScanner::get_tracked_drones_snapshot() const {
@@ -3341,6 +3350,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
     if (init_state_ == InitState::INITIALIZATION_ERROR) {
         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0,
                                       ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]);
+        initialization_in_progress_ = false;
         return;
     }
     
@@ -3383,6 +3393,11 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
                 initialization_in_progress_ = false;
                 return;
             }
+            
+            // Если фаза возвращает с ошибкой (initialization_in_progress_ сброшен внутри фазы)
+            if (!initialization_in_progress_) {
+                return;
+            }
 
             // Если состояние изменилось - обновляем UI
             const char* status_msg = phase.name;
@@ -3413,6 +3428,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers() {
     if (!display_controller_.allocate_buffers_from_pool()) {
         init_error_ = InitError::ALLOCATION_FAILED;
         init_state_ = InitState::INITIALIZATION_ERROR;
+        initialization_in_progress_ = false;
         return;
     }
 
