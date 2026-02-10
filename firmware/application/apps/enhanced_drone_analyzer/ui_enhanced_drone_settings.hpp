@@ -120,10 +120,12 @@ using PresetMenuView = std::function<void(const DronePreset&)>;
 class DroneFrequencyPresets {
 public:
     static constexpr size_t PRESETS_COUNT = 5;
-    // Note: Cannot use constexpr because DronePreset contains std::string
+    static constexpr size_t AVAILABLE_TYPES_COUNT = 7;
     static const std::array<DronePreset, PRESETS_COUNT>& get_all_presets();
-    static std::vector<std::string> get_preset_names();
-    static std::vector<DroneType> get_available_types();
+    static const char* const* get_preset_names();
+    static const DroneType* get_available_types();
+    static size_t get_preset_count();
+    static size_t get_available_types_count();
     static std::string get_type_display_name(DroneType type);
     static std::vector<DronePreset> get_presets_of_type(const std::array<DronePreset, PRESETS_COUNT>& all_presets, DroneType type);
     static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset);

@@ -114,7 +114,7 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "demo_mode=%s\n", settings.demo_mode ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "freqman_path=%s\n", settings.freqman_path.c_str());
+                      "freqman_path=%s\n", settings.freqman_path);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "user_min_freq_hz=%llu\n", (unsigned long long)settings.user_min_freq_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
@@ -433,15 +433,15 @@ void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& sett
 
     // ===== LOGGING SETTINGS =====
     settings.auto_save_logs = true;
-    settings.log_file_path = "/eda_logs";
-    settings.log_format = "CSV";
+    safe_strcpy(settings.log_file_path, "/eda_logs", ui::apps::enhanced_drone_analyzer::MAX_PATH_LEN);
+    safe_strcpy(settings.log_format, "CSV", ui::apps::enhanced_drone_analyzer::MAX_FORMAT_LEN);
     settings.max_log_file_size_kb = 1024;
     settings.enable_session_logging = true;
     settings.include_timestamp = true;
     settings.include_rssi_values = true;
 
     // ===== DISPLAY SETTINGS =====
-    settings.color_scheme = "DARK";
+    safe_strcpy(settings.color_scheme, "DARK", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
     settings.font_size = 0;
     settings.spectrum_density = 1;
     settings.waterfall_speed = 5;
@@ -454,13 +454,13 @@ void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& sett
     settings.auto_ruler_style = true;
 
     // ===== PROFILE SETTINGS =====
-    settings.current_profile_name = "Default";
+    safe_strcpy(settings.current_profile_name, "Default", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
     settings.enable_quick_profiles = true;
     settings.auto_save_on_change = false;
 
     // ===== SYSTEM SETTINGS =====
-    settings.freqman_path = "DRONES";
-    settings.settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    safe_strcpy(settings.freqman_path, "DRONES", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
+    safe_strcpy(settings.settings_file_path, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt", ui::apps::enhanced_drone_analyzer::MAX_PATH_LEN);
     settings.settings_version = 2;
 }
 
@@ -496,7 +496,7 @@ bool DroneAnalyzerSettingsManager::validate(const DroneAnalyzerSettings& setting
     if (settings.alert_persistence_threshold == 0 || settings.alert_persistence_threshold > 10) return false;
 
     // ===== LOGGING VALIDATION =====
-    if (settings.log_format != "CSV" && settings.log_format != "JSON" && settings.log_format != "TXT") return false;
+    if (strcmp(settings.log_format, "CSV") != 0 && strcmp(settings.log_format, "JSON") != 0 && strcmp(settings.log_format, "TXT") != 0) return false;
     if (settings.max_log_file_size_kb < 100 || settings.max_log_file_size_kb > 10240) return false;
 
     // ===== DISPLAY VALIDATION =====
@@ -568,7 +568,7 @@ const char* DroneAnalyzerSettingsManager::get_translation(const std::string& key
 
 // 🔴 OPTIMIZATION: static const array instead of vector to avoid heap allocation
 // Scott Meyers Item 15: Prefer static const to #define
-// Note: Cannot use constexpr because DronePreset contains std::string (not constexpr-constructible)
+// Note: DronePreset now uses char arrays (zero-heap), so can be constexpr-constructible
 static const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5> default_presets = {{
     {"2.4GHz Band Scan", "Drone_2_4GHz", 2400000000ULL, ThreatLevel::MEDIUM, DroneType::MAVIC},
     {"2.5GHz Band Scan", "Drone_2_5GHz", 2500000000ULL, ThreatLevel::HIGH, DroneType::PHANTOM},
@@ -578,15 +578,39 @@ static const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5> defau
 }};
 
 const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5>& DroneFrequencyPresets::get_all_presets() { return default_presets; }
-std::vector<std::string> DroneFrequencyPresets::get_preset_names() {
-    std::vector<std::string> names;
-    for (const auto& preset : default_presets) names.push_back(preset.display_name);
-    return names;
+
+static constexpr const char* PRESET_NAMES[] = {
+    "2.4GHz Band Scan",
+    "2.5GHz Band Scan",
+    "DJI Mavic Series",
+    "Parrot Anafi",
+    "Military UAV Band"
+};
+
+const char* const* DroneFrequencyPresets::get_preset_names() {
+    return PRESET_NAMES;
 }
-std::vector<DroneType> DroneFrequencyPresets::get_available_types() {
-    return {DroneType::MAVIC, DroneType::PHANTOM, DroneType::DJI_MINI,
-            DroneType::PARROT_ANAFI, DroneType::PARROT_BEBOP,
-            DroneType::PX4_DRONE, DroneType::MILITARY_DRONE};
+
+static constexpr DroneType AVAILABLE_TYPES[] = {
+    DroneType::MAVIC,
+    DroneType::PHANTOM,
+    DroneType::DJI_MINI,
+    DroneType::PARROT_ANAFI,
+    DroneType::PARROT_BEBOP,
+    DroneType::PX4_DRONE,
+    DroneType::MILITARY_DRONE
+};
+
+const DroneType* DroneFrequencyPresets::get_available_types() {
+    return AVAILABLE_TYPES;
+}
+
+size_t DroneFrequencyPresets::get_preset_count() {
+    return 5;
+}
+
+size_t DroneFrequencyPresets::get_available_types_count() {
+    return 7;
 }
 // DIAMOND OPTIMIZATION: LUT lookup вместо switch для get_type_display_name()
 // Scott Meyers Item 15: Prefer constexpr to #define
@@ -624,10 +648,10 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui
         config.user_min_freq_hz = 50000000ULL;
     }
     if (config.user_max_freq_hz > 6000000000ULL) {
-        config.user_max_freq_hz = 6000000000ULL;
+    config.user_max_freq_hz = 6000000000ULL;
     }
 
-    config.freqman_path = "DRONES";
+    safe_strcpy(config.freqman_path, "DRONES", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
     config.show_detailed_info = true;
 
     return true;

@@ -2,8 +2,7 @@
 #define UI_DRONE_COMMON_TYPES_HPP_
 
 #include <cstdint>
-#include <string>
-#include <vector>
+#include <cstring>
 #include "drone_constants.hpp"
 #include "radio.hpp"
 #include "file.hpp"
@@ -16,12 +15,28 @@ namespace ui::apps::enhanced_drone_analyzer {
 using rf::Frequency;
 
 // ===========================================
+// CONSTANTS & TYPE ALIASES
+// ===========================================
+static constexpr size_t MAX_PATH_LEN = 64;
+static constexpr size_t MAX_NAME_LEN = 32;
+static constexpr size_t MAX_FORMAT_LEN = 8;
+
+// Helper for safe string assignment (Zero-Heap)
+static inline void safe_strcpy(char* dest, const char* src, size_t max_len) {
+    if (dest && src) {
+        strncpy(dest, src, max_len - 1);
+        dest[max_len - 1] = '\0';
+    }
+}
+
+// ===========================================
 // DroneAnalyzerSettings - UNIFIED SETTINGS STRUCTURE
 // Single source of truth for all EDA settings
 // Merged from: EDAUnifiedSettings, EDAAppSettings, DroneAnalyzerSettings, etc.
 // ===========================================
-// DIAMOND OPTIMIZATION: bitfield packing для экономии RAM (смотри settings_bitfields.hpp)
-// bool flags заменены на bitfields в будущем, пока совместимость сохранена
+// DIAMOND OPTIMIZATION: Removed std::string completely.
+// All string data is now fixed-size char arrays.
+// This eliminates heap allocation during initialization and parsing.
 struct DroneAnalyzerSettings {
     // ===== AUDIO SETTINGS =====
     bool enable_audio_alerts = true;
@@ -67,17 +82,17 @@ struct DroneAnalyzerSettings {
     uint32_t alert_persistence_threshold = 3;
     bool enable_intelligent_tracking = true;
 
-    // ===== LOGGING SETTINGS =====
+    // ===== LOGGING SETTINGS (Zero-Heap Strings) =====
     bool auto_save_logs = true;
-    std::string log_file_path = "/eda_logs";
-    std::string log_format = "CSV";
+    char log_file_path[MAX_PATH_LEN] = "/eda_logs";
+    char log_format[MAX_FORMAT_LEN] = "CSV";
     uint32_t max_log_file_size_kb = 1024;
     bool enable_session_logging = true;
     bool include_timestamp = true;
     bool include_rssi_values = true;
 
-    // ===== DISPLAY SETTINGS =====
-    std::string color_scheme = "DARK";
+    // ===== DISPLAY SETTINGS (Zero-Heap Strings) =====
+    char color_scheme[MAX_NAME_LEN] = "DARK";
     uint8_t font_size = 0;
     uint8_t spectrum_density = 1;
     uint8_t waterfall_speed = 5;
@@ -89,14 +104,14 @@ struct DroneAnalyzerSettings {
     uint8_t compact_ruler_tick_count = 4;
     bool auto_ruler_style = true;
 
-    // ===== PROFILE SETTINGS =====
-    std::string current_profile_name = "Default";
+    // ===== PROFILE SETTINGS (Zero-Heap Strings) =====
+    char current_profile_name[MAX_NAME_LEN] = "Default";
     bool enable_quick_profiles = true;
     bool auto_save_on_change = false;
 
-    // ===== SYSTEM SETTINGS =====
-    std::string freqman_path = "DRONES";
-    std::string settings_file_path = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    // ===== SYSTEM SETTINGS (Zero-Heap Strings) =====
+    char freqman_path[MAX_NAME_LEN] = "DRONES";
+    char settings_file_path[MAX_PATH_LEN] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     uint32_t settings_version = 2;
 };
 
@@ -162,14 +177,14 @@ private:
 };
 
 struct DronePreset {
-    std::string display_name;
-    std::string name_template;
+    char display_name[MAX_NAME_LEN];
+    char name_template[MAX_NAME_LEN];
     Frequency frequency_hz;
     ThreatLevel threat_level;
     DroneType drone_type;
 
     bool is_valid() const {
-        return !display_name.empty() && frequency_hz > 0;
+        return display_name[0] != '\0' && frequency_hz > 0;
     }
 };
 

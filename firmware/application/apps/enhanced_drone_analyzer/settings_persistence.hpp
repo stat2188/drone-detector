@@ -24,9 +24,9 @@
 #define SETTINGS_PERSISTENCE_HPP_
 
 #include <cstdint>
-#include <cstring>  // Для strlen, strchr, strcmp
+#include <cstring>
 #include <cstdio>
-#include <string>
+#include <array>
 #include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
@@ -74,6 +74,7 @@ enum SettingType : uint8_t {
 // Perfect hash lookup table - generated at compile time
 // Eliminates 50+ if-else blocks
 constexpr size_t SETTINGS_COUNT = 54;
+constexpr size_t MAX_SETTING_STR_LEN = 64;
 
 constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
     // ===== AUDIO SETTINGS =====
@@ -202,7 +203,7 @@ private:
 template<typename T>
 bool SettingsPersistence<T>::load(T& settings) {
     File file;
-    const char* path = settings.settings_file_path.c_str();
+    const char* path = settings.settings_file_path;
     auto error = file.open(path);
     if (error) {
         return false;
@@ -286,7 +287,7 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
                     *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(value, nullptr, 10));
                     break;
                 case TYPE_STR:
-                    *reinterpret_cast<std::string*>(data_ptr) = std::string(value);
+                    safe_strcpy(reinterpret_cast<char*>(data_ptr), value, MAX_SETTING_STR_LEN);
                     break;
             }
             return true;
@@ -393,13 +394,13 @@ bool SettingsPersistence<T>::save(const T& settings) {
         static_cast<unsigned int>(settings.alert_persistence_threshold),
         settings.enable_intelligent_tracking ? "true" : "false",
         settings.auto_save_logs ? "true" : "false",
-        settings.log_file_path.c_str(),
-        settings.log_format.c_str(),
+        settings.log_file_path,
+        settings.log_format,
         static_cast<unsigned int>(settings.max_log_file_size_kb),
         settings.enable_session_logging ? "true" : "false",
         settings.include_timestamp ? "true" : "false",
         settings.include_rssi_values ? "true" : "false",
-        settings.color_scheme.c_str(),
+        settings.color_scheme,
         static_cast<unsigned int>(settings.font_size),
         static_cast<unsigned int>(settings.spectrum_density),
         static_cast<unsigned int>(settings.waterfall_speed),
@@ -410,11 +411,11 @@ bool SettingsPersistence<T>::save(const T& settings) {
         static_cast<unsigned int>(settings.frequency_ruler_style),
         static_cast<unsigned int>(settings.compact_ruler_tick_count),
         settings.auto_ruler_style ? "true" : "false",
-        settings.current_profile_name.c_str(),
+        settings.current_profile_name,
         settings.enable_quick_profiles ? "true" : "false",
         settings.auto_save_on_change ? "true" : "false",
-        settings.freqman_path.c_str(),
-        settings.settings_file_path.c_str(),
+        settings.freqman_path,
+        settings.settings_file_path,
         static_cast<unsigned int>(settings.settings_version)
     );
     
@@ -425,7 +426,7 @@ bool SettingsPersistence<T>::save(const T& settings) {
     }
     
     File file;
-    const char* path = settings.settings_file_path.c_str();
+    const char* path = settings.settings_file_path;
     auto error = file.append(path);
     if (error && !error->ok()) {
         return false;
@@ -459,7 +460,7 @@ void SettingsPersistence<T>::reset(T& settings) {
                 *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(meta.default_str, nullptr, 10));
                 break;
             case TYPE_STR:
-                *reinterpret_cast<std::string*>(data_ptr) = std::string(meta.default_str);
+                safe_strcpy(reinterpret_cast<char*>(data_ptr), meta.default_str, MAX_SETTING_STR_LEN);
                 break;
         }
     }
@@ -512,11 +513,13 @@ bool SettingsPersistence<T>::validate(const T& settings) {
                 if (val_signed < meta.min_val || val_signed > meta.max_val) return false;
                 break;
             }
-            case TYPE_STR:
-                if (reinterpret_cast<const std::string*>(data_ptr)->empty()) {
+            case TYPE_STR: {
+                const char* str = reinterpret_cast<const char*>(data_ptr);
+                if (str[0] == '\0') {
                     return false;
                 }
                 break;
+            }
         }
     }
     
