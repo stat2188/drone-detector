@@ -278,7 +278,9 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
         if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
             wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
         }
-        Frequency slices_span = wideband_scan_data_.slices_nb * settings_.wideband_slice_width_hz;
+        // DIAMOND FIX: Cast to uint64_t before multiplication to prevent overflow
+        // If slices_nb=50 and width=28MHz, result=1400MHz which overflows uint32_t Frequency
+        Frequency slices_span = static_cast<Frequency>(static_cast<uint64_t>(wideband_scan_data_.slices_nb) * static_cast<uint64_t>(settings_.wideband_slice_width_hz));
         Frequency offset = ((scanning_range - slices_span) / 2) + (settings_.wideband_slice_width_hz / 2);
         Frequency center_frequency = safe_min + offset;
 
@@ -564,7 +566,9 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         }
         
         // 3. Get spectrum data from M0 coprocessor with optimized timing
-        std::array<uint8_t, 256> spectrum_data;
+        // DIAMOND FIX: Use static buffer to prevent stack overflow
+        // Saves ~256 bytes of stack space in hot path
+        static std::array<uint8_t, 256> spectrum_data;
         
         // Clear spectrum flag and wait for fresh data
 

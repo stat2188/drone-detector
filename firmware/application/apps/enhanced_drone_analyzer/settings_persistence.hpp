@@ -164,6 +164,19 @@ static const size_t MAX_LINE_LENGTH = CALCULATE_MAX_LINE_LENGTH();
 // Compile-time buffer size for single-pass serialization
 constexpr size_t SETTINGS_TEMPLATE_SIZE = 4096;
 
+// DIAMOND FIX: Static buffer to prevent stack overflow
+// Defined outside template to avoid code bloat from instantiations
+struct SettingsStaticBuffer {
+    static constexpr size_t SIZE = SETTINGS_TEMPLATE_SIZE;
+    static char buffer[SIZE];
+};
+
+// Static buffer definition must be in exactly one translation unit
+inline SettingsStaticBuffer& get_settings_buffer() {
+    static SettingsStaticBuffer buf = {};
+    return buf;
+}
+
 // ===========================================
 // SINGLE-PASS SERIALIZATION TEMPLATE
 // ===========================================
@@ -288,6 +301,8 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
 // ===========================================
 template<typename T>
 bool SettingsPersistence<T>::save(const T& settings) {
+    // DIAMOND FIX: Use static buffer instead of stack allocation
+    // Saves ~4KB of stack space
     constexpr char SETTINGS_TEMPLATE[] =
         "enable_audio_alerts=%s\n"
         "audio_alert_frequency_hz=%u\n"
@@ -343,10 +358,10 @@ bool SettingsPersistence<T>::save(const T& settings) {
         "freqman_path=%s\n"
         "settings_file_path=%s\n"
         "settings_version=%u\n";
-    
-    char buffer[SETTINGS_TEMPLATE_SIZE];
-    
-    int len = snprintf(buffer, sizeof(buffer), SETTINGS_TEMPLATE,
+
+    char& buffer = get_settings_buffer().buffer[0];
+
+    int len = snprintf(&buffer, SettingsStaticBuffer::SIZE, SETTINGS_TEMPLATE,
         settings.enable_audio_alerts ? "true" : "false",
         static_cast<unsigned int>(settings.audio_alert_frequency_hz),
         static_cast<unsigned int>(settings.audio_alert_duration_ms),
@@ -404,8 +419,8 @@ bool SettingsPersistence<T>::save(const T& settings) {
     );
     
     // Compile-time validation
-    static_assert(SETTINGS_TEMPLATE_SIZE >= 4096, "Buffer too small for settings template");
-    if (len <= 0 || static_cast<size_t>(len) >= sizeof(buffer)) {
+    static_assert(SettingsStaticBuffer::SIZE >= 4096, "Buffer too small for settings template");
+    if (len <= 0 || static_cast<size_t>(len) >= SettingsStaticBuffer::SIZE) {
         return false;
     }
     

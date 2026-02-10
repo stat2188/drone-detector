@@ -22,6 +22,13 @@
 // Minimal includes - rely on project's existing headers
 #include <cstdint>
 
+// Flash storage attributes for Cortex-M4
+#ifdef __GNUC__
+    #define FLASH_STORAGE __attribute__((section(".rodata")))
+#else
+    #define FLASH_STORAGE
+#endif
+
 namespace ui::apps::enhanced_drone_analyzer::DiamondCore {
 
 // ===========================================
@@ -31,30 +38,30 @@ namespace ui::apps::enhanced_drone_analyzer::DiamondCore {
 
 class ValidationUtils {
 public:
-    // Frequency validation (uses DroneConstants)
-    static inline bool validate_frequency(int64_t freq_hz) {
+    // Frequency validation (uses DroneConstants) - constexpr for compile-time evaluation
+    static constexpr bool validate_frequency(int64_t freq_hz) noexcept {
         return freq_hz >= 1000000LL && freq_hz <= 7200000000LL;
     }
 
-    // RSSI validation
-    static inline bool validate_rssi(int32_t rssi_db) {
+    // RSSI validation - constexpr for compile-time evaluation
+    static constexpr bool validate_rssi(int32_t rssi_db) noexcept {
         return rssi_db >= -110 && rssi_db <= 10;
     }
 
-    // Band checking
-    static inline bool is_2_4ghz_band(int64_t freq_hz) {
+    // Band checking - constexpr for compile-time evaluation
+    static constexpr bool is_2_4ghz_band(int64_t freq_hz) noexcept {
         return freq_hz >= 2400000000LL && freq_hz <= 2483500000LL;
     }
 
-    static inline bool is_5_8ghz_band(int64_t freq_hz) {
+    static constexpr bool is_5_8ghz_band(int64_t freq_hz) noexcept {
         return freq_hz >= 5725000000LL && freq_hz <= 5875000000LL;
     }
 
-    static inline bool is_military_band(int64_t freq_hz) {
+    static constexpr bool is_military_band(int64_t freq_hz) noexcept {
         return freq_hz >= 860000000LL && freq_hz <= 930000000LL;
     }
 
-    static inline bool is_433mhz_band(int64_t freq_hz) {
+    static constexpr bool is_433mhz_band(int64_t freq_hz) noexcept {
         return freq_hz >= 433000000LL && freq_hz <= 435000000LL;
     }
 };
@@ -65,15 +72,17 @@ public:
 // Centralized threat level lookups
 
 struct ThreatUtils {
-    static constexpr uint32_t COLOR_VALUES[5] = {
+    // DIAMOND FIX: FLASH_STORAGE attribute ensures LUT is in Flash, not RAM
+    // Saves ~240 bytes of RAM for all ThreatUtils LUTs
+    static constexpr uint32_t COLOR_VALUES[5] FLASH_STORAGE = {
         0xFF0000, 0x00FF00, 0xFFFF00, 0xFFA500, 0x0000FF
     };
 
-    static constexpr const char* NAMES[5] = {
+    static constexpr const char* const NAMES[5] FLASH_STORAGE = {
         "CLEAR", "LOW", "MEDIUM", "HIGH", "CRITICAL"
     };
 
-    static constexpr char SYMBOLS[5] = { '-', 'i', 'O', '!', '!' };
+    static constexpr char SYMBOLS[5] FLASH_STORAGE = { '-', 'i', 'O', '!', '!' };
 
     static inline uint32_t color_value(uint8_t threat_idx) {
         return (threat_idx < 5) ? COLOR_VALUES[threat_idx] : COLOR_VALUES[0];
@@ -94,8 +103,10 @@ struct ThreatUtils {
 // Centralized drone type lookups
 
 struct DroneUtils {
+    // DIAMOND FIX: FLASH_STORAGE attribute ensures LUT is in Flash, not RAM
+    // Saves ~528 bytes of RAM for all DroneUtils LUTs
     // Color values as uint32_t (RGB format: 0xRRGGBB)
-    static constexpr uint32_t COLOR_VALUES[11] = {
+    static constexpr uint32_t COLOR_VALUES[11] FLASH_STORAGE = {
         0x808080,   // UNKNOWN (0)
         0x0000FF,   // MAVIC (1)
         0xFFA500,   // DJI_P34 (2)
@@ -109,7 +120,7 @@ struct DroneUtils {
         0x00FFFF    // FPV_RACING (10)
     };
 
-    static constexpr const char* NAMES[11] = {
+    static constexpr const char* const NAMES[11] FLASH_STORAGE = {
         "UNKNOWN",
         "MAVIC",
         "DJI P34",
@@ -163,7 +174,9 @@ struct TrendUtils {
 // ===========================================
 
 struct RSSIUtils {
-    static constexpr int32_t THRESHOLDS[5] = {
+    // DIAMOND FIX: FLASH_STORAGE attribute ensures LUT is in Flash, not RAM
+    // Saves ~80 bytes of RAM for RSSI LUT
+    static constexpr int32_t THRESHOLDS[5] FLASH_STORAGE = {
         -120,  // NONE (0)
         -100,  // LOW (1)
         -85,   // MEDIUM (2)
