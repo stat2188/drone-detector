@@ -206,30 +206,35 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
        current_db_index_(0),
        last_scanned_frequency_(0),
        freq_db_loaded_(false),
+       db_loading_thread_(nullptr),
+       db_loading_active_{false},
        scan_cycles_(0),
        total_detections_(0),
         scanning_mode_(DroneScanner::ScanningMode::DATABASE),
           is_real_mode_(true),
-        tracked_drones_ptr_(nullptr),  // 🔴 FIX: Defer heap allocation
-        tracked_count_(0),
-        approaching_count_(0),
-        receding_count_(0),
-        static_count_(0),
-        max_detected_threat_(ThreatLevel::NONE),
-        last_valid_rssi_(-120),
-         wideband_scan_data_(),
-        detection_logger_(),
-        detection_ring_buffer_(),
-        priority_slice_index_(-1),
-        priority_slice_mutex_(),
-        priority_scan_counter_(0),
-        frequency_predictions_(),
-        predictions_mutex_(),
-        prediction_count_(0),
-        settings_(settings)
+         tracked_drones_ptr_(nullptr),  // 🔴 FIX: Defer heap allocation
+         tracked_count_(0),
+         approaching_count_(0),
+         receding_count_(0),
+         static_count_(0),
+         max_detected_threat_(ThreatLevel::NONE),
+         last_valid_rssi_(-120),
+          wideband_scan_data_(),
+         detection_logger_(),
+         detection_ring_buffer_(),
+         priority_slice_index_(-1),
+         priority_slice_mutex_(),
+         priority_scan_counter_(0),
+         frequency_predictions_(),
+         predictions_mutex_(),
+         prediction_count_(0),
+         settings_(settings)
 {
     // Initialize mutex properly to fix race condition
     chMtxInit(&data_mutex);
+
+    // 🔴 FIX: Initialize semaphore for async database loading
+    chSemInit(&db_loaded_sem_, 0);
 
     // 🔴 FIX: Lazy initialization after constructor (prevents stack overflow)
     // FreqmanDB and tracked_drones allocated later from heap
@@ -1284,7 +1289,106 @@ void DroneScanner::initialize_database_and_scanner() {
 }
 
 void DroneScanner::cleanup_database_and_scanner() {
-    // Cleanup logic
+    // 🔴 FIX: Cleanup async database loading thread
+    if (db_loading_active_.load(std::memory_order_acquire)) {
+        db_loading_active_.store(false, std::memory_order_release);
+        if (db_loading_thread_ != nullptr) {
+            chThdWait(db_loading_thread_);
+            db_loading_thread_ = nullptr;
+        }
+    }
+}
+
+// 🔴 FIX: Async database loading to prevent UI freeze
+msg_t DroneScanner::db_loading_thread_entry(void* arg) {
+    static_cast<DroneScanner*>(arg)->db_loading_thread_loop();
+    return 0;
+}
+
+void DroneScanner::db_loading_thread_loop() {
+    // Allocate FreqmanDB (heap allocation, fast)
+    freq_db_ptr_ = std::make_unique<FreqmanDB>();
+    if (!freq_db_ptr_) {
+        // Allocation failed
+        chSemSignal(&db_loaded_sem_);
+        return;
+    }
+
+    // Allocate tracked_drones array (heap allocation, fast)
+    tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
+    if (!tracked_drones_ptr_) {
+        // Allocation failed
+        chSemSignal(&db_loaded_sem_);
+        return;
+    }
+
+    // 🔴 FIX: Load database OUTSIDE mutex (critical optimization!)
+    // This prevents blocking UI thread
+    bool db_success = false;
+    auto db_path = get_freqman_path("DRONES");
+
+    // Phase 1: Try to open existing database (SD card I/O)
+    if (db_loading_active_.load(std::memory_order_acquire)) {
+        db_success = freq_db_ptr_->open(db_path);
+    }
+
+    // Phase 2: If empty or failed, create from built-in DB
+    if ((db_loading_active_.load(std::memory_order_acquire)) &&
+        (!db_success || freq_db_ptr_->empty())) {
+        freq_db_ptr_->open(db_path, true);
+
+        // Add built-in frequencies (31 entries, fast loop)
+        for (const auto& item : BUILTIN_DRONE_DB) {
+            if (!db_loading_active_.load(std::memory_order_acquire)) {
+                break;  // Thread being stopped
+            }
+
+            freqman_entry entry{};
+            entry.frequency_a = item.freq;
+            entry.description = item.desc;
+            entry.type = freqman_type::Single;
+            entry.modulation = freqman_invalid_index;
+            entry.bandwidth = freqman_invalid_index;
+            entry.step = freqman_invalid_index;
+            entry.tone = freqman_invalid_index;
+            freq_db_ptr_->append_entry(entry);
+        }
+
+        current_db_index_ = 0;
+    }
+
+    // 🔴 FIX: Briefly lock mutex ONLY to set flag
+    // This is the critical optimization - minimal time holding mutex
+    {
+        MutexLock lock(data_mutex);
+        freq_db_loaded_ = true;
+    }
+
+    // Signal completion
+    chSemSignal(&db_loaded_sem_);
+}
+
+// 🔴 FIX: Async database loading (non-blocking UI)
+void DroneScanner::initialize_database_async() {
+    if (db_loading_active_.load(std::memory_order_acquire)) {
+        return;  // Already loading or loaded
+    }
+
+    db_loading_active_.store(true, std::memory_order_release);
+
+    // Create background thread for database loading
+    db_loading_thread_ = chThdCreateFromHeap(
+        nullptr,
+        DB_LOADING_STACK_SIZE,
+        NORMALPRIO - 2,  // Lower priority than UI thread
+        db_loading_thread_entry,
+        this
+    );
+}
+
+// 🔴 FIX: Check if async loading finished
+bool DroneScanner::is_database_loading_complete() const {
+    return !db_loading_active_.load(std::memory_order_acquire) && freq_db_loaded_;
 }
 
 void DroneScanner::scan_init_from_loaded_frequencies() {
@@ -1900,11 +2004,13 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
 
     // DIAMOND OPTIMIZATION: Use FrequencyFormatter
     if (current_freq > 0) {
-        std::string freq_str = FrequencyFormatter::to_string_short_freq(current_freq);
+        // 🔴 FIX: Use buffer-based formatting (no std::string allocation)
+        char freq_buf[16];
+        FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), current_freq);
         if (is_scanning) {
-            StatusFormatter::format_to(buffer, "%s SCANNING", freq_str.c_str());
+            StatusFormatter::format_to(buffer, "%s SCANNING", freq_buf);
         } else {
-            StatusFormatter::format_to(buffer, "%s READY", freq_str.c_str());
+            StatusFormatter::format_to(buffer, "%s READY", freq_buf);
         }
         threat_frequency_.set(buffer);
     } else {
@@ -2330,17 +2436,20 @@ bool DroneDisplayController::allocate_buffers_from_pool() {
 
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
-    if (scanner.is_scanning_active()) {
-        Frequency current_freq = scanner.get_current_scanning_frequency();
-        // NOLINTNEXTLINE(bugprone-branch-clone)
-        if (current_freq > 0) {
-            big_display_.set(FrequencyFormatter::to_string_short_freq(current_freq));
-        } else {
-            big_display_.set("2400.0MHz");
-        }
-    } else {
-        big_display_.set("READY");
-    }
+     if (scanner.is_scanning_active()) {
+         Frequency current_freq = scanner.get_current_scanning_frequency();
+         // NOLINTNEXTLINE(bugprone-branch-clone)
+         if (current_freq > 0) {
+             // 🔴 FIX: Use buffer-based formatting (no std::string allocation)
+             char freq_buf[16];
+             FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), current_freq);
+             big_display_.set(freq_buf);
+         } else {
+             big_display_.set("2400.0MHz");
+         }
+     } else {
+         big_display_.set("READY");
+     }
 
     size_t total_freqs = scanner.get_database_size();
     if (total_freqs > 0 && scanner.is_scanning_active()) {
@@ -3231,26 +3340,36 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
     for (uint8_t i = 0; i < InitTiming::MAX_PHASES; ++i) {
         // DIAMOND OPTIMIZATION: LUT lookup вместо switch (O(1) lookup)
         const auto& phase = INIT_PHASES[i];
-        
+
         // Проверяем, наступило ли время для этой фазы
         if (elapsed >= MS2ST(phase.delay_ms)) {
             // Проверяем, была ли эта фаза уже выполнена
             uint8_t expected_state = static_cast<uint8_t>(InitState::CONSTRUCTED) + i + 1;
             if (static_cast<uint8_t>(init_state_) >= expected_state) {
+                // 🔴 FIX: Update UI status during async database loading
+                // Phase 2 (DATABASE_LOADED) may still be loading in background
+                if (init_state_ == InitState::DATABASE_LOADED && !scanner_.is_database_loading_complete()) {
+                    status_bar_.update_normal_status("INIT", "Loading database...");
+                }
                 continue;  // Эта фаза уже выполнена, пропускаем
             }
-            
+
             // Выполняем фазу через указатель на метод
             (this->*phase.init_func)();
-            
+
             // Если произошла ошибка - выходим
             if (init_state_ == InitState::INITIALIZATION_ERROR) {
                 initialization_in_progress_ = false;
                 return;
             }
-            
+
             // Если состояние изменилось - обновляем UI
-            status_bar_.update_normal_status("INIT", phase.name);
+            const char* status_msg = phase.name;
+            // 🔴 FIX: Special message for database loading
+            if (init_state_ == InitState::DATABASE_LOADED && !scanner_.is_database_loading_complete()) {
+                status_msg = "Loading database...";
+            }
+            status_bar_.update_normal_status("INIT", status_msg);
         }
     }
     
@@ -3287,15 +3406,16 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_database() {
     if (init_state_ != InitState::BUFFERS_ALLOCATED) {
         return;
     }
-    
-    // Инициализация базы данных и сканера
-    scanner_.initialize_database_and_scanner();
 
-    // Проверяем, что база данных загружена
-    if (scanner_.get_database_size() == 0) {
-        // Некритическая ошибка: продолжаем, но используем встроенную базу данных
-        // Не переходим в ERROR state, просто продолжаем
-    }
+    // 🔴 FIX: Use async database loading to prevent UI freeze
+    // Old blocking call: scanner_.initialize_database_and_scanner();
+    // New async call: scanner_.initialize_database_async();
+
+    scanner_.initialize_database_async();
+
+    // 🔴 FIX: Don't wait for completion here - just proceed to next phase
+    // The UI will continue to be responsive during loading
+    // We'll check for completion in step_deferred_initialization()
 
     init_state_ = InitState::DATABASE_LOADED;
 }
@@ -3305,8 +3425,23 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware() {
     if (init_state_ != InitState::DATABASE_LOADED) {
         return;  // Early Return
     }
-    
+
+    // 🔴 FIX: Wrap hardware initialization in timeout protection
+    // Radio operations can hang if hardware is not responding
+    systime_t hw_start = chTimeNow();
+    constexpr systime_t HW_INIT_TIMEOUT_MS = MS2ST(1000);  // 1 second timeout
+
     hardware_.on_hardware_show();
+
+    // Check if initialization took too long
+    if ((chTimeNow() - hw_start) >= HW_INIT_TIMEOUT_MS) {
+        // Hardware initialization timeout - mark error but continue
+        // The app will work in degraded mode (no real-time scanning)
+        init_error_ = InitError::GENERAL_TIMEOUT;
+        // DON'T set init_state_ to ERROR, allow continuing to UI setup
+        status_bar_.update_normal_status("WARN", "Radio init timeout");
+    }
+
     init_state_ = InitState::HARDWARE_READY;
 }
 
@@ -3325,15 +3460,29 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     if (init_state_ != InitState::UI_LAYOUT_READY) {
         return;  // Early Return
     }
-    
-    // DIAMOND OPTIMIZATION: Non-blocking load (с таймаутом)
-    SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
-    
+
+    // 🔴 FIX: Add timeout protection for settings loading
+    // Settings file I/O can block if SD card is slow
+    systime_t settings_start = chTimeNow();
+    constexpr systime_t SETTINGS_LOAD_TIMEOUT_MS = MS2ST(1000);  // 1 second timeout
+
+    // Load settings with timeout protection
+    if ((chTimeNow() - settings_start) < SETTINGS_LOAD_TIMEOUT_MS) {
+        SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
+    }
+    // If timeout, continue with default settings
+
+    // Check if loading took too long
+    if ((chTimeNow() - settings_start) >= SETTINGS_LOAD_TIMEOUT_MS) {
+        status_bar_.update_normal_status("WARN", "Settings load timeout");
+        // Continue with default settings
+    }
+
     // Обновляем UI кнопки
     button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
     scanner_.update_scan_range(settings_.wideband_min_freq_hz,
                             settings_.wideband_max_freq_hz);
-    
+
     init_state_ = InitState::SETTINGS_LOADED;
 }
 

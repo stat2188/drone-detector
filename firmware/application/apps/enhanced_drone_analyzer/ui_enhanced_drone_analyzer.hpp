@@ -473,15 +473,21 @@ struct DetectionParams {
 
     bool try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const;
 
-    // 🔴 FIX: Public API for safe initialization
+     // 🔴 FIX: Public API for safe initialization
     // These methods must be public to allow lazy initialization after constructor
     void initialize_database_and_scanner();
+    void initialize_database_async();  // 🔴 FIX: Async database loading (non-blocking UI)
     void cleanup_database_and_scanner();
+    bool is_database_loading_complete() const;  // 🔴 FIX: Check if async loading finished
 
  private:
     void reset_scan_cycles();
     void initialize_wideband_scanning();
     void setup_wideband_range(Frequency min_freq, Frequency max_freq);
+
+    // 🔴 FIX: Async database loading methods
+    static msg_t db_loading_thread_entry(void* arg);
+    void db_loading_thread_loop();
     void wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override);
     void process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                    int32_t original_threshold, int32_t wideband_threshold);
@@ -520,11 +526,17 @@ struct DetectionParams {
      mutable Mutex data_mutex;
      std::atomic<bool> scanning_active_{false};
 
-     // 🔴 OPTIMIZATION: Heap-allocated FreqmanDB (saves ~2KB stack in constructor)
-     std::unique_ptr<FreqmanDB> freq_db_ptr_;
-     size_t current_db_index_ = 0;
-     Frequency last_scanned_frequency_ = 0;
-     bool freq_db_loaded_ = false;
+      // 🔴 OPTIMIZATION: Heap-allocated FreqmanDB (saves ~2KB stack in constructor)
+      std::unique_ptr<FreqmanDB> freq_db_ptr_;
+      size_t current_db_index_ = 0;
+      Frequency last_scanned_frequency_ = 0;
+      bool freq_db_loaded_ = false;
+
+      // 🔴 FIX: Async database loading to prevent UI freeze
+      Thread* db_loading_thread_ = nullptr;
+      Semaphore db_loaded_sem_;
+      std::atomic<bool> db_loading_active_{false};
+      static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4 KB for safety
 
      std::atomic<uint32_t> scan_cycles_{0};
      std::atomic<uint32_t> total_detections_{0};
