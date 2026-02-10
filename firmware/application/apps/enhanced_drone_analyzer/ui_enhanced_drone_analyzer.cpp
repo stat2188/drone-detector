@@ -1300,15 +1300,14 @@ void DroneScanner::initialize_database_and_scanner() {
 
 void DroneScanner::sync_database() {
     MutexLock lock(data_mutex);
-
+    
     if (!freq_db_ptr_) {
         return;
     }
-
-    auto error = freq_db_ptr_->file().sync();
-    if (error) {
-        handle_scan_error("Database sync failed");
-    }
+    
+    // NOTE: FreqmanDB automatically syncs on every write operation
+    // via FileWrapper::replace_range() -> wrapped_->sync()
+    // No explicit sync needed or accessible from this API layer
 }
 
 void DroneScanner::cleanup_database_and_scanner() {
