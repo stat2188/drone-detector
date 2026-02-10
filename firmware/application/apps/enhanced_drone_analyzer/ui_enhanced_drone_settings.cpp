@@ -851,7 +851,7 @@ void AudioSettingsView::on_save_settings() {
 // LoadingView
 LoadingView::LoadingView(NavigationView& nav, const std::string& loading_text)
     : View(), nav_(nav), loading_text_(loading_text),
-      loading_text_1_{{screen_width / 2 - 50, screen_height / 2 - 10, 100, 16}, loading_text},
+      loading_text_1_{{screen_width / 2 - 50, screen_height / 2 - 10, 100, 16}, loading_text_.c_str()},
       loading_text_2_{{screen_width / 2 - 50, screen_height / 2 + 10, 100, 16}, ""} {
     add_children({&loading_text_1_, &loading_text_2_});
 }
