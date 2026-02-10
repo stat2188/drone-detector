@@ -662,14 +662,16 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui
 void DronePresetSelector::show_preset_menu(NavigationView& nav, PresetMenuView callback) {
     auto preset_names = DroneFrequencyPresets::get_preset_names();
     auto all_presets = DroneFrequencyPresets::get_all_presets();
+    auto preset_count = DroneFrequencyPresets::get_preset_count();
 
     class PresetMenuView : public MenuView {
     public:
-        PresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected,
+        PresetMenuView(NavigationView& nav, const char* const* names, size_t count,
+                      std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected,
                       const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5>& presets)
-            : MenuView(), nav_(nav), names_(std::move(names)), on_selected_fn_(on_selected), presets_(presets) {
-            for (const auto& name : names_) {
-                add_item({name, Color::white(), nullptr, nullptr});
+            : MenuView(), nav_(nav), names_(names), name_count_(count), on_selected_fn_(on_selected), presets_(presets) {
+            for (size_t i = 0; i < name_count_; ++i) {
+                add_item({names_[i], Color::white(), nullptr, nullptr});
             }
         }
     private:
@@ -684,17 +686,27 @@ void DronePresetSelector::show_preset_menu(NavigationView& nav, PresetMenuView c
             }
             return MenuView::on_key(key);
         }
-        std::vector<std::string> names_;
+        const char* const* names_;
+        size_t name_count_;
         std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected_fn_;
         const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5>& presets_;
     };
-    nav.push<PresetMenuView>(preset_names, callback, all_presets);
+    nav.push<PresetMenuView>(preset_names, preset_count, callback, all_presets);
 }
 
 void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneType type) {
     auto filtered_presets = DroneFrequencyPresets::get_presets_of_type(DroneFrequencyPresets::get_all_presets(), type);
-    std::vector<std::string> names;
-    for (const auto& preset : filtered_presets) names.push_back(preset.display_name);
+    
+    static constexpr size_t MAX_FILTERED = 5;
+    const char* names[MAX_FILTERED];
+    size_t preset_count = 0;
+    
+    for (const auto& preset : filtered_presets) {
+        if (preset_count < MAX_FILTERED) {
+            names[preset_count] = preset.display_name;
+            preset_count++;
+        }
+    }
 
     auto on_selected = [&nav](const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
         (void)preset;
@@ -703,11 +715,12 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
 
     class FilteredPresetMenuView : public MenuView {
     public:
-        FilteredPresetMenuView(NavigationView& nav, std::vector<std::string> names, std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected,
+        FilteredPresetMenuView(NavigationView& nav, const char* const* names, size_t count,
+                               std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected,
                                const std::vector<ui::apps::enhanced_drone_analyzer::DronePreset>& presets)
-            : MenuView(), nav_(nav), names_(std::move(names)), on_selected_fn_(on_selected), presets_(presets) {
-            for (const auto& name : names_) {
-                add_item({name, Color::white(), nullptr, nullptr});
+            : MenuView(), nav_(nav), names_(names), name_count_(count), on_selected_fn_(on_selected), presets_(presets) {
+            for (size_t i = 0; i < name_count_; ++i) {
+                add_item({names_[i], Color::white(), nullptr, nullptr});
             }
         }
     private:
@@ -722,11 +735,12 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
             }
             return MenuView::on_key(key);
         }
-        std::vector<std::string> names_;
+        const char* const* names_;
+        size_t name_count_;
         std::function<void(const ui::apps::enhanced_drone_analyzer::DronePreset&)> on_selected_fn_;
         const std::vector<ui::apps::enhanced_drone_analyzer::DronePreset>& presets_;
     };
-    nav.push<FilteredPresetMenuView>(names, on_selected, filtered_presets);
+    nav.push<FilteredPresetMenuView>(names, preset_count, on_selected, filtered_presets);
 }
 
 PresetMenuView DronePresetSelector::create_config_updater(DroneAnalyzerSettings& config_to_update) {
