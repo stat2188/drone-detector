@@ -127,7 +127,6 @@ public:
     static size_t get_preset_count();
     static size_t get_available_types_count();
     static std::string get_type_display_name(DroneType type);
-    static std::vector<DronePreset> get_presets_of_type(const std::array<DronePreset, PRESETS_COUNT>& all_presets, DroneType type);
     static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset);
 };
 
