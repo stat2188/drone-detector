@@ -534,7 +534,6 @@ struct DetectionParams {
 
       // 🔴 FIX: Async database loading to prevent UI freeze
       Thread* db_loading_thread_ = nullptr;
-      Semaphore db_loaded_sem_;
       std::atomic<bool> db_loading_active_{false};
       static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4 KB for safety
 

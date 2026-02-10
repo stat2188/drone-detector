@@ -233,9 +233,6 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
     // Initialize mutex properly to fix race condition
     chMtxInit(&data_mutex);
 
-    // 🔴 FIX: Initialize semaphore for async database loading
-    chSemInit(&db_loaded_sem_, 0);
-
     // 🔴 FIX: Lazy initialization after constructor (prevents stack overflow)
     // FreqmanDB and tracked_drones allocated later from heap
     // Initialize wideband scanning only (lightweight operation)
@@ -1310,7 +1307,6 @@ void DroneScanner::db_loading_thread_loop() {
     freq_db_ptr_ = std::make_unique<FreqmanDB>();
     if (!freq_db_ptr_) {
         // Allocation failed
-        chSemSignal(&db_loaded_sem_);
         return;
     }
 
@@ -1318,7 +1314,6 @@ void DroneScanner::db_loading_thread_loop() {
     tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
     if (!tracked_drones_ptr_) {
         // Allocation failed
-        chSemSignal(&db_loaded_sem_);
         return;
     }
 
@@ -1363,9 +1358,6 @@ void DroneScanner::db_loading_thread_loop() {
         MutexLock lock(data_mutex);
         freq_db_loaded_ = true;
     }
-
-    // Signal completion
-    chSemSignal(&db_loaded_sem_);
 }
 
 // 🔴 FIX: Async database loading (non-blocking UI)
