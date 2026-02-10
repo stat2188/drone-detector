@@ -59,9 +59,6 @@ enum class ScannerMode : uint8_t {
 // Application specific namespace starts here to ensure all classes are properly scoped
 namespace ui::apps::enhanced_drone_analyzer {
 
-// Signal processing utilities
-#include "ui_signal_processing.hpp"
-
 struct preset_entry {
     Frequency min = 0;
     Frequency max = 0;
