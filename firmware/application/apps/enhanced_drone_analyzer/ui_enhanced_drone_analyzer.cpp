@@ -334,7 +334,6 @@ bool DroneScanner::load_frequency_database() {
     options.load_hamradios = true;
     options.load_repeaters = true;
 
-    // Use heap-allocated FreqmanDB instead of stack-allocated (saves ~3KB stack)
     if (!freq_db_ptr_) return false;
 
     auto db_path = get_freqman_path("DRONES");
@@ -344,8 +343,22 @@ bool DroneScanner::load_frequency_database() {
         MutexLock lock(data_mutex);
 
         if (!sd_loaded || freq_db_ptr_->empty()) {
-            // Try to create the file if it doesn't exist
             freq_db_ptr_->open(db_path, true);
+
+            for (const auto& item : BUILTIN_DRONE_DB) {
+                freqman_entry entry{};
+                entry.frequency_a = item.freq;
+                entry.description = item.desc;
+                entry.type = freqman_type::Single;
+                entry.modulation = freqman_invalid_index;
+                entry.bandwidth = freqman_invalid_index;
+                entry.step = freqman_invalid_index;
+                entry.tone = freqman_invalid_index;
+                freq_db_ptr_->append_entry(entry);
+            }
+
+            sync_database();
+
             sd_loaded = !freq_db_ptr_->empty();
         }
     }
@@ -1285,8 +1298,22 @@ void DroneScanner::initialize_database_and_scanner() {
     }
 }
 
+void DroneScanner::sync_database() {
+    MutexLock lock(data_mutex);
+
+    if (!freq_db_ptr_) {
+        return;
+    }
+
+    auto error = freq_db_ptr_->file().sync();
+    if (error) {
+        handle_scan_error("Database sync failed");
+    }
+}
+
 void DroneScanner::cleanup_database_and_scanner() {
-    // 🔴 FIX: Cleanup async database loading thread
+    sync_database();
+
     if (db_loading_active_.load(std::memory_order_acquire)) {
         db_loading_active_.store(false, std::memory_order_release);
         if (db_loading_thread_ != nullptr) {
@@ -1303,39 +1330,42 @@ msg_t DroneScanner::db_loading_thread_entry(void* arg) {
 }
 
 void DroneScanner::db_loading_thread_loop() {
-    // Allocate FreqmanDB (heap allocation, fast)
     freq_db_ptr_ = std::make_unique<FreqmanDB>();
     if (!freq_db_ptr_) {
-        // Allocation failed
         return;
     }
 
-    // Allocate tracked_drones array (heap allocation, fast)
     tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
     if (!tracked_drones_ptr_) {
-        // Allocation failed
         return;
     }
 
-    // 🔴 FIX: Load database OUTSIDE mutex (critical optimization!)
-    // This prevents blocking UI thread
     bool db_success = false;
     auto db_path = get_freqman_path("DRONES");
 
-    // Phase 1: Try to open existing database (SD card I/O)
+    systime_t load_start = chTimeNow();
+
     if (db_loading_active_.load(std::memory_order_acquire)) {
         db_success = freq_db_ptr_->open(db_path);
+
+        if (db_success) {
+            systime_t load_time = chTimeNow() - load_start;
+            if (load_time > MS2ST(DB_LOAD_TIMEOUT_MS)) {
+                handle_scan_error("Database load timeout");
+                db_loading_active_.store(false, std::memory_order_release);
+                return;
+            }
+        }
     }
 
-    // Phase 2: If empty or failed, create from built-in DB
     if ((db_loading_active_.load(std::memory_order_acquire)) &&
         (!db_success || freq_db_ptr_->empty())) {
+
         freq_db_ptr_->open(db_path, true);
 
-        // Add built-in frequencies (31 entries, fast loop)
         for (const auto& item : BUILTIN_DRONE_DB) {
             if (!db_loading_active_.load(std::memory_order_acquire)) {
-                break;  // Thread being stopped
+                return;
             }
 
             freqman_entry entry{};
@@ -1350,10 +1380,10 @@ void DroneScanner::db_loading_thread_loop() {
         }
 
         current_db_index_ = 0;
+
+        sync_database();
     }
 
-    // 🔴 FIX: Briefly lock mutex ONLY to set flag
-    // This is the critical optimization - minimal time holding mutex
     {
         MutexLock lock(data_mutex);
         freq_db_loaded_ = true;
@@ -3485,8 +3515,7 @@ void EnhancedDroneSpectrumAnalyzerView::on_hide() {
     hardware_.shutdown_hardware();
     hardware_.on_hardware_hide();
 
-    // DIAMOND OPTIMIZATION: waterfall удалён (экономия ~10KB RAM)
-    // display.scroll_disable() больше не нужен
+    scanner_.sync_database();
 
     View::on_hide();
 }

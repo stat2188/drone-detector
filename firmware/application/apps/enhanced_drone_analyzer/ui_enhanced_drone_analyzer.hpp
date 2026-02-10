@@ -380,6 +380,10 @@ public:
     static constexpr size_t BUILTIN_DB_SIZE = 31;
     static const std::array<BuiltinDroneFreq, BUILTIN_DB_SIZE> BUILTIN_DRONE_DB;
 
+    // Database timeout constants (Flash storage)
+    static constexpr uint32_t DB_LOAD_TIMEOUT_MS = 2000;     // 2 seconds max for DB load
+    static constexpr uint32_t DB_SYNC_TIMEOUT_MS = 1000;     // 1 second max for sync
+
     // Scanning modes for DroneScanner (different from DroneConstants::ScanningMode)
     enum class ScanningMode {
         DATABASE,
@@ -473,12 +477,13 @@ struct DetectionParams {
 
     bool try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const;
 
-     // 🔴 FIX: Public API for safe initialization
+      // 🔴 FIX: Public API for safe initialization
     // These methods must be public to allow lazy initialization after constructor
     void initialize_database_and_scanner();
     void initialize_database_async();  // 🔴 FIX: Async database loading (non-blocking UI)
     void cleanup_database_and_scanner();
     bool is_database_loading_complete() const;  // 🔴 FIX: Check if async loading finished
+    void sync_database();  // 🔴 FIX: Sync database to physical media (thread-safe)
 
  private:
     void reset_scan_cycles();
