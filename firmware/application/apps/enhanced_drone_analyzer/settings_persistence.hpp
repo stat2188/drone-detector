@@ -431,7 +431,7 @@ bool SettingsPersistence<T>::save(const T& settings) {
         return false;
     }
     
-    auto write_result = file.write(buffer, static_cast<File::Size>(len));
+    auto write_result = file.write(&buffer, static_cast<File::Size>(len));
     return !write_result.is_error();
 }
 
