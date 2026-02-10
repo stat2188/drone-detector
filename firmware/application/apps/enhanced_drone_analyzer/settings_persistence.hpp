@@ -165,6 +165,10 @@ static const size_t MAX_LINE_LENGTH = CALCULATE_MAX_LINE_LENGTH();
 // Compile-time buffer size for single-pass serialization
 constexpr size_t SETTINGS_TEMPLATE_SIZE = 4096;
 
+// Protection constants for file loading
+constexpr size_t MAX_SETTINGS_FILE_SIZE = 65536;      // 64KB max file size
+constexpr size_t MAX_SETTINGS_LINES = 1000;            // Max 1000 settings lines
+
 // DIAMOND FIX: Static buffer to prevent stack overflow
 // Defined outside template to avoid code bloat from instantiations
 struct SettingsStaticBuffer {
@@ -208,38 +212,51 @@ bool SettingsPersistence<T>::load(T& settings) {
     if (error) {
         return false;
     }
-    
+
     constexpr size_t BUFFER_SIZE = 256;
-    char line_buffer[MAX_LINE_LENGTH + 16];  // Safety margin
+    char line_buffer[MAX_LINE_LENGTH + 16];
     char read_buffer[BUFFER_SIZE];
     size_t line_idx = 0;
-    
+
+    size_t total_bytes_read = 0;
+    size_t lines_processed = 0;
+
     while (true) {
         auto read_res = file.read(read_buffer, sizeof(read_buffer));
         if (read_res.is_error() || read_res.value() == 0) {
             break;
         }
-        
+
         size_t bytes_read = read_res.value();
+        total_bytes_read += bytes_read;
+
+        if (total_bytes_read > MAX_SETTINGS_FILE_SIZE) {
+            return false;
+        }
+
         for (size_t i = 0; i < bytes_read; i++) {
             char c = read_buffer[i];
-            
+
             if (c == '\n') {
                 line_buffer[line_idx] = '\0';
                 parse_line(line_buffer, settings);
                 line_idx = 0;
+                lines_processed++;
+
+                if (lines_processed > MAX_SETTINGS_LINES) {
+                    return false;
+                }
             } else if (c != '\r' && line_idx < MAX_LINE_LENGTH) {
                 line_buffer[line_idx++] = c;
             }
         }
     }
-    
-    // Process last line
+
     if (line_idx > 0) {
         line_buffer[line_idx] = '\0';
         parse_line(line_buffer, settings);
     }
-    
+
     return true;
 }
 

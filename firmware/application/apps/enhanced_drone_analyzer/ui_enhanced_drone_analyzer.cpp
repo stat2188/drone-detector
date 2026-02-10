@@ -3376,101 +3376,78 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
 
 // ФАЗА 1: Allocate display buffers
 void EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers() {
-    // DIAMOND OPTIMIZATION: Проверка уже выделенных буферов (защита от повторного выделения)
     if (display_controller_.are_buffers_allocated()) {
         init_state_ = InitState::BUFFERS_ALLOCATED;
-        return;  // Уже выделено, пропускаем
+        return;
     }
-    
-    // DIAMOND OPTIMIZATION: Используем allocate_buffers_from_pool для предсказуемости
+
     if (!display_controller_.allocate_buffers_from_pool()) {
         init_error_ = InitError::ALLOCATION_FAILED;
         init_state_ = InitState::INITIALIZATION_ERROR;
         return;
     }
-    
+
+    status_bar_.update_normal_status("INIT", "Phase 1: Buffers OK");
     init_state_ = InitState::BUFFERS_ALLOCATED;
 }
 
 // ФАЗА 2: Load database
 void EnhancedDroneSpectrumAnalyzerView::init_phase_load_database() {
-    // Early Return: неверное состояние
     if (init_state_ != InitState::BUFFERS_ALLOCATED) {
         return;
     }
 
-    // 🔴 FIX: Use async database loading to prevent UI freeze
-    // Old blocking call: scanner_.initialize_database_and_scanner();
-    // New async call: scanner_.initialize_database_async();
-
     scanner_.initialize_database_async();
-
-    // 🔴 FIX: Don't wait for completion here - just proceed to next phase
-    // The UI will continue to be responsive during loading
-    // We'll check for completion in step_deferred_initialization()
-
+    status_bar_.update_normal_status("INIT", "Phase 2: DB loading...");
     init_state_ = InitState::DATABASE_LOADED;
 }
 
 // ФАЗА 3: Initialize hardware
 void EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware() {
     if (init_state_ != InitState::DATABASE_LOADED) {
-        return;  // Early Return
+        return;
     }
-
-    // 🔴 FIX: Wrap hardware initialization in timeout protection
-    // Radio operations can hang if hardware is not responding
-    systime_t hw_start = chTimeNow();
-    constexpr systime_t HW_INIT_TIMEOUT_MS = MS2ST(1000);  // 1 second timeout
 
     hardware_.on_hardware_show();
-
-    // Check if initialization took too long
-    if ((chTimeNow() - hw_start) >= HW_INIT_TIMEOUT_MS) {
-        // Hardware initialization timeout - mark error but continue
-        // The app will work in degraded mode (no real-time scanning)
-        init_error_ = InitError::GENERAL_TIMEOUT;
-        // DON'T set init_state_ to ERROR, allow continuing to UI setup
-        status_bar_.update_normal_status("WARN", "Radio init timeout");
-    }
-
+    status_bar_.update_normal_status("INIT", "Phase 3: HW ready");
     init_state_ = InitState::HARDWARE_READY;
 }
 
 // ФАЗА 4: Setup UI layout
 void EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui() {
     if (init_state_ != InitState::HARDWARE_READY) {
-        return;  // Early Return
+        return;
     }
-    
+
     initialize_modern_layout();
+    status_bar_.update_normal_status("INIT", "Phase 4: UI ready");
     init_state_ = InitState::UI_LAYOUT_READY;
 }
 
 // ФАЗА 5: Load settings
 void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     if (init_state_ != InitState::UI_LAYOUT_READY) {
-        return;  // Early Return
+        return;
     }
 
-    // 🔴 FIX: Add timeout protection for settings loading
-    // Settings file I/O can block if SD card is slow
     systime_t settings_start = chTimeNow();
-    constexpr systime_t SETTINGS_LOAD_TIMEOUT_MS = MS2ST(1000);  // 1 second timeout
+    constexpr systime_t SETTINGS_LOAD_TIMEOUT_MS = MS2ST(2000);
 
-    // Load settings with timeout protection
-    if ((chTimeNow() - settings_start) < SETTINGS_LOAD_TIMEOUT_MS) {
-        SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
-    }
-    // If timeout, continue with default settings
+    bool loaded = SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
 
-    // Check if loading took too long
-    if ((chTimeNow() - settings_start) >= SETTINGS_LOAD_TIMEOUT_MS) {
-        status_bar_.update_normal_status("WARN", "Settings load timeout");
-        // Continue with default settings
+    systime_t elapsed = chTimeNow() - settings_start;
+    if (elapsed >= SETTINGS_LOAD_TIMEOUT_MS) {
+        status_bar_.update_normal_status("WARN", "Settings timeout");
+        init_state_ = InitState::SETTINGS_LOADED;
+        return;
     }
 
-    // Обновляем UI кнопки
+    if (!loaded) {
+        status_bar_.update_normal_status("INIT", "Using defaults");
+    } else {
+        status_bar_.update_normal_status("INIT", "Settings loaded");
+    }
+
     button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
     scanner_.update_scan_range(settings_.wideband_min_freq_hz,
                             settings_.wideband_max_freq_hz);
@@ -3481,43 +3458,24 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
 // ФАЗА 6: Finalize (переход в FULLY_INITIALIZED)
 void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
     if (init_state_ != InitState::SETTINGS_LOADED) {
-        return;  // Early Return
+        return;
     }
-    
-    // Финальное обновление UI
+
     handle_scanner_update();
-    
     init_state_ = InitState::FULLY_INITIALIZED;
-    
-    // Показываем финальный статус
-    status_bar_.update_normal_status("EDA Ready", "All systems go");
+    status_bar_.update_normal_status("EDA", "Ready");
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_show() {
     View::on_show();
 
-    // 🔴 ФАЗА 2.6: МИНИМАЛЬНАЯ инициализация в on_show()
-    // НЕ вызываем scanner_.initialize_database_and_scanner() здесь!
-    // НЕ вызываем hardware_.on_hardware_show() здесь!
-    // НЕ вызываем initialize_modern_layout() здесь!
-    // Все эти вызовы отложены до step_deferred_initialization()
-
-    // DIAMOND OPTIMIZATION: waterfall удалён (экономия ~10KB RAM)
-    // Бар spectrum отрисовывается в paint() через render_bar_spectrum()
-    // Настройка scroll_set_area больше не нужна
-
-    // Инициализация таймеров для пошаговой инициализации
     init_state_ = InitState::CONSTRUCTED;
     init_start_time_ = chTimeNow();
     last_init_progress_ = 0;
     initialization_in_progress_ = false;
-    init_error_ = InitError::NONE;  // 🔴 DIAMOND: Сброс ошибки инициализации
+    init_error_ = InitError::NONE;
 
-    // Показать статус инициализации
-    status_bar_.update_normal_status("INIT", "Starting up...");
-
-    // Фоновая инициализация начнется в первом DisplayFrameSync
-    // Это позволяет UI thread остаться responsive!
+    status_bar_.update_normal_status("INIT", "Phase 0: Ready");
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
