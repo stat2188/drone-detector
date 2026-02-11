@@ -10,7 +10,7 @@ static inline uint32_t get_current_time_ticks() noexcept {
     return static_cast<uint32_t>(chTimeNow());
 }
 
-void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) noexcept {
+void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash, DetectionCount detection_count, RssiValue rssi_value) noexcept {
     const uint32_t current_time = get_current_time_ticks();
     const size_t start_idx = frequency_hash % MAX_ENTRIES;
 
@@ -26,8 +26,8 @@ void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detect
             return;
         }
         
-        if (entry_hash == 0) {
-            size_t expected = 0;
+        if (entry_hash == EMPTY_HASH) {
+            FrequencyHash expected = EMPTY_HASH;
             if (entries_[idx].frequency_hash.compare_exchange_strong(
                     expected, frequency_hash,
                     std::memory_order_acq_rel,
@@ -55,7 +55,7 @@ void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detect
     entries_[new_head].timestamp.store(current_time, std::memory_order_release);
 }
 
-uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const noexcept {
+DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_hash) const noexcept {
     const size_t start_idx = frequency_hash % MAX_ENTRIES;
 
     for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
@@ -67,14 +67,14 @@ uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const no
             return entries_[idx].detection_count.load(std::memory_order_acquire);
         }
         
-        if (entry_hash == 0) {
+        if (entry_hash == EMPTY_HASH) {
             return 0;
         }
     }
     return 0;
 }
 
-int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const noexcept {
+RssiValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) const noexcept {
     const size_t start_idx = frequency_hash % MAX_ENTRIES;
 
     for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
@@ -86,18 +86,18 @@ int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const noexcep
             return entries_[idx].rssi_value.load(std::memory_order_acquire);
         }
         
-        if (entry_hash == 0) {
-            return -120;
+        if (entry_hash == EMPTY_HASH) {
+            return DEFAULT_RSSI;
         }
     }
-    return -120;
+    return DEFAULT_RSSI;
 }
 
 void DetectionRingBuffer::clear() noexcept {
     for (auto& entry : entries_) {
-        entry.frequency_hash.store(0, std::memory_order_release);
+        entry.frequency_hash.store(EMPTY_HASH, std::memory_order_release);
         entry.detection_count.store(0, std::memory_order_release);
-        entry.rssi_value.store(-120, std::memory_order_release);
+        entry.rssi_value.store(DEFAULT_RSSI, std::memory_order_release);
         entry.timestamp.store(0, std::memory_order_release);
     }
     head_.store(0, std::memory_order_release);
