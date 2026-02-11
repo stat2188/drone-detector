@@ -29,6 +29,17 @@ static inline void safe_strcpy(char* dest, const char* src, size_t max_len) {
     }
 }
 
+// Helper for safe string concatenation (Zero-Heap)
+static inline void safe_strcat(char* dest, const char* src, size_t max_len) {
+    if (dest && src) {
+        size_t dest_len = strlen(dest);
+        if (dest_len < max_len - 1) {
+            strncpy(dest + dest_len, src, max_len - dest_len - 1);
+            dest[max_len - 1] = '\0';
+        }
+    }
+}
+
 // ===========================================
 // DroneAnalyzerSettings - UNIFIED SETTINGS STRUCTURE
 // Single source of truth for all EDA settings
@@ -218,4 +229,4 @@ struct DetectionLogEntry {
 
 }  // namespace ui::apps::enhanced_drone_analyzer
 
-#endif // __UI_DRONE_COMMON_TYPES_HPP__
+#endif // UI_DRONE_COMMON_TYPES_HPP_

@@ -34,13 +34,13 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
-// COMPILE-TIME STRING LENGTH METAFUNCTION
+// COMPILE-TIME STRING LENGTH (Recursive Constexpr)
 // ===========================================
-// Вычисляет длину строкового литерала на этапе компиляции
+// DIAMOND FIX: Recursive constexpr for compile-time string length
+// Replaces runtime strlen() with zero-cost abstraction
 // Scott Meyers Item 15: Prefer constexpr to #define
-template<size_t N>
-constexpr size_t StringLength(const char (&)[N]) {
-    return N - 1;  // Вычитаем нуль-терминатор
+constexpr size_t const_strlen(const char* str) {
+    return (str == nullptr || *str == '\0') ? 0 : 1 + const_strlen(str + 1);
 }
 
 // ===========================================
@@ -76,7 +76,6 @@ enum SettingType : uint8_t {
 // Perfect hash lookup table - generated at compile time
 // Eliminates 50+ if-else blocks
 constexpr size_t SETTINGS_COUNT = 54;
-constexpr size_t MAX_SETTING_STR_LEN = 64;
 
 // DIAMOND FIX: inline constexpr ensures single Flash instance (ODR-safe, RAM-efficient)
 inline constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
@@ -151,19 +150,48 @@ inline constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
     {"settings_version", offsetof(DroneAnalyzerSettings, settings_version), TYPE_UINT32, 1, 999, "2"}
 };
 
-// DIAMOND FIX: Runtime buffer size calculation (strlen на этапе инициализации)
-inline size_t CALCULATE_MAX_LINE_LENGTH() {
+// ===========================================
+// COMPILE-TIME MAX LINE LENGTH CALCULATOR
+// ===========================================
+// DIAMOND FIX: Replaced runtime strlen loop with constexpr.
+// This code executes on the HOST during compilation.
+// Result is embedded as a constant integer - ZERO CPU cycles at runtime.
+constexpr size_t calculate_max_line_length() {
     size_t max_len = 0;
     for (size_t i = 0; i < SETTINGS_COUNT; i++) {
-        size_t key_len = strlen(SETTINGS_LUT[i].key);
-        size_t val_len = strlen(SETTINGS_LUT[i].default_str);
+        // Compile-time string length calculation
+        size_t key_len = const_strlen(SETTINGS_LUT[i].key);
+        size_t val_len = const_strlen(SETTINGS_LUT[i].default_str);
+        // Format: "key=value\n\0"
         size_t total = key_len + 1 + val_len + 2;
-        max_len = (total > max_len) ? total : max_len;
+        if (total > max_len) {
+            max_len = total;
+        }
     }
     return max_len;
 }
 
-static const size_t MAX_LINE_LENGTH = CALCULATE_MAX_LINE_LENGTH();
+// DIAMOND FIX: static constexpr forces compile-time evaluation.
+// The MCU sees this as a constant integer (e.g., 65). No function call.
+static constexpr size_t MAX_LINE_LENGTH = calculate_max_line_length();
+
+// ===========================================
+// COMPILE-TIME MAX SETTING STRING LENGTH CALCULATOR
+// ===========================================
+// DIAMOND FIX: Derive from actual SETTINGS_LUT at compile time.
+// Eliminates magic number 64 and prevents buffer overflow.
+constexpr size_t calculate_max_setting_str_len() {
+    size_t max_len = 0;
+    for (size_t i = 0; i < SETTINGS_COUNT; i++) {
+        size_t val_len = const_strlen(SETTINGS_LUT[i].default_str);
+        if (val_len > max_len) {
+            max_len = val_len;
+        }
+    }
+    return max_len + 1;  // +1 for null terminator
+}
+
+static constexpr size_t MAX_SETTING_STR_LEN = calculate_max_setting_str_len();
 
 // Compile-time buffer size for single-pass serialization
 constexpr size_t SETTINGS_TEMPLATE_SIZE = 4096;

@@ -2173,7 +2173,8 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
     : View(parent_rect), card_index_(card_index),
       parent_rect_(parent_rect), is_active_(false), // <--- ПЕРЕМЕЩЕНО СЮДА (после parent_rect_, перед last_frequency_)
       last_frequency_(0), last_threat_(ThreatLevel::NONE),
-      last_trend_(MovementTrend::UNKNOWN), last_rssi_(-120), last_threat_name_("") {
+      last_trend_(MovementTrend::UNKNOWN), last_rssi_(-120) {
+    last_threat_name_[0] = '\0';
     add_children({&card_text_});
 }
 
@@ -2185,7 +2186,7 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
                         (drone.threat != last_threat_) ||
                         (drone.trend != last_trend_) ||
                         (std::abs(drone.rssi - last_rssi_) > 1) || // RSSI hysteresis
-                        (drone.type_name != last_threat_name_);
+                        (strcmp(drone.type_name, last_threat_name_) != 0);
 
     if (!data_changed && is_active_) {
         return; // Exit early, no need to redraw
@@ -2196,7 +2197,7 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     last_threat_ = drone.threat;
     last_trend_ = drone.trend;
     last_rssi_ = drone.rssi;
-    last_threat_name_ = drone.type_name;
+    safe_strcpy(last_threat_name_, drone.type_name, sizeof(last_threat_name_));
     is_active_ = true;
 
     // DIAMOND OPTIMIZATION: Use TrendSymbols for O(1) lookup
@@ -2206,7 +2207,7 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     // DIAMOND OPTIMIZATION: Use StatusFormatter
     char buffer[48];
     StatusFormatter::format_to(buffer, "%s %c %luM %ld",
-                             drone.type_name.c_str(), trend_char,
+                             drone.type_name, trend_char,
                              (unsigned long)mhz, (long)drone.rssi);
     card_text_.set(buffer);
     
@@ -2651,7 +2652,7 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
             detected_drones()[i].threat = threat;
             detected_drones()[i].type = type;
             detected_drones()[i].last_seen = now;
-            detected_drones()[i].type_name = get_drone_type_name(type);
+            safe_strcpy(detected_drones()[i].type_name, get_drone_type_name(type), sizeof(detected_drones()[i].type_name));
             detected_drones()[i].display_color = get_drone_type_color(type);
             sort_drones_by_rssi();
             render_drone_text_display();
@@ -2667,7 +2668,7 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
         entry.threat = threat;
         entry.type = type;
         entry.last_seen = now;
-        entry.type_name = get_drone_type_name(type);
+        safe_strcpy(entry.type_name, get_drone_type_name(type), sizeof(entry.type_name));
         entry.display_color = get_drone_type_color(type);
         entry.trend = MovementTrend::STATIC;
         detected_drones_count_++;
@@ -2713,7 +2714,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
             entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
             entry.rssi = drone_data.rssi;
             entry.last_seen = drone_data.last_seen;
-            entry.type_name = get_drone_type_name(entry.type);
+            safe_strcpy(entry.type_name, get_drone_type_name(entry.type), sizeof(entry.type_name));
             entry.display_color = get_drone_type_color(entry.type);
             entry.trend = drone_data.get_trend(); // Now this is safe to call
             detected_drones_count_++;
@@ -2771,7 +2772,7 @@ void DroneDisplayController::render_drone_text_display() {
 
         // DIAMOND OPTIMIZATION: Use StatusFormatter
         StatusFormatter::format_to(buffer, DRONE_DISPLAY_FORMAT,
-                                 drone.type_name.c_str(),
+                                 drone.type_name,
                                  freq_buf,
                                  (long int)drone.rssi,
                                  trend_symbol);
@@ -3586,6 +3587,12 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     scanner_.update_scan_range(settings_.wideband_min_freq_hz,
                             settings_.wideband_max_freq_hz);
 
+    // DIAMOND FIX: Update audio cooldown based on settings to prevent UI freeze
+    // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
+    // Set cooldown = duration + 100ms buffer to ensure M0 can process audio
+    uint32_t audio_cooldown = settings_.audio_alert_duration_ms + 100;
+    AudioAlertManager::set_cooldown_ms(audio_cooldown);
+
     init_state_ = InitState::SETTINGS_LOADED;
 }
 
@@ -3720,6 +3727,17 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     size_t receding = scanner_.get_receding_count();
     bool is_scanning = scanner_.is_scanning_active();
     Frequency current_freq = scanner_.get_current_scanning_frequency();
+
+    // DIAMOND FIX: Trigger audio alerts based on threat level (with debouncing)
+    // Only play audio if threats detected and audio alerts are enabled
+    // AudioAlertManager::play_alert() has built-in debouncing to prevent baseband queue saturation
+    // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
+    if (settings_.enable_audio_alerts && max_threat >= ThreatLevel::LOW) {
+        size_t total_drones = approaching + static_count + receding;
+        if (total_drones > 0) {
+            AudioAlertManager::play_alert(max_threat);
+        }
+    }
 
     // Update header
     smart_header_.update(max_threat, approaching, static_count, receding,
@@ -3938,138 +3956,130 @@ void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
 // PART 7: ENHANCED SETTINGS VALIDATOR
 // ===========================================
 
-EnhancedDroneSettingsValidator::ValidationResult 
+EnhancedDroneSettingsValidator::ValidationResult
 EnhancedDroneSettingsValidator::validate_all(const DroneAnalyzerSettings& settings) {
     ValidationResult result;
-    
+
     // 1. Validate RSSI threshold
-    if (!validate_rssi_threshold(settings.rssi_threshold_db, result.error_message)) {
+    if (!validate_rssi_threshold(settings.rssi_threshold_db, result.error_message, sizeof(result.error_message))) {
         result.is_valid = false;
         return result;
     }
-    
+
     // 2. Validate scan interval
-    if (!validate_scan_interval(settings.scan_interval_ms, result.error_message)) {
+    if (!validate_scan_interval(settings.scan_interval_ms, result.error_message, sizeof(result.error_message))) {
         result.is_valid = false;
         return result;
     }
-    
+
     // 3. Validate audio parameters
-    if (!validate_audio_params(settings.audio_alert_frequency_hz, 
-                              settings.audio_alert_duration_ms, result.error_message)) {
+    if (!validate_audio_params(settings.audio_alert_frequency_hz,
+                              settings.audio_alert_duration_ms, result.error_message, sizeof(result.error_message))) {
         result.is_valid = false;
         return result;
     }
-    
+
     // 4. Validate bandwidth
-    if (!validate_bandwidth(settings.hardware_bandwidth_hz, result.error_message)) {
+    if (!validate_bandwidth(settings.hardware_bandwidth_hz, result.error_message, sizeof(result.error_message))) {
         result.is_valid = false;
         return result;
     }
-    
+
     // 5. Validate frequency range
-    if (!validate_frequency_range(settings.user_min_freq_hz, settings.user_max_freq_hz, result.error_message)) {
+    if (!validate_frequency_range(settings.user_min_freq_hz, settings.user_max_freq_hz, result.error_message, sizeof(result.error_message))) {
         result.is_valid = false;
         return result;
     }
-    
+
     // 6. Check for warnings (not errors)
     if (settings.rssi_threshold_db > -60) {
         result.warning_count++;
-        result.error_message += "WARN: High RSSI threshold may miss weak signals\n";
+        safe_strcat(result.error_message, "WARN: High RSSI threshold may miss weak signals\n", sizeof(result.error_message));
     }
-    
+
     if (settings.scan_interval_ms > 5000) {
         result.warning_count++;
-        result.error_message += "WARN: Slow scan interval\n";
+        safe_strcat(result.error_message, "WARN: Slow scan interval\n", sizeof(result.error_message));
     }
-    
+
     return result;
 }
 
-bool EnhancedDroneSettingsValidator::validate_frequency(Frequency freq, std::string& error) {
+bool EnhancedDroneSettingsValidator::validate_frequency(Frequency freq, char* error, size_t error_size) {
     if (freq < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ ||
         freq > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
-        // DIAMOND OPTIMIZATION: Use StatusFormatter and FrequencyFormatter
-        std::string freq_str = format_frequency_hz(freq);
-        char buffer[128];
-        StatusFormatter::format_to(buffer, "Frequency %s out of range (must be %llu-%llu GHz)",
-                                  freq_str.c_str(),
-                                  DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ / 1000000000ULL,
-                                  DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ / 1000000000ULL);
-        error = buffer;
+        char freq_str[32];
+        format_frequency_hz(freq, freq_str, sizeof(freq_str));
+        snprintf(error, error_size, "Frequency %s out of range (must be %llu-%llu GHz)",
+                 freq_str,
+                 DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ / 1000000000ULL,
+                 DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ / 1000000000ULL);
         return false;
     }
     return true;
 }
 
-bool EnhancedDroneSettingsValidator::validate_rssi_threshold(int32_t rssi, std::string& error) {
+bool EnhancedDroneSettingsValidator::validate_rssi_threshold(int32_t rssi, char* error, size_t error_size) {
     if (rssi < DroneConstants::MIN_VALID_RSSI || rssi > DroneConstants::MAX_VALID_RSSI) {
-        // DIAMOND OPTIMIZATION: Use ValidatorFormatter
-        error = ValidatorFormatter::out_of_range("RSSI threshold", rssi,
-                                                DroneConstants::MIN_VALID_RSSI,
-                                                DroneConstants::MAX_VALID_RSSI);
+        snprintf(error, error_size, "RSSI threshold %ld invalid (must be %ld to %ld)",
+                 (long)rssi, (long)DroneConstants::MIN_VALID_RSSI, (long)DroneConstants::MAX_VALID_RSSI);
         return false;
     }
     return true;
 }
 
-bool EnhancedDroneSettingsValidator::validate_scan_interval(uint32_t interval_ms, std::string& error) {
+bool EnhancedDroneSettingsValidator::validate_scan_interval(uint32_t interval_ms, char* error, size_t error_size) {
     if (interval_ms < DroneConstants::MIN_SCAN_INTERVAL_MS ||
         interval_ms > DroneConstants::MAX_SCAN_INTERVAL_MS) {
-        // DIAMOND OPTIMIZATION: Use ValidatorFormatter
-        error = ValidatorFormatter::out_of_range("Scan interval", interval_ms,
-                                                DroneConstants::MIN_SCAN_INTERVAL_MS,
-                                                DroneConstants::MAX_SCAN_INTERVAL_MS);
+        snprintf(error, error_size, "Scan interval %lu invalid (must be %lu to %lu)",
+                 (unsigned long)interval_ms, (unsigned long)DroneConstants::MIN_SCAN_INTERVAL_MS,
+                 (unsigned long)DroneConstants::MAX_SCAN_INTERVAL_MS);
         return false;
     }
     return true;
 }
 
-bool EnhancedDroneSettingsValidator::validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, std::string& error) {
+bool EnhancedDroneSettingsValidator::validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, char* error, size_t error_size) {
     if (freq_hz < DroneConstants::MIN_AUDIO_FREQ || freq_hz > DroneConstants::MAX_AUDIO_FREQ) {
-        // DIAMOND OPTIMIZATION: Use ValidatorFormatter
-        error = ValidatorFormatter::out_of_range("Audio frequency", freq_hz,
-                                                DroneConstants::MIN_AUDIO_FREQ,
-                                                DroneConstants::MAX_AUDIO_FREQ);
+        snprintf(error, error_size, "Audio frequency %lu invalid (must be %lu to %lu)",
+                 (unsigned long)freq_hz, (unsigned long)DroneConstants::MIN_AUDIO_FREQ,
+                 (unsigned long)DroneConstants::MAX_AUDIO_FREQ);
         return false;
     }
 
     if (duration_ms < DroneConstants::MIN_AUDIO_DURATION ||
         duration_ms > DroneConstants::MAX_AUDIO_DURATION) {
-        // DIAMOND OPTIMIZATION: Use ValidatorFormatter
-        error = ValidatorFormatter::out_of_range("Audio duration", duration_ms,
-                                                DroneConstants::MIN_AUDIO_DURATION,
-                                                DroneConstants::MAX_AUDIO_DURATION);
+        snprintf(error, error_size, "Audio duration %lu invalid (must be %lu to %lu)",
+                 (unsigned long)duration_ms, (unsigned long)DroneConstants::MIN_AUDIO_DURATION,
+                 (unsigned long)DroneConstants::MAX_AUDIO_DURATION);
         return false;
     }
     return true;
 }
 
-bool EnhancedDroneSettingsValidator::validate_bandwidth(uint32_t bandwidth_hz, std::string& error) {
+bool EnhancedDroneSettingsValidator::validate_bandwidth(uint32_t bandwidth_hz, char* error, size_t error_size) {
     if (bandwidth_hz < DroneConstants::MIN_BANDWIDTH || bandwidth_hz > DroneConstants::MAX_BANDWIDTH) {
-        // DIAMOND OPTIMIZATION: Use ValidatorFormatter
-        error = ValidatorFormatter::out_of_range("Bandwidth", bandwidth_hz,
-                                                DroneConstants::MIN_BANDWIDTH,
-                                                DroneConstants::MAX_BANDWIDTH);
+        snprintf(error, error_size, "Bandwidth %lu invalid (must be %lu to %lu)",
+                 (unsigned long)bandwidth_hz, (unsigned long)DroneConstants::MIN_BANDWIDTH,
+                 (unsigned long)DroneConstants::MAX_BANDWIDTH);
         return false;
     }
     return true;
 }
 
-bool EnhancedDroneSettingsValidator::validate_frequency_range(Frequency min_hz, Frequency max_hz, std::string& error) {
+bool EnhancedDroneSettingsValidator::validate_frequency_range(Frequency min_hz, Frequency max_hz, char* error, size_t error_size) {
     if (min_hz >= max_hz) {
-        error = "Min frequency must be less than max frequency";
+        safe_strcpy(error, "Min frequency must be less than max frequency", error_size);
         return false;
     }
-    
-    if (!validate_frequency(min_hz, error)) return false;
-    if (!validate_frequency(max_hz, error)) return false;
-    
+
+    if (!validate_frequency(min_hz, error, error_size)) return false;
+    if (!validate_frequency(max_hz, error, error_size)) return false;
+
     // Check range width
     Frequency range = max_hz - min_hz;
     if (static_cast<uint64_t>(range) < 1000000ULL) { // Minimum 1 MHz range
-        error = "Frequency range too small (minimum 1 MHz)";
+        safe_strcpy(error, "Frequency range too small (minimum 1 MHz)", error_size);
         return false;
     }
     
@@ -4100,11 +4110,11 @@ bool EnhancedDroneSettingsValidator::is_ism_band(Frequency freq) {
 // DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
 // Eliminates ~30 lines of duplicate formatting code
 // Scott Meyers Item 25: Consider support for implicit interfaces
-std::string EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq) {
+void EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq, char* buffer, size_t buffer_size) {
     if (static_cast<uint64_t>(freq) >= 1000000000ULL) {
-        return FrequencyFormatter::format(freq, FrequencyFormatter::Format::DETAILED_GHZ);
+        FrequencyFormatter::format_to_buffer(buffer, buffer_size, freq, FrequencyFormatter::Format::DETAILED_GHZ);
     } else {
-        return FrequencyFormatter::format(freq, FrequencyFormatter::Format::STANDARD_MHZ);
+        FrequencyFormatter::format_to_buffer(buffer, buffer_size, freq, FrequencyFormatter::Format::STANDARD_MHZ);
     }
 }
 
@@ -4530,26 +4540,41 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
     }
 }
 
-} // namespace ui::apps::enhanced_drone_analyzer
+
 
 // ===========================================
-// DIAMOND FIX: AudioAlertManager Implementation (Global Scope)
-// AudioAlertManager is declared globally in ui_drone_audio.hpp
-// Implementation must be in global scope, not in namespace
+// AudioAlertManager Implementation
 // ===========================================
+// AudioAlertManager is declared in ui_drone_audio.hpp inside namespace ui::apps::enhanced_drone_analyzer
 
 bool AudioAlertManager::audio_enabled_ = true;
+systime_t AudioAlertManager::last_alert_timestamp_ = 0;
+uint32_t AudioAlertManager::cooldown_ms_ = 600;
 
-void AudioAlertManager::play_alert(ui::apps::enhanced_drone_analyzer::ThreatLevel level) {
+void AudioAlertManager::play_alert(ThreatLevel level) {
     if (!audio_enabled_) return;
+
+    // DIAMOND OPTIMIZATION: Time-based debouncing to prevent UI freeze
+    // baseband::send_message() contains busy-wait spin loop (baseband_api.cpp:54-64)
+    // If called at 60 FPS with 200ms beeps, UI would spin-wait ~180ms per frame
+    // This would completely freeze the UI - no touch/key events processed
+    systime_t now = chTimeNow();
+    systime_t elapsed_ticks = now - last_alert_timestamp_;
+
+    if (elapsed_ticks < MS2ST(cooldown_ms_)) {
+        return;
+    }
+
+    // Update timestamp for next call
+    last_alert_timestamp_ = now;
 
     uint16_t freq_hz = 800;
     switch (level) {
-        case ui::apps::enhanced_drone_analyzer::ThreatLevel::NONE: return;
-        case ui::apps::enhanced_drone_analyzer::ThreatLevel::LOW: freq_hz = 800; break;
-        case ui::apps::enhanced_drone_analyzer::ThreatLevel::MEDIUM: freq_hz = 1000; break;
-        case ui::apps::enhanced_drone_analyzer::ThreatLevel::HIGH: freq_hz = 1200; break;
-        case ui::apps::enhanced_drone_analyzer::ThreatLevel::CRITICAL: freq_hz = 2000; break;
+        case ThreatLevel::NONE: return;
+        case ThreatLevel::LOW: freq_hz = 800; break;
+        case ThreatLevel::MEDIUM: freq_hz = 1000; break;
+        case ThreatLevel::HIGH: freq_hz = 1200; break;
+        case ThreatLevel::CRITICAL: freq_hz = 2000; break;
         default: freq_hz = 800; break;
     }
     baseband::request_audio_beep(freq_hz, 24000, 200);
@@ -4563,3 +4588,8 @@ bool AudioAlertManager::is_enabled() {
     return audio_enabled_;
 }
 
+void AudioAlertManager::set_cooldown_ms(uint32_t cooldown_ms) {
+    cooldown_ms_ = cooldown_ms;
+}
+
+} // namespace ui::apps::enhanced_drone_analyzer

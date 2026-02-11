@@ -55,4 +55,4 @@ private:
 
 }  // namespace ui::apps::enhanced_drone_analyzer
 
-#endif  // __SCANNING_COORDINATOR_HPP__
+#endif  // SCANNING_COORDINATOR_HPP_

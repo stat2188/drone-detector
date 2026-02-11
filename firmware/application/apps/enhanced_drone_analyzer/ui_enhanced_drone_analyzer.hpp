@@ -1,5 +1,5 @@
-#ifndef UI_SCANNER_COMBINED_HPP_
-#define UI_SCANNER_COMBINED_HPP_
+#ifndef UI_ENHANCED_DRONE_ANALYZER_HPP_
+#define UI_ENHANCED_DRONE_ANALYZER_HPP_
 
 #include <cstdint>
 #include <string>
@@ -82,7 +82,7 @@ public:
 struct preset_entry {
     Frequency min = 0;
     Frequency max = 0;
-    std::string label;
+    char label[32];
 };
 
 struct RssiMeasurement {
@@ -189,7 +189,7 @@ struct DisplayDroneEntry {
     ThreatLevel threat = ThreatLevel::NONE;
     int32_t rssi = -120;
     systime_t last_seen = 0;
-    std::string type_name = "";
+    char type_name[16];
     Color display_color = Color::white();
     MovementTrend trend = MovementTrend::UNKNOWN;
 };
@@ -250,25 +250,25 @@ public:
 struct ValidationResult {
     bool is_valid;
     uint32_t warning_count;
-    std::string error_message;
+    char error_message[128];
 
-    ValidationResult() : is_valid(true), warning_count(0), error_message{} {}
+    ValidationResult() : is_valid(true), warning_count(0) { error_message[0] = '\0'; }
 };
     
     static ValidationResult validate_all(const DroneAnalyzerSettings& settings);
     
 private:
-    static bool validate_frequency(Frequency freq, std::string& error);
-    static bool validate_rssi_threshold(int32_t rssi, std::string& error);
-    static bool validate_scan_interval(uint32_t interval_ms, std::string& error);
-    static bool validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, std::string& error);
-    static bool validate_bandwidth(uint32_t bandwidth_hz, std::string& error);
-    static bool validate_frequency_range(Frequency min_hz, Frequency max_hz, std::string& error);
+    static bool validate_frequency(Frequency freq, char* error, size_t error_size);
+    static bool validate_rssi_threshold(int32_t rssi, char* error, size_t error_size);
+    static bool validate_scan_interval(uint32_t interval_ms, char* error, size_t error_size);
+    static bool validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, char* error, size_t error_size);
+    static bool validate_bandwidth(uint32_t bandwidth_hz, char* error, size_t error_size);
+    static bool validate_frequency_range(Frequency min_hz, Frequency max_hz, char* error, size_t error_size);
     
     // Enhanced frequency validation with drone band checks
     static bool is_known_drone_band(Frequency freq);
     static bool is_ism_band(Frequency freq);
-    static std::string format_frequency_hz(Frequency freq);
+    static void format_frequency_hz(Frequency freq, char* buffer, size_t buffer_size);
 };
 
 // RAII wrapper for ChibiOS mutexes
@@ -807,7 +807,7 @@ private:
     ThreatLevel last_threat_ = ThreatLevel::NONE;
     MovementTrend last_trend_ = MovementTrend::UNKNOWN;
     int32_t last_rssi_ = -120;
-    std::string last_threat_name_;
+    char last_threat_name_[16];
 
     void paint(Painter& painter) override;
 
@@ -1602,4 +1602,4 @@ class DroneAnalyzerSettingsView;
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
-#endif // UI_SCANNER_COMBINED_HPP_
+#endif // UI_ENHANCED_DRONE_ANALYZER_HPP_

@@ -188,4 +188,4 @@ public:
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
-#endif // __UI_SPECTRAL_ANALYZER_HPP__
+#endif // UI_SPECTRAL_ANALYZER_HPP_
