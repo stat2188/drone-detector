@@ -779,7 +779,7 @@ private:
     size_t last_approaching_ = 0;
     size_t last_static_ = 0;
     size_t last_receding_ = 0;
-    std::string last_text_;
+    char last_text_[128];  // Fixed-size buffer instead of std::string (no heap allocation)
 };
 
 class ThreatCard : public View {

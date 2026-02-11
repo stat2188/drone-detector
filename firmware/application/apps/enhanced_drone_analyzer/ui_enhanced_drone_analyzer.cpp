@@ -2026,11 +2026,9 @@ SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
     : View(parent_rect),
       threat_progress_bar_({0, 0, screen_width, 16}),
       threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | <0 ~0 >0"),
-      threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING"),
-      last_text_() {
+      threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING") {
+    last_text_[0] = '\0';
     add_children({&threat_progress_bar_, &threat_status_main_, &threat_frequency_});
-    // Initialize with empty string to ensure proper initialization
-    last_text_ = "";
     update(ThreatLevel::NONE, 0, 0, 0, 2400000000ULL, false);
 }
 
@@ -2078,7 +2076,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     }
     threat_status_main_.set(buffer);
     threat_status_main_.set_style(&UIStyles::RED_STYLE);
-    last_text_ = buffer;
+    safe_strcpy(last_text_, buffer, sizeof(last_text_));
 
     // DIAMOND OPTIMIZATION: Use FrequencyFormatter
     if (current_freq > 0) {
@@ -2160,7 +2158,7 @@ void SmartThreatHeader::paint(Painter& painter) {
 
     // 2. Draw large centered text with white color on colored background
     // Calculate centered position
-    const int text_width = last_text_.length() * 8; // fixed_8x16 is 8px per char
+    const int text_width = strlen(last_text_) * 8; // fixed_8x16 is 8px per char
     const int text_height = 16;
     const int center_x = (screen_width - text_width) / 2;
     const int center_y = (60 - text_height) / 2; // Header height is 60px
@@ -2984,9 +2982,8 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
     if (freq_hz < MIN_FREQ || freq_hz > MAX_FREQ || FREQ_RANGE == 0) {
         return MINI_SPECTRUM_WIDTH;
     }
-    float relative_freq = static_cast<float>(freq_hz - MIN_FREQ);
-    float float_bin = relative_freq * MINI_SPECTRUM_WIDTH / static_cast<float>(FREQ_RANGE);
-    size_t bin = static_cast<size_t>(float_bin);
+    int64_t relative_freq = freq_hz - MIN_FREQ;
+    size_t bin = static_cast<size_t>((relative_freq * MINI_SPECTRUM_WIDTH) / FREQ_RANGE);
     return std::min(bin, MINI_SPECTRUM_WIDTH - 1);
 }
 
@@ -3016,7 +3013,7 @@ Frequency DroneDisplayController::spectrum_bin_to_frequency(size_t bin) const {
         return MIN_FREQ;
     }
     
-    float relative_freq = static_cast<float>(bin) * FREQ_RANGE / MINI_SPECTRUM_WIDTH;
+    int64_t relative_freq = (static_cast<int64_t>(bin) * FREQ_RANGE) / MINI_SPECTRUM_WIDTH;
     return MIN_FREQ + static_cast<Frequency>(relative_freq);
 }
 
@@ -3566,8 +3563,8 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     systime_t settings_start = chTimeNow();
     constexpr systime_t SETTINGS_LOAD_TIMEOUT_MS = MS2ST(2000);
 
-    // DIAMOND FIX: Lock SD card before settings load (FatFS is NOT thread-safe)
-    SDCardLock lock;
+    // FIX: Removed SDCardLock - FatFS handles locking at driver level
+    // Deadlock occurred when Phase 2 (db loading thread) held lock while Phase 5 waited
     bool loaded = SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
 
     systime_t elapsed = chTimeNow() - settings_start;

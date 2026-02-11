@@ -19,7 +19,7 @@ using rf::Frequency;
 namespace ui::apps::enhanced_drone_analyzer {
 
 // Signal classification results
-enum class SignalSignature {
+enum class SignalSignature : uint8_t {
     NOISE,
     WIDEBAND_WIFI,   // Wide "plateau" (> 5-10 MHz)
     NARROWBAND_DRONE, // Narrow peak (< 2-3 MHz)
