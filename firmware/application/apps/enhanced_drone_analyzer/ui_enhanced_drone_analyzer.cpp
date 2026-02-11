@@ -3368,6 +3368,16 @@ void EnhancedDroneSpectrumAnalyzerView::focus() {
 void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
     View::paint(painter);
 
+    // ===========================================
+    // DIAMOND FIX: Execute deferred initialization
+    // ===========================================
+    // CRITICAL: This was missing, causing permanent hang
+    // The initialization state machine was defined but never invoked
+    if (init_state_ != InitState::FULLY_INITIALIZED && 
+        init_state_ != InitState::INITIALIZATION_ERROR) {
+        step_deferred_initialization();
+    }
+
     // 🔴 DIAMOND OPTIMIZATION: Enhanced paint method с защитой от UB
     // DIAMOND OPTIMIZATION: Отрисовка bar spectrum вместо waterfall
     // Вызываем каждый кадр (60 FPS) для обновления спектра
