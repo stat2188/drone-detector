@@ -608,14 +608,7 @@ bool InformationView::firmware_checksum_error() {
 
     // only checking firmware checksum once per boot
     if (!fw_checksum_checked) {
-        fw_checksum_checked = true;
-        // DIAMOND FIX: Skip checksum calculation if disabled (FLASH_EXPECTED_CHECKSUM == FLASH_CHECKSUM_ERROR)
-        // This prevents unnecessary 1MB Flash read on every boot
-        if (FLASH_EXPECTED_CHECKSUM == FLASH_CHECKSUM_ERROR) {
-            fw_checksum_error = false;
-        } else {
-            fw_checksum_error = (simple_checksum(FLASH_STARTING_ADDRESS, FLASH_ROM_SIZE) != FLASH_EXPECTED_CHECKSUM);
-        }
+        fw_checksum_error = (simple_checksum(FLASH_STARTING_ADDRESS, FLASH_ROM_SIZE) != FLASH_EXPECTED_CHECKSUM);
     }
     return fw_checksum_error;
 }
