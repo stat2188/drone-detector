@@ -42,6 +42,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
@@ -1258,18 +1259,17 @@ void DroneScanner::initialize_database_and_scanner() {
     // This is safe because constructor has already returned
     // NO EXCEPTIONS - use simple pointer checks
 
-    // Allocate FreqmanDB
+    // DIAMOND FIX: Add allocation guards to prevent nullptr dereference
     freq_db_ptr_ = std::make_unique<FreqmanDB>();
     if (!freq_db_ptr_) {
-        // Allocation failed - critical error, but continue anyway
-        // Scanner will be in non-functional state
+        handle_scan_error("Memory: FreqmanDB alloc failed");
         return;
     }
 
-    // Allocate tracked_drones array
     tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
     if (!tracked_drones_ptr_) {
-        // Allocation failed - critical error, but continue anyway
+        handle_scan_error("Memory: tracked_drones alloc failed");
+        freq_db_ptr_.reset();
         return;
     }
 
@@ -1336,16 +1336,19 @@ msg_t DroneScanner::db_loading_thread_entry(void* arg) {
 }
 
 void DroneScanner::db_loading_thread_loop() {
+    // DIAMOND FIX: Add allocation guards to prevent nullptr dereference
     freq_db_ptr_ = std::make_unique<FreqmanDB>();
     if (!freq_db_ptr_) {
+        handle_scan_error("Memory: FreqmanDB alloc failed (async)");
         db_loading_active_.store(false, std::memory_order_release);
         return;
     }
 
     tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
     if (!tracked_drones_ptr_) {
-        db_loading_active_.store(false, std::memory_order_release);
+        handle_scan_error("Memory: tracked_drones alloc failed (async)");
         freq_db_ptr_.reset();
+        db_loading_active_.store(false, std::memory_order_release);
         return;
     }
 
@@ -2499,15 +2502,28 @@ bool DroneDisplayController::are_buffers_valid() const {
 bool DroneDisplayController::allocate_buffers_from_pool() {
     // DIAMOND OPTIMIZATION: Проверка уже выделенных буферов (защита от повторного выделения)
     if (are_buffers_allocated()) {
-        return true;  // Уже выделено
+        return true;
     }
-    
-    // TODO: В будущем использовать bump allocator или StringPool
-    // Для сейчас используем make_unique (но с защитой от повторного выделения)
-    
+
+    // DIAMOND FIX: Check each allocation to prevent nullptr dereference
     spectrum_row_buffer_ptr_ = std::make_unique<std::array<Color, SPECTRUM_ROW_SIZE>>();
+    if (!spectrum_row_buffer_ptr_) {
+        return false;
+    }
+
     render_line_buffer_ptr_ = std::make_unique<std::array<Color, RENDER_LINE_SIZE>>();
+    if (!render_line_buffer_ptr_) {
+        spectrum_row_buffer_ptr_.reset();
+        return false;
+    }
+
     spectrum_power_levels_ptr_ = std::make_unique<std::array<uint8_t, 200>>();
+    if (!spectrum_power_levels_ptr_) {
+        spectrum_row_buffer_ptr_.reset();
+        render_line_buffer_ptr_.reset();
+        return false;
+    }
+
     waterfall_line_index_ = 0;
     return true;
 }
@@ -3298,14 +3314,15 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       button_start_stop_({screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"),
       button_menu_({screen_width - 80, screen_height - 40, 72, 32}, "MENU"),
       button_audio_({screen_width - 160, screen_height - 72, 72, 32}, "AUDIO: OFF"),
-      field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
+      field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband",1}, {"Hybrid", 2}}),
       scanning_active_(false)
 {
-    // DIAMOND FIX: Initialize SD card mutex once (first time only)
-    static bool mutex_initialized = false;
-    if (!mutex_initialized) {
+    // DIAMOND FIX: Thread-safe mutex initialization with atomic once-flag
+    // Prevents race condition when multiple threads access constructor
+    static std::atomic<bool> sd_mutex_initialized{false};
+    bool expected = false;
+    if (sd_mutex_initialized.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         chMtxInit(&sd_card_mutex);
-        mutex_initialized = true;
     }
 
     // 🔴 ФАЗА 2.8: МИНИМАЛЬНЫЙ конструктор
@@ -4504,3 +4521,35 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer
+
+// ===========================================
+// DIAMOND FIX: AudioAlertManager Implementation (Global Scope)
+// AudioAlertManager is declared globally in ui_drone_audio.hpp
+// Implementation must be in global scope, not in namespace
+// ===========================================
+
+bool AudioAlertManager::audio_enabled_ = true;
+
+void AudioAlertManager::play_alert(ui::apps::enhanced_drone_analyzer::ThreatLevel level) {
+    if (!audio_enabled_) return;
+
+    uint16_t freq_hz = 800;
+    switch (level) {
+        case ui::apps::enhanced_drone_analyzer::ThreatLevel::NONE: return;
+        case ui::apps::enhanced_drone_analyzer::ThreatLevel::LOW: freq_hz = 800; break;
+        case ui::apps::enhanced_drone_analyzer::ThreatLevel::MEDIUM: freq_hz = 1000; break;
+        case ui::apps::enhanced_drone_analyzer::ThreatLevel::HIGH: freq_hz = 1200; break;
+        case ui::apps::enhanced_drone_analyzer::ThreatLevel::CRITICAL: freq_hz = 2000; break;
+        default: freq_hz = 800; break;
+    }
+    baseband::request_audio_beep(freq_hz, 24000, 200);
+}
+
+void AudioAlertManager::set_enabled(bool enable) {
+    audio_enabled_ = enable;
+}
+
+bool AudioAlertManager::is_enabled() {
+    return audio_enabled_;
+}
+
