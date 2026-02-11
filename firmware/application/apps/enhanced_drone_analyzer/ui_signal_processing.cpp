@@ -13,8 +13,6 @@ static inline uint32_t get_current_time_ticks() noexcept {
 void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) noexcept {
     const uint32_t current_time = get_current_time_ticks();
     const size_t start_idx = frequency_hash % MAX_ENTRIES;
-    
-    size_t local_head = head_.load(std::memory_order_acquire);
 
     for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
         const size_t idx = (start_idx + probe) % MAX_ENTRIES;

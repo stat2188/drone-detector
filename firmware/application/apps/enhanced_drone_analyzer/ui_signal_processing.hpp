@@ -44,7 +44,7 @@ class DetectionRingBuffer {
 public:
     static constexpr size_t MAX_ENTRIES = 32;
 
-    DetectionRingBuffer() noexcept = default;
+    DetectionRingBuffer() noexcept {}
     ~DetectionRingBuffer() = default;
 
     DetectionRingBuffer(const DetectionRingBuffer&) = delete;
