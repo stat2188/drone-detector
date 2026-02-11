@@ -22,15 +22,14 @@
 
 // Include common types from local header
 #include "ui_drone_common_types.hpp"
+
+// DIAMOND OPTIMIZATION: Unified settings persistence
 #include "settings_persistence.hpp"
 
 // DEPRECATED: Old unified settings files removed
 // #include "eda_unified_settings.hpp"
 // #include "eda_unified_settings_manager.hpp"
 // #include "eda_tabbed_settings_view.hpp"
-
-// DIAMOND OPTIMIZATION: Unified settings persistence
-#include "settings_persistence.hpp"
 
 #include "radio.hpp"
 

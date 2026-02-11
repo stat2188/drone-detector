@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <array>
 #include "ui_drone_common_types.hpp"
+#include "sd_card.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -206,6 +207,10 @@ private:
 // ===========================================
 template<typename T>
 bool SettingsPersistence<T>::load(T& settings) {
+    if (sd_card::status() < sd_card::Status::Mounted) {
+        return false;
+    }
+
     File file;
     const char* path = settings.settings_file_path;
     auto error = file.open(path);
@@ -441,14 +446,18 @@ bool SettingsPersistence<T>::save(const T& settings) {
     if (len <= 0 || static_cast<size_t>(len) >= SettingsStaticBuffer::SIZE) {
         return false;
     }
-    
+
+    if (sd_card::status() < sd_card::Status::Mounted) {
+        return false;
+    }
+
     File file;
     const char* path = settings.settings_file_path;
     auto error = file.append(path);
     if (error && !error->ok()) {
         return false;
     }
-    
+
     auto write_result = file.write(&buffer, static_cast<File::Size>(len));
     return !write_result.is_error();
 }

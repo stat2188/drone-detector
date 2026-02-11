@@ -38,6 +38,7 @@
 #include "ui_drone_common_types.hpp"
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_spectral_analyzer.hpp"
+#include "sd_card.hpp"
 
 #include <algorithm>
 #include <array>
@@ -1627,6 +1628,10 @@ void DroneDetectionLogger::worker_loop() {
 }
 
 bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
+    if (sd_card::status() < sd_card::Status::Mounted) {
+        return false;
+    }
+
     if (!ensure_csv_header()) return false;
 
     char line_buffer[128];
@@ -1661,6 +1666,11 @@ bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
 
 bool DroneDetectionLogger::ensure_csv_header() {
     if (header_written_) return true;
+
+    if (sd_card::status() < sd_card::Status::Mounted) {
+        return false;
+    }
+
     const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence_percent,width_bins,signal_width_hz,snr\n";
     auto error = csv_log_.append(generate_log_filename());
     if (error && !error->ok()) return false;
@@ -1719,8 +1729,9 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
         return std::string("Session summary too long");
     }
 
-    if (!safe_append("Scan Cycles: %zu\nTotal Detections: %zu\n\nPERFORMANCE:\n",
-                    scan_cycles, total_detections)) {
+    if (!safe_append("Scan Cycles: %lu\nTotal Detections: %lu\n\nPERFORMANCE:\n",
+                    static_cast<unsigned long>(scan_cycles),
+                    static_cast<unsigned long>(total_detections))) {
         return std::string("Session summary too long");
     }
 
@@ -1728,10 +1739,10 @@ std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, siz
     uint32_t avg_det_x100 = (scan_cycles > 0) ? (total_detections * 100) / scan_cycles : 0;
     uint32_t rate_x10 = (uint64_t)total_detections * 10000 / session_duration_ms;
 
-    if (!safe_append("Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: %zu\n\nEnhanced Drone Analyzer v0.3",
+    if (!safe_append("Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: %lu\n\nEnhanced Drone Analyzer v0.3",
                     avg_det_x100 / 100, avg_det_x100 % 100,
                     rate_x10 / 10, rate_x10 % 10,
-                    logged_count_)) {
+                    static_cast<unsigned long>(logged_count_))) {
         return std::string("Session summary too long");
     }
 
@@ -2020,11 +2031,16 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     char buffer[64];
     const char* threat_name = StringMappings::get_threat_name(static_cast<uint8_t>(max_threat));
     if (total_drones > 0) {
-        StatusFormatter::format_to(buffer, "THREAT: %s | <%zu ~%zu >%zu",
-                                  threat_name, approaching, static_count, receding);
+        StatusFormatter::format_to(buffer, "THREAT: %s | <%lu ~%lu >%lu",
+                                  threat_name,
+                                  static_cast<unsigned long>(approaching),
+                                  static_cast<unsigned long>(static_count),
+                                  static_cast<unsigned long>(receding));
     } else if (is_scanning) {
-        StatusFormatter::format_to(buffer, "SCANNING: <%zu ~%zu >%zu",
-                                  approaching, static_count, receding);
+        StatusFormatter::format_to(buffer, "SCANNING: <%lu ~%lu >%lu",
+                                  static_cast<unsigned long>(approaching),
+                                  static_cast<unsigned long>(static_count),
+                                  static_cast<unsigned long>(receding));
     } else {
         StatusFormatter::format_to(buffer, "READY");
     }
@@ -2262,8 +2278,10 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
 
     // DIAMOND OPTIMIZATION: Use StatusFormatter
     char buffer[64];
-    StatusFormatter::format_to(buffer, "%s ALERT: %zu drones | %s",
-                             alert_icon, total_drones, alert_msg);
+    StatusFormatter::format_to(buffer, "%s ALERT: %lu drones | %s",
+                             alert_icon,
+                             static_cast<unsigned long>(total_drones),
+                             alert_msg);
     alert_text_.set(buffer);
 
     // DIAMOND OPTIMIZATION: Table-driven style selection (устраняет условный оператор + 7 строк кода)
@@ -2496,9 +2514,11 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     char summary_buffer[48];
     const char* threat_name = StringMappings::get_threat_name(static_cast<uint8_t>(max_threat));
         // DIAMOND OPTIMIZATION: Use StatusFormatter
-        StatusFormatter::format_to(summary_buffer, "THREAT: %s | <%zu ~%zu >%zu",
-                                  threat_name, scanner.get_approaching_count(),
-                                  scanner.get_static_count(), scanner.get_receding_count());
+        StatusFormatter::format_to(summary_buffer, "THREAT: %s | <%lu ~%lu >%lu",
+                                  threat_name,
+                                  static_cast<unsigned long>(scanner.get_approaching_count()),
+                                  static_cast<unsigned long>(scanner.get_static_count()),
+                                  static_cast<unsigned long>(scanner.get_receding_count()));
         text_threat_summary_.set(summary_buffer);
         // DIAMOND OPTIMIZATION: Use Color::red()
         static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
@@ -2528,11 +2548,13 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     if (scanner.is_scanning_active() && loaded_freqs > 0) {
         size_t current_idx = 0;
         // DIAMOND OPTIMIZATION: Use StatusFormatter
-        StatusFormatter::format_to(stats_buffer, "Freq: %zu/%zu | Cycle: %lu",
-                                  current_idx +1, loaded_freqs,
+        StatusFormatter::format_to(stats_buffer, "Freq: %lu/%lu | Cycle: %lu",
+                                  static_cast<unsigned long>(current_idx + 1),
+                                  static_cast<unsigned long>(loaded_freqs),
                                   static_cast<unsigned long>(scanner.get_scan_cycles()));
     } else if (loaded_freqs > 0) {
-        StatusFormatter::format_to(stats_buffer, "Loaded: %zu frequencies", loaded_freqs);
+        StatusFormatter::format_to(stats_buffer, "Loaded: %lu frequencies",
+                                  static_cast<unsigned long>(loaded_freqs));
     } else {
         StatusFormatter::format_to(stats_buffer, "No database loaded");
     }
@@ -3027,7 +3049,8 @@ void DroneUIController::on_load_frequency_file() {
         size_t count = scanner_.get_database_size();
         // DIAMOND OPTIMIZATION: Use StatusFormatter
         char buffer[64];
-        StatusFormatter::format_to(buffer, "Loaded %zu frequencies", count);
+        StatusFormatter::format_to(buffer, "Loaded %lu frequencies",
+                                  static_cast<unsigned long>(count));
         nav_.display_modal("Success", buffer);
     } else {
         nav_.display_modal("Error", "Failed to load database");
