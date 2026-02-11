@@ -355,7 +355,7 @@ private:
     Thread* worker_thread_ = nullptr;           // Declared 1st
     mutable Mutex mutex_;                       // Declared 2nd
     Semaphore data_ready_;                      // Declared 3rd
-    volatile bool worker_should_run_ = false;   // Declared 4th
+    std::atomic<bool> worker_should_run_{false};   // Declared 4th (DIAMOND FIX: was volatile)
     
     // --- FILE I/O ---
     LogFile csv_log_;                           // Declared 5th

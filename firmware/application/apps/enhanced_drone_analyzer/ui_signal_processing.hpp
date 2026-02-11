@@ -4,6 +4,8 @@
 //
 // DIAMOND OPTIMIZATION: WidebandMedianFilter replaced with MedianFilter<int16_t>
 // from eda_optimized_utils.hpp to eliminate code duplication
+//
+// DIAMOND FIX: Added atomic operations to DetectionRingBuffer to fix race conditions
 
 #ifndef UI_SIGNAL_PROCESSING_HPP_
 #define UI_SIGNAL_PROCESSING_HPP_
@@ -11,8 +13,10 @@
 #include <array>
 #include <cstdint>
 #include <cstddef>
+#include <atomic>
 #include "ui_drone_common_types.hpp"
 #include "eda_optimized_utils.hpp"
+#include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -34,7 +38,7 @@ struct DetectionEntry {
 };
 
 // ========================================
-// DETECTION RING BUFFER (Zero-Heap)
+// DETECTION RING BUFFER (Zero-Heap, Lock-Free)
 // ========================================
 class DetectionRingBuffer {
 public:
@@ -53,8 +57,15 @@ public:
     void clear() noexcept;
 
 private:
-    std::array<DetectionEntry, MAX_ENTRIES> entries_{};
-    size_t head_ = 0;
+    struct AtomicDetectionEntry {
+        std::atomic<size_t> frequency_hash{0};
+        std::atomic<uint8_t> detection_count{0};
+        std::atomic<int32_t> rssi_value{-120};
+        std::atomic<uint32_t> timestamp{0};
+    };
+    
+    std::array<AtomicDetectionEntry, MAX_ENTRIES> entries_;
+    std::atomic<size_t> head_{0};
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer

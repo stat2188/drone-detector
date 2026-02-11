@@ -1545,6 +1545,7 @@ DroneDetectionLogger::DroneDetectionLogger()
     // Инициализация бинарного семафора (not taken = false)
     chSemInit(&data_ready_, 0);
     
+    worker_should_run_.store(false, std::memory_order_release);
     start_session();
 }
 
@@ -1597,7 +1598,7 @@ bool DroneDetectionLogger::log_detection_async(const DetectionLogEntry& entry) {
 void DroneDetectionLogger::start_worker() {
     if (worker_thread_) return;
 
-    worker_should_run_ = true;
+    worker_should_run_.store(true, std::memory_order_release);
     // Создаем поток с НИЗКИМ приоритетом, чтобы не мешать UI и Радио
     // NORMALPRIO - 1 или IDLEPRIO + 10
     worker_thread_ = chThdCreateFromHeap(NULL, 2048, NORMALPRIO - 1, worker_thread_entry, this);
@@ -1608,7 +1609,7 @@ void DroneDetectionLogger::start_worker() {
 void DroneDetectionLogger::stop_worker() {
     if (!worker_thread_) return;
 
-    worker_should_run_ = false;
+    worker_should_run_.store(false, std::memory_order_release);
     chSemSignal(&data_ready_); // Будим поток, чтобы он вышел из wait
     
     chThdWait(worker_thread_); // Ждем завершения
@@ -1623,9 +1624,9 @@ msg_t DroneDetectionLogger::worker_thread_entry(void* arg) {
 }
 
 void DroneDetectionLogger::worker_loop() {
-    while (worker_should_run_) {
+    while (worker_should_run_.load(std::memory_order_acquire)) {
         chSemWaitTimeout(&data_ready_, MS2ST(1000));
-        if (!worker_should_run_) break;
+        if (!worker_should_run_.load(std::memory_order_acquire)) break;
 
         DetectionLogEntry entry_to_write;
         bool has_data = false;
@@ -1977,8 +1978,8 @@ void DroneHardwareController::handle_channel_spectrum_config(const ChannelSpectr
 }
 
 void DroneHardwareController::handle_channel_statistics(const ChannelStatistics& statistics) {
-    last_valid_rssi_ = statistics.max_db;
-    rssi_updated_ = true;  // Mark RSSI as fresh
+    last_valid_rssi_.store(statistics.max_db, std::memory_order_release);
+    rssi_updated_.store(true, std::memory_order_release);  // Mark RSSI as fresh
 }
 
 void DroneHardwareController::clear_rssi_flag() {
