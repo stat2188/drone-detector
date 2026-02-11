@@ -41,11 +41,10 @@ static inline void safe_strcat(char* dest, const char* src, size_t max_len) {
 }
 
 // ===========================================
-// DRONEANALYZERSETTINGS - BITFIELD OPTIMIZED
+// DIAMOND FIX: PACKED STRUCTS TO MINIMIZE SIZE
 // ===========================================
-// DIAMOND OPTIMIZATION: All boolean flags packed into bitfields.
-// RAM savings: ~20 bytes per instance (23 bool -> 5 bytes packed).
-// Scott Meyers Item 1: View C++ as a federation of languages.
+// Eliminates padding waste (~30-50 bytes saved)
+#pragma pack(push, 1)
 
 struct DroneAnalyzerSettings {
     // ===== AUDIO SETTINGS =====
@@ -146,6 +145,8 @@ struct DroneAnalyzerSettings {
     char settings_file_path[MAX_PATH_LEN] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     uint32_t settings_version = 2;
 };
+
+#pragma pack(pop)
 
 // Default wideband constants for scanner settings
 static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2400000000ULL;

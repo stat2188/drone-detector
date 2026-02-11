@@ -34,13 +34,18 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
-// COMPILE-TIME STRING LENGTH (Recursive Constexpr)
+// DIAMOND FIX: ITERATIVE CONSTEXPR STRLEN
 // ===========================================
-// DIAMOND FIX: Recursive constexpr for compile-time string length
-// Replaces runtime strlen() with zero-cost abstraction
+// Prevents Stack Overflow on large strings (e.g. database loading)
+// Safe for both compile-time and runtime evaluation
 // Scott Meyers Item 15: Prefer constexpr to #define
-constexpr size_t const_strlen(const char* str) {
-    return (str == nullptr || *str == '\0') ? 0 : 1 + const_strlen(str + 1);
+constexpr size_t const_strlen(const char* str) noexcept {
+    if (!str) return 0;
+    size_t len = 0;
+    while (str[len] != '\0') {
+        ++len;
+    }
+    return len;
 }
 
 // ===========================================
