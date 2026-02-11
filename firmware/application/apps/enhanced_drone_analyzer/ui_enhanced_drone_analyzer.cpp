@@ -1430,16 +1430,25 @@ void DroneScanner::initialize_database_async() {
         return;  // Already loading or loaded
     }
 
-    db_loading_active_.store(true, std::memory_order_release);
-
     // Create background thread for database loading
+    // DIAMOND FIX: Check thread creation result to prevent hang
     db_loading_thread_ = chThdCreateFromHeap(
         nullptr,
         DB_LOADING_STACK_SIZE,
-        NORMALPRIO - 2,  // Lower priority than UI thread
+        NORMALPRIO - 2,
         db_loading_thread_entry,
         this
     );
+
+    // Guard Clause: Fall back to sync load if thread creation fails
+    if (db_loading_thread_ == nullptr) {
+        handle_scan_error("DB thread: heap exhausted");
+        db_loading_active_.store(false, std::memory_order_release);
+        initialize_database_and_scanner();
+        return;
+    }
+
+    db_loading_active_.store(true, std::memory_order_release);
 }
 
 // 🔴 FIX: Check if async loading finished
@@ -3404,7 +3413,8 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         init_state_ = InitState::INITIALIZATION_ERROR;
         init_error_ = InitError::GENERAL_TIMEOUT;
         initialization_in_progress_ = false;
-        status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init timeout!");
+        status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0,
+                                          ERROR_MESSAGES[static_cast<uint8_t>(InitError::GENERAL_TIMEOUT)]);
         return;
     }
 

@@ -560,7 +560,7 @@ struct DetectionParams {
       // 🔴 FIX: Async database loading to prevent UI freeze
       Thread* db_loading_thread_ = nullptr;
       std::atomic<bool> db_loading_active_{false};
-      static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4 KB for safety
+      static constexpr size_t DB_LOADING_STACK_SIZE = 2048;  // 2 KB (reduced: DB loading is I/O bound, not CPU intensive)
 
      std::atomic<uint32_t> scan_cycles_{0};
      std::atomic<uint32_t> total_detections_{0};

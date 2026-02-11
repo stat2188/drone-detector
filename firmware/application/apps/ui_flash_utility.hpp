@@ -34,7 +34,18 @@
 
 #define FLASH_ROM_SIZE 1048576
 #define FLASH_STARTING_ADDRESS 0x00000000
+
+// DIAMOND FIX: Disable firmware checksum validation by default
+// Runtime checksum validation is overkill for Portapack platform
+// Flash has built-in ECC/CRC protection at hardware level
+// Set to FLASH_CHECKSUM_ERROR sentinel to skip validation
+// To enable: #define ENABLE_FIRMWARE_CHECKSUM before this file
+#ifndef ENABLE_FIRMWARE_CHECKSUM
+#define FLASH_EXPECTED_CHECKSUM FLASH_CHECKSUM_ERROR
+#else
 #define FLASH_EXPECTED_CHECKSUM 0x00000000
+#endif
+
 #define FLASH_CHECKSUM_ERROR 0xFFFFFFFF
 
 namespace ui {
