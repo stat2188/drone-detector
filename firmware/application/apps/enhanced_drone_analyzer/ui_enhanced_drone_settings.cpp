@@ -391,10 +391,10 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui
     config.spectrum_mode = SpectrumMode::MEDIUM;
     config.scan_interval_ms = 1000;
     config.rssi_threshold_db = static_cast<int32_t>(preset.threat_level) >= static_cast<int32_t>(ThreatLevel::HIGH) ? -80 : -90;
-    config.enable_audio_alerts = true;
+    config.audio_flags.enable_alerts = true;
 
     if (static_cast<uint64_t>(preset.frequency_hz) >= 2400000000ULL && static_cast<uint64_t>(preset.frequency_hz) <= 2500000000ULL) {
-        config.enable_wideband_scanning = true;
+        config.scanning_flags.enable_wideband_scanning = true;
         config.wideband_min_freq_hz = 2400000000ULL;
         config.wideband_max_freq_hz = 2500000000ULL;
     }
@@ -406,11 +406,11 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui
         config.user_min_freq_hz = 50000000ULL;
     }
     if (config.user_max_freq_hz > 6000000000ULL) {
-    config.user_max_freq_hz = 6000000000ULL;
+        config.user_max_freq_hz = 6000000000ULL;
     }
 
     safe_strcpy(config.freqman_path, "DRONES", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
-    config.show_detailed_info = true;
+    config.display_flags.show_detailed_info = true;
 
     return true;
 }
@@ -567,15 +567,8 @@ void HardwareSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     checkbox_real_hardware_.set_value(settings.hardware_flags.enable_real_hardware);
-...
     settings.hardware_flags.enable_real_hardware = checkbox_real_hardware_.value();
     settings.hardware_flags.demo_mode = !checkbox_real_hardware_.value();
-...
-    checkbox_audio_enabled_.set_value(settings.audio_flags.enable_alerts);
-    checkbox_repeat_.set_value(settings.audio_flags.repeat_alerts);
-...
-    settings.audio_flags.enable_alerts = checkbox_audio_enabled_.value();
-    settings.audio_flags.repeat_alerts = checkbox_repeat_.value();
 
     // Validate settings before saving
     if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
@@ -621,7 +614,6 @@ void ScanningSettingsView::load_current_settings() {
     number_scan_interval_.set_value(settings.scan_interval_ms);
     number_rssi_threshold_.set_value(settings.rssi_threshold_db);
     checkbox_wideband_.set_value(settings.scanning_flags.enable_wideband_scanning);
-...
     settings.scanning_flags.enable_wideband_scanning = checkbox_wideband_.value();
 
     // Validate settings before saving

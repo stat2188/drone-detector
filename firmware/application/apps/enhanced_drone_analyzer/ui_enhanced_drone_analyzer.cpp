@@ -3030,10 +3030,10 @@ void DroneDisplayController::update_or_create_drone_from_spectrum(Frequency freq
 }
 
 DroneUIController::DroneUIController(NavigationView& nav,
-                                         DroneHardwareController& hardware,
-                                         DroneScanner& scanner,
-                                         ::AudioManager& audio_mgr,
-                                         DroneDisplayController& display_controller)
+                                          DroneHardwareController& hardware,
+                                          DroneScanner& scanner,
+                                          ::AudioManager& audio_mgr,
+                                          DroneDisplayController& display_controller)
     : nav_(nav),
       hardware_(hardware),
       scanner_(scanner),
@@ -3046,7 +3046,8 @@ DroneUIController::DroneUIController(NavigationView& nav,
     settings_.scan_interval_ms = 1000;
     settings_.rssi_threshold_db = -90;
     settings_.audio_flags.enable_alerts = true;
-...
+    char buffer[32];
+    
     settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
     const char* status = settings_.audio_flags.enable_alerts ? "ENABLED" : "DISABLED";
     strcpy(buffer, "Alerts ");
@@ -4454,11 +4455,11 @@ void DroneDisplayController::set_ruler_style(RulerStyle style) {
 }
 
 void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings& settings) {
-    if (settings.show_frequency_ruler) {
+    if (settings.display_flags.show_frequency_ruler) {
         compact_frequency_ruler_.set_visible(true);
         frequency_ruler_.set_visible(false);
 
-        if (settings.auto_ruler_style) {
+        if (settings.display_flags.auto_ruler_style) {
             compact_frequency_ruler_.set_ruler_style(RulerStyle::COMPACT_GHZ);
         } else {
             // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 4135-4144)
