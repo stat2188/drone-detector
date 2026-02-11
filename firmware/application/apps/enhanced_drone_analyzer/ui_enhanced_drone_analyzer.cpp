@@ -3055,6 +3055,23 @@ DroneUIController::DroneUIController(NavigationView& nav,
     nav_.display_modal("Audio Alerts", buffer);
 }
 
+DroneUIController::~DroneUIController() {
+}
+
+void DroneUIController::on_start_scan() {
+    scanner_.start_scanning();
+    scanning_active_.store(true, std::memory_order_release);
+}
+
+void DroneUIController::on_stop_scan() {
+    scanner_.stop_scanning();
+    scanning_active_.store(false, std::memory_order_release);
+}
+
+void DroneUIController::show_menu() {
+    nav_.display_modal("EDA Menu", "Menu not implemented in this version");
+}
+
 void DroneUIController::on_spectrum_mode() {
     nav_.display_modal("Spectrum Mode", "Feature not implemented in this version");
 }
