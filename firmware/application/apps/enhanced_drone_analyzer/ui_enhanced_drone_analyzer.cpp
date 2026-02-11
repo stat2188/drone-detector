@@ -58,6 +58,12 @@ namespace ui::apps::enhanced_drone_analyzer {
 using namespace DroneConstants;
 
 // ===========================================
+// DIAMOND FIX: SD Card Mutex Definition
+// FatFS is NOT thread-safe - all SD operations must be serialized
+// ===========================================
+Mutex sd_card_mutex;
+
+// ===========================================
 // DIAMOND OPTIMIZATION: ScanningMode LUT (namespace scope)
 // ===========================================
 // Scott Meyers Item 15: Prefer constexpr to #define
@@ -1348,6 +1354,23 @@ void DroneScanner::db_loading_thread_loop() {
 
     systime_t load_start = chTimeNow();
 
+    // DIAMOND FIX: Validate SD card status before attempting to open file
+    systime_t sd_check_start = chTimeNow();
+    while (sd_card::status() < sd_card::Status::Mounted) {
+        if ((chTimeNow() - sd_check_start) > MS2ST(5000)) {  // 5 second timeout
+            handle_scan_error("SD card not ready");
+            db_loading_active_.store(false, std::memory_order_release);
+            freq_db_ptr_.reset();
+            tracked_drones_ptr_.reset();
+            return;
+        }
+        chThdSleepMilliseconds(100);
+    }
+
+    // DIAMOND FIX: Lock SD card before file operations (FatFS is NOT thread-safe)
+    {
+        SDCardLock lock;
+
     if (db_loading_active_.load(std::memory_order_acquire)) {
         db_success = freq_db_ptr_->open(db_path);
 
@@ -1362,9 +1385,13 @@ void DroneScanner::db_loading_thread_loop() {
             }
         }
     }
+    }  // DIAMOND FIX: SDCardLock scope ends here
 
     if ((db_loading_active_.load(std::memory_order_acquire)) &&
         (!db_success || freq_db_ptr_->empty())) {
+
+        // DIAMOND FIX: Lock SD card before file operations (FatFS is NOT thread-safe)
+        SDCardLock lock;
 
         freq_db_ptr_->open(db_path, true);
 
@@ -1387,7 +1414,7 @@ void DroneScanner::db_loading_thread_loop() {
         current_db_index_ = 0;
 
         sync_database();
-    }
+    }  // DIAMOND FIX: SDCardLock scope ends here
 
     {
         MutexLock lock(data_mutex);
@@ -1631,6 +1658,9 @@ bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
     if (sd_card::status() < sd_card::Status::Mounted) {
         return false;
     }
+
+    // DIAMOND FIX: Lock SD card before file operations (FatFS is NOT thread-safe)
+    SDCardLock lock;
 
     if (!ensure_csv_header()) return false;
 
@@ -3271,6 +3301,13 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband", 1}, {"Hybrid", 2}}),
       scanning_active_(false)
 {
+    // DIAMOND FIX: Initialize SD card mutex once (first time only)
+    static bool mutex_initialized = false;
+    if (!mutex_initialized) {
+        chMtxInit(&sd_card_mutex);
+        mutex_initialized = true;
+    }
+
     // 🔴 ФАЗА 2.8: МИНИМАЛЬНЫЙ конструктор
     // Только простая инициализация, без blocking I/O
     // Без вызовов методов scanner_/hardware_/scanning_coordinator_
@@ -3501,6 +3538,8 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     systime_t settings_start = chTimeNow();
     constexpr systime_t SETTINGS_LOAD_TIMEOUT_MS = MS2ST(2000);
 
+    // DIAMOND FIX: Lock SD card before settings load (FatFS is NOT thread-safe)
+    SDCardLock lock;
     bool loaded = SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
 
     systime_t elapsed = chTimeNow() - settings_start;

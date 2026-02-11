@@ -27,6 +27,7 @@
 #include <cstring>
 #include <cstdio>
 #include <array>
+#include <ch.h>
 #include "ui_drone_common_types.hpp"
 #include "sd_card.hpp"
 
@@ -77,7 +78,8 @@ enum SettingType : uint8_t {
 constexpr size_t SETTINGS_COUNT = 54;
 constexpr size_t MAX_SETTING_STR_LEN = 64;
 
-constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
+// DIAMOND FIX: inline constexpr ensures single Flash instance (ODR-safe, RAM-efficient)
+inline constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
     // ===== AUDIO SETTINGS =====
     {"enable_audio_alerts", offsetof(DroneAnalyzerSettings, enable_audio_alerts), TYPE_BOOL, 0, 1, "true"},
     {"audio_alert_frequency_hz", offsetof(DroneAnalyzerSettings, audio_alert_frequency_hz), TYPE_UINT32, 200, 20000, "800"},
@@ -207,8 +209,13 @@ private:
 // ===========================================
 template<typename T>
 bool SettingsPersistence<T>::load(T& settings) {
-    if (sd_card::status() < sd_card::Status::Mounted) {
-        return false;
+    // DIAMOND FIX: Validate SD card status with timeout
+    systime_t sd_check_start = chTimeNow();
+    while (sd_card::status() < sd_card::Status::Mounted) {
+        if ((chTimeNow() - sd_check_start) > MS2ST(2000)) {  // 2 second timeout
+            return false;
+        }
+        chThdSleepMilliseconds(50);
     }
 
     File file;

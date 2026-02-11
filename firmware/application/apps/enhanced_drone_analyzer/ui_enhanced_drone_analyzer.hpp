@@ -59,6 +59,26 @@ enum class ScannerMode : uint8_t {
 // Application specific namespace starts here to ensure all classes are properly scoped
 namespace ui::apps::enhanced_drone_analyzer {
 
+// ===========================================
+// DIAMOND FIX: Global SD Card Mutex Protection
+// FatFS is NOT thread-safe - all SD operations must be serialized
+// ===========================================
+
+extern Mutex sd_card_mutex;
+
+// RAII wrapper for automatic SD card lock/unlock
+class SDCardLock {
+public:
+    SDCardLock() {
+        chMtxLock(&sd_card_mutex);
+    }
+    ~SDCardLock() {
+        chMtxUnlock();
+    }
+    SDCardLock(const SDCardLock&) = delete;
+    SDCardLock& operator=(const SDCardLock&) = delete;
+};
+
 struct preset_entry {
     Frequency min = 0;
     Frequency max = 0;
