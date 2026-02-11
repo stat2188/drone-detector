@@ -60,11 +60,11 @@ struct ColorConverter {
 
 struct ThreatColorLUT {
     static constexpr uint32_t COLORS[6] = {
-        0x0000FF,   // Red (0xFF0000 RGB) - NONE (0)
+        0xFF0000,   // Red (0xFF0000 RGB) - NONE (0)
         0x00FF00,   // Green - LOW (1)
         0xFFFF00,   // Yellow - MEDIUM (2)
         0xFFA500,   // Orange - HIGH (3)
-        0x000080,   // Dark Red (0x800000 RGB) - CRITICAL (4)
+        0x800000,   // Dark Red (0x800000 RGB) - CRITICAL (4)
         0x808080    // Grey - UNKNOWN (5)
     };
     static_assert(sizeof(COLORS) == sizeof(uint32_t) * 6, "COLORS size mismatch");
@@ -110,7 +110,7 @@ struct ThreatColorLUT {
 struct DroneColorLUT {
     static constexpr uint32_t COLORS[11] = {
         0xFFFFFF,   // White - UNKNOWN (0)
-        0x0000FF,   // Red - MAVIC (1)
+        0xFF0000,   // Red - MAVIC (1)
         0xFFA500,   // Orange - DJI_P34 (2)
         0xFFFF00,   // Yellow - PHANTOM (3)
         0x00FFFF,   // Cyan - DJI_MINI (4)

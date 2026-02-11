@@ -11,7 +11,7 @@ namespace ui::apps::enhanced_drone_analyzer {
 // Все строки хранятся во Flash, RAM не тратится
 // O(n) поиск по массиву быстрее, чем std::string сравнение
 
-static constexpr TranslationEntry ENGLISH_TRANSLATIONS[] = {
+static constexpr TranslationEntry TRANSLATIONS[] = {
     {"load_database", "Load Database"},
     {"save_frequency", "Save Frequency"},
     {"advanced", "Advanced"},
@@ -24,36 +24,16 @@ static constexpr TranslationEntry ENGLISH_TRANSLATIONS[] = {
     {"russian_selected", "Язык изменен на русский"}
 };
 
-static constexpr size_t ENGLISH_TRANSLATION_COUNT = 
-    sizeof(ENGLISH_TRANSLATIONS) / sizeof(TranslationEntry);
-
-static constexpr TranslationEntry RUSSIAN_TRANSLATIONS[] = {
-    {"load_database", "Load Database"},
-    {"save_frequency", "Save Frequency"},
-    {"advanced", "Advanced"},
-    {"constant_settings", "Constant Settings"},
-    {"select_language", "Select Language"},
-    {"about_author", "About Author"},
-    {"english", "English"},
-    {"russian", "Russian"},
-    {"english_selected", "Language updated to English"},
-    {"russian_selected", "Language updated to Russian"}
-};
-
-static constexpr size_t RUSSIAN_TRANSLATION_COUNT = 
-    sizeof(RUSSIAN_TRANSLATIONS) / sizeof(TranslationEntry);
+static constexpr size_t TRANSLATION_COUNT =
+    sizeof(TRANSLATIONS) / sizeof(TranslationEntry);
 
 // Быстрый поиск по ключу (O(n) где n=10, быстрее чем std::string)
-static constexpr const char* lookup_translation(
-    const char* key,
-    const TranslationEntry* table,
-    size_t count
-) {
+static constexpr const char* lookup_translation(const char* key) {
     if (!key) return nullptr;
-    
-    for (size_t i = 0; i < count; ++i) {
-        if (strcmp(key, table[i].key) == 0) {
-            return table[i].value;
+
+    for (size_t i = 0; i < TRANSLATION_COUNT; ++i) {
+        if (strcmp(key, TRANSLATIONS[i].key) == 0) {
+            return TRANSLATIONS[i].value;
         }
     }
     return key;
@@ -61,14 +41,6 @@ static constexpr const char* lookup_translation(
 
 // Translator implementations
 Language Translator::current_language_ = Language::ENGLISH;
-
-const char* Translator::get_english(const char* key) {
-    return lookup_translation(key, ENGLISH_TRANSLATIONS, ENGLISH_TRANSLATION_COUNT);
-}
-
-const char* Translator::get_russian(const char* key) {
-    return lookup_translation(key, RUSSIAN_TRANSLATIONS, RUSSIAN_TRANSLATION_COUNT);
-}
 
 void Translator::set_language(Language lang) {
     current_language_ = lang;
@@ -83,11 +55,7 @@ const char* Translator::translate(const char* key) {
 }
 
 const char* Translator::get_translation(const char* key) {
-    if (current_language_ == Language::RUSSIAN) {
-        return get_russian(key);
-    } else {
-        return get_english(key);
-    }
+    return lookup_translation(key);
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer

@@ -17,9 +17,9 @@ using rf::Frequency;
 // ===========================================
 // CONSTANTS & TYPE ALIASES
 // ===========================================
-static constexpr size_t MAX_PATH_LEN = 64;
-static constexpr size_t MAX_NAME_LEN = 32;
-static constexpr size_t MAX_FORMAT_LEN = 8;
+using DroneConstants::MAX_PATH_LEN;
+using DroneConstants::MAX_NAME_LEN;
+using DroneConstants::MAX_FORMAT_LEN;
 
 // Helper for safe string assignment (Zero-Heap)
 static inline void safe_strcpy(char* dest, const char* src, size_t max_len) {
@@ -148,9 +148,9 @@ struct DroneAnalyzerSettings {
 
 #pragma pack(pop)
 
-// Default wideband constants for scanner settings
-static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2400000000ULL;
-static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2500000000ULL;
+// Default wideband constants for scanner settings - using centralized constants
+using DroneConstants::WIDEBAND_DEFAULT_MIN;
+using DroneConstants::WIDEBAND_DEFAULT_MAX;
 
 // Enhanced enums for EDA
 enum class ThreatLevel : uint8_t {
@@ -205,8 +205,6 @@ public:
 
 private:
     static Language current_language_;
-    static const char* get_english(const char* key);
-    static const char* get_russian(const char* key);
 };
 
 struct DronePreset {
@@ -223,16 +221,16 @@ struct DronePreset {
 
 // Implementations moved to ui_drone_common_types.cpp
 
-static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-
-// Validation constants for scanner settings
-static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
-static constexpr uint8_t MIN_DETECTION_COUNT = 3;
-static constexpr uint32_t MAX_SCAN_INTERVAL_MS = 10000;
-static constexpr uint16_t MIN_AUDIO_FREQ = 200;
-static constexpr uint16_t MAX_AUDIO_FREQ = 4000;
-static constexpr uint32_t MIN_AUDIO_DURATION = 50;
-static constexpr uint32_t MAX_AUDIO_DURATION = 5000;
+// Validation constants for scanner settings - using centralized constants from drone_constants.hpp
+using DroneConstants::DEFAULT_RSSI_THRESHOLD_DB;
+using DroneConstants::MIN_SCAN_INTERVAL_MS;
+using DroneConstants::MAX_SCAN_INTERVAL_MS;
+using DroneConstants::DEFAULT_SCAN_INTERVAL_MS;
+using DroneConstants::MIN_DETECTION_COUNT;
+using DroneConstants::MIN_AUDIO_FREQ;
+using DroneConstants::MAX_AUDIO_FREQ;
+using DroneConstants::MIN_AUDIO_DURATION;
+using DroneConstants::MAX_AUDIO_DURATION;
 
 // DetectionLogEntry structure for asynchronous logging
 // This is a POD (Plain Old Data) structure for safe memory copying

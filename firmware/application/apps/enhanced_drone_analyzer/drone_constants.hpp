@@ -117,6 +117,15 @@ constexpr uint32_t MAX_AUDIO_DURATION = 5000;  // 5000 ms maximum
 constexpr uint32_t MIN_BANDWIDTH = 10000;     // 10 kHz minimum
 constexpr uint32_t MAX_BANDWIDTH = 28000000;  // 28 MHz maximum (HackRF limit)
 
+// ===== SYSTEM LIMITS =====
+constexpr size_t MAX_PATH_LEN = 64;
+constexpr size_t MAX_NAME_LEN = 32;
+constexpr size_t MAX_FORMAT_LEN = 8;
+
+// ===== WIDEBAND DEFAULTS =====
+constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2400000000ULL;
+constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2500000000ULL;
+
 } // namespace DroneConstants
 
 #endif // DRONE_CONSTANTS_HPP_
