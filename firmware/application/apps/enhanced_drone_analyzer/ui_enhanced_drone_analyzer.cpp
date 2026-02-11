@@ -42,7 +42,6 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
@@ -3317,12 +3316,13 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband",1}, {"Hybrid", 2}}),
       scanning_active_(false)
 {
-    // DIAMOND FIX: Thread-safe mutex initialization with atomic once-flag
-    // Prevents race condition when multiple threads access constructor
-    static std::atomic<bool> sd_mutex_initialized{false};
-    bool expected = false;
-    if (sd_mutex_initialized.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+    // DIAMOND FIX: Thread-safe mutex initialization (volatile for embedded)
+    // Note: Constructor is called once per View instance in single-threaded init phase
+    // Using volatile prevents compiler optimization but not true multi-threaded atomic
+    static volatile bool sd_mutex_initialized = false;
+    if (!sd_mutex_initialized) {
         chMtxInit(&sd_card_mutex);
+        sd_mutex_initialized = true;
     }
 
     // 🔴 ФАЗА 2.8: МИНИМАЛЬНЫЙ конструктор
