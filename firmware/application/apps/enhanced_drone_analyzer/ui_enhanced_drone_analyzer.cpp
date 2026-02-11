@@ -2371,8 +2371,12 @@ void ConsoleStatusBar::set_display_mode(DisplayMode mode) {
 
 void ConsoleStatusBar::paint(Painter& painter) {
     View::paint(painter);
-    if (mode_ == DisplayMode::ALERT) {
-        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect().width(), 2}, Color::dark_red());
+
+    uint8_t mode_idx = static_cast<uint8_t>(mode_);
+    const auto& layout = DISPLAY_MODE_LAYOUTS[mode_idx];
+
+    if (layout.bar_color != 0x0000) {
+        painter.fill_rectangle({parent_rect_.left(), parent_rect_.top(), parent_rect().width(), 2}, Color(layout.bar_color));
     }
 }
 
@@ -3041,77 +3045,10 @@ DroneUIController::DroneUIController(NavigationView& nav,
     settings_.spectrum_mode = SpectrumMode::MEDIUM;
     settings_.scan_interval_ms = 1000;
     settings_.rssi_threshold_db = -90;
-    settings_.enable_audio_alerts = true;
-}
-
-DroneUIController::~DroneUIController() {
-    // TODO[FIXED]: Don't delete display_controller_ - owned by View
-    // UIController only uses reference, doesn't own the resource
-    display_controller_ = nullptr;  // Only nullify pointer
-}
-
-void DroneUIController::on_start_scan() {
-    if (scanning_active_.load(std::memory_order_acquire)) return;
-    scanning_active_.store(true, std::memory_order_release);
-    scanner_.start_scanning();
-    display_controller_->set_scanning_status(true, "Scanning Active");
-    display_controller_->update_detection_display(scanner_);
-}
-
-void DroneUIController::on_stop_scan() {
-    scanning_active_.store(false, std::memory_order_release);
-    scanner_.stop_scanning();
-    audio_mgr_.stop_audio();
-    display_controller_->set_scanning_status(false, "Stopped");
-    display_controller_->update_detection_display(scanner_);
-}
-
-void DroneUIController::on_toggle_mode() {
-    if (scanner_.is_real_mode()) {
-        scanner_.switch_to_demo_mode();
-        if (hardware_.is_spectrum_streaming_active()) {
-            hardware_.stop_spectrum_streaming();
-        }
-    } else {
-        scanner_.switch_to_real_mode();
-        if (!hardware_.is_spectrum_streaming_active()) {
-            hardware_.start_spectrum_streaming();
-        }
-    }
-    display_controller_->set_scanning_status(scanning_active_.load(std::memory_order_acquire),
-                                           scanner_.is_real_mode() ? "Real Mode" : "Demo Mode");
-}
-
-void DroneUIController::show_menu() {
-    // СТАЛО: Открываем полноценное меню настроек EDA
-    nav_.push<DroneAnalyzerSettingsView>();
-}
-
-void DroneUIController::on_load_frequency_file() {
-    if (scanner_.load_frequency_database()) {
-        size_t count = scanner_.get_database_size();
-        // DIAMOND OPTIMIZATION: Use StatusFormatter
-        char buffer[64];
-        StatusFormatter::format_to(buffer, "Loaded %lu frequencies",
-                                  static_cast<unsigned long>(count));
-        nav_.display_modal("Success", buffer);
-    } else {
-        nav_.display_modal("Error", "Failed to load database");
-    }
-}
-
-void DroneUIController::on_save_settings() {
-    if (!SettingsPersistence<DroneAnalyzerSettings>::save(settings_)) {
-        nav_.display_modal("Error", "Failed to save settings");
-        return;
-    }
-    nav_.display_modal("Success", "Settings saved");
-}
-
-void DroneUIController::on_audio_settings() {
-    settings_.enable_audio_alerts = !settings_.enable_audio_alerts;
-    char buffer[48];
-    const char* status = settings_.enable_audio_alerts ? "ENABLED" : "DISABLED";
+    settings_.audio_flags.enable_alerts = true;
+...
+    settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
+    const char* status = settings_.audio_flags.enable_alerts ? "ENABLED" : "DISABLED";
     strcpy(buffer, "Alerts ");
     strcat(buffer, status);
     nav_.display_modal("Audio Alerts", buffer);
@@ -3580,7 +3517,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
         status_bar_.update_normal_status("INIT", "Settings loaded");
     }
 
-    button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
+    button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
     scanner_.update_scan_range(settings_.wideband_min_freq_hz,
                             settings_.wideband_max_freq_hz);
 
@@ -3729,7 +3666,7 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     // Only play audio if threats detected and audio alerts are enabled
     // AudioAlertManager::play_alert() has built-in debouncing to prevent baseband queue saturation
     // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
-    if (settings_.enable_audio_alerts && max_threat >= ThreatLevel::LOW) {
+    if (settings_.audio_flags.enable_alerts && max_threat >= ThreatLevel::LOW) {
         size_t total_drones = approaching + static_count + receding;
         if (total_drones > 0) {
             AudioAlertManager::play_alert(max_threat);
@@ -3773,12 +3710,12 @@ void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
     };
     button_audio_.on_select = [this](Button&) {
         // Toggle audio alerts setting
-        settings_.enable_audio_alerts = !settings_.enable_audio_alerts;
+        settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
         // Update button text immediately
-        button_audio_.set_text(settings_.enable_audio_alerts ? "AUDIO: ON" : "AUDIO: OFF");
+        button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
         static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
         static Style grey_style{font::fixed_8x16, Color::black(), Color::grey()};
-        button_audio_.set_style(settings_.enable_audio_alerts ? &green_style : &grey_style);
+        button_audio_.set_style(settings_.audio_flags.enable_alerts ? &green_style : &grey_style);
     };
 
     field_scanning_mode_.on_change = [this](size_t index, int32_t value) -> void {

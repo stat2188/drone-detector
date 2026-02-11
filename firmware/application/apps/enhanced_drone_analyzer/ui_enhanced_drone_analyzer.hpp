@@ -892,6 +892,22 @@ private:
     };
     static_assert(sizeof(PROGRESS_PATTERNS) / sizeof(ProgressBarEntry) == 9, "PROGRESS_PATTERNS size");
 
+    // DIAMOND OPTIMIZATION: Display Mode Rendering LUT
+    // Data-driven rendering for paint() - eliminates if statement
+    // Maps DisplayMode -> (visibility_mask, bar_color)
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    struct DisplayModeLayout {
+        uint8_t visibility_mask;
+        uint32_t bar_color;
+    };
+
+    static constexpr DisplayModeLayout DISPLAY_MODE_LAYOUTS[] = {
+        {0b001, 0x0000},  // NORMAL: normal_text visible, no bar
+        {0b010, 0x001F},  // SCANNING: progress_text visible, blue bar
+        {0b100, 0xF800}   // ALERT: alert_text visible, red bar
+    };
+    static_assert(sizeof(DISPLAY_MODE_LAYOUTS) / sizeof(DisplayModeLayout) == 3, "DISPLAY_MODE_LAYOUTS size");
+
     size_t bar_index_;
     DisplayMode mode_ = DisplayMode::NORMAL;
     Rect parent_rect_;

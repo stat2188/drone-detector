@@ -102,7 +102,7 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "rssi_threshold_db=%d\n", (int)settings.rssi_threshold_db);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "enable_audio_alerts=%s\n", settings.enable_audio_alerts ? "true" : "false");
+                      "enable_audio_alerts=%s\n", settings.audio_flags.enable_alerts ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "audio_alert_frequency_hz=%u\n", (unsigned int)settings.audio_alert_frequency_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
@@ -110,9 +110,9 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "hardware_bandwidth_hz=%u\n", (unsigned int)settings.hardware_bandwidth_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "enable_real_hardware=%s\n", settings.enable_real_hardware ? "true" : "false");
+                      "enable_real_hardware=%s\n", settings.hardware_flags.enable_real_hardware ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "demo_mode=%s\n", settings.demo_mode ? "true" : "false");
+                      "demo_mode=%s\n", settings.hardware_flags.demo_mode ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "freqman_path=%s\n", settings.freqman_path);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
@@ -122,7 +122,7 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "wideband_slice_width_hz=%u\n", (unsigned int)settings.wideband_slice_width_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
-                      "panoramic_mode_enabled=%s\n", settings.panoramic_mode_enabled ? "true" : "false");
+                      "panoramic_mode_enabled=%s\n", settings.scanning_flags.panoramic_mode_enabled ? "true" : "false");
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "wideband_min_freq_hz=%llu\n", (unsigned long long)settings.wideband_min_freq_hz);
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
@@ -262,17 +262,17 @@ std::string EnhancedSettingsManager::generate_settings_content(const DroneAnalyz
     ss << "spectrum_mode=" << spectrum_mode_to_string(settings.spectrum_mode) << "\n";
     ss << "scan_interval_ms=" << settings.scan_interval_ms << "\n";
     ss << "rssi_threshold_db=" << settings.rssi_threshold_db << "\n";
-    ss << "enable_audio_alerts=" << (settings.enable_audio_alerts ? "true" : "false") << "\n";
+    ss << "enable_audio_alerts=" << (settings.audio_flags.enable_alerts ? "true" : "false") << "\n";
     ss << "audio_alert_frequency_hz=" << settings.audio_alert_frequency_hz << "\n";
     ss << "audio_alert_duration_ms=" << settings.audio_alert_duration_ms << "\n";
     ss << "hardware_bandwidth_hz=" << settings.hardware_bandwidth_hz << "\n";
-    ss << "enable_real_hardware=" << (settings.enable_real_hardware ? "true" : "false") << "\n";
-    ss << "demo_mode=" << (settings.demo_mode ? "true" : "false") << "\n";
+    ss << "enable_real_hardware=" << (settings.hardware_flags.enable_real_hardware ? "true" : "false") << "\n";
+    ss << "demo_mode=" << (settings.hardware_flags.demo_mode ? "true" : "false") << "\n";
     ss << "freqman_path=" << settings.freqman_path << "\n";
     ss << "user_min_freq_hz=" << settings.user_min_freq_hz << "\n";
     ss << "user_max_freq_hz=" << settings.user_max_freq_hz << "\n";
     ss << "wideband_slice_width_hz=" << settings.wideband_slice_width_hz << "\n";
-    ss << "panoramic_mode_enabled=" << (settings.panoramic_mode_enabled ? "true" : "false") << "\n";
+    ss << "panoramic_mode_enabled=" << (settings.scanning_flags.panoramic_mode_enabled ? "true" : "false") << "\n";
     ss << "wideband_min_freq_hz=" << settings.wideband_min_freq_hz << "\n";
     ss << "wideband_max_freq_hz=" << settings.wideband_max_freq_hz << "\n";
     ss << "settings_version=0.4\n";
@@ -566,74 +566,16 @@ static_assert(sizeof(INDEX_TO_SPECTRUM_MODE_LUT) / sizeof(SpectrumMode) == 5, "I
 void HardwareSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
-    checkbox_real_hardware_.set_value(settings.enable_real_hardware);
-    
-    // DIAMOND OPTIMIZATION: LUT lookup вместо switch (O(1) lookup)
-    uint8_t mode_idx = static_cast<uint8_t>(settings.spectrum_mode);
-    if (mode_idx >= 5) mode_idx = 2;  // Fallback to MEDIUM
-    
-    field_spectrum_mode_.set_selected_index(SPECTRUM_MODE_TO_INDEX_LUT[mode_idx]);
-    number_bandwidth_.set_value(settings.hardware_bandwidth_hz);
-    number_min_freq_.set_value(settings.user_min_freq_hz);
-    number_max_freq_.set_value(settings.user_max_freq_hz);
-}
-void HardwareSettingsView::save_current_settings() {
-    DroneAnalyzerSettings settings;
-    SettingsPersistence<DroneAnalyzerSettings>::load(settings);
-    settings.enable_real_hardware = checkbox_real_hardware_.value();
-    settings.demo_mode = !checkbox_real_hardware_.value();
-    size_t mode_idx = field_spectrum_mode_.selected_index();
-    
-    // DIAMOND OPTIMIZATION: LUT lookup вместо switch (O(1) lookup)
-    // Защита от выхода за пределы массива
-    if (mode_idx < 5) {
-        settings.spectrum_mode = INDEX_TO_SPECTRUM_MODE_LUT[mode_idx];
-    } else {
-        settings.spectrum_mode = SpectrumMode::MEDIUM;  // Fallback
-    }
-    
-    settings.hardware_bandwidth_hz = number_bandwidth_.value();
-    settings.user_min_freq_hz = number_min_freq_.value();
-    settings.user_max_freq_hz = number_max_freq_.value();
-
-    // Validate settings before saving
-    if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
-        nav_.display_modal("Error", "Invalid settings detected");
-        return;
-    }
-
-    SettingsPersistence<DroneAnalyzerSettings>::save(settings);
-}
-void HardwareSettingsView::update_ui_from_settings() { load_current_settings(); }
-void HardwareSettingsView::update_settings_from_ui() { save_current_settings(); }
-void HardwareSettingsView::on_save_settings() {
-    save_current_settings();
-    nav_.display_modal("Success", "Hardware settings saved");
-}
-
-// AudioSettingsView
-AudioSettingsView::AudioSettingsView(NavigationView& nav) : View(), nav_(nav) {
-    add_children({&checkbox_audio_enabled_, &text_audio_enabled_, &number_alert_frequency_,
-                  &number_alert_duration_, &number_volume_, &checkbox_repeat_, &text_repeat_, &button_save_});
-}
-void AudioSettingsView::focus() { button_save_.focus(); }
-void AudioSettingsView::load_current_settings() {
-    DroneAnalyzerSettings settings;
-    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
-    checkbox_audio_enabled_.set_value(settings.enable_audio_alerts);
-    number_alert_frequency_.set_value(settings.audio_alert_frequency_hz);
-    number_alert_duration_.set_value(settings.audio_alert_duration_ms);
-    number_volume_.set_value(settings.audio_volume_level);
-    checkbox_repeat_.set_value(settings.audio_repeat_alerts);
-}
-void AudioSettingsView::save_current_settings() {
-    DroneAnalyzerSettings settings;
-    SettingsPersistence<DroneAnalyzerSettings>::load(settings);
-    settings.enable_audio_alerts = checkbox_audio_enabled_.value();
-    settings.audio_alert_frequency_hz = number_alert_frequency_.value();
-    settings.audio_alert_duration_ms = number_alert_duration_.value();
-    settings.audio_volume_level = number_volume_.value();
-    settings.audio_repeat_alerts = checkbox_repeat_.value();
+    checkbox_real_hardware_.set_value(settings.hardware_flags.enable_real_hardware);
+...
+    settings.hardware_flags.enable_real_hardware = checkbox_real_hardware_.value();
+    settings.hardware_flags.demo_mode = !checkbox_real_hardware_.value();
+...
+    checkbox_audio_enabled_.set_value(settings.audio_flags.enable_alerts);
+    checkbox_repeat_.set_value(settings.audio_flags.repeat_alerts);
+...
+    settings.audio_flags.enable_alerts = checkbox_audio_enabled_.value();
+    settings.audio_flags.repeat_alerts = checkbox_repeat_.value();
 
     // Validate settings before saving
     if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
@@ -678,14 +620,9 @@ void ScanningSettingsView::load_current_settings() {
     field_scanning_mode_.set_selected_index(0);
     number_scan_interval_.set_value(settings.scan_interval_ms);
     number_rssi_threshold_.set_value(settings.rssi_threshold_db);
-    checkbox_wideband_.set_value(settings.enable_wideband_scanning);
-}
-void ScanningSettingsView::save_current_settings() {
-    DroneAnalyzerSettings settings;
-    SettingsPersistence<DroneAnalyzerSettings>::load(settings);
-    settings.scan_interval_ms = number_scan_interval_.value();
-    settings.rssi_threshold_db = number_rssi_threshold_.value();
-    settings.enable_wideband_scanning = checkbox_wideband_.value();
+    checkbox_wideband_.set_value(settings.scanning_flags.enable_wideband_scanning);
+...
+    settings.scanning_flags.enable_wideband_scanning = checkbox_wideband_.value();
 
     // Validate settings before saving
     if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
