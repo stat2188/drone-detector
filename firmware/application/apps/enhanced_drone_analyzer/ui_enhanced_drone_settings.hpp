@@ -59,47 +59,6 @@ private:
 };
 
 // ===========================================
-// DEPRECATED: DroneAnalyzerSettingsManager
-// ===========================================
-// This class has been REPLACED by SettingsPersistence<T>
-// Most methods are now in settings_persistence.hpp
-// Only translation functions are kept here as they provide unique functionality
-//
-// MIGRATION: Replace
-//   DroneAnalyzerSettingsManager::load/save/validate/settings/defaults
-// With:
-//   SettingsPersistence<DroneAnalyzerSettings>::load/save/validate/settings/defaults
-//
-#if 0  // DISABLED - Use SettingsPersistence<T> from settings_persistence.hpp
-
-class DroneAnalyzerSettingsManager {
-public:
-    static bool load(DroneAnalyzerSettings& settings);
-    static bool save(const DroneAnalyzerSettings& settings);
-    static void reset_to_defaults(DroneAnalyzerSettings& settings);
-    static bool validate(const DroneAnalyzerSettings& settings);
-    static std::string serialize(const DroneAnalyzerSettings& settings);
-    static bool deserialize(DroneAnalyzerSettings& settings, const std::string& data);
-
-    // Legacy compatibility methods
-    static bool load_settings(DroneAnalyzerSettings& settings);
-    static bool save_settings(const DroneAnalyzerSettings& settings);
-
-    static void set_language(Language lang) { current_language_ = lang; }
-    static Language get_language() { return current_language_; }
-    static const char* translate(const std::string& key);
-
-    // Default translations (English)
-    static const std::map<std::string, const char*> translations_english;
-    static const char* get_translation(const std::string& key);
-
-private:
-    static Language current_language_;
-};
-
-#endif  // END OF DEPRECATED DroneAnalyzerSettingsManager
-
-// ===========================================
 // ACTIVE: Translation Functions (Kept for UI)
 // ===========================================
 class DroneAnalyzerSettingsManager_Translations {
@@ -223,7 +182,7 @@ private:
     NavigationView& nav_;
     Checkbox checkbox_real_hardware_{{8, 8}, 18, "Use Real Hardware", false};
     Text text_real_hardware_{{28, 8, 224, 16}, "Use Real Hardware (Disable for Demo)"};
-    OptionsField field_spectrum_mode_{{8, 32}, 10, { {"Narrow", 0}, {"Medium", 1}, {"Wide", 2}, {"Ultra Wide", 3} }};
+    OptionsField field_spectrum_mode_{{8, 32}, 10, { {"Ultra Narrow", 0}, {"Narrow", 1}, {"Medium", 2}, {"Wide", 3}, {"Ultra Wide", 4} }};
     NumberField number_bandwidth_{{8, 64}, 8, {1000000, 24000000}, 1000000, ' ', false};
     NumberField number_min_freq_{{8, 96}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
     NumberField number_max_freq_{{8, 128}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};

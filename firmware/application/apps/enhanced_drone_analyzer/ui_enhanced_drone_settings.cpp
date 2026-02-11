@@ -327,242 +327,6 @@ const char* DroneAnalyzerSettingsManager_Translations::get_translation(const std
 }
 
 // ===========================================
-// DEPRECATED CODE: DroneAnalyzerSettingsManager
-// ===========================================
-// This namespace has been REPLACED by SettingsPersistence<T> in settings_persistence.hpp
-//
-// REASONS FOR DEPRECATION:
-// - ~200 lines of duplicate load/save/validation logic
-// - Manual parsing instead of unified serialization
-// - Separate validation instead of centralized validation
-//
-// REPLACEMENT: SettingsPersistence<DroneAnalyzerSettings>
-// - Unified template for all settings operations
-// - Compile-time LUT for O(1) parsing
-// - Centralized validation and error handling
-//
-// MIGRATION:
-// Replace:
-//   DroneAnalyzerSettingsManager::load(settings)
-//   DroneAnalyzerSettingsManager::save(settings)
-//
-// With:
-//   SettingsPersistence<DroneAnalyzerSettings>::load(settings)
-//   SettingsPersistence<DroneAnalyzerSettings>::save(settings)
-//
-#if 0  // DISABLED - Use settings_persistence.hpp instead
-
-// ===========================================
-// DEPRECATED IMPLEMENTATION STARTS HERE
-// ===========================================
-
-Language DroneAnalyzerSettingsManager::current_language_ = Language::ENGLISH;
-
-const std::map<std::string, const char*> DroneAnalyzerSettingsManager::translations_english = {
-    {"save_settings", "Save Settings"},
-    {"load_settings", "Load Settings"},
-    {"audio_settings", "Audio Settings"},
-    {"hardware_settings", "Hardware Settings"},
-    {"scan_interval", "Scan Interval"},
-    {"rssi_threshold", "RSSI Threshold"},
-    {"spectrum_mode", "Spectrum Mode"}
-};
-
-bool DroneAnalyzerSettingsManager::load(DroneAnalyzerSettings& settings) {
-    bool loaded = load_settings_from_txt(settings);
-    if (!loaded) {
-        reset_to_defaults(settings);
-    }
-    return loaded;
-}
-
-bool DroneAnalyzerSettingsManager::save(const DroneAnalyzerSettings& settings) {
-    // Validate settings before saving
-    if (!validate(settings)) {
-        return false;
-    }
-    return EnhancedSettingsManager::save_settings_to_txt(settings);
-}
-
-bool DroneAnalyzerSettingsManager::load_settings(DroneAnalyzerSettings& settings) {
-    return load(settings);
-}
-
-bool DroneAnalyzerSettingsManager::save_settings(const DroneAnalyzerSettings& settings) {
-    return save(settings);
-}
-
-void DroneAnalyzerSettingsManager::reset_to_defaults(DroneAnalyzerSettings& settings) {
-    // ===== AUDIO SETTINGS =====
-    settings.enable_audio_alerts = true;
-    settings.audio_alert_frequency_hz = 800;
-    settings.audio_alert_duration_ms = 500;
-    settings.audio_volume_level = 50;
-    settings.audio_repeat_alerts = false;
-
-    // ===== HARDWARE SETTINGS =====
-    settings.spectrum_mode = SpectrumMode::MEDIUM;
-    settings.hardware_bandwidth_hz = 24000000;
-    settings.enable_real_hardware = true;
-    settings.demo_mode = false;
-    settings.iq_calibration_enabled = false;
-    settings.rx_phase_value = 15;
-    settings.lna_gain_db = 32;
-    settings.vga_gain_db = 20;
-    settings.rf_amp_enabled = false;
-    settings.user_min_freq_hz = 50000000ULL;
-    settings.user_max_freq_hz = 6000000000ULL;
-
-    // ===== SCANNING SETTINGS =====
-    settings.scan_interval_ms = 1000;
-    settings.rssi_threshold_db = DEFAULT_RSSI_THRESHOLD_DB;
-    settings.enable_wideband_scanning = false;
-    settings.wideband_min_freq_hz = WIDEBAND_DEFAULT_MIN;
-    settings.wideband_max_freq_hz = WIDEBAND_DEFAULT_MAX;
-    settings.wideband_slice_width_hz = 24000000;
-    settings.panoramic_mode_enabled = true;
-    settings.enable_intelligent_scanning = true;
-
-    // ===== DETECTION SETTINGS =====
-    settings.enable_fhss_detection = true;
-    settings.movement_sensitivity = 3;
-    settings.threat_level_threshold = 2;
-    settings.min_detection_count = 3;
-    settings.alert_persistence_threshold = 3;
-    settings.enable_intelligent_tracking = true;
-
-    // ===== LOGGING SETTINGS =====
-    settings.auto_save_logs = true;
-    safe_strcpy(settings.log_file_path, "/eda_logs", ui::apps::enhanced_drone_analyzer::MAX_PATH_LEN);
-    safe_strcpy(settings.log_format, "CSV", ui::apps::enhanced_drone_analyzer::MAX_FORMAT_LEN);
-    settings.max_log_file_size_kb = 1024;
-    settings.enable_session_logging = true;
-    settings.include_timestamp = true;
-    settings.include_rssi_values = true;
-
-    // ===== DISPLAY SETTINGS =====
-    safe_strcpy(settings.color_scheme, "DARK", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
-    settings.font_size = 0;
-    settings.spectrum_density = 1;
-    settings.waterfall_speed = 5;
-    settings.show_detailed_info = true;
-    settings.show_mini_spectrum = true;
-    settings.show_rssi_history = true;
-    settings.show_frequency_ruler = true;
-    settings.frequency_ruler_style = 5;
-    settings.compact_ruler_tick_count = 4;
-    settings.auto_ruler_style = true;
-
-    // ===== PROFILE SETTINGS =====
-    safe_strcpy(settings.current_profile_name, "Default", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
-    settings.enable_quick_profiles = true;
-    settings.auto_save_on_change = false;
-
-    // ===== SYSTEM SETTINGS =====
-    safe_strcpy(settings.freqman_path, "DRONES", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
-    safe_strcpy(settings.settings_file_path, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt", ui::apps::enhanced_drone_analyzer::MAX_PATH_LEN);
-    settings.settings_version = 2;
-}
-
-bool DroneAnalyzerSettingsManager::validate(const DroneAnalyzerSettings& settings) {
-    // ===== AUDIO VALIDATION =====
-    if (settings.audio_alert_frequency_hz < DroneConstants::MIN_AUDIO_FREQ ||
-        settings.audio_alert_frequency_hz > DroneConstants::MAX_AUDIO_FREQ) return false;
-    if (settings.audio_alert_duration_ms < DroneConstants::MIN_AUDIO_DURATION ||
-        settings.audio_alert_duration_ms > DroneConstants::MAX_AUDIO_DURATION) return false;
-    if (settings.audio_volume_level > 100) return false;
-
-    // ===== HARDWARE VALIDATION =====
-    if (settings.hardware_bandwidth_hz < DroneConstants::MIN_BANDWIDTH ||
-        settings.hardware_bandwidth_hz > DroneConstants::MAX_BANDWIDTH) return false;
-    if (settings.rx_phase_value > 63) return false;
-    if (settings.lna_gain_db > 63) return false;
-    if (settings.vga_gain_db > 62) return false;
-    if (settings.user_min_freq_hz >= settings.user_max_freq_hz) return false;
-
-    // ===== SCANNING VALIDATION =====
-    if (settings.scan_interval_ms < DroneConstants::MIN_SCAN_INTERVAL_MS ||
-        settings.scan_interval_ms > DroneConstants::MAX_SCAN_INTERVAL_MS) return false;
-    if (settings.rssi_threshold_db < DroneConstants::NOISE_FLOOR_RSSI ||
-        settings.rssi_threshold_db > -30) return false;
-    if (settings.wideband_min_freq_hz >= settings.wideband_max_freq_hz) return false;
-    if (settings.wideband_slice_width_hz < 1000000 ||
-        settings.wideband_slice_width_hz > 28000000) return false;
-
-    // ===== DETECTION VALIDATION =====
-    if (settings.movement_sensitivity > 3) return false;
-    if (settings.threat_level_threshold > 4) return false;
-    if (settings.min_detection_count == 0 || settings.min_detection_count > 10) return false;
-    if (settings.alert_persistence_threshold == 0 || settings.alert_persistence_threshold > 10) return false;
-
-    // ===== LOGGING VALIDATION =====
-    if (strcmp(settings.log_format, "CSV") != 0 && strcmp(settings.log_format, "JSON") != 0 && strcmp(settings.log_format, "TXT") != 0) return false;
-    if (settings.max_log_file_size_kb < 100 || settings.max_log_file_size_kb > 10240) return false;
-
-    // ===== DISPLAY VALIDATION =====
-    if (settings.font_size > 2) return false;
-    if (settings.spectrum_density > 2) return false;
-    if (settings.waterfall_speed == 0 || settings.waterfall_speed > 10) return false;
-    if (settings.frequency_ruler_style > 6) return false;
-    if (settings.compact_ruler_tick_count < 3 || settings.compact_ruler_tick_count > 5) return false;
-
-    return true;
-}
-
-// DIAMOND OPTIMIZATION: LUT lookup вместо switch в serialize()
-// Scott Meyers Item 15: Prefer constexpr to #define
-// Экономит ~70 байт Flash
-std::string DroneAnalyzerSettingsManager::serialize(const DroneAnalyzerSettings& settings) {
-    std::ostringstream oss;
-    oss << "spectrum_mode=";
-    
-    // LUT lookup вместо switch
-    uint8_t mode_idx = static_cast<uint8_t>(settings.spectrum_mode);
-    oss << ((mode_idx < 5) ? SPECTRUM_MODE_NAMES[mode_idx] : "MEDIUM");
-    
-    oss << "|scan_interval_ms=" << settings.scan_interval_ms;
-    oss << "|rssi_threshold_db=" << settings.rssi_threshold_db;
-    oss << "|enable_audio_alerts=" << (settings.enable_audio_alerts ? "true" : "false");
-    return oss.str();
-}
-
-bool DroneAnalyzerSettingsManager::deserialize(DroneAnalyzerSettings& settings, const std::string& data) {
-    std::istringstream iss(data);
-    std::string token;
-    while (std::getline(iss, token, '|')) {
-        size_t equals_pos = token.find('=');
-        if (equals_pos != std::string::npos) {
-            std::string key = token.substr(0, equals_pos);
-            std::string value = token.substr(equals_pos + 1);
-            if (key == "spectrum_mode") {
-                if (value == "NARROW") settings.spectrum_mode = SpectrumMode::NARROW;
-                else if (value == "MEDIUM") settings.spectrum_mode = SpectrumMode::MEDIUM;
-                else if (value == "WIDE") settings.spectrum_mode = SpectrumMode::WIDE;
-                else if (value == "ULTRA_WIDE") settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
-            }
-            else if (key == "scan_interval_ms") settings.scan_interval_ms = std::stoul(value);
-            else if (key == "rssi_threshold_db") settings.rssi_threshold_db = std::stoi(value);
-            else if (key == "enable_audio_alerts") settings.enable_audio_alerts = (value == "true");
-        }
-    }
-    return validate(settings);
-}
-
-const char* DroneAnalyzerSettingsManager::translate(const std::string& key) {
-    auto it = translations_english.find(key);
-    if (it != translations_english.end()) {
-        return it->second;
-    }
-    return key.c_str();
-}
-
-const char* DroneAnalyzerSettingsManager::get_translation(const std::string& key) {
-    return translate(key);
-}
-
-#endif  // END OF DEPRECATED DroneAnalyzerSettingsManager
-
-// ===========================================
 // DroneFrequencyPresets Implementation (ACTIVE)
 // ===========================================
 
@@ -778,11 +542,11 @@ void HardwareSettingsView::focus() { button_save_.focus(); }
 // Экономия RAM: LUT хранится во Flash, ноль heap allocation
 // Ускорение: O(1) lookup вместо 5-branch switch
 static constexpr uint8_t SPECTRUM_MODE_TO_INDEX_LUT[] = {
-    0,  // ULTRA_NARROW = 0
-    1,  // NARROW = 1
-    2,  // MEDIUM = 2
-    3,  // WIDE = 3
-    4   // ULTRA_WIDE = 4
+    1,  // SpectrumMode::NARROW (0) → OptionsField index 1 ("Narrow")
+    2,  // SpectrumMode::MEDIUM (1) → OptionsField index 2 ("Medium")
+    3,  // SpectrumMode::WIDE (2) → OptionsField index 3 ("Wide")
+    4,  // SpectrumMode::ULTRA_WIDE (3) → OptionsField index 4 ("Ultra Wide")
+    0   // SpectrumMode::ULTRA_NARROW (4) → OptionsField index 0 ("Ultra Narrow")
 };
 static_assert(sizeof(SPECTRUM_MODE_TO_INDEX_LUT) == 5, "SPECTRUM_MODE_TO_INDEX_LUT size");
 
@@ -791,11 +555,11 @@ static_assert(sizeof(SPECTRUM_MODE_TO_INDEX_LUT) == 5, "SPECTRUM_MODE_TO_INDEX_L
 // Экономия RAM: LUT хранится во Flash, ноль heap allocation
 // Ускорение: O(1) lookup вместо 5-branch switch
 static constexpr SpectrumMode INDEX_TO_SPECTRUM_MODE_LUT[] = {
-    SpectrumMode::ULTRA_NARROW,  // index 0
-    SpectrumMode::NARROW,        // index 1
-    SpectrumMode::MEDIUM,         // index 2
-    SpectrumMode::WIDE,           // index 3
-    SpectrumMode::ULTRA_WIDE      // index 4
+    SpectrumMode::ULTRA_NARROW,  // index 0 (OptionsField "Ultra Narrow")
+    SpectrumMode::NARROW,        // index 1 (OptionsField "Narrow")
+    SpectrumMode::MEDIUM,         // index 2 (OptionsField "Medium")
+    SpectrumMode::WIDE,           // index 3 (OptionsField "Wide")
+    SpectrumMode::ULTRA_WIDE      // index 4 (OptionsField "Ultra Wide")
 };
 static_assert(sizeof(INDEX_TO_SPECTRUM_MODE_LUT) / sizeof(SpectrumMode) == 5, "INDEX_TO_SPECTRUM_MODE_LUT size");
 
