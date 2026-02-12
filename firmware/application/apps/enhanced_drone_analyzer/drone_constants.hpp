@@ -23,9 +23,9 @@ enum class ScanningMode : uint8_t {
     FULL_SPECTRUM = 1    // Accept all frequencies within hardware limits
 };
 
-// ===== FREQUENCY RANGES (Legacy compatibility) =====
-constexpr rf::Frequency MIN_HARDWARE_FREQ = 1'000'000ULL;
-constexpr rf::Frequency MAX_HARDWARE_FREQ = 7'200'000'000ULL;
+// ===== FREQUENCY RANGES (Delegated to FrequencyLimits for SPOT) =====
+constexpr rf::Frequency MIN_HARDWARE_FREQ = FrequencyLimits::MIN_HARDWARE_FREQ;
+constexpr rf::Frequency MAX_HARDWARE_FREQ = FrequencyLimits::MAX_HARDWARE_FREQ;
 
 // 433 MHz ISM band (DIY drones)
 constexpr rf::Frequency MIN_433MHZ = 433'000'000ULL;
@@ -46,6 +46,9 @@ constexpr rf::Frequency WIDEBAND_24GHZ_MAX = 2'500'000'000ULL;
 constexpr rf::Frequency MIN_58GHZ = 5'725'000'000ULL;
 constexpr rf::Frequency MAX_58GHZ = 5'875'000'000ULL;
 constexpr rf::Frequency DEFAULT_58GHZ_CENTER = 5'800'000'000ULL;
+
+// ===== FREQUENCY THRESHOLDS =====
+constexpr rf::Frequency BAND_SPLIT_FREQ_5GHZ = 5'000'000'000ULL;
 
 // ===== SIGNAL WIDTHS =====
 constexpr uint32_t NARROWBAND_DRONE_MAX_WIDTH_HZ = 2'500'000ULL;

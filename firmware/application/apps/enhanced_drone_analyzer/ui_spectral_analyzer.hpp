@@ -130,7 +130,7 @@ public:
         // 7. Classify signal based on width and context
         if (result.signal_width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {  // Width > 10 MHz
             // Context analysis based on frequency range
-            if (center_freq_hz >= 5000000000LL) {
+            if (center_freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ) {
             // On 5.8 GHz wide signal is likely digital FPV (DJI O3, Vista)
             // WiFi on 5.8 also exists, but in field conditions it's more likely a drone
             result.signature = SignalSignature::DIGITAL_FPV;

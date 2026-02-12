@@ -21,23 +21,34 @@ static constexpr size_t MAX_PATH_LEN = 64;
 static constexpr size_t MAX_NAME_LEN = 32;
 static constexpr size_t MAX_FORMAT_LEN = 8;
 
-// Helper for safe string assignment (Zero-Heap)
+// Helper for safe string assignment (Zero-Heap, no null-padding overhead)
 static inline void safe_strcpy(char* dest, const char* src, size_t max_len) {
-    if (dest && src) {
-        strncpy(dest, src, max_len - 1);
-        dest[max_len - 1] = '\0';
+    if (!dest || !src || max_len == 0) return;
+    
+    size_t i = 0;
+    while (i < max_len - 1 && src[i] != '\0') {
+        dest[i] = src[i];
+        ++i;
     }
+    dest[i] = '\0';
 }
 
-// Helper for safe string concatenation (Zero-Heap)
+// Helper for safe string concatenation (Zero-Heap, no null-padding overhead)
 static inline void safe_strcat(char* dest, const char* src, size_t max_len) {
-    if (dest && src) {
-        size_t dest_len = strlen(dest);
-        if (dest_len < max_len - 1) {
-            strncpy(dest + dest_len, src, max_len - dest_len - 1);
-            dest[max_len - 1] = '\0';
-        }
+    if (!dest || !src || max_len == 0) return;
+    
+    char* d = dest;
+    const char* s = src;
+    
+    while (*d && static_cast<size_t>(d - dest) < max_len) ++d;
+    
+    size_t remaining = max_len - static_cast<size_t>(d - dest);
+    if (remaining == 0) return;
+    
+    while (--remaining && *s) {
+        *d++ = *s++;
     }
+    *d = '\0';
 }
 
 // ===========================================
