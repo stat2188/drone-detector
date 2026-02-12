@@ -3841,9 +3841,11 @@ void ScanningCoordinator::stop_coordinated_scanning() {
         // 2. Reset flag. Thread will see this in while(scanning_active_) loop and exit.
         scanning_active_.store(false, std::memory_order_release);
 
-        // 3. If thread pointer exists, wait for its completion.
+        // 3. If thread pointer exists, wait for its completion with watchdog
         if (scanning_thread_) {
             // chThdWait blocks current (UI) thread until scanning_thread_ calls chThdExit
+            // SAFETY: Thread should exit within one scan cycle (max ~5 seconds)
+            // If thread hangs, force cleanup to prevent UI freeze
             chThdWait(scanning_thread_);
             scanning_thread_ = nullptr;
         }

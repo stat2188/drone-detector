@@ -41,10 +41,12 @@ static inline void safe_strcat(char* dest, const char* src, size_t max_len) {
 }
 
 // ===========================================
-// DIAMOND FIX: PACKED STRUCTS TO MINIMIZE SIZE
+// DIAMOND FIX: REMOVED PACKING - NATURAL ALIGNMENT
 // ===========================================
-// Eliminates padding waste (~30-50 bytes saved)
-#pragma pack(push, 1)
+// #pragma pack(1) removed to prevent unaligned access on ARM Cortex-M4
+// Settings are parsed textually (key=value), not binary-mapped
+// Natural alignment improves speed and prevents Hard Faults
+// Memory savings from packing (~30-50 bytes) are not worth alignment risks
 
 struct DroneAnalyzerSettings {
     // ===== AUDIO SETTINGS =====
@@ -145,8 +147,6 @@ struct DroneAnalyzerSettings {
     char settings_file_path[MAX_PATH_LEN] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     uint32_t settings_version = 2;
 };
-
-#pragma pack(pop)
 
 // Default wideband constants for scanner settings - using centralized constants
 using DroneConstants::WIDEBAND_DEFAULT_MIN;
