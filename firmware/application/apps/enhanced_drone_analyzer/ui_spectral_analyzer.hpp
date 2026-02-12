@@ -21,16 +21,16 @@ using rf::Frequency;
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-using Signature = SignalSignature;
-using Threat = ThreatLevel;
-using Drone = DroneType;
-
 enum class SignalSignature : uint8_t {
     NOISE = 0,
     WIDEBAND_WIFI = 1,
     NARROWBAND_DRONE = 2,
     DIGITAL_FPV = 3
 };
+
+using Signature = SignalSignature;
+using Threat = ThreatLevel;
+using Drone = DroneType;
 
 struct SpectralAnalysisConfig {
     static constexpr uint8_t SNR_THRESHOLD = 10;
