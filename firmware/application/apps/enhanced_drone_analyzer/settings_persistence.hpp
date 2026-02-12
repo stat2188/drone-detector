@@ -229,6 +229,23 @@ inline SettingsStaticBuffer& get_settings_buffer() {
 }
 
 // ===========================================
+// DIAMOND FIX: Static buffers for load() to prevent stack overflow
+// Saves ~337 bytes of stack space during settings loading
+// ===========================================
+struct SettingsLoadBuffer {
+    static constexpr size_t LINE_BUFFER_SIZE = MAX_LINE_LENGTH + 16;
+    static constexpr size_t READ_BUFFER_SIZE = 256;
+    static char line_buffer[LINE_BUFFER_SIZE];
+    static char read_buffer[READ_BUFFER_SIZE];
+};
+
+// Static buffer access for load()
+inline SettingsLoadBuffer& get_load_buffer() {
+    static SettingsLoadBuffer buf = {};
+    return buf;
+}
+
+// ===========================================
 // SINGLE-PASS SERIALIZATION TEMPLATE
 // ===========================================
 
@@ -268,16 +285,18 @@ bool SettingsPersistence<T>::load(T& settings) {
         return false;
     }
 
-    constexpr size_t BUFFER_SIZE = 256;
-    char line_buffer[MAX_LINE_LENGTH + 16];
-    char read_buffer[BUFFER_SIZE];
+    // DIAMOND FIX: Use static buffers to prevent stack overflow
+    // Saves ~337 bytes of stack space during settings loading
+    auto& load_buf = get_load_buffer();
+    char* line_buffer = load_buf.line_buffer;
+    char* read_buffer = load_buf.read_buffer;
     size_t line_idx = 0;
 
     size_t total_bytes_read = 0;
     size_t lines_processed = 0;
 
     while (true) {
-        auto read_res = file.read(read_buffer, sizeof(read_buffer));
+        auto read_res = file.read(read_buffer, SettingsLoadBuffer::READ_BUFFER_SIZE);
         if (read_res.is_error() || read_res.value() == 0) {
             break;
         }
