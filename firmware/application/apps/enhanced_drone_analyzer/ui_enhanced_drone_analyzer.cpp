@@ -17,6 +17,8 @@
  * 
  * I'm just here for fun. I had this idea to cram 8,000 lines into an outdated controller and that's it. Code for me is like painting a picture. I want it abstract, extensive, and yet solid.
  * 
+ * I'd like to point out that the current problem isn't related to either the stack or the heap. I've changed them variously and disabled modules, but the problem hasn't changed. It's not moving. I suspect the problem is in the math. Changing the stack and heap should logically correct the logic error. But that's not happening.
+ * 
  */
 
 #include "ui_enhanced_drone_analyzer.hpp"
