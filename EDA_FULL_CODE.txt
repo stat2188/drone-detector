@@ -1,7 +1,7 @@
  
 ======================================== 
 Enhanced Drone Analyzer (EDA) - Full Code 
-Generated: 12.02.2026 19:05:59,65 
+Generated: 12.02.2026 19:19:36,15 
 ======================================== 
  
  
@@ -306,103 +306,6 @@ FILE: color_lookup_unified.hpp
 164: } // namespace ui::apps::enhanced_drone_analyzer
 165: 
 166: #endif // COLOR_LOOKUP_UNIFIED_HPP_
- 
- 
-======================================== 
-FILE: settings_bitfields.hpp 
-======================================== 
- 
-1: /**
-2:  * DIAMOND OPTIMIZATION: Settings Bitfields
-3:  * 
-4:  * REMOVED: DroneAnalyzerSettingsOptimized (never used, ~200 lines)
-5:  * SAVINGS: ~200 lines of code, ~30 bytes RAM (not used anyway)
-6:  * 
-7:  * NOTE: If bitfield packing is needed in the future, apply to DroneAnalyzerSettings
-8:  * instead of creating duplicate structures.
-9:  * 
-10:  * CONSTRAINTS:
-11:  * - Cortex-M4 alignment-safe
-12:  * - Packed for flash storage
-13:  */
-14: 
-15: #ifndef SETTINGS_BITFIELDS_HPP_
-16: #define SETTINGS_BITFIELDS_HPP_
-17: 
-18: #include <cstdint>
-19: #include <string>
-20: 
-21: #pragma pack(push, 1)
-22: 
-23: namespace ui::apps::enhanced_drone_analyzer {
-24: 
-25: // ===========================================
-26: // BITFIELD FLAGS (for future use with DroneAnalyzerSettings)
-27: // ===========================================
-28: // These are defined for potential future optimization but not currently used
-29: 
-30: struct AudioFlags {
-31:     bool enable_alerts : 1;
-32:     bool repeat_alerts : 1;
-33:     uint8_t reserved : 6;
-34: };
-35: static_assert(sizeof(AudioFlags) == 1, "AudioFlags must be 1 byte");
-36: 
-37: struct HardwareFlags {
-38:     bool enable_real_hardware : 1;
-39:     bool demo_mode : 1;
-40:     bool iq_calibration_enabled : 1;
-41:     bool rf_amp_enabled : 1;
-42:     uint8_t reserved : 4;
-43: };
-44: static_assert(sizeof(HardwareFlags) == 1, "HardwareFlags must be 1 byte");
-45: 
-46: struct ScanningFlags {
-47:     bool enable_wideband_scanning : 1;
-48:     bool panoramic_mode_enabled : 1;
-49:     bool enable_intelligent_scanning : 1;
-50:     uint8_t reserved : 5;
-51: };
-52: static_assert(sizeof(ScanningFlags) == 1, "ScanningFlags must be 1 byte");
-53: 
-54: struct DetectionFlags {
-55:     bool enable_fhss_detection : 1;
-56:     bool enable_intelligent_tracking : 1;
-57:     uint8_t reserved : 6;
-58: };
-59: static_assert(sizeof(DetectionFlags) == 1, "DetectionFlags must be 1 byte");
-60: 
-61: struct LoggingFlags {
-62:     bool auto_save_logs : 1;
-63:     bool enable_session_logging : 1;
-64:     bool include_timestamp : 1;
-65:     bool include_rssi_values : 1;
-66:     uint8_t reserved : 4;
-67: };
-68: static_assert(sizeof(LoggingFlags) == 1, "LoggingFlags must be 1 byte");
-69: 
-70: struct DisplayFlags {
-71:     bool show_detailed_info : 1;
-72:     bool show_mini_spectrum : 1;
-73:     bool show_rssi_history : 1;
-74:     bool show_frequency_ruler : 1;
-75:     bool auto_ruler_style : 1;
-76:     uint8_t reserved : 3;
-77: };
-78: static_assert(sizeof(DisplayFlags) == 1, "DisplayFlags must be 1 byte");
-79: 
-80: struct ProfileFlags {
-81:     bool enable_quick_profiles : 1;
-82:     bool auto_save_on_change : 1;
-83:     uint8_t reserved : 6;
-84: };
-85: static_assert(sizeof(ProfileFlags) == 1, "ProfileFlags must be 1 byte");
-86: 
-87: #pragma pack(pop)
-88: 
-89: } // namespace ui::apps::enhanced_drone_analyzer
-90: 
-91: #endif // SETTINGS_BITFIELDS_HPP_
  
  
 ======================================== 
@@ -1411,15 +1314,15 @@ FILE: settings_persistence.hpp
 134: 
 135:     // ===== LOGGING SETTINGS (Bitfield-packed) =====
 136:     {"auto_save_logs", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 0, "true"},
-137:     {"log_file_path", offsetof(DroneAnalyzerSettings, log_file_path), TYPE_STR, 0, 0, "/eda_logs"},
-138:     {"log_format", offsetof(DroneAnalyzerSettings, log_format), TYPE_STR, 0, 0, "CSV"},
+137:     {"log_file_path", offsetof(DroneAnalyzerSettings, log_file_path), TYPE_STR, 64, 0, "/eda_logs"},
+138:     {"log_format", offsetof(DroneAnalyzerSettings, log_format), TYPE_STR, 8, 0, "CSV"},
 139:     {"max_log_file_size_kb", offsetof(DroneAnalyzerSettings, max_log_file_size_kb), TYPE_UINT32, 1, 10240, "1024"},
 140:     {"enable_session_logging", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 1, "true"},
 141:     {"include_timestamp", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 2, "true"},
 142:     {"include_rssi_values", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 3, "true"},
 143: 
 144:     // ===== DISPLAY SETTINGS (Bitfield-packed) =====
-145:     {"color_scheme", offsetof(DroneAnalyzerSettings, color_scheme), TYPE_STR, 0, 0, "DARK"},
+145:     {"color_scheme", offsetof(DroneAnalyzerSettings, color_scheme), TYPE_STR, 32, 0, "DARK"},
 146:     {"font_size", offsetof(DroneAnalyzerSettings, font_size), TYPE_UINT32, 0, 2, "0"},
 147:     {"spectrum_density", offsetof(DroneAnalyzerSettings, spectrum_density), TYPE_UINT32, 0, 2, "1"},
 148:     {"waterfall_speed", offsetof(DroneAnalyzerSettings, waterfall_speed), TYPE_UINT32, 1, 10, "5"},
@@ -1432,13 +1335,13 @@ FILE: settings_persistence.hpp
 155:     {"auto_ruler_style", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 4, "true"},
 156: 
 157:     // ===== PROFILE SETTINGS (Bitfield-packed) =====
-158:     {"current_profile_name", offsetof(DroneAnalyzerSettings, current_profile_name), TYPE_STR, 0, 0, "Default"},
+158:     {"current_profile_name", offsetof(DroneAnalyzerSettings, current_profile_name), TYPE_STR, 32, 0, "Default"},
 159:     {"enable_quick_profiles", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 0, 0, "true"},
 160:     {"auto_save_on_change", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 0, 1, "false"},
 161: 
 162:     // ===== SYSTEM SETTINGS =====
-163:     {"freqman_path", offsetof(DroneAnalyzerSettings, freqman_path), TYPE_STR, 0, 0, "DRONES"},
-164:     {"settings_file_path", offsetof(DroneAnalyzerSettings, settings_file_path), TYPE_STR, 0, 0, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"},
+163:     {"freqman_path", offsetof(DroneAnalyzerSettings, freqman_path), TYPE_STR, 32, 0, "DRONES"},
+164:     {"settings_file_path", offsetof(DroneAnalyzerSettings, settings_file_path), TYPE_STR, 64, 0, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"},
 165:     {"settings_version", offsetof(DroneAnalyzerSettings, settings_version), TYPE_UINT32, 1, 999, "2"}
 166: };
 167: 
@@ -1681,7 +1584,7 @@ FILE: settings_persistence.hpp
 404:                     *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(value, nullptr, 10));
 405:                     break;
 406:                 case TYPE_STR:
-407:                     safe_strcpy(reinterpret_cast<char*>(data_ptr), value, MAX_SETTING_STR_LEN);
+407:                     safe_strcpy(reinterpret_cast<char*>(data_ptr), value, static_cast<size_t>(meta.min_val));
 408:                     break;
 409:                 case TYPE_BITFIELD:
 410:                     {
@@ -1866,13 +1769,13 @@ FILE: settings_persistence.hpp
 589:             case TYPE_INT32:
 590:                 *reinterpret_cast<int32_t*>(data_ptr) = static_cast<int32_t>(strtol(meta.default_str, nullptr, 10));
 591:                 break;
-592:             case TYPE_UINT64:
-593:                 *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(meta.default_str, nullptr, 10));
-594:                 break;
-595:             case TYPE_STR:
-596:                 safe_strcpy(reinterpret_cast<char*>(data_ptr), meta.default_str, MAX_SETTING_STR_LEN);
-597:                 break;
-598:             case TYPE_BITFIELD:
+592:                 case TYPE_UINT64:
+593:                     *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(meta.default_str, nullptr, 10));
+594:                     break;
+595:                 case TYPE_STR:
+596:                     safe_strcpy(reinterpret_cast<char*>(data_ptr), meta.default_str, static_cast<size_t>(meta.min_val));
+597:                     break;
+598:                 case TYPE_BITFIELD:
 599:                 {
 600:                     uint8_t* bf_ptr = data_ptr;
 601:                     uint8_t bit_pos = static_cast<uint8_t>(meta.min_val);
@@ -9387,11 +9290,11 @@ FILE: ui_enhanced_drone_analyzer.cpp
 3189:     settings_.rssi_threshold_db = -90;
 3190:     settings_.audio_flags.enable_alerts = true;
 3191:     char buffer[32];
-3192:     
+3192: 
 3193:     settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
 3194:     const char* status = settings_.audio_flags.enable_alerts ? "ENABLED" : "DISABLED";
-3195:     strcpy(buffer, "Alerts ");
-3196:     strcat(buffer, status);
+3195:     safe_strcpy(buffer, "Alerts ", sizeof(buffer));
+3196:     safe_strcat(buffer, status, sizeof(buffer));
 3197:     nav_.display_modal("Audio Alerts", buffer);
 3198: }
 3199: 
@@ -10045,7 +9948,7 @@ FILE: ui_enhanced_drone_analyzer.cpp
 3847:             StatusFormatter::format_to(secondary_buffer, "Total detections: %lu",
 3848:                                       static_cast<unsigned long>(total_detections));
 3849:         } else {
-3850:             strcpy(secondary_buffer, "Awaiting commands");
+3850:             safe_strcpy(secondary_buffer, "Awaiting commands", sizeof(secondary_buffer));
 3851:         }
 3852:         status_bar_.update_normal_status(primary_msg, secondary_buffer);
 3853:         return;
