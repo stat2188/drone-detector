@@ -1,8 +1,10 @@
 // ui_spectral_analyzer.hpp - Spectral Analysis for Enhanced Drone Analyzer
 // Implements intelligent signal classification using M0 FFT data
 //
-// DIAMOND OPTIMIZATION: FastMedianFilter replaced with MedianFilter<uint8_t>
-// from eda_optimized_utils.hpp to eliminate code duplication
+// DIAMOND FIX: Rolling median filter replaced with 128-bin histogram noise estimator
+// - Correctness: Median computed from ENTIRE spectrum (232 bins), not just tail (11 bins)
+// - Performance: O(N) time, 256 bytes stack, O(1) median lookup
+// - Removed runtime division: VALID_BIN_COUNT computed at compile time
 
 #ifndef UI_SPECTRAL_ANALYZER_HPP_
 #define UI_SPECTRAL_ANALYZER_HPP_
@@ -28,12 +30,13 @@ enum class SignalSignature : uint8_t {
 
 // Spectral analysis configuration
 struct SpectralAnalysisConfig {
-    static constexpr uint8_t SNR_THRESHOLD = 10;         // Signal must be 10dB above noise
-    static constexpr uint8_t PEAK_THRESHOLD_DB = 6;      // Threshold for width measurement (Peak - 6dB)
-    static constexpr uint32_t DRONE_MAX_WIDTH_HZ = 2500000;  // ~2.5 MHz for drones
-    static constexpr uint32_t WIFI_MIN_WIDTH_HZ = 10000000;  // ~10 MHz for WiFi
-    static constexpr size_t VALID_BIN_START = 8;         // Skip first bins (DC and edges)
-    static constexpr size_t VALID_BIN_END = 240;         // Skip last bins
+    static constexpr uint8_t SNR_THRESHOLD = 10;         
+    static constexpr uint8_t PEAK_THRESHOLD_DB = 6;      
+    static constexpr uint32_t DRONE_MAX_WIDTH_HZ = 2500000;  
+    static constexpr uint32_t WIFI_MIN_WIDTH_HZ = 10000000;  
+    static constexpr size_t VALID_BIN_START = 8;         
+    static constexpr size_t VALID_BIN_END = 240;         
+    static constexpr size_t VALID_BIN_COUNT = VALID_BIN_END - VALID_BIN_START;
 };
 
 // Spectral analysis statistics
@@ -47,11 +50,6 @@ struct SpectralAnalysisResult {
     uint8_t width_bins = 0;
     bool is_valid = false;
 };
-
-// DIAMOND OPTIMIZATION: Using unified MedianFilter template
-// Eliminates duplicate median filter implementation (~40 lines removed)
-// Scott Meyers Item 22: Declare data members private
-using FastMedianFilter = MedianFilter<uint8_t, 11>;
 
 // Parameters for spectral analysis (prevents easily-swappable-parameters warning)
 struct SpectralAnalysisParams {
@@ -67,26 +65,40 @@ public:
         uint32_t slice_bandwidth_hz = params.slice_bandwidth_hz;
         Frequency center_freq_hz = params.center_freq_hz;
         SpectralAnalysisResult result;
-        
-        // 1. Calculate noise floor using median filter
-        FastMedianFilter median_filter;
-        uint32_t sum = 0;
-        size_t valid_bins = 0;
-        
-        for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
-             i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
-            median_filter.add(db_buffer[i]);
-            sum += db_buffer[i];
-            valid_bins++;
-        }
-        
-        if (valid_bins == 0) {
+
+        if (SpectralAnalysisConfig::VALID_BIN_COUNT == 0) {
             result.is_valid = false;
             return result;
         }
 
-        result.noise_floor = median_filter.get_median();
-        result.avg_val = sum / valid_bins;
+        // 1. Calculate noise floor using 128-bin histogram (O(N) time, 256 bytes stack)
+        // Maps uint8_t values [0-255] to histogram bins [0-127] as bin = value/2
+        constexpr size_t HISTOGRAM_BINS = 128;
+        uint16_t histogram[HISTOGRAM_BINS] = {0};
+        uint32_t sum = 0;
+
+        for (size_t i = SpectralAnalysisConfig::VALID_BIN_START;
+             i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
+            uint8_t value = db_buffer[i];
+            histogram[value / 2]++;
+            sum += value;
+        }
+
+        // Find median: count up to half of total bins
+        constexpr size_t MEDIAN_TARGET = SpectralAnalysisConfig::VALID_BIN_COUNT / 2;
+        size_t cumulative = 0;
+        uint8_t noise_floor = 0;
+
+        for (size_t bin = 0; bin < HISTOGRAM_BINS; bin++) {
+            cumulative += histogram[bin];
+            if (cumulative > MEDIAN_TARGET) {
+                noise_floor = static_cast<uint8_t>(bin * 2);
+                break;
+            }
+        }
+
+        result.noise_floor = noise_floor;
+        result.avg_val = static_cast<uint8_t>(sum / SpectralAnalysisConfig::VALID_BIN_COUNT);
 
         // 2. Find maximum peak
         result.max_val = 0;
@@ -121,10 +133,7 @@ public:
         }
 
         // 6. Convert bins to Hz
-        uint32_t total_valid_bins = SpectralAnalysisConfig::VALID_BIN_END -
-                                   SpectralAnalysisConfig::VALID_BIN_START;
-        // total_valid_bins always > 0 (constant 232)
-        uint32_t bin_width_hz = slice_bandwidth_hz / total_valid_bins;
+        uint32_t bin_width_hz = slice_bandwidth_hz / SpectralAnalysisConfig::VALID_BIN_COUNT;
         result.signal_width_hz = result.width_bins * bin_width_hz;
 
         // 7. Classify signal based on width and context

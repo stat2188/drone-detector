@@ -1,7 +1,7 @@
  
 ======================================== 
 Enhanced Drone Analyzer (EDA) - Full Code 
-Generated: 12.02.2026 19:29:51,59 
+Generated: 12.02.2026 19:45:04,07 
 ======================================== 
  
  
@@ -1040,67 +1040,64 @@ FILE: ui_spectral_analyzer.hpp
 128:         result.signal_width_hz = result.width_bins * bin_width_hz;
 129: 
 130:         // 7. Classify signal based on width and context
-131:         if (result.signal_width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {  // Width > 10 MHz
-132:             // Context analysis based on frequency range
-133:             if (center_freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ) {
-134:             // On 5.8 GHz wide signal is likely digital FPV (DJI O3, Vista)
-135:             // WiFi on 5.8 also exists, but in field conditions it's more likely a drone
-136:             result.signature = SignalSignature::DIGITAL_FPV;
-137:         } else {
-138:             // On 2.4 GHz this is more likely WiFi (though DJI O3 also exists, but WiFi is more common)
-139:             result.signature = SignalSignature::WIDEBAND_WIFI;
-140:         }
-141:         // NOLINTNEXTLINE(bugprone-branch-clone)
-142:         } else if (result.signal_width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
-143:             result.signature = SignalSignature::NARROWBAND_DRONE;  // Analog, ELRS, TBS
-144:         } else {
-145:             // "Grey zone" 3-10 MHz. Often poor analog video. Count as drone for safety.
-146:             result.signature = SignalSignature::NARROWBAND_DRONE;
-147:         }
-148: 
-149:         result.is_valid = true;
-150:         return result;
-151:     }
-152: 
-153:     // DIAMOND OPTIMIZATION: Delegation to unified ThreatClassifier from eda_optimized_utils.hpp
-154:     static ThreatLevel get_threat_level(SignalSignature signature, uint8_t snr) {
-155:         // Map SignalSignature to DroneType for unified classification
-156:         uint8_t drone_type = 0;
-157:         switch (signature) {
-158:             case SignalSignature::DIGITAL_FPV:
-159:                 drone_type = static_cast<uint8_t>(DroneType::FPV_RACING);
-160:                 break;
-161:             case SignalSignature::NARROWBAND_DRONE:
-162:                 drone_type = static_cast<uint8_t>(DroneType::MAVIC); // Default type for narrowband
-163:                 break;
-164:             case SignalSignature::WIDEBAND_WIFI:
-165:                 drone_type = static_cast<uint8_t>(DroneType::UNKNOWN);
-166:                 break;
-167:             case SignalSignature::NOISE:
-168:             default:
-169:                 return ThreatLevel::NONE;
-170:         }
-171:         // Use unified ThreatClassifier from eda_optimized_utils.hpp
-172:         return static_cast<ThreatLevel>(ThreatClassifier::from_snr_and_type(snr, drone_type));
-173:     }
-174: 
-175:     // DIAMOND OPTIMIZATION: Delegation to unified DroneTypeDetector from eda_optimized_utils.hpp
-176:     static DroneType get_drone_type(Frequency frequency_hz, SignalSignature signature) {
-177:         // For non-drone signatures, return UNKNOWN early
-178:         if (signature != SignalSignature::NARROWBAND_DRONE && 
-179:             signature != SignalSignature::DIGITAL_FPV) {
-180:             return DroneType::UNKNOWN;
+131:         result.signature = classify_signal(result.signal_width_hz, center_freq_hz);
+132: 
+133:         result.is_valid = true;
+134:         return result;
+135:     }
+136: 
+137:     // DIAMOND OPTIMIZATION: Delegation to unified ThreatClassifier from eda_optimized_utils.hpp
+138:     static ThreatLevel get_threat_level(SignalSignature signature, uint8_t snr) {
+139:         // Map SignalSignature to DroneType for unified classification
+140:         uint8_t drone_type = 0;
+141:         switch (signature) {
+142:             case SignalSignature::DIGITAL_FPV:
+143:                 drone_type = static_cast<uint8_t>(DroneType::FPV_RACING);
+144:                 break;
+145:             case SignalSignature::NARROWBAND_DRONE:
+146:                 drone_type = static_cast<uint8_t>(DroneType::MAVIC); // Default type for narrowband
+147:                 break;
+148:             case SignalSignature::WIDEBAND_WIFI:
+149:                 drone_type = static_cast<uint8_t>(DroneType::UNKNOWN);
+150:                 break;
+151:             case SignalSignature::NOISE:
+152:             default:
+153:                 return ThreatLevel::NONE;
+154:         }
+155:         // Use unified ThreatClassifier from eda_optimized_utils.hpp
+156:         return static_cast<ThreatLevel>(ThreatClassifier::from_snr_and_type(snr, drone_type));
+157:     }
+158: 
+159:     // DIAMOND OPTIMIZATION: Delegation to unified DroneTypeDetector from eda_optimized_utils.hpp
+160:     static DroneType get_drone_type(Frequency frequency_hz, SignalSignature signature) {
+161:         // For non-drone signatures, return UNKNOWN early
+162:         if (signature != SignalSignature::NARROWBAND_DRONE && 
+163:             signature != SignalSignature::DIGITAL_FPV) {
+164:             return DroneType::UNKNOWN;
+165:         }
+166:         // Use unified DroneTypeDetector from eda_optimized_utils.hpp
+167:         // Returns uint8_t, cast to DroneType enum
+168:         uint8_t type_code = DroneTypeDetector::from_frequency(frequency_hz);
+169:         return static_cast<DroneType>(type_code);
+170:     }
+171: 
+172: private:
+173:     static SignalSignature classify_signal(uint32_t width_hz, Frequency freq_hz) noexcept {
+174:         if (width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {
+175:             return (freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ) 
+176:                    ? SignalSignature::DIGITAL_FPV 
+177:                    : SignalSignature::WIDEBAND_WIFI;
+178:         }
+179:         if (width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
+180:             return SignalSignature::NARROWBAND_DRONE;
 181:         }
-182:         // Use unified DroneTypeDetector from eda_optimized_utils.hpp
-183:         // Returns uint8_t, cast to DroneType enum
-184:         uint8_t type_code = DroneTypeDetector::from_frequency(frequency_hz);
-185:         return static_cast<DroneType>(type_code);
-186:     }
-187: };
-188: 
-189: } // namespace ui::apps::enhanced_drone_analyzer
-190: 
-191: #endif // UI_SPECTRAL_ANALYZER_HPP_
+182:         return SignalSignature::NARROWBAND_DRONE;
+183:     }
+184: };
+185: 
+186: } // namespace ui::apps::enhanced_drone_analyzer
+187: 
+188: #endif // UI_SPECTRAL_ANALYZER_HPP_
  
  
 ======================================== 
@@ -1121,57 +1118,63 @@ FILE: ui_drone_audio.hpp
 12: 
 13: namespace ui::apps::enhanced_drone_analyzer {
 14: 
-15: // DIAMOND FIX: Moved audio_enabled_ to .cpp to fix ODR violation
-16: // Prevents memory corruption from multiple definitions across translation units
-17: // DIAMOND OPTIMIZATION: Added last_alert_timestamp_ for debouncing to prevent UI freeze
-18: struct AudioAlertManager {
-19:     static void play_alert(ThreatLevel level);
-20:     static void set_enabled(bool enable);
-21:     static bool is_enabled();
-22:     static void set_cooldown_ms(uint32_t cooldown_ms);
-23: 
-24: private:
-25:     // DIAMOND FIX: Declaration only - definition moved to .cpp
-26:     // Single instance prevents ODR violation and undefined behavior
-27:     static bool audio_enabled_;
-28:     
-29:     // DIAMOND OPTIMIZATION: Last alert timestamp for debouncing
-30:     // Prevents baseband queue saturation when called at 60 FPS
-31:     // baseband::send_message() has busy-wait spin loop (baseband_api.cpp:54-64)
-32:     // Without debouncing, UI thread would freeze indefinitely
-33:     static systime_t last_alert_timestamp_;
-34:     static uint32_t cooldown_ms_;
-35: };
+15: struct AudioAlertManager {
+16:     static void play_alert(ThreatLevel level) {
+17:         if (!audio_enabled_) return;
+18:         systime_t now = chTimeNow();
+19:         systime_t elapsed_ticks = now - last_alert_timestamp_;
+20:         if (elapsed_ticks < MS2ST(cooldown_ms_)) return;
+21:         last_alert_timestamp_ = now;
+22:         uint16_t freq_hz = 800;
+23:         switch (level) {
+24:             case ThreatLevel::NONE: return;
+25:             case ThreatLevel::LOW: freq_hz = 800; break;
+26:             case ThreatLevel::MEDIUM: freq_hz = 1000; break;
+27:             case ThreatLevel::HIGH: freq_hz = 1200; break;
+28:             case ThreatLevel::CRITICAL: freq_hz = 2000; break;
+29:             default: freq_hz = 800; break;
+30:         }
+31:         baseband::request_audio_beep(freq_hz, 24000, 200);
+32:     }
+33:     static void set_enabled(bool enable) { audio_enabled_ = enable; }
+34:     static bool is_enabled() { return audio_enabled_; }
+35:     static void set_cooldown_ms(uint32_t cooldown_ms) { cooldown_ms_ = cooldown_ms; }
 36: 
-37: } // namespace ui::apps::enhanced_drone_analyzer
-38: 
-39: // Class-compatible interface to maintain API compatibility
-40: // Simplified like detector_app's play_beep inline method
-41: class AudioManager {
-42: public:
-43:     AudioManager() = default;
-44:     ~AudioManager() = default;
-45: 
-46:     bool is_audio_enabled() const { return ui::apps::enhanced_drone_analyzer::AudioAlertManager::is_enabled(); }
-47:     void toggle_audio() { ui::apps::enhanced_drone_analyzer::AudioAlertManager::set_enabled(!ui::apps::enhanced_drone_analyzer::AudioAlertManager::is_enabled()); }
-48:     void play_detection_beep(ui::apps::enhanced_drone_analyzer::ThreatLevel threat) {
-49:         ui::apps::enhanced_drone_analyzer::AudioAlertManager::play_alert(threat);
-50:     }
-51:     void stop_audio() { /* Simple beeps don't persist - no stop needed */ }
-52: 
-53:     // Legacy API for compatibility
-54:     uint16_t get_alert_frequency() const { return 800; }
-55:     void set_alert_frequency([[maybe_unused]] uint16_t freq) { (void)freq; /* Fixed to 800Hz like detector_app */ }
-56:     uint32_t get_alert_duration_ms() const { return 200; }
-57:     void set_alert_duration_ms([[maybe_unused]] uint32_t duration) { (void)duration; /* Fixed 200ms like detector_app */ }
-58: };
-59: 
-60: struct DroneAudioSettings {
-61:     bool audio_enabled = true;
-62:     ui::apps::enhanced_drone_analyzer::ThreatLevel test_threat_level = ui::apps::enhanced_drone_analyzer::ThreatLevel::HIGH;
-63: };
-64: 
-65: #endif // UI_DRONE_AUDIO_HPP_
+37: private:
+38:     inline static bool audio_enabled_ = true;
+39:     inline static systime_t last_alert_timestamp_ = 0;
+40:     inline static uint32_t cooldown_ms_ = 100;
+41: };
+42: 
+43: } // namespace ui::apps::enhanced_drone_analyzer
+44: 
+45: // Class-compatible interface to maintain API compatibility
+46: // Simplified like detector_app's play_beep inline method
+47: class AudioManager {
+48: public:
+49:     AudioManager() = default;
+50:     ~AudioManager() = default;
+51: 
+52:     bool is_audio_enabled() const { return ui::apps::enhanced_drone_analyzer::AudioAlertManager::is_enabled(); }
+53:     void toggle_audio() { ui::apps::enhanced_drone_analyzer::AudioAlertManager::set_enabled(!ui::apps::enhanced_drone_analyzer::AudioAlertManager::is_enabled()); }
+54:     void play_detection_beep(ui::apps::enhanced_drone_analyzer::ThreatLevel threat) {
+55:         ui::apps::enhanced_drone_analyzer::AudioAlertManager::play_alert(threat);
+56:     }
+57:     void stop_audio() { /* Simple beeps don't persist - no stop needed */ }
+58: 
+59:     // Legacy API for compatibility
+60:     uint16_t get_alert_frequency() const { return 800; }
+61:     void set_alert_frequency([[maybe_unused]] uint16_t freq) { (void)freq; /* Fixed to 800Hz like detector_app */ }
+62:     uint32_t get_alert_duration_ms() const { return 200; }
+63:     void set_alert_duration_ms([[maybe_unused]] uint32_t duration) { (void)duration; /* Fixed 200ms like detector_app */ }
+64: };
+65: 
+66: struct DroneAudioSettings {
+67:     bool audio_enabled = true;
+68:     ui::apps::enhanced_drone_analyzer::ThreatLevel test_threat_level = ui::apps::enhanced_drone_analyzer::ThreatLevel::HIGH;
+69: };
+70: 
+71: #endif // UI_DRONE_AUDIO_HPP_
  
  
 ======================================== 
@@ -10786,54 +10789,10 @@ FILE: ui_enhanced_drone_analyzer.cpp
 4685: // ===========================================
 4686: // AudioAlertManager Implementation
 4687: // ===========================================
-4688: // AudioAlertManager is declared in ui_drone_audio.hpp inside namespace ui::apps::enhanced_drone_analyzer
-4689: 
-4690: bool AudioAlertManager::audio_enabled_ = true;
-4691: systime_t AudioAlertManager::last_alert_timestamp_ = 0;
-4692: uint32_t AudioAlertManager::cooldown_ms_ = 600;
-4693: 
-4694: void AudioAlertManager::play_alert(ThreatLevel level) {
-4695:     if (!audio_enabled_) return;
-4696: 
-4697:     // DIAMOND OPTIMIZATION: Time-based debouncing to prevent UI freeze
-4698:     // baseband::send_message() contains busy-wait spin loop (baseband_api.cpp:54-64)
-4699:     // If called at 60 FPS with 200ms beeps, UI would spin-wait ~180ms per frame
-4700:     // This would completely freeze the UI - no touch/key events processed
-4701:     systime_t now = chTimeNow();
-4702:     systime_t elapsed_ticks = now - last_alert_timestamp_;
-4703: 
-4704:     if (elapsed_ticks < MS2ST(cooldown_ms_)) {
-4705:         return;
-4706:     }
-4707: 
-4708:     // Update timestamp for next call
-4709:     last_alert_timestamp_ = now;
-4710: 
-4711:     uint16_t freq_hz = 800;
-4712:     switch (level) {
-4713:         case ThreatLevel::NONE: return;
-4714:         case ThreatLevel::LOW: freq_hz = 800; break;
-4715:         case ThreatLevel::MEDIUM: freq_hz = 1000; break;
-4716:         case ThreatLevel::HIGH: freq_hz = 1200; break;
-4717:         case ThreatLevel::CRITICAL: freq_hz = 2000; break;
-4718:         default: freq_hz = 800; break;
-4719:     }
-4720:     baseband::request_audio_beep(freq_hz, 24000, 200);
-4721: }
-4722: 
-4723: void AudioAlertManager::set_enabled(bool enable) {
-4724:     audio_enabled_ = enable;
-4725: }
-4726: 
-4727: bool AudioAlertManager::is_enabled() {
-4728:     return audio_enabled_;
-4729: }
-4730: 
-4731: void AudioAlertManager::set_cooldown_ms(uint32_t cooldown_ms) {
-4732:     cooldown_ms_ = cooldown_ms;
-4733: }
-4734: 
-4735: } // namespace ui::apps::enhanced_drone_analyzer
+4688: // DIAMOND FIX: Fully migrated to ui_drone_audio.hpp as inline static (C++17)
+4689: // Eliminates ODR violation, removes .cpp dependency, ensures single instance
+4690: 
+4691: } // namespace ui::apps::enhanced_drone_analyzer
  
  
 ======================================== 
