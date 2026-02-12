@@ -138,55 +138,12 @@ inline constexpr SettingMetadata SETTINGS_LUT[] = {
     SET_META(settings_version, TYPE_UINT32, 1, 999, "2")
 };
 
-// ===========================================
-// COMPILE-TIME MAX LINE LENGTH CALCULATOR
-// ===========================================
-// DIAMOND FIX: Replaced runtime strlen loop with constexpr.
-// This code executes on the HOST during compilation.
-// Result is embedded as a constant integer - ZERO CPU cycles at runtime.
-constexpr size_t calculate_max_line_length() {
-    size_t max_len = 0;
-    for (size_t i = 0; i < SETTINGS_COUNT; i++) {
-        // Compile-time string length calculation
-        size_t key_len = const_strlen(SETTINGS_LUT[i].key);
-        size_t val_len = const_strlen(SETTINGS_LUT[i].default_str);
-        // Format: "key=value\n\0"
-        size_t total = key_len + 1 + val_len + 2;
-        if (total > max_len) {
-            max_len = total;
-        }
-    }
-    return max_len;
-}
+static constexpr size_t MAX_LINE_LENGTH = 128;
+static constexpr size_t MAX_SETTING_STR_LEN = 65;
 
-// DIAMOND FIX: static constexpr forces compile-time evaluation.
-// The MCU sees this as a constant integer (e.g., 65). No function call.
-static constexpr size_t MAX_LINE_LENGTH = calculate_max_line_length();
-
-// ===========================================
-// COMPILE-TIME MAX SETTING STRING LENGTH CALCULATOR
-// ===========================================
-// DIAMOND FIX: Derive from actual SETTINGS_LUT at compile time.
-// Eliminates magic number 64 and prevents buffer overflow.
-constexpr size_t calculate_max_setting_str_len() {
-    size_t max_len = 0;
-    for (size_t i = 0; i < SETTINGS_COUNT; i++) {
-        size_t val_len = const_strlen(SETTINGS_LUT[i].default_str);
-        if (val_len > max_len) {
-            max_len = val_len;
-        }
-    }
-    return max_len + 1;  // +1 for null terminator
-}
-
-static constexpr size_t MAX_SETTING_STR_LEN = calculate_max_setting_str_len();
-
-// Compile-time buffer size for single-pass serialization
 constexpr size_t SETTINGS_TEMPLATE_SIZE = 4096;
-
-// Protection constants for file loading
-constexpr size_t MAX_SETTINGS_FILE_SIZE = 65536;      // 64KB max file size
-constexpr size_t MAX_SETTINGS_LINES = 1000;            // Max 1000 settings lines
+constexpr size_t MAX_SETTINGS_FILE_SIZE = 65536;
+constexpr size_t MAX_SETTINGS_LINES = 1000;
 
 // DIAMOND FIX: Static buffer to prevent stack overflow
 // Defined outside template to avoid code bloat from instantiations
@@ -201,12 +158,8 @@ inline SettingsStaticBuffer& get_settings_buffer() {
     return buf;
 }
 
-// ===========================================
-// DIAMOND FIX: Static buffers for load() to prevent stack overflow
-// Saves ~337 bytes of stack space during settings loading
-// ===========================================
 struct SettingsLoadBuffer {
-    static constexpr size_t LINE_BUFFER_SIZE = MAX_LINE_LENGTH + 16;
+    static constexpr size_t LINE_BUFFER_SIZE = 144;
     static constexpr size_t READ_BUFFER_SIZE = 256;
     static char line_buffer[LINE_BUFFER_SIZE];
     static char read_buffer[READ_BUFFER_SIZE];
