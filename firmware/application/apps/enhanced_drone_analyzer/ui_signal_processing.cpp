@@ -1,13 +1,22 @@
 #include "ui_signal_processing.hpp"
 #include <algorithm>
 #include <ch.h>
+#include <limits>
 
 namespace ui::apps::enhanced_drone_analyzer {
 
 constexpr size_t HASH_TABLE_SIZE = DetectionRingBuffer::MAX_ENTRIES;
+constexpr size_t EMPTY_HASH_MARKER = std::numeric_limits<size_t>::max();
 
 static inline uint32_t get_current_time_ticks() noexcept {
     return static_cast<uint32_t>(chTimeNow());
+}
+
+static inline void init_entry(DetectionEntry& entry) noexcept {
+    entry.frequency_hash = EMPTY_HASH_MARKER;
+    entry.detection_count = 0;
+    entry.rssi_value = -120;
+    entry.timestamp = 0;
 }
 
 void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) noexcept {
@@ -24,7 +33,7 @@ void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detect
             return;
         }
 
-        if (entries_[idx].frequency_hash == 0) {
+        if (entries_[idx].frequency_hash == EMPTY_HASH_MARKER) {
             entries_[idx] = {frequency_hash, detection_count, rssi_value, current_time};
             return;
         }
@@ -44,7 +53,7 @@ uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const no
             return entries_[idx].detection_count;
         }
 
-        if (entries_[idx].frequency_hash == 0) {
+        if (entries_[idx].frequency_hash == EMPTY_HASH_MARKER) {
             return 0;
         }
     }
@@ -61,7 +70,7 @@ int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const noexcep
             return entries_[idx].rssi_value;
         }
 
-        if (entries_[idx].frequency_hash == 0) {
+        if (entries_[idx].frequency_hash == EMPTY_HASH_MARKER) {
             return -120;
         }
     }
@@ -69,9 +78,8 @@ int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const noexcep
 }
 
 void DetectionRingBuffer::clear() noexcept {
-    constexpr DetectionEntry empty_entry{0, 0, -120, 0};
     for (auto& entry : entries_) {
-        entry = empty_entry;
+        init_entry(entry);
     }
     head_ = 0;
 }
