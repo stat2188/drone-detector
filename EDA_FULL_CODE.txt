@@ -1,7 +1,7 @@
  
 ======================================== 
 Enhanced Drone Analyzer (EDA) - Full Code 
-Generated: 12.02.2026 19:45:04,07 
+Generated: 12.02.2026 20:36:28,65 
 ======================================== 
  
  
@@ -913,191 +913,200 @@ FILE: ui_spectral_analyzer.hpp
 1: // ui_spectral_analyzer.hpp - Spectral Analysis for Enhanced Drone Analyzer
 2: // Implements intelligent signal classification using M0 FFT data
 3: //
-4: // DIAMOND OPTIMIZATION: FastMedianFilter replaced with MedianFilter<uint8_t>
-5: // from eda_optimized_utils.hpp to eliminate code duplication
-6: 
-7: #ifndef UI_SPECTRAL_ANALYZER_HPP_
-8: #define UI_SPECTRAL_ANALYZER_HPP_
-9: 
-10: #include <cstdint>
-11: #include <array>
-12: #include <algorithm>
-13: #include "ui_drone_common_types.hpp"
-14: #include "radio.hpp"
-15: #include "eda_optimized_utils.hpp"
-16: 
-17: using rf::Frequency;
+4: // DIAMOND FIX: Rolling median filter replaced with 128-bin histogram noise estimator
+5: // - Correctness: Median computed from ENTIRE spectrum (232 bins), not just tail (11 bins)
+6: // - Performance: O(N) time, 256 bytes stack, O(1) median lookup
+7: // - Removed runtime division: VALID_BIN_COUNT computed at compile time
+8: 
+9: #ifndef UI_SPECTRAL_ANALYZER_HPP_
+10: #define UI_SPECTRAL_ANALYZER_HPP_
+11: 
+12: #include <cstdint>
+13: #include <array>
+14: #include <algorithm>
+15: #include "ui_drone_common_types.hpp"
+16: #include "radio.hpp"
+17: #include "eda_optimized_utils.hpp"
 18: 
-19: namespace ui::apps::enhanced_drone_analyzer {
+19: using rf::Frequency;
 20: 
-21: // Signal classification results
-22: enum class SignalSignature : uint8_t {
-23:     NOISE,
-24:     WIDEBAND_WIFI,   // Wide "plateau" (> 5-10 MHz)
-25:     NARROWBAND_DRONE, // Narrow peak (< 2-3 MHz)
-26:     DIGITAL_FPV      // Digital FPV video (DJI O3, Vista, etc.)
-27: };
-28: 
-29: // Spectral analysis configuration
-30: struct SpectralAnalysisConfig {
-31:     static constexpr uint8_t SNR_THRESHOLD = 10;         // Signal must be 10dB above noise
-32:     static constexpr uint8_t PEAK_THRESHOLD_DB = 6;      // Threshold for width measurement (Peak - 6dB)
-33:     static constexpr uint32_t DRONE_MAX_WIDTH_HZ = 2500000;  // ~2.5 MHz for drones
-34:     static constexpr uint32_t WIFI_MIN_WIDTH_HZ = 10000000;  // ~10 MHz for WiFi
-35:     static constexpr size_t VALID_BIN_START = 8;         // Skip first bins (DC and edges)
-36:     static constexpr size_t VALID_BIN_END = 240;         // Skip last bins
-37: };
-38: 
-39: // Spectral analysis statistics
-40: struct SpectralAnalysisResult {
-41:     SignalSignature signature = SignalSignature::NOISE;
-42:     uint8_t max_val = 0;
-43:     uint8_t avg_val = 0;
-44:     uint8_t noise_floor = 0;
-45:     uint8_t snr = 0;
-46:     uint32_t signal_width_hz = 0;
-47:     uint8_t width_bins = 0;
-48:     bool is_valid = false;
-49: };
-50: 
-51: // DIAMOND OPTIMIZATION: Using unified MedianFilter template
-52: // Eliminates duplicate median filter implementation (~40 lines removed)
-53: // Scott Meyers Item 22: Declare data members private
-54: using FastMedianFilter = MedianFilter<uint8_t, 11>;
-55: 
-56: // Parameters for spectral analysis (prevents easily-swappable-parameters warning)
-57: struct SpectralAnalysisParams {
-58:     uint32_t slice_bandwidth_hz;
-59:     Frequency center_freq_hz;
-60: };
-61: 
-62: // Main spectral analyzer class
-63: class SpectralAnalyzer {
-64: public:
-65:     static SpectralAnalysisResult analyze(const std::array<uint8_t, 256>& db_buffer,
-66:                                           const SpectralAnalysisParams& params) {
-67:         uint32_t slice_bandwidth_hz = params.slice_bandwidth_hz;
-68:         Frequency center_freq_hz = params.center_freq_hz;
-69:         SpectralAnalysisResult result;
-70:         
-71:         // 1. Calculate noise floor using median filter
-72:         FastMedianFilter median_filter;
-73:         uint32_t sum = 0;
-74:         size_t valid_bins = 0;
-75:         
-76:         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
-77:              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
-78:             median_filter.add(db_buffer[i]);
-79:             sum += db_buffer[i];
-80:             valid_bins++;
-81:         }
-82:         
-83:         if (valid_bins == 0) {
-84:             result.is_valid = false;
-85:             return result;
-86:         }
-87: 
-88:         result.noise_floor = median_filter.get_median();
-89:         result.avg_val = sum / valid_bins;
-90: 
-91:         // 2. Find maximum peak
-92:         result.max_val = 0;
-93:         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
-94:              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
-95:             if (db_buffer[i] > result.max_val) {
-96:                 result.max_val = db_buffer[i];
+21: namespace ui::apps::enhanced_drone_analyzer {
+22: 
+23: // Signal classification results
+24: enum class SignalSignature : uint8_t {
+25:     NOISE,
+26:     WIDEBAND_WIFI,   // Wide "plateau" (> 5-10 MHz)
+27:     NARROWBAND_DRONE, // Narrow peak (< 2-3 MHz)
+28:     DIGITAL_FPV      // Digital FPV video (DJI O3, Vista, etc.)
+29: };
+30: 
+31: // Spectral analysis configuration
+32: struct SpectralAnalysisConfig {
+33:     static constexpr uint8_t SNR_THRESHOLD = 10;         
+34:     static constexpr uint8_t PEAK_THRESHOLD_DB = 6;      
+35:     static constexpr uint32_t DRONE_MAX_WIDTH_HZ = 2500000;  
+36:     static constexpr uint32_t WIFI_MIN_WIDTH_HZ = 10000000;  
+37:     static constexpr size_t VALID_BIN_START = 8;         
+38:     static constexpr size_t VALID_BIN_END = 240;         
+39:     static constexpr size_t VALID_BIN_COUNT = VALID_BIN_END - VALID_BIN_START;
+40: };
+41: 
+42: // Spectral analysis statistics
+43: struct SpectralAnalysisResult {
+44:     SignalSignature signature = SignalSignature::NOISE;
+45:     uint8_t max_val = 0;
+46:     uint8_t avg_val = 0;
+47:     uint8_t noise_floor = 0;
+48:     uint8_t snr = 0;
+49:     uint32_t signal_width_hz = 0;
+50:     uint8_t width_bins = 0;
+51:     bool is_valid = false;
+52: };
+53: 
+54: // Parameters for spectral analysis (prevents easily-swappable-parameters warning)
+55: struct SpectralAnalysisParams {
+56:     uint32_t slice_bandwidth_hz;
+57:     Frequency center_freq_hz;
+58: };
+59: 
+60: // Main spectral analyzer class
+61: class SpectralAnalyzer {
+62: public:
+63:     static SpectralAnalysisResult analyze(const std::array<uint8_t, 256>& db_buffer,
+64:                                           const SpectralAnalysisParams& params) {
+65:         uint32_t slice_bandwidth_hz = params.slice_bandwidth_hz;
+66:         Frequency center_freq_hz = params.center_freq_hz;
+67:         SpectralAnalysisResult result;
+68: 
+69:         if (SpectralAnalysisConfig::VALID_BIN_COUNT == 0) {
+70:             result.is_valid = false;
+71:             return result;
+72:         }
+73: 
+74:         // 1. Calculate noise floor using 128-bin histogram (O(N) time, 256 bytes stack)
+75:         // Maps uint8_t values [0-255] to histogram bins [0-127] as bin = value/2
+76:         constexpr size_t HISTOGRAM_BINS = 128;
+77:         uint16_t histogram[HISTOGRAM_BINS] = {0};
+78:         uint32_t sum = 0;
+79: 
+80:         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START;
+81:              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
+82:             uint8_t value = db_buffer[i];
+83:             histogram[value / 2]++;
+84:             sum += value;
+85:         }
+86: 
+87:         // Find median: count up to half of total bins
+88:         constexpr size_t MEDIAN_TARGET = SpectralAnalysisConfig::VALID_BIN_COUNT / 2;
+89:         size_t cumulative = 0;
+90:         uint8_t noise_floor = 0;
+91: 
+92:         for (size_t bin = 0; bin < HISTOGRAM_BINS; bin++) {
+93:             cumulative += histogram[bin];
+94:             if (cumulative > MEDIAN_TARGET) {
+95:                 noise_floor = static_cast<uint8_t>(bin * 2);
+96:                 break;
 97:             }
 98:         }
 99: 
-100:         // 3. Calculate SNR
-101:         result.snr = (result.max_val > result.noise_floor) ? 
-102:                      (result.max_val - result.noise_floor) : 0;
-103: 
-104:         // 4. Early exit for noise
-105:         if (result.snr < SpectralAnalysisConfig::SNR_THRESHOLD) {
-106:             result.signature = SignalSignature::NOISE;
-107:             result.is_valid = true;
-108:             return result;
-109:         }
-110: 
-111:         // 5. Calculate signal width
-112:         uint8_t threshold = (result.max_val > SpectralAnalysisConfig::PEAK_THRESHOLD_DB) ?
-113:                            (result.max_val - SpectralAnalysisConfig::PEAK_THRESHOLD_DB) : 0;
-114:         
-115:         result.width_bins = 0;
-116:         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
-117:              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
-118:             if (db_buffer[i] >= threshold) {
-119:                 result.width_bins++;
-120:             }
+100:         result.noise_floor = noise_floor;
+101:         result.avg_val = static_cast<uint8_t>(sum / SpectralAnalysisConfig::VALID_BIN_COUNT);
+102: 
+103:         // 2. Find maximum peak
+104:         result.max_val = 0;
+105:         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
+106:              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
+107:             if (db_buffer[i] > result.max_val) {
+108:                 result.max_val = db_buffer[i];
+109:             }
+110:         }
+111: 
+112:         // 3. Calculate SNR
+113:         result.snr = (result.max_val > result.noise_floor) ? 
+114:                      (result.max_val - result.noise_floor) : 0;
+115: 
+116:         // 4. Early exit for noise
+117:         if (result.snr < SpectralAnalysisConfig::SNR_THRESHOLD) {
+118:             result.signature = SignalSignature::NOISE;
+119:             result.is_valid = true;
+120:             return result;
 121:         }
 122: 
-123:         // 6. Convert bins to Hz
-124:         uint32_t total_valid_bins = SpectralAnalysisConfig::VALID_BIN_END -
-125:                                    SpectralAnalysisConfig::VALID_BIN_START;
-126:         // total_valid_bins always > 0 (constant 232)
-127:         uint32_t bin_width_hz = slice_bandwidth_hz / total_valid_bins;
-128:         result.signal_width_hz = result.width_bins * bin_width_hz;
-129: 
-130:         // 7. Classify signal based on width and context
-131:         result.signature = classify_signal(result.signal_width_hz, center_freq_hz);
-132: 
-133:         result.is_valid = true;
-134:         return result;
-135:     }
-136: 
-137:     // DIAMOND OPTIMIZATION: Delegation to unified ThreatClassifier from eda_optimized_utils.hpp
-138:     static ThreatLevel get_threat_level(SignalSignature signature, uint8_t snr) {
-139:         // Map SignalSignature to DroneType for unified classification
-140:         uint8_t drone_type = 0;
-141:         switch (signature) {
-142:             case SignalSignature::DIGITAL_FPV:
-143:                 drone_type = static_cast<uint8_t>(DroneType::FPV_RACING);
-144:                 break;
-145:             case SignalSignature::NARROWBAND_DRONE:
-146:                 drone_type = static_cast<uint8_t>(DroneType::MAVIC); // Default type for narrowband
-147:                 break;
-148:             case SignalSignature::WIDEBAND_WIFI:
-149:                 drone_type = static_cast<uint8_t>(DroneType::UNKNOWN);
-150:                 break;
-151:             case SignalSignature::NOISE:
-152:             default:
-153:                 return ThreatLevel::NONE;
-154:         }
-155:         // Use unified ThreatClassifier from eda_optimized_utils.hpp
-156:         return static_cast<ThreatLevel>(ThreatClassifier::from_snr_and_type(snr, drone_type));
-157:     }
-158: 
-159:     // DIAMOND OPTIMIZATION: Delegation to unified DroneTypeDetector from eda_optimized_utils.hpp
-160:     static DroneType get_drone_type(Frequency frequency_hz, SignalSignature signature) {
-161:         // For non-drone signatures, return UNKNOWN early
-162:         if (signature != SignalSignature::NARROWBAND_DRONE && 
-163:             signature != SignalSignature::DIGITAL_FPV) {
-164:             return DroneType::UNKNOWN;
-165:         }
-166:         // Use unified DroneTypeDetector from eda_optimized_utils.hpp
-167:         // Returns uint8_t, cast to DroneType enum
-168:         uint8_t type_code = DroneTypeDetector::from_frequency(frequency_hz);
-169:         return static_cast<DroneType>(type_code);
-170:     }
-171: 
-172: private:
-173:     static SignalSignature classify_signal(uint32_t width_hz, Frequency freq_hz) noexcept {
-174:         if (width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {
-175:             return (freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ) 
-176:                    ? SignalSignature::DIGITAL_FPV 
-177:                    : SignalSignature::WIDEBAND_WIFI;
-178:         }
-179:         if (width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
-180:             return SignalSignature::NARROWBAND_DRONE;
-181:         }
-182:         return SignalSignature::NARROWBAND_DRONE;
-183:     }
-184: };
-185: 
-186: } // namespace ui::apps::enhanced_drone_analyzer
-187: 
-188: #endif // UI_SPECTRAL_ANALYZER_HPP_
+123:         // 5. Calculate signal width
+124:         uint8_t threshold = (result.max_val > SpectralAnalysisConfig::PEAK_THRESHOLD_DB) ?
+125:                            (result.max_val - SpectralAnalysisConfig::PEAK_THRESHOLD_DB) : 0;
+126:         
+127:         result.width_bins = 0;
+128:         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START; 
+129:              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
+130:             if (db_buffer[i] >= threshold) {
+131:                 result.width_bins++;
+132:             }
+133:         }
+134: 
+135:         // 6. Convert bins to Hz
+136:         uint32_t bin_width_hz = slice_bandwidth_hz / SpectralAnalysisConfig::VALID_BIN_COUNT;
+137:         result.signal_width_hz = result.width_bins * bin_width_hz;
+138: 
+139:         // 7. Classify signal based on width and context
+140:         result.signature = classify_signal(result.signal_width_hz, center_freq_hz);
+141: 
+142:         result.is_valid = true;
+143:         return result;
+144:     }
+145: 
+146:     // DIAMOND OPTIMIZATION: Delegation to unified ThreatClassifier from eda_optimized_utils.hpp
+147:     static ThreatLevel get_threat_level(SignalSignature signature, uint8_t snr) {
+148:         // Map SignalSignature to DroneType for unified classification
+149:         uint8_t drone_type = 0;
+150:         switch (signature) {
+151:             case SignalSignature::DIGITAL_FPV:
+152:                 drone_type = static_cast<uint8_t>(DroneType::FPV_RACING);
+153:                 break;
+154:             case SignalSignature::NARROWBAND_DRONE:
+155:                 drone_type = static_cast<uint8_t>(DroneType::MAVIC); // Default type for narrowband
+156:                 break;
+157:             case SignalSignature::WIDEBAND_WIFI:
+158:                 drone_type = static_cast<uint8_t>(DroneType::UNKNOWN);
+159:                 break;
+160:             case SignalSignature::NOISE:
+161:             default:
+162:                 return ThreatLevel::NONE;
+163:         }
+164:         // Use unified ThreatClassifier from eda_optimized_utils.hpp
+165:         return static_cast<ThreatLevel>(ThreatClassifier::from_snr_and_type(snr, drone_type));
+166:     }
+167: 
+168:     // DIAMOND OPTIMIZATION: Delegation to unified DroneTypeDetector from eda_optimized_utils.hpp
+169:     static DroneType get_drone_type(Frequency frequency_hz, SignalSignature signature) {
+170:         // For non-drone signatures, return UNKNOWN early
+171:         if (signature != SignalSignature::NARROWBAND_DRONE && 
+172:             signature != SignalSignature::DIGITAL_FPV) {
+173:             return DroneType::UNKNOWN;
+174:         }
+175:         // Use unified DroneTypeDetector from eda_optimized_utils.hpp
+176:         // Returns uint8_t, cast to DroneType enum
+177:         uint8_t type_code = DroneTypeDetector::from_frequency(frequency_hz);
+178:         return static_cast<DroneType>(type_code);
+179:     }
+180: 
+181: private:
+182:     static SignalSignature classify_signal(uint32_t width_hz, Frequency freq_hz) noexcept {
+183:         if (width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {
+184:             return (freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ) 
+185:                    ? SignalSignature::DIGITAL_FPV 
+186:                    : SignalSignature::WIDEBAND_WIFI;
+187:         }
+188:         if (width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
+189:             return SignalSignature::NARROWBAND_DRONE;
+190:         }
+191:         return SignalSignature::NARROWBAND_DRONE;
+192:     }
+193: };
+194: 
+195: } // namespace ui::apps::enhanced_drone_analyzer
+196: 
+197: #endif // UI_SPECTRAL_ANALYZER_HPP_
  
  
 ======================================== 

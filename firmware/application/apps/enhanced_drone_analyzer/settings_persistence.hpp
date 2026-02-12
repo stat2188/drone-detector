@@ -33,50 +33,22 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ===========================================
-// DIAMOND FIX: BOUNDED STRING FUNCTIONS
-// ===========================================
-
-// Bounded strlen for runtime buffers (prevents infinite loops)
-static inline size_t safe_strlen(const char* str, size_t max_len) noexcept {
+static inline size_t safe_strlen(const char* const str, const size_t max_len) noexcept {
     if (!str) return 0;
     size_t len = 0;
-    while (len < max_len && str[len] != '\0') {
-        ++len;
-    }
+    while (len < max_len && str[len] != '\0') { ++len; }
     return len;
 }
 
-// Compile-time strlen for string literals (constexpr context only)
-// WARNING: Only use with compile-time string literals!
-constexpr size_t const_strlen(const char* str) noexcept {
+constexpr size_t const_strlen(const char* const str) noexcept {
     if (!str) return 0;
     size_t len = 0;
-    while (str[len] != '\0') {
-        ++len;
-    }
+    while (str[len] != '\0') { ++len; }
     return len;
 }
 
-// ===========================================
-// FORWARD DECLARATIONS
-// ===========================================
 struct DroneAnalyzerSettings;
 
-// ===========================================
-// COMPILE-TIME SETTINGS METADATA
-// ===========================================
-
-struct SettingMetadata {
-    const char* key;
-    size_t offset;
-    uint8_t type;
-    int64_t min_val;
-    int64_t max_val;
-    const char* default_str;
-};
-
-// Type codes for compile-time dispatch
 enum SettingType : uint8_t {
     TYPE_BOOL = 0,
     TYPE_UINT32 = 1,
@@ -86,83 +58,84 @@ enum SettingType : uint8_t {
     TYPE_BITFIELD = 5
 };
 
-// ===========================================
-// COMPILE-TIME SETTINGS LUT
-// ===========================================
-// Perfect hash lookup table - generated at compile time
-// Eliminates 50+ if-else blocks
+struct SettingMetadata {
+    const char* key;
+    uint16_t offset;
+    uint8_t type;
+    uint8_t bit_pos;
+    int64_t min_val;
+    int64_t max_val;
+    const char* default_str;
+};
+
+#define SET_META(name, type_code, min, max, def) \
+    { #name, static_cast<uint16_t>(offsetof(DroneAnalyzerSettings, name)), type_code, 0xFF, min, max, def }
+
+#define SET_META_BIT(name, bit_idx, def) \
+    { #name, static_cast<uint16_t>(offsetof(DroneAnalyzerSettings, name)), TYPE_BITFIELD, bit_idx, 0, 1, def }
+
 constexpr size_t SETTINGS_COUNT = 54;
 
-// DIAMOND FIX: inline constexpr ensures single Flash instance (ODR-safe, RAM-efficient)
-// Updated for bitfield-packed DroneAnalyzerSettings
-inline constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
-    // ===== AUDIO SETTINGS (Bitfield-packed) =====
-    {"enable_audio_alerts", offsetof(DroneAnalyzerSettings, audio_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"audio_alert_frequency_hz", offsetof(DroneAnalyzerSettings, audio_alert_frequency_hz), TYPE_UINT32, 200, 20000, "800"},
-    {"audio_alert_duration_ms", offsetof(DroneAnalyzerSettings, audio_alert_duration_ms), TYPE_UINT32, 50, 5000, "500"},
-    {"audio_volume_level", offsetof(DroneAnalyzerSettings, audio_volume_level), TYPE_UINT32, 0, 100, "50"},
-    {"audio_repeat_alerts", offsetof(DroneAnalyzerSettings, audio_flags), TYPE_BITFIELD, 0, 1, "false"},
+inline constexpr SettingMetadata SETTINGS_LUT[] = {
+    SET_META_BIT(audio_flags, 0, "true"),
+    SET_META(audio_alert_frequency_hz, TYPE_UINT32, 200, 20000, "800"),
+    SET_META(audio_alert_duration_ms, TYPE_UINT32, 50, 5000, "500"),
+    SET_META(audio_volume_level, TYPE_UINT32, 0, 100, "50"),
+    SET_META_BIT(audio_flags, 1, "false"),
 
-    // ===== HARDWARE SETTINGS (Bitfield-packed) =====
-    {"spectrum_mode", offsetof(DroneAnalyzerSettings, spectrum_mode), TYPE_UINT32, 0, 4, "1"},
-    {"hardware_bandwidth_hz", offsetof(DroneAnalyzerSettings, hardware_bandwidth_hz), TYPE_UINT32, 10000, 28000000, "24000000"},
-    {"enable_real_hardware", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"demo_mode", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 0, 1, "false"},
-    {"iq_calibration_enabled", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 0, 2, "false"},
-    {"rx_phase_value", offsetof(DroneAnalyzerSettings, rx_phase_value), TYPE_UINT32, 0, 31, "15"},
-    {"lna_gain_db", offsetof(DroneAnalyzerSettings, lna_gain_db), TYPE_UINT32, 0, 40, "32"},
-    {"vga_gain_db", offsetof(DroneAnalyzerSettings, vga_gain_db), TYPE_UINT32, 0, 62, "20"},
-    {"rf_amp_enabled", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 0, 3, "false"},
+    SET_META(spectrum_mode, TYPE_UINT32, 0, 4, "1"),
+    SET_META(hardware_bandwidth_hz, TYPE_UINT32, 10000, 28000000, "24000000"),
+    SET_META_BIT(hardware_flags, 0, "true"),
+    SET_META_BIT(hardware_flags, 1, "false"),
+    SET_META_BIT(hardware_flags, 2, "false"),
+    SET_META(rx_phase_value, TYPE_UINT32, 0, 31, "15"),
+    SET_META(lna_gain_db, TYPE_UINT32, 0, 40, "32"),
+    SET_META(vga_gain_db, TYPE_UINT32, 0, 62, "20"),
+    SET_META_BIT(hardware_flags, 3, "false"),
 
-    // ===== SCANNING SETTINGS (Bitfield-packed) =====
-    {"scan_interval_ms", offsetof(DroneAnalyzerSettings, scan_interval_ms), TYPE_UINT32, 100, 10000, "1000"},
-    {"rssi_threshold_db", offsetof(DroneAnalyzerSettings, rssi_threshold_db), TYPE_INT32, -120, 10, "-90"},
-    {"enable_wideband_scanning", offsetof(DroneAnalyzerSettings, scanning_flags), TYPE_BITFIELD, 0, 0, "false"},
-    {"wideband_min_freq_hz", offsetof(DroneAnalyzerSettings, wideband_min_freq_hz), TYPE_UINT64, 2400000000ULL, 7200000000ULL, "2400000000"},
-    {"wideband_max_freq_hz", offsetof(DroneAnalyzerSettings, wideband_max_freq_hz), TYPE_UINT64, 2400000001ULL, 7200000000ULL, "2500000000"},
-    {"wideband_slice_width_hz", offsetof(DroneAnalyzerSettings, wideband_slice_width_hz), TYPE_UINT32, 10000000, 28000000, "24000000"},
-    {"panoramic_mode_enabled", offsetof(DroneAnalyzerSettings, scanning_flags), TYPE_BITFIELD, 0, 1, "true"},
-    {"enable_intelligent_scanning", offsetof(DroneAnalyzerSettings, scanning_flags), TYPE_BITFIELD, 0, 2, "true"},
+    SET_META(scan_interval_ms, TYPE_UINT32, 100, 10000, "1000"),
+    SET_META(rssi_threshold_db, TYPE_INT32, -120, 10, "-90"),
+    SET_META_BIT(scanning_flags, 0, "false"),
+    SET_META(wideband_min_freq_hz, TYPE_UINT64, 2400000000ULL, 7200000000ULL, "2400000000"),
+    SET_META(wideband_max_freq_hz, TYPE_UINT64, 2400000001ULL, 7200000000ULL, "2500000000"),
+    SET_META(wideband_slice_width_hz, TYPE_UINT32, 10000000, 28000000, "24000000"),
+    SET_META_BIT(scanning_flags, 1, "true"),
+    SET_META_BIT(scanning_flags, 2, "true"),
 
-    // ===== DETECTION SETTINGS (Bitfield-packed) =====
-    {"enable_fhss_detection", offsetof(DroneAnalyzerSettings, detection_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"movement_sensitivity", offsetof(DroneAnalyzerSettings, movement_sensitivity), TYPE_UINT32, 1, 5, "3"},
-    {"threat_level_threshold", offsetof(DroneAnalyzerSettings, threat_level_threshold), TYPE_UINT32, 0, 4, "2"},
-    {"min_detection_count", offsetof(DroneAnalyzerSettings, min_detection_count), TYPE_UINT32, 1, 10, "3"},
-    {"alert_persistence_threshold", offsetof(DroneAnalyzerSettings, alert_persistence_threshold), TYPE_UINT32, 1, 10, "3"},
-    {"enable_intelligent_tracking", offsetof(DroneAnalyzerSettings, detection_flags), TYPE_BITFIELD, 0, 1, "true"},
+    SET_META_BIT(detection_flags, 0, "true"),
+    SET_META(movement_sensitivity, TYPE_UINT32, 1, 5, "3"),
+    SET_META(threat_level_threshold, TYPE_UINT32, 0, 4, "2"),
+    SET_META(min_detection_count, TYPE_UINT32, 1, 10, "3"),
+    SET_META(alert_persistence_threshold, TYPE_UINT32, 1, 10, "3"),
+    SET_META_BIT(detection_flags, 1, "true"),
 
-    // ===== LOGGING SETTINGS (Bitfield-packed) =====
-    {"auto_save_logs", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"log_file_path", offsetof(DroneAnalyzerSettings, log_file_path), TYPE_STR, 64, 0, "/eda_logs"},
-    {"log_format", offsetof(DroneAnalyzerSettings, log_format), TYPE_STR, 8, 0, "CSV"},
-    {"max_log_file_size_kb", offsetof(DroneAnalyzerSettings, max_log_file_size_kb), TYPE_UINT32, 1, 10240, "1024"},
-    {"enable_session_logging", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 1, "true"},
-    {"include_timestamp", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 2, "true"},
-    {"include_rssi_values", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 3, "true"},
+    SET_META_BIT(logging_flags, 0, "true"),
+    SET_META(log_file_path, TYPE_STR, 64, 0, "/eda_logs"),
+    SET_META(log_format, TYPE_STR, 8, 0, "CSV"),
+    SET_META(max_log_file_size_kb, TYPE_UINT32, 1, 10240, "1024"),
+    SET_META_BIT(logging_flags, 1, "true"),
+    SET_META_BIT(logging_flags, 2, "true"),
+    SET_META_BIT(logging_flags, 3, "true"),
 
-    // ===== DISPLAY SETTINGS (Bitfield-packed) =====
-    {"color_scheme", offsetof(DroneAnalyzerSettings, color_scheme), TYPE_STR, 32, 0, "DARK"},
-    {"font_size", offsetof(DroneAnalyzerSettings, font_size), TYPE_UINT32, 0, 2, "0"},
-    {"spectrum_density", offsetof(DroneAnalyzerSettings, spectrum_density), TYPE_UINT32, 0, 2, "1"},
-    {"waterfall_speed", offsetof(DroneAnalyzerSettings, waterfall_speed), TYPE_UINT32, 1, 10, "5"},
-    {"show_detailed_info", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"show_mini_spectrum", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 1, "true"},
-    {"show_rssi_history", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 2, "true"},
-    {"show_frequency_ruler", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 3, "true"},
-    {"frequency_ruler_style", offsetof(DroneAnalyzerSettings, frequency_ruler_style), TYPE_UINT32, 0, 6, "5"},
-    {"compact_ruler_tick_count", offsetof(DroneAnalyzerSettings, compact_ruler_tick_count), TYPE_UINT32, 3, 8, "4"},
-    {"auto_ruler_style", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 4, "true"},
+    SET_META(color_scheme, TYPE_STR, 32, 0, "DARK"),
+    SET_META(font_size, TYPE_UINT32, 0, 2, "0"),
+    SET_META(spectrum_density, TYPE_UINT32, 0, 2, "1"),
+    SET_META(waterfall_speed, TYPE_UINT32, 1, 10, "5"),
+    SET_META_BIT(display_flags, 0, "true"),
+    SET_META_BIT(display_flags, 1, "true"),
+    SET_META_BIT(display_flags, 2, "true"),
+    SET_META_BIT(display_flags, 3, "true"),
+    SET_META(frequency_ruler_style, TYPE_UINT32, 0, 6, "5"),
+    SET_META(compact_ruler_tick_count, TYPE_UINT32, 3, 8, "4"),
+    SET_META_BIT(display_flags, 4, "true"),
 
-    // ===== PROFILE SETTINGS (Bitfield-packed) =====
-    {"current_profile_name", offsetof(DroneAnalyzerSettings, current_profile_name), TYPE_STR, 32, 0, "Default"},
-    {"enable_quick_profiles", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"auto_save_on_change", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 0, 1, "false"},
+    SET_META(current_profile_name, TYPE_STR, 32, 0, "Default"),
+    SET_META_BIT(profile_flags, 0, "true"),
+    SET_META_BIT(profile_flags, 1, "false"),
 
-    // ===== SYSTEM SETTINGS =====
-    {"freqman_path", offsetof(DroneAnalyzerSettings, freqman_path), TYPE_STR, 32, 0, "DRONES"},
-    {"settings_file_path", offsetof(DroneAnalyzerSettings, settings_file_path), TYPE_STR, 64, 0, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"},
-    {"settings_version", offsetof(DroneAnalyzerSettings, settings_version), TYPE_UINT32, 1, 999, "2"}
+    SET_META(freqman_path, TYPE_STR, 32, 0, "DRONES"),
+    SET_META(settings_file_path, TYPE_STR, 64, 0, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"),
+    SET_META(settings_version, TYPE_UINT32, 1, 999, "2")
 };
 
 // ===========================================
@@ -408,9 +381,9 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
                     break;
                 case TYPE_BITFIELD:
                     {
-                        uint8_t* bf_ptr = data_ptr;
-                        uint8_t bit_pos = static_cast<uint8_t>(meta.min_val);
-                        bool bit_val = (strncmp(value, "true", 4) == 0);
+                        uint8_t* const bf_ptr = data_ptr;
+                        const uint8_t bit_pos = meta.bit_pos;
+                        const bool bit_val = (strncmp(value, "true", 4) == 0);
                         if (bit_val) {
                             *bf_ptr |= (1 << bit_pos);
                         } else {
@@ -595,11 +568,11 @@ void SettingsPersistence<T>::reset(T& settings) {
                 case TYPE_STR:
                     safe_strcpy(reinterpret_cast<char*>(data_ptr), meta.default_str, static_cast<size_t>(meta.min_val));
                     break;
-                case TYPE_BITFIELD:
+            case TYPE_BITFIELD:
                 {
-                    uint8_t* bf_ptr = data_ptr;
-                    uint8_t bit_pos = static_cast<uint8_t>(meta.min_val);
-                    bool bit_val = (strcmp(meta.default_str, "true") == 0);
+                    uint8_t* const bf_ptr = data_ptr;
+                    const uint8_t bit_pos = meta.bit_pos;
+                    const bool bit_val = (strcmp(meta.default_str, "true") == 0);
                     if (bit_val) {
                         *bf_ptr |= (1 << bit_pos);
                     } else {
