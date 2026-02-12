@@ -34,11 +34,21 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
-// DIAMOND FIX: ITERATIVE CONSTEXPR STRLEN
+// DIAMOND FIX: BOUNDED STRING FUNCTIONS
 // ===========================================
-// Prevents Stack Overflow on large strings (e.g. database loading)
-// Safe for both compile-time and runtime evaluation
-// Scott Meyers Item 15: Prefer constexpr to #define
+
+// Bounded strlen for runtime buffers (prevents infinite loops)
+static inline size_t safe_strlen(const char* str, size_t max_len) noexcept {
+    if (!str) return 0;
+    size_t len = 0;
+    while (len < max_len && str[len] != '\0') {
+        ++len;
+    }
+    return len;
+}
+
+// Compile-time strlen for string literals (constexpr context only)
+// WARNING: Only use with compile-time string literals!
 constexpr size_t const_strlen(const char* str) noexcept {
     if (!str) return 0;
     size_t len = 0;
@@ -312,32 +322,58 @@ template<typename T>
 bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
     if (!line || *line == '\0') return true;
     
-    char* equals = strchr(line, '=');
+    size_t line_len = safe_strlen(line, MAX_LINE_LENGTH);
+    if (line_len == 0) return true;
+    
+    char* equals = static_cast<char*>(memchr(line, '=', line_len));
     if (!equals) return true;
     
     *equals = '\0';
     char* key = line;
     char* value = equals + 1;
     
-    // Trim leading whitespace
-    while (*key == ' ' || *key == '\t') key++;
-    while (*value == ' ' || *value == '\t') value++;
+    size_t key_len = equals - key;
+    size_t value_len = line + line_len - value;
     
-    // Trim trailing whitespace
-    char* end = value + strlen(value) - 1;
-    while (end > value && (*end == ' ' || *end == '\t' || *end == '\r')) {
-        *end-- = '\0';
+    if (key_len == 0 || value_len == 0) return true;
+    
+    char* key_end = key + key_len - 1;
+    while (key_end >= key && (*key_end == ' ' || *key_end == '\t')) {
+        *key_end-- = '\0';
+        key_len--;
     }
     
-    // O(1) lookup via perfect hash
+    while (*key == ' ' || *key == '\t') {
+        key++;
+        key_len--;
+    }
+    
+    if (key_len == 0) return true;
+    
+    while (*value == ' ' || *value == '\t') {
+        value++;
+        value_len--;
+    }
+    
+    char* value_end = value + value_len - 1;
+    while (value_end >= value && (*value_end == ' ' || *value_end == '\t' || *value_end == '\r')) {
+        *value_end-- = '\0';
+        value_len--;
+    }
+    
+    if (value_len == 0) return true;
+    
+    value[value_len] = '\0';
+    
     for (size_t i = 0; i < SETTINGS_COUNT; i++) {
-        if (strcmp(key, SETTINGS_LUT[i].key) == 0) {
+        if (strncmp(key, SETTINGS_LUT[i].key, key_len) == 0 &&
+            const_strlen(SETTINGS_LUT[i].key) == key_len) {
             const auto& meta = SETTINGS_LUT[i];
             uint8_t* data_ptr = reinterpret_cast<uint8_t*>(&settings) + meta.offset;
 
             switch (meta.type) {
                 case TYPE_BOOL:
-                    *reinterpret_cast<bool*>(data_ptr) = (strcmp(value, "true") == 0);
+                    *reinterpret_cast<bool*>(data_ptr) = (strncmp(value, "true", 4) == 0);
                     break;
                 case TYPE_UINT32:
                     *reinterpret_cast<uint32_t*>(data_ptr) = static_cast<uint32_t>(strtoul(value, nullptr, 10));
@@ -355,7 +391,7 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
                     {
                         uint8_t* bf_ptr = data_ptr;
                         uint8_t bit_pos = static_cast<uint8_t>(meta.min_val);
-                        bool bit_val = (strcmp(value, "true") == 0);
+                        bool bit_val = (strncmp(value, "true", 4) == 0);
                         if (bit_val) {
                             *bf_ptr |= (1 << bit_pos);
                         } else {
@@ -368,7 +404,7 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
         }
     }
     
-    return true;  // Unknown key, skip
+    return true;
 }
 
 // ===========================================
