@@ -241,7 +241,7 @@ void EnhancedSettingsManager::remove_backup_file(const std::string& filepath) {
 }
 
 std::string EnhancedSettingsManager::generate_file_header() {
-    // 🔴 OPTIMIZATION: Use char array instead of stringstream to avoid heap allocations
+    // OPTIMIZATION: Use char array instead of stringstream to avoid heap allocations
     static constexpr size_t HEADER_BUFFER_SIZE = 256;
     static char header_buffer[HEADER_BUFFER_SIZE];
 
