@@ -134,15 +134,15 @@ inline constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
 
     // ===== LOGGING SETTINGS (Bitfield-packed) =====
     {"auto_save_logs", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"log_file_path", offsetof(DroneAnalyzerSettings, log_file_path), TYPE_STR, 0, 0, "/eda_logs"},
-    {"log_format", offsetof(DroneAnalyzerSettings, log_format), TYPE_STR, 0, 0, "CSV"},
+    {"log_file_path", offsetof(DroneAnalyzerSettings, log_file_path), TYPE_STR, 64, 0, "/eda_logs"},
+    {"log_format", offsetof(DroneAnalyzerSettings, log_format), TYPE_STR, 8, 0, "CSV"},
     {"max_log_file_size_kb", offsetof(DroneAnalyzerSettings, max_log_file_size_kb), TYPE_UINT32, 1, 10240, "1024"},
     {"enable_session_logging", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 1, "true"},
     {"include_timestamp", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 2, "true"},
     {"include_rssi_values", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 3, "true"},
 
     // ===== DISPLAY SETTINGS (Bitfield-packed) =====
-    {"color_scheme", offsetof(DroneAnalyzerSettings, color_scheme), TYPE_STR, 0, 0, "DARK"},
+    {"color_scheme", offsetof(DroneAnalyzerSettings, color_scheme), TYPE_STR, 32, 0, "DARK"},
     {"font_size", offsetof(DroneAnalyzerSettings, font_size), TYPE_UINT32, 0, 2, "0"},
     {"spectrum_density", offsetof(DroneAnalyzerSettings, spectrum_density), TYPE_UINT32, 0, 2, "1"},
     {"waterfall_speed", offsetof(DroneAnalyzerSettings, waterfall_speed), TYPE_UINT32, 1, 10, "5"},
@@ -155,13 +155,13 @@ inline constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
     {"auto_ruler_style", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 4, "true"},
 
     // ===== PROFILE SETTINGS (Bitfield-packed) =====
-    {"current_profile_name", offsetof(DroneAnalyzerSettings, current_profile_name), TYPE_STR, 0, 0, "Default"},
+    {"current_profile_name", offsetof(DroneAnalyzerSettings, current_profile_name), TYPE_STR, 32, 0, "Default"},
     {"enable_quick_profiles", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 0, 0, "true"},
     {"auto_save_on_change", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 0, 1, "false"},
 
     // ===== SYSTEM SETTINGS =====
-    {"freqman_path", offsetof(DroneAnalyzerSettings, freqman_path), TYPE_STR, 0, 0, "DRONES"},
-    {"settings_file_path", offsetof(DroneAnalyzerSettings, settings_file_path), TYPE_STR, 0, 0, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"},
+    {"freqman_path", offsetof(DroneAnalyzerSettings, freqman_path), TYPE_STR, 32, 0, "DRONES"},
+    {"settings_file_path", offsetof(DroneAnalyzerSettings, settings_file_path), TYPE_STR, 64, 0, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"},
     {"settings_version", offsetof(DroneAnalyzerSettings, settings_version), TYPE_UINT32, 1, 999, "2"}
 };
 
@@ -404,7 +404,7 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
                     *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(value, nullptr, 10));
                     break;
                 case TYPE_STR:
-                    safe_strcpy(reinterpret_cast<char*>(data_ptr), value, MAX_SETTING_STR_LEN);
+                    safe_strcpy(reinterpret_cast<char*>(data_ptr), value, static_cast<size_t>(meta.min_val));
                     break;
                 case TYPE_BITFIELD:
                     {
@@ -589,13 +589,13 @@ void SettingsPersistence<T>::reset(T& settings) {
             case TYPE_INT32:
                 *reinterpret_cast<int32_t*>(data_ptr) = static_cast<int32_t>(strtol(meta.default_str, nullptr, 10));
                 break;
-            case TYPE_UINT64:
-                *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(meta.default_str, nullptr, 10));
-                break;
-            case TYPE_STR:
-                safe_strcpy(reinterpret_cast<char*>(data_ptr), meta.default_str, MAX_SETTING_STR_LEN);
-                break;
-            case TYPE_BITFIELD:
+                case TYPE_UINT64:
+                    *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(meta.default_str, nullptr, 10));
+                    break;
+                case TYPE_STR:
+                    safe_strcpy(reinterpret_cast<char*>(data_ptr), meta.default_str, static_cast<size_t>(meta.min_val));
+                    break;
+                case TYPE_BITFIELD:
                 {
                     uint8_t* bf_ptr = data_ptr;
                     uint8_t bit_pos = static_cast<uint8_t>(meta.min_val);

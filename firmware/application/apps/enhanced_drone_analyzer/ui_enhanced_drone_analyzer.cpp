@@ -3189,11 +3189,11 @@ DroneUIController::DroneUIController(NavigationView& nav,
     settings_.rssi_threshold_db = -90;
     settings_.audio_flags.enable_alerts = true;
     char buffer[32];
-    
+
     settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
     const char* status = settings_.audio_flags.enable_alerts ? "ENABLED" : "DISABLED";
-    strcpy(buffer, "Alerts ");
-    strcat(buffer, status);
+    safe_strcpy(buffer, "Alerts ", sizeof(buffer));
+    safe_strcat(buffer, status, sizeof(buffer));
     nav_.display_modal("Audio Alerts", buffer);
 }
 
@@ -3847,7 +3847,7 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
             StatusFormatter::format_to(secondary_buffer, "Total detections: %lu",
                                       static_cast<unsigned long>(total_detections));
         } else {
-            strcpy(secondary_buffer, "Awaiting commands");
+            safe_strcpy(secondary_buffer, "Awaiting commands", sizeof(secondary_buffer));
         }
         status_bar_.update_normal_status(primary_msg, secondary_buffer);
         return;
