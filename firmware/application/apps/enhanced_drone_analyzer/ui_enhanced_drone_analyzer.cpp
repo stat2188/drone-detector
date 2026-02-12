@@ -255,12 +255,12 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
        current_db_index_(0),
        last_scanned_frequency_(0),
        db_loading_thread_(nullptr),
-       db_loading_active_{false},
-       scan_cycles_(0),
-       total_detections_(0),
-         scanning_mode_(DroneScanner::ScanningMode::DATABASE),
-          tracked_drones_ptr_(nullptr),  // 🔴 FIX: Defer heap allocation
-           is_real_mode_(true),
+        db_loading_active_{false},
+        scan_cycles_(0),
+        total_detections_(0),
+           tracked_drones_ptr_(nullptr),  // 🔴 FIX: Defer heap allocation
+          scanning_mode_(DroneScanner::ScanningMode::DATABASE),
+            is_real_mode_(true),
           tracked_count_(0),
           approaching_count_(0),
           receding_count_(0),
