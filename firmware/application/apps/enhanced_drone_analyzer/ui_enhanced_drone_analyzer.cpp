@@ -251,32 +251,32 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
        data_mutex(),
        scanning_active_(false),
        freq_db_ptr_(nullptr),  // 🔴 FIX: Defer heap allocation to after constructor
+       freq_db_loaded_(false),
        current_db_index_(0),
        last_scanned_frequency_(0),
-       freq_db_loaded_(false),
        db_loading_thread_(nullptr),
        db_loading_active_{false},
        scan_cycles_(0),
        total_detections_(0),
-        scanning_mode_(DroneScanner::ScanningMode::DATABASE),
-          is_real_mode_(true),
-         tracked_drones_ptr_(nullptr),  // 🔴 FIX: Defer heap allocation
-         tracked_count_(0),
-         approaching_count_(0),
-         receding_count_(0),
-         static_count_(0),
-         max_detected_threat_(ThreatLevel::NONE),
-         last_valid_rssi_(-120),
-          wideband_scan_data_(),
-         detection_logger_(),
-         detection_ring_buffer_(),
-         priority_slice_index_(-1),
-         priority_slice_mutex_(),
-         priority_scan_counter_(0),
-         frequency_predictions_(),
-         predictions_mutex_(),
-         prediction_count_(0),
-         settings_(settings)
+         scanning_mode_(DroneScanner::ScanningMode::DATABASE),
+          tracked_drones_ptr_(nullptr),  // 🔴 FIX: Defer heap allocation
+           is_real_mode_(true),
+          tracked_count_(0),
+          approaching_count_(0),
+          receding_count_(0),
+          static_count_(0),
+          max_detected_threat_(ThreatLevel::NONE),
+          last_valid_rssi_(-120),
+           wideband_scan_data_(),
+          detection_logger_(),
+          detection_ring_buffer_(),
+          priority_slice_index_(-1),
+          priority_slice_mutex_(),
+          priority_scan_counter_(0),
+          frequency_predictions_(),
+          predictions_mutex_(),
+          prediction_count_(0),
+          settings_(settings)
 {
     // Initialize mutex properly to fix race condition
     chMtxInit(&data_mutex);
@@ -3591,7 +3591,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
             status_bar_.update_normal_status("INIT", status_msg);
             
             // 🔴 ФАЗА 0.2: Логирование heap после выполнения фазы
-            if (i < 6 && static_cast<size_t>(init_state_) >= i + 1) {
+            if (i < 6 && static_cast<size_t>(init_state_) >= static_cast<size_t>(i + 1)) {
                 HeapDiagnostics::log_heap_status(PHASE_NAMES[i]);
             }
 
