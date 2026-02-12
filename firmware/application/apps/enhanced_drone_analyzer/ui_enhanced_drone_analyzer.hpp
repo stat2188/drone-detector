@@ -356,6 +356,11 @@ private:
     mutable Mutex mutex_;                       // Declared 2nd
     Semaphore data_ready_;                      // Declared 3rd
     volatile bool worker_should_run_ = false;   // Declared 4th
+
+    // ФАЗА 5.3: Статический стек для worker thread
+    static constexpr size_t WORKER_STACK_SIZE = 4096;
+    static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
+
     
     // --- FILE I/O ---
     LogFile csv_log_;                           // Declared 5th
@@ -551,26 +556,55 @@ struct DetectionParams {
      mutable Mutex data_mutex;
      std::atomic<bool> scanning_active_{false};
 
-      // 🔴 OPTIMIZATION: Heap-allocated FreqmanDB (saves ~2KB stack in constructor)
-      std::unique_ptr<FreqmanDB> freq_db_ptr_;
-      size_t current_db_index_ = 0;
-      Frequency last_scanned_frequency_ = 0;
-      bool freq_db_loaded_ = false;
+       // ===========================================
+       // ФАЗА 3.1: СТАТИЧЕСКИЕ ХРАНИЛИЩА ДЛЯ SCANNER
+       // ===========================================
+       // Diamond Code: Zero heap allocation
+       // Используем placement new для объектов с известным размером
 
-      // 🔴 FIX: Async database loading to prevent UI freeze
-      Thread* db_loading_thread_ = nullptr;
-      std::atomic<bool> db_loading_active_{false};
-      static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4 KB for safety
+       // Статическое хранилище для FreqmanDB
+       // Размер подбираем с запасом (FreqmanDB ~2KB)
+       static constexpr size_t FREQ_DB_STORAGE_SIZE = 4096;
+       alignas(alignof(FreqmanDB))
+       static inline uint8_t freq_db_storage_[FREQ_DB_STORAGE_SIZE];
 
-     std::atomic<uint32_t> scan_cycles_{0};
-     std::atomic<uint32_t> total_detections_{0};
+       // Статическое хранилище для TrackedDrones
+       // Размер: MAX_TRACKED_DRONES * sizeof(TrackedDrone) = 8 * ~200 = ~1.6KB
+       static constexpr size_t TRACKED_DRONES_STORAGE_SIZE =
+           sizeof(TrackedDrone) * DroneConstants::MAX_TRACKED_DRONES;
+       alignas(alignof(TrackedDrone))
+       static inline uint8_t tracked_drones_storage_[TRACKED_DRONES_STORAGE_SIZE];
 
-     ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
-     std::atomic<bool> is_real_mode_{true};
+       // Указатели на объекты, созданные через placement new
+       FreqmanDB* freq_db_ptr_ = nullptr;
+       std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>* tracked_drones_ptr_ = nullptr;
 
-     // 🔴 OPTIMIZATION: Heap-allocated tracked_drones (reduces stack usage)
-     std::unique_ptr<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>> tracked_drones_ptr_;
-    size_t tracked_count_ = 0;
+       // Флаги состояния
+       bool freq_db_loaded_ = false;
+       size_t current_db_index_ = 0;
+       Frequency last_scanned_frequency_ = 0;
+
+       // 🔴 FIX: Async database loading to prevent UI freeze
+       Thread* db_loading_thread_ = nullptr;
+       std::atomic<bool> db_loading_active_{false};
+
+       // ===========================================
+       // ФАЗА 5.1: СТАТИЧЕСКИЙ СТЕК ДЛЯ ПОТОКА
+       // ===========================================
+       // Diamond Code: Thread stack из статической памяти
+       // Увеличен размер для безопасности (8KB вместо 4KB)
+       static constexpr size_t DB_LOADING_STACK_SIZE = 8192;  // 8KB
+
+        static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
+
+      std::atomic<uint32_t> scan_cycles_{0};
+      std::atomic<uint32_t> total_detections_{0};
+
+      ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
+      std::atomic<bool> is_real_mode_{true};
+
+     size_t tracked_count_ = 0;
+
 
     size_t approaching_count_ = 0;
     size_t receding_count_ = 0;
@@ -999,6 +1033,7 @@ public:
     static constexpr size_t SPECTRUM_ROW_SIZE = 240;
     static constexpr size_t RENDER_LINE_SIZE = 240;
     static constexpr size_t WATERFALL_SIZE = 40 * 240;  // 9.6KB waterfall buffer
+    static constexpr size_t MAX_UI_DRONES = 16;
     
     explicit DroneDisplayController(Rect parent_rect = {0, 60, screen_width, screen_height - 80});
     ~DroneDisplayController();
@@ -1016,11 +1051,14 @@ public:
     // DIAMOND OPTIMIZATION: прямой доступ к массиву вместо switch (строки 2486-2491)
     static constexpr size_t NUM_DRONE_TEXT_WIDGETS = 3;
 
-    static constexpr size_t MAX_UI_DRONES = 16;
-
+    // ФАЗА 2.2: Возвращаем ссылку на статический массив
     std::array<DisplayDroneEntry, MAX_UI_DRONES>& detected_drones() {
-        return *detected_drones_ptr_;
+        return *reinterpret_cast<std::array<DisplayDroneEntry, MAX_UI_DRONES>*>(detected_drones_storage_);
     }
+    const std::array<DisplayDroneEntry, MAX_UI_DRONES>& detected_drones() const {
+        return *reinterpret_cast<const std::array<DisplayDroneEntry, MAX_UI_DRONES>*>(detected_drones_storage_);
+    }
+
 
     void update_detection_display(const DroneScanner& scanner);
     void update_trends_display(size_t approaching, size_t static_count, size_t receding);
@@ -1062,13 +1100,37 @@ public:
     bool are_buffers_valid() const;
     bool allocate_buffers_from_pool();
 
-    // 🔴 FIX: Safe buffer accessors (без waterfall_buffer - не используется)
-    std::array<Color, SPECTRUM_ROW_SIZE>& spectrum_row_buffer() { return *spectrum_row_buffer_ptr_; }
-    const std::array<Color, SPECTRUM_ROW_SIZE>& spectrum_row_buffer() const { return *spectrum_row_buffer_ptr_; }
-    std::array<Color, RENDER_LINE_SIZE>& render_line_buffer() { return *render_line_buffer_ptr_; }
-    const std::array<Color, RENDER_LINE_SIZE>& render_line_buffer() const { return *render_line_buffer_ptr_; }
-    std::array<uint8_t, 200>& spectrum_power_levels() { return *spectrum_power_levels_ptr_; }
-    const std::array<uint8_t, 200>& spectrum_power_levels() const { return *spectrum_power_levels_ptr_; }
+    // ===========================================
+    // ФАЗА 1.2: МЕТОДЫ ДОСТУПА К СТАТИЧЕСКИМ БУФЕРАМ
+    // ===========================================
+    // Возвращаем ссылку на статический массив
+    // О(1) доступ, нет dereference overhead
+
+    using SpectrumRowBuffer = std::array<Color, SPECTRUM_ROW_SIZE>;
+    using RenderLineBuffer = std::array<Color, RENDER_LINE_SIZE>;
+    using PowerLevelsBuffer = std::array<uint8_t, 200>;
+
+    SpectrumRowBuffer& spectrum_row_buffer() {
+        return *reinterpret_cast<SpectrumRowBuffer*>(spectrum_row_buffer_storage_);
+    }
+    const SpectrumRowBuffer& spectrum_row_buffer() const {
+        return *reinterpret_cast<const SpectrumRowBuffer*>(spectrum_row_buffer_storage_);
+    }
+
+    RenderLineBuffer& render_line_buffer() {
+        return *reinterpret_cast<RenderLineBuffer*>(render_line_buffer_storage_);
+    }
+    const RenderLineBuffer& render_line_buffer() const {
+        return *reinterpret_cast<const RenderLineBuffer*>(render_line_buffer_storage_);
+    }
+
+    PowerLevelsBuffer& spectrum_power_levels() {
+        return *reinterpret_cast<PowerLevelsBuffer*>(spectrum_power_levels_storage_);
+    }
+    const PowerLevelsBuffer& spectrum_power_levels() const {
+        return *reinterpret_cast<const PowerLevelsBuffer*>(spectrum_power_levels_storage_);
+    }
+
 
     // 🔴 FIX: Public methods for parent View message delegation
     void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
@@ -1195,14 +1257,45 @@ private:
     CompactFrequencyRuler compact_frequency_ruler_{{0, 68, screen_width, 12}};
     FrequencyRuler frequency_ruler_{{0, 68, screen_width, 12}};
 
-    std::unique_ptr<std::array<DisplayDroneEntry, MAX_UI_DRONES>> detected_drones_ptr_;
+    // ===========================================
+    // ФАЗА 2.1: СТАТИЧЕСКИЙ МАССИВ DETECTED_DRONES
+    // ===========================================
+    // Diamond Code: Zero heap allocation
+    // Размер: MAX_UI_DRONES * sizeof(DisplayDroneEntry) = 16 * ~80 = ~1.28 KB
+
+    // Статический массив вместо unique_ptr
+    alignas(alignof(DisplayDroneEntry))
+    static DisplayDroneEntry detected_drones_storage_[MAX_UI_DRONES];
+
+    // Счётчик используемых элементов
     size_t detected_drones_count_ = 0;
     std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
 
-    // 🔴 FIX: Heap-allocated buffers (waterfall_buffer удалён - не нужен, экономия ~9.6KB RAM)
-    std::unique_ptr<std::array<Color, SPECTRUM_ROW_SIZE>> spectrum_row_buffer_ptr_;
-    std::unique_ptr<std::array<Color, RENDER_LINE_SIZE>> render_line_buffer_ptr_;
-    std::unique_ptr<std::array<uint8_t, 200>> spectrum_power_levels_ptr_;
+
+    // ===========================================
+    // ФАЗА 1.1: СТАТИЧЕСКИЕ БУФЕРЫ (Zero-Heap)
+    // ===========================================
+    // Diamond Code Principle: All data must be static or stack-based
+    // Используем inline статические массивы вместо unique_ptr
+
+    // Статические буферы (хранятся в .bss, инициализируются нулями)
+    // Размер: SPECTRUM_ROW_SIZE * sizeof(Color) = 240 * 2 = 480 байт
+    // Размер: RENDER_LINE_SIZE * sizeof(Color) = 240 * 2 = 480 байт
+    // Размер: 200 * sizeof(uint8_t) = 200 байт
+    // Итого: ~1.16 KB в .bss вместо heap allocation
+
+    alignas(alignof(std::array<Color, SPECTRUM_ROW_SIZE>))
+    static inline Color spectrum_row_buffer_storage_[SPECTRUM_ROW_SIZE];
+
+    alignas(alignof(std::array<Color, RENDER_LINE_SIZE>))
+    static inline Color render_line_buffer_storage_[RENDER_LINE_SIZE];
+
+    alignas(alignof(std::array<uint8_t, 200>))
+    static inline uint8_t spectrum_power_levels_storage_[200];
+
+    // Флаг для отслеживания состояния буферов
+    bool buffers_allocated_ = false;
+
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, DroneConstants::MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
@@ -1232,7 +1325,8 @@ private:
 
     // DIAMOND OPTIMIZATION: анализ формы сигнала для bar spectrum (без SpectralAnalyzer)
     inline size_t get_bar_color_index(size_t x, uint8_t power) const {
-        if (!SafeBufferAccess<uint8_t, 200>::is_valid(spectrum_power_levels_ptr_)) {
+        // 🔴 ФАЗА 1.5: Для статических буферов проверка упрощается
+        if (!buffers_allocated_) {
             return 2; // Unknown/Noise (Grey)
         }
 
@@ -1253,6 +1347,7 @@ private:
         // Широкий сигнал: Blue
         return 0; // Wideband (Blue)
     }
+
 
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
     void analyze_spectrum_for_threats(const ChannelSpectrum& spectrum);
@@ -1386,16 +1481,26 @@ public:
     // Scott Meyers Item 15: Prefer constexpr to #define
     // Eliminates magic numbers, improves maintainability
     struct InitTiming {
-        static constexpr uint32_t TIMEOUT_MS = 5000;           // 5 seconds for total initialization
-        static constexpr uint32_t PHASE_INTERVAL_MS = 50;       // Base interval between phases
-        static constexpr uint32_t PHASE_DELAY_1_MS = 50;      // Phase 1: Buffer allocation
-        static constexpr uint32_t PHASE_DELAY_2_MS = 100;     // Phase 2: Database loading
-        static constexpr uint32_t PHASE_DELAY_3_MS = 200;     // Phase 3: Hardware init
-        static constexpr uint32_t PHASE_DELAY_4_MS = 300;     // Phase 4: UI setup
-        static constexpr uint32_t PHASE_DELAY_5_MS = 400;     // Phase 5: Settings loading
-        static constexpr uint32_t PHASE_DELAY_6_MS = 500;     // Phase 6: Finalization
+        // ===========================================
+        // ФАЗА 4.1: ИСПРАВЛЕННЫЕ ЗАДЕРЖКИ
+        // ===========================================
+        // Задержки указывают, когда ЗАПУСТИТЬ фазу от начала
+        // Каждая фаза должна иметь достаточное время для выполнения
+
+        static constexpr uint32_t TIMEOUT_MS = 15000;  // 15 сек (увеличено)
+        static constexpr uint32_t PHASE_INTERVAL_MS = 50;
+
+        // Кумулятивные задержки (каждая фаза + минимум 200мс на выполнение)
+        static constexpr uint32_t PHASE_DELAY_0_MS = 50;     // Allocate buffers
+        static constexpr uint32_t PHASE_DELAY_1_MS = 300;    // Database (50 + 250 for async)
+        static constexpr uint32_t PHASE_DELAY_2_MS = 500;    // Hardware (300 + 200)
+        static constexpr uint32_t PHASE_DELAY_3_MS = 700;    // UI Setup (500 + 200)
+        static constexpr uint32_t PHASE_DELAY_4_MS = 900;    // Settings (700 + 200)
+        static constexpr uint32_t PHASE_DELAY_5_MS = 1100;   // Finalize (900 + 200)
+
         static constexpr uint8_t MAX_PHASES = 6;
     };
+
 
     // DIAMOND OPTIMIZATION: constexpr LUT для сообщений инициализации в Flash
     static constexpr const char* const INIT_STATUS_MESSAGES[] = {
@@ -1429,13 +1534,14 @@ public:
     };
 
     static constexpr InitPhaseConfig INIT_PHASES[] = {
-        {"Allocating buffers...",   InitTiming::PHASE_DELAY_1_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers},
-        {"Loading database...",     InitTiming::PHASE_DELAY_2_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_database},
-        {"Initializing hardware...", InitTiming::PHASE_DELAY_3_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware},
-        {"Setting up UI...",        InitTiming::PHASE_DELAY_4_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui},
-        {"Loading settings...",     InitTiming::PHASE_DELAY_5_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings},
-        {"Finalizing...",           InitTiming::PHASE_DELAY_6_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_finalize}
+        {"Allocating buffers...",   InitTiming::PHASE_DELAY_0_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers},
+        {"Loading database...",     InitTiming::PHASE_DELAY_1_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_database},
+        {"Initializing hardware...", InitTiming::PHASE_DELAY_2_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware},
+        {"Setting up UI...",        InitTiming::PHASE_DELAY_3_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui},
+        {"Loading settings...",     InitTiming::PHASE_DELAY_4_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings},
+        {"Finalizing...",           InitTiming::PHASE_DELAY_5_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_finalize}
     };
+
 
     // 🔴 DIAMOND OPTIMIZATION: constexpr массив для сообщений об ошибках (Flash)
     static constexpr const char* const ERROR_MESSAGES[] = {

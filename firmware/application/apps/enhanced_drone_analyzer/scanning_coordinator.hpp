@@ -50,8 +50,11 @@ private:
     std::atomic<bool> scanning_active_{false};
     Thread* scanning_thread_ = nullptr;
     uint32_t scan_interval_ms_ = 712;
-    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 8192; // 8 KB (increased for safety)
+    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 12288;
+
+    static WORKING_AREA(coordinator_wa_, COORDINATOR_THREAD_STACK_SIZE);
 };
+
 
 }  // namespace ui::apps::enhanced_drone_analyzer
 

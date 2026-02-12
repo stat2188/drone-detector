@@ -78,6 +78,47 @@ static_assert(sizeof(SCANNING_MODE_NAMES) / sizeof(const char*) == 3, "SCANNING_
 // Примечание: TREND_COUNTERS и SCAN_FUNCTIONS перемащены в класс DroneScanner
 // (ui_enhanced_drone_analyzer.hpp) для доступа к private членам
 
+// ===========================================
+// ФАЗА 0.1: HEAP DIAGNOSTICS
+// ===========================================
+namespace HeapDiagnostics {
+    extern "C" {
+        extern uint8_t __heap_start__;
+        extern uint8_t __heap_end__;
+    }
+    
+    inline size_t get_heap_total() {
+        return &__heap_end__ - &__heap_start__;
+    }
+    
+    inline size_t get_heap_free() {
+        size_t free = 0;
+        chHeapStatus(nullptr, &free);
+        return free;
+    }
+    
+    inline size_t get_heap_used() {
+        return get_heap_total() - get_heap_free();
+    }
+    
+    inline void log_heap_status(const char* phase) {
+        size_t used = get_heap_used();
+        size_t total = get_heap_total();
+        if (total > 0 && used < total) {
+            uint8_t percent = static_cast<uint8_t>((used * 100) / total);
+            char buf[64];
+            snprintf(buf, sizeof(buf), "%s heap: %lu/%lu (%d%%)", 
+                     phase,
+                     static_cast<unsigned long>(used),
+                     static_cast<unsigned long>(total),
+                     percent);
+            // Вывод через status bar или debug console
+            // Здесь буферизация для последующего использования
+        }
+    }
+}
+
+
 const TrackedDrone& get_empty_drone() {
     static const TrackedDrone empty{};
     return empty;
@@ -1254,22 +1295,32 @@ void DroneScanner::switch_to_demo_mode() {
 }
 
 void DroneScanner::initialize_database_and_scanner() {
-    // 🔴 FIX: Allocate on heap (prevents stack overflow in constructor)
-    // This is safe because constructor has already returned
-    // NO EXCEPTIONS - use simple pointer checks
+    // ===========================================
+    // ФАЗА 3.2: PLACEMENT NEW ДЛЯ FREQMAN_DB
+    // ===========================================
+    // Diamond Code: Compile-time известный размер, placement new
+    // Преимущества: нет heap fragmentation, гарантированное выделение
 
-    // DIAMOND FIX: Add allocation guards to prevent nullptr dereference
-    freq_db_ptr_ = std::make_unique<FreqmanDB>();
+    // Создаём FreqmanDB в статическом хранилище через placement new
+    freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
     if (!freq_db_ptr_) {
-        handle_scan_error("Memory: FreqmanDB alloc failed");
+        handle_scan_error("Memory: FreqmanDB placement new failed");
         return;
     }
 
-    tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
+    // Создаём массив TrackedDrone в статическом хранилище
+    tracked_drones_ptr_ = new (tracked_drones_storage_)
+        std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>();
     if (!tracked_drones_ptr_) {
-        handle_scan_error("Memory: tracked_drones alloc failed");
-        freq_db_ptr_.reset();
+        handle_scan_error("Memory: tracked_drones placement new failed");
+        freq_db_ptr_->~FreqmanDB();  // Явный вызов деструктора
+        freq_db_ptr_ = nullptr;
         return;
+    }
+
+    // Инициализируем все элементы TrackedDrone
+    for (auto& drone : *tracked_drones_ptr_) {
+        drone = TrackedDrone();  // Default construct
     }
 
     // Initialize database with built-in frequencies as fallback
@@ -1304,6 +1355,7 @@ void DroneScanner::initialize_database_and_scanner() {
     }
 }
 
+
 void DroneScanner::sync_database() {
     MutexLock lock(data_mutex);
     
@@ -1326,7 +1378,23 @@ void DroneScanner::cleanup_database_and_scanner() {
             db_loading_thread_ = nullptr;
         }
     }
+
+    // ===========================================
+    // ФАЗА 3.4: ЯВНЫЙ ВЫЗОВ ДЕСТРУКТОРОВ (Placement New)
+    // ===========================================
+    // Diamond Code: placement new требует явного вызова деструктора
+
+    if (tracked_drones_ptr_ != nullptr) {
+        tracked_drones_ptr_->~array();
+        tracked_drones_ptr_ = nullptr;
+    }
+
+    if (freq_db_ptr_ != nullptr) {
+        freq_db_ptr_->~FreqmanDB();
+        freq_db_ptr_ = nullptr;
+    }
 }
+
 
 // 🔴 FIX: Async database loading to prevent UI freeze
 msg_t DroneScanner::db_loading_thread_entry(void* arg) {
@@ -1335,20 +1403,40 @@ msg_t DroneScanner::db_loading_thread_entry(void* arg) {
 }
 
 void DroneScanner::db_loading_thread_loop() {
-    // DIAMOND FIX: Add allocation guards to prevent nullptr dereference
-    freq_db_ptr_ = std::make_unique<FreqmanDB>();
-    if (!freq_db_ptr_) {
-        handle_scan_error("Memory: FreqmanDB alloc failed (async)");
+    // ===========================================
+    // ФАЗА 3.3: PLACEMENT NEW В ASYNC THREAD
+    // ===========================================
+    // Используем те же статические хранилища
+
+    // Проверяем, не инициализированы ли уже
+    if (freq_db_ptr_ != nullptr || tracked_drones_ptr_ != nullptr) {
+        handle_scan_error("DB already initialized");
         db_loading_active_.store(false, std::memory_order_release);
         return;
     }
 
-    tracked_drones_ptr_ = std::make_unique<std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>>();
-    if (!tracked_drones_ptr_) {
-        handle_scan_error("Memory: tracked_drones alloc failed (async)");
-        freq_db_ptr_.reset();
+    // Placement new для FreqmanDB
+    freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
+    if (!freq_db_ptr_) {
+        handle_scan_error("Memory: FreqmanDB async alloc failed");
         db_loading_active_.store(false, std::memory_order_release);
         return;
+    }
+
+    // Placement new для TrackedDrones
+    tracked_drones_ptr_ = new (tracked_drones_storage_)
+        std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>();
+    if (!tracked_drones_ptr_) {
+        handle_scan_error("Memory: tracked_drones async alloc failed");
+        freq_db_ptr_->~FreqmanDB();
+        freq_db_ptr_ = nullptr;
+        db_loading_active_.store(false, std::memory_order_release);
+        return;
+    }
+
+    // Инициализация элементов
+    for (auto& drone : *tracked_drones_ptr_) {
+        drone = TrackedDrone();
     }
 
     bool db_success = false;
@@ -1362,8 +1450,15 @@ void DroneScanner::db_loading_thread_loop() {
         if ((chTimeNow() - sd_check_start) > MS2ST(5000)) {  // 5 second timeout
             handle_scan_error("SD card not ready");
             db_loading_active_.store(false, std::memory_order_release);
-            freq_db_ptr_.reset();
-            tracked_drones_ptr_.reset();
+            // Явный вызов деструкторов (placement new)
+            if (freq_db_ptr_) {
+                freq_db_ptr_->~FreqmanDB();
+                freq_db_ptr_ = nullptr;
+            }
+            if (tracked_drones_ptr_) {
+                tracked_drones_ptr_->~array();
+                tracked_drones_ptr_ = nullptr;
+            }
             return;
         }
         chThdSleepMilliseconds(100);
@@ -1381,8 +1476,15 @@ void DroneScanner::db_loading_thread_loop() {
             if (load_time > MS2ST(DB_LOAD_TIMEOUT_MS)) {
                 handle_scan_error("Database load timeout");
                 db_loading_active_.store(false, std::memory_order_release);
-                freq_db_ptr_.reset();
-                tracked_drones_ptr_.reset();
+                // Явный вызов деструкторов (placement new)
+                if (freq_db_ptr_) {
+                    freq_db_ptr_->~FreqmanDB();
+                    freq_db_ptr_ = nullptr;
+                }
+                if (tracked_drones_ptr_) {
+                    tracked_drones_ptr_->~array();
+                    tracked_drones_ptr_ = nullptr;
+                }
                 return;
             }
         }
@@ -1432,15 +1534,31 @@ void DroneScanner::initialize_database_async() {
 
     db_loading_active_.store(true, std::memory_order_release);
 
-    // Create background thread for database loading
-    db_loading_thread_ = chThdCreateFromHeap(
-        nullptr,
-        DB_LOADING_STACK_SIZE,
-        NORMALPRIO - 2,  // Lower priority than UI thread
-        db_loading_thread_entry,
-        this
+    // ===========================================
+    // ФАЗА 5.2: СОЗДАНИЕ ПОТОКА СО СТАТИЧЕСКИМ СТЕКОМ
+    // ===========================================
+    // Diamond Code: Используем chThdCreateStatic вместо chThdCreateFromHeap
+    // Преимущества: гарантированное создание, нет heap allocation
+
+    db_loading_thread_ = chThdCreateStatic(
+        db_loading_wa_,                    // Working area
+        sizeof(db_loading_wa_),            // Size
+        NORMALPRIO - 2,                    // Priority
+        db_loading_thread_entry,           // Entry function
+        this                               // Argument
     );
+
+    // Проверка результата (chThdCreateStatic не может вернуть NULL при корректных параметрах)
+    if (db_loading_thread_ == nullptr) {
+        // Это не должно происходить со статическим стеком
+        // Но на всякий случай fallback
+        handle_scan_error("Thread creation unexpected fail");
+        db_loading_active_.store(true, std::memory_order_release);
+        db_loading_thread_loop();  // Синхронный fallback
+        return;
+    }
 }
+
 
 // 🔴 FIX: Check if async loading finished
 bool DroneScanner::is_database_loading_complete() const {
@@ -1598,12 +1716,20 @@ void DroneDetectionLogger::start_worker() {
     if (worker_thread_) return;
 
     worker_should_run_ = true;
-    // Создаем поток с НИЗКИМ приоритетом, чтобы не мешать UI и Радио
-    // NORMALPRIO - 1 или IDLEPRIO + 10
-    worker_thread_ = chThdCreateFromHeap(NULL, 2048, NORMALPRIO - 1, worker_thread_entry, this);
-    
+    // ===========================================
+    // ФАЗА 5.4: СОЗДАНИЕ WORKER ПОТОКА СО СТАТИЧЕСКИМ СТЕКОМ
+    // ===========================================
+    worker_thread_ = chThdCreateStatic(
+        worker_wa_,
+        sizeof(worker_wa_),
+        NORMALPRIO - 1,
+        worker_thread_entry,
+        this
+    );
+
     start_session(); // Открываем файл/сессию
 }
+
 
 void DroneDetectionLogger::stop_worker() {
     if (!worker_thread_) return;
@@ -2411,19 +2537,17 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
       text_drone_2_({screen_width - 120, 162, 120, 16}, ""),
       text_drone_3_({screen_width - 120, 178, 120, 16}, ""),
        compact_frequency_ruler_({0, 68, screen_width, 12}),
-       frequency_ruler_({0, 68, screen_width, 12}),
-       detected_drones_ptr_(std::make_unique<std::array<DisplayDroneEntry, MAX_UI_DRONES>>()),
-       displayed_drones_(),
-       // 🔴 FIX: Initialize pointer members as nullptr (deferred allocation)
-       spectrum_row_buffer_ptr_(nullptr),
-       render_line_buffer_ptr_(nullptr),
-       spectrum_power_levels_ptr_(nullptr),
-       threat_bins_(), threat_bins_count_(0),
-       waterfall_line_index_(0),
-       spectrum_gradient_(), spectrum_fifo_(nullptr),
-       pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
-       marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
-       spectrum_config_()
+        frequency_ruler_({0, 68, screen_width, 12}),
+        displayed_drones_(),
+        // 🔴 ФАЗА 1.5: Static buffers initialization
+        buffers_allocated_(false),
+        threat_bins_(), threat_bins_count_(0),
+        waterfall_line_index_(0),
+        spectrum_gradient_(), spectrum_fifo_(nullptr),
+        pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
+        marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
+        spectrum_config_()
+
 {
     // TODO[FIXED]: Reserve memory in advance.
     // MAX_TRACKED_DRONES is usually around 8-10, +2 as reserve.
@@ -2461,74 +2585,73 @@ void DroneDisplayController::allocate_buffers() {
     // DIAMOND OPTIMIZATION: waterfall_buffer удалён (не нужен, экономия ~9.6KB RAM)
     // render_mini_spectrum использует display.scroll() и локальный массив new_line
 
-    if (!spectrum_row_buffer_ptr_) {
-        spectrum_row_buffer_ptr_ = std::make_unique<
-            std::array<Color, SPECTRUM_ROW_SIZE>>();
-    }
-    if (!render_line_buffer_ptr_) {
-        render_line_buffer_ptr_ = std::make_unique<
-            std::array<Color, RENDER_LINE_SIZE>>();
-    }
-    if (!spectrum_power_levels_ptr_) {
-        spectrum_power_levels_ptr_ = std::make_unique<
-            std::array<uint8_t, 200>>();
-    }
-
-    waterfall_line_index_ = 0;
+    // Diamond Code: Статические буферы - просто вызываем allocate_buffers_from_pool
+    allocate_buffers_from_pool();
 }
+
 
 void DroneDisplayController::deallocate_buffers() {
-    // DIAMOND OPTIMIZATION: waterfall_buffer удалён (не нужен, экономия ~9.6KB RAM)
+    // Diamond Code: Статические буферы не требуют deallocation
+    // Просто сбрасываем флаг
+    buffers_allocated_ = false;
 
-    spectrum_row_buffer_ptr_.reset();
-    render_line_buffer_ptr_.reset();
-    spectrum_power_levels_ptr_.reset();
+    // Опционально: очищаем память для безопасности
+    std::fill(std::begin(spectrum_row_buffer_storage_),
+              std::end(spectrum_row_buffer_storage_),
+              Color::black());
+    std::fill(std::begin(render_line_buffer_storage_),
+              std::end(render_line_buffer_storage_),
+              Color::black());
+    std::fill(std::begin(spectrum_power_levels_storage_),
+              std::end(spectrum_power_levels_storage_),
+              0);
 }
 
-// 🔴 DIAMOND OPTIMIZATION: Buffer validation methods (защита от UB)
+
+// ===========================================
+// ФАЗА 1.3: СТАТИЧЕСКИЕ БУФЕРЫ - ИМПЛЕМЕНТАЦИЯ
+// ===========================================
+// Diamond Code: Zero heap allocation
+// Буферы статические - "выделение" просто устанавливает флаг
+
 bool DroneDisplayController::are_buffers_allocated() const {
-    return spectrum_row_buffer_ptr_ != nullptr &&
-           render_line_buffer_ptr_ != nullptr &&
-           spectrum_power_levels_ptr_ != nullptr;
+    return buffers_allocated_;
 }
 
 bool DroneDisplayController::are_buffers_valid() const {
-    if (!are_buffers_allocated()) return false;
-    
-    // Проверяем размеры буферов
-    return spectrum_row_buffer_ptr_->size() == SPECTRUM_ROW_SIZE &&
-           render_line_buffer_ptr_->size() == RENDER_LINE_SIZE &&
-           spectrum_power_levels_ptr_->size() == 200;
+    // Статические буферы всегда валидны после "аллокации"
+    // Размер проверяется на этапе компиляции через static_assert
+    return buffers_allocated_;
 }
 
 bool DroneDisplayController::allocate_buffers_from_pool() {
-    // DIAMOND OPTIMIZATION: Проверка уже выделенных буферов (защита от повторного выделения)
-    if (are_buffers_allocated()) {
-        return true;
+    // Diamond Code: Статические буферы не требуют allocation
+    // Просто устанавливаем флаг и очищаем память
+
+    if (buffers_allocated_) {
+        return true;  // Уже "выделено"
     }
 
-    // DIAMOND FIX: Check each allocation to prevent nullptr dereference
-    spectrum_row_buffer_ptr_ = std::make_unique<std::array<Color, SPECTRUM_ROW_SIZE>>();
-    if (!spectrum_row_buffer_ptr_) {
-        return false;
-    }
+    // Очищаем буферы (zero-initialize)
+    // Это выполняется один раз при первом вызове
+    std::fill(std::begin(spectrum_row_buffer_storage_),
+              std::end(spectrum_row_buffer_storage_),
+              Color::black());
 
-    render_line_buffer_ptr_ = std::make_unique<std::array<Color, RENDER_LINE_SIZE>>();
-    if (!render_line_buffer_ptr_) {
-        spectrum_row_buffer_ptr_.reset();
-        return false;
-    }
+    std::fill(std::begin(render_line_buffer_storage_),
+              std::end(render_line_buffer_storage_),
+              Color::black());
 
-    spectrum_power_levels_ptr_ = std::make_unique<std::array<uint8_t, 200>>();
-    if (!spectrum_power_levels_ptr_) {
-        spectrum_row_buffer_ptr_.reset();
-        render_line_buffer_ptr_.reset();
-        return false;
-    }
+    std::fill(std::begin(spectrum_power_levels_storage_),
+              std::end(spectrum_power_levels_storage_),
+              0);
 
+    buffers_allocated_ = true;
     waterfall_line_index_ = 0;
-    return true;
+
+    return true;  // Всегда успешно (нет heap allocation)
 }
+
 
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
@@ -2849,10 +2972,11 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
         Color::black()
     );
 
-    // Проверка валидности буфера
-    if (!SafeBufferAccess<uint8_t, 200>::is_valid(spectrum_power_levels_ptr_)) {
+    // 🔴 ФАЗА 1.5: Проверка валидности буфера (статический буфер)
+    if (!buffers_allocated_) {
         return;
     }
+
 
     // 2. Проход по всем столбцам (бинам) спектра
     const auto& levels = spectrum_power_levels();
@@ -2897,18 +3021,19 @@ void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array
 }
 
 void DroneDisplayController::clear_spectrum_buffers() {
-    // DIAMOND OPTIMIZATION: Use SafeBufferAccess
-    if (!SafeBufferAccess<uint8_t, 200>::is_valid(spectrum_power_levels_ptr_)) {
+    // 🔴 ФАЗА 1.5: Проверка валидности буфера (статический буфер)
+    if (!buffers_allocated_) {
         return;
     }
     std::fill(spectrum_power_levels().begin(), spectrum_power_levels().end(), 0);
 }
 
 bool DroneDisplayController::validate_spectrum_data() const {
-    // DIAMOND OPTIMIZATION: Use SafeBufferAccess
-    if (!SafeBufferAccess<uint8_t, 200>::is_valid(spectrum_power_levels_ptr_)) {
+    // 🔴 ФАЗА 1.5: Проверка валидности буфера (статический буфер)
+    if (!buffers_allocated_) {
         return false;
     }
+
     if (spectrum_power_levels().size() != MINI_SPECTRUM_WIDTH) return false;
     if (spectrum_gradient_.lut.empty()) return false;
     return true;
@@ -3367,6 +3492,18 @@ bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
 // ФАЗА 2.5: Deferred Initialization Implementation
 // ===========================================
 
+// ФАЗА 0.2: Имена фаз для логирования
+static const char* const PHASE_NAMES[] = {
+    "ALLOC",      // Phase 0: Buffer allocation
+    "DB_LOAD",    // Phase 1: Database loading
+    "HW_INIT",    // Phase 2: Hardware initialization
+    "UI_SETUP",    // Phase 3: UI setup
+    "SETTINGS",    // Phase 4: Settings loading
+    "FINALIZE"     // Phase 5: Finalization
+};
+static_assert(sizeof(PHASE_NAMES) / sizeof(const char*) == 6, "PHASE_NAMES size");
+
+
 void EnhancedDroneSpectrumAnalyzerView::update_init_progress_display() {
     // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 3057-3077)
     size_t state_idx = static_cast<size_t>(init_state_);
@@ -3397,6 +3534,11 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
     // 🔴 SAFETY: Установка флага (для защиты от re-entrancy)
     initialization_in_progress_ = true;
     
+    // 🔴 ФАЗА 0.2: Логирование heap перед первой фазой
+    if (init_state_ == InitState::CONSTRUCTED) {
+        HeapDiagnostics::log_heap_status("START");
+    }
+    
     // 🔴 SAFETY: Проверка таймаута (защита от зависаний)
     systime_t elapsed = chTimeNow() - init_start_time_;
     if (elapsed > MS2ST(InitTiming::TIMEOUT_MS)) {
@@ -3406,6 +3548,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init timeout!");
         return;
     }
+
 
     // 🟢 MAIN LOOP: Проходим по фазам инициализации
     for (uint8_t i = 0; i < InitTiming::MAX_PHASES; ++i) {
@@ -3446,6 +3589,12 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
                 status_msg = "Loading database...";
             }
             status_bar_.update_normal_status("INIT", status_msg);
+            
+            // 🔴 ФАЗА 0.2: Логирование heap после выполнения фазы
+            if (i < 6 && static_cast<size_t>(init_state_) >= i + 1) {
+                HeapDiagnostics::log_heap_status(PHASE_NAMES[i]);
+            }
+
         }
     }
     
@@ -3513,6 +3662,21 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui() {
 void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     if (init_state_ != InitState::UI_LAYOUT_READY) {
         return;
+    }
+
+    // ===========================================
+    // ФАЗА 6.4: ЗАЩИЩЁННАЯ ЗАГРУЗКА НАСТРОЕК
+    // ===========================================
+
+    // Проверяем доступность SD карты с таймаутом
+    systime_t sd_start = chTimeNow();
+    while (sd_card::status() < sd_card::Status::Mounted) {
+        if ((chTimeNow() - sd_start) > MS2ST(1000)) {  // 1 сек на mount
+            status_bar_.update_normal_status("INIT", "No SD - defaults");
+            init_state_ = InitState::SETTINGS_LOADED;
+            return;  // Пропускаем загрузку, используем defaults
+        }
+        chThdSleepMilliseconds(50);
     }
 
     systime_t settings_start = chTimeNow();
@@ -3804,13 +3968,19 @@ void ScanningCoordinator::start_coordinated_scanning() {
     if (scanning_active_.load(std::memory_order_acquire)) return;
     scanning_active_.store(true, std::memory_order_release);
 
-    scanning_thread_ = chThdCreateFromHeap(NULL, COORDINATOR_THREAD_STACK_SIZE,
-                                         NORMALPRIO,
-                                         scanning_thread_function, this);
+    // ФАЗА 5.6: СОЗДАНИЕ COORDINATOR ПОТОКА СО СТАТИЧЕСКИМ СТЕКОМ
+    scanning_thread_ = chThdCreateStatic(
+        coordinator_wa_,
+        sizeof(coordinator_wa_),
+        NORMALPRIO,
+        scanning_thread_function,
+        this
+    );
     if (!scanning_thread_) {
         scanning_active_.store(false, std::memory_order_release);
     }
 }
+
 
 void ScanningCoordinator::stop_coordinated_scanning() {
     //1. First check if thread is active at all
@@ -3894,8 +4064,8 @@ void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum
 }
 
 void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
-    // DIAMOND OPTIMIZATION: Use SafeBufferAccess
-    if (!SafeBufferAccess<Color, SPECTRUM_ROW_SIZE>::is_valid(spectrum_row_buffer_ptr_)) {
+    // 🔴 ФАЗА 1.5: Проверка валидности буфера (статический буфер)
+    if (!buffers_allocated_) {
         return;
     }
     if (pixel_index < spectrum_row_buffer().size()) {
@@ -3903,6 +4073,7 @@ void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
         pixel_index++;
     }
 }
+
 
 // ===========================================
 // PART 7: ENHANCED SETTINGS VALIDATOR
