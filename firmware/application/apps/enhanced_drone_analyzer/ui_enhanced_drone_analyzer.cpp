@@ -1430,25 +1430,16 @@ void DroneScanner::initialize_database_async() {
         return;  // Already loading or loaded
     }
 
+    db_loading_active_.store(true, std::memory_order_release);
+
     // Create background thread for database loading
-    // DIAMOND FIX: Check thread creation result to prevent hang
     db_loading_thread_ = chThdCreateFromHeap(
         nullptr,
         DB_LOADING_STACK_SIZE,
-        NORMALPRIO - 2,
+        NORMALPRIO - 2,  // Lower priority than UI thread
         db_loading_thread_entry,
         this
     );
-
-    // Guard Clause: Fall back to sync load if thread creation fails
-    if (db_loading_thread_ == nullptr) {
-        handle_scan_error("DB thread: heap exhausted");
-        db_loading_active_.store(false, std::memory_order_release);
-        initialize_database_and_scanner();
-        return;
-    }
-
-    db_loading_active_.store(true, std::memory_order_release);
 }
 
 // 🔴 FIX: Check if async loading finished
@@ -1554,7 +1545,6 @@ DroneDetectionLogger::DroneDetectionLogger()
     // Инициализация бинарного семафора (not taken = false)
     chSemInit(&data_ready_, 0);
     
-    worker_should_run_.store(false, std::memory_order_release);
     start_session();
 }
 
@@ -1607,7 +1597,7 @@ bool DroneDetectionLogger::log_detection_async(const DetectionLogEntry& entry) {
 void DroneDetectionLogger::start_worker() {
     if (worker_thread_) return;
 
-    worker_should_run_.store(true, std::memory_order_release);
+    worker_should_run_ = true;
     // Создаем поток с НИЗКИМ приоритетом, чтобы не мешать UI и Радио
     // NORMALPRIO - 1 или IDLEPRIO + 10
     worker_thread_ = chThdCreateFromHeap(NULL, 2048, NORMALPRIO - 1, worker_thread_entry, this);
@@ -1618,7 +1608,7 @@ void DroneDetectionLogger::start_worker() {
 void DroneDetectionLogger::stop_worker() {
     if (!worker_thread_) return;
 
-    worker_should_run_.store(false, std::memory_order_release);
+    worker_should_run_ = false;
     chSemSignal(&data_ready_); // Будим поток, чтобы он вышел из wait
     
     chThdWait(worker_thread_); // Ждем завершения
@@ -1633,9 +1623,9 @@ msg_t DroneDetectionLogger::worker_thread_entry(void* arg) {
 }
 
 void DroneDetectionLogger::worker_loop() {
-    while (worker_should_run_.load(std::memory_order_acquire)) {
+    while (worker_should_run_) {
         chSemWaitTimeout(&data_ready_, MS2ST(1000));
-        if (!worker_should_run_.load(std::memory_order_acquire)) break;
+        if (!worker_should_run_) break;
 
         DetectionLogEntry entry_to_write;
         bool has_data = false;
@@ -1987,8 +1977,8 @@ void DroneHardwareController::handle_channel_spectrum_config(const ChannelSpectr
 }
 
 void DroneHardwareController::handle_channel_statistics(const ChannelStatistics& statistics) {
-    last_valid_rssi_.store(statistics.max_db, std::memory_order_release);
-    rssi_updated_.store(true, std::memory_order_release);  // Mark RSSI as fresh
+    last_valid_rssi_ = statistics.max_db;
+    rssi_updated_ = true;  // Mark RSSI as fresh
 }
 
 void DroneHardwareController::clear_rssi_flag() {
@@ -3413,8 +3403,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         init_state_ = InitState::INITIALIZATION_ERROR;
         init_error_ = InitError::GENERAL_TIMEOUT;
         initialization_in_progress_ = false;
-        status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0,
-                                          ERROR_MESSAGES[static_cast<uint8_t>(InitError::GENERAL_TIMEOUT)]);
+        status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init timeout!");
         return;
     }
 
@@ -3503,18 +3492,6 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware() {
     if (init_state_ != InitState::DATABASE_LOADED) {
         return;
     }
-
-    // CRITICAL FIX: Start baseband processor BEFORE any hardware/spectrum operations
-    // This prevents deadlock in send_message() busy-wait loop (baseband_api.cpp:62)
-    // Other spectrum apps (ui_search.cpp, analog_audio_app.cpp) all call this
-    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
-    
-    // Allow baseband M0 to initialize (small delay for safety)
-    chThdSleepMilliseconds(10);
-
-    // CRITICAL FIX: Mark baseband as ready for audio alerts
-    // This enables AudioAlertManager to safely call baseband::request_audio_beep()
-    AudioAlertManager::mark_baseband_ready();
 
     hardware_.on_hardware_show();
     status_bar_.update_normal_status("INIT", "Phase 3: HW ready");
@@ -3841,11 +3818,9 @@ void ScanningCoordinator::stop_coordinated_scanning() {
         // 2. Reset flag. Thread will see this in while(scanning_active_) loop and exit.
         scanning_active_.store(false, std::memory_order_release);
 
-        // 3. If thread pointer exists, wait for its completion with watchdog
+        // 3. If thread pointer exists, wait for its completion.
         if (scanning_thread_) {
             // chThdWait blocks current (UI) thread until scanning_thread_ calls chThdExit
-            // SAFETY: Thread should exit within one scan cycle (max ~5 seconds)
-            // If thread hangs, force cleanup to prevent UI freeze
             chThdWait(scanning_thread_);
             scanning_thread_ = nullptr;
         }
@@ -4522,8 +4497,51 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
 // ===========================================
 // AudioAlertManager Implementation
 // ===========================================
-// AudioAlertManager implementation moved to ui_drone_audio.cpp
-// to fix ODR violation and add baseband_is_ready_ guard
+// AudioAlertManager is declared in ui_drone_audio.hpp inside namespace ui::apps::enhanced_drone_analyzer
+
+bool AudioAlertManager::audio_enabled_ = true;
+systime_t AudioAlertManager::last_alert_timestamp_ = 0;
+uint32_t AudioAlertManager::cooldown_ms_ = 600;
+
+void AudioAlertManager::play_alert(ThreatLevel level) {
+    if (!audio_enabled_) return;
+
+    // DIAMOND OPTIMIZATION: Time-based debouncing to prevent UI freeze
+    // baseband::send_message() contains busy-wait spin loop (baseband_api.cpp:54-64)
+    // If called at 60 FPS with 200ms beeps, UI would spin-wait ~180ms per frame
+    // This would completely freeze the UI - no touch/key events processed
+    systime_t now = chTimeNow();
+    systime_t elapsed_ticks = now - last_alert_timestamp_;
+
+    if (elapsed_ticks < MS2ST(cooldown_ms_)) {
+        return;
+    }
+
+    // Update timestamp for next call
+    last_alert_timestamp_ = now;
+
+    uint16_t freq_hz = 800;
+    switch (level) {
+        case ThreatLevel::NONE: return;
+        case ThreatLevel::LOW: freq_hz = 800; break;
+        case ThreatLevel::MEDIUM: freq_hz = 1000; break;
+        case ThreatLevel::HIGH: freq_hz = 1200; break;
+        case ThreatLevel::CRITICAL: freq_hz = 2000; break;
+        default: freq_hz = 800; break;
+    }
+    baseband::request_audio_beep(freq_hz, 24000, 200);
+}
+
+void AudioAlertManager::set_enabled(bool enable) {
+    audio_enabled_ = enable;
+}
+
+bool AudioAlertManager::is_enabled() {
+    return audio_enabled_;
+}
+
+void AudioAlertManager::set_cooldown_ms(uint32_t cooldown_ms) {
+    cooldown_ms_ = cooldown_ms;
+}
 
 } // namespace ui::apps::enhanced_drone_analyzer
-

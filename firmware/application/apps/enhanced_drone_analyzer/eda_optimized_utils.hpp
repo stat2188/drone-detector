@@ -130,29 +130,26 @@ struct ColorMappings {
         static constexpr RGBColor dark_grey(){ return RGBColor{0x404040}; }
     };
 
-    // Threat level colors (6 levels) - RGB888 format: 0xRRGGBB
+    // Threat level colors (6 levels)
     static constexpr uint32_t THREAT_COLORS[6] = {
-        0xFF0000,   // Red - NONE (0)
-        0x00FF00,   // Green - LOW (1)
-        0xFFFF00,   // Yellow - MEDIUM (2)
-        0xFFA500,   // Orange - HIGH (3)
-        0x800000,   // Dark Red - CRITICAL (4)
-        0x808080    // Grey - UNKNOWN (5)
+        0xFF0000,   // blue - NONE (0)
+        0x00FF00,   // green - LOW (1)
+        0xFFFF00,   // yellow - MEDIUM (2)
+        0xFFA500,   // orange - HIGH (3)
+        0x0000FF,   // red - CRITICAL (4)
+        0x808080    // grey - UNKNOWN (5)
     };
 
-    // Drone type colors (11 types - matches DroneType enum)
-    static constexpr uint32_t DRONE_COLORS[11] = {
+    // Drone type colors (8 types)
+    static constexpr uint32_t DRONE_COLORS[8] = {
         0xFFFFFF,   // white - UNKNOWN (0)
-        0xFF0000,   // red - MAVIC (1)
+        0x0000FF,   // red - MAVIC (1)
         0xFFA500,   // orange - DJI_P34 (2)
         0xFFFF00,   // yellow - PHANTOM (3)
-        0x00FFFF,   // cyan - DJI_MINI (4)
-        0xFF00FF,   // magenta - PARROT_ANAFI (5)
-        0x00FF00,   // green - PARROT_BEBOP (6)
-        0x800080,   // purple - PX4_DRONE (7)
-        0x000000,   // black - MILITARY_DRONE (8)
-        0xC0C0C0,   // silver - DIY_DRONE (9)
-        0xFFC0CB    // pink - FPV_RACING (10)
+        0x00FFFF,   // cyan - FPV_RACING (4)
+        0xFF00FF,   // magenta - DIY_DRONE (5)
+        0x00FF00,   // green - MILITARY_DRONE (6)
+        0x404040    // dark_grey - OTHER (7)
     };
 
     // NOTE: These return uint32_t RGB values, not Color objects
@@ -162,7 +159,7 @@ struct ColorMappings {
     }
 
     static constexpr uint32_t get_drone_color_value(uint8_t type) {
-        return (type < 11) ? DRONE_COLORS[type] : DRONE_COLORS[0];
+        return (type < 8) ? DRONE_COLORS[type] : DRONE_COLORS[0];
     }
 };
 
@@ -181,18 +178,15 @@ struct StringMappings {
         "UNKNOWN"     // UNKNOWN (5)
     };
 
-    static constexpr const char* const DRONE_TYPE_NAMES[11] = {
+    static constexpr const char* const DRONE_TYPE_NAMES[8] = {
         "UNKNOWN",        // UNKNOWN (0)
         "MAVIC",          // MAVIC (1)
         "DJI P34",       // DJI_P34 (2)
         "PHANTOM",        // PHANTOM (3)
-        "MINI",           // DJI_MINI (4)
-        "ANAFI",          // PARROT_ANAFI (5)
-        "BEBOP",          // PARROT_BEBOP (6)
-        "PX4",            // PX4_DRONE (7)
-        "MILITARY",       // MILITARY_DRONE (8)
-        "DIY DRONE",      // DIY_DRONE (9)
-        "FPV RACING"      // FPV_RACING (10)
+        "FPV RACING",     // FPV_RACING (4)
+        "DIY DRONE",      // DIY_DRONE (5)
+        "MILITARY",       // MILITARY_DRONE (6)
+        "OTHER"           // OTHER (7)
     };
 
     static constexpr const char* get_threat_name(uint8_t level) {
@@ -200,7 +194,7 @@ struct StringMappings {
     }
 
     static constexpr const char* get_drone_type_name(uint8_t type) {
-        return (type < 11) ? DRONE_TYPE_NAMES[type] : "UNKNOWN";
+        return (type < 8) ? DRONE_TYPE_NAMES[type] : "UNKNOWN";
     }
 };
 

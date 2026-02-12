@@ -15,23 +15,16 @@ namespace ui::apps::enhanced_drone_analyzer {
 // DIAMOND FIX: Moved audio_enabled_ to .cpp to fix ODR violation
 // Prevents memory corruption from multiple definitions across translation units
 // DIAMOND OPTIMIZATION: Added last_alert_timestamp_ for debouncing to prevent UI freeze
-// DIAMOND FIX: Added baseband_is_ready_ guard to prevent deadlock during initialization
 struct AudioAlertManager {
     static void play_alert(ThreatLevel level);
     static void set_enabled(bool enable);
     static bool is_enabled();
     static void set_cooldown_ms(uint32_t cooldown_ms);
-    
-    // CRITICAL FIX: Mark baseband as ready after baseband::run_image() succeeds
-    // Prevents deadlock in send_message() busy-wait loop (baseband_api.cpp:62)
-    static void mark_baseband_ready();
-    static bool is_baseband_ready();
 
 private:
     // DIAMOND FIX: Declaration only - definition moved to .cpp
     // Single instance prevents ODR violation and undefined behavior
     static bool audio_enabled_;
-    static bool baseband_is_ready_;  // NEW: Guard flag to prevent calls before baseband startup
     
     // DIAMOND OPTIMIZATION: Last alert timestamp for debouncing
     // Prevents baseband queue saturation when called at 60 FPS

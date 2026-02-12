@@ -84,62 +84,75 @@ enum SettingType : uint8_t {
 constexpr size_t SETTINGS_COUNT = 54;
 
 // DIAMOND FIX: inline constexpr ensures single Flash instance (ODR-safe, RAM-efficient)
-// DIAMOND OPTIMIZATION: Sorted alphabetically for binary search O(log N)
+// Updated for bitfield-packed DroneAnalyzerSettings
 inline constexpr SettingMetadata SETTINGS_LUT[SETTINGS_COUNT] = {
-    {"alert_persistence_threshold", offsetof(DroneAnalyzerSettings, alert_persistence_threshold), TYPE_UINT32, 1, 10, "3"},
-    {"audio_alert_duration_ms", offsetof(DroneAnalyzerSettings, audio_alert_duration_ms), TYPE_UINT32, 50, 5000, "500"},
-    {"audio_alert_frequency_hz", offsetof(DroneAnalyzerSettings, audio_alert_frequency_hz), TYPE_UINT32, 200, 20000, "800"},
-    {"audio_repeat_alerts", offsetof(DroneAnalyzerSettings, audio_flags), TYPE_BITFIELD, 1, 0, "false"},
-    {"audio_volume_level", offsetof(DroneAnalyzerSettings, audio_volume_level), TYPE_UINT32, 0, 100, "50"},
-    {"auto_ruler_style", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 4, 0, "true"},
-    {"auto_save_logs", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"auto_save_on_change", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 1, 0, "false"},
-    {"color_scheme", offsetof(DroneAnalyzerSettings, color_scheme), TYPE_STR, 0, 0, "DARK"},
-    {"compact_ruler_tick_count", offsetof(DroneAnalyzerSettings, compact_ruler_tick_count), TYPE_UINT32, 3, 8, "4"},
-    {"current_profile_name", offsetof(DroneAnalyzerSettings, current_profile_name), TYPE_STR, 0, 0, "Default"},
-    {"demo_mode", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 1, 0, "false"},
+    // ===== AUDIO SETTINGS (Bitfield-packed) =====
     {"enable_audio_alerts", offsetof(DroneAnalyzerSettings, audio_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"enable_fhss_detection", offsetof(DroneAnalyzerSettings, detection_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"enable_intelligent_scanning", offsetof(DroneAnalyzerSettings, scanning_flags), TYPE_BITFIELD, 2, 0, "true"},
-    {"enable_intelligent_tracking", offsetof(DroneAnalyzerSettings, detection_flags), TYPE_BITFIELD, 1, 0, "true"},
-    {"enable_quick_profiles", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"enable_real_hardware", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"enable_session_logging", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 1, 0, "true"},
-    {"enable_wideband_scanning", offsetof(DroneAnalyzerSettings, scanning_flags), TYPE_BITFIELD, 0, 0, "false"},
-    {"font_size", offsetof(DroneAnalyzerSettings, font_size), TYPE_UINT32, 0, 2, "0"},
-    {"freqman_path", offsetof(DroneAnalyzerSettings, freqman_path), TYPE_STR, 0, 0, "DRONES"},
-    {"frequency_ruler_style", offsetof(DroneAnalyzerSettings, frequency_ruler_style), TYPE_UINT32, 0, 6, "5"},
+    {"audio_alert_frequency_hz", offsetof(DroneAnalyzerSettings, audio_alert_frequency_hz), TYPE_UINT32, 200, 20000, "800"},
+    {"audio_alert_duration_ms", offsetof(DroneAnalyzerSettings, audio_alert_duration_ms), TYPE_UINT32, 50, 5000, "500"},
+    {"audio_volume_level", offsetof(DroneAnalyzerSettings, audio_volume_level), TYPE_UINT32, 0, 100, "50"},
+    {"audio_repeat_alerts", offsetof(DroneAnalyzerSettings, audio_flags), TYPE_BITFIELD, 0, 1, "false"},
+
+    // ===== HARDWARE SETTINGS (Bitfield-packed) =====
+    {"spectrum_mode", offsetof(DroneAnalyzerSettings, spectrum_mode), TYPE_UINT32, 0, 4, "1"},
     {"hardware_bandwidth_hz", offsetof(DroneAnalyzerSettings, hardware_bandwidth_hz), TYPE_UINT32, 10000, 28000000, "24000000"},
-    {"include_rssi_values", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 3, 0, "true"},
-    {"include_timestamp", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 2, 0, "true"},
-    {"iq_calibration_enabled", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 2, 0, "false"},
+    {"enable_real_hardware", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 0, 0, "true"},
+    {"demo_mode", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 0, 1, "false"},
+    {"iq_calibration_enabled", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 0, 2, "false"},
+    {"rx_phase_value", offsetof(DroneAnalyzerSettings, rx_phase_value), TYPE_UINT32, 0, 31, "15"},
     {"lna_gain_db", offsetof(DroneAnalyzerSettings, lna_gain_db), TYPE_UINT32, 0, 40, "32"},
+    {"vga_gain_db", offsetof(DroneAnalyzerSettings, vga_gain_db), TYPE_UINT32, 0, 62, "20"},
+    {"rf_amp_enabled", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 0, 3, "false"},
+
+    // ===== SCANNING SETTINGS (Bitfield-packed) =====
+    {"scan_interval_ms", offsetof(DroneAnalyzerSettings, scan_interval_ms), TYPE_UINT32, 100, 10000, "1000"},
+    {"rssi_threshold_db", offsetof(DroneAnalyzerSettings, rssi_threshold_db), TYPE_INT32, -120, 10, "-90"},
+    {"enable_wideband_scanning", offsetof(DroneAnalyzerSettings, scanning_flags), TYPE_BITFIELD, 0, 0, "false"},
+    {"wideband_min_freq_hz", offsetof(DroneAnalyzerSettings, wideband_min_freq_hz), TYPE_UINT64, 2400000000ULL, 7200000000ULL, "2400000000"},
+    {"wideband_max_freq_hz", offsetof(DroneAnalyzerSettings, wideband_max_freq_hz), TYPE_UINT64, 2400000001ULL, 7200000000ULL, "2500000000"},
+    {"wideband_slice_width_hz", offsetof(DroneAnalyzerSettings, wideband_slice_width_hz), TYPE_UINT32, 10000000, 28000000, "24000000"},
+    {"panoramic_mode_enabled", offsetof(DroneAnalyzerSettings, scanning_flags), TYPE_BITFIELD, 0, 1, "true"},
+    {"enable_intelligent_scanning", offsetof(DroneAnalyzerSettings, scanning_flags), TYPE_BITFIELD, 0, 2, "true"},
+
+    // ===== DETECTION SETTINGS (Bitfield-packed) =====
+    {"enable_fhss_detection", offsetof(DroneAnalyzerSettings, detection_flags), TYPE_BITFIELD, 0, 0, "true"},
+    {"movement_sensitivity", offsetof(DroneAnalyzerSettings, movement_sensitivity), TYPE_UINT32, 1, 5, "3"},
+    {"threat_level_threshold", offsetof(DroneAnalyzerSettings, threat_level_threshold), TYPE_UINT32, 0, 4, "2"},
+    {"min_detection_count", offsetof(DroneAnalyzerSettings, min_detection_count), TYPE_UINT32, 1, 10, "3"},
+    {"alert_persistence_threshold", offsetof(DroneAnalyzerSettings, alert_persistence_threshold), TYPE_UINT32, 1, 10, "3"},
+    {"enable_intelligent_tracking", offsetof(DroneAnalyzerSettings, detection_flags), TYPE_BITFIELD, 0, 1, "true"},
+
+    // ===== LOGGING SETTINGS (Bitfield-packed) =====
+    {"auto_save_logs", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 0, "true"},
     {"log_file_path", offsetof(DroneAnalyzerSettings, log_file_path), TYPE_STR, 0, 0, "/eda_logs"},
     {"log_format", offsetof(DroneAnalyzerSettings, log_format), TYPE_STR, 0, 0, "CSV"},
     {"max_log_file_size_kb", offsetof(DroneAnalyzerSettings, max_log_file_size_kb), TYPE_UINT32, 1, 10240, "1024"},
-    {"min_detection_count", offsetof(DroneAnalyzerSettings, min_detection_count), TYPE_UINT32, 1, 10, "3"},
-    {"movement_sensitivity", offsetof(DroneAnalyzerSettings, movement_sensitivity), TYPE_UINT32, 1, 5, "3"},
-    {"panoramic_mode_enabled", offsetof(DroneAnalyzerSettings, scanning_flags), TYPE_BITFIELD, 1, 0, "true"},
-    {"rf_amp_enabled", offsetof(DroneAnalyzerSettings, hardware_flags), TYPE_BITFIELD, 3, 0, "false"},
-    {"rssi_threshold_db", offsetof(DroneAnalyzerSettings, rssi_threshold_db), TYPE_INT32, -120, 10, "-90"},
-    {"rx_phase_value", offsetof(DroneAnalyzerSettings, rx_phase_value), TYPE_UINT32, 0, 31, "15"},
-    {"scan_interval_ms", offsetof(DroneAnalyzerSettings, scan_interval_ms), TYPE_UINT32, 100, 10000, "1000"},
-    {"settings_file_path", offsetof(DroneAnalyzerSettings, settings_file_path), TYPE_STR, 0, 0, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"},
-    {"settings_version", offsetof(DroneAnalyzerSettings, settings_version), TYPE_UINT32, 1, 999, "2"},
-    {"show_detailed_info", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 0, "true"},
-    {"show_frequency_ruler", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 3, 0, "true"},
-    {"show_mini_spectrum", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 1, 0, "true"},
-    {"show_rssi_history", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 2, 0, "true"},
+    {"enable_session_logging", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 1, "true"},
+    {"include_timestamp", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 2, "true"},
+    {"include_rssi_values", offsetof(DroneAnalyzerSettings, logging_flags), TYPE_BITFIELD, 0, 3, "true"},
+
+    // ===== DISPLAY SETTINGS (Bitfield-packed) =====
+    {"color_scheme", offsetof(DroneAnalyzerSettings, color_scheme), TYPE_STR, 0, 0, "DARK"},
+    {"font_size", offsetof(DroneAnalyzerSettings, font_size), TYPE_UINT32, 0, 2, "0"},
     {"spectrum_density", offsetof(DroneAnalyzerSettings, spectrum_density), TYPE_UINT32, 0, 2, "1"},
-    {"spectrum_mode", offsetof(DroneAnalyzerSettings, spectrum_mode), TYPE_UINT32, 0, 4, "1"},
-    {"threat_level_threshold", offsetof(DroneAnalyzerSettings, threat_level_threshold), TYPE_UINT32, 0, 4, "2"},
-    {"user_max_freq_hz", offsetof(DroneAnalyzerSettings, user_max_freq_hz), TYPE_UINT64, 1000001, 7200000000ULL, "6000000000"},
-    {"user_min_freq_hz", offsetof(DroneAnalyzerSettings, user_min_freq_hz), TYPE_UINT64, 1000000, 7200000000ULL, "50000000"},
-    {"vga_gain_db", offsetof(DroneAnalyzerSettings, vga_gain_db), TYPE_UINT32, 0, 62, "20"},
     {"waterfall_speed", offsetof(DroneAnalyzerSettings, waterfall_speed), TYPE_UINT32, 1, 10, "5"},
-    {"wideband_max_freq_hz", offsetof(DroneAnalyzerSettings, wideband_max_freq_hz), TYPE_UINT64, 2400000001ULL, 7200000000ULL, "2500000000"},
-    {"wideband_min_freq_hz", offsetof(DroneAnalyzerSettings, wideband_min_freq_hz), TYPE_UINT64, 2400000000ULL, 7200000000ULL, "2400000000"},
-    {"wideband_slice_width_hz", offsetof(DroneAnalyzerSettings, wideband_slice_width_hz), TYPE_UINT32, 10000000, 28000000, "24000000"}
+    {"show_detailed_info", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 0, "true"},
+    {"show_mini_spectrum", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 1, "true"},
+    {"show_rssi_history", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 2, "true"},
+    {"show_frequency_ruler", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 3, "true"},
+    {"frequency_ruler_style", offsetof(DroneAnalyzerSettings, frequency_ruler_style), TYPE_UINT32, 0, 6, "5"},
+    {"compact_ruler_tick_count", offsetof(DroneAnalyzerSettings, compact_ruler_tick_count), TYPE_UINT32, 3, 8, "4"},
+    {"auto_ruler_style", offsetof(DroneAnalyzerSettings, display_flags), TYPE_BITFIELD, 0, 4, "true"},
+
+    // ===== PROFILE SETTINGS (Bitfield-packed) =====
+    {"current_profile_name", offsetof(DroneAnalyzerSettings, current_profile_name), TYPE_STR, 0, 0, "Default"},
+    {"enable_quick_profiles", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 0, 0, "true"},
+    {"auto_save_on_change", offsetof(DroneAnalyzerSettings, profile_flags), TYPE_BITFIELD, 0, 1, "false"},
+
+    // ===== SYSTEM SETTINGS =====
+    {"freqman_path", offsetof(DroneAnalyzerSettings, freqman_path), TYPE_STR, 0, 0, "DRONES"},
+    {"settings_file_path", offsetof(DroneAnalyzerSettings, settings_file_path), TYPE_STR, 0, 0, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"},
+    {"settings_version", offsetof(DroneAnalyzerSettings, settings_version), TYPE_UINT32, 1, 999, "2"}
 };
 
 // ===========================================
@@ -293,87 +306,69 @@ bool SettingsPersistence<T>::load(T& settings) {
 }
 
 // ===========================================
-// IMPLEMENTATION: PARSE LINE (O(log N) BINARY SEARCH)
+// IMPLEMENTATION: PARSE LINE (O(1) LOOKUP)
 // ===========================================
 template<typename T>
 bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
     if (!line || *line == '\0') return true;
-
+    
     char* equals = strchr(line, '=');
     if (!equals) return true;
-
+    
     *equals = '\0';
     char* key = line;
     char* value = equals + 1;
-
+    
     // Trim leading whitespace
     while (*key == ' ' || *key == '\t') key++;
     while (*value == ' ' || *value == '\t') value++;
-
+    
     // Trim trailing whitespace
     char* end = value + strlen(value) - 1;
     while (end > value && (*end == ' ' || *end == '\t' || *end == '\r')) {
         *end-- = '\0';
     }
+    
+    // O(1) lookup via perfect hash
+    for (size_t i = 0; i < SETTINGS_COUNT; i++) {
+        if (strcmp(key, SETTINGS_LUT[i].key) == 0) {
+            const auto& meta = SETTINGS_LUT[i];
+            uint8_t* data_ptr = reinterpret_cast<uint8_t*>(&settings) + meta.offset;
 
-    // DIAMOND OPTIMIZATION: Binary search O(log N) instead of O(N) linear search
-    // SETTINGS_LUT is sorted alphabetically, enabling efficient lookup
-    size_t low = 0;
-    size_t high = SETTINGS_COUNT - 1;
-    const SettingMetadata* meta = nullptr;
-
-    while (low <= high && SETTINGS_COUNT > 0) {
-        size_t mid = low + (high - low) / 2;
-        int cmp = strcmp(key, SETTINGS_LUT[mid].key);
-
-        if (cmp == 0) {
-            meta = &SETTINGS_LUT[mid];
-            break;
-        } else if (cmp < 0) {
-            if (mid == 0) break;
-            high = mid - 1;
-        } else {
-            low = mid + 1;
+            switch (meta.type) {
+                case TYPE_BOOL:
+                    *reinterpret_cast<bool*>(data_ptr) = (strcmp(value, "true") == 0);
+                    break;
+                case TYPE_UINT32:
+                    *reinterpret_cast<uint32_t*>(data_ptr) = static_cast<uint32_t>(strtoul(value, nullptr, 10));
+                    break;
+                case TYPE_INT32:
+                    *reinterpret_cast<int32_t*>(data_ptr) = static_cast<int32_t>(strtol(value, nullptr, 10));
+                    break;
+                case TYPE_UINT64:
+                    *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(value, nullptr, 10));
+                    break;
+                case TYPE_STR:
+                    safe_strcpy(reinterpret_cast<char*>(data_ptr), value, MAX_SETTING_STR_LEN);
+                    break;
+                case TYPE_BITFIELD:
+                    {
+                        uint8_t* bf_ptr = data_ptr;
+                        uint8_t bit_pos = static_cast<uint8_t>(meta.min_val);
+                        bool bit_val = (strcmp(value, "true") == 0);
+                        if (bit_val) {
+                            *bf_ptr |= (1 << bit_pos);
+                        } else {
+                            *bf_ptr &= ~(1 << bit_pos);
+                        }
+                    }
+                    break;
+            }
+            return true;
         }
     }
-
-    if (!meta) {
-        return true;
-    }
-
-    uint8_t* data_ptr = reinterpret_cast<uint8_t*>(&settings) + meta->offset;
-
-    switch (meta->type) {
-        case TYPE_BOOL:
-            *reinterpret_cast<bool*>(data_ptr) = (strcmp(value, "true") == 0);
-            break;
-        case TYPE_UINT32:
-            *reinterpret_cast<uint32_t*>(data_ptr) = static_cast<uint32_t>(strtoul(value, nullptr, 10));
-            break;
-        case TYPE_INT32:
-            *reinterpret_cast<int32_t*>(data_ptr) = static_cast<int32_t>(strtol(value, nullptr, 10));
-            break;
-        case TYPE_UINT64:
-            *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(value, nullptr, 10));
-            break;
-        case TYPE_STR:
-            safe_strcpy(reinterpret_cast<char*>(data_ptr), value, MAX_SETTING_STR_LEN);
-            break;
-        case TYPE_BITFIELD:
-            {
-                uint8_t* bf_ptr = data_ptr;
-                uint8_t bit_pos = static_cast<uint8_t>(meta->min_val);
-                bool bit_val = (strcmp(value, "true") == 0);
-                if (bit_val) {
-                    *bf_ptr |= (1 << bit_pos);
-                } else {
-                    *bf_ptr &= ~(1 << bit_pos);
-                }
-            }
-            break;
-    }
-
-    return true;
+    
+    return true;  // Unknown key, skip
 }
 
 // ===========================================

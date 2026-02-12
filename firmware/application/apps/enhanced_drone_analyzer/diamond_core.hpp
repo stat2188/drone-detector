@@ -74,13 +74,8 @@ public:
 struct ThreatUtils {
     // DIAMOND FIX: FLASH_STORAGE attribute ensures LUT is in Flash, not RAM
     // Saves ~240 bytes of RAM for all ThreatUtils LUTs
-    // RGB888 format: 0xRRGGBB
     static constexpr uint32_t COLOR_VALUES[5] FLASH_STORAGE = {
-        0xFF0000,  // Red - NONE (0)
-        0x00FF00,  // Green - LOW (1)
-        0xFFFF00,  // Yellow - MEDIUM (2)
-        0xFFA500,  // Orange - HIGH (3)
-        0x800000   // Dark Red - CRITICAL (4)
+        0xFF0000, 0x00FF00, 0xFFFF00, 0xFFA500, 0x0000FF
     };
 
     static constexpr const char* const NAMES[5] FLASH_STORAGE = {
@@ -110,19 +105,19 @@ struct ThreatUtils {
 struct DroneUtils {
     // DIAMOND FIX: FLASH_STORAGE attribute ensures LUT is in Flash, not RAM
     // Saves ~528 bytes of RAM for all DroneUtils LUTs
-    // Color values as uint32_t (RGB888 format: 0xRRGGBB)
+    // Color values as uint32_t (RGB format: 0xRRGGBB)
     static constexpr uint32_t COLOR_VALUES[11] FLASH_STORAGE = {
-        0xFFFFFF,   // White - UNKNOWN (0)
-        0xFF0000,   // Red - MAVIC (1)
-        0xFFA500,   // Orange - DJI_P34 (2)
-        0xFFFF00,   // Yellow - PHANTOM (3)
-        0x00FFFF,   // Cyan - DJI_MINI (4)
-        0xFF00FF,   // Magenta - PARROT_ANAFI (5)
-        0x00FF00,   // Green - PARROT_BEBOP (6)
-        0x800080,   // Purple - PX4_DRONE (7)
-        0x000000,   // Black - MILITARY_DRONE (8)
-        0xC0C0C0,   // Silver - DIY_DRONE (9)
-        0xFFC0CB    // Pink - FPV_RACING (10)
+        0x808080,   // UNKNOWN (0)
+        0x0000FF,   // MAVIC (1)
+        0xFFA500,   // DJI_P34 (2)
+        0xFFFF00,   // PHANTOM (3)
+        0x00FFFF,   // DJI_MINI (4)
+        0xFF00FF,   // PARROT_ANAFI (5)
+        0xFFFF00,   // PARROT_BEBOP (6)
+        0x00FF00,   // PX4_DRONE (7)
+        0x00FF00,   // MILITARY_DRONE (8)
+        0xFF00FF,   // DIY_DRONE (9)
+        0x00FFFF    // FPV_RACING (10)
     };
 
     static constexpr const char* const NAMES[11] FLASH_STORAGE = {
