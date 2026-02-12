@@ -220,8 +220,21 @@ bool SettingsPersistence<T>::load(T& settings) {
 
     size_t total_bytes_read = 0;
     size_t lines_processed = 0;
+    size_t read_iterations = 0;
+    
+    // DIAMOND FIX: Timeout protection for infinite loops
+    // Prevents system freeze on SD card failures or corrupted files
+    constexpr size_t MAX_READ_ITERATIONS = 10000;
+    constexpr systime_t READ_TIMEOUT_MS = 5000;
+    systime_t read_start_time = chTimeNow();
 
-    while (true) {
+    while (read_iterations < MAX_READ_ITERATIONS) {
+        // Timeout guard: abort if reading takes too long
+        if ((chTimeNow() - read_start_time) > MS2ST(READ_TIMEOUT_MS)) {
+            file.close();
+            return false;
+        }
+        
         auto read_res = file.read(read_buffer, SettingsLoadBuffer::READ_BUFFER_SIZE);
         if (read_res.is_error() || read_res.value() == 0) {
             break;
@@ -231,6 +244,7 @@ bool SettingsPersistence<T>::load(T& settings) {
         total_bytes_read += bytes_read;
 
         if (total_bytes_read > MAX_SETTINGS_FILE_SIZE) {
+            file.close();
             return false;
         }
 
@@ -244,12 +258,21 @@ bool SettingsPersistence<T>::load(T& settings) {
                 lines_processed++;
 
                 if (lines_processed > MAX_SETTINGS_LINES) {
+                    file.close();
                     return false;
                 }
             } else if (c != '\r' && line_idx < MAX_LINE_LENGTH) {
                 line_buffer[line_idx++] = c;
             }
         }
+        
+        read_iterations++;
+    }
+    
+    // Handle case where max iterations reached
+    if (read_iterations >= MAX_READ_ITERATIONS) {
+        file.close();
+        return false;
     }
 
     if (line_idx > 0) {
@@ -257,6 +280,7 @@ bool SettingsPersistence<T>::load(T& settings) {
         parse_line(line_buffer, settings);
     }
 
+    file.close();
     return true;
 }
 
