@@ -83,12 +83,12 @@ static_assert(sizeof(SCANNING_MODE_NAMES) / sizeof(const char*) == 3, "SCANNING_
 // ===========================================
 namespace HeapDiagnostics {
     extern "C" {
-        extern uint8_t __heap_start__;
+        extern uint8_t __heap_base__;
         extern uint8_t __heap_end__;
     }
-    
+
     inline size_t get_heap_total() {
-        return &__heap_end__ - &__heap_start__;
+        return &__heap_end__ - &__heap_base__;
     }
     
     inline size_t get_heap_free() {
@@ -118,6 +118,23 @@ namespace HeapDiagnostics {
     }
 }
 
+
+// ===========================================
+// STATIC MEMBER DEFINITIONS
+// ===========================================
+// Diamond Code: Out-of-line definitions for static class members
+// Required for non-inline static members in header-only declarations
+
+// DroneDisplayController static member definition
+alignas(alignof(DisplayDroneEntry))
+DisplayDroneEntry DroneDisplayController::detected_drones_storage_[DroneDisplayController::MAX_UI_DRONES];
+
+// DroneDetectionLogger static member definition for thread working area
+stkalign_t DroneDetectionLogger::worker_wa_[THD_WA_SIZE(DroneDetectionLogger::WORKER_STACK_SIZE) / sizeof(stkalign_t)];
+
+// DroneScanner static member definition for thread working area
+// WORKING_AREA macro expands to: stkalign_t name[THD_WA_SIZE(n) / sizeof(stkalign_t)]
+stkalign_t DroneScanner::db_loading_wa_[THD_WA_SIZE(DroneScanner::DB_LOADING_STACK_SIZE) / sizeof(stkalign_t)];
 
 const TrackedDrone& get_empty_drone() {
     static const TrackedDrone empty{};

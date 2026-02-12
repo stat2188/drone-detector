@@ -53,7 +53,9 @@ for /L %%i in (0,1,21) do (
         echo ======================================== >> "%OUTPUT_FILE%"
         echo. >> "%OUTPUT_FILE%"
 
-        type "!filepath!" >> "%OUTPUT_FILE%"
+        setlocal EnableDelayedExpansion
+        powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0number_lines.ps1" "!filepath!" >>"%OUTPUT_FILE%"
+        endlocal
         echo. >> "%OUTPUT_FILE%"
     ) else (
         echo WARNING: File not found: !currentfile!
