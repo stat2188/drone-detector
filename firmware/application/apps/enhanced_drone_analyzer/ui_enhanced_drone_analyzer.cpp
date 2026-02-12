@@ -4685,51 +4685,7 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
 // ===========================================
 // AudioAlertManager Implementation
 // ===========================================
-// AudioAlertManager is declared in ui_drone_audio.hpp inside namespace ui::apps::enhanced_drone_analyzer
-
-bool AudioAlertManager::audio_enabled_ = true;
-systime_t AudioAlertManager::last_alert_timestamp_ = 0;
-uint32_t AudioAlertManager::cooldown_ms_ = 600;
-
-void AudioAlertManager::play_alert(ThreatLevel level) {
-    if (!audio_enabled_) return;
-
-    // DIAMOND OPTIMIZATION: Time-based debouncing to prevent UI freeze
-    // baseband::send_message() contains busy-wait spin loop (baseband_api.cpp:54-64)
-    // If called at 60 FPS with 200ms beeps, UI would spin-wait ~180ms per frame
-    // This would completely freeze the UI - no touch/key events processed
-    systime_t now = chTimeNow();
-    systime_t elapsed_ticks = now - last_alert_timestamp_;
-
-    if (elapsed_ticks < MS2ST(cooldown_ms_)) {
-        return;
-    }
-
-    // Update timestamp for next call
-    last_alert_timestamp_ = now;
-
-    uint16_t freq_hz = 800;
-    switch (level) {
-        case ThreatLevel::NONE: return;
-        case ThreatLevel::LOW: freq_hz = 800; break;
-        case ThreatLevel::MEDIUM: freq_hz = 1000; break;
-        case ThreatLevel::HIGH: freq_hz = 1200; break;
-        case ThreatLevel::CRITICAL: freq_hz = 2000; break;
-        default: freq_hz = 800; break;
-    }
-    baseband::request_audio_beep(freq_hz, 24000, 200);
-}
-
-void AudioAlertManager::set_enabled(bool enable) {
-    audio_enabled_ = enable;
-}
-
-bool AudioAlertManager::is_enabled() {
-    return audio_enabled_;
-}
-
-void AudioAlertManager::set_cooldown_ms(uint32_t cooldown_ms) {
-    cooldown_ms_ = cooldown_ms;
-}
+// DIAMOND FIX: Fully migrated to ui_drone_audio.hpp as inline static (C++17)
+// Eliminates ODR violation, removes .cpp dependency, ensures single instance
 
 } // namespace ui::apps::enhanced_drone_analyzer

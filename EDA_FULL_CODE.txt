@@ -1,7 +1,7 @@
  
 ======================================== 
 Enhanced Drone Analyzer (EDA) - Full Code 
-Generated: 12.02.2026 19:19:36,15 
+Generated: 12.02.2026 19:29:51,59 
 ======================================== 
  
  
@@ -202,11 +202,11 @@ FILE: color_lookup_unified.hpp
 60: 
 61: struct ThreatColorLUT {
 62:     static constexpr uint32_t COLORS[6] = {
-63:         0x0000FF,   // Red (0xFF0000 RGB) - NONE (0)
+63:         0xFF0000,   // Red - NONE (0)
 64:         0x00FF00,   // Green - LOW (1)
 65:         0xFFFF00,   // Yellow - MEDIUM (2)
 66:         0xFFA500,   // Orange - HIGH (3)
-67:         0x000080,   // Dark Red (0x800000 RGB) - CRITICAL (4)
+67:         0x800000,   // Dark Red - CRITICAL (4)
 68:         0x808080    // Grey - UNKNOWN (5)
 69:     };
 70:     static_assert(sizeof(COLORS) == sizeof(uint32_t) * 6, "COLORS size mismatch");
@@ -252,7 +252,7 @@ FILE: color_lookup_unified.hpp
 110: struct DroneColorLUT {
 111:     static constexpr uint32_t COLORS[11] = {
 112:         0xFFFFFF,   // White - UNKNOWN (0)
-113:         0x0000FF,   // Red - MAVIC (1)
+113:         0xFF0000,   // Red - MAVIC (1)
 114:         0xFFA500,   // Orange - DJI_P34 (2)
 115:         0xFFFF00,   // Yellow - PHANTOM (3)
 116:         0x00FFFF,   // Cyan - DJI_MINI (4)

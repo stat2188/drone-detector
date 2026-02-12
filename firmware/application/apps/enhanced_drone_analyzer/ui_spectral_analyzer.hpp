@@ -128,23 +128,7 @@ public:
         result.signal_width_hz = result.width_bins * bin_width_hz;
 
         // 7. Classify signal based on width and context
-        if (result.signal_width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {  // Width > 10 MHz
-            // Context analysis based on frequency range
-            if (center_freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ) {
-            // On 5.8 GHz wide signal is likely digital FPV (DJI O3, Vista)
-            // WiFi on 5.8 also exists, but in field conditions it's more likely a drone
-            result.signature = SignalSignature::DIGITAL_FPV;
-        } else {
-            // On 2.4 GHz this is more likely WiFi (though DJI O3 also exists, but WiFi is more common)
-            result.signature = SignalSignature::WIDEBAND_WIFI;
-        }
-        // NOLINTNEXTLINE(bugprone-branch-clone)
-        } else if (result.signal_width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
-            result.signature = SignalSignature::NARROWBAND_DRONE;  // Analog, ELRS, TBS
-        } else {
-            // "Grey zone" 3-10 MHz. Often poor analog video. Count as drone for safety.
-            result.signature = SignalSignature::NARROWBAND_DRONE;
-        }
+        result.signature = classify_signal(result.signal_width_hz, center_freq_hz);
 
         result.is_valid = true;
         return result;
@@ -183,6 +167,19 @@ public:
         // Returns uint8_t, cast to DroneType enum
         uint8_t type_code = DroneTypeDetector::from_frequency(frequency_hz);
         return static_cast<DroneType>(type_code);
+    }
+
+private:
+    static SignalSignature classify_signal(uint32_t width_hz, Frequency freq_hz) noexcept {
+        if (width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {
+            return (freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ) 
+                   ? SignalSignature::DIGITAL_FPV 
+                   : SignalSignature::WIDEBAND_WIFI;
+        }
+        if (width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
+            return SignalSignature::NARROWBAND_DRONE;
+        }
+        return SignalSignature::NARROWBAND_DRONE;
     }
 };
 

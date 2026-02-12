@@ -12,26 +12,32 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// DIAMOND FIX: Moved audio_enabled_ to .cpp to fix ODR violation
-// Prevents memory corruption from multiple definitions across translation units
-// DIAMOND OPTIMIZATION: Added last_alert_timestamp_ for debouncing to prevent UI freeze
 struct AudioAlertManager {
-    static void play_alert(ThreatLevel level);
-    static void set_enabled(bool enable);
-    static bool is_enabled();
-    static void set_cooldown_ms(uint32_t cooldown_ms);
+    static void play_alert(ThreatLevel level) {
+        if (!audio_enabled_) return;
+        systime_t now = chTimeNow();
+        systime_t elapsed_ticks = now - last_alert_timestamp_;
+        if (elapsed_ticks < MS2ST(cooldown_ms_)) return;
+        last_alert_timestamp_ = now;
+        uint16_t freq_hz = 800;
+        switch (level) {
+            case ThreatLevel::NONE: return;
+            case ThreatLevel::LOW: freq_hz = 800; break;
+            case ThreatLevel::MEDIUM: freq_hz = 1000; break;
+            case ThreatLevel::HIGH: freq_hz = 1200; break;
+            case ThreatLevel::CRITICAL: freq_hz = 2000; break;
+            default: freq_hz = 800; break;
+        }
+        baseband::request_audio_beep(freq_hz, 24000, 200);
+    }
+    static void set_enabled(bool enable) { audio_enabled_ = enable; }
+    static bool is_enabled() { return audio_enabled_; }
+    static void set_cooldown_ms(uint32_t cooldown_ms) { cooldown_ms_ = cooldown_ms; }
 
 private:
-    // DIAMOND FIX: Declaration only - definition moved to .cpp
-    // Single instance prevents ODR violation and undefined behavior
-    static bool audio_enabled_;
-    
-    // DIAMOND OPTIMIZATION: Last alert timestamp for debouncing
-    // Prevents baseband queue saturation when called at 60 FPS
-    // baseband::send_message() has busy-wait spin loop (baseband_api.cpp:54-64)
-    // Without debouncing, UI thread would freeze indefinitely
-    static systime_t last_alert_timestamp_;
-    static uint32_t cooldown_ms_;
+    inline static bool audio_enabled_ = true;
+    inline static systime_t last_alert_timestamp_ = 0;
+    inline static uint32_t cooldown_ms_ = 100;
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer
