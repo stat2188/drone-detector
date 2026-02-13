@@ -25,6 +25,7 @@
 #include "ui_enhanced_drone_memory_pool.hpp"
 #include "ui_drone_audio.hpp"
 #include "eda_optimized_utils.hpp"
+#include "color_lookup_unified.hpp"
 #include "diamond_core.hpp"
 #include "gradient.hpp"
 #include "baseband_api.hpp"
@@ -2204,7 +2205,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
 
     // DIAMOND OPTIMIZATION: Use StatusFormatter
     char buffer[64];
-    const char* threat_name = StringMappings::get_threat_name(static_cast<uint8_t>(max_threat));
+    const char* threat_name = UnifiedStringLookup::threat_name(static_cast<uint8_t>(max_threat));
     if (total_drones > 0) {
         StatusFormatter::format_to(buffer, "THREAT: %s | <%lu ~%lu >%lu",
                                   threat_name,
@@ -2293,7 +2294,7 @@ Color SmartThreatHeader::get_threat_text_color(ThreatLevel level) const {
 }
 
 const char* SmartThreatHeader::get_threat_icon_text(ThreatLevel level) const {
-    return DiamondCore::ThreatUtils::name(static_cast<uint8_t>(level));
+    return UnifiedStringLookup::threat_name(static_cast<uint8_t>(level));
 }
 
 void SmartThreatHeader::paint(Painter& painter) {
@@ -2321,7 +2322,7 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
     add_children({&card_text_});
 }
 
-// Use consolidated utility function from DroneUtils namespace
+// 🎯 Use UnifiedStringLookup for consolidated utility functions
 
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     // Check-Before-Update Pattern: Only update if data actually changed
@@ -2702,7 +2703,7 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
 
     if (has_detections) {
     char summary_buffer[48];
-    const char* threat_name = StringMappings::get_threat_name(static_cast<uint8_t>(max_threat));
+    const char* threat_name = UnifiedStringLookup::threat_name(static_cast<uint8_t>(max_threat));
         // DIAMOND OPTIMIZATION: Use StatusFormatter
         StatusFormatter::format_to(summary_buffer, "THREAT: %s | <%lu ~%lu >%lu",
                                   threat_name,
@@ -2796,8 +2797,8 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
             detected_drones()[i].threat = threat;
             detected_drones()[i].type = type;
             detected_drones()[i].last_seen = now;
-            safe_strcpy(detected_drones()[i].type_name, get_drone_type_name(type), sizeof(detected_drones()[i].type_name));
-            detected_drones()[i].display_color = get_drone_type_color(type);
+            safe_strcpy(detected_drones()[i].type_name, UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type)), sizeof(detected_drones()[i].type_name));
+            detected_drones()[i].display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(type));
             sort_drones_by_rssi();
             render_drone_text_display();
             return;
@@ -2812,8 +2813,8 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
         entry.threat = threat;
         entry.type = type;
         entry.last_seen = now;
-        safe_strcpy(entry.type_name, get_drone_type_name(type), sizeof(entry.type_name));
-        entry.display_color = get_drone_type_color(type);
+        safe_strcpy(entry.type_name, UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type)), sizeof(entry.type_name));
+        entry.display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(type));
         entry.trend = MovementTrend::STATIC;
         detected_drones_count_++;
     }
@@ -2858,8 +2859,8 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
             entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
             entry.rssi = drone_data.rssi;
             entry.last_seen = drone_data.last_seen;
-            safe_strcpy(entry.type_name, get_drone_type_name(entry.type), sizeof(entry.type_name));
-            entry.display_color = get_drone_type_color(entry.type);
+            safe_strcpy(entry.type_name, UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(entry.type)), sizeof(entry.type_name));
+            entry.display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(entry.type));
             entry.trend = drone_data.get_trend(); // Now this is safe to call
             detected_drones_count_++;
         }
@@ -4049,28 +4050,8 @@ void ScanningCoordinator::show_session_summary(const std::string& summary) {
 // ===========================================
 // PART 6: DISPLAY HELPER IMPLEMENTATIONS
 // ===========================================
-// DIAMOND OPTIMIZATION: Unified mappings from eda_optimized_utils.hpp
-// Eliminates ~80 lines of duplicate switch statements
-// Scott Meyers Item 15: Prefer constexpr to #define
-
-const char* DroneDisplayController::get_drone_type_name(DroneType type) const {
-    return StringMappings::get_drone_type_name(static_cast<uint8_t>(type));
-}
-
-// ✅ ИСПРАВЛЕНО: Корректная конвертация RGB888 → RGB565
-Color DroneDisplayController::get_drone_type_color(DroneType type) const {
-    // ✅ UnifiedColorLookup выполняет корректную конвертацию
-    return UnifiedColorLookup::drone(static_cast<uint8_t>(type));
-}
-
-Color DroneDisplayController::get_threat_level_color(ThreatLevel level) const {
-    // ✅ UnifiedColorLookup выполняет корректную конвертацию
-    return UnifiedColorLookup::threat(static_cast<uint8_t>(level));
-}
-
-const char* DroneDisplayController::get_threat_level_name(ThreatLevel level) const {
-    return StringMappings::get_threat_name(static_cast<uint8_t>(level));
-}
+// 🎯 Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
+// All wrapper methods removed to eliminate indirection
 
 void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
     if (bin >= spectrum.db.size()) {

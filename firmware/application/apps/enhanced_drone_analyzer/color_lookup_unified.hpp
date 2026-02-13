@@ -161,6 +161,73 @@ struct UnifiedColorLookup {
     }
 };
 
+// ===========================================
+// UNIFIED STRING LOOKUP TABLES (SSOT)
+// ===========================================
+// Eliminates duplicates from: diamond_core.hpp, eda_optimized_utils.hpp, ui_enhanced_drone_settings.cpp
+// Correctly sized for all enum values
+
+struct UnifiedStringLookup {
+    // Threat level names (6 levels: matches ThreatLevel enum)
+    static constexpr const char* const THREAT_NAMES[6] = {
+        "NONE",       // NONE (0)
+        "LOW",        // LOW (1)
+        "MEDIUM",     // MEDIUM (2)
+        "HIGH",       // HIGH (3)
+        "CRITICAL",   // CRITICAL (4)
+        "UNKNOWN"     // UNKNOWN (5)
+    };
+
+    // Drone type names (11 types: matches DroneType enum)
+    static constexpr const char* const DRONE_TYPE_NAMES[11] = {
+        "Unknown",        // UNKNOWN (0)
+        "DJI Mavic",      // MAVIC (1)
+        "DJI P34",        // DJI_P34 (2)
+        "DJI Phantom",    // PHANTOM (3)
+        "DJI Mini",       // DJI_MINI (4)
+        "Parrot Anafi",   // PARROT_ANAFI (5)
+        "Parrot Bebop",   // PARROT_BEBOP (6)
+        "PX4 Drone",      // PX4_DRONE (7)
+        "Military UAV",   // MILITARY_DRONE (8)
+        "DIY Drone",      // DIY_DRONE (9)
+        "FPV Racing"      // FPV_RACING (10)
+    };
+
+    // Spectrum mode names (5 modes: matches SpectrumMode enum)
+    static constexpr const char* const SPECTRUM_MODE_NAMES[5] = {
+        "NARROW",       // NARROW (0)
+        "MEDIUM",       // MEDIUM (1)
+        "WIDE",         // WIDE (2)
+        "ULTRA_WIDE",   // ULTRA_WIDE (3)
+        "ULTRA_NARROW"  // ULTRA_NARROW (4)
+    };
+
+    // Threat level symbols (for compact display)
+    static constexpr char THREAT_SYMBOLS[6] = {
+        '-', 'i', 'O', '!', '!', '?'  // NONE, LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN
+    };
+
+    // O(1) lookup functions
+    static constexpr const char* threat_name(uint8_t level) {
+        return (level < 6) ? THREAT_NAMES[level] : "UNKNOWN";
+    }
+
+    static constexpr const char* drone_type_name(uint8_t type) {
+        return (type < 11) ? DRONE_TYPE_NAMES[type] : "Unknown";
+    }
+
+    static constexpr const char* spectrum_mode_name(uint8_t mode) {
+        return (mode < 5) ? SPECTRUM_MODE_NAMES[mode] : "MEDIUM";
+    }
+
+    static constexpr char threat_symbol(uint8_t level) {
+        return (level < 6) ? THREAT_SYMBOLS[level] : '?';
+    }
+};
+static_assert(sizeof(UnifiedStringLookup::THREAT_NAMES) == sizeof(const char*) * 6, "THREAT_NAMES size");
+static_assert(sizeof(UnifiedStringLookup::DRONE_TYPE_NAMES) == sizeof(const char*) * 11, "DRONE_TYPE_NAMES size");
+static_assert(sizeof(UnifiedStringLookup::SPECTRUM_MODE_NAMES) == sizeof(const char*) * 5, "SPECTRUM_MODE_NAMES size");
+
 } // namespace ui::apps::enhanced_drone_analyzer
 
 #endif // COLOR_LOOKUP_UNIFIED_HPP_

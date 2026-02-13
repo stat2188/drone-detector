@@ -483,13 +483,9 @@ struct DetectionParams {
     DroneScanner& operator=(const DroneScanner&) = delete;
     DroneScanner& operator=(DroneScanner&&) = delete;
 
-    // DIAMOND OPTIMIZATION: Unified lookup from eda_optimized_utils.hpp
-    const char* get_drone_type_name(DroneType type) const {
-        return StringMappings::get_drone_type_name(static_cast<uint8_t>(type));
-    }
-    Color get_drone_type_color(DroneType type) const {
-        return Color(ColorMappings::get_drone_color_value(static_cast<uint8_t>(type)));
-    }
+    // 🎯 Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
+    // UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type))
+    // UnifiedColorLookup::drone(static_cast<uint8_t>(type))
 
     Frequency get_current_radio_frequency() const;
 
@@ -1315,10 +1311,11 @@ private:
 
     SpectrumConfig spectrum_config_;
 
-    const char* get_drone_type_name(DroneType type) const;
-    Color get_drone_type_color(DroneType type) const;
-    Color get_threat_level_color(ThreatLevel level) const;
-    const char* get_threat_level_name(ThreatLevel level) const;
+    // 🎯 Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
+    // UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type))
+    // UnifiedColorLookup::drone(static_cast<uint8_t>(type))
+    // UnifiedColorLookup::threat(static_cast<uint8_t>(level))
+    // UnifiedStringLookup::threat_name(static_cast<uint8_t>(level))
 
     void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power);
     void add_spectrum_pixel(uint8_t power);

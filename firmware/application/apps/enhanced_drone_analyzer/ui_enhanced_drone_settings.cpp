@@ -7,6 +7,7 @@
 #include "default_drones_db.hpp"
 #include "diamond_core.hpp"
 #include "eda_optimized_utils.hpp"
+#include "color_lookup_unified.hpp"
 #include "file.hpp"
 #include "portapack.hpp"
 #include "string_format.hpp"
@@ -23,37 +24,11 @@ namespace fs = std::filesystem;
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
-// DIAMOND OPTIMIZATION: SpectrumMode LUT
+// MOVED TO UNIFIED LOOKUP TABLES
 // ===========================================
-// Scott Meyers Item 15: Prefer constexpr to #define
-// Все строки хранятся во Flash, RAM не тратится
-static constexpr const char* const SPECTRUM_MODE_NAMES[] = {
-    "NARROW",       // NARROW = 0
-    "MEDIUM",       // MEDIUM = 1
-    "WIDE",         // WIDE = 2
-    "ULTRA_WIDE",   // ULTRA_WIDE = 3
-    "ULTRA_NARROW"  // ULTRA_NARROW = 4
-};
-static_assert(sizeof(SPECTRUM_MODE_NAMES) / sizeof(const char*) == 5, "SPECTRUM_MODE_NAMES size");
-
-// ===========================================
-// DIAMOND OPTIMIZATION: DroneType Display Names LUT
-// ===========================================
-// Scott Meyers Item 15: Prefer constexpr to #define
-static constexpr const char* const DRONE_TYPE_DISPLAY_NAMES[] = {
-    "Unknown",            // UNKNOWN = 0
-    "DJI Mavic",          // MAVIC = 1
-    "DJI P34",            // DJI_P34 = 2
-    "DJI Phantom",        // PHANTOM = 3
-    "DJI Mini",           // DJI_MINI = 4
-    "Parrot Anafi",       // PARROT_ANAFI = 5
-    "Parrot Bebop",       // PARROT_BEBOP = 6
-    "PX4 Drone",          // PX4_DRONE = 7
-    "Military UAV",       // MILITARY_DRONE = 8
-    "DIY Drone",          // DIY_DRONE = 9
-    "FPV Racing"          // FPV_RACING = 10
-};
-static_assert(sizeof(DRONE_TYPE_DISPLAY_NAMES) / sizeof(const char*) == 11, "DRONE_TYPE_DISPLAY_NAMES size");
+// Spectrum mode names:    UnifiedStringLookup::SPECTRUM_MODE_NAMES
+// Drone type names:       UnifiedStringLookup::DRONE_TYPE_NAMES
+// Single source of truth: color_lookup_unified.hpp
 
 
 // ===========================================
@@ -285,8 +260,7 @@ std::string EnhancedSettingsManager::generate_settings_content(const DroneAnalyz
 // Scott Meyers Item 15: Prefer constexpr to #define
 // Экономит ~50 байт Flash
 std::string EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) {
-    uint8_t idx = static_cast<uint8_t>(mode);
-    return (idx < 5) ? std::string(SPECTRUM_MODE_NAMES[idx]) : "MEDIUM";
+    return std::string(UnifiedStringLookup::spectrum_mode_name(static_cast<uint8_t>(mode)));
 }
 
 std::string EnhancedSettingsManager::get_current_timestamp() {
@@ -380,8 +354,7 @@ size_t DroneFrequencyPresets::get_available_types_count() {
 // Scott Meyers Item 15: Prefer constexpr to #define
 // Экономит ~100 байт Flash
 std::string DroneFrequencyPresets::get_type_display_name(DroneType type) {
-    uint8_t idx = static_cast<uint8_t>(type);
-    return (idx < 11) ? std::string(DRONE_TYPE_DISPLAY_NAMES[idx]) : "Unknown";
+    return std::string(UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type)));
 }
 bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
     if (!preset.is_valid()) {

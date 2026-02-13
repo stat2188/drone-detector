@@ -87,116 +87,14 @@ private:
 };
 
 // ===========================================
-// SPECTRUM MODE LOOKUP TABLES
+// MOVED TO UNIFIED LOOKUP TABLES
 // ===========================================
-// Eliminates duplicate spectrum_mode switches
-// Scott Meyers Item 15: Prefer constexpr to #define
-struct SpectrumModeMappings {
-    static constexpr const char* const NAMES[] = {
-        "NARROW",       // NARROW = 0
-        "MEDIUM",       // MEDIUM = 1
-        "WIDE",         // WIDE = 2
-        "ULTRA_WIDE",   // ULTRA_WIDE = 3
-        "ULTRA_NARROW"  // ULTRA_NARROW = 4
-    };
-    
-    static constexpr const char* get_name(uint8_t mode) {
-        return (mode < 5) ? NAMES[mode] : "MEDIUM";
-    }
-};
-
-// ===========================================
-// COLOR LOOKUP TABLES
-// ===========================================
-// Eliminates 150+ lines of switch-case statements
-// Scott Meyers Item 15: Prefer constexpr to #define
-// USAGE: Use ColorMappings::get_threat_color(ThreatLevel::LOW)
-// REQUIRES: Color enum from ui namespace
-struct ColorMappings {
-    // RGB values for colors (uint32_t format: 0xRRGGBB)
-    // Eliminates dependency on Color class
-    struct RGBColor {
-        uint32_t value;
-        
-        static constexpr RGBColor blue()   { return RGBColor{0xFF0000}; }
-        static constexpr RGBColor green()  { return RGBColor{0x00FF00}; }
-        static constexpr RGBColor yellow() { return RGBColor{0xFFFF00}; }
-        static constexpr RGBColor orange() { return RGBColor{0xFFA500}; }
-        static constexpr RGBColor red()    { return RGBColor{0x0000FF}; }
-        static constexpr RGBColor grey()   { return RGBColor{0x808080}; }
-        static constexpr RGBColor white()  { return RGBColor{0xFFFFFF}; }
-        static constexpr RGBColor cyan()    { return RGBColor{0xFFFF00}; }
-        static constexpr RGBColor magenta(){ return RGBColor{0xFF00FF}; }
-        static constexpr RGBColor dark_grey(){ return RGBColor{0x404040}; }
-    };
-
-    // Threat level colors (6 levels)
-    static constexpr uint32_t THREAT_COLORS[6] = {
-        0xFF0000,   // blue - NONE (0)
-        0x00FF00,   // green - LOW (1)
-        0xFFFF00,   // yellow - MEDIUM (2)
-        0xFFA500,   // orange - HIGH (3)
-        0x0000FF,   // red - CRITICAL (4)
-        0x808080    // grey - UNKNOWN (5)
-    };
-
-    // Drone type colors (8 types)
-    static constexpr uint32_t DRONE_COLORS[8] = {
-        0xFFFFFF,   // white - UNKNOWN (0)
-        0x0000FF,   // red - MAVIC (1)
-        0xFFA500,   // orange - DJI_P34 (2)
-        0xFFFF00,   // yellow - PHANTOM (3)
-        0x00FFFF,   // cyan - FPV_RACING (4)
-        0xFF00FF,   // magenta - DIY_DRONE (5)
-        0x00FF00,   // green - MILITARY_DRONE (6)
-        0x404040    // dark_grey - OTHER (7)
-    };
-
-    // NOTE: These return uint32_t RGB values, not Color objects
-    // Caller must convert to Color if needed
-    static constexpr uint32_t get_threat_color_value(uint8_t level) {
-        return (level < 6) ? THREAT_COLORS[level] : THREAT_COLORS[5];
-    }
-
-    static constexpr uint32_t get_drone_color_value(uint8_t type) {
-        return (type < 8) ? DRONE_COLORS[type] : DRONE_COLORS[0];
-    }
-};
-
-// ===========================================
-// STRING LOOKUP TABLES
-// ===========================================
-// Eliminates duplicate get_drone_type_name() functions
-// Scott Meyers Item 15: Prefer constexpr to #define
-struct StringMappings {
-    static constexpr const char* const THREAT_NAMES[6] = {
-        "NONE",     // NONE (0)
-        "LOW",       // LOW (1)
-        "MEDIUM",    // MEDIUM (2)
-        "HIGH",      // HIGH (3)
-        "CRITICAL",  // CRITICAL (4)
-        "UNKNOWN"     // UNKNOWN (5)
-    };
-
-    static constexpr const char* const DRONE_TYPE_NAMES[8] = {
-        "UNKNOWN",        // UNKNOWN (0)
-        "MAVIC",          // MAVIC (1)
-        "DJI P34",       // DJI_P34 (2)
-        "PHANTOM",        // PHANTOM (3)
-        "FPV RACING",     // FPV_RACING (4)
-        "DIY DRONE",      // DIY_DRONE (5)
-        "MILITARY",       // MILITARY_DRONE (6)
-        "OTHER"           // OTHER (7)
-    };
-
-    static constexpr const char* get_threat_name(uint8_t level) {
-        return (level < 6) ? THREAT_NAMES[level] : "UNKNOWN";
-    }
-
-    static constexpr const char* get_drone_type_name(uint8_t type) {
-        return (type < 8) ? DRONE_TYPE_NAMES[type] : "UNKNOWN";
-    }
-};
+// Spectrum mode names:    UnifiedStringLookup::SPECTRUM_MODE_NAMES
+// Threat colors:          UnifiedColorLookup::threat()
+// Drone colors:            UnifiedColorLookup::drone()
+// Threat names:            UnifiedStringLookup::threat_name()
+// Drone type names:        UnifiedStringLookup::drone_type_name()
+// Single source of truth:  color_lookup_unified.hpp
 
 // ===========================================
 // CACHED VALUE HELPER

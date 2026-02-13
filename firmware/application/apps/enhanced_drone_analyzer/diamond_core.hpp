@@ -67,81 +67,11 @@ public:
 };
 
 // ===========================================
-// THREAT LEVEL UTILITIES
+// MOVED TO UNIFIED LOOKUP TABLES
 // ===========================================
-// Centralized threat level lookups
-
-struct ThreatUtils {
-    // DIAMOND FIX: FLASH_STORAGE attribute ensures LUT is in Flash, not RAM
-    // Saves ~240 bytes of RAM for all ThreatUtils LUTs
-    static constexpr uint32_t COLOR_VALUES[5] FLASH_STORAGE = {
-        0xFF0000, 0x00FF00, 0xFFFF00, 0xFFA500, 0x0000FF
-    };
-
-    static constexpr const char* const NAMES[5] FLASH_STORAGE = {
-        "CLEAR", "LOW", "MEDIUM", "HIGH", "CRITICAL"
-    };
-
-    static constexpr char SYMBOLS[5] FLASH_STORAGE = { '-', 'i', 'O', '!', '!' };
-
-    static inline uint32_t color_value(uint8_t threat_idx) {
-        return (threat_idx < 5) ? COLOR_VALUES[threat_idx] : COLOR_VALUES[0];
-    }
-
-    static inline const char* name(uint8_t threat_idx) {
-        return (threat_idx < 5) ? NAMES[threat_idx] : NAMES[0];
-    }
-
-    static inline char symbol(uint8_t threat_idx) {
-        return (threat_idx < 5) ? SYMBOLS[threat_idx] : SYMBOLS[0];
-    }
-};
-
-// ===========================================
-// DRONE TYPE UTILITIES
-// ===========================================
-// Centralized drone type lookups
-
-struct DroneUtils {
-    // DIAMOND FIX: FLASH_STORAGE attribute ensures LUT is in Flash, not RAM
-    // Saves ~528 bytes of RAM for all DroneUtils LUTs
-    // Color values as uint32_t (RGB format: 0xRRGGBB)
-    static constexpr uint32_t COLOR_VALUES[11] FLASH_STORAGE = {
-        0x808080,   // UNKNOWN (0)
-        0x0000FF,   // MAVIC (1)
-        0xFFA500,   // DJI_P34 (2)
-        0xFFFF00,   // PHANTOM (3)
-        0x00FFFF,   // DJI_MINI (4)
-        0xFF00FF,   // PARROT_ANAFI (5)
-        0xFFFF00,   // PARROT_BEBOP (6)
-        0x00FF00,   // PX4_DRONE (7)
-        0x00FF00,   // MILITARY_DRONE (8)
-        0xFF00FF,   // DIY_DRONE (9)
-        0x00FFFF    // FPV_RACING (10)
-    };
-
-    static constexpr const char* const NAMES[11] FLASH_STORAGE = {
-        "UNKNOWN",
-        "MAVIC",
-        "DJI P34",
-        "PHANTOM",
-        "MINI",
-        "ANAFI",
-        "BEBOP",
-        "PX4",
-        "MILITARY",
-        "DIY DRONE",
-        "FPV"
-    };
-
-    static inline uint32_t color_value(uint8_t type_idx) {
-        return (type_idx < 11) ? COLOR_VALUES[type_idx] : COLOR_VALUES[0];
-    }
-
-    static inline const char* name(uint8_t type_idx) {
-        return (type_idx < 11) ? NAMES[type_idx] : NAMES[0];
-    }
-};
+// Threat colors/names/symbols:  UnifiedStringLookup, UnifiedColorLookup
+// Drone colors/names:           UnifiedStringLookup, UnifiedColorLookup
+// Single source of truth:       color_lookup_unified.hpp
 
 // ===========================================
 // MOVEMENT TREND UTILITIES
