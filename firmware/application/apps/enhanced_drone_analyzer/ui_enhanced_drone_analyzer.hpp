@@ -16,7 +16,7 @@
 #include "gradient.hpp"
 #include "ui_drone_audio.hpp"
 #include "ui_spectral_analyzer.hpp"
-#include "drone_constants.hpp"
+#include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
 

@@ -4,8 +4,7 @@
 #include "settings_persistence.hpp"
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
-#include "default_drones_db.hpp"
-#include "diamond_core.hpp"
+#include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
 #include "file.hpp"
@@ -149,7 +148,7 @@ void EnhancedSettingsManager::ensure_database_exists() {
 
     File create_file;
     if (create_file.open(file_path, false)) { 
-        create_file.write(DEFAULT_DRONE_DATABASE_CONTENT, strlen(DEFAULT_DRONE_DATABASE_CONTENT));
+        create_file.write(EDA::Database::DEFAULT_DRONE_DATABASE_CONTENT, strlen(EDA::Database::DEFAULT_DRONE_DATABASE_CONTENT));
         create_file.close();
     }
 }
@@ -494,7 +493,7 @@ DroneFrequencyEntry::DroneFrequencyEntry(Frequency freq, DroneType type, ThreatL
       rssi_threshold_db(rssi_thresh), bandwidth_hz(bw_hz), description(desc) {}
 
 bool DroneFrequencyEntry::is_valid() const {
-    return DiamondCore::ValidationUtils::validate_frequency(frequency_hz) &&
+    return EDA::Validation::validate_frequency(frequency_hz) &&
            rssi_threshold_db >= -120 && rssi_threshold_db <= 0 &&
            bandwidth_hz > 0;
 }

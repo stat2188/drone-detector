@@ -16,6 +16,7 @@
 #include "ui_drone_common_types.hpp"
 #include "radio.hpp"
 #include "eda_optimized_utils.hpp"
+#include "eda_constants.hpp"
 
 using rf::Frequency;
 
@@ -64,6 +65,13 @@ struct SpectralAnalysisParams {
 // Main spectral analyzer class
 class SpectralAnalyzer {
 public:
+    SpectralAnalyzer() = default;
+    
+    SpectralAnalyzer(const SpectralAnalyzer&) = delete;
+    SpectralAnalyzer& operator=(const SpectralAnalyzer&) = delete;
+    SpectralAnalyzer(SpectralAnalyzer&&) = delete;
+    SpectralAnalyzer& operator=(SpectralAnalyzer&&) = delete;
+    
     static inline SpectralAnalysisResult analyze(const std::array<uint8_t, 256>& db_buffer,
                                                   const SpectralAnalysisParams& params) noexcept {
         SpectralAnalysisResult result{};
@@ -75,8 +83,8 @@ public:
 
         constexpr size_t HISTOGRAM_BINS = 128;
 
-        static uint16_t histogram[HISTOGRAM_BINS];
-        std::memset(histogram, 0, sizeof(histogram));
+        std::array<uint16_t, HISTOGRAM_BINS> histogram{};
+        histogram.fill(0);
 
         uint32_t sum = 0;
 
@@ -130,7 +138,9 @@ public:
             }
         }
 
-        const uint32_t bin_width_hz = (params.slice_bandwidth_hz * SpectralAnalysisConfig::INV_BIN_COUNT_Q16) >> 16;
+        const uint64_t bin_width_calc = static_cast<uint64_t>(params.slice_bandwidth_hz) *
+                                         static_cast<uint64_t>(SpectralAnalysisConfig::INV_BIN_COUNT_Q16);
+        const uint32_t bin_width_hz = static_cast<uint32_t>(bin_width_calc >> 16);
         result.signal_width_hz = result.width_bins * bin_width_hz;
 
         result.signature = classify_signal(result.signal_width_hz, params.center_freq_hz);
@@ -169,7 +179,7 @@ public:
 private:
     static inline SignalSignature classify_signal(const uint32_t width_hz, const Frequency freq_hz) noexcept {
         if (width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {
-            return (freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ)
+            return (freq_hz >= EDA::Constants::BAND_SPLIT_FREQ_5GHZ)
                    ? SignalSignature::DIGITAL_FPV
                    : SignalSignature::WIDEBAND_WIFI;
         }

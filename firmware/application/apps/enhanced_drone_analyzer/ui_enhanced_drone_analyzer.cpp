@@ -26,7 +26,7 @@
 #include "ui_drone_audio.hpp"
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
-#include "diamond_core.hpp"
+#include "eda_constants.hpp"
 #include "gradient.hpp"
 #include "baseband_api.hpp"
 #include "portapack.hpp"
@@ -58,7 +58,7 @@ using namespace tonekey;
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-using namespace DroneConstants;
+using namespace EDA::Constants;
 
 // ===========================================
 // DIAMOND FIX: SD Card Mutex Definition
@@ -321,13 +321,13 @@ void DroneScanner::initialize_wideband_scanning() {
 
 void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) {
     // Use unified frequency limits from DroneConstants
-    Frequency safe_min = std::max(min_freq, DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ);
-    Frequency safe_max = std::min(max_freq, DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ);
+    Frequency safe_min = std::max(min_freq, EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ);
+    Frequency safe_max = std::min(max_freq, EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ);
 
     // Ensure min < max and apply hardware constraints
     if (safe_min >= safe_max) {
-        safe_min = DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ;
-        safe_max = DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ;
+        safe_min = EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
+        safe_max = EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
     }
 
     wideband_scan_data_.min_freq = safe_min;
@@ -466,7 +466,7 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 
     // 🔴 ENHANCED: Adaptive timing with golden mean between speed and accuracy
     // Considering Cortex M4 limitations on Portapack (limited RAM, CPU)
-    using namespace DroneConstants;
+    using namespace EDA::Constants;
     uint32_t base_interval = DEFAULT_SCAN_INTERVAL_MS; // Base interval in milliseconds
     uint32_t adaptive_interval = base_interval;
 
@@ -575,8 +575,8 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
         // CRITICAL: Enhanced frequency validation with overflow protection
         // Use unified frequency limits from DroneConstants
-        const Frequency MIN_VALID_FREQ = DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ;
-        const Frequency MAX_VALID_FREQ = DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ;
+        const Frequency MIN_VALID_FREQ = EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
+        const Frequency MAX_VALID_FREQ = EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
 
         // Validate frequency range
         if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) {
@@ -879,8 +879,8 @@ void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32
 
 void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                            int32_t /*original_threshold*/, int32_t wideband_threshold) {
-    if (!DiamondCore::ValidationUtils::validate_rssi(rssi) ||
-        !DiamondCore::ValidationUtils::validate_frequency(entry.frequency_a)) {
+    if (!EDA::Validation::validate_rssi(rssi) ||
+        !EDA::Validation::validate_frequency(entry.frequency_a)) {
         return;
     }
 
@@ -956,7 +956,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
 void DroneScanner::process_spectral_detection(const freqman_entry& entry,
                                              const SpectralAnalysisResult& analysis_result,
                                              ThreatLevel threat_level, DroneType drone_type) {
-    if (!DiamondCore::ValidationUtils::validate_frequency(entry.frequency_a)) {
+    if (!EDA::Validation::validate_frequency(entry.frequency_a)) {
         return;
     }
 
@@ -1033,20 +1033,20 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
     // DIAMOND OPTIMIZATION: Using DiamondCore validation utilities
     // 1. RSSI validation (using DiamondCore RSSI utilities)
-    if (!DiamondCore::ValidationUtils::validate_rssi(rssi)) {
+    if (!EDA::Validation::validate_rssi(rssi)) {
         return;
     }
 
     // 2. Frequency validation (using DiamondCore validation)
-    if (!DiamondCore::ValidationUtils::validate_frequency(entry.frequency_a)) {
+    if (!EDA::Validation::validate_frequency(entry.frequency_a)) {
         return;
     }
 
     // 3. Drone band filtering (433MHz - 5.8GHz)
-    if (!DiamondCore::ValidationUtils::is_433mhz_band(entry.frequency_a) &&
-        !DiamondCore::ValidationUtils::is_2_4ghz_band(entry.frequency_a) &&
-        !DiamondCore::ValidationUtils::is_5_8ghz_band(entry.frequency_a) &&
-        !DiamondCore::ValidationUtils::is_military_band(entry.frequency_a)) {
+    if (!EDA::Validation::is_433mhz_band(entry.frequency_a) &&
+        !EDA::Validation::is_2_4ghz_band(entry.frequency_a) &&
+        !EDA::Validation::is_5_8ghz_band(entry.frequency_a) &&
+        !EDA::Validation::is_military_band(entry.frequency_a)) {
         return;
     }
 
@@ -1330,7 +1330,7 @@ void DroneScanner::initialize_database_and_scanner() {
 
     // Создаём массив TrackedDrone в статическом хранилище
     tracked_drones_ptr_ = new (tracked_drones_storage_)
-        std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>();
+        std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>();
     if (!tracked_drones_ptr_) {
         handle_scan_error("Memory: tracked_drones placement new failed");
         freq_db_ptr_->~FreqmanDB();  // Явный вызов деструктора
@@ -1445,7 +1445,7 @@ void DroneScanner::db_loading_thread_loop() {
 
     // Placement new для TrackedDrones
     tracked_drones_ptr_ = new (tracked_drones_storage_)
-        std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>();
+        std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>();
     if (!tracked_drones_ptr_) {
         handle_scan_error("Memory: tracked_drones async alloc failed");
         freq_db_ptr_->~FreqmanDB();
@@ -1589,7 +1589,7 @@ void DroneScanner::scan_init_from_loaded_frequencies() {
 }
 
 bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat) {
-    return DiamondCore::RSSIUtils::validate_rssi(rssi_db, static_cast<uint8_t>(threat));
+    return EDA::RSSI::validate_rssi(rssi_db, static_cast<uint8_t>(threat));
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
@@ -2060,7 +2060,7 @@ void DroneHardwareController::set_spectrum_center_frequency(Frequency center_fre
 // DIAMOND OPTIMIZATION: Using DiamondCore validation with overflow protection
 bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
     // Validate frequency range using DiamondCore utilities
-    if (!DiamondCore::ValidationUtils::validate_frequency(frequency_hz)) {
+    if (!EDA::Validation::validate_frequency(frequency_hz)) {
         return false;
     }
     
@@ -2988,7 +2988,7 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
     const int spectrum_height = config.BAR_HEIGHT_MAX;
 
     painter.fill_rectangle(
-        {0, waterfall_y_start, DroneConstants::MINI_SPECTRUM_WIDTH, spectrum_height},
+        {0, waterfall_y_start, EDA::Constants::MINI_SPECTRUM_WIDTH, spectrum_height},
         Color::black()
     );
 
@@ -3001,7 +3001,7 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
     // 2. Проход по всем столбцам (бинам) спектра
     const auto& levels = spectrum_power_levels();
     const size_t spectrum_width = std::min(levels.size(),
-                                        static_cast<size_t>(DroneConstants::MINI_SPECTRUM_WIDTH));
+                                        static_cast<size_t>(EDA::Constants::MINI_SPECTRUM_WIDTH));
 
     for (size_t x = 0; x < spectrum_width; ++x) {
         uint8_t power = levels[x];
@@ -3068,17 +3068,17 @@ size_t DroneDisplayController::get_safe_spectrum_index(size_t x, size_t y) const
 
 void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency max_freq) {
     // Use unified frequency limits from DroneConstants
-    if (min_freq >= max_freq || min_freq < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ ||
-        max_freq > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
-        spectrum_config_.min_freq = DroneConstants::WIDEBAND_24GHZ_MIN;
-        spectrum_config_.max_freq = DroneConstants::WIDEBAND_24GHZ_MAX;
+    if (min_freq >= max_freq || min_freq < EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ ||
+        max_freq > EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+        spectrum_config_.min_freq = EDA::Constants::WIDEBAND_24GHZ_MIN;
+        spectrum_config_.max_freq = EDA::Constants::WIDEBAND_24GHZ_MAX;
         update_frequency_ruler();
         return;
     }
     spectrum_config_.min_freq = min_freq;
     spectrum_config_.max_freq = max_freq;
-    spectrum_config_.bandwidth = (max_freq - min_freq) > DroneConstants::WIDEBAND_WIFI_MIN_WIDTH_HZ ?
-                                DroneConstants::WIDEBAND_DEFAULT_SLICE_WIDTH : static_cast<uint32_t>(max_freq - min_freq);
+    spectrum_config_.bandwidth = (max_freq - min_freq) > EDA::Constants::WIDEBAND_WIFI_MIN_WIDTH_HZ ?
+                                EDA::Constants::WIDEBAND_DEFAULT_SLICE_WIDTH : static_cast<uint32_t>(max_freq - min_freq);
     spectrum_config_.sampling_rate = spectrum_config_.bandwidth;
     update_frequency_ruler();
 }
@@ -3331,8 +3331,8 @@ void FrequencyRangeSetupView::on_save() {
     
     // DIAMOND FIX: Integer-only frequency parsing (no strtod, no double)
     // Eliminates ~1000-2000 cycles per parse on Cortex-M4F
-    Frequency new_min = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(min_str.c_str()));
-    Frequency new_max = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(max_str.c_str()));
+    Frequency new_min = static_cast<Frequency>(EDA::Validation::parse_mhz_string(min_str.c_str()));
+    Frequency new_max = static_cast<Frequency>(EDA::Validation::parse_mhz_string(max_str.c_str()));
     
     // Input validation (integer-only, no NaN check needed)
     if (new_min == 0 || new_max == 0) {
@@ -3349,8 +3349,8 @@ void FrequencyRangeSetupView::on_save() {
         return;
     }
     
-    if (new_min < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ || 
-        new_max > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+    if (new_min < EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ || 
+        new_max > EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ) {
         nav_.display_modal("Error", "Frequency out of range (1MHz - 7.2GHz)");
         return;
     }
@@ -3425,7 +3425,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     // Без вызовов методов scanner_/hardware_/scanning_coordinator_
 
     // Настройка по умолчанию (безопасно)
-    scanner_.update_scan_range(DroneConstants::WIDEBAND_DEFAULT_MIN, DroneConstants::WIDEBAND_DEFAULT_MAX);
+    scanner_.update_scan_range(EDA::Constants::WIDEBAND_DEFAULT_MIN, EDA::Constants::WIDEBAND_DEFAULT_MAX);
 
     // Обновление параметров coordinator (безопасно)
     scanning_coordinator_.update_runtime_parameters(settings_);
@@ -4126,14 +4126,14 @@ EnhancedDroneSettingsValidator::validate_all(const DroneAnalyzerSettings& settin
 }
 
 bool EnhancedDroneSettingsValidator::validate_frequency(Frequency freq, char* error, size_t error_size) {
-    if (freq < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ ||
-        freq > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+    if (freq < EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ ||
+        freq > EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ) {
         char freq_str[32];
         format_frequency_hz(freq, freq_str, sizeof(freq_str));
         snprintf(error, error_size, "Frequency %s out of range (must be %llu-%llu GHz)",
                  freq_str,
-                 DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ / 1000000000ULL,
-                 DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ / 1000000000ULL);
+                 EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ / 1000000000ULL,
+                 EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ / 1000000000ULL);
         return false;
     }
     return true;

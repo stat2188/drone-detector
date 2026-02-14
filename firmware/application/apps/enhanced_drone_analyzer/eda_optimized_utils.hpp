@@ -31,13 +31,7 @@
 #include <string>
 #include <cstdio>
 #include <cstring>
-
-// Flash storage attributes for Cortex-M4
-#ifdef __GNUC__
-    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
-#else
-    #define EDA_FLASH_CONST
-#endif
+#include "eda_constants.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -488,6 +482,45 @@ struct ValidatorFormatter {
 
     static std::string out_of_range(const char* name, uint32_t value, uint32_t min, uint32_t max) {
         return out_of_range(name, static_cast<uint64_t>(value), static_cast<uint64_t>(min), static_cast<uint64_t>(max));
+    }
+};
+
+// ===========================================
+// FREQUENCY FORMAT (Zero-Allocation)
+// ===========================================
+struct FrequencyFormat {
+    enum class Style : uint8_t {
+        COMPACT_GHZ,    // "2.4G"
+        STANDARD_GHZ,   // "2.45GHz"
+        STANDARD_MHZ    // "2450MHz"
+    };
+    
+    static void format(char* buf, size_t buf_size, uint64_t hz, Style style) noexcept {
+        if (!buf || buf_size == 0) return;
+        
+        switch (style) {
+            case Style::COMPACT_GHZ: {
+                uint32_t ghz = static_cast<uint32_t>(hz / 1'000'000'000ULL);
+                uint32_t dec = static_cast<uint32_t>((hz % 1'000'000'000ULL) / 100'000'000ULL);
+                if (dec > 0) {
+                    snprintf(buf, buf_size, "%u.%uG", ghz, dec);
+                } else {
+                    snprintf(buf, buf_size, "%uG", ghz);
+                }
+                break;
+            }
+            case Style::STANDARD_GHZ: {
+                uint32_t ghz = static_cast<uint32_t>(hz / 1'000'000'000ULL);
+                uint32_t dec = static_cast<uint32_t>((hz % 1'000'000'000ULL) / 10'000'000ULL);
+                snprintf(buf, buf_size, "%u.%03uGHz", ghz, dec);
+                break;
+            }
+            case Style::STANDARD_MHZ: {
+                uint32_t mhz = static_cast<uint32_t>(hz / 1'000'000ULL);
+                snprintf(buf, buf_size, "%uMHz", mhz);
+                break;
+            }
+        }
     }
 };
 
