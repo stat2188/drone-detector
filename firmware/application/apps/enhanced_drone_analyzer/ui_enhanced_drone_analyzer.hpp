@@ -90,7 +90,7 @@ struct RssiMeasurement {
     systime_t timestamp_ms;
 };
 
-// Constants moved to drone_constants.hpp - single source of truth
+// Constants moved to eda_constants.hpp - single source of truth
 
 namespace UIStyles {
     static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
@@ -194,11 +194,11 @@ struct DisplayDroneEntry {
     MovementTrend trend = MovementTrend::UNKNOWN;
 };
 
-// Removed duplicate constants - using from drone_constants.hpp
-// MAX_TRACKED_DRONES, MAX_DISPLAYED_DRONES defined in drone_constants.hpp
-// Constants moved to drone_constants.hpp - single source of truth
+// Removed duplicate constants - using from eda_constants.hpp
+// MAX_TRACKED_DRONES, MAX_DISPLAYED_DRONES defined in eda_constants.hpp
+// Constants moved to eda_constants.hpp - single source of truth
 
-// Local constants for DroneDisplayController (not in drone_constants.hpp)
+// Local constants for DroneDisplayController (not in eda_constants.hpp)
 static constexpr int SPEC_WIDTH = 240;
 static constexpr int SPEC_HEIGHT = 40;  // Heap optimization: 80 -> 40 (saves 9.6KB)
 
