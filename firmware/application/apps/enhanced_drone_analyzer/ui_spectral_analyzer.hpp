@@ -163,8 +163,7 @@ public:
             signature != SignalSignature::DIGITAL_FPV) {
             return DroneType::UNKNOWN;
         }
-        const uint8_t type_code = DroneTypeDetector::from_frequency(frequency_hz);
-        return static_cast<DroneType>(type_code);
+        return DroneTypeDetector::from_frequency(frequency_hz);
     }
 
 private:

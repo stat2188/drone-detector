@@ -3169,8 +3169,7 @@ Frequency DroneDisplayController::spectrum_bin_to_frequency(size_t bin) const {
 void DroneDisplayController::update_or_create_drone_from_spectrum(Frequency freq_hz, uint8_t power) {
     int32_t rssi = static_cast<int32_t>(power) - 150;
     ThreatLevel threat = ThreatClassifier::from_rssi(rssi);
-    uint8_t type_code = DroneTypeDetector::from_frequency(freq_hz);
-    DroneType type = static_cast<DroneType>(type_code);
+    DroneType type = DroneTypeDetector::from_frequency(freq_hz);
     add_detected_drone(freq_hz, type, threat, rssi);
 }
 

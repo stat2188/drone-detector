@@ -32,6 +32,13 @@
 #include <cstdio>
 #include <cstring>
 
+// Flash storage attributes for Cortex-M4
+#ifdef __GNUC__
+    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
+#else
+    #define EDA_FLASH_CONST
+#endif
+
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
@@ -46,13 +53,13 @@ public:
     MedianFilter() : window_{}, head_(0), full_(false) {
     }
 
-    void add(T value) {
+    void add(T value) noexcept {
         window_[head_] = value;
         head_ = (head_ + 1) % N;
         if (head_ == 0) full_ = true;
     }
 
-    T get_median() const {
+    T get_median() const noexcept {
         if (!full_) return window_[0];
 
         std::array<T, N> temp = window_;
@@ -74,7 +81,7 @@ public:
         return temp[k];
     }
 
-    void reset() {
+    void reset() noexcept {
         full_ = false;
         head_ = 0;
         window_.fill(static_cast<T>(0));
@@ -104,10 +111,10 @@ private:
 template<typename T>
 class CachedValue {
 public:
-    explicit CachedValue(const T& initial_value = T{}) 
+    explicit CachedValue(const T& initial_value = T{})
         : value_(initial_value), dirty_(true) {}
 
-    bool update(const T& new_value) {
+    bool update(const T& new_value) noexcept {
         if (value_ != new_value) {
             value_ = new_value;
             dirty_ = true;
@@ -116,10 +123,10 @@ public:
         return false;  // Unchanged
     }
 
-    bool is_dirty() const { return dirty_; }
-    void clear_dirty() { dirty_ = false; }
-    const T& get() const { return value_; }
-    T& get() { return value_; }
+    bool is_dirty() const noexcept { return dirty_; }
+    void clear_dirty() noexcept { dirty_ = false; }
+    const T& get() const noexcept { return value_; }
+    T& get() noexcept { return value_; }
 
 private:
     T value_;
@@ -136,27 +143,27 @@ struct FrequencyValidator {
     static constexpr int64_t MIN_HARDWARE_FREQ = 1'000'000LL;
     static constexpr int64_t MAX_HARDWARE_FREQ = 7'200'000'000LL;
 
-    static constexpr bool is_in_range(int64_t value, int64_t min_val, int64_t max_val) {
+    static constexpr bool is_in_range(int64_t value, int64_t min_val, int64_t max_val) noexcept {
         return value >= min_val && value <= max_val;
     }
 
-    static constexpr bool is_valid_frequency(int64_t hz) {
+    static constexpr bool is_valid_frequency(int64_t hz) noexcept {
         return is_in_range(hz, MIN_HARDWARE_FREQ, MAX_HARDWARE_FREQ);
     }
 
-    static constexpr bool is_valid_2_4ghz_band(int64_t hz) {
+    static constexpr bool is_valid_2_4ghz_band(int64_t hz) noexcept {
         return is_in_range(hz, 2400000000LL, 2483500000LL);
     }
 
-    static constexpr bool is_valid_5_8ghz_band(int64_t hz) {
+    static constexpr bool is_valid_5_8ghz_band(int64_t hz) noexcept {
         return is_in_range(hz, 5725000000LL, 5875000000LL);
     }
 
-    static constexpr bool is_valid_military_band(int64_t hz) {
+    static constexpr bool is_valid_military_band(int64_t hz) noexcept {
         return is_in_range(hz, 860000000LL, 930000000LL);
     }
 
-    static constexpr bool is_valid_433mhz_ism(int64_t hz) {
+    static constexpr bool is_valid_433mhz_ism(int64_t hz) noexcept {
         return is_in_range(hz, 433000000LL, 435000000LL);
     }
 };
@@ -167,24 +174,24 @@ struct FrequencyValidator {
 // Eliminates duplicate identify_drone_type() functions
 // REQUIRES: Frequency type (int64_t), DroneType enum
 struct DroneTypeDetector {
-    static constexpr uint8_t from_frequency(int64_t hz) {
+    static constexpr DroneType from_frequency(int64_t hz) noexcept {
         // 2.4 GHz band
         if (FrequencyValidator::is_valid_2_4ghz_band(hz)) {
-            return 1;  // MAVIC - DJI typically uses 2.4GHz
+            return DroneType::MAVIC;  // DJI typically uses 2.4GHz
         }
         // 5.8 GHz band
         if (FrequencyValidator::is_valid_5_8ghz_band(hz)) {
-            return 4;  // FPV_RACING - 5.8GHz is common for FPV
+            return DroneType::FPV_RACING;  // 5.8GHz is common for FPV
         }
         // Military band
         if (FrequencyValidator::is_valid_military_band(hz)) {
-            return 6;  // MILITARY_DRONE
+            return DroneType::MILITARY_DRONE;
         }
         // 433 MHz ISM band
         if (FrequencyValidator::is_valid_433mhz_ism(hz)) {
-            return 5;  // DIY_DRONE
+            return DroneType::DIY_DRONE;
         }
-        return 0;  // UNKNOWN
+        return DroneType::UNKNOWN;
     }
 };
 
@@ -208,7 +215,7 @@ struct FrequencyFormatter {
     // Stack-based formatting (no heap allocation)
     // Returns std::string with SSO optimization for short strings
     // NOTE: Frequency must be included/defined before using this
-    static std::string format(int64_t freq_hz, Format fmt) {
+    static std::string format(int64_t freq_hz, Format fmt) noexcept {
         char buffer[24]; // Sufficient for "5.875000GHz" + null
         
         switch (fmt) {
@@ -278,7 +285,7 @@ struct FrequencyFormatter {
 
     // 🔴 FIX: Non-allocating version for performance-critical paths
     // Writes directly to user-provided buffer (no malloc/free)
-    static void format_to_buffer(char* buffer, size_t buffer_size, int64_t freq_hz, Format fmt) {
+    static void format_to_buffer(char* buffer, size_t buffer_size, int64_t freq_hz, Format fmt) noexcept {
         if (!buffer || buffer_size == 0) return;
 
         switch (fmt) {
@@ -345,12 +352,12 @@ struct FrequencyFormatter {
     }
 
     // Alias for existing code compatibility
-    static std::string to_string_short_freq(int64_t freq_hz) {
+    static std::string to_string_short_freq(int64_t freq_hz) noexcept {
         return format(freq_hz, Format::COMPACT_GHZ);
     }
 
     // 🔴 FIX: Alias for buffer-based formatting (non-allocating)
-    static void to_string_short_freq_buffer(char* buffer, size_t buffer_size, int64_t freq_hz) {
+    static void to_string_short_freq_buffer(char* buffer, size_t buffer_size, int64_t freq_hz) noexcept {
         format_to_buffer(buffer, buffer_size, freq_hz, Format::COMPACT_GHZ);
     }
 };
@@ -362,37 +369,37 @@ struct FrequencyFormatter {
 // REQUIRES: ThreatLevel, DroneType enums
 struct ThreatClassifier {
     // Classify threat by RSSI (simple version)
-    static constexpr ThreatLevel from_rssi(int32_t rssi_db) {
-        if (rssi_db >= -50) return static_cast<ThreatLevel>(4);  // CRITICAL
-        if (rssi_db >= -60) return static_cast<ThreatLevel>(3);  // HIGH
-        if (rssi_db >= -70) return static_cast<ThreatLevel>(2);  // MEDIUM
-        if (rssi_db >= -80) return static_cast<ThreatLevel>(1);  // LOW
-        return static_cast<ThreatLevel>(0);  // NONE
+    static constexpr ThreatLevel from_rssi(int32_t rssi_db) noexcept {
+        if (rssi_db >= -50) return ThreatLevel::CRITICAL;
+        if (rssi_db >= -60) return ThreatLevel::HIGH;
+        if (rssi_db >= -70) return ThreatLevel::MEDIUM;
+        if (rssi_db >= -80) return ThreatLevel::LOW;
+        return ThreatLevel::NONE;
     }
 
     // Classify threat by SNR and signal type (advanced version)
-    static constexpr ThreatLevel from_snr_and_type(uint8_t snr, uint8_t type) {
-        // Military drones (type=6) = always high threat
-        if (type == 6) {
-            if (snr >= 15) return static_cast<ThreatLevel>(4);  // CRITICAL
-            if (snr >= 10) return static_cast<ThreatLevel>(3);  // HIGH
-            return static_cast<ThreatLevel>(2);  // MEDIUM
+    static constexpr ThreatLevel from_snr_and_type(uint8_t snr, uint8_t type) noexcept {
+        // Military drones (type=8) = always high threat
+        if (type == static_cast<uint8_t>(DroneType::MILITARY_DRONE)) {
+            if (snr >= 15) return ThreatLevel::CRITICAL;
+            if (snr >= 10) return ThreatLevel::HIGH;
+            return ThreatLevel::MEDIUM;
         }
 
-        // FPV racing (type=4) = variable threat
-        if (type == 4) {
-            if (snr >= 20) return static_cast<ThreatLevel>(3);  // HIGH
-            if (snr >= 10) return static_cast<ThreatLevel>(2);  // MEDIUM
-            if (snr >= 5) return static_cast<ThreatLevel>(1);  // LOW
-            return static_cast<ThreatLevel>(0);  // NONE
+        // FPV racing (type=10) = variable threat
+        if (type == static_cast<uint8_t>(DroneType::FPV_RACING)) {
+            if (snr >= 20) return ThreatLevel::HIGH;
+            if (snr >= 10) return ThreatLevel::MEDIUM;
+            if (snr >= 5) return ThreatLevel::LOW;
+            return ThreatLevel::NONE;
         }
 
         // Commercial drones (MAVIC=1, PHANTOM=3) = moderate threat
-        if (snr >= 25) return static_cast<ThreatLevel>(4);  // CRITICAL
-        if (snr >= 15) return static_cast<ThreatLevel>(3);  // HIGH
-        if (snr >= 10) return static_cast<ThreatLevel>(2);  // MEDIUM
-        if (snr >= 5) return static_cast<ThreatLevel>(1);  // LOW
-        return static_cast<ThreatLevel>(0);  // NONE
+        if (snr >= 25) return ThreatLevel::CRITICAL;
+        if (snr >= 15) return ThreatLevel::HIGH;
+        if (snr >= 10) return ThreatLevel::MEDIUM;
+        if (snr >= 5) return ThreatLevel::LOW;
+        return ThreatLevel::NONE;
     }
 };
 
@@ -401,14 +408,14 @@ struct ThreatClassifier {
 // ===========================================
 // Eliminates duplicate switch statements for trend symbols
 struct TrendSymbols {
-    static constexpr char SYMBOLS[4] = {
+    static constexpr char SYMBOLS[4] EDA_FLASH_CONST = {
         '=',  // STATIC (0)
         '^',  // APPROACHING (1)
         'v',  // RECEDING (2)
         '~'   // UNKNOWN (3)
     };
 
-    static constexpr char from_trend(uint8_t trend) {
+    static constexpr char from_trend(uint8_t trend) noexcept {
         return (trend < 4) ? SYMBOLS[trend] : SYMBOLS[3];
     }
 };
@@ -420,15 +427,15 @@ struct TrendSymbols {
 // Scott Meyers Item 17: Understand special member function generation
 template<typename T, size_t N>
 struct SafeBufferAccess {
-    static constexpr T& get(std::unique_ptr<std::array<T, N>>& ptr, size_t idx, T& fallback) {
+    static constexpr T& get(std::unique_ptr<std::array<T, N>>& ptr, size_t idx, T& fallback) noexcept {
         return ptr ? (*ptr)[idx] : fallback;
     }
 
-    static constexpr const T& get(const std::unique_ptr<std::array<T, N>>& ptr, size_t idx, const T& fallback) {
+    static constexpr const T& get(const std::unique_ptr<std::array<T, N>>& ptr, size_t idx, const T& fallback) noexcept {
         return ptr ? (*ptr)[idx] : fallback;
     }
 
-    static constexpr bool is_valid(const std::unique_ptr<std::array<T, N>>& ptr) {
+    static constexpr bool is_valid(const std::unique_ptr<std::array<T, N>>& ptr) noexcept {
         return ptr != nullptr;
     }
 };
@@ -440,7 +447,7 @@ struct SafeBufferAccess {
 // Scott Meyers Item 25: Consider support for implicit interfaces
 struct StatusFormatter {
     template<size_t N, typename... Args>
-    static void format_to(char (&buffer)[N], const char* fmt, Args&&... args) {
+    static void format_to(char (&buffer)[N], const char* fmt, Args&&... args) noexcept {
         snprintf(buffer, N, fmt, std::forward<Args>(args)...);
     }
 
