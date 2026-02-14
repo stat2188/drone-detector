@@ -138,6 +138,93 @@ inline constexpr SettingMetadata SETTINGS_LUT[] = {
     SET_META(settings_version, TYPE_UINT32, 1, 999, "2")
 };
 
+inline bool is_value_in_range(int64_t val, int64_t min_val, int64_t max_val) {
+    return val >= min_val && val <= max_val;
+}
+
+inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
+                                const DroneAnalyzerSettings& s, const SettingMetadata& meta) {
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(&s) + meta.offset;
+    switch (meta.type) {
+        case TYPE_BOOL:
+            return snprintf(buf + offset, max_size - offset, "%s=%s\n",
+                   meta.key, *reinterpret_cast<const bool*>(data) ? "true" : "false");
+        case TYPE_UINT32:
+            return snprintf(buf + offset, max_size - offset, "%s=%u\n",
+                   meta.key, *reinterpret_cast<const uint32_t*>(data));
+        case TYPE_INT32:
+            return snprintf(buf + offset, max_size - offset, "%s=%d\n",
+                   meta.key, *reinterpret_cast<const int32_t*>(data));
+        case TYPE_UINT64:
+            return snprintf(buf + offset, max_size - offset, "%s=%llu\n",
+                   meta.key, *reinterpret_cast<const uint64_t*>(data));
+        case TYPE_STR:
+            return snprintf(buf + offset, max_size - offset, "%s=%s\n",
+                   meta.key, reinterpret_cast<const char*>(data));
+        case TYPE_BITFIELD: {
+            bool bit_val = (*data >> meta.bit_pos) & 1;
+            return snprintf(buf + offset, max_size - offset, "%s=%s\n",
+                   meta.key, bit_val ? "true" : "false");
+        }
+    }
+    return 0;
+}
+
+enum class DispatchOp : uint8_t { PARSE, RESET, VALIDATE };
+
+inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
+                             const SettingMetadata& meta, char* value_str = nullptr) {
+    switch (meta.type) {
+        case TYPE_BOOL: {
+            bool* ptr = reinterpret_cast<bool*>(data_ptr);
+            bool val = (value_str && strncmp(value_str, "true", 4) == 0) ||
+                       (op == DispatchOp::RESET && strcmp(meta.default_str, "true") == 0);
+            if (op != DispatchOp::VALIDATE) *ptr = val;
+            return true;
+        }
+        case TYPE_UINT32: {
+            uint32_t* ptr = reinterpret_cast<uint32_t*>(data_ptr);
+            uint32_t val = (op == DispatchOp::RESET) ?
+                          static_cast<uint32_t>(strtoul(meta.default_str, nullptr, 10)) :
+                          static_cast<uint32_t>(strtoul(value_str, nullptr, 10));
+            if (op != DispatchOp::VALIDATE) *ptr = val;
+            return true;
+        }
+        case TYPE_INT32: {
+            int32_t* ptr = reinterpret_cast<int32_t*>(data_ptr);
+            int32_t val = (op == DispatchOp::RESET) ?
+                          static_cast<int32_t>(strtol(meta.default_str, nullptr, 10)) :
+                          static_cast<int32_t>(strtol(value_str, nullptr, 10));
+            if (op != DispatchOp::VALIDATE) *ptr = val;
+            return true;
+        }
+        case TYPE_UINT64: {
+            uint64_t* ptr = reinterpret_cast<uint64_t*>(data_ptr);
+            uint64_t val = (op == DispatchOp::RESET) ?
+                          static_cast<uint64_t>(strtoull(meta.default_str, nullptr, 10)) :
+                          static_cast<uint64_t>(strtoull(value_str, nullptr, 10));
+            if (op != DispatchOp::VALIDATE) *ptr = val;
+            return true;
+        }
+        case TYPE_STR: {
+            char* ptr = reinterpret_cast<char*>(data_ptr);
+            const char* val = (op == DispatchOp::RESET) ? meta.default_str : value_str;
+            if (op != DispatchOp::VALIDATE) safe_strcpy(ptr, val, static_cast<size_t>(meta.min_val));
+            return true;
+        }
+        case TYPE_BITFIELD: {
+            bool bit_val = (value_str && strncmp(value_str, "true", 4) == 0) ||
+                          (op == DispatchOp::RESET && strcmp(meta.default_str, "true") == 0);
+            if (op != DispatchOp::VALIDATE) {
+                if (bit_val) *data_ptr |= (1 << meta.bit_pos);
+                else *data_ptr &= ~(1 << meta.bit_pos);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 static constexpr size_t MAX_LINE_LENGTH = 128;
 static constexpr size_t MAX_SETTING_STR_LEN = 65;
 
@@ -340,36 +427,7 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
             const auto& meta = SETTINGS_LUT[i];
             uint8_t* data_ptr = reinterpret_cast<uint8_t*>(&settings) + meta.offset;
 
-            switch (meta.type) {
-                case TYPE_BOOL:
-                    *reinterpret_cast<bool*>(data_ptr) = (strncmp(value, "true", 4) == 0);
-                    break;
-                case TYPE_UINT32:
-                    *reinterpret_cast<uint32_t*>(data_ptr) = static_cast<uint32_t>(strtoul(value, nullptr, 10));
-                    break;
-                case TYPE_INT32:
-                    *reinterpret_cast<int32_t*>(data_ptr) = static_cast<int32_t>(strtol(value, nullptr, 10));
-                    break;
-                case TYPE_UINT64:
-                    *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(value, nullptr, 10));
-                    break;
-                case TYPE_STR:
-                    safe_strcpy(reinterpret_cast<char*>(data_ptr), value, static_cast<size_t>(meta.min_val));
-                    break;
-                case TYPE_BITFIELD:
-                    {
-                        uint8_t* const bf_ptr = data_ptr;
-                        const uint8_t bit_pos = meta.bit_pos;
-                        const bool bit_val = (strncmp(value, "true", 4) == 0);
-                        if (bit_val) {
-                            *bf_ptr |= (1 << bit_pos);
-                        } else {
-                            *bf_ptr &= ~(1 << bit_pos);
-                        }
-                    }
-                    break;
-            }
-            return true;
+            return dispatch_by_type(DispatchOp::PARSE, data_ptr, meta, value);
         }
     }
     
@@ -383,126 +441,26 @@ template<typename T>
 bool SettingsPersistence<T>::save(const T& settings) {
     // DIAMOND FIX: Use static buffer instead of stack allocation
     // Saves ~4KB of stack space
-    constexpr char SETTINGS_TEMPLATE[] =
-        "enable_audio_alerts=%s\n"
-        "audio_alert_frequency_hz=%u\n"
-        "audio_alert_duration_ms=%u\n"
-        "audio_volume_level=%u\n"
-        "audio_repeat_alerts=%s\n"
-        "spectrum_mode=%u\n"
-        "hardware_bandwidth_hz=%u\n"
-        "enable_real_hardware=%s\n"
-        "demo_mode=%s\n"
-        "iq_calibration_enabled=%s\n"
-        "rx_phase_value=%u\n"
-        "lna_gain_db=%u\n"
-        "vga_gain_db=%u\n"
-        "rf_amp_enabled=%s\n"
-        "user_min_freq_hz=%llu\n"
-        "user_max_freq_hz=%llu\n"
-        "scan_interval_ms=%u\n"
-        "rssi_threshold_db=%d\n"
-        "enable_wideband_scanning=%s\n"
-        "wideband_min_freq_hz=%llu\n"
-        "wideband_max_freq_hz=%llu\n"
-        "wideband_slice_width_hz=%u\n"
-        "panoramic_mode_enabled=%s\n"
-        "enable_intelligent_scanning=%s\n"
-        "enable_fhss_detection=%s\n"
-        "movement_sensitivity=%u\n"
-        "threat_level_threshold=%u\n"
-        "min_detection_count=%u\n"
-        "alert_persistence_threshold=%u\n"
-        "enable_intelligent_tracking=%s\n"
-        "auto_save_logs=%s\n"
-        "log_file_path=%s\n"
-        "log_format=%s\n"
-        "max_log_file_size_kb=%u\n"
-        "enable_session_logging=%s\n"
-        "include_timestamp=%s\n"
-        "include_rssi_values=%s\n"
-        "color_scheme=%s\n"
-        "font_size=%u\n"
-        "spectrum_density=%u\n"
-        "waterfall_speed=%u\n"
-        "show_detailed_info=%s\n"
-        "show_mini_spectrum=%s\n"
-        "show_rssi_history=%s\n"
-        "show_frequency_ruler=%s\n"
-        "frequency_ruler_style=%u\n"
-        "compact_ruler_tick_count=%u\n"
-        "auto_ruler_style=%s\n"
-        "current_profile_name=%s\n"
-        "enable_quick_profiles=%s\n"
-        "auto_save_on_change=%s\n"
-        "freqman_path=%s\n"
-        "settings_file_path=%s\n"
-        "settings_version=%u\n";
+    constexpr char SETTINGS_TEMPLATE[] = "# EDA Settings v2\n";
 
-    char& buffer = get_settings_buffer().buffer[0];
+    char* buffer = get_settings_buffer().buffer;
 
-    int len = snprintf(&buffer, SettingsStaticBuffer::SIZE, SETTINGS_TEMPLATE,
-        settings.audio_flags.enable_alerts ? "true" : "false",
-        static_cast<unsigned int>(settings.audio_alert_frequency_hz),
-        static_cast<unsigned int>(settings.audio_alert_duration_ms),
-        static_cast<unsigned int>(settings.audio_volume_level),
-        settings.audio_flags.repeat_alerts ? "true" : "false",
-        static_cast<unsigned int>(settings.spectrum_mode),
-        static_cast<unsigned int>(settings.hardware_bandwidth_hz),
-        settings.hardware_flags.enable_real_hardware ? "true" : "false",
-        settings.hardware_flags.demo_mode ? "true" : "false",
-        settings.hardware_flags.iq_calibration_enabled ? "true" : "false",
-        static_cast<unsigned int>(settings.rx_phase_value),
-        static_cast<unsigned int>(settings.lna_gain_db),
-        static_cast<unsigned int>(settings.vga_gain_db),
-        settings.hardware_flags.rf_amp_enabled ? "true" : "false",
-        static_cast<unsigned long long>(settings.user_min_freq_hz),
-        static_cast<unsigned long long>(settings.user_max_freq_hz),
-        static_cast<unsigned int>(settings.scan_interval_ms),
-        static_cast<int>(settings.rssi_threshold_db),
-        settings.scanning_flags.enable_wideband_scanning ? "true" : "false",
-        static_cast<unsigned long long>(settings.wideband_min_freq_hz),
-        static_cast<unsigned long long>(settings.wideband_max_freq_hz),
-        static_cast<unsigned int>(settings.wideband_slice_width_hz),
-        settings.scanning_flags.panoramic_mode_enabled ? "true" : "false",
-        settings.scanning_flags.enable_intelligent_scanning ? "true" : "false",
-        settings.detection_flags.enable_fhss_detection ? "true" : "false",
-        static_cast<unsigned int>(settings.movement_sensitivity),
-        static_cast<unsigned int>(settings.threat_level_threshold),
-        static_cast<unsigned int>(settings.min_detection_count),
-        static_cast<unsigned int>(settings.alert_persistence_threshold),
-        settings.detection_flags.enable_intelligent_tracking ? "true" : "false",
-        settings.logging_flags.auto_save_logs ? "true" : "false",
-        settings.log_file_path,
-        settings.log_format,
-        static_cast<unsigned int>(settings.max_log_file_size_kb),
-        settings.logging_flags.enable_session_logging ? "true" : "false",
-        settings.logging_flags.include_timestamp ? "true" : "false",
-        settings.logging_flags.include_rssi_values ? "true" : "false",
-        settings.color_scheme,
-        static_cast<unsigned int>(settings.font_size),
-        static_cast<unsigned int>(settings.spectrum_density),
-        static_cast<unsigned int>(settings.waterfall_speed),
-        settings.display_flags.show_detailed_info ? "true" : "false",
-        settings.display_flags.show_mini_spectrum ? "true" : "false",
-        settings.display_flags.show_rssi_history ? "true" : "false",
-        settings.display_flags.show_frequency_ruler ? "true" : "false",
-        static_cast<unsigned int>(settings.frequency_ruler_style),
-        static_cast<unsigned int>(settings.compact_ruler_tick_count),
-        settings.display_flags.auto_ruler_style ? "true" : "false",
-        settings.current_profile_name,
-        settings.profile_flags.enable_quick_profiles ? "true" : "false",
-        settings.profile_flags.auto_save_on_change ? "true" : "false",
-        settings.freqman_path,
-        settings.settings_file_path,
-        static_cast<unsigned int>(settings.settings_version)
-    );
+    size_t offset = snprintf(buffer, SettingsStaticBuffer::SIZE, SETTINGS_TEMPLATE);
+    
+    if (offset >= SettingsStaticBuffer::SIZE) {
+        return false;
+    }
+    
+    for (size_t i = 0; i < SETTINGS_COUNT; ++i) {
+        int written = serialize_setting(buffer, offset, SettingsStaticBuffer::SIZE, settings, SETTINGS_LUT[i]);
+        if (written <= 0 || static_cast<size_t>(written) > (SettingsStaticBuffer::SIZE - offset)) {
+            return false;
+        }
+        offset += written;
+    }
     
     // Compile-time validation
     static_assert(SettingsStaticBuffer::SIZE >= 4096, "Buffer too small for settings template");
-    if (len <= 0 || static_cast<size_t>(len) >= SettingsStaticBuffer::SIZE) {
-        return false;
-    }
 
     if (sd_card::status() < sd_card::Status::Mounted) {
         return false;
@@ -515,7 +473,7 @@ bool SettingsPersistence<T>::save(const T& settings) {
         return false;
     }
 
-    auto write_result = file.write(&buffer, static_cast<File::Size>(len));
+    auto write_result = file.write(buffer, static_cast<File::Size>(offset));
     return !write_result.is_error();
 }
 
@@ -524,40 +482,10 @@ bool SettingsPersistence<T>::save(const T& settings) {
 // ===========================================
 template<typename T>
 void SettingsPersistence<T>::reset(T& settings) {
-    // Reset all settings to defaults from LUT
     for (size_t i = 0; i < SETTINGS_COUNT; i++) {
         const auto& meta = SETTINGS_LUT[i];
         uint8_t* data_ptr = reinterpret_cast<uint8_t*>(&settings) + meta.offset;
-
-        switch (meta.type) {
-            case TYPE_BOOL:
-                *reinterpret_cast<bool*>(data_ptr) = (strcmp(meta.default_str, "true") == 0);
-                break;
-            case TYPE_UINT32:
-                *reinterpret_cast<uint32_t*>(data_ptr) = static_cast<uint32_t>(strtoul(meta.default_str, nullptr, 10));
-                break;
-            case TYPE_INT32:
-                *reinterpret_cast<int32_t*>(data_ptr) = static_cast<int32_t>(strtol(meta.default_str, nullptr, 10));
-                break;
-                case TYPE_UINT64:
-                    *reinterpret_cast<uint64_t*>(data_ptr) = static_cast<uint64_t>(strtoull(meta.default_str, nullptr, 10));
-                    break;
-                case TYPE_STR:
-                    safe_strcpy(reinterpret_cast<char*>(data_ptr), meta.default_str, static_cast<size_t>(meta.min_val));
-                    break;
-            case TYPE_BITFIELD:
-                {
-                    uint8_t* const bf_ptr = data_ptr;
-                    const uint8_t bit_pos = meta.bit_pos;
-                    const bool bit_val = (strcmp(meta.default_str, "true") == 0);
-                    if (bit_val) {
-                        *bf_ptr |= (1 << bit_pos);
-                    } else {
-                        *bf_ptr &= ~(1 << bit_pos);
-                    }
-                }
-                break;
-        }
+        dispatch_by_type(DispatchOp::RESET, data_ptr, meta);
     }
 }
 

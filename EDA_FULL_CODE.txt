@@ -1,7 +1,7 @@
  
 ======================================== 
 Enhanced Drone Analyzer (EDA) - Full Code 
-Generated: 14.02.2026 19:39:42,29 
+Generated: 14.02.2026 21:33:13,49 
 ======================================== 
  
  
@@ -1142,27 +1142,26 @@ FILE: ui_spectral_analyzer.hpp
 163:             signature != SignalSignature::DIGITAL_FPV) {
 164:             return DroneType::UNKNOWN;
 165:         }
-166:         const uint8_t type_code = DroneTypeDetector::from_frequency(frequency_hz);
-167:         return static_cast<DroneType>(type_code);
-168:     }
-169: 
-170: private:
-171:     static inline SignalSignature classify_signal(const uint32_t width_hz, const Frequency freq_hz) noexcept {
-172:         if (width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {
-173:             return (freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ)
-174:                    ? SignalSignature::DIGITAL_FPV
-175:                    : SignalSignature::WIDEBAND_WIFI;
-176:         }
-177:         if (width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
-178:             return SignalSignature::NARROWBAND_DRONE;
-179:         }
-180:         return SignalSignature::NARROWBAND_DRONE;
-181:     }
-182: };
-183: 
-184: } // namespace ui::apps::enhanced_drone_analyzer
-185: 
-186: #endif // UI_SPECTRAL_ANALYZER_HPP_
+166:         return DroneTypeDetector::from_frequency(frequency_hz);
+167:     }
+168: 
+169: private:
+170:     static inline SignalSignature classify_signal(const uint32_t width_hz, const Frequency freq_hz) noexcept {
+171:         if (width_hz >= SpectralAnalysisConfig::WIFI_MIN_WIDTH_HZ) {
+172:             return (freq_hz >= DroneConstants::BAND_SPLIT_FREQ_5GHZ)
+173:                    ? SignalSignature::DIGITAL_FPV
+174:                    : SignalSignature::WIDEBAND_WIFI;
+175:         }
+176:         if (width_hz <= SpectralAnalysisConfig::DRONE_MAX_WIDTH_HZ) {
+177:             return SignalSignature::NARROWBAND_DRONE;
+178:         }
+179:         return SignalSignature::NARROWBAND_DRONE;
+180:     }
+181: };
+182: 
+183: } // namespace ui::apps::enhanced_drone_analyzer
+184: 
+185: #endif // UI_SPECTRAL_ANALYZER_HPP_
  
  
 ======================================== 
@@ -2367,461 +2366,468 @@ FILE: eda_optimized_utils.hpp
 32: #include <cstdio>
 33: #include <cstring>
 34: 
-35: namespace ui::apps::enhanced_drone_analyzer {
-36: 
-37: // ===========================================
-38: // UNIFIED MEDIAN FILTER TEMPLATE
-39: // ===========================================
-40: // Eliminates duplicate WidebandMedianFilter and FastMedianFilter
-41: // Scott Meyers Item 41: Understand implicit interfaces
-42: // USAGE: Include this BEFORE using MedianFilter<T>
-43: template<typename T, size_t N = 11>
-44: class MedianFilter {
-45: public:
-46:     MedianFilter() : window_{}, head_(0), full_(false) {
-47:     }
-48: 
-49:     void add(T value) {
-50:         window_[head_] = value;
-51:         head_ = (head_ + 1) % N;
-52:         if (head_ == 0) full_ = true;
-53:     }
-54: 
-55:     T get_median() const {
-56:         if (!full_) return window_[0];
-57: 
-58:         std::array<T, N> temp = window_;
-59:         size_t k = N / 2;
-60: 
-61:         // Selection algorithm: O(N*k) where k=N/2
-62:         // More efficient than full sort (O(N log N))
-63:         for (size_t i = 0; i <= k; ++i) {
-64:             size_t min_idx = i;
-65:             for (size_t j = i + 1; j < N; ++j) {
-66:                 if (temp[j] < temp[min_idx]) {
-67:                     min_idx = j;
-68:                 }
-69:             }
-70:             if (min_idx != i) {
-71:                 std::swap(temp[i], temp[min_idx]);
-72:             }
-73:         }
-74:         return temp[k];
-75:     }
-76: 
-77:     void reset() {
-78:         full_ = false;
-79:         head_ = 0;
-80:         window_.fill(static_cast<T>(0));
-81:     }
-82: 
-83: private:
-84:     std::array<T, N> window_;
-85:     size_t head_;
-86:     bool full_;
-87: };
-88: 
-89: // ===========================================
-90: // MOVED TO UNIFIED LOOKUP TABLES
-91: // ===========================================
-92: // Spectrum mode names:    UnifiedStringLookup::SPECTRUM_MODE_NAMES
-93: // Threat colors:          UnifiedColorLookup::threat()
-94: // Drone colors:            UnifiedColorLookup::drone()
-95: // Threat names:            UnifiedStringLookup::threat_name()
-96: // Drone type names:        UnifiedStringLookup::drone_type_name()
-97: // Single source of truth:  color_lookup_unified.hpp
-98: 
-99: // ===========================================
-100: // CACHED VALUE HELPER
-101: // ===========================================
-102: // Eliminates duplicate Check-Before-Update logic
-103: // Scott Meyers Item 11: Handle assignment to self in operator=
-104: template<typename T>
-105: class CachedValue {
-106: public:
-107:     explicit CachedValue(const T& initial_value = T{}) 
-108:         : value_(initial_value), dirty_(true) {}
-109: 
-110:     bool update(const T& new_value) {
-111:         if (value_ != new_value) {
-112:             value_ = new_value;
-113:             dirty_ = true;
-114:             return true;  // Changed
-115:         }
-116:         return false;  // Unchanged
-117:     }
-118: 
-119:     bool is_dirty() const { return dirty_; }
-120:     void clear_dirty() { dirty_ = false; }
-121:     const T& get() const { return value_; }
-122:     T& get() { return value_; }
-123: 
-124: private:
-125:     T value_;
-126:     bool dirty_;
-127: };
-128: 
-129: // ===========================================
-130: // CONSTEXPR FREQUENCY VALIDATION
-131: // ===========================================
-132: // Eliminates duplicate frequency range checking
-133: // Scott Meyers Item 15: Prefer constexpr to #define
-134: // REQUIRES: Frequency type (int64_t)
-135: struct FrequencyValidator {
-136:     static constexpr int64_t MIN_HARDWARE_FREQ = 1'000'000LL;
-137:     static constexpr int64_t MAX_HARDWARE_FREQ = 7'200'000'000LL;
-138: 
-139:     static constexpr bool is_in_range(int64_t value, int64_t min_val, int64_t max_val) {
-140:         return value >= min_val && value <= max_val;
-141:     }
-142: 
-143:     static constexpr bool is_valid_frequency(int64_t hz) {
-144:         return is_in_range(hz, MIN_HARDWARE_FREQ, MAX_HARDWARE_FREQ);
-145:     }
-146: 
-147:     static constexpr bool is_valid_2_4ghz_band(int64_t hz) {
-148:         return is_in_range(hz, 2400000000LL, 2483500000LL);
-149:     }
-150: 
-151:     static constexpr bool is_valid_5_8ghz_band(int64_t hz) {
-152:         return is_in_range(hz, 5725000000LL, 5875000000LL);
-153:     }
-154: 
-155:     static constexpr bool is_valid_military_band(int64_t hz) {
-156:         return is_in_range(hz, 860000000LL, 930000000LL);
-157:     }
-158: 
-159:     static constexpr bool is_valid_433mhz_ism(int64_t hz) {
-160:         return is_in_range(hz, 433000000LL, 435000000LL);
-161:     }
-162: };
-163: 
-164: // ===========================================
-165: // DRONE TYPE DETECTION
-166: // ===========================================
-167: // Eliminates duplicate identify_drone_type() functions
-168: // REQUIRES: Frequency type (int64_t), DroneType enum
-169: struct DroneTypeDetector {
-170:     static constexpr uint8_t from_frequency(int64_t hz) {
-171:         // 2.4 GHz band
-172:         if (FrequencyValidator::is_valid_2_4ghz_band(hz)) {
-173:             return 1;  // MAVIC - DJI typically uses 2.4GHz
-174:         }
-175:         // 5.8 GHz band
-176:         if (FrequencyValidator::is_valid_5_8ghz_band(hz)) {
-177:             return 4;  // FPV_RACING - 5.8GHz is common for FPV
-178:         }
-179:         // Military band
-180:         if (FrequencyValidator::is_valid_military_band(hz)) {
-181:             return 6;  // MILITARY_DRONE
-182:         }
-183:         // 433 MHz ISM band
-184:         if (FrequencyValidator::is_valid_433mhz_ism(hz)) {
-185:             return 5;  // DIY_DRONE
-186:         }
-187:         return 0;  // UNKNOWN
-188:     }
-189: };
-190: 
-191: // ===========================================
-192: // FREQUENCY FORMATTER
-193: // ===========================================
-194: // Eliminates duplicate frequency formatting logic
-195: // Scott Meyers Item 25: Consider support for implicit interfaces
-196: // REQUIRES: Frequency type (int64_t alias), to_string_dec_uint()
-197: // NOTE: Frequency is defined as using Frequency = int64_t; in ui_drone_common_types.hpp
-198: struct FrequencyFormatter {
-199:     enum class Format { 
-200:         COMPACT_GHZ,      // "2.4G" - for tight spaces
-201:         COMPACT_MHZ,      // "2400" - for MHz values
-202:         STANDARD_GHZ,      // "2.450GHz" - for detailed display
-203:         STANDARD_MHZ,      // "2400.0MHz" - for MHz with decimal
-204:         DETAILED_GHZ,      // "2.450GHz" - 3 decimal places
-205:         SPACED_GHZ         // "2.4 GHz" - for labels with space
-206:     };
-207: 
-208:     // Stack-based formatting (no heap allocation)
-209:     // Returns std::string with SSO optimization for short strings
-210:     // NOTE: Frequency must be included/defined before using this
-211:     static std::string format(int64_t freq_hz, Format fmt) {
-212:         char buffer[24]; // Sufficient for "5.875000GHz" + null
-213:         
-214:         switch (fmt) {
-215:             case Format::COMPACT_GHZ: {
-216:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
-217:                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 100000000ULL);
-218:                 if (decimal > 0) {
-219:                     snprintf(buffer, sizeof(buffer), "%lu.%luG", 
-220:                              static_cast<unsigned long>(ghz), 
-221:                              static_cast<unsigned long>(decimal));
-222:                 } else {
-223:                     snprintf(buffer, sizeof(buffer), "%luG", 
-224:                              static_cast<unsigned long>(ghz));
-225:                 }
-226:                 break;
-227:             }
-228:             case Format::COMPACT_MHZ: {
-229:                 uint32_t mhz = static_cast<uint32_t>((freq_hz + 500000) / 1000000ULL);
-230:                 snprintf(buffer, sizeof(buffer), "%lu", 
-231:                          static_cast<unsigned long>(mhz));
-232:                 break;
-233:             }
-234:             case Format::STANDARD_GHZ: {
-235:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
-236:                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 100000000ULL);
-237:                 if (decimal > 0) {
-238:                     snprintf(buffer, sizeof(buffer), "%lu.%luGHz", 
-239:                              static_cast<unsigned long>(ghz), 
-240:                              static_cast<unsigned long>(decimal));
-241:                 } else {
-242:                     snprintf(buffer, sizeof(buffer), "%luGHz", 
-243:                              static_cast<unsigned long>(ghz));
-244:                 }
-245:                 break;
-246:             }
-247:             case Format::STANDARD_MHZ: {
-248:                 uint32_t mhz = static_cast<uint32_t>(freq_hz / 1000000ULL);
-249:                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000ULL) / 100000ULL);
-250:                 if (decimals > 0) {
-251:                     snprintf(buffer, sizeof(buffer), "%lu.%luMHz", 
-252:                              static_cast<unsigned long>(mhz), 
-253:                              static_cast<unsigned long>(decimals));
-254:                 } else {
-255:                     snprintf(buffer, sizeof(buffer), "%luMHz", 
-256:                              static_cast<unsigned long>(mhz));
-257:                 }
-258:                 break;
-259:             }
-260:             case Format::DETAILED_GHZ: {
-261:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
-262:                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 10000000ULL);
-263:                 snprintf(buffer, sizeof(buffer), "%lu.%03luGHz", 
-264:                          static_cast<unsigned long>(ghz), 
-265:                          static_cast<unsigned long>(decimals));
-266:                 break;
-267:             }
-268:             case Format::SPACED_GHZ: {
-269:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
-270:                 snprintf(buffer, sizeof(buffer), "%lu GHz", 
-271:                          static_cast<unsigned long>(ghz));
-272:                 break;
-273:             }
-274:         }
-275: 
-276:         return std::string(buffer, strlen(buffer)); // SSO optimization
-277:     }
-278: 
-279:     // ?? FIX: Non-allocating version for performance-critical paths
-280:     // Writes directly to user-provided buffer (no malloc/free)
-281:     static void format_to_buffer(char* buffer, size_t buffer_size, int64_t freq_hz, Format fmt) {
-282:         if (!buffer || buffer_size == 0) return;
-283: 
-284:         switch (fmt) {
-285:             case Format::COMPACT_GHZ: {
-286:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
-287:                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000LL) / 100000000ULL);
-288:                 if (decimal > 0) {
-289:                     snprintf(buffer, buffer_size, "%lu.%luG",
-290:                              static_cast<unsigned long>(ghz),
-291:                              static_cast<unsigned long>(decimal));
-292:                 } else {
-293:                     snprintf(buffer, buffer_size, "%luG",
-294:                              static_cast<unsigned long>(ghz));
-295:                 }
-296:                 break;
-297:             }
-298:             case Format::COMPACT_MHZ: {
-299:                 uint32_t mhz = static_cast<uint32_t>((freq_hz + 500000) / 1000000LL);
-300:                 snprintf(buffer, buffer_size, "%lu",
-301:                          static_cast<unsigned long>(mhz));
-302:                 break;
-303:             }
-304:             case Format::STANDARD_GHZ: {
-305:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
-306:                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000LL) / 100000000ULL);
-307:                 if (decimal > 0) {
-308:                     snprintf(buffer, buffer_size, "%lu.%luGHz",
-309:                              static_cast<unsigned long>(ghz),
-310:                              static_cast<unsigned long>(decimal));
-311:                 } else {
-312:                     snprintf(buffer, buffer_size, "%luGHz",
-313:                              static_cast<unsigned long>(ghz));
-314:                 }
-315:                 break;
-316:             }
-317:             case Format::STANDARD_MHZ: {
-318:                 uint32_t mhz = static_cast<uint32_t>(freq_hz / 1000000LL);
-319:                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000LL) / 100000ULL);
-320:                 if (decimals > 0) {
-321:                     snprintf(buffer, buffer_size, "%lu.%luMHz",
-322:                              static_cast<unsigned long>(mhz),
-323:                              static_cast<unsigned long>(decimals));
-324:                 } else {
-325:                     snprintf(buffer, buffer_size, "%luMHz",
-326:                              static_cast<unsigned long>(mhz));
-327:                 }
-328:                 break;
-329:             }
-330:             case Format::DETAILED_GHZ: {
-331:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
-332:                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000000LL) / 10000000ULL);
-333:                 snprintf(buffer, buffer_size, "%lu.%03luGHz",
-334:                          static_cast<unsigned long>(ghz),
-335:                          static_cast<unsigned long>(decimals));
-336:                 break;
-337:             }
-338:             case Format::SPACED_GHZ: {
-339:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
-340:                 snprintf(buffer, buffer_size, "%lu GHz",
-341:                          static_cast<unsigned long>(ghz));
-342:                 break;
-343:             }
-344:         }
-345:     }
-346: 
-347:     // Alias for existing code compatibility
-348:     static std::string to_string_short_freq(int64_t freq_hz) {
-349:         return format(freq_hz, Format::COMPACT_GHZ);
-350:     }
-351: 
-352:     // ?? FIX: Alias for buffer-based formatting (non-allocating)
-353:     static void to_string_short_freq_buffer(char* buffer, size_t buffer_size, int64_t freq_hz) {
-354:         format_to_buffer(buffer, buffer_size, freq_hz, Format::COMPACT_GHZ);
-355:     }
-356: };
-357: 
-358: // ===========================================
-359: // THREAT CLASSIFICATION
-360: // ===========================================
-361: // Eliminates duplicate threat classification logic
-362: // REQUIRES: ThreatLevel, DroneType enums
-363: struct ThreatClassifier {
-364:     // Classify threat by RSSI (simple version)
-365:     static constexpr ThreatLevel from_rssi(int32_t rssi_db) {
-366:         if (rssi_db >= -50) return static_cast<ThreatLevel>(4);  // CRITICAL
-367:         if (rssi_db >= -60) return static_cast<ThreatLevel>(3);  // HIGH
-368:         if (rssi_db >= -70) return static_cast<ThreatLevel>(2);  // MEDIUM
-369:         if (rssi_db >= -80) return static_cast<ThreatLevel>(1);  // LOW
-370:         return static_cast<ThreatLevel>(0);  // NONE
-371:     }
-372: 
-373:     // Classify threat by SNR and signal type (advanced version)
-374:     static constexpr ThreatLevel from_snr_and_type(uint8_t snr, uint8_t type) {
-375:         // Military drones (type=6) = always high threat
-376:         if (type == 6) {
-377:             if (snr >= 15) return static_cast<ThreatLevel>(4);  // CRITICAL
-378:             if (snr >= 10) return static_cast<ThreatLevel>(3);  // HIGH
-379:             return static_cast<ThreatLevel>(2);  // MEDIUM
-380:         }
-381: 
-382:         // FPV racing (type=4) = variable threat
-383:         if (type == 4) {
-384:             if (snr >= 20) return static_cast<ThreatLevel>(3);  // HIGH
-385:             if (snr >= 10) return static_cast<ThreatLevel>(2);  // MEDIUM
-386:             if (snr >= 5) return static_cast<ThreatLevel>(1);  // LOW
-387:             return static_cast<ThreatLevel>(0);  // NONE
-388:         }
-389: 
-390:         // Commercial drones (MAVIC=1, PHANTOM=3) = moderate threat
-391:         if (snr >= 25) return static_cast<ThreatLevel>(4);  // CRITICAL
-392:         if (snr >= 15) return static_cast<ThreatLevel>(3);  // HIGH
-393:         if (snr >= 10) return static_cast<ThreatLevel>(2);  // MEDIUM
-394:         if (snr >= 5) return static_cast<ThreatLevel>(1);  // LOW
-395:         return static_cast<ThreatLevel>(0);  // NONE
-396:     }
-397: };
-398: 
-399: // ===========================================
-400: // TREND SYMBOL LOOKUP
-401: // ===========================================
-402: // Eliminates duplicate switch statements for trend symbols
-403: struct TrendSymbols {
-404:     static constexpr char SYMBOLS[4] = {
-405:         '=',  // STATIC (0)
-406:         '^',  // APPROACHING (1)
-407:         'v',  // RECEDING (2)
-408:         '~'   // UNKNOWN (3)
-409:     };
-410: 
-411:     static constexpr char from_trend(uint8_t trend) {
-412:         return (trend < 4) ? SYMBOLS[trend] : SYMBOLS[3];
-413:     }
-414: };
-415: 
-416: // ===========================================
-417: // SAFE BUFFER ACCESS HELPER
-418: // ===========================================
-419: // Eliminates duplicate nullptr checks for heap-allocated buffers
-420: // Scott Meyers Item 17: Understand special member function generation
-421: template<typename T, size_t N>
-422: struct SafeBufferAccess {
-423:     static constexpr T& get(std::unique_ptr<std::array<T, N>>& ptr, size_t idx, T& fallback) {
-424:         return ptr ? (*ptr)[idx] : fallback;
-425:     }
-426: 
-427:     static constexpr const T& get(const std::unique_ptr<std::array<T, N>>& ptr, size_t idx, const T& fallback) {
-428:         return ptr ? (*ptr)[idx] : fallback;
-429:     }
-430: 
-431:     static constexpr bool is_valid(const std::unique_ptr<std::array<T, N>>& ptr) {
-432:         return ptr != nullptr;
-433:     }
-434: };
-435: 
-436: // ===========================================
-437: // STATUS FORMATTING HELPER
-438: // ===========================================
-439: // Eliminates repeated snprintf + widget.set patterns
-440: // Scott Meyers Item 25: Consider support for implicit interfaces
-441: struct StatusFormatter {
-442:     template<size_t N, typename... Args>
-443:     static void format_to(char (&buffer)[N], const char* fmt, Args&&... args) {
-444:         snprintf(buffer, N, fmt, std::forward<Args>(args)...);
-445:     }
-446: 
-447:     template<size_t N, typename... Args>
-448:     static std::string make_string(const char* fmt, Args&&... args) {
-449:         char buffer[N];
-450:         snprintf(buffer, N, fmt, std::forward<Args>(args)...);
-451:         return std::string(buffer);
+35: // Flash storage attributes for Cortex-M4
+36: #ifdef __GNUC__
+37:     #define EDA_FLASH_CONST __attribute__((section(".rodata")))
+38: #else
+39:     #define EDA_FLASH_CONST
+40: #endif
+41: 
+42: namespace ui::apps::enhanced_drone_analyzer {
+43: 
+44: // ===========================================
+45: // UNIFIED MEDIAN FILTER TEMPLATE
+46: // ===========================================
+47: // Eliminates duplicate WidebandMedianFilter and FastMedianFilter
+48: // Scott Meyers Item 41: Understand implicit interfaces
+49: // USAGE: Include this BEFORE using MedianFilter<T>
+50: template<typename T, size_t N = 11>
+51: class MedianFilter {
+52: public:
+53:     MedianFilter() : window_{}, head_(0), full_(false) {
+54:     }
+55: 
+56:     void add(T value) noexcept {
+57:         window_[head_] = value;
+58:         head_ = (head_ + 1) % N;
+59:         if (head_ == 0) full_ = true;
+60:     }
+61: 
+62:     T get_median() const noexcept {
+63:         if (!full_) return window_[0];
+64: 
+65:         std::array<T, N> temp = window_;
+66:         size_t k = N / 2;
+67: 
+68:         // Selection algorithm: O(N*k) where k=N/2
+69:         // More efficient than full sort (O(N log N))
+70:         for (size_t i = 0; i <= k; ++i) {
+71:             size_t min_idx = i;
+72:             for (size_t j = i + 1; j < N; ++j) {
+73:                 if (temp[j] < temp[min_idx]) {
+74:                     min_idx = j;
+75:                 }
+76:             }
+77:             if (min_idx != i) {
+78:                 std::swap(temp[i], temp[min_idx]);
+79:             }
+80:         }
+81:         return temp[k];
+82:     }
+83: 
+84:     void reset() noexcept {
+85:         full_ = false;
+86:         head_ = 0;
+87:         window_.fill(static_cast<T>(0));
+88:     }
+89: 
+90: private:
+91:     std::array<T, N> window_;
+92:     size_t head_;
+93:     bool full_;
+94: };
+95: 
+96: // ===========================================
+97: // MOVED TO UNIFIED LOOKUP TABLES
+98: // ===========================================
+99: // Spectrum mode names:    UnifiedStringLookup::SPECTRUM_MODE_NAMES
+100: // Threat colors:          UnifiedColorLookup::threat()
+101: // Drone colors:            UnifiedColorLookup::drone()
+102: // Threat names:            UnifiedStringLookup::threat_name()
+103: // Drone type names:        UnifiedStringLookup::drone_type_name()
+104: // Single source of truth:  color_lookup_unified.hpp
+105: 
+106: // ===========================================
+107: // CACHED VALUE HELPER
+108: // ===========================================
+109: // Eliminates duplicate Check-Before-Update logic
+110: // Scott Meyers Item 11: Handle assignment to self in operator=
+111: template<typename T>
+112: class CachedValue {
+113: public:
+114:     explicit CachedValue(const T& initial_value = T{})
+115:         : value_(initial_value), dirty_(true) {}
+116: 
+117:     bool update(const T& new_value) noexcept {
+118:         if (value_ != new_value) {
+119:             value_ = new_value;
+120:             dirty_ = true;
+121:             return true;  // Changed
+122:         }
+123:         return false;  // Unchanged
+124:     }
+125: 
+126:     bool is_dirty() const noexcept { return dirty_; }
+127:     void clear_dirty() noexcept { dirty_ = false; }
+128:     const T& get() const noexcept { return value_; }
+129:     T& get() noexcept { return value_; }
+130: 
+131: private:
+132:     T value_;
+133:     bool dirty_;
+134: };
+135: 
+136: // ===========================================
+137: // CONSTEXPR FREQUENCY VALIDATION
+138: // ===========================================
+139: // Eliminates duplicate frequency range checking
+140: // Scott Meyers Item 15: Prefer constexpr to #define
+141: // REQUIRES: Frequency type (int64_t)
+142: struct FrequencyValidator {
+143:     static constexpr int64_t MIN_HARDWARE_FREQ = 1'000'000LL;
+144:     static constexpr int64_t MAX_HARDWARE_FREQ = 7'200'000'000LL;
+145: 
+146:     static constexpr bool is_in_range(int64_t value, int64_t min_val, int64_t max_val) noexcept {
+147:         return value >= min_val && value <= max_val;
+148:     }
+149: 
+150:     static constexpr bool is_valid_frequency(int64_t hz) noexcept {
+151:         return is_in_range(hz, MIN_HARDWARE_FREQ, MAX_HARDWARE_FREQ);
+152:     }
+153: 
+154:     static constexpr bool is_valid_2_4ghz_band(int64_t hz) noexcept {
+155:         return is_in_range(hz, 2400000000LL, 2483500000LL);
+156:     }
+157: 
+158:     static constexpr bool is_valid_5_8ghz_band(int64_t hz) noexcept {
+159:         return is_in_range(hz, 5725000000LL, 5875000000LL);
+160:     }
+161: 
+162:     static constexpr bool is_valid_military_band(int64_t hz) noexcept {
+163:         return is_in_range(hz, 860000000LL, 930000000LL);
+164:     }
+165: 
+166:     static constexpr bool is_valid_433mhz_ism(int64_t hz) noexcept {
+167:         return is_in_range(hz, 433000000LL, 435000000LL);
+168:     }
+169: };
+170: 
+171: // ===========================================
+172: // DRONE TYPE DETECTION
+173: // ===========================================
+174: // Eliminates duplicate identify_drone_type() functions
+175: // REQUIRES: Frequency type (int64_t), DroneType enum
+176: struct DroneTypeDetector {
+177:     static constexpr DroneType from_frequency(int64_t hz) noexcept {
+178:         // 2.4 GHz band
+179:         if (FrequencyValidator::is_valid_2_4ghz_band(hz)) {
+180:             return DroneType::MAVIC;  // DJI typically uses 2.4GHz
+181:         }
+182:         // 5.8 GHz band
+183:         if (FrequencyValidator::is_valid_5_8ghz_band(hz)) {
+184:             return DroneType::FPV_RACING;  // 5.8GHz is common for FPV
+185:         }
+186:         // Military band
+187:         if (FrequencyValidator::is_valid_military_band(hz)) {
+188:             return DroneType::MILITARY_DRONE;
+189:         }
+190:         // 433 MHz ISM band
+191:         if (FrequencyValidator::is_valid_433mhz_ism(hz)) {
+192:             return DroneType::DIY_DRONE;
+193:         }
+194:         return DroneType::UNKNOWN;
+195:     }
+196: };
+197: 
+198: // ===========================================
+199: // FREQUENCY FORMATTER
+200: // ===========================================
+201: // Eliminates duplicate frequency formatting logic
+202: // Scott Meyers Item 25: Consider support for implicit interfaces
+203: // REQUIRES: Frequency type (int64_t alias), to_string_dec_uint()
+204: // NOTE: Frequency is defined as using Frequency = int64_t; in ui_drone_common_types.hpp
+205: struct FrequencyFormatter {
+206:     enum class Format { 
+207:         COMPACT_GHZ,      // "2.4G" - for tight spaces
+208:         COMPACT_MHZ,      // "2400" - for MHz values
+209:         STANDARD_GHZ,      // "2.450GHz" - for detailed display
+210:         STANDARD_MHZ,      // "2400.0MHz" - for MHz with decimal
+211:         DETAILED_GHZ,      // "2.450GHz" - 3 decimal places
+212:         SPACED_GHZ         // "2.4 GHz" - for labels with space
+213:     };
+214: 
+215:     // Stack-based formatting (no heap allocation)
+216:     // Returns std::string with SSO optimization for short strings
+217:     // NOTE: Frequency must be included/defined before using this
+218:     static std::string format(int64_t freq_hz, Format fmt) noexcept {
+219:         char buffer[24]; // Sufficient for "5.875000GHz" + null
+220:         
+221:         switch (fmt) {
+222:             case Format::COMPACT_GHZ: {
+223:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
+224:                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 100000000ULL);
+225:                 if (decimal > 0) {
+226:                     snprintf(buffer, sizeof(buffer), "%lu.%luG", 
+227:                              static_cast<unsigned long>(ghz), 
+228:                              static_cast<unsigned long>(decimal));
+229:                 } else {
+230:                     snprintf(buffer, sizeof(buffer), "%luG", 
+231:                              static_cast<unsigned long>(ghz));
+232:                 }
+233:                 break;
+234:             }
+235:             case Format::COMPACT_MHZ: {
+236:                 uint32_t mhz = static_cast<uint32_t>((freq_hz + 500000) / 1000000ULL);
+237:                 snprintf(buffer, sizeof(buffer), "%lu", 
+238:                          static_cast<unsigned long>(mhz));
+239:                 break;
+240:             }
+241:             case Format::STANDARD_GHZ: {
+242:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
+243:                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 100000000ULL);
+244:                 if (decimal > 0) {
+245:                     snprintf(buffer, sizeof(buffer), "%lu.%luGHz", 
+246:                              static_cast<unsigned long>(ghz), 
+247:                              static_cast<unsigned long>(decimal));
+248:                 } else {
+249:                     snprintf(buffer, sizeof(buffer), "%luGHz", 
+250:                              static_cast<unsigned long>(ghz));
+251:                 }
+252:                 break;
+253:             }
+254:             case Format::STANDARD_MHZ: {
+255:                 uint32_t mhz = static_cast<uint32_t>(freq_hz / 1000000ULL);
+256:                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000ULL) / 100000ULL);
+257:                 if (decimals > 0) {
+258:                     snprintf(buffer, sizeof(buffer), "%lu.%luMHz", 
+259:                              static_cast<unsigned long>(mhz), 
+260:                              static_cast<unsigned long>(decimals));
+261:                 } else {
+262:                     snprintf(buffer, sizeof(buffer), "%luMHz", 
+263:                              static_cast<unsigned long>(mhz));
+264:                 }
+265:                 break;
+266:             }
+267:             case Format::DETAILED_GHZ: {
+268:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
+269:                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 10000000ULL);
+270:                 snprintf(buffer, sizeof(buffer), "%lu.%03luGHz", 
+271:                          static_cast<unsigned long>(ghz), 
+272:                          static_cast<unsigned long>(decimals));
+273:                 break;
+274:             }
+275:             case Format::SPACED_GHZ: {
+276:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
+277:                 snprintf(buffer, sizeof(buffer), "%lu GHz", 
+278:                          static_cast<unsigned long>(ghz));
+279:                 break;
+280:             }
+281:         }
+282: 
+283:         return std::string(buffer, strlen(buffer)); // SSO optimization
+284:     }
+285: 
+286:     // ?? FIX: Non-allocating version for performance-critical paths
+287:     // Writes directly to user-provided buffer (no malloc/free)
+288:     static void format_to_buffer(char* buffer, size_t buffer_size, int64_t freq_hz, Format fmt) noexcept {
+289:         if (!buffer || buffer_size == 0) return;
+290: 
+291:         switch (fmt) {
+292:             case Format::COMPACT_GHZ: {
+293:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
+294:                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000LL) / 100000000ULL);
+295:                 if (decimal > 0) {
+296:                     snprintf(buffer, buffer_size, "%lu.%luG",
+297:                              static_cast<unsigned long>(ghz),
+298:                              static_cast<unsigned long>(decimal));
+299:                 } else {
+300:                     snprintf(buffer, buffer_size, "%luG",
+301:                              static_cast<unsigned long>(ghz));
+302:                 }
+303:                 break;
+304:             }
+305:             case Format::COMPACT_MHZ: {
+306:                 uint32_t mhz = static_cast<uint32_t>((freq_hz + 500000) / 1000000LL);
+307:                 snprintf(buffer, buffer_size, "%lu",
+308:                          static_cast<unsigned long>(mhz));
+309:                 break;
+310:             }
+311:             case Format::STANDARD_GHZ: {
+312:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
+313:                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000LL) / 100000000ULL);
+314:                 if (decimal > 0) {
+315:                     snprintf(buffer, buffer_size, "%lu.%luGHz",
+316:                              static_cast<unsigned long>(ghz),
+317:                              static_cast<unsigned long>(decimal));
+318:                 } else {
+319:                     snprintf(buffer, buffer_size, "%luGHz",
+320:                              static_cast<unsigned long>(ghz));
+321:                 }
+322:                 break;
+323:             }
+324:             case Format::STANDARD_MHZ: {
+325:                 uint32_t mhz = static_cast<uint32_t>(freq_hz / 1000000LL);
+326:                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000LL) / 100000ULL);
+327:                 if (decimals > 0) {
+328:                     snprintf(buffer, buffer_size, "%lu.%luMHz",
+329:                              static_cast<unsigned long>(mhz),
+330:                              static_cast<unsigned long>(decimals));
+331:                 } else {
+332:                     snprintf(buffer, buffer_size, "%luMHz",
+333:                              static_cast<unsigned long>(mhz));
+334:                 }
+335:                 break;
+336:             }
+337:             case Format::DETAILED_GHZ: {
+338:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
+339:                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000000LL) / 10000000ULL);
+340:                 snprintf(buffer, buffer_size, "%lu.%03luGHz",
+341:                          static_cast<unsigned long>(ghz),
+342:                          static_cast<unsigned long>(decimals));
+343:                 break;
+344:             }
+345:             case Format::SPACED_GHZ: {
+346:                 uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
+347:                 snprintf(buffer, buffer_size, "%lu GHz",
+348:                          static_cast<unsigned long>(ghz));
+349:                 break;
+350:             }
+351:         }
+352:     }
+353: 
+354:     // Alias for existing code compatibility
+355:     static std::string to_string_short_freq(int64_t freq_hz) noexcept {
+356:         return format(freq_hz, Format::COMPACT_GHZ);
+357:     }
+358: 
+359:     // ?? FIX: Alias for buffer-based formatting (non-allocating)
+360:     static void to_string_short_freq_buffer(char* buffer, size_t buffer_size, int64_t freq_hz) noexcept {
+361:         format_to_buffer(buffer, buffer_size, freq_hz, Format::COMPACT_GHZ);
+362:     }
+363: };
+364: 
+365: // ===========================================
+366: // THREAT CLASSIFICATION
+367: // ===========================================
+368: // Eliminates duplicate threat classification logic
+369: // REQUIRES: ThreatLevel, DroneType enums
+370: struct ThreatClassifier {
+371:     // Classify threat by RSSI (simple version)
+372:     static constexpr ThreatLevel from_rssi(int32_t rssi_db) noexcept {
+373:         if (rssi_db >= -50) return ThreatLevel::CRITICAL;
+374:         if (rssi_db >= -60) return ThreatLevel::HIGH;
+375:         if (rssi_db >= -70) return ThreatLevel::MEDIUM;
+376:         if (rssi_db >= -80) return ThreatLevel::LOW;
+377:         return ThreatLevel::NONE;
+378:     }
+379: 
+380:     // Classify threat by SNR and signal type (advanced version)
+381:     static constexpr ThreatLevel from_snr_and_type(uint8_t snr, uint8_t type) noexcept {
+382:         // Military drones (type=8) = always high threat
+383:         if (type == static_cast<uint8_t>(DroneType::MILITARY_DRONE)) {
+384:             if (snr >= 15) return ThreatLevel::CRITICAL;
+385:             if (snr >= 10) return ThreatLevel::HIGH;
+386:             return ThreatLevel::MEDIUM;
+387:         }
+388: 
+389:         // FPV racing (type=10) = variable threat
+390:         if (type == static_cast<uint8_t>(DroneType::FPV_RACING)) {
+391:             if (snr >= 20) return ThreatLevel::HIGH;
+392:             if (snr >= 10) return ThreatLevel::MEDIUM;
+393:             if (snr >= 5) return ThreatLevel::LOW;
+394:             return ThreatLevel::NONE;
+395:         }
+396: 
+397:         // Commercial drones (MAVIC=1, PHANTOM=3) = moderate threat
+398:         if (snr >= 25) return ThreatLevel::CRITICAL;
+399:         if (snr >= 15) return ThreatLevel::HIGH;
+400:         if (snr >= 10) return ThreatLevel::MEDIUM;
+401:         if (snr >= 5) return ThreatLevel::LOW;
+402:         return ThreatLevel::NONE;
+403:     }
+404: };
+405: 
+406: // ===========================================
+407: // TREND SYMBOL LOOKUP
+408: // ===========================================
+409: // Eliminates duplicate switch statements for trend symbols
+410: struct TrendSymbols {
+411:     static constexpr char SYMBOLS[4] EDA_FLASH_CONST = {
+412:         '=',  // STATIC (0)
+413:         '^',  // APPROACHING (1)
+414:         'v',  // RECEDING (2)
+415:         '~'   // UNKNOWN (3)
+416:     };
+417: 
+418:     static constexpr char from_trend(uint8_t trend) noexcept {
+419:         return (trend < 4) ? SYMBOLS[trend] : SYMBOLS[3];
+420:     }
+421: };
+422: 
+423: // ===========================================
+424: // SAFE BUFFER ACCESS HELPER
+425: // ===========================================
+426: // Eliminates duplicate nullptr checks for heap-allocated buffers
+427: // Scott Meyers Item 17: Understand special member function generation
+428: template<typename T, size_t N>
+429: struct SafeBufferAccess {
+430:     static constexpr T& get(std::unique_ptr<std::array<T, N>>& ptr, size_t idx, T& fallback) noexcept {
+431:         return ptr ? (*ptr)[idx] : fallback;
+432:     }
+433: 
+434:     static constexpr const T& get(const std::unique_ptr<std::array<T, N>>& ptr, size_t idx, const T& fallback) noexcept {
+435:         return ptr ? (*ptr)[idx] : fallback;
+436:     }
+437: 
+438:     static constexpr bool is_valid(const std::unique_ptr<std::array<T, N>>& ptr) noexcept {
+439:         return ptr != nullptr;
+440:     }
+441: };
+442: 
+443: // ===========================================
+444: // STATUS FORMATTING HELPER
+445: // ===========================================
+446: // Eliminates repeated snprintf + widget.set patterns
+447: // Scott Meyers Item 25: Consider support for implicit interfaces
+448: struct StatusFormatter {
+449:     template<size_t N, typename... Args>
+450:     static void format_to(char (&buffer)[N], const char* fmt, Args&&... args) noexcept {
+451:         snprintf(buffer, N, fmt, std::forward<Args>(args)...);
 452:     }
-453: };
-454: 
-455: // ===========================================
-456: // VALIDATOR ERROR FORMATTER
-457: // ===========================================
-458: // Eliminates duplicate error formatting in validators
-459: struct ValidatorFormatter {
-460:     static constexpr size_t ERROR_BUFFER_SIZE = 128;
+453: 
+454:     template<size_t N, typename... Args>
+455:     static std::string make_string(const char* fmt, Args&&... args) {
+456:         char buffer[N];
+457:         snprintf(buffer, N, fmt, std::forward<Args>(args)...);
+458:         return std::string(buffer);
+459:     }
+460: };
 461: 
-462:     static std::string out_of_range(const char* name, int64_t value, int64_t min, int64_t max) {
-463:         char buffer[ERROR_BUFFER_SIZE];
-464:         snprintf(buffer, ERROR_BUFFER_SIZE, "%s %lld invalid (must be %lld to %lld)",
-465:                  name, static_cast<long long>(value),
-466:                  static_cast<long long>(min), static_cast<long long>(max));
-467:         return buffer;
-468:     }
-469: 
-470:     static std::string out_of_range(const char* name, uint64_t value, uint64_t min, uint64_t max) {
-471:         char buffer[ERROR_BUFFER_SIZE];
-472:         snprintf(buffer, ERROR_BUFFER_SIZE, "%s %llu invalid (must be %llu to %llu)",
-473:                  name, static_cast<unsigned long long>(value),
-474:                  static_cast<unsigned long long>(min), static_cast<unsigned long long>(max));
-475:         return buffer;
-476:     }
-477: 
-478:     static std::string out_of_range(const char* name, int32_t value, int32_t min, int32_t max) {
-479:         return out_of_range(name, static_cast<int64_t>(value), static_cast<int64_t>(min), static_cast<int64_t>(max));
-480:     }
-481: 
-482:     static std::string out_of_range(const char* name, uint32_t value, uint32_t min, uint32_t max) {
-483:         return out_of_range(name, static_cast<uint64_t>(value), static_cast<uint64_t>(min), static_cast<uint64_t>(max));
-484:     }
-485: };
-486: 
-487: } // namespace ui::apps::enhanced_drone_analyzer
+462: // ===========================================
+463: // VALIDATOR ERROR FORMATTER
+464: // ===========================================
+465: // Eliminates duplicate error formatting in validators
+466: struct ValidatorFormatter {
+467:     static constexpr size_t ERROR_BUFFER_SIZE = 128;
+468: 
+469:     static std::string out_of_range(const char* name, int64_t value, int64_t min, int64_t max) {
+470:         char buffer[ERROR_BUFFER_SIZE];
+471:         snprintf(buffer, ERROR_BUFFER_SIZE, "%s %lld invalid (must be %lld to %lld)",
+472:                  name, static_cast<long long>(value),
+473:                  static_cast<long long>(min), static_cast<long long>(max));
+474:         return buffer;
+475:     }
+476: 
+477:     static std::string out_of_range(const char* name, uint64_t value, uint64_t min, uint64_t max) {
+478:         char buffer[ERROR_BUFFER_SIZE];
+479:         snprintf(buffer, ERROR_BUFFER_SIZE, "%s %llu invalid (must be %llu to %llu)",
+480:                  name, static_cast<unsigned long long>(value),
+481:                  static_cast<unsigned long long>(min), static_cast<unsigned long long>(max));
+482:         return buffer;
+483:     }
+484: 
+485:     static std::string out_of_range(const char* name, int32_t value, int32_t min, int32_t max) {
+486:         return out_of_range(name, static_cast<int64_t>(value), static_cast<int64_t>(min), static_cast<int64_t>(max));
+487:     }
 488: 
-489: #endif // EDA_OPTIMIZED_UTILS_HPP_
+489:     static std::string out_of_range(const char* name, uint32_t value, uint32_t min, uint32_t max) {
+490:         return out_of_range(name, static_cast<uint64_t>(value), static_cast<uint64_t>(min), static_cast<uint64_t>(max));
+491:     }
+492: };
+493: 
+494: } // namespace ui::apps::enhanced_drone_analyzer
+495: 
+496: #endif // EDA_OPTIMIZED_UTILS_HPP_
  
  
 ======================================== 
@@ -9177,1507 +9183,1506 @@ FILE: ui_enhanced_drone_analyzer.cpp
 3169: void DroneDisplayController::update_or_create_drone_from_spectrum(Frequency freq_hz, uint8_t power) {
 3170:     int32_t rssi = static_cast<int32_t>(power) - 150;
 3171:     ThreatLevel threat = ThreatClassifier::from_rssi(rssi);
-3172:     uint8_t type_code = DroneTypeDetector::from_frequency(freq_hz);
-3173:     DroneType type = static_cast<DroneType>(type_code);
-3174:     add_detected_drone(freq_hz, type, threat, rssi);
-3175: }
-3176: 
-3177: DroneUIController::DroneUIController(NavigationView& nav,
-3178:                                           DroneHardwareController& hardware,
-3179:                                           DroneScanner& scanner,
-3180:                                           ::AudioManager& audio_mgr,
-3181:                                           DroneDisplayController& display_controller)
-3182:     : nav_(nav),
-3183:       hardware_(hardware),
-3184:       scanner_(scanner),
-3185:       audio_mgr_(audio_mgr),
-3186:       scanning_active_{false},
-3187:       display_controller_(&display_controller),
-3188:       settings_()
-3189: {
-3190:     settings_.spectrum_mode = SpectrumMode::MEDIUM;
-3191:     settings_.scan_interval_ms = 1000;
-3192:     settings_.rssi_threshold_db = -90;
-3193:     settings_.audio_flags.enable_alerts = true;
-3194:     char buffer[32];
-3195: 
-3196:     settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
-3197:     const char* status = settings_.audio_flags.enable_alerts ? "ENABLED" : "DISABLED";
-3198:     safe_strcpy(buffer, "Alerts ", sizeof(buffer));
-3199:     safe_strcat(buffer, status, sizeof(buffer));
-3200:     nav_.display_modal("Audio Alerts", buffer);
-3201: }
-3202: 
-3203: DroneUIController::~DroneUIController() {
-3204: }
-3205: 
-3206: void DroneUIController::on_start_scan() {
-3207:     scanner_.start_scanning();
-3208:     scanning_active_.store(true, std::memory_order_release);
-3209: }
-3210: 
-3211: void DroneUIController::on_stop_scan() {
-3212:     scanner_.stop_scanning();
-3213:     scanning_active_.store(false, std::memory_order_release);
-3214: }
-3215: 
-3216: void DroneUIController::show_menu() {
-3217:     nav_.display_modal("EDA Menu", "Menu not implemented in this version");
-3218: }
-3219: 
-3220: void DroneUIController::on_spectrum_mode() {
-3221:     nav_.display_modal("Spectrum Mode", "Feature not implemented in this version");
-3222: }
-3223: 
-3224: void DroneUIController::set_spectrum_mode(SpectrumMode mode) {
-3225:     hardware_.set_spectrum_mode(mode);
-3226:     nav_.display_modal("Applied", "Spectrum mode updated");
-3227: }
-3228: 
-3229: void DroneUIController::on_hardware_control() {
-3230:     show_hardware_status();
-3231: }
-3232: 
-3233: void DroneUIController::on_set_bandwidth() {
-3234:     uint32_t current_bw = hardware_.get_spectrum_bandwidth();
-3235:     char buffer[48];
-3236:     snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)current_bw);
-3237:     nav_.display_modal("Set Bandwidth (MHz)", buffer);
-3238: }
-3239: 
-3240: void DroneUIController::on_set_center_freq() {
-3241:     Frequency current_cf = hardware_.get_spectrum_center_frequency();
-3242:     hardware_.set_spectrum_center_frequency(current_cf + 1000000);
-3243:     show_hardware_status();
-3244: }
-3245: 
-3246: void DroneUIController::show_hardware_status() {
-3247:     // DIAMOND OPTIMIZATION: Use FrequencyFormatter
-3248:     char buffer[128];
-3249:     uint32_t band_mhz = hardware_.get_spectrum_bandwidth() / 1000000ULL;
-3250:     std::string freq_str = FrequencyFormatter::format(hardware_.get_spectrum_center_frequency(),
-3251:                                                      FrequencyFormatter::Format::STANDARD_GHZ);
-3252:     StatusFormatter::format_to(buffer, "Band: %lu MHz\nFreq: %s",
-3253:                               (unsigned long)band_mhz, freq_str.c_str());
-3254:     nav_.display_modal("Hardware Status", buffer);
-3255: }
-3256: 
-3257: void DroneUIController::on_view_logs() {
-3258:     auto open_view = nav_.push<FileLoadView>(".CSV");
-3259:     open_view->push_dir("/LOGS/EDA");
-3260: }
-3261: 
-3262: void DroneUIController::on_about() {
-3263:     nav_.display_modal("EDA v1.0", "Enhanced Drone Analyzer\nMayhem Firmware Integration\nBased on Recon & Looking Glass");
-3264: }
-3265: 
-3266: void DroneUIController::update_scanner_range(Frequency min_freq, Frequency max_freq) {
-3267:     scanner_.update_scan_range(min_freq, max_freq);
-3268:     display_controller_->set_spectrum_range(min_freq, max_freq);
-3269: }
-3270: 
-3271: // --- РЕАЛИЗАЦИЯ FrequencyRangeSetupView ---
-3272: 
-3273: FrequencyRangeSetupView::FrequencyRangeSetupView(NavigationView& nav, DroneUIController& controller)
-3274:     : View({0, 0, screen_width, screen_height}),
-3275:       nav_(nav),
-3276:       controller_(controller),
-3277:       text_title_({4, 4, 224, 16}, "Panoramic Spectrum"),
-3278:       label_min_({4, 36, 80, 16}, "Start Freq:"),
-3279:       field_min_({88, 36, 160, 16}, "2400.000000"),
-3280:       label_max_({4, 68, 80, 16}, "End Freq:"),
-3281:       field_max_({88, 68, 160, 16}, "2500.000000"),
-3282:       label_slice_({4, 100, 80, 16}, "Res (BW):"),
-3283:       field_slice_({88, 100, 160, 16}, "24 MHz"),
-3284:       button_save_({4, 140, 224, 40}, "Apply Range"),
-3285:       button_cancel_({4, 190, 224, 40}, "Cancel") {
-3286: 
-3287:     add_children({
-3288:         &text_title_,
-3289:         &label_min_, &field_min_,
-3290:         &label_max_, &field_max_,
-3291:         &label_slice_, &field_slice_,
-3292:         &button_save_, &button_cancel_
-3293:     });
-3294: 
-3295:     // Set up button handlers
-3296:     button_save_.on_select = [this](Button&) {
-3297:         on_save();
-3298:     };
-3299:     
-3300:     button_cancel_.on_select = [this](Button&) {
-3301:         on_cancel();
-3302:     };
-3303: }
-3304: 
-3305: void FrequencyRangeSetupView::focus() {
-3306:     // При фокусе загружаем текущие настройки в поля ввода
-3307:     const auto& settings = controller_.settings();
-3308:     
-3309:     // Format frequencies as MHz with 6 decimal places
-3310:     // DIAMOND OPTIMIZATION: Use FrequencyFormatter
-3311:     std::string min_freq_str = FrequencyFormatter::format(settings.wideband_min_freq_hz,
-3312:                                                        FrequencyFormatter::Format::DETAILED_GHZ);
-3313:     std::string max_freq_str = FrequencyFormatter::format(settings.wideband_max_freq_hz,
-3314:                                                        FrequencyFormatter::Format::DETAILED_GHZ);
-3315: 
-3316:     field_min_.set_text(min_freq_str);
-3317:     field_max_.set_text(max_freq_str);
-3318: 
-3319:     // DIAMOND OPTIMIZATION: Use StatusFormatter
-3320:     char slice_buffer[32];
-3321:     uint64_t slice_mhz = settings.wideband_slice_width_hz / 1000000;
-3322:     StatusFormatter::format_to(slice_buffer, "%lu MHz", (unsigned long)slice_mhz);
-3323:     field_slice_.set(slice_buffer);
-3324: 
-3325:     button_save_.focus();
-3326: }
-3327: 
-3328: void FrequencyRangeSetupView::on_save() {
-3329:     // Получаем значения из полей
-3330:     const std::string min_str = field_min_.get_text();
-3331:     const std::string max_str = field_max_.get_text();
-3332:     
-3333:     // DIAMOND FIX: Integer-only frequency parsing (no strtod, no double)
-3334:     // Eliminates ~1000-2000 cycles per parse on Cortex-M4F
-3335:     Frequency new_min = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(min_str.c_str()));
-3336:     Frequency new_max = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(max_str.c_str()));
-3337:     
-3338:     // Input validation (integer-only, no NaN check needed)
-3339:     if (new_min == 0 || new_max == 0) {
-3340:         nav_.display_modal("Error", "Invalid frequency format");
-3341:         return;
-3342:     }
-3343:     
-3344:     // Get slice width from settings instead of hardcoded value
-3345:     uint64_t new_slice_width = controller_.settings().wideband_slice_width_hz;
-3346:     
-3347:     // Валидация - use unified constants from DroneConstants
-3348:     if (new_min >= new_max) {
-3349:         nav_.display_modal("Error", "Min freq must be < Max freq");
-3350:         return;
-3351:     }
-3352:     
-3353:     if (new_min < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ || 
-3354:         new_max > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
-3355:         nav_.display_modal("Error", "Frequency out of range (1MHz - 7.2GHz)");
-3356:         return;
-3357:     }
-3358:     
-3359:     // Overflow check
-3360:     if (new_max > new_max + new_min) {
-3361:         nav_.display_modal("Error", "Frequency range overflow detected");
-3362:         return;
-3363:     }
-3364: 
-3365:     // Сохранение настроек (use existing settings reference)
-3366:     controller_.settings().wideband_min_freq_hz = new_min;
-3367:     controller_.settings().wideband_max_freq_hz = new_max;
-3368: 
-3369:     // Сохранение в файл с проверкой успешности
-3370:     if (!SettingsPersistence<DroneAnalyzerSettings>::save(controller_.settings())) {
-3371:         nav_.display_modal("Error", "Failed to save settings to SD card");
-3372:         return;
-3373:     }
-3374:     
-3375:     // Обновление сканера
-3376:     controller_.update_scanner_range(new_min, new_max);
-3377:     
-3378:     // DIAMOND OPTIMIZATION: Use FrequencyFormatter and StatusFormatter
-3379:     char buffer[64];
-3380:     std::string min_freq_str = FrequencyFormatter::format(new_min, FrequencyFormatter::Format::STANDARD_MHZ);
-3381:     std::string max_freq_str = FrequencyFormatter::format(new_max, FrequencyFormatter::Format::STANDARD_MHZ);
-3382:     StatusFormatter::format_to(buffer, "Range updated:\n%s - %s\nBW: %lu MHz",
-3383:                               min_freq_str.c_str(), max_freq_str.c_str(),
-3384:                               (unsigned long)(new_slice_width / 1000000));
-3385: 
-3386:     nav_.display_modal("Success", buffer);
-3387:     nav_.pop();
-3388: }
-3389: 
-3390: void FrequencyRangeSetupView::on_cancel() {
-3391:     nav_.pop();
-3392: }
-3393: 
-3394: // 2. Реализация меню удалена - теперь используем DroneAnalyzerSettingsView из ui_enhanced_drone_settings.cpp
-3395: 
-3396: EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
-3397:     : View({0, 0, screen_width, screen_height}),
-3398:       nav_(nav),
-3399:       settings_(),
-3400:       hardware_(SpectrumMode::MEDIUM),
-3401:       scanner_(settings_),
-3402:       audio_(),
-3403:       display_controller_({0, 60, screen_width, screen_height - 80}),
-3404:       ui_controller_(nav, hardware_, scanner_, audio_, display_controller_),
-3405:       scanning_coordinator_(nav, hardware_, scanner_, display_controller_, audio_),
-3406:       smart_header_(Rect{0, 0, screen_width, 60}),
-3407:       status_bar_(0, Rect{0, screen_height - 80, screen_width, 16}),
-3408:       threat_cards_(),
-3409:       button_start_stop_({screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"),
-3410:       button_menu_({screen_width - 80, screen_height - 40, 72, 32}, "MENU"),
-3411:       button_audio_({screen_width - 160, screen_height - 72, 72, 32}, "AUDIO: OFF"),
-3412:       field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband",1}, {"Hybrid", 2}}),
-3413:       scanning_active_(false)
-3414: {
-3415:     // DIAMOND FIX: Thread-safe mutex initialization (volatile for embedded)
-3416:     // Note: Constructor is called once per View instance in single-threaded init phase
-3417:     // Using volatile prevents compiler optimization but not true multi-threaded atomic
-3418:     static volatile bool sd_mutex_initialized = false;
-3419:     if (!sd_mutex_initialized) {
-3420:         chMtxInit(&sd_card_mutex);
-3421:         sd_mutex_initialized = true;
-3422:     }
-3423: 
-3424:     // ?? ФАЗА 2.8: МИНИМАЛЬНЫЙ конструктор
-3425:     // Только простая инициализация, без blocking I/O
-3426:     // Без вызовов методов scanner_/hardware_/scanning_coordinator_
-3427: 
-3428:     // Настройка по умолчанию (безопасно)
-3429:     scanner_.update_scan_range(DroneConstants::WIDEBAND_DEFAULT_MIN, DroneConstants::WIDEBAND_DEFAULT_MAX);
-3430: 
-3431:     // Обновление параметров coordinator (безопасно)
-3432:     scanning_coordinator_.update_runtime_parameters(settings_);
-3433: 
-3434:     setup_button_handlers();
-3435: 
-3436:     // ?? УДАЛЕНО:
-3437:     // - initialize_modern_layout()  (перенесено в step_deferred_initialization())
-3438:     // - update_modern_layout()     (перенесено в step_deferred_initialization())
-3439:     // - scanner_.initialize_database_and_scanner() (перенесено в step_deferred_initialization())
-3440:     // - hardware_.on_hardware_show()                   (перенесено в step_deferred_initialization())
-3441: 
-3442:     initialize_scanning_mode();
-3443:     add_ui_elements();
-3444: }
-3445: 
-3446: EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
-3447:     // TODO[FIXED]: STEP 2.1: Destruction order
-3448:     // 1. Stop activity (in dependency order)
-3449:     scanning_coordinator_.stop_coordinated_scanning();
-3450:     scanner_.stop_scanning();
-3451:     hardware_.shutdown_hardware();
-3452: 
-3453:     // ?? FIX: Explicit buffer deallocation (before stack objects destroyed)
-3454:     display_controller_.deallocate_buffers();
-3455: 
-3456:     // 2. Stack objects will be automatically destroyed in reverse order
-3457:     // No manual deletion needed for stack-allocated objects
-3458: }
-3459: 
-3460: void EnhancedDroneSpectrumAnalyzerView::focus() {
-3461:     button_start_stop_.focus();
-3462: }
-3463: 
-3464: void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
-3465:     View::paint(painter);
-3466: 
-3467:     // ===========================================
-3468:     // DIAMOND FIX: Execute deferred initialization
-3469:     // ===========================================
-3470:     // CRITICAL: This was missing, causing permanent hang
-3471:     // The initialization state machine was defined but never invoked
-3472:     if (init_state_ != InitState::FULLY_INITIALIZED && 
-3473:         init_state_ != InitState::INITIALIZATION_ERROR) {
-3474:         step_deferred_initialization();
-3475:     }
-3476: 
-3477:     // ?? DIAMOND OPTIMIZATION: Enhanced paint method с защитой от UB
-3478:     // DIAMOND OPTIMIZATION: Отрисовка bar spectrum вместо waterfall
-3479:     // Вызываем каждый кадр (60 FPS) для обновления спектра
-3480:     
-3481:     // ?? SAFETY: Дополнительная проверка состояния (защита от UB)
-3482:     // Даже если init_state_ == FULLY_INITIALIZED, проверяем буферы
-3483:     if (init_state_ == InitState::INITIALIZATION_ERROR) {
-3484:         return;
-3485:     }
-3486:     
-3487:     if (init_state_ == InitState::FULLY_INITIALIZED && 
-3488:         display_controller_.are_buffers_valid()) {
-3489:         display_controller_.render_bar_spectrum(painter);
-3490:     }
-3491: }
-3492: 
-3493: bool EnhancedDroneSpectrumAnalyzerView::on_key(const KeyEvent key) {
-3494:     switch(key) {
-3495:         case KeyEvent::Back:
-3496:             stop_scanning_thread();
-3497:             nav_.pop();
-3498:             return true;
-3499:         default:
-3500:             break;
-3501:     }
-3502:     return View::on_key(key);
-3503: }
-3504: 
-3505: bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
-3506:     return View::on_touch(event);
-3507: }
-3508: 
-3509: // ===========================================
-3510: // ФАЗА 2.5: Deferred Initialization Implementation
-3511: // ===========================================
-3512: 
-3513: // ФАЗА 0.2: Имена фаз для логирования
-3514: static const char* const PHASE_NAMES[] = {
-3515:     "ALLOC",      // Phase 0: Buffer allocation
-3516:     "DB_LOAD",    // Phase 1: Database loading
-3517:     "HW_INIT",    // Phase 2: Hardware initialization
-3518:     "UI_SETUP",    // Phase 3: UI setup
-3519:     "SETTINGS",    // Phase 4: Settings loading
-3520:     "FINALIZE"     // Phase 5: Finalization
-3521: };
-3522: static_assert(sizeof(PHASE_NAMES) / sizeof(const char*) == 6, "PHASE_NAMES size");
+3172:     DroneType type = DroneTypeDetector::from_frequency(freq_hz);
+3173:     add_detected_drone(freq_hz, type, threat, rssi);
+3174: }
+3175: 
+3176: DroneUIController::DroneUIController(NavigationView& nav,
+3177:                                           DroneHardwareController& hardware,
+3178:                                           DroneScanner& scanner,
+3179:                                           ::AudioManager& audio_mgr,
+3180:                                           DroneDisplayController& display_controller)
+3181:     : nav_(nav),
+3182:       hardware_(hardware),
+3183:       scanner_(scanner),
+3184:       audio_mgr_(audio_mgr),
+3185:       scanning_active_{false},
+3186:       display_controller_(&display_controller),
+3187:       settings_()
+3188: {
+3189:     settings_.spectrum_mode = SpectrumMode::MEDIUM;
+3190:     settings_.scan_interval_ms = 1000;
+3191:     settings_.rssi_threshold_db = -90;
+3192:     settings_.audio_flags.enable_alerts = true;
+3193:     char buffer[32];
+3194: 
+3195:     settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
+3196:     const char* status = settings_.audio_flags.enable_alerts ? "ENABLED" : "DISABLED";
+3197:     safe_strcpy(buffer, "Alerts ", sizeof(buffer));
+3198:     safe_strcat(buffer, status, sizeof(buffer));
+3199:     nav_.display_modal("Audio Alerts", buffer);
+3200: }
+3201: 
+3202: DroneUIController::~DroneUIController() {
+3203: }
+3204: 
+3205: void DroneUIController::on_start_scan() {
+3206:     scanner_.start_scanning();
+3207:     scanning_active_.store(true, std::memory_order_release);
+3208: }
+3209: 
+3210: void DroneUIController::on_stop_scan() {
+3211:     scanner_.stop_scanning();
+3212:     scanning_active_.store(false, std::memory_order_release);
+3213: }
+3214: 
+3215: void DroneUIController::show_menu() {
+3216:     nav_.display_modal("EDA Menu", "Menu not implemented in this version");
+3217: }
+3218: 
+3219: void DroneUIController::on_spectrum_mode() {
+3220:     nav_.display_modal("Spectrum Mode", "Feature not implemented in this version");
+3221: }
+3222: 
+3223: void DroneUIController::set_spectrum_mode(SpectrumMode mode) {
+3224:     hardware_.set_spectrum_mode(mode);
+3225:     nav_.display_modal("Applied", "Spectrum mode updated");
+3226: }
+3227: 
+3228: void DroneUIController::on_hardware_control() {
+3229:     show_hardware_status();
+3230: }
+3231: 
+3232: void DroneUIController::on_set_bandwidth() {
+3233:     uint32_t current_bw = hardware_.get_spectrum_bandwidth();
+3234:     char buffer[48];
+3235:     snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)current_bw);
+3236:     nav_.display_modal("Set Bandwidth (MHz)", buffer);
+3237: }
+3238: 
+3239: void DroneUIController::on_set_center_freq() {
+3240:     Frequency current_cf = hardware_.get_spectrum_center_frequency();
+3241:     hardware_.set_spectrum_center_frequency(current_cf + 1000000);
+3242:     show_hardware_status();
+3243: }
+3244: 
+3245: void DroneUIController::show_hardware_status() {
+3246:     // DIAMOND OPTIMIZATION: Use FrequencyFormatter
+3247:     char buffer[128];
+3248:     uint32_t band_mhz = hardware_.get_spectrum_bandwidth() / 1000000ULL;
+3249:     std::string freq_str = FrequencyFormatter::format(hardware_.get_spectrum_center_frequency(),
+3250:                                                      FrequencyFormatter::Format::STANDARD_GHZ);
+3251:     StatusFormatter::format_to(buffer, "Band: %lu MHz\nFreq: %s",
+3252:                               (unsigned long)band_mhz, freq_str.c_str());
+3253:     nav_.display_modal("Hardware Status", buffer);
+3254: }
+3255: 
+3256: void DroneUIController::on_view_logs() {
+3257:     auto open_view = nav_.push<FileLoadView>(".CSV");
+3258:     open_view->push_dir("/LOGS/EDA");
+3259: }
+3260: 
+3261: void DroneUIController::on_about() {
+3262:     nav_.display_modal("EDA v1.0", "Enhanced Drone Analyzer\nMayhem Firmware Integration\nBased on Recon & Looking Glass");
+3263: }
+3264: 
+3265: void DroneUIController::update_scanner_range(Frequency min_freq, Frequency max_freq) {
+3266:     scanner_.update_scan_range(min_freq, max_freq);
+3267:     display_controller_->set_spectrum_range(min_freq, max_freq);
+3268: }
+3269: 
+3270: // --- РЕАЛИЗАЦИЯ FrequencyRangeSetupView ---
+3271: 
+3272: FrequencyRangeSetupView::FrequencyRangeSetupView(NavigationView& nav, DroneUIController& controller)
+3273:     : View({0, 0, screen_width, screen_height}),
+3274:       nav_(nav),
+3275:       controller_(controller),
+3276:       text_title_({4, 4, 224, 16}, "Panoramic Spectrum"),
+3277:       label_min_({4, 36, 80, 16}, "Start Freq:"),
+3278:       field_min_({88, 36, 160, 16}, "2400.000000"),
+3279:       label_max_({4, 68, 80, 16}, "End Freq:"),
+3280:       field_max_({88, 68, 160, 16}, "2500.000000"),
+3281:       label_slice_({4, 100, 80, 16}, "Res (BW):"),
+3282:       field_slice_({88, 100, 160, 16}, "24 MHz"),
+3283:       button_save_({4, 140, 224, 40}, "Apply Range"),
+3284:       button_cancel_({4, 190, 224, 40}, "Cancel") {
+3285: 
+3286:     add_children({
+3287:         &text_title_,
+3288:         &label_min_, &field_min_,
+3289:         &label_max_, &field_max_,
+3290:         &label_slice_, &field_slice_,
+3291:         &button_save_, &button_cancel_
+3292:     });
+3293: 
+3294:     // Set up button handlers
+3295:     button_save_.on_select = [this](Button&) {
+3296:         on_save();
+3297:     };
+3298:     
+3299:     button_cancel_.on_select = [this](Button&) {
+3300:         on_cancel();
+3301:     };
+3302: }
+3303: 
+3304: void FrequencyRangeSetupView::focus() {
+3305:     // При фокусе загружаем текущие настройки в поля ввода
+3306:     const auto& settings = controller_.settings();
+3307:     
+3308:     // Format frequencies as MHz with 6 decimal places
+3309:     // DIAMOND OPTIMIZATION: Use FrequencyFormatter
+3310:     std::string min_freq_str = FrequencyFormatter::format(settings.wideband_min_freq_hz,
+3311:                                                        FrequencyFormatter::Format::DETAILED_GHZ);
+3312:     std::string max_freq_str = FrequencyFormatter::format(settings.wideband_max_freq_hz,
+3313:                                                        FrequencyFormatter::Format::DETAILED_GHZ);
+3314: 
+3315:     field_min_.set_text(min_freq_str);
+3316:     field_max_.set_text(max_freq_str);
+3317: 
+3318:     // DIAMOND OPTIMIZATION: Use StatusFormatter
+3319:     char slice_buffer[32];
+3320:     uint64_t slice_mhz = settings.wideband_slice_width_hz / 1000000;
+3321:     StatusFormatter::format_to(slice_buffer, "%lu MHz", (unsigned long)slice_mhz);
+3322:     field_slice_.set(slice_buffer);
+3323: 
+3324:     button_save_.focus();
+3325: }
+3326: 
+3327: void FrequencyRangeSetupView::on_save() {
+3328:     // Получаем значения из полей
+3329:     const std::string min_str = field_min_.get_text();
+3330:     const std::string max_str = field_max_.get_text();
+3331:     
+3332:     // DIAMOND FIX: Integer-only frequency parsing (no strtod, no double)
+3333:     // Eliminates ~1000-2000 cycles per parse on Cortex-M4F
+3334:     Frequency new_min = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(min_str.c_str()));
+3335:     Frequency new_max = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(max_str.c_str()));
+3336:     
+3337:     // Input validation (integer-only, no NaN check needed)
+3338:     if (new_min == 0 || new_max == 0) {
+3339:         nav_.display_modal("Error", "Invalid frequency format");
+3340:         return;
+3341:     }
+3342:     
+3343:     // Get slice width from settings instead of hardcoded value
+3344:     uint64_t new_slice_width = controller_.settings().wideband_slice_width_hz;
+3345:     
+3346:     // Валидация - use unified constants from DroneConstants
+3347:     if (new_min >= new_max) {
+3348:         nav_.display_modal("Error", "Min freq must be < Max freq");
+3349:         return;
+3350:     }
+3351:     
+3352:     if (new_min < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ || 
+3353:         new_max > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+3354:         nav_.display_modal("Error", "Frequency out of range (1MHz - 7.2GHz)");
+3355:         return;
+3356:     }
+3357:     
+3358:     // Overflow check
+3359:     if (new_max > new_max + new_min) {
+3360:         nav_.display_modal("Error", "Frequency range overflow detected");
+3361:         return;
+3362:     }
+3363: 
+3364:     // Сохранение настроек (use existing settings reference)
+3365:     controller_.settings().wideband_min_freq_hz = new_min;
+3366:     controller_.settings().wideband_max_freq_hz = new_max;
+3367: 
+3368:     // Сохранение в файл с проверкой успешности
+3369:     if (!SettingsPersistence<DroneAnalyzerSettings>::save(controller_.settings())) {
+3370:         nav_.display_modal("Error", "Failed to save settings to SD card");
+3371:         return;
+3372:     }
+3373:     
+3374:     // Обновление сканера
+3375:     controller_.update_scanner_range(new_min, new_max);
+3376:     
+3377:     // DIAMOND OPTIMIZATION: Use FrequencyFormatter and StatusFormatter
+3378:     char buffer[64];
+3379:     std::string min_freq_str = FrequencyFormatter::format(new_min, FrequencyFormatter::Format::STANDARD_MHZ);
+3380:     std::string max_freq_str = FrequencyFormatter::format(new_max, FrequencyFormatter::Format::STANDARD_MHZ);
+3381:     StatusFormatter::format_to(buffer, "Range updated:\n%s - %s\nBW: %lu MHz",
+3382:                               min_freq_str.c_str(), max_freq_str.c_str(),
+3383:                               (unsigned long)(new_slice_width / 1000000));
+3384: 
+3385:     nav_.display_modal("Success", buffer);
+3386:     nav_.pop();
+3387: }
+3388: 
+3389: void FrequencyRangeSetupView::on_cancel() {
+3390:     nav_.pop();
+3391: }
+3392: 
+3393: // 2. Реализация меню удалена - теперь используем DroneAnalyzerSettingsView из ui_enhanced_drone_settings.cpp
+3394: 
+3395: EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
+3396:     : View({0, 0, screen_width, screen_height}),
+3397:       nav_(nav),
+3398:       settings_(),
+3399:       hardware_(SpectrumMode::MEDIUM),
+3400:       scanner_(settings_),
+3401:       audio_(),
+3402:       display_controller_({0, 60, screen_width, screen_height - 80}),
+3403:       ui_controller_(nav, hardware_, scanner_, audio_, display_controller_),
+3404:       scanning_coordinator_(nav, hardware_, scanner_, display_controller_, audio_),
+3405:       smart_header_(Rect{0, 0, screen_width, 60}),
+3406:       status_bar_(0, Rect{0, screen_height - 80, screen_width, 16}),
+3407:       threat_cards_(),
+3408:       button_start_stop_({screen_width - 80, screen_height - 72, 72, 32}, "START/STOP"),
+3409:       button_menu_({screen_width - 80, screen_height - 40, 72, 32}, "MENU"),
+3410:       button_audio_({screen_width - 160, screen_height - 72, 72, 32}, "AUDIO: OFF"),
+3411:       field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband",1}, {"Hybrid", 2}}),
+3412:       scanning_active_(false)
+3413: {
+3414:     // DIAMOND FIX: Thread-safe mutex initialization (volatile for embedded)
+3415:     // Note: Constructor is called once per View instance in single-threaded init phase
+3416:     // Using volatile prevents compiler optimization but not true multi-threaded atomic
+3417:     static volatile bool sd_mutex_initialized = false;
+3418:     if (!sd_mutex_initialized) {
+3419:         chMtxInit(&sd_card_mutex);
+3420:         sd_mutex_initialized = true;
+3421:     }
+3422: 
+3423:     // ?? ФАЗА 2.8: МИНИМАЛЬНЫЙ конструктор
+3424:     // Только простая инициализация, без blocking I/O
+3425:     // Без вызовов методов scanner_/hardware_/scanning_coordinator_
+3426: 
+3427:     // Настройка по умолчанию (безопасно)
+3428:     scanner_.update_scan_range(DroneConstants::WIDEBAND_DEFAULT_MIN, DroneConstants::WIDEBAND_DEFAULT_MAX);
+3429: 
+3430:     // Обновление параметров coordinator (безопасно)
+3431:     scanning_coordinator_.update_runtime_parameters(settings_);
+3432: 
+3433:     setup_button_handlers();
+3434: 
+3435:     // ?? УДАЛЕНО:
+3436:     // - initialize_modern_layout()  (перенесено в step_deferred_initialization())
+3437:     // - update_modern_layout()     (перенесено в step_deferred_initialization())
+3438:     // - scanner_.initialize_database_and_scanner() (перенесено в step_deferred_initialization())
+3439:     // - hardware_.on_hardware_show()                   (перенесено в step_deferred_initialization())
+3440: 
+3441:     initialize_scanning_mode();
+3442:     add_ui_elements();
+3443: }
+3444: 
+3445: EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
+3446:     // TODO[FIXED]: STEP 2.1: Destruction order
+3447:     // 1. Stop activity (in dependency order)
+3448:     scanning_coordinator_.stop_coordinated_scanning();
+3449:     scanner_.stop_scanning();
+3450:     hardware_.shutdown_hardware();
+3451: 
+3452:     // ?? FIX: Explicit buffer deallocation (before stack objects destroyed)
+3453:     display_controller_.deallocate_buffers();
+3454: 
+3455:     // 2. Stack objects will be automatically destroyed in reverse order
+3456:     // No manual deletion needed for stack-allocated objects
+3457: }
+3458: 
+3459: void EnhancedDroneSpectrumAnalyzerView::focus() {
+3460:     button_start_stop_.focus();
+3461: }
+3462: 
+3463: void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
+3464:     View::paint(painter);
+3465: 
+3466:     // ===========================================
+3467:     // DIAMOND FIX: Execute deferred initialization
+3468:     // ===========================================
+3469:     // CRITICAL: This was missing, causing permanent hang
+3470:     // The initialization state machine was defined but never invoked
+3471:     if (init_state_ != InitState::FULLY_INITIALIZED && 
+3472:         init_state_ != InitState::INITIALIZATION_ERROR) {
+3473:         step_deferred_initialization();
+3474:     }
+3475: 
+3476:     // ?? DIAMOND OPTIMIZATION: Enhanced paint method с защитой от UB
+3477:     // DIAMOND OPTIMIZATION: Отрисовка bar spectrum вместо waterfall
+3478:     // Вызываем каждый кадр (60 FPS) для обновления спектра
+3479:     
+3480:     // ?? SAFETY: Дополнительная проверка состояния (защита от UB)
+3481:     // Даже если init_state_ == FULLY_INITIALIZED, проверяем буферы
+3482:     if (init_state_ == InitState::INITIALIZATION_ERROR) {
+3483:         return;
+3484:     }
+3485:     
+3486:     if (init_state_ == InitState::FULLY_INITIALIZED && 
+3487:         display_controller_.are_buffers_valid()) {
+3488:         display_controller_.render_bar_spectrum(painter);
+3489:     }
+3490: }
+3491: 
+3492: bool EnhancedDroneSpectrumAnalyzerView::on_key(const KeyEvent key) {
+3493:     switch(key) {
+3494:         case KeyEvent::Back:
+3495:             stop_scanning_thread();
+3496:             nav_.pop();
+3497:             return true;
+3498:         default:
+3499:             break;
+3500:     }
+3501:     return View::on_key(key);
+3502: }
+3503: 
+3504: bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
+3505:     return View::on_touch(event);
+3506: }
+3507: 
+3508: // ===========================================
+3509: // ФАЗА 2.5: Deferred Initialization Implementation
+3510: // ===========================================
+3511: 
+3512: // ФАЗА 0.2: Имена фаз для логирования
+3513: static const char* const PHASE_NAMES[] = {
+3514:     "ALLOC",      // Phase 0: Buffer allocation
+3515:     "DB_LOAD",    // Phase 1: Database loading
+3516:     "HW_INIT",    // Phase 2: Hardware initialization
+3517:     "UI_SETUP",    // Phase 3: UI setup
+3518:     "SETTINGS",    // Phase 4: Settings loading
+3519:     "FINALIZE"     // Phase 5: Finalization
+3520: };
+3521: static_assert(sizeof(PHASE_NAMES) / sizeof(const char*) == 6, "PHASE_NAMES size");
+3522: 
 3523: 
-3524: 
-3525: void EnhancedDroneSpectrumAnalyzerView::update_init_progress_display() {
-3526:     // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 3057-3077)
-3527:     size_t state_idx = static_cast<size_t>(init_state_);
-3528:     size_t title_idx = (state_idx < static_cast<size_t>(InitState::FULLY_INITIALIZED)) ? 0 : 1;
-3529: 
-3530:     status_bar_.update_normal_status(
-3531:         INIT_STATUS_TITLES[title_idx],
-3532:         (state_idx < 7) ? INIT_STATUS_MESSAGES[state_idx] : INIT_STATUS_MESSAGES[6]
-3533:     );
-3534: }
-3535: 
-3536: // ?? DIAMOND OPTIMIZATION: Enhanced Initialization State Machine with Timeout Protection
-3537: // Scott Meyers Item 15: Prefer constexpr to #define
-3538: // Scott Meyers Item 20: Prefer pass-by-reference-to-const to pass-by-value
-3539: // Eliminates cascading if/else, adds timeout protection, saves ~150 bytes RAM
-3540: void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
-3541:     // ?? SAFETY: Защита от повторного вызова (re-entrancy)
-3542:     if (initialization_in_progress_) return;
-3543:     
-3544:     // ?? SAFETY: Проверка на ошибку (если уже в ERROR state - выходим)
-3545:     if (init_state_ == InitState::INITIALIZATION_ERROR) {
-3546:         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0,
-3547:                                       ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]);
-3548:         initialization_in_progress_ = false;
-3549:         return;
-3550:     }
-3551:     
-3552:     // ?? SAFETY: Установка флага (для защиты от re-entrancy)
-3553:     initialization_in_progress_ = true;
-3554:     
-3555:     // ?? ФАЗА 0.2: Логирование heap перед первой фазой
-3556:     if (init_state_ == InitState::CONSTRUCTED) {
-3557:         HeapDiagnostics::log_heap_status("START");
-3558:     }
-3559:     
-3560:     // ?? SAFETY: Проверка таймаута (защита от зависаний)
-3561:     systime_t elapsed = chTimeNow() - init_start_time_;
-3562:     if (elapsed > MS2ST(InitTiming::TIMEOUT_MS)) {
-3563:         init_state_ = InitState::INITIALIZATION_ERROR;
-3564:         init_error_ = InitError::GENERAL_TIMEOUT;
-3565:         initialization_in_progress_ = false;
-3566:         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init timeout!");
-3567:         return;
-3568:     }
+3524: void EnhancedDroneSpectrumAnalyzerView::update_init_progress_display() {
+3525:     // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 3057-3077)
+3526:     size_t state_idx = static_cast<size_t>(init_state_);
+3527:     size_t title_idx = (state_idx < static_cast<size_t>(InitState::FULLY_INITIALIZED)) ? 0 : 1;
+3528: 
+3529:     status_bar_.update_normal_status(
+3530:         INIT_STATUS_TITLES[title_idx],
+3531:         (state_idx < 7) ? INIT_STATUS_MESSAGES[state_idx] : INIT_STATUS_MESSAGES[6]
+3532:     );
+3533: }
+3534: 
+3535: // ?? DIAMOND OPTIMIZATION: Enhanced Initialization State Machine with Timeout Protection
+3536: // Scott Meyers Item 15: Prefer constexpr to #define
+3537: // Scott Meyers Item 20: Prefer pass-by-reference-to-const to pass-by-value
+3538: // Eliminates cascading if/else, adds timeout protection, saves ~150 bytes RAM
+3539: void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
+3540:     // ?? SAFETY: Защита от повторного вызова (re-entrancy)
+3541:     if (initialization_in_progress_) return;
+3542:     
+3543:     // ?? SAFETY: Проверка на ошибку (если уже в ERROR state - выходим)
+3544:     if (init_state_ == InitState::INITIALIZATION_ERROR) {
+3545:         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0,
+3546:                                       ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]);
+3547:         initialization_in_progress_ = false;
+3548:         return;
+3549:     }
+3550:     
+3551:     // ?? SAFETY: Установка флага (для защиты от re-entrancy)
+3552:     initialization_in_progress_ = true;
+3553:     
+3554:     // ?? ФАЗА 0.2: Логирование heap перед первой фазой
+3555:     if (init_state_ == InitState::CONSTRUCTED) {
+3556:         HeapDiagnostics::log_heap_status("START");
+3557:     }
+3558:     
+3559:     // ?? SAFETY: Проверка таймаута (защита от зависаний)
+3560:     systime_t elapsed = chTimeNow() - init_start_time_;
+3561:     if (elapsed > MS2ST(InitTiming::TIMEOUT_MS)) {
+3562:         init_state_ = InitState::INITIALIZATION_ERROR;
+3563:         init_error_ = InitError::GENERAL_TIMEOUT;
+3564:         initialization_in_progress_ = false;
+3565:         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init timeout!");
+3566:         return;
+3567:     }
+3568: 
 3569: 
-3570: 
-3571:     // ?? MAIN LOOP: Проходим по фазам инициализации
-3572:     for (uint8_t i = 0; i < InitTiming::MAX_PHASES; ++i) {
-3573:         // DIAMOND OPTIMIZATION: LUT lookup вместо switch (O(1) lookup)
-3574:         const auto& phase = INIT_PHASES[i];
-3575: 
-3576:         // Проверяем, наступило ли время для этой фазы
-3577:         if (elapsed >= MS2ST(phase.delay_ms)) {
-3578:             // Проверяем, была ли эта фаза уже выполнена
-3579:             uint8_t expected_state = static_cast<uint8_t>(InitState::CONSTRUCTED) + i + 1;
-3580:             if (static_cast<uint8_t>(init_state_) >= expected_state) {
-3581:                 // ?? FIX: Update UI status during async database loading
-3582:                 // Phase 2 (DATABASE_LOADED) may still be loading in background
-3583:                 if (init_state_ == InitState::DATABASE_LOADED && !scanner_.is_database_loading_complete()) {
-3584:                     status_bar_.update_normal_status("INIT", "Loading database...");
-3585:                 }
-3586:                 continue;  // Эта фаза уже выполнена, пропускаем
-3587:             }
-3588: 
-3589:             // Выполняем фазу через указатель на метод
-3590:             (this->*phase.init_func)();
-3591: 
-3592:             // Если произошла ошибка - выходим
-3593:             if (init_state_ == InitState::INITIALIZATION_ERROR) {
-3594:                 initialization_in_progress_ = false;
-3595:                 return;
-3596:             }
-3597:             
-3598:             // Если фаза возвращает с ошибкой (initialization_in_progress_ сброшен внутри фазы)
-3599:             if (!initialization_in_progress_) {
-3600:                 return;
-3601:             }
-3602: 
-3603:             // Если состояние изменилось - обновляем UI
-3604:             const char* status_msg = phase.name;
-3605:             // ?? FIX: Special message for database loading
-3606:             if (init_state_ == InitState::DATABASE_LOADED && !scanner_.is_database_loading_complete()) {
-3607:                 status_msg = "Loading database...";
-3608:             }
-3609:             status_bar_.update_normal_status("INIT", status_msg);
-3610:             
-3611:             // ?? ФАЗА 0.2: Логирование heap после выполнения фазы
-3612:             if (i < 6 && static_cast<size_t>(init_state_) >= static_cast<size_t>(i + 1)) {
-3613:                 HeapDiagnostics::log_heap_status(PHASE_NAMES[i]);
-3614:             }
-3615: 
-3616:         }
-3617:     }
-3618:     
-3619:     // ?? SAFETY: Сброс флага (разрешаем повторный вызов)
-3620:     initialization_in_progress_ = false;
-3621: }
-3622: 
-3623: // ================================================================
-3624: // DIAMOND OPTIMIZATION: Phase Initialization Methods
-3625: // Защита от UB: каждый метод проверяет состояние перед выполнением
-3626: // ================================================================
-3627: 
-3628: // ФАЗА 1: Allocate display buffers
-3629: void EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers() {
-3630:     if (display_controller_.are_buffers_allocated()) {
-3631:         init_state_ = InitState::BUFFERS_ALLOCATED;
-3632:         return;
-3633:     }
-3634: 
-3635:     if (!display_controller_.allocate_buffers_from_pool()) {
-3636:         init_error_ = InitError::ALLOCATION_FAILED;
-3637:         init_state_ = InitState::INITIALIZATION_ERROR;
-3638:         initialization_in_progress_ = false;
-3639:         return;
-3640:     }
-3641: 
-3642:     status_bar_.update_normal_status("INIT", "Phase 1: Buffers OK");
-3643:     init_state_ = InitState::BUFFERS_ALLOCATED;
-3644: }
-3645: 
-3646: // ФАЗА 2: Load database
-3647: void EnhancedDroneSpectrumAnalyzerView::init_phase_load_database() {
-3648:     if (init_state_ != InitState::BUFFERS_ALLOCATED) {
-3649:         return;
-3650:     }
-3651: 
-3652:     scanner_.initialize_database_async();
-3653:     status_bar_.update_normal_status("INIT", "Phase 2: DB loading...");
-3654:     init_state_ = InitState::DATABASE_LOADED;
-3655: }
-3656: 
-3657: // ФАЗА 3: Initialize hardware
-3658: void EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware() {
-3659:     if (init_state_ != InitState::DATABASE_LOADED) {
-3660:         return;
-3661:     }
-3662: 
-3663:     hardware_.on_hardware_show();
-3664:     status_bar_.update_normal_status("INIT", "Phase 3: HW ready");
-3665:     init_state_ = InitState::HARDWARE_READY;
-3666: }
-3667: 
-3668: // ФАЗА 4: Setup UI layout
-3669: void EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui() {
-3670:     if (init_state_ != InitState::HARDWARE_READY) {
-3671:         return;
-3672:     }
-3673: 
-3674:     initialize_modern_layout();
-3675:     status_bar_.update_normal_status("INIT", "Phase 4: UI ready");
-3676:     init_state_ = InitState::UI_LAYOUT_READY;
-3677: }
-3678: 
-3679: // ФАЗА 5: Load settings
-3680: void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
-3681:     if (init_state_ != InitState::UI_LAYOUT_READY) {
-3682:         return;
-3683:     }
-3684: 
-3685:     // ===========================================
-3686:     // ФАЗА 6.4: ЗАЩИЩЁННАЯ ЗАГРУЗКА НАСТРОЕК
-3687:     // ===========================================
-3688: 
-3689:     // Проверяем доступность SD карты с таймаутом
-3690:     systime_t sd_start = chTimeNow();
-3691:     while (sd_card::status() < sd_card::Status::Mounted) {
-3692:         if ((chTimeNow() - sd_start) > MS2ST(1000)) {  // 1 сек на mount
-3693:             status_bar_.update_normal_status("INIT", "No SD - defaults");
-3694:             init_state_ = InitState::SETTINGS_LOADED;
-3695:             return;  // Пропускаем загрузку, используем defaults
-3696:         }
-3697:         chThdSleepMilliseconds(50);
-3698:     }
-3699: 
-3700:     systime_t settings_start = chTimeNow();
-3701:     constexpr systime_t SETTINGS_LOAD_TIMEOUT_MS = MS2ST(2000);
-3702: 
-3703:     // FIX: Removed SDCardLock - FatFS handles locking at driver level
-3704:     // Deadlock occurred when Phase 2 (db loading thread) held lock while Phase 5 waited
-3705:     bool loaded = SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
-3706: 
-3707:     systime_t elapsed = chTimeNow() - settings_start;
-3708:     if (elapsed >= SETTINGS_LOAD_TIMEOUT_MS) {
-3709:         status_bar_.update_normal_status("WARN", "Settings timeout");
-3710:         init_state_ = InitState::SETTINGS_LOADED;
-3711:         return;
-3712:     }
-3713: 
-3714:     if (!loaded) {
-3715:         status_bar_.update_normal_status("INIT", "Using defaults");
-3716:     } else {
-3717:         status_bar_.update_normal_status("INIT", "Settings loaded");
-3718:     }
-3719: 
-3720:     button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
-3721:     scanner_.update_scan_range(settings_.wideband_min_freq_hz,
-3722:                             settings_.wideband_max_freq_hz);
-3723: 
-3724:     // DIAMOND FIX: Update audio cooldown based on settings to prevent UI freeze
-3725:     // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
-3726:     // Set cooldown = duration + 100ms buffer to ensure M0 can process audio
-3727:     uint32_t audio_cooldown = settings_.audio_alert_duration_ms + 100;
-3728:     AudioAlertManager::set_cooldown_ms(audio_cooldown);
-3729: 
-3730:     init_state_ = InitState::SETTINGS_LOADED;
-3731: }
-3732: 
-3733: // ФАЗА 6: Finalize (переход в FULLY_INITIALIZED)
-3734: void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
-3735:     if (init_state_ != InitState::SETTINGS_LOADED) {
-3736:         return;
-3737:     }
-3738: 
-3739:     handle_scanner_update();
-3740:     init_state_ = InitState::FULLY_INITIALIZED;
-3741:     status_bar_.update_normal_status("EDA", "Ready");
-3742: }
-3743: 
-3744: void EnhancedDroneSpectrumAnalyzerView::on_show() {
-3745:     View::on_show();
-3746: 
-3747:     init_state_ = InitState::CONSTRUCTED;
-3748:     init_start_time_ = chTimeNow();
-3749:     last_init_progress_ = 0;
-3750:     initialization_in_progress_ = false;
-3751:     init_error_ = InitError::NONE;
-3752: 
-3753:     status_bar_.update_normal_status("INIT", "Phase 0: Ready");
-3754: }
-3755: 
-3756: void EnhancedDroneSpectrumAnalyzerView::on_hide() {
-3757:     stop_scanning_thread();
-3758:     scanner_.stop_scanning();
-3759:     hardware_.stop_spectrum_streaming();
-3760:     hardware_.shutdown_hardware();
-3761:     hardware_.on_hardware_hide();
-3762: 
-3763:     scanner_.sync_database();
-3764: 
-3765:     View::on_hide();
-3766: }
-3767: 
-3768: void EnhancedDroneSpectrumAnalyzerView::start_scanning_thread() {
-3769:     if (scanning_coordinator_.is_scanning_active()) return;
-3770:     scanning_coordinator_.start_coordinated_scanning();
-3771: }
-3772: 
-3773: void EnhancedDroneSpectrumAnalyzerView::stop_scanning_thread() {
-3774:     if (!scanning_coordinator_.is_scanning_active()) return;
-3775:     scanning_coordinator_.stop_coordinated_scanning();
-3776: }
-3777: 
-3778: bool EnhancedDroneSpectrumAnalyzerView::handle_start_stop_button() {
-3779:     if (scanning_coordinator_.is_scanning_active()) {
-3780:         ui_controller_.on_stop_scan();
-3781:         button_start_stop_.set_text("START/STOP");
-3782:     } else {
-3783:         ui_controller_.on_start_scan();
-3784:         button_start_stop_.set_text("STOP");
-3785:     }
-3786:     return true;
-3787: }
-3788: 
-3789: bool EnhancedDroneSpectrumAnalyzerView::handle_menu_button() {
-3790:     ui_controller_.show_menu();
-3791:     return true;
-3792: }
-3793: 
-3794: void EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout() {
-3795:     // ?? ФАЗА 2.7: Don't call handle_scanner_update() here!
-3796:     // scanner_ may not be fully initialized yet
-3797:     // This prevents segfault/black screen during startup
-3798:     // handle_scanner_update() will be called after FULLY_INITIALIZED state
-3799: 
-3800:     for (size_t i = 0; i < threat_cards_.size(); ++i) {
-3801:         size_t card_y_pos = 165 + i * 20;
-3802: 
-3803:         if (card_y_pos + 24 > 224) break;
-3804: 
-3805:         threat_cards_[i].set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
-3806:     }
-3807: }
-3808: 
-3809: void EnhancedDroneSpectrumAnalyzerView::update_modern_layout() {
-3810:     handle_scanner_update();
-3811: }
-3812: 
-3813: // DIAMOND OPTIMIZATION: Lookup tables for UI state machine
-3814: // Scott Meyers Item 15: Prefer constexpr to #define
-3815: // Eliminates branching and std::string allocation
-3816: namespace {
-3817:     // Signal type mapping from ScanningMode to const char* (Flash storage)
-3818:     static constexpr const char* SIGNAL_TYPE_LUT[] = {
-3819:         "RSSI",      // DATABASE = 0
-3820:         "SPECTRAL",  // WIDEBAND_CONTINUOUS = 1
-3821:         "HYBRID"     // HYBRID = 2
-3822:     };
-3823: 
-3824:     // Alert message mapping from ThreatLevel to const char* (Flash storage)
-3825:     static constexpr const char* ALERT_MSG_LUT[] = {
-3826:         "Threats detected",   // NONE/LOW = 0,1
-3827:         "Threats detected",   // MEDIUM = 2
-3828:         "HIGH THREATS!",      // HIGH = 3
-3829:         "CRITICAL THREATS!"   // CRITICAL = 4
-3830:     };
-3831: }
-3832: 
-3833: void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
-3834:     // ?? SAFETY: Early exit if buffers are not valid
-3835:     if (!display_controller_.are_buffers_valid()) {
-3836:         return;
-3837:     }
-3838:     
-3839:     // Early exit if scanner not active
-3840:     if (!scanner_.is_scanning_active() &&
-3841:         scanner_.get_approaching_count() == 0 &&
-3842:         scanner_.get_static_count() == 0 &&
-3843:         scanner_.get_receding_count() == 0) {
-3844:         const char* primary_msg = "EDA Ready";
-3845:         char secondary_buffer[48];
-3846:         uint32_t total_detections = scanner_.get_total_detections();
-3847:         if (total_detections > 0) {
-3848:             StatusFormatter::format_to(secondary_buffer, "Total detections: %lu",
-3849:                                       static_cast<unsigned long>(total_detections));
-3850:         } else {
-3851:             safe_strcpy(secondary_buffer, "Awaiting commands", sizeof(secondary_buffer));
-3852:         }
-3853:         status_bar_.update_normal_status(primary_msg, secondary_buffer);
-3854:         return;
-3855:     }
-3856: 
-3857:     // Cache scanner state (single read)
-3858:     ThreatLevel max_threat = scanner_.get_max_detected_threat();
-3859:     size_t approaching = scanner_.get_approaching_count();
-3860:     size_t static_count = scanner_.get_static_count();
-3861:     size_t receding = scanner_.get_receding_count();
-3862:     bool is_scanning = scanner_.is_scanning_active();
-3863:     Frequency current_freq = scanner_.get_current_scanning_frequency();
-3864: 
-3865:     // DIAMOND FIX: Trigger audio alerts based on threat level (with debouncing)
-3866:     // Only play audio if threats detected and audio alerts are enabled
-3867:     // AudioAlertManager::play_alert() has built-in debouncing to prevent baseband queue saturation
-3868:     // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
-3869:     if (settings_.audio_flags.enable_alerts && max_threat >= ThreatLevel::LOW) {
-3870:         size_t total_drones = approaching + static_count + receding;
-3871:         if (total_drones > 0) {
-3872:             AudioAlertManager::play_alert(max_threat);
-3873:         }
-3874:     }
-3875: 
-3876:     // Update header
-3877:     smart_header_.update(max_threat, approaching, static_count, receding,
-3878:                         current_freq, is_scanning);
-3879: 
-3880:     // Update status bar (DoD: table-driven state machine)
-3881:     if (is_scanning) {
-3882:         uint32_t cycles = scanner_.get_scan_cycles();
-3883:         uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), static_cast<uint32_t>(32));
-3884:         status_bar_.update_scanning_progress(progress, cycles,
-3885:                                          scanner_.get_total_detections());
-3886:     } else {
-3887:         size_t total_drones = approaching + static_count + receding;
-3888:         // LUT lookup instead of ternary (Flash string, zero RAM allocation)
-3889:         const char* alert_msg = ALERT_MSG_LUT[
-3890:             std::min(static_cast<uint8_t>(max_threat), static_cast<uint8_t>(ThreatLevel::CRITICAL))
-3891:         ];
-3892:         status_bar_.update_alert_status(max_threat, total_drones, alert_msg);
-3893:     }
-3894: 
-3895:     display_controller_.update_detection_display(scanner_);
-3896: 
-3897:     // DIAMOND OPTIMIZATION: LUT lookup for signal type (Flash storage)
-3898:     // Eliminates switch-case and std::string allocation
-3899:     uint8_t mode_idx = static_cast<uint8_t>(scanner_.get_scanning_mode());
-3900:     const char* signal_type = SIGNAL_TYPE_LUT[mode_idx];
-3901:     display_controller_.update_signal_type_display(signal_type);
-3902: }
-3903: 
-3904: void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
-3905:     button_start_stop_.on_select = [this](Button&) {
-3906:         handle_start_stop_button();
-3907:     };
-3908:     button_menu_.on_select = [this](Button&) -> void {
-3909:         ui_controller_.show_menu();
-3910:     };
-3911:     button_audio_.on_select = [this](Button&) {
-3912:         // Toggle audio alerts setting
-3913:         settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
-3914:         // Update button text immediately
-3915:         button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
-3916:         static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
-3917:         static Style grey_style{font::fixed_8x16, Color::black(), Color::grey()};
-3918:         button_audio_.set_style(settings_.audio_flags.enable_alerts ? &green_style : &grey_style);
-3919:     };
-3920: 
-3921:     field_scanning_mode_.on_change = [this](size_t index, int32_t value) -> void {
-3922:         (void)value;
-3923:         set_scanning_mode_from_index(index);
-3924:     };
-3925: }
-3926: 
-3927: void EnhancedDroneSpectrumAnalyzerView::initialize_scanning_mode() {
-3928:     int initial_mode = static_cast<int>(scanner_.get_scanning_mode());
-3929:     field_scanning_mode_.set_selected_index(initial_mode);
-3930: }
-3931: 
-3932: void EnhancedDroneSpectrumAnalyzerView::set_scanning_mode_from_index(size_t index) {
-3933:     DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
-3934:     scanner_.set_scanning_mode(mode);
-3935:     display_controller_.set_scanning_status(ui_controller_.is_scanning(),
-3936:                                            scanner_.scanning_mode_name());
-3937:     update_modern_layout();
-3938: }
-3939: 
-3940: void EnhancedDroneSpectrumAnalyzerView::add_ui_elements() {
-3941:     add_children({&smart_header_, &status_bar_});
-3942:     for (auto& card : threat_cards_) {
-3943:         add_child(&card);
-3944:     }
-3945:     add_children({&button_start_stop_, &button_menu_, &button_audio_});
-3946: }
-3947: 
-3948: LoadingScreenView::LoadingScreenView(NavigationView& nav)
-3949:     : nav_(nav),
-3950:       text_eda_(Rect{108, 213, 24, 16}, "EDA"),
-3951:       timer_start_(chTimeNow())
-3952: {
-3953:     static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
-3954:     text_eda_.set_style(&red_style);
-3955:     add_child(&text_eda_);
-3956:     set_focusable(false);
-3957: }
-3958: 
-3959: void LoadingScreenView::paint(Painter& painter) {
-3960:     painter.fill_rectangle(
-3961:         {0, 0, portapack::display.width(), portapack::display.height()},
-3962:         Color::black()
-3963:     );
-3964:     View::paint(painter);
-3965: }
-3966: 
-3967: // ===========================================
-3968: // PART 5: SCANNINGCOORDINATOR IMPLEMENTATION
-3969: // ===========================================
-3970: 
-3971: ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
-3972:                                        DroneHardwareController& hardware,
-3973:                                        DroneScanner& scanner,
-3974:                                        DroneDisplayController& display_controller,
-3975:                                        ::AudioManager& audio_controller)
-3976:     : nav_(nav), hardware_(hardware), scanner_(scanner), display_controller_(display_controller), audio_controller_(audio_controller),
-3977:       scanning_active_(false), scanning_thread_(nullptr), scan_interval_ms_(750)
-3978: {
-3979: }
-3980: 
-3981: ScanningCoordinator::~ScanningCoordinator() {
-3982:     stop_coordinated_scanning();
-3983: }
-3984: 
-3985: void ScanningCoordinator::start_coordinated_scanning() {
-3986:     if (scanning_active_.load(std::memory_order_acquire)) return;
-3987:     scanning_active_.store(true, std::memory_order_release);
-3988: 
-3989:     // ФАЗА 5.6: СОЗДАНИЕ COORDINATOR ПОТОКА СО СТАТИЧЕСКИМ СТЕКОМ
-3990:     scanning_thread_ = chThdCreateStatic(
-3991:         coordinator_wa_,
-3992:         sizeof(coordinator_wa_),
-3993:         NORMALPRIO,
-3994:         scanning_thread_function,
-3995:         this
-3996:     );
-3997:     if (!scanning_thread_) {
-3998:         scanning_active_.store(false, std::memory_order_release);
-3999:     }
-4000: }
+3570:     // ?? MAIN LOOP: Проходим по фазам инициализации
+3571:     for (uint8_t i = 0; i < InitTiming::MAX_PHASES; ++i) {
+3572:         // DIAMOND OPTIMIZATION: LUT lookup вместо switch (O(1) lookup)
+3573:         const auto& phase = INIT_PHASES[i];
+3574: 
+3575:         // Проверяем, наступило ли время для этой фазы
+3576:         if (elapsed >= MS2ST(phase.delay_ms)) {
+3577:             // Проверяем, была ли эта фаза уже выполнена
+3578:             uint8_t expected_state = static_cast<uint8_t>(InitState::CONSTRUCTED) + i + 1;
+3579:             if (static_cast<uint8_t>(init_state_) >= expected_state) {
+3580:                 // ?? FIX: Update UI status during async database loading
+3581:                 // Phase 2 (DATABASE_LOADED) may still be loading in background
+3582:                 if (init_state_ == InitState::DATABASE_LOADED && !scanner_.is_database_loading_complete()) {
+3583:                     status_bar_.update_normal_status("INIT", "Loading database...");
+3584:                 }
+3585:                 continue;  // Эта фаза уже выполнена, пропускаем
+3586:             }
+3587: 
+3588:             // Выполняем фазу через указатель на метод
+3589:             (this->*phase.init_func)();
+3590: 
+3591:             // Если произошла ошибка - выходим
+3592:             if (init_state_ == InitState::INITIALIZATION_ERROR) {
+3593:                 initialization_in_progress_ = false;
+3594:                 return;
+3595:             }
+3596:             
+3597:             // Если фаза возвращает с ошибкой (initialization_in_progress_ сброшен внутри фазы)
+3598:             if (!initialization_in_progress_) {
+3599:                 return;
+3600:             }
+3601: 
+3602:             // Если состояние изменилось - обновляем UI
+3603:             const char* status_msg = phase.name;
+3604:             // ?? FIX: Special message for database loading
+3605:             if (init_state_ == InitState::DATABASE_LOADED && !scanner_.is_database_loading_complete()) {
+3606:                 status_msg = "Loading database...";
+3607:             }
+3608:             status_bar_.update_normal_status("INIT", status_msg);
+3609:             
+3610:             // ?? ФАЗА 0.2: Логирование heap после выполнения фазы
+3611:             if (i < 6 && static_cast<size_t>(init_state_) >= static_cast<size_t>(i + 1)) {
+3612:                 HeapDiagnostics::log_heap_status(PHASE_NAMES[i]);
+3613:             }
+3614: 
+3615:         }
+3616:     }
+3617:     
+3618:     // ?? SAFETY: Сброс флага (разрешаем повторный вызов)
+3619:     initialization_in_progress_ = false;
+3620: }
+3621: 
+3622: // ================================================================
+3623: // DIAMOND OPTIMIZATION: Phase Initialization Methods
+3624: // Защита от UB: каждый метод проверяет состояние перед выполнением
+3625: // ================================================================
+3626: 
+3627: // ФАЗА 1: Allocate display buffers
+3628: void EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers() {
+3629:     if (display_controller_.are_buffers_allocated()) {
+3630:         init_state_ = InitState::BUFFERS_ALLOCATED;
+3631:         return;
+3632:     }
+3633: 
+3634:     if (!display_controller_.allocate_buffers_from_pool()) {
+3635:         init_error_ = InitError::ALLOCATION_FAILED;
+3636:         init_state_ = InitState::INITIALIZATION_ERROR;
+3637:         initialization_in_progress_ = false;
+3638:         return;
+3639:     }
+3640: 
+3641:     status_bar_.update_normal_status("INIT", "Phase 1: Buffers OK");
+3642:     init_state_ = InitState::BUFFERS_ALLOCATED;
+3643: }
+3644: 
+3645: // ФАЗА 2: Load database
+3646: void EnhancedDroneSpectrumAnalyzerView::init_phase_load_database() {
+3647:     if (init_state_ != InitState::BUFFERS_ALLOCATED) {
+3648:         return;
+3649:     }
+3650: 
+3651:     scanner_.initialize_database_async();
+3652:     status_bar_.update_normal_status("INIT", "Phase 2: DB loading...");
+3653:     init_state_ = InitState::DATABASE_LOADED;
+3654: }
+3655: 
+3656: // ФАЗА 3: Initialize hardware
+3657: void EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware() {
+3658:     if (init_state_ != InitState::DATABASE_LOADED) {
+3659:         return;
+3660:     }
+3661: 
+3662:     hardware_.on_hardware_show();
+3663:     status_bar_.update_normal_status("INIT", "Phase 3: HW ready");
+3664:     init_state_ = InitState::HARDWARE_READY;
+3665: }
+3666: 
+3667: // ФАЗА 4: Setup UI layout
+3668: void EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui() {
+3669:     if (init_state_ != InitState::HARDWARE_READY) {
+3670:         return;
+3671:     }
+3672: 
+3673:     initialize_modern_layout();
+3674:     status_bar_.update_normal_status("INIT", "Phase 4: UI ready");
+3675:     init_state_ = InitState::UI_LAYOUT_READY;
+3676: }
+3677: 
+3678: // ФАЗА 5: Load settings
+3679: void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
+3680:     if (init_state_ != InitState::UI_LAYOUT_READY) {
+3681:         return;
+3682:     }
+3683: 
+3684:     // ===========================================
+3685:     // ФАЗА 6.4: ЗАЩИЩЁННАЯ ЗАГРУЗКА НАСТРОЕК
+3686:     // ===========================================
+3687: 
+3688:     // Проверяем доступность SD карты с таймаутом
+3689:     systime_t sd_start = chTimeNow();
+3690:     while (sd_card::status() < sd_card::Status::Mounted) {
+3691:         if ((chTimeNow() - sd_start) > MS2ST(1000)) {  // 1 сек на mount
+3692:             status_bar_.update_normal_status("INIT", "No SD - defaults");
+3693:             init_state_ = InitState::SETTINGS_LOADED;
+3694:             return;  // Пропускаем загрузку, используем defaults
+3695:         }
+3696:         chThdSleepMilliseconds(50);
+3697:     }
+3698: 
+3699:     systime_t settings_start = chTimeNow();
+3700:     constexpr systime_t SETTINGS_LOAD_TIMEOUT_MS = MS2ST(2000);
+3701: 
+3702:     // FIX: Removed SDCardLock - FatFS handles locking at driver level
+3703:     // Deadlock occurred when Phase 2 (db loading thread) held lock while Phase 5 waited
+3704:     bool loaded = SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
+3705: 
+3706:     systime_t elapsed = chTimeNow() - settings_start;
+3707:     if (elapsed >= SETTINGS_LOAD_TIMEOUT_MS) {
+3708:         status_bar_.update_normal_status("WARN", "Settings timeout");
+3709:         init_state_ = InitState::SETTINGS_LOADED;
+3710:         return;
+3711:     }
+3712: 
+3713:     if (!loaded) {
+3714:         status_bar_.update_normal_status("INIT", "Using defaults");
+3715:     } else {
+3716:         status_bar_.update_normal_status("INIT", "Settings loaded");
+3717:     }
+3718: 
+3719:     button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
+3720:     scanner_.update_scan_range(settings_.wideband_min_freq_hz,
+3721:                             settings_.wideband_max_freq_hz);
+3722: 
+3723:     // DIAMOND FIX: Update audio cooldown based on settings to prevent UI freeze
+3724:     // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
+3725:     // Set cooldown = duration + 100ms buffer to ensure M0 can process audio
+3726:     uint32_t audio_cooldown = settings_.audio_alert_duration_ms + 100;
+3727:     AudioAlertManager::set_cooldown_ms(audio_cooldown);
+3728: 
+3729:     init_state_ = InitState::SETTINGS_LOADED;
+3730: }
+3731: 
+3732: // ФАЗА 6: Finalize (переход в FULLY_INITIALIZED)
+3733: void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
+3734:     if (init_state_ != InitState::SETTINGS_LOADED) {
+3735:         return;
+3736:     }
+3737: 
+3738:     handle_scanner_update();
+3739:     init_state_ = InitState::FULLY_INITIALIZED;
+3740:     status_bar_.update_normal_status("EDA", "Ready");
+3741: }
+3742: 
+3743: void EnhancedDroneSpectrumAnalyzerView::on_show() {
+3744:     View::on_show();
+3745: 
+3746:     init_state_ = InitState::CONSTRUCTED;
+3747:     init_start_time_ = chTimeNow();
+3748:     last_init_progress_ = 0;
+3749:     initialization_in_progress_ = false;
+3750:     init_error_ = InitError::NONE;
+3751: 
+3752:     status_bar_.update_normal_status("INIT", "Phase 0: Ready");
+3753: }
+3754: 
+3755: void EnhancedDroneSpectrumAnalyzerView::on_hide() {
+3756:     stop_scanning_thread();
+3757:     scanner_.stop_scanning();
+3758:     hardware_.stop_spectrum_streaming();
+3759:     hardware_.shutdown_hardware();
+3760:     hardware_.on_hardware_hide();
+3761: 
+3762:     scanner_.sync_database();
+3763: 
+3764:     View::on_hide();
+3765: }
+3766: 
+3767: void EnhancedDroneSpectrumAnalyzerView::start_scanning_thread() {
+3768:     if (scanning_coordinator_.is_scanning_active()) return;
+3769:     scanning_coordinator_.start_coordinated_scanning();
+3770: }
+3771: 
+3772: void EnhancedDroneSpectrumAnalyzerView::stop_scanning_thread() {
+3773:     if (!scanning_coordinator_.is_scanning_active()) return;
+3774:     scanning_coordinator_.stop_coordinated_scanning();
+3775: }
+3776: 
+3777: bool EnhancedDroneSpectrumAnalyzerView::handle_start_stop_button() {
+3778:     if (scanning_coordinator_.is_scanning_active()) {
+3779:         ui_controller_.on_stop_scan();
+3780:         button_start_stop_.set_text("START/STOP");
+3781:     } else {
+3782:         ui_controller_.on_start_scan();
+3783:         button_start_stop_.set_text("STOP");
+3784:     }
+3785:     return true;
+3786: }
+3787: 
+3788: bool EnhancedDroneSpectrumAnalyzerView::handle_menu_button() {
+3789:     ui_controller_.show_menu();
+3790:     return true;
+3791: }
+3792: 
+3793: void EnhancedDroneSpectrumAnalyzerView::initialize_modern_layout() {
+3794:     // ?? ФАЗА 2.7: Don't call handle_scanner_update() here!
+3795:     // scanner_ may not be fully initialized yet
+3796:     // This prevents segfault/black screen during startup
+3797:     // handle_scanner_update() will be called after FULLY_INITIALIZED state
+3798: 
+3799:     for (size_t i = 0; i < threat_cards_.size(); ++i) {
+3800:         size_t card_y_pos = 165 + i * 20;
+3801: 
+3802:         if (card_y_pos + 24 > 224) break;
+3803: 
+3804:         threat_cards_[i].set_parent_rect(Rect{0, static_cast<int>(card_y_pos), screen_width, 24});
+3805:     }
+3806: }
+3807: 
+3808: void EnhancedDroneSpectrumAnalyzerView::update_modern_layout() {
+3809:     handle_scanner_update();
+3810: }
+3811: 
+3812: // DIAMOND OPTIMIZATION: Lookup tables for UI state machine
+3813: // Scott Meyers Item 15: Prefer constexpr to #define
+3814: // Eliminates branching and std::string allocation
+3815: namespace {
+3816:     // Signal type mapping from ScanningMode to const char* (Flash storage)
+3817:     static constexpr const char* SIGNAL_TYPE_LUT[] = {
+3818:         "RSSI",      // DATABASE = 0
+3819:         "SPECTRAL",  // WIDEBAND_CONTINUOUS = 1
+3820:         "HYBRID"     // HYBRID = 2
+3821:     };
+3822: 
+3823:     // Alert message mapping from ThreatLevel to const char* (Flash storage)
+3824:     static constexpr const char* ALERT_MSG_LUT[] = {
+3825:         "Threats detected",   // NONE/LOW = 0,1
+3826:         "Threats detected",   // MEDIUM = 2
+3827:         "HIGH THREATS!",      // HIGH = 3
+3828:         "CRITICAL THREATS!"   // CRITICAL = 4
+3829:     };
+3830: }
+3831: 
+3832: void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
+3833:     // ?? SAFETY: Early exit if buffers are not valid
+3834:     if (!display_controller_.are_buffers_valid()) {
+3835:         return;
+3836:     }
+3837:     
+3838:     // Early exit if scanner not active
+3839:     if (!scanner_.is_scanning_active() &&
+3840:         scanner_.get_approaching_count() == 0 &&
+3841:         scanner_.get_static_count() == 0 &&
+3842:         scanner_.get_receding_count() == 0) {
+3843:         const char* primary_msg = "EDA Ready";
+3844:         char secondary_buffer[48];
+3845:         uint32_t total_detections = scanner_.get_total_detections();
+3846:         if (total_detections > 0) {
+3847:             StatusFormatter::format_to(secondary_buffer, "Total detections: %lu",
+3848:                                       static_cast<unsigned long>(total_detections));
+3849:         } else {
+3850:             safe_strcpy(secondary_buffer, "Awaiting commands", sizeof(secondary_buffer));
+3851:         }
+3852:         status_bar_.update_normal_status(primary_msg, secondary_buffer);
+3853:         return;
+3854:     }
+3855: 
+3856:     // Cache scanner state (single read)
+3857:     ThreatLevel max_threat = scanner_.get_max_detected_threat();
+3858:     size_t approaching = scanner_.get_approaching_count();
+3859:     size_t static_count = scanner_.get_static_count();
+3860:     size_t receding = scanner_.get_receding_count();
+3861:     bool is_scanning = scanner_.is_scanning_active();
+3862:     Frequency current_freq = scanner_.get_current_scanning_frequency();
+3863: 
+3864:     // DIAMOND FIX: Trigger audio alerts based on threat level (with debouncing)
+3865:     // Only play audio if threats detected and audio alerts are enabled
+3866:     // AudioAlertManager::play_alert() has built-in debouncing to prevent baseband queue saturation
+3867:     // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
+3868:     if (settings_.audio_flags.enable_alerts && max_threat >= ThreatLevel::LOW) {
+3869:         size_t total_drones = approaching + static_count + receding;
+3870:         if (total_drones > 0) {
+3871:             AudioAlertManager::play_alert(max_threat);
+3872:         }
+3873:     }
+3874: 
+3875:     // Update header
+3876:     smart_header_.update(max_threat, approaching, static_count, receding,
+3877:                         current_freq, is_scanning);
+3878: 
+3879:     // Update status bar (DoD: table-driven state machine)
+3880:     if (is_scanning) {
+3881:         uint32_t cycles = scanner_.get_scan_cycles();
+3882:         uint32_t progress = std::min(static_cast<uint32_t>(cycles * 5), static_cast<uint32_t>(32));
+3883:         status_bar_.update_scanning_progress(progress, cycles,
+3884:                                          scanner_.get_total_detections());
+3885:     } else {
+3886:         size_t total_drones = approaching + static_count + receding;
+3887:         // LUT lookup instead of ternary (Flash string, zero RAM allocation)
+3888:         const char* alert_msg = ALERT_MSG_LUT[
+3889:             std::min(static_cast<uint8_t>(max_threat), static_cast<uint8_t>(ThreatLevel::CRITICAL))
+3890:         ];
+3891:         status_bar_.update_alert_status(max_threat, total_drones, alert_msg);
+3892:     }
+3893: 
+3894:     display_controller_.update_detection_display(scanner_);
+3895: 
+3896:     // DIAMOND OPTIMIZATION: LUT lookup for signal type (Flash storage)
+3897:     // Eliminates switch-case and std::string allocation
+3898:     uint8_t mode_idx = static_cast<uint8_t>(scanner_.get_scanning_mode());
+3899:     const char* signal_type = SIGNAL_TYPE_LUT[mode_idx];
+3900:     display_controller_.update_signal_type_display(signal_type);
+3901: }
+3902: 
+3903: void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
+3904:     button_start_stop_.on_select = [this](Button&) {
+3905:         handle_start_stop_button();
+3906:     };
+3907:     button_menu_.on_select = [this](Button&) -> void {
+3908:         ui_controller_.show_menu();
+3909:     };
+3910:     button_audio_.on_select = [this](Button&) {
+3911:         // Toggle audio alerts setting
+3912:         settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
+3913:         // Update button text immediately
+3914:         button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
+3915:         static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
+3916:         static Style grey_style{font::fixed_8x16, Color::black(), Color::grey()};
+3917:         button_audio_.set_style(settings_.audio_flags.enable_alerts ? &green_style : &grey_style);
+3918:     };
+3919: 
+3920:     field_scanning_mode_.on_change = [this](size_t index, int32_t value) -> void {
+3921:         (void)value;
+3922:         set_scanning_mode_from_index(index);
+3923:     };
+3924: }
+3925: 
+3926: void EnhancedDroneSpectrumAnalyzerView::initialize_scanning_mode() {
+3927:     int initial_mode = static_cast<int>(scanner_.get_scanning_mode());
+3928:     field_scanning_mode_.set_selected_index(initial_mode);
+3929: }
+3930: 
+3931: void EnhancedDroneSpectrumAnalyzerView::set_scanning_mode_from_index(size_t index) {
+3932:     DroneScanner::ScanningMode mode = static_cast<DroneScanner::ScanningMode>(index);
+3933:     scanner_.set_scanning_mode(mode);
+3934:     display_controller_.set_scanning_status(ui_controller_.is_scanning(),
+3935:                                            scanner_.scanning_mode_name());
+3936:     update_modern_layout();
+3937: }
+3938: 
+3939: void EnhancedDroneSpectrumAnalyzerView::add_ui_elements() {
+3940:     add_children({&smart_header_, &status_bar_});
+3941:     for (auto& card : threat_cards_) {
+3942:         add_child(&card);
+3943:     }
+3944:     add_children({&button_start_stop_, &button_menu_, &button_audio_});
+3945: }
+3946: 
+3947: LoadingScreenView::LoadingScreenView(NavigationView& nav)
+3948:     : nav_(nav),
+3949:       text_eda_(Rect{108, 213, 24, 16}, "EDA"),
+3950:       timer_start_(chTimeNow())
+3951: {
+3952:     static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
+3953:     text_eda_.set_style(&red_style);
+3954:     add_child(&text_eda_);
+3955:     set_focusable(false);
+3956: }
+3957: 
+3958: void LoadingScreenView::paint(Painter& painter) {
+3959:     painter.fill_rectangle(
+3960:         {0, 0, portapack::display.width(), portapack::display.height()},
+3961:         Color::black()
+3962:     );
+3963:     View::paint(painter);
+3964: }
+3965: 
+3966: // ===========================================
+3967: // PART 5: SCANNINGCOORDINATOR IMPLEMENTATION
+3968: // ===========================================
+3969: 
+3970: ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
+3971:                                        DroneHardwareController& hardware,
+3972:                                        DroneScanner& scanner,
+3973:                                        DroneDisplayController& display_controller,
+3974:                                        ::AudioManager& audio_controller)
+3975:     : nav_(nav), hardware_(hardware), scanner_(scanner), display_controller_(display_controller), audio_controller_(audio_controller),
+3976:       scanning_active_(false), scanning_thread_(nullptr), scan_interval_ms_(750)
+3977: {
+3978: }
+3979: 
+3980: ScanningCoordinator::~ScanningCoordinator() {
+3981:     stop_coordinated_scanning();
+3982: }
+3983: 
+3984: void ScanningCoordinator::start_coordinated_scanning() {
+3985:     if (scanning_active_.load(std::memory_order_acquire)) return;
+3986:     scanning_active_.store(true, std::memory_order_release);
+3987: 
+3988:     // ФАЗА 5.6: СОЗДАНИЕ COORDINATOR ПОТОКА СО СТАТИЧЕСКИМ СТЕКОМ
+3989:     scanning_thread_ = chThdCreateStatic(
+3990:         coordinator_wa_,
+3991:         sizeof(coordinator_wa_),
+3992:         NORMALPRIO,
+3993:         scanning_thread_function,
+3994:         this
+3995:     );
+3996:     if (!scanning_thread_) {
+3997:         scanning_active_.store(false, std::memory_order_release);
+3998:     }
+3999: }
+4000: 
 4001: 
-4002: 
-4003: void ScanningCoordinator::stop_coordinated_scanning() {
-4004:     //1. First check if thread is active at all
-4005:     if (scanning_active_.load(std::memory_order_acquire)) {
-4006:         // 2. Reset flag. Thread will see this in while(scanning_active_) loop and exit.
-4007:         scanning_active_.store(false, std::memory_order_release);
-4008: 
-4009:         // 3. If thread pointer exists, wait for its completion.
-4010:         if (scanning_thread_) {
-4011:             // chThdWait blocks current (UI) thread until scanning_thread_ calls chThdExit
-4012:             chThdWait(scanning_thread_);
-4013:             scanning_thread_ = nullptr;
-4014:         }
-4015:     }
-4016: }
-4017: 
-4018: msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
-4019:     return static_cast<ScanningCoordinator*>(arg)->coordinated_scanning_thread();
-4020: }
-4021: 
-4022: msg_t ScanningCoordinator::coordinated_scanning_thread() {
-4023:     while (scanning_active_.load(std::memory_order_acquire)) {
-4024:         scanner_.perform_scan_cycle(hardware_);
-4025:         // TODO[CRITICAL][FIXED]: Removed direct UI calls from scanning thread
-4026:         // UI updates now happen only through MessageHandler in handle_scanner_update()
-4027: 
-4028:         chThdSleepMilliseconds(scan_interval_ms_);
-4029:     }
-4030:     scanning_active_.store(false, std::memory_order_release);
-4031:     scanning_thread_ = nullptr;
-4032:     chThdExit(0);
-4033:     return 0;
-4034: }
-4035: 
-4036: void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {
-4037:     scan_interval_ms_ = settings.scan_interval_ms;
-4038: 
-4039:     // Update scanner parameters if scanning is active
-4040:     if (scanning_active_.load(std::memory_order_acquire)) {
-4041:         scanner_.update_scan_range(settings.wideband_min_freq_hz,
-4042:                                    settings.wideband_max_freq_hz);
-4043:     }
-4044: }
-4045: 
-4046: void ScanningCoordinator::show_session_summary(const std::string& summary) {
-4047:     (void)summary;
-4048: }
-4049: 
-4050: // ===========================================
-4051: // PART 6: DISPLAY HELPER IMPLEMENTATIONS
-4052: // ===========================================
-4053: // ?? Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
-4054: // All wrapper methods removed to eliminate indirection
-4055: 
-4056: void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
-4057:     if (bin >= spectrum.db.size()) {
-4058:         max_power = 0;
-4059:         return;
-4060:     }
-4061:     max_power = spectrum.db[bin];
-4062: }
-4063: 
-4064: void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
-4065:     // ?? ФАЗА 1.5: Проверка валидности буфера (статический буфер)
-4066:     if (!buffers_allocated_) {
-4067:         return;
-4068:     }
-4069:     if (pixel_index < spectrum_row_buffer().size()) {
-4070:         spectrum_row_buffer()[pixel_index] = spectrum_gradient_.lut[power];
-4071:         pixel_index++;
-4072:     }
-4073: }
+4002: void ScanningCoordinator::stop_coordinated_scanning() {
+4003:     //1. First check if thread is active at all
+4004:     if (scanning_active_.load(std::memory_order_acquire)) {
+4005:         // 2. Reset flag. Thread will see this in while(scanning_active_) loop and exit.
+4006:         scanning_active_.store(false, std::memory_order_release);
+4007: 
+4008:         // 3. If thread pointer exists, wait for its completion.
+4009:         if (scanning_thread_) {
+4010:             // chThdWait blocks current (UI) thread until scanning_thread_ calls chThdExit
+4011:             chThdWait(scanning_thread_);
+4012:             scanning_thread_ = nullptr;
+4013:         }
+4014:     }
+4015: }
+4016: 
+4017: msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
+4018:     return static_cast<ScanningCoordinator*>(arg)->coordinated_scanning_thread();
+4019: }
+4020: 
+4021: msg_t ScanningCoordinator::coordinated_scanning_thread() {
+4022:     while (scanning_active_.load(std::memory_order_acquire)) {
+4023:         scanner_.perform_scan_cycle(hardware_);
+4024:         // TODO[CRITICAL][FIXED]: Removed direct UI calls from scanning thread
+4025:         // UI updates now happen only through MessageHandler in handle_scanner_update()
+4026: 
+4027:         chThdSleepMilliseconds(scan_interval_ms_);
+4028:     }
+4029:     scanning_active_.store(false, std::memory_order_release);
+4030:     scanning_thread_ = nullptr;
+4031:     chThdExit(0);
+4032:     return 0;
+4033: }
+4034: 
+4035: void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {
+4036:     scan_interval_ms_ = settings.scan_interval_ms;
+4037: 
+4038:     // Update scanner parameters if scanning is active
+4039:     if (scanning_active_.load(std::memory_order_acquire)) {
+4040:         scanner_.update_scan_range(settings.wideband_min_freq_hz,
+4041:                                    settings.wideband_max_freq_hz);
+4042:     }
+4043: }
+4044: 
+4045: void ScanningCoordinator::show_session_summary(const std::string& summary) {
+4046:     (void)summary;
+4047: }
+4048: 
+4049: // ===========================================
+4050: // PART 6: DISPLAY HELPER IMPLEMENTATIONS
+4051: // ===========================================
+4052: // ?? Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
+4053: // All wrapper methods removed to eliminate indirection
+4054: 
+4055: void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
+4056:     if (bin >= spectrum.db.size()) {
+4057:         max_power = 0;
+4058:         return;
+4059:     }
+4060:     max_power = spectrum.db[bin];
+4061: }
+4062: 
+4063: void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
+4064:     // ?? ФАЗА 1.5: Проверка валидности буфера (статический буфер)
+4065:     if (!buffers_allocated_) {
+4066:         return;
+4067:     }
+4068:     if (pixel_index < spectrum_row_buffer().size()) {
+4069:         spectrum_row_buffer()[pixel_index] = spectrum_gradient_.lut[power];
+4070:         pixel_index++;
+4071:     }
+4072: }
+4073: 
 4074: 
-4075: 
-4076: // ===========================================
-4077: // PART 7: ENHANCED SETTINGS VALIDATOR
-4078: // ===========================================
-4079: 
-4080: EnhancedDroneSettingsValidator::ValidationResult
-4081: EnhancedDroneSettingsValidator::validate_all(const DroneAnalyzerSettings& settings) {
-4082:     ValidationResult result;
-4083: 
-4084:     // 1. Validate RSSI threshold
-4085:     if (!validate_rssi_threshold(settings.rssi_threshold_db, result.error_message, sizeof(result.error_message))) {
-4086:         result.is_valid = false;
-4087:         return result;
-4088:     }
-4089: 
-4090:     // 2. Validate scan interval
-4091:     if (!validate_scan_interval(settings.scan_interval_ms, result.error_message, sizeof(result.error_message))) {
-4092:         result.is_valid = false;
-4093:         return result;
-4094:     }
-4095: 
-4096:     // 3. Validate audio parameters
-4097:     if (!validate_audio_params(settings.audio_alert_frequency_hz,
-4098:                               settings.audio_alert_duration_ms, result.error_message, sizeof(result.error_message))) {
-4099:         result.is_valid = false;
-4100:         return result;
-4101:     }
-4102: 
-4103:     // 4. Validate bandwidth
-4104:     if (!validate_bandwidth(settings.hardware_bandwidth_hz, result.error_message, sizeof(result.error_message))) {
-4105:         result.is_valid = false;
-4106:         return result;
-4107:     }
-4108: 
-4109:     // 5. Validate frequency range
-4110:     if (!validate_frequency_range(settings.user_min_freq_hz, settings.user_max_freq_hz, result.error_message, sizeof(result.error_message))) {
-4111:         result.is_valid = false;
-4112:         return result;
-4113:     }
-4114: 
-4115:     // 6. Check for warnings (not errors)
-4116:     if (settings.rssi_threshold_db > -60) {
-4117:         result.warning_count++;
-4118:         safe_strcat(result.error_message, "WARN: High RSSI threshold may miss weak signals\n", sizeof(result.error_message));
-4119:     }
-4120: 
-4121:     if (settings.scan_interval_ms > 5000) {
-4122:         result.warning_count++;
-4123:         safe_strcat(result.error_message, "WARN: Slow scan interval\n", sizeof(result.error_message));
-4124:     }
-4125: 
-4126:     return result;
-4127: }
-4128: 
-4129: bool EnhancedDroneSettingsValidator::validate_frequency(Frequency freq, char* error, size_t error_size) {
-4130:     if (freq < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ ||
-4131:         freq > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
-4132:         char freq_str[32];
-4133:         format_frequency_hz(freq, freq_str, sizeof(freq_str));
-4134:         snprintf(error, error_size, "Frequency %s out of range (must be %llu-%llu GHz)",
-4135:                  freq_str,
-4136:                  DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ / 1000000000ULL,
-4137:                  DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ / 1000000000ULL);
-4138:         return false;
-4139:     }
-4140:     return true;
-4141: }
-4142: 
-4143: bool EnhancedDroneSettingsValidator::validate_rssi_threshold(int32_t rssi, char* error, size_t error_size) {
-4144:     if (rssi < DroneConstants::MIN_VALID_RSSI || rssi > DroneConstants::MAX_VALID_RSSI) {
-4145:         snprintf(error, error_size, "RSSI threshold %ld invalid (must be %ld to %ld)",
-4146:                  (long)rssi, (long)DroneConstants::MIN_VALID_RSSI, (long)DroneConstants::MAX_VALID_RSSI);
-4147:         return false;
-4148:     }
-4149:     return true;
-4150: }
-4151: 
-4152: bool EnhancedDroneSettingsValidator::validate_scan_interval(uint32_t interval_ms, char* error, size_t error_size) {
-4153:     if (interval_ms < DroneConstants::MIN_SCAN_INTERVAL_MS ||
-4154:         interval_ms > DroneConstants::MAX_SCAN_INTERVAL_MS) {
-4155:         snprintf(error, error_size, "Scan interval %lu invalid (must be %lu to %lu)",
-4156:                  (unsigned long)interval_ms, (unsigned long)DroneConstants::MIN_SCAN_INTERVAL_MS,
-4157:                  (unsigned long)DroneConstants::MAX_SCAN_INTERVAL_MS);
-4158:         return false;
-4159:     }
-4160:     return true;
-4161: }
-4162: 
-4163: bool EnhancedDroneSettingsValidator::validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, char* error, size_t error_size) {
-4164:     if (freq_hz < DroneConstants::MIN_AUDIO_FREQ || freq_hz > DroneConstants::MAX_AUDIO_FREQ) {
-4165:         snprintf(error, error_size, "Audio frequency %lu invalid (must be %lu to %lu)",
-4166:                  (unsigned long)freq_hz, (unsigned long)DroneConstants::MIN_AUDIO_FREQ,
-4167:                  (unsigned long)DroneConstants::MAX_AUDIO_FREQ);
-4168:         return false;
-4169:     }
-4170: 
-4171:     if (duration_ms < DroneConstants::MIN_AUDIO_DURATION ||
-4172:         duration_ms > DroneConstants::MAX_AUDIO_DURATION) {
-4173:         snprintf(error, error_size, "Audio duration %lu invalid (must be %lu to %lu)",
-4174:                  (unsigned long)duration_ms, (unsigned long)DroneConstants::MIN_AUDIO_DURATION,
-4175:                  (unsigned long)DroneConstants::MAX_AUDIO_DURATION);
-4176:         return false;
-4177:     }
-4178:     return true;
-4179: }
-4180: 
-4181: bool EnhancedDroneSettingsValidator::validate_bandwidth(uint32_t bandwidth_hz, char* error, size_t error_size) {
-4182:     if (bandwidth_hz < DroneConstants::MIN_BANDWIDTH || bandwidth_hz > DroneConstants::MAX_BANDWIDTH) {
-4183:         snprintf(error, error_size, "Bandwidth %lu invalid (must be %lu to %lu)",
-4184:                  (unsigned long)bandwidth_hz, (unsigned long)DroneConstants::MIN_BANDWIDTH,
-4185:                  (unsigned long)DroneConstants::MAX_BANDWIDTH);
-4186:         return false;
-4187:     }
-4188:     return true;
-4189: }
-4190: 
-4191: bool EnhancedDroneSettingsValidator::validate_frequency_range(Frequency min_hz, Frequency max_hz, char* error, size_t error_size) {
-4192:     if (min_hz >= max_hz) {
-4193:         safe_strcpy(error, "Min frequency must be less than max frequency", error_size);
-4194:         return false;
-4195:     }
-4196: 
-4197:     if (!validate_frequency(min_hz, error, error_size)) return false;
-4198:     if (!validate_frequency(max_hz, error, error_size)) return false;
-4199: 
-4200:     // Check range width
-4201:     Frequency range = max_hz - min_hz;
-4202:     if (static_cast<uint64_t>(range) < 1000000ULL) { // Minimum 1 MHz range
-4203:         safe_strcpy(error, "Frequency range too small (minimum 1 MHz)", error_size);
-4204:         return false;
-4205:     }
-4206:     
-4207:     return true;
-4208: }
-4209: 
-4210: bool EnhancedDroneSettingsValidator::is_known_drone_band(Frequency freq) {
-4211:     // Check 433 MHz band
-4212:     if (freq >= DroneConstants::MIN_433MHZ && freq <= DroneConstants::MAX_433MHZ) return true;
-4213:     
-4214:     // Check 860-930 MHz (LRS/Military)
-4215:     if (freq >= DroneConstants::MIN_900MHZ && freq <= DroneConstants::MAX_900MHZ) return true;
-4216:     
-4217:     // Check 2.4 GHz ISM band
-4218:     if (freq >= DroneConstants::MIN_24GHZ && freq <= DroneConstants::MAX_24GHZ) return true;
-4219:     
-4220:     // Check 5.8 GHz band
-4221:     if (freq >= DroneConstants::MIN_58GHZ && freq <= DroneConstants::MAX_58GHZ) return true;
-4222:     
-4223:     return false;
-4224: }
-4225: 
-4226: bool EnhancedDroneSettingsValidator::is_ism_band(Frequency freq) {
-4227:     return (static_cast<uint64_t>(freq) >= 2400000000ULL && static_cast<uint64_t>(freq) <= 2483500000ULL) ||
-4228:            (static_cast<uint64_t>(freq) >= 5725000000ULL && static_cast<uint64_t>(freq) <= 5875000000ULL);
-4229: }
-4230: 
-4231: // DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
-4232: // Eliminates ~30 lines of duplicate formatting code
-4233: // Scott Meyers Item 25: Consider support for implicit interfaces
-4234: void EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq, char* buffer, size_t buffer_size) {
-4235:     if (static_cast<uint64_t>(freq) >= 1000000000ULL) {
-4236:         FrequencyFormatter::format_to_buffer(buffer, buffer_size, freq, FrequencyFormatter::Format::DETAILED_GHZ);
-4237:     } else {
-4238:         FrequencyFormatter::format_to_buffer(buffer, buffer_size, freq, FrequencyFormatter::Format::STANDARD_MHZ);
-4239:     }
-4240: }
-4241: 
-4242: // ===========================================
-4243: // PART 6.5: COMPACT FREQUENCY RULER IMPLEMENTATION
-4244: // ===========================================
-4245: 
-4246: CompactFrequencyRuler::CompactFrequencyRuler(Rect parent_rect)
-4247:     : View(parent_rect),
-4248:       min_freq_(2400000000ULL),
-4249:       max_freq_(2500000000ULL),
-4250:       spectrum_width_(240),
-4251:       visible_(true),
-4252:       ruler_style_(RulerStyle::COMPACT_GHZ),
-4253:       target_tick_count_(DEFAULT_TICK_COUNT) {
-4254: }
-4255: 
-4256: void CompactFrequencyRuler::set_frequency_range(Frequency min_freq, Frequency max_freq) {
-4257:     min_freq_ = min_freq;
-4258:     max_freq_ = max_freq;
-4259:     set_dirty();
-4260: }
-4261: 
-4262: void CompactFrequencyRuler::set_spectrum_width(int width) {
-4263:     spectrum_width_ = width;
-4264:     set_dirty();
-4265: }
-4266: 
-4267: void CompactFrequencyRuler::set_visible(bool visible) {
-4268:     visible_ = visible;
-4269:     hidden(!visible);
-4270: }
-4271: 
-4272: void CompactFrequencyRuler::set_ruler_style(RulerStyle style) {
-4273:     ruler_style_ = style;
-4274:     set_dirty();
-4275: }
-4276: 
-4277: void CompactFrequencyRuler::set_tick_count(int num_ticks) {
-4278:     if (num_ticks >= 3 && num_ticks <= 8) {
-4279:         target_tick_count_ = num_ticks;
-4280:     }
-4281:     set_dirty();
-4282: }
-4283: 
-4284: void CompactFrequencyRuler::paint(Painter& painter) {
-4285:     const auto r = screen_rect();
-4286: 
-4287:     painter.fill_rectangle(r, Color::black());
-4288: 
-4289:     if (!visible_) return;
-4290: 
-4291:     draw_compact_ticks(painter, r);
-4292: }
-4293: 
-4294: void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
-4295:     Frequency range = max_freq_ - min_freq_;
-4296:     if (range == 0) return;  // Early exit pattern
-4297: 
-4298:     Frequency tick_interval = calculate_optimal_tick_interval();
-4299:     if (tick_interval == 0) return;
-4300: 
-4301:     // DIAMOND OPTIMIZATION: Single style (both use same font/colors)
-4302:     // Eliminates branching between mhz/ghz styles
-4303:     static Style label_style{font::fixed_5x8, Color::grey(), Color::black()};
-4304: 
-4305:     // Draw horizontal line at bottom of ruler (using 1-pixel rectangle)
-4306:     painter.fill_rectangle(
-4307:         {r.left(), r.top() + RULER_HEIGHT - 1, r.width(), 1},
-4308:         Theme::getInstance()->bg_darkest->foreground
-4309:     );
-4310: 
-4311:     Frequency first_tick = (min_freq_ / tick_interval) * tick_interval;
-4312:     if (first_tick < min_freq_) {
-4313:         first_tick += tick_interval;
-4314:     }
-4315: 
-4316:     for (Frequency tick = first_tick; tick <= max_freq_; tick += tick_interval) {
-4317:         int x = r.left() + static_cast<int>(((tick - min_freq_) * spectrum_width_) / range);
-4318: 
-4319:         if (x < r.left() || x > r.right()) {
-4320:             continue;
-4321:         }
-4322: 
-4323:         // Draw major tick (tall) - using 1-pixel rectangle
-4324:         painter.fill_rectangle(
-4325:             {x, r.top(), 1, TICK_HEIGHT_MAJOR},
-4326:             Theme::getInstance()->bg_darkest->foreground
-4327:         );
-4328: 
-4329:         std::string label = format_compact_label(tick);
-4330: 
-4331:         auto text_size = label_style.font.size_of(label);
-4332:         int text_x = x - text_size.width() / 2;
-4333:         int text_y = r.top() + 1;
-4334: 
-4335:         if (text_x < r.left() + 2) text_x = r.left() + 2;
-4336:         if (text_x + text_size.width() > r.right() - 2) {
-4337:             text_x = r.right() - text_size.width() - 2;
-4338:         }
-4339: 
-4340:         painter.draw_string({text_x, text_y}, label_style, label);
-4341: 
-4342:         // DIAMOND OPTIMIZATION: Sub-tick logic based on tick_interval only
-4343:         // Eliminates should_use_mhz() call (bitfield read cost)
-4344:         if (static_cast<uint64_t>(tick_interval) >= 100000000ULL) {
-4345:             for (int sub = 1; sub < 5; sub++) {
-4346:                 Frequency sub_tick = tick + (tick_interval * sub) / 5;
-4347:                 int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
-4348: 
-4349:                 if (sub_x > r.left() && sub_x < r.right()) {
-4350:                     painter.fill_rectangle(
-4351:                         {sub_x, r.top(), 1, TICK_HEIGHT_MINOR},
-4352:                         Theme::getInstance()->bg_darkest->foreground
-4353:                     );
-4354:                 }
-4355:             }
-4356:         }
-4357:     }
-4358: }
-4359: 
-4360: // DIAMOND OPTIMIZATION: Lookup table for ruler style to formatter mapping
-4361: // Scott Meyers Item 15: Prefer constexpr to #define
-4362: // Eliminates ~60 lines of switch-case logic
-4363: namespace {
-4364:     static constexpr FrequencyFormatter::Format RULER_FORMAT_LUT[] = {
-4365:         FrequencyFormatter::Format::COMPACT_GHZ,   // COMPACT_GHZ = 0
-4366:         FrequencyFormatter::Format::COMPACT_MHZ,   // COMPACT_MHZ = 1
-4367:         FrequencyFormatter::Format::STANDARD_GHZ,  // STANDARD_GHZ = 2
-4368:         FrequencyFormatter::Format::STANDARD_MHZ,  // STANDARD_MHZ = 3
-4369:         FrequencyFormatter::Format::DETAILED_GHZ,  // DETAILED = 4
-4370:         FrequencyFormatter::Format::SPACED_GHZ      // SPACED_GHZ = 5
-4371:     };
-4372: }
-4373: 
-4374: // DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
-4375: // Eliminates ~60 lines of duplicate formatting code
-4376: // Scott Meyers Item 2: Prefer consts, enums, and inlines to #defines
-4377: std::string CompactFrequencyRuler::format_compact_label(Frequency freq) {
-4378:     // LUT lookup instead of switch-case (Flash storage, zero RAM allocation)
-4379:     uint8_t idx = static_cast<uint8_t>(ruler_style_);
-4380:     if (idx >= 6) idx = 0;  // Fallback to COMPACT_GHZ
-4381:     
-4382:     return FrequencyFormatter::format(freq, RULER_FORMAT_LUT[idx]);
-4383: }
-4384: 
-4385: Frequency CompactFrequencyRuler::calculate_optimal_tick_interval() {
-4386:     Frequency range = max_freq_ - min_freq_;
-4387:     if (range == 0) return 0;
-4388: 
-4389:     // Optimized intervals for PortaPack's small screen
-4390:     // Prioritize GHz intervals for SPACED_GHZ style
-4391:     Frequency intervals[] = {
-4392:         5000000000ULL,  4000000000ULL,  3000000000ULL, 2000000000ULL,  // 5G, 4G, 3G, 2G
-4393:         1000000000ULL,  // 1G (key for SPACED_GHZ)
-4394:         500000000ULL,   250000000ULL,   200000000ULL,            // 500M, 250M, 200M
-4395:         100000000ULL,   50000000ULL,    25000000ULL,            // 100M, 50M, 25M
-4396:         20000000ULL,    10000000ULL,    5000000ULL,             // 20M, 10M, 5M
-4397:         2000000ULL,     1000000ULL,     500000ULL,              // 2M, 1M, 500k
-4398:         200000ULL,      100000ULL                                // 200k, 100k
-4399:     };
-4400: 
-4401:     for (auto interval : intervals) {
-4402:         int ticks = static_cast<int>(range / interval);
-4403:         if (ticks >= target_tick_count_ - 1 && ticks <= target_tick_count_ + 1) {
-4404:             return interval;
-4405:         }
-4406:     }
-4407: 
-4408:     return range / target_tick_count_;
-4409: }
-4410: 
-4411: RulerStyle CompactFrequencyRuler::determine_auto_style() {
-4412:     Frequency range = max_freq_ - min_freq_;
-4413:     bool use_mhz = should_use_mhz_labels();
-4414: 
-4415:     if (use_mhz) {
-4416:         if (static_cast<uint64_t>(range) < 100000000ULL) {
-4417:             return RulerStyle::DETAILED;
-4418:         } else {
-4419:             return RulerStyle::STANDARD_MHZ;
-4420:         }
-4421:     } else {
-4422:         // Optimal for PortaPack: Use SPACED_GHZ for wide ranges (>1GHz)
-4423:         if (static_cast<uint64_t>(range) >= 1000000000ULL) {
-4424:             return RulerStyle::SPACED_GHZ;
-4425:         } else if (static_cast<uint64_t>(range) >= 500000000ULL) {
-4426:             return RulerStyle::STANDARD_GHZ;
-4427:         } else {
-4428:             return RulerStyle::COMPACT_GHZ;
-4429:         }
-4430:     }
-4431: }
-4432: 
-4433: bool CompactFrequencyRuler::should_use_mhz_labels() const {
-4434:     Frequency range = max_freq_ - min_freq_;
-4435: 
-4436:     if (static_cast<uint64_t>(range) < 50000000ULL) {
-4437:         return true;
-4438:     }
-4439: 
-4440:     Frequency center = (min_freq_ + max_freq_) / 2;
-4441:     if (static_cast<uint64_t>(center) < 1000000000ULL) {
-4442:         return true;
-4443:     }
-4444: 
-4445:     if (ruler_style_ == RulerStyle::COMPACT_MHZ ||
-4446:         ruler_style_ == RulerStyle::STANDARD_MHZ) {
-4447:         return true;
-4448:     }
-4449: 
-4450:     return false;
-4451: }
-4452: 
-4453: // ===========================================
-4454: // PART 7: FREQUENCY RULER IMPLEMENTATION
-4455: // ===========================================
-4456: 
-4457: FrequencyRuler::FrequencyRuler(Rect parent_rect)
-4458:     : View(parent_rect),
-4459:       min_freq_(2400000000ULL),
-4460:       max_freq_(2500000000ULL),
-4461:       spectrum_width_(240),
-4462:       visible_(true) {
-4463: }
-4464: 
-4465: void FrequencyRuler::set_frequency_range(Frequency min_freq, Frequency max_freq) {
-4466:     min_freq_ = min_freq;
-4467:     max_freq_ = max_freq;
-4468:     set_dirty();
-4469: }
-4470: 
-4471: void FrequencyRuler::set_spectrum_width(int width) {
-4472:     spectrum_width_ = width;
-4473:     set_dirty();
-4474: }
-4475: 
-4476: void FrequencyRuler::set_visible(bool visible) {
-4477:     visible_ = visible;
-4478:     if (!visible) {
-4479:         hidden(true);
-4480:     } else {
-4481:         hidden(false);
-4482:     }
-4483: }
-4484: 
-4485: Frequency FrequencyRuler::calculate_tick_interval() {
-4486:     Frequency freq_range = max_freq_ - min_freq_;
-4487:     if (freq_range == 0) {
-4488:         return 1000000000ULL;  // Default: 1 GHz
-4489:     }
-4490: 
-4491:     // Possible intervals in Hz (from largest to smallest)
-4492:     Frequency intervals[] = {
-4493:         4000000000ULL,  // 4 GHz
-4494:         2000000000ULL,  // 2 GHz
-4495:         1000000000ULL,  // 1 GHz
-4496:         500000000ULL,   // 500 MHz
-4497:         200000000ULL,   // 200 MHz
-4498:         100000000ULL,   // 100 MHz
-4499:         50000000ULL,    // 50 MHz
-4500:         20000000ULL,    // 20 MHz
-4501:         10000000ULL,    // 10 MHz
-4502:         5000000ULL,     // 5 MHz
-4503:         2000000ULL,     // 2 MHz
-4504:         1000000ULL      // 1 MHz
-4505:     };
-4506: 
-4507:     size_t num_intervals = sizeof(intervals) / sizeof(intervals[0]);
-4508: 
-4509:     // Select interval so that we have 4-8 ticks on screen
-4510:     for (size_t i = 0; i < num_intervals; i++) {
-4511:         if (freq_range / intervals[i] <= 8 && freq_range / intervals[i] >= 4) {
-4512:             return intervals[i];
-4513:         }
-4514:     }
-4515: 
-4516:     // Fallback: use 6 ticks evenly distributed
-4517:     return freq_range / 6;
-4518: }
-4519: 
-4520: // DIAMOND OPTIMIZATION: Lookup tables for frequency ruler configuration
-4521: // Scott Meyers Item 15: Prefer constexpr to #define
-4522: // Eliminates conditional std::string allocation and branching
-4523: namespace {
-4524:     // Tick configuration LUT (Flash storage, zero RAM at runtime)
-4525:     struct TickConfig {
-4526:         FrequencyFormatter::Format format;
-4527:         uint8_t sub_ticks;  // Bitfield: 0=none, 1..5=count
-4528:     };
-4529: 
-4530:     static constexpr TickConfig TICK_CONFIG_LUT[] = {
-4531:         {FrequencyFormatter::Format::STANDARD_GHZ, 5},  // >= 1 GHz
-4532:         {FrequencyFormatter::Format::STANDARD_MHZ, 5},  // >= 1 MHz
-4533:         {FrequencyFormatter::Format::COMPACT_MHZ, 0}    // < 1 MHz
-4534:     };
-4535: 
-4536:     // Get config index from tick_interval (constexpr-friendly)
-4537:     constexpr uint8_t get_tick_config_index(Frequency tick_interval) {
-4538:         return (static_cast<uint64_t>(tick_interval) >= 1000000000ULL) ? 0 :
-4539:                (static_cast<uint64_t>(tick_interval) >= 1000000ULL) ? 1 : 2;
-4540:     }
-4541: }
-4542: 
-4543: // DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
-4544: // Eliminates ~40 lines of duplicate formatting code
-4545: std::string FrequencyRuler::format_frequency_label(Frequency freq, Frequency tick_interval) {
-4546:     // LUT lookup instead of conditional (Flash string, zero RAM allocation)
-4547:     uint8_t idx = get_tick_config_index(tick_interval);
-4548:     return FrequencyFormatter::format(freq, TICK_CONFIG_LUT[idx].format);
-4549: }
-4550: 
-4551: void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
-4552:     Frequency tick_interval = calculate_tick_interval();
-4553:     Frequency range = max_freq_ - min_freq_;
-4554:     if (range == 0) return;  // Early exit pattern
-4555: 
-4556:     // LUT lookup for configuration (Flash storage, zero RAM allocation)
-4557:     const TickConfig& config = TICK_CONFIG_LUT[get_tick_config_index(tick_interval)];
-4558: 
-4559:     // Style for tick labels (small font 5x8)
-4560:     static Style ruler_style{font::fixed_5x8, Color::grey(), Color::black()};
-4561: 
-4562:     // Draw horizontal line at bottom of ruler (using 1-pixel rectangle)
-4563:     painter.fill_rectangle(
-4564:         {r.left(), r.top() + RULER_HEIGHT - 1, r.width(), 1},
-4565:         Theme::getInstance()->bg_darkest->foreground
-4566:     );
-4567: 
-4568:     // Find first tick
-4569:     Frequency first_tick = (min_freq_ / tick_interval) * tick_interval;
-4570:     if (first_tick < min_freq_) {
-4571:         first_tick += tick_interval;
-4572:     }
-4573: 
-4574:     // Draw ticks and labels
-4575:     for (Frequency tick = first_tick; tick <= max_freq_; tick += tick_interval) {
-4576:         // Convert frequency to x position
-4577:         int x = r.left() + static_cast<int>(((tick - min_freq_) * spectrum_width_) / range);
-4578: 
-4579:         if (x < r.left() || x > r.right()) {
-4580:             continue;
-4581:         }
-4582: 
-4583:         // Draw major tick (tall) - using 1-pixel rectangle
-4584:         painter.fill_rectangle(
-4585:             {x, r.top(), 1, TICK_HEIGHT_MAJOR},
-4586:             Theme::getInstance()->bg_darkest->foreground
-4587:         );
-4588: 
-4589:         // Format and draw text label (LUT lookup, no std::string allocation for unit)
-4590:         std::string label = format_frequency_label(tick, tick_interval);
-4591: 
-4592:         auto text_size = ruler_style.font.size_of(label);
-4593:         int text_x = x - text_size.width() / 2;
-4594:         int text_y = r.top() + 1;
-4595: 
-4596:         // Clamp text position to screen bounds
-4597:         if (text_x < r.left() + 2) text_x = r.left() + 2;
-4598:         if (text_x + text_size.width() > r.right() - 2) {
-4599:             text_x = r.right() - text_size.width() - 2;
-4600:         }
-4601: 
-4602:         painter.draw_string({text_x, text_y}, ruler_style, label);
-4603: 
-4604:         // Add intermediate ticks if configured (LUT lookup, zero branching)
-4605:         for (uint8_t sub = 1; sub <= config.sub_ticks; sub++) {
-4606:             Frequency sub_tick = tick + (tick_interval * sub) / (config.sub_ticks + 1);
-4607:             int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
-4608: 
-4609:             if (sub_x > r.left() && sub_x < r.right()) {
-4610:                 painter.fill_rectangle(
-4611:                     {sub_x, r.top(), 1, TICK_HEIGHT_MINOR},
-4612:                     Theme::getInstance()->bg_darkest->foreground
-4613:                 );
-4614:             }
-4615:         }
-4616:     }
-4617: }
-4618: 
-4619: void FrequencyRuler::paint(Painter& painter) {
-4620:     const auto r = screen_rect();
-4621: 
-4622:     // Fill background
-4623:     painter.fill_rectangle(r, Color::black());
-4624: 
-4625:     // Draw frequency ticks and labels
-4626:     if (visible_) {
-4627:         draw_frequency_ticks(painter, r);
-4628:     }
-4629: }
-4630: 
-4631: void DroneDisplayController::update_frequency_ruler() {
-4632:     compact_frequency_ruler_.set_frequency_range(spectrum_config_.min_freq, spectrum_config_.max_freq);
-4633:     compact_frequency_ruler_.set_spectrum_width(SPEC_WIDTH);
-4634:     compact_frequency_ruler_.set_dirty();
-4635: }
-4636: 
-4637: void DroneDisplayController::set_ruler_style(RulerStyle style) {
-4638:     compact_frequency_ruler_.set_ruler_style(style);
-4639:     compact_frequency_ruler_.set_visible(true);
-4640:     frequency_ruler_.set_visible(false);
-4641: }
-4642: 
-4643: void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings& settings) {
-4644:     if (settings.display_flags.show_frequency_ruler) {
-4645:         compact_frequency_ruler_.set_visible(true);
-4646:         frequency_ruler_.set_visible(false);
-4647: 
-4648:         if (settings.display_flags.auto_ruler_style) {
-4649:             compact_frequency_ruler_.set_ruler_style(RulerStyle::COMPACT_GHZ);
-4650:         } else {
-4651:             // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 4135-4144)
-4652:             uint8_t style_idx = (settings.frequency_ruler_style < 7) ?
-4653:                                 settings.frequency_ruler_style : 0;
-4654:             compact_frequency_ruler_.set_ruler_style(RULER_STYLE_LUT[style_idx]);
-4655:         }
-4656: 
-4657:         compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);
-4658:     } else {
-4659:         compact_frequency_ruler_.set_visible(false);
-4660:         frequency_ruler_.set_visible(false);
-4661:     }
-4662: }
+4075: // ===========================================
+4076: // PART 7: ENHANCED SETTINGS VALIDATOR
+4077: // ===========================================
+4078: 
+4079: EnhancedDroneSettingsValidator::ValidationResult
+4080: EnhancedDroneSettingsValidator::validate_all(const DroneAnalyzerSettings& settings) {
+4081:     ValidationResult result;
+4082: 
+4083:     // 1. Validate RSSI threshold
+4084:     if (!validate_rssi_threshold(settings.rssi_threshold_db, result.error_message, sizeof(result.error_message))) {
+4085:         result.is_valid = false;
+4086:         return result;
+4087:     }
+4088: 
+4089:     // 2. Validate scan interval
+4090:     if (!validate_scan_interval(settings.scan_interval_ms, result.error_message, sizeof(result.error_message))) {
+4091:         result.is_valid = false;
+4092:         return result;
+4093:     }
+4094: 
+4095:     // 3. Validate audio parameters
+4096:     if (!validate_audio_params(settings.audio_alert_frequency_hz,
+4097:                               settings.audio_alert_duration_ms, result.error_message, sizeof(result.error_message))) {
+4098:         result.is_valid = false;
+4099:         return result;
+4100:     }
+4101: 
+4102:     // 4. Validate bandwidth
+4103:     if (!validate_bandwidth(settings.hardware_bandwidth_hz, result.error_message, sizeof(result.error_message))) {
+4104:         result.is_valid = false;
+4105:         return result;
+4106:     }
+4107: 
+4108:     // 5. Validate frequency range
+4109:     if (!validate_frequency_range(settings.user_min_freq_hz, settings.user_max_freq_hz, result.error_message, sizeof(result.error_message))) {
+4110:         result.is_valid = false;
+4111:         return result;
+4112:     }
+4113: 
+4114:     // 6. Check for warnings (not errors)
+4115:     if (settings.rssi_threshold_db > -60) {
+4116:         result.warning_count++;
+4117:         safe_strcat(result.error_message, "WARN: High RSSI threshold may miss weak signals\n", sizeof(result.error_message));
+4118:     }
+4119: 
+4120:     if (settings.scan_interval_ms > 5000) {
+4121:         result.warning_count++;
+4122:         safe_strcat(result.error_message, "WARN: Slow scan interval\n", sizeof(result.error_message));
+4123:     }
+4124: 
+4125:     return result;
+4126: }
+4127: 
+4128: bool EnhancedDroneSettingsValidator::validate_frequency(Frequency freq, char* error, size_t error_size) {
+4129:     if (freq < DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ ||
+4130:         freq > DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+4131:         char freq_str[32];
+4132:         format_frequency_hz(freq, freq_str, sizeof(freq_str));
+4133:         snprintf(error, error_size, "Frequency %s out of range (must be %llu-%llu GHz)",
+4134:                  freq_str,
+4135:                  DroneConstants::FrequencyLimits::MIN_HARDWARE_FREQ / 1000000000ULL,
+4136:                  DroneConstants::FrequencyLimits::MAX_HARDWARE_FREQ / 1000000000ULL);
+4137:         return false;
+4138:     }
+4139:     return true;
+4140: }
+4141: 
+4142: bool EnhancedDroneSettingsValidator::validate_rssi_threshold(int32_t rssi, char* error, size_t error_size) {
+4143:     if (rssi < DroneConstants::MIN_VALID_RSSI || rssi > DroneConstants::MAX_VALID_RSSI) {
+4144:         snprintf(error, error_size, "RSSI threshold %ld invalid (must be %ld to %ld)",
+4145:                  (long)rssi, (long)DroneConstants::MIN_VALID_RSSI, (long)DroneConstants::MAX_VALID_RSSI);
+4146:         return false;
+4147:     }
+4148:     return true;
+4149: }
+4150: 
+4151: bool EnhancedDroneSettingsValidator::validate_scan_interval(uint32_t interval_ms, char* error, size_t error_size) {
+4152:     if (interval_ms < DroneConstants::MIN_SCAN_INTERVAL_MS ||
+4153:         interval_ms > DroneConstants::MAX_SCAN_INTERVAL_MS) {
+4154:         snprintf(error, error_size, "Scan interval %lu invalid (must be %lu to %lu)",
+4155:                  (unsigned long)interval_ms, (unsigned long)DroneConstants::MIN_SCAN_INTERVAL_MS,
+4156:                  (unsigned long)DroneConstants::MAX_SCAN_INTERVAL_MS);
+4157:         return false;
+4158:     }
+4159:     return true;
+4160: }
+4161: 
+4162: bool EnhancedDroneSettingsValidator::validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, char* error, size_t error_size) {
+4163:     if (freq_hz < DroneConstants::MIN_AUDIO_FREQ || freq_hz > DroneConstants::MAX_AUDIO_FREQ) {
+4164:         snprintf(error, error_size, "Audio frequency %lu invalid (must be %lu to %lu)",
+4165:                  (unsigned long)freq_hz, (unsigned long)DroneConstants::MIN_AUDIO_FREQ,
+4166:                  (unsigned long)DroneConstants::MAX_AUDIO_FREQ);
+4167:         return false;
+4168:     }
+4169: 
+4170:     if (duration_ms < DroneConstants::MIN_AUDIO_DURATION ||
+4171:         duration_ms > DroneConstants::MAX_AUDIO_DURATION) {
+4172:         snprintf(error, error_size, "Audio duration %lu invalid (must be %lu to %lu)",
+4173:                  (unsigned long)duration_ms, (unsigned long)DroneConstants::MIN_AUDIO_DURATION,
+4174:                  (unsigned long)DroneConstants::MAX_AUDIO_DURATION);
+4175:         return false;
+4176:     }
+4177:     return true;
+4178: }
+4179: 
+4180: bool EnhancedDroneSettingsValidator::validate_bandwidth(uint32_t bandwidth_hz, char* error, size_t error_size) {
+4181:     if (bandwidth_hz < DroneConstants::MIN_BANDWIDTH || bandwidth_hz > DroneConstants::MAX_BANDWIDTH) {
+4182:         snprintf(error, error_size, "Bandwidth %lu invalid (must be %lu to %lu)",
+4183:                  (unsigned long)bandwidth_hz, (unsigned long)DroneConstants::MIN_BANDWIDTH,
+4184:                  (unsigned long)DroneConstants::MAX_BANDWIDTH);
+4185:         return false;
+4186:     }
+4187:     return true;
+4188: }
+4189: 
+4190: bool EnhancedDroneSettingsValidator::validate_frequency_range(Frequency min_hz, Frequency max_hz, char* error, size_t error_size) {
+4191:     if (min_hz >= max_hz) {
+4192:         safe_strcpy(error, "Min frequency must be less than max frequency", error_size);
+4193:         return false;
+4194:     }
+4195: 
+4196:     if (!validate_frequency(min_hz, error, error_size)) return false;
+4197:     if (!validate_frequency(max_hz, error, error_size)) return false;
+4198: 
+4199:     // Check range width
+4200:     Frequency range = max_hz - min_hz;
+4201:     if (static_cast<uint64_t>(range) < 1000000ULL) { // Minimum 1 MHz range
+4202:         safe_strcpy(error, "Frequency range too small (minimum 1 MHz)", error_size);
+4203:         return false;
+4204:     }
+4205:     
+4206:     return true;
+4207: }
+4208: 
+4209: bool EnhancedDroneSettingsValidator::is_known_drone_band(Frequency freq) {
+4210:     // Check 433 MHz band
+4211:     if (freq >= DroneConstants::MIN_433MHZ && freq <= DroneConstants::MAX_433MHZ) return true;
+4212:     
+4213:     // Check 860-930 MHz (LRS/Military)
+4214:     if (freq >= DroneConstants::MIN_900MHZ && freq <= DroneConstants::MAX_900MHZ) return true;
+4215:     
+4216:     // Check 2.4 GHz ISM band
+4217:     if (freq >= DroneConstants::MIN_24GHZ && freq <= DroneConstants::MAX_24GHZ) return true;
+4218:     
+4219:     // Check 5.8 GHz band
+4220:     if (freq >= DroneConstants::MIN_58GHZ && freq <= DroneConstants::MAX_58GHZ) return true;
+4221:     
+4222:     return false;
+4223: }
+4224: 
+4225: bool EnhancedDroneSettingsValidator::is_ism_band(Frequency freq) {
+4226:     return (static_cast<uint64_t>(freq) >= 2400000000ULL && static_cast<uint64_t>(freq) <= 2483500000ULL) ||
+4227:            (static_cast<uint64_t>(freq) >= 5725000000ULL && static_cast<uint64_t>(freq) <= 5875000000ULL);
+4228: }
+4229: 
+4230: // DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
+4231: // Eliminates ~30 lines of duplicate formatting code
+4232: // Scott Meyers Item 25: Consider support for implicit interfaces
+4233: void EnhancedDroneSettingsValidator::format_frequency_hz(Frequency freq, char* buffer, size_t buffer_size) {
+4234:     if (static_cast<uint64_t>(freq) >= 1000000000ULL) {
+4235:         FrequencyFormatter::format_to_buffer(buffer, buffer_size, freq, FrequencyFormatter::Format::DETAILED_GHZ);
+4236:     } else {
+4237:         FrequencyFormatter::format_to_buffer(buffer, buffer_size, freq, FrequencyFormatter::Format::STANDARD_MHZ);
+4238:     }
+4239: }
+4240: 
+4241: // ===========================================
+4242: // PART 6.5: COMPACT FREQUENCY RULER IMPLEMENTATION
+4243: // ===========================================
+4244: 
+4245: CompactFrequencyRuler::CompactFrequencyRuler(Rect parent_rect)
+4246:     : View(parent_rect),
+4247:       min_freq_(2400000000ULL),
+4248:       max_freq_(2500000000ULL),
+4249:       spectrum_width_(240),
+4250:       visible_(true),
+4251:       ruler_style_(RulerStyle::COMPACT_GHZ),
+4252:       target_tick_count_(DEFAULT_TICK_COUNT) {
+4253: }
+4254: 
+4255: void CompactFrequencyRuler::set_frequency_range(Frequency min_freq, Frequency max_freq) {
+4256:     min_freq_ = min_freq;
+4257:     max_freq_ = max_freq;
+4258:     set_dirty();
+4259: }
+4260: 
+4261: void CompactFrequencyRuler::set_spectrum_width(int width) {
+4262:     spectrum_width_ = width;
+4263:     set_dirty();
+4264: }
+4265: 
+4266: void CompactFrequencyRuler::set_visible(bool visible) {
+4267:     visible_ = visible;
+4268:     hidden(!visible);
+4269: }
+4270: 
+4271: void CompactFrequencyRuler::set_ruler_style(RulerStyle style) {
+4272:     ruler_style_ = style;
+4273:     set_dirty();
+4274: }
+4275: 
+4276: void CompactFrequencyRuler::set_tick_count(int num_ticks) {
+4277:     if (num_ticks >= 3 && num_ticks <= 8) {
+4278:         target_tick_count_ = num_ticks;
+4279:     }
+4280:     set_dirty();
+4281: }
+4282: 
+4283: void CompactFrequencyRuler::paint(Painter& painter) {
+4284:     const auto r = screen_rect();
+4285: 
+4286:     painter.fill_rectangle(r, Color::black());
+4287: 
+4288:     if (!visible_) return;
+4289: 
+4290:     draw_compact_ticks(painter, r);
+4291: }
+4292: 
+4293: void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
+4294:     Frequency range = max_freq_ - min_freq_;
+4295:     if (range == 0) return;  // Early exit pattern
+4296: 
+4297:     Frequency tick_interval = calculate_optimal_tick_interval();
+4298:     if (tick_interval == 0) return;
+4299: 
+4300:     // DIAMOND OPTIMIZATION: Single style (both use same font/colors)
+4301:     // Eliminates branching between mhz/ghz styles
+4302:     static Style label_style{font::fixed_5x8, Color::grey(), Color::black()};
+4303: 
+4304:     // Draw horizontal line at bottom of ruler (using 1-pixel rectangle)
+4305:     painter.fill_rectangle(
+4306:         {r.left(), r.top() + RULER_HEIGHT - 1, r.width(), 1},
+4307:         Theme::getInstance()->bg_darkest->foreground
+4308:     );
+4309: 
+4310:     Frequency first_tick = (min_freq_ / tick_interval) * tick_interval;
+4311:     if (first_tick < min_freq_) {
+4312:         first_tick += tick_interval;
+4313:     }
+4314: 
+4315:     for (Frequency tick = first_tick; tick <= max_freq_; tick += tick_interval) {
+4316:         int x = r.left() + static_cast<int>(((tick - min_freq_) * spectrum_width_) / range);
+4317: 
+4318:         if (x < r.left() || x > r.right()) {
+4319:             continue;
+4320:         }
+4321: 
+4322:         // Draw major tick (tall) - using 1-pixel rectangle
+4323:         painter.fill_rectangle(
+4324:             {x, r.top(), 1, TICK_HEIGHT_MAJOR},
+4325:             Theme::getInstance()->bg_darkest->foreground
+4326:         );
+4327: 
+4328:         std::string label = format_compact_label(tick);
+4329: 
+4330:         auto text_size = label_style.font.size_of(label);
+4331:         int text_x = x - text_size.width() / 2;
+4332:         int text_y = r.top() + 1;
+4333: 
+4334:         if (text_x < r.left() + 2) text_x = r.left() + 2;
+4335:         if (text_x + text_size.width() > r.right() - 2) {
+4336:             text_x = r.right() - text_size.width() - 2;
+4337:         }
+4338: 
+4339:         painter.draw_string({text_x, text_y}, label_style, label);
+4340: 
+4341:         // DIAMOND OPTIMIZATION: Sub-tick logic based on tick_interval only
+4342:         // Eliminates should_use_mhz() call (bitfield read cost)
+4343:         if (static_cast<uint64_t>(tick_interval) >= 100000000ULL) {
+4344:             for (int sub = 1; sub < 5; sub++) {
+4345:                 Frequency sub_tick = tick + (tick_interval * sub) / 5;
+4346:                 int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
+4347: 
+4348:                 if (sub_x > r.left() && sub_x < r.right()) {
+4349:                     painter.fill_rectangle(
+4350:                         {sub_x, r.top(), 1, TICK_HEIGHT_MINOR},
+4351:                         Theme::getInstance()->bg_darkest->foreground
+4352:                     );
+4353:                 }
+4354:             }
+4355:         }
+4356:     }
+4357: }
+4358: 
+4359: // DIAMOND OPTIMIZATION: Lookup table for ruler style to formatter mapping
+4360: // Scott Meyers Item 15: Prefer constexpr to #define
+4361: // Eliminates ~60 lines of switch-case logic
+4362: namespace {
+4363:     static constexpr FrequencyFormatter::Format RULER_FORMAT_LUT[] = {
+4364:         FrequencyFormatter::Format::COMPACT_GHZ,   // COMPACT_GHZ = 0
+4365:         FrequencyFormatter::Format::COMPACT_MHZ,   // COMPACT_MHZ = 1
+4366:         FrequencyFormatter::Format::STANDARD_GHZ,  // STANDARD_GHZ = 2
+4367:         FrequencyFormatter::Format::STANDARD_MHZ,  // STANDARD_MHZ = 3
+4368:         FrequencyFormatter::Format::DETAILED_GHZ,  // DETAILED = 4
+4369:         FrequencyFormatter::Format::SPACED_GHZ      // SPACED_GHZ = 5
+4370:     };
+4371: }
+4372: 
+4373: // DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
+4374: // Eliminates ~60 lines of duplicate formatting code
+4375: // Scott Meyers Item 2: Prefer consts, enums, and inlines to #defines
+4376: std::string CompactFrequencyRuler::format_compact_label(Frequency freq) {
+4377:     // LUT lookup instead of switch-case (Flash storage, zero RAM allocation)
+4378:     uint8_t idx = static_cast<uint8_t>(ruler_style_);
+4379:     if (idx >= 6) idx = 0;  // Fallback to COMPACT_GHZ
+4380:     
+4381:     return FrequencyFormatter::format(freq, RULER_FORMAT_LUT[idx]);
+4382: }
+4383: 
+4384: Frequency CompactFrequencyRuler::calculate_optimal_tick_interval() {
+4385:     Frequency range = max_freq_ - min_freq_;
+4386:     if (range == 0) return 0;
+4387: 
+4388:     // Optimized intervals for PortaPack's small screen
+4389:     // Prioritize GHz intervals for SPACED_GHZ style
+4390:     Frequency intervals[] = {
+4391:         5000000000ULL,  4000000000ULL,  3000000000ULL, 2000000000ULL,  // 5G, 4G, 3G, 2G
+4392:         1000000000ULL,  // 1G (key for SPACED_GHZ)
+4393:         500000000ULL,   250000000ULL,   200000000ULL,            // 500M, 250M, 200M
+4394:         100000000ULL,   50000000ULL,    25000000ULL,            // 100M, 50M, 25M
+4395:         20000000ULL,    10000000ULL,    5000000ULL,             // 20M, 10M, 5M
+4396:         2000000ULL,     1000000ULL,     500000ULL,              // 2M, 1M, 500k
+4397:         200000ULL,      100000ULL                                // 200k, 100k
+4398:     };
+4399: 
+4400:     for (auto interval : intervals) {
+4401:         int ticks = static_cast<int>(range / interval);
+4402:         if (ticks >= target_tick_count_ - 1 && ticks <= target_tick_count_ + 1) {
+4403:             return interval;
+4404:         }
+4405:     }
+4406: 
+4407:     return range / target_tick_count_;
+4408: }
+4409: 
+4410: RulerStyle CompactFrequencyRuler::determine_auto_style() {
+4411:     Frequency range = max_freq_ - min_freq_;
+4412:     bool use_mhz = should_use_mhz_labels();
+4413: 
+4414:     if (use_mhz) {
+4415:         if (static_cast<uint64_t>(range) < 100000000ULL) {
+4416:             return RulerStyle::DETAILED;
+4417:         } else {
+4418:             return RulerStyle::STANDARD_MHZ;
+4419:         }
+4420:     } else {
+4421:         // Optimal for PortaPack: Use SPACED_GHZ for wide ranges (>1GHz)
+4422:         if (static_cast<uint64_t>(range) >= 1000000000ULL) {
+4423:             return RulerStyle::SPACED_GHZ;
+4424:         } else if (static_cast<uint64_t>(range) >= 500000000ULL) {
+4425:             return RulerStyle::STANDARD_GHZ;
+4426:         } else {
+4427:             return RulerStyle::COMPACT_GHZ;
+4428:         }
+4429:     }
+4430: }
+4431: 
+4432: bool CompactFrequencyRuler::should_use_mhz_labels() const {
+4433:     Frequency range = max_freq_ - min_freq_;
+4434: 
+4435:     if (static_cast<uint64_t>(range) < 50000000ULL) {
+4436:         return true;
+4437:     }
+4438: 
+4439:     Frequency center = (min_freq_ + max_freq_) / 2;
+4440:     if (static_cast<uint64_t>(center) < 1000000000ULL) {
+4441:         return true;
+4442:     }
+4443: 
+4444:     if (ruler_style_ == RulerStyle::COMPACT_MHZ ||
+4445:         ruler_style_ == RulerStyle::STANDARD_MHZ) {
+4446:         return true;
+4447:     }
+4448: 
+4449:     return false;
+4450: }
+4451: 
+4452: // ===========================================
+4453: // PART 7: FREQUENCY RULER IMPLEMENTATION
+4454: // ===========================================
+4455: 
+4456: FrequencyRuler::FrequencyRuler(Rect parent_rect)
+4457:     : View(parent_rect),
+4458:       min_freq_(2400000000ULL),
+4459:       max_freq_(2500000000ULL),
+4460:       spectrum_width_(240),
+4461:       visible_(true) {
+4462: }
+4463: 
+4464: void FrequencyRuler::set_frequency_range(Frequency min_freq, Frequency max_freq) {
+4465:     min_freq_ = min_freq;
+4466:     max_freq_ = max_freq;
+4467:     set_dirty();
+4468: }
+4469: 
+4470: void FrequencyRuler::set_spectrum_width(int width) {
+4471:     spectrum_width_ = width;
+4472:     set_dirty();
+4473: }
+4474: 
+4475: void FrequencyRuler::set_visible(bool visible) {
+4476:     visible_ = visible;
+4477:     if (!visible) {
+4478:         hidden(true);
+4479:     } else {
+4480:         hidden(false);
+4481:     }
+4482: }
+4483: 
+4484: Frequency FrequencyRuler::calculate_tick_interval() {
+4485:     Frequency freq_range = max_freq_ - min_freq_;
+4486:     if (freq_range == 0) {
+4487:         return 1000000000ULL;  // Default: 1 GHz
+4488:     }
+4489: 
+4490:     // Possible intervals in Hz (from largest to smallest)
+4491:     Frequency intervals[] = {
+4492:         4000000000ULL,  // 4 GHz
+4493:         2000000000ULL,  // 2 GHz
+4494:         1000000000ULL,  // 1 GHz
+4495:         500000000ULL,   // 500 MHz
+4496:         200000000ULL,   // 200 MHz
+4497:         100000000ULL,   // 100 MHz
+4498:         50000000ULL,    // 50 MHz
+4499:         20000000ULL,    // 20 MHz
+4500:         10000000ULL,    // 10 MHz
+4501:         5000000ULL,     // 5 MHz
+4502:         2000000ULL,     // 2 MHz
+4503:         1000000ULL      // 1 MHz
+4504:     };
+4505: 
+4506:     size_t num_intervals = sizeof(intervals) / sizeof(intervals[0]);
+4507: 
+4508:     // Select interval so that we have 4-8 ticks on screen
+4509:     for (size_t i = 0; i < num_intervals; i++) {
+4510:         if (freq_range / intervals[i] <= 8 && freq_range / intervals[i] >= 4) {
+4511:             return intervals[i];
+4512:         }
+4513:     }
+4514: 
+4515:     // Fallback: use 6 ticks evenly distributed
+4516:     return freq_range / 6;
+4517: }
+4518: 
+4519: // DIAMOND OPTIMIZATION: Lookup tables for frequency ruler configuration
+4520: // Scott Meyers Item 15: Prefer constexpr to #define
+4521: // Eliminates conditional std::string allocation and branching
+4522: namespace {
+4523:     // Tick configuration LUT (Flash storage, zero RAM at runtime)
+4524:     struct TickConfig {
+4525:         FrequencyFormatter::Format format;
+4526:         uint8_t sub_ticks;  // Bitfield: 0=none, 1..5=count
+4527:     };
+4528: 
+4529:     static constexpr TickConfig TICK_CONFIG_LUT[] = {
+4530:         {FrequencyFormatter::Format::STANDARD_GHZ, 5},  // >= 1 GHz
+4531:         {FrequencyFormatter::Format::STANDARD_MHZ, 5},  // >= 1 MHz
+4532:         {FrequencyFormatter::Format::COMPACT_MHZ, 0}    // < 1 MHz
+4533:     };
+4534: 
+4535:     // Get config index from tick_interval (constexpr-friendly)
+4536:     constexpr uint8_t get_tick_config_index(Frequency tick_interval) {
+4537:         return (static_cast<uint64_t>(tick_interval) >= 1000000000ULL) ? 0 :
+4538:                (static_cast<uint64_t>(tick_interval) >= 1000000ULL) ? 1 : 2;
+4539:     }
+4540: }
+4541: 
+4542: // DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
+4543: // Eliminates ~40 lines of duplicate formatting code
+4544: std::string FrequencyRuler::format_frequency_label(Frequency freq, Frequency tick_interval) {
+4545:     // LUT lookup instead of conditional (Flash string, zero RAM allocation)
+4546:     uint8_t idx = get_tick_config_index(tick_interval);
+4547:     return FrequencyFormatter::format(freq, TICK_CONFIG_LUT[idx].format);
+4548: }
+4549: 
+4550: void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
+4551:     Frequency tick_interval = calculate_tick_interval();
+4552:     Frequency range = max_freq_ - min_freq_;
+4553:     if (range == 0) return;  // Early exit pattern
+4554: 
+4555:     // LUT lookup for configuration (Flash storage, zero RAM allocation)
+4556:     const TickConfig& config = TICK_CONFIG_LUT[get_tick_config_index(tick_interval)];
+4557: 
+4558:     // Style for tick labels (small font 5x8)
+4559:     static Style ruler_style{font::fixed_5x8, Color::grey(), Color::black()};
+4560: 
+4561:     // Draw horizontal line at bottom of ruler (using 1-pixel rectangle)
+4562:     painter.fill_rectangle(
+4563:         {r.left(), r.top() + RULER_HEIGHT - 1, r.width(), 1},
+4564:         Theme::getInstance()->bg_darkest->foreground
+4565:     );
+4566: 
+4567:     // Find first tick
+4568:     Frequency first_tick = (min_freq_ / tick_interval) * tick_interval;
+4569:     if (first_tick < min_freq_) {
+4570:         first_tick += tick_interval;
+4571:     }
+4572: 
+4573:     // Draw ticks and labels
+4574:     for (Frequency tick = first_tick; tick <= max_freq_; tick += tick_interval) {
+4575:         // Convert frequency to x position
+4576:         int x = r.left() + static_cast<int>(((tick - min_freq_) * spectrum_width_) / range);
+4577: 
+4578:         if (x < r.left() || x > r.right()) {
+4579:             continue;
+4580:         }
+4581: 
+4582:         // Draw major tick (tall) - using 1-pixel rectangle
+4583:         painter.fill_rectangle(
+4584:             {x, r.top(), 1, TICK_HEIGHT_MAJOR},
+4585:             Theme::getInstance()->bg_darkest->foreground
+4586:         );
+4587: 
+4588:         // Format and draw text label (LUT lookup, no std::string allocation for unit)
+4589:         std::string label = format_frequency_label(tick, tick_interval);
+4590: 
+4591:         auto text_size = ruler_style.font.size_of(label);
+4592:         int text_x = x - text_size.width() / 2;
+4593:         int text_y = r.top() + 1;
+4594: 
+4595:         // Clamp text position to screen bounds
+4596:         if (text_x < r.left() + 2) text_x = r.left() + 2;
+4597:         if (text_x + text_size.width() > r.right() - 2) {
+4598:             text_x = r.right() - text_size.width() - 2;
+4599:         }
+4600: 
+4601:         painter.draw_string({text_x, text_y}, ruler_style, label);
+4602: 
+4603:         // Add intermediate ticks if configured (LUT lookup, zero branching)
+4604:         for (uint8_t sub = 1; sub <= config.sub_ticks; sub++) {
+4605:             Frequency sub_tick = tick + (tick_interval * sub) / (config.sub_ticks + 1);
+4606:             int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
+4607: 
+4608:             if (sub_x > r.left() && sub_x < r.right()) {
+4609:                 painter.fill_rectangle(
+4610:                     {sub_x, r.top(), 1, TICK_HEIGHT_MINOR},
+4611:                     Theme::getInstance()->bg_darkest->foreground
+4612:                 );
+4613:             }
+4614:         }
+4615:     }
+4616: }
+4617: 
+4618: void FrequencyRuler::paint(Painter& painter) {
+4619:     const auto r = screen_rect();
+4620: 
+4621:     // Fill background
+4622:     painter.fill_rectangle(r, Color::black());
+4623: 
+4624:     // Draw frequency ticks and labels
+4625:     if (visible_) {
+4626:         draw_frequency_ticks(painter, r);
+4627:     }
+4628: }
+4629: 
+4630: void DroneDisplayController::update_frequency_ruler() {
+4631:     compact_frequency_ruler_.set_frequency_range(spectrum_config_.min_freq, spectrum_config_.max_freq);
+4632:     compact_frequency_ruler_.set_spectrum_width(SPEC_WIDTH);
+4633:     compact_frequency_ruler_.set_dirty();
+4634: }
+4635: 
+4636: void DroneDisplayController::set_ruler_style(RulerStyle style) {
+4637:     compact_frequency_ruler_.set_ruler_style(style);
+4638:     compact_frequency_ruler_.set_visible(true);
+4639:     frequency_ruler_.set_visible(false);
+4640: }
+4641: 
+4642: void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings& settings) {
+4643:     if (settings.display_flags.show_frequency_ruler) {
+4644:         compact_frequency_ruler_.set_visible(true);
+4645:         frequency_ruler_.set_visible(false);
+4646: 
+4647:         if (settings.display_flags.auto_ruler_style) {
+4648:             compact_frequency_ruler_.set_ruler_style(RulerStyle::COMPACT_GHZ);
+4649:         } else {
+4650:             // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 4135-4144)
+4651:             uint8_t style_idx = (settings.frequency_ruler_style < 7) ?
+4652:                                 settings.frequency_ruler_style : 0;
+4653:             compact_frequency_ruler_.set_ruler_style(RULER_STYLE_LUT[style_idx]);
+4654:         }
+4655: 
+4656:         compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);
+4657:     } else {
+4658:         compact_frequency_ruler_.set_visible(false);
+4659:         frequency_ruler_.set_visible(false);
+4660:     }
+4661: }
+4662: 
 4663: 
 4664: 
-4665: 
-4666: // ===========================================
-4667: // AudioAlertManager Implementation
-4668: // ===========================================
-4669: // DIAMOND FIX: Fully migrated to ui_drone_audio.hpp as inline static (C++17)
-4670: // Eliminates ODR violation, removes .cpp dependency, ensures single instance
-4671: 
-4672: } // namespace ui::apps::enhanced_drone_analyzer
+4665: // ===========================================
+4666: // AudioAlertManager Implementation
+4667: // ===========================================
+4668: // DIAMOND FIX: Fully migrated to ui_drone_audio.hpp as inline static (C++17)
+4669: // Eliminates ODR violation, removes .cpp dependency, ensures single instance
+4670: 
+4671: } // namespace ui::apps::enhanced_drone_analyzer
  
  
 ======================================== 

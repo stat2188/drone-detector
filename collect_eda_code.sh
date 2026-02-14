@@ -16,7 +16,6 @@ echo "" > "$OUTPUT_FILE"
 FILES=(
     "drone_constants.hpp"
     "color_lookup_unified.hpp"
-    "settings_bitfields.hpp"
     "default_drones_db.hpp"
     "ui_drone_common_types.hpp"
     "ui_drone_common_types.cpp"

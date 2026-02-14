@@ -159,6 +159,8 @@ struct DroneAnalyzerSettings {
 
 #pragma pack(pop)
 
+static_assert(sizeof(DroneAnalyzerSettings) <= 512, "DroneAnalyzerSettings exceeds 512 bytes");
+
 // Default wideband constants for scanner settings
 static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2400000000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2500000000ULL;
