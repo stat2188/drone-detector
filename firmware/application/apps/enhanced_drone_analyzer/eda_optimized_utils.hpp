@@ -28,6 +28,7 @@
 #include <array>
 #include <algorithm>
 #include <cstdint>
+#include <inttypes.h>
 #include <string>
 #include <cstdio>
 #include <cstring>
@@ -503,21 +504,21 @@ struct FrequencyFormat {
                 uint32_t ghz = static_cast<uint32_t>(hz / 1'000'000'000ULL);
                 uint32_t dec = static_cast<uint32_t>((hz % 1'000'000'000ULL) / 100'000'000ULL);
                 if (dec > 0) {
-                    snprintf(buf, buf_size, "%u.%uG", ghz, dec);
+                    snprintf(buf, buf_size, "%" PRIu32 ".%" PRIu32 "G", ghz, dec);
                 } else {
-                    snprintf(buf, buf_size, "%uG", ghz);
+                    snprintf(buf, buf_size, "%" PRIu32 "G", ghz);
                 }
                 break;
             }
             case Style::STANDARD_GHZ: {
                 uint32_t ghz = static_cast<uint32_t>(hz / 1'000'000'000ULL);
                 uint32_t dec = static_cast<uint32_t>((hz % 1'000'000'000ULL) / 10'000'000ULL);
-                snprintf(buf, buf_size, "%u.%03uGHz", ghz, dec);
+                snprintf(buf, buf_size, "%" PRIu32 ".%03" PRIu32 "GHz", ghz, dec);
                 break;
             }
             case Style::STANDARD_MHZ: {
                 uint32_t mhz = static_cast<uint32_t>(hz / 1'000'000ULL);
-                snprintf(buf, buf_size, "%uMHz", mhz);
+                snprintf(buf, buf_size, "%" PRIu32 "MHz", mhz);
                 break;
             }
         }

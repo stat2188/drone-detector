@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <inttypes.h>
 #include <array>
 #include <ch.h>
 #include "ui_drone_common_types.hpp"
@@ -74,7 +75,7 @@ struct SettingMetadata {
 #define SET_META_BIT(name, bit_idx, def) \
     { #name, static_cast<uint16_t>(offsetof(DroneAnalyzerSettings, name)), TYPE_BITFIELD, bit_idx, 0, 1, def }
 
-constexpr size_t SETTINGS_COUNT = 54;
+constexpr size_t SETTINGS_COUNT = 52;
 
 inline constexpr SettingMetadata SETTINGS_LUT[] = {
     SET_META_BIT(audio_flags, 0, "true"),
@@ -150,10 +151,10 @@ inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
             return snprintf(buf + offset, max_size - offset, "%s=%s\n",
                    meta.key, *reinterpret_cast<const bool*>(data) ? "true" : "false");
         case TYPE_UINT32:
-            return snprintf(buf + offset, max_size - offset, "%s=%u\n",
+            return snprintf(buf + offset, max_size - offset, "%s=%" PRIu32 "\n",
                    meta.key, *reinterpret_cast<const uint32_t*>(data));
         case TYPE_INT32:
-            return snprintf(buf + offset, max_size - offset, "%s=%d\n",
+            return snprintf(buf + offset, max_size - offset, "%s=%" PRId32 "\n",
                    meta.key, *reinterpret_cast<const int32_t*>(data));
         case TYPE_UINT64:
             return snprintf(buf + offset, max_size - offset, "%s=%llu\n",
