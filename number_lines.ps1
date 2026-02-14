@@ -1,4 +1,10 @@
 param([string]$FilePath)
 
+$lines = [System.IO.File]::ReadAllLines($FilePath, [System.Text.Encoding]::UTF8)
+$output = @()
 $i = 1
-Get-Content -Encoding UTF8 $FilePath | ForEach-Object { Write-Output "${i}: $_"; $i++ }
+foreach ($line in $lines) {
+    $output += "${i}: $line"
+    $i++
+}
+$output

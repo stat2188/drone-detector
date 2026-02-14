@@ -53,7 +53,7 @@ for /L %%i in (0,1,20) do (
         echo. >> "%OUTPUT_FILE%"
 
         setlocal EnableDelayedExpansion
-        powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0number_lines.ps1" "!filepath!" >>"%OUTPUT_FILE%"
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "& { $output = & '%~dp0number_lines.ps1' '!filepath!'; $output | Out-File -FilePath '%OUTPUT_FILE%' -Encoding UTF8 -Append }"
         endlocal
         echo. >> "%OUTPUT_FILE%"
     ) else (

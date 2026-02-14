@@ -61,7 +61,8 @@ FILE: $File
 
         $Separator | Out-File -FilePath $OutputFile -Encoding UTF8 -Append
 
-        Get-Content -Path $FilePath | Out-File -FilePath $OutputFile -Encoding UTF8 -Append
+        $lines = [System.IO.File]::ReadAllLines($FilePath, [System.Text.Encoding]::UTF8)
+        $lines | Out-File -FilePath $OutputFile -Encoding UTF8 -Append
 
         "" | Out-File -FilePath $OutputFile -Encoding UTF8 -Append
         $ProcessedCount++
