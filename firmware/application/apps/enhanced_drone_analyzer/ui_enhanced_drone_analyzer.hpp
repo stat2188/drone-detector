@@ -22,6 +22,9 @@
 #include "eda_advanced_settings.hpp"
 
 #include "ui.hpp"
+#include "ui_menu.hpp"
+#include "ui_fileman.hpp"
+#include "ui_enhanced_drone_settings.hpp"
 #include "event_m0.hpp"
 #include "ui_widget.hpp"
 #include "message.hpp"
@@ -1714,6 +1717,18 @@ private:
 
     void on_save();
     void on_cancel();
+};
+
+class DroneAnalyzerMenuView : public View {
+public:
+    explicit DroneAnalyzerMenuView(NavigationView& nav);
+    ~DroneAnalyzerMenuView() = default;
+    
+    void focus() override;
+
+private:
+    NavigationView& nav_;
+    ui::MenuView menu_view_{{0, 16, screen_width, screen_height - 16}};
 };
 
 // Forward declaration of integrated settings view

@@ -3214,18 +3214,7 @@ void DroneUIController::on_stop_scan() {
 }
 
 void DroneUIController::show_menu() {
-    auto menu_view = nav_.push<ui::MenuView>();
-    
-    menu_view->add_item({"Advanced Settings", Theme::getInstance()->fg_cyan->foreground, nullptr,
-        [this](KeyEvent) { on_advanced_settings(); }});
-    menu_view->add_item({"Audio Settings", Theme::getInstance()->fg_yellow->foreground, nullptr,
-        [this](KeyEvent) { on_audio_settings(); }});
-    menu_view->add_item({"Hardware Control", Theme::getInstance()->fg_green->foreground, nullptr,
-        [this](KeyEvent) { on_hardware_control(); }});
-    menu_view->add_item({"View Logs", Theme::getInstance()->fg_blue->foreground, nullptr,
-        [this](KeyEvent) { on_view_logs(); }});
-    menu_view->add_item({"About", Theme::getInstance()->fg_yellow->foreground, nullptr,
-        [this](KeyEvent) { on_about(); }});
+    nav_.push<DroneAnalyzerMenuView>();
 }
 
 void DroneUIController::on_spectrum_mode() {
@@ -3242,7 +3231,7 @@ void DroneUIController::on_hardware_control() {
 }
 
 void DroneUIController::on_advanced_settings() {
-    nav_.push<AdvancedSettingsView>(nav_);
+    nav_.push<AdvancedSettingsView>();
 }
 
 void DroneUIController::on_set_bandwidth() {
@@ -3404,6 +3393,29 @@ void FrequencyRangeSetupView::on_save() {
 
 void FrequencyRangeSetupView::on_cancel() {
     nav_.pop();
+}
+
+DroneAnalyzerMenuView::DroneAnalyzerMenuView(NavigationView& nav)
+    : View({0, 0, screen_width, screen_height}),
+      nav_(nav),
+      menu_view_{{0, 16, screen_width, screen_height - 16}} {
+
+    add_children({&menu_view_});
+
+    menu_view_.add_item({"Advanced Settings", Theme::getInstance()->fg_cyan->foreground, nullptr,
+        [this](KeyEvent) { nav_.push<AdvancedSettingsView>(); }});
+    menu_view_.add_item({"Audio Settings", Theme::getInstance()->fg_yellow->foreground, nullptr,
+        [this](KeyEvent) { nav_.push<AudioSettingsView>(); }});
+    menu_view_.add_item({"Hardware Control", Theme::getInstance()->fg_green->foreground, nullptr,
+        [this](KeyEvent) { nav_.push<HardwareSettingsView>(); }});
+    menu_view_.add_item({"View Logs", Theme::getInstance()->fg_blue->foreground, nullptr,
+        [this](KeyEvent) { nav_.push<FileLoadView>(".CSV"); }});
+    menu_view_.add_item({"About", Theme::getInstance()->fg_yellow->foreground, nullptr,
+        [this](KeyEvent) { nav_.display_modal("About", "Enhanced Drone Analyzer v2.0\nDetection and analysis tool for UAV signals"); }});
+}
+
+void DroneAnalyzerMenuView::focus() {
+    menu_view_.focus();
 }
 
 // 2. Реализация меню удалена - теперь используем DroneAnalyzerSettingsView из ui_enhanced_drone_settings.cpp
