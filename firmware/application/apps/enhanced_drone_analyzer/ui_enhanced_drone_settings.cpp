@@ -550,6 +550,55 @@ void HardwareSettingsView::load_current_settings() {
 
     SettingsPersistence<DroneAnalyzerSettings>::save(settings);
 }
+
+AudioSettingsView::AudioSettingsView(NavigationView& nav) : View(), nav_(nav) {
+    add_children({
+        &checkbox_audio_enabled_, &text_audio_enabled_,
+        &number_alert_frequency_, &number_alert_duration_,
+        &number_volume_, &checkbox_repeat_, &text_repeat_,
+        &button_save_
+    });
+    button_save_.on_select = [this](Button&) { on_save_settings(); };
+    load_current_settings();
+}
+
+void AudioSettingsView::focus() {
+    button_save_.focus();
+}
+
+void AudioSettingsView::load_current_settings() {
+    DroneAnalyzerSettings settings;
+    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
+        SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
+    }
+    
+    checkbox_audio_enabled_.set_value(settings.audio_flags.enable_alerts);
+    number_alert_frequency_.set_value(settings.audio_alert_frequency_hz);
+    number_alert_duration_.set_value(settings.audio_alert_duration_ms);
+    number_volume_.set_value(settings.audio_volume_level);
+    checkbox_repeat_.set_value(settings.audio_flags.repeat_alerts);
+}
+
+void AudioSettingsView::save_current_settings() {
+    DroneAnalyzerSettings settings;
+    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
+        SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
+    }
+    
+    settings.audio_flags.enable_alerts = checkbox_audio_enabled_.value();
+    settings.audio_alert_frequency_hz = static_cast<uint32_t>(number_alert_frequency_.value());
+    settings.audio_alert_duration_ms = static_cast<uint32_t>(number_alert_duration_.value());
+    settings.audio_volume_level = static_cast<uint8_t>(number_volume_.value());
+    settings.audio_flags.repeat_alerts = checkbox_repeat_.value();
+    
+    if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
+        nav_.display_modal("Error", "Invalid audio settings");
+        return;
+    }
+    
+    SettingsPersistence<DroneAnalyzerSettings>::save(settings);
+}
+
 void AudioSettingsView::update_ui_from_settings() { load_current_settings(); }
 void AudioSettingsView::update_settings_from_ui() { save_current_settings(); }
 void AudioSettingsView::on_save_settings() {

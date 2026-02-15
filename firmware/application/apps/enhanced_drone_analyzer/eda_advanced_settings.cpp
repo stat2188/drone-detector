@@ -251,7 +251,7 @@ void AdvancedSettingsView::export_all_settings() {
     file.write(buffer, strlen(buffer));
     snprintf(buffer, sizeof(buffer), "scan_interval_ms=%" PRIu32 "\n", settings.scan_interval_ms);
     file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "rssi_threshold_db=%d\n", settings.rssi_threshold_db);
+    snprintf(buffer, sizeof(buffer), "rssi_threshold_db=%" PRId32 "\n", settings.rssi_threshold_db);
     file.write(buffer, strlen(buffer));
     
     snprintf(buffer, sizeof(buffer), "\n# DETECTION SETTINGS\n");
