@@ -107,9 +107,9 @@ class TrackedDrone {
 public:
     TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
-                     last_seen(0), rssi(-120), rssi_history_{}, timestamp_history_{}, history_index_(0) {
+                     last_seen(0), rssi(EDA::Constants::RSSI_SILENCE_DBM), rssi_history_{}, timestamp_history_{}, history_index_(0) {
         // Initialize array with "silence" (-120 dBm), not zeros
-        std::fill(std::begin(rssi_history_), std::end(rssi_history_), -120);
+        std::fill(std::begin(rssi_history_), std::end(rssi_history_), EDA::Constants::RSSI_SILENCE_DBM);
         std::fill(std::begin(timestamp_history_), std::end(timestamp_history_), 0);
     }
 
@@ -201,8 +201,8 @@ struct DisplayDroneEntry {
 // Constants moved to eda_constants.hpp - single source of truth
 
 // Local constants for DroneDisplayController (not in eda_constants.hpp)
-static constexpr int SPEC_WIDTH = 240;
-static constexpr int SPEC_HEIGHT = 40;  // Heap optimization: 80 -> 40 (saves 9.6KB)
+static constexpr int SPEC_WIDTH = 240;  // EDA::Constants::SPECTRUM_BIN_COUNT_240
+static constexpr int SPEC_HEIGHT = 40;  // EDA::Constants::MINI_SPECTRUM_HEIGHT (but 40 used here)
 
 struct WidebandSlice {
     Frequency center_frequency;
@@ -291,12 +291,33 @@ private:
     Mutex& mtx_;
 };
 
+// RAII wrapper for ChibiOS mutexes with try-lock
+class MutexTryLock {
+public:
+    explicit MutexTryLock(Mutex& mtx) : mtx_(mtx), locked_(chMtxTryLock(&mtx_)) {}
+
+    ~MutexTryLock() {
+        if (locked_) {
+            chMtxUnlock();
+        }
+    }
+
+    bool is_locked() const { return locked_; }
+
+    MutexTryLock(const MutexTryLock&) = delete;
+    MutexTryLock& operator=(const MutexTryLock&) = delete;
+
+private:
+    Mutex& mtx_;
+    bool locked_;
+};
+
 // 🔴 OPTIMIZATION: String Pool for heap fragmentation reduction
 // Scott Meyers Item 29: Consider using object pools for frequently allocated objects
 class StringPool {
 public:
-    static constexpr size_t POOL_SIZE = 2048;
-    static constexpr size_t MAX_STRING_LENGTH = 256;
+    static constexpr size_t POOL_SIZE = EDA::Constants::POOL_SIZE_2KB;
+    static constexpr size_t MAX_STRING_LENGTH = EDA::Constants::MAX_STRING_LENGTH_256;
 
     StringPool() : pool_{}, offset_(0) {
     }
@@ -363,7 +384,7 @@ private:
     static constexpr size_t WORKER_STACK_SIZE = 4096;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
 
-    
+
     // --- FILE I/O ---
     LogFile csv_log_;                           // Declared 5th
     bool session_active_ = false;               // Declared 6th
@@ -371,7 +392,7 @@ private:
     uint32_t logged_count_ = 0;                 // Declared 8th
     uint32_t dropped_logs_ = 0;                 // Declared 9th
     bool header_written_ = false;               // Declared 10th
-    
+
     // --- ASYNC BUFFERING ---
     static constexpr size_t BUFFER_SIZE = 32;   // Declared 11th
     std::array<DetectionLogEntry, BUFFER_SIZE> ring_buffer_; // Declared 12th
@@ -380,7 +401,7 @@ private:
     bool is_full_ = false;                      // Declared 15th
 
     // Helper buffer for string formatting (avoid heap allocation)
-    char line_buffer_[128];                     // Declared last
+    char line_buffer_[EDA::Constants::ERROR_MESSAGE_BUFFER_SIZE];                     // Declared last
 
     // --- INTERNAL METHODS ---
     static msg_t worker_thread_entry(void* arg);
@@ -455,9 +476,19 @@ public:
     void switch_to_demo_mode();
 
     void update_scan_range(Frequency min_freq, Frequency max_freq) {
+        // 🔴 FIX: Validate frequency range before use
+        if (!EDA::Validation::validate_frequency(min_freq) || 
+            !EDA::Validation::validate_frequency(max_freq)) {
+            return;  // Invalid frequency - reject silently
+        }
+        
         if (min_freq >= max_freq) return;
-        if (min_freq < 1000000) min_freq = 1000000;
-        if (max_freq > 7200000000LL) max_freq = 7200000000LL;
+        if (min_freq < EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ) {
+            min_freq = EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
+        }
+        if (max_freq > EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+            max_freq = EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+        }
         setup_wideband_range(min_freq, max_freq);
     }
 
@@ -566,51 +597,62 @@ struct DetectionParams {
     size_t get_next_slice_with_intelligence();
     void update_frequency_predictions(Frequency detected_freq, ThreatLevel threat_level);
     void update_priority_slice_detection(size_t slice_idx, bool detected_something_interesting);
+    void boost_prediction_confidence(size_t prediction_idx, systime_t now);
 
      Thread* scanning_thread_ = nullptr;
      mutable Mutex data_mutex;
      std::atomic<bool> scanning_active_{false};
 
-       // ===========================================
-       // ФАЗА 3.1: СТАТИЧЕСКИЕ ХРАНИЛИЩА ДЛЯ SCANNER
-       // ===========================================
-       // Diamond Code: Zero heap allocation
-       // Используем placement new для объектов с известным размером
+        // ===========================================
+        // ФАЗА 3.1: СТАТИЧЕСКИЕ ХРАНИЛИЩА ДЛЯ SCANNER
+        // ===========================================
+        // Diamond Code: Zero heap allocation
+        // Используем placement new для объектов с известным размером
 
-       // Статическое хранилище для FreqmanDB
-       // Размер подбираем с запасом (FreqmanDB ~2KB)
-       static constexpr size_t FREQ_DB_STORAGE_SIZE = 4096;
-       alignas(alignof(FreqmanDB))
-       static inline uint8_t freq_db_storage_[FREQ_DB_STORAGE_SIZE];
+        // Статическое хранилище для FreqmanDB
+        // Размер подбираем с запасом (FreqmanDB ~2KB)
+        static constexpr size_t FREQ_DB_STORAGE_SIZE = EDA::Constants::FREQ_DB_STORAGE_SIZE_4KB;
+        alignas(alignof(FreqmanDB))
+        static inline uint8_t freq_db_storage_[FREQ_DB_STORAGE_SIZE];
 
-       // Статическое хранилище для TrackedDrones
-       // Размер: MAX_TRACKED_DRONES * sizeof(TrackedDrone) = 8 * ~200 = ~1.6KB
-       static constexpr size_t TRACKED_DRONES_STORAGE_SIZE =
-           sizeof(TrackedDrone) * DroneConstants::MAX_TRACKED_DRONES;
-       alignas(alignof(TrackedDrone))
-       static inline uint8_t tracked_drones_storage_[TRACKED_DRONES_STORAGE_SIZE];
+        // 🔴 FIX: Compile-time alignment verification
+        static_assert(alignof(FreqmanDB) <= 16, "FreqmanDB alignment too large for static storage");
+        static_assert(FREQ_DB_STORAGE_SIZE >= sizeof(FreqmanDB), "FREQ_DB_STORAGE_SIZE too small");
+
+        // Статическое хранилище для TrackedDrones
+        // Размер: MAX_TRACKED_DRONES * sizeof(TrackedDrone) = 8 * ~200 = ~1.6KB
+        static constexpr size_t TRACKED_DRONES_STORAGE_SIZE =
+            sizeof(TrackedDrone) * EDA::Constants::MAX_TRACKED_DRONES;
+        alignas(alignof(TrackedDrone))
+        static inline uint8_t tracked_drones_storage_[TRACKED_DRONES_STORAGE_SIZE];
+
+        // 🔴 FIX: Compile-time alignment verification
+        static_assert(alignof(TrackedDrone) <= 16, "TrackedDrone alignment too large for static storage");
+        static_assert(TRACKED_DRONES_STORAGE_SIZE >= sizeof(std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>),
+                     "TRACKED_DRONES_STORAGE_SIZE too small");
 
        // Указатели на объекты, созданные через placement new
        FreqmanDB* freq_db_ptr_ = nullptr;
        std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>* tracked_drones_ptr_ = nullptr;
 
-       // Флаги состояния
-       bool freq_db_loaded_ = false;
-       size_t current_db_index_ = 0;
-       Frequency last_scanned_frequency_ = 0;
+        // Флаги состояния
+        bool freq_db_loaded_ = false;
+        size_t current_db_index_ = 0;
+        Frequency last_scanned_frequency_ = 0;
+        std::atomic<systime_t> last_detection_log_time_{0};
 
-       // 🔴 FIX: Async database loading to prevent UI freeze
-       Thread* db_loading_thread_ = nullptr;
-       std::atomic<bool> db_loading_active_{false};
+        // 🔴 FIX: Async database loading to prevent UI freeze
+        Thread* db_loading_thread_ = nullptr;
+        std::atomic<bool> db_loading_active_{false};
 
        // ===========================================
        // ФАЗА 5.1: СТАТИЧЕСКИЙ СТЕК ДЛЯ ПОТОКА
        // ===========================================
        // Diamond Code: Thread stack из статической памяти
        // Увеличен размер для безопасности (8KB вместо 4KB)
-       static constexpr size_t DB_LOADING_STACK_SIZE = 8192;  // 8KB
+       static constexpr size_t DB_LOADING_STACK_SIZE = EDA::Constants::DB_LOADING_STACK_SIZE_8KB;  // 8KB
 
-        static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
+         static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
       std::atomic<uint32_t> scan_cycles_{0};
       std::atomic<uint32_t> total_detections_{0};

@@ -269,22 +269,32 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
 
     Frequency scanning_range = safe_max - safe_min;
     if (scanning_range > static_cast<Frequency>(settings_.wideband_slice_width_hz)) {
-        // Check for integer overflow before calculating slices
-        // Use int64_t to match rf::Frequency type and avoid sign comparison warning
-        int64_t range_plus_width = static_cast<int64_t>(scanning_range) + static_cast<int64_t>(settings_.wideband_slice_width_hz);
-        if (range_plus_width < scanning_range) {
-            // Overflow detected - handle gracefully with single slice
+        // 🔴 FIX: Check for overflow BEFORE addition to prevent undefined behavior
+        // Use uint64_t for all arithmetic to match Frequency type safely
+        const uint64_t range_u64 = static_cast<uint64_t>(scanning_range);
+        const uint64_t width_u64 = static_cast<uint64_t>(settings_.wideband_slice_width_hz);
+        
+        // Check if adding width would overflow
+        if (range_u64 > UINT64_MAX - width_u64) {
+            // Overflow would occur - use single slice
             wideband_scan_data_.slices_nb = 1;
         } else {
-            wideband_scan_data_.slices_nb = (static_cast<uint64_t>(range_plus_width) - 1) / settings_.wideband_slice_width_hz;
+            uint64_t range_plus_width = range_u64 + width_u64;
+            wideband_scan_data_.slices_nb = static_cast<size_t>((range_plus_width - 1) / width_u64);
         }
 
         if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
             wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
         }
-        // DIAMOND FIX: Cast to uint64_t before multiplication to prevent overflow
-        // If slices_nb=50 and width=28MHz, result=1400MHz which overflows uint32_t Frequency
-        Frequency slices_span = static_cast<Frequency>(static_cast<uint64_t>(wideband_scan_data_.slices_nb) * static_cast<uint64_t>(settings_.wideband_slice_width_hz));
+        
+        // 🔴 FIX: Check for overflow in multiplication BEFORE performing it
+        const uint64_t slices_nb_u64 = static_cast<uint64_t>(wideband_scan_data_.slices_nb);
+        if (slices_nb_u64 > UINT64_MAX / width_u64) {
+            // Multiplication would overflow - clamp slices_nb
+            wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
+        }
+        
+        Frequency slices_span = static_cast<Frequency>(slices_nb_u64 * width_u64);
         Frequency offset = ((scanning_range - slices_span) / 2) + (settings_.wideband_slice_width_hz / 2);
         Frequency center_frequency = safe_min + offset;
 
@@ -583,9 +593,9 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         }
         
         // 3. Get spectrum data from M0 coprocessor with optimized timing
-        // DIAMOND FIX: Use static buffer to prevent stack overflow
-        // Saves ~256 bytes of stack space in hot path
-        static std::array<uint8_t, 256> spectrum_data;
+        // 🔴 FIX: Use stack-local buffer instead of static for thread safety
+        // On Cortex-M4 with 8KB+ stack, 256 bytes is acceptable
+        std::array<uint8_t, 256> spectrum_data;
         
         // Clear spectrum flag and wait for fresh data
 
@@ -724,10 +734,8 @@ size_t DroneScanner::get_next_slice_with_intelligence() {
                 Frequency slice_max = slice.center_frequency + (static_cast<Frequency>(settings_.wideband_slice_width_hz) / 2);
                 
                 if (predicted_freq >= slice_min && predicted_freq <= slice_max) {
-                    // Boost confidence for this prediction
-                    frequency_predictions_[best_prediction_idx].confidence = 
-                        std::min(frequency_predictions_[best_prediction_idx].confidence + 1, size_t(10));
-                    frequency_predictions_[best_prediction_idx].last_seen = now;
+                    // 🔴 FIX: Use method to boost confidence inside critical section
+                    boost_prediction_confidence(best_prediction_idx, now);
                     return i;
                 }
             }
@@ -792,7 +800,7 @@ void DroneScanner::update_frequency_predictions(Frequency detected_freq, ThreatL
 void DroneScanner::update_priority_slice_detection(size_t slice_idx, bool detected_something_interesting) {
     // 🔴 FIX: Race condition protection
     MutexLock lock(priority_slice_mutex_);
-    
+
     if (detected_something_interesting) {
         priority_slice_index_ = static_cast<int32_t>(slice_idx);
         priority_scan_counter_ = 0; // Reset counter to scan priority slice immediately next cycle
@@ -800,6 +808,16 @@ void DroneScanner::update_priority_slice_detection(size_t slice_idx, bool detect
         // If we didn't detect anything on the priority slice, reduce its priority
         // but don't immediately remove it
         // This creates a "sticky" priority that doesn't jump around too much
+    }
+}
+
+void DroneScanner::boost_prediction_confidence(size_t prediction_idx, systime_t now) {
+    MutexLock lock(predictions_mutex_);
+
+    if (prediction_idx < MAX_FREQUENCY_PREDICTIONS) {
+        frequency_predictions_[prediction_idx].confidence =
+            std::min(frequency_predictions_[prediction_idx].confidence + 1, size_t(10));
+        frequency_predictions_[prediction_idx].last_seen = now;
     }
 }
 
@@ -1075,16 +1093,18 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     if (should_log) {
         // Only log every 200ms to prevent I/O blocking while maintaining responsiveness
         // Async logging means IO is no longer the bottleneck, so we can log more frequently
-        static systime_t last_log_time;
         systime_t now = chTimeNow();
-        
+
+        // Use atomic member to prevent race condition
+        systime_t last_time = last_detection_log_time_.load(std::memory_order_acquire);
+
         // Use chTimeNow() directly for timing - no CH_CFG_ST_FREQUENCY dependency
-        if (now - last_log_time > 200) { // 200ms delay (10x more frequent than before)
+        if (now - last_time > 200) { // 200ms delay (10x more frequent than before)
             if (detection_logger_.is_session_active()) {
-                // log_detection_async returns false if buffer is full, 
+                // log_detection_async returns false if buffer is full,
                 // so built-in protection against hanging is already inside the logger.
                 if (detection_logger_.log_detection_async(log_entry_to_write)) {
-                    last_log_time = now;
+                    last_detection_log_time_.store(now, std::memory_order_release);
                 }
             }
         }
@@ -1255,10 +1275,25 @@ void DroneScanner::initialize_database_and_scanner() {
     // Diamond Code: Compile-time известный размер, placement new
     // Преимущества: нет heap fragmentation, гарантированное выделение
 
+    // 🔴 FIX: Runtime alignment verification before placement new
+    // Prevents undefined behavior on platforms with stricter alignment
+    if (reinterpret_cast<uintptr_t>(freq_db_storage_) % alignof(FreqmanDB) != 0) {
+        handle_scan_error("Memory: freq_db_storage_ alignment error");
+        return;
+    }
+
     // Создаём FreqmanDB в статическом хранилище через placement new
     freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
     if (!freq_db_ptr_) {
         handle_scan_error("Memory: FreqmanDB placement new failed");
+        return;
+    }
+
+    // 🔴 FIX: Runtime alignment verification for tracked_drones storage
+    if (reinterpret_cast<uintptr_t>(tracked_drones_storage_) % alignof(TrackedDrone) != 0) {
+        handle_scan_error("Memory: tracked_drones_storage_ alignment error");
+        freq_db_ptr_->~FreqmanDB();
+        freq_db_ptr_ = nullptr;
         return;
     }
 
@@ -1291,6 +1326,11 @@ void DroneScanner::initialize_database_and_scanner() {
             freq_db_ptr_->open(db_path, true);
 
             for (const auto& item : BUILTIN_DRONE_DB) {
+                // 🔴 FIX: Validate frequency before adding to database
+                if (!EDA::Validation::validate_frequency(item.freq)) {
+                    continue;  // Skip invalid frequencies
+                }
+                
                 freqman_entry entry{};
                 entry.frequency_a = item.freq;
                 entry.description = item.desc;
@@ -1333,6 +1373,10 @@ void DroneScanner::cleanup_database_and_scanner() {
         }
     }
 
+    // 🔴 FIX: Stop detection logger worker thread
+    // This ensures proper cleanup of SD card resources and thread
+    detection_logger_.stop_worker();
+
     // ===========================================
     // ФАЗА 3.4: ЯВНЫЙ ВЫЗОВ ДЕСТРУКТОРОВ (Placement New)
     // ===========================================
@@ -1347,6 +1391,26 @@ void DroneScanner::cleanup_database_and_scanner() {
         freq_db_ptr_->~FreqmanDB();
         freq_db_ptr_ = nullptr;
     }
+    
+    // 🔴 FIX: Clear detection ring buffer to prevent stale data
+    detection_ring_buffer_.clear();
+    
+    // 🔴 FIX: Reset all prediction data
+    {
+        MutexLock lock(predictions_mutex_);
+        prediction_count_ = 0;
+        std::fill(frequency_predictions_.begin(), frequency_predictions_.end(), FrequencyPrediction{});
+    }
+    
+    // 🔴 FIX: Reset priority slice data
+    {
+        MutexLock lock(priority_slice_mutex_);
+        priority_slice_index_ = -1;
+        priority_scan_counter_ = 0;
+    }
+    
+    // Note: ChibiOS mutexes (data_mutex_, predictions_mutex_, priority_slice_mutex_) 
+    // are automatically cleaned up with the object. No explicit deinit needed.
 }
 
 
@@ -1456,6 +1520,11 @@ void DroneScanner::db_loading_thread_loop() {
         for (const auto& item : BUILTIN_DRONE_DB) {
             if (!db_loading_active_.load(std::memory_order_acquire)) {
                 return;
+            }
+
+            // 🔴 FIX: Validate frequency before adding to database
+            if (!EDA::Validation::validate_frequency(item.freq)) {
+                continue;  // Skip invalid frequencies
             }
 
             freqman_entry entry{};
@@ -1574,12 +1643,14 @@ DroneScanner::DroneSnapshot DroneScanner::get_tracked_drones_snapshot() const {
 }
 
 bool DroneScanner::try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const {
-    if (chMtxTryLock(&data_mutex)) {
+    // 🔴 FIX: Use RAII MutexTryLock for automatic unlock on all paths
+    MutexTryLock lock(data_mutex);
+
+    if (lock.is_locked()) {
         out_snapshot.count = tracked_count_;
         for (size_t i = 0; i < tracked_count_ && i < MAX_TRACKED_DRONES; ++i) {
             out_snapshot.drones[i] = tracked_drones()[i];
         }
-        chMtxUnlock();
         return true;
     }
     return false;
@@ -1648,11 +1719,13 @@ bool DroneDetectionLogger::log_detection_async(const DetectionLogEntry& entry) {
     MutexLock lock(mutex_); // Блокировка на микросекунды
 
     if (is_full_) {
-        // Буфер полон (SD карта зависла надолго).
-        // Стратегия: отбрасываем новые данные, сохраняем старые (или наоборот).
-        // Здесь: отбрасываем новые, чтобы не ждать освобождения.
+        // 🔴 FIX: Circular buffer - overwrite oldest entry instead of dropping
+        // This ensures we always have the most recent data for analysis
+        // Track overwrites for statistics and debugging
         dropped_logs_++;
-        return false; 
+        
+        // Overwrite oldest entry (tail position)
+        tail_ = (tail_ + 1) % BUFFER_SIZE;
     }
 
     // Копируем данные в буфер
@@ -1683,6 +1756,13 @@ void DroneDetectionLogger::start_worker() {
         worker_thread_entry,
         this
     );
+
+    // 🔴 FIX: Check thread creation result
+    if (worker_thread_ == nullptr) {
+        // Thread creation failed - fall back to synchronous logging
+        worker_should_run_ = false;
+        return;
+    }
 
     start_session(); // Открываем файл/сессию
 }
@@ -1991,6 +2071,11 @@ Frequency DroneHardwareController::get_spectrum_center_frequency() const {
 }
 
 void DroneHardwareController::set_spectrum_center_frequency(Frequency center_freq) {
+    // 🔴 FIX: Validate frequency before setting
+    if (!EDA::Validation::validate_frequency(center_freq)) {
+        // Invalid frequency - do nothing, keep previous value
+        return;
+    }
     center_frequency_ = center_freq;
 }
 

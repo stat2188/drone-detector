@@ -202,7 +202,7 @@ struct DroneTypeDetector {
 // REQUIRES: Frequency type (int64_t alias), to_string_dec_uint()
 // NOTE: Frequency is defined as using Frequency = int64_t; in ui_drone_common_types.hpp
 struct FrequencyFormatter {
-    enum class Format { 
+    enum class Format {
         COMPACT_GHZ,      // "2.4G" - for tight spaces
         COMPACT_MHZ,      // "2400" - for MHz values
         STANDARD_GHZ,      // "2.450GHz" - for detailed display
@@ -210,79 +210,6 @@ struct FrequencyFormatter {
         DETAILED_GHZ,      // "2.450GHz" - 3 decimal places
         SPACED_GHZ         // "2.4 GHz" - for labels with space
     };
-
-    [[deprecated("Use format_to_buffer() for zero-heap allocation")]]
-    static std::string format(int64_t freq_hz, Format fmt) noexcept {
-        char buffer[24]; // Sufficient for "5.875000GHz" + null
-        
-        switch (fmt) {
-            case Format::COMPACT_GHZ: {
-                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 500000000ULL;
-                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
-                uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 100000000ULL);
-                if (decimal > 0) {
-                    snprintf(buffer, sizeof(buffer), "%lu.%luG",
-                             static_cast<unsigned long>(ghz),
-                             static_cast<unsigned long>(decimal));
-                } else {
-                    snprintf(buffer, sizeof(buffer), "%luG",
-                             static_cast<unsigned long>(ghz));
-                }
-                break;
-            }
-            case Format::COMPACT_MHZ: {
-                uint32_t mhz = static_cast<uint32_t>((freq_hz + 500000) / 1000000ULL);
-                snprintf(buffer, sizeof(buffer), "%lu",
-                         static_cast<unsigned long>(mhz));
-                break;
-            }
-            case Format::STANDARD_GHZ: {
-                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 50000000ULL;
-                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
-                uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 100000000ULL);
-                if (decimal > 0) {
-                    snprintf(buffer, sizeof(buffer), "%lu.%luGHz",
-                             static_cast<unsigned long>(ghz),
-                             static_cast<unsigned long>(decimal));
-                } else {
-                    snprintf(buffer, sizeof(buffer), "%luGHz",
-                             static_cast<unsigned long>(ghz));
-                }
-                break;
-            }
-            case Format::STANDARD_MHZ: {
-                uint32_t mhz = static_cast<uint32_t>(freq_hz / 1000000ULL);
-                uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000ULL) / 100000ULL);
-                if (decimals > 0) {
-                    snprintf(buffer, sizeof(buffer), "%lu.%luMHz", 
-                             static_cast<unsigned long>(mhz), 
-                             static_cast<unsigned long>(decimals));
-                } else {
-                    snprintf(buffer, sizeof(buffer), "%luMHz", 
-                             static_cast<unsigned long>(mhz));
-                }
-                break;
-            }
-            case Format::DETAILED_GHZ: {
-                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 5000000ULL;
-                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
-                uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 10000000ULL);
-                snprintf(buffer, sizeof(buffer), "%lu.%03luGHz",
-                         static_cast<unsigned long>(ghz),
-                         static_cast<unsigned long>(decimals));
-                break;
-            }
-            case Format::SPACED_GHZ: {
-                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 500000000ULL;
-                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
-                snprintf(buffer, sizeof(buffer), "%lu GHz",
-                         static_cast<unsigned long>(ghz));
-                break;
-            }
-        }
-
-        return std::string(buffer, strlen(buffer)); // SSO optimization
-    }
 
     // 🔴 FIX: Non-allocating version for performance-critical paths
     // Writes directly to user-provided buffer (no malloc/free)

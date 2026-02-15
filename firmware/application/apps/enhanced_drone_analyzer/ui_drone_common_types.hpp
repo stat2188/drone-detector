@@ -236,16 +236,17 @@ struct DronePreset {
 
 // Implementations moved to ui_drone_common_types.cpp
 
-static constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;
-
-// Validation constants for scanner settings
-static constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
-static constexpr uint8_t MIN_DETECTION_COUNT = 3;
-static constexpr uint32_t MAX_SCAN_INTERVAL_MS = 10000;
-static constexpr uint16_t MIN_AUDIO_FREQ = 200;
-static constexpr uint16_t MAX_AUDIO_FREQ = 4000;
-static constexpr uint32_t MIN_AUDIO_DURATION = 50;
-static constexpr uint32_t MAX_AUDIO_DURATION = 5000;
+// ===========================================
+// DEPRECATED: Moved to EDA::Constants
+// ===========================================
+// Constants removed - now in eda_constants.hpp:
+// - DEFAULT_RSSI_THRESHOLD_DB
+// - MIN_SCAN_INTERVAL_MS, MAX_SCAN_INTERVAL_MS
+// - MIN_DETECTION_COUNT
+// - MIN_AUDIO_FREQ, MCU_MAX_AUDIO_FREQ_HZ
+// - MIN_AUDIO_DURATION, MAX_AUDIO_DURATION
+// - MIN_BANDWIDTH, MAX_BANDWIDTH
+// ===========================================
 
 // DetectionLogEntry structure for asynchronous logging
 // This is a POD (Plain Old Data) structure for safe memory copying

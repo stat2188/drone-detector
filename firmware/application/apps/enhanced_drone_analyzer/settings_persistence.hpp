@@ -252,17 +252,14 @@ inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
     return false;
 }
 
+// Magic numbers moved to EDA::Constants - use those instead
 static constexpr size_t MAX_LINE_LENGTH = 128;
 static constexpr size_t MAX_SETTING_STR_LEN = 65;
-
-constexpr size_t SETTINGS_TEMPLATE_SIZE = 4096;
-constexpr size_t MAX_SETTINGS_FILE_SIZE = 65536;
-constexpr size_t MAX_SETTINGS_LINES = 1000;
 
 // DIAMOND FIX: Static buffer to prevent stack overflow
 // Defined outside template to avoid code bloat from instantiations
 struct SettingsStaticBuffer {
-    static constexpr size_t SIZE = SETTINGS_TEMPLATE_SIZE;
+    static constexpr size_t SIZE = EDA::Constants::SETTINGS_TEMPLATE_SIZE_4KB;
     static char buffer[SIZE];
 };
 
@@ -290,12 +287,12 @@ inline SettingsLoadBuffer& get_load_buffer() {
 template<typename T>
 class SettingsPersistence {
 public:
-    static bool load(T& settings);
-    static bool save(const T& settings);
+    static EDA::ErrorResult<bool> load(T& settings);
+    static EDA::ErrorResult<bool> save(const T& settings);
     static void reset(T& settings);
-    static bool validate(const T& settings);
+    static EDA::ErrorResult<bool> validate(const T& settings);
     static void reset_to_defaults(T& settings) { reset(settings); }  // Compatibility alias
-    
+
 private:
     static bool parse_line(char* line, T& settings);
     // DIAMOND OPTIMIZATION: validate_setting removed (never called, validation inline in validate())
@@ -306,12 +303,12 @@ private:
 // IMPLEMENTATION: LOAD
 // ===========================================
 template<typename T>
-bool SettingsPersistence<T>::load(T& settings) {
+EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
     // DIAMOND FIX: Validate SD card status with timeout
     systime_t sd_check_start = chTimeNow();
     while (sd_card::status() < sd_card::Status::Mounted) {
         if ((chTimeNow() - sd_check_start) > MS2ST(2000)) {  // 2 second timeout
-            return false;
+            return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::TIMEOUT);
         }
         chThdSleepMilliseconds(50);
     }
@@ -320,7 +317,7 @@ bool SettingsPersistence<T>::load(T& settings) {
     const char* path = settings.settings_file_path;
     auto error = file.open(path);
     if (error) {
-        return false;
+        return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
     }
 
     // DIAMOND FIX: Use static buffers to prevent stack overflow
@@ -333,7 +330,7 @@ bool SettingsPersistence<T>::load(T& settings) {
     size_t total_bytes_read = 0;
     size_t lines_processed = 0;
     size_t read_iterations = 0;
-    
+
     // DIAMOND FIX: Timeout protection for infinite loops
     // Prevents system freeze on SD card failures or corrupted files
     constexpr size_t MAX_READ_ITERATIONS = 10000;
@@ -344,9 +341,9 @@ bool SettingsPersistence<T>::load(T& settings) {
         // Timeout guard: abort if reading takes too long
         if ((chTimeNow() - read_start_time) > MS2ST(READ_TIMEOUT_MS)) {
             file.close();
-            return false;
+            return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::TIMEOUT);
         }
-        
+
         auto read_res = file.read(read_buffer, SettingsLoadBuffer::READ_BUFFER_SIZE);
         if (read_res.is_error() || read_res.value() == 0) {
             break;
@@ -355,9 +352,9 @@ bool SettingsPersistence<T>::load(T& settings) {
         size_t bytes_read = read_res.value();
         total_bytes_read += bytes_read;
 
-        if (total_bytes_read > MAX_SETTINGS_FILE_SIZE) {
+        if (total_bytes_read > EDA::Constants::MAX_SETTINGS_FILE_SIZE_64KB) {
             file.close();
-            return false;
+            return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
         }
 
         for (size_t i = 0; i < bytes_read; i++) {
@@ -369,22 +366,22 @@ bool SettingsPersistence<T>::load(T& settings) {
                 line_idx = 0;
                 lines_processed++;
 
-                if (lines_processed > MAX_SETTINGS_LINES) {
+                if (lines_processed > EDA::Constants::MAX_SETTINGS_LINES) {
                     file.close();
-                    return false;
+                    return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
                 }
-            } else if (c != '\r' && line_idx < MAX_LINE_LENGTH) {
+            } else if (c != '\r' && line_idx < EDA::Constants::MAX_LINE_LENGTH) {
                 line_buffer[line_idx++] = c;
             }
         }
-        
+
         read_iterations++;
     }
-    
+
     // Handle case where max iterations reached
     if (read_iterations >= MAX_READ_ITERATIONS) {
         file.close();
-        return false;
+        return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::TIMEOUT);
     }
 
     if (line_idx > 0) {
@@ -393,7 +390,7 @@ bool SettingsPersistence<T>::load(T& settings) {
     }
 
     file.close();
-    return true;
+    return EDA::ErrorResult<bool>::ok(true);
 }
 
 // ===========================================
@@ -402,50 +399,50 @@ bool SettingsPersistence<T>::load(T& settings) {
 template<typename T>
 bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
     if (!line || *line == '\0') return true;
-    
-    size_t line_len = safe_strlen(line, MAX_LINE_LENGTH);
+
+    size_t line_len = safe_strlen(line, EDA::Constants::MAX_LINE_LENGTH);
     if (line_len == 0) return true;
-    
+
     char* equals = static_cast<char*>(memchr(line, '=', line_len));
     if (!equals) return true;
-    
+
     *equals = '\0';
     char* key = line;
     char* value = equals + 1;
-    
+
     size_t key_len = equals - key;
     size_t value_len = line + line_len - value;
-    
+
     if (key_len == 0 || value_len == 0) return true;
-    
+
     char* key_end = key + key_len - 1;
     while (key_end >= key && (*key_end == ' ' || *key_end == '\t')) {
         *key_end-- = '\0';
         key_len--;
     }
-    
+
     while (*key == ' ' || *key == '\t') {
         key++;
         key_len--;
     }
-    
+
     if (key_len == 0) return true;
-    
+
     while (*value == ' ' || *value == '\t') {
         value++;
         value_len--;
     }
-    
+
     char* value_end = value + value_len - 1;
     while (value_end >= value && (*value_end == ' ' || *value_end == '\t' || *value_end == '\r')) {
         *value_end-- = '\0';
         value_len--;
     }
-    
+
     if (value_len == 0) return true;
-    
+
     value[value_len] = '\0';
-    
+
     for (size_t i = 0; i < SETTINGS_COUNT; i++) {
         if (strncmp(key, SETTINGS_LUT[i].key, key_len) == 0 &&
             const_strlen(SETTINGS_LUT[i].key) == key_len) {
@@ -455,7 +452,7 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
             return dispatch_by_type(DispatchOp::PARSE, data_ptr, meta, value);
         }
     }
-    
+
     return true;
 }
 
@@ -463,43 +460,47 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
 // IMPLEMENTATION: SAVE (SINGLE-PASS BUFFER)
 // ===========================================
 template<typename T>
-bool SettingsPersistence<T>::save(const T& settings) {
+EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
     SettingsBufferLock lock;
-    
+
     constexpr char SETTINGS_TEMPLATE[] = "# EDA Settings v2\n";
 
     char* buffer = get_settings_buffer().buffer;
 
     size_t offset = snprintf(buffer, SettingsStaticBuffer::SIZE, SETTINGS_TEMPLATE);
-    
+
     if (offset >= SettingsStaticBuffer::SIZE) {
-        return false;
+        return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
     }
-    
+
     for (size_t i = 0; i < SETTINGS_COUNT; ++i) {
         int written = serialize_setting(buffer, offset, SettingsStaticBuffer::SIZE, settings, SETTINGS_LUT[i]);
         if (written <= 0 || static_cast<size_t>(written) > (SettingsStaticBuffer::SIZE - offset)) {
-            return false;
+            return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
         }
         offset += written;
     }
-    
+
     // Compile-time validation
-    static_assert(SettingsStaticBuffer::SIZE >= 4096, "Buffer too small for settings template");
+    static_assert(SettingsStaticBuffer::SIZE >= EDA::Constants::SETTINGS_TEMPLATE_SIZE_4KB, "Buffer too small for settings template");
 
     if (sd_card::status() < sd_card::Status::Mounted) {
-        return false;
+        return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
     }
 
     File file;
     const char* path = settings.settings_file_path;
     auto error = file.append(path);
     if (error && !error->ok()) {
-        return false;
+        return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
     }
 
     auto write_result = file.write(buffer, static_cast<File::Size>(offset));
-    return !write_result.is_error();
+    if (write_result.is_error()) {
+        return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
+    }
+
+    return EDA::ErrorResult<bool>::ok(true);
 }
 
 // ===========================================
@@ -533,38 +534,46 @@ bool SettingsPersistence<T>::validate_setting(const SettingMetadata& meta, uint3
 // IMPLEMENTATION: VALIDATE
 // ===========================================
 template<typename T>
-bool SettingsPersistence<T>::validate(const T& settings) {
+EDA::ErrorResult<bool> SettingsPersistence<T>::validate(const T& settings) {
     for (size_t i = 0; i < SETTINGS_COUNT; i++) {
         const auto& meta = SETTINGS_LUT[i];
         const uint8_t* data_ptr = reinterpret_cast<const uint8_t*>(&settings) + meta.offset;
-        
+
         switch (meta.type) {
             case TYPE_BOOL:
                 break;
             case TYPE_UINT32: {
                 uint32_t val = *reinterpret_cast<const uint32_t*>(data_ptr);
                 int32_t val_signed = static_cast<int32_t>(val);
-                if (val_signed < meta.min_val || val_signed > meta.max_val) return false;
+                if (val_signed < meta.min_val || val_signed > meta.max_val) {
+                    return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+                }
                 break;
             }
             case TYPE_INT32: {
                 int32_t val = *reinterpret_cast<const int32_t*>(data_ptr);
                 int32_t min_val = static_cast<int32_t>(meta.min_val);
                 int32_t max_val = static_cast<int32_t>(meta.max_val);
-                if (val < min_val || val > max_val) return false;
+                if (val < min_val || val > max_val) {
+                    return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+                }
                 break;
             }
             case TYPE_UINT64: {
                 uint64_t val = *reinterpret_cast<const uint64_t*>(data_ptr);
-                if (val > 0x7FFFFFFFFFFFFFFFULL) return false;
+                if (val > 0x7FFFFFFFFFFFFFFFULL) {
+                    return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+                }
                 int64_t val_signed = static_cast<int64_t>(val);
-                if (val_signed < meta.min_val || val_signed > meta.max_val) return false;
+                if (val_signed < meta.min_val || val_signed > meta.max_val) {
+                    return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+                }
                 break;
             }
             case TYPE_STR: {
                 const char* str = reinterpret_cast<const char*>(data_ptr);
                 if (str[0] == '\0') {
-                    return false;
+                    return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
                 }
                 break;
             }
@@ -572,11 +581,15 @@ bool SettingsPersistence<T>::validate(const T& settings) {
                 break;
         }
     }
-    
-    if (settings.user_min_freq_hz >= settings.user_max_freq_hz) return false;
-    if (settings.wideband_min_freq_hz >= settings.wideband_max_freq_hz) return false;
 
-    return true;
+    if (settings.user_min_freq_hz >= settings.user_max_freq_hz) {
+        return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+    }
+    if (settings.wideband_min_freq_hz >= settings.wideband_max_freq_hz) {
+        return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+    }
+
+    return EDA::ErrorResult<bool>::ok(true);
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer

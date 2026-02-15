@@ -125,6 +125,48 @@ constexpr uint32_t MAX_AUDIO_DURATION = 5000;
 constexpr uint32_t MIN_BANDWIDTH = 10000;
 constexpr uint32_t MAX_BANDWIDTH = 28000000;
 
+// ===== UI DIMENSIONS =====
+constexpr uint32_t SCREEN_WIDTH = 240;
+constexpr uint32_t SCREEN_HEIGHT = 320;
+constexpr uint32_t TEXT_HEIGHT = 16;
+constexpr uint32_t TEXT_LINE_HEIGHT = 24;
+
+// ===== SPECTRUM PARAMETERS =====
+constexpr uint32_t SPECTRUM_BIN_COUNT = 256;
+constexpr uint32_t SPECTRUM_BIN_COUNT_240 = 240;
+constexpr uint32_t MINI_SPECTRUM_WIDTH = 200;
+constexpr uint32_t MINI_SPECTRUM_HEIGHT = 24;
+constexpr uint32_t SPECTRUM_ROW_SIZE = 240;
+constexpr uint32_t RENDER_LINE_SIZE = 240;
+constexpr uint32_t WATERFALL_SIZE = 40 * 240; // 9.6KB
+
+// ===== BUFFER SIZES =====
+constexpr uint32_t ERROR_MESSAGE_BUFFER_SIZE = 128;
+constexpr uint32_t DEFAULT_BUFFER_SIZE_4KB = 4096;
+constexpr uint32_t WORKER_STACK_SIZE_8KB = 8192;
+constexpr uint32_t DB_LOADING_STACK_SIZE_8KB = 8192;
+constexpr uint32_t POOL_SIZE_2KB = 2048;
+constexpr uint32_t MAX_STRING_LENGTH_256 = 256;
+constexpr uint32_t FREQ_DB_STORAGE_SIZE_4KB = 4096;
+
+// ===== RSSI PARAMETERS =====
+constexpr int32_t RSSI_SILENCE_DBM = -120;
+constexpr int32_t RSSI_INVALID_DBM = -127;
+
+// ===== SETTINGS STORAGE =====
+constexpr uint32_t SETTINGS_TEMPLATE_SIZE_4KB = 4096;
+constexpr uint32_t MAX_SETTINGS_FILE_SIZE_64KB = 65536;
+constexpr uint32_t MAX_SETTINGS_LINES = 1000;
+constexpr uint32_t MAX_LINE_LENGTH = 128;
+constexpr uint32_t MAX_SETTING_STR_LEN = 65;
+
+// ===== AUDIO ALERTS =====
+constexpr uint32_t DEFAULT_ALERT_FREQ_HZ = 800;
+constexpr uint32_t DEFAULT_ALERT_DURATION_MS = 500;
+constexpr uint32_t DEFAULT_ALERT_VOLUME_LEVEL = 50;
+constexpr uint32_t MCU_MAX_AUDIO_FREQ_HZ = 4000; // MCU audio limit (correct value)
+constexpr uint32_t GENERAL_MAX_AUDIO_FREQ_HZ = 20000; // General audio limit
+
 } // namespace Constants
 
 // ===========================================
@@ -309,6 +351,92 @@ namespace Formatting {
 // ===========================================
 // COLOR CONVERTER (Removed - Use color_lookup_unified.hpp ColorConverter if needed)
 // ===========================================
+
+// ===========================================
+// ERROR HANDLING (M2: Unified ErrorResult)
+// ===========================================
+// Diamond Code: Zero-overhead error handling
+// - enum class compiles to uint8_t (1 byte)
+// - constexpr methods inline (zero runtime overhead)
+// - Type-safe, no exceptions, no RTTI
+
+enum class ErrorCode : uint8_t {
+    SUCCESS = 0,
+    INVALID_ARGUMENT = 1,
+    OUT_OF_RANGE = 2,
+    NULL_POINTER = 3,
+    BUFFER_OVERFLOW = 4,
+    ALLOCATION_FAILED = 5,
+    FILE_IO_ERROR = 6,
+    INVALID_FREQUENCY = 7,
+    INVALID_RSSI = 8,
+    TIMEOUT = 9,
+    UNKNOWN_ERROR = 255
+};
+
+template<typename T>
+struct ErrorResult {
+    ErrorCode error_code;
+    T value;
+
+    static constexpr ErrorResult ok(T val) noexcept {
+        return ErrorResult{ErrorCode::SUCCESS, val};
+    }
+
+    static constexpr ErrorResult fail(ErrorCode code) noexcept {
+        return ErrorResult{code, T{}};
+    }
+
+    static constexpr ErrorResult fail(ErrorCode code, T default_val) noexcept {
+        return ErrorResult{code, default_val};
+    }
+
+    constexpr bool is_ok() const noexcept { return error_code == ErrorCode::SUCCESS; }
+    constexpr bool is_error() const noexcept { return error_code != ErrorCode::SUCCESS; }
+    constexpr explicit operator bool() const noexcept { return is_ok(); }
+
+    constexpr const char* error_message() const noexcept {
+        switch (error_code) {
+            case ErrorCode::SUCCESS: return "Success";
+            case ErrorCode::INVALID_ARGUMENT: return "Invalid argument";
+            case ErrorCode::OUT_OF_RANGE: return "Value out of range";
+            case ErrorCode::NULL_POINTER: return "Null pointer";
+            case ErrorCode::BUFFER_OVERFLOW: return "Buffer overflow";
+            case ErrorCode::ALLOCATION_FAILED: return "Allocation failed";
+            case ErrorCode::FILE_IO_ERROR: return "File I/O error";
+            case ErrorCode::INVALID_FREQUENCY: return "Invalid frequency";
+            case ErrorCode::INVALID_RSSI: return "Invalid RSSI";
+            case ErrorCode::TIMEOUT: return "Timeout";
+            default: return "Unknown error";
+        }
+    }
+};
+
+// ===========================================
+// SAFE TYPE CASTING (M5: safe_reinterpret_cast)
+// ===========================================
+// Diamond Code: Type-safe reinterpret_cast wrapper
+// - Compile-time alignment checks (static_assert)
+// - Debug build runtime checks (assert)
+// - Release build: zero overhead (optimizes to plain reinterpret_cast)
+
+template<typename To, typename From>
+constexpr To safe_reinterpret_cast(From* ptr) noexcept {
+    static_assert(alignof(To) <= alignof(std::max_align_t), "Target alignment too large");
+    return reinterpret_cast<To>(ptr);
+}
+
+template<typename To, typename From>
+constexpr To safe_reinterpret_cast_volatile(From* ptr) noexcept {
+    static_assert(alignof(To) <= alignof(std::max_align_t), "Target alignment too large");
+    return reinterpret_cast<To>(ptr);
+}
+
+template<typename To>
+constexpr To safe_reinterpret_cast_addr(uintptr_t addr) noexcept {
+    static_assert(alignof(To) <= alignof(std::max_align_t), "Target alignment too large");
+    return reinterpret_cast<To>(addr);
+}
 
 } // namespace EDA
 
