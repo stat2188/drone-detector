@@ -492,45 +492,11 @@ struct ValidatorFormatter {
 };
 
 // ===========================================
-// FREQUENCY FORMAT (Zero-Allocation)
+// DEPRECATED: FrequencyFormat removed (use EDA::Formatting)
 // ===========================================
-struct FrequencyFormat {
-    enum class Style : uint8_t {
-        COMPACT_GHZ,    // "2.4G"
-        STANDARD_GHZ,   // "2.45GHz"
-        STANDARD_MHZ    // "2450MHz"
-    };
-    
-    static void format(char* buf, size_t buf_size, uint64_t hz, Style style) noexcept {
-        if (!buf || buf_size == 0) return;
-        
-        switch (style) {
-            case Style::COMPACT_GHZ: {
-                uint64_t freq_rounded = hz + 500'000'000ULL;
-                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1'000'000'000ULL);
-                uint32_t dec = static_cast<uint32_t>((hz % 1'000'000'000ULL) / 100'000'000ULL);
-                if (dec > 0) {
-                    snprintf(buf, buf_size, "%" PRIu32 ".%" PRIu32 "G", ghz, dec);
-                } else {
-                    snprintf(buf, buf_size, "%" PRIu32 "G", ghz);
-                }
-                break;
-            }
-            case Style::STANDARD_GHZ: {
-                uint64_t freq_rounded = hz + 50'000'000ULL;
-                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1'000'000'000ULL);
-                uint32_t dec = static_cast<uint32_t>((hz % 1'000'000'000ULL) / 10'000'000ULL);
-                snprintf(buf, buf_size, "%" PRIu32 ".%03" PRIu32 "GHz", ghz, dec);
-                break;
-            }
-            case Style::STANDARD_MHZ: {
-                uint32_t mhz = static_cast<uint32_t>(hz / 1'000'000ULL);
-                snprintf(buf, buf_size, "%" PRIu32 "MHz", mhz);
-                break;
-            }
-        }
-    }
-};
+// Removed duplicate FrequencyFormat class
+// Use EDA::Formatting::format_frequency() instead
+// Single source of truth in eda_constants.hpp
 
 } // namespace ui::apps::enhanced_drone_analyzer
 

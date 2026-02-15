@@ -24,11 +24,14 @@ namespace fs = std::filesystem;
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
-// MOVED TO UNIFIED LOOKUP TABLES
+// UNIFIED LOOKUP TABLES (Single Source of Truth)
 // ===========================================
-// Spectrum mode names:    UnifiedStringLookup::SPECTRUM_MODE_NAMES
-// Drone type names:       UnifiedStringLookup::DRONE_TYPE_NAMES
-// Single source of truth: color_lookup_unified.hpp
+// Spectrum modes:  EDA::LUTs::spectrum_mode_*()          (eda_constants.hpp)
+// Frequency fmt:  EDA::Formatting::format_frequency()      (eda_constants.hpp)
+// Threat colors:  UnifiedColorLookup::threat()              (color_lookup_unified.hpp)
+// Drone colors:   UnifiedColorLookup::drone()               (color_lookup_unified.hpp)
+// Drone types:    UnifiedStringLookup::drone_type_name()     (color_lookup_unified.hpp)
+// Threat names:   UnifiedStringLookup::threat_name()         (color_lookup_unified.hpp)
 
 
 // ===========================================
@@ -256,11 +259,11 @@ std::string EnhancedSettingsManager::generate_settings_content(const DroneAnalyz
     return ss.str();
 }
 
-// DIAMOND OPTIMIZATION: LUT lookup вместо switch для spectrum_mode_to_string()
+// DIAMOND OPTIMIZATION: Unified LUT lookup для spectrum_mode_to_string()
 // Scott Meyers Item 15: Prefer constexpr to #define
-// Экономит ~50 байт Flash
+// Экономит ~50 байт Flash, использует EDA::LUTs (SSOT)
 std::string EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) {
-    return std::string(UnifiedStringLookup::spectrum_mode_name(static_cast<uint8_t>(mode)));
+    return std::string(EDA::LUTs::spectrum_mode_display_name(static_cast<uint8_t>(mode)));
 }
 
 std::string EnhancedSettingsManager::get_current_timestamp() {
@@ -510,31 +513,11 @@ HardwareSettingsView::HardwareSettingsView(NavigationView& nav) : nav_(nav) {
     load_current_settings();
 }
 void HardwareSettingsView::focus() { button_save_.focus(); }
-// DIAMOND OPTIMIZATION: constexpr LUT для SpectrumMode → index conversion
+// DIAMOND OPTIMIZATION: Unified LUT lookup для SpectrumMode conversion
 // Scott Meyers Item 15: Prefer constexpr to #define
 // Экономия RAM: LUT хранится во Flash, ноль heap allocation
 // Ускорение: O(1) lookup вместо 5-branch switch
-static constexpr uint8_t SPECTRUM_MODE_TO_INDEX_LUT[] = {
-    1,  // SpectrumMode::NARROW (0) → OptionsField index 1 ("Narrow")
-    2,  // SpectrumMode::MEDIUM (1) → OptionsField index 2 ("Medium")
-    3,  // SpectrumMode::WIDE (2) → OptionsField index 3 ("Wide")
-    4,  // SpectrumMode::ULTRA_WIDE (3) → OptionsField index 4 ("Ultra Wide")
-    0   // SpectrumMode::ULTRA_NARROW (4) → OptionsField index 0 ("Ultra Narrow")
-};
-static_assert(sizeof(SPECTRUM_MODE_TO_INDEX_LUT) == 5, "SPECTRUM_MODE_TO_INDEX_LUT size");
-
-// DIAMOND OPTIMIZATION: constexpr LUT для index → SpectrumMode conversion
-// Scott Meyers Item 15: Prefer constexpr to #define
-// Экономия RAM: LUT хранится во Flash, ноль heap allocation
-// Ускорение: O(1) lookup вместо 5-branch switch
-static constexpr SpectrumMode INDEX_TO_SPECTRUM_MODE_LUT[] = {
-    SpectrumMode::ULTRA_NARROW,  // index 0 (OptionsField "Ultra Narrow")
-    SpectrumMode::NARROW,        // index 1 (OptionsField "Narrow")
-    SpectrumMode::MEDIUM,         // index 2 (OptionsField "Medium")
-    SpectrumMode::WIDE,           // index 3 (OptionsField "Wide")
-    SpectrumMode::ULTRA_WIDE      // index 4 (OptionsField "Ultra Wide")
-};
-static_assert(sizeof(INDEX_TO_SPECTRUM_MODE_LUT) / sizeof(SpectrumMode) == 5, "INDEX_TO_SPECTRUM_MODE_LUT size");
+// ИСПОЛЬЗУЕТ: EDA::LUTs::spectrum_mode_ui_index() (SSOT)
 
 void HardwareSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
@@ -717,51 +700,114 @@ void DroneAnalyzerSettingsView::show_about_author() {
 }
 
 // DroneDatabaseManager
-std::vector<DroneDbEntry> DroneDatabaseManager::load_database(const std::string& file_path) {
-    std::vector<DroneDbEntry> entries;
+DroneDatabaseManager::DatabaseView DroneDatabaseManager::load_database(const char* file_path) {
+    DatabaseView view{};
+    
     File file;
-    if (!file.open(file_path, true)) return entries;
-    std::string content;
-    content.resize(file.size());
-    file.read(content.data(), file.size());
-    file.close();
-    std::stringstream ss(content);
-    std::string line;
-    while (std::getline(ss, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (line.empty() || line[0] == '#') continue;
-        std::vector<std::string> tokens;
-        std::stringstream line_ss(line);
-        std::string token;
-        while (std::getline(line_ss, token, ',')) tokens.push_back(token);
-        DroneDbEntry entry;
-        if (tokens.size() >= 3) {
-            entry.freq = std::strtoull(tokens[0].c_str(), nullptr, 10);
-            entry.description = tokens[2] + " (R)";
-        } else if (tokens.size() >= 2) {
-            entry.freq = std::strtoull(tokens[0].c_str(), nullptr, 10);
-            entry.description = tokens[1];
+    if (!file.open(file_path, true)) return view;
+    
+    // DIAMOND OPTIMIZATION: Stack-allocated line buffer (zero heap)
+    constexpr size_t LINE_BUFFER_SIZE = 128;
+    char line_buffer[LINE_BUFFER_SIZE];
+    char line_ptr = 0;
+    
+    constexpr size_t READ_BUFFER_SIZE = 256;
+    char read_buffer[READ_BUFFER_SIZE];
+    
+    size_t total_read = 0;
+    while (total_read < file.size() && view.count < MAX_DATABASE_ENTRIES) {
+        auto read_res = file.read(read_buffer, READ_BUFFER_SIZE);
+        if (read_res.is_error()) break;
+        
+        size_t bytes_read = read_res.value();
+        
+        for (size_t i = 0; i < bytes_read && view.count < MAX_DATABASE_ENTRIES; ++i) {
+            char c = read_buffer[i];
+            
+            if (c == '\n' || c == '\r') {
+                line_buffer[line_ptr] = '\0';
+                
+                // Parse line
+                if (line_buffer[0] != '\0' && line_buffer[0] != '#') {
+                    // Find comma separator
+                    char* comma = static_cast<char*>(memchr(line_buffer, ',', line_ptr));
+                    if (comma) {
+                        *comma = '\0';
+                        DroneDbEntry entry{};
+                        entry.freq = strtoull(line_buffer, nullptr, 10);
+                        
+                        // Copy description (skip comma and space)
+                        char* desc = comma + 1;
+                        while (*desc == ' ') desc++;
+                        
+                        entry.description.assign(desc);
+                        
+                        if (entry.freq > 0) {
+                            view.entries[view.count++] = entry;
+                        }
+                    }
+                }
+                
+                line_ptr = 0;
+            } else if (line_ptr < LINE_BUFFER_SIZE - 1) {
+                line_buffer[line_ptr++] = c;
+            }
         }
-        if (entry.freq > 0) entries.push_back(entry);
+        
+        total_read += bytes_read;
     }
-    return entries;
-}
-bool DroneDatabaseManager::save_database(const std::vector<DroneDbEntry>& entries, const std::string& file_path) {
-    std::stringstream ss;
-    ss << "frequency,description\n# EDA User Database\n";
-    for (const auto& entry : entries) {
-        if (entry.freq == 0) continue;
-        std::string safe_desc = entry.description;
-        std::replace(safe_desc.begin(), safe_desc.end(), ',', ' ');
-        std::replace(safe_desc.begin(), safe_desc.end(), '\n', ' ');
-        std::replace(safe_desc.begin(), safe_desc.end(), '\r', ' ');
-        ss << entry.freq << "," << safe_desc << "\n";
-    }
-    std::string content = ss.str();
-    File file;
-    if (!file.open(file_path, false)) return false;
-    file.write(content.data(), content.size());
+    
     file.close();
+    return view;
+}
+
+bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* file_path) {
+    // DIAMOND OPTIMIZATION: Stack-allocated buffer (zero heap)
+    constexpr size_t WRITE_BUFFER_SIZE = 4096;
+    char write_buffer[WRITE_BUFFER_SIZE];
+    size_t offset = 0;
+    
+    // Write header
+    offset += snprintf(write_buffer + offset, WRITE_BUFFER_SIZE - offset,
+                      "frequency,description\n# EDA User Database\n");
+    
+    // Write entries
+    for (size_t i = 0; i < view.count; ++i) {
+        const auto& entry = view.entries[i];
+        if (entry.freq == 0) continue;
+        
+        char safe_desc[64];
+        size_t desc_len = entry.description.size();
+        for (size_t j = 0; j < desc_len && j < sizeof(safe_desc) - 1; ++j) {
+            safe_desc[j] = (entry.description[j] == ',') ? ' ' : entry.description[j];
+        }
+        safe_desc[desc_len < (sizeof(safe_desc) - 1) ? desc_len : sizeof(safe_desc) - 1] = '\0';
+        
+        int written = snprintf(write_buffer + offset, WRITE_BUFFER_SIZE - offset,
+                            "%llu,%s\n",
+                            static_cast<unsigned long long>(entry.freq),
+                            safe_desc);
+        
+        if (written < 0 || offset + static_cast<size_t>(written) >= WRITE_BUFFER_SIZE) {
+            // Buffer full - flush and continue (simplified)
+            File file;
+            if (!file.open(file_path, false)) return false;
+            file.write(write_buffer, offset);
+            file.close();
+            offset = 0;
+        } else {
+            offset += static_cast<size_t>(written);
+        }
+    }
+    
+    // Final write
+    if (offset > 0) {
+        File file;
+        if (!file.open(file_path, false)) return false;
+        file.write(write_buffer, offset);
+        file.close();
+    }
+    
     return true;
 }
 
@@ -790,9 +836,9 @@ void DroneEntryEditorView::on_cancel() {
 
 // DroneDatabaseListView
 DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav) 
-    : View(), nav_(nav), entries_() {
+    : View(), nav_(nav), database_view_() {
     add_children({&menu_view_});
-    entries_ = DroneDatabaseManager::load_database();
+    database_view_ = DroneDatabaseManager::load_database();
     reload_list();
 }
 
@@ -800,14 +846,20 @@ void DroneDatabaseListView::focus() { menu_view_.focus(); }
 
 void DroneDatabaseListView::reload_list() {
     menu_view_.clear();
-    menu_view_.add_item({"[ + ADD NEW FREQUENCY ]", Color::white(), nullptr, nullptr});
-    for (const auto& entry : entries_) {
+    menu_view_.add_item({"[+ ADD NEW FREQUENCY]", Color::white(), nullptr, nullptr});
+    for (size_t i = 0; i < database_view_.count; ++i) {
+        const auto& entry = database_view_.entries[i];
         constexpr size_t FREQ_BUF_SIZE = 24;
         char freq_buf[FREQ_BUF_SIZE];
         FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), entry.freq);
-        std::string freq_str(freq_buf);
-        std::string text = freq_str + ": " + entry.description;
-        menu_view_.add_item({text, Color::white(), nullptr, nullptr});
+        
+        constexpr size_t TEXT_BUFFER_SIZE = 64;
+        char text_buffer[TEXT_BUFFER_SIZE];
+        snprintf(text_buffer, sizeof(text_buffer), "%s: %s", freq_buf, entry.description);
+        
+        // DIAMOND FIX: Create named string object for lifetime extension
+        std::string text_item(text_buffer);
+        menu_view_.add_item({text_item, Color::white(), nullptr, nullptr});
     }
 }
 
@@ -815,17 +867,17 @@ void DroneDatabaseListView::on_entry_selected(size_t index) {
     if (index == 0) {
         DroneDbEntry empty_entry;
         nav_.push<DroneEntryEditorView>(empty_entry, [this](const DroneDbEntry& entry) {
-            if (entry.freq != 0) {
-                entries_.push_back(entry);
+            if (entry.freq != 0 && database_view_.count < DroneDatabaseManager::MAX_DATABASE_ENTRIES) {
+                database_view_.entries[database_view_.count++] = entry;
                 save_changes();
                 reload_list();
             }
         });
     } else {
         size_t entry_index = index - 1;
-        nav_.push<DroneEntryEditorView>(entries_[entry_index], [this, entry_index](const DroneDbEntry& entry) {
+        nav_.push<DroneEntryEditorView>(database_view_.entries[entry_index], [this, entry_index](const DroneDbEntry& entry) {
             if (entry.freq != 0) {
-                entries_[entry_index] = entry;
+                database_view_.entries[entry_index] = entry;
                 save_changes();
                 reload_list();
             }
@@ -833,7 +885,7 @@ void DroneDatabaseListView::on_entry_selected(size_t index) {
     }
 }
 
-void DroneDatabaseListView::save_changes() { DroneDatabaseManager::save_database(entries_); }
+void DroneDatabaseListView::save_changes() { DroneDatabaseManager::save_database(database_view_); }
 bool DroneDatabaseListView::on_key(const KeyEvent key) {
     if (key == KeyEvent::Select) {
         size_t index = menu_view_.highlighted_index();

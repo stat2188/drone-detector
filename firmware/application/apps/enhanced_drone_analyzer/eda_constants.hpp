@@ -172,6 +172,125 @@ inline constexpr bool is_433mhz_band(int64_t freq_hz) noexcept {
 } // namespace Validation
 
 // ===========================================
+// UNIFIED SPECTRUM MODE LUT (Single Source of Truth)
+// ===========================================
+// Eliminates duplicate definitions from:
+// - ui_enhanced_drone_settings.cpp (SPECTRUM_MODE_TO_INDEX_LUT)
+// - color_lookup_unified.hpp (SPECTRUM_MODE_NAMES)
+
+namespace LUTs {
+    struct SpectrumModeInfo {
+        const char* short_name;      // "NARROW"
+        const char* display_name;    // "Narrow Band"
+        uint32_t   bandwidth_hz;     // 2.4MHz
+        uint8_t    ui_index;        // OptionsField index
+    };
+    
+    // constexpr ensures Flash storage (O(1) RAM)
+    static constexpr SpectrumModeInfo SPECTRUM_MODES[] = {
+        {"ULTRA_NARROW", "Ultra Narrow",  8000000,  0},
+        {"NARROW",       "Narrow",        12000000, 1},
+        {"MEDIUM",       "Medium",        24000000, 2},
+        {"WIDE",         "Wide",          48000000, 3},
+        {"ULTRA_WIDE",   "Ultra Wide",    96000000, 4}
+    };
+    static_assert(sizeof(SPECTRUM_MODES) / sizeof(SpectrumModeInfo) == 5, "SPECTRUM_MODES size");
+    
+    // O(1) lookup (eliminates switch)
+    inline constexpr const char* spectrum_mode_short_name(uint8_t mode_idx) noexcept {
+        return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].short_name : "MEDIUM";
+    }
+    
+    inline constexpr const char* spectrum_mode_display_name(uint8_t mode_idx) noexcept {
+        return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].display_name : "Medium";
+    }
+    
+    inline constexpr uint32_t spectrum_mode_bandwidth(uint8_t mode_idx) noexcept {
+        return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].bandwidth_hz : 24000000;
+    }
+    
+    inline constexpr uint8_t spectrum_mode_ui_index(uint8_t mode_idx) noexcept {
+        return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].ui_index : 2;
+    }
+}
+
+// ===========================================
+// UNIFIED FREQUENCY FORMATTING (Zero-Heap)
+// ===========================================
+// Eliminates duplicate FrequencyFormatter/FrequencyFormat classes
+
+namespace Formatting {
+    struct FrequencyScale {
+        int64_t  threshold_hz;
+        const char* unit;
+        int64_t  divider;
+    };
+    
+    static constexpr FrequencyScale FREQUENCY_SCALES[] = {
+        {1'000'000'000LL, "G", 1'000'000'000LL},  // GHz
+        {1'000'000LL,     "M", 1'000'000LL},        // MHz
+        {1'000LL,         "k", 1'000LL},            // kHz
+        {0LL,             "",  1LL}                  // Hz (fallback)
+    };
+    
+    // Stack-allocated formatting (NO heap allocation)
+    inline void format_frequency(char* buffer, size_t size, int64_t freq_hz) noexcept {
+        if (!buffer || size == 0) return;
+        
+        const auto* scale = FREQUENCY_SCALES;
+        while (scale->threshold_hz > 0 && freq_hz >= scale->threshold_hz) scale++;
+        
+        int64_t value = freq_hz / scale->divider;
+        int64_t decimal = freq_hz % scale->divider;
+        
+        if (decimal > 0 && scale->threshold_hz > 0) {
+            // Single decimal place for precision
+            decimal = (decimal * 10) / scale->divider;
+            snprintf(buffer, size, "%lld.%lld%s", 
+                     static_cast<long long>(value),
+                     static_cast<long long>(decimal),
+                     scale->unit);
+        } else {
+            snprintf(buffer, size, "%lld%s",
+                     static_cast<long long>(value),
+                     scale->unit);
+        }
+    }
+    
+    // Compact format for UI (e.g., "2.4G")
+    inline void format_frequency_compact(char* buffer, size_t size, int64_t freq_hz) noexcept {
+        if (!buffer || size == 0) return;
+        
+        // GHz range
+        if (freq_hz >= 1'000'000'000LL) {
+            uint64_t rounded = static_cast<uint64_t>(freq_hz + 500'000'000ULL);
+            uint32_t ghz = static_cast<uint32_t>(rounded / 1'000'000'000ULL);
+            uint32_t decimal = static_cast<uint32_t>((rounded % 1'000'000'000ULL) / 100'000'000ULL);
+            
+            if (decimal > 0) {
+                snprintf(buffer, size, "%u.%luG", ghz, static_cast<unsigned long>(decimal));
+            } else {
+                snprintf(buffer, size, "%uG", ghz);
+            }
+        }
+        // MHz range
+        else if (freq_hz >= 1'000'000LL) {
+            uint32_t mhz = static_cast<uint32_t>((freq_hz + 500'000LL) / 1'000'000LL);
+            snprintf(buffer, size, "%uM", mhz);
+        }
+        // kHz range
+        else if (freq_hz >= 1'000LL) {
+            uint32_t khz = static_cast<uint32_t>((freq_hz + 500LL) / 1'000LL);
+            snprintf(buffer, size, "%uk", khz);
+        }
+        // Hz range
+        else {
+            snprintf(buffer, size, "%lld", static_cast<long long>(freq_hz));
+        }
+    }
+}
+
+// ===========================================
 // FREQUENCY BANDS (Removed - Use diamond_core.hpp if needed)
 // ===========================================
 

@@ -120,8 +120,23 @@ struct DroneDbEntry {
 // Database manager class
 class DroneDatabaseManager {
 public:
-    static std::vector<DroneDbEntry> load_database(const std::string& file_path = "/FREQMAN/DRONES.TXT");
-    static bool save_database(const std::vector<DroneDbEntry>& entries, const std::string& file_path = "/FREQMAN/DRONES.TXT");
+    // DIAMOND OPTIMIZATION: Use DatabaseView instead of std::vector
+    // Returns stack-allocated view (zero heap allocation)
+    static constexpr size_t MAX_DATABASE_ENTRIES = 100;
+    
+    struct DatabaseView {
+        DroneDbEntry entries[MAX_DATABASE_ENTRIES];
+        size_t count = 0;
+        
+        constexpr bool is_valid() const noexcept { return count > 0; }
+        constexpr const DroneDbEntry& operator[](size_t idx) const noexcept {
+            return (idx < count) ? entries[idx] : entries[0];
+        }
+        constexpr size_t size() const noexcept { return count; }
+    };
+    
+    static DatabaseView load_database(const char* file_path = "/FREQMAN/DRONES.TXT");
+    static bool save_database(const DatabaseView& view, const char* file_path = "/FREQMAN/DRONES.TXT");
 };
 
 // ===========================================
@@ -302,7 +317,7 @@ public:
 
 private:
     NavigationView& nav_;
-    std::vector<DroneDbEntry> entries_;
+    DroneDatabaseManager::DatabaseView database_view_;
     MenuView menu_view_{{0, 0, 240, 168}};
 
     void reload_list();
