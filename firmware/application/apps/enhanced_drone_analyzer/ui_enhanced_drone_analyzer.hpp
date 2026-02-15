@@ -37,14 +37,11 @@
 #include "radio.hpp"
 #include "irq_controls.hpp"
 
-using rf::Frequency;
-
 #include "ui_navigation.hpp"
 #include "app_settings.hpp"
 #include "string_format.hpp"
 #include "tone_key.hpp"
 #include "message_queue.hpp"
-// #include "eda_unified_settings.hpp"  // DEPRECATED - removed, use DroneAnalyzerSettings instead
 
 class LogFile;
 
@@ -58,6 +55,8 @@ enum class ScannerMode : uint8_t {
 
 // Application specific namespace starts here to ensure all classes are properly scoped
 namespace ui::apps::enhanced_drone_analyzer {
+
+using rf::Frequency;
 
 // ===========================================
 // DIAMOND FIX: Global SD Card Mutex Protection

@@ -7,12 +7,12 @@
 #include "radio.hpp"
 #include "file.hpp"
 
-// SpectrumMode forward declare
-enum class SpectrumMode : uint8_t { NARROW = 0, MEDIUM = 1, WIDE = 2, ULTRA_WIDE = 3, ULTRA_NARROW = 4 };
-
 namespace ui::apps::enhanced_drone_analyzer {
 
 using rf::Frequency;
+
+// SpectrumMode forward declare
+enum class SpectrumMode : uint8_t { NARROW = 0, MEDIUM = 1, WIDE = 2, ULTRA_WIDE = 3, ULTRA_NARROW = 4 };
 
 // ===========================================
 // CONSTANTS & TYPE ALIASES

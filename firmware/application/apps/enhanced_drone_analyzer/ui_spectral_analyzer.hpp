@@ -18,9 +18,9 @@
 #include "eda_optimized_utils.hpp"
 #include "eda_constants.hpp"
 
-using rf::Frequency;
-
 namespace ui::apps::enhanced_drone_analyzer {
+
+using rf::Frequency;
 
 enum class SignalSignature : uint8_t {
     NOISE = 0,
