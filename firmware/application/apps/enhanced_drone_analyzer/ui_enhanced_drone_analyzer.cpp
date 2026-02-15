@@ -27,6 +27,7 @@
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
 #include "eda_constants.hpp"
+#include "diamond_core.hpp"
 #include "gradient.hpp"
 #include "baseband_api.hpp"
 #include "portapack.hpp"
@@ -66,6 +67,12 @@ using namespace EDA::Constants;
 // FatFS is NOT thread-safe - all SD operations must be serialized
 // ===========================================
 Mutex sd_card_mutex;
+
+// ===========================================
+// DIAMOND FIX: Settings Buffer Mutex Definition
+// FatFS is NOT thread-safe - all settings buffer access must be serialized
+// ===========================================
+Mutex settings_buffer_mutex;
 
 // ===========================================
 // DIAMOND OPTIMIZATION: ScanningMode LUT (namespace scope)
@@ -144,75 +151,6 @@ const TrackedDrone& get_empty_drone() {
     static const TrackedDrone empty{};
     return empty;
 }
-
-// DIAMOND OPTIMIZATION: Deprecated parse_settings_line_inplace removed (~60 lines)
-// Now using SettingsPersistence<T> from settings_persistence.hpp
-// Scott Meyers Item 11: Handle assignment to self in operator=
-
-bool load_settings_from_sd_card(DroneAnalyzerSettings& settings) {
-    (void)settings;  // Suppress unused parameter warning
-    File settings_file;
-    auto error = settings_file.open("/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt");
-    if (error) return false;
-
-    char read_buffer[256];       // Increased buffer size for safety
-    char line_buffer[256];       // Increased buffer size to handle long lines
-    size_t line_idx = 0;
-    size_t discarded_bytes = 0;  // Counter for dropped bytes
-
-    while (true) {
-        // Read block
-        auto read_res = settings_file.read(read_buffer, sizeof(read_buffer));
-        if (read_res.is_error()) break;
-
-        size_t bytes_read = read_res.value();
-        if (bytes_read == 0) break; // EOF
-
-        // Process the read block
-        for (size_t i = 0; i < bytes_read; i++) {
-            char c = read_buffer[i];
-
-            if (c == '\n') {
-                // End of line found
-                line_buffer[line_idx] = 0; // Null-terminate
-
-                // ===========================================
-                // DEPRECATED: parse_settings_line_inplace REPLACED
-                // Use SettingsPersistence<DroneAnalyzerSettings>::load(settings) instead
-                // ===========================================
-                // parse_settings_line_inplace(line_buffer, settings);
-
-        // Reset for next line
-        line_idx = 0;
-            }
-            else if (c != '\r') {
-                // Ignore \r, accumulate other characters
-                if (line_idx < sizeof(line_buffer) - 1) {
-                    line_buffer[line_idx++] = c;
-                } else {
-                    // Count discarded bytes when line exceeds buffer
-                    discarded_bytes++;
-                }
-            }
-        }
-    }
-
-    // ===========================================
-    // DEPRECATED: parse_settings_line_inplace REPLACED
-    // Use SettingsPersistence<DroneAnalyzerSettings>::load(settings) instead
-    // ===========================================
-    // Process last line if file doesn't end with \n
-    if (line_idx > 0) {
-        line_buffer[line_idx] = 0;
-        // parse_settings_line_inplace(line_buffer, settings);
-    }
-
-    // Log discarded bytes for debugging (could be expanded to actual logging)
-    (void)discarded_bytes;
-
-    return true;
-}
-
 
 
 
@@ -1590,7 +1528,10 @@ void DroneScanner::scan_init_from_loaded_frequencies() {
 }
 
 bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat) {
-    return EDA::RSSI::validate_rssi(rssi_db, static_cast<uint8_t>(threat));
+    constexpr int32_t RSSI_THRESHOLDS[5] = {-120, -100, -85, -70, -50};
+    uint8_t threat_idx = static_cast<uint8_t>(threat);
+    uint8_t idx = (threat_idx < 5) ? threat_idx : 0;
+    return rssi_db >= RSSI_THRESHOLDS[idx];
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
@@ -3248,13 +3189,13 @@ void DroneUIController::on_set_center_freq() {
 }
 
 void DroneUIController::show_hardware_status() {
-    // DIAMOND OPTIMIZATION: Use FrequencyFormatter
     char buffer[128];
+    char freq_buf[32];
     uint32_t band_mhz = hardware_.get_spectrum_bandwidth() / 1000000ULL;
-    std::string freq_str = FrequencyFormatter::format(hardware_.get_spectrum_center_frequency(),
-                                                     FrequencyFormatter::Format::STANDARD_GHZ);
+    FrequencyFormatter::format_to_buffer(freq_buf, sizeof(freq_buf), hardware_.get_spectrum_center_frequency(),
+                                     FrequencyFormatter::Format::STANDARD_GHZ);
     StatusFormatter::format_to(buffer, "Band: %lu MHz\nFreq: %s",
-                              (unsigned long)band_mhz, freq_str.c_str());
+                               (unsigned long)band_mhz, freq_buf);
     nav_.display_modal("Hardware Status", buffer);
 }
 
@@ -3307,18 +3248,17 @@ FrequencyRangeSetupView::FrequencyRangeSetupView(NavigationView& nav, DroneUICon
 }
 
 void FrequencyRangeSetupView::focus() {
-    // При фокусе загружаем текущие настройки в поля ввода
+    char min_freq_buf[32];
+    char max_freq_buf[32];
     const auto& settings = controller_.settings();
-    
-    // Format frequencies as MHz with 6 decimal places
-    // DIAMOND OPTIMIZATION: Use FrequencyFormatter
-    std::string min_freq_str = FrequencyFormatter::format(settings.wideband_min_freq_hz,
-                                                       FrequencyFormatter::Format::DETAILED_GHZ);
-    std::string max_freq_str = FrequencyFormatter::format(settings.wideband_max_freq_hz,
-                                                       FrequencyFormatter::Format::DETAILED_GHZ);
 
-    field_min_.set_text(min_freq_str);
-    field_max_.set_text(max_freq_str);
+    FrequencyFormatter::format_to_buffer(min_freq_buf, sizeof(min_freq_buf), settings.wideband_min_freq_hz,
+                                       FrequencyFormatter::Format::DETAILED_GHZ);
+    FrequencyFormatter::format_to_buffer(max_freq_buf, sizeof(max_freq_buf), settings.wideband_max_freq_hz,
+                                       FrequencyFormatter::Format::DETAILED_GHZ);
+
+    field_min_.set_text(min_freq_buf);
+    field_max_.set_text(max_freq_buf);
 
     // DIAMOND OPTIMIZATION: Use StatusFormatter
     char slice_buffer[32];
@@ -3334,10 +3274,8 @@ void FrequencyRangeSetupView::on_save() {
     const std::string min_str = field_min_.get_text();
     const std::string max_str = field_max_.get_text();
     
-    // DIAMOND FIX: Integer-only frequency parsing (no strtod, no double)
-    // Eliminates ~1000-2000 cycles per parse on Cortex-M4F
-    Frequency new_min = static_cast<Frequency>(EDA::Validation::parse_mhz_string(min_str.c_str()));
-    Frequency new_max = static_cast<Frequency>(EDA::Validation::parse_mhz_string(max_str.c_str()));
+    Frequency new_min = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(min_str.c_str()));
+    Frequency new_max = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(max_str.c_str()));
     
     // Input validation (integer-only, no NaN check needed)
     if (new_min == 0 || new_max == 0) {
@@ -3376,16 +3314,16 @@ void FrequencyRangeSetupView::on_save() {
         return;
     }
     
-    // Обновление сканера
     controller_.update_scanner_range(new_min, new_max);
     
-    // DIAMOND OPTIMIZATION: Use FrequencyFormatter and StatusFormatter
     char buffer[64];
-    std::string min_freq_str = FrequencyFormatter::format(new_min, FrequencyFormatter::Format::STANDARD_MHZ);
-    std::string max_freq_str = FrequencyFormatter::format(new_max, FrequencyFormatter::Format::STANDARD_MHZ);
+    char min_freq_buf[32];
+    char max_freq_buf[32];
+    FrequencyFormatter::format_to_buffer(min_freq_buf, sizeof(min_freq_buf), new_min, FrequencyFormatter::Format::STANDARD_MHZ);
+    FrequencyFormatter::format_to_buffer(max_freq_buf, sizeof(max_freq_buf), new_max, FrequencyFormatter::Format::STANDARD_MHZ);
     StatusFormatter::format_to(buffer, "Range updated:\n%s - %s\nBW: %lu MHz",
-                              min_freq_str.c_str(), max_freq_str.c_str(),
-                              (unsigned long)(new_slice_width / 1000000));
+                               min_freq_buf, max_freq_buf,
+                               (unsigned long)(new_slice_width / 1000000));
 
     nav_.display_modal("Success", buffer);
     nav_.pop();
@@ -4353,9 +4291,10 @@ void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
             Theme::getInstance()->bg_darkest->foreground
         );
 
-        std::string label = format_compact_label(tick);
+        char label_buf[32];
+        format_compact_label(label_buf, sizeof(label_buf), tick);
 
-        auto text_size = label_style.font.size_of(label);
+        auto text_size = label_style.font.size_of(label_buf);
         int text_x = x - text_size.width() / 2;
         int text_y = r.top() + 1;
 
@@ -4364,7 +4303,7 @@ void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
             text_x = r.right() - text_size.width() - 2;
         }
 
-        painter.draw_string({text_x, text_y}, label_style, label);
+        painter.draw_string({text_x, text_y}, label_style, label_buf);
 
         // DIAMOND OPTIMIZATION: Sub-tick logic based on tick_interval only
         // Eliminates should_use_mhz() call (bitfield read cost)
@@ -4401,12 +4340,10 @@ namespace {
 // DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
 // Eliminates ~60 lines of duplicate formatting code
 // Scott Meyers Item 2: Prefer consts, enums, and inlines to #defines
-std::string CompactFrequencyRuler::format_compact_label(Frequency freq) {
-    // LUT lookup instead of switch-case (Flash storage, zero RAM allocation)
+void CompactFrequencyRuler::format_compact_label(char* buffer, size_t buffer_size, Frequency freq) {
     uint8_t idx = static_cast<uint8_t>(ruler_style_);
-    if (idx >= 6) idx = 0;  // Fallback to COMPACT_GHZ
-    
-    return FrequencyFormatter::format(freq, RULER_FORMAT_LUT[idx]);
+    if (idx >= 6) idx = 0;
+    FrequencyFormatter::format_to_buffer(buffer, buffer_size, freq, RULER_FORMAT_LUT[idx]);
 }
 
 Frequency CompactFrequencyRuler::calculate_optimal_tick_interval() {
@@ -4567,12 +4504,9 @@ namespace {
     }
 }
 
-// DIAMOND OPTIMIZATION: Unified frequency formatting using FrequencyFormatter
-// Eliminates ~40 lines of duplicate formatting code
-std::string FrequencyRuler::format_frequency_label(Frequency freq, Frequency tick_interval) {
-    // LUT lookup instead of conditional (Flash string, zero RAM allocation)
+void FrequencyRuler::format_frequency_label(char* buffer, size_t buffer_size, Frequency freq, Frequency tick_interval) {
     uint8_t idx = get_tick_config_index(tick_interval);
-    return FrequencyFormatter::format(freq, TICK_CONFIG_LUT[idx].format);
+    FrequencyFormatter::format_to_buffer(buffer, buffer_size, freq, TICK_CONFIG_LUT[idx].format);
 }
 
 void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
@@ -4613,20 +4547,19 @@ void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
             Theme::getInstance()->bg_darkest->foreground
         );
 
-        // Format and draw text label (LUT lookup, no std::string allocation for unit)
-        std::string label = format_frequency_label(tick, tick_interval);
+        char label_buf[32];
+        format_frequency_label(label_buf, sizeof(label_buf), tick, tick_interval);
 
-        auto text_size = ruler_style.font.size_of(label);
+        auto text_size = ruler_style.font.size_of(label_buf);
         int text_x = x - text_size.width() / 2;
         int text_y = r.top() + 1;
 
-        // Clamp text position to screen bounds
         if (text_x < r.left() + 2) text_x = r.left() + 2;
         if (text_x + text_size.width() > r.right() - 2) {
             text_x = r.right() - text_size.width() - 2;
         }
 
-        painter.draw_string({text_x, text_y}, ruler_style, label);
+        painter.draw_string({text_x, text_y}, ruler_style, label_buf);
 
         // Add intermediate ticks if configured (LUT lookup, zero branching)
         for (uint8_t sub = 1; sub <= config.sub_ticks; sub++) {

@@ -32,46 +32,10 @@
 namespace ui::apps::enhanced_drone_analyzer::DiamondCore {
 
 // ===========================================
-// FORWARD DECLARATIONS
+// VALIDATION UTILITIES (Removed - Use EDA::Validation from eda_constants.hpp)
 // ===========================================
-// These will be defined when the full header chain is loaded
-
-class ValidationUtils {
-public:
-    // Frequency validation (uses DroneConstants) - constexpr for compile-time evaluation
-    static constexpr bool validate_frequency(int64_t freq_hz) noexcept {
-        return freq_hz >= 1000000LL && freq_hz <= 7200000000LL;
-    }
-
-    // RSSI validation - constexpr for compile-time evaluation
-    static constexpr bool validate_rssi(int32_t rssi_db) noexcept {
-        return rssi_db >= -110 && rssi_db <= 10;
-    }
-
-    // Band checking - constexpr for compile-time evaluation
-    static constexpr bool is_2_4ghz_band(int64_t freq_hz) noexcept {
-        return freq_hz >= 2400000000LL && freq_hz <= 2483500000LL;
-    }
-
-    static constexpr bool is_5_8ghz_band(int64_t freq_hz) noexcept {
-        return freq_hz >= 5725000000LL && freq_hz <= 5875000000LL;
-    }
-
-    static constexpr bool is_military_band(int64_t freq_hz) noexcept {
-        return freq_hz >= 860000000LL && freq_hz <= 930000000LL;
-    }
-
-    static constexpr bool is_433mhz_band(int64_t freq_hz) noexcept {
-        return freq_hz >= 433000000LL && freq_hz <= 435000000LL;
-    }
-};
-
-// ===========================================
-// MOVED TO UNIFIED LOOKUP TABLES
-// ===========================================
-// Threat colors/names/symbols:  UnifiedStringLookup, UnifiedColorLookup
-// Drone colors/names:           UnifiedStringLookup, UnifiedColorLookup
-// Single source of truth:       color_lookup_unified.hpp
+// This functionality is now provided by EDA::Validation namespace
+// which is the single source of truth for validation logic
 
 // ===========================================
 // MOVEMENT TREND UTILITIES

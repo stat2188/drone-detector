@@ -41,6 +41,7 @@ namespace ui::apps::enhanced_drone_analyzer {
 // ===========================================
 // Eliminates duplicate WidebandMedianFilter and FastMedianFilter
 // Scott Meyers Item 41: Understand implicit interfaces
+// FIX: Correctly handles partial buffer median calculation (was returning window_[0] for non-full buffers)
 // USAGE: Include this BEFORE using MedianFilter<T>
 template<typename T, size_t N = 11>
 class MedianFilter {
@@ -55,16 +56,19 @@ public:
     }
 
     T get_median() const noexcept {
-        if (!full_) return window_[0];
+        const size_t current_size = full_ ? N : head_;
+
+        if (current_size == 0) {
+            return T{};
+        }
 
         std::array<T, N> temp = window_;
-        size_t k = N / 2;
 
-        // Selection algorithm: O(N*k) where k=N/2
-        // More efficient than full sort (O(N log N))
+        const size_t k = current_size / 2;
+
         for (size_t i = 0; i <= k; ++i) {
             size_t min_idx = i;
-            for (size_t j = i + 1; j < N; ++j) {
+            for (size_t j = i + 1; j < current_size; ++j) {
                 if (temp[j] < temp[min_idx]) {
                     min_idx = j;
                 }
@@ -207,9 +211,7 @@ struct FrequencyFormatter {
         SPACED_GHZ         // "2.4 GHz" - for labels with space
     };
 
-    // Stack-based formatting (no heap allocation)
-    // Returns std::string with SSO optimization for short strings
-    // NOTE: Frequency must be included/defined before using this
+    [[deprecated("Use format_to_buffer() for zero-heap allocation")]]
     static std::string format(int64_t freq_hz, Format fmt) noexcept {
         char buffer[24]; // Sufficient for "5.875000GHz" + null
         
@@ -346,7 +348,7 @@ struct FrequencyFormatter {
         }
     }
 
-    // Alias for existing code compatibility
+    [[deprecated("Use format_to_buffer() for zero-heap allocation")]]
     static std::string to_string_short_freq(int64_t freq_hz) noexcept {
         return format(freq_hz, Format::COMPACT_GHZ);
     }

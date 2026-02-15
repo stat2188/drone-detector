@@ -1,18 +1,18 @@
 /**
  * Diamond-Optimized Settings Persistence
- * 
+ *
  * FEATURES:
  * - Single template for all settings types (eliminates code duplication)
- * - Compile-time hash table for O(1) parsing (eliminates 50+ if-else)
+ * - Look-up table for settings parsing (eliminates 50+ if-else)
  * - Single-pass buffer serialization (eliminates 50+ SD write syscalls)
  * - Zero heap allocation (all stack-based)
  * - Compile-time validation (static_assert)
- * 
+ *
  * COMPILE-TIME METRICS:
  * - Code reduction: ~350 lines → ~150 lines (57% savings)
- * - Parse time: O(n) → O(1) with perfect hash lookup
+ * - Parse time: O(n) with LUT lookup (52 settings)
  * - Write time: 50x faster (single buffer write)
- * 
+ *
  * CONSTRAINTS:
  * - Cortex-M4 (ARMv7E-M)
  * - No heap allocation
@@ -33,6 +33,32 @@
 #include "sd_card.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
+
+// ===========================================
+// DIAMOND FIX: Settings Buffer Mutex Protection
+// ===========================================
+// FatFS is NOT thread-safe - all settings buffer access must be serialized
+extern Mutex settings_buffer_mutex;
+
+class SettingsBufferLock {
+public:
+    SettingsBufferLock() {
+        chMtxLock(&settings_buffer_mutex);
+    }
+    
+    ~SettingsBufferLock() {
+        chMtxUnlock();
+    }
+    
+    SettingsBufferLock(const SettingsBufferLock&) = delete;
+    SettingsBufferLock& operator=(const SettingsBufferLock&) = delete;
+};
+
+#ifdef __GNUC__
+    #define FLASH_STORAGE __attribute__((section(".rodata")))
+#else
+    #define FLASH_STORAGE
+#endif
 
 static inline size_t safe_strlen(const char* const str, const size_t max_len) noexcept {
     if (!str) return 0;
@@ -77,7 +103,7 @@ struct SettingMetadata {
 
 constexpr size_t SETTINGS_COUNT = 52;
 
-inline constexpr SettingMetadata SETTINGS_LUT[] = {
+inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
     SET_META_BIT(audio_flags, 0, "true"),
     SET_META(audio_alert_frequency_hz, TYPE_UINT32, 200, 20000, "800"),
     SET_META(audio_alert_duration_ms, TYPE_UINT32, 50, 5000, "500"),
@@ -240,9 +266,8 @@ struct SettingsStaticBuffer {
     static char buffer[SIZE];
 };
 
-// Static buffer definition must be in exactly one translation unit
 inline SettingsStaticBuffer& get_settings_buffer() {
-    static SettingsStaticBuffer buf = {};
+    static SettingsStaticBuffer buf FLASH_STORAGE;
     return buf;
 }
 
@@ -253,9 +278,8 @@ struct SettingsLoadBuffer {
     static char read_buffer[READ_BUFFER_SIZE];
 };
 
-// Static buffer access for load()
 inline SettingsLoadBuffer& get_load_buffer() {
-    static SettingsLoadBuffer buf = {};
+    static SettingsLoadBuffer buf FLASH_STORAGE;
     return buf;
 }
 
@@ -440,8 +464,8 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
 // ===========================================
 template<typename T>
 bool SettingsPersistence<T>::save(const T& settings) {
-    // DIAMOND FIX: Use static buffer instead of stack allocation
-    // Saves ~4KB of stack space
+    SettingsBufferLock lock;
+    
     constexpr char SETTINGS_TEMPLATE[] = "# EDA Settings v2\n";
 
     char* buffer = get_settings_buffer().buffer;

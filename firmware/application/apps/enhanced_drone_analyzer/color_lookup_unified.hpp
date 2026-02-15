@@ -86,17 +86,17 @@ struct ThreatColorLUT {
     
     // O(1) lookup функции (inline, no branching)
     static inline Color threat_color(uint8_t level) {
-        uint8_t idx = (level < 6) ? level : 0;
+        uint8_t idx = (level < 6) ? level : 5;
         return ColorConverter::rgb888_to_color(COLORS[idx]);
     }
     
     static inline Color card_bg_color(uint8_t threat) {
-        uint8_t idx = (threat < 5) ? threat : 0;
+        uint8_t idx = (threat < 5) ? threat : 4;
         return ColorConverter::rgb888_to_color(CARD_STYLES[idx].bg_color);
     }
     
     static inline Color card_text_color(uint8_t threat) {
-        uint8_t idx = (threat < 5) ? threat : 0;
+        uint8_t idx = (threat < 5) ? threat : 4;
         return ColorConverter::rgb888_to_color(CARD_STYLES[idx].text_color);
     }
 };

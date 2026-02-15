@@ -7,6 +7,7 @@
 #include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
+#include "default_drones_db.hpp"
 #include "file.hpp"
 #include "portapack.hpp"
 #include "string_format.hpp"
@@ -147,8 +148,8 @@ void EnhancedSettingsManager::ensure_database_exists() {
     }
 
     File create_file;
-    if (create_file.open(file_path, false)) { 
-        create_file.write(EDA::Database::DEFAULT_DRONE_DATABASE_CONTENT, strlen(EDA::Database::DEFAULT_DRONE_DATABASE_CONTENT));
+    if (create_file.open(file_path, false)) {
+        create_file.write(DEFAULT_DRONE_DATABASE_CONTENT, strlen(DEFAULT_DRONE_DATABASE_CONTENT));
         create_file.close();
     }
 }
@@ -747,7 +748,7 @@ std::vector<DroneDbEntry> DroneDatabaseManager::load_database(const std::string&
 }
 bool DroneDatabaseManager::save_database(const std::vector<DroneDbEntry>& entries, const std::string& file_path) {
     std::stringstream ss;
-    ss << "frequency_a,frequency_b,description\n# EDA User Database\n";
+    ss << "frequency,description\n# EDA User Database\n";
     for (const auto& entry : entries) {
         if (entry.freq == 0) continue;
         std::string safe_desc = entry.description;
@@ -763,6 +764,8 @@ bool DroneDatabaseManager::save_database(const std::vector<DroneDbEntry>& entrie
     file.close();
     return true;
 }
+
+// DroneEntryEditorView
 
 // DroneEntryEditorView
 DroneEntryEditorView::DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, OnSaveCallback callback)
@@ -786,12 +789,15 @@ void DroneEntryEditorView::on_cancel() {
 }
 
 // DroneDatabaseListView
-DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav) : View(), nav_(nav), entries_() {
+DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav) 
+    : View(), nav_(nav), entries_() {
     add_children({&menu_view_});
     entries_ = DroneDatabaseManager::load_database();
     reload_list();
 }
+
 void DroneDatabaseListView::focus() { menu_view_.focus(); }
+
 void DroneDatabaseListView::reload_list() {
     menu_view_.clear();
     menu_view_.add_item({"[ + ADD NEW FREQUENCY ]", Color::white(), nullptr, nullptr});
@@ -801,6 +807,7 @@ void DroneDatabaseListView::reload_list() {
         menu_view_.add_item({text, Color::white(), nullptr, nullptr});
     }
 }
+
 void DroneDatabaseListView::on_entry_selected(size_t index) {
     if (index == 0) {
         DroneDbEntry empty_entry;
@@ -822,6 +829,7 @@ void DroneDatabaseListView::on_entry_selected(size_t index) {
         });
     }
 }
+
 void DroneDatabaseListView::save_changes() { DroneDatabaseManager::save_database(entries_); }
 bool DroneDatabaseListView::on_key(const KeyEvent key) {
     if (key == KeyEvent::Select) {

@@ -989,7 +989,7 @@ private:
     static constexpr int DEFAULT_TICK_COUNT = 4;
 
     void draw_compact_ticks(Painter& painter, const Rect r);
-    std::string format_compact_label(Frequency freq);
+    void format_compact_label(char* buffer, size_t buffer_size, Frequency freq);
     Frequency calculate_optimal_tick_interval();
     RulerStyle determine_auto_style();
     bool should_use_mhz_labels() const;
@@ -1020,9 +1020,7 @@ private:
 
     void draw_frequency_ticks(Painter& painter, const Rect r);
     Frequency calculate_tick_interval();
-    // DIAMOND OPTIMIZATION: Changed signature to use tick_interval instead of unit string
-    // Eliminates std::string allocation, uses LUT lookup instead
-    std::string format_frequency_label(Frequency freq, Frequency tick_interval);
+    void format_frequency_label(char* buffer, size_t buffer_size, Frequency freq, Frequency tick_interval);
 };
 
 class DroneDisplayController : public View {
