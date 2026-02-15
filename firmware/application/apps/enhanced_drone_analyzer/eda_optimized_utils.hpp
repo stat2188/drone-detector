@@ -348,12 +348,7 @@ struct FrequencyFormatter {
         }
     }
 
-    [[deprecated("Use format_to_buffer() for zero-heap allocation")]]
-    static std::string to_string_short_freq(int64_t freq_hz) noexcept {
-        return format(freq_hz, Format::COMPACT_GHZ);
-    }
-
-    // 🔴 FIX: Alias for buffer-based formatting (non-allocating)
+    // Buffer-based formatting (non-allocating)
     static void to_string_short_freq_buffer(char* buffer, size_t buffer_size, int64_t freq_hz) noexcept {
         format_to_buffer(buffer, buffer_size, freq_hz, Format::COMPACT_GHZ);
     }
