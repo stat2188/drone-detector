@@ -802,7 +802,10 @@ void DroneDatabaseListView::reload_list() {
     menu_view_.clear();
     menu_view_.add_item({"[ + ADD NEW FREQUENCY ]", Color::white(), nullptr, nullptr});
     for (const auto& entry : entries_) {
-        std::string freq_str = to_string_short_freq(entry.freq);
+        constexpr size_t FREQ_BUF_SIZE = 24;
+        char freq_buf[FREQ_BUF_SIZE];
+        FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), entry.freq);
+        std::string freq_str(freq_buf);
         std::string text = freq_str + ": " + entry.description;
         menu_view_.add_item({text, Color::white(), nullptr, nullptr});
     }

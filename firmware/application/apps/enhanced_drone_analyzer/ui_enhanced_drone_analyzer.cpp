@@ -69,12 +69,7 @@ using namespace EDA::Constants;
 Mutex sd_card_mutex;
 
 // ===========================================
-// DIAMOND FIX: Settings Buffer Mutex Definition
-// FatFS is NOT thread-safe - all settings buffer access must be serialized
-// ===========================================
-Mutex settings_buffer_mutex;
 
-// ===========================================
 // DIAMOND OPTIMIZATION: ScanningMode LUT (namespace scope)
 // ===========================================
 // Scott Meyers Item 15: Prefer constexpr to #define

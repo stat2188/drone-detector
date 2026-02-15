@@ -114,7 +114,7 @@ using DroneFrequencyDatabase = std::vector<DroneFrequencyEntry>;
 // Structure of one entry
 struct DroneDbEntry {
     Frequency freq = 0;
-    std::string description;
+    std::string description = "";
 };
 
 // Database manager class
