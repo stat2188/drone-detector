@@ -2,6 +2,7 @@
 #define EDA_CONSTANTS_HPP_
 
 #include <cstdint>
+#include <cinttypes>
 #include "rf_path.hpp"
 
 // Flash storage attribute for Cortex-M4
@@ -110,8 +111,6 @@ constexpr uint32_t FHSS_TRACKING_CONFIDENCE_MAX = 10;
 constexpr size_t MAX_TRACKED_DRONES = 8;
 constexpr size_t MAX_DISPLAYED_DRONES = 3;
 constexpr size_t DETECTION_TABLE_SIZE = 256;
-constexpr size_t MINI_SPECTRUM_WIDTH = 200;
-constexpr size_t MINI_SPECTRUM_HEIGHT = 24;
 
 // ===== AUDIO ALERT PARAMETERS =====
 constexpr uint32_t MIN_AUDIO_FREQ = 200;
@@ -310,20 +309,20 @@ namespace Formatting {
             uint32_t decimal = static_cast<uint32_t>((rounded % 1'000'000'000ULL) / 100'000'000ULL);
             
             if (decimal > 0) {
-                snprintf(buffer, size, "%u.%luG", ghz, static_cast<unsigned long>(decimal));
+                snprintf(buffer, size, "%" PRIu32 ".%" PRIu32 "G", ghz, decimal);
             } else {
-                snprintf(buffer, size, "%uG", ghz);
+                snprintf(buffer, size, "%" PRIu32 "G", ghz);
             }
         }
         // MHz range
         else if (freq_hz >= 1'000'000LL) {
             uint32_t mhz = static_cast<uint32_t>((freq_hz + 500'000LL) / 1'000'000LL);
-            snprintf(buffer, size, "%uM", mhz);
+            snprintf(buffer, size, "%" PRIu32 "M", mhz);
         }
         // kHz range
         else if (freq_hz >= 1'000LL) {
             uint32_t khz = static_cast<uint32_t>((freq_hz + 500LL) / 1'000LL);
-            snprintf(buffer, size, "%uk", khz);
+            snprintf(buffer, size, "%" PRIu32 "k", khz);
         }
         // Hz range
         else {
