@@ -1567,11 +1567,13 @@ public:
         "UI ready",            // UI_LAYOUT_READY = 4
         "Settings loaded",     // SETTINGS_LOADED = 5 (NEW!)
         "Coordinator ready",   // COORDINATOR_READY = 6
-        "All systems go"       // FULLY_INITIALIZED = 7
+        "All systems go",      // FULLY_INITIALIZED = 7
+        "Init error!"          // INITIALIZATION_ERROR = 8
     };
     static constexpr const char* const INIT_STATUS_TITLES[] = {
         "INIT",               // CONSTRUCTED through COORDINATOR_READY (0-6)
-        "EDA Ready"           // FULLY_INITIALIZED = 7
+        "EDA Ready",          // FULLY_INITIALIZED = 7
+        "ERROR"               // INITIALIZATION_ERROR = 8
     };
 
     // 🔴 DIAMOND OPTIMIZATION: constexpr LUT для фаз инициализации (хранится во Flash)

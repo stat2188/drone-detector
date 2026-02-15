@@ -3457,33 +3457,21 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       field_scanning_mode_({10, screen_height - 72}, 15, OptionsField::options_t{{"Database", 0}, {"Wideband",1}, {"Hybrid", 2}}),
       scanning_active_(false)
 {
-    // DIAMOND FIX: Thread-safe mutex initialization (volatile for embedded)
+    // 🔧 FIX: Thread-safe mutex initialization (volatile for embedded)
     // Note: Constructor is called once per View instance in single-threaded init phase
-    // Using volatile prevents compiler optimization but not true multi-threaded atomic
     static volatile bool sd_mutex_initialized = false;
     if (!sd_mutex_initialized) {
         chMtxInit(&sd_card_mutex);
         sd_mutex_initialized = true;
     }
 
-    // 🔴 ФАЗА 2.8: МИНИМАЛЬНЫЙ конструктор
-    // Только простая инициализация, без blocking I/O
-    // Без вызовов методов scanner_/hardware_/scanning_coordinator_
-
-    // Настройка по умолчанию (безопасно)
-    scanner_.update_scan_range(EDA::Constants::WIDEBAND_DEFAULT_MIN, EDA::Constants::WIDEBAND_DEFAULT_MAX);
-
-    // Обновление параметров coordinator (безопасно)
-    scanning_coordinator_.update_runtime_parameters(settings_);
+    // 🔧 FIX: МИНИМАЛЬНЫЙ конструктор - только UI setup
+    // Все вызовы scanner_/hardware_/coordinator_ перенесены в step_deferred_initialization()
+    
+    // 🔧 FIX: Установить начальное состояние
+    init_state_ = InitState::CONSTRUCTED;
 
     setup_button_handlers();
-
-    // 🔴 УДАЛЕНО:
-    // - initialize_modern_layout()  (перенесено в step_deferred_initialization())
-    // - update_modern_layout()     (перенесено в step_deferred_initialization())
-    // - scanner_.initialize_database_and_scanner() (перенесено в step_deferred_initialization())
-    // - hardware_.on_hardware_show()                   (перенесено в step_deferred_initialization())
-
     initialize_scanning_mode();
     add_ui_elements();
 }
@@ -3507,6 +3495,7 @@ void EnhancedDroneSpectrumAnalyzerView::focus() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
+    // 🔧 FIX: Всегда вызываем базовый paint для очистки экрана
     View::paint(painter);
 
     // ===========================================
@@ -3519,18 +3508,46 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
         step_deferred_initialization();
     }
 
-    // 🔴 DIAMOND OPTIMIZATION: Enhanced paint method с защитой от UB
-    // DIAMOND OPTIMIZATION: Отрисовка bar spectrum вместо waterfall
-    // Вызываем каждый кадр (60 FPS) для обновления спектра
-    
-    // 🔴 SAFETY: Дополнительная проверка состояния (защита от UB)
-    // Даже если init_state_ == FULLY_INITIALIZED, проверяем буферы
+    // 🔧 FIX: Показываем сообщение об ошибке с возможностью выхода
     if (init_state_ == InitState::INITIALIZATION_ERROR) {
+        // Заполняем экран чёрным
+        painter.fill_rectangle({0, 0, screen_width, screen_height}, Color::black());
+        
+        // Заголовок ошибки
+        painter.draw_string({10, 80}, Style{font::fixed_8x16, Color::red(), Color::black()}, "INIT ERROR");
+        
+        // Сообщение об ошибке
+        painter.draw_string({10, 100}, Style{font::fixed_8x16, Color::white(), Color::black()}, 
+                           ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]);
+        
+        // Инструкция
+        painter.draw_string({10, 130}, Style{font::fixed_8x16, Color::yellow(), Color::black()}, "Press BACK to exit");
         return;
     }
     
-    if (init_state_ == InitState::FULLY_INITIALIZED && 
-        display_controller_.are_buffers_valid()) {
+    // 🔧 FIX: Показываем прогресс инициализации
+    if (init_state_ != InitState::FULLY_INITIALIZED) {
+        // Текущая фаза
+        size_t phase_idx = static_cast<size_t>(init_state_);
+        if (phase_idx < 7) {
+            painter.draw_string({10, 80}, Style{font::fixed_8x16, Color::white(), Color::black()}, "Loading...");
+            painter.draw_string({10, 100}, Style{font::fixed_8x16, Color::green(), Color::black()}, 
+                               INIT_STATUS_MESSAGES[phase_idx]);
+            
+            // Прогресс-бар (6 фаз = 16.6% каждая)
+            uint8_t progress = static_cast<uint8_t>(phase_idx * 16);
+            if (progress > 100) progress = 100;
+            
+            // Фон прогресс-бара
+            painter.fill_rectangle({10, 120, 100, 10}, Color::dark_grey());
+            // Заполненная часть
+            painter.fill_rectangle({10, 120, progress, 10}, Color::green());
+        }
+        return;
+    }
+    
+    // 🔴 SAFETY: Дополнительная проверка буферов
+    if (display_controller_.are_buffers_valid()) {
         display_controller_.render_bar_spectrum(painter);
     }
 }
@@ -3570,11 +3587,20 @@ static_assert(sizeof(PHASE_NAMES) / sizeof(const char*) == 6, "PHASE_NAMES size"
 void EnhancedDroneSpectrumAnalyzerView::update_init_progress_display() {
     // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 3057-3077)
     size_t state_idx = static_cast<size_t>(init_state_);
-    size_t title_idx = (state_idx < static_cast<size_t>(InitState::FULLY_INITIALIZED)) ? 0 : 1;
+    
+    // 🔧 FIX: Bounds-checked array access
+    constexpr size_t MAX_STATE_IDX = 8;  // INITIALIZATION_ERROR = 8
+    if (state_idx > MAX_STATE_IDX) {
+        state_idx = MAX_STATE_IDX;  // Fallback to error message
+    }
+    
+    // Title: 0=INIT (states 0-6), 1=EDA Ready (state 7), 2=ERROR (state 8)
+    size_t title_idx = (state_idx < static_cast<size_t>(InitState::FULLY_INITIALIZED)) ? 0 :
+                       (state_idx == static_cast<size_t>(InitState::FULLY_INITIALIZED)) ? 1 : 2;
 
     status_bar_.update_normal_status(
         INIT_STATUS_TITLES[title_idx],
-        (state_idx < 7) ? INIT_STATUS_MESSAGES[state_idx] : INIT_STATUS_MESSAGES[6]
+        INIT_STATUS_MESSAGES[state_idx]
     );
 }
 
@@ -3766,6 +3792,9 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
     scanner_.update_scan_range(settings_.wideband_min_freq_hz,
                             settings_.wideband_max_freq_hz);
+    
+    // 🔧 FIX: Update coordinator parameters after settings load
+    scanning_coordinator_.update_runtime_parameters(settings_);
 
     // DIAMOND FIX: Update audio cooldown based on settings to prevent UI freeze
     // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
@@ -3790,6 +3819,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
 void EnhancedDroneSpectrumAnalyzerView::on_show() {
     View::on_show();
 
+    // 🔧 FIX: Reset initialization state
     init_state_ = InitState::CONSTRUCTED;
     init_start_time_ = chTimeNow();
     last_init_progress_ = 0;
@@ -3797,6 +3827,13 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
     init_error_ = InitError::NONE;
 
     status_bar_.update_normal_status("INIT", "Phase 0: Ready");
+    
+    // 🔧 FIX: Force immediate first initialization step
+    // This ensures initialization starts even if paint() is delayed
+    step_deferred_initialization();
+    
+    // 🔧 FIX: Force redraw to show status bar
+    set_dirty();
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
