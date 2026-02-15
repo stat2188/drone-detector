@@ -41,6 +41,7 @@
 #include "ui_drone_common_types.hpp"
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_spectral_analyzer.hpp"
+#include "eda_advanced_settings.hpp"
 #include "sd_card.hpp"
 
 #include <algorithm>
@@ -3213,7 +3214,18 @@ void DroneUIController::on_stop_scan() {
 }
 
 void DroneUIController::show_menu() {
-    nav_.display_modal("EDA Menu", "Menu not implemented in this version");
+    auto menu_view = nav_.push<ui::MenuView>();
+    
+    menu_view->add_item({"Advanced Settings", Theme::getInstance()->fg_cyan->foreground, nullptr,
+        [this](KeyEvent) { on_advanced_settings(); }});
+    menu_view->add_item({"Audio Settings", Theme::getInstance()->fg_yellow->foreground, nullptr,
+        [this](KeyEvent) { on_audio_settings(); }});
+    menu_view->add_item({"Hardware Control", Theme::getInstance()->fg_green->foreground, nullptr,
+        [this](KeyEvent) { on_hardware_control(); }});
+    menu_view->add_item({"View Logs", Theme::getInstance()->fg_blue->foreground, nullptr,
+        [this](KeyEvent) { on_view_logs(); }});
+    menu_view->add_item({"About", Theme::getInstance()->fg_yellow->foreground, nullptr,
+        [this](KeyEvent) { on_about(); }});
 }
 
 void DroneUIController::on_spectrum_mode() {
@@ -3227,6 +3239,10 @@ void DroneUIController::set_spectrum_mode(SpectrumMode mode) {
 
 void DroneUIController::on_hardware_control() {
     show_hardware_status();
+}
+
+void DroneUIController::on_advanced_settings() {
+    nav_.push<AdvancedSettingsView>(nav_);
 }
 
 void DroneUIController::on_set_bandwidth() {

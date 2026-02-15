@@ -19,6 +19,7 @@
 #include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
+#include "eda_advanced_settings.hpp"
 
 #include "ui.hpp"
 #include "event_m0.hpp"
