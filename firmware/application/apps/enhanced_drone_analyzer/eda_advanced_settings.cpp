@@ -1,7 +1,7 @@
 /*
  * Enhanced Drone Analyzer - Advanced Settings UI Implementation
  * Following Mayhem firmware UI patterns
- * 
+ *
  * DIAMOND OPTIMIZATION: Zero-overhead abstractions, RAII, constexpr where possible
  * FIX: Reserve capacity for std::string to prevent multiple heap allocations
  */
@@ -10,6 +10,7 @@
 #include "settings_persistence.hpp"
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_drone_common_types.hpp"
+#include "ui_enhanced_drone_analyzer.hpp"
 #include "string_format.hpp"
 #include "file.hpp"
 #include <cstring>
@@ -203,68 +204,72 @@ void AdvancedSettingsView::export_all_settings() {
         nav_.display_modal("Export Failed", "Unable to load current settings");
         return;
     }
-    
+
     if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
         nav_.display_modal("Export Failed", "Settings validation failed");
         return;
     }
-    
+
     const char* export_path = "/sdcard/EDA_SETTINGS_EXPORT.txt";
-    
+
     File file;
     auto error = file.append(export_path);
     if (error && !error->ok()) {
         nav_.display_modal("Export Failed", "Unable to create export file");
         return;
     }
-    
-    char buffer[512];
-    
-    snprintf(buffer, sizeof(buffer), "# Enhanced Drone Analyzer Settings Export\n");
-    file.write(buffer, strlen(buffer));
-    
-    snprintf(buffer, sizeof(buffer), "# Generated: %" PRIu32 "\n\n", (uint32_t)chTimeNow());
-    file.write(buffer, strlen(buffer));
-    
-    snprintf(buffer, sizeof(buffer), "# AUDIO SETTINGS\n");
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "enable_alerts=%s\n", settings.audio_flags.enable_alerts ? "true" : "false");
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "audio_alert_frequency_hz=%" PRIu32 "\n", settings.audio_alert_frequency_hz);
-    file.write(buffer, strlen(buffer));
-    
-    snprintf(buffer, sizeof(buffer), "\n# HARDWARE SETTINGS\n");
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "hardware_bandwidth_hz=%" PRIu32 "\n", settings.hardware_bandwidth_hz);
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "lna_gain_db=%u\n", settings.lna_gain_db);
-    file.write(buffer, strlen(buffer));
-    
-    snprintf(buffer, sizeof(buffer), "\n# SCANNING SETTINGS\n");
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "scan_interval_ms=%" PRIu32 "\n", settings.scan_interval_ms);
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "rssi_threshold_db=%" PRId32 "\n", settings.rssi_threshold_db);
-    file.write(buffer, strlen(buffer));
-    
-    snprintf(buffer, sizeof(buffer), "\n# DETECTION SETTINGS\n");
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "enable_fhss_detection=%s\n", settings.detection_flags.enable_fhss_detection ? "true" : "false");
-    file.write(buffer, strlen(buffer));
-    
-    snprintf(buffer, sizeof(buffer), "\n# LOGGING SETTINGS\n");
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "log_file_path=%s\n", settings.log_file_path);
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "max_log_file_size_kb=%" PRIu32 "\n", settings.max_log_file_size_kb);
-    file.write(buffer, strlen(buffer));
-    
-    snprintf(buffer, sizeof(buffer), "\n# DISPLAY SETTINGS\n");
-    file.write(buffer, strlen(buffer));
-    snprintf(buffer, sizeof(buffer), "color_scheme=%s\n", settings.color_scheme);
-    file.write(buffer, strlen(buffer));
-    
-    file.close();
+
+    {
+        SDCardLock lock;
+
+        char buffer[512];
+
+        snprintf(buffer, sizeof(buffer), "# Enhanced Drone Analyzer Settings Export\n");
+        file.write(buffer, strlen(buffer));
+
+        snprintf(buffer, sizeof(buffer), "# Generated: %" PRIu32 "\n\n", (uint32_t)chTimeNow());
+        file.write(buffer, strlen(buffer));
+
+        snprintf(buffer, sizeof(buffer), "# AUDIO SETTINGS\n");
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "enable_alerts=%s\n", settings.audio_flags.enable_alerts ? "true" : "false");
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "audio_alert_frequency_hz=%" PRIu32 "\n", settings.audio_alert_frequency_hz);
+        file.write(buffer, strlen(buffer));
+
+        snprintf(buffer, sizeof(buffer), "\n# HARDWARE SETTINGS\n");
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "hardware_bandwidth_hz=%" PRIu32 "\n", settings.hardware_bandwidth_hz);
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "lna_gain_db=%u\n", settings.lna_gain_db);
+        file.write(buffer, strlen(buffer));
+
+        snprintf(buffer, sizeof(buffer), "\n# SCANNING SETTINGS\n");
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "scan_interval_ms=%" PRIu32 "\n", settings.scan_interval_ms);
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "rssi_threshold_db=%" PRId32 "\n", settings.rssi_threshold_db);
+        file.write(buffer, strlen(buffer));
+
+        snprintf(buffer, sizeof(buffer), "\n# DETECTION SETTINGS\n");
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "enable_fhss_detection=%s\n", settings.detection_flags.enable_fhss_detection ? "true" : "false");
+        file.write(buffer, strlen(buffer));
+
+        snprintf(buffer, sizeof(buffer), "\n# LOGGING SETTINGS\n");
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "log_file_path=%s\n", settings.log_file_path);
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "max_log_file_size_kb=%" PRIu32 "\n", settings.max_log_file_size_kb);
+        file.write(buffer, strlen(buffer));
+
+        snprintf(buffer, sizeof(buffer), "\n# DISPLAY SETTINGS\n");
+        file.write(buffer, strlen(buffer));
+        snprintf(buffer, sizeof(buffer), "color_scheme=%s\n", settings.color_scheme);
+        file.write(buffer, strlen(buffer));
+
+        file.close();
+    }
     
     char msg[128];
     snprintf(msg, sizeof(msg), "Settings exported to:\n%s", export_path);

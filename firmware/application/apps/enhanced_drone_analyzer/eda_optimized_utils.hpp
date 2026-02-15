@@ -217,33 +217,35 @@ struct FrequencyFormatter {
         
         switch (fmt) {
             case Format::COMPACT_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
+                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 500000000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 100000000ULL);
                 if (decimal > 0) {
-                    snprintf(buffer, sizeof(buffer), "%lu.%luG", 
-                             static_cast<unsigned long>(ghz), 
+                    snprintf(buffer, sizeof(buffer), "%lu.%luG",
+                             static_cast<unsigned long>(ghz),
                              static_cast<unsigned long>(decimal));
                 } else {
-                    snprintf(buffer, sizeof(buffer), "%luG", 
+                    snprintf(buffer, sizeof(buffer), "%luG",
                              static_cast<unsigned long>(ghz));
                 }
                 break;
             }
             case Format::COMPACT_MHZ: {
                 uint32_t mhz = static_cast<uint32_t>((freq_hz + 500000) / 1000000ULL);
-                snprintf(buffer, sizeof(buffer), "%lu", 
+                snprintf(buffer, sizeof(buffer), "%lu",
                          static_cast<unsigned long>(mhz));
                 break;
             }
             case Format::STANDARD_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
+                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 50000000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 100000000ULL);
                 if (decimal > 0) {
-                    snprintf(buffer, sizeof(buffer), "%lu.%luGHz", 
-                             static_cast<unsigned long>(ghz), 
+                    snprintf(buffer, sizeof(buffer), "%lu.%luGHz",
+                             static_cast<unsigned long>(ghz),
                              static_cast<unsigned long>(decimal));
                 } else {
-                    snprintf(buffer, sizeof(buffer), "%luGHz", 
+                    snprintf(buffer, sizeof(buffer), "%luGHz",
                              static_cast<unsigned long>(ghz));
                 }
                 break;
@@ -262,16 +264,18 @@ struct FrequencyFormatter {
                 break;
             }
             case Format::DETAILED_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
+                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 5000000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000000ULL) / 10000000ULL);
-                snprintf(buffer, sizeof(buffer), "%lu.%03luGHz", 
-                         static_cast<unsigned long>(ghz), 
+                snprintf(buffer, sizeof(buffer), "%lu.%03luGHz",
+                         static_cast<unsigned long>(ghz),
                          static_cast<unsigned long>(decimals));
                 break;
             }
             case Format::SPACED_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000ULL);
-                snprintf(buffer, sizeof(buffer), "%lu GHz", 
+                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 500000000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
+                snprintf(buffer, sizeof(buffer), "%lu GHz",
                          static_cast<unsigned long>(ghz));
                 break;
             }
@@ -287,7 +291,8 @@ struct FrequencyFormatter {
 
         switch (fmt) {
             case Format::COMPACT_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
+                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 500000000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000LL) / 100000000ULL);
                 if (decimal > 0) {
                     snprintf(buffer, buffer_size, "%lu.%luG",
@@ -306,7 +311,8 @@ struct FrequencyFormatter {
                 break;
             }
             case Format::STANDARD_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
+                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 50000000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
                 uint32_t decimal = static_cast<uint32_t>((freq_hz % 1000000000LL) / 100000000ULL);
                 if (decimal > 0) {
                     snprintf(buffer, buffer_size, "%lu.%luGHz",
@@ -332,7 +338,8 @@ struct FrequencyFormatter {
                 break;
             }
             case Format::DETAILED_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
+                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 5000000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
                 uint32_t decimals = static_cast<uint32_t>((freq_hz % 1000000000LL) / 10000000ULL);
                 snprintf(buffer, buffer_size, "%lu.%03luGHz",
                          static_cast<unsigned long>(ghz),
@@ -340,7 +347,8 @@ struct FrequencyFormatter {
                 break;
             }
             case Format::SPACED_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(freq_hz / 1000000000LL);
+                uint64_t freq_rounded = static_cast<uint64_t>(freq_hz) + 500000000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1000000000ULL);
                 snprintf(buffer, buffer_size, "%lu GHz",
                          static_cast<unsigned long>(ghz));
                 break;
@@ -498,7 +506,8 @@ struct FrequencyFormat {
         
         switch (style) {
             case Style::COMPACT_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(hz / 1'000'000'000ULL);
+                uint64_t freq_rounded = hz + 500'000'000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1'000'000'000ULL);
                 uint32_t dec = static_cast<uint32_t>((hz % 1'000'000'000ULL) / 100'000'000ULL);
                 if (dec > 0) {
                     snprintf(buf, buf_size, "%" PRIu32 ".%" PRIu32 "G", ghz, dec);
@@ -508,7 +517,8 @@ struct FrequencyFormat {
                 break;
             }
             case Style::STANDARD_GHZ: {
-                uint32_t ghz = static_cast<uint32_t>(hz / 1'000'000'000ULL);
+                uint64_t freq_rounded = hz + 50'000'000ULL;
+                uint32_t ghz = static_cast<uint32_t>(freq_rounded / 1'000'000'000ULL);
                 uint32_t dec = static_cast<uint32_t>((hz % 1'000'000'000ULL) / 10'000'000ULL);
                 snprintf(buf, buf_size, "%" PRIu32 ".%03" PRIu32 "GHz", ghz, dec);
                 break;

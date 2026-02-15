@@ -395,6 +395,23 @@ private:
 
 class DroneScanner {
 public:
+    // ===========================================
+    // DIAMOND DOCUMENTATION: Settings Reference Lifetime
+    // ===========================================
+    // CRITICAL: DroneScanner stores a const reference to DroneAnalyzerSettings (settings_ member)
+    //
+    // Lifetime Requirements:
+    // - The referenced DroneAnalyzerSettings object MUST outlive this DroneScanner instance
+    // - Do NOT pass temporary objects or stack-local settings with shorter lifetime
+    //
+    // Current Usage (SAFE):
+    // - EnhancedDroneSpectrumAnalyzerView owns both settings_ and scanner_ as members
+    // - Both are constructed in the same object, ensuring correct lifetime
+    //
+    // Future Usage Warning:
+    // - If creating DroneScanner separately, ensure settings object persists
+    // - Alternative: Pass by value if memory allows (but adds ~100 bytes to DroneScanner)
+    //
     // Built-in database structure for frequencies
     struct BuiltinDroneFreq {
         Frequency freq;
