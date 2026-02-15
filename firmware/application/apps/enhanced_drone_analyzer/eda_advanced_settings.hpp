@@ -88,7 +88,7 @@ private:
     std::string log_path_buffer_;
     TextEdit field_log_path_{log_path_buffer_, 200, {8, 208}, 28};
     
-    Button button_save_{{8, 232, 224, 32}, "Save"};
+    Button button_save_{{8, 244, 224, 32}, "Save"};
     
     void save_settings();
 };
@@ -159,9 +159,8 @@ public:
         {"Logging", Theme::getInstance()->fg_green->foreground, settings_views_[1]},
         {"Display", Theme::getInstance()->fg_yellow->foreground, settings_views_[2]}};
     
-    Button button_back_{{0, 272, 240, 32}, "Back"};
-    Button button_defaults_{{0, 272, 120, 32}, "Load Defaults"};
-    Button button_export_{{120, 272, 120, 32}, "Export All"};
+    Button button_defaults_{{0, 240, 120, 32}, "Load Defaults"};
+    Button button_export_{{120, 240, 120, 32}, "Export All"};
     
     void show_detection_tab();
     void show_logging_tab();

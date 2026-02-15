@@ -107,53 +107,51 @@ struct RSSIUtils {
 
 struct FrequencyParser {
     static constexpr uint64_t MHZ_TO_HZ = 1000000ULL;
-    static constexpr uint64_t MAX_MHZ = 18000ULL;
+    static constexpr uint64_t MAX_MHZ = 7200ULL;
     
-    // Parse MHz string with decimal point (e.g., "2400.500000" -> 2400500000 Hz)
-    // Returns 0 on error, frequency in Hz on success
+    static constexpr uint64_t MULTIPLIERS[7] FLASH_STORAGE = {
+        1000000ULL,
+        100000ULL,
+        10000ULL,
+        1000ULL,
+        100ULL,
+        10ULL,
+        1ULL
+    };
+    
     static inline uint64_t parse_mhz_string(const char* str) noexcept {
         if (!str || *str == '\0') return 0;
         
-        // Skip leading whitespace
         while (*str == ' ' || *str == '\t') str++;
         
-        // Parse integer part (MHz)
         uint64_t mhz = 0;
         while (*str >= '0' && *str <= '9') {
             uint8_t digit = static_cast<uint8_t>(*str - '0');
-            // Overflow check: if (mhz * 10 + digit) would overflow
             if (mhz > (UINT64_MAX - digit) / 10) return 0;
             mhz = mhz * 10 + digit;
             str++;
         }
         
-        // Check for MHz overflow (max ~18 GHz)
         if (mhz > MAX_MHZ) return 0;
         
-        // Parse fractional part if decimal point present
         uint64_t hz_fraction = 0;
         if (*str == '.') {
             str++;
             
-            // Parse up to 6 decimal digits (kHz and Hz precision)
-            // Digits 1-3: kHz, Digits 4-6: Hz
-            uint64_t multiplier = 100000ULL;
+            uint8_t digits = 0;
             
             for (int i = 0; i < 6 && *str >= '0' && *str <= '9'; i++) {
                 uint8_t digit = static_cast<uint8_t>(*str - '0');
                 hz_fraction = hz_fraction * 10 + digit;
-                if (multiplier > 1) multiplier /= 10;
+                digits++;
                 str++;
             }
             
-            // Apply remaining multiplier to fraction
-            hz_fraction *= multiplier;
+            hz_fraction *= MULTIPLIERS[digits];
         }
         
-        // Final result: MHz * 1000000 + fraction in Hz
         uint64_t result = mhz * MHZ_TO_HZ;
         
-        // Overflow check before adding fraction
         if (result > UINT64_MAX - hz_fraction) return 0;
         result += hz_fraction;
         

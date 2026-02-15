@@ -160,14 +160,9 @@ AdvancedSettingsView::AdvancedSettingsView(NavigationView& nav)
     
     add_children({
         &tab_view_,
-        &button_back_,
         &button_defaults_,
         &button_export_
     });
-    
-    button_back_.on_select = [this](Button&) {
-        nav_.pop();
-    };
     
     button_defaults_.on_select = [this](Button&) {
         load_defaults();
@@ -179,7 +174,7 @@ AdvancedSettingsView::AdvancedSettingsView(NavigationView& nav)
 }
 
 void AdvancedSettingsView::focus() {
-    button_back_.focus();
+    button_defaults_.focus();
 }
 
 void AdvancedSettingsView::show_detection_tab() {
