@@ -62,12 +62,10 @@ void DetectionSettingsView::save_settings() {
 // ==========================================
 
 LoggingSettingsView::LoggingSettingsView(NavigationView& nav)
-    : View({0, 0, 240, 304}), nav_(nav) {
+    : View({0, 0, 240, 304}), nav_(nav), log_path_buffer_{"/EDA_LOG.TXT"} {
     
-    // ✅ DIAMOND FIX: Reserve capacity to prevent multiple heap allocations
-    // This is the CRITICAL fix for the UI freeze issue
     log_path_buffer_.reserve(64);
-    log_path_buffer_ = "/EDA_LOG.TXT";
+
     
     add_children({
         &text_title_,
