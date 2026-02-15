@@ -17,7 +17,7 @@ echo ======================================== >> "%OUTPUT_FILE%"
 echo. >> "%OUTPUT_FILE%"
 
 REM Files to include (in logical order)
-set FILES[0]=drone_constants.hpp
+set FILES[0]=eda_constants.hpp
 set FILES[1]=color_lookup_unified.hpp
 set FILES[2]=default_drones_db.hpp
 set FILES[3]=ui_drone_common_types.hpp

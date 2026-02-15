@@ -14,7 +14,7 @@ echo "" > "$OUTPUT_FILE"
 
 # Files to include (in logical order)
 FILES=(
-    "drone_constants.hpp"
+    "eda_constants.hpp"
     "color_lookup_unified.hpp"
     "default_drones_db.hpp"
     "ui_drone_common_types.hpp"
