@@ -248,6 +248,35 @@ DroneScanner::~DroneScanner() {
     // No explicit deinitialization needed - mutex is part of thread context.
 }
 
+// ===========================================
+// RAII DESIGN NOTES FOR DroneScanner
+// ===========================================
+// WHY MANUAL CLEANUP IS NECESSARY:
+// 
+// This class uses placement new for memory allocation, which is a deliberate
+// design choice for embedded systems (Cortex-M4 with limited RAM).
+//
+// RAII WRAPPERS USED:
+// - std::array<DetectionEntry, 32> detection_ring_buffer_ (automatic storage)
+// - std::atomic<bool> scanning_active_ (lock-free, automatic)
+// - MutexLock wrapper for ChibiOS mutexes (RAII-style lock management)
+//
+// MANUAL CLEANUP REQUIRED FOR:
+// - freq_db_ptr_: FreqmanDB allocated via placement new from memory pool
+// - tracked_drones_ptr_: TrackedDrone array via placement new
+// - detection_logger_: Worker thread requires explicit stop_worker() call
+//
+// RATIONALE FOR PLACEMENT NEW:
+// 1. Memory pool allocation prevents heap fragmentation
+// 2. Deterministic memory usage (critical for embedded systems)
+// 3. Objects constructed only when needed (lazy initialization)
+// 4. Explicit destructor calls required by C++ standard for placement new
+//
+// ALTERNATIVE CONSIDERED:
+// std::optional<T> could provide RAII semantics, but adds ~4 bytes overhead
+// per object and requires C++17. Current design is optimal for Cortex-M4.
+// ===========================================
+
 void DroneScanner::initialize_wideband_scanning() {
     wideband_scan_data_.reset();
     setup_wideband_range(WIDEBAND_DEFAULT_MIN, WIDEBAND_DEFAULT_MAX);
@@ -432,24 +461,25 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
         adaptive_interval = FAST_SCAN_INTERVAL_MS; // Fastest possible scan
     } else if (max_threat == ThreatLevel::HIGH) {
         // High threat - fast scanning
-        adaptive_interval = 400;
+        adaptive_interval = HIGH_THREAT_SCAN_INTERVAL_MS;
     } else if (max_threat == ThreatLevel::MEDIUM) {
         // Medium threat - normal scanning
         adaptive_interval = NORMAL_SCAN_INTERVAL_MS;
     } else if (current_detections > 0 && tracked_count > 0) {
         // Have detections but low threat - maintain medium pace
         adaptive_interval = SLOW_SCAN_INTERVAL_MS;
-    } else if (current_detections == 0 && scan_cycles_ > 10) {
+    } else if (current_detections == 0 && scan_cycles_ > PROGRESSIVE_SLOWDOWN_DIVISOR) {
         // No detections for a while - progressively slow down
         // Progressive slowdown: 1000ms → 1500ms → 2000ms (cap)
-        uint32_t slowdown_multiplier = std::min(scan_cycles_ / 10, static_cast<uint32_t>(3));
+        uint32_t slowdown_multiplier = std::min(scan_cycles_ / PROGRESSIVE_SLOWDOWN_DIVISOR, static_cast<uint32_t>(3));
         adaptive_interval = std::min(VERY_SLOW_SCAN_INTERVAL_MS, base_interval * slowdown_multiplier);
     }
 
     // Additional adjustment based on detection density
-    if (current_detections > 5) {
+    static constexpr size_t HIGH_DENSITY_DETECTION_THRESHOLD = 5;
+    if (current_detections > HIGH_DENSITY_DETECTION_THRESHOLD) {
         // Very high detection rate - maintain fast pace
-        adaptive_interval = std::min(adaptive_interval, static_cast<uint32_t>(500));
+        adaptive_interval = std::min(adaptive_interval, HIGH_DENSITY_SCAN_CAP_MS);
     }
     
     // Apply adaptive interval
@@ -509,59 +539,62 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         }
     }
 
+    // Named constants for scan parameters
+    static constexpr systime_t RSSI_TIMEOUT_MS = 60;
+    static constexpr int PLL_STABILIZATION_ITERATIONS = 3;
+    static constexpr uint32_t PLL_STABILIZATION_DELAY_MS = 10;
+    static constexpr uint32_t RSSI_POLL_DELAY_MS = 5;
+    
+    // Frequency validation constants (from unified limits)
+    const Frequency MIN_VALID_FREQ = EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
+    const Frequency MAX_VALID_FREQ = EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+
     for (size_t i = 0; i < entries_count; ++i) {
         const auto& entry = entries_to_scan[i];
 
-        // CRITICAL: Check scanning flag EVERY iteration for immediate stop
+        // GUARD CLAUSE: Check scanning flag for immediate stop
         if (!scanning_active_.load(std::memory_order_acquire)) return;
 
         Frequency target_freq_hz = entry.frequency_a;
 
-        // CRITICAL: Enhanced frequency validation with overflow protection
-        // Use unified frequency limits from DroneConstants
-        const Frequency MIN_VALID_FREQ = EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
-        const Frequency MAX_VALID_FREQ = EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+        // GUARD CLAUSE: Validate frequency range
+        if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) continue;
 
-        // Validate frequency range
-        if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) {
-            continue;
+        // GUARD CLAUSE: Overflow protection check
+        if (static_cast<uint64_t>(target_freq_hz) + 1000000ULL < static_cast<uint64_t>(target_freq_hz)) continue;
+
+        // GUARD CLAUSE: Hardware tuning validation
+        if (!hardware.tune_to_frequency(target_freq_hz)) continue;
+
+        // Wait for PLL stabilization - broken into small chunks for responsiveness
+        for (int w = 0; w < PLL_STABILIZATION_ITERATIONS; w++) {
+            if (!scanning_active_.load(std::memory_order_acquire)) return;
+            chThdSleepMilliseconds(PLL_STABILIZATION_DELAY_MS);
         }
 
-        // Overflow protection check
-        if (static_cast<uint64_t>(target_freq_hz) + 1000000ULL < static_cast<uint64_t>(target_freq_hz)) {
-            continue;
+        hardware.clear_rssi_flag();
+
+        // Wait for fresh data with ABSOLUTE TIMEOUT (prevents infinite loop)
+        systime_t deadline = chTimeNow() + MS2ST(RSSI_TIMEOUT_MS);
+        bool signal_captured = false;
+
+        while (chTimeNow() < deadline) {
+            chThdSleepMilliseconds(RSSI_POLL_DELAY_MS);
+            if (hardware.is_rssi_fresh()) {
+                signal_captured = true;
+                break;
+            }
         }
 
-        // CRITICAL: Hardware tuning with proper validation
-        if (hardware.tune_to_frequency(target_freq_hz)) {
-            // Wait for PLL stabilization - broken into small chunks for responsiveness
-            for(int w = 0; w < 3; w++) {
-                if(!scanning_active_.load(std::memory_order_acquire)) return;
-                chThdSleepMilliseconds(10);
-            }
-
-            hardware.clear_rssi_flag();
-
-            // Wait for fresh data with ABSOLUTE TIMEOUT (prevents infinite loop)
-            constexpr systime_t RSSI_TIMEOUT_MS = 60;
-            systime_t deadline = chTimeNow() + MS2ST(RSSI_TIMEOUT_MS);
-            bool signal_captured = false;
-
-            while (chTimeNow() < deadline) {
-                chThdSleepMilliseconds(5);
-                if (hardware.is_rssi_fresh()) {
-                    signal_captured = true;
-                    break;
-                }
-            }
-
-            if (signal_captured) {
-                int32_t real_rssi = hardware.get_current_rssi();
-                process_rssi_detection(entry, real_rssi);
-            }
-            
+        // GUARD CLAUSE: Only process if signal was captured
+        if (!signal_captured) {
             last_scanned_frequency_ = target_freq_hz;
+            continue;
         }
+
+        int32_t real_rssi = hardware.get_current_rssi();
+        process_rssi_detection(entry, real_rssi);
+        last_scanned_frequency_ = target_freq_hz;
     }
 }
 
@@ -1573,12 +1606,12 @@ void DroneScanner::initialize_database_async() {
 
     // Проверка результата (chThdCreateStatic не может вернуть NULL при корректных параметрах)
     if (db_loading_thread_ == nullptr) {
-        // Это не должно происходить со статическим стеком
-        // Но на всякий случай fallback
-        handle_scan_error("Thread creation unexpected fail");
-        db_loading_active_.store(true, std::memory_order_release);
-        db_loading_thread_loop();  // Синхронный fallback
-        return;
+        // GRACEFUL FAILURE: Do NOT run synchronously - would block UI thread
+        // This should not happen with static stack allocation, but handle safely
+        handle_scan_error("Scan unavailable - resource limit");
+        db_loading_active_.store(false, std::memory_order_release);
+        freq_db_loaded_ = false;
+        return;  // Keep UI responsive - early return on failure
     }
 }
 

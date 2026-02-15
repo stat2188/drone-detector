@@ -85,8 +85,12 @@ private:
     Checkbox checkbox_session_{{8, 176}, 20, "Enable Session Logging"};
     Text text_session_{{28, 192, 200, 16}, "Track scan sessions"};
 
+    // FIXED: Use constexpr for max path length and pre-allocate string
+    // Note: TextEdit widget requires std::string& (framework constraint)
+    // The string is pre-allocated with reserve() in constructor to avoid runtime heap allocation
+    static constexpr size_t kMaxLogPathLen = 64;
     std::string log_path_buffer_;
-    TextEdit field_log_path_{log_path_buffer_, 200, {8, 208}, 28};
+    TextEdit field_log_path_{log_path_buffer_, kMaxLogPathLen, {8, 208}, 28};
     
     Button button_save_{{8, 244, 224, 32}, "Save"};
     

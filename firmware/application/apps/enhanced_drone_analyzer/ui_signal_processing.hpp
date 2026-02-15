@@ -36,6 +36,33 @@ struct DetectionEntry {
 // ========================================
 // DETECTION RING BUFFER (Zero-Heap)
 // ========================================
+// THREAD SAFETY DOCUMENTATION:
+// ============================
+// This ring buffer is designed for single-writer, single-reader access pattern.
+//
+// WRITER THREAD: DroneScanner::scan_thread (baseband/M0 context)
+//   - Calls update_detection() to record new signal detections
+//   - Called from perform_database_scan_cycle() and perform_wideband_scan_cycle()
+//
+// READER THREAD: UI thread (main application context)
+//   - Calls get_detection_count() and get_rssi_value() for display updates
+//   - Called from DroneDisplayController update methods
+//
+// SYNCHRONIZATION STRATEGY:
+//   - NO mutex protection required due to single-writer/single-reader pattern
+//   - Uses atomic head_ index updates for lock-free operation
+//   - Memory ordering: Relaxed semantics sufficient for this use case
+//     (detection data is eventually consistent, not safety-critical)
+//
+// RATIONALE FOR LOCK-FREE DESIGN:
+//   1. Cortex-M4 has limited RAM - mutex overhead would add ~40 bytes
+//   2. Detection data is advisory (signal strength), not safety-critical
+//   3. Worst case: reader sees slightly stale data (acceptable for UI)
+//   4. ChibiOS RTOS guarantees atomic 32-bit reads/writes on Cortex-M4
+//
+// WARNING: If multi-writer access is needed in future, add MutexLock protection
+// to update_detection() method. Read methods remain lock-free.
+// ========================================
 class DetectionRingBuffer {
 public:
     static constexpr size_t MAX_ENTRIES = 32;

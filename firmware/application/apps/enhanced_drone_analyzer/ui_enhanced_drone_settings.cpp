@@ -13,7 +13,6 @@
 #include "string_format.hpp"
 #include <algorithm>
 #include <sstream>
-#include <vector>
 #include <memory>
 #include <cstring>
 #include <cstdlib>
@@ -39,7 +38,8 @@ namespace ui::apps::enhanced_drone_analyzer {
 // ===========================================
 
 bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& settings) {
-    const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
+    static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
     // Create backup for atomic write operation
     // 🔴 ENHANCED: Error logging - backup creation failure is implicit in return false
@@ -125,7 +125,8 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
 }
 
 bool EnhancedSettingsManager::verify_comm_file_exists() {
-    const std::string filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
+    static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     File txt_file;
     if (txt_file.open(filepath, true)) {  // true = read_only
         txt_file.close();
@@ -143,7 +144,8 @@ std::string EnhancedSettingsManager::get_communication_status() {
 }
 
 void EnhancedSettingsManager::ensure_database_exists() {
-    const std::string file_path = "/FREQMAN/DRONES.TXT";
+    // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
+    static constexpr const char* file_path = "/FREQMAN/DRONES.TXT";
     File check_file;
     if (check_file.open(file_path, true)) {
         check_file.close();
@@ -161,7 +163,17 @@ void EnhancedSettingsManager::create_backup_file(const std::string& filepath) {
     File orig_file;
     if (!orig_file.open(filepath, true)) return;
 
-    const std::string backup_path = filepath + ".bak";
+    // FIXED: Use fixed-size char array instead of std::string for backup path
+    static constexpr size_t kMaxPathLen = 256;
+    char backup_path[kMaxPathLen] = {};
+    size_t filepath_len = filepath.size();
+    if (filepath_len >= kMaxPathLen - 4) {
+        orig_file.close();
+        return;  // Path too long
+    }
+    safe_strcpy(backup_path, filepath.c_str(), kMaxPathLen);
+    safe_strcat(backup_path, ".bak", kMaxPathLen);
+    
     File backup_file;
     if (!backup_file.open(backup_path, false)) {
         orig_file.close();
@@ -189,7 +201,16 @@ void EnhancedSettingsManager::create_backup_file(const std::string& filepath) {
 }
 
 void EnhancedSettingsManager::restore_from_backup(const std::string& filepath) {
-    const std::string backup_path = filepath + ".bak";
+    // FIXED: Use fixed-size char array instead of std::string for backup path
+    static constexpr size_t kMaxPathLen = 256;
+    char backup_path[kMaxPathLen] = {};
+    size_t filepath_len = filepath.size();
+    if (filepath_len >= kMaxPathLen - 4) {
+        return;  // Path too long
+    }
+    safe_strcpy(backup_path, filepath.c_str(), kMaxPathLen);
+    safe_strcat(backup_path, ".bak", kMaxPathLen);
+    
     File backup_file;
     if (!backup_file.open(backup_path, true)) return;
 
@@ -214,7 +235,15 @@ void EnhancedSettingsManager::restore_from_backup(const std::string& filepath) {
 }
 
 void EnhancedSettingsManager::remove_backup_file(const std::string& filepath) {
-    const std::string backup_path = filepath + ".bak";
+    // FIXED: Use fixed-size char array instead of std::string for backup path
+    static constexpr size_t kMaxPathLen = 256;
+    char backup_path[kMaxPathLen] = {};
+    size_t filepath_len = filepath.size();
+    if (filepath_len >= kMaxPathLen - 4) {
+        return;  // Path too long
+    }
+    safe_strcpy(backup_path, filepath.c_str(), kMaxPathLen);
+    safe_strcat(backup_path, ".bak", kMaxPathLen);
     delete_file(std::filesystem::path{backup_path});
 }
 
@@ -855,7 +884,7 @@ void DroneDatabaseListView::reload_list() {
         
         constexpr size_t TEXT_BUFFER_SIZE = 64;
         char text_buffer[TEXT_BUFFER_SIZE];
-        snprintf(text_buffer, sizeof(text_buffer), "%s: %s", freq_buf, entry.description);
+        snprintf(text_buffer, sizeof(text_buffer), "%s: %s", freq_buf, entry.description.c_str());
         
         // DIAMOND FIX: Create named string object for lifetime extension
         std::string text_item(text_buffer);

@@ -97,10 +97,13 @@ constexpr uint8_t MIN_DETECTION_COUNT = 3;
 constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 
 // ===== ADAPTIVE SCAN INTERVALS =====
-constexpr uint32_t FAST_SCAN_INTERVAL_MS = 250;
-constexpr uint32_t NORMAL_SCAN_INTERVAL_MS = 750;
-constexpr uint32_t SLOW_SCAN_INTERVAL_MS = 1000;
-constexpr uint32_t VERY_SLOW_SCAN_INTERVAL_MS = 2000;
+constexpr uint32_t FAST_SCAN_INTERVAL_MS = 250;        // CRITICAL threat level
+constexpr uint32_t HIGH_THREAT_SCAN_INTERVAL_MS = 400; // HIGH threat level
+constexpr uint32_t NORMAL_SCAN_INTERVAL_MS = 750;      // MEDIUM threat level
+constexpr uint32_t SLOW_SCAN_INTERVAL_MS = 1000;       // LOW threat / detections present
+constexpr uint32_t VERY_SLOW_SCAN_INTERVAL_MS = 2000;  // No detections (progressive slowdown cap)
+constexpr uint32_t HIGH_DENSITY_SCAN_CAP_MS = 500;     // Cap for high detection density (>5 detections)
+constexpr uint32_t PROGRESSIVE_SLOWDOWN_DIVISOR = 10;  // Scan cycles divisor for slowdown calculation
 
 // ===== INTELLIGENT SCANNING =====
 constexpr uint32_t PRIORITY_SLICE_SKIP_THRESHOLD = 10;

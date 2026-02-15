@@ -65,7 +65,8 @@ void DetectionSettingsView::save_settings() {
 LoggingSettingsView::LoggingSettingsView(NavigationView& nav)
     : View({0, 0, 240, 304}), nav_(nav), log_path_buffer_{"/EDA_LOG.TXT"} {
     
-    log_path_buffer_.reserve(64);
+    // FIXED: Pre-allocate string buffer to avoid runtime heap allocation
+    log_path_buffer_.reserve(kMaxLogPathLen);
 
     
     add_children({
