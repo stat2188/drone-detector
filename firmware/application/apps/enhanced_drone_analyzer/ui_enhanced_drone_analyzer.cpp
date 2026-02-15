@@ -3155,7 +3155,7 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
     }
     int64_t relative_freq = freq_hz - MIN_FREQ;
     size_t bin = static_cast<size_t>((relative_freq * MINI_SPECTRUM_WIDTH) / FREQ_RANGE);
-    return std::min(bin, MINI_SPECTRUM_WIDTH - 1);
+    return std::min(bin, static_cast<size_t>(MINI_SPECTRUM_WIDTH - 1));
 }
 
 void DroneDisplayController::handle_channel_spectrum(const ChannelSpectrum& spectrum) {
@@ -3747,7 +3747,8 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
 
     // FIX: Removed SDCardLock - FatFS handles locking at driver level
     // Deadlock occurred when Phase 2 (db loading thread) held lock while Phase 5 waited
-    bool loaded = SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
+    auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(settings_);
+    bool loaded = load_result.is_ok() && load_result.value;
 
     systime_t elapsed = chTimeNow() - settings_start;
     if (elapsed >= SETTINGS_LOAD_TIMEOUT_MS) {
