@@ -59,45 +59,45 @@ struct ColorConverter {
 // Хранится во Flash (constexpr), ноль RAM
 
 struct ThreatColorLUT {
-    static constexpr uint32_t COLORS[6] = {
-        0xFF0000,   // Red - NONE (0)
-        0x00FF00,   // Green - LOW (1)
-        0xFFFF00,   // Yellow - MEDIUM (2)
-        0xFFA500,   // Orange - HIGH (3)
-        0x800000,   // Dark Red - CRITICAL (4)
-        0x808080    // Grey - UNKNOWN (5)
+    static constexpr uint16_t COLORS[6] = {
+        ColorConverter::rgb888_to_rgb565(0xFF0000),   // Red - NONE (0)
+        ColorConverter::rgb888_to_rgb565(0x00FF00),   // Green - LOW (1)
+        ColorConverter::rgb888_to_rgb565(0xFFFF00),   // Yellow - MEDIUM (2)
+        ColorConverter::rgb888_to_rgb565(0xFFA500),   // Orange - HIGH (3)
+        ColorConverter::rgb888_to_rgb565(0x800000),   // Dark Red - CRITICAL (4)
+        ColorConverter::rgb888_to_rgb565(0x808080)    // Grey - UNKNOWN (5)
     };
-    static_assert(sizeof(COLORS) == sizeof(uint32_t) * 6, "COLORS size mismatch");
+    static_assert(sizeof(COLORS) == sizeof(uint16_t) * 6, "COLORS size mismatch");
     
     // Карточные стили (фон + текст) - ОБЪЕДИНЁННЫЕ
     struct CardStyle {
-        uint32_t bg_color;
-        uint32_t text_color;
+        uint16_t bg_color;
+        uint16_t text_color;
     };
     
     static constexpr CardStyle CARD_STYLES[5] = {
-        {0x000040, 0xFFFFFF},  // Dark Blue bg, White text - NONE (0)
-        {0x002000, 0xFFFFFF},  // Dark Green bg, White text - LOW (1)
-        {0x202000, 0x000000},  // Dark Yellow bg, Black text - MEDIUM (2)
-        {0x402000, 0xFFFFFF},  // Dark Orange bg, White text - HIGH (3)
-        {0x400000, 0xFFFFFF}   // Dark Red bg, White text - CRITICAL (4)
+        {ColorConverter::rgb888_to_rgb565(0x000040), ColorConverter::rgb888_to_rgb565(0xFFFFFF)},  // Dark Blue bg, White text - NONE (0)
+        {ColorConverter::rgb888_to_rgb565(0x002000), ColorConverter::rgb888_to_rgb565(0xFFFFFF)},  // Dark Green bg, White text - LOW (1)
+        {ColorConverter::rgb888_to_rgb565(0x202000), ColorConverter::rgb888_to_rgb565(0x000000)},  // Dark Yellow bg, Black text - MEDIUM (2)
+        {ColorConverter::rgb888_to_rgb565(0x402000), ColorConverter::rgb888_to_rgb565(0xFFFFFF)},  // Dark Orange bg, White text - HIGH (3)
+        {ColorConverter::rgb888_to_rgb565(0x400000), ColorConverter::rgb888_to_rgb565(0xFFFFFF)}   // Dark Red bg, White text - CRITICAL (4)
     };
     static_assert(sizeof(CARD_STYLES) == sizeof(CardStyle) * 5, "CARD_STYLES size mismatch");
     
     // O(1) lookup функции (inline, no branching)
     static inline Color threat_color(uint8_t level) {
         uint8_t idx = (level < 6) ? level : 5;
-        return ColorConverter::rgb888_to_color(COLORS[idx]);
+        return Color(COLORS[idx]);
     }
     
     static inline Color card_bg_color(uint8_t threat) {
         uint8_t idx = (threat < 5) ? threat : 4;
-        return ColorConverter::rgb888_to_color(CARD_STYLES[idx].bg_color);
+        return Color(CARD_STYLES[idx].bg_color);
     }
     
     static inline Color card_text_color(uint8_t threat) {
         uint8_t idx = (threat < 5) ? threat : 4;
-        return ColorConverter::rgb888_to_color(CARD_STYLES[idx].text_color);
+        return Color(CARD_STYLES[idx].text_color);
     }
 };
 
@@ -108,24 +108,24 @@ struct ThreatColorLUT {
 // Совпадает с DroneType enum (ui_drone_common_types.hpp)
 
 struct DroneColorLUT {
-    static constexpr uint32_t COLORS[11] = {
-        0xFFFFFF,   // White - UNKNOWN (0)
-        0xFF0000,   // Red - MAVIC (1)
-        0xFFA500,   // Orange - DJI_P34 (2)
-        0xFFFF00,   // Yellow - PHANTOM (3)
-        0x00FFFF,   // Cyan - DJI_MINI (4)
-        0xFF00FF,   // Magenta - PARROT_ANAFI (5)
-        0x00FF00,   // Green - PARROT_BEBOP (6)
-        0x800080,   // Purple - PX4_DRONE (7)
-        0x000000,   // Black - MILITARY_DRONE (8)
-        0xC0C0C0,   // Silver - DIY_DRONE (9)
-        0xFFC0CB    // Pink - FPV_RACING (10)
+    static constexpr uint16_t COLORS[11] = {
+        ColorConverter::rgb888_to_rgb565(0xFFFFFF),   // White - UNKNOWN (0)
+        ColorConverter::rgb888_to_rgb565(0xFF0000),   // Red - MAVIC (1)
+        ColorConverter::rgb888_to_rgb565(0xFFA500),   // Orange - DJI_P34 (2)
+        ColorConverter::rgb888_to_rgb565(0xFFFF00),   // Yellow - PHANTOM (3)
+        ColorConverter::rgb888_to_rgb565(0x00FFFF),   // Cyan - DJI_MINI (4)
+        ColorConverter::rgb888_to_rgb565(0xFF00FF),   // Magenta - PARROT_ANAFI (5)
+        ColorConverter::rgb888_to_rgb565(0x00FF00),   // Green - PARROT_BEBOP (6)
+        ColorConverter::rgb888_to_rgb565(0x800080),   // Purple - PX4_DRONE (7)
+        ColorConverter::rgb888_to_rgb565(0x000000),   // Black - MILITARY_DRONE (8)
+        ColorConverter::rgb888_to_rgb565(0xC0C0C0),   // Silver - DIY_DRONE (9)
+        ColorConverter::rgb888_to_rgb565(0xFFC0CB)    // Pink - FPV_RACING (10)
     };
-    static_assert(sizeof(COLORS) == sizeof(uint32_t) * 11, "COLORS size mismatch");
+    static_assert(sizeof(COLORS) == sizeof(uint16_t) * 11, "COLORS size mismatch");
     
     static inline Color drone_color(uint8_t type) {
         uint8_t idx = (type < 11) ? type : 0;
-        return ColorConverter::rgb888_to_color(COLORS[idx]);
+        return Color(COLORS[idx]);
     }
 };
 

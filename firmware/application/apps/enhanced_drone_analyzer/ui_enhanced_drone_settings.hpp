@@ -45,6 +45,7 @@ class EnhancedSettingsManager {
 public:
     static void ensure_database_exists();
     static bool save_settings_to_txt(const DroneAnalyzerSettings& settings);
+    static bool load_settings_from_txt(DroneAnalyzerSettings& settings);
     static bool verify_comm_file_exists();
     static std::string get_communication_status();
 

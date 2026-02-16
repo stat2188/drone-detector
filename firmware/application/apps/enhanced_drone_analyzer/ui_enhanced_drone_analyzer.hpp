@@ -95,12 +95,12 @@ struct RssiMeasurement {
 // Constants moved to eda_constants.hpp - single source of truth
 
 namespace UIStyles {
-    static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
-    static constexpr Style YELLOW_STYLE{font::fixed_8x16, Color::black(), Color::yellow()};
-    static constexpr Style GREEN_STYLE{font::fixed_8x16, Color::black(), Color::green()};
-    static constexpr Style LIGHT_STYLE{font::fixed_8x16, Color::black(), Color::white()};
-    static constexpr Style DARK_STYLE{font::fixed_8x16, Color::black(), Color::dark_grey()};
-    static constexpr Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color::orange()};
+    static constexpr EDA_FLASH_CONST Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
+    static constexpr EDA_FLASH_CONST Style YELLOW_STYLE{font::fixed_8x16, Color::black(), Color::yellow()};
+    static constexpr EDA_FLASH_CONST Style GREEN_STYLE{font::fixed_8x16, Color::black(), Color::green()};
+    static constexpr EDA_FLASH_CONST Style LIGHT_STYLE{font::fixed_8x16, Color::black(), Color::white()};
+    static constexpr EDA_FLASH_CONST Style DARK_STYLE{font::fixed_8x16, Color::black(), Color::dark_grey()};
+    static constexpr EDA_FLASH_CONST Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color::orange()};
 }
 
 class TrackedDrone {

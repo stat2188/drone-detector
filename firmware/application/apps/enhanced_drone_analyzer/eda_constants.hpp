@@ -188,31 +188,48 @@ constexpr uint32_t GENERAL_MAX_AUDIO_FREQ_HZ = 20000; // General audio limit
 // ===========================================
 
 namespace Validation {
+    static constexpr int64_t MIN_HARDWARE_FREQ = 1'000'000LL;
+    static constexpr int64_t MAX_HARDWARE_FREQ = 7'200'000'000LL;
+    
+    static constexpr int64_t MIN_2_4GHZ = 2'400'000'000LL;
+    static constexpr int64_t MAX_2_4GHZ = 2'483'500'000LL;
+    
+    static constexpr int64_t MIN_5_8GHZ = 5'725'000'000LL;
+    static constexpr int64_t MAX_5_8GHZ = 5'875'000'000LL;
+    
+    static constexpr int64_t MIN_MILITARY = 860'000'000LL;
+    static constexpr int64_t MAX_MILITARY = 930'000'000LL;
+    
+    static constexpr int64_t MIN_433MHZ = 433'000'000LL;
+    static constexpr int64_t MAX_433MHZ = 435'000'000LL;
+    
+    static constexpr bool is_in_range(int64_t value, int64_t min_val, int64_t max_val) noexcept {
+        return value >= min_val && value <= max_val;
+    }
 
-inline constexpr bool validate_frequency(int64_t freq_hz) noexcept {
-    return freq_hz >= 1000000LL && freq_hz <= 7200000000LL;
-}
+    static constexpr bool validate_frequency(int64_t freq_hz) noexcept {
+        return is_in_range(freq_hz, MIN_HARDWARE_FREQ, MAX_HARDWARE_FREQ);
+    }
 
-inline constexpr bool validate_rssi(int32_t rssi_db) noexcept {
-    return rssi_db >= -110 && rssi_db <= 10;
-}
+    static constexpr bool validate_rssi(int32_t rssi_db) noexcept {
+        return rssi_db >= -110 && rssi_db <= 10;
+    }
 
-inline constexpr bool is_2_4ghz_band(int64_t freq_hz) noexcept {
-    return freq_hz >= 2400000000LL && freq_hz <= 2483500000LL;
-}
+    static constexpr bool is_2_4ghz_band(int64_t freq_hz) noexcept {
+        return is_in_range(freq_hz, MIN_2_4GHZ, MAX_2_4GHZ);
+    }
 
-inline constexpr bool is_5_8ghz_band(int64_t freq_hz) noexcept {
-    return freq_hz >= 5725000000LL && freq_hz <= 5875000000LL;
-}
+    static constexpr bool is_5_8ghz_band(int64_t freq_hz) noexcept {
+        return is_in_range(freq_hz, MIN_5_8GHZ, MAX_5_8GHZ);
+    }
 
-inline constexpr bool is_military_band(int64_t freq_hz) noexcept {
-    return freq_hz >= 860000000LL && freq_hz <= 930000000LL;
-}
+    static constexpr bool is_military_band(int64_t freq_hz) noexcept {
+        return is_in_range(freq_hz, MIN_MILITARY, MAX_MILITARY);
+    }
 
-inline constexpr bool is_433mhz_band(int64_t freq_hz) noexcept {
-    return freq_hz >= 433000000LL && freq_hz <= 435000000LL;
-}
-
+    static constexpr bool is_433mhz_band(int64_t freq_hz) noexcept {
+        return is_in_range(freq_hz, MIN_433MHZ, MAX_433MHZ);
+    }
 } // namespace Validation
 
 // ===========================================
@@ -240,22 +257,31 @@ namespace LUTs {
     };
     static_assert(sizeof(SPECTRUM_MODES) / sizeof(SpectrumModeInfo) == 5, "SPECTRUM_MODES size");
     
-    // O(1) lookup (eliminates switch)
-    inline constexpr const char* spectrum_mode_short_name(uint8_t mode_idx) noexcept {
-        return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].short_name : "MEDIUM";
-    }
-    
-    inline constexpr const char* spectrum_mode_display_name(uint8_t mode_idx) noexcept {
-        return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].display_name : "Medium";
-    }
-    
-    inline constexpr uint32_t spectrum_mode_bandwidth(uint8_t mode_idx) noexcept {
-        return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].bandwidth_hz : 24000000;
-    }
-    
-    inline constexpr uint8_t spectrum_mode_ui_index(uint8_t mode_idx) noexcept {
-        return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].ui_index : 2;
-    }
+     // O(1) lookup (eliminates switch)
+     inline constexpr const char* spectrum_mode_short_name(uint8_t mode_idx) noexcept {
+         return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].short_name : "MEDIUM";
+     }
+     
+     inline constexpr const char* spectrum_mode_display_name(uint8_t mode_idx) noexcept {
+         return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].display_name : "Medium";
+     }
+     
+     inline constexpr uint32_t spectrum_mode_bandwidth(uint8_t mode_idx) noexcept {
+         return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].bandwidth_hz : 24000000;
+     }
+     
+     inline constexpr uint8_t spectrum_mode_ui_index(uint8_t mode_idx) noexcept {
+         return (mode_idx < 5) ? SPECTRUM_MODES[mode_idx].ui_index : 2;
+     }
+     
+     inline constexpr uint8_t ui_index_to_spectrum_mode(uint8_t ui_index) noexcept {
+         for (uint8_t i = 0; i < 5; ++i) {
+             if (SPECTRUM_MODES[i].ui_index == ui_index) {
+                 return i;
+             }
+         }
+         return 2; // Default to MEDIUM
+     }
 }
 
 // ===========================================
@@ -399,17 +425,17 @@ struct ErrorResult {
 
     constexpr const char* error_message() const noexcept {
         switch (error_code) {
-            case ErrorCode::SUCCESS: return "Success";
-            case ErrorCode::INVALID_ARGUMENT: return "Invalid argument";
-            case ErrorCode::OUT_OF_RANGE: return "Value out of range";
-            case ErrorCode::NULL_POINTER: return "Null pointer";
-            case ErrorCode::BUFFER_OVERFLOW: return "Buffer overflow";
-            case ErrorCode::ALLOCATION_FAILED: return "Allocation failed";
-            case ErrorCode::FILE_IO_ERROR: return "File I/O error";
-            case ErrorCode::INVALID_FREQUENCY: return "Invalid frequency";
-            case ErrorCode::INVALID_RSSI: return "Invalid RSSI";
-            case ErrorCode::TIMEOUT: return "Timeout";
-            default: return "Unknown error";
+            case ErrorCode::SUCCESS: return EDA_FLASH_CONST "Success";
+            case ErrorCode::INVALID_ARGUMENT: return EDA_FLASH_CONST "Invalid argument";
+            case ErrorCode::OUT_OF_RANGE: return EDA_FLASH_CONST "Value out of range";
+            case ErrorCode::NULL_POINTER: return EDA_FLASH_CONST "Null pointer";
+            case ErrorCode::BUFFER_OVERFLOW: return EDA_FLASH_CONST "Buffer overflow";
+            case ErrorCode::ALLOCATION_FAILED: return EDA_FLASH_CONST "Allocation failed";
+            case ErrorCode::FILE_IO_ERROR: return EDA_FLASH_CONST "File I/O error";
+            case ErrorCode::INVALID_FREQUENCY: return EDA_FLASH_CONST "Invalid frequency";
+            case ErrorCode::INVALID_RSSI: return EDA_FLASH_CONST "Invalid RSSI";
+            case ErrorCode::TIMEOUT: return EDA_FLASH_CONST "Timeout";
+            default: return EDA_FLASH_CONST "Unknown error";
         }
     }
 };

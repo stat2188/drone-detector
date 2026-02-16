@@ -135,6 +135,101 @@ bool EnhancedSettingsManager::verify_comm_file_exists() {
     return false;
 }
 
+bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& settings) {
+    // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
+    static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+
+    File settings_file;
+    if (!settings_file.open(filepath, true)) {  // true = read_only
+        return false;
+    }
+
+    auto& file = settings_file;
+
+    // 🔴 OPTIMIZATION: Pre-allocated buffer for file content
+    static constexpr size_t FILE_BUFFER_SIZE = 4096;
+    char file_buffer[FILE_BUFFER_SIZE];
+    auto read_result = file.read(file_buffer, FILE_BUFFER_SIZE);
+    
+    if (read_result.is_error() || read_result.value() == 0) {
+        file.close();
+        return false;
+    }
+
+    file_buffer[read_result.value()] = '\0';
+
+    // Parse settings from buffer
+    char* line = strtok(file_buffer, "\n");
+    while (line != nullptr) {
+        // Skip empty lines and comments
+        if (*line == '\0' || *line == '#') {
+            line = strtok(nullptr, "\n");
+            continue;
+        }
+
+        // Find key-value separator
+        char* equals = strchr(line, '=');
+        if (equals != nullptr) {
+            *equals = '\0';
+            char* key = line;
+            char* value = equals + 1;
+
+            // Trim whitespace from key and value
+            while (*key == ' ' || *key == '\t') key++;
+            while (*value == ' ' || *value == '\t') value++;
+            char* value_end = value + strlen(value) - 1;
+            while (value_end >= value && (*value_end == ' ' || *value_end == '\t' || *value_end == '\r')) {
+                *value_end-- = '\0';
+            }
+
+            // Parse specific settings
+            if (strcmp(key, "spectrum_mode") == 0) {
+                if (strcmp(value, "Ultra Narrow") == 0) settings.spectrum_mode = SpectrumMode::ULTRA_NARROW;
+                else if (strcmp(value, "Narrow") == 0) settings.spectrum_mode = SpectrumMode::NARROW;
+                else if (strcmp(value, "Medium") == 0) settings.spectrum_mode = SpectrumMode::MEDIUM;
+                else if (strcmp(value, "Wide") == 0) settings.spectrum_mode = SpectrumMode::WIDE;
+                else if (strcmp(value, "Ultra Wide") == 0) settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+            } else if (strcmp(key, "scan_interval_ms") == 0) {
+                settings.scan_interval_ms = (uint32_t)atoi(value);
+            } else if (strcmp(key, "rssi_threshold_db") == 0) {
+                settings.rssi_threshold_db = (int32_t)atoi(value);
+            } else if (strcmp(key, "enable_audio_alerts") == 0) {
+                settings.audio_flags.enable_alerts = (strcmp(value, "true") == 0);
+            } else if (strcmp(key, "audio_alert_frequency_hz") == 0) {
+                settings.audio_alert_frequency_hz = (uint32_t)atoi(value);
+            } else if (strcmp(key, "audio_alert_duration_ms") == 0) {
+                settings.audio_alert_duration_ms = (uint32_t)atoi(value);
+            } else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
+                settings.hardware_bandwidth_hz = (uint32_t)atoi(value);
+            } else if (strcmp(key, "enable_real_hardware") == 0) {
+                settings.hardware_flags.enable_real_hardware = (strcmp(value, "true") == 0);
+            } else if (strcmp(key, "demo_mode") == 0) {
+                settings.hardware_flags.demo_mode = (strcmp(value, "true") == 0);
+            } else if (strcmp(key, "freqman_path") == 0) {
+                strncpy(settings.freqman_path, value, sizeof(settings.freqman_path) - 1);
+                settings.freqman_path[sizeof(settings.freqman_path) - 1] = '\0';
+            } else if (strcmp(key, "user_min_freq_hz") == 0) {
+                settings.user_min_freq_hz = (uint64_t)atoll(value);
+            } else if (strcmp(key, "user_max_freq_hz") == 0) {
+                settings.user_max_freq_hz = (uint64_t)atoll(value);
+            } else if (strcmp(key, "wideband_slice_width_hz") == 0) {
+                settings.wideband_slice_width_hz = (uint32_t)atoi(value);
+            } else if (strcmp(key, "panoramic_mode_enabled") == 0) {
+                settings.scanning_flags.panoramic_mode_enabled = (strcmp(value, "true") == 0);
+            } else if (strcmp(key, "wideband_min_freq_hz") == 0) {
+                settings.wideband_min_freq_hz = (uint64_t)atoll(value);
+            } else if (strcmp(key, "wideband_max_freq_hz") == 0) {
+                settings.wideband_max_freq_hz = (uint64_t)atoll(value);
+            }
+        }
+
+        line = strtok(nullptr, "\n");
+    }
+
+    file.close();
+    return true;
+}
+
 std::string EnhancedSettingsManager::get_communication_status() {
     if (verify_comm_file_exists()) {
         return "TXT file found\nCommunication ready";
@@ -550,18 +645,42 @@ void HardwareSettingsView::focus() { button_save_.focus(); }
 
 void HardwareSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
-    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
+    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
+        SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
+    }
     checkbox_real_hardware_.set_value(settings.hardware_flags.enable_real_hardware);
+    field_spectrum_mode_.set_selected_index(static_cast<int>(settings.spectrum_mode));
+    number_bandwidth_.set_value(settings.hardware_bandwidth_hz);
+    number_min_freq_.set_value(settings.user_min_freq_hz);
+    number_max_freq_.set_value(settings.user_max_freq_hz);
+}
+
+void HardwareSettingsView::save_current_settings() {
+    DroneAnalyzerSettings settings;
+    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
+        SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
+    }
+    
     settings.hardware_flags.enable_real_hardware = checkbox_real_hardware_.value();
     settings.hardware_flags.demo_mode = !checkbox_real_hardware_.value();
-
-    // Validate settings before saving
+    settings.spectrum_mode = static_cast<SpectrumMode>(field_spectrum_mode_.selected_index());
+    settings.hardware_bandwidth_hz = static_cast<uint32_t>(number_bandwidth_.value());
+    settings.user_min_freq_hz = static_cast<uint64_t>(number_min_freq_.value());
+    settings.user_max_freq_hz = static_cast<uint64_t>(number_max_freq_.value());
+    
     if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
-        nav_.display_modal("Error", "Invalid settings detected");
+        nav_.display_modal("Error", "Invalid hardware settings");
         return;
     }
-
+    
     SettingsPersistence<DroneAnalyzerSettings>::save(settings);
+}
+
+void HardwareSettingsView::update_ui_from_settings() { load_current_settings(); }
+void HardwareSettingsView::update_settings_from_ui() { save_current_settings(); }
+void HardwareSettingsView::on_save_settings() {
+    save_current_settings();
+    nav_.display_modal("Success", "Hardware settings saved");
 }
 
 AudioSettingsView::AudioSettingsView(NavigationView& nav) : View(), nav_(nav) {
@@ -643,19 +762,30 @@ ScanningSettingsView::ScanningSettingsView(NavigationView& nav) : View(), nav_(n
 void ScanningSettingsView::focus() { button_save_.focus(); }
 void ScanningSettingsView::load_current_settings() {
     DroneAnalyzerSettings settings;
-    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
+    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
+        SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
+    }
     field_scanning_mode_.set_selected_index(0);
     number_scan_interval_.set_value(settings.scan_interval_ms);
     number_rssi_threshold_.set_value(settings.rssi_threshold_db);
     checkbox_wideband_.set_value(settings.scanning_flags.enable_wideband_scanning);
-    settings.scanning_flags.enable_wideband_scanning = checkbox_wideband_.value();
+}
 
-    // Validate settings before saving
+void ScanningSettingsView::save_current_settings() {
+    DroneAnalyzerSettings settings;
+    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
+        SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
+    }
+    
+    settings.scan_interval_ms = static_cast<uint32_t>(number_scan_interval_.value());
+    settings.rssi_threshold_db = static_cast<int32_t>(number_rssi_threshold_.value());
+    settings.scanning_flags.enable_wideband_scanning = checkbox_wideband_.value();
+    
     if (!SettingsPersistence<DroneAnalyzerSettings>::validate(settings)) {
-        nav_.display_modal("Error", "Invalid settings detected");
+        nav_.display_modal("Error", "Invalid scanning settings");
         return;
     }
-
+    
     SettingsPersistence<DroneAnalyzerSettings>::save(settings);
 }
 void ScanningSettingsView::on_save_settings() {

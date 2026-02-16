@@ -32,12 +32,6 @@
 namespace ui::apps::enhanced_drone_analyzer::DiamondCore {
 
 // ===========================================
-// VALIDATION UTILITIES (Removed - Use EDA::Validation from eda_constants.hpp)
-// ===========================================
-// This functionality is now provided by EDA::Validation namespace
-// which is the single source of truth for validation logic
-
-// ===========================================
 // MOVEMENT TREND UTILITIES
 // ===========================================
 
@@ -52,14 +46,13 @@ struct TrendUtils {
         }
     }
 
+    static const char* const TREND_NAMES[];
+
     static inline const char* name(uint8_t trend_idx) {
-        switch (trend_idx) {
-            case 1: return "APPROACHING";
-            case 2: return "RECEDING";
-            case 0: return "STATIC";
-            case 3:
-            default: return "UNKNOWN";
+        if (trend_idx < 4) {
+            return TREND_NAMES[trend_idx];
         }
+        return TREND_NAMES[3];  // UNKNOWN
     }
 };
 
@@ -109,14 +102,18 @@ struct FrequencyParser {
     static constexpr uint64_t MHZ_TO_HZ = 1000000ULL;
     static constexpr uint64_t MAX_MHZ = 7200ULL;
     
+    static constexpr uint64_t compute_multiplier(int exponent) {
+        return (exponent == 0) ? 1 : 10 * compute_multiplier(exponent - 1);
+    }
+    
     static constexpr uint64_t MULTIPLIERS[7] FLASH_STORAGE = {
-        1000000ULL,
-        100000ULL,
-        10000ULL,
-        1000ULL,
-        100ULL,
-        10ULL,
-        1ULL
+        1000000ULL,  // 10^6
+        100000ULL,   // 10^5
+        10000ULL,    // 10^4
+        1000ULL,     // 10^3
+        100ULL,      // 10^2
+        10ULL,       // 10^1
+        1ULL         // 10^0
     };
     
     static inline uint64_t parse_mhz_string(const char* str) noexcept {
@@ -155,7 +152,7 @@ struct FrequencyParser {
         if (result > UINT64_MAX - hz_fraction) return 0;
         result += hz_fraction;
         
-        return result;
+        return EDA::Validation::validate_frequency(result) ? result : 0;
     }
     
     // Parse pure Hz string (no decimal point, e.g., "2400500000" -> 2400500000 Hz)

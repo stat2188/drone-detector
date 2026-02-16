@@ -63,20 +63,38 @@ public:
         }
 
         std::array<T, N> temp = window_;
-
         const size_t k = current_size / 2;
 
-        for (size_t i = 0; i <= k; ++i) {
-            size_t min_idx = i;
-            for (size_t j = i + 1; j < current_size; ++j) {
-                if (temp[j] < temp[min_idx]) {
-                    min_idx = j;
+        // QuickSelect implementation for median
+        size_t left = 0;
+        size_t right = current_size - 1;
+        
+        while (left < right) {
+            size_t pivot_idx = left + (right - left) / 2;
+            T pivot = temp[pivot_idx];
+            
+            // Partition
+            std::swap(temp[pivot_idx], temp[right]);
+            size_t store_idx = left;
+            
+            for (size_t i = left; i < right; ++i) {
+                if (temp[i] < pivot) {
+                    std::swap(temp[store_idx], temp[i]);
+                    store_idx++;
                 }
             }
-            if (min_idx != i) {
-                std::swap(temp[i], temp[min_idx]);
+            
+            std::swap(temp[store_idx], temp[right]);
+            
+            if (store_idx == k) {
+                break;
+            } else if (store_idx < k) {
+                left = store_idx + 1;
+            } else {
+                right = store_idx - 1;
             }
         }
+        
         return temp[k];
     }
 
@@ -139,31 +157,24 @@ private:
 // Scott Meyers Item 15: Prefer constexpr to #define
 // REQUIRES: Frequency type (int64_t)
 struct FrequencyValidator {
-    static constexpr int64_t MIN_HARDWARE_FREQ = 1'000'000LL;
-    static constexpr int64_t MAX_HARDWARE_FREQ = 7'200'000'000LL;
-
-    static constexpr bool is_in_range(int64_t value, int64_t min_val, int64_t max_val) noexcept {
-        return value >= min_val && value <= max_val;
-    }
-
     static constexpr bool is_valid_frequency(int64_t hz) noexcept {
-        return is_in_range(hz, MIN_HARDWARE_FREQ, MAX_HARDWARE_FREQ);
+        return EDA::Validation::validate_frequency(hz);
     }
 
     static constexpr bool is_valid_2_4ghz_band(int64_t hz) noexcept {
-        return is_in_range(hz, 2400000000LL, 2483500000LL);
+        return EDA::Validation::is_2_4ghz_band(hz);
     }
 
     static constexpr bool is_valid_5_8ghz_band(int64_t hz) noexcept {
-        return is_in_range(hz, 5725000000LL, 5875000000LL);
+        return EDA::Validation::is_5_8ghz_band(hz);
     }
 
     static constexpr bool is_valid_military_band(int64_t hz) noexcept {
-        return is_in_range(hz, 860000000LL, 930000000LL);
+        return EDA::Validation::is_military_band(hz);
     }
 
     static constexpr bool is_valid_433mhz_ism(int64_t hz) noexcept {
-        return is_in_range(hz, 433000000LL, 435000000LL);
+        return EDA::Validation::is_433mhz_band(hz);
     }
 };
 
