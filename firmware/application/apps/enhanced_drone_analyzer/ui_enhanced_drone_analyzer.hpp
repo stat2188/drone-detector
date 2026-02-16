@@ -378,19 +378,21 @@ public:
     // Consumer lifecycle methods
     void start_worker();
     void stop_worker();
-    
+
     // Session management
     void start_session();
     void end_session();
     bool is_session_active() const { return session_active_; }
-    
+
     // Statistics for monitoring
     uint32_t get_dropped_logs_count() const { return dropped_logs_; }
     uint32_t get_logged_count() const { return logged_count_; }
 
-    std::string get_log_filename() const;
-    std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
-    
+    // 🔴 REMOVED: format_session_summary() (Dead Code - never called)
+    // REASON: Returns std::string but only invoked by get_session_summary() which is dead code
+    //
+    // std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
+
 private:
     // --- THREADING PRIMITIVES ---
     Thread* worker_thread_ = nullptr;           // Declared 1st
@@ -434,7 +436,9 @@ private:
     void worker_loop();
     bool write_entry_to_sd(const DetectionLogEntry& entry);
     bool ensure_csv_header();
-    std::string generate_log_filename() const;
+
+    // 🔴 OPTIMIZED: generate_log_filename() - returns constexpr string (Flash storage)
+    const char* generate_log_filename() const;
 
     DroneDetectionLogger(const DroneDetectionLogger&) = delete;
     DroneDetectionLogger& operator=(const DroneDetectionLogger&) = delete;
@@ -545,7 +549,12 @@ struct DetectionParams {
     const TrackedDrone& getTrackedDrone(size_t index) const;  // 🔴 FIX: Protected with mutex
     void handle_scan_error(const char* error_msg);
 
-    std::string get_session_summary() const;
+    // 🔴 REMOVED: get_session_summary() (Dead Code - never called)
+    // REASON: Returns std::string but never invoked anywhere in codebase
+    // SAVES: Eliminates heap allocation on call site
+    //
+    // std::string get_session_summary() const;
+
     size_t get_approaching_count() const { return approaching_count_; }
     size_t get_receding_count() const { return receding_count_; }
     size_t get_static_count() const { return static_count_; }
@@ -598,12 +607,18 @@ struct DetectionParams {
                                    const SpectralAnalysisResult& analysis_result,
                                    ThreatLevel threat_level, DroneType drone_type);
 
-    bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
+    // 🔴 REMOVED: validate_detection_simple() (Dead Code - never called)
+    // REASON: Defined but never invoked anywhere in codebase
+    //
+    // bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
 
     static msg_t scanning_thread_function(void* arg);
     msg_t scanning_thread();
 
-    void scan_init_from_loaded_frequencies();
+    // 🔴 REMOVED: scan_init_from_loaded_frequencies() (Dead Code - empty function)
+    // REASON: Function does nothing, wastes Flash and call overhead
+    //
+    // void scan_init_from_loaded_frequencies();
 
     void perform_database_scan_cycle(DroneHardwareController& hardware);
     void perform_wideband_scan_cycle(DroneHardwareController& hardware);
@@ -775,10 +790,15 @@ public:
     void stop_spectrum_before_scan();
     void resume_spectrum_after_scan();
     bool is_spectrum_compatible_with_scanning() const;
-    
+
     void clear_rssi_flag();
     bool is_rssi_fresh() const;
-    
+
+    // 🔴 REMOVED: update_spectrum_for_scanner() (Dead Code - empty function)
+    // REASON: Function does nothing, wastes Flash and call overhead
+    //
+    // void update_spectrum_for_scanner();
+
     // 🔴 FIXED: TOCTOU race condition - atomic check-and-fetch method
     bool get_rssi_if_fresh(int32_t& out_rssi) {
         // Atomic check-and-fetch to prevent TOCTOU race
@@ -1057,56 +1077,64 @@ public:
     void set_tick_count(int num_ticks);
     void paint(Painter& painter) override;
 
-    CompactFrequencyRuler(const CompactFrequencyRuler&) = delete;
-    CompactFrequencyRuler& operator=(const CompactFrequencyRuler&) = delete;
-
-private:
-    Frequency min_freq_;
-    Frequency max_freq_;
-    int spectrum_width_;
-    bool visible_;
-    RulerStyle ruler_style_;
-    int target_tick_count_;
-
-    static constexpr int RULER_HEIGHT = 12;
-    static constexpr int TICK_HEIGHT_MAJOR = 8;
-    static constexpr int TICK_HEIGHT_MINOR = 4;
-    static constexpr int DEFAULT_TICK_COUNT = 4;
-
-    void draw_compact_ticks(Painter& painter, const Rect r);
-    void format_compact_label(char* buffer, size_t buffer_size, Frequency freq);
     Frequency calculate_optimal_tick_interval();
-    RulerStyle determine_auto_style();
+
+    // 🔴 REMOVED: determine_auto_style() (Dead Code - never called)
+    // REASON: Defined but never invoked anywhere in codebase
+    //
+    // RulerStyle determine_auto_style();
+
     bool should_use_mhz_labels() const;
-};
-
-class FrequencyRuler : public View {
-public:
-    explicit FrequencyRuler(Rect parent_rect = {0, 0, screen_width, 12});
-    ~FrequencyRuler() override = default;
-
-    void set_frequency_range(Frequency min_freq, Frequency max_freq);
-    void set_spectrum_width(int width);
-    void set_visible(bool visible);
-    void paint(Painter& painter) override;
-
-    FrequencyRuler(const FrequencyRuler&) = delete;
-    FrequencyRuler& operator=(const FrequencyRuler&) = delete;
 
 private:
-    Frequency min_freq_;
-    Frequency max_freq_;
-    int spectrum_width_;
-    bool visible_;
-
+    // DIAMOND OPTIMIZATION: constexpr constants (stored in Flash)
     static constexpr int RULER_HEIGHT = 12;
     static constexpr int TICK_HEIGHT_MAJOR = 10;
     static constexpr int TICK_HEIGHT_MINOR = 6;
+    static constexpr int DEFAULT_TICK_COUNT = 5;
 
-    void draw_frequency_ticks(Painter& painter, const Rect r);
-    Frequency calculate_tick_interval();
-    void format_frequency_label(char* buffer, size_t buffer_size, Frequency freq, Frequency tick_interval);
+    // State variables
+    Frequency min_freq_{2400000000ULL};
+    Frequency max_freq_{2500000000ULL};
+    int spectrum_width_{240};
+    bool visible_{true};
+    RulerStyle ruler_style_{RulerStyle::COMPACT_GHZ};
+    int target_tick_count_{DEFAULT_TICK_COUNT};
+
+    // Private helper methods
+    void draw_compact_ticks(Painter& painter, const Rect r);
+    void format_compact_label(char* buffer, size_t buffer_size, Frequency freq);
 };
+
+// 🔴 REMOVED: FrequencyRuler class (Dead Code - duplicate, never used)
+// REASON: Complete duplicate of CompactFrequencyRuler, never referenced in codebase
+//         Only CompactFrequencyRuler is used in apply_display_settings()
+// SAVES: ~60 lines Flash, ~500 bytes
+//
+// class FrequencyRuler : public View {
+// public:
+//     explicit FrequencyRuler(Rect parent_rect = {0, 0, screen_width, 12});
+//     ~FrequencyRuler() override = default;
+//
+//     void set_frequency_range(Frequency min_freq, Frequency max_freq);
+//     void set_spectrum_width(int width);
+//     void set_visible(bool visible);
+//     void paint(Painter& painter) override;
+//
+// private:
+//     Frequency min_freq_;
+//     Frequency max_freq_;
+//     int spectrum_width_;
+//     bool visible_;
+//
+//     static constexpr int RULER_HEIGHT = 12;
+//     static constexpr int TICK_HEIGHT_MAJOR = 10;
+//     static constexpr int TICK_HEIGHT_MINOR = 6;
+//
+//     void draw_frequency_ticks(Painter& painter, const Rect r);
+//     Frequency calculate_tick_interval();
+//     void format_frequency_label(char* buffer, size_t buffer_size, Frequency freq, Frequency tick_interval);
+// };
 
 class DroneDisplayController : public View {
 public:
@@ -1170,7 +1198,8 @@ public:
     void set_ruler_style(RulerStyle style);
     void apply_display_settings(const DroneAnalyzerSettings& settings);
     CompactFrequencyRuler& compact_frequency_ruler() { return compact_frequency_ruler_; }
-    FrequencyRuler& frequency_ruler() { return frequency_ruler_; }
+    // 🔴 REMOVED: frequency_ruler() getter (Dead Code - duplicate never used)
+    // FrequencyRuler& frequency_ruler() { return frequency_ruler_; }
 
     // 🔴 FIX: Buffer allocation/deallocation (deferred from constructor)
     void allocate_buffers();
@@ -1217,6 +1246,12 @@ public:
     void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
         spectrum_fifo_ = fifo;
     }
+
+    // 🔴 REMOVED: frequency_ruler_ member (Dead Code - duplicate never used)
+    // REASON: FrequencyRuler class was removed (duplicate of CompactFrequencyRuler)
+    //         Only compact_frequency_ruler_ is used in apply_display_settings()
+    //
+    // FrequencyRuler frequency_ruler_{{0, 68, screen_width, 12}};
 
     // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch/if-else (экономия ROM)
     static constexpr RulerStyle RULER_STYLE_LUT[] = {
@@ -1336,7 +1371,8 @@ private:
     }
 
     CompactFrequencyRuler compact_frequency_ruler_{{0, 68, screen_width, 12}};
-    FrequencyRuler frequency_ruler_{{0, 68, screen_width, 12}};
+    // 🔴 REMOVED: frequency_ruler_ member (Dead Code - duplicate never used)
+    // FrequencyRuler frequency_ruler_{{0, 68, screen_width, 12}};
 
     // ===========================================
     // ФАЗА 2.1: СТАТИЧЕСКИЙ МАССИВ DETECTED_DRONES
