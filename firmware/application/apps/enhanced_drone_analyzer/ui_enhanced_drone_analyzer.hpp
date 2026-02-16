@@ -1380,13 +1380,17 @@ private:
     // Diamond Code: Zero heap allocation
     // Размер: MAX_UI_DRONES * sizeof(DisplayDroneEntry) = 16 * ~80 = ~1.28 KB
 
+    // Diamond Code: Member declaration order MUST match constructor initializer list order
+    // Declaration order: displayed_drones_ -> detected_drones_count_
+    // Constructor order: displayed_drones_() -> detected_drones_count_(0)
+    std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
+
     // Статический массив вместо unique_ptr
     alignas(alignof(DisplayDroneEntry))
     static DisplayDroneEntry detected_drones_storage_[MAX_UI_DRONES];
 
     // Счётчик используемых элементов
     size_t detected_drones_count_ = 0;
-    std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
 
 
     // ===========================================

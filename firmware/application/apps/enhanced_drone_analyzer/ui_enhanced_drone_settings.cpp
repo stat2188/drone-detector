@@ -864,11 +864,12 @@ DroneDatabaseManager::DatabaseView DroneDatabaseManager::load_database(const cha
     
     File file;
     if (!file.open(file_path, true)) return view;
-    
+
     // DIAMOND OPTIMIZATION: Stack-allocated line buffer (zero heap)
+    // Diamond Code: Strong typing - size_t for array indices
     constexpr size_t LINE_BUFFER_SIZE = 128;
     char line_buffer[LINE_BUFFER_SIZE];
-    char line_ptr = 0;
+    size_t line_ptr = 0;
     
     constexpr size_t READ_BUFFER_SIZE = 256;
     char read_buffer[READ_BUFFER_SIZE];

@@ -4158,87 +4158,11 @@ void LoadingScreenView::paint(Painter& painter) {
 }
 
 // ===========================================
-// PART 5: SCANNINGCOORDINATOR IMPLEMENTATION
+// PART 5: SCANNINGCOORDINATOR IMPLEMENTATION REMOVED
 // ===========================================
-
-ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
-                                       DroneHardwareController& hardware,
-                                       DroneScanner& scanner,
-                                       DroneDisplayController& display_controller,
-                                       ::AudioManager& audio_controller)
-    : nav_(nav), hardware_(hardware), scanner_(scanner), display_controller_(display_controller), audio_controller_(audio_controller),
-      scanning_active_(false), scanning_thread_(nullptr), scan_interval_ms_(750)
-{
-}
-
-ScanningCoordinator::~ScanningCoordinator() {
-    stop_coordinated_scanning();
-}
-
-void ScanningCoordinator::start_coordinated_scanning() {
-    if (scanning_active_.load(std::memory_order_acquire)) return;
-    scanning_active_.store(true, std::memory_order_release);
-
-    // ФАЗА 5.6: СОЗДАНИЕ COORDINATOR ПОТОКА СО СТАТИЧЕСКИМ СТЕКОМ
-    scanning_thread_ = chThdCreateStatic(
-        coordinator_wa_,
-        sizeof(coordinator_wa_),
-        NORMALPRIO,
-        scanning_thread_function,
-        this
-    );
-    if (!scanning_thread_) {
-        scanning_active_.store(false, std::memory_order_release);
-    }
-}
-
-
-void ScanningCoordinator::stop_coordinated_scanning() {
-    //1. First check if thread is active at all
-    if (scanning_active_.load(std::memory_order_acquire)) {
-        // 2. Reset flag. Thread will see this in while(scanning_active_) loop and exit.
-        scanning_active_.store(false, std::memory_order_release);
-
-        // 3. If thread pointer exists, wait for its completion.
-        if (scanning_thread_) {
-            // chThdWait blocks current (UI) thread until scanning_thread_ calls chThdExit
-            chThdWait(scanning_thread_);
-            scanning_thread_ = nullptr;
-        }
-    }
-}
-
-msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
-    return static_cast<ScanningCoordinator*>(arg)->coordinated_scanning_thread();
-}
-
-msg_t ScanningCoordinator::coordinated_scanning_thread() {
-    while (scanning_active_.load(std::memory_order_acquire)) {
-        scanner_.perform_scan_cycle(hardware_);
-        // TODO[CRITICAL][FIXED]: Removed direct UI calls from scanning thread
-        // UI updates now happen only through MessageHandler in handle_scanner_update()
-
-        chThdSleepMilliseconds(scan_interval_ms_);
-    }
-    scanning_active_.store(false, std::memory_order_release);
-    scanning_thread_ = nullptr;
-    chThdExit(0);
-    return 0;
-}
-
-void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {
-    scan_interval_ms_ = settings.scan_interval_ms;
-
-    // Update scanner parameters if scanning is active
-    if (scanning_active_.load(std::memory_order_acquire)) {
-        scanner_.update_scan_range(settings.wideband_min_freq_hz,
-                                   settings.wideband_max_freq_hz);
-    }
-}
-
-void ScanningCoordinator::show_session_summary(const std::string& summary) {
-    (void)summary;
-}
+// Diamond Code: Single Responsibility Principle
+// All ScanningCoordinator implementations moved to scanning_coordinator.cpp
+// This eliminates multiple definition linker errors
 
 // ===========================================
 // PART 6: DISPLAY HELPER IMPLEMENTATIONS

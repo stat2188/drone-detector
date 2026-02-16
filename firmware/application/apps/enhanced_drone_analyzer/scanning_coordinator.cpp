@@ -13,15 +13,18 @@ namespace ui::apps::enhanced_drone_analyzer {
 // ===========================================
 
 ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
-                                       DroneHardwareController& hardware,
-                                       DroneScanner& scanner,
-                                       DroneDisplayController& display_controller,
-                                       ::AudioManager& audio_controller)
+                                        DroneHardwareController& hardware,
+                                        DroneScanner& scanner,
+                                        DroneDisplayController& display_controller,
+                                        ::AudioManager& audio_controller)
     : nav_(nav)
     , hardware_(hardware)
     , scanner_(scanner)
     , display_controller_(display_controller)
-    , audio_controller_(audio_controller) {
+    , audio_controller_(audio_controller)
+    , scanning_active_(false)
+    , scanning_thread_(nullptr)
+    , scan_interval_ms_(750) {
 }
 
 ScanningCoordinator::~ScanningCoordinator() {
@@ -29,17 +32,25 @@ ScanningCoordinator::~ScanningCoordinator() {
 }
 
 void ScanningCoordinator::start_coordinated_scanning() {
-    if (!scanning_active_) {
-        scanning_active_ = true;
-        scanning_thread_ = chThdCreateStatic(coordinator_wa_, sizeof(coordinator_wa_),
-                                           NORMALPRIO + 1,
-                                           scanning_thread_function, this);
+    if (scanning_active_.load(std::memory_order_acquire)) return;
+    scanning_active_.store(true, std::memory_order_release);
+
+    scanning_thread_ = chThdCreateStatic(
+        coordinator_wa_,
+        sizeof(coordinator_wa_),
+        NORMALPRIO,
+        scanning_thread_function,
+        this
+    );
+    if (!scanning_thread_) {
+        scanning_active_.store(false, std::memory_order_release);
     }
 }
 
 void ScanningCoordinator::stop_coordinated_scanning() {
-    if (scanning_active_) {
-        scanning_active_ = false;
+    if (scanning_active_.load(std::memory_order_acquire)) {
+        scanning_active_.store(false, std::memory_order_release);
+
         if (scanning_thread_) {
             chThdWait(scanning_thread_);
             scanning_thread_ = nullptr;
@@ -48,11 +59,15 @@ void ScanningCoordinator::stop_coordinated_scanning() {
 }
 
 void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {
-    // TODO: Implement parameter update logic
+    scan_interval_ms_ = settings.scan_interval_ms;
+
+    if (scanning_active_.load(std::memory_order_acquire)) {
+        scanner_.update_scan_range(settings.wideband_min_freq_hz,
+                                   settings.wideband_max_freq_hz);
+    }
 }
 
-void ScanningCoordinator::show_session_summary(const std::string& summary) {
-    // TODO: Implement session summary display
+void ScanningCoordinator::show_session_summary([[maybe_unused]] const std::string& summary) {
 }
 
 msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
@@ -61,10 +76,14 @@ msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
 }
 
 msg_t ScanningCoordinator::coordinated_scanning_thread() {
-    while (scanning_active_) {
-        // TODO: Implement coordinated scanning logic
+    while (scanning_active_.load(std::memory_order_acquire)) {
+        scanner_.perform_scan_cycle(hardware_);
+
         chThdSleepMilliseconds(scan_interval_ms_);
     }
+    scanning_active_.store(false, std::memory_order_release);
+    scanning_thread_ = nullptr;
+    chThdExit(0);
     return 0;
 }
 
