@@ -65,7 +65,8 @@ struct DetectionEntry {
 // ========================================
 class DetectionRingBuffer {
 public:
-    static constexpr size_t MAX_ENTRIES = 32;
+    // Phase 3 Optimization: Reduced from 32 to 16 entries (~256 bytes savings)
+    static constexpr size_t MAX_ENTRIES = 16;
 
     DetectionRingBuffer() noexcept = default;
     ~DetectionRingBuffer() = default;

@@ -312,7 +312,7 @@ while (left < right) {
 | Prefer constexpr to #define | Item 15 | All constants | [`eda_constants.hpp`](firmware/application/apps/enhanced_drone_analyzer/eda_constants.hpp) |
 | Understand implicit interfaces | Item 41 | Template design | [`eda_optimized_utils.hpp`](firmware/application/apps/enhanced_drone_analyzer/eda_optimized_utils.hpp) |
 | Handle assignment to self | Item 11 | CachedValue | [`eda_optimized_utils.hpp:134`](firmware/application/apps/enhanced_drone_analyzer/eda_optimized_utils.hpp:134) |
-| Use object pools | Item 29 | Memory pools | [`ui_enhanced_drone_memory_pool.hpp`](firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_memory_pool.hpp) |
+| Use object pools | Item 29 | ~~Memory pools~~ (Removed in Phase 2) | ~~[`ui_enhanced_drone_memory_pool.hpp`](firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_memory_pool.hpp)~~ |
 | Consider support for implicit interfaces | Item 25 | Formatter templates | [`eda_optimized_utils.hpp:215`](firmware/application/apps/enhanced_drone_analyzer/eda_optimized_utils.hpp:215) |
 
 ### 4.2 Diamond Core Protocol Principles

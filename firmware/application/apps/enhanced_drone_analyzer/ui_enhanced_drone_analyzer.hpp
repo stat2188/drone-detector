@@ -19,7 +19,6 @@
 #include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
-#include "eda_advanced_settings.hpp"
 
 #include "ui.hpp"
 #include "ui_menu.hpp"
@@ -196,7 +195,8 @@ public:
     int32_t rssi = -120;
 
 private:
-    inline static constexpr size_t MAX_HISTORY = 8;
+    // Phase 3 Optimization: Reduced from 8 to 4 entries (~96 bytes savings)
+    inline static constexpr size_t MAX_HISTORY = 4;
     int16_t rssi_history_[MAX_HISTORY];
     systime_t timestamp_history_[MAX_HISTORY] = {0};
     size_t history_index_ = 0;
@@ -230,7 +230,8 @@ struct WidebandScanData {
     Frequency min_freq;
     Frequency max_freq;
     size_t slices_nb;
-    WidebandSlice slices[20];
+    // Phase 3 Optimization: Reduced from 20 to 10 slices (~200 bytes savings)
+    WidebandSlice slices[10];
     size_t slice_counter;
 
     void reset() {
@@ -329,62 +330,6 @@ private:
     bool locked_;
 };
 
-// 🔴 OPTIMIZATION: String Pool for heap fragmentation reduction
-// Scott Meyers Item 29: Consider using object pools for frequently allocated objects
-// Diamond Code: Reduced from 2KB to 1KB for stack safety
-class StringPool {
-public:
-    static constexpr size_t POOL_SIZE = EDA::Constants::POOL_SIZE_1KB;
-    static constexpr size_t MAX_STRING_LENGTH = EDA::Constants::MAX_STRING_LENGTH_256;
-
-    StringPool() noexcept : pool_{}, offset_(0) {
-    }
-
-    char* allocate(size_t length) noexcept {
-        if (length >= MAX_STRING_LENGTH) {
-            return nullptr;
-        }
-
-        // Check if we have enough space
-        if (offset_ + length + 1 >= POOL_SIZE) {
-            // DIAMOND FIX: Pool full - return nullptr instead of wrap-around to prevent data corruption
-            return nullptr;
-        }
-
-        char* result = pool_ + offset_;
-        offset_ += length + 1;
-        pool_[offset_ - 1] = '\0';  // Null-terminate
-        return result;
-    }
-
-    void reset() noexcept {
-        offset_ = 0;
-    }
-
-    size_t remaining() const noexcept {
-        return POOL_SIZE - offset_;
-    }
-
-    bool is_full(size_t length) const noexcept {
-        return (offset_ + length + 1 >= POOL_SIZE);
-    }
-
-    size_t allocated() const noexcept {
-        return offset_;
-    }
-
-    float utilization() const noexcept {
-        return static_cast<float>(offset_) / POOL_SIZE;
-    }
-
-    StringPool(const StringPool&) = delete;
-    StringPool& operator=(const StringPool&) = delete;
-
-private:
-    char pool_[POOL_SIZE];
-    size_t offset_;
-};
-
 class DroneDetectionLogger {
 public:
     DroneDetectionLogger();
@@ -428,9 +373,10 @@ private:
     // - Log entry processing: ~64 bytes (DetectionLogEntry)
     // - SDCardLock mutex overhead: ~100 bytes
     // - ChibiOS thread context: ~256 bytes
-    // - Stack safety margin: ~7644 bytes (to prevent overflow under heavy I/O load)
-    // DIAMOND FIX: Increased from 4KB to 8KB to prevent stack overflow during logging operations
-    static constexpr size_t WORKER_STACK_SIZE = 8192;
+    // - Stack safety margin: ~3644 bytes (to prevent overflow under heavy I/O load)
+    // Phase 2 Optimization: Reduced from 8KB to 4KB for memory savings
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    static constexpr size_t WORKER_STACK_SIZE = 4096;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
 
 
@@ -493,7 +439,8 @@ public:
 
     // 🔴 OPTIMIZATION: constexpr array instead of vector to avoid heap allocation
     // Scott Meyers Item 15: Prefer constexpr to #define and const
-    static constexpr size_t BUILTIN_DB_SIZE = 31;
+    // Phase 3 Optimization: Reduced from 31 to 15 entries (~384 bytes savings)
+    static constexpr size_t BUILTIN_DB_SIZE = 15;
     static const std::array<BuiltinDroneFreq, BUILTIN_DB_SIZE> BUILTIN_DRONE_DB;
 
     // Database timeout constants (Flash storage)
@@ -703,13 +650,14 @@ struct DetectionParams {
         std::atomic<bool> db_loading_active_{false};
 
        // ===========================================
-       // ФАЗА 5.1: СТАТИЧЕСКИЙ СТЕК ДЛЯ ПОТОКА
-       // ===========================================
-       // Diamond Code: Thread stack из статической памяти
-       // Увеличен размер для безопасности (8KB вместо 4KB)
-       static constexpr size_t DB_LOADING_STACK_SIZE = EDA::Constants::DB_LOADING_STACK_SIZE_8KB;  // 8KB
+        // ФАЗА 5.1: СТАТИЧЕСКИЙ СТЕК ДЛЯ ПОТОКА
+        // ===========================================
+        // Diamond Code: Thread stack из статической памяти
+        // Phase 2 Optimization: Reduced from 8KB to 4KB for memory savings
+        // Scott Meyers Item 15: Prefer constexpr to #define
+        static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4KB
 
-         static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
+          static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
       std::atomic<uint32_t> scan_cycles_{0};
       std::atomic<uint32_t> total_detections_{0};
@@ -732,22 +680,17 @@ struct DetectionParams {
     DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
 
-    // Intelligent scanning features
-    int32_t priority_slice_index_ = -1;  // For priority scanning
-    mutable Mutex priority_slice_mutex_;  // 🔴 FIX: Race condition protection
-    size_t priority_scan_counter_ = 0;   // Counter for priority slice scanning
-    static constexpr size_t PRIORITY_SCAN_INTERVAL = 3; // Scan priority slice every N cycles
-    static constexpr size_t MAX_FREQUENCY_PREDICTIONS = 5; // Max predicted frequencies to track
-    
-    // Frequency prediction for FHSS drones
-    struct FrequencyPrediction {
-        Frequency predicted_freq;
-        size_t confidence;
-        systime_t last_seen;
-    };
-    std::array<FrequencyPrediction, MAX_FREQUENCY_PREDICTIONS> frequency_predictions_{};
-    mutable Mutex predictions_mutex_;  // 🔴 FIX: Race condition protection
-    size_t prediction_count_ = 0;
+    // Phase 3 Optimization: Removed Intelligent Scanning features (~200 bytes savings)
+    // Disabled to reduce memory usage while keeping basic database/wideband/hybrid scanning
+    //
+    // Removed:
+    // - int32_t priority_slice_index_ (priority scanning)
+    // - mutable Mutex priority_slice_mutex_ (race condition protection)
+    // - size_t priority_scan_counter_ (priority slice scanning counter)
+    // - struct FrequencyPrediction (frequency prediction for FHSS drones)
+    // - std::array<FrequencyPrediction, MAX_FREQUENCY_PREDICTIONS> frequency_predictions_
+    // - mutable Mutex predictions_mutex_ (prediction mutex)
+    // - size_t prediction_count_ (prediction counter)
 
     // Settings for user-defined frequency ranges
     const DroneAnalyzerSettings& settings_;
@@ -1123,7 +1066,7 @@ public:
     static constexpr size_t SPECTRUM_ROW_SIZE = 240;
     static constexpr size_t RENDER_LINE_SIZE = 240;
     static constexpr size_t WATERFALL_SIZE = 40 * 240;  // 9.6KB waterfall buffer
-    static constexpr size_t MAX_UI_DRONES = 16;
+    static constexpr size_t MAX_UI_DRONES = 3;  // Reduced from 16 to 3 for memory savings
     
     explicit DroneDisplayController(Rect parent_rect = {0, 60, screen_width, screen_height - 80});
     ~DroneDisplayController();
@@ -1359,7 +1302,7 @@ private:
     // ФАЗА 2.1: СТАТИЧЕСКИЙ МАССИВ DETECTED_DRONES
     // ===========================================
     // Diamond Code: Zero heap allocation
-    // Размер: MAX_UI_DRONES * sizeof(DisplayDroneEntry) = 16 * ~80 = ~1.28 KB
+    // Размер: MAX_UI_DRONES * sizeof(DisplayDroneEntry) = 3 * ~80 = ~240 bytes
 
     // Diamond Code: Member declaration order MUST match constructor initializer list order
     // Declaration order: displayed_drones_ -> detected_drones_count_

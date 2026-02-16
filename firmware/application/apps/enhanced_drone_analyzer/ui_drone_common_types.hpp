@@ -197,8 +197,7 @@ enum class MovementTrend : uint8_t {
 };
 
 enum class Language : uint8_t {
-    ENGLISH = 0,
-    RUSSIAN = 1
+    ENGLISH = 0
 };
 
 // DIAMOND OPTIMIZATION: constexpr LUTs instead of std::string comparisons
@@ -219,7 +218,6 @@ public:
 private:
     static Language current_language_;
     static const char* get_english(const char* key);
-    static const char* get_russian(const char* key);
 };
 
 struct DronePreset {

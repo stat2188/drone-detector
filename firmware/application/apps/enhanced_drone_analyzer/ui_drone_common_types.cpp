@@ -19,29 +19,11 @@ static constexpr TranslationEntry ENGLISH_TRANSLATIONS[] = {
     {"select_language", "Select Language"},
     {"about_author", "About Author"},
     {"english", "English"},
-    {"russian", "Russian"},
-    {"english_selected", "Language updated to English"},
-    {"russian_selected", "Язык изменен на русский"}
+    {"english_selected", "Language updated to English"}
 };
 
-static constexpr size_t ENGLISH_TRANSLATION_COUNT = 
+static constexpr size_t ENGLISH_TRANSLATION_COUNT =
     sizeof(ENGLISH_TRANSLATIONS) / sizeof(TranslationEntry);
-
-static constexpr TranslationEntry RUSSIAN_TRANSLATIONS[] = {
-    {"load_database", "Load Database"},
-    {"save_frequency", "Save Frequency"},
-    {"advanced", "Advanced"},
-    {"constant_settings", "Constant Settings"},
-    {"select_language", "Select Language"},
-    {"about_author", "About Author"},
-    {"english", "English"},
-    {"russian", "Russian"},
-    {"english_selected", "Language updated to English"},
-    {"russian_selected", "Language updated to Russian"}
-};
-
-static constexpr size_t RUSSIAN_TRANSLATION_COUNT = 
-    sizeof(RUSSIAN_TRANSLATIONS) / sizeof(TranslationEntry);
 
 // Fast key-based lookup (O(n) where n=10, faster than std::string)
 static constexpr const char* lookup_translation(
@@ -66,10 +48,6 @@ const char* Translator::get_english(const char* key) {
     return lookup_translation(key, ENGLISH_TRANSLATIONS, ENGLISH_TRANSLATION_COUNT);
 }
 
-const char* Translator::get_russian(const char* key) {
-    return lookup_translation(key, RUSSIAN_TRANSLATIONS, RUSSIAN_TRANSLATION_COUNT);
-}
-
 void Translator::set_language(Language lang) {
     current_language_ = lang;
 }
@@ -83,11 +61,7 @@ const char* Translator::translate(const char* key) {
 }
 
 const char* Translator::get_translation(const char* key) {
-    if (current_language_ == Language::RUSSIAN) {
-        return get_russian(key);
-    } else {
-        return get_english(key);
-    }
+    return get_english(key);
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer

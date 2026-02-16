@@ -64,7 +64,8 @@ constexpr Frequency BAND_SPLIT_FREQ_5GHZ = 5'000'000'000ULL;
 constexpr uint32_t NARROWBAND_DRONE_MAX_WIDTH_HZ = 2'500'000ULL;
 constexpr uint32_t WIDEBAND_WIFI_MIN_WIDTH_HZ = 10'000'000ULL;
 constexpr uint32_t WIDEBAND_DEFAULT_SLICE_WIDTH = 22'000'000ULL;
-constexpr uint32_t WIDEBAND_MAX_SLICES = 20;
+// Phase 3 Optimization: Reduced from 20 to 10 slices (~200 bytes savings)
+constexpr uint32_t WIDEBAND_MAX_SLICES = 10;
 constexpr Frequency WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
 constexpr Frequency WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
 

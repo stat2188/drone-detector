@@ -256,19 +256,6 @@ inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
 static constexpr size_t MAX_LINE_LENGTH = 128;
 static constexpr size_t MAX_SETTING_STR_LEN = 65;
 
-// DIAMOND FIX: Static buffer to prevent stack overflow
-// Defined outside template to avoid code bloat from instantiations
-// 4KB required for 52 settings serialization (Diamond Code: calculate at compile time)
-struct SettingsStaticBuffer {
-    static constexpr size_t SIZE = EDA::Constants::SETTINGS_TEMPLATE_SIZE_4KB;
-    static char buffer[SIZE];
-};
-
-inline SettingsStaticBuffer& get_settings_buffer() {
-    static SettingsStaticBuffer buf FLASH_STORAGE;
-    return buf;
-}
-
 // Stack usage documentation for settings loading buffers
 struct SettingsLoadBuffer {
     // LINE_BUFFER_SIZE: 144 bytes
@@ -465,32 +452,13 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
 }
 
 // ===========================================
-// IMPLEMENTATION: SAVE (SINGLE-PASS BUFFER)
+// IMPLEMENTATION: SAVE (DIRECT WRITE - NO INTERMEDIATE BUFFER)
 // ===========================================
+// Phase 1 Optimization: Eliminate SettingsStaticBuffer (4KB) by writing directly to file
+// Saves ~2.4 KB of static RAM
 template<typename T>
 EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
     SettingsBufferLock lock;
-
-    constexpr char SETTINGS_TEMPLATE[] = "# EDA Settings v2\n";
-
-    char* buffer = get_settings_buffer().buffer;
-
-    size_t offset = snprintf(buffer, SettingsStaticBuffer::SIZE, SETTINGS_TEMPLATE);
-
-    if (offset >= SettingsStaticBuffer::SIZE) {
-        return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
-    }
-
-    for (size_t i = 0; i < SETTINGS_COUNT; ++i) {
-        int written = serialize_setting(buffer, offset, SettingsStaticBuffer::SIZE, settings, SETTINGS_LUT[i]);
-        if (written <= 0 || static_cast<size_t>(written) > (SettingsStaticBuffer::SIZE - offset)) {
-            return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
-        }
-        offset += written;
-    }
-
-    // Compile-time validation
-    static_assert(SettingsStaticBuffer::SIZE >= EDA::Constants::SETTINGS_TEMPLATE_SIZE_4KB, "Buffer too small for settings template");
 
     if (sd_card::status() < sd_card::Status::Mounted) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
@@ -503,9 +471,26 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
     }
 
-    auto write_result = file.write(buffer, static_cast<File::Size>(offset));
+    // Write header
+    constexpr char SETTINGS_TEMPLATE[] = "# EDA Settings v2\n";
+    auto write_result = file.write(SETTINGS_TEMPLATE, const_strlen(SETTINGS_TEMPLATE));
     if (write_result.is_error()) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
+    }
+
+    // Write each setting directly to file (no intermediate buffer)
+    // Use small stack buffer for each line (128 bytes)
+    char line_buffer[128];
+    for (size_t i = 0; i < SETTINGS_COUNT; ++i) {
+        int written = serialize_setting(line_buffer, 0, sizeof(line_buffer), settings, SETTINGS_LUT[i]);
+        if (written <= 0 || static_cast<size_t>(written) > sizeof(line_buffer)) {
+            return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
+        }
+        
+        write_result = file.write(line_buffer, static_cast<File::Size>(written));
+        if (write_result.is_error()) {
+            return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
+        }
     }
 
     return EDA::ErrorResult<bool>::ok(true);
