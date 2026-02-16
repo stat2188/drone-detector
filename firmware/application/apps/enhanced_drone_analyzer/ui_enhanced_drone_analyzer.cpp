@@ -521,11 +521,9 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         }
     }
 
-    // Named constants for scan parameters
-    static constexpr systime_t RSSI_TIMEOUT_MS = 60;
+    // Named constants for scan parameters (from EDA::Constants)
     static constexpr int PLL_STABILIZATION_ITERATIONS = 3;
     static constexpr uint32_t PLL_STABILIZATION_DELAY_MS = 10;
-    static constexpr uint32_t RSSI_POLL_DELAY_MS = 5;
     
     // Frequency validation constants (from unified limits)
     const Frequency MIN_VALID_FREQ = EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
@@ -609,9 +607,9 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         }
         
         // 3. Get spectrum data from M0 coprocessor with optimized timing
-        // DIAMOND OPTIMIZATION: static inline buffer in Flash/RAM boundary (256 bytes)
+        // DIAMOND OPTIMIZATION: static buffer in Flash/RAM boundary (256 bytes)
         // Reduces stack usage by 256 bytes per call
-        static inline std::array<uint8_t, 256> spectrum_data;
+        static std::array<uint8_t, 256> spectrum_data;
         
         // Clear spectrum flag and wait for fresh data
 
@@ -4369,7 +4367,7 @@ Frequency CompactFrequencyRuler::calculate_optimal_tick_interval() {
 
     // Optimized intervals for PortaPack's small screen
     // Prioritize GHz intervals for SPACED_GHZ style
-    EDA_FLASH_CONST inline static constexpr Frequency intervals[] = {
+    static constexpr Frequency intervals[] = {
         5000000000ULL,  4000000000ULL,  3000000000ULL, 2000000000ULL,  // 5G, 4G, 3G, 2G
         1000000000ULL,  // 1G (key for SPACED_GHZ)
         500000000ULL,   250000000ULL,   200000000ULL,            // 500M, 250M, 200M
