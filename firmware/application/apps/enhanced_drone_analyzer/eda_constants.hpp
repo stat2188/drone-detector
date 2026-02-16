@@ -424,19 +424,24 @@ struct ErrorResult {
     constexpr explicit operator bool() const noexcept { return is_ok(); }
 
     constexpr const char* error_message() const noexcept {
-        switch (error_code) {
-            case ErrorCode::SUCCESS: return EDA_FLASH_CONST "Success";
-            case ErrorCode::INVALID_ARGUMENT: return EDA_FLASH_CONST "Invalid argument";
-            case ErrorCode::OUT_OF_RANGE: return EDA_FLASH_CONST "Value out of range";
-            case ErrorCode::NULL_POINTER: return EDA_FLASH_CONST "Null pointer";
-            case ErrorCode::BUFFER_OVERFLOW: return EDA_FLASH_CONST "Buffer overflow";
-            case ErrorCode::ALLOCATION_FAILED: return EDA_FLASH_CONST "Allocation failed";
-            case ErrorCode::FILE_IO_ERROR: return EDA_FLASH_CONST "File I/O error";
-            case ErrorCode::INVALID_FREQUENCY: return EDA_FLASH_CONST "Invalid frequency";
-            case ErrorCode::INVALID_RSSI: return EDA_FLASH_CONST "Invalid RSSI";
-            case ErrorCode::TIMEOUT: return EDA_FLASH_CONST "Timeout";
-            default: return EDA_FLASH_CONST "Unknown error";
+        static constexpr EDA_FLASH_CONST char* error_messages[] = {
+            "Success",
+            "Invalid argument",
+            "Value out of range",
+            "Null pointer",
+            "Buffer overflow",
+            "Allocation failed",
+            "File I/O error",
+            "Invalid frequency",
+            "Invalid RSSI",
+            "Timeout"
+        };
+        
+        const size_t code = static_cast<size_t>(error_code);
+        if (code < sizeof(error_messages) / sizeof(error_messages[0])) {
+            return error_messages[code];
         }
+        return "Unknown error";
     }
 };
 

@@ -323,11 +323,13 @@ public:
     }
 
     char* allocate(size_t length) {
-        if (length >= MAX_STRING_LENGTH) return nullptr;
+        if (length >= MAX_STRING_LENGTH) {
+            return nullptr;
+        }
 
         // Check if we have enough space
         if (offset_ + length + 1 >= POOL_SIZE) {
-            // Pool full - return nullptr instead of wrap-around to prevent data corruption
+            // DIAMOND FIX: Pool full - return nullptr instead of wrap-around to prevent data corruption
             return nullptr;
         }
 
@@ -347,6 +349,14 @@ public:
 
     bool is_full(size_t length) const {
         return (offset_ + length + 1 >= POOL_SIZE);
+    }
+
+    size_t allocated() const {
+        return offset_;
+    }
+
+    float utilization() const {
+        return static_cast<float>(offset_) / POOL_SIZE;
     }
 
     StringPool(const StringPool&) = delete;

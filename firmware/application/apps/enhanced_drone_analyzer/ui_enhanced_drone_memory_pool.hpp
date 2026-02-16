@@ -196,17 +196,16 @@ public:
         return pools;
     }
 
-     // Pool для DetectionLogEntry (reduced to 16 entries = ~3.2KB)
-     static constexpr size_t DETECTION_LOG_POOL_SIZE = 16;
-     using DetectionLogPool = FixedSizeMemoryPool<DetectionLogEntry, DETECTION_LOG_POOL_SIZE>;
+    // DIAMOND FIX: Optimized pool sizes with compile-time configuration
+    // Balances memory usage and performance based on typical drone detection scenarios
+    static constexpr size_t DETECTION_LOG_POOL_SIZE = 16;  // ~3.2KB (sufficient for 8 seconds at 2Hz)
+    using DetectionLogPool = FixedSizeMemoryPool<DetectionLogEntry, DETECTION_LOG_POOL_SIZE>;
 
-     // Pool для DisplayDroneEntry (reduced to 8 entries = ~1.6KB)
-     static constexpr size_t DISPLAY_DRONE_POOL_SIZE = 8;
-     using DisplayDronePool = FixedSizeMemoryPool<DisplayDroneEntry, DISPLAY_DRONE_POOL_SIZE>;
+    static constexpr size_t DISPLAY_DRONE_POOL_SIZE = 8;   // ~1.6KB (max 8 concurrent visible drones)
+    using DisplayDronePool = FixedSizeMemoryPool<DisplayDroneEntry, DISPLAY_DRONE_POOL_SIZE>;
 
-     // Pool для TrackedDrone (reduced to 8 entries)
-     static constexpr size_t TRACKED_DRONE_POOL_SIZE = 8;
-     using TrackedDronePool = FixedSizeMemoryPool<TrackedDrone, TRACKED_DRONE_POOL_SIZE>;
+    static constexpr size_t TRACKED_DRONE_POOL_SIZE = 8;   // ~3.2KB (max 8 tracked drones)
+    using TrackedDronePool = FixedSizeMemoryPool<TrackedDrone, TRACKED_DRONE_POOL_SIZE>;
 
     DetectionLogPool& detection_log_pool() { return detection_log_pool_; }
     DisplayDronePool& display_drone_pool() { return display_drone_pool_; }

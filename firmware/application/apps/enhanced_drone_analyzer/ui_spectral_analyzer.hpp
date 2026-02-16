@@ -83,7 +83,10 @@ public:
 
         constexpr size_t HISTOGRAM_BINS = 64;
 
-        std::array<uint16_t, HISTOGRAM_BINS> histogram{};
+        // DIAMOND FIX: Move large stack arrays to static storage to prevent stack overflow
+        // Reduces stack usage by ~128 bytes (histogram) + ~256 bytes (spectrum_data) = ~384 bytes
+        static std::array<uint16_t, HISTOGRAM_BINS> histogram_storage{};
+        auto& histogram = histogram_storage;
         histogram.fill(0);
 
         uint32_t sum = 0;
