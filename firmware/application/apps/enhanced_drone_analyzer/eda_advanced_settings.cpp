@@ -199,6 +199,13 @@ void AdvancedSettingsView::load_defaults() {
     nav_.display_modal("Defaults Loaded", "Settings restored to defaults");
 }
 
+namespace {
+
+constexpr size_t kExportBufferSize = 512;
+constexpr size_t kMessageBufferSize = 128;
+
+} 
+
 void AdvancedSettingsView::export_all_settings() {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
@@ -211,10 +218,10 @@ void AdvancedSettingsView::export_all_settings() {
         return;
     }
 
-    const char* export_path = "/sdcard/EDA_SETTINGS_EXPORT.txt";
+    constexpr const char* kExportPath = "/sdcard/EDA_SETTINGS_EXPORT.txt";
 
     File file;
-    auto error = file.append(export_path);
+    auto error = file.append(kExportPath);
     if (error && !error->ok()) {
         nav_.display_modal("Export Failed", "Unable to create export file");
         return;
@@ -222,60 +229,105 @@ void AdvancedSettingsView::export_all_settings() {
 
     {
         SDCardLock lock;
+        
+        static char buffer[kExportBufferSize];
+        int written;
 
-        // DIAMOND OPTIMIZATION: static inline buffer (512 bytes)
-        // Reduces stack usage by 512 bytes per call
-        static inline char buffer[512];
+        written = snprintf(buffer, kExportBufferSize, "# Enhanced Drone Analyzer Settings Export\n");
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
 
-        snprintf(buffer, sizeof(buffer), "# Enhanced Drone Analyzer Settings Export\n");
-        file.write(buffer, strlen(buffer));
+        written = snprintf(buffer, kExportBufferSize, "# Generated: %" PRIu32 "\n\n", static_cast<uint32_t>(chTimeNow()));
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
 
-        snprintf(buffer, sizeof(buffer), "# Generated: %" PRIu32 "\n\n", (uint32_t)chTimeNow());
-        file.write(buffer, strlen(buffer));
+        written = snprintf(buffer, kExportBufferSize, "# AUDIO SETTINGS\n");
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
 
-        snprintf(buffer, sizeof(buffer), "# AUDIO SETTINGS\n");
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "enable_alerts=%s\n", settings.audio_flags.enable_alerts ? "true" : "false");
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "audio_alert_frequency_hz=%" PRIu32 "\n", settings.audio_alert_frequency_hz);
-        file.write(buffer, strlen(buffer));
+        written = snprintf(buffer, kExportBufferSize, "enable_alerts=%s\n", settings.audio_flags.enable_alerts ? "true" : "false");
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
 
-        snprintf(buffer, sizeof(buffer), "\n# HARDWARE SETTINGS\n");
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "hardware_bandwidth_hz=%" PRIu32 "\n", settings.hardware_bandwidth_hz);
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "lna_gain_db=%u\n", settings.lna_gain_db);
-        file.write(buffer, strlen(buffer));
+        written = snprintf(buffer, kExportBufferSize, "audio_alert_frequency_hz=%" PRIu32 "\n", settings.audio_alert_frequency_hz);
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
 
-        snprintf(buffer, sizeof(buffer), "\n# SCANNING SETTINGS\n");
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "scan_interval_ms=%" PRIu32 "\n", settings.scan_interval_ms);
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "rssi_threshold_db=%" PRId32 "\n", settings.rssi_threshold_db);
-        file.write(buffer, strlen(buffer));
+        written = snprintf(buffer, kExportBufferSize, "\n# HARDWARE SETTINGS\n");
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
 
-        snprintf(buffer, sizeof(buffer), "\n# DETECTION SETTINGS\n");
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "enable_fhss_detection=%s\n", settings.detection_flags.enable_fhss_detection ? "true" : "false");
-        file.write(buffer, strlen(buffer));
+        written = snprintf(buffer, kExportBufferSize, "hardware_bandwidth_hz=%" PRIu32 "\n", settings.hardware_bandwidth_hz);
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
 
-        snprintf(buffer, sizeof(buffer), "\n# LOGGING SETTINGS\n");
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "log_file_path=%s\n", settings.log_file_path);
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "max_log_file_size_kb=%" PRIu32 "\n", settings.max_log_file_size_kb);
-        file.write(buffer, strlen(buffer));
+        written = snprintf(buffer, kExportBufferSize, "lna_gain_db=%u\n", settings.lna_gain_db);
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
 
-        snprintf(buffer, sizeof(buffer), "\n# DISPLAY SETTINGS\n");
-        file.write(buffer, strlen(buffer));
-        snprintf(buffer, sizeof(buffer), "color_scheme=%s\n", settings.color_scheme);
-        file.write(buffer, strlen(buffer));
+        written = snprintf(buffer, kExportBufferSize, "\n# SCANNING SETTINGS\n");
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
+
+        written = snprintf(buffer, kExportBufferSize, "scan_interval_ms=%" PRIu32 "\n", settings.scan_interval_ms);
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
+
+        written = snprintf(buffer, kExportBufferSize, "rssi_threshold_db=%" PRId32 "\n", settings.rssi_threshold_db);
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
+
+        written = snprintf(buffer, kExportBufferSize, "\n# DETECTION SETTINGS\n");
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
+
+        written = snprintf(buffer, kExportBufferSize, "enable_fhss_detection=%s\n", settings.detection_flags.enable_fhss_detection ? "true" : "false");
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
+
+        written = snprintf(buffer, kExportBufferSize, "\n# LOGGING SETTINGS\n");
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
+
+        written = snprintf(buffer, kExportBufferSize, "log_file_path=%s\n", settings.log_file_path);
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
+
+        written = snprintf(buffer, kExportBufferSize, "max_log_file_size_kb=%" PRIu32 "\n", settings.max_log_file_size_kb);
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
+
+        written = snprintf(buffer, kExportBufferSize, "\n# DISPLAY SETTINGS\n");
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
+
+        written = snprintf(buffer, kExportBufferSize, "color_scheme=%s\n", settings.color_scheme);
+        if (written > 0 && static_cast<size_t>(written) < kExportBufferSize) {
+            file.write(buffer, static_cast<size_t>(written));
+        }
 
         file.close();
     }
     
-    char msg[128];
-    snprintf(msg, sizeof(msg), "Settings exported to:\n%s", export_path);
+    char msg[kMessageBufferSize];
+    snprintf(msg, kMessageBufferSize, "Settings exported to:\n%s", kExportPath);
     nav_.display_modal("Export Complete", msg);
 }
 
