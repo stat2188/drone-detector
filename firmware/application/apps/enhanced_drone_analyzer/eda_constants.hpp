@@ -424,7 +424,7 @@ struct ErrorResult {
     constexpr explicit operator bool() const noexcept { return is_ok(); }
 
     constexpr const char* error_message() const noexcept {
-        static constexpr EDA_FLASH_CONST char* error_messages[] = {
+        static constexpr const char* error_messages[] = {
             "Success",
             "Invalid argument",
             "Value out of range",
