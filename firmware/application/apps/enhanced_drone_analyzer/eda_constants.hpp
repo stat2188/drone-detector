@@ -109,9 +109,28 @@ constexpr uint32_t PROGRESSIVE_SLOWDOWN_DIVISOR = 10;  // Scan cycles divisor fo
 constexpr uint32_t PRIORITY_SLICE_SKIP_THRESHOLD = 10;
 constexpr uint32_t PREDICTION_FRESHNESS_MS = 5000;
 constexpr uint32_t FHSS_TRACKING_CONFIDENCE_MAX = 10;
+constexpr uint32_t PRIORITY_SCAN_INTERVAL = 10;  // Diamond Code: Named constant for priority scan interval
+constexpr uint32_t MAX_FREQUENCY_PREDICTIONS = 10;  // Diamond Code: Named constant for max predictions
+constexpr uint32_t PREDICTION_STALE_MS = 5000;  // Diamond Code: Named constant for prediction staleness
+constexpr uint32_t CONFIDENCE_BOOST_INCREMENT = 1;  // Diamond Code: Named constant for confidence boost
+constexpr uint32_t CONFIDENCE_MAX = 10;  // Diamond Code: Named constant for max confidence
+
+// ===== HARDWARE TIMING =====
+constexpr uint32_t RSSI_TIMEOUT_MS = 60;  // Diamond Code: Named constant for RSSI timeout
+constexpr uint32_t RSSI_POLL_DELAY_MS = 2;  // Diamond Code: Named constant for RSSI poll delay
+constexpr uint32_t PLL_STABILIZATION_ITERATIONS = 3;  // Diamond Code: Named constant for PLL stabilization
+constexpr uint32_t SPECTRUM_TIMEOUT_MS = 32;  // Diamond Code: Named constant for spectrum timeout
+constexpr uint32_t CHECK_INTERVAL_MS = 2;  // Diamond Code: Named constant for check interval
+constexpr uint32_t MAX_SCAN_BATCH_SIZE = 10;  // Diamond Code: Named constant for max scan batch size
+
+// ===== MOVEMENT TREND =====
+constexpr int32_t MOVEMENT_TREND_THRESHOLD_APPROACHING = 3;  // Diamond Code: Named constant for approaching threshold
+constexpr int32_t MOVEMENT_TREND_THRESHOLD_RECEEDING = -3;  // Diamond Code: Named constant for receding threshold
+constexpr int32_t MOVEMENT_TREND_MIN_HISTORY = 4;  // Diamond Code: Named constant for min history for trend
+constexpr int32_t MOVEMENT_TREND_SILENCE_THRESHOLD = -110;  // Diamond Code: Named constant for silence threshold
 
 // ===== MEMORY =====
-constexpr size_t MAX_TRACKED_DRONES = 8;
+constexpr size_t MAX_TRACKED_DRONES = 4;  // Diamond Code: Reduced from 8 to 4 for stack safety
 constexpr size_t MAX_DISPLAYED_DRONES = 3;
 constexpr size_t DETECTION_TABLE_SIZE = 256;
 
@@ -148,8 +167,10 @@ constexpr uint32_t DEFAULT_BUFFER_SIZE_4KB = 4096;
 constexpr uint32_t WORKER_STACK_SIZE_8KB = 8192;
 constexpr uint32_t DB_LOADING_STACK_SIZE_8KB = 8192;
 constexpr uint32_t POOL_SIZE_2KB = 2048;
+constexpr uint32_t POOL_SIZE_1KB = 1024;  // Diamond Code: Reduced for stack safety
 constexpr uint32_t MAX_STRING_LENGTH_256 = 256;
 constexpr uint32_t FREQ_DB_STORAGE_SIZE_4KB = 4096;
+constexpr uint32_t FREQ_DB_STORAGE_SIZE_2KB = 2048;  // Diamond Code: Reduced for stack safety
 
 // ===== RSSI PARAMETERS =====
 constexpr int32_t RSSI_SILENCE_DBM = -120;
@@ -157,6 +178,7 @@ constexpr int32_t RSSI_INVALID_DBM = -127;
 
 // ===== SETTINGS STORAGE =====
 constexpr uint32_t SETTINGS_TEMPLATE_SIZE_4KB = 4096;
+constexpr uint32_t SETTINGS_TEMPLATE_SIZE_2KB = 2048;  // Diamond Code: Reduced for stack safety
 constexpr uint32_t MAX_SETTINGS_FILE_SIZE_64KB = 65536;
 constexpr uint32_t MAX_SETTINGS_LINES = 1000;
 constexpr uint32_t MAX_LINE_LENGTH = 128;

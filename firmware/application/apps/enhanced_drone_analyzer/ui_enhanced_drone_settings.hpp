@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <map>
 #include <functional>
@@ -53,10 +54,10 @@ private:
     static void create_backup_file(const std::string& filepath);
     static void restore_from_backup(const std::string& filepath);
     static void remove_backup_file(const std::string& filepath);
-    static std::string generate_file_header();
+    static std::string_view generate_file_header();
     static std::string generate_settings_content(const DroneAnalyzerSettings& settings);
     static std::string spectrum_mode_to_string(SpectrumMode mode);
-    static std::string get_current_timestamp();
+    static const char* get_current_timestamp();
 };
 
 // ===========================================

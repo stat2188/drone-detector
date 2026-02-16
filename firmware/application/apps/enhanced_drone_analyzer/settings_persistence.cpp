@@ -17,7 +17,7 @@ template class SettingsPersistence<DroneAnalyzerSettings>;
 Mutex settings_buffer_mutex;
 
 // DIAMOND FIX: Static buffer definitions (one definition per translation unit)
-// Saves ~4KB of stack space during save operations
+// Saves ~2KB of stack space during save operations (reduced from 4KB to 2KB)
 char SettingsStaticBuffer::buffer[SettingsStaticBuffer::SIZE] = {0};
 
 // DIAMOND FIX: Static load buffer definitions to prevent stack overflow

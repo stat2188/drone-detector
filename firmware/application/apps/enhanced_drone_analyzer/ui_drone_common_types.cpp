@@ -5,11 +5,11 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
-// DIAMOND OPTIMIZATION: constexpr LUTs для переводов
+// DIAMOND OPTIMIZATION: constexpr LUTs for translations
 // ===========================================
 // Scott Meyers Item 15: Prefer constexpr to #define
-// Все строки хранятся во Flash, RAM не тратится
-// O(n) поиск по массиву быстрее, чем std::string сравнение
+// All strings stored in Flash, no RAM used
+// O(n) array search faster than std::string comparison
 
 static constexpr TranslationEntry ENGLISH_TRANSLATIONS[] = {
     {"load_database", "Load Database"},
@@ -43,7 +43,7 @@ static constexpr TranslationEntry RUSSIAN_TRANSLATIONS[] = {
 static constexpr size_t RUSSIAN_TRANSLATION_COUNT = 
     sizeof(RUSSIAN_TRANSLATIONS) / sizeof(TranslationEntry);
 
-// Быстрый поиск по ключу (O(n) где n=10, быстрее чем std::string)
+// Fast key-based lookup (O(n) where n=10, faster than std::string)
 static constexpr const char* lookup_translation(
     const char* key,
     const TranslationEntry* table,

@@ -201,9 +201,9 @@ enum class Language : uint8_t {
     RUSSIAN = 1
 };
 
-// DIAMOND OPTIMIZATION: constexpr LUTs вместо std::string сравнений
+// DIAMOND OPTIMIZATION: constexpr LUTs instead of std::string comparisons
 // Scott Meyers Item 15: Prefer constexpr to #define
-// Экономия RAM: все строки хранятся во Flash, ноль heap allocation
+// RAM savings: all strings stored in Flash, 0 heap allocation
 struct TranslationEntry {
     const char* key;
     const char* value;
@@ -236,17 +236,7 @@ struct DronePreset {
 
 // Implementations moved to ui_drone_common_types.cpp
 
-// ===========================================
-// DEPRECATED: Moved to EDA::Constants
-// ===========================================
-// Constants removed - now in eda_constants.hpp:
-// - DEFAULT_RSSI_THRESHOLD_DB
-// - MIN_SCAN_INTERVAL_MS, MAX_SCAN_INTERVAL_MS
-// - MIN_DETECTION_COUNT
-// - MIN_AUDIO_FREQ, MCU_MAX_AUDIO_FREQ_HZ
-// - MIN_AUDIO_DURATION, MAX_AUDIO_DURATION
-// - MIN_BANDWIDTH, MAX_BANDWIDTH
-// ===========================================
+
 
 // DetectionLogEntry structure for asynchronous logging
 // This is a POD (Plain Old Data) structure for safe memory copying

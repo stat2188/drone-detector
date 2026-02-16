@@ -258,8 +258,9 @@ static constexpr size_t MAX_SETTING_STR_LEN = 65;
 
 // DIAMOND FIX: Static buffer to prevent stack overflow
 // Defined outside template to avoid code bloat from instantiations
+// Reduced from 4KB to 2KB to save stack space (Diamond Code optimization)
 struct SettingsStaticBuffer {
-    static constexpr size_t SIZE = EDA::Constants::SETTINGS_TEMPLATE_SIZE_4KB;
+    static constexpr size_t SIZE = EDA::Constants::SETTINGS_TEMPLATE_SIZE_2KB;
     static char buffer[SIZE];
 };
 
@@ -525,7 +526,7 @@ void SettingsPersistence<T>::reset(T& settings) {
 }
 
 // ===========================================
-// DEPRECATED: validate_setting helper
+
 // ===========================================
 // This method is defined but never called - validation is done inline in validate()
 // Kept for reference, but commented out to avoid compiler warnings

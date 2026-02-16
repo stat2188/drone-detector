@@ -430,7 +430,7 @@ struct ValidatorFormatter {
 };
 
 // ===========================================
-// DEPRECATED: FrequencyFormat removed (use EDA::Formatting)
+
 // ===========================================
 // Removed duplicate FrequencyFormat class
 // Use EDA::Formatting::format_frequency() instead

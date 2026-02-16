@@ -206,8 +206,8 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
             } else if (strcmp(key, "demo_mode") == 0) {
                 settings.hardware_flags.demo_mode = (strcmp(value, "true") == 0);
             } else if (strcmp(key, "freqman_path") == 0) {
-                strncpy(settings.freqman_path, value, sizeof(settings.freqman_path) - 1);
-                settings.freqman_path[sizeof(settings.freqman_path) - 1] = '\0';
+                // DIAMOND OPTIMIZATION: Use safe_strcpy instead of strncpy for consistent safety
+                safe_strcpy(settings.freqman_path, value, sizeof(settings.freqman_path));
             } else if (strcmp(key, "user_min_freq_hz") == 0) {
                 settings.user_min_freq_hz = (uint64_t)atoll(value);
             } else if (strcmp(key, "user_max_freq_hz") == 0) {
@@ -342,8 +342,7 @@ void EnhancedSettingsManager::remove_backup_file(const std::string& filepath) {
     delete_file(std::filesystem::path{backup_path});
 }
 
-std::string EnhancedSettingsManager::generate_file_header() {
-    // OPTIMIZATION: Use char array instead of stringstream to avoid heap allocations
+std::string_view EnhancedSettingsManager::generate_file_header() {
     static constexpr size_t HEADER_BUFFER_SIZE = 256;
     static char header_buffer[HEADER_BUFFER_SIZE];
 
@@ -353,9 +352,9 @@ std::string EnhancedSettingsManager::generate_file_header() {
              "# Timestamp: %s\n"
              "# This file is automatically read by EDA module\n"
              "\n",
-             get_current_timestamp().c_str());
+             get_current_timestamp());
 
-    return std::string(header_buffer);
+    return std::string_view{header_buffer};
 }
 
 std::string EnhancedSettingsManager::generate_settings_content(const DroneAnalyzerSettings& settings) {
@@ -383,18 +382,19 @@ std::string EnhancedSettingsManager::generate_settings_content(const DroneAnalyz
     return ss.str();
 }
 
-// DIAMOND OPTIMIZATION: Unified LUT lookup для spectrum_mode_to_string()
+// DIAMOND OPTIMIZATION: Unified LUT lookup for spectrum_mode_to_string()
 // Scott Meyers Item 15: Prefer constexpr to #define
-// Экономит ~50 байт Flash, использует EDA::LUTs (SSOT)
+// Saves ~50 bytes Flash, uses EDA::LUTs (Single Source of Truth)
 std::string EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) {
     return std::string(EDA::LUTs::spectrum_mode_display_name(static_cast<uint8_t>(mode)));
 }
 
-std::string EnhancedSettingsManager::get_current_timestamp() {
-    char buffer[32];
+const char* EnhancedSettingsManager::get_current_timestamp() {
+    // DIAMOND OPTIMIZATION: Return const char* to static buffer (no std::string allocation)
+    static char buffer[32];
     systime_t now = chTimeNow();
     snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)now);
-    return std::string(buffer);
+    return buffer;
 }
 
 // ===========================================
@@ -444,7 +444,7 @@ static const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5> defau
 
 const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5>& DroneFrequencyPresets::get_all_presets() { return default_presets; }
 
-static constexpr const char* PRESET_NAMES[] = {
+EDA_FLASH_CONST inline static constexpr const char* PRESET_NAMES[] = {
     "2.4GHz Band Scan",
     "2.5GHz Band Scan",
     "DJI Mavic Series",
@@ -456,7 +456,7 @@ const char* const* DroneFrequencyPresets::get_preset_names() {
     return PRESET_NAMES;
 }
 
-static constexpr DroneType AVAILABLE_TYPES[] = {
+EDA_FLASH_CONST inline static constexpr DroneType AVAILABLE_TYPES[] = {
     DroneType::MAVIC,
     DroneType::PHANTOM,
     DroneType::DJI_MINI,
@@ -477,9 +477,9 @@ size_t DroneFrequencyPresets::get_preset_count() {
 size_t DroneFrequencyPresets::get_available_types_count() {
     return 7;
 }
-// DIAMOND OPTIMIZATION: LUT lookup вместо switch для get_type_display_name()
+// DIAMOND OPTIMIZATION: LUT lookup instead of switch for get_type_display_name()
 // Scott Meyers Item 15: Prefer constexpr to #define
-// Экономит ~100 байт Flash
+// Saves ~100 bytes Flash
 std::string DroneFrequencyPresets::get_type_display_name(DroneType type) {
     return std::string(UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type)));
 }

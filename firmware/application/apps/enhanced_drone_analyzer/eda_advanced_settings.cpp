@@ -223,7 +223,9 @@ void AdvancedSettingsView::export_all_settings() {
     {
         SDCardLock lock;
 
-        char buffer[512];
+        // DIAMOND OPTIMIZATION: static inline buffer (512 bytes)
+        // Reduces stack usage by 512 bytes per call
+        static inline char buffer[512];
 
         snprintf(buffer, sizeof(buffer), "# Enhanced Drone Analyzer Settings Export\n");
         file.write(buffer, strlen(buffer));

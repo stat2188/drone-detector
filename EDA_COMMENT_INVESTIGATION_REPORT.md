@@ -1,0 +1,918 @@
+# Enhanced Drone Analyzer Comment Investigation Report
+
+## Summary Statistics
+-------------------
+
+- **Total Files Analyzed:** 25
+- **Files with Comments:** 25 (100.0%)
+- **Total Comments:** 2486
+- **Single-line Comments:** 2470 (99.4%)
+- **Multi-line Comments:** 16 (0.6%)
+- **Documentation Comments:** 7 (0.3%)
+- **Files with Legacy Code Comments:** 5
+- **Total Legacy Code Comments:** 21
+
+## Comment Language Distribution
+---------------------------
+
+- **English:** 2078 comments (83.6%)
+- **Non-English:** 408 comments (16.4%)
+
+## Detailed File Analysis
+----------------------
+
+### check_struct_size.cpp
+- **Single-line Comments:** 8
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 8
+- **Comment Characters:** 329
+
+### color_lookup_unified.hpp
+- **Single-line Comments:** 94
+- **Multi-line Comments:** 1
+- **Documentation Comments:** 1
+- **Non-English Comments:** 13
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 108
+- **Comment Characters:** 3402
+
+  **Non-English Comment Text:**
+  - 💾
+  - ⚡
+  - →
+  - 🎨
+  - ✅
+  - 🎯
+  - Для
+
+### default_drones_db.hpp
+- **Single-line Comments:** 4
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 4
+- **Comment Characters:** 141
+
+### diamond_core.hpp
+- **Single-line Comments:** 41
+- **Multi-line Comments:** 1
+- **Documentation Comments:** 1
+- **Non-English Comments:** 1
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 58
+- **Comment Characters:** 2006
+
+  **Non-English Comment Text:**
+  - →
+
+### eda_advanced_settings.cpp
+- **Single-line Comments:** 16
+- **Multi-line Comments:** 1
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 23
+- **Comment Characters:** 1018
+
+### eda_advanced_settings.hpp
+- **Single-line Comments:** 17
+- **Multi-line Comments:** 1
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 21
+- **Comment Characters:** 869
+
+### eda_constants.hpp
+- **Single-line Comments:** 133
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 133
+- **Comment Characters:** 5398
+
+### eda_optimized_utils.hpp
+- **Single-line Comments:** 97
+- **Multi-line Comments:** 1
+- **Documentation Comments:** 1
+- **Non-English Comments:** 1
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 120
+- **Comment Characters:** 4872
+
+  **Non-English Comment Text:**
+  - 🔴
+
+### enhanced_drone_analyzer_app.cpp
+- **Single-line Comments:** 2
+- **Multi-line Comments:** 1
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 6
+- **Comment Characters:** 234
+
+### scanning_coordinator.cpp
+- **Single-line Comments:** 13
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 13
+- **Comment Characters:** 434
+
+### scanning_coordinator.hpp
+- **Single-line Comments:** 3
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 3
+- **Comment Characters:** 142
+
+### settings_persistence.cpp
+- **Single-line Comments:** 7
+- **Multi-line Comments:** 1
+- **Documentation Comments:** 1
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 13
+- **Comment Characters:** 655
+
+### settings_persistence.hpp
+- **Single-line Comments:** 54
+- **Multi-line Comments:** 2
+- **Documentation Comments:** 1
+- **Non-English Comments:** 1
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 83
+- **Comment Characters:** 3646
+
+  **Non-English Comment Text:**
+  - →
+
+### test_frequency_parser_fix.cpp
+- **Single-line Comments:** 11
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 11
+- **Comment Characters:** 664
+
+### ui_drone_audio.hpp
+- **Single-line Comments:** 9
+- **Multi-line Comments:** 3
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 12
+- **Comment Characters:** 717
+
+### ui_drone_common_types.cpp
+- **Single-line Comments:** 9
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 9
+- **Comment Characters:** 440
+
+### ui_drone_common_types.hpp
+- **Single-line Comments:** 33
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 1
+- **Comment Lines:** 33
+- **Comment Characters:** 1542
+
+  **Legacy Code Snippets:**
+  - // This is a POD (Plain Old Data) structure for safe memory copying
+
+### ui_enhanced_drone_analyzer.cpp
+- **Single-line Comments:** 1196
+- **Multi-line Comments:** 2
+- **Documentation Comments:** 1
+- **Non-English Comments:** 244
+- **Legacy Code Comments:** 11
+- **Comment Lines:** 1219
+- **Comment Characters:** 56136
+
+  **Non-English Comment Text:**
+  - приоритет
+  - в
+  - сигнал
+  - ноль
+  - оператор
+  - чтобы
+  - таймаута
+  - устанавливает
+  - значения
+  - начальное
+  - буферы
+  - этой
+  - результата
+  - Сообщение
+  - корректных
+  - по
+  - фаз
+  - защита
+  - ничего
+  - стиль
+  - деструкторов
+  - Буферы
+  - базовый
+  - указатель
+  - Эта
+  - несовпадение
+  - сброшен
+  - к
+  - инициализированы
+  - постфиксный
+  - есть
+  - ошибка
+  - буферов
+  - экономит
+  - Инициализируем
+  - поток
+  - маска
+  - Всегда
+  - В
+  - Опционально
+  - выполнением
+  - время
+  - эта
+  - теперь
+  - доступа
+  - фаза
+  - высоты
+  - Все
+  - выделено
+  - Локальный
+  - деструктора
+  - байта
+  - вышел
+  - хранится
+  - ветвления
+  - столбцам
+  - рабочему
+  - вызов
+  - Создаём
+  - всегда
+  - Прогресс
+  - часть
+  - Расчет
+  - Реализация
+  - СТЕКОМ
+  - форматирование
+  - поиск
+  - Пропускаем
+  - кода
+  - Функция
+  - избегает
+  - правильного
+  - где
+  - перед
+  - возможностью
+  - СО
+  - Используем
+  - анализа
+  - Битовая
+  - 🟢
+  - длительность
+  - завершения
+  - Вычисляем
+  - же
+  - бинарного
+  - Имена
+  - создаётся
+  - карты
+  - безветвящийся
+  - только
+  - выхода
+  - буферизация
+  - успешно
+  - вернуть
+  - меню
+  - терминатор
+  - безопасной
+  - Заполняем
+  - столбика
+  - массива
+  - Явный
+  - обновляем
+  - АНАЛИЗ
+  - об
+  - Сигнализируем
+  - Показываем
+  - Выполняем
+  - состояние
+  - массив
+  - выделяет
+  - РЕАЛИЗАЦИЯ
+  - инициализации
+  - произошла
+  - оптимизирует
+  - может
+  - зависаний
+  - с
+  - указатели
+  - нет
+  - форматирования
+  - память
+  - 🔴
+  - защиту
+  - каждый
+  - ошибку
+  - удалён
+  - ФОРМЫ
+  - дублирование
+  - или
+  - обязательны
+  - запятой
+  - валидности
+  - ошибке
+  - через
+  - Сохранение
+  - Открываем
+  - проверка
+  - Острый
+  - для
+  - Уменьшаем
+  - ИМПЛЕМЕНТАЦИЯ
+  - выполнена
+  - семафора
+  - проверкой
+  - внутри
+  - наступило
+  - Добавляем
+  - хелпер
+  - Валидация
+  - Копируем
+  - Вызов
+  - Мьютекс
+  - валидны
+  - компиляции
+  - один
+  - бинам
+  - строк
+  - первом
+  - этапе
+  - Проверяем
+  - записи
+  - Статические
+  - элементы
+  - известный
+  - статическом
+  - СТАТИЧЕСКИМ
+  - проверками
+  - была
+  - условный
+  - Здесь
+  - буфера
+  - фазы
+  - без
+  - Инструкция
+  - полей
+  - Преимущества
+  - флаг
+  - нужен
+  - ПЕРЕМЕЩЕНО
+  - индексного
+  - последующего
+  - ЗАЩИЩЁННАЯ
+  - переход
+  - условными
+  - локальный
+  - аллокации
+  - явного
+  - типов
+  - Очищаем
+  - сессию
+  - СТАТИЧЕСКИЕ
+  - оптимизируем
+  - логирования
+  - сравнения
+  - нулевой
+  - Блокировка
+  - элементов
+  - Оптимизированный
+  - цикл
+  - Будим
+  - 🎯
+  - Это
+  - Текущая
+  - арифметикой
+  - вызова
+  - ✅
+  - бар
+  - классный
+  - стеке
+  - повторного
+  - фазу
+  - безопасности
+  - Если
+  - если
+  - на
+  - Уже
+  - требуют
+  - метрики
+  - локального
+  - очищаем
+  - Компилятор
+  - сырые
+  - данные
+  - хранилище
+  - запас
+  - прогресс
+  - МИНИМАЛЬНЫЙ
+  - строки
+  - ДЛЯ
+  - остальное
+  - Устраняет
+  - Проверка
+  - чёрным
+  - от
+  - ПОТОКА
+  - СОЗДАНИЕ
+  - ЯВНЫЙ
+  - создание
+  - хранилища
+  - разрешаем
+  - Вывод
+  - раз
+  - байт
+  - ли
+  - проверяет
+  - слабый
+  - во
+  - знака
+  - методы
+  - имени
+  - возвращает
+  - чем
+  - спектрального
+  - сек
+  - требует
+  - проверяется
+  - выше
+  - освобождён
+  - БУФЕРЫ
+  - Просто
+  - цикла
+  - те
+  - унифицированного
+  - Исправлено
+  - Сброс
+  - ФАЗА
+  - сообщение
+  - вместо
+  - защиты
+  - Компактнее
+  - экран
+  - повторный
+  - членам
+  - не
+  - →
+  - ВНЕ
+  - Тернарный
+  - вызовы
+  - вызове
+  - успешности
+  - гарантированное
+  - заголовок
+  - он
+  - конструктор
+  - изменилось
+  - бара
+  - Экономит
+  - операций
+  - все
+  - Размер
+  - использования
+  - статические
+  - из
+  - приоритета
+  - статический
+  - спектра
+  - Заполненная
+  - использует
+  - методам
+  - ВЫЗОВ
+  - при
+  - изация
+  - выполняется
+  - каскадных
+  - Установка
+  - устраняет
+  - Широкий
+  - потоку
+  - Оставляем
+  - буфер
+  - сессии
+  - экономия
+  - устанавливаем
+  - рисуем
+  - это
+  - Гарантируем
+  - указывает
+  - шума
+  - Проходим
+  - после
+  - уже
+  - экрана
+  - Заголовок
+  - Фон
+  - НАСТРОЕК
+  - каскадного
+  - ПАМЯТИ
+  - Дополнительная
+  - метода
+  - таймаутом
+  - Ждем
+  - выделение
+  - мьютекса
+  - до
+  - пропускаем
+  - Рисование
+  - загрузку
+  - микросекунды
+  - Закрываем
+  - Получаем
+  - Проход
+  - 🔧
+  - флага
+  - просто
+  - всем
+  - ошибкой
+  - Установить
+  - ДЕСТРУКТОРОВ
+  - область
+  - и
+  - ещё
+  - доступность
+  - выходим
+  - недоступны
+  - параметрах
+  - каждая
+  - ЗАГРУЗКА
+  - Скобки
+  - метод
+  - имеет
+  - Фильтр
+  - удалена
+  - настроек
+  - быстрее
+  - СЮДА
+  - вызываем
+  - Инициализация
+  - переполнения
+  - Защита
+  - функций
+  - Форматируем
+  - ОПТИМИЗАЦИЯ
+  - используем
+  - код
+  - размер
+  - Переполнение
+  - режиме
+  - сбрасываем
+  - Быстрый
+  - очистки
+  - перенесены
+  - слишком
+  - файл
+  - ошибки
+  - фазам
+
+  **Legacy Code Snippets:**
+  - // --- Legacy / Telemetry ---
+  - // TODO[CRITICAL][FIXED]: Async logging to prevent blocking scan thread
+  - // TODO[CRITICAL][FIXED]: Don't call UI methods directly from scanning thread
+  - // TODO[CRITICAL][FIXED]: Don't call UI methods directly from scanning thread
+  - // TODO[FIXED]: Ring buffer overflow protection
+  - // TODO[CRITICAL][FIXED]: Remove hardcoded RF Amp enable
+  - // TODO[CRITICAL][FIXED]: Safe Baseband/Scanning separation methods
+  - // TODO[FIXED]: STEP 2.2: Memory leaks in MessageHandler's
+  - //     // TODO[FIXED]: Reserve memory in advance.
+  - //     // Hide old ruler, use compact by default
+  - // TODO[FIXED]: STEP 2.1: Destruction order
+
+### ui_enhanced_drone_analyzer.hpp
+- **Single-line Comments:** 471
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 131
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 471
+- **Comment Characters:** 21497
+
+  **Non-English Comment Text:**
+  - цветов
+  - в
+  - сигнал
+  - Задержки
+  - ноль
+  - объекты
+  - конце
+  - увеличено
+  - Используем
+  - подбираем
+  - массивы
+  - элементов
+  - СТАТИЧЕСКИЙ
+  - показана
+  - Возвращаем
+  - 🎯
+  - нулями
+  - члены
+  - ✅
+  - начала
+  - размером
+  - буферы
+  - Размер
+  - все
+  - ИСПРАВЛЕННЫЕ
+  - фазу
+  - созданные
+  - безопасности
+  - статические
+  - мс
+  - из
+  - бары
+  - Статический
+  - Хранится
+  - выполнение
+  - на
+  - единиц
+  - Острого
+  - статической
+  - массивов
+  - части
+  - Предвычисленные
+  - упрощается
+  - статический
+  - фаз
+  - памяти
+  - защита
+  - черный
+  - Перемещено
+  - ХРАНИЛИЩА
+  - обновляем
+  - методам
+  - хранилище
+  - об
+  - должна
+  - указатель
+  - изация
+  - Для
+  - иметь
+  - НАСТРОЙКИ
+  - статических
+  - дублирующего
+  - прогресс
+  - Каждая
+  - строки
+  - массив
+  - операциями
+  - сигнала
+  - Широкий
+  - к
+  - инициализации
+  - ДЛЯ
+  - Использует
+  - задержки
+  - целой
+  - Устраняет
+  - объектов
+  - текущее
+  - ошибка
+  - К
+  - с
+  - когда
+  - Проверка
+  - указатели
+  - СТЕК
+  - экономия
+  - нет
+  - Статическое
+  - дробной
+  - виджетам
+  - 🔴
+  - от
+  - ПОТОКА
+  - буферов
+  - ДИАПАЗОНА
+  - Желтый
+  - Флаги
+  - Флаг
+  - Не
+  - каскадный
+  - после
+  - здесь
+  - уже
+  - Увеличен
+  - дублирование
+  - отслеживания
+  - каскадного
+  - фон
+  - запасом
+  - Виджеты
+  - угрозы
+  - Строка
+  - указывают
+  - валидности
+  - байт
+  - через
+  - Цвета
+  - перед
+  - достаточное
+  - Итого
+  - проверка
+  - во
+  - Острый
+  - для
+  - экономии
+  - Задержка
+  - известным
+  - методы
+  - формы
+  - Счётчик
+  - сек
+  - Синий
+  - текущий
+  - сигналов
+  - счётчиков
+  - анализ
+  - Кумулятивные
+  - используется
+  - текст
+  - заменяет
+  - хелпер
+  - сканирования
+  - МАССИВ
+  - Указатели
+  - время
+  - белый
+  - ВЫШЕ
+  - ошибках
+  - БУФЕРЫ
+  - фаза
+  - доступа
+  - интерфейса
+  - Баланс
+  - примерно
+  - Все
+  - доступ
+  - объявлений
+  - Логика
+  - КЛАСС
+  - Делитель
+  - каждая
+  - конфигурация
+  - Статические
+  - Исправлено
+  - инициализируются
+  - метод
+  - СТАТИЧЕСКИМ
+  - ФАЗА
+  - хранится
+  - всех
+  - объявлены
+  - минимум
+  - без
+  - пик
+  - вместо
+  - выполнения
+  - Сырой
+  - НОВЫЙ
+  - функций
+  - локальных
+  - ОПТИМИЗАЦИЯ
+  - уровней
+  - членам
+  - БУФЕРАМ
+  - ветвление
+  - МЕТОДЫ
+  - хранятся
+  - размер
+  - Белый
+  - индексного
+  - состояния
+  - ссылку
+  - ДОСТУПА
+  - сообщений
+  - Красный
+  - режимов
+  - ЗАПУСТИТЬ
+  - класса
+  - используемых
+  - прямой
+  - равны
+  - типов
+  - соседей
+  - где
+  - ЗАДЕРЖКИ
+  - СТАТИЧЕСКИЕ
+  - стилей
+  - массиву
+  - О
+  - пика
+
+### ui_enhanced_drone_memory_pool.hpp
+- **Single-line Comments:** 40
+- **Multi-line Comments:** 1
+- **Documentation Comments:** 0
+- **Non-English Comments:** 3
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 48
+- **Comment Characters:** 2137
+
+  **Non-English Comment Text:**
+  - 🔴
+
+### ui_enhanced_drone_settings.cpp
+- **Single-line Comments:** 110
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 14
+- **Legacy Code Comments:** 2
+- **Comment Lines:** 110
+- **Comment Characters:** 6000
+
+  **Non-English Comment Text:**
+  - вместо
+  - ИСПОЛЬЗУЕТ
+  - 🔴
+  - ноль
+  - Экономия
+  - хранится
+  - Ускорение
+  - во
+  - для
+
+  **Legacy Code Snippets:**
+  - // DEPRECATED: button_tabbed_settings_ removed - use individual settings views
+  - // DEPRECATED: show_tabbed_settings() removed - EDATabbedSettingsView no longer available
+
+### ui_enhanced_drone_settings.hpp
+- **Single-line Comments:** 43
+- **Multi-line Comments:** 1
+- **Documentation Comments:** 1
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 6
+- **Comment Lines:** 47
+- **Comment Characters:** 2084
+
+  **Legacy Code Snippets:**
+  - // DEPRECATED: Old unified settings files removed
+  - // using FilteredPresetMenuView = std::function<void(const DronePreset&, const std::vector<DronePres...
+  - // ===== DEPRECATED: DroneAudioSettings =====
+  - // DroneAudioSettings audio_settings_;  // DEPRECATED - now using DroneAnalyzerSettings directly
+  - // DEPRECATED: Tabbed settings view removed - use individual settings views instead
+  - // DEPRECATED: show_tabbed_settings() removed - tabbed view no longer available
+
+### ui_signal_processing.cpp
+- **Single-line Comments:** 1
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 1
+- **Comment Characters:** 46
+
+### ui_signal_processing.hpp
+- **Single-line Comments:** 44
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 1
+- **Comment Lines:** 44
+- **Comment Characters:** 2146
+
+  **Legacy Code Snippets:**
+  - // Replaces old WidebandMedianFilter class
+
+### ui_spectral_analyzer.hpp
+- **Single-line Comments:** 14
+- **Multi-line Comments:** 0
+- **Documentation Comments:** 0
+- **Non-English Comments:** 0
+- **Legacy Code Comments:** 0
+- **Comment Lines:** 14
+- **Comment Characters:** 843
+
+
+## Patterns and Issues Identified
+---------------------------
+
+- 21 legacy code comments detected (marked as old, legacy, deprecated, todo, fixme, xxx, or hack)
+- 408 non-English comments detected (requires translation to English)
+- High percentage of single-line comments - consider more multi-line or documentation comments for complex code
+- Low percentage of documentation comments - consider adding more structured documentation

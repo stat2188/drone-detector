@@ -27,7 +27,7 @@ namespace ui::apps::enhanced_drone_analyzer {
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ============================================
-// ФАЗА 3.2: Универсальный Memory Pool (Fixed Size)
+// PHASE 3.2: Universal Fixed-Size Memory Pool
 // ============================================
 
 template<typename T, size_t PoolSize>
@@ -52,11 +52,11 @@ public:
     }
 
     ~FixedSizeMemoryPool() {
-        // Pool автоматически уничтожается при выходе из области видимости
-        // Mutex уничтожается автоматически (ChibiOS)
+        // Pool automatically destroyed when out of scope
+        // Mutex automatically cleaned up by ChibiOS
     }
 
-    // 🔴 ФАЗА 3.3: Thread-safe allocation
+    // 🔴 PHASE 3.3: Thread-safe allocation
     T* allocate() {
         chMtxLock(&mutex_);
 
@@ -71,22 +71,22 @@ public:
 
         chMtxUnlock();
 
-        // Placement new для вызова конструктора
+        // Placement new to call constructor
         new(ptr) T();
 
         return ptr;
     }
 
-    // 🔴 ФАЗА 3.4: Thread-safe deallocation
+    // 🔴 PHASE 3.4: Thread-safe deallocation
     void deallocate(T* ptr) {
         if (!ptr) return;
 
         chMtxLock(&mutex_);
 
-        // Вызов деструктора
+        // Call destructor
         ptr->~T();
 
-        // Возврат в free list
+        // Return to free list
         if (free_count_ < PoolSize) {
             free_list_[free_count_++] = ptr;
         }
@@ -96,7 +96,7 @@ public:
         chMtxUnlock();
     }
 
-    // 🔴 ФАЗА 3.5: Status functions
+    // 🔴 PHASE 3.5: Status functions
     size_t allocated_count() const {
         return allocation_count_;
     }
@@ -130,7 +130,7 @@ private:
 };
 
 // ============================================
-// ФАЗА 3.6: RAII Wrapper для pool-allocated объектов
+// PHASE 3.6: RAII Wrapper for Pool-Allocated Objects
 // ============================================
 
 template<typename T, size_t PoolSize>
@@ -185,7 +185,7 @@ private:
 };
 
 // ============================================
-// ФАЗА 3.7: Singleton pools для EDA
+// PHASE 3.7: Singleton Pools for EDA
 // ============================================
 
 class EDAMemoryPools {
@@ -228,7 +228,7 @@ public:
 };
 
 // ============================================
-// ФАЗА 3.8: Convenience functions
+// PHASE 3.8: Convenience functions
 // ============================================
 
 inline EDAMemoryPools& get_eda_pools() {

@@ -4,8 +4,8 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// Этот огромный строковый литерал будет скомпилирован в бинарник.
-// Формат: FREQMAN (Frequency, Description)
+// This large string literal will be compiled into the binary.
+// Format: FREQMAN (Frequency, Description)
 constexpr const char* DEFAULT_DRONE_DATABASE_CONTENT =
     "# EDA Factory Drone Database\n"
     "# Format: Freq(Hz), Description\n"

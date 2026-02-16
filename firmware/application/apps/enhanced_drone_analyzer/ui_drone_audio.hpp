@@ -13,7 +13,8 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 struct AudioAlertManager {
-    static void play_alert(ThreatLevel level) {
+    // DIAMOND OPTIMIZATION: noexcept enables compiler optimization, avoids exception handling overhead
+    static void play_alert(ThreatLevel level) noexcept {
         if (!audio_enabled_) return;
         systime_t now = chTimeNow();
         systime_t elapsed_ticks = now - last_alert_timestamp_;
@@ -30,9 +31,10 @@ struct AudioAlertManager {
         }
         baseband::request_audio_beep(freq_hz, 24000, 200);
     }
-    static void set_enabled(bool enable) { audio_enabled_ = enable; }
-    static bool is_enabled() { return audio_enabled_; }
-    static void set_cooldown_ms(uint32_t cooldown_ms) { cooldown_ms_ = cooldown_ms; }
+    // DIAMOND OPTIMIZATION: noexcept for zero-overhead abstraction
+    static void set_enabled(bool enable) noexcept { audio_enabled_ = enable; }
+    static bool is_enabled() noexcept { return audio_enabled_; }
+    static void set_cooldown_ms(uint32_t cooldown_ms) noexcept { cooldown_ms_ = cooldown_ms; }
 
 private:
     inline static bool audio_enabled_ = true;
@@ -56,7 +58,7 @@ public:
     }
     void stop_audio() { /* Simple beeps don't persist - no stop needed */ }
 
-    // Legacy API for compatibility
+
     uint16_t get_alert_frequency() const { return 800; }
     void set_alert_frequency([[maybe_unused]] uint16_t freq) { (void)freq; /* Fixed to 800Hz like detector_app */ }
     uint32_t get_alert_duration_ms() const { return 200; }
