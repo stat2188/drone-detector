@@ -258,9 +258,9 @@ static constexpr size_t MAX_SETTING_STR_LEN = 65;
 
 // DIAMOND FIX: Static buffer to prevent stack overflow
 // Defined outside template to avoid code bloat from instantiations
-// Reduced from 4KB to 2KB to save stack space (Diamond Code optimization)
+// 4KB required for 52 settings serialization (Diamond Code: calculate at compile time)
 struct SettingsStaticBuffer {
-    static constexpr size_t SIZE = EDA::Constants::SETTINGS_TEMPLATE_SIZE_2KB;
+    static constexpr size_t SIZE = EDA::Constants::SETTINGS_TEMPLATE_SIZE_4KB;
     static char buffer[SIZE];
 };
 
@@ -490,7 +490,7 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
     }
 
     // Compile-time validation
-    static_assert(SettingsStaticBuffer::SIZE >= EDA::Constants::SETTINGS_TEMPLATE_SIZE_2KB, "Buffer too small for settings template");
+    static_assert(SettingsStaticBuffer::SIZE >= EDA::Constants::SETTINGS_TEMPLATE_SIZE_4KB, "Buffer too small for settings template");
 
     if (sd_card::status() < sd_card::Status::Mounted) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
