@@ -41,6 +41,10 @@ class LogFile {
     Optional<File::Error> write_entry(const rtc::RTC& datetime, const std::string& entry);
     Optional<File::Error> write_raw(const std::string& message);
 
+    // DIAMOND FIX: Zero-heap overload for raw buffer writing
+    // Eliminates std::string allocation for embedded logging
+    Optional<File::Error> write_raw(const void* data, File::Size length);
+
    private:
     File file{};
 };

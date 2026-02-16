@@ -1883,29 +1883,27 @@ bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
 
     if (!ensure_csv_header()) return false;
 
+    // DIAMOND FIX: Stack buffer (no heap allocation)
     char line_buffer[128];
     int len = snprintf(line_buffer, sizeof(line_buffer),
         "%" PRIu32 ",%" PRIu32 ",%" PRId32 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu8 ",%" PRIu32 ",%" PRIu8 "\n",
         entry.timestamp,
-        (uint32_t)(entry.frequency_hz),
+        static_cast<uint32_t>(entry.frequency_hz),
         entry.rssi_db,
-        (uint8_t)entry.threat_level,
-        (uint8_t)entry.drone_type,
+        static_cast<uint8_t>(entry.threat_level),
+        static_cast<uint8_t>(entry.drone_type),
         entry.detection_count,
         entry.confidence_percent,
         entry.width_bins,
-        (uint32_t)(entry.signal_width_hz),
+        static_cast<uint32_t>(entry.signal_width_hz),
         entry.snr);
 
-    if (len < 0 || (size_t)len >= sizeof(line_buffer)) {
+    if (len < 0 || static_cast<size_t>(len) >= sizeof(line_buffer)) {
         return false;
     }
 
-    // 🔴 OPTIMIZED: Construct string from buffer using pointer+len instead of std::string constructor
-    // Avoids heap allocation by passing raw buffer pointer to File::append
-    std::string line(line_buffer, len);
-
-    auto error = csv_log_.write_raw(line);
+    // DIAMOND FIX: Zero-heap write using raw buffer
+    auto error = csv_log_.write_raw(line_buffer, static_cast<File::Size>(len));
 
     if (error && error->ok()) {
         logged_count_++;
@@ -1921,11 +1919,17 @@ bool DroneDetectionLogger::ensure_csv_header() {
         return false;
     }
 
-    const char* header = "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence_percent,width_bins,signal_width_hz,snr\n";
-    // 🔴 OPTIMIZED: Use const char* directly instead of std::string (Flash storage, no heap)
+    // DIAMOND FIX: Static string literal stored in Flash (no heap allocation)
+    static const char* const header =
+        "timestamp_ms,frequency_hz,rssi_db,threat_level,drone_type,detection_count,confidence_percent,width_bins,signal_width_hz,snr\n";
+
     auto error = csv_log_.append(generate_log_filename());
     if (error && !error->ok()) return false;
-    error = csv_log_.write_raw(header);
+
+    // DIAMOND FIX: Zero-heap write using raw buffer
+    const size_t header_len = strlen(header);
+    error = csv_log_.write_raw(header, static_cast<File::Size>(header_len));
+
     if (error && error->ok()) {
         header_written_ = true;
         return true;

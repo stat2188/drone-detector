@@ -38,3 +38,14 @@ Optional<File::Error> LogFile::write_raw(const std::string& message) {
     }
     return error;
 }
+
+// DIAMOND FIX: Zero-heap implementation for raw buffer writing
+// Eliminates std::string allocation for embedded logging
+Optional<File::Error> LogFile::write_raw(const void* data, File::Size length) {
+    const auto result = file.write(data, length);
+    if (result.is_error()) {
+        return {result.error()};
+    }
+    file.sync();
+    return {};
+}
