@@ -668,161 +668,25 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
 }
 
 size_t DroneScanner::get_next_slice_with_intelligence() {
-    // 1. Check if we have a priority slice to scan
-    // 🔴 FIXED: Race condition protection - copy entire decision into critical section
-    size_t result_slice = 0;
-    bool use_priority_slice = false;
-    int32_t local_priority_slice = -1;
-    
-    {
-        MutexLock lock(priority_slice_mutex_);
-        local_priority_slice = priority_slice_index_;
-        
-        if (local_priority_slice != -1) {
-            priority_scan_counter_++;
-            
-            // Scan priority slice every PRIORITY_SCAN_INTERVAL cycles
-            // Diamond Code: Use named constant from eda_constants.hpp
-            if (priority_scan_counter_ >= EDA::Constants::PRIORITY_SCAN_INTERVAL) {
-                priority_scan_counter_ = 0;
-                use_priority_slice = true;
-                result_slice = static_cast<size_t>(local_priority_slice);
-            }
-        }
-    }
-    
-    if (use_priority_slice) {
-        return result_slice;
-    }
-    
-    // 2. Check for frequency predictions (FHSS tracking)
-    // 🔴 FIX: Race condition protection - lock predictions_mutex_
-    size_t local_prediction_count;
-    FrequencyPrediction local_predictions[MAX_FREQUENCY_PREDICTIONS];
-    {
-        MutexLock lock(predictions_mutex_);
-        local_prediction_count = prediction_count_;
-        if (prediction_count_ > 0) {
-            std::copy_n(frequency_predictions_.begin(), prediction_count_, local_predictions);
-        }
-    }
-    
-    if (local_prediction_count > 0) {
-        systime_t now = chTimeNow();
-        size_t best_prediction_idx = 0;
-        size_t max_confidence = 0;
-        bool found_prediction = false;
-        
-        // Find the highest confidence prediction that's still fresh
-        // Diamond Code: Use named constant for prediction staleness
-        for (size_t i = 0; i < local_prediction_count; i++) {
-            if (now - local_predictions[i].last_seen < EDA::Constants::PREDICTION_STALE_MS) {
-                if (local_predictions[i].confidence > max_confidence) {
-                    max_confidence = local_predictions[i].confidence;
-                    best_prediction_idx = i;
-                    found_prediction = true;
-                }
-            }
-        }
-        
-        if (found_prediction) {
-            // Find the slice that contains this predicted frequency
-            Frequency predicted_freq = local_predictions[best_prediction_idx].predicted_freq;
-            for (size_t i = 0; i < wideband_scan_data_.slices_nb; i++) {
-                const WidebandSlice& slice = wideband_scan_data_.slices[i];
-                Frequency slice_min = slice.center_frequency - (static_cast<Frequency>(settings_.wideband_slice_width_hz) / 2);
-                Frequency slice_max = slice.center_frequency + (static_cast<Frequency>(settings_.wideband_slice_width_hz) / 2);
-                
-                if (predicted_freq >= slice_min && predicted_freq <= slice_max) {
-                    // 🔴 FIX: Use method to boost confidence inside critical section
-                    boost_prediction_confidence(best_prediction_idx, now);
-                    return i;
-                }
-            }
-        }
-    }
-
-    // 3. Normal sequential scanning
+    (void)settings_;
     size_t current = wideband_scan_data_.slice_counter;
     size_t next = (current + 1) % wideband_scan_data_.slices_nb;
-    
-    // If we just scanned a priority slice, don't immediately go back to it
-    // 🔴 FIXED: Use local copy instead of atomic read
-    if (local_priority_slice != -1 && next == static_cast<size_t>(local_priority_slice)) {
-        next = (next + 1) % wideband_scan_data_.slices_nb;
-    }
-    
     return next;
 }
 
 void DroneScanner::update_frequency_predictions(Frequency detected_freq, ThreatLevel threat_level) {
-    if (threat_level < ThreatLevel::MEDIUM) return; // Only predict for medium+ threats
-    
-    // 🔴 FIX: Race condition protection - lock predictions_mutex_
-    MutexLock lock(predictions_mutex_);
-    
-    systime_t now = chTimeNow();
-    
-    // Check if this frequency is already in our predictions
-    for (size_t i = 0; i < prediction_count_; i++) {
-        if (frequency_predictions_[i].predicted_freq == detected_freq) {
-            // Update existing prediction
-            frequency_predictions_[i].confidence = std::min(frequency_predictions_[i].confidence + 2, size_t(10));
-            frequency_predictions_[i].last_seen = now;
-            return;
-        }
-    }
-    
-    // Add new prediction if we have space
-    if (prediction_count_ < MAX_FREQUENCY_PREDICTIONS) {
-        frequency_predictions_[prediction_count_].predicted_freq = detected_freq;
-        frequency_predictions_[prediction_count_].confidence = 3; // Initial confidence
-        frequency_predictions_[prediction_count_].last_seen = now;
-        prediction_count_++;
-    } else {
-        // Replace lowest confidence prediction
-        size_t min_confidence_idx = 0;
-        size_t min_confidence = frequency_predictions_[0].confidence;
-        
-        for (size_t i = 1; i < MAX_FREQUENCY_PREDICTIONS; i++) {
-            if (frequency_predictions_[i].confidence < min_confidence) {
-                min_confidence = frequency_predictions_[i].confidence;
-                min_confidence_idx = i;
-            }
-        }
-        
-        frequency_predictions_[min_confidence_idx].predicted_freq = detected_freq;
-        frequency_predictions_[min_confidence_idx].confidence = 3;
-        frequency_predictions_[min_confidence_idx].last_seen = now;
-    }
+    (void)detected_freq;
+    (void)threat_level;
 }
 
 void DroneScanner::update_priority_slice_detection(size_t slice_idx, bool detected_something_interesting) {
-    // 🔴 FIX: Race condition protection
-    MutexLock lock(priority_slice_mutex_);
-
-    if (detected_something_interesting) {
-        priority_slice_index_ = static_cast<int32_t>(slice_idx);
-        priority_scan_counter_ = 0; // Reset counter to scan priority slice immediately next cycle
-    } else if (priority_slice_index_ == static_cast<int32_t>(slice_idx)) {
-        // If we didn't detect anything on the priority slice, reduce its priority
-        // but don't immediately remove it
-        // This creates a "sticky" priority that doesn't jump around too much
-    }
+    (void)slice_idx;
+    (void)detected_something_interesting;
 }
 
 void DroneScanner::boost_prediction_confidence(size_t prediction_idx, systime_t now) {
-    MutexLock lock(predictions_mutex_);
-
-    if (prediction_idx < EDA::Constants::MAX_FREQUENCY_PREDICTIONS) {
-        // Diamond Code: Use named constants instead of magic numbers
-        size_t new_confidence = frequency_predictions_[prediction_idx].confidence + EDA::Constants::CONFIDENCE_BOOST_INCREMENT;
-        if (new_confidence > EDA::Constants::CONFIDENCE_MAX) {
-            new_confidence = EDA::Constants::CONFIDENCE_MAX;
-        }
-        frequency_predictions_[prediction_idx].confidence = new_confidence;
-        frequency_predictions_[prediction_idx].last_seen = now;
-    }
+    (void)prediction_idx;
+    (void)now;
 }
 
 void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override) {
@@ -1399,22 +1263,8 @@ void DroneScanner::cleanup_database_and_scanner() {
     // 🔴 FIX: Clear detection ring buffer to prevent stale data
     detection_ring_buffer_.clear();
     
-    // 🔴 FIX: Reset all prediction data
-    {
-        MutexLock lock(predictions_mutex_);
-        prediction_count_ = 0;
-        std::fill(frequency_predictions_.begin(), frequency_predictions_.end(), FrequencyPrediction{});
-    }
-    
-    // 🔴 FIX: Reset priority slice data
-    {
-        MutexLock lock(priority_slice_mutex_);
-        priority_slice_index_ = -1;
-        priority_scan_counter_ = 0;
-    }
-    
-    // Note: ChibiOS mutexes (data_mutex_, predictions_mutex_, priority_slice_mutex_) 
-    // are automatically cleaned up with the object. No explicit deinit needed.
+    // Note: ChibiOS mutexes (data_mutex_) are automatically cleaned up with the object.
+    // No explicit deinit needed.
 }
 
 

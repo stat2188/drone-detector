@@ -439,8 +439,7 @@ public:
 
     // 🔴 OPTIMIZATION: constexpr array instead of vector to avoid heap allocation
     // Scott Meyers Item 15: Prefer constexpr to #define and const
-    // Phase 3 Optimization: Reduced from 31 to 15 entries (~384 bytes savings)
-    static constexpr size_t BUILTIN_DB_SIZE = 15;
+    static constexpr size_t BUILTIN_DB_SIZE = 17;
     static const std::array<BuiltinDroneFreq, BUILTIN_DB_SIZE> BUILTIN_DRONE_DB;
 
     // Database timeout constants (Flash storage)
