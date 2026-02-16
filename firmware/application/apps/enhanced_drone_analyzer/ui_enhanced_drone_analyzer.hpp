@@ -95,12 +95,12 @@ struct RssiMeasurement {
 // Constants moved to eda_constants.hpp - single source of truth
 
 namespace UIStyles {
-    static constexpr EDA_FLASH_CONST Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
-    static constexpr EDA_FLASH_CONST Style YELLOW_STYLE{font::fixed_8x16, Color::black(), Color::yellow()};
-    static constexpr EDA_FLASH_CONST Style GREEN_STYLE{font::fixed_8x16, Color::black(), Color::green()};
-    static constexpr EDA_FLASH_CONST Style LIGHT_STYLE{font::fixed_8x16, Color::black(), Color::white()};
-    static constexpr EDA_FLASH_CONST Style DARK_STYLE{font::fixed_8x16, Color::black(), Color::dark_grey()};
-    static constexpr EDA_FLASH_CONST Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color::orange()};
+    EDA_FLASH_CONST static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
+    EDA_FLASH_CONST static constexpr Style YELLOW_STYLE{font::fixed_8x16, Color::black(), Color::yellow()};
+    EDA_FLASH_CONST static constexpr Style GREEN_STYLE{font::fixed_8x16, Color::black(), Color::green()};
+    EDA_FLASH_CONST static constexpr Style LIGHT_STYLE{font::fixed_8x16, Color::black(), Color::white()};
+    EDA_FLASH_CONST static constexpr Style DARK_STYLE{font::fixed_8x16, Color::black(), Color::dark_grey()};
+    EDA_FLASH_CONST static constexpr Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color::orange()};
 }
 
 class TrackedDrone {
@@ -1628,7 +1628,7 @@ public:
 
 
     // 🔴 DIAMOND OPTIMIZATION: constexpr массив для сообщений об ошибках (Flash)
-    static constexpr const char* const ERROR_MESSAGES[] = {
+    EDA_FLASH_CONST static constexpr const char* const ERROR_MESSAGES[] = {
         "No error",           // NONE = 0
         "Init timeout",       // GENERAL_TIMEOUT = 1
         "Allocation failed",  // ALLOCATION_FAILED = 2

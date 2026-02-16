@@ -248,7 +248,7 @@ namespace LUTs {
     };
     
     // EDA_FLASH_CONST ensures Flash storage (O(1) RAM)
-    static constexpr EDA_FLASH_CONST SpectrumModeInfo SPECTRUM_MODES[] = {
+    EDA_FLASH_CONST static constexpr SpectrumModeInfo SPECTRUM_MODES[] = {
         {"ULTRA_NARROW", "Ultra Narrow",  8000000,  0},
         {"NARROW",       "Narrow",        12000000, 1},
         {"MEDIUM",       "Medium",        24000000, 2},
@@ -285,6 +285,25 @@ namespace LUTs {
 }
 
 // ===========================================
+// ERROR MESSAGE LUT (Zero-Heap, Flash-Resident)
+// ===========================================
+namespace ErrorHandling {
+    EDA_FLASH_CONST static constexpr const char* const ERROR_MESSAGES[] = {
+        "Success",
+        "Invalid argument",
+        "Value out of range",
+        "Null pointer",
+        "Buffer overflow",
+        "Allocation failed",
+        "File I/O error",
+        "Invalid frequency",
+        "Invalid RSSI",
+        "Timeout"
+    };
+    static_assert(sizeof(ERROR_MESSAGES) / sizeof(const char*) == 10, "ERROR_MESSAGES size");
+}
+
+// ===========================================
 // UNIFIED FREQUENCY FORMATTING (Zero-Heap)
 // ===========================================
 // Eliminates duplicate FrequencyFormatter/FrequencyFormat classes
@@ -296,7 +315,7 @@ namespace Formatting {
         int64_t  divider;
     };
     
-    static constexpr EDA_FLASH_CONST FrequencyScale FREQUENCY_SCALES[] = {
+    EDA_FLASH_CONST static constexpr FrequencyScale FREQUENCY_SCALES[] = {
         {1'000'000'000LL, "G", 1'000'000'000LL},  // GHz
         {1'000'000LL,     "M", 1'000'000LL},        // MHz
         {1'000LL,         "k", 1'000LL},            // kHz
@@ -424,22 +443,9 @@ struct ErrorResult {
     constexpr explicit operator bool() const noexcept { return is_ok(); }
 
     constexpr const char* error_message() const noexcept {
-        constexpr EDA_FLASH_CONST const char* error_messages[] = {
-            "Success",
-            "Invalid argument",
-            "Value out of range",
-            "Null pointer",
-            "Buffer overflow",
-            "Allocation failed",
-            "File I/O error",
-            "Invalid frequency",
-            "Invalid RSSI",
-            "Timeout"
-        };
-        
         const size_t code = static_cast<size_t>(error_code);
-        if (code < sizeof(error_messages) / sizeof(error_messages[0])) {
-            return error_messages[code];
+        if (code < sizeof(ErrorHandling::ERROR_MESSAGES) / sizeof(const char*)) {
+            return ErrorHandling::ERROR_MESSAGES[code];
         }
         return "Unknown error";
     }

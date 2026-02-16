@@ -346,7 +346,7 @@ struct ThreatClassifier {
 // ===========================================
 // Eliminates duplicate switch statements for trend symbols
 struct TrendSymbols {
-    static constexpr char SYMBOLS[4] EDA_FLASH_CONST = {
+    EDA_FLASH_CONST static constexpr char SYMBOLS[4] = {
         '=',  // STATIC (0)
         '^',  // APPROACHING (1)
         'v',  // RECEDING (2)

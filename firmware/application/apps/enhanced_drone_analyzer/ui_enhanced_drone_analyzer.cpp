@@ -74,7 +74,7 @@ Mutex sd_card_mutex;
 // ===========================================
 // Scott Meyers Item 15: Prefer constexpr to #define
 // Все строки хранятся во Flash, RAM не тратится
-static constexpr const char* const SCANNING_MODE_NAMES[] EDA_FLASH_CONST = {
+EDA_FLASH_CONST static constexpr const char* const SCANNING_MODE_NAMES[] = {
     "Database Scan",      // DATABASE = 0
     "Wideband Monitor",   // WIDEBAND_CONTINUOUS = 1
     "Hybrid Discovery"    // HYBRID = 2
@@ -151,7 +151,7 @@ const TrackedDrone& get_empty_drone() {
 
 // 🔴 OPTIMIZATION: static const array instead of vector to avoid heap allocation
 // Built-in database of known drone frequencies (2025)
-const std::array<DroneScanner::BuiltinDroneFreq, DroneScanner::BUILTIN_DB_SIZE> DroneScanner::BUILTIN_DRONE_DB EDA_FLASH_CONST = {{
+EDA_FLASH_CONST const std::array<DroneScanner::BuiltinDroneFreq, DroneScanner::BUILTIN_DB_SIZE> DroneScanner::BUILTIN_DRONE_DB = {{
     // --- LRS / Control (Long Range) ---
     { 868000000, "TBS Crossfire EU", DroneType::MILITARY_DRONE }, // Often used in FPV/DIY
     { 915000000, "TBS Crossfire US", DroneType::MILITARY_DRONE },
