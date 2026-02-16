@@ -111,7 +111,7 @@ constexpr uint32_t PREDICTION_FRESHNESS_MS = 5000;
 constexpr uint32_t FHSS_TRACKING_CONFIDENCE_MAX = 10;
 
 // ===== MEMORY =====
-constexpr size_t MAX_TRACKED_DRONES = 8;
+constexpr size_t MAX_TRACKED_DRONES = 16;
 constexpr size_t MAX_DISPLAYED_DRONES = 3;
 constexpr size_t DETECTION_TABLE_SIZE = 256;
 

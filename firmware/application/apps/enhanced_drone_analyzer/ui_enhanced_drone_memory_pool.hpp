@@ -15,12 +15,14 @@
 #include <array>
 #include <algorithm>
 
-// Forward declaration (defined in ui_enhanced_drone_analyzer.hpp)
+// Forward declarations (defined in ui_enhanced_drone_analyzer.hpp)
 namespace ui::apps::enhanced_drone_analyzer {
     struct DisplayDroneEntry;
+    class TrackedDrone;
 }
 
 #include "ui_drone_common_types.hpp"
+#include "ui_enhanced_drone_analyzer.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -194,29 +196,36 @@ public:
         return pools;
     }
 
-    // Pool для DetectionLogEntry (10 entries = ~2KB)
-    static constexpr size_t DETECTION_LOG_POOL_SIZE = 10;
+    // Pool для DetectionLogEntry (increased to 32 entries = ~6.4KB)
+    static constexpr size_t DETECTION_LOG_POOL_SIZE = 32;
     using DetectionLogPool = FixedSizeMemoryPool<DetectionLogEntry, DETECTION_LOG_POOL_SIZE>;
 
-    // Pool для DisplayDroneEntry (8 entries = ~1.6KB)
-    static constexpr size_t DISPLAY_DRONE_POOL_SIZE = 8;
+    // Pool для DisplayDroneEntry (increased to 16 entries = ~3.2KB)
+    static constexpr size_t DISPLAY_DRONE_POOL_SIZE = 16;
     using DisplayDronePool = FixedSizeMemoryPool<DisplayDroneEntry, DISPLAY_DRONE_POOL_SIZE>;
+
+    // Pool для TrackedDrone (new pool - 16 entries)
+    static constexpr size_t TRACKED_DRONE_POOL_SIZE = 16;
+    using TrackedDronePool = FixedSizeMemoryPool<TrackedDrone, TRACKED_DRONE_POOL_SIZE>;
 
     DetectionLogPool& detection_log_pool() { return detection_log_pool_; }
     DisplayDronePool& display_drone_pool() { return display_drone_pool_; }
+    TrackedDronePool& tracked_drone_pool() { return tracked_drone_pool_; }
 
     // Prevent copying
     EDAMemoryPools(const EDAMemoryPools&) = delete;
     EDAMemoryPools& operator=(const EDAMemoryPools&) = delete;
 
- private:
+  private:
     EDAMemoryPools()  // Explicit initialization to fix -Weffc++ warning
         : detection_log_pool_(),
-          display_drone_pool_() {}
+          display_drone_pool_(),
+          tracked_drone_pool_() {}
     ~EDAMemoryPools() = default;
 
     DetectionLogPool detection_log_pool_;
     DisplayDronePool display_drone_pool_;
+    TrackedDronePool tracked_drone_pool_;
 };
 
 // ============================================
