@@ -250,6 +250,7 @@ struct DronePreset {
 
 // DetectionLogEntry structure for asynchronous logging
 // This is a POD (Plain Old Data) structure for safe memory copying
+#pragma pack(push, 1)
 struct DetectionLogEntry {
     uint32_t timestamp;
     uint64_t frequency_hz;  // uint64_t for frequencies > 4GHz
@@ -262,6 +263,7 @@ struct DetectionLogEntry {
     uint32_t signal_width_hz;     // Signal width in Hz (for calibration)
     uint8_t snr;                  // Signal-to-Noise Ratio (for calibration)
 };
+#pragma pack(pop)
 
 }  // namespace ui::apps::enhanced_drone_analyzer
 

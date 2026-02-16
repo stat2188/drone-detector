@@ -81,7 +81,7 @@ public:
             return result;
         }
 
-        constexpr size_t HISTOGRAM_BINS = 128;
+        constexpr size_t HISTOGRAM_BINS = 64;
 
         std::array<uint16_t, HISTOGRAM_BINS> histogram{};
         histogram.fill(0);
@@ -91,7 +91,7 @@ public:
         for (size_t i = SpectralAnalysisConfig::VALID_BIN_START;
              i < SpectralAnalysisConfig::VALID_BIN_END; i++) {
             const uint8_t value = db_buffer[i];
-            histogram[value / 2]++;
+            histogram[value / 4]++;
             sum += value;
         }
 
@@ -102,7 +102,7 @@ public:
         for (size_t bin = 0; bin < HISTOGRAM_BINS; bin++) {
             cumulative += histogram[bin];
             if (cumulative > MEDIAN_TARGET) {
-                noise_floor = static_cast<uint8_t>(bin * 2);
+                noise_floor = static_cast<uint8_t>(bin * 4);
                 break;
             }
         }

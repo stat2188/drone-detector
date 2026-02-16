@@ -111,7 +111,7 @@ constexpr uint32_t PREDICTION_FRESHNESS_MS = 5000;
 constexpr uint32_t FHSS_TRACKING_CONFIDENCE_MAX = 10;
 
 // ===== MEMORY =====
-constexpr size_t MAX_TRACKED_DRONES = 16;
+constexpr size_t MAX_TRACKED_DRONES = 8;
 constexpr size_t MAX_DISPLAYED_DRONES = 3;
 constexpr size_t DETECTION_TABLE_SIZE = 256;
 
@@ -230,8 +230,8 @@ namespace LUTs {
         uint8_t    ui_index;        // OptionsField index
     };
     
-    // constexpr ensures Flash storage (O(1) RAM)
-    static constexpr SpectrumModeInfo SPECTRUM_MODES[] = {
+    // EDA_FLASH_CONST ensures Flash storage (O(1) RAM)
+    static constexpr EDA_FLASH_CONST SpectrumModeInfo SPECTRUM_MODES[] = {
         {"ULTRA_NARROW", "Ultra Narrow",  8000000,  0},
         {"NARROW",       "Narrow",        12000000, 1},
         {"MEDIUM",       "Medium",        24000000, 2},
@@ -270,7 +270,7 @@ namespace Formatting {
         int64_t  divider;
     };
     
-    static constexpr FrequencyScale FREQUENCY_SCALES[] = {
+    static constexpr EDA_FLASH_CONST FrequencyScale FREQUENCY_SCALES[] = {
         {1'000'000'000LL, "G", 1'000'000'000LL},  // GHz
         {1'000'000LL,     "M", 1'000'000LL},        // MHz
         {1'000LL,         "k", 1'000LL},            // kHz
