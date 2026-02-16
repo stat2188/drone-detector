@@ -268,9 +268,18 @@ inline SettingsStaticBuffer& get_settings_buffer() {
     return buf;
 }
 
+// Stack usage documentation for settings loading buffers
 struct SettingsLoadBuffer {
+    // LINE_BUFFER_SIZE: 144 bytes
+    // Purpose: Stores individual settings lines during parsing
+    // Reasoning: Maximum expected line length is 128 bytes (+16 byte safety margin)
     static constexpr size_t LINE_BUFFER_SIZE = 144;
+    
+    // READ_BUFFER_SIZE: 256 bytes
+    // Purpose: Reads raw data from SD card in chunks
+    // Reasoning: Balances I/O efficiency and stack usage (256 bytes is ChibiOS sector size friendly)
     static constexpr size_t READ_BUFFER_SIZE = 256;
+    
     static char line_buffer[LINE_BUFFER_SIZE];
     static char read_buffer[READ_BUFFER_SIZE];
 };

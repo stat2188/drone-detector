@@ -327,8 +327,8 @@ public:
 
         // Check if we have enough space
         if (offset_ + length + 1 >= POOL_SIZE) {
-            // Pool full - reset to beginning (simple circular buffer)
-            offset_ = 0;
+            // Pool full - return nullptr instead of wrap-around to prevent data corruption
+            return nullptr;
         }
 
         char* result = pool_ + offset_;
@@ -339,6 +339,14 @@ public:
 
     void reset() {
         offset_ = 0;
+    }
+
+    size_t remaining() const {
+        return POOL_SIZE - offset_;
+    }
+
+    bool is_full(size_t length) const {
+        return (offset_ + length + 1 >= POOL_SIZE);
     }
 
     StringPool(const StringPool&) = delete;
@@ -380,7 +388,15 @@ private:
     Semaphore data_ready_;                      // Declared 3rd
     volatile bool worker_should_run_ = false;   // Declared 4th
 
-    // ФАЗА 5.3: Статический стек для worker thread
+    // STACK USAGE DOCUMENTATION: Worker Thread Stack
+    // Stack size: 4096 bytes (4KB)
+    // Purpose: File I/O operations, string formatting, and buffer management
+    // 
+    // Stack Usage Breakdown:
+    // - CSV line formatting: ~128 bytes (line_buffer_)
+    // - File operations (fopen/fwrite): ~200 bytes (C standard library overhead)
+    // - Log entry processing: ~64 bytes (DetectionLogEntry)
+    // - Stack safety margin: ~3704 bytes (to account for C standard library and ChibiOS overhead)
     static constexpr size_t WORKER_STACK_SIZE = 4096;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
 
