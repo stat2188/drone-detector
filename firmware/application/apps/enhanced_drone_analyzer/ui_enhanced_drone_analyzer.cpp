@@ -105,50 +105,6 @@ static_assert(sizeof(SCANNING_MODE_NAMES) / sizeof(const char*) == 3, "SCANNING_
 // (ui_enhanced_drone_analyzer.hpp) for access to private members
 
 // ===========================================
-// 🔴 REMOVED: ФАЗА 0.1: HEAP DIAGNOSTICS (Dead Code)
-// ===========================================
-// REASON: Never outputs anything (buffer created but never used)
-// SAVES: ~36 lines Flash, ~150 bytes
-//
-// namespace HeapDiagnostics {
-//     extern "C" {
-//         extern uint8_t __heap_base__;
-//         extern uint8_t __heap_end__;
-//     }
-// 
-//     inline size_t get_heap_total() {
-//         return &__heap_end__ - &__heap_base__;
-//     }
-//     
-//     inline size_t get_heap_free() {
-//         size_t free = 0;
-//         chHeapStatus(nullptr, &free);
-//         return free;
-//     }
-//     
-//     inline size_t get_heap_used() {
-//         return get_heap_total() - get_heap_free();
-//     }
-//     
-//     inline void log_heap_status(const char* phase) {
-//         size_t used = get_heap_used();
-//         size_t total = get_heap_total();
-//         if (total > 0 && used < total) {
-//             uint8_t percent = static_cast<uint8_t>((used * 100) / total);
-//             char buf[64];
-//             snprintf(buf, sizeof(buf), "%s heap: %lu/%lu (%d%%)", 
-//                      phase,
-//                      static_cast<unsigned long>(used),
-//                      static_cast<unsigned long>(total),
-//                      percent);
-//             // Вывод через status bar или debug console
-//             // Здесь буферизация для последующего использования
-//         }
-//     }
-// }
-
-
-// ===========================================
 // STATIC MEMBER DEFINITIONS
 // ===========================================
 // Diamond Code: Out-of-line definitions for static class members
@@ -164,17 +120,6 @@ stkalign_t DroneDetectionLogger::worker_wa_[THD_WA_SIZE(DroneDetectionLogger::WO
 // DroneScanner static member definition for thread working area
 // WORKING_AREA macro expands to: stkalign_t name[THD_WA_SIZE(n) / sizeof(stkalign_t)]
 stkalign_t DroneScanner::db_loading_wa_[THD_WA_SIZE(DroneScanner::DB_LOADING_STACK_SIZE) / sizeof(stkalign_t)];
-
-// 🔴 REMOVED: get_empty_drone() (Dead Code - optimize to inline)
-// REASON: Single-use function can be inlined or replaced with constexpr
-// SAVES: ~10 bytes Flash
-//
-// const TrackedDrone& get_empty_drone() {
-//     static const TrackedDrone empty{};
-//     return empty;
-// }
-
-
 
 // 🔴 OPTIMIZATION: static const array instead of vector to avoid heap allocation
 // Built-in database of known drone frequencies (2025)
@@ -1664,24 +1609,6 @@ bool DroneScanner::is_database_loading_complete() const {
     return !db_loading_active_.load(std::memory_order_acquire) && freq_db_loaded_;
 }
 
-// 🔴 REMOVED: scan_init_from_loaded_frequencies() (Empty function - Dead Code)
-// REASON: Function does nothing, wastes Flash and call overhead
-// SAVES: ~4 lines Flash, ~10 bytes
-//
-// void DroneScanner::scan_init_from_loaded_frequencies() {
-// }
-
-// 🔴 REMOVED: validate_detection_simple() (Dead Code - never called)
-// REASON: Defined but never used anywhere in codebase
-// SAVES: ~7 lines Flash, ~30 bytes
-//
-// bool DroneScanner::validate_detection_simple(int32_t rssi_db, ThreatLevel threat) {
-//     constexpr int32_t RSSI_THRESHOLDS[5] = {-120, -100, -85, -70, -50};
-//     uint8_t threat_idx = static_cast<uint8_t>(threat);
-//     uint8_t idx = (threat_idx < 5) ? threat_idx : 0;
-//     return rssi_db >= RSSI_THRESHOLDS[idx];
-// }
-
 Frequency DroneScanner::get_current_scanning_frequency() const {
     // 🔴 FIX: Use freq_db_ptr_ instead of freq_db_
     if (!freq_db_ptr_) return 433000000;
@@ -1706,14 +1633,6 @@ const TrackedDrone& DroneScanner::getTrackedDrone(size_t index) const {
     static const TrackedDrone empty_drone{};
     return empty_drone;
 }
-
-// 🔴 REMOVED: get_session_summary() (Dead Code - never called)
-// REASON: Returns std::string but never invoked anywhere in codebase
-// SAVES: ~4 lines Flash, eliminates heap allocation
-//
-// std::string DroneScanner::get_session_summary() const {
-//     return detection_logger_.format_session_summary(get_scan_cycles(), get_total_detections());
-// }
 
 void DroneScanner::handle_scan_error([[maybe_unused]] const char* error_msg) {
     // Store last error for diagnostics (accessed via get_last_scan_error if needed)
@@ -1979,79 +1898,6 @@ const char* DroneDetectionLogger::generate_log_filename() const {
     return "EDA_LOG.CSV";
 }
 
-// 🔴 REMOVED: format_session_summary() (Dead Code - never called)
-// REASON: Returns std::string but only invoked by get_session_summary() which is dead code
-// SAVES: ~65 lines Flash, eliminates complex heap allocations
-//
-// std::string DroneDetectionLogger::format_session_summary(size_t scan_cycles, size_t total_detections) const {
-//     // ОПТИМИЗАЦИЯ ПАМЯТИ: Уменьшаем буфер с 256 до 128 байт (экономия 128 байт)
-//     // Добавляем защиту от переполнения и оптимизируем форматирование
-//
-//     char buffer[128]; // Оптимизированный буфер (128 байт)
-//     size_t offset = 0;
-//
-//     // Функция безопасной записи с проверкой переполнения
-//     auto safe_append = [&](const char* format, ...) -> bool {
-//         if (offset >= sizeof(buffer) - 64) { // Оставляем запас 64 байта
-//             return false;
-//         }
-//         
-//         va_list args;
-//         va_start(args, format);
-//         int written = vsnprintf(buffer + offset, sizeof(buffer) - offset, format, args);
-//         va_end(args);
-//         
-//         if (written < 0 || written >= (int)(sizeof(buffer) - offset)) {
-//             return false; // Переполнение
-//         }
-//         
-//         offset += written;
-//         return true;
-//     };
-//
-//     // Форматируем заголовок
-//     if (!safe_append("SCANNING SESSION COMPLETE\n========================\n\nSESSION STATISTICS:\n")) {
-//         return std::string("Session summary too long");
-//     }
-//
-//     // Вычисляем длительность сессии с integer арифметикой
-//     uint32_t session_duration_ms = chTimeNow() - session_start_;
-//     if (session_duration_ms == 0) session_duration_ms = 1;
-//
-//     uint32_t int_part = session_duration_ms / 1000;
-//     uint32_t frac_part = (session_duration_ms % 1000) / 10; // 2 знака после запятой
-//
-//     if (!safe_append("Duration: %lu.%02lu seconds\n",
-//                     (unsigned long)int_part, (unsigned long)frac_part)) {
-//         return std::string("Session summary too long");
-//     }
-//
-//     if (!safe_append("Scan Cycles: %lu\nTotal Detections: %lu\n\nPERFORMANCE:\n",
-//                     static_cast<unsigned long>(scan_cycles),
-//                     static_cast<unsigned long>(total_detections))) {
-//         return std::string("Session summary too long");
-//     }
-//
-//     // Вычисляем метрики с integer арифметикой
-//     uint32_t avg_det_x100 = (scan_cycles > 0) ? (total_detections * 100) / scan_cycles : 0;
-//     uint32_t rate_x10 = (uint64_t)total_detections * 10000 / session_duration_ms;
-//
-//     if (!safe_append("Avg. detections/cycle: %lu.%02lu\nDetection rate: %lu.%lu/sec\nLogged entries: %lu\n\nEnhanced Drone Analyzer v0.3",
-//                     avg_det_x100 / 100, avg_det_x100 % 100,
-//                     rate_x10 / 10, rate_x10 % 10,
-//                     static_cast<unsigned long>(logged_count_))) {
-//         return std::string("Session summary too long");
-//     }
-//
-//     // Гарантируем нулевой терминатор
-//     if (offset >= sizeof(buffer)) {
-//         offset = sizeof(buffer) - 1;
-//     }
-//     buffer[offset] = '\0';
-//
-//     return std::string(buffer);
-// }
-
 // ===========================================
 // PART 3: HARDWARE CONTROLLER IMPLEMENTATION
 // ===========================================
@@ -2284,13 +2130,6 @@ bool DroneHardwareController::is_spectrum_streaming_active() const {
 int32_t DroneHardwareController::get_current_rssi() const {
     return last_valid_rssi_;
 }
-
-// 🔴 REMOVED: update_spectrum_for_scanner() (Empty function - Dead Code)
-// REASON: Function does nothing, wastes Flash and call overhead
-// SAVES: ~4 lines Flash, ~10 bytes
-//
-// void DroneHardwareController::update_spectrum_for_scanner() {
-// }
 
 // ===========================================
 // PART 4: UI IMPLEMENTATIONS
@@ -3769,13 +3608,6 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
     // 🔴 SAFETY: Установка флага (для защиты от re-entrancy)
     initialization_in_progress_ = true;
 
-    // 🔴 REMOVED: ФАЗА 0.2 HeapDiagnostics (Dead Code - no longer exists)
-    // REASON: HeapDiagnostics namespace was removed (never output anything)
-    //
-    // if (init_state_ == InitState::CONSTRUCTED) {
-    //     HeapDiagnostics::log_heap_status("START");
-    // }
-
     // 🔴 SAFETY: Проверка таймаута (защита от зависаний)
     systime_t elapsed = chTimeNow() - init_start_time_;
     if (elapsed > MS2ST(InitTiming::TIMEOUT_MS)) {
@@ -3826,13 +3658,6 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
                 status_msg = "Loading database...";
             }
             status_bar_.update_normal_status("INIT", status_msg);
-
-            // 🔴 REMOVED: ФАЗА 0.2 HeapDiagnostics (Dead Code - no longer exists)
-            // REASON: HeapDiagnostics namespace was removed (never output anything)
-            //
-            // if (i < 6 && static_cast<size_t>(init_state_) >= static_cast<size_t>(i + 1)) {
-            //     HeapDiagnostics::log_heap_status(PHASE_NAMES[i]);
-            // }
 
         }
     }
@@ -4564,32 +4389,6 @@ Frequency CompactFrequencyRuler::calculate_optimal_tick_interval() {
     return range / target_tick_count_;
 }
 
-// 🔴 REMOVED: determine_auto_style() (Dead Code - never called)
-// REASON: Defined but never invoked anywhere in codebase
-// SAVES: ~22 lines Flash, ~60 bytes
-//
-// RulerStyle CompactFrequencyRuler::determine_auto_style() {
-//     Frequency range = max_freq_ - min_freq_;
-//     bool use_mhz = should_use_mhz_labels();
-//
-//     if (use_mhz) {
-//         if (static_cast<uint64_t>(range) < 100000000ULL) {
-//             return RulerStyle::DETAILED;
-//         } else {
-//             return RulerStyle::STANDARD_MHZ;
-//         }
-//     } else {
-//         // Optimal for PortaPack: Use SPACED_GHZ for wide ranges (>1GHz)
-//         if (static_cast<uint64_t>(range) >= 1000000000ULL) {
-//             return RulerStyle::SPACED_GHZ;
-//         } else if (static_cast<uint64_t>(range) >= 500000000ULL) {
-//             return RulerStyle::STANDARD_GHZ;
-//         } else {
-//             return RulerStyle::COMPACT_GHZ;
-//         }
-//     }
-// }
-
 bool CompactFrequencyRuler::should_use_mhz_labels() const {
     Frequency range = max_freq_ - min_freq_;
 
@@ -4609,183 +4408,6 @@ bool CompactFrequencyRuler::should_use_mhz_labels() const {
 
     return false;
 }
-
-// ===========================================
-// 🔴 REMOVED: PART 7 - FREQUENCY RULER IMPLEMENTATION (Dead Code - Duplicate)
-// ===========================================
-// REASON: Duplicate of CompactFrequencyRuler, never used in codebase
-//         Only CompactFrequencyRuler is referenced in apply_display_settings()
-// SAVES: ~170 lines Flash, ~500 bytes
-//
-// FrequencyRuler::FrequencyRuler(Rect parent_rect)
-//     : View(parent_rect),
-//       min_freq_(2400000000ULL),
-//       max_freq_(2500000000ULL),
-//       spectrum_width_(240),
-//       visible_(true) {
-// }
-//
-// void FrequencyRuler::set_frequency_range(Frequency min_freq, Frequency max_freq) {
-//     min_freq_ = min_freq;
-//     max_freq_ = max_freq;
-//     set_dirty();
-// }
-//
-// void FrequencyRuler::set_spectrum_width(int width) {
-//     spectrum_width_ = width;
-//     set_dirty();
-// }
-//
-// void FrequencyRuler::set_visible(bool visible) {
-//     visible_ = visible;
-//     if (!visible) {
-//         hidden(true);
-//     } else {
-//         hidden(false);
-//     }
-// }
-//
-// Frequency FrequencyRuler::calculate_tick_interval() {
-//     Frequency freq_range = max_freq_ - min_freq_;
-//     if (freq_range == 0) {
-//         return 1000000000ULL;  // Default: 1 GHz
-//     }
-//
-//     // Possible intervals in Hz (from largest to smallest)
-//     Frequency intervals[] = {
-//         4000000000ULL,  // 4 GHz
-//         2000000000ULL,  // 2 GHz
-//         1000000000ULL,  // 1 GHz
-//         500000000ULL,   //500 MHz
-//         200000000ULL,   // 200 MHz
-//         100000000ULL,   // 100 MHz
-//         50000000ULL,    // 50 MHz
-//         20000000ULL,    // 20 MHz
-//         10000000ULL,    // 10 MHz
-//         5000000ULL,     // 5 MHz
-//         2000000ULL,     // 2 MHz
-//         1000000ULL      // 1 MHz
-//     };
-//
-//     size_t num_intervals = sizeof(intervals) / sizeof(intervals[0]);
-//
-//     // Select interval so that we have 4-8 ticks on screen
-//     for (size_t i = 0; i < num_intervals; i++) {
-//         if (freq_range / intervals[i] <= 8 && freq_range / intervals[i] >= 4) {
-//             return intervals[i];
-//         }
-//     }
-//
-//     // Fallback: use 6 ticks evenly distributed
-//     return freq_range / 6;
-// }
-//
-// // DIAMOND OPTIMIZATION: Lookup tables for frequency ruler configuration
-// // Scott Meyers Item 15: Prefer constexpr to #define
-// // Eliminates conditional std::string allocation and branching
-// namespace {
-//     // Tick configuration LUT (Flash storage, zero RAM at runtime)
-//     struct TickConfig {
-//         FrequencyFormatter::Format format;
-//         uint8_t sub_ticks;  // Bitfield: 0=none, 1..5=count
-//     };
-//
-//     static constexpr TickConfig TICK_CONFIG_LUT[] = {
-//         {FrequencyFormatter::Format::STANDARD_GHZ, 5},  // >= 1 GHz
-//         {FrequencyFormatter::Format::STANDARD_MHZ, 5},  // >= 1 MHz
-//         {FrequencyFormatter::Format::COMPACT_MHZ, 0}    // < 1 MHz
-//     };
-//
-//     // Get config index from tick_interval (constexpr-friendly)
-//     constexpr uint8_t get_tick_config_index(Frequency tick_interval) {
-//         return (static_cast<uint64_t>(tick_interval) >= 1000000000ULL) ? 0 :
-//                (static_cast<uint64_t>(tick_interval) >= 1000000ULL) ? 1 : 2;
-//     }
-// }
-//
-// void FrequencyRuler::format_frequency_label(char* buffer, size_t buffer_size, Frequency freq, Frequency tick_interval) {
-//     uint8_t idx = get_tick_config_index(tick_interval);
-//     FrequencyFormatter::format_to_buffer(buffer, buffer_size, freq, TICK_CONFIG_LUT[idx].format);
-// }
-//
-// void FrequencyRuler::draw_frequency_ticks(Painter& painter, const Rect r) {
-//     Frequency tick_interval = calculate_tick_interval();
-//     Frequency range = max_freq_ - min_freq_;
-//     if (range == 0) return;  // Early exit pattern
-//
-//     // LUT lookup for configuration (Flash storage, zero RAM allocation)
-//     const TickConfig& config = TICK_CONFIG_LUT[get_tick_config_index(tick_interval)];
-//
-//     // Style for tick labels (small font 5x8)
-//     static Style ruler_style{font::fixed_5x8, Color::grey(), Color::black()};
-//
-//     // Draw horizontal line at bottom of ruler (using 1-pixel rectangle)
-//     painter.fill_rectangle(
-//         {r.left(), r.top() + RULER_HEIGHT - 1, r.width(), 1},
-//         Theme::getInstance()->bg_darkest->foreground
-//     );
-//
-//     // Find first tick
-//     Frequency first_tick = (min_freq_ / tick_interval) * tick_interval;
-//     if (first_tick < min_freq_) {
-//         first_tick += tick_interval;
-//     }
-//
-//     // Draw ticks and labels
-//     for (Frequency tick = first_tick; tick <= max_freq_; tick += tick_interval) {
-//         // Convert frequency to x position
-//         int x = r.left() + static_cast<int>(((tick - min_freq_) * spectrum_width_) / range);
-//
-//         if (x < r.left() || x > r.right()) {
-//             continue;
-//         }
-//
-//         // Draw major tick (tall) - using 1-pixel rectangle
-//         painter.fill_rectangle(
-//             {x, r.top(), 1, TICK_HEIGHT_MAJOR},
-//             Theme::getInstance()->bg_darkest->foreground
-//         );
-//
-//         char label_buf[32];
-//         format_frequency_label(label_buf, sizeof(label_buf), tick, tick_interval);
-//
-//         auto text_size = ruler_style.font.size_of(label_buf);
-//         int text_x = x - text_size.width() / 2;
-//         int text_y = r.top() + 1;
-//
-//         if (text_x < r.left() + 2) text_x = r.left() + 2;
-//         if (text_x + text_size.width() > r.right() - 2) {
-//             text_x = r.right() - text_size.width() - 2;
-//         }
-//
-//         painter.draw_string({text_x, text_y}, ruler_style, label_buf);
-//
-//         // Add intermediate ticks if configured (LUT lookup, zero branching)
-//         for (uint8_t sub = 1; sub <= config.sub_ticks; sub++) {
-//             Frequency sub_tick = tick + (tick_interval * sub) / (config.sub_ticks + 1);
-//             int sub_x = r.left() + static_cast<int>(((sub_tick - min_freq_) * spectrum_width_) / range);
-//
-//             if (sub_x > r.left() && sub_x < r.right()) {
-//                 painter.fill_rectangle(
-//                     {sub_x, r.top(), 1, TICK_HEIGHT_MINOR},
-//                     Theme::getInstance()->bg_darkest->foreground
-//                 );
-//             }
-//         }
-//     }
-// }
-//
-// void FrequencyRuler::paint(Painter& painter) {
-//     const auto r = screen_rect();
-//
-//     // Fill background
-//     painter.fill_rectangle(r, Color::black());
-//
-//     // Draw frequency ticks and labels
-//     if (visible_) {
-//         draw_frequency_ticks(painter, r);
-//     }
-// }
 
 void DroneDisplayController::update_frequency_ruler() {
     compact_frequency_ruler_.set_frequency_range(spectrum_config_.min_freq, spectrum_config_.max_freq);

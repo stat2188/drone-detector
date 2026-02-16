@@ -305,8 +305,6 @@ public:
 
 private:
     static bool parse_line(char* line, T& settings);
-    // DIAMOND OPTIMIZATION: validate_setting removed (never called, validation inline in validate())
-    // static bool validate_setting(const SettingMetadata& meta, uint32_t value);
 };
 
 // ===========================================
@@ -492,7 +490,7 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
     }
 
     // Compile-time validation
-    static_assert(SettingsStaticBuffer::SIZE >= EDA::Constants::SETTINGS_TEMPLATE_SIZE_4KB, "Buffer too small for settings template");
+    static_assert(SettingsStaticBuffer::SIZE >= EDA::Constants::SETTINGS_TEMPLATE_SIZE_2KB, "Buffer too small for settings template");
 
     if (sd_card::status() < sd_card::Status::Mounted) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);

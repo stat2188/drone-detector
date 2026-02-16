@@ -835,10 +835,6 @@ bool DroneAnalyzerSettingsView::on_key(const KeyEvent key) {
 bool DroneAnalyzerSettingsView::on_touch(const TouchEvent event) { return View::on_touch(event); }
 void DroneAnalyzerSettingsView::on_show() { View::on_show(); }
 void DroneAnalyzerSettingsView::on_hide() { View::on_hide(); }
-// DEPRECATED: show_tabbed_settings() removed - EDATabbedSettingsView no longer available
-// void DroneAnalyzerSettingsView::show_tabbed_settings() {
-//     nav_.push<EDATabbedSettingsView>();
-// }
 void DroneAnalyzerSettingsView::show_audio_settings() { nav_.push<AudioSettingsView>(); }
 void DroneAnalyzerSettingsView::show_hardware_settings() { nav_.push<HardwareSettingsView>(); }
 void DroneAnalyzerSettingsView::show_scanning_settings() { nav_.push<ScanningSettingsView>(); }

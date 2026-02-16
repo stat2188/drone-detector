@@ -631,18 +631,8 @@ struct DetectionParams {
                                    const SpectralAnalysisResult& analysis_result,
                                    ThreatLevel threat_level, DroneType drone_type);
 
-    // 🔴 REMOVED: validate_detection_simple() (Dead Code - never called)
-    // REASON: Defined but never invoked anywhere in codebase
-    //
-    // bool validate_detection_simple(int32_t rssi_db, ThreatLevel threat);
-
     static msg_t scanning_thread_function(void* arg);
     msg_t scanning_thread();
-
-    // 🔴 REMOVED: scan_init_from_loaded_frequencies() (Dead Code - empty function)
-    // REASON: Function does nothing, wastes Flash and call overhead
-    //
-    // void scan_init_from_loaded_frequencies();
 
     void perform_database_scan_cycle(DroneHardwareController& hardware);
     void perform_wideband_scan_cycle(DroneHardwareController& hardware);
@@ -819,11 +809,6 @@ public:
 
     void clear_rssi_flag();
     bool is_rssi_fresh() const;
-
-    // 🔴 REMOVED: update_spectrum_for_scanner() (Dead Code - empty function)
-    // REASON: Function does nothing, wastes Flash and call overhead
-    //
-    // void update_spectrum_for_scanner();
 
     // 🔴 FIXED: TOCTOU race condition - atomic check-and-fetch method
     bool get_rssi_if_fresh(int32_t& out_rssi) {
@@ -1131,36 +1116,6 @@ private:
     void draw_compact_ticks(Painter& painter, const Rect r);
     void format_compact_label(char* buffer, size_t buffer_size, Frequency freq);
 };
-
-// 🔴 REMOVED: FrequencyRuler class (Dead Code - duplicate, never used)
-// REASON: Complete duplicate of CompactFrequencyRuler, never referenced in codebase
-//         Only CompactFrequencyRuler is used in apply_display_settings()
-// SAVES: ~60 lines Flash, ~500 bytes
-//
-// class FrequencyRuler : public View {
-// public:
-//     explicit FrequencyRuler(Rect parent_rect = {0, 0, screen_width, 12});
-//     ~FrequencyRuler() override = default;
-//
-//     void set_frequency_range(Frequency min_freq, Frequency max_freq);
-//     void set_spectrum_width(int width);
-//     void set_visible(bool visible);
-//     void paint(Painter& painter) override;
-//
-// private:
-//     Frequency min_freq_;
-//     Frequency max_freq_;
-//     int spectrum_width_;
-//     bool visible_;
-//
-//     static constexpr int RULER_HEIGHT = 12;
-//     static constexpr int TICK_HEIGHT_MAJOR = 10;
-//     static constexpr int TICK_HEIGHT_MINOR = 6;
-//
-//     void draw_frequency_ticks(Painter& painter, const Rect r);
-//     Frequency calculate_tick_interval();
-//     void format_frequency_label(char* buffer, size_t buffer_size, Frequency freq, Frequency tick_interval);
-// };
 
 class DroneDisplayController : public View {
 public:
