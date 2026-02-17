@@ -155,6 +155,19 @@ inline bool is_value_in_range(int64_t val, int64_t min_val, int64_t max_val) {
     return val >= min_val && val <= max_val;
 }
 
+inline size_t safe_strlen(const char* str, size_t max_len) {
+    if (!str) return 0;
+    size_t len = 0;
+    while (len < max_len && str[len] != '\0') {
+        len++;
+    }
+    return len;
+}
+
+inline size_t const_strlen(const char* str) {
+    return str ? strlen(str) : 0;
+}
+
 inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
                                 const DroneAnalyzerSettings& s, const SettingMetadata& meta) {
     const uint8_t* data = reinterpret_cast<const uint8_t*>(&s) + meta.offset;
@@ -248,14 +261,14 @@ struct SettingsLoadBuffer {
     // Purpose: Stores individual settings lines during parsing
     // Reasoning: Maximum expected line length is 128 bytes (+16 byte safety margin)
     static constexpr size_t LINE_BUFFER_SIZE = 144;
-    
+
     // READ_BUFFER_SIZE: 256 bytes
     // Purpose: Reads raw data from SD card in chunks
     // Reasoning: Balances I/O efficiency and stack usage (256 bytes is ChibiOS sector size friendly)
     static constexpr size_t READ_BUFFER_SIZE = 256;
-    
-    static char line_buffer[LINE_BUFFER_SIZE];
-    static char read_buffer[READ_BUFFER_SIZE];
+
+    char line_buffer[LINE_BUFFER_SIZE];
+    char read_buffer[READ_BUFFER_SIZE];
 };
 
 // 🔴 HIGH PRIORITY FIX: Remove incorrect FLASH_STORAGE attribute
