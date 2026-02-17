@@ -95,8 +95,8 @@ private:
 
 // MEDIUM PRIORITY FIX: Replaced std::function with raw function pointer to eliminate heap allocation
 // std::function allocates on heap - raw function pointers are stack-only
-// However, lambdas with captures need std::function - revert for stateful callbacks
-// using PresetMenuView = void(*)(const DronePreset&); // REMOVED - use std::function for lambda support
+// For stateful callbacks, use template-based approach (see DronePresetSelector below)
+// using PresetMenuView = void(*)(const DronePreset&); // REMOVED - use template-based approach
 // using FilteredPresetMenuView = void(*)(const DronePreset&, const std::vector<DronePreset>&); // DEPRECATED - not used
 
 class DroneFrequencyPresets {
@@ -113,11 +113,81 @@ public:
     static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset);
 };
 
+// CRITICAL FIX: Replaced std::function with template-based callbacks
+// std::function heap-allocates when capturing - FORBIDDEN in embedded systems
+// Scott Meyers Item 30: Understand the ins and outs of inlining
+// Template-based approach enables compile-time polymorphism with zero heap allocation
+
+// Functor for config updates - zero heap allocation, fixed storage
+struct ConfigUpdaterCallback {
+    DroneAnalyzerSettings* config_ptr;
+    
+    constexpr explicit ConfigUpdaterCallback(DroneAnalyzerSettings& config) noexcept 
+        : config_ptr(&config) {}
+    
+    void operator()(const DronePreset& preset) const {
+        if (config_ptr) {
+            DroneFrequencyPresets::apply_preset(*config_ptr, preset);
+        }
+    }
+};
+
+// CRITICAL FIX: Template-based callback system - zero heap allocation
+// Scott Meyers Item 46: Define non-member functions inside templates when type conversions are needed
+// Template parameter Callback accepts any callable type (lambda, functor, function pointer)
+// This eliminates std::function which heap-allocates when capturing state
+template <typename PresetContainer, typename Callback>
+class PresetMenuViewImpl : public MenuView {
+public:
+    PresetMenuViewImpl(NavigationView& nav, const char* const* names, size_t count,
+                       Callback on_selected, const PresetContainer& presets)
+        : MenuView(), nav_(nav), names_(names), name_count_(count),
+          on_selected_fn_(std::move(on_selected)), presets_(presets) {
+        for (size_t i = 0; i < name_count_; ++i) {
+            add_item({names_[i], Color::white(), nullptr, nullptr});
+        }
+    }
+
+    PresetMenuViewImpl(const PresetMenuViewImpl&) = delete;
+    PresetMenuViewImpl& operator=(const PresetMenuViewImpl&) = delete;
+
+private:
+    NavigationView& nav_;
+    const char* const* names_;
+    size_t name_count_;
+    Callback on_selected_fn_;  // Template parameter - no heap allocation
+    const PresetContainer& presets_;
+
+    bool on_key(const KeyEvent key) override {
+        if (key == KeyEvent::Select) {
+            size_t idx = highlighted_index();
+            if (idx < presets_.size()) {
+                on_selected_fn_(presets_[idx]);
+            }
+            return true;
+        }
+        return MenuView::on_key(key);
+    }
+};
+
 class DronePresetSelector {
 public:
-    static void show_preset_menu(NavigationView& nav, std::function<void(const DronePreset&)> callback);
+    // Template-based callback - accepts any callable type without heap allocation
+    // Implementation must be in header for implicit template instantiation
+    template <typename Callback>
+    static void show_preset_menu(NavigationView& nav, Callback callback) {
+        const auto preset_names = DroneFrequencyPresets::get_preset_names();
+        const auto& all_presets = DroneFrequencyPresets::get_all_presets();
+        const auto preset_count = DroneFrequencyPresets::get_preset_count();
+
+        using PresetMenuViewT = PresetMenuViewImpl<std::array<DronePreset, 5>, Callback>;
+        nav.push<PresetMenuViewT>(preset_names, preset_count, std::move(callback), all_presets);
+    }
+    
     static void show_type_filtered_presets(NavigationView& nav, DroneType type);
-    static std::function<void(const DronePreset&)> create_config_updater(DroneAnalyzerSettings& config_to_update);
+    
+    // Returns functor instead of std::function - zero heap allocation
+    static ConfigUpdaterCallback create_config_updater(DroneAnalyzerSettings& config_to_update);
 };
 
 struct DroneFrequencyEntry {

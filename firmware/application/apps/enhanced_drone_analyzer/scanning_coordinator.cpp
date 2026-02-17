@@ -67,7 +67,8 @@ void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings&
     }
 }
 
-void ScanningCoordinator::show_session_summary([[maybe_unused]] const std::string& summary) {
+// DIAMOND OPTIMIZATION: Use const char* instead of std::string (zero heap allocation)
+void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summary) {
 }
 
 msg_t ScanningCoordinator::scanning_thread_function(void* arg) {

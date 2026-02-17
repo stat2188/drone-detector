@@ -564,44 +564,7 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui
 }
 
 // ============ DronePresetSelector Implementation ============
-
-// DIAMOND OPTIMIZATION: Unified template menu view for zero-allocation preset selection
-// Scott Meyers Item 15: Prefer constexpr to #define
-// Template eliminates code duplication between array and vector preset containers
-// Deleted copy operations fix Rule of Three violation (has pointer/reference members)
-template <typename PresetContainer>
-class PresetMenuViewImpl : public MenuView {
-public:
-    PresetMenuViewImpl(NavigationView& nav, const char* const* names, size_t count,
-                       std::function<void(const DronePreset&)> on_selected, const PresetContainer& presets)
-        : MenuView(), nav_(nav), names_(names), name_count_(count),
-          on_selected_fn_(std::move(on_selected)), presets_(presets) {
-        for (size_t i = 0; i < name_count_; ++i) {
-            add_item({names_[i], Color::white(), nullptr, nullptr});
-        }
-    }
-
-    PresetMenuViewImpl(const PresetMenuViewImpl&) = delete;
-    PresetMenuViewImpl& operator=(const PresetMenuViewImpl&) = delete;
-
-private:
-    NavigationView& nav_;
-    const char* const* names_;
-    size_t name_count_;
-    std::function<void(const DronePreset&)> on_selected_fn_;
-    const PresetContainer& presets_;
-
-    bool on_key(const KeyEvent key) override {
-        if (key == KeyEvent::Select) {
-            size_t idx = highlighted_index();
-            if (idx < presets_.size()) {
-                if (on_selected_fn_) on_selected_fn_(presets_[idx]);
-            }
-            return true;
-        }
-        return MenuView::on_key(key);
-    }
-};
+// Note: PresetMenuViewImpl template is now defined in the header file
 
 // DIAMOND OPTIMIZATION: Zero-allocation preset filtering using stack allocation
 // Scott Meyers Item 29: Use object pools to reduce allocation overhead
@@ -619,14 +582,8 @@ static inline size_t filter_presets_by_type_stack(
     return found_count;
 }
 
-void DronePresetSelector::show_preset_menu(NavigationView& nav, std::function<void(const DronePreset&)> callback) {
-    const auto preset_names = DroneFrequencyPresets::get_preset_names();
-    const auto& all_presets = DroneFrequencyPresets::get_all_presets();
-    const auto preset_count = DroneFrequencyPresets::get_preset_count();
-
-    using PresetMenuViewT = PresetMenuViewImpl<std::array<DronePreset, 5>>;
-    nav.push<PresetMenuViewT>(preset_names, preset_count, std::move(callback), all_presets);
-}
+// Template implementation must be in header for implicit instantiation
+// show_preset_menu is now a template function defined in the header
 
 void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneType type) {
     const auto& all_presets = DroneFrequencyPresets::get_all_presets();
@@ -649,16 +606,18 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
     };
 
     FilteredPresetsView filtered_view{filtered_ptrs, preset_count};
+    // CRITICAL FIX: Lambda with capture passed to template - no heap allocation
+    // The lambda type is deduced at compile time, enabling inline expansion
     auto on_selected = [&nav](const DronePreset&) { nav.pop(); };
 
-    using FilteredPresetMenuViewT = PresetMenuViewImpl<FilteredPresetsView>;
+    using FilteredPresetMenuViewT = PresetMenuViewImpl<FilteredPresetsView, decltype(on_selected)>;
     nav.push<FilteredPresetMenuViewT>(names, preset_count, std::move(on_selected), filtered_view);
 }
 
-std::function<void(const DronePreset&)> DronePresetSelector::create_config_updater(DroneAnalyzerSettings& config_to_update) {
-    return [&config_to_update](const DronePreset& preset) {
-        DroneFrequencyPresets::apply_preset(config_to_update, preset);
-    };
+// CRITICAL FIX: Return ConfigUpdaterCallback functor instead of std::function
+// Zero heap allocation - functor stores only a pointer
+ConfigUpdaterCallback DronePresetSelector::create_config_updater(DroneAnalyzerSettings& config_to_update) {
+    return ConfigUpdaterCallback{config_to_update};
 }
 
 // ============ DroneFrequencyEntry Implementation ============
@@ -847,7 +806,11 @@ void ScanningSettingsView::on_show_presets() {
         SettingsPersistence<DroneAnalyzerSettings>::load(settings);
         if (DroneFrequencyPresets::apply_preset(settings, preset)) {
             SettingsPersistence<DroneAnalyzerSettings>::save(settings);
-            nav_.display_modal("Success", std::string("Preset applied: ") + preset.display_name);
+            // DIAMOND OPTIMIZATION: Use fixed buffer instead of std::string concatenation
+            constexpr size_t kMsgBufSize = 64;
+            char msg_buf[kMsgBufSize];
+            snprintf(msg_buf, kMsgBufSize, "Preset applied: %s", preset.display_name);
+            nav_.display_modal("Success", msg_buf);
             load_current_settings();
         } else {
             nav_.display_modal("Error", "Failed to apply preset");
@@ -891,14 +854,16 @@ void DroneAnalyzerSettingsView::load_default_settings() {
     nav_.display_modal("Reset", "Settings reset to defaults");
 }
 void DroneAnalyzerSettingsView::show_about_author() {
-    std::string message;
-    message += "About the Author\n================\n\nApplication developed for\ncivilian population safety.\n\n";
-    message += "Author: Kuznetsov Maxim Sergeevich\nLocksmith at Gazprom Gazoraspredeleniye\nOrenburg branch\n\n";
-    message += "Development completed in October 2025\non voluntary and altruistic principles\nby one person.\n\n";
-    message += "Greetings to everyone who risks\ntheir lives for the safety of others.\n\n";
-    message += "Support the author:\nCard: 2202 20202 5787 1695\nYooMoney: 41001810704697\nTON: UQCdtMxQB5zbQBOICkY90lTQQqcs8V-V28Bf2AGvl8xOc5HR\n\n";
-    message += "Contact:\nTelegram: @max_ai_master";
-    nav_.display_modal("About Author", message);
+    // DIAMOND OPTIMIZATION: Use constexpr string literal in ROM (no heap allocation)
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    static constexpr const char* kAboutMessage =
+        "About the Author\n================\n\nApplication developed for\ncivilian population safety.\n\n"
+        "Author: Kuznetsov Maxim Sergeevich\nLocksmith at Gazprom Gazoraspredeleniye\nOrenburg branch\n\n"
+        "Development completed in October 2025\non voluntary and altruistic principles\nby one person.\n\n"
+        "Greetings to everyone who risks\ntheir lives for the safety of others.\n\n"
+        "Support the author:\nCard: 2202 20202 5787 1695\nYooMoney: 41001810704697\nTON: UQCdtMxQB5zbQBOICkY90lTQQqcs8V-V28Bf2AGvl8xOc5HR\n\n"
+        "Contact:\nTelegram: @max_ai_master";
+    nav_.display_modal("About Author", kAboutMessage);
 }
 
 // DroneDatabaseManager

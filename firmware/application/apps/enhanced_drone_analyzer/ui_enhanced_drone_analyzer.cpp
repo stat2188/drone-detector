@@ -2004,6 +2004,9 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     threat_status_main_.set(buffer);
     threat_status_main_.set_style(&UIStyles::RED_STYLE);
     safe_strcpy(last_text_, buffer, sizeof(last_text_));
+    
+    // OPTIMIZATION: Cache text length to avoid strlen() in paint()
+    last_text_len_ = strlen(last_text_);
 
     // DIAMOND OPTIMIZATION: Use FrequencyFormatter
     if (current_freq > 0) {
@@ -2084,8 +2087,8 @@ void SmartThreatHeader::paint(Painter& painter) {
     painter.fill_rectangle(screen_rect(), bg_color);
 
     // 2. Draw large centered text with white color on colored background
-    // Calculate centered position
-    const int text_width = strlen(last_text_) * 8; // fixed_8x16 is 8px per char
+    // OPTIMIZATION: Use cached text length instead of strlen() every paint call
+    const int text_width = static_cast<int>(last_text_len_) * 8; // fixed_8x16 is 8px per char
     const int text_height = 16;
     const int center_x = (screen_width - text_width) / 2;
     const int center_y = (60 - text_height) / 2; // Header height is 60px
@@ -2260,8 +2263,9 @@ void ConsoleStatusBar::update_normal_status(const char* primary, const char* sec
     set_display_mode(DisplayMode::NORMAL);
 
     // DIAMOND OPTIMIZATION: Use StatusFormatter
+    // OPTIMIZATION: Direct character check instead of strlen() - O(1) vs O(n)
     char buffer[48];
-    if (!secondary || strlen(secondary) == 0) {
+    if (!secondary || secondary[0] == '\0') {
         StatusFormatter::format_to(buffer, "%s", primary);
     } else {
         StatusFormatter::format_to(buffer, "%s | %s", primary, secondary);
@@ -3072,12 +3076,13 @@ void FrequencyRangeSetupView::focus() {
 }
 
 void FrequencyRangeSetupView::on_save() {
-    // Получаем значения из полей
-    const std::string min_str = field_min_.get_text();
-    const std::string max_str = field_max_.get_text();
+    // DIAMOND OPTIMIZATION: Use const char* from get_text() reference (no new heap allocation)
+    // get_text() returns const std::string&, so .c_str() avoids copying
+    const char* min_str = field_min_.get_text().c_str();
+    const char* max_str = field_max_.get_text().c_str();
     
-    Frequency new_min = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(min_str.c_str()));
-    Frequency new_max = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(max_str.c_str()));
+    Frequency new_min = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(min_str));
+    Frequency new_max = static_cast<Frequency>(DiamondCore::FrequencyParser::parse_mhz_string(max_str));
     
     // Input validation (integer-only, no NaN check needed)
     if (new_min == 0 || new_max == 0) {
@@ -4151,10 +4156,10 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
             uint8_t style_idx = (settings.frequency_ruler_style < 7) ?
                                 settings.frequency_ruler_style : 0;
             compact_frequency_ruler_.set_ruler_style(RULER_STYLE_LUT[style_idx]);
-            }
-    
-            compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);
-        } else {
-            compact_frequency_ruler_.set_visible(false);
         }
+    
+        compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);
+    } else {
+        compact_frequency_ruler_.set_visible(false);
     }
+}

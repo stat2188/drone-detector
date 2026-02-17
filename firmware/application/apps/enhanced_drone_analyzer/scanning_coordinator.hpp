@@ -31,7 +31,8 @@ public:
     void stop_coordinated_scanning();
     bool is_scanning_active() const { return scanning_active_; }
     void update_runtime_parameters(const DroneAnalyzerSettings& settings);
-    void show_session_summary(const std::string& summary);
+    // DIAMOND OPTIMIZATION: Use const char* instead of std::string (zero heap allocation)
+    void show_session_summary(const char* summary);
 
     ScanningCoordinator(const ScanningCoordinator&) = delete;
     ScanningCoordinator(ScanningCoordinator&&) = delete;

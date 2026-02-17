@@ -835,6 +835,7 @@ private:
     size_t last_static_ = 0;
     size_t last_receding_ = 0;
     char last_text_[128];  // Fixed-size buffer instead of std::string (no heap allocation)
+    size_t last_text_len_ = 0;  // OPTIMIZATION: Cached text length to avoid strlen() in paint()
 };
 
 class ThreatCard : public View {
@@ -863,6 +864,7 @@ private:
     MovementTrend last_trend_ = MovementTrend::UNKNOWN;
     int32_t last_rssi_ = -120;
     char last_threat_name_[16];
+    size_t last_card_text_len_ = 0;  // OPTIMIZATION: Cached text length to avoid strlen() in paint()
 
     void paint(Painter& painter) override;
 
@@ -966,6 +968,11 @@ private:
     size_t bar_index_;
     DisplayMode mode_ = DisplayMode::NORMAL;
     Rect parent_rect_;
+    
+    // OPTIMIZATION: Cached text lengths to avoid strlen() in paint()
+    size_t last_progress_len_ = 0;
+    size_t last_alert_len_ = 0;
+    size_t last_normal_len_ = 0;
 
     Text progress_text_  {{0, 1, screen_width, 16}, ""};
     Text alert_text_     {{0, 1, screen_width, 16}, ""};
@@ -1250,6 +1257,12 @@ private:
         static Text* const widgets[] = {&text_drone_1_, &text_drone_2_, &text_drone_3_};
         return (index < NUM_DRONE_TEXT_WIDGETS) ? widgets[index] : nullptr;
     }
+    
+    // OPTIMIZATION: Cached drone display strings for Check-Before-Update pattern
+    // Avoids redundant Text::set() calls when content hasn't changed
+    char last_drone_text_0_[64] = {0};
+    char last_drone_text_1_[64] = {0};
+    char last_drone_text_2_[64] = {0};
 
     CompactFrequencyRuler compact_frequency_ruler_{{0, 68, screen_width, 12}};
     // 🔴 REMOVED: frequency_ruler_ member (Dead Code - duplicate never used)
