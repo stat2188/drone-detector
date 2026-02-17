@@ -1773,6 +1773,10 @@ void DroneHardwareController::shutdown_hardware() {
     // Stop Baseband data streaming
     stop_spectrum_streaming();
 
+    // Shutdown baseband coprocessor for proper resource cleanup
+    // This is critical for proper cleanup - all working apps call this
+    baseband::shutdown();
+
     // Explicitly disable radio chip (CPLD/R820T/MAX2837)
     // This is critical for power saving and stability of the next application launch
     receiver_model.disable();
@@ -1782,6 +1786,10 @@ void DroneHardwareController::shutdown_hardware() {
 }
 
 void DroneHardwareController::initialize_radio_state() {
+    // Load baseband coprocessor image before accessing receiver resources
+    // This is critical for proper radio initialization - all working apps call this first
+    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
+
     // 🔴 FIX: Add error handling for all radio operations
     // Returns false if any operation fails to prevent blocking
 
