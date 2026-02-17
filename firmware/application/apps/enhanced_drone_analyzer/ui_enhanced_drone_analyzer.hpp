@@ -402,21 +402,18 @@ private:
 class DroneScanner {
 public:
     // ===========================================
-    // DIAMOND DOCUMENTATION: Settings Reference Lifetime
+    // DIAMOND FIX: Settings Lifetime - Value Semantics
     // ===========================================
-    // CRITICAL: DroneScanner stores a const reference to DroneAnalyzerSettings (settings_ member)
+    // CRITICAL FIX: DroneScanner now stores settings by VALUE (not reference)
     //
-    // Lifetime Requirements:
-    // - The referenced DroneAnalyzerSettings object MUST outlive this DroneScanner instance
-    // - Do NOT pass temporary objects or stack-local settings with shorter lifetime
+    // Benefits:
+    // - No lifetime dependency issues
+    // - Thread-safe access without additional locking
+    // - Simpler ownership model
     //
-    // Current Usage (SAFE):
-    // - EnhancedDroneSpectrumAnalyzerView owns both settings_ and scanner_ as members
-    // - Both are constructed in the same object, ensuring correct lifetime
-    //
-    // Future Usage Warning:
-    // - If creating DroneScanner separately, ensure settings object persists
-    // - Alternative: Pass by value if memory allows (but adds ~100 bytes to DroneScanner)
+    // Memory Trade-off:
+    // - Adds ~100 bytes to DroneScanner size (acceptable for 192KB RAM)
+    // - Eliminates risk of dangling reference bugs
     //
     // Built-in database structure for frequencies
     struct BuiltinDroneFreq {
@@ -441,7 +438,9 @@ public:
         HYBRID
     };
 
-    DroneScanner(const DroneAnalyzerSettings& settings);
+    // DIAMOND FIX: Constructor accepts settings by value to eliminate lifetime dependency
+    // Settings are copied on construction, no reference held
+    DroneScanner(DroneAnalyzerSettings settings);
     ~DroneScanner();
 
     void start_scanning();
@@ -458,6 +457,12 @@ public:
 
     void switch_to_real_mode();
     void switch_to_demo_mode();
+
+    // DIAMOND FIX: Method to update scanner's settings from view's settings
+    // Required because scanner now stores settings by value (not reference)
+    void update_settings(const DroneAnalyzerSettings& settings) {
+        settings_ = settings;  // Copy settings into scanner's own copy
+    }
 
     void update_scan_range(Frequency min_freq, Frequency max_freq) {
         // 🔴 FIX: Validate frequency range before use
@@ -655,9 +660,10 @@ struct DetectionParams {
     DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
 
-    // LIFETIME: settings_ must outlive this instance; it references parent class member
-    // See DIAMOND DOCUMENTATION at class declaration (lines 404-419) for full details
-    const DroneAnalyzerSettings& settings_;
+    // DIAMOND FIX: Settings stored by VALUE (not reference)
+    // No lifetime dependency - settings are copied on construction
+    // Thread-safe access without additional locking
+    DroneAnalyzerSettings settings_;
     
     // Last scan error for diagnostics
     const char* last_scan_error_ = nullptr;

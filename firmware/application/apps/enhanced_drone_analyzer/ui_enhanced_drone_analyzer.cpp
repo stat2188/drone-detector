@@ -167,7 +167,10 @@ EDA_FLASH_CONST const std::array<DroneScanner::BuiltinDroneFreq, DroneScanner::B
 // PART 2: DRONE SCANNER IMPLEMENTATION
 // ===========================================
 
-DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
+// DIAMOND FIX: Settings stored by VALUE (not reference)
+// Constructor accepts settings by value and stores a copy
+// This eliminates lifetime dependency issues
+DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
     : scanning_thread_(nullptr),
         data_mutex(),
         scanning_active_(false),
@@ -192,7 +195,7 @@ DroneScanner::DroneScanner(const DroneAnalyzerSettings& settings)
           detection_logger_(),
           detection_ring_buffer_(),
           // Phase 3 Optimization: Removed intelligent scanning features initialization
-          settings_(settings)
+          settings_(std::move(settings))  // DIAMOND FIX: Move settings into member
 {
     // Initialize mutex properly to fix race condition
     chMtxInit(&data_mutex);
@@ -2934,6 +2937,8 @@ void DroneDisplayController::update_or_create_drone_from_spectrum(Frequency freq
     add_detected_drone(freq_hz, type, threat, rssi);
 }
 
+// DIAMOND FIX: Pass settings by value to scanner constructor
+// Settings are copied, eliminating lifetime dependency
 DroneUIController::DroneUIController(NavigationView& nav,
                                           DroneHardwareController& hardware,
                                           DroneScanner& scanner,
@@ -2945,7 +2950,7 @@ DroneUIController::DroneUIController(NavigationView& nav,
       audio_mgr_(audio_mgr),
       scanning_active_{false},
       display_controller_(&display_controller),
-      settings_()
+      settings_()  // Initialize settings_ with defaults
 {
     settings_.spectrum_mode = SpectrumMode::MEDIUM;
     settings_.scan_interval_ms = 1000;
@@ -3163,12 +3168,14 @@ void DroneAnalyzerMenuView::focus() {
 
 // 2. Реализация меню удалена - теперь используем DroneAnalyzerSettingsView из ui_enhanced_drone_settings.cpp
 
+// DIAMOND FIX: Pass settings by value to scanner constructor
+// Settings are copied into scanner_, eliminating lifetime dependency
 EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationView& nav)
     : View({0, 0, screen_width, screen_height}),
       nav_(nav),
       settings_(),
       hardware_(SpectrumMode::MEDIUM),
-      scanner_(settings_),
+      scanner_(DroneAnalyzerSettings()),  // DIAMOND FIX: Pass empty settings, will be updated later
       audio_(),
       display_controller_({0, 60, screen_width, screen_height - 80}),
       ui_controller_(nav, hardware_, scanner_, audio_, display_controller_),
@@ -3510,6 +3517,10 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     
     // 🔧 FIX: Update coordinator parameters after settings load
     scanning_coordinator_.update_runtime_parameters(settings_);
+
+    // DIAMOND FIX: Update scanner's settings from view's settings
+    // Required because scanner now stores settings by value (not reference)
+    scanner_.update_settings(settings_);
 
     // DIAMOND FIX: Update audio cooldown based on settings to prevent UI freeze
     // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
