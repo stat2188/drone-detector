@@ -4168,9 +4168,11 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
                                 settings.frequency_ruler_style : 0;
             compact_frequency_ruler_.set_ruler_style(RULER_STYLE_LUT[style_idx]);
         }
-    
+
         compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);
     } else {
         compact_frequency_ruler_.set_visible(false);
     }
 }
+
+} // namespace ui::apps::enhanced_drone_analyzer
