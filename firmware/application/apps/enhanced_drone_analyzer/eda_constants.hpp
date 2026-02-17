@@ -16,12 +16,20 @@ namespace EDA {
 
 using Frequency = rf::Frequency;
 
+// ========================================
+// TYPE ALIASES (Semantic Types)
+// ========================================
+using RSSI = int32_t;
+using BinIndex = size_t;
+using Threshold = int32_t;
+using Decibel = int32_t;
+
 namespace Constants {
 
 // ===== FREQUENCY LIMITS =====
 namespace FrequencyLimits {
     using Frequency = rf::Frequency;
-    
+
     constexpr Frequency MIN_HARDWARE_FREQ =     1'000'000ULL; // 1 MHz
     constexpr Frequency MAX_HARDWARE_FREQ =  7'200'000'000ULL; // 7.2 GHz (hardware maximum)
 
@@ -224,46 +232,52 @@ constexpr size_t MAX_FORMAT_LENGTH = 8;
 // ===========================================
 
 namespace Validation {
+    // ========================================
+    // CONSTANTS
+    // ========================================
     static constexpr int64_t MIN_HARDWARE_FREQ = 1'000'000LL;
     static constexpr int64_t MAX_HARDWARE_FREQ = 7'200'000'000LL;
-    
+
     static constexpr int64_t MIN_2_4GHZ = 2'400'000'000LL;
     static constexpr int64_t MAX_2_4GHZ = 2'483'500'000LL;
-    
+
     static constexpr int64_t MIN_5_8GHZ = 5'725'000'000LL;
     static constexpr int64_t MAX_5_8GHZ = 5'875'000'000LL;
-    
+
     static constexpr int64_t MIN_MILITARY = 860'000'000LL;
     static constexpr int64_t MAX_MILITARY = 930'000'000LL;
-    
+
     static constexpr int64_t MIN_433MHZ = 433'000'000LL;
     static constexpr int64_t MAX_433MHZ = 435'000'000LL;
-    
-    static constexpr bool is_in_range(int64_t value, int64_t min_val, int64_t max_val) noexcept {
+
+    // ========================================
+    // VALIDATION FUNCTIONS
+    // ========================================
+    static constexpr bool is_in_range(const int64_t value, const int64_t min_val, const int64_t max_val) noexcept {
         return value >= min_val && value <= max_val;
     }
 
-    static constexpr bool validate_frequency(int64_t freq_hz) noexcept {
+    static constexpr bool validate_frequency(const int64_t freq_hz) noexcept {
         return is_in_range(freq_hz, MIN_HARDWARE_FREQ, MAX_HARDWARE_FREQ);
     }
 
-    static constexpr bool validate_rssi(int32_t rssi_db) noexcept {
+    static constexpr bool validate_rssi(const int32_t rssi_db) noexcept {
         return rssi_db >= -110 && rssi_db <= 10;
     }
 
-    static constexpr bool is_2_4ghz_band(int64_t freq_hz) noexcept {
+    static constexpr bool is_2_4ghz_band(const int64_t freq_hz) noexcept {
         return is_in_range(freq_hz, MIN_2_4GHZ, MAX_2_4GHZ);
     }
 
-    static constexpr bool is_5_8ghz_band(int64_t freq_hz) noexcept {
+    static constexpr bool is_5_8ghz_band(const int64_t freq_hz) noexcept {
         return is_in_range(freq_hz, MIN_5_8GHZ, MAX_5_8GHZ);
     }
 
-    static constexpr bool is_military_band(int64_t freq_hz) noexcept {
+    static constexpr bool is_military_band(const int64_t freq_hz) noexcept {
         return is_in_range(freq_hz, MIN_MILITARY, MAX_MILITARY);
     }
 
-    static constexpr bool is_433mhz_band(int64_t freq_hz) noexcept {
+    static constexpr bool is_433mhz_band(const int64_t freq_hz) noexcept {
         return is_in_range(freq_hz, MIN_433MHZ, MAX_433MHZ);
     }
 } // namespace Validation

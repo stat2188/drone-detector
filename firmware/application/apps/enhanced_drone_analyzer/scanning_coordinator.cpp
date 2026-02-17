@@ -9,6 +9,13 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
+// CONSTANTS
+// ===========================================
+namespace ScanningConstants {
+    constexpr uint32_t DEFAULT_SCAN_INTERVAL_MS = 750;
+}
+
+// ===========================================
 // ScanningCoordinator Implementation
 // ===========================================
 
@@ -24,14 +31,14 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
     , audio_controller_(audio_controller)
     , scanning_active_(false)
     , scanning_thread_(nullptr)
-    , scan_interval_ms_(750) {
+    , scan_interval_ms_(ScanningConstants::DEFAULT_SCAN_INTERVAL_MS) {
 }
 
 ScanningCoordinator::~ScanningCoordinator() {
     stop_coordinated_scanning();
 }
 
-void ScanningCoordinator::start_coordinated_scanning() {
+void ScanningCoordinator::start_coordinated_scanning() noexcept {
     if (scanning_active_.load(std::memory_order_acquire)) return;
     scanning_active_.store(true, std::memory_order_release);
 
@@ -47,7 +54,7 @@ void ScanningCoordinator::start_coordinated_scanning() {
     }
 }
 
-void ScanningCoordinator::stop_coordinated_scanning() {
+void ScanningCoordinator::stop_coordinated_scanning() noexcept {
     if (scanning_active_.load(std::memory_order_acquire)) {
         scanning_active_.store(false, std::memory_order_release);
 
@@ -58,7 +65,7 @@ void ScanningCoordinator::stop_coordinated_scanning() {
     }
 }
 
-void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) {
+void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) noexcept {
     scan_interval_ms_ = settings.scan_interval_ms;
 
     if (scanning_active_.load(std::memory_order_acquire)) {
@@ -68,15 +75,15 @@ void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings&
 }
 
 // DIAMOND OPTIMIZATION: Use const char* instead of std::string (zero heap allocation)
-void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summary) {
+void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summary) noexcept {
 }
 
-msg_t ScanningCoordinator::scanning_thread_function(void* arg) {
+msg_t ScanningCoordinator::scanning_thread_function(void* arg) noexcept {
     auto coordinator = static_cast<ScanningCoordinator*>(arg);
     return coordinator->coordinated_scanning_thread();
 }
 
-msg_t ScanningCoordinator::coordinated_scanning_thread() {
+msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     while (scanning_active_.load(std::memory_order_acquire)) {
         scanner_.perform_scan_cycle(hardware_);
 

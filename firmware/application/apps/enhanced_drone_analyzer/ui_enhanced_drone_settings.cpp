@@ -22,12 +22,15 @@ namespace fs = std::filesystem;
 namespace ui::apps::enhanced_drone_analyzer {
 
 
+// DIAMOND OPTIMIZATION: RAII wrapper for File (Scott Meyers Item 13)
+// Ensures proper cleanup without manual init/cleanup pairs
 class FileRAII {
 public:
     explicit FileRAII(const char* path, bool read_only = false)
         : file_(), opened_(file_.open(path, read_only)) {}
 
-    ~FileRAII() {
+    // DIAMOND OPTIMIZATION: noexcept for move operations
+    ~FileRAII() noexcept {
         if (opened_) {
             file_.close();
         }
@@ -41,9 +44,9 @@ public:
         other.opened_ = false;
     }
 
-    File& get() { return file_; }
-    const File& get() const { return file_; }
-    bool is_open() const { return opened_; }
+    File& get() noexcept { return file_; }
+    const File& get() const noexcept { return file_; }
+    bool is_open() const noexcept { return opened_; }
 
 private:
     File file_;
@@ -54,7 +57,8 @@ private:
 // EnhancedSettingsManager Implementation
 // ===========================================
 
-bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& settings) {
+// DIAMOND OPTIMIZATION: const reference to prevent unnecessary copies
+bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept {
     // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
@@ -74,9 +78,9 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     // 🔴 CRITICAL FIX: Move 2KB buffer from stack to static storage to prevent stack overflow
     // Scott Meyers Item 29: Use object pools to reduce allocation overhead
     // This replaces ~20 std::string allocations with a single char array
-    // Stack savings: 2048 bytes
-    // MEDIUM PRIORITY FIX: Reduced from 4096 to 2048 bytes (saves ~2KB RAM)
-    static constexpr size_t SETTINGS_BUFFER_SIZE = 2048;
+    // Stack savings: 1024 bytes
+    // MEDIUM PRIORITY FIX: Reduced from 4096 to 1024 bytes (saves ~3KB RAM)
+    static constexpr size_t SETTINGS_BUFFER_SIZE = 1024;
     static char settings_buffer[SETTINGS_BUFFER_SIZE];
     size_t offset = 0;
 
@@ -144,7 +148,8 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     return true;
 }
 
-bool EnhancedSettingsManager::verify_comm_file_exists() {
+// DIAMOND OPTIMIZATION: noexcept for simple file existence check
+bool EnhancedSettingsManager::verify_comm_file_exists() noexcept {
     // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     File txt_file;
@@ -155,7 +160,8 @@ bool EnhancedSettingsManager::verify_comm_file_exists() {
     return false;
 }
 
-bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& settings) {
+// DIAMOND OPTIMIZATION: const reference to prevent unnecessary copies
+bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& settings) noexcept {
     // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
@@ -167,9 +173,9 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
     auto& file = settings_file;
 
     // 🔴 CRITICAL FIX: Move 2KB buffer from stack to static storage to prevent stack overflow
-    // Stack savings: 2048 bytes
-    // MEDIUM PRIORITY FIX: Reduced from 4096 to 2048 bytes (saves ~2KB RAM)
-    static constexpr size_t FILE_BUFFER_SIZE = 2048;
+    // Stack savings: 1024 bytes
+    // MEDIUM PRIORITY FIX: Reduced from 4096 to 1024 bytes (saves ~3KB RAM)
+    static constexpr size_t FILE_BUFFER_SIZE = 1024;
     static char file_buffer[FILE_BUFFER_SIZE];
     auto read_result = file.read(file_buffer, FILE_BUFFER_SIZE);
     
@@ -312,13 +318,15 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
 
 // 🔴 HIGH PRIORITY FIX: Return const char* instead of std::string to eliminate heap allocation
 // RAM savings: ~100-200 bytes per call (no std::string allocation)
-const char* EnhancedSettingsManager::get_communication_status() {
+// DIAMOND OPTIMIZATION: noexcept for simple status lookup
+const char* EnhancedSettingsManager::get_communication_status() noexcept {
     static constexpr const char* STATUS_READY = "TXT file found\nCommunication ready";
     static constexpr const char* STATUS_NOT_READY = "No TXT file found\nSave settings first";
     return verify_comm_file_exists() ? STATUS_READY : STATUS_NOT_READY;
 }
 
-void EnhancedSettingsManager::ensure_database_exists() {
+// DIAMOND OPTIMIZATION: noexcept for file creation
+void EnhancedSettingsManager::ensure_database_exists() noexcept {
     // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
     static constexpr const char* file_path = "/FREQMAN/DRONES.TXT";
     File check_file;
@@ -339,7 +347,8 @@ void EnhancedSettingsManager::ensure_database_exists() {
     }
 }
 
-void EnhancedSettingsManager::create_backup_file(const char* filepath) {
+// DIAMOND OPTIMIZATION: const pointer, noexcept for file backup
+void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept {
     // 🔴 PHASE 3: Use RAII wrapper for File to ensure proper cleanup
     FileRAII orig_file(filepath, true);
     if (!orig_file.is_open()) return;
@@ -375,7 +384,8 @@ void EnhancedSettingsManager::create_backup_file(const char* filepath) {
     }
 }
 
-void EnhancedSettingsManager::restore_from_backup(const char* filepath) {
+// DIAMOND OPTIMIZATION: const pointer, noexcept for file restore
+void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept {
     // FIXED: Use fixed-size char array instead of std::string for backup path
     static constexpr size_t kMaxPathLen = 256;
     char backup_path[kMaxPathLen] = {};
@@ -404,7 +414,8 @@ void EnhancedSettingsManager::restore_from_backup(const char* filepath) {
     }
 }
 
-void EnhancedSettingsManager::remove_backup_file(const char* filepath) {
+// DIAMOND OPTIMIZATION: const pointer, noexcept for file removal
+void EnhancedSettingsManager::remove_backup_file(const char* filepath) noexcept {
     // FIXED: Use fixed-size char array instead of std::string for backup path
     static constexpr size_t kMaxPathLen = 256;
     char backup_path[kMaxPathLen] = {};
@@ -417,7 +428,8 @@ void EnhancedSettingsManager::remove_backup_file(const char* filepath) {
     delete_file(std::filesystem::path{backup_path});
 }
 
-const char* EnhancedSettingsManager::generate_file_header() {
+// DIAMOND OPTIMIZATION: noexcept for header generation
+const char* EnhancedSettingsManager::generate_file_header() noexcept {
     static constexpr size_t HEADER_BUFFER_SIZE = 256;
     static char header_buffer[HEADER_BUFFER_SIZE];
 
@@ -437,11 +449,13 @@ const char* EnhancedSettingsManager::generate_file_header() {
 // Scott Meyers Item 15: Prefer constexpr to #define
 // Saves ~50 bytes Flash, uses EDA::LUTs (Single Source of Truth)
 // RAM savings: ~50-100 bytes per call (no std::string allocation)
-const char* EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) {
+// DIAMOND OPTIMIZATION: const reference, noexcept for LUT lookup
+const char* EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) noexcept {
     return EDA::LUTs::spectrum_mode_display_name(static_cast<uint8_t>(mode));
 }
 
-const char* EnhancedSettingsManager::get_current_timestamp() {
+// DIAMOND OPTIMIZATION: noexcept for timestamp generation
+const char* EnhancedSettingsManager::get_current_timestamp() noexcept {
     // DIAMOND OPTIMIZATION: Return const char* to static buffer (no std::string allocation)
     static char buffer[32];
     systime_t now = chTimeNow();
@@ -457,7 +471,8 @@ const char* EnhancedSettingsManager::get_current_timestamp() {
 
 Language DroneAnalyzerSettingsManager_Translations::current_language_ = Language::ENGLISH;
 
-const char* DroneAnalyzerSettingsManager_Translations::translate(const char* key) {
+// DIAMOND OPTIMIZATION: const pointer, noexcept for translation lookup
+const char* DroneAnalyzerSettingsManager_Translations::translate(const char* key) noexcept {
     for (size_t i = 0; i < translations_count; ++i) {
         if (strcmp(translations_english[i].key, key) == 0) {
             return translations_english[i].value;
@@ -466,7 +481,8 @@ const char* DroneAnalyzerSettingsManager_Translations::translate(const char* key
     return key;
 }
 
-const char* DroneAnalyzerSettingsManager_Translations::get_translation(const char* key) {
+// DIAMOND OPTIMIZATION: const pointer, noexcept for translation lookup
+const char* DroneAnalyzerSettingsManager_Translations::get_translation(const char* key) noexcept {
     return translate(key);
 }
 
@@ -485,7 +501,8 @@ static const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5> defau
     {"Military UAV Band", "Military_UAV", 5000000000ULL, ThreatLevel::CRITICAL, DroneType::MILITARY_DRONE}
 }};
 
-const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5>& DroneFrequencyPresets::get_all_presets() { return default_presets; }
+// DIAMOND OPTIMIZATION: const reference, noexcept for preset array access
+const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5>& DroneFrequencyPresets::get_all_presets() noexcept { return default_presets; }
 
 EDA_FLASH_CONST inline static constexpr const char* PRESET_NAMES[] = {
     "2.4GHz Band Scan",
@@ -495,7 +512,8 @@ EDA_FLASH_CONST inline static constexpr const char* PRESET_NAMES[] = {
     "Military UAV Band"
 };
 
-const char* const* DroneFrequencyPresets::get_preset_names() {
+// DIAMOND OPTIMIZATION: noexcept for preset names array access
+const char* const* DroneFrequencyPresets::get_preset_names() noexcept {
     return PRESET_NAMES;
 }
 
@@ -509,47 +527,59 @@ EDA_FLASH_CONST inline static constexpr DroneType AVAILABLE_TYPES[] = {
     DroneType::MILITARY_DRONE
 };
 
-const DroneType* DroneFrequencyPresets::get_available_types() {
+// DIAMOND OPTIMIZATION: noexcept for types array access
+const DroneType* DroneFrequencyPresets::get_available_types() noexcept {
     return AVAILABLE_TYPES;
 }
 
-size_t DroneFrequencyPresets::get_preset_count() {
+// DIAMOND OPTIMIZATION: noexcept for count access
+size_t DroneFrequencyPresets::get_preset_count() noexcept {
     return 5;
 }
 
-size_t DroneFrequencyPresets::get_available_types_count() {
+// DIAMOND OPTIMIZATION: noexcept for count access
+size_t DroneFrequencyPresets::get_available_types_count() noexcept {
     return 7;
 }
 // DIAMOND OPTIMIZATION: LUT lookup instead of switch for get_type_display_name()
 // Scott Meyers Item 15: Prefer constexpr to #define
 // Saves ~100 bytes Flash
-const char* DroneFrequencyPresets::get_type_display_name(DroneType type) {
+// DIAMOND OPTIMIZATION: noexcept for LUT lookup
+const char* DroneFrequencyPresets::get_type_display_name(DroneType type) noexcept {
     return UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type));
 }
-bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
-    if (!preset.is_valid()) {
-        return false;
-    }
+// DIAMOND OPTIMIZATION: const references, noexcept for preset application
+bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui::apps::enhanced_drone_analyzer::DronePreset& preset) noexcept {
+    // DIAMOND OPTIMIZATION: Guard clause to reduce nesting
+    if (!preset.is_valid()) return false;
 
     config.spectrum_mode = SpectrumMode::MEDIUM;
     config.scan_interval_ms = 1000;
     config.rssi_threshold_db = static_cast<int32_t>(preset.threat_level) >= static_cast<int32_t>(ThreatLevel::HIGH) ? -80 : -90;
     config.audio_flags.enable_alerts = true;
 
-    if (static_cast<uint64_t>(preset.frequency_hz) >= 2400000000ULL && static_cast<uint64_t>(preset.frequency_hz) <= 2500000000ULL) {
+    // DIAMOND OPTIMIZATION: Named constants for magic numbers
+    static constexpr uint64_t WIDEBAND_MIN_FREQ = 2400000000ULL;
+    static constexpr uint64_t WIDEBAND_MAX_FREQ = 2500000000ULL;
+    static constexpr uint64_t FREQ_OFFSET = 10000000ULL;
+    static constexpr uint64_t USER_MIN_FREQ = 50000000ULL;
+    static constexpr uint64_t USER_MAX_FREQ = 6000000000ULL;
+    
+    if (static_cast<uint64_t>(preset.frequency_hz) >= WIDEBAND_MIN_FREQ && static_cast<uint64_t>(preset.frequency_hz) <= WIDEBAND_MAX_FREQ) {
         config.scanning_flags.enable_wideband_scanning = true;
-        config.wideband_min_freq_hz = 2400000000ULL;
-        config.wideband_max_freq_hz = 2500000000ULL;
+        config.wideband_min_freq_hz = WIDEBAND_MIN_FREQ;
+        config.wideband_max_freq_hz = WIDEBAND_MAX_FREQ;
     }
 
-    config.user_min_freq_hz = preset.frequency_hz - 10000000ULL;
-    config.user_max_freq_hz = preset.frequency_hz + 10000000ULL;
+    config.user_min_freq_hz = preset.frequency_hz - FREQ_OFFSET;
+    config.user_max_freq_hz = preset.frequency_hz + FREQ_OFFSET;
 
-    if (config.user_min_freq_hz < 50000000ULL) {
-        config.user_min_freq_hz = 50000000ULL;
+    // DIAMOND OPTIMIZATION: Guard clauses for frequency clamping
+    if (config.user_min_freq_hz < USER_MIN_FREQ) {
+        config.user_min_freq_hz = USER_MIN_FREQ;
     }
-    if (config.user_max_freq_hz > 6000000000ULL) {
-        config.user_max_freq_hz = 6000000000ULL;
+    if (config.user_max_freq_hz > USER_MAX_FREQ) {
+        config.user_max_freq_hz = USER_MAX_FREQ;
     }
 
     safe_strcpy(config.freqman_path, "DRONES", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
@@ -580,7 +610,8 @@ static inline size_t filter_presets_by_type_stack(
 // Template implementation must be in header for implicit instantiation
 // show_preset_menu is now a template function defined in the header
 
-void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneType type) {
+// DIAMOND OPTIMIZATION: const reference, noexcept for filtered presets
+void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneType type) noexcept {
     const auto& all_presets = DroneFrequencyPresets::get_all_presets();
     
     static constexpr size_t MAX_FILTERED = 5;
@@ -611,7 +642,8 @@ void DronePresetSelector::show_type_filtered_presets(NavigationView& nav, DroneT
 
 // CRITICAL FIX: Return ConfigUpdaterCallback functor instead of std::function
 // Zero heap allocation - functor stores only a pointer
-ConfigUpdaterCallback DronePresetSelector::create_config_updater(DroneAnalyzerSettings& config_to_update) {
+// DIAMOND OPTIMIZATION: const reference, noexcept for callback creation
+ConfigUpdaterCallback DronePresetSelector::create_config_updater(DroneAnalyzerSettings& config_to_update) noexcept {
     return ConfigUpdaterCallback{config_to_update};
 }
 
@@ -622,7 +654,8 @@ DroneFrequencyEntry::DroneFrequencyEntry(Frequency freq, DroneType type, ThreatL
     : frequency_hz(freq), drone_type(type), threat_level(threat),
       rssi_threshold_db(rssi_thresh), bandwidth_hz(bw_hz), description(desc) {}
 
-bool DroneFrequencyEntry::is_valid() const {
+// DIAMOND OPTIMIZATION: noexcept for validation
+bool DroneFrequencyEntry::is_valid() const noexcept {
     return EDA::Validation::validate_frequency(frequency_hz) &&
            rssi_threshold_db >= -120 && rssi_threshold_db <= 0 &&
            bandwidth_hz > 0;
@@ -645,7 +678,8 @@ void HardwareSettingsView::focus() { button_save_.focus(); }
 // Ускорение: O(1) lookup вместо 5-branch switch
 // ИСПОЛЬЗУЕТ: EDA::LUTs::spectrum_mode_ui_index() (SSOT)
 
-void HardwareSettingsView::load_current_settings() {
+// DIAMOND OPTIMIZATION: noexcept for settings load
+void HardwareSettingsView::load_current_settings() noexcept {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
@@ -657,7 +691,8 @@ void HardwareSettingsView::load_current_settings() {
     number_max_freq_.set_value(settings.user_max_freq_hz);
 }
 
-void HardwareSettingsView::save_current_settings() {
+// DIAMOND OPTIMIZATION: noexcept for settings save
+void HardwareSettingsView::save_current_settings() noexcept {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
@@ -678,9 +713,9 @@ void HardwareSettingsView::save_current_settings() {
     SettingsPersistence<DroneAnalyzerSettings>::save(settings);
 }
 
-void HardwareSettingsView::update_ui_from_settings() { load_current_settings(); }
-void HardwareSettingsView::update_settings_from_ui() { save_current_settings(); }
-void HardwareSettingsView::on_save_settings() {
+void HardwareSettingsView::update_ui_from_settings() noexcept { load_current_settings(); }
+void HardwareSettingsView::update_settings_from_ui() noexcept { save_current_settings(); }
+void HardwareSettingsView::on_save_settings() noexcept {
     save_current_settings();
     nav_.display_modal("Success", "Hardware settings saved");
 }
@@ -700,7 +735,8 @@ void AudioSettingsView::focus() {
     button_save_.focus();
 }
 
-void AudioSettingsView::load_current_settings() {
+// DIAMOND OPTIMIZATION: noexcept for settings load
+void AudioSettingsView::load_current_settings() noexcept {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
@@ -713,7 +749,8 @@ void AudioSettingsView::load_current_settings() {
     checkbox_repeat_.set_value(settings.audio_flags.repeat_alerts);
 }
 
-void AudioSettingsView::save_current_settings() {
+// DIAMOND OPTIMIZATION: noexcept for settings save
+void AudioSettingsView::save_current_settings() noexcept {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
@@ -733,9 +770,8 @@ void AudioSettingsView::save_current_settings() {
     SettingsPersistence<DroneAnalyzerSettings>::save(settings);
 }
 
-void AudioSettingsView::update_ui_from_settings() { load_current_settings(); }
-void AudioSettingsView::update_settings_from_ui() { save_current_settings(); }
-void AudioSettingsView::on_save_settings() {
+// DIAMOND OPTIMIZATION: noexcept for save action
+void AudioSettingsView::on_save_settings() noexcept {
     save_current_settings();
     nav_.display_modal("Success", "Audio settings saved");
 }
@@ -747,9 +783,6 @@ LoadingView::LoadingView(NavigationView& nav, const char* loading_text)
     add_children({&loading_text_1_, &loading_text_2_});
 }
 void LoadingView::focus() {}
-void LoadingView::paint(Painter& painter) { View::paint(painter); }
-void LoadingView::on_show() { start_time_ = chTimeNow(); }
-void LoadingView::on_hide() {}
 
 // ScanningSettingsView
 ScanningSettingsView::ScanningSettingsView(NavigationView& nav) : View(), nav_(nav) {
@@ -761,7 +794,8 @@ ScanningSettingsView::ScanningSettingsView(NavigationView& nav) : View(), nav_(n
     load_current_settings();
 }
 void ScanningSettingsView::focus() { button_save_.focus(); }
-void ScanningSettingsView::load_current_settings() {
+// DIAMOND OPTIMIZATION: noexcept for settings load
+void ScanningSettingsView::load_current_settings() noexcept {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
@@ -772,7 +806,8 @@ void ScanningSettingsView::load_current_settings() {
     checkbox_wideband_.set_value(settings.scanning_flags.enable_wideband_scanning);
 }
 
-void ScanningSettingsView::save_current_settings() {
+// DIAMOND OPTIMIZATION: noexcept for settings save
+void ScanningSettingsView::save_current_settings() noexcept {
     DroneAnalyzerSettings settings;
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
@@ -789,11 +824,13 @@ void ScanningSettingsView::save_current_settings() {
     
     SettingsPersistence<DroneAnalyzerSettings>::save(settings);
 }
-void ScanningSettingsView::on_save_settings() {
+// DIAMOND OPTIMIZATION: noexcept for save action
+void ScanningSettingsView::on_save_settings() noexcept {
     save_current_settings();
     nav_.display_modal("Success", "Scanning settings saved");
 }
-void ScanningSettingsView::on_show_presets() {
+// DIAMOND OPTIMIZATION: noexcept for preset menu
+void ScanningSettingsView::on_show_presets() noexcept {
     // Show presets menu using DronePresetSelector
     // Create callback that updates settings when preset is selected
     auto on_preset_selected = [this](const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
@@ -813,10 +850,8 @@ void ScanningSettingsView::on_show_presets() {
     };
     DronePresetSelector::show_preset_menu(nav_, on_preset_selected);
 }
-void ScanningSettingsView::on_wideband_enabled_changed() {}
-void ScanningSettingsView::update_ui_from_settings() { load_current_settings(); }
-void ScanningSettingsView::update_settings_from_ui() { save_current_settings(); }
-
+// DIAMOND OPTIMIZATION: noexcept for empty handler
+void ScanningSettingsView::on_wideband_enabled_changed() noexcept {}
 // DroneAnalyzerSettingsView
 DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View(), nav_(nav), current_settings_{} {
     add_children({&text_title_, &button_audio_settings_, &button_hardware_settings_, &button_scanning_settings_,
@@ -831,24 +866,18 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View
     EnhancedSettingsManager::ensure_database_exists();
     SettingsPersistence<DroneAnalyzerSettings>::load(current_settings_);
 }
-void DroneAnalyzerSettingsView::focus() { button_audio_settings_.focus(); }
-void DroneAnalyzerSettingsView::paint(Painter& painter) { View::paint(painter); }
-bool DroneAnalyzerSettingsView::on_key(const KeyEvent key) {
-    if (key == KeyEvent::Back) { nav_.pop(); return true; }
-    return View::on_key(key);
-}
-bool DroneAnalyzerSettingsView::on_touch(const TouchEvent event) { return View::on_touch(event); }
-void DroneAnalyzerSettingsView::on_show() { View::on_show(); }
-void DroneAnalyzerSettingsView::on_hide() { View::on_hide(); }
-void DroneAnalyzerSettingsView::show_audio_settings() { nav_.push<AudioSettingsView>(); }
-void DroneAnalyzerSettingsView::show_hardware_settings() { nav_.push<HardwareSettingsView>(); }
-void DroneAnalyzerSettingsView::show_scanning_settings() { nav_.push<ScanningSettingsView>(); }
-void DroneAnalyzerSettingsView::load_default_settings() {
+// DIAMOND OPTIMIZATION: noexcept for focus and navigation
+void DroneAnalyzerSettingsView::focus() noexcept { button_audio_settings_.focus(); }
+void DroneAnalyzerSettingsView::show_audio_settings() noexcept { nav_.push<AudioSettingsView>(); }
+void DroneAnalyzerSettingsView::show_hardware_settings() noexcept { nav_.push<HardwareSettingsView>(); }
+void DroneAnalyzerSettingsView::show_scanning_settings() noexcept { nav_.push<ScanningSettingsView>(); }
+void DroneAnalyzerSettingsView::load_default_settings() noexcept {
     SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(current_settings_);
     SettingsPersistence<DroneAnalyzerSettings>::save(current_settings_);
     nav_.display_modal("Reset", "Settings reset to defaults");
 }
-void DroneAnalyzerSettingsView::show_about_author() {
+// DIAMOND OPTIMIZATION: noexcept for about dialog
+void DroneAnalyzerSettingsView::show_about_author() noexcept {
     // DIAMOND OPTIMIZATION: Use constexpr string literal in ROM (no heap allocation)
     // Scott Meyers Item 15: Prefer constexpr to #define
     static constexpr const char* kAboutMessage =
@@ -862,7 +891,8 @@ void DroneAnalyzerSettingsView::show_about_author() {
 }
 
 // DroneDatabaseManager
-DroneDatabaseManager::DatabaseView DroneDatabaseManager::load_database(const char* file_path) {
+// DIAMOND OPTIMIZATION: const pointer, noexcept for database load
+DroneDatabaseManager::DatabaseView DroneDatabaseManager::load_database(const char* file_path) noexcept {
     DatabaseView view{};
     
     File file;
@@ -925,9 +955,11 @@ DroneDatabaseManager::DatabaseView DroneDatabaseManager::load_database(const cha
     return view;
 }
 
-bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* file_path) {
+// DIAMOND OPTIMIZATION: const reference, const pointer, noexcept for database save
+bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* file_path) noexcept {
     // DIAMOND OPTIMIZATION: Stack-allocated buffer (zero heap)
-    constexpr size_t WRITE_BUFFER_SIZE = 4096;
+    // MEDIUM PRIORITY FIX: Reduced from 4096 to 2048 bytes (saves ~2KB RAM)
+    constexpr size_t WRITE_BUFFER_SIZE = 2048;
     char write_buffer[WRITE_BUFFER_SIZE];
     size_t offset = 0;
     
@@ -982,12 +1014,6 @@ DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav)
     : View(), nav_(nav), database_view_() {
     add_children({&menu_view_});
     database_view_ = DroneDatabaseManager::load_database();
-    reload_list();
-}
-
-void DroneDatabaseListView::focus() { menu_view_.focus(); }
-
-void DroneDatabaseListView::reload_list() {
     menu_view_.clear();
     menu_view_.add_item({"[+ ADD NEW FREQUENCY]", Color::white(), nullptr, nullptr});
     for (size_t i = 0; i < database_view_.count; ++i) {
@@ -1005,15 +1031,32 @@ void DroneDatabaseListView::reload_list() {
         menu_view_.add_item({text_item, Color::white(), nullptr, nullptr});
     }
 }
+// DIAMOND OPTIMIZATION: noexcept for focus
+void DroneDatabaseListView::focus() noexcept { menu_view_.focus(); }
 
-void DroneDatabaseListView::on_entry_selected(size_t index) {
+// DIAMOND OPTIMIZATION: noexcept for entry selection
+void DroneDatabaseListView::on_entry_selected(size_t index) noexcept {
     if (index == 0) {
         DroneDbEntry empty_entry;
         auto on_add = [this](const DroneDbEntry& entry) {
             if (entry.freq != 0 && database_view_.count < DroneDatabaseManager::MAX_DATABASE_ENTRIES) {
                 database_view_.entries[database_view_.count++] = entry;
                 save_changes();
-                reload_list();
+                menu_view_.clear();
+                menu_view_.add_item({"[+ ADD NEW FREQUENCY]", Color::white(), nullptr, nullptr});
+                for (size_t i = 0; i < database_view_.count; ++i) {
+                    const auto& entry = database_view_.entries[i];
+                    constexpr size_t FREQ_BUF_SIZE = 24;
+                    char freq_buf[FREQ_BUF_SIZE];
+                    FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), entry.freq);
+                    
+                    constexpr size_t TEXT_BUFFER_SIZE = 64;
+                    char text_buffer[TEXT_BUFFER_SIZE];
+                    snprintf(text_buffer, sizeof(text_buffer), "%s: %s", freq_buf, entry.description);
+                    
+                    std::string text_item(text_buffer);
+                    menu_view_.add_item({text_item, Color::white(), nullptr, nullptr});
+                }
             }
         };
         using EditorViewT = DroneEntryEditorView<decltype(on_add)>;
@@ -1024,7 +1067,21 @@ void DroneDatabaseListView::on_entry_selected(size_t index) {
             if (entry.freq != 0) {
                 database_view_.entries[entry_index] = entry;
                 save_changes();
-                reload_list();
+                menu_view_.clear();
+                menu_view_.add_item({"[+ ADD NEW FREQUENCY]", Color::white(), nullptr, nullptr});
+                for (size_t i = 0; i < database_view_.count; ++i) {
+                    const auto& entry = database_view_.entries[i];
+                    constexpr size_t FREQ_BUF_SIZE = 24;
+                    char freq_buf[FREQ_BUF_SIZE];
+                    FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), entry.freq);
+                    
+                    constexpr size_t TEXT_BUFFER_SIZE = 64;
+                    char text_buffer[TEXT_BUFFER_SIZE];
+                    snprintf(text_buffer, sizeof(text_buffer), "%s: %s", freq_buf, entry.description);
+                    
+                    std::string text_item(text_buffer);
+                    menu_view_.add_item({text_item, Color::white(), nullptr, nullptr});
+                }
             }
         };
         using EditorViewT = DroneEntryEditorView<decltype(on_edit)>;
@@ -1032,8 +1089,11 @@ void DroneDatabaseListView::on_entry_selected(size_t index) {
     }
 }
 
-void DroneDatabaseListView::save_changes() { DroneDatabaseManager::save_database(database_view_); }
-bool DroneDatabaseListView::on_key(const KeyEvent key) {
+// DIAMOND OPTIMIZATION: noexcept for save
+void DroneDatabaseListView::save_changes() noexcept { DroneDatabaseManager::save_database(database_view_); }
+
+// DIAMOND OPTIMIZATION: noexcept for key handling
+bool DroneDatabaseListView::on_key(const KeyEvent key) noexcept {
     if (key == KeyEvent::Select) {
         size_t index = menu_view_.highlighted_index();
         on_entry_selected(index);

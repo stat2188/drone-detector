@@ -37,55 +37,64 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
+// TYPE ALIASES (Semantic Types)
+// ===========================================
+template<typename T>
+using BufferIndex = size_t;
+
+template<typename T>
+using WindowSize = size_t;
+
+// ===========================================
 // UNIFIED MEDIAN FILTER TEMPLATE
 // ===========================================
 // Eliminates duplicate WidebandMedianFilter and FastMedianFilter
 // Scott Meyers Item 41: Understand implicit interfaces
 // FIX: Correctly handles partial buffer median calculation (was returning window_[0] for non-full buffers)
 // USAGE: Include this BEFORE using MedianFilter<T>
-template<typename T, size_t N = 11>
+template<typename T, WindowSize<T> N = 11>
 class MedianFilter {
 public:
     MedianFilter() : window_{}, head_(0), full_(false) {
     }
 
-    void add(T value) noexcept {
+    void add(const T value) noexcept {
         window_[head_] = value;
         head_ = (head_ + 1) % N;
         if (head_ == 0) full_ = true;
     }
 
     T get_median() const noexcept {
-        const size_t current_size = full_ ? N : head_;
+        const WindowSize<T> current_size = full_ ? N : head_;
 
         if (current_size == 0) {
             return T{};
         }
 
         std::array<T, N> temp = window_;
-        const size_t k = current_size / 2;
+        const WindowSize<T> k = current_size / 2;
 
         // QuickSelect implementation for median
-        size_t left = 0;
-        size_t right = current_size - 1;
-        
+        WindowSize<T> left = 0;
+        WindowSize<T> right = current_size - 1;
+
         while (left < right) {
-            size_t pivot_idx = left + (right - left) / 2;
+            WindowSize<T> pivot_idx = left + (right - left) / 2;
             T pivot = temp[pivot_idx];
-            
+
             // Partition
             std::swap(temp[pivot_idx], temp[right]);
-            size_t store_idx = left;
-            
-            for (size_t i = left; i < right; ++i) {
+            WindowSize<T> store_idx = left;
+
+            for (WindowSize<T> i = left; i < right; ++i) {
                 if (temp[i] < pivot) {
                     std::swap(temp[store_idx], temp[i]);
                     store_idx++;
                 }
             }
-            
+
             std::swap(temp[store_idx], temp[right]);
-            
+
             if (store_idx == k) {
                 break;
             } else if (store_idx < k) {
@@ -94,7 +103,7 @@ public:
                 right = store_idx - 1;
             }
         }
-        
+
         return temp[k];
     }
 
@@ -106,7 +115,7 @@ public:
 
 private:
     std::array<T, N> window_;
-    size_t head_;
+    BufferIndex<T> head_;
     bool full_;
 };
 
@@ -149,6 +158,22 @@ private:
     T value_;
     bool dirty_;
 };
+
+// ===========================================
+// CONSTANTS FOR FREQUENCY VALIDATION
+// ===========================================
+namespace FrequencyValidationConstants {
+    constexpr int64_t MIN_HARDWARE_FREQ = 1'000'000LL;
+    constexpr int64_t MAX_HARDWARE_FREQ = 7'200'000'000LL;
+    constexpr int64_t MIN_2_4GHZ = 2'400'000'000LL;
+    constexpr int64_t MAX_2_4GHZ = 2'483'500'000LL;
+    constexpr int64_t MIN_5_8GHZ = 5'725'000'000LL;
+    constexpr int64_t MAX_5_8GHZ = 5'875'000'000LL;
+    constexpr int64_t MIN_MILITARY = 860'000'000LL;
+    constexpr int64_t MAX_MILITARY = 930'000'000LL;
+    constexpr int64_t MIN_433MHZ = 433'000'000LL;
+    constexpr int64_t MAX_433MHZ = 435'000'000LL;
+}
 
 // ===========================================
 // CONSTEXPR FREQUENCY VALIDATION

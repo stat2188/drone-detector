@@ -211,14 +211,14 @@ struct TranslationEntry {
 
 class Translator {
 public:
-    static void set_language(Language lang);
-    static Language get_language();
-    static const char* translate(const char* key);
-    static const char* get_translation(const char* key);
+    static void set_language(Language lang) noexcept;
+    static Language get_language() noexcept;
+    static const char* translate(const char* key) noexcept;
+    static const char* get_translation(const char* key) noexcept;
 
 private:
     static Language current_language_;
-    static const char* get_english(const char* key);
+    static const char* get_english(const char* key) noexcept;
 };
 
 struct DronePreset {

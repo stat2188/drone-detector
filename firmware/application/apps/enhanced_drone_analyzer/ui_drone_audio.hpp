@@ -12,6 +12,26 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
+// ========================================
+// TYPE ALIASES (Semantic Types)
+// ========================================
+using AudioFrequency = uint16_t;
+using AudioDuration = uint32_t;
+using AudioVolume = uint8_t;
+using CooldownMs = uint32_t;
+
+// ========================================
+// CONSTANTS
+// ========================================
+namespace AudioConstants {
+    constexpr AudioFrequency DEFAULT_LOW_FREQ = 800;
+    constexpr AudioFrequency DEFAULT_MEDIUM_FREQ = 1000;
+    constexpr AudioFrequency DEFAULT_HIGH_FREQ = 1200;
+    constexpr AudioFrequency DEFAULT_CRITICAL_FREQ = 2000;
+    constexpr AudioDuration BEEP_DURATION = 200;
+    constexpr uint32_t BEEP_SAMPLE_RATE = 24000;
+}
+
 // 🔴 HIGH PRIORITY FIX: Add mutex protection for static variables
 // Prevents race conditions when audio is accessed from multiple threads
 static Mutex audio_mutex;
@@ -33,19 +53,19 @@ struct AudioAlertManager {
             return;
         }
         last_alert_timestamp_ = now;
-        uint16_t freq_hz = 800;
+        AudioFrequency freq_hz = AudioConstants::DEFAULT_LOW_FREQ;
         switch (level) {
             case ThreatLevel::NONE: chMtxUnlock(); return;
-            case ThreatLevel::LOW: freq_hz = 800; break;
-            case ThreatLevel::MEDIUM: freq_hz = 1000; break;
-            case ThreatLevel::HIGH: freq_hz = 1200; break;
-            case ThreatLevel::CRITICAL: freq_hz = 2000; break;
-            default: freq_hz = 800; break;
+            case ThreatLevel::LOW: freq_hz = AudioConstants::DEFAULT_LOW_FREQ; break;
+            case ThreatLevel::MEDIUM: freq_hz = AudioConstants::DEFAULT_MEDIUM_FREQ; break;
+            case ThreatLevel::HIGH: freq_hz = AudioConstants::DEFAULT_HIGH_FREQ; break;
+            case ThreatLevel::CRITICAL: freq_hz = AudioConstants::DEFAULT_CRITICAL_FREQ; break;
+            default: freq_hz = AudioConstants::DEFAULT_LOW_FREQ; break;
         }
         chMtxUnlock();
         // Use local variable to ensure consistent state
         if (audio_enabled) {
-            baseband::request_audio_beep(freq_hz, 24000, 200);
+            baseband::request_audio_beep(freq_hz, AudioConstants::BEEP_SAMPLE_RATE, AudioConstants::BEEP_DURATION);
         }
     }
     // DIAMOND OPTIMIZATION: noexcept for zero-overhead abstraction
@@ -60,7 +80,7 @@ struct AudioAlertManager {
         chMtxUnlock();
         return enabled;
     }
-    static void set_cooldown_ms(uint32_t cooldown_ms) noexcept {
+    static void set_cooldown_ms(CooldownMs cooldown_ms) noexcept {
         chMtxLock(&audio_mutex);
         cooldown_ms_ = cooldown_ms;
         chMtxUnlock();
@@ -70,7 +90,7 @@ private:
     inline static bool audio_enabled_ = true;
     inline static systime_t last_alert_timestamp_ = 0;
     // 🔴 PHASE 3: Use constant from EDA::Constants instead of magic number
-    inline static uint32_t cooldown_ms_ = EDA::Constants::DEFAULT_ALERT_COOLDOWN_MS;
+    inline static CooldownMs cooldown_ms_ = EDA::Constants::DEFAULT_ALERT_COOLDOWN_MS;
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer

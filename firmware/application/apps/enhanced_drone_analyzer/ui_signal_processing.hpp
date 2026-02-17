@@ -16,8 +16,20 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// Signal processing constants
+// ========================================
+// TYPE ALIASES (Semantic Types)
+// ========================================
+using FrequencyHash = size_t;
+using DetectionCount = uint8_t;
+using RSSIValue = int32_t;
+using Timestamp = uint32_t;
+using EntryIndex = size_t;
+
+// ========================================
+// CONSTANTS
+// ========================================
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
+static constexpr int32_t DEFAULT_RSSI_DBM = EDA::Constants::RSSI_INVALID_DBM;
 
 // DIAMOND OPTIMIZATION: Using unified MedianFilter template
 // Replaces old WidebandMedianFilter class
@@ -27,10 +39,10 @@ using WidebandMedianFilter = MedianFilter<int16_t, 11>;
 // ENTRY STRUCT (POD for memory safety)
 // ========================================
 struct DetectionEntry {
-    size_t frequency_hash;
-    uint8_t detection_count;
-    int32_t rssi_value;
-    uint32_t timestamp;
+    FrequencyHash frequency_hash;
+    DetectionCount detection_count;
+    RSSIValue rssi_value;
+    Timestamp timestamp;
 };
 
 // ========================================
@@ -74,10 +86,10 @@ public:
     DetectionRingBuffer(const DetectionRingBuffer&) = delete;
     DetectionRingBuffer& operator=(const DetectionRingBuffer&) = delete;
 
-    void update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) noexcept;
+    void update_detection(FrequencyHash frequency_hash, DetectionCount detection_count, RSSIValue rssi_value) noexcept;
 
-    uint8_t get_detection_count(size_t frequency_hash) const noexcept;
-    int32_t get_rssi_value(size_t frequency_hash) const noexcept;
+    DetectionCount get_detection_count(FrequencyHash frequency_hash) const noexcept;
+    RSSIValue get_rssi_value(FrequencyHash frequency_hash) const noexcept;
     void clear() noexcept;
 
 private:

@@ -27,12 +27,12 @@ public:
                        ::AudioManager& audio_controller);
     ~ScanningCoordinator();
 
-    void start_coordinated_scanning();
-    void stop_coordinated_scanning();
-    bool is_scanning_active() const { return scanning_active_; }
-    void update_runtime_parameters(const DroneAnalyzerSettings& settings);
+    void start_coordinated_scanning() noexcept;
+    void stop_coordinated_scanning() noexcept;
+    bool is_scanning_active() const noexcept { return scanning_active_; }
+    void update_runtime_parameters(const DroneAnalyzerSettings& settings) noexcept;
     // DIAMOND OPTIMIZATION: Use const char* instead of std::string (zero heap allocation)
-    void show_session_summary(const char* summary);
+    void show_session_summary([[maybe_unused]] const char* summary) noexcept;
 
     ScanningCoordinator(const ScanningCoordinator&) = delete;
     ScanningCoordinator(ScanningCoordinator&&) = delete;
@@ -40,8 +40,8 @@ public:
     ScanningCoordinator& operator=(ScanningCoordinator&&) = delete;
 
 private:
-    static msg_t scanning_thread_function(void* arg);
-    msg_t coordinated_scanning_thread();
+    static msg_t scanning_thread_function(void* arg) noexcept;
+    msg_t coordinated_scanning_thread() noexcept;
 
     NavigationView& nav_;
     DroneHardwareController& hardware_;

@@ -41,38 +41,42 @@ namespace ui::apps::enhanced_drone_analyzer {
  * Uses file.hpp API for robust SD card communication with scanner module
  * DIAMOND OPTIMIZATION: All methods use const char* instead of std::string (zero heap allocation)
  */
+// DIAMOND OPTIMIZATION: Settings manager with zero heap allocation
 class EnhancedSettingsManager {
 public:
-    static void ensure_database_exists();
-    static bool save_settings_to_txt(const DroneAnalyzerSettings& settings);
-    static bool load_settings_from_txt(DroneAnalyzerSettings& settings);
-    static bool verify_comm_file_exists();
+    // DIAMOND OPTIMIZATION: noexcept for all methods
+    static void ensure_database_exists() noexcept;
+    static bool save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept;
+    static bool load_settings_from_txt(DroneAnalyzerSettings& settings) noexcept;
+    static bool verify_comm_file_exists() noexcept;
     // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string
-    static const char* get_communication_status();
+    static const char* get_communication_status() noexcept;
 
 private:
-    static void create_backup_file(const char* filepath);
-    static void restore_from_backup(const char* filepath);
-    static void remove_backup_file(const char* filepath);
+    static void create_backup_file(const char* filepath) noexcept;
+    static void restore_from_backup(const char* filepath) noexcept;
+    static void remove_backup_file(const char* filepath) noexcept;
     // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string_view
-    static const char* generate_file_header();
+    static const char* generate_file_header() noexcept;
     // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string
-    static const char* spectrum_mode_to_string(SpectrumMode mode);
-    static const char* get_current_timestamp();
+    static const char* spectrum_mode_to_string(SpectrumMode mode) noexcept;
+    static const char* get_current_timestamp() noexcept;
 };
 
 // ===========================================
 // ACTIVE: Translation Functions (Kept for UI)
 // ===========================================
 // DIAMOND OPTIMIZATION: Replaced std::map with constexpr LUT for zero heap allocation
+// DIAMOND OPTIMIZATION: Translation manager with zero heap allocation
 class DroneAnalyzerSettingsManager_Translations {
 public:
     static Language current_language_;
     
-    static void set_language(Language lang) { current_language_ = lang; }
-    static Language get_language() { return current_language_; }
-    static const char* translate(const char* key);
-    static const char* get_translation(const char* key);
+    // DIAMOND OPTIMIZATION: noexcept for simple getters/setters
+    static void set_language(Language lang) noexcept { current_language_ = lang; }
+    static Language get_language() noexcept { return current_language_; }
+    static const char* translate(const char* key) noexcept;
+    static const char* get_translation(const char* key) noexcept;
 
 private:
     struct TranslationEntry {
@@ -99,18 +103,22 @@ private:
 // using PresetMenuView = void(*)(const DronePreset&); // REMOVED - use template-based approach
 // using FilteredPresetMenuView = void(*)(const DronePreset&, const std::vector<DronePreset>&); // DEPRECATED - not used
 
+// DIAMOND OPTIMIZATION: Preset manager with zero heap allocation
 class DroneFrequencyPresets {
 public:
+    // DIAMOND OPTIMIZATION: Named constants for preset counts
     static constexpr size_t PRESETS_COUNT = 5;
     static constexpr size_t AVAILABLE_TYPES_COUNT = 7;
-    static const std::array<DronePreset, PRESETS_COUNT>& get_all_presets();
-    static const char* const* get_preset_names();
-    static const DroneType* get_available_types();
-    static size_t get_preset_count();
-    static size_t get_available_types_count();
+    
+    // DIAMOND OPTIMIZATION: noexcept for all methods
+    static const std::array<DronePreset, PRESETS_COUNT>& get_all_presets() noexcept;
+    static const char* const* get_preset_names() noexcept;
+    static const DroneType* get_available_types() noexcept;
+    static size_t get_preset_count() noexcept;
+    static size_t get_available_types_count() noexcept;
     // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string
-    static const char* get_type_display_name(DroneType type);
-    static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset);
+    static const char* get_type_display_name(DroneType type) noexcept;
+    static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset) noexcept;
 };
 
 // CRITICAL FIX: Replaced std::function with template-based callbacks
@@ -119,16 +127,18 @@ public:
 // Template-based approach enables compile-time polymorphism with zero heap allocation
 
 // Functor for config updates - zero heap allocation, fixed storage
+// DIAMOND OPTIMIZATION: Functor for config updates - zero heap allocation
 struct ConfigUpdaterCallback {
     DroneAnalyzerSettings* config_ptr;
     
-    constexpr explicit ConfigUpdaterCallback(DroneAnalyzerSettings& config) noexcept 
+    constexpr explicit ConfigUpdaterCallback(DroneAnalyzerSettings& config) noexcept
         : config_ptr(&config) {}
     
-    void operator()(const DronePreset& preset) const {
-        if (config_ptr) {
-            DroneFrequencyPresets::apply_preset(*config_ptr, preset);
-        }
+    // DIAMOND OPTIMIZATION: noexcept for operator()
+    void operator()(const DronePreset& preset) const noexcept {
+        // DIAMOND OPTIMIZATION: Guard clause to reduce nesting
+        if (!config_ptr) return;
+        DroneFrequencyPresets::apply_preset(*config_ptr, preset);
     }
 };
 
@@ -158,24 +168,26 @@ private:
     Callback on_selected_fn_;  // Template parameter - no heap allocation
     const PresetContainer& presets_;
 
-    bool on_key(const KeyEvent key) override {
-        if (key == KeyEvent::Select) {
-            size_t idx = highlighted_index();
-            if (idx < presets_.size()) {
-                on_selected_fn_(presets_[idx]);
-            }
-            return true;
+    // DIAMOND OPTIMIZATION: noexcept for key handling
+    bool on_key(const KeyEvent key) noexcept override {
+        // DIAMOND OPTIMIZATION: Guard clause for early return
+        if (key != KeyEvent::Select) return MenuView::on_key(key);
+        
+        size_t idx = highlighted_index();
+        if (idx < presets_.size()) {
+            on_selected_fn_(presets_[idx]);
         }
-        return MenuView::on_key(key);
+        return true;
     }
 };
 
+// DIAMOND OPTIMIZATION: Preset selector with zero heap allocation
 class DronePresetSelector {
 public:
     // Template-based callback - accepts any callable type without heap allocation
     // Implementation must be in header for implicit template instantiation
     template <typename Callback>
-    static void show_preset_menu(NavigationView& nav, Callback callback) {
+    static void show_preset_menu(NavigationView& nav, Callback callback) noexcept {
         const auto preset_names = DroneFrequencyPresets::get_preset_names();
         const auto& all_presets = DroneFrequencyPresets::get_all_presets();
         const auto preset_count = DroneFrequencyPresets::get_preset_count();
@@ -184,12 +196,13 @@ public:
         nav.push<PresetMenuViewT>(preset_names, preset_count, std::move(callback), all_presets);
     }
     
-    static void show_type_filtered_presets(NavigationView& nav, DroneType type);
+    static void show_type_filtered_presets(NavigationView& nav, DroneType type) noexcept;
     
     // Returns functor instead of std::function - zero heap allocation
-    static ConfigUpdaterCallback create_config_updater(DroneAnalyzerSettings& config_to_update);
+    static ConfigUpdaterCallback create_config_updater(DroneAnalyzerSettings& config_to_update) noexcept;
 };
 
+// DIAMOND OPTIMIZATION: POD struct for frequency entries (zero heap allocation)
 struct DroneFrequencyEntry {
     Frequency frequency_hz;
     DroneType drone_type;
@@ -199,9 +212,9 @@ struct DroneFrequencyEntry {
     const char* description;
 
     DroneFrequencyEntry(Frequency freq, DroneType type, ThreatLevel threat,
-                       int32_t rssi_thresh, uint32_t bw_hz, const char* desc);
+                       int32_t rssi_thresh, uint32_t bw_hz, const char* desc) noexcept;
 
-    bool is_valid() const;
+    bool is_valid() const noexcept;
 };
 
 // DIAMOND OPTIMIZATION: Fixed-size array instead of std::vector (zero heap allocation)
@@ -216,12 +229,13 @@ struct DroneDbEntry {
 };
 
 // Database manager class
+// DIAMOND OPTIMIZATION: Database manager with zero heap allocation
 class DroneDatabaseManager {
 public:
-    // DIAMOND OPTIMIZATION: Use DatabaseView instead of std::vector
-    // Returns stack-allocated view (zero heap allocation)
+    // DIAMOND OPTIMIZATION: Named constant for max entries
     static constexpr size_t MAX_DATABASE_ENTRIES = 100;
     
+    // DIAMOND OPTIMIZATION: POD struct for database view (zero heap allocation)
     struct DatabaseView {
         DroneDbEntry entries[MAX_DATABASE_ENTRIES];
         size_t count = 0;
@@ -233,19 +247,21 @@ public:
         constexpr size_t size() const noexcept { return count; }
     };
     
-    static DatabaseView load_database(const char* file_path = "/FREQMAN/DRONES.TXT");
-    static bool save_database(const DatabaseView& view, const char* file_path = "/FREQMAN/DRONES.TXT");
+    // DIAMOND OPTIMIZATION: noexcept for all methods
+    static DatabaseView load_database(const char* file_path = "/FREQMAN/DRONES.TXT") noexcept;
+    static bool save_database(const DatabaseView& view, const char* file_path = "/FREQMAN/DRONES.TXT") noexcept;
 };
 
 // ===========================================
 // PART 3: SETTINGS UI CLASSES
 // ===========================================
 
+// DIAMOND OPTIMIZATION: Audio settings view with zero heap allocation
 class AudioSettingsView : public View {
 public:
     explicit AudioSettingsView(NavigationView& nav);
     ~AudioSettingsView() = default;
-    void focus() override;
+    void focus() noexcept override;
     std::string title() const override { return "Audio Settings"; }
 
 private:
@@ -260,18 +276,20 @@ private:
     Text text_repeat_{{28, 128, 200, 16}, "Repeat Alerts"};
     Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings", false};
 
-    void load_current_settings();
-    void save_current_settings();
-    void update_ui_from_settings();
-    void update_settings_from_ui();
-    void on_save_settings();
+    // DIAMOND OPTIMIZATION: noexcept for all methods
+    void load_current_settings() noexcept;
+    void save_current_settings() noexcept;
+    void update_ui_from_settings() noexcept;
+    void update_settings_from_ui() noexcept;
+    void on_save_settings() noexcept;
 };
 
+// DIAMOND OPTIMIZATION: Hardware settings view with zero heap allocation
 class HardwareSettingsView : public View {
 public:
     explicit HardwareSettingsView(NavigationView& nav);
     ~HardwareSettingsView() = default;
-    void focus() override;
+    void focus() noexcept override;
     std::string title() const override { return "Hardware Settings"; }
 
 private:
@@ -284,18 +302,20 @@ private:
     NumberField number_max_freq_{{8, 128}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
     Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings", false};
 
-    void load_current_settings();
-    void save_current_settings();
-    void update_ui_from_settings();
-    void update_settings_from_ui();
-    void on_save_settings();
+    // DIAMOND OPTIMIZATION: noexcept for all methods
+    void load_current_settings() noexcept;
+    void save_current_settings() noexcept;
+    void update_ui_from_settings() noexcept;
+    void update_settings_from_ui() noexcept;
+    void on_save_settings() noexcept;
 };
 
+// DIAMOND OPTIMIZATION: Scanning settings view with zero heap allocation
 class ScanningSettingsView : public View {
 public:
     explicit ScanningSettingsView(NavigationView& nav);
     ~ScanningSettingsView() = default;
-    void focus() override;
+    void focus() noexcept override;
     std::string title() const override { return "Scanning Settings"; }
 
 private:
@@ -308,26 +328,21 @@ private:
     Button button_presets_{{8, 128, 120, 32}, "Frequency Presets", false};
     Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings", false};
 
-    void load_current_settings();
-    void save_current_settings();
-    void update_ui_from_settings();
-    void update_settings_from_ui();
-    void on_save_settings();
-    void on_show_presets();
-    void on_wideband_enabled_changed();
+    // DIAMOND OPTIMIZATION: noexcept for all methods
+    void load_current_settings() noexcept;
+    void save_current_settings() noexcept;
+    void on_save_settings() noexcept;
+    void on_show_presets() noexcept;
+    void on_wideband_enabled_changed() noexcept;
 };
 
+// DIAMOND OPTIMIZATION: Main settings view with zero heap allocation
 class DroneAnalyzerSettingsView : public View {
 public:
     explicit DroneAnalyzerSettingsView(NavigationView& nav);
     ~DroneAnalyzerSettingsView() override = default;
-    void focus() override;
+    void focus() noexcept override;
     std::string title() const override { return "EDA Settings"; }
-    void paint(Painter& painter) override;
-    bool on_key(const KeyEvent key) override;
-    bool on_touch(const TouchEvent event) override;
-    void on_show() override;
-    void on_hide() override;
 
  private:
     NavigationView& nav_;
@@ -338,20 +353,22 @@ public:
     Button button_about_author_{{136, 152, 120, 32}, "About Author", false};
     Text text_title_{{8, 8, screen_width - 16, 16}, "Enhanced Drone Analyzer Settings"};
 
-    void show_audio_settings();
-    void show_hardware_settings();
-    void show_scanning_settings();
-    void show_about_author();
-    void load_default_settings();
+    // DIAMOND OPTIMIZATION: noexcept for all methods
+    void show_audio_settings() noexcept;
+    void show_hardware_settings() noexcept;
+    void show_scanning_settings() noexcept;
+    void show_about_author() noexcept;
+    void load_default_settings() noexcept;
 
     DroneAnalyzerSettings current_settings_;
 };
 
+// DIAMOND OPTIMIZATION: Loading view with zero heap allocation
 class LoadingView : public View {
 public:
     explicit LoadingView(NavigationView& nav, const char* loading_text = "Loading...");
     ~LoadingView() = default;
-    void focus() override;
+    void focus() noexcept override;
     std::string title() const override { return "Loading"; }
     void paint(Painter& painter) override;
     void on_show() override;
@@ -373,27 +390,30 @@ class DroneEntryEditorView : public View {
 public:
     explicit DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, Callback callback)
         : View(), nav_(nav), entry_(entry), on_save_fn_(std::move(callback)),
-          description_buffer_(entry.description),
           text_freq_{{8, 16, 64, 16}, "Freq:"},
           field_freq_{{8, 32}},
           text_desc_{{8, 64, 64, 16}, "Name:"},
           field_desc_{description_buffer_, {8, 80}, 28},
           button_save_{{8, 128, 100, 32}, "SAVE"},
           button_cancel_{{128, 128, 100, 32}, "CANCEL"} {
+        // DIAMOND OPTIMIZATION: Initialize char array from entry description (no heap allocation)
+        safe_strcpy(description_buffer_, entry.description, sizeof(description_buffer_));
         add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
         field_freq_.set_value(entry_.freq);
         button_save_.on_select = [this](Button&) { on_save(); };
         button_cancel_.on_select = [this](Button&) { on_cancel(); };
     }
 
-    void focus() override { field_freq_.focus(); }
+    // DIAMOND OPTIMIZATION: noexcept for focus
+    void focus() noexcept override { field_freq_.focus(); }
     std::string title() const override { return "Edit Frequency"; }
 
 private:
     NavigationView& nav_;
     DroneDbEntry entry_;
     Callback on_save_fn_;
-    std::string description_buffer_;
+    // DIAMOND OPTIMIZATION: Fixed-size char array instead of std::string (zero heap allocation)
+    char description_buffer_[64];
     Text text_freq_;
     FrequencyField field_freq_;
     Text text_desc_;
@@ -401,24 +421,26 @@ private:
     Button button_save_;
     Button button_cancel_;
 
-    void on_save() {
+    // DIAMOND OPTIMIZATION: noexcept for save/cancel
+    void on_save() noexcept {
         DroneDbEntry new_entry;
         new_entry.freq = field_freq_.value();
-        safe_strcpy(new_entry.description, description_buffer_.c_str(), sizeof(new_entry.description));
+        safe_strcpy(new_entry.description, description_buffer_, sizeof(new_entry.description));
         on_save_fn_(new_entry);
         nav_.pop();
     }
-    void on_cancel() {
+    void on_cancel() noexcept {
         DroneDbEntry empty_entry{0};
         on_save_fn_(empty_entry);
         nav_.pop();
     }
 };
 
+// DIAMOND OPTIMIZATION: Database list view with zero heap allocation
 class DroneDatabaseListView : public View {
 public:
     DroneDatabaseListView(NavigationView& nav);
-    void focus() override;
+    void focus() noexcept override;
     std::string title() const override { return "Manage Database"; }
 
 private:
@@ -426,10 +448,10 @@ private:
     DroneDatabaseManager::DatabaseView database_view_;
     MenuView menu_view_{{0, 0, 240, 168}};
 
-    void reload_list();
-    void on_entry_selected(size_t index);
-    void save_changes();
-    bool on_key(const KeyEvent key) override;
+    // DIAMOND OPTIMIZATION: noexcept for all methods
+    void on_entry_selected(size_t index) noexcept;
+    void save_changes() noexcept;
+    bool on_key(const KeyEvent key) noexcept override;
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer

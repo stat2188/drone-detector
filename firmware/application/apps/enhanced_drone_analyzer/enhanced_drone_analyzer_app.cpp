@@ -17,7 +17,12 @@ using namespace portapack;
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-void initialize_app(ui::NavigationView& nav) {
+// ========================================
+// TYPE ALIASES (Semantic Types)
+// ========================================
+using AppNavigationView = ui::NavigationView;
+
+void initialize_app(AppNavigationView& nav) noexcept {
     nav.push<EnhancedDroneSpectrumAnalyzerView>();
 }
 

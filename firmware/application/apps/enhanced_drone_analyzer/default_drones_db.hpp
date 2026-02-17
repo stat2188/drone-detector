@@ -4,10 +4,39 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// This large string literal will be compiled into the binary.
+// ========================================
+// TYPE ALIASES (Semantic Types)
+// ========================================
+using DatabaseContent = const char*;
+using FrequencyHz = uint64_t;
+
+// ========================================
+// CONSTANTS
+// ========================================
+namespace DatabaseConstants {
+    constexpr FrequencyHz TBS_CROSSFIRE_EU = 868000000ULL;
+    constexpr FrequencyHz TBS_CROSSFIRE_US = 915000000ULL;
+    constexpr FrequencyHz ELRS_868 = 866000000ULL;
+    constexpr FrequencyHz ELRS_915 = 915000000ULL;
+    constexpr FrequencyHz LRS_433 = 433050000ULL;
+    constexpr FrequencyHz DJI_CH1 = 2406500000ULL;
+    constexpr FrequencyHz DJI_CH3 = 2416500000ULL;
+    constexpr FrequencyHz DJI_CH5 = 2426500000ULL;
+    constexpr FrequencyHz DJI_CH7 = 2436500000ULL;
+    constexpr FrequencyHz FPV_RB_CH1 = 5658000000ULL;
+    constexpr FrequencyHz FPV_RB_CH2 = 5695000000ULL;
+    constexpr FrequencyHz FPV_RB_CH3 = 5732000000ULL;
+    constexpr FrequencyHz FPV_RB_CH4 = 5769000000ULL;
+    constexpr FrequencyHz DJI_FPV_CH1 = 5735000000ULL;
+    constexpr FrequencyHz WIFI_CH1 = 2412000000ULL;
+    constexpr FrequencyHz WIFI_CH6 = 2437000000ULL;
+    constexpr FrequencyHz WIFI_CH11 = 2462000000ULL;
+}
+
+// This large string literal will be compiled into binary.
 // Format: FREQMAN (Frequency, Description)
 // Phase 3 Optimization: Reduced from 31 to 15 entries (~384 bytes savings)
-constexpr const char* DEFAULT_DRONE_DATABASE_CONTENT =
+constexpr DatabaseContent DEFAULT_DRONE_DATABASE_CONTENT =
     "# EDA Factory Drone Database\n"
     "# Format: Freq(Hz), Description\n"
     "\n"

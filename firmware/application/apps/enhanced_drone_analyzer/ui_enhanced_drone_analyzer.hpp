@@ -853,7 +853,6 @@ public:
     void clear_card();
     Color get_card_bg_color() const;
     Color get_card_text_color() const;
-    void set_parent_rect(const Rect& rect);
 
     ThreatCard(const ThreatCard&) = delete;
     ThreatCard& operator=(const ThreatCard&) = delete;
@@ -1067,7 +1066,7 @@ public:
 
     void update_detection_display(const DroneScanner& scanner);
     void update_trends_display(size_t approaching, size_t static_count, size_t receding);
-    // DIAMOND OPTIMIZATION: const char* вместо const std::string& для экономии RAM
+    void update_signal_type_display(const char* signal_type);
     void set_scanning_status(bool active, const char* message);
     void set_frequency_display(Frequency freq);
     void add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi);
@@ -1075,7 +1074,6 @@ public:
     void sort_drones_by_rssi();
     void render_drone_text_display();
 
-    void initialize_mini_spectrum();
     void process_mini_spectrum_data(const ChannelSpectrum& spectrum);
     bool process_bins(uint8_t* power_level);
 
@@ -1083,14 +1081,8 @@ public:
     void highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES>& drones);
     size_t frequency_to_spectrum_bin(Frequency freq_hz) const;
     void clear_spectrum_buffers();
-    bool validate_spectrum_data() const;
-    size_t get_safe_spectrum_index(size_t x, size_t y) const;
-
     void set_spectrum_range(Frequency min_freq, Frequency max_freq);
-    // DIAMOND OPTIMIZATION: const char* вместо const std::string& для экономии RAM
-    void update_signal_type_display(const char* signal_type);
     void update_frequency_ruler();
-    void lazy_initialize_gradient();  // CRITICAL FIX: Prevent blocking I/O on startup
     void set_ruler_style(RulerStyle style);
     void apply_display_settings(const DroneAnalyzerSettings& settings);
     CompactFrequencyRuler& compact_frequency_ruler() { return compact_frequency_ruler_; }
@@ -1342,9 +1334,6 @@ private:
     // UnifiedColorLookup::threat(static_cast<uint8_t>(level))
     // UnifiedStringLookup::threat_name(static_cast<uint8_t>(level))
 
-    void get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power);
-    void add_spectrum_pixel(uint8_t power);
-
     // DIAMOND OPTIMIZATION: анализ формы сигнала для bar spectrum (без SpectralAnalyzer)
     inline size_t get_bar_color_index(size_t x, uint8_t power) const {
         // 🔴 ФАЗА 1.5: Для статических буферов проверка упрощается
@@ -1372,9 +1361,6 @@ private:
 
 
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
-    void analyze_spectrum_for_threats(const ChannelSpectrum& spectrum);
-    Frequency spectrum_bin_to_frequency(size_t bin) const;
-    void update_or_create_drone_from_spectrum(Frequency freq_hz, uint8_t power);
 };
 
 static constexpr const char* DEFAULT_CONFIG_PATH = "DRONES/DATA.CFG";

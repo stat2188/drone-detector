@@ -2179,12 +2179,6 @@ void ThreatCard::paint(Painter& painter) {
     }
 }
 
-void ThreatCard::set_parent_rect(const Rect& rect) {
-    parent_rect_ = rect;
-    View::set_parent_rect(rect);
-    set_dirty();
-}
-
 ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
     : View(parent_rect), bar_index_(bar_index), parent_rect_(parent_rect) {
     add_children({&progress_text_, &alert_text_, &normal_text_});
@@ -2328,7 +2322,6 @@ void DroneDisplayController::process_frame_sync() {
         ChannelSpectrum spectrum;
         while (spectrum_fifo_->out(spectrum)) {
             this->process_mini_spectrum_data(spectrum);
-            this->analyze_spectrum_for_threats(spectrum);
         }
     }
 }
@@ -2374,81 +2367,12 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     });
 }
 
-// 🔴 FIX: Deferred buffer allocation to prevent stack overflow
-void DroneDisplayController::allocate_buffers() {
-    // DIAMOND OPTIMIZATION: waterfall_buffer удалён (не нужен, экономия ~9.6KB RAM)
-    // render_mini_spectrum использует display.scroll() и локальный массив new_line
-
-    // Diamond Code: Статические буферы - просто вызываем allocate_buffers_from_pool
-    allocate_buffers_from_pool();
-}
-
-
-void DroneDisplayController::deallocate_buffers() {
-    // Diamond Code: Статические буферы не требуют deallocation
-    // Просто сбрасываем флаг
-    buffers_allocated_ = false;
-
-    // Опционально: очищаем память для безопасности
-    std::fill(std::begin(spectrum_row_buffer_storage_),
-              std::end(spectrum_row_buffer_storage_),
-              Color::black());
-    std::fill(std::begin(render_line_buffer_storage_),
-              std::end(render_line_buffer_storage_),
-              Color::black());
-    std::fill(std::begin(spectrum_power_levels_storage_),
-              std::end(spectrum_power_levels_storage_),
-              0);
-}
-
-
-// ===========================================
-// ФАЗА 1.3: СТАТИЧЕСКИЕ БУФЕРЫ - ИМПЛЕМЕНТАЦИЯ
-// ===========================================
-// Diamond Code: Zero heap allocation
-// Буферы статические - "выделение" просто устанавливает флаг
-
-bool DroneDisplayController::are_buffers_allocated() const {
-    return buffers_allocated_;
-}
-
-bool DroneDisplayController::are_buffers_valid() const {
-    // Статические буферы всегда валидны после "аллокации"
-    // Размер проверяется на этапе компиляции через static_assert
-    return buffers_allocated_;
-}
-
-bool DroneDisplayController::allocate_buffers_from_pool() {
-    // Diamond Code: Статические буферы не требуют allocation
-    // Просто устанавливаем флаг и очищаем память
-
-    if (buffers_allocated_) {
-        return true;  // Уже "выделено"
-    }
-
-    // Очищаем буферы (zero-initialize)
-    // Это выполняется один раз при первом вызове
-    std::fill(std::begin(spectrum_row_buffer_storage_),
-              std::end(spectrum_row_buffer_storage_),
-              Color::black());
-
-    std::fill(std::begin(render_line_buffer_storage_),
-              std::end(render_line_buffer_storage_),
-              Color::black());
-
-    std::fill(std::begin(spectrum_power_levels_storage_),
-              std::end(spectrum_power_levels_storage_),
-              0);
-
-    buffers_allocated_ = true;
-    waterfall_line_index_ = 0;
-
-    return true;  // Всегда успешно (нет heap allocation)
-}
-
-
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
+    // DIAMOND FIX: Direct buffer validation without dead functions
+    if (!buffers_allocated_) {
+        return;
+    }
      if (scanner.is_scanning_active()) {
          Frequency current_freq = scanner.get_current_scanning_frequency();
          // NOLINTNEXTLINE(bugprone-branch-clone)
@@ -2549,6 +2473,11 @@ void DroneDisplayController::set_scanning_status(bool active, const char* messag
         StatusFormatter::format_to(buffer, "STOP: %s", message);
         text_status_info_.set_style(&UIStyles::LIGHT_STYLE);
     }
+}
+
+void DroneDisplayController::update_signal_type_display(const char* signal_type) {
+    if (!signal_type) return;
+    text_scanner_stats_.set(signal_type);
 }
 
 void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi) {
@@ -2694,32 +2623,15 @@ void DroneDisplayController::render_drone_text_display() {
     }
 }
 
-void DroneDisplayController::initialize_mini_spectrum() {
-    if (!spectrum_gradient_.load_file(default_gradient_file)) {
-        spectrum_gradient_.set_default();
-    }
-    clear_spectrum_buffers();
-    update_frequency_ruler();
-}
-
-void DroneDisplayController::lazy_initialize_gradient() {
-    static bool initialized = false;
-    if (initialized) return;
-    initialized = true;
-
-    // Try to load gradient file, use default if fails
-    // This is now called from on_show() instead of constructor to avoid blocking I/O
-    if (!spectrum_gradient_.load_file(default_gradient_file)) {
-        spectrum_gradient_.set_default();
-    }
-    clear_spectrum_buffers();
-    update_frequency_ruler();
-}
-
 void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& spectrum) {
     uint8_t current_bin_power = 0;
     for (size_t bin = 0; bin < MINI_SPECTRUM_WIDTH; bin++) {
-        get_max_power_for_current_bin(spectrum, bin, current_bin_power);
+        // DIAMOND FIX: Direct access without dead function
+        if (bin < spectrum.db.size()) {
+            current_bin_power = spectrum.db[bin];
+        } else {
+            current_bin_power = 0;
+        }
         if (process_bins(&current_bin_power)) {
             return;
         }
@@ -2729,10 +2641,10 @@ void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& s
 bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
     bins_hz_size += each_bin_size;
     if (bins_hz_size >= marker_pixel_step) {
-        if (*powerlevel > min_color_power)
-            add_spectrum_pixel(*powerlevel);
-        else
-            add_spectrum_pixel(0);
+        // DIAMOND FIX: Direct buffer access without dead function
+        if (pixel_index < spectrum_power_levels().size()) {
+            spectrum_power_levels()[pixel_index] = (*powerlevel > min_color_power) ? *powerlevel : 0;
+        }
         *powerlevel = 0;
 
         if (!pixel_index) {
@@ -2805,29 +2717,11 @@ void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array
 }
 
 void DroneDisplayController::clear_spectrum_buffers() {
-    // 🔴 ФАЗА 1.5: Проверка валидности буфера (статический буфер)
+    // DIAMOND FIX: Direct buffer validation without dead functions
     if (!buffers_allocated_) {
         return;
     }
     std::fill(spectrum_power_levels().begin(), spectrum_power_levels().end(), 0);
-}
-
-bool DroneDisplayController::validate_spectrum_data() const {
-    // 🔴 ФАЗА 1.5: Проверка валидности буфера (статический буфер)
-    if (!buffers_allocated_) {
-        return false;
-    }
-
-    if (spectrum_power_levels().size() != MINI_SPECTRUM_WIDTH) return false;
-    if (spectrum_gradient_.lut.empty()) return false;
-    return true;
-}
-
-size_t DroneDisplayController::get_safe_spectrum_index(size_t x, size_t y) const {
-    if (x >= MINI_SPECTRUM_WIDTH || y >= MINI_SPECTRUM_HEIGHT) {
-        return 0;
-    }
-    return y * MINI_SPECTRUM_WIDTH + x;
 }
 
 void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency max_freq) {
@@ -2847,47 +2741,6 @@ void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency ma
     update_frequency_ruler();
 }
 
-void DroneDisplayController::update_signal_type_display(const char* signal_type) {
-    // DIAMOND OPTIMIZATION: Early Return для invalid states
-    if (!signal_type) return;
-    
-    // DIAMOND OPTIMIZATION: Use StatusFormatter
-    char buffer[48];
-    StatusFormatter::format_to(buffer, "SIGNAL: %s", signal_type);
-    text_signal_type_.set(buffer);
- 
-    // DIAMOND OPTIMIZATION: constexpr LUT для signal_type → index (во Flash)
-    static constexpr struct SignalTypeMapping {
-        const char* name;
-        uint8_t idx;
-    } SIGNAL_TYPE_LUT[] = {
-        {"--",       0},  // DEFAULT/Unknown
-        {"DIGITAL",  1},  // Digital
-        {"ANALOG",   2},  // Analog
-        {"NOISE",    3}   // Noise
-    };
-    
-    // Быстрый поиск по имени (O(n) где n=4, быстрее чем 3x strcmp + ternary)
-    size_t signal_idx = 0;
-    for (size_t i = 0; i < 4; ++i) {
-        if (strcmp(signal_type, SIGNAL_TYPE_LUT[i].name) == 0) {
-            signal_idx = SIGNAL_TYPE_LUT[i].idx;
-            break;
-        }
-    }
- 
-    // DIAMOND OPTIMIZATION: constexpr LUT вместо локального массива (хранится во Flash)
-    static constexpr Style SIGNAL_STYLES[] = {
-        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[0].color},
-        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[1].color},
-        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[2].color},
-        {font::fixed_8x16, Color::black(), SIGNAL_TYPE_CONFIG[3].color}
-    };
-    text_signal_type_.set_style(&SIGNAL_STYLES[signal_idx]);
- 
-    set_dirty();
-}
-
 size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) const {
     const Frequency MIN_FREQ = spectrum_config_.min_freq;
     const Frequency MAX_FREQ = spectrum_config_.max_freq;
@@ -2898,43 +2751,6 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
     int64_t relative_freq = freq_hz - MIN_FREQ;
     size_t bin = static_cast<size_t>((relative_freq * MINI_SPECTRUM_WIDTH) / FREQ_RANGE);
     return std::min(bin, static_cast<size_t>(MINI_SPECTRUM_WIDTH - 1));
-}
-
-void DroneDisplayController::handle_channel_spectrum(const ChannelSpectrum& spectrum) {
-    process_mini_spectrum_data(spectrum);
-}
-
-void DroneDisplayController::analyze_spectrum_for_threats(const ChannelSpectrum& spectrum) {
-    for (size_t i = 0; i < spectrum.db.size(); ++i) {
-        uint8_t power = spectrum.db[i];
-        
-        const uint8_t THREAT_THRESHOLD = 100;
-        
-        if (power > THREAT_THRESHOLD) {
-            Frequency freq_hz = spectrum_bin_to_frequency(i);
-            update_or_create_drone_from_spectrum(freq_hz, power);
-        }
-    }
-}
-
-Frequency DroneDisplayController::spectrum_bin_to_frequency(size_t bin) const {
-    const Frequency MIN_FREQ = spectrum_config_.min_freq;
-    const Frequency MAX_FREQ = spectrum_config_.max_freq;
-    const Frequency FREQ_RANGE = MAX_FREQ - MIN_FREQ;
-    
-    if (FREQ_RANGE == 0 || bin >= MINI_SPECTRUM_WIDTH) {
-        return MIN_FREQ;
-    }
-    
-    int64_t relative_freq = (static_cast<int64_t>(bin) * FREQ_RANGE) / MINI_SPECTRUM_WIDTH;
-    return MIN_FREQ + static_cast<Frequency>(relative_freq);
-}
-
-void DroneDisplayController::update_or_create_drone_from_spectrum(Frequency freq_hz, uint8_t power) {
-    int32_t rssi = static_cast<int32_t>(power) - 150;
-    ThreatLevel threat = ThreatClassifier::from_rssi(rssi);
-    DroneType type = DroneTypeDetector::from_frequency(freq_hz);
-    add_detected_drone(freq_hz, type, threat, rssi);
 }
 
 // DIAMOND FIX: Pass settings by value to scanner constructor
@@ -3770,26 +3586,6 @@ void LoadingScreenView::paint(Painter& painter) {
     );
     View::paint(painter);
 }
-
-void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
-    if (bin >= spectrum.db.size()) {
-        max_power = 0;
-        return;
-    }
-    max_power = spectrum.db[bin];
-}
-
-void DroneDisplayController::add_spectrum_pixel(uint8_t power) {
-    // 🔴 ФАЗА 1.5: Проверка валидности буфера (статический буфер)
-    if (!buffers_allocated_) {
-        return;
-    }
-    if (pixel_index < spectrum_row_buffer().size()) {
-        spectrum_row_buffer()[pixel_index] = spectrum_gradient_.lut[power];
-        pixel_index++;
-    }
-}
-
 
 // ===========================================
 // PART 7: ENHANCED SETTINGS VALIDATOR

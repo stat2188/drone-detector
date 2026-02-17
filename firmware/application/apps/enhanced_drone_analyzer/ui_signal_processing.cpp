@@ -5,26 +5,37 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
+// ========================================
+// CONSTANTS
+// ========================================
 constexpr size_t HASH_TABLE_SIZE = DetectionRingBuffer::MAX_ENTRIES;
-constexpr size_t EMPTY_HASH_MARKER = std::numeric_limits<size_t>::max();
+constexpr FrequencyHash EMPTY_HASH_MARKER = std::numeric_limits<FrequencyHash>::max();
+constexpr RSSIValue DEFAULT_RSSI_DBM = EDA::Constants::RSSI_INVALID_DBM;
+constexpr Timestamp ZERO_TIMESTAMP = 0;
 
-static inline uint32_t get_current_time_ticks() noexcept {
-    return static_cast<uint32_t>(chTimeNow());
+// ========================================
+// HELPER FUNCTIONS
+// ========================================
+static inline Timestamp get_current_time_ticks() noexcept {
+    return static_cast<Timestamp>(chTimeNow());
 }
 
 static inline void init_entry(DetectionEntry& entry) noexcept {
     entry.frequency_hash = EMPTY_HASH_MARKER;
     entry.detection_count = 0;
-    entry.rssi_value = -120;
-    entry.timestamp = 0;
+    entry.rssi_value = DEFAULT_RSSI_DBM;
+    entry.timestamp = ZERO_TIMESTAMP;
 }
 
-void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detection_count, int32_t rssi_value) noexcept {
-    const uint32_t current_time = get_current_time_ticks();
-    const size_t start_idx = frequency_hash % MAX_ENTRIES;
+// ========================================
+// DETECTION RING BUFFER IMPLEMENTATION
+// ========================================
+void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash, DetectionCount detection_count, RSSIValue rssi_value) noexcept {
+    const Timestamp current_time = get_current_time_ticks();
+    const EntryIndex start_idx = frequency_hash % MAX_ENTRIES;
 
     for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
-        const size_t idx = (start_idx + probe) % MAX_ENTRIES;
+        const EntryIndex idx = (start_idx + probe) % MAX_ENTRIES;
 
         if (entries_[idx].frequency_hash == frequency_hash) {
             entries_[idx].rssi_value = rssi_value;
@@ -43,11 +54,11 @@ void DetectionRingBuffer::update_detection(size_t frequency_hash, uint8_t detect
     head_ = (head_ + 1) % MAX_ENTRIES;
 }
 
-uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const noexcept {
-    const size_t start_idx = frequency_hash % MAX_ENTRIES;
+DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_hash) const noexcept {
+    const EntryIndex start_idx = frequency_hash % MAX_ENTRIES;
 
     for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
-        const size_t idx = (start_idx + probe) % MAX_ENTRIES;
+        const EntryIndex idx = (start_idx + probe) % MAX_ENTRIES;
 
         if (entries_[idx].frequency_hash == frequency_hash) {
             return entries_[idx].detection_count;
@@ -60,21 +71,21 @@ uint8_t DetectionRingBuffer::get_detection_count(size_t frequency_hash) const no
     return 0;
 }
 
-int32_t DetectionRingBuffer::get_rssi_value(size_t frequency_hash) const noexcept {
-    const size_t start_idx = frequency_hash % MAX_ENTRIES;
+RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) const noexcept {
+    const EntryIndex start_idx = frequency_hash % MAX_ENTRIES;
 
     for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
-        const size_t idx = (start_idx + probe) % MAX_ENTRIES;
+        const EntryIndex idx = (start_idx + probe) % MAX_ENTRIES;
 
         if (entries_[idx].frequency_hash == frequency_hash) {
             return entries_[idx].rssi_value;
         }
 
         if (entries_[idx].frequency_hash == EMPTY_HASH_MARKER) {
-            return -120;
+            return DEFAULT_RSSI_DBM;
         }
     }
-    return -120;
+    return DEFAULT_RSSI_DBM;
 }
 
 void DetectionRingBuffer::clear() noexcept {

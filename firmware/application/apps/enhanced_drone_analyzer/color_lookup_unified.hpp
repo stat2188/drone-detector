@@ -22,32 +22,58 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
+// TYPE ALIASES (Semantic Types)
+// ===========================================
+using RGB888 = uint32_t;
+using RGB565 = uint16_t;
+using RGB888Component = uint8_t;
+using ColorIndex = uint8_t;
+
+// ===========================================
+// CONSTANTS
+// ===========================================
+namespace ColorConstants {
+    constexpr RGB888Component RED_MASK = 0xFF;
+    constexpr RGB888Component GREEN_MASK = 0xFF;
+    constexpr RGB888Component BLUE_MASK = 0xFF;
+    constexpr RGB565 RED_MASK = 0xF8;
+    constexpr RGB565 GREEN_MASK = 0xFC;
+    constexpr RGB565 BLUE_MASK = 0xF8;
+    constexpr int RED_SHIFT = 16;
+    constexpr int GREEN_SHIFT = 8;
+    constexpr int BLUE_SHIFT = 0;
+    constexpr int RED_565_SHIFT = 8;
+    constexpr int GREEN_565_SHIFT = 3;
+    constexpr int BLUE_565_SHIFT = -3;
+}
+
+// ===========================================
 // RGB888 → RGB565 CONVERTER (constexpr)
 // ===========================================
 // Color format (ui.hpp): rrrrrGGGGGGbbbbb (RGB565, 16-bit)
 // LUT format: 0xRRGGBB (RGB888, 24-bit)
-// 
+//
 // R888 → R565: trunc 3 MSB bits (8 → 5)
-// G888 → G665: trunc 2 MSB bits (8 → 6)  
+// G888 → G665: trunc 2 MSB bits (8 → 6)
 // B888 → B565: trunc 3 MSB bits (8 → 5)
 
 struct ColorConverter {
     // ✅ constexpr RGB888 → RGB565 conversion (O(1))
-    static constexpr uint16_t rgb888_to_rgb565(uint32_t rgb888) {
-        uint8_t r = (rgb888 >> 16) & 0xFF;
-        uint8_t g = (rgb888 >> 8) & 0xFF;
-        uint8_t b = rgb888 & 0xFF;
-        
+    static constexpr RGB565 rgb888_to_rgb565(const RGB888 rgb888) noexcept {
+        const RGB888Component r = (rgb888 >> ColorConstants::RED_SHIFT) & ColorConstants::RED_MASK;
+        const RGB888Component g = (rgb888 >> ColorConstants::GREEN_SHIFT) & ColorConstants::GREEN_MASK;
+        const RGB888Component b = rgb888 & ColorConstants::BLUE_MASK;
+
         // RGB565 format: rrrrrGGGGGGbbbbb
-        uint16_t r565 = (r & 0xF8) << 8;    // 5 bits R (bits 11-15)
-        uint16_t g565 = (g & 0xFC) << 3;    // 6 bits G (bits 5-10)
-        uint16_t b565 = (b & 0xF8) >> 3;    // 5 bits B (bits 0-4)
-        
+        const RGB565 r565 = (r & ColorConstants::RED_MASK) << ColorConstants::RED_565_SHIFT;    // 5 bits R (bits 11-15)
+        const RGB565 g565 = (g & ColorConstants::GREEN_MASK) << ColorConstants::GREEN_565_SHIFT;    // 6 bits G (bits 5-10)
+        const RGB565 b565 = (b & ColorConstants::BLUE_MASK) >> 3;    // 5 bits B (bits 0-4)
+
         return r565 | g565 | b565;
     }
-    
+
     // ✅ constexpr wrapper for Color (O(1))
-    static constexpr Color rgb888_to_color(uint32_t rgb888) {
+    static constexpr Color rgb888_to_color(const RGB888 rgb888) noexcept {
         return Color(rgb888_to_rgb565(rgb888));
     }
 };

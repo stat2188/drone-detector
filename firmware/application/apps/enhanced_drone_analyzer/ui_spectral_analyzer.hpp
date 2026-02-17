@@ -22,6 +22,16 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 using rf::Frequency;
 
+// ========================================
+// TYPE ALIASES (Semantic Types)
+// ========================================
+using BinValue = uint8_t;
+using HistogramIndex = uint16_t;
+using SpectralBin = size_t;
+using SNRValue = uint8_t;
+using SignalWidthHz = uint32_t;
+using WidthBins = uint8_t;
+
 enum class SignalSignature : uint8_t {
     NOISE = 0,
     WIDEBAND_WIFI = 1,
@@ -35,13 +45,13 @@ using Drone = DroneType;
 
 struct SpectralAnalysisConfig {
     // 🔴 PHASE 3: Use constants from EDA::Constants instead of magic numbers
-    static constexpr uint8_t SNR_THRESHOLD = EDA::Constants::SPECTRAL_SNR_THRESHOLD;
-    static constexpr uint8_t PEAK_THRESHOLD_DB = EDA::Constants::SPECTRAL_PEAK_THRESHOLD_DB;
-    static constexpr uint32_t DRONE_MAX_WIDTH_HZ = EDA::Constants::NARROWBAND_DRONE_MAX_WIDTH_HZ;
-    static constexpr uint32_t WIFI_MIN_WIDTH_HZ = EDA::Constants::WIDEBAND_WIFI_MIN_WIDTH_HZ;
-    static constexpr size_t VALID_BIN_START = EDA::Constants::SPECTRAL_VALID_BIN_START;
-    static constexpr size_t VALID_BIN_END = EDA::Constants::SPECTRAL_VALID_BIN_END;
-    static constexpr size_t VALID_BIN_COUNT = VALID_BIN_END - VALID_BIN_START;
+    static constexpr SNRValue SNR_THRESHOLD = EDA::Constants::SPECTRAL_SNR_THRESHOLD;
+    static constexpr SNRValue PEAK_THRESHOLD_DB = EDA::Constants::SPECTRAL_PEAK_THRESHOLD_DB;
+    static constexpr SignalWidthHz DRONE_MAX_WIDTH_HZ = EDA::Constants::NARROWBAND_DRONE_MAX_WIDTH_HZ;
+    static constexpr SignalWidthHz WIFI_MIN_WIDTH_HZ = EDA::Constants::WIDEBAND_WIFI_MIN_WIDTH_HZ;
+    static constexpr SpectralBin VALID_BIN_START = EDA::Constants::SPECTRAL_VALID_BIN_START;
+    static constexpr SpectralBin VALID_BIN_END = EDA::Constants::SPECTRAL_VALID_BIN_END;
+    static constexpr SpectralBin VALID_BIN_COUNT = VALID_BIN_END - VALID_BIN_START;
     static constexpr uint32_t INV_BIN_COUNT_Q16 = (65536 + VALID_BIN_COUNT / 2) / VALID_BIN_COUNT;
 };
 

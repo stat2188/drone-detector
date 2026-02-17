@@ -25,14 +25,25 @@ static constexpr TranslationEntry ENGLISH_TRANSLATIONS[] = {
 static constexpr size_t ENGLISH_TRANSLATION_COUNT =
     sizeof(ENGLISH_TRANSLATIONS) / sizeof(TranslationEntry);
 
+// ===========================================
+// CONSTANTS
+// ===========================================
+namespace TranslationConstants {
+    constexpr size_t NULL_KEY_RESULT = 0;
+    constexpr char NULL_TERMINATOR = '\0';
+}
+
+// ===========================================
+// HELPER FUNCTIONS
+// ===========================================
 // Fast key-based lookup (O(n) where n=10, faster than std::string)
 static constexpr const char* lookup_translation(
-    const char* key,
-    const TranslationEntry* table,
-    size_t count
-) {
+    const char* const key,
+    const TranslationEntry* const table,
+    const size_t count
+) noexcept {
     if (!key) return nullptr;
-    
+
     for (size_t i = 0; i < count; ++i) {
         if (strcmp(key, table[i].key) == 0) {
             return table[i].value;
@@ -41,26 +52,28 @@ static constexpr const char* lookup_translation(
     return key;
 }
 
-// Translator implementations
+// ===========================================
+// TRANSLATOR IMPLEMENTATIONS
+// ===========================================
 Language Translator::current_language_ = Language::ENGLISH;
 
-const char* Translator::get_english(const char* key) {
+const char* Translator::get_english(const char* const key) noexcept {
     return lookup_translation(key, ENGLISH_TRANSLATIONS, ENGLISH_TRANSLATION_COUNT);
 }
 
-void Translator::set_language(Language lang) {
+void Translator::set_language(const Language lang) noexcept {
     current_language_ = lang;
 }
 
-Language Translator::get_language() {
+Language Translator::get_language() noexcept {
     return current_language_;
 }
 
-const char* Translator::translate(const char* key) {
+const char* Translator::translate(const char* const key) noexcept {
     return get_translation(key);
 }
 
-const char* Translator::get_translation(const char* key) {
+const char* Translator::get_translation(const char* const key) noexcept {
     return get_english(key);
 }
 
