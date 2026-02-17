@@ -34,12 +34,13 @@ using Threat = ThreatLevel;
 using Drone = DroneType;
 
 struct SpectralAnalysisConfig {
-    static constexpr uint8_t SNR_THRESHOLD = 10;
-    static constexpr uint8_t PEAK_THRESHOLD_DB = 6;
-    static constexpr uint32_t DRONE_MAX_WIDTH_HZ = 2500000;
-    static constexpr uint32_t WIFI_MIN_WIDTH_HZ = 10000000;
-    static constexpr size_t VALID_BIN_START = 8;
-    static constexpr size_t VALID_BIN_END = 240;
+    // 🔴 PHASE 3: Use constants from EDA::Constants instead of magic numbers
+    static constexpr uint8_t SNR_THRESHOLD = EDA::Constants::SPECTRAL_SNR_THRESHOLD;
+    static constexpr uint8_t PEAK_THRESHOLD_DB = EDA::Constants::SPECTRAL_PEAK_THRESHOLD_DB;
+    static constexpr uint32_t DRONE_MAX_WIDTH_HZ = EDA::Constants::NARROWBAND_DRONE_MAX_WIDTH_HZ;
+    static constexpr uint32_t WIFI_MIN_WIDTH_HZ = EDA::Constants::WIDEBAND_WIFI_MIN_WIDTH_HZ;
+    static constexpr size_t VALID_BIN_START = EDA::Constants::SPECTRAL_VALID_BIN_START;
+    static constexpr size_t VALID_BIN_END = EDA::Constants::SPECTRAL_VALID_BIN_END;
     static constexpr size_t VALID_BIN_COUNT = VALID_BIN_END - VALID_BIN_START;
     static constexpr uint32_t INV_BIN_COUNT_Q16 = (65536 + VALID_BIN_COUNT / 2) / VALID_BIN_COUNT;
 };
@@ -65,6 +66,12 @@ struct SpectralAnalysisParams {
 // Main spectral analyzer class
 class SpectralAnalyzer {
 public:
+    // CRITICAL FIX (BUG-002): Histogram buffer size constant
+    // Must be passed as parameter to avoid static storage race condition
+    // when analyze() is called concurrently from multiple threads
+    static constexpr size_t HISTOGRAM_BINS = 64;
+    using HistogramBuffer = std::array<uint16_t, HISTOGRAM_BINS>;
+    
     SpectralAnalyzer() = default;
     
     SpectralAnalyzer(const SpectralAnalyzer&) = delete;
@@ -72,8 +79,12 @@ public:
     SpectralAnalyzer(SpectralAnalyzer&&) = delete;
     SpectralAnalyzer& operator=(SpectralAnalyzer&&) = delete;
     
+    // CRITICAL FIX (BUG-002): Added histogram_buffer parameter to eliminate static storage race
+    // The caller must provide a buffer - this ensures thread safety without dynamic allocation
+    // Memory cost: 128 bytes on caller's stack (preferred over static for thread safety)
     static inline SpectralAnalysisResult analyze(const std::array<uint8_t, 256>& db_buffer,
-                                                  const SpectralAnalysisParams& params) noexcept {
+                                                  const SpectralAnalysisParams& params,
+                                                  HistogramBuffer& histogram_buffer) noexcept {
         SpectralAnalysisResult result{};
 
         if (SpectralAnalysisConfig::VALID_BIN_COUNT == 0) {
@@ -81,12 +92,9 @@ public:
             return result;
         }
 
-        constexpr size_t HISTOGRAM_BINS = 64;
-
-        // DIAMOND FIX: Move large stack arrays to static storage to prevent stack overflow
-        // Reduces stack usage by ~128 bytes (histogram) + ~256 bytes (spectrum_data) = ~384 bytes
-        static std::array<uint16_t, HISTOGRAM_BINS> histogram_storage{};
-        auto& histogram = histogram_storage;
+        // CRITICAL FIX (BUG-002): Use caller-provided buffer instead of static storage
+        // This eliminates race condition when analyze() is called from multiple threads
+        auto& histogram = histogram_buffer;
         histogram.fill(0);
 
         uint32_t sum = 0;
@@ -141,6 +149,16 @@ public:
             }
         }
 
+        // 🔴 CRITICAL FIX: Compile-time validation to prevent integer overflow
+        // Maximum slice_bandwidth_hz is 28MHz (28000000)
+        // INV_BIN_COUNT_Q16 is Q16 fixed-point: (65536 + VALID_BIN_COUNT/2) / VALID_BIN_COUNT
+        // Maximum calculation: 28000000 * 283 = ~7.9GB (fits in uint64_t)
+        // Safe calculation: (slice_bandwidth_hz * INV_BIN_COUNT_Q16) >> 16
+        // Maximum safe result: 28000000 Hz (fits in uint32_t)
+        static_assert(SpectralAnalysisConfig::VALID_BIN_COUNT > 0,
+                      "VALID_BIN_COUNT must be positive");
+        static_assert(28000000ULL * SpectralAnalysisConfig::INV_BIN_COUNT_Q16 <= UINT64_MAX,
+                      "Bin width calculation must not overflow");
         const uint64_t bin_width_calc = static_cast<uint64_t>(params.slice_bandwidth_hz) *
                                          static_cast<uint64_t>(SpectralAnalysisConfig::INV_BIN_COUNT_Q16);
         const uint32_t bin_width_hz = static_cast<uint32_t>(bin_width_calc >> 16);

@@ -6,12 +6,16 @@
  * 2. data_mutex (DroneScanner::tracked_drones_)
  * 3. spectrum_mutex (DroneHardwareController::spectrum_buffer_)
  * 4. logger_mutex (DroneDetectionLogger::mutex_)
+ * 5. sd_card_mutex (SD card operations - FatFS is NOT thread-safe)
  *
  * Rules:
- * - Always acquire locks in order 1->2->3->4
+ * - Always acquire locks in order 1->2->3->4->5
  * - Never acquire a lower-numbered lock while holding a higher-numbered lock
+ * - sd_card_mutex must ALWAYS be acquired LAST (after all other locks)
  * - Use MutexLock RAII wrapper for automatic unlock
  * - Keep critical sections as short as possible
+ * - When calling log_detection_async(), ensure no other locks are held
+ *   since it may acquire sd_card_mutex internally
  * 
  * If something doesn't load at all, at least it doesn't freeze and immediately crash. Which means the code is potentially alive. You all know perfectly well that running so many lines of code is already an achievement.
  * 
@@ -22,6 +26,7 @@
  */
 
 #include "ui_enhanced_drone_analyzer.hpp"
+#include "settings_persistence.hpp"
 // Phase 2 Optimization: Removed ui_enhanced_drone_memory_pool.hpp (~5.6 KB savings)
 // Memory pools replaced with static arrays directly in code
 #include "ui_drone_audio.hpp"
@@ -205,34 +210,7 @@ DroneScanner::~DroneScanner() {
     // No explicit deinitialization needed - mutex is part of thread context.
 }
 
-// ===========================================
-// RAII DESIGN NOTES FOR DroneScanner
-// ===========================================
-// WHY MANUAL CLEANUP IS NECESSARY:
-// 
-// This class uses placement new for memory allocation, which is a deliberate
-// design choice for embedded systems (Cortex-M4 with limited RAM).
-//
-// RAII WRAPPERS USED:
-// - std::array<DetectionEntry, 32> detection_ring_buffer_ (automatic storage)
-// - std::atomic<bool> scanning_active_ (lock-free, automatic)
-// - MutexLock wrapper for ChibiOS mutexes (RAII-style lock management)
-//
-// MANUAL CLEANUP REQUIRED FOR:
-// - freq_db_ptr_: FreqmanDB allocated via placement new from memory pool
-// - tracked_drones_ptr_: TrackedDrone array via placement new
-// - detection_logger_: Worker thread requires explicit stop_worker() call
-//
-// RATIONALE FOR PLACEMENT NEW:
-// 1. Memory pool allocation prevents heap fragmentation
-// 2. Deterministic memory usage (critical for embedded systems)
-// 3. Objects constructed only when needed (lazy initialization)
-// 4. Explicit destructor calls required by C++ standard for placement new
-//
-// ALTERNATIVE CONSIDERED:
-// std::optional<T> could provide RAII semantics, but adds ~4 bytes overhead
-// per object and requires C++17. Current design is optimal for Cortex-M4.
-// ===========================================
+
 
 void DroneScanner::initialize_wideband_scanning() {
     wideband_scan_data_.reset();
@@ -254,22 +232,34 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
     wideband_scan_data_.max_freq = safe_max;
 
     Frequency scanning_range = safe_max - safe_min;
+    const uint64_t width_u64 = static_cast<uint64_t>(settings_.wideband_slice_width_hz);
     if (scanning_range > static_cast<Frequency>(settings_.wideband_slice_width_hz)) {
         // 🔴 FIX: Check for overflow BEFORE addition to prevent undefined behavior
         // Use uint64_t for all arithmetic to match Frequency type safely
         // Diamond Code: Use proper overflow check pattern: if (max_val - current_val < increment)
-        const uint64_t range_u64 = static_cast<uint64_t>(scanning_range);
-        const uint64_t width_u64 = static_cast<uint64_t>(settings_.wideband_slice_width_hz);
-
-        // Check if adding width would overflow using Diamond Code pattern
-        if (UINT64_MAX - range_u64 < width_u64) {
-            // Overflow would occur - use single slice
+        // FIX: Validate scanning_range is non-negative before casting to uint64_t
+        if (scanning_range < 0) {
+            // Invalid range - use single slice
             wideband_scan_data_.slices_nb = 1;
         } else {
-            // DIAMOND OPTIMIZATION: Use constexpr ceil_div_u64 for better compiler optimization
-            // Enables compiler to optimize division when width_u64 is a power of 2
-            uint64_t range_plus_width = range_u64 + width_u64;
-            wideband_scan_data_.slices_nb = static_cast<size_t>(ceil_div_u64(range_plus_width, width_u64));
+            const uint64_t range_u64 = static_cast<uint64_t>(scanning_range);
+
+            // Check if adding width would overflow using Diamond Code pattern
+            if (UINT64_MAX - range_u64 < width_u64) {
+                // Overflow would occur - use single slice
+                wideband_scan_data_.slices_nb = 1;
+            } else {
+                // DIAMOND OPTIMIZATION: Use constexpr ceil_div_u64 for better compiler optimization
+                // Enables compiler to optimize division when width_u64 is a power of 2
+                uint64_t range_plus_width = range_u64 + width_u64;
+                uint64_t slices_calc = ceil_div_u64(range_plus_width, width_u64);
+                // FIX: Check if result exceeds size_t max to prevent truncation
+                if (slices_calc > static_cast<uint64_t>(SIZE_MAX)) {
+                    wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
+                } else {
+                    wideband_scan_data_.slices_nb = static_cast<size_t>(slices_calc);
+                }
+            }
         }
 
         if (wideband_scan_data_.slices_nb > WIDEBAND_MAX_SLICES) {
@@ -284,7 +274,13 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
             wideband_scan_data_.slices_nb = WIDEBAND_MAX_SLICES;
         }
         
-        Frequency slices_span = static_cast<Frequency>(slices_nb_u64 * width_u64);
+        // BUG-007 FIX: Check for INT64_MAX overflow before casting to Frequency (int64_t)
+        // The product may fit in uint64_t but still exceed INT64_MAX
+        const uint64_t product = slices_nb_u64 * width_u64;
+        if (product > static_cast<uint64_t>(INT64_MAX)) {
+            return;  // Frequency span too large - abort wideband setup
+        }
+        Frequency slices_span = static_cast<Frequency>(product);
         Frequency offset = ((scanning_range - slices_span) / 2) + (settings_.wideband_slice_width_hz / 2);
         Frequency center_frequency = safe_min + offset;
 
@@ -294,7 +290,10 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
                            WidebandSlice slice;
                            slice.center_frequency = center_frequency;
                            slice.index = slice_index++;
-                           center_frequency += settings_.wideband_slice_width_hz;
+                           // FIX: Add overflow check before incrementing center_frequency
+                           if (center_frequency <= static_cast<Frequency>(INT64_MAX) - static_cast<Frequency>(settings_.wideband_slice_width_hz)) {
+                               center_frequency += settings_.wideband_slice_width_hz;
+                           }
                            return slice;
                        });
     } else {
@@ -617,10 +616,14 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
 
         // 4. Perform spectral analysis if data was received
         if (spectrum_received) {
+            // CRITICAL FIX (BUG-002): Provide histogram buffer to avoid static storage race
+            // Buffer is 128 bytes on stack - acceptable for embedded MCU
+            SpectralAnalyzer::HistogramBuffer histogram_buffer{};
             // Analyze the spectrum using our new SpectralAnalyzer
             auto analysis_result = SpectralAnalyzer::analyze(
                 spectrum_data,
-                {hardware.get_spectrum_bandwidth(), current_slice.center_frequency}
+                {hardware.get_spectrum_bandwidth(), current_slice.center_frequency},
+                histogram_buffer
             );
             
             // 5. Process detection based on spectral analysis
@@ -674,21 +677,6 @@ size_t DroneScanner::get_next_slice_with_intelligence() {
     return next;
 }
 
-void DroneScanner::update_frequency_predictions(Frequency detected_freq, ThreatLevel threat_level) {
-    (void)detected_freq;
-    (void)threat_level;
-}
-
-void DroneScanner::update_priority_slice_detection(size_t slice_idx, bool detected_something_interesting) {
-    (void)slice_idx;
-    (void)detected_something_interesting;
-}
-
-void DroneScanner::boost_prediction_confidence(size_t prediction_idx, systime_t now) {
-    (void)prediction_idx;
-    (void)now;
-}
-
 void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override) {
     if (rssi >= threshold_override) {
         // DIAMOND OPTIMIZATION: Use const reference to avoid copy
@@ -723,7 +711,12 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
 
         total_detections_++; // Protect counter
 
-        size_t freq_hash = entry.frequency_a / 100000;
+        // BUG-008 FIX: Hash can produce values up to 72000 (for 7.2GHz),
+        // but DetectionRingBuffer::MAX_ENTRIES is only 16.
+        // Use modulo to ensure safe index within buffer bounds.
+        constexpr size_t FREQ_HASH_DIVISOR = 100000;
+        const size_t freq_hash_raw = static_cast<size_t>(entry.frequency_a / FREQ_HASH_DIVISOR);
+        const size_t freq_hash = freq_hash_raw % DetectionRingBuffer::MAX_ENTRIES;
         int32_t effective_threshold = wideband_threshold;
 
         if (detection_ring_buffer_.get_rssi_value(freq_hash) < wideband_threshold) {
@@ -1338,7 +1331,7 @@ void DroneScanner::db_loading_thread_loop() {
 
     // DIAMOND FIX: Lock SD card before file operations (FatFS is NOT thread-safe)
     {
-        SDCardLock lock;
+        MutexLock lock(sd_card_mutex);
 
     if (db_loading_active_.load(std::memory_order_acquire)) {
         db_success = freq_db_ptr_->open(db_path);
@@ -1367,7 +1360,7 @@ void DroneScanner::db_loading_thread_loop() {
         (!db_success || freq_db_ptr_->empty())) {
 
         // DIAMOND FIX: Lock SD card before file operations (FatFS is NOT thread-safe)
-        SDCardLock lock;
+        MutexLock lock(sd_card_mutex);
 
         freq_db_ptr_->open(db_path, true);
 
@@ -1667,7 +1660,7 @@ bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
     }
 
     // DIAMOND FIX: Lock SD card before file operations (FatFS is NOT thread-safe)
-    SDCardLock lock;
+    SDCardLock lock(sd_card_mutex);
 
     if (!ensure_csv_header()) return false;
 
@@ -1795,10 +1788,7 @@ void DroneHardwareController::initialize_radio_state() {
     receiver_model.set_baseband_bandwidth(get_configured_bandwidth());
     receiver_model.set_squelch_level(0);
 
-        // TODO[CRITICAL][FIXED]: Remove hardcoded RF Amp enable
-        // Hardware safety: Never enable RF Amp by default to prevent damage
-        // to antenna/power supply in case of short circuit
-        // receiver_model.set_rf_amp(true); <-- REMOVED FOR SAFETY
+        
 
         // Use safe defaults - RF Amp should be controlled by user settings
         // or left disabled until explicitly enabled
@@ -1812,18 +1802,9 @@ void DroneHardwareController::initialize_radio_state() {
     // Responsible for signal volume after LNA.
     receiver_model.set_vga(32);
     
-    // 4. OPTIMIZATION: Hardware-specific tuning for faster PLL lock
-    // Configure MAX2837 for faster frequency switching
-    // These settings reduce PLL lock time from ~5ms to ~1ms
-    // Note: These methods may not exist in all ReceiverModel implementations
-    // receiver_model.set_pll_lock_time(1); // Fast lock mode
-    // receiver_model.set_vco_calibration_mode(1); // Fast calibration
     
-    // 5. OPTIMIZATION: Pre-calibrate DC offset for faster stabilization
-    // This reduces the time needed for DC offset to settle after frequency change
-    // Note: These methods may not exist in all ReceiverModel implementations
-    // receiver_model.enable_dc_offset_compensation(true);
-    // receiver_model.set_dc_offset_calibration_mode(1); // Fast calibration mode
+    
+   
 }
 
 void DroneHardwareController::initialize_spectrum_collector() {
@@ -2368,22 +2349,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
          marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
          spectrum_config_()
 {
-    // 🔴 REMOVED: frequency_ruler_ member (Dead Code - duplicate never used)
-    // FrequencyRuler class was removed, only CompactFrequencyRuler is used
-
-    // DIAMOND OPTIMIZATION: Member initialization (moved from body to initializer list)
-    // detected_drones_count_ initialized in initializer list (line 2650)
-    // displayed_drones_ value-initialized in initializer list (line 2648)
-    // SAVES: ~4 bytes Flash, eliminates unnecessary std::fill call
-    //
-    // detected_drones_count_ = 0;
-    // std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{});
-
-    // CRITICAL FIX: Use default gradient immediately
-    spectrum_gradient_.set_default();
-
-    // --- REMOVED: Stack allocation now handled in header ---
-    // MessageHandlerRegistration objects are now initialized in-class (C++11 feature)
+    
 
     // CRITICAL: Add ALL widgets to View hierarchy
     add_children({
@@ -2399,46 +2365,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
         &text_drone_3_,
         &text_signal_type_
     });
-
-    // 🔴 REMOVED: frequency_ruler_.set_visible(false) (Dead Code - duplicate never used)
 }
-
-// 🔴 REMOVED: Duplicate initialization block (lines 2690-2720)
-// REASON: Duplicate of constructor initialization (lines 2661-2686)
-//         Caused syntax error when closing brace at line 2689 orphaned this code
-// SAVES: ~30 lines Flash, ~120 bytes
-//
-//     // TODO[FIXED]: Reserve memory in advance.
-//     // MAX_TRACKED_DRONES is usually around 8-10, +2 as reserve.
-//     detected_drones_count_ = 0;
-// 
-//     std::fill(displayed_drones_.begin(), displayed_drones_.end(), DisplayDroneEntry{});
-// 
-//     // CRITICAL FIX: Use default gradient immediately
-//     spectrum_gradient_.set_default();
-// 
-//     // --- REMOVED: Stack allocation now handled in header ---
-//     // MessageHandlerRegistration objects are now initialized in-class (C++11 feature)
-// 
-//     // CRITICAL: Add ALL widgets to View hierarchy
-//     add_children({
-//         &big_display_,
-//         &scanning_progress_,
-//         &compact_frequency_ruler_,
-//         &text_threat_summary_,
-//         &text_status_info_,
-//         &text_scanner_stats_,
-//         &text_trends_compact_,
-//         &text_drone_1_,
-//         &text_drone_2_,
-//         &text_drone_3_,
-//         &text_signal_type_
-//     });
-// 
-//     // 🔴 REMOVED: frequency_ruler_ (Dead Code - duplicate never used)
-//     // Hide old ruler, use compact by default
-//     // frequency_ruler_.set_visible(false);
-// }
 
 // 🔴 FIX: Deferred buffer allocation to prevent stack overflow
 void DroneDisplayController::allocate_buffers() {
@@ -2551,14 +2478,10 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
                                   static_cast<unsigned long>(scanner.get_static_count()),
                                   static_cast<unsigned long>(scanner.get_receding_count()));
         text_threat_summary_.set(summary_buffer);
-        // DIAMOND OPTIMIZATION: Use Color::red()
-        static Style red_style{font::fixed_8x16, Color::black(), Color::red()};
-        text_threat_summary_.set_style(&red_style);
+        text_threat_summary_.set_style(&UIStyles::RED_STYLE);
     } else {
         text_threat_summary_.set("THREAT: NONE | All clear");
-        // DIAMOND OPTIMIZATION: Use Color::green()
-        static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
-        text_threat_summary_.set_style(&green_style);
+        text_threat_summary_.set_style(&UIStyles::GREEN_STYLE);
     }
 
     char status_buffer[48];
@@ -2614,16 +2537,10 @@ void DroneDisplayController::set_scanning_status(bool active, const char* messag
     if (active) {
         StatusFormatter::format_to(buffer, "SCAN: %s", message);
         text_status_info_.set(buffer);
-        
-        // DIAMOND OPTIMIZATION: статический стиль из constexpr LUT
-        static const Style SCANNING_STYLE = {font::fixed_8x16, Color::black(), Color::green()};
-        text_status_info_.set_style(&SCANNING_STYLE);
+        text_status_info_.set_style(&UIStyles::GREEN_STYLE);
     } else {
         StatusFormatter::format_to(buffer, "STOP: %s", message);
-        
-        // DIAMOND OPTIMIZATION: статический стиль (не создаётся на стеке)
-        static const Style STOPPED_STYLE = {font::fixed_8x16, Color::black(), Color::white()};
-        text_status_info_.set_style(&STOPPED_STYLE);
+        text_status_info_.set_style(&UIStyles::LIGHT_STYLE);
     }
 }
 
@@ -3054,15 +2971,6 @@ void DroneUIController::on_stop_scan() {
 
 void DroneUIController::show_menu() {
     nav_.push<DroneAnalyzerMenuView>();
-}
-
-void DroneUIController::on_spectrum_mode() {
-    nav_.display_modal("Spectrum Mode", "Feature not implemented in this version");
-}
-
-void DroneUIController::set_spectrum_mode(SpectrumMode mode) {
-    hardware_.set_spectrum_mode(mode);
-    nav_.display_modal("Applied", "Spectrum mode updated");
 }
 
 void DroneUIController::on_hardware_control() {
@@ -3798,9 +3706,7 @@ void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
         settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
         // Update button text immediately
         button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
-        static Style green_style{font::fixed_8x16, Color::black(), Color::green()};
-        static Style grey_style{font::fixed_8x16, Color::black(), Color::grey()};
-        button_audio_.set_style(settings_.audio_flags.enable_alerts ? &green_style : &grey_style);
+        button_audio_.set_style(settings_.audio_flags.enable_alerts ? &UIStyles::GREEN_STYLE : &UIStyles::LIGHT_STYLE);
     };
 
     field_scanning_mode_.on_change = [this](size_t index, int32_t value) -> void {
@@ -3848,19 +3754,6 @@ void LoadingScreenView::paint(Painter& painter) {
     );
     View::paint(painter);
 }
-
-// ===========================================
-// PART 5: SCANNINGCOORDINATOR IMPLEMENTATION REMOVED
-// ===========================================
-// Diamond Code: Single Responsibility Principle
-// All ScanningCoordinator implementations moved to scanning_coordinator.cpp
-// This eliminates multiple definition linker errors
-
-// ===========================================
-// PART 6: DISPLAY HELPER IMPLEMENTATIONS
-// ===========================================
-// 🎯 Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
-// All wrapper methods removed to eliminate indirection
 
 void DroneDisplayController::get_max_power_for_current_bin(const ChannelSpectrum& spectrum, uint8_t bin, uint8_t& max_power) {
     if (bin >= spectrum.db.size()) {
@@ -4245,15 +4138,11 @@ void DroneDisplayController::update_frequency_ruler() {
 void DroneDisplayController::set_ruler_style(RulerStyle style) {
     compact_frequency_ruler_.set_ruler_style(style);
     compact_frequency_ruler_.set_visible(true);
-    // 🔴 REMOVED: frequency_ruler_ (Dead Code - duplicate never used)
-    // frequency_ruler_.set_visible(false);
 }
 
 void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings& settings) {
     if (settings.display_flags.show_frequency_ruler) {
         compact_frequency_ruler_.set_visible(true);
-        // 🔴 REMOVED: frequency_ruler_ (Dead Code - duplicate never used)
-        // frequency_ruler_.set_visible(false);
 
         if (settings.display_flags.auto_ruler_style) {
             compact_frequency_ruler_.set_ruler_style(RulerStyle::COMPACT_GHZ);
@@ -4262,22 +4151,10 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
             uint8_t style_idx = (settings.frequency_ruler_style < 7) ?
                                 settings.frequency_ruler_style : 0;
             compact_frequency_ruler_.set_ruler_style(RULER_STYLE_LUT[style_idx]);
+            }
+    
+            compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);
+        } else {
+            compact_frequency_ruler_.set_visible(false);
         }
-
-        compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);
-    } else {
-        compact_frequency_ruler_.set_visible(false);
-        // 🔴 REMOVED: frequency_ruler_ (Dead Code - duplicate never used)
-        // frequency_ruler_.set_visible(false);
     }
-}
-
-
-
-// ===========================================
-// AudioAlertManager Implementation
-// ===========================================
-// DIAMOND FIX: Fully migrated to ui_drone_audio.hpp as inline static (C++17)
-// Eliminates ODR violation, removes .cpp dependency, ensures single instance
-
-} // namespace ui::apps::enhanced_drone_analyzer

@@ -50,7 +50,9 @@ private:
     std::atomic<bool> scanning_active_{false};
     Thread* scanning_thread_ = nullptr;
     uint32_t scan_interval_ms_ = 712;
-    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 12288;
+    // Phase 2 Optimization: Reduced from 12KB to 6KB for memory savings
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 6144;
 
     static WORKING_AREA(coordinator_wa_, COORDINATOR_THREAD_STACK_SIZE);
 };

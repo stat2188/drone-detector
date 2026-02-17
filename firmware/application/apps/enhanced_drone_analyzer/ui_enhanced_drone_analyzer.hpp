@@ -2,8 +2,6 @@
 #define UI_ENHANCED_DRONE_ANALYZER_HPP_
 
 #include <cstdint>
-#include <string>
-#include <vector>
 #include <array>
 #include <atomic>
 #include <memory>
@@ -47,14 +45,6 @@
 
 class LogFile;
 
-// Enum for scanner modes
-enum class ScannerMode : uint8_t {
-    DATABASE_ONLY = 0,
-    WIDEBAND_ONLY = 1,
-    HYBRID = 2,
-    SPECTRUM_VIEW = 3
-};
-
 // Application specific namespace starts here to ensure all classes are properly scoped
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -67,18 +57,60 @@ using rf::Frequency;
 
 extern Mutex sd_card_mutex;
 
-// RAII wrapper for automatic SD card lock/unlock
-class SDCardLock {
+// ===========================================
+// DIAMOND OPTIMIZATION: Unified ScopedLock Template
+// ===========================================
+// Eliminates duplicate RAII wrappers (SDCardLock, MutexLock, MutexTryLock, FileRAII)
+// Scott Meyers Item 15: Prefer constexpr to #define
+// Zero-overhead abstraction: Template compiles to direct chMtxLock/chMtxUnlock calls
+//
+// USAGE:
+//   ScopedLock<Mutex> lock(sd_card_mutex);           // Blocking lock
+//   ScopedLock<Mutex, true> lock(sd_card_mutex);     // Try-lock (non-blocking)
+//
+// Embedded C++ Optimization Constraints:
+// - No dynamic allocation (stack-only)
+// - constexpr template parameters for compile-time optimization
+// - Strong typing with Mutex reference
+// - RAII for automatic unlock
+//
+template<typename MutexType, bool TryLock = false>
+class ScopedLock {
 public:
-    SDCardLock() {
-        chMtxLock(&sd_card_mutex);
+    // Blocking lock constructor (default)
+    explicit ScopedLock(MutexType& mtx) : mtx_(mtx), locked_(true) {
+        chMtxLock(&mtx_);
     }
-    ~SDCardLock() {
-        chMtxUnlock();
+
+    // Try-lock constructor (specialized template)
+    explicit ScopedLock(MutexType& mtx, bool /*try_lock_tag*/) : mtx_(mtx), locked_(chMtxTryLock(&mtx_)) {
+        // locked_ is set by chMtxTryLock() result
     }
-    SDCardLock(const SDCardLock&) = delete;
-    SDCardLock& operator=(const SDCardLock&) = delete;
+
+    ~ScopedLock() {
+        if (locked_) {
+            chMtxUnlock();
+        }
+    }
+
+    // Query lock status (for try-lock variant)
+    bool is_locked() const noexcept { return locked_; }
+
+    // Non-copyable, non-movable (RAII requirement)
+    ScopedLock(const ScopedLock&) = delete;
+    ScopedLock& operator=(const ScopedLock&) = delete;
+    ScopedLock(ScopedLock&&) = delete;
+    ScopedLock& operator=(ScopedLock&&) = delete;
+
+private:
+    MutexType& mtx_;
+    bool locked_;
 };
+
+// Backward compatibility aliases for existing code
+using MutexLock = ScopedLock<Mutex, false>;  // Blocking lock
+using MutexTryLock = ScopedLock<Mutex, true>;  // Try-lock
+using SDCardLock = ScopedLock<Mutex, false>;  // SD card lock (uses sd_card_mutex)
 
 struct preset_entry {
     Frequency min = 0;
@@ -291,45 +323,6 @@ private:
     static void format_frequency_hz(Frequency freq, char* buffer, size_t buffer_size);
 };
 
-// RAII wrapper for ChibiOS mutexes
-class MutexLock {
-public:
-    explicit MutexLock(Mutex& mtx) : mtx_(mtx) {
-        chMtxLock(&mtx_);
-    }
-
-    ~MutexLock() {
-        chMtxUnlock();
-    }
-
-    MutexLock(const MutexLock&) = delete;
-    MutexLock& operator=(const MutexLock&) = delete;
-
-private:
-    Mutex& mtx_;
-};
-
-// RAII wrapper for ChibiOS mutexes with try-lock
-class MutexTryLock {
-public:
-    explicit MutexTryLock(Mutex& mtx) : mtx_(mtx), locked_(chMtxTryLock(&mtx_)) {}
-
-    ~MutexTryLock() {
-        if (locked_) {
-            chMtxUnlock();
-        }
-    }
-
-    bool is_locked() const { return locked_; }
-
-    MutexTryLock(const MutexTryLock&) = delete;
-    MutexTryLock& operator=(const MutexTryLock&) = delete;
-
-private:
-    Mutex& mtx_;
-    bool locked_;
-};
-
 class DroneDetectionLogger {
 public:
     DroneDetectionLogger();
@@ -350,11 +343,6 @@ public:
     // Statistics for monitoring
     uint32_t get_dropped_logs_count() const { return dropped_logs_; }
     uint32_t get_logged_count() const { return logged_count_; }
-
-    // 🔴 REMOVED: format_session_summary() (Dead Code - never called)
-    // REASON: Returns std::string but only invoked by get_session_summary() which is dead code
-    //
-    // std::string format_session_summary(size_t scan_cycles, size_t total_detections) const;
 
 private:
     // --- THREADING PRIMITIVES ---
@@ -446,15 +434,12 @@ public:
     static constexpr uint32_t DB_LOAD_TIMEOUT_MS = 2000;     // 2 seconds max for DB load
     static constexpr uint32_t DB_SYNC_TIMEOUT_MS = 1000;     // 1 second max for sync
 
-    // Scanning modes for DroneScanner (different from DroneConstants::ScanningMode)
+    // Scanning modes for DroneScanner (using EDA::Constants::ScanningMode)
     enum class ScanningMode {
         DATABASE,
         WIDEBAND_CONTINUOUS,
         HYBRID
     };
-
-    // Alias to avoid ambiguity with DroneConstants::ScanningMode
-    using ScannerMode = ScanningMode;
 
     DroneScanner(const DroneAnalyzerSettings& settings);
     ~DroneScanner();
@@ -517,12 +502,6 @@ struct DetectionParams {
     ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
     const TrackedDrone& getTrackedDrone(size_t index) const;  // 🔴 FIX: Protected with mutex
     void handle_scan_error(const char* error_msg);
-
-    // 🔴 REMOVED: get_session_summary() (Dead Code - never called)
-    // REASON: Returns std::string but never invoked anywhere in codebase
-    // SAVES: Eliminates heap allocation on call site
-    //
-    // std::string get_session_summary() const;
 
     // DIAMOND OPTIMIZATION: inline + noexcept for zero-overhead abstraction
     inline size_t get_approaching_count() const noexcept { return approaching_count_; }
@@ -596,9 +575,6 @@ struct DetectionParams {
 
     // Intelligent scanning methods
     size_t get_next_slice_with_intelligence();
-    void update_frequency_predictions(Frequency detected_freq, ThreatLevel threat_level);
-    void update_priority_slice_detection(size_t slice_idx, bool detected_something_interesting);
-    void boost_prediction_confidence(size_t prediction_idx, systime_t now);
 
      Thread* scanning_thread_ = nullptr;
      mutable Mutex data_mutex;
@@ -679,19 +655,8 @@ struct DetectionParams {
     DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
 
-    // Phase 3 Optimization: Removed Intelligent Scanning features (~200 bytes savings)
-    // Disabled to reduce memory usage while keeping basic database/wideband/hybrid scanning
-    //
-    // Removed:
-    // - int32_t priority_slice_index_ (priority scanning)
-    // - mutable Mutex priority_slice_mutex_ (race condition protection)
-    // - size_t priority_scan_counter_ (priority slice scanning counter)
-    // - struct FrequencyPrediction (frequency prediction for FHSS drones)
-    // - std::array<FrequencyPrediction, MAX_FREQUENCY_PREDICTIONS> frequency_predictions_
-    // - mutable Mutex predictions_mutex_ (prediction mutex)
-    // - size_t prediction_count_ (prediction counter)
-
-    // Settings for user-defined frequency ranges
+    // LIFETIME: settings_ must outlive this instance; it references parent class member
+    // See DIAMOND DOCUMENTATION at class declaration (lines 404-419) for full details
     const DroneAnalyzerSettings& settings_;
     
     // Last scan error for diagnostics
@@ -1032,11 +997,6 @@ public:
 
     Frequency calculate_optimal_tick_interval();
 
-    // 🔴 REMOVED: determine_auto_style() (Dead Code - never called)
-    // REASON: Defined but never invoked anywhere in codebase
-    //
-    // RulerStyle determine_auto_style();
-
     bool should_use_mhz_labels() const;
 
 private:
@@ -1121,8 +1081,6 @@ public:
     void set_ruler_style(RulerStyle style);
     void apply_display_settings(const DroneAnalyzerSettings& settings);
     CompactFrequencyRuler& compact_frequency_ruler() { return compact_frequency_ruler_; }
-    // 🔴 REMOVED: frequency_ruler() getter (Dead Code - duplicate never used)
-    // FrequencyRuler& frequency_ruler() { return frequency_ruler_; }
 
     // 🔴 FIX: Buffer allocation/deallocation (deferred from constructor)
     void allocate_buffers();
@@ -1417,18 +1375,9 @@ public:
 
     void on_start_scan();
     void on_stop_scan();
-    void on_toggle_mode();
     void show_menu();
-    void on_load_frequency_file();
-    void on_save_frequency();
-    void on_toggle_audio_simple();
-    void on_audio_toggle();
-    void on_advanced_settings();
     void on_open_settings();
-    void on_open_constant_settings();
-    void on_select_language();
     void on_about();
-    void on_audio_settings();
     void on_hardware_control();
     void on_view_logs();
     void update_scanner_range(Frequency min_freq, Frequency max_freq);
@@ -1454,23 +1403,7 @@ private:
     void on_manage_frequencies();
     void on_create_new_database();
     void on_frequency_warning();
-    void show_system_status();
-    void show_performance_stats();
-    void show_debug_info();
     void select_spectrum_mode(SpectrumMode mode);
-    void on_spectrum_range_config();
-    void on_add_preset_quick();
-    void show_current_bandwidth();
-    void show_current_center_freq();
-    void on_set_bandwidth_config();
-    void on_set_center_freq_config();
-    void set_bandwidth_from_menu(uint32_t bandwidth_hz);
-    void set_center_freq_from_menu(Frequency center_freq);
-    void add_preset_to_scanner(const DronePreset& preset);
-    void on_save_settings();
-    void on_load_settings();
-    void set_spectrum_mode(SpectrumMode mode);
-    void on_spectrum_mode();
     void on_set_bandwidth();
     void on_set_center_freq();
     void show_hardware_status();
@@ -1567,13 +1500,7 @@ public:
 
     // 🔴 DIAMOND OPTIMIZATION: constexpr LUT для фаз инициализации (хранится во Flash)
     // Scott Meyers Item 15: Prefer constexpr to #define
-    // Phase dependencies documented:
-    //   Phase 0 (Allocate): No dependencies
-    //   Phase 1 (Database):  Requires Phase 0 (buffers)
-    //   Phase 2 (Hardware):  Requires Phase 1 (database)
-    //   Phase 3 (UI Setup):   Requires Phase 2 (hardware)
-    //   Phase 4 (Settings):   Requires Phase 3 (UI layout)
-    //   Phase 5 (Finalize):   Requires Phase 4 (settings)
+ 
     struct InitPhaseConfig {
         const char* const name;           // Строка во Flash (const char*)
         uint32_t delay_ms;               // Задержка в мс
@@ -1602,27 +1529,7 @@ public:
  private:
     NavigationView& nav_;
 
-    // ===========================================
-    // MEMBER DECLARATION ORDER (CRITICAL)
-    // ===========================================
-    // Scott Meyers Effective C++ Item 12: Never change the order of member initialization
-    // C++ initialization order: members are initialized in DECLARATION order, NOT init-list order
-    //
-    // Dependencies:
-    //   settings_               - No dependencies (declared first)
-    //   hardware_               - No dependencies
-    //   scanner_                - Depends on settings_
-    //   audio_                  - No dependencies
-    //   display_controller_      - No dependencies
-    //   ui_controller_           - Depends on hardware_, scanner_, audio_, display_controller_
-    //   scanning_coordinator_   - Depends on hardware_, scanner_, display_controller_, audio_
-    //   smart_header_            - No dependencies
-    //   status_bar_              - No dependencies
-    //   threat_cards_            - No dependencies
-    //   button_*                 - No dependencies (initialized in constructor)
-    //   field_scanning_mode_     - No dependencies (initialized in constructor)
-    //   scanning_active_         - No dependencies (initialized last)
-    // ===========================================
+    
 
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 

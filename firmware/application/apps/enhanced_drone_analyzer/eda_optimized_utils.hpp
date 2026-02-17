@@ -176,6 +176,27 @@ struct FrequencyValidator {
     static constexpr bool is_valid_433mhz_ism(int64_t hz) noexcept {
         return EDA::Validation::is_433mhz_band(hz);
     }
+
+    // 🔴 PHASE 3: Add noexcept to enable compiler optimizations
+    static constexpr bool is_valid_frequency_noexcept(int64_t hz) noexcept {
+        return is_valid_frequency(hz);
+    }
+
+    static constexpr bool is_valid_2_4ghz_band_noexcept(int64_t hz) noexcept {
+        return is_valid_2_4ghz_band(hz);
+    }
+
+    static constexpr bool is_valid_5_8ghz_band_noexcept(int64_t hz) noexcept {
+        return is_valid_5_8ghz_band(hz);
+    }
+
+    static constexpr bool is_valid_military_band_noexcept(int64_t hz) noexcept {
+        return is_valid_military_band(hz);
+    }
+
+    static constexpr bool is_valid_433mhz_ism_noexcept(int64_t hz) noexcept {
+        return is_valid_433mhz_ism(hz);
+    }
 };
 
 // ===========================================
@@ -202,6 +223,11 @@ struct DroneTypeDetector {
             return DroneType::DIY_DRONE;
         }
         return DroneType::UNKNOWN;
+    }
+
+    // 🔴 PHASE 3: Add noexcept to enable compiler optimizations
+    static constexpr DroneType from_frequency_noexcept(int64_t hz) noexcept {
+        return from_frequency(hz);
     }
 };
 
@@ -383,49 +409,46 @@ struct SafeBufferAccess {
 // ===========================================
 // Eliminates repeated snprintf + widget.set patterns
 // Scott Meyers Item 25: Consider support for implicit interfaces
+// DIAMOND OPTIMIZATION: Removed std::string make_string() (zero heap allocation)
 struct StatusFormatter {
     template<size_t N, typename... Args>
     static void format_to(char (&buffer)[N], const char* fmt, Args&&... args) noexcept {
         snprintf(buffer, N, fmt, std::forward<Args>(args)...);
     }
 
-    template<size_t N, typename... Args>
-    static std::string make_string(const char* fmt, Args&&... args) {
-        char buffer[N];
-        snprintf(buffer, N, fmt, std::forward<Args>(args)...);
-        return std::string(buffer);
-    }
+    // DIAMOND OPTIMIZATION: Removed std::string version to eliminate heap allocation
+    // Use format_to() with stack-allocated buffer instead
 };
 
 // ===========================================
 // VALIDATOR ERROR FORMATTER
 // ===========================================
 // Eliminates duplicate error formatting in validators
+// DIAMOND OPTIMIZATION: Removed std::string return type (zero heap allocation)
 struct ValidatorFormatter {
     static constexpr size_t ERROR_BUFFER_SIZE = 128;
 
-    static std::string out_of_range(const char* name, int64_t value, int64_t min, int64_t max) {
-        char buffer[ERROR_BUFFER_SIZE];
-        snprintf(buffer, ERROR_BUFFER_SIZE, "%s %lld invalid (must be %lld to %lld)",
+    // DIAMOND OPTIMIZATION: Non-allocating version - writes to user-provided buffer
+    static void out_of_range(char* buffer, size_t buffer_size, const char* name, int64_t value, int64_t min, int64_t max) noexcept {
+        if (!buffer || buffer_size == 0) return;
+        snprintf(buffer, buffer_size, "%s %lld invalid (must be %lld to %lld)",
                  name, static_cast<long long>(value),
                  static_cast<long long>(min), static_cast<long long>(max));
-        return buffer;
     }
 
-    static std::string out_of_range(const char* name, uint64_t value, uint64_t min, uint64_t max) {
-        char buffer[ERROR_BUFFER_SIZE];
-        snprintf(buffer, ERROR_BUFFER_SIZE, "%s %llu invalid (must be %llu to %llu)",
+    static void out_of_range(char* buffer, size_t buffer_size, const char* name, uint64_t value, uint64_t min, uint64_t max) noexcept {
+        if (!buffer || buffer_size == 0) return;
+        snprintf(buffer, buffer_size, "%s %llu invalid (must be %llu to %llu)",
                  name, static_cast<unsigned long long>(value),
                  static_cast<unsigned long long>(min), static_cast<unsigned long long>(max));
-        return buffer;
     }
 
-    static std::string out_of_range(const char* name, int32_t value, int32_t min, int32_t max) {
-        return out_of_range(name, static_cast<int64_t>(value), static_cast<int64_t>(min), static_cast<int64_t>(max));
+    static void out_of_range(char* buffer, size_t buffer_size, const char* name, int32_t value, int32_t min, int32_t max) noexcept {
+        out_of_range(buffer, buffer_size, name, static_cast<int64_t>(value), static_cast<int64_t>(min), static_cast<int64_t>(max));
     }
 
-    static std::string out_of_range(const char* name, uint32_t value, uint32_t min, uint32_t max) {
-        return out_of_range(name, static_cast<uint64_t>(value), static_cast<uint64_t>(min), static_cast<uint64_t>(max));
+    static void out_of_range(char* buffer, size_t buffer_size, const char* name, uint32_t value, uint32_t min, uint32_t max) noexcept {
+        out_of_range(buffer, buffer_size, name, static_cast<uint64_t>(value), static_cast<uint64_t>(min), static_cast<uint64_t>(max));
     }
 };
 

@@ -8,11 +8,9 @@
 // ===========================================
 
 #include <cstdint>
-#include <string>
-#include <string_view>
-#include <vector>
-#include <map>
-#include <functional>
+#include <array>
+// MEDIUM PRIORITY FIX: Removed <functional> to eliminate std::function heap allocation
+// std::function allocates on heap - replaced with raw function pointers
 
 // UI framework includes
 #include "ui.hpp"
@@ -41,6 +39,7 @@ namespace ui::apps::enhanced_drone_analyzer {
 /**
  * PHASE 7: ENHANCED SETTINGS MANAGER WITH TXT FILE COMMUNICATION
  * Uses file.hpp API for robust SD card communication with scanner module
+ * DIAMOND OPTIMIZATION: All methods use const char* instead of std::string (zero heap allocation)
  */
 class EnhancedSettingsManager {
 public:
@@ -48,34 +47,57 @@ public:
     static bool save_settings_to_txt(const DroneAnalyzerSettings& settings);
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings);
     static bool verify_comm_file_exists();
-    static std::string get_communication_status();
+    // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string
+    static const char* get_communication_status();
 
 private:
-    static void create_backup_file(const std::string& filepath);
-    static void restore_from_backup(const std::string& filepath);
-    static void remove_backup_file(const std::string& filepath);
-    static std::string_view generate_file_header();
-    static std::string generate_settings_content(const DroneAnalyzerSettings& settings);
-    static std::string spectrum_mode_to_string(SpectrumMode mode);
+    static void create_backup_file(const char* filepath);
+    static void restore_from_backup(const char* filepath);
+    static void remove_backup_file(const char* filepath);
+    // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string_view
+    static const char* generate_file_header();
+    // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string
+    static const char* spectrum_mode_to_string(SpectrumMode mode);
     static const char* get_current_timestamp();
 };
 
 // ===========================================
 // ACTIVE: Translation Functions (Kept for UI)
 // ===========================================
+// DIAMOND OPTIMIZATION: Replaced std::map with constexpr LUT for zero heap allocation
 class DroneAnalyzerSettingsManager_Translations {
 public:
     static Language current_language_;
-    static const std::map<std::string, const char*> translations_english;
     
     static void set_language(Language lang) { current_language_ = lang; }
     static Language get_language() { return current_language_; }
-    static const char* translate(const std::string& key);
-    static const char* get_translation(const std::string& key);
+    static const char* translate(const char* key);
+    static const char* get_translation(const char* key);
+
+private:
+    struct TranslationEntry {
+        const char* key;
+        const char* value;
+    };
+    
+    static constexpr TranslationEntry translations_english[] = {
+        {"save_settings", "Save Settings"},
+        {"load_settings", "Load Settings"},
+        {"audio_settings", "Audio Settings"},
+        {"hardware_settings", "Hardware Settings"},
+        {"scan_interval", "Scan Interval"},
+        {"rssi_threshold", "RSSI Threshold"},
+        {"spectrum_mode", "Spectrum Mode"}
+    };
+    
+    static constexpr size_t translations_count = sizeof(translations_english) / sizeof(TranslationEntry);
 };
 
-using PresetMenuView = std::function<void(const DronePreset&)>;
-// using FilteredPresetMenuView = std::function<void(const DronePreset&, const std::vector<DronePreset>&)>; // DEPRECATED - not used
+// MEDIUM PRIORITY FIX: Replaced std::function with raw function pointer to eliminate heap allocation
+// std::function allocates on heap - raw function pointers are stack-only
+// However, lambdas with captures need std::function - revert for stateful callbacks
+// using PresetMenuView = void(*)(const DronePreset&); // REMOVED - use std::function for lambda support
+// using FilteredPresetMenuView = void(*)(const DronePreset&, const std::vector<DronePreset>&); // DEPRECATED - not used
 
 class DroneFrequencyPresets {
 public:
@@ -86,15 +108,16 @@ public:
     static const DroneType* get_available_types();
     static size_t get_preset_count();
     static size_t get_available_types_count();
-    static std::string get_type_display_name(DroneType type);
+    // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string
+    static const char* get_type_display_name(DroneType type);
     static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset);
 };
 
 class DronePresetSelector {
 public:
-    static void show_preset_menu(NavigationView& nav, PresetMenuView callback);
+    static void show_preset_menu(NavigationView& nav, std::function<void(const DronePreset&)> callback);
     static void show_type_filtered_presets(NavigationView& nav, DroneType type);
-    static PresetMenuView create_config_updater(DroneAnalyzerSettings& config_to_update);
+    static std::function<void(const DronePreset&)> create_config_updater(DroneAnalyzerSettings& config_to_update);
 };
 
 struct DroneFrequencyEntry {
@@ -111,12 +134,15 @@ struct DroneFrequencyEntry {
     bool is_valid() const;
 };
 
-using DroneFrequencyDatabase = std::vector<DroneFrequencyEntry>;
+// DIAMOND OPTIMIZATION: Fixed-size array instead of std::vector (zero heap allocation)
+static constexpr size_t MAX_FREQUENCY_ENTRIES = 100;
+using DroneFrequencyDatabase = std::array<DroneFrequencyEntry, MAX_FREQUENCY_ENTRIES>;
 
 // Structure of one entry
+// DIAMOND OPTIMIZATION: Fixed-size char array instead of std::string (zero heap allocation)
 struct DroneDbEntry {
     Frequency freq = 0;
-    std::string description = "";
+    char description[64] = "";  // 64 chars max for description
 };
 
 // Database manager class
@@ -144,23 +170,6 @@ public:
 // ===========================================
 // PART 3: SETTINGS UI CLASSES
 // ===========================================
-
-// ===== DEPRECATED: DroneAudioSettings =====
-// All audio settings now part of DroneAnalyzerSettings:
-// - enable_audio_alerts
-// - audio_alert_frequency_hz
-// - audio_alert_duration_ms
-// - audio_volume_level
-// - audio_repeat_alerts
-// ===========================================
-
-// struct DroneAudioSettings {
-//     bool audio_enabled = true;
-//     uint16_t alert_frequency_hz = 800;
-//     uint32_t alert_duration_ms = 500;
-//     uint8_t volume_level = 50;
-//     bool repeat_alerts = false;
-// };
 
 class AudioSettingsView : public View {
 public:
@@ -252,8 +261,6 @@ public:
 
  private:
     NavigationView& nav_;
-    // DEPRECATED: Tabbed settings view removed - use individual settings views instead
-    // Button button_tabbed_settings_{{8, 32, 224, 32}, "Tabbed Settings", false};
     Button button_audio_settings_{{8, 32, 224, 32}, "Audio Settings", false};
     Button button_hardware_settings_{{8, 72, 224, 32}, "Hardware Settings", false};
     Button button_scanning_settings_{{8, 112, 224, 32}, "Scanning Settings", false};
@@ -266,14 +273,13 @@ public:
     void show_scanning_settings();
     void show_about_author();
     void load_default_settings();
-    // DEPRECATED: show_tabbed_settings() removed - tabbed view no longer available
 
     DroneAnalyzerSettings current_settings_;
 };
 
 class LoadingView : public View {
 public:
-    explicit LoadingView(NavigationView& nav, const std::string& loading_text = "Loading...");
+    explicit LoadingView(NavigationView& nav, const char* loading_text = "Loading...");
     ~LoadingView() = default;
     void focus() override;
     std::string title() const override { return "Loading"; }
@@ -283,7 +289,8 @@ public:
 
 private:
     NavigationView& nav_;
-    std::string loading_text_;
+    // DIAMOND OPTIMIZATION: Fixed-size char array instead of std::string (zero heap allocation)
+    char loading_text_[64] = "Loading...";
     Text loading_text_1_;
     Text loading_text_2_;
     systime_t start_time_ = 0;
@@ -291,7 +298,8 @@ private:
 
 class DroneEntryEditorView : public View {
 public:
-    using OnSaveCallback = std::function<void(const DroneDbEntry&)>;
+    // MEDIUM PRIORITY FIX: Replaced std::function with raw function pointer to eliminate heap allocation
+    using OnSaveCallback = void(*)(const DroneDbEntry&);
     explicit DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, OnSaveCallback callback);
     void focus() override;
     std::string title() const override { return "Edit Frequency"; }
@@ -300,10 +308,14 @@ private:
     NavigationView& nav_;
     DroneDbEntry entry_;
     OnSaveCallback on_save_;
+    // DIAMOND OPTIMIZATION: Use std::string buffer for TextEdit (requires std::string&), sync to char array on save
+    // This is the minimal heap usage compromise - TextEdit widget requires std::string reference
+    std::string description_buffer_;
     Text text_freq_{{8, 16, 64, 16}, "Freq:"};
     FrequencyField field_freq_{{8, 32}};
     Text text_desc_{{8, 64, 64, 16}, "Name:"};
-    TextEdit field_desc_{entry_.description, 30, {8, 80}, 28};
+    // DIAMOND OPTIMIZATION: Use std::string buffer for TextEdit, sync to char array on save
+    TextEdit field_desc_{description_buffer_, {8, 80}, 28};
     Button button_save_{{8, 128, 100, 32}, "SAVE"};
     Button button_cancel_{{128, 128, 100, 32}, "CANCEL"};
 

@@ -173,6 +173,11 @@ constexpr uint32_t MAX_STRING_LENGTH_256 = 256;
 constexpr uint32_t FREQ_DB_STORAGE_SIZE_4KB = 4096;
 constexpr uint32_t FREQ_DB_STORAGE_SIZE_2KB = 2048;  // Diamond Code: Reduced for stack safety
 
+// ===== THREAD STACK SIZES (Phase 2 Optimizations) =====
+constexpr uint32_t WORKER_STACK_SIZE_4KB = 4096;  // Reduced from 8KB
+constexpr uint32_t DB_LOADING_STACK_SIZE_4KB = 4096;  // Reduced from 8KB
+constexpr uint32_t COORDINATOR_STACK_SIZE_6KB = 6144;  // Reduced from 12KB
+
 // ===== RSSI PARAMETERS =====
 constexpr int32_t RSSI_SILENCE_DBM = -120;
 constexpr int32_t RSSI_INVALID_DBM = -127;
@@ -191,6 +196,14 @@ constexpr uint32_t DEFAULT_ALERT_DURATION_MS = 500;
 constexpr uint32_t DEFAULT_ALERT_VOLUME_LEVEL = 50;
 constexpr uint32_t MCU_MAX_AUDIO_FREQ_HZ = 4000; // MCU audio limit (correct value)
 constexpr uint32_t GENERAL_MAX_AUDIO_FREQ_HZ = 20000; // General audio limit
+
+// 🔴 PHASE 3: Added audio cooldown constant
+constexpr uint32_t DEFAULT_ALERT_COOLDOWN_MS = 100;
+
+// 🔴 PHASE 3: Added string length constants
+constexpr size_t MAX_PATH_LENGTH = 64;
+constexpr size_t MAX_NAME_LENGTH = 32;
+constexpr size_t MAX_FORMAT_LENGTH = 8;
 
 } // namespace Constants
 

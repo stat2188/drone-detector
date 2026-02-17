@@ -17,9 +17,10 @@ enum class SpectrumMode : uint8_t { NARROW = 0, MEDIUM = 1, WIDE = 2, ULTRA_WIDE
 // ===========================================
 // CONSTANTS & TYPE ALIASES
 // ===========================================
-static constexpr size_t MAX_PATH_LEN = 64;
-static constexpr size_t MAX_NAME_LEN = 32;
-static constexpr size_t MAX_FORMAT_LEN = 8;
+// 🔴 PHASE 3: Use constants from EDA::Constants instead of magic numbers
+static constexpr size_t MAX_PATH_LEN = EDA::Constants::MAX_PATH_LENGTH;
+static constexpr size_t MAX_NAME_LEN = EDA::Constants::MAX_NAME_LENGTH;
+static constexpr size_t MAX_FORMAT_LEN = EDA::Constants::MAX_FORMAT_LENGTH;
 
 // Helper for safe string assignment (Zero-Heap, no null-padding overhead)
 static inline void safe_strcpy(char* dest, const char* src, size_t max_len) {

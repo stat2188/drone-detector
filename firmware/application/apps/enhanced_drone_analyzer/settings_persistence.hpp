@@ -60,20 +60,6 @@ public:
     #define FLASH_STORAGE
 #endif
 
-static inline size_t safe_strlen(const char* const str, const size_t max_len) noexcept {
-    if (!str) return 0;
-    size_t len = 0;
-    while (len < max_len && str[len] != '\0') { ++len; }
-    return len;
-}
-
-constexpr size_t const_strlen(const char* const str) noexcept {
-    if (!str) return 0;
-    size_t len = 0;
-    while (str[len] != '\0') { ++len; }
-    return len;
-}
-
 struct DroneAnalyzerSettings;
 
 enum SettingType : uint8_t {
@@ -252,9 +238,9 @@ inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
     return false;
 }
 
-// Magic numbers moved to EDA::Constants - use those instead
-static constexpr size_t MAX_LINE_LENGTH = 128;
-static constexpr size_t MAX_SETTING_STR_LEN = 65;
+// 🔴 PHASE 3: Use constants from EDA::Constants instead of magic numbers
+static constexpr size_t MAX_LINE_LENGTH = EDA::Constants::MAX_LINE_LENGTH;
+static constexpr size_t MAX_SETTING_STR_LEN = EDA::Constants::MAX_SETTING_STR_LEN;
 
 // Stack usage documentation for settings loading buffers
 struct SettingsLoadBuffer {
@@ -272,8 +258,11 @@ struct SettingsLoadBuffer {
     static char read_buffer[READ_BUFFER_SIZE];
 };
 
+// 🔴 HIGH PRIORITY FIX: Remove incorrect FLASH_STORAGE attribute
+// SettingsLoadBuffer contains writable arrays that must be in RAM, not Flash
+// FLASH_STORAGE places data in read-only memory, causing undefined behavior when arrays are modified
 inline SettingsLoadBuffer& get_load_buffer() {
-    static SettingsLoadBuffer buf FLASH_STORAGE;
+    static SettingsLoadBuffer buf;
     return buf;
 }
 
@@ -507,21 +496,6 @@ void SettingsPersistence<T>::reset(T& settings) {
         dispatch_by_type(DispatchOp::RESET, data_ptr, meta);
     }
 }
-
-// ===========================================
-
-// ===========================================
-// This method is defined but never called - validation is done inline in validate()
-// Kept for reference, but commented out to avoid compiler warnings
-// DIAMOND OPTIMIZATION: ~10 lines removed
-/*
-template<typename T>
-bool SettingsPersistence<T>::validate_setting(const SettingMetadata& meta, uint32_t value) {
-    if (meta.type == TYPE_BOOL) return true;  // Bool always valid
-    if (meta.type == TYPE_STR) return true;     // String always valid
-    return value >= meta.min_val && value <= meta.max_val;
-}
-*/
 
 // ===========================================
 // IMPLEMENTATION: VALIDATE
