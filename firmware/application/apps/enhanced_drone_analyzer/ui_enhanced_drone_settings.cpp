@@ -24,9 +24,8 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 class FileRAII {
 public:
-    explicit FileRAII(const char* path, bool read_only = false) {
-        opened_ = file_.open(path, read_only);
-    }
+    explicit FileRAII(const char* path, bool read_only = false)
+        : file_(), opened_(file_.open(path, read_only)) {}
 
     ~FileRAII() {
         if (opened_) {
@@ -34,14 +33,11 @@ public:
         }
     }
 
-    // Delete copy constructor and assignment
     FileRAII(const FileRAII&) = delete;
     FileRAII& operator=(const FileRAII&) = delete;
 
-    // Allow move
-    FileRAII(FileRAII&& other) noexcept {
-        file_ = std::move(other.file_);
-        opened_ = other.opened_;
+    FileRAII(FileRAII&& other) noexcept
+        : file_(std::move(other.file_)), opened_(other.opened_) {
         other.opened_ = false;
     }
 
@@ -540,8 +536,7 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui
     config.rssi_threshold_db = static_cast<int32_t>(preset.threat_level) >= static_cast<int32_t>(ThreatLevel::HIGH) ? -80 : -90;
     config.audio_flags.enable_alerts = true;
 
-    // 🔴 PHASE 4: Remove redundant cast (preset.frequency_hz is already uint64_t)
-    if (preset.frequency_hz >= 2400000000ULL && preset.frequency_hz <= 2500000000ULL) {
+    if (static_cast<uint64_t>(preset.frequency_hz) >= 2400000000ULL && static_cast<uint64_t>(preset.frequency_hz) <= 2500000000ULL) {
         config.scanning_flags.enable_wideband_scanning = true;
         config.wideband_min_freq_hz = 2400000000ULL;
         config.wideband_max_freq_hz = 2500000000ULL;
@@ -980,30 +975,7 @@ bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* f
     return true;
 }
 
-// DroneEntryEditorView
-// DroneEntryEditorView
 
-DroneEntryEditorView::DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, OnSaveCallback callback)
-    : View(), nav_(nav), entry_(entry), on_save_(callback), description_buffer_(entry.description) {
-    add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
-    field_freq_.set_value(entry_.freq);
-    button_save_.on_select = [this](Button&) { on_save(); };
-    button_cancel_.on_select = [this](Button&) { on_cancel(); };
-}
-void DroneEntryEditorView::focus() { field_freq_.focus(); }
-void DroneEntryEditorView::on_save() {
-    DroneDbEntry new_entry;
-    new_entry.freq = field_freq_.value();
-    // MEDIUM PRIORITY FIX: Use char array instead of std::string
-    safe_strcpy(new_entry.description, description_buffer_.c_str(), sizeof(new_entry.description));
-    if (on_save_) on_save_(new_entry);
-    nav_.pop();
-}
-void DroneEntryEditorView::on_cancel() {
-    DroneDbEntry empty_entry{0};
-    if (on_save_) on_save_(empty_entry);
-    nav_.pop();
-}
 
 // DroneDatabaseListView
 DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav) 
@@ -1037,22 +1009,26 @@ void DroneDatabaseListView::reload_list() {
 void DroneDatabaseListView::on_entry_selected(size_t index) {
     if (index == 0) {
         DroneDbEntry empty_entry;
-        nav_.push<DroneEntryEditorView>(empty_entry, [this](const DroneDbEntry& entry) {
+        auto on_add = [this](const DroneDbEntry& entry) {
             if (entry.freq != 0 && database_view_.count < DroneDatabaseManager::MAX_DATABASE_ENTRIES) {
                 database_view_.entries[database_view_.count++] = entry;
                 save_changes();
                 reload_list();
             }
-        });
+        };
+        using EditorViewT = DroneEntryEditorView<decltype(on_add)>;
+        nav_.push<EditorViewT>(empty_entry, std::move(on_add));
     } else {
         size_t entry_index = index - 1;
-        nav_.push<DroneEntryEditorView>(database_view_.entries[entry_index], [this, entry_index](const DroneDbEntry& entry) {
+        auto on_edit = [this, entry_index](const DroneDbEntry& entry) {
             if (entry.freq != 0) {
                 database_view_.entries[entry_index] = entry;
                 save_changes();
                 reload_list();
             }
-        });
+        };
+        using EditorViewT = DroneEntryEditorView<decltype(on_edit)>;
+        nav_.push<EditorViewT>(database_view_.entries[entry_index], std::move(on_edit));
     }
 }
 

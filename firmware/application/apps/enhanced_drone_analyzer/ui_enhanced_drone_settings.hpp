@@ -366,31 +366,53 @@ private:
     systime_t start_time_ = 0;
 };
 
+// CRITICAL FIX: Template-based callback system for DroneEntryEditorView - zero heap allocation
+// Template parameter Callback accepts any callable type (lambda, functor, function pointer)
+template <typename Callback>
 class DroneEntryEditorView : public View {
 public:
-    // MEDIUM PRIORITY FIX: Replaced std::function with raw function pointer to eliminate heap allocation
-    using OnSaveCallback = void(*)(const DroneDbEntry&);
-    explicit DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, OnSaveCallback callback);
-    void focus() override;
+    explicit DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, Callback callback)
+        : View(), nav_(nav), entry_(entry), on_save_fn_(std::move(callback)),
+          description_buffer_(entry.description),
+          text_freq_{{8, 16, 64, 16}, "Freq:"},
+          field_freq_{{8, 32}},
+          text_desc_{{8, 64, 64, 16}, "Name:"},
+          field_desc_{description_buffer_, {8, 80}, 28},
+          button_save_{{8, 128, 100, 32}, "SAVE"},
+          button_cancel_{{128, 128, 100, 32}, "CANCEL"} {
+        add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
+        field_freq_.set_value(entry_.freq);
+        button_save_.on_select = [this](Button&) { on_save(); };
+        button_cancel_.on_select = [this](Button&) { on_cancel(); };
+    }
+
+    void focus() override { field_freq_.focus(); }
     std::string title() const override { return "Edit Frequency"; }
 
 private:
     NavigationView& nav_;
     DroneDbEntry entry_;
-    OnSaveCallback on_save_;
-    // DIAMOND OPTIMIZATION: Use std::string buffer for TextEdit (requires std::string&), sync to char array on save
-    // This is the minimal heap usage compromise - TextEdit widget requires std::string reference
+    Callback on_save_fn_;
     std::string description_buffer_;
-    Text text_freq_{{8, 16, 64, 16}, "Freq:"};
-    FrequencyField field_freq_{{8, 32}};
-    Text text_desc_{{8, 64, 64, 16}, "Name:"};
-    // DIAMOND OPTIMIZATION: Use std::string buffer for TextEdit, sync to char array on save
-    TextEdit field_desc_{description_buffer_, {8, 80}, 28};
-    Button button_save_{{8, 128, 100, 32}, "SAVE"};
-    Button button_cancel_{{128, 128, 100, 32}, "CANCEL"};
+    Text text_freq_;
+    FrequencyField field_freq_;
+    Text text_desc_;
+    TextEdit field_desc_;
+    Button button_save_;
+    Button button_cancel_;
 
-    void on_save();
-    void on_cancel();
+    void on_save() {
+        DroneDbEntry new_entry;
+        new_entry.freq = field_freq_.value();
+        safe_strcpy(new_entry.description, description_buffer_.c_str(), sizeof(new_entry.description));
+        on_save_fn_(new_entry);
+        nav_.pop();
+    }
+    void on_cancel() {
+        DroneDbEntry empty_entry{0};
+        on_save_fn_(empty_entry);
+        nav_.pop();
+    }
 };
 
 class DroneDatabaseListView : public View {
