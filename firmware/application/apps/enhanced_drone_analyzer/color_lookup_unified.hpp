@@ -33,12 +33,12 @@ using ColorIndex = uint8_t;
 // CONSTANTS
 // ===========================================
 namespace ColorConstants {
-    constexpr RGB888Component RED_MASK = 0xFF;
-    constexpr RGB888Component GREEN_MASK = 0xFF;
-    constexpr RGB888Component BLUE_MASK = 0xFF;
-    constexpr RGB565 RED_MASK = 0xF8;
-    constexpr RGB565 GREEN_MASK = 0xFC;
-    constexpr RGB565 BLUE_MASK = 0xF8;
+    constexpr RGB888Component RED_MASK_888 = 0xFF;
+    constexpr RGB888Component GREEN_MASK_888 = 0xFF;
+    constexpr RGB888Component BLUE_MASK_888 = 0xFF;
+    constexpr RGB565 RED_MASK_565 = 0xF8;
+    constexpr RGB565 GREEN_MASK_565 = 0xFC;
+    constexpr RGB565 BLUE_MASK_565 = 0xF8;
     constexpr int RED_SHIFT = 16;
     constexpr int GREEN_SHIFT = 8;
     constexpr int BLUE_SHIFT = 0;
@@ -60,14 +60,13 @@ namespace ColorConstants {
 struct ColorConverter {
     // ✅ constexpr RGB888 → RGB565 conversion (O(1))
     static constexpr RGB565 rgb888_to_rgb565(const RGB888 rgb888) noexcept {
-        const RGB888Component r = (rgb888 >> ColorConstants::RED_SHIFT) & ColorConstants::RED_MASK;
-        const RGB888Component g = (rgb888 >> ColorConstants::GREEN_SHIFT) & ColorConstants::GREEN_MASK;
-        const RGB888Component b = rgb888 & ColorConstants::BLUE_MASK;
+        const RGB888Component r = (rgb888 >> ColorConstants::RED_SHIFT) & ColorConstants::RED_MASK_888;
+        const RGB888Component g = (rgb888 >> ColorConstants::GREEN_SHIFT) & ColorConstants::GREEN_MASK_888;
+        const RGB888Component b = rgb888 & ColorConstants::BLUE_MASK_888;
 
-        // RGB565 format: rrrrrGGGGGGbbbbb
-        const RGB565 r565 = (r & ColorConstants::RED_MASK) << ColorConstants::RED_565_SHIFT;    // 5 bits R (bits 11-15)
-        const RGB565 g565 = (g & ColorConstants::GREEN_MASK) << ColorConstants::GREEN_565_SHIFT;    // 6 bits G (bits 5-10)
-        const RGB565 b565 = (b & ColorConstants::BLUE_MASK) >> 3;    // 5 bits B (bits 0-4)
+        const RGB565 r565 = (r & ColorConstants::RED_MASK_565) << ColorConstants::RED_565_SHIFT;
+        const RGB565 g565 = (g & ColorConstants::GREEN_MASK_565) << ColorConstants::GREEN_565_SHIFT;
+        const RGB565 b565 = (b & ColorConstants::BLUE_MASK_565) >> 3;
 
         return r565 | g565 | b565;
     }
