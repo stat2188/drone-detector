@@ -37,23 +37,29 @@ using namespace portapack;
 
 #include <cmath>
 #include <array>
+#include <algorithm>
 
 namespace ui::external_app::analogtv {
 namespace tv {
 
-static int8_t x_offset_table[129][128];
-
-__attribute__((constructor))
-static void init_offset_table() {
+// Compile-time X-offset table generation - saves 16.5KB of RAM by placing in ROM
+constexpr std::array<std::array<int8_t, 128>, 129> generate_x_offset_table() {
+    std::array<std::array<int8_t, 128>, 129> table{};
+    
     for (int corr = 0; corr < 129; corr++) {
         for (int i = 0; i < 128; i++) {
             int idx = i + corr;
-            if (idx < 0) idx = 0;
-            else if (idx > 255) idx = 255;
-            x_offset_table[corr][i] = static_cast<int8_t>(idx);
+            // Clamp to valid range [0, 255]
+            idx = std::clamp(idx, 0, 255);
+            table[corr][i] = static_cast<int8_t>(idx);
         }
     }
+    
+    return table;
 }
+
+// Constexpr table - placed in ROM by compiler
+constexpr auto X_OFFSET_TABLE = generate_x_offset_table();
 
 /* TimeScopeView******************************************************/
 
@@ -62,36 +68,18 @@ TimeScopeView::TimeScopeView(
     : View{parent_rect} {
     set_focusable(true);
 
-    add_children({//&labels,
-                  //&field_frequency,
-                  &waveform});
-
-    /*field_frequency.on_change = [this](int32_t) {
-                set_dirty();
-        };
-        field_frequency.set_value(10);*/
+    add_children({&waveform});
 }
 
 void TimeScopeView::paint(Painter& painter) {
     const auto r = screen_rect();
-
     painter.fill_rectangle(r, Color::black());
-
-    // Cursor
-    /*
-        const Rect r_cursor {
-                field_frequency.value() / (48000 / 240), r.bottom() - 32 - cursor_band_height,
-                1, cursor_band_height
-        };
-        painter.fill_rectangle(
-                r_cursor,
-                Color::red()
-        );*/
 }
 
 void TimeScopeView::on_audio_spectrum(const AudioSpectrum* spectrum) {
-    for (size_t i = 0; i < spectrum->db.size(); i++)
+    for (size_t i = 0; i < spectrum->db.size(); i++) {
         audio_spectrum[i] = ((int16_t)spectrum->db[i] - 127) * 256;
+    }
     waveform.set_dirty();
 }
 
@@ -105,14 +93,10 @@ void TVView::on_show() {
 }
 
 void TVView::on_hide() {
-    /* TODO: Clear region to eliminate brief flash of content at un-shifted
-     * position?
-     */
     display.scroll_disable();
 }
 
 void TVView::paint(Painter& painter) {
-    // Do nothing.
     (void)painter;
 }
 
@@ -120,30 +104,32 @@ void TVView::set_x_correction(int32_t value) {
     x_correction_ = value;
 }
 
-
 void TVView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
     add_line_to_buffer(spectrum, 0);    // First line (samples 0..127)
     add_line_to_buffer(spectrum, 128);  // Second line (samples 128..255)
     
     // Check if we need to render
-    if (buffer_line_count >= RENDER_THRESHOLD) {
+    if (buffer_line_count >= RenderConstants::RENDER_THRESHOLD) {
         render_buffer_batch();
     }
 }
 
 void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx) {
     (void)offset_idx;
-    if (buffer_line_count >= LINE_BUFFER_SIZE) {
+    if (buffer_line_count >= RenderConstants::LINE_BUFFER_SIZE) {
         process_buffer_overflow();
         return;
     }
 
     const auto* db = spectrum.db.data();
-    const int8_t* offset_row = x_offset_table[x_correction_ + 64];
+    // Access ROM table with clamped correction value
+    const int corr_idx = std::clamp(x_correction_ + 64, 0, 128);
+    const int8_t* offset_row = X_OFFSET_TABLE[corr_idx].data();
     const auto* lut = spectrum_rgb4_lut.data();
 
-    for (int i = 0; i < 128; i++) {
-        uint8_t db_val = 255 - db[offset_row[i]];
+    // Hot path: minimal logic, direct memory access
+    for (int i = 0; i < RenderConstants::TV_LINE_WIDTH; i++) {
+        const uint8_t db_val = 255 - db[offset_row[i]];
         line_buffer_[buffer_line_count][i] = lut[db_val];
     }
 
@@ -159,7 +145,7 @@ void TVView::render_buffer_batch() {
 
     for (int i = 0; i < buffer_line_count; i++) {
         display.render_line({rect.left(), rect.top() + scan_line + i},
-                           TV_LINE_WIDTH, line_buffer_[i].data());
+                           RenderConstants::TV_LINE_WIDTH, line_buffer_[i].data());
     }
 
     scan_line += buffer_line_count;
@@ -168,9 +154,7 @@ void TVView::render_buffer_batch() {
 }
 
 void TVView::process_buffer_overflow() {
-    // On buffer overflow - render current buffer and start from new position
     render_buffer_batch();
-    // Reset scan position to avoid artifacts
     scan_line = 0;
 }
 
@@ -227,14 +211,13 @@ void TVWidget::update_widgets_rect() {
 void TVWidget::set_parent_rect(const Rect new_parent_rect) {
     View::set_parent_rect(new_parent_rect);
 
-    tv_normal_rect = {0, scale_height, new_parent_rect.width(), new_parent_rect.height() - scale_height};
-    tv_reduced_rect = {0, audio_spectrum_height + scale_height, new_parent_rect.width(), new_parent_rect.height() - scale_height - audio_spectrum_height};
+    tv_normal_rect = {0, RenderConstants::SCALE_HEIGHT, new_parent_rect.width(), new_parent_rect.height() - RenderConstants::SCALE_HEIGHT};
+    tv_reduced_rect = {0, RenderConstants::AUDIO_SPECTRUM_HEIGHT + RenderConstants::SCALE_HEIGHT, new_parent_rect.width(), new_parent_rect.height() - RenderConstants::SCALE_HEIGHT - RenderConstants::AUDIO_SPECTRUM_HEIGHT};
 
     update_widgets_rect();
 }
 
 void TVWidget::paint(Painter& painter) {
-    // TODO:
     (void)painter;
 }
 
@@ -243,7 +226,7 @@ void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
     sampling_rate = spectrum.sampling_rate;
 
     frame_counter++;
-    if (frame_counter >= DETECTION_SKIP_FRAMES) {
+    if (frame_counter >= RenderConstants::DETECTION_SKIP_FRAMES) {
         frame_counter = 0;
         auto detection_result = signal_detector.detect_tv_signal(spectrum, receiver_model.target_frequency());
 
@@ -257,7 +240,7 @@ void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
 }
 
 void TVWidget::on_audio_spectrum() {
-    // Обрабатываем аудио спектр только если он активен
+    // Process audio spectrum only if active
     if (audio_spectrum_view && audio_spectrum_data) {
         audio_spectrum_view->on_audio_spectrum(audio_spectrum_data);
     }

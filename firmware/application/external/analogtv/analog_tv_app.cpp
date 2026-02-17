@@ -24,6 +24,7 @@
 #include "analog_tv_app.hpp"
 
 #include <cstring>
+#include <algorithm>
 
 #include "baseband_api.hpp"
 
@@ -44,18 +45,67 @@ using namespace tonekey;
 
 namespace ui::external_app::analogtv {
 
+// RAII for baseband resources
+class ScopedBaseband {
+public:
+    ScopedBaseband() {
+        baseband::run_prepared_image(portapack::memory::map::m4_code.base());
+    }
+    
+    ~ScopedBaseband() {
+        baseband::shutdown();
+    }
+};
+
+// RAII for receiver resources
+class ScopedReceiver {
+public:
+    ScopedReceiver() {
+        receiver_model.enable();
+    }
+    
+    ~ScopedReceiver() {
+        receiver_model.disable();
+    }
+};
+
+// RAII for audio output
+class ScopedAudio {
+public:
+    ScopedAudio() {
+        audio::output::stop();
+    }
+    
+    ~ScopedAudio() {
+        audio::output::stop();
+    }
+};
+
+/* FoundChannel implementation */
+
+void AnalogTvView::FoundChannel::set_from_detector(const TVSignalDetector::DetectionResult& result) {
+    frequency = result.frequency;
+    signal_strength = static_cast<int8_t>(result.signal_strength);
+    is_valid = result.is_tv_signal;
+
+    auto freq_str = to_string_short_freq(frequency);
+    size_t len = std::min(freq_str.length(), Constants::CHANNEL_NAME_MAX_LEN);
+    std::memcpy(name.data(), freq_str.c_str(), len);
+    name[len] = '\0';
+
+    // Copy modulation type from detector result
+    std::memcpy(modulation_type.data(), result.modulation_type.data(), result.modulation_type.size());
+}
+
 /* AnalogTvView *******************************************************/
 
 AnalogTvView::AnalogTvView(
     NavigationView& nav)
     : nav_(nav) {
-    add_children({&rssi,
-                  &channel,
-                  &audio,
-                  &field_frequency,
+    // Consolidated header - only essential widgets
+    add_children({&field_frequency,
                   &field_lna,
                   &field_vga,
-                  &options_modulation,
                   &field_volume,
                   &tv,
                   &button_scan_start,
@@ -83,14 +133,9 @@ AnalogTvView::AnalogTvView(
         this->on_show_options_rf_gain();
     };
 
+    // Set default modulation (no UI widget needed)
     const auto modulation = receiver_model.modulation();
-    options_modulation.set_by_value(toUType(ReceiverModel::Mode::WidebandFMAudio));
-    options_modulation.on_change = [this](size_t, OptionsField::value_t v) {
-        this->on_modulation_changed(static_cast<ReceiverModel::Mode>(v));
-    };
-    options_modulation.on_show_options = [this]() {
-        this->on_show_options_modulation();
-    };
+    update_modulation(static_cast<ReceiverModel::Mode>(modulation));
 
     tv.on_select = [this](int32_t offset) {
         field_frequency.set_value(receiver_model.target_frequency() + offset);
@@ -98,7 +143,7 @@ AnalogTvView::AnalogTvView(
 
     // Connect callback for TV signal detection
     tv.on_tv_signal_detected = [this](const TVSignalDetector::DetectionResult& result) {
-        if (is_scanning) {
+        if (scan_state.load(std::memory_order_acquire) == ScanState::Scanning) {
             add_found_channel(result);
         }
     };
@@ -113,7 +158,7 @@ AnalogTvView::AnalogTvView(
     };
     
     button_manual.on_select = [this](Button&) {
-        if (is_scanning) {
+        if (scan_state.load(std::memory_order_acquire) == ScanState::Scanning) {
             pause_scan();
         }
         text_scan_status.set("Status: Manual");
@@ -140,16 +185,26 @@ AnalogTvView::AnalogTvView(
         scan_params.scan_timeout_ms = v;
     };
 
-    update_modulation(static_cast<ReceiverModel::Mode>(modulation));
-    on_modulation_changed(ReceiverModel::Mode::WidebandFMAudio);
+    update_modulation(ReceiverModel::Mode::WidebandFMAudio);
 }
 
 AnalogTvView::~AnalogTvView() {
     view_destroying = true;
-    thread_terminate = true;
-    audio::output::stop();
-    receiver_model.disable();
-    baseband::shutdown();
+    
+    // Signal thread to terminate
+    thread_terminate.store(true, std::memory_order_release);
+    
+    // Wait for thread to finish with timeout
+    const auto current_state = scan_state.load(std::memory_order_acquire);
+    if (current_state == ScanState::Scanning || current_state == ScanState::Paused) {
+        // Give thread time to exit gracefully
+        chThdSleepMilliseconds(Constants::THREAD_JOIN_TIMEOUT_MS);
+    }
+    
+    // RAII cleanup
+    ScopedAudio audio_cleanup;
+    ScopedReceiver receiver_cleanup;
+    ScopedBaseband baseband_cleanup;
 }
 
 void AnalogTvView::on_hide() {
@@ -179,7 +234,6 @@ void AnalogTvView::on_modulation_changed(const ReceiverModel::Mode modulation) {
     // it's being shown or hidden.
     tv.on_hide();
     update_modulation(modulation);
-    on_show_options_modulation();
     tv.on_show();
 }
 
@@ -190,7 +244,6 @@ void AnalogTvView::remove_options_widget() {
     }
 
     field_lna.set_style(nullptr);
-    options_modulation.set_style(nullptr);
     field_frequency.set_style(nullptr);
 }
 
@@ -200,7 +253,7 @@ void AnalogTvView::set_options_widget(std::unique_ptr<Widget> new_widget) {
     if (new_widget) {
         options_widget = std::move(new_widget);
     } else {
-        // TODO: Lame hack to hide options view due to my bad paint/damage algorithm.
+        // Use rectangle for options view
         options_widget = std::make_unique<Rectangle>(options_view_rect, Theme::getInstance()->option_active->background);
     }
     add_child(options_widget.get());
@@ -227,15 +280,6 @@ void AnalogTvView::on_show_options_rf_gain() {
 
     set_options_widget(std::move(widget));
     field_lna.set_style(Theme::getInstance()->option_active);
-}
-
-void AnalogTvView::on_show_options_modulation() {
-    std::unique_ptr<Widget> widget;
-
-    tv.show_audio_spectrum_view(true);
-
-    set_options_widget(std::move(widget));
-    options_modulation.set_style(Theme::getInstance()->option_active);
 }
 
 void AnalogTvView::on_frequency_step_changed(rf::Frequency f) {
@@ -273,7 +317,8 @@ void AnalogTvView::on_frequency_changed(rf::Frequency f) {
 }
 
 void AnalogTvView::on_left() {
-    if (!is_scanning && found_channels_count > 0) {
+    const auto current_state = scan_state.load(std::memory_order_acquire);
+    if (current_state == ScanState::Idle && found_channels_count.load(std::memory_order_acquire) > 0) {
         if (current_channel_index > 0) {
             current_channel_index--;
             switch_to_channel(current_channel_index);
@@ -282,8 +327,10 @@ void AnalogTvView::on_left() {
 }
 
 void AnalogTvView::on_right() {
-    if (!is_scanning && found_channels_count > 0) {
-        if (current_channel_index < found_channels_count - 1) {
+    const auto current_state = scan_state.load(std::memory_order_acquire);
+    if (current_state == ScanState::Idle && found_channels_count.load(std::memory_order_acquire) > 0) {
+        const auto count = found_channels_count.load(std::memory_order_acquire);
+        if (current_channel_index < count - 1) {
             current_channel_index++;
             switch_to_channel(current_channel_index);
         }
@@ -292,12 +339,12 @@ void AnalogTvView::on_right() {
 
 // Implementation of scanning methods
 void AnalogTvView::start_scan() {
-    if (is_scanning) return;
+    const auto current_state = scan_state.load(std::memory_order_acquire);
+    if (current_state == ScanState::Scanning) return;
 
-    is_scanning = true;
-    scan_paused = false;
-    thread_terminate = false;
-    found_channels_count = 0;
+    scan_state.store(ScanState::Scanning, std::memory_order_release);
+    thread_terminate.store(false, std::memory_order_release);
+    found_channels_count.store(0, std::memory_order_release);
     current_scan_freq = scan_params.start_freq;
     ui_update_counter = 0;
     last_added_freq = 0;
@@ -306,7 +353,7 @@ void AnalogTvView::start_scan() {
     text_found_channels.set("Channels: 0");
     text_progress.set("Progress: 0%");
 
-    chThdCreateFromHeap(nullptr, 2048, NORMALPRIO + 10,
+    chThdCreateFromHeap(nullptr, Constants::THREAD_STACK_SIZE, Constants::THREAD_PRIORITY,
                        [](void* arg) -> msg_t {
                            auto self = static_cast<AnalogTvView*>(arg);
                            return self->scan_worker_thread();
@@ -314,18 +361,23 @@ void AnalogTvView::start_scan() {
 }
 
 msg_t AnalogTvView::scan_worker_thread() {
-    while (is_scanning && current_scan_freq <= scan_params.end_freq && !thread_terminate) {
-        if (scan_paused) {
+    while (scan_state.load(std::memory_order_acquire) == ScanState::Scanning && 
+           current_scan_freq <= scan_params.end_freq && 
+           !thread_terminate.load(std::memory_order_acquire)) {
+        
+        if (scan_state.load(std::memory_order_acquire) == ScanState::Paused) {
             text_scan_status.set("Status: Paused");
-            while (scan_paused && is_scanning && !thread_terminate) {
+            while (scan_state.load(std::memory_order_acquire) == ScanState::Paused && 
+                   !thread_terminate.load(std::memory_order_acquire)) {
                 chThdSleepMilliseconds(100);
             }
-            if (!is_scanning || thread_terminate) break;
+            const auto state = scan_state.load(std::memory_order_acquire);
+            if (state != ScanState::Scanning || thread_terminate.load(std::memory_order_acquire)) break;
             text_scan_status.set("Status: Scanning...");
         }
 
         if (view_destroying) {
-            is_scanning = false;
+            scan_state.store(ScanState::Idle, std::memory_order_release);
             break;
         }
 
@@ -334,7 +386,7 @@ msg_t AnalogTvView::scan_worker_thread() {
         chThdSleepMilliseconds(scan_params.scan_timeout_ms);
 
         if (view_destroying) {
-            is_scanning = false;
+            scan_state.store(ScanState::Idle, std::memory_order_release);
             break;
         }
 
@@ -343,15 +395,16 @@ msg_t AnalogTvView::scan_worker_thread() {
         current_scan_freq += scan_params.step;
     }
 
-    if (is_scanning && !thread_terminate) {
-        is_scanning = false;
+    const auto final_state = scan_state.load(std::memory_order_acquire);
+    if (final_state == ScanState::Scanning && !thread_terminate.load(std::memory_order_acquire)) {
+        scan_state.store(ScanState::Complete, std::memory_order_release);
         text_scan_status.set("Status: Complete");
         save_found_channels();
-        if (found_channels_count > 0) {
+        if (found_channels_count.load(std::memory_order_acquire) > 0) {
             switch_to_channel(0);
         }
-    } else if (thread_terminate) {
-        is_scanning = false;
+    } else if (thread_terminate.load(std::memory_order_acquire)) {
+        scan_state.store(ScanState::Idle, std::memory_order_release);
         text_scan_status.set("Status: Stopped");
         save_found_channels();
     }
@@ -361,16 +414,19 @@ msg_t AnalogTvView::scan_worker_thread() {
 
 void AnalogTvView::update_scan_progress() {
     ui_update_counter++;
-    if (ui_update_counter < UI_UPDATE_SKIP) {
+    if (ui_update_counter < Constants::UI_UPDATE_SKIP) {
         return;
     }
     ui_update_counter = 0;
 
     if (scan_params.end_freq > scan_params.start_freq) {
-        int64_t total_range = scan_params.end_freq - scan_params.start_freq;
-        int64_t current_pos = current_scan_freq - scan_params.start_freq;
-        int percentage = static_cast<int>((current_pos * 100) / total_range);
-        percentage = (percentage > 100) ? 100 : (percentage < 0) ? 0 : percentage;
+        // Use 64-bit arithmetic to prevent integer overflow
+        const int64_t total_range = scan_params.end_freq - scan_params.start_freq;
+        const int64_t current_pos = current_scan_freq - scan_params.start_freq;
+        
+        // Clamp percentage to [0, 100] to prevent overflow
+        const int64_t percentage_scaled = (current_pos * 100) / total_range;
+        const int percentage = static_cast<int>(std::clamp(percentage_scaled, int64_t{0}, int64_t{100}));
 
         char buffer[32];
         snprintf(buffer, sizeof(buffer), "Progress: %d%%", percentage);
@@ -379,17 +435,16 @@ void AnalogTvView::update_scan_progress() {
 }
 
 void AnalogTvView::stop_scan() {
-    is_scanning = false;
-    scan_paused = false;
-    thread_terminate = true;
+    scan_state.store(ScanState::Idle, std::memory_order_release);
+    thread_terminate.store(true, std::memory_order_release);
 }
 
 void AnalogTvView::pause_scan() {
-    scan_paused = true;
+    scan_state.store(ScanState::Paused, std::memory_order_release);
 }
 
 void AnalogTvView::resume_scan() {
-    scan_paused = false;
+    scan_state.store(ScanState::Scanning, std::memory_order_release);
 }
 
 void AnalogTvView::add_found_channel(const TVSignalDetector::DetectionResult& result) {
@@ -397,35 +452,41 @@ void AnalogTvView::add_found_channel(const TVSignalDetector::DetectionResult& re
 
     if (result.frequency == last_added_freq) return;
 
-    for (size_t i = 0; i < found_channels_count; i++) {
-        if (abs(found_channels[i].frequency - result.frequency) < FREQUENCY_TOLERANCE_HZ) {
+    const auto current_count = found_channels_count.load(std::memory_order_acquire);
+    
+    // Bounds check BEFORE access
+    if (current_count >= Constants::MAX_FOUND_CHANNELS) return;
+
+    // Check for duplicates
+    for (size_t i = 0; i < current_count; i++) {
+        if (std::abs(found_channels[i].frequency - result.frequency) < Constants::FREQUENCY_TOLERANCE_HZ) {
             return;
         }
     }
 
-    if (found_channels_count >= MAX_FOUND_CHANNELS) return;
-
-    found_channels[found_channels_count].set_from_detector(result);
-    found_channels_count++;
+    found_channels[current_count].set_from_detector(result);
+    found_channels_count.store(current_count + 1, std::memory_order_release);
     last_added_freq = result.frequency;
 
     ui_update_counter++;
-    if (ui_update_counter >= UI_UPDATE_SKIP || found_channels_count == 1) {
+    if (ui_update_counter >= Constants::UI_UPDATE_SKIP || current_count == 0) {
         ui_update_counter = 0;
 
         char buffer[32];
-        snprintf(buffer, sizeof(buffer), "Channels: %u", static_cast<unsigned>(found_channels_count));
+        const auto new_count = found_channels_count.load(std::memory_order_acquire);
+        snprintf(buffer, sizeof(buffer), "Channels: %u", static_cast<unsigned>(new_count));
         text_found_channels.set(buffer);
 
         snprintf(buffer, sizeof(buffer), "Current: %s (%s)",
-                 found_channels[found_channels_count - 1].name,
-                 to_string_short_freq(found_channels[found_channels_count - 1].frequency).c_str());
+                 found_channels[new_count - 1].name.data(),
+                 to_string_short_freq(found_channels[new_count - 1].frequency).c_str());
         text_current_channel.set(buffer);
     }
 }
 
 void AnalogTvView::switch_to_channel(size_t index) {
-    if (index >= found_channels_count) return;
+    const auto count = found_channels_count.load(std::memory_order_acquire);
+    if (index >= count) return;
 
     auto& channel = found_channels[index];
     current_channel_index = index;
@@ -435,16 +496,17 @@ void AnalogTvView::switch_to_channel(size_t index) {
 
     char buffer[64];
     snprintf(buffer, sizeof(buffer), "Current: %s (%s)",
-             channel.name,
+             channel.name.data(),
              to_string_short_freq(channel.frequency).c_str());
     text_current_channel.set(buffer);
 
-    snprintf(buffer, sizeof(buffer), "Watching: %s", channel.name);
+    snprintf(buffer, sizeof(buffer), "Watching: %s", channel.name.data());
     text_scan_status.set(buffer);
 }
 
 void AnalogTvView::save_found_channels() {
-    if (found_channels_count == 0) return;
+    const auto count = found_channels_count.load(std::memory_order_acquire);
+    if (count == 0) return;
 
     std::string filename = "TV_CHANNELS.txt";
 
@@ -456,11 +518,11 @@ void AnalogTvView::save_found_channels() {
     file.write(header.c_str(), header.length());
 
     char line_buffer[64];
-    for (size_t i = 0; i < found_channels_count; i++) {
+    for (size_t i = 0; i < count; i++) {
         const auto& channel = found_channels[i];
         snprintf(line_buffer, sizeof(line_buffer), "%s MHz | %s | %d dB\n",
                  to_string_short_freq(channel.frequency).c_str(),
-                 channel.modulation_type,
+                 channel.modulation_type.data(),
                  channel.signal_strength);
         file.write(line_buffer, strlen(line_buffer));
     }
@@ -471,11 +533,11 @@ void AnalogTvView::save_found_channels() {
 void AnalogTvView::load_scan_settings() {
     // Load scanning settings from persistent memory
     // Use standard default values
-    scan_params.start_freq = 100000000;  // 100 MHz
-    scan_params.end_freq = 800000000;    // 800 MHz
-    scan_params.step = 200000;           // 200 kHz
-    scan_params.min_signal_db = -60;     // -60 dB
-    scan_params.scan_timeout_ms = 500;   // 500 ms
+    scan_params.start_freq = Constants::DEFAULT_START_FREQ_HZ;
+    scan_params.end_freq = Constants::DEFAULT_END_FREQ_HZ;
+    scan_params.step = Constants::DEFAULT_STEP_FREQ_HZ;
+    scan_params.min_signal_db = Constants::DEFAULT_MIN_SIGNAL_DB;
+    scan_params.scan_timeout_ms = Constants::DEFAULT_TIMEOUT_MS;
     
     // Update UI fields
     field_scan_start.set_value(scan_params.start_freq);

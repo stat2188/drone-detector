@@ -21,12 +21,14 @@
 
 #include "tv_signal_detector.hpp"
 #include <cstring>
+#include <algorithm>
 
 namespace ui::external_app::analogtv {
 
 TVSignalDetector::TVSignalDetector() {
 }
 
+// Single-pass signal detection algorithm for optimal performance
 TVSignalDetector::DetectionResult TVSignalDetector::detect_tv_signal(
     const ChannelSpectrum& spectrum,
     int64_t current_frequency) {
@@ -36,6 +38,7 @@ TVSignalDetector::DetectionResult TVSignalDetector::detect_tv_signal(
 
     const auto* db = spectrum.db.data();
 
+    // Initialize all metrics in one pass
     int max_db = -127;
     int avg_db = 0;
     int left_power = 0;
@@ -47,85 +50,109 @@ TVSignalDetector::DetectionResult TVSignalDetector::detect_tv_signal(
     int first_edge = -1;
     int last_edge = -1;
 
-    for (int i = 0; i < 256; i++) {
-        int v = db[i];
+    // Single pass through spectrum data - data-oriented design
+    for (int i = 0; i < DetectorConstants::TV_CHANNEL_WIDTH_SAMPLES; i++) {
+        const int v = db[i];
 
+        // Track maximum signal
         if (v > max_db) {
             max_db = v;
         }
 
+        // Accumulate for average calculation
         avg_db += v;
 
-        if (i < 128) {
+        // Split power calculation (left/right halves)
+        if (i < DetectorConstants::SPECTRUM_HALF_WIDTH) {
             left_power += v;
         } else {
             right_power += v;
         }
 
-        if (i < 64 && v > video_peak_val) {
+        // Video carrier peak detection (first half)
+        if (i < DetectorConstants::VIDEO_PEAK_THRESHOLD_IDX && v > video_peak_val) {
             video_peak_val = v;
             video_peak_idx = i;
         }
 
-        if (i >= 192 && v > audio_peak_val) {
+        // Audio carrier peak detection (last quarter)
+        if (i >= DetectorConstants::AUDIO_PEAK_START_IDX && v > audio_peak_val) {
             audio_peak_val = v;
             audio_peak_idx = i;
         }
 
-        if (first_edge == -1 && v > MIN_SIGNAL_DB) {
+        // Edge detection for bandwidth measurement
+        if (first_edge == -1 && v > DetectorConstants::MIN_SIGNAL_DB) {
             first_edge = i;
         }
-        if (v > MIN_SIGNAL_DB) {
+        if (v > DetectorConstants::MIN_SIGNAL_DB) {
             last_edge = i;
         }
     }
 
+    // Calculate average (divide by 256 using bit shift)
     avg_db >>= 8;
-    result.signal_strength = max_db;
+    result.signal_strength = static_cast<int>(max_db);
 
-    int signal_to_noise = max_db - avg_db;
-    if (max_db < MIN_SIGNAL_DB || signal_to_noise < CARRIER_THRESHOLD) {
+    // Signal-to-noise ratio check
+    const int signal_to_noise = max_db - avg_db;
+    if (max_db < DetectorConstants::MIN_SIGNAL_DB || 
+        signal_to_noise < DetectorConstants::CARRIER_THRESHOLD_DB) {
         return result;
     }
 
-    if (video_peak_idx == -1 || video_peak_val < MIN_CARRIER_DB) {
+    // Video carrier validation
+    if (video_peak_idx == -1 || video_peak_val < DetectorConstants::MIN_CARRIER_DB) {
         return result;
     }
 
-    if (audio_peak_idx == -1 || audio_peak_val < MIN_CARRIER_DB) {
+    // Audio carrier validation
+    if (audio_peak_idx == -1 || audio_peak_val < DetectorConstants::MIN_CARRIER_DB) {
         return result;
     }
 
+    // Carrier ordering check (video must come before audio)
     if (video_peak_idx >= audio_peak_idx) {
         return result;
     }
 
-    int spacing = audio_peak_idx - video_peak_idx;
-    if (spacing < 160 || spacing > 200) {
+    // Carrier spacing check
+    const int spacing = audio_peak_idx - video_peak_idx;
+    if (spacing < DetectorConstants::MIN_CARRIER_SPACING || 
+        spacing > DetectorConstants::MAX_CARRIER_SPACING) {
         return result;
     }
 
+    // Bandwidth validation
     if (first_edge == -1 || last_edge == -1) {
         return result;
     }
 
-    int bandwidth = last_edge - first_edge;
-    if (bandwidth < 180 || bandwidth > 240) {
+    const int bandwidth = last_edge - first_edge;
+    if (bandwidth < DetectorConstants::MIN_BANDWIDTH_SAMPLES || 
+        bandwidth > DetectorConstants::MAX_BANDWIDTH_SAMPLES) {
         return result;
     }
 
+    // Asymmetry check (TV signals have asymmetric power distribution)
     int asymmetry = left_power - right_power;
-    if (asymmetry < 0) {
-        asymmetry = -asymmetry;
-    }
-    if (asymmetry < 500) {
+    asymmetry = std::abs(asymmetry);
+    if (asymmetry < DetectorConstants::MIN_ASYMMETRY) {
         return result;
     }
 
-    if (video_peak_idx < 30) {
-        strncpy(result.modulation_type, "PAL", 7);
+    // PAL/NTSC discrimination based on video carrier position
+    if (video_peak_idx < DetectorConstants::PAL_NTSC_THRESHOLD_IDX) {
+        // Use safe string copy with null termination
+        size_t len = std::strlen(DetectorConstants::MODULATION_PAL);
+        len = std::min(len, DetectorConstants::MODULATION_TYPE_MAX_LEN);
+        std::memcpy(result.modulation_type.data(), DetectorConstants::MODULATION_PAL, len);
+        result.modulation_type[len] = '\0';
     } else {
-        strncpy(result.modulation_type, "NTSC", 7);
+        size_t len = std::strlen(DetectorConstants::MODULATION_NTSC);
+        len = std::min(len, DetectorConstants::MODULATION_TYPE_MAX_LEN);
+        std::memcpy(result.modulation_type.data(), DetectorConstants::MODULATION_NTSC, len);
+        result.modulation_type[len] = '\0';
     }
 
     result.video_carrier_offset = video_peak_idx;

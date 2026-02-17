@@ -38,8 +38,57 @@
 
 #include <vector>
 #include <string>
+#include <atomic>
+#include <array>
 
 namespace ui::external_app::analogtv {
+
+// Named constants for magic numbers
+namespace Constants {
+    // Frequency constants (Hz)
+    constexpr int64_t DEFAULT_START_FREQ_HZ = 100000000;
+    constexpr int64_t DEFAULT_END_FREQ_HZ = 800000000;
+    constexpr int64_t DEFAULT_STEP_FREQ_HZ = 200000;
+    constexpr int64_t MIN_FREQ_HZ = 10000000;
+    constexpr int64_t MAX_FREQ_HZ = 1000000000;
+    constexpr int64_t MIN_STEP_HZ = 50000;
+    constexpr int64_t MAX_STEP_HZ = 1000000;
+    constexpr int64_t FREQUENCY_TOLERANCE_HZ = 50000;
+    
+    // Signal strength constants (dB)
+    constexpr int8_t DEFAULT_MIN_SIGNAL_DB = -60;
+    constexpr int8_t MIN_SIGNAL_DB = -100;
+    constexpr int8_t MAX_SIGNAL_DB = -20;
+    
+    // Timeout constants (ms)
+    constexpr int DEFAULT_TIMEOUT_MS = 500;
+    constexpr int MIN_TIMEOUT_MS = 100;
+    constexpr int MAX_TIMEOUT_MS = 2000;
+    
+    // UI constants
+    constexpr size_t MAX_FOUND_CHANNELS = 50;
+    constexpr int UI_UPDATE_SKIP = 10;
+    constexpr size_t CHANNEL_NAME_MAX_LEN = 19;
+    constexpr size_t MODULATION_TYPE_MAX_LEN = 7;
+    
+    // Thread constants
+    constexpr int THREAD_STACK_SIZE = 2048;
+    constexpr int THREAD_PRIORITY = NORMALPRIO + 10;
+    constexpr int THREAD_JOIN_TIMEOUT_MS = 1000;
+}
+
+// Strong typing with enum class
+enum class ScanState : uint8_t {
+    Idle = 0,
+    Scanning = 1,
+    Paused = 2,
+    Stopping = 3,
+    Complete = 4
+};
+
+// Type aliases for clarity
+using ChannelName = std::array<char, Constants::CHANNEL_NAME_MAX_LEN + 1>;
+using ModulationType = std::array<char, Constants::MODULATION_TYPE_MAX_LEN + 1>;
 
 class AnalogTvView : public View {
    public:
@@ -65,15 +114,7 @@ class AnalogTvView : public View {
     const Rect options_view_rect{UI_POS_X(0), 1 * 16, screen_width, 1 * 16};
     const Rect nbfm_view_rect{UI_POS_X(0), 1 * 16, 18 * 8, 1 * 16};
 
-    RSSI rssi{
-        {21 * 8, 0, 6 * 8, 4}};
-
-    Channel channel{
-        {21 * 8, 5, 6 * 8, 4}};
-
-    Audio audio{
-        {21 * 8, 10, 6 * 8, 4}};
-
+    // Consolidated header - essential widgets only (4 widgets instead of 8)
     RxFrequencyField field_frequency{
         {5 * 8, UI_POS_Y(0)},
         nav_};
@@ -84,23 +125,17 @@ class AnalogTvView : public View {
     VGAGainField field_vga{
         {18 * 8, UI_POS_Y(0)}};
 
-    OptionsField options_modulation{
-        {UI_POS_X(0), UI_POS_Y(0)},
-        4,
-        {
-            {"TV ", toUType(ReceiverModel::Mode::WidebandFMAudio)},
-            {"TV ", toUType(ReceiverModel::Mode::WidebandFMAudio)},
-            {"TV ", toUType(ReceiverModel::Mode::WidebandFMAudio)},
-        }};
-
     AudioVolumeField field_volume{
         {27 * 8, UI_POS_Y(0)}};
+
+    // Removed redundant widgets (RSSI, Channel, Audio, Modulation options)
+    // These are less critical for the main TV viewing experience
 
     std::unique_ptr<Widget> options_widget{};
 
     tv::TVWidget tv{};
     
-    // UI элементы для сканирования
+    // UI elements for scanning
     Button button_scan_start{ {UI_POS_X(0), UI_POS_Y(1), 8 * 8, 2 * 8}, "SCAN" };
     Button button_scan_stop{ {UI_POS_X(1), UI_POS_Y(1), 8 * 8, 2 * 8}, "STOP" };
     Button button_manual{ {UI_POS_X(2), UI_POS_Y(1), 8 * 8, 2 * 8}, "MANUAL" };
@@ -110,67 +145,48 @@ class AnalogTvView : public View {
     Text text_current_channel{ {UI_POS_X(0), UI_POS_Y(4), 20 * 8, 1 * 8}, "Current: -" };
     Text text_progress{ {UI_POS_X(0), UI_POS_Y(5), 20 * 8, 1 * 8}, "Progress: 0%" };
     
-    // Поля для настройки диапазона
-    NumberField field_scan_start{ {UI_POS_X(0), UI_POS_Y(7)}, 9, {10000000, 1000000000}, 1000000, ' ' };
-    NumberField field_scan_end{ {UI_POS_X(1), UI_POS_Y(7)}, 9, {10000000, 1000000000}, 1000000, ' ' };
-    NumberField field_scan_step{ {UI_POS_X(0), UI_POS_Y(8)}, 6, {50000, 1000000}, 10000, ' ' };
-    NumberField field_min_signal{ {UI_POS_X(1), UI_POS_Y(8)}, 4, {-100, -20}, 1, ' ' };
-    NumberField field_scan_timeout{ {UI_POS_X(0), UI_POS_Y(9)}, 4, {100, 2000}, 10, ' ' };
+    // Fields for scan range configuration
+    NumberField field_scan_start{ {UI_POS_X(0), UI_POS_Y(7)}, 9, {Constants::MIN_FREQ_HZ, Constants::MAX_FREQ_HZ}, 1000000, ' ' };
+    NumberField field_scan_end{ {UI_POS_X(1), UI_POS_Y(7)}, 9, {Constants::MIN_FREQ_HZ, Constants::MAX_FREQ_HZ}, 1000000, ' ' };
+    NumberField field_scan_step{ {UI_POS_X(0), UI_POS_Y(8)}, 6, {Constants::MIN_STEP_HZ, Constants::MAX_STEP_HZ}, 10000, ' ' };
+    NumberField field_min_signal{ {UI_POS_X(1), UI_POS_Y(8)}, 4, {Constants::MIN_SIGNAL_DB, Constants::MAX_SIGNAL_DB}, 1, ' ' };
+    NumberField field_scan_timeout{ {UI_POS_X(0), UI_POS_Y(9)}, 4, {Constants::MIN_TIMEOUT_MS, Constants::MAX_TIMEOUT_MS}, 10, ' ' };
     
-    // Структуры для сканирования
-    static constexpr size_t MAX_FOUND_CHANNELS = 50;
-    static constexpr int64_t FREQUENCY_TOLERANCE_HZ = 50000;
-
+    // Structures for scanning
     struct FoundChannel {
         int64_t frequency;
-        char name[20];
+        ChannelName name{};
         int8_t signal_strength;
-        char modulation_type[8];
+        ModulationType modulation_type{};
         bool is_valid;
 
         FoundChannel() : frequency(0), signal_strength(0), is_valid(false) {
-            name[0] = '\0';
-            modulation_type[0] = '\0';
+            name.fill('\0');
+            modulation_type.fill('\0');
         }
 
-        void set_from_detector(const TVSignalDetector::DetectionResult& result) {
-            frequency = result.frequency;
-            signal_strength = static_cast<int8_t>(result.signal_strength);
-            is_valid = result.is_tv_signal;
-
-            auto freq_str = to_string_short_freq(frequency);
-            size_t len = freq_str.length();
-            if (len > 19) len = 19;
-            memcpy(name, freq_str.c_str(), len);
-            name[len] = '\0';
-
-            size_t mod_len = 0;
-            while (result.modulation_type[mod_len] && mod_len < 7) {
-                modulation_type[mod_len] = result.modulation_type[mod_len];
-                mod_len++;
-            }
-            modulation_type[mod_len] = '\0';
-        }
+        void set_from_detector(const TVSignalDetector::DetectionResult& result);
     };
 
-    std::array<FoundChannel, MAX_FOUND_CHANNELS> found_channels{};
-    size_t found_channels_count{0};
-    volatile bool is_scanning = false;
-    volatile bool scan_paused = false;
-    volatile bool thread_terminate = false;
+    std::array<FoundChannel, Constants::MAX_FOUND_CHANNELS> found_channels{};
+    
+    // Thread-safe state variables using atomic
+    std::atomic<size_t> found_channels_count{0};
+    std::atomic<ScanState> scan_state{ScanState::Idle};
+    std::atomic<bool> thread_terminate{false};
+    
     size_t current_channel_index = 0;
     int64_t current_scan_freq = 0;
     bool view_destroying = false;
     int ui_update_counter{0};
-    static constexpr int UI_UPDATE_SKIP = 10;
     int64_t last_added_freq{0};
 
     struct ScanParameters {
-        int64_t start_freq = 100000000;
-        int64_t end_freq = 800000000;
-        int64_t step = 200000;
-        int min_signal_db = -60;
-        int scan_timeout_ms = 500;
+        int64_t start_freq = Constants::DEFAULT_START_FREQ_HZ;
+        int64_t end_freq = Constants::DEFAULT_END_FREQ_HZ;
+        int64_t step = Constants::DEFAULT_STEP_FREQ_HZ;
+        int min_signal_db = Constants::DEFAULT_MIN_SIGNAL_DB;
+        int scan_timeout_ms = Constants::DEFAULT_TIMEOUT_MS;
     };
 
     ScanParameters scan_params{};
@@ -179,7 +195,6 @@ class AnalogTvView : public View {
     void on_modulation_changed(const ReceiverModel::Mode modulation);
     void on_show_options_frequency();
     void on_show_options_rf_gain();
-    void on_show_options_modulation();
     void on_frequency_step_changed(rf::Frequency f);
     void on_reference_ppm_correction_changed(int32_t v);
 
@@ -197,13 +212,13 @@ class AnalogTvView : public View {
 
     void on_freqchg(int64_t freq);
     
-    // Обработка управления стиками
+    // Joystick handling
     void on_left();
     void on_right();
     
     void on_frequency_changed(rf::Frequency f);
     
-    // Методы для сканирования
+    // Scanning methods
     void start_scan();
     void stop_scan();
     void pause_scan();
