@@ -2,14 +2,14 @@
  * Enhanced Drone Analyzer - Thread Safety Notes
  *
  * Locking Order (to prevent deadlocks):
- * 1. scanning_active_ (std::atomic<bool>) - No lock needed
+ * 1.. scanning_active_ (std::atomic<bool>) - No lock needed
  * 2. data_mutex (DroneScanner::tracked_drones_)
  * 3. spectrum_mutex (DroneHardwareController::spectrum_buffer_)
  * 4. logger_mutex (DroneDetectionLogger::mutex_)
  * 5. sd_card_mutex (SD card operations - FatFS is NOT thread-safe)
  *
  * Rules:
- * - Always acquire locks in order 1->2->3->4->5
+ * - 2Always acquire locks in order 1->2->3->4->5
  * - Never acquire a lower-numbered lock while holding a higher-numbered lock
  * - sd_card_mutex must ALWAYS be acquired LAST (after all other locks)
  * - Use MutexLock RAII wrapper for automatic unlock
