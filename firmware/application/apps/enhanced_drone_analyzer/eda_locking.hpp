@@ -111,7 +111,7 @@ public:
     /// @brief Destructor - Releases lock and updates order tracking
     ~OrderedScopedLock() noexcept {
         if (locked_) {
-            chMtxUnlock(&mtx_);
+            chMtxUnlock();
             
             // Restore previous lock order using critical section
             // Note: This is a simplified approach - in production,

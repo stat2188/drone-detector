@@ -205,8 +205,6 @@ constexpr uint32_t DB_LOAD_RETRY_COUNT = 3;
 constexpr uint32_t DB_LOAD_RETRY_DELAY_MS = 500;
 
 // ===== WIDEBAND SCANNING =====
-constexpr Frequency WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
-constexpr Frequency WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
 constexpr uint32_t WIDEBAND_SLICE_COUNT_DEFAULT = 10;
 constexpr uint32_t WIDEBAND_SLICE_COUNT_MIN = 1;
 constexpr uint32_t WIDEBAND_SLICE_COUNT_MAX = 20;
