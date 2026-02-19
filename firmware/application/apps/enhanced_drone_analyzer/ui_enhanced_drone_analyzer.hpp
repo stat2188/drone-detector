@@ -488,6 +488,31 @@ struct DetectionParams {
     ThreatLevel threat_level;
 };
 
+    // ===========================================
+    // DIAMOND OPTIMIZATION: Histogram Data Flow
+    // ===========================================
+    // Callback for histogram data: SpectralAnalyzer → Scanner → Display
+    // Diamond Code: Function pointer with user data (no heap allocation, no std::function)
+    //
+    // USAGE:
+    //   scanner.set_histogram_callback(StaticHistogramCallback, this);
+    //   // In static callback:
+    //   auto* view = static_cast<EnhancedDroneSpectrumAnalyzerView*>(user_data);
+    //   view->display_controller_.update_histogram_display(histogram, noise_floor);
+    //
+    // NOTE: User data pointer allows static function to access class instance
+    // without lambda captures (which can't be converted to function pointers)
+    using HistogramCallback = void(*)(const SpectralAnalyzer::HistogramBuffer&, uint8_t noise_floor, void* user_data) noexcept;
+    
+    /// @brief Set histogram callback for data flow from SpectralAnalyzer to DisplayController
+    /// @param callback Function pointer to receive histogram data
+    /// @param user_data User data pointer (typically 'this' pointer)
+    /// @note Callback is called from scanner thread (must be thread-safe)
+    void set_histogram_callback(HistogramCallback callback, void* user_data = nullptr) noexcept {
+        histogram_callback_ = callback;
+        histogram_callback_user_data_ = user_data;
+    }
+
     void perform_scan_cycle(DroneHardwareController& hardware);
     void process_rssi_detection(const freqman_entry& entry, int32_t rssi);
     void send_drone_detection_message(const DetectionParams& params);
@@ -580,6 +605,13 @@ struct DetectionParams {
      Thread* scanning_thread_ = nullptr;
      mutable Mutex data_mutex;
      std::atomic<bool> scanning_active_{false};
+    
+    // ===========================================
+    // DIAMOND OPTIMIZATION: Histogram Callback
+    // ===========================================
+    // Function pointer for histogram data flow (no heap allocation)
+    HistogramCallback histogram_callback_ = nullptr;
+    void* histogram_callback_user_data_ = nullptr;
 
         // ===========================================
         // ФАЗА 3.1: СТАТИЧЕСКИЕ ХРАНИЛИЩА ДЛЯ SCANNER
@@ -1059,6 +1091,36 @@ public:
     static constexpr size_t WATERFALL_SIZE = 40 * 240;  // 9.6KB waterfall buffer
     static constexpr size_t MAX_UI_DRONES = 3;  // Reduced from 16 to 3 for memory savings
     
+    // ===========================================
+    // DIAMOND OPTIMIZATION: Histogram Display Buffer
+    // ===========================================
+    // Zero-heap histogram display buffer (static storage in .bss)
+    struct HistogramDisplayBuffer {
+        // 64 bins, each storing count (0-255)
+        // Total: 64 bytes
+        alignas(4) uint8_t bin_counts[64];
+        
+        // Metadata for rendering
+        uint8_t max_count;      // Maximum bin count (for scaling)
+        uint8_t noise_floor;    // Noise floor from spectral analysis
+        bool is_valid;          // Buffer contains valid data
+        
+        /// @brief Clear histogram buffer
+        void clear() noexcept {
+            std::fill(std::begin(bin_counts), std::end(bin_counts), 0);
+            max_count = 0;
+            noise_floor = 0;
+            is_valid = false;
+        }
+    };
+    
+    // Histogram rendering constants (stored in Flash)
+    static constexpr int HISTOGRAM_Y = 164;
+    static constexpr int HISTOGRAM_HEIGHT = 26;
+    static constexpr int HISTOGRAM_WIDTH = 240;
+    static constexpr int HISTOGRAM_NUM_BINS = 64;
+    static constexpr int HISTOGRAM_BIN_WIDTH = HISTOGRAM_WIDTH / HISTOGRAM_NUM_BINS;  // 3.75px/bin
+    
     explicit DroneDisplayController(Rect parent_rect = {0, 60, screen_width, screen_height - 80});
     ~DroneDisplayController();
 
@@ -1083,6 +1145,21 @@ public:
         return *reinterpret_cast<const std::array<DisplayDroneEntry, MAX_UI_DRONES>*>(detected_drones_storage_);
     }
 
+    // ===========================================
+    // DIAMOND OPTIMIZATION: Histogram Display Methods
+    // ===========================================
+    
+    /// @brief Update histogram display buffer with new data
+    /// @param analysis_histogram Histogram buffer from SpectralAnalyzer (64 bins)
+    /// @param noise_floor Noise floor value from spectral analysis
+    void update_histogram_display(
+        const SpectralAnalyzer::HistogramBuffer& analysis_histogram,
+        uint8_t noise_floor
+    ) noexcept;
+    
+    /// @brief Render histogram to display
+    /// @param painter Painter object for rendering
+    void render_histogram(Painter& painter) noexcept;
 
     void update_detection_display(const DroneScanner& scanner);
     void update_trends_display(size_t approaching, size_t static_count, size_t receding);
@@ -1213,7 +1290,24 @@ public:
             Color::grey()           // 2: Unknown/Noise - Grey
         };
     };
-
+    
+    // ===========================================
+    // DIAMOND OPTIMIZATION: Histogram Color LUT (Flash storage)
+    // ===========================================
+    // Pre-computed color gradient for histogram visualization
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    struct HistogramColorConfig {
+        // 5-level gradient from noise floor to peak signal
+        static constexpr Color HISTOGRAM_COLORS[] = {
+            Color::dark_grey(),   // 0-20%: Noise floor
+            Color::blue(),        // 20-40%: Low signal
+            Color::cyan(),        // 40-60%: Medium signal
+            Color::yellow(),      // 60-80%: High signal
+            Color::red()          // 80-100%: Peak signal
+        };
+        static constexpr uint8_t NUM_COLOR_LEVELS = 5;
+    };
+    
     void process_frame_sync();
 
     DroneDisplayController(const DroneDisplayController&) = delete;
@@ -1328,6 +1422,15 @@ private:
 
     // Флаг для отслеживания состояния буферов
     bool buffers_allocated_ = false;
+    
+    // ===========================================
+    // DIAMOND OPTIMIZATION: Histogram Display Buffer
+    // ===========================================
+    // Zero-heap histogram display buffer (static storage in .bss)
+    HistogramDisplayBuffer histogram_display_buffer_{};
+    
+    // Dirty flag for histogram rendering optimization
+    bool histogram_dirty_ = false;
 
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, DroneConstants::MAX_DISPLAYED_DRONES> threat_bins_;
@@ -1633,6 +1736,22 @@ public:
     void initialize_scanning_mode();
     void set_scanning_mode_from_index(size_t index);
     void add_ui_elements();
+
+    // ===========================================
+    // DIAMOND OPTIMIZATION: Static Histogram Callback
+    // ===========================================
+    // Static callback function for histogram data flow (no lambda captures)
+    // This allows passing 'this' pointer via user_data parameter
+    // Diamond Code: Function pointer (no heap allocation, no std::function)
+    //
+    // @param histogram Histogram buffer from SpectralAnalyzer (64 bins)
+    // @param noise_floor Noise floor value from spectral analysis
+    // @param user_data User data pointer (typically 'this' pointer to view instance)
+    static void static_histogram_callback(
+        const SpectralAnalyzer::HistogramBuffer& histogram,
+        uint8_t noise_floor,
+        void* user_data
+    ) noexcept;
 
     // 🔴 ФАЗА 2.2: Deferred initialization methods
     void step_deferred_initialization();

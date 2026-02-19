@@ -642,6 +642,12 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
                 histogram_buffer
             );
             
+            // DIAMOND OPTIMIZATION: Invoke histogram callback for data flow to display
+            // Callback is called from scanner thread (must be thread-safe)
+            if (histogram_callback_) {
+                histogram_callback_(histogram_buffer, analysis_result.noise_floor, histogram_callback_user_data_);
+            }
+            
             // 5. Process detection based on spectral analysis
             if (analysis_result.is_valid && analysis_result.signature != SignalSignature::NOISE) {
                 // Create detection entry
@@ -2884,6 +2890,127 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
     }
 }
 
+// ===========================================
+// DIAMOND OPTIMIZATION: Histogram Display Implementation
+// ===========================================
+// Diamond Code: Zero heap allocation, static storage, integer-only math
+// Scott Meyers Item 15: Prefer constexpr to #define
+
+void DroneDisplayController::update_histogram_display(
+    const SpectralAnalyzer::HistogramBuffer& analysis_histogram,
+    uint8_t noise_floor
+) noexcept {
+    // GUARD CLAUSE: Validate input histogram
+    if (analysis_histogram.empty()) {
+        histogram_display_buffer_.is_valid = false;
+        return;
+    }
+    
+    // Copy histogram data from analysis buffer to display buffer
+    // Scale from uint16_t to uint8_t (0-255) for display
+    // Diamond Code: Integer-only scaling (no floating-point)
+    uint8_t max_count = 0;
+    for (size_t i = 0; i < HISTOGRAM_NUM_BINS; ++i) {
+        // Clamp to 255 (uint8_t max)
+        uint16_t raw_count = (i < analysis_histogram.size()) ? analysis_histogram[i] : 0;
+        histogram_display_buffer_.bin_counts[i] =
+            static_cast<uint8_t>(std::min(raw_count, static_cast<uint16_t>(255)));
+        
+        // Track maximum for normalization
+        if (histogram_display_buffer_.bin_counts[i] > max_count) {
+            max_count = histogram_display_buffer_.bin_counts[i];
+        }
+    }
+    
+    // Store metadata
+    histogram_display_buffer_.max_count = max_count;
+    histogram_display_buffer_.noise_floor = noise_floor;
+    histogram_display_buffer_.is_valid = true;
+    
+    // Mark histogram as dirty (needs re-render)
+    histogram_dirty_ = true;
+}
+
+void DroneDisplayController::render_histogram(Painter& painter) noexcept {
+    // GUARD CLAUSE: Skip rendering if data hasn't changed
+    if (!histogram_dirty_) {
+        return;
+    }
+    
+    // GUARD CLAUSE: Skip if histogram data is invalid
+    if (!histogram_display_buffer_.is_valid) {
+        return;
+    }
+    
+    const auto& config = HistogramColorConfig{};
+    
+    // 1. Clear histogram area (y=164-190)
+    painter.fill_rectangle(
+        {0, HISTOGRAM_Y, HISTOGRAM_WIDTH, HISTOGRAM_HEIGHT},
+        Color::black()
+    );
+    
+    // 2. Render 64 bins with color gradient
+    // Diamond Code: Integer-only math for performance
+    const uint8_t max_count = histogram_display_buffer_.max_count;
+    
+    // GUARD CLAUSE: Skip rendering if max_count is zero
+    if (max_count == 0) {
+        histogram_dirty_ = false;
+        return;
+    }
+    
+    // Calculate scaling factor for bin height (0-255 -> 0-HISTOGRAM_HEIGHT)
+    // Diamond Code: Use 256 as divisor for fast bit shift approximation
+    const int scale_factor = HISTOGRAM_HEIGHT;
+    
+    for (size_t bin_idx = 0; bin_idx < HISTOGRAM_NUM_BINS; ++bin_idx) {
+        uint8_t bin_count = histogram_display_buffer_.bin_counts[bin_idx];
+        
+        // Skip empty bins
+        if (bin_count == 0) continue;
+        
+        // Calculate bin height (integer scaling)
+        int bin_height = (static_cast<int>(bin_count) * scale_factor) / 256;
+        if (bin_height < 1) bin_height = 1;
+        if (bin_height > HISTOGRAM_HEIGHT) bin_height = HISTOGRAM_HEIGHT;
+        
+        // Calculate bin position
+        const int bin_x = static_cast<int>(bin_idx * HISTOGRAM_BIN_WIDTH);
+        const int bin_width = static_cast<int>(HISTOGRAM_BIN_WIDTH);
+        
+        // Calculate color level based on signal strength
+        // Diamond Code: Integer-only color mapping
+        uint8_t color_level;
+        if (bin_count <= 51) {           // 0-20%
+            color_level = 0;  // dark_grey (noise floor)
+        } else if (bin_count <= 102) {    // 20-40%
+            color_level = 1;  // blue (low signal)
+        } else if (bin_count <= 153) {    // 40-60%
+            color_level = 2;  // cyan (medium signal)
+        } else if (bin_count <= 204) {    // 60-80%
+            color_level = 3;  // yellow (high signal)
+        } else {                           // 80-100%
+            color_level = 4;  // red (peak signal)
+        }
+        
+        // GUARD CLAUSE: Bounds check for color array
+        if (color_level >= config.NUM_COLOR_LEVELS) {
+            color_level = 4;  // Fallback to red
+        }
+        
+        // Draw bin with color
+        const int y_top = (HISTOGRAM_Y + HISTOGRAM_HEIGHT) - bin_height;
+        painter.fill_rectangle(
+            {bin_x, y_top, bin_width, bin_height},
+            config.HISTOGRAM_COLORS[color_level]
+        );
+    }
+    
+    // 3. Mark histogram as clean (rendered)
+    histogram_dirty_ = false;
+}
+
 void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES>& drones) {
     threat_bins_count_ = 0;
     for (const auto& drone : drones) {
@@ -3281,6 +3408,9 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
     // 🔴 SAFETY: Дополнительная проверка буферов
     if (display_controller_.are_buffers_valid()) {
         display_controller_.render_bar_spectrum(painter);
+        // DIAMOND OPTIMIZATION: Render histogram after bar spectrum
+        // Histogram is positioned at y=164-190 (below bar spectrum)
+        display_controller_.render_histogram(painter);
     }
 }
 
@@ -3334,6 +3464,37 @@ void EnhancedDroneSpectrumAnalyzerView::update_init_progress_display() {
         INIT_STATUS_TITLES[title_idx],
         INIT_STATUS_MESSAGES[state_idx]
     );
+}
+
+// ===========================================
+// DIAMOND OPTIMIZATION: Static Histogram Callback Implementation
+// ===========================================
+// Static callback function for histogram data flow (no lambda captures)
+// Diamond Code: Function pointer (no heap allocation, no std::function)
+//
+// @param histogram Histogram buffer from SpectralAnalyzer (64 bins)
+// @param noise_floor Noise floor value from spectral analysis
+// @param user_data User data pointer (typically 'this' pointer to view instance)
+void EnhancedDroneSpectrumAnalyzerView::static_histogram_callback(
+    const SpectralAnalyzer::HistogramBuffer& histogram,
+    uint8_t noise_floor,
+    void* user_data
+) noexcept {
+    // Guard clause: Validate user_data pointer
+    if (!user_data) {
+        return;
+    }
+    
+    // Cast user_data pointer back to view instance
+    auto* view = static_cast<EnhancedDroneSpectrumAnalyzerView*>(user_data);
+    
+    // Guard clause: Skip if display buffers not ready
+    if (!view->display_controller_.are_buffers_valid()) {
+        return;
+    }
+    
+    // Forward histogram data to display controller
+    view->display_controller_.update_histogram_display(histogram, noise_floor);
 }
 
 // 🔴 DIAMOND OPTIMIZATION: Enhanced Initialization State Machine with Timeout Protection
@@ -3539,6 +3700,15 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
     if (init_state_ != InitState::SETTINGS_LOADED) {
         return;
     }
+
+    // ===========================================
+    // DIAMOND OPTIMIZATION: Wire histogram data flow
+    // ===========================================
+    // Connect scanner histogram callback to display controller
+    // Diamond Code: Function pointer with user data (no heap allocation, no std::function)
+    // Data flow: SpectralAnalyzer → Scanner → DisplayController
+    // NOTE: Using static function with 'this' as user data to avoid lambda captures
+    scanner_.set_histogram_callback(&EnhancedDroneSpectrumAnalyzerView::static_histogram_callback, this);
 
     handle_scanner_update();
     init_state_ = InitState::FULLY_INITIALIZED;

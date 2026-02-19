@@ -255,6 +255,15 @@ inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
 static constexpr size_t MAX_LINE_LENGTH = EDA::Constants::MAX_LINE_LENGTH;
 static constexpr size_t MAX_SETTING_STR_LEN = EDA::Constants::MAX_SETTING_STR_LEN;
 
+// ===========================================
+// DIAMOND FIX: Named Constants for Magic Numbers
+// ===========================================
+// SD card and file reading timeout constants
+// Prevents system freeze on SD card failures or corrupted files
+static constexpr systime_t SD_CARD_MOUNT_TIMEOUT_MS = 2000;
+static constexpr size_t MAX_READ_ITERATIONS = 10000;
+static constexpr systime_t READ_TIMEOUT_MS = 5000;
+
 // Stack usage documentation for settings loading buffers
 struct SettingsLoadBuffer {
     // LINE_BUFFER_SIZE: 144 bytes
@@ -271,11 +280,13 @@ struct SettingsLoadBuffer {
     char read_buffer[READ_BUFFER_SIZE];
 };
 
-// 🔴 HIGH PRIORITY FIX: Remove incorrect FLASH_STORAGE attribute
+// ===========================================
+// DIAMOND FIX: Zero-Initialized Static Buffer Accessor
+// ===========================================
 // SettingsLoadBuffer contains writable arrays that must be in RAM, not Flash
-// FLASH_STORAGE places data in read-only memory, causing undefined behavior when arrays are modified
+// Zero-initialization ensures deterministic behavior and prevents undefined data
 inline SettingsLoadBuffer& get_load_buffer() {
-    static SettingsLoadBuffer buf;
+    static SettingsLoadBuffer buf{};  // Value initialization: zero-initializes all members
     return buf;
 }
 
@@ -304,7 +315,7 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
     // DIAMOND FIX: Validate SD card status with timeout
     systime_t sd_check_start = chTimeNow();
     while (sd_card::status() < sd_card::Status::Mounted) {
-        if ((chTimeNow() - sd_check_start) > MS2ST(2000)) {  // 2 second timeout
+        if ((chTimeNow() - sd_check_start) > MS2ST(SD_CARD_MOUNT_TIMEOUT_MS)) {
             return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::TIMEOUT);
         }
         chThdSleepMilliseconds(50);
@@ -330,8 +341,6 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
 
     // DIAMOND FIX: Timeout protection for infinite loops
     // Prevents system freeze on SD card failures or corrupted files
-    constexpr size_t MAX_READ_ITERATIONS = 10000;
-    constexpr systime_t READ_TIMEOUT_MS = 5000;
     systime_t read_start_time = chTimeNow();
 
     while (read_iterations < MAX_READ_ITERATIONS) {
@@ -358,8 +367,11 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
             char c = read_buffer[i];
 
             if (c == '\n') {
-                line_buffer[line_idx] = '\0';
-                parse_line(line_buffer, settings);
+                // DIAMOND FIX: Explicit bounds check before null terminator write
+                if (line_idx < SettingsLoadBuffer::LINE_BUFFER_SIZE) {
+                    line_buffer[line_idx] = '\0';
+                    parse_line(line_buffer, settings);
+                }
                 line_idx = 0;
                 lines_processed++;
 
@@ -367,7 +379,9 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
                     file.close();
                     return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
                 }
-            } else if (c != '\r' && line_idx < EDA::Constants::MAX_LINE_LENGTH) {
+            } else if (c != '\r' && line_idx < (SettingsLoadBuffer::LINE_BUFFER_SIZE - 1)) {
+                // DIAMOND FIX: Use actual buffer size for bounds checking
+                // Prevents buffer overflow by ensuring we never write past LINE_BUFFER_SIZE - 1
                 line_buffer[line_idx++] = c;
             }
         }
@@ -381,7 +395,8 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::TIMEOUT);
     }
 
-    if (line_idx > 0) {
+    // DIAMOND FIX: Handle last line without newline (with bounds checking)
+    if (line_idx > 0 && line_idx < SettingsLoadBuffer::LINE_BUFFER_SIZE) {
         line_buffer[line_idx] = '\0';
         parse_line(line_buffer, settings);
     }
