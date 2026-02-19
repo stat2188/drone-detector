@@ -1169,18 +1169,11 @@ void DroneScanner::initialize_database_and_scanner() {
         return;
     }
 
-    // FIX #4: Use try-catch for placement new (placement new can throw)
-    // The check (!freq_db_ptr_) after placement new is NEVER true
-    // Use try-catch to handle potential exceptions from constructor
-    try {
-        freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
-    } catch (...) {
-        freq_db_ptr_ = nullptr;
-        handle_scan_error("Memory: FreqmanDB placement new failed");
-        return;
-    }
+    // Diamond Code: Guard clause - placement new without exceptions
+    // Placement new returns the pointer, never throws in embedded environment
+    freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
     
-    // Validate placement new succeeded (redundant but safe)
+    // Guard clause: Validate placement new succeeded
     if (!freq_db_ptr_) {
         handle_scan_error("Memory: FreqmanDB placement new failed");
         return;
