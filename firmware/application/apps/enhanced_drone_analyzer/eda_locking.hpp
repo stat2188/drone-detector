@@ -295,6 +295,8 @@ public:
     /**
      * @brief Construct object in-place using default constructor
      * @return true if construction succeeded, false if already constructed
+     *
+     * @note Critical section extends through construction to prevent race condition
      */
     bool construct() noexcept {
         // Use critical section for thread-safe construction
@@ -304,10 +306,12 @@ public:
             return false;  // Already constructed
         }
         constructed_ = true;
-        chSysUnlock();
         
         // Use placement new to construct in static storage
+        // Construction happens INSIDE critical section to prevent race condition
         new (&storage_) T();
+        
+        chSysUnlock();
         return true;
     }
 
@@ -316,6 +320,8 @@ public:
      * @tparam Args Constructor argument types
      * @param args Constructor arguments
      * @return true if construction succeeded, false if already constructed
+     *
+     * @note Critical section extends through construction to prevent race condition
      */
     template<typename... Args>
     bool construct(Args&&... args) noexcept {
@@ -326,16 +332,20 @@ public:
             return false;  // Already constructed
         }
         constructed_ = true;
-        chSysUnlock();
         
         // Use placement new to construct in static storage
+        // Construction happens INSIDE critical section to prevent race condition
         new (&storage_) T(std::forward<Args>(args)...);
+        
+        chSysUnlock();
         return true;
     }
 
     /**
      * @brief Destroy the constructed object
      * @return true if object was destroyed, false if not constructed
+     *
+     * @note Critical section extends through destruction to prevent race condition
      */
     bool destroy() noexcept {
         // Use critical section for thread-safe destruction
@@ -344,11 +354,13 @@ public:
             chSysUnlock();
             return false;  // Not constructed
         }
-        constructed_ = false;
-        chSysUnlock();
         
         // Call destructor explicitly
-        get()->~T();
+        // Destruction happens INSIDE critical section to prevent race condition
+        reinterpret_cast<T*>(&storage_)->~T();
+        
+        constructed_ = false;
+        chSysUnlock();
         return true;
     }
 

@@ -25,6 +25,9 @@
 // DIAMOND OPTIMIZATION: Unified settings persistence
 #include "settings_persistence.hpp"
 
+// DIAMOND FIX: Safe string operations (zero heap allocation)
+#include "eda_safe_string.hpp"
+
 // DEPRECATED: Old unified settings files removed
 // #include "eda_unified_settings.hpp"
 // #include "eda_unified_settings_manager.hpp"
@@ -390,13 +393,14 @@ class DroneEntryEditorView : public View {
 public:
     explicit DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, Callback callback)
         : View(), nav_(nav), entry_(entry), on_save_fn_(std::move(callback)),
-          description_buffer_{entry.description},
           text_freq_{{8, 16, 64, 16}, "Freq:"},
           field_freq_{{8, 32}},
           text_desc_{{8, 64, 64, 16}, "Name:"},
           field_desc_{description_buffer_, {8, 80}, 28},
           button_save_{{8, 128, 100, 32}, "SAVE"},
           button_cancel_{{128, 128, 100, 32}, "CANCEL"} {
+        // Initialize description_buffer_ with entry description
+        safe_strcpy(description_buffer_, entry.description, sizeof(description_buffer_));
         add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
         field_freq_.set_value(entry_.freq);
         button_save_.on_select = [this](Button&) { on_save(); };
@@ -405,13 +409,15 @@ public:
 
     // DIAMOND OPTIMIZATION: noexcept for focus
     void focus() noexcept override { field_freq_.focus(); }
-    std::string title() const override { return "Edit Frequency"; }
+    std::string_view title() const noexcept override { return "Edit Frequency"; }
 
 private:
     NavigationView& nav_;
     DroneDbEntry entry_;
     Callback on_save_fn_;
-    std::string description_buffer_;
+    // DIAMOND FIX: Replace std::string with fixed-size char array (zero heap allocation)
+    static constexpr size_t DESCRIPTION_BUFFER_SIZE = 64;
+    char description_buffer_[DESCRIPTION_BUFFER_SIZE];
     Text text_freq_;
     FrequencyField field_freq_;
     Text text_desc_;
@@ -423,8 +429,7 @@ private:
     void on_save() noexcept {
         DroneDbEntry new_entry;
         new_entry.freq = field_freq_.value();
-        strncpy(new_entry.description, description_buffer_.c_str(), sizeof(new_entry.description) - 1);
-        new_entry.description[sizeof(new_entry.description) - 1] = '\0';
+        safe_strcpy(new_entry.description, description_buffer_, sizeof(new_entry.description));
         on_save_fn_(new_entry);
         nav_.pop();
     }

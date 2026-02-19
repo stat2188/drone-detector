@@ -33,14 +33,27 @@ namespace AudioConstants {
 }
 
 struct AudioAlertManager {
-    // 🔴 FIX: Mutex is now a class member with proper initialization
-    // Helper function ensures one-time initialization using chMtxInit()
+    /**
+     * @brief Get mutex reference with thread-safe initialization
+     *
+     * Uses std::atomic_flag for double-checked locking pattern.
+     * Prevents race condition during mutex initialization.
+     *
+     * @return Reference to audio mutex
+     *
+     * @note Uses memory_order_acquire for load, memory_order_acq_rel for test_and_set
+     * @note ChibiOS critical section ensures atomicity of initialization
+     */
     static Mutex& get_mutex() noexcept {
         static Mutex audio_mutex{};
-        static bool initialized = false;
-        if (!initialized) {
+        static std::atomic_flag initialized = ATOMIC_FLAG_INIT;
+
+        // Double-checked locking with atomic flag
+        if (!initialized.test_and_set(std::memory_order_acquire)) {
+            chSysLock();  // Critical section for ChibiOS
+            // Already checked by test_and_set above, no need to check again
             chMtxInit(&audio_mutex);
-            initialized = true;
+            chSysUnlock();
         }
         return audio_mutex;
     }

@@ -3516,6 +3516,21 @@ void EnhancedDroneSpectrumAnalyzerView::static_histogram_callback(
 // Scott Meyers Item 20: Prefer pass-by-reference-to-const to pass-by-value
 // Eliminates cascading if/else, adds timeout protection, saves ~150 bytes RAM
 void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
+    // Add logging at entry
+    static systime_t last_log_time = 0;
+    static int call_count = 0;
+    systime_t now = chTimeNow();
+    call_count++;
+    
+    if (now - last_log_time > MS2ST(1000)) {
+        last_log_time = now;
+        // Log current state for debugging
+        char debug_buf[64];
+        snprintf(debug_buf, sizeof(debug_buf), "Init: state=%d, calls=%d",
+                 static_cast<int>(init_state_), call_count);
+        status_bar_.update_normal_status("DEBUG", debug_buf);
+    }
+    
     // 🔴 SAFETY: Защита от повторного вызова (re-entrancy)
     if (initialization_in_progress_) return;
     
@@ -3727,6 +3742,9 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
     handle_scanner_update();
     init_state_ = InitState::FULLY_INITIALIZED;
     status_bar_.update_normal_status("EDA", "Ready");
+    
+    // 🔴 FIX: Automatically start scanning thread after initialization
+    start_scanning_thread();
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_show() {

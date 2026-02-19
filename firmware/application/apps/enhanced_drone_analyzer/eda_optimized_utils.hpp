@@ -417,20 +417,41 @@ struct TrendSymbols {
 // ===========================================
 // SAFE BUFFER ACCESS HELPER
 // ===========================================
-// Eliminates duplicate nullptr checks for heap-allocated buffers
+// Eliminates duplicate bounds checking for array access
 // Scott Meyers Item 17: Understand special member function generation
+// DIAMOND FIX: Replaced std::unique_ptr<std::array<T, N>> with direct std::array<T, N>
+// This eliminates heap allocation and improves cache locality
 template<typename T, size_t N>
 struct SafeBufferAccess {
-    static constexpr T& get(std::unique_ptr<std::array<T, N>>& ptr, size_t idx, T& fallback) noexcept {
-        return ptr ? (*ptr)[idx] : fallback;
+    /**
+     * @brief Get element from array with bounds checking
+     * @param arr Reference to array
+     * @param idx Index to access
+     * @param fallback Fallback value if index is out of bounds
+     * @return Reference to array element or fallback
+     */
+    static constexpr T& get(std::array<T, N>& arr, size_t idx, T& fallback) noexcept {
+        return (idx < N) ? arr[idx] : fallback;
     }
 
-    static constexpr const T& get(const std::unique_ptr<std::array<T, N>>& ptr, size_t idx, const T& fallback) noexcept {
-        return ptr ? (*ptr)[idx] : fallback;
+    /**
+     * @brief Get const element from array with bounds checking
+     * @param arr Reference to const array
+     * @param idx Index to access
+     * @param fallback Fallback value if index is out of bounds
+     * @return Const reference to array element or fallback
+     */
+    static constexpr const T& get(const std::array<T, N>& arr, size_t idx, const T& fallback) noexcept {
+        return (idx < N) ? arr[idx] : fallback;
     }
 
-    static constexpr bool is_valid(const std::unique_ptr<std::array<T, N>>& ptr) noexcept {
-        return ptr != nullptr;
+    /**
+     * @brief Check if index is valid for array
+     * @param idx Index to check
+     * @return true if index is valid
+     */
+    static constexpr bool is_valid(size_t idx) noexcept {
+        return idx < N;
     }
 };
 
