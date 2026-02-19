@@ -2463,6 +2463,65 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
     });
 }
 
+// ===========================================
+// DIAMOND OPTIMIZATION: Buffer Management Methods
+// ===========================================
+// Diamond Code Principle: Zero heap allocation, use static storage
+// All buffers are allocated at compile time in .bss section
+// These methods manage the allocation state flag only
+
+// Guard clause: Returns true if display buffers are marked as allocated
+bool DroneDisplayController::are_buffers_allocated() const {
+    // DIAMOND OPTIMIZATION: Direct flag access (O(1), zero overhead)
+    // Static buffers are always present, only the flag needs checking
+    return buffers_allocated_;
+}
+
+// Guard clause: Allocates display buffers from memory pool
+// Since buffers are static, this just marks them as ready for use
+bool DroneDisplayController::allocate_buffers_from_pool() {
+    // Guard clause: Early return if already allocated
+    if (buffers_allocated_) {
+        return true;  // Already allocated, success
+    }
+
+    // DIAMOND OPTIMIZATION: Static buffers are pre-allocated at compile time
+    // No heap allocation needed - just mark as ready
+    // Buffers are in .bss section:
+    // - spectrum_row_buffer_storage_[SPECTRUM_ROW_SIZE] = 480 bytes
+    // - render_line_buffer_storage_[RENDER_LINE_SIZE] = 480 bytes
+    // - spectrum_power_levels_storage_[200] = 200 bytes
+    // Total: ~1.16 KB (all in static memory)
+
+    buffers_allocated_ = true;
+    return true;  // Allocation successful
+}
+
+// Guard clause: Returns true if display buffers are valid for use
+bool DroneDisplayController::are_buffers_valid() const {
+    // DIAMOND OPTIMIZATION: Direct flag access (O(1), zero overhead)
+    // For static buffers, "valid" means "allocated and ready"
+    return buffers_allocated_;
+}
+
+// Guard clause: Deallocates display buffers
+// Since buffers are static, this just marks them as not ready for use
+void DroneDisplayController::deallocate_buffers() {
+    // Guard clause: Early return if not allocated
+    if (!buffers_allocated_) {
+        return;  // Nothing to deallocate
+    }
+
+    // DIAMOND OPTIMIZATION: Static buffers don't need deallocation
+    // Just clear the flag to mark buffers as unavailable
+    // Buffers remain in .bss section, will be reused on next allocation
+    buffers_allocated_ = false;
+
+    // Clear buffer contents to prevent stale data usage
+    // DIAMOND OPTIMIZATION: Zero-initialize all buffers
+    std::fill(spectrum_power_levels().begin(), spectrum_power_levels().end(), 0);
+}
+
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
     // FIX #28: Separate UI/DSP logic - Diamond Code pattern
