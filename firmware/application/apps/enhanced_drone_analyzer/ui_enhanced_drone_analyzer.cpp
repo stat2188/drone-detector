@@ -1316,6 +1316,11 @@ void DroneScanner::db_loading_thread_loop() {
     }
 
     // Placement new для FreqmanDB
+    if (reinterpret_cast<uintptr_t>(freq_db_storage_) % alignof(FreqmanDB) != 0) {
+        handle_scan_error("Memory: freq_db_storage_ alignment error (async)");
+        db_loading_active_.store(false, std::memory_order_release);
+        return;
+    }
     freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
     if (!freq_db_ptr_) {
         handle_scan_error("Memory: FreqmanDB async alloc failed");

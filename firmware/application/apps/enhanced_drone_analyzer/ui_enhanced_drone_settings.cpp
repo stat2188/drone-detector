@@ -971,13 +971,33 @@ DroneDatabaseManager::DatabaseView DroneDatabaseManager::load_database(const cha
                         *comma = '\0';
                         DroneDbEntry entry{};
                         entry.freq = strtoull(line_buffer, nullptr, 10);
-                        
-                        // Copy description (skip comma and space)
+
+                        // Validate desc is within line_buffer bounds
                         char* desc = comma + 1;
-                        while (*desc == ' ') desc++;
-                        
-                        safe_strcpy(entry.description, desc, sizeof(entry.description));
-                        
+                        size_t desc_offset = static_cast<size_t>(desc - line_buffer);
+                        if (desc_offset >= LINE_BUFFER_SIZE) {
+                            line_ptr = 0;
+                            continue;
+                        }
+
+                        // Skip leading spaces (with bounds check)
+                        while (desc_offset < LINE_BUFFER_SIZE - 1 && *desc == ' ') {
+                            desc++;
+                            desc_offset++;
+                        }
+
+                        // Safe copy with explicit length
+                        size_t max_desc_len = LINE_BUFFER_SIZE - desc_offset;
+                        size_t copy_len = sizeof(entry.description) - 1;
+                        if (max_desc_len < copy_len) {
+                            copy_len = max_desc_len;
+                        }
+
+                        for (size_t j = 0; j < copy_len && desc[j] != '\0'; ++j) {
+                            entry.description[j] = desc[j];
+                        }
+                        entry.description[copy_len] = '\0';
+
                         if (entry.freq > 0) {
                             view.entries[view.count++] = entry;
                         }

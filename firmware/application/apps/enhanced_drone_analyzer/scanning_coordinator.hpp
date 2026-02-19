@@ -55,9 +55,9 @@ private:
     // FIX #24: Use constant from settings instead of magic number
     // scan_interval_ms_ = 712 differs from DEFAULT_SCAN_INTERVAL_MS = 750
     uint32_t scan_interval_ms_ = EDA::Constants::DEFAULT_SCAN_INTERVAL_MS;
-    // Phase 2 Optimization: Reduced from 12KB to 6KB for memory savings
+    // Phase 2 Optimization: Increased to 8KB for thread safety
     // Scott Meyers Item 15: Prefer constexpr to #define
-    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 6144;
+    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 8192;
 
     static WORKING_AREA(coordinator_wa_, COORDINATOR_THREAD_STACK_SIZE);
 };

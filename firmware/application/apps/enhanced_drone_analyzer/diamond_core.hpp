@@ -166,7 +166,7 @@ struct FrequencyParser {
         uint64_t mhz = 0;
         while (*str >= FrequencyParserConstants::DIGIT_ZERO && *str <= FrequencyParserConstants::DIGIT_NINE) {
             uint8_t digit = static_cast<uint8_t>(*str - FrequencyParserConstants::DIGIT_ZERO);
-            if (mhz > (UINT64_MAX - digit) / 10) return UINT64_MAX;
+            if (mhz > UINT64_MAX / 10) return UINT64_MAX;
             mhz = mhz * 10 + digit;
             str++;
         }

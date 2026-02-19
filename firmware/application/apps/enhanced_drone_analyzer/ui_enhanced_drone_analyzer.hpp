@@ -663,9 +663,9 @@ struct DetectionParams {
         // ФАЗА 5.1: СТАТИЧЕСКИЙ СТЕК ДЛЯ ПОТОКА
         // ===========================================
         // Diamond Code: Thread stack из статической памяти
-        // Phase 2 Optimization: Reduced from 8KB to 4KB for memory savings
+        // Phase 2 Optimization: Increased to 8KB for thread safety
         // Scott Meyers Item 15: Prefer constexpr to #define
-        static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4KB
+        static constexpr size_t DB_LOADING_STACK_SIZE = 8192;  // 8KB
 
           static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 

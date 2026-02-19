@@ -37,18 +37,16 @@ static inline void safe_strcpy(char* dest, const char* src, size_t max_len) {
 // Helper for safe string concatenation (Zero-Heap, no null-padding overhead)
 static inline void safe_strcat(char* dest, const char* src, size_t max_len) {
     if (!dest || !src || max_len == 0) return;
-    
+
     char* d = dest;
     const char* s = src;
-    
-    while (*d && static_cast<size_t>(d - dest) < max_len) ++d;
-    
+
+    while (*d && static_cast<size_t>(d - dest) < max_len - 1) { ++d; }
+
     size_t remaining = max_len - static_cast<size_t>(d - dest);
     if (remaining == 0) return;
-    
-    while (--remaining && *s) {
-        *d++ = *s++;
-    }
+
+    while (remaining > 1 && *s) { *d++ = *s++; --remaining; }
     *d = '\0';
 }
 

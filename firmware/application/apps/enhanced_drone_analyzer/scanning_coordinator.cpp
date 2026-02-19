@@ -84,8 +84,32 @@ msg_t ScanningCoordinator::scanning_thread_function(void* arg) noexcept {
 msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // DIAMOND CODE: No exceptions - perform scan cycle directly
     // Error handling is managed by scanner_.perform_scan_cycle() via return codes
+
+    // Timeout protection constants
+    constexpr systime_t SCAN_CYCLE_TIMEOUT_MS = MS2ST(10000);
+    uint32_t consecutive_timeouts = 0;
+    constexpr uint32_t MAX_CONSECUTIVE_TIMEOUTS = 3;
+
     while (scanning_active_.load(std::memory_order_acquire)) {
+        systime_t cycle_start = chTimeNow();
+
         scanner_.perform_scan_cycle(hardware_);
+
+        systime_t cycle_duration = chTimeNow() - cycle_start;
+
+        // Check for scan cycle timeout
+        if (cycle_duration > SCAN_CYCLE_TIMEOUT_MS) {
+            consecutive_timeouts++;
+            if (consecutive_timeouts >= MAX_CONSECUTIVE_TIMEOUTS) {
+                scanning_active_.store(false, std::memory_order_release);
+                scanning_thread_ = nullptr;
+                chThdExit(static_cast<msg_t>(-1));
+                return -1;
+            }
+        } else {
+            consecutive_timeouts = 0;
+        }
+
         chThdSleepMilliseconds(scan_interval_ms_);
     }
     scanning_active_.store(false, std::memory_order_release);
