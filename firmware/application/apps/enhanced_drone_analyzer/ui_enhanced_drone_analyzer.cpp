@@ -2,7 +2,7 @@
  * Enhanced Drone Analyzer - Thread Safety Notes
  *
  * Locking Order (to prevent deadlocks):
- * 1.. scanning_active_ (std::atomic<bool>) - No lock needed
+ * 1... scanning_active_ (std::atomic<bool>) - No lock needed
  * 2. data_mutex (DroneScanner::tracked_drones_)
  * 3. spectrum_mutex (DroneHardwareController::spectrum_buffer_)
  * 4. logger_mutex (DroneDetectionLogger::mutex_)
