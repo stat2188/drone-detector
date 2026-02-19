@@ -9,13 +9,6 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ===========================================
-// CONSTANTS
-// ===========================================
-namespace ScanningConstants {
-    constexpr uint32_t DEFAULT_SCAN_INTERVAL_MS = 750;
-}
-
-// ===========================================
 // ScanningCoordinator Implementation
 // ===========================================
 
@@ -31,7 +24,7 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
     , audio_controller_(audio_controller)
     , scanning_active_(false)
     , scanning_thread_(nullptr)
-    , scan_interval_ms_(ScanningConstants::DEFAULT_SCAN_INTERVAL_MS) {
+    , scan_interval_ms_(EDA::Constants::DEFAULT_SCAN_INTERVAL_MS) {
 }
 
 ScanningCoordinator::~ScanningCoordinator() {

@@ -32,14 +32,22 @@ namespace AudioConstants {
     constexpr uint32_t BEEP_SAMPLE_RATE = 24000;
 }
 
-// 🔴 HIGH PRIORITY FIX: Add mutex protection for static variables
-// Prevents race conditions when audio is accessed from multiple threads
-static Mutex audio_mutex;
-
 struct AudioAlertManager {
+    // 🔴 FIX: Mutex is now a class member with proper initialization
+    // Helper function ensures one-time initialization using chMtxInit()
+    static Mutex& get_mutex() noexcept {
+        static Mutex audio_mutex{};
+        static bool initialized = false;
+        if (!initialized) {
+            chMtxInit(&audio_mutex);
+            initialized = true;
+        }
+        return audio_mutex;
+    }
+
     // DIAMOND OPTIMIZATION: noexcept enables compiler optimization, avoids exception handling overhead
     static void play_alert(ThreatLevel level) noexcept {
-        chMtxLock(&audio_mutex);
+        chMtxLock(&get_mutex());
         // FIX: Store audio_enabled_ in local variable while holding lock to prevent race condition
         bool audio_enabled = audio_enabled_;
         if (!audio_enabled) {
@@ -70,18 +78,18 @@ struct AudioAlertManager {
     }
     // DIAMOND OPTIMIZATION: noexcept for zero-overhead abstraction
     static void set_enabled(bool enable) noexcept {
-        chMtxLock(&audio_mutex);
+        chMtxLock(&get_mutex());
         audio_enabled_ = enable;
         chMtxUnlock();
     }
     static bool is_enabled() noexcept {
-        chMtxLock(&audio_mutex);
+        chMtxLock(&get_mutex());
         bool enabled = audio_enabled_;
         chMtxUnlock();
         return enabled;
     }
     static void set_cooldown_ms(CooldownMs cooldown_ms) noexcept {
-        chMtxLock(&audio_mutex);
+        chMtxLock(&get_mutex());
         cooldown_ms_ = cooldown_ms;
         chMtxUnlock();
     }

@@ -9,6 +9,7 @@
 #include "ui_navigation.hpp"
 #include "thread_base.hpp"
 #include "ui_drone_audio.hpp"
+#include "eda_constants.hpp"
 
 class AudioManager;
 
@@ -53,7 +54,7 @@ private:
     Thread* scanning_thread_ = nullptr;
     // FIX #24: Use constant from settings instead of magic number
     // scan_interval_ms_ = 712 differs from DEFAULT_SCAN_INTERVAL_MS = 750
-    uint32_t scan_interval_ms_ = ScanningConstants::DEFAULT_SCAN_INTERVAL_MS;
+    uint32_t scan_interval_ms_ = EDA::Constants::DEFAULT_SCAN_INTERVAL_MS;
     // Phase 2 Optimization: Reduced from 12KB to 6KB for memory savings
     // Scott Meyers Item 15: Prefer constexpr to #define
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 6144;
