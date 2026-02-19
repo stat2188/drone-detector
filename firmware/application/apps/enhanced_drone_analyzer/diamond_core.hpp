@@ -155,43 +155,46 @@ struct FrequencyParser {
         1ULL         // 10^0
     };
 
+    // FIX #22: Return error code on overflow
+    // Original code returned 0 (valid frequency) on overflow
+    // Now returns UINT64_MAX to indicate error (outside valid hardware range)
     static inline uint64_t parse_mhz_string(const char* str) noexcept {
-        if (!str || *str == '\0') return 0;
-
+        if (!str || *str == '\0') return UINT64_MAX;
+        
         while (*str == FrequencyParserConstants::SPACE || *str == FrequencyParserConstants::TAB) str++;
-
+        
         uint64_t mhz = 0;
         while (*str >= FrequencyParserConstants::DIGIT_ZERO && *str <= FrequencyParserConstants::DIGIT_NINE) {
             uint8_t digit = static_cast<uint8_t>(*str - FrequencyParserConstants::DIGIT_ZERO);
-            if (mhz > (UINT64_MAX - digit) / 10) return 0;
+            if (mhz > (UINT64_MAX - digit) / 10) return UINT64_MAX;
             mhz = mhz * 10 + digit;
             str++;
         }
-
-        if (mhz > FrequencyParserConstants::MAX_MHZ) return 0;
-
+        
+        if (mhz > FrequencyParserConstants::MAX_MHZ) return UINT64_MAX;
+        
         uint64_t hz_fraction = 0;
         if (*str == FrequencyParserConstants::DECIMAL_POINT) {
             str++;
-
+            
             uint8_t digits = 0;
-
+            
             for (int i = 0; i < FrequencyParserConstants::MAX_DECIMAL_DIGITS && *str >= FrequencyParserConstants::DIGIT_ZERO && *str <= FrequencyParserConstants::DIGIT_NINE; i++) {
                 uint8_t digit = static_cast<uint8_t>(*str - FrequencyParserConstants::DIGIT_ZERO);
                 hz_fraction = hz_fraction * 10 + digit;
                 digits++;
                 str++;
             }
-
+            
             hz_fraction *= MULTIPLIERS[digits];
         }
-
+        
         uint64_t result = mhz * FrequencyParserConstants::MHZ_TO_HZ;
-
-        if (result > UINT64_MAX - hz_fraction) return 0;
+        
+        if (result > UINT64_MAX - hz_fraction) return UINT64_MAX;
         result += hz_fraction;
-
-        return EDA::Validation::validate_frequency(result) ? result : 0;
+        
+        return EDA::Validation::validate_frequency(result) ? result : UINT64_MAX;
     }
 
     // Parse pure Hz string (no decimal point, e.g., "2400500000" -> 2400500000 Hz)

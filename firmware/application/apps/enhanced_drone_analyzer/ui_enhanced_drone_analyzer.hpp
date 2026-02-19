@@ -659,6 +659,10 @@ struct DetectionParams {
     WidebandScanData wideband_scan_data_;
     DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
+    
+    // FIX #3: Thread-safe spectrum buffer (replaces static buffer)
+    // Moved from static in perform_wideband_scan_cycle() to class member
+    std::array<uint8_t, 256> spectrum_data_{};
 
     // DIAMOND FIX: Settings stored by VALUE (not reference)
     // No lifetime dependency - settings are copied on construction
@@ -1029,6 +1033,24 @@ private:
     // Private helper methods
     void draw_compact_ticks(Painter& painter, const Rect r);
     void format_compact_label(char* buffer, size_t buffer_size, Frequency freq);
+};
+
+// FIX #28: Display data structure for UI/DSP separation
+// Diamond Code pattern: Separate data fetching from UI rendering
+struct DisplayData {
+    // Phase 1: Data fetched from scanner (DSP/logic layer)
+    bool is_scanning;
+    Frequency current_freq;
+    size_t total_freqs;
+    ThreatLevel max_threat;
+    size_t approaching_count;
+    size_t receding_count;
+    size_t static_count;
+    uint32_t total_detections;
+    bool is_real_mode;
+    uint32_t scan_cycles;
+    bool has_detections;
+    size_t color_idx;  // Computed color index for big display style
 };
 
 class DroneDisplayController : public View {

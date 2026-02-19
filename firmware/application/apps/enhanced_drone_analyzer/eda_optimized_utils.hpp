@@ -64,8 +64,13 @@ public:
         if (head_ == 0) full_ = true;
     }
 
+    // FIX #21: Helper method to get current size (template-agnostic)
+    WindowSize<T> get_current_size() const noexcept {
+        return full_ ? N : head_;
+    }
+
     T get_median() const noexcept {
-        const WindowSize<T> current_size = full_ ? N : head_;
+        const WindowSize<T> current_size = get_current_size();
 
         if (current_size == 0) {
             return T{};

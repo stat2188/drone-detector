@@ -27,7 +27,8 @@ public:
                        ::AudioManager& audio_controller);
     ~ScanningCoordinator();
 
-    void start_coordinated_scanning() noexcept;
+    // FIX #23: Return bool to indicate success/failure of thread creation
+    bool start_coordinated_scanning() noexcept;
     void stop_coordinated_scanning() noexcept;
     bool is_scanning_active() const noexcept { return scanning_active_; }
     void update_runtime_parameters(const DroneAnalyzerSettings& settings) noexcept;
@@ -50,7 +51,9 @@ private:
     ::AudioManager& audio_controller_;
     std::atomic<bool> scanning_active_{false};
     Thread* scanning_thread_ = nullptr;
-    uint32_t scan_interval_ms_ = 712;
+    // FIX #24: Use constant from settings instead of magic number
+    // scan_interval_ms_ = 712 differs from DEFAULT_SCAN_INTERVAL_MS = 750
+    uint32_t scan_interval_ms_ = ScanningConstants::DEFAULT_SCAN_INTERVAL_MS;
     // Phase 2 Optimization: Reduced from 12KB to 6KB for memory savings
     // Scott Meyers Item 15: Prefer constexpr to #define
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 6144;

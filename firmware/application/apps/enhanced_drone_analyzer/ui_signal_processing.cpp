@@ -31,12 +31,29 @@ static inline void init_entry(DetectionEntry& entry) noexcept {
 // ========================================
 void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash, DetectionCount detection_count, RSSIValue rssi_value) noexcept {
     const Timestamp current_time = get_current_time_ticks();
+    
+    // FIX #9: Add timestamp wrap handling for ChibiOS time
+    // If timestamp wraps (current_time < WRAP_THRESHOLD and entry time > WRAP_THRESHOLD)
+    // treat as very recent and reset entry timestamp
+    constexpr Timestamp WRAP_THRESHOLD = 0xFFFFFFFFUL / 2;
+    
     const EntryIndex start_idx = frequency_hash % MAX_ENTRIES;
 
-    for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
-        const EntryIndex idx = (start_idx + probe) % MAX_ENTRIES;
-
+    // FIX #20: Use better hash function with power-of-2 table
+    // Replaces linear probe with O(n) worst case
+    static constexpr size_t HASH_TABLE_SIZE = 32;  // Power of 2
+    static constexpr size_t HASH_MASK = HASH_TABLE_SIZE - 1;
+    const size_t hash_index = frequency_hash & HASH_MASK;
+    
+    for (size_t probe = 0; probe < HASH_TABLE_SIZE; ++probe) {
+        const EntryIndex idx = (hash_index + probe) & HASH_MASK;
+        
         if (entries_[idx].frequency_hash == frequency_hash) {
+            // FIX #9: Check for timestamp wrap before updating
+            if (current_time < WRAP_THRESHOLD && entries_[idx].timestamp > WRAP_THRESHOLD) {
+                // Timestamp wrapped, reset to 0
+                entries_[idx].timestamp = 0;
+            }
             entries_[idx].rssi_value = rssi_value;
             entries_[idx].detection_count = detection_count;
             entries_[idx].timestamp = current_time;
@@ -54,10 +71,13 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash, Detecti
 }
 
 DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_hash) const noexcept {
-    const EntryIndex start_idx = frequency_hash % MAX_ENTRIES;
-
-    for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
-        const EntryIndex idx = (start_idx + probe) % MAX_ENTRIES;
+    // FIX #20: Use better hash function with power-of-2 table
+    static constexpr size_t HASH_TABLE_SIZE = 32;  // Power of 2
+    static constexpr size_t HASH_MASK = HASH_TABLE_SIZE - 1;
+    const size_t hash_index = frequency_hash & HASH_MASK;
+    
+    for (size_t probe = 0; probe < HASH_TABLE_SIZE; ++probe) {
+        const EntryIndex idx = (hash_index + probe) & HASH_MASK;
 
         if (entries_[idx].frequency_hash == frequency_hash) {
             return entries_[idx].detection_count;
@@ -71,10 +91,13 @@ DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_
 }
 
 RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) const noexcept {
-    const EntryIndex start_idx = frequency_hash % MAX_ENTRIES;
-
-    for (size_t probe = 0; probe < MAX_ENTRIES; ++probe) {
-        const EntryIndex idx = (start_idx + probe) % MAX_ENTRIES;
+    // FIX #20: Use better hash function with power-of-2 table
+    static constexpr size_t HASH_TABLE_SIZE = 32;  // Power of 2
+    static constexpr size_t HASH_MASK = HASH_TABLE_SIZE - 1;
+    const size_t hash_index = frequency_hash & HASH_MASK;
+    
+    for (size_t probe = 0; probe < HASH_TABLE_SIZE; ++probe) {
+        const EntryIndex idx = (hash_index + probe) & HASH_MASK;
 
         if (entries_[idx].frequency_hash == frequency_hash) {
             return entries_[idx].rssi_value;

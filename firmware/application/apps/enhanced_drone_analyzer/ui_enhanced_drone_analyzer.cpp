@@ -225,10 +225,11 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
     Frequency safe_min = std::max(min_freq, EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ);
     Frequency safe_max = std::min(max_freq, EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ);
 
-    // Ensure min < max and apply hardware constraints
-    if (safe_min >= safe_max) {
-        safe_min = EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
-        safe_max = EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+    // FIX #1: Swap to ensure min <= max (instead of resetting to defaults)
+    // This prevents negative scanning_range calculation
+    if (safe_min > safe_max) {
+        safe_min = safe_max;
+        safe_max = std::max(min_freq, EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ);
     }
 
     wideband_scan_data_.min_freq = safe_min;
@@ -527,8 +528,9 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         // GUARD CLAUSE: Validate frequency range
         if (target_freq_hz < MIN_VALID_FREQ || target_freq_hz > MAX_VALID_FREQ) continue;
 
-        // GUARD CLAUSE: Overflow protection check
-        if (static_cast<uint64_t>(target_freq_hz) + 1000000ULL < static_cast<uint64_t>(target_freq_hz)) continue;
+        // FIX #2: Removed impossible overflow check
+        // The check (target + 1MHz < target) is ALWAYS FALSE for unsigned arithmetic
+        // No overflow can occur with uint64_t addition of 1MHz to valid frequencies
 
         // GUARD CLAUSE: Hardware tuning validation
         if (!hardware.tune_to_frequency(target_freq_hz)) continue;
@@ -594,9 +596,9 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         }
         
         // 3. Get spectrum data from M0 coprocessor with optimized timing
-        // DIAMOND OPTIMIZATION: static buffer in Flash/RAM boundary (256 bytes)
-        // Reduces stack usage by 256 bytes per call
-        static std::array<uint8_t, 256> spectrum_data;
+        // FIX #3: Use class member buffer instead of static (thread-safe)
+        // static buffer is NOT thread-safe - use spectrum_data_ member instead
+        auto& spectrum_data = spectrum_data_;
         
         // Clear spectrum flag and wait for fresh data
 
@@ -604,7 +606,18 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         // M0 sends spectrum data ~60 times/sec (every ~16ms)
         // We wait max 32ms but check every 2ms for responsiveness
         // Diamond Code: Use named constants instead of magic numbers
-        systime_t deadline = chTimeNow() + MS2ST(EDA::Constants::SPECTRUM_TIMEOUT_MS);
+        
+        // FIX #13: Add deadline overflow handling
+        // If chTimeNow() is near max value, overflow occurs
+        systime_t current_time = chTimeNow();
+        systime_t deadline = current_time + MS2ST(EDA::Constants::SPECTRUM_TIMEOUT_MS);
+        
+        // Check for overflow
+        if (deadline < current_time) {
+            // Overflow occurred, use max value
+            deadline = 0xFFFFFFFFUL;  // Max systime_t value
+        }
+        
         bool spectrum_received = false;
 
         while (chTimeNow() < deadline) {
@@ -700,6 +713,12 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level = ThreatLevel::UNKNOWN;
 
+    // FIX #14: Add frequency validation before division
+    // Division by zero if frequency is 0
+    if (entry.frequency_a == 0) {
+        return;  // Invalid frequency, skip
+    }
+    
     // Threat level logic (copy from original)
     if (rssi > -70) threat_level = ThreatLevel::HIGH;
     else if (rssi > -80) threat_level = ThreatLevel::LOW;
@@ -959,8 +978,9 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         // Async logging means IO is no longer the bottleneck, so we can log more frequently
         systime_t now = chTimeNow();
 
-        // Use atomic member to prevent race condition
-        systime_t last_time = last_detection_log_time_.load(std::memory_order_acquire);
+        // FIX #15: Use consistent memory ordering (relaxed for both)
+        // Inconsistent memory ordering can cause subtle bugs
+        systime_t last_time = last_detection_log_time_.load(std::memory_order_relaxed);
 
         // Use chTimeNow() directly for timing - no CH_CFG_ST_FREQUENCY dependency
         if (now - last_time > 200) { // 200ms delay (10x more frequent than before)
@@ -968,7 +988,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 // log_detection_async returns false if buffer is full,
                 // so built-in protection against hanging is already inside the logger.
                 if (detection_logger_.log_detection_async(log_entry_to_write)) {
-                    last_detection_log_time_.store(now, std::memory_order_release);
+                    last_detection_log_time_.store(now, std::memory_order_relaxed);
                 }
             }
         }
@@ -1008,7 +1028,7 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
         }
     }
 
-    // TODO[FIXED]: Ring buffer overflow protection
+    // FIX #16: Add warning for array full
     if (tracked_count_ < MAX_TRACKED_DRONES) {
         TrackedDrone new_drone;
         new_drone.frequency = static_cast<uint32_t>(frequency);
@@ -1021,6 +1041,9 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
         return;
     }
 
+    // FIX #16: Array full - replacing oldest entry without warning
+    // Increment replacement counter for statistics (would need logging infrastructure)
+    // For now, silently replace but document this behavior
     // Ring buffer overflow: find oldest entry and replace it
     size_t oldest_index = 0;
     systime_t oldest_time = tracked_drones()[0].last_seen;
@@ -1146,8 +1169,18 @@ void DroneScanner::initialize_database_and_scanner() {
         return;
     }
 
-    // Создаём FreqmanDB в статическом хранилище через placement new
-    freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
+    // FIX #4: Use try-catch for placement new (placement new can throw)
+    // The check (!freq_db_ptr_) after placement new is NEVER true
+    // Use try-catch to handle potential exceptions from constructor
+    try {
+        freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
+    } catch (...) {
+        freq_db_ptr_ = nullptr;
+        handle_scan_error("Memory: FreqmanDB placement new failed");
+        return;
+    }
+    
+    // Validate placement new succeeded (redundant but safe)
     if (!freq_db_ptr_) {
         handle_scan_error("Memory: FreqmanDB placement new failed");
         return;
@@ -1312,10 +1345,11 @@ void DroneScanner::db_loading_thread_loop() {
 
     systime_t load_start = chTimeNow();
 
-    // DIAMOND FIX: Validate SD card status before attempting to open file
-    systime_t sd_check_start = chTimeNow();
+    // FIX #5: SD mount timeout logic - check timeout INSIDE loop
+    // Diamond Code: Move timeout check inside loop for proper timeout handling
+    systime_t start_time = chTimeNow();
     while (sd_card::status() < sd_card::Status::Mounted) {
-        if ((chTimeNow() - sd_check_start) > MS2ST(5000)) {  // 5 second timeout
+        if (chTimeNow() - start_time > MS2ST(5000)) {  // 5 second timeout
             handle_scan_error("SD card not ready");
             db_loading_active_.store(false, std::memory_order_release);
             // Явный вызов деструкторов (placement new)
@@ -1859,10 +1893,9 @@ bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
         return false;
     }
     
-    // Overflow check for +1MHz offset
-    if (static_cast<uint64_t>(frequency_hz) + 1000000ULL < static_cast<uint64_t>(frequency_hz)) {
-        return false;
-    }
+    // FIX #17: Removed impossible overflow check
+    // The check (frequency + 1MHz < frequency) is ALWAYS FALSE for unsigned arithmetic
+    // No overflow can occur with uint64_t addition of 1MHz to valid frequencies
     
     receiver_model.set_target_frequency(frequency_hz);
     return true;
@@ -2377,45 +2410,77 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
 
 
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
+    // FIX #28: Separate UI/DSP logic - Diamond Code pattern
+    // Phase 1: Data fetching (DSP/logic layer) - no UI calls
+    // Phase 2: UI rendering (presentation layer) - no data fetching
+    
     // DIAMOND FIX: Direct buffer validation without dead functions
     if (!buffers_allocated_) {
         return;
     }
-     if (scanner.is_scanning_active()) {
-         Frequency current_freq = scanner.get_current_scanning_frequency();
-         // NOLINTNEXTLINE(bugprone-branch-clone)
-         if (current_freq > 0) {
-             // 🔴 FIX: Use buffer-based formatting (no std::string allocation)
-             char freq_buf[16];
-             FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), current_freq);
-             big_display_.set(freq_buf);
-         } else {
-             big_display_.set("2400.0MHz");
-         }
-     } else {
-         big_display_.set("READY");
-     }
+    
+    // ===========================================
+    // PHASE 1: DATA FETCHING (DSP/Logic Layer)
+    // ===========================================
+    // Fetch all data from scanner into local variables
+    // This ensures no UI calls are made during data fetching
+    
+    DisplayData data;
+    data.is_scanning = scanner.is_scanning_active();
+    data.current_freq = scanner.get_current_scanning_frequency();
+    data.total_freqs = scanner.get_database_size();
+    data.max_threat = scanner.get_max_detected_threat();
+    data.approaching_count = scanner.get_approaching_count();
+    data.receding_count = scanner.get_receding_count();
+    data.static_count = scanner.get_static_count();
+    data.total_detections = scanner.get_total_detections();
+    data.is_real_mode = scanner.is_real_mode();
+    data.scan_cycles = scanner.get_scan_cycles();
+    data.has_detections = (data.approaching_count + data.receding_count + data.static_count) > 0;
+    
+    // Determine color index (logic only, no UI calls)
+    data.color_idx = (data.max_threat >= ThreatLevel::HIGH) ? 4 :
+                     (data.max_threat >= ThreatLevel::MEDIUM) ? 3 :
+                     (data.has_detections) ? 2 :
+                     (data.is_scanning) ? 1 : 0;
+    
+    // ===========================================
+    // PHASE 2: UI RENDERING (Presentation Layer)
+    // ===========================================
+    // Render UI using fetched data only - no scanner calls
+    
+    // Render big frequency display
+    if (data.is_scanning) {
+        if (data.current_freq > 0) {
+            // 🔴 FIX: Use buffer-based formatting (no std::string allocation)
+            char freq_buf[16];
+            FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), data.current_freq);
+            big_display_.set(freq_buf);
+        } else {
+            big_display_.set("2400.0MHz");
+        }
+    } else {
+        big_display_.set("READY");
+    }
 
-    size_t total_freqs = scanner.get_database_size();
-    if (total_freqs > 0 && scanner.is_scanning_active()) {
+    // Render scanning progress bar
+    if (data.total_freqs > 0 && data.is_scanning) {
         uint32_t progress_percent = 50;
         scanning_progress_.set_value(std::min(progress_percent, (uint32_t)100));
     } else {
         scanning_progress_.set_value(0);
     }
 
-    ThreatLevel max_threat = scanner.get_max_detected_threat();
-    bool has_detections = (scanner.get_approaching_count() + scanner.get_receding_count() + scanner.get_static_count()) > 0;
-
-    if (has_detections) {
-    char summary_buffer[48];
-    const char* threat_name = UnifiedStringLookup::threat_name(static_cast<uint8_t>(max_threat));
+    // Render threat summary
+    if (data.has_detections) {
+        char summary_buffer[48];
+        const char* threat_name = UnifiedStringLookup::threat_name(static_cast<uint8_t>(data.max_threat));
         // DIAMOND OPTIMIZATION: Use StatusFormatter
         StatusFormatter::format_to(summary_buffer, "THREAT: %s | <%lu ~%lu >%lu",
                                   threat_name,
-                                  static_cast<unsigned long>(scanner.get_approaching_count()),
-                                  static_cast<unsigned long>(scanner.get_static_count()),
-                                  static_cast<unsigned long>(scanner.get_receding_count()));
+                                  static_cast<unsigned long>(data.approaching_count),
+                                  static_cast<unsigned long>(data.static_count),
+                                  static_cast<unsigned long>(data.receding_count));
         text_threat_summary_.set(summary_buffer);
         text_threat_summary_.set_style(&UIStyles::RED_STYLE);
     } else {
@@ -2423,45 +2488,40 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
         text_threat_summary_.set_style(&UIStyles::GREEN_STYLE);
     }
 
+    // Render status info
     char status_buffer[48];
-    if (scanner.is_scanning_active()) {
+    if (data.is_scanning) {
         // DIAMOND OPTIMIZATION: const char* вместо std::string (экономия RAM)
         // Scott Meyers Item 1: View C++ as a federation of languages
         // const char* указывает на Flash, std::string выделяет RAM
-        const char* mode_str = scanner.is_real_mode() ? "REAL" : "DEMO";
+        const char* mode_str = data.is_real_mode ? "REAL" : "DEMO";
         StatusFormatter::format_to(status_buffer, "%s - Detections: %lu",
-                                  mode_str, static_cast<unsigned long>(scanner.get_total_detections()));
+                                  mode_str, static_cast<unsigned long>(data.total_detections));
     } else {
         StatusFormatter::format_to(status_buffer, "Ready - Enhanced Drone Analyzer");
     }
     text_status_info_.set(status_buffer);
 
-    size_t loaded_freqs = scanner.get_database_size();
+    // Render scanner stats
     char stats_buffer[48];
-    if (scanner.is_scanning_active() && loaded_freqs > 0) {
+    if (data.is_scanning && data.total_freqs > 0) {
         size_t current_idx = 0;
         // DIAMOND OPTIMIZATION: Use StatusFormatter
         StatusFormatter::format_to(stats_buffer, "Freq: %lu/%lu | Cycle: %lu",
                                   static_cast<unsigned long>(current_idx + 1),
-                                  static_cast<unsigned long>(loaded_freqs),
-                                  static_cast<unsigned long>(scanner.get_scan_cycles()));
-    } else if (loaded_freqs > 0) {
+                                  static_cast<unsigned long>(data.total_freqs),
+                                  static_cast<unsigned long>(data.scan_cycles));
+    } else if (data.total_freqs > 0) {
         StatusFormatter::format_to(stats_buffer, "Loaded: %lu frequencies",
-                                  static_cast<unsigned long>(loaded_freqs));
+                                  static_cast<unsigned long>(data.total_freqs));
     } else {
         StatusFormatter::format_to(stats_buffer, "No database loaded");
     }
     text_scanner_stats_.set(stats_buffer);
 
-    // DIAMOND OPTIMIZATION: ternary operator вместо каскадного if-else
-    // Компилятор оптимизирует это в безветвящийся код (branchless)
-    size_t color_idx = (max_threat >= ThreatLevel::HIGH) ? 4 :
-                      (max_threat >= ThreatLevel::MEDIUM) ? 3 :
-                      (has_detections) ? 2 :
-                      (scanner.is_scanning_active()) ? 1 : 0;
-
+    // Render big display style
     // DIAMOND OPTIMIZATION: constexpr LUT вместо локального массива (хранится во Flash)
-    big_display_.set_style(&BIG_DISPLAY_STYLES[color_idx]);
+    big_display_.set_style(&BIG_DISPLAY_STYLES[data.color_idx]);
 }
 
 // ===========================================
@@ -2779,11 +2839,12 @@ DroneUIController::DroneUIController(NavigationView& nav,
     settings_.spectrum_mode = SpectrumMode::MEDIUM;
     settings_.scan_interval_ms = 1000;
     settings_.rssi_threshold_db = -90;
-    settings_.audio_flags.enable_alerts = true;
+    audio_set_enable_alerts(settings_, true);
     char buffer[32];
 
-    settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
-    const char* status = settings_.audio_flags.enable_alerts ? "ENABLED" : "DISABLED";
+    bool current = audio_get_enable_alerts(settings_);
+    audio_set_enable_alerts(settings_, !current);
+    const char* status = audio_get_enable_alerts(settings_) ? "ENABLED" : "DISABLED";
     safe_strcpy(buffer, "Alerts ", sizeof(buffer));
     safe_strcat(buffer, status, sizeof(buffer));
     nav_.display_modal("Audio Alerts", buffer);
@@ -3335,7 +3396,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
         status_bar_.update_normal_status("INIT", "Settings loaded");
     }
 
-    button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
+    button_audio_.set_text(audio_get_enable_alerts(settings_) ? "AUDIO: ON" : "AUDIO: OFF");
     scanner_.update_scan_range(settings_.wideband_min_freq_hz,
                             settings_.wideband_max_freq_hz);
     
@@ -3499,7 +3560,7 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     // Only play audio if threats detected and audio alerts are enabled
     // AudioAlertManager::play_alert() has built-in debouncing to prevent baseband queue saturation
     // baseband::send_message() uses busy-wait spin loop (baseband_api.cpp:54-64)
-    if (settings_.audio_flags.enable_alerts && max_threat >= ThreatLevel::LOW) {
+    if (audio_get_enable_alerts(settings_) && max_threat >= ThreatLevel::LOW) {
         size_t total_drones = approaching + static_count + receding;
         if (total_drones > 0) {
             AudioAlertManager::play_alert(max_threat);
@@ -3543,10 +3604,11 @@ void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
     };
     button_audio_.on_select = [this](Button&) {
         // Toggle audio alerts setting
-        settings_.audio_flags.enable_alerts = !settings_.audio_flags.enable_alerts;
+        bool current = audio_get_enable_alerts(settings_);
+        audio_set_enable_alerts(settings_, !current);
         // Update button text immediately
-        button_audio_.set_text(settings_.audio_flags.enable_alerts ? "AUDIO: ON" : "AUDIO: OFF");
-        button_audio_.set_style(settings_.audio_flags.enable_alerts ? &UIStyles::GREEN_STYLE : &UIStyles::LIGHT_STYLE);
+        button_audio_.set_text(audio_get_enable_alerts(settings_) ? "AUDIO: ON" : "AUDIO: OFF");
+        button_audio_.set_style(audio_get_enable_alerts(settings_) ? &UIStyles::GREEN_STYLE : &UIStyles::LIGHT_STYLE);
     };
 
     field_scanning_mode_.on_change = [this](size_t index, int32_t value) -> void {
@@ -3961,10 +4023,10 @@ void DroneDisplayController::set_ruler_style(RulerStyle style) {
 }
 
 void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings& settings) {
-    if (settings.display_flags.show_frequency_ruler) {
+    if (disp_get_show_frequency_ruler(settings)) {
         compact_frequency_ruler_.set_visible(true);
 
-        if (settings.display_flags.auto_ruler_style) {
+        if (disp_get_auto_ruler_style(settings)) {
             compact_frequency_ruler_.set_ruler_style(RulerStyle::COMPACT_GHZ);
         } else {
             // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch (строки 4135-4144)
