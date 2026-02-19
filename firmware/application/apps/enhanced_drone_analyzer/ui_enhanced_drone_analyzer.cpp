@@ -35,6 +35,8 @@
 #include "eda_constants.hpp"
 #include "diamond_core.hpp"
 #include "gradient.hpp"
+#include "eda_locking.hpp"  // STAGE 4 FIX: Lock order enforcement
+#include "eda_safecast.hpp"  // STAGE 4 FIX: Safe type casting
 #include "baseband_api.hpp"
 #include "portapack.hpp"
 #include "ui_navigation.hpp"
@@ -1400,40 +1402,47 @@ void DroneScanner::db_loading_thread_loop() {
     if ((db_loading_active_.load(std::memory_order_acquire)) &&
         (!db_success || freq_db_ptr_->empty())) {
 
-        // DIAMOND FIX: Lock SD card before file operations (FatFS is NOT thread-safe)
-        MutexLock lock(sd_card_mutex);
+        // STAGE 4 FIX: Lock order enforcement - acquire data_mutex first, then sd_card_mutex
+        // LOCK ORDER: DATA_MUTEX (2) → SD_CARD_MUTEX (5)
+        // This prevents deadlock by always acquiring locks in ascending order
+        {
+            MutexLock data_lock(data_mutex, LockOrder::DATA_MUTEX);
+            
+            // STAGE 4 FIX: Release data_mutex before calling sync_database()
+            // sync_database() acquires sd_card_mutex, so we must release data_mutex first
+            // to maintain lock order: DATA_MUTEX → SD_CARD_MUTEX
+            freq_db_ptr_->open(db_path, true);
 
-        freq_db_ptr_->open(db_path, true);
+            for (const auto& item : BUILTIN_DRONE_DB) {
+                if (!db_loading_active_.load(std::memory_order_acquire)) {
+                    return;
+                }
 
-        for (const auto& item : BUILTIN_DRONE_DB) {
-            if (!db_loading_active_.load(std::memory_order_acquire)) {
-                return;
+                // 🔴 FIX: Validate frequency before adding to database
+                if (!EDA::Validation::validate_frequency(item.freq)) {
+                    continue;  // Skip invalid frequencies
+                }
+
+                freqman_entry entry{};
+                entry.frequency_a = item.freq;
+                entry.description = item.desc;
+                entry.type = freqman_type::Single;
+                entry.modulation = freqman_invalid_index;
+                entry.bandwidth = freqman_invalid_index;
+                entry.step = freqman_invalid_index;
+                entry.tone = freqman_invalid_index;
+                freq_db_ptr_->append_entry(entry);
             }
 
-            // 🔴 FIX: Validate frequency before adding to database
-            if (!EDA::Validation::validate_frequency(item.freq)) {
-                continue;  // Skip invalid frequencies
-            }
+            current_db_index_ = 0;
+            freq_db_loaded_ = true;
+        }  // data_lock released here
 
-            freqman_entry entry{};
-            entry.frequency_a = item.freq;
-            entry.description = item.desc;
-            entry.type = freqman_type::Single;
-            entry.modulation = freqman_invalid_index;
-            entry.bandwidth = freqman_invalid_index;
-            entry.step = freqman_invalid_index;
-            entry.tone = freqman_invalid_index;
-            freq_db_ptr_->append_entry(entry);
-        }
-
-        current_db_index_ = 0;
-
-        sync_database();
-    }  // DIAMOND FIX: SDCardLock scope ends here
-
-    {
-        MutexLock lock(data_mutex);
-        freq_db_loaded_ = true;
+        // Now acquire sd_card_mutex (correct lock order)
+        {
+            MutexLock sd_lock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
+            sync_database();
+        }  // sd_lock released here
     }
 }
 

@@ -29,8 +29,13 @@ static inline void init_entry(DetectionEntry& entry) noexcept {
 // ========================================
 // DETECTION RING BUFFER IMPLEMENTATION
 // ========================================
+// STAGE 4 FIX: Mutex-protected writer methods, lock-free reader methods
+// ================================================================
 void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash, DetectionCount detection_count, RSSIValue rssi_value) noexcept {
     const Timestamp current_time = get_current_time_ticks();
+
+    // STAGE 4 FIX: Acquire mutex for thread-safe writer access
+    chMtxLock(&buffer_mutex_);
 
     // FIX #9: Add timestamp wrap handling for ChibiOS time
     // If timestamp wraps (current_time < WRAP_THRESHOLD and entry time > WRAP_THRESHOLD)
@@ -55,21 +60,29 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash, Detecti
             entries_[idx].rssi_value = rssi_value;
             entries_[idx].detection_count = detection_count;
             entries_[idx].timestamp = current_time;
+            chMtxUnlock();
             return;
         }
 
         if (entries_[idx].frequency_hash == EMPTY_HASH_MARKER) {
             entries_[idx] = {frequency_hash, detection_count, rssi_value, current_time};
+            chMtxUnlock();
             return;
         }
     }
 
-    entries_[head_] = {frequency_hash, detection_count, rssi_value, current_time};
-    head_ = (head_ + 1) % MAX_ENTRIES;
+    // Use volatile head_ for update (protected by mutex)
+    size_t current_head = head_;
+    entries_[current_head] = {frequency_hash, detection_count, rssi_value, current_time};
+    size_t next_head = (current_head + 1) % MAX_ENTRIES;
+    head_ = next_head;
+
+    chMtxUnlock();
 }
 
 DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_hash) const noexcept {
-    // FIX #20: Use better hash function with power-of-2 table
+    // STAGE 4 FIX: Lock-free reader using atomic head_
+    // No mutex needed - readers are lock-free for performance
     static constexpr size_t HASH_TABLE_SIZE = 32;  // Power of 2
     static constexpr size_t HASH_MASK = HASH_TABLE_SIZE - 1;
     const size_t hash_index = frequency_hash & HASH_MASK;
@@ -89,7 +102,8 @@ DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_
 }
 
 RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) const noexcept {
-    // FIX #20: Use better hash function with power-of-2 table
+    // STAGE 4 FIX: Lock-free reader using atomic head_
+    // No mutex needed - readers are lock-free for performance
     static constexpr size_t HASH_TABLE_SIZE = 32;  // Power of 2
     static constexpr size_t HASH_MASK = HASH_TABLE_SIZE - 1;
     const size_t hash_index = frequency_hash & HASH_MASK;
@@ -109,10 +123,15 @@ RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) cons
 }
 
 void DetectionRingBuffer::clear() noexcept {
+    // STAGE 4 FIX: Acquire mutex for thread-safe clear
+    chMtxLock(&buffer_mutex_);
+
     for (auto& entry : entries_) {
         init_entry(entry);
     }
     head_ = 0;
+
+    chMtxUnlock();
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer

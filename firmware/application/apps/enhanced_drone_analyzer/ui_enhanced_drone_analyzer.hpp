@@ -17,6 +17,8 @@
 #include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
+#include "eda_locking.hpp"  // STAGE 4 FIX: Lock order enforcement
+#include "eda_safecast.hpp"  // STAGE 4 FIX: Safe type casting
 
 #include "ui.hpp"
 #include "ui_menu.hpp"
@@ -58,59 +60,24 @@ using rf::Frequency;
 extern Mutex sd_card_mutex;
 
 // ===========================================
-// DIAMOND OPTIMIZATION: Unified ScopedLock Template
+// STAGE 4 FIX: Use OrderedScopedLock for Deadlock Prevention
 // ===========================================
-// Eliminates duplicate RAII wrappers (SDCardLock, MutexLock, MutexTryLock, FileRAII)
-// Scott Meyers Item 15: Prefer constexpr to #define
-// Zero-overhead abstraction: Template compiles to direct chMtxLock/chMtxUnlock calls
+// OrderedScopedLock enforces lock order to prevent deadlock violations.
+// See eda_locking.hpp for implementation details.
 //
 // USAGE:
-//   ScopedLock<Mutex> lock(sd_card_mutex);           // Blocking lock
-//   ScopedLock<Mutex, true> lock(sd_card_mutex);     // Try-lock (non-blocking)
+//   OrderedScopedLock<Mutex> lock(data_mutex, LockOrder::DATA_MUTEX);
+//   OrderedScopedLock<Mutex> lock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
 //
-// Embedded C++ Optimization Constraints:
-// - No dynamic allocation (stack-only)
-// - constexpr template parameters for compile-time optimization
-// - Strong typing with Mutex reference
-// - RAII for automatic unlock
+// LOCK ORDER RULE:
+// Always acquire locks in ascending order (1 → 2 → 3 → 4 → 5)
+// Never acquire a lower-numbered lock while holding a higher-numbered lock
 //
-template<typename MutexType, bool TryLock = false>
-class ScopedLock {
-public:
-    // Blocking lock constructor (default)
-    explicit ScopedLock(MutexType& mtx) : mtx_(mtx), locked_(true) {
-        chMtxLock(&mtx_);
-    }
-
-    // Try-lock constructor (specialized template)
-    explicit ScopedLock(MutexType& mtx, bool /*try_lock_tag*/) : mtx_(mtx), locked_(chMtxTryLock(&mtx_)) {
-        // locked_ is set by chMtxTryLock() result
-    }
-
-    ~ScopedLock() {
-        if (locked_) {
-            chMtxUnlock();
-        }
-    }
-
-    // Query lock status (for try-lock variant)
-    bool is_locked() const noexcept { return locked_; }
-
-    // Non-copyable, non-movable (RAII requirement)
-    ScopedLock(const ScopedLock&) = delete;
-    ScopedLock& operator=(const ScopedLock&) = delete;
-    ScopedLock(ScopedLock&&) = delete;
-    ScopedLock& operator=(ScopedLock&&) = delete;
-
-private:
-    MutexType& mtx_;
-    bool locked_;
-};
-
 // Backward compatibility aliases for existing code
-using MutexLock = ScopedLock<Mutex, false>;  // Blocking lock
-using MutexTryLock = ScopedLock<Mutex, true>;  // Try-lock
-using SDCardLock = ScopedLock<Mutex, false>;  // SD card lock (uses sd_card_mutex)
+using ScopedLock = OrderedScopedLock<Mutex, false>;
+using MutexLock = ScopedLock;
+using MutexTryLock = OrderedScopedLock<Mutex, true>;
+using SDCardLock = ScopedLock;
 
 struct preset_entry {
     Frequency min = 0;
@@ -772,13 +739,13 @@ public:
         // Atomic check-and-fetch to prevent TOCTOU race
         bool was_fresh = spectrum_updated_.exchange(false, std::memory_order_acq_rel);
         if (was_fresh) {
-            MutexLock lock(spectrum_mutex_);
+            MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
             out_db_buffer = last_spectrum_db_;
         }
         return was_fresh;
     }
     bool try_get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer) {
-        MutexLock lock(spectrum_mutex_);
+        MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
         out_db_buffer = last_spectrum_db_;
         return true;
     }

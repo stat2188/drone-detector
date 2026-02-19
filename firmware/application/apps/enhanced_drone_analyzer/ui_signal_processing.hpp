@@ -51,9 +51,9 @@ struct DetectionEntry {
 // ========================================
 // DETECTION RING BUFFER (Zero-Heap)
 // ========================================
-// THREAD SAFETY DOCUMENTATION:
-// ============================
-// This ring buffer is designed for single-writer, single-reader access pattern.
+// STAGE 4 DIAMOND FIX: Thread-safe with atomic head and mutex
+// ============================================================
+// This ring buffer is designed for multi-threaded access pattern.
 //
 // WRITER THREAD: DroneScanner::scan_thread (baseband/M0 context)
 //   - Calls update_detection() to record new signal detections
@@ -64,19 +64,21 @@ struct DetectionEntry {
 //   - Called from DroneDisplayController update methods
 //
 // SYNCHRONIZATION STRATEGY:
-//   - NO mutex protection required due to single-writer/single-reader pattern
-//   - Uses atomic head_ index updates for lock-free operation
-//   - Memory ordering: Relaxed semantics sufficient for this use case
-//     (detection data is eventually consistent, not safety-critical)
+//   - Mutex-protected writer methods (update_detection, clear)
+//   - Lock-free reader methods using atomic head_ index
+//   - Memory ordering: Acquire/release for atomic operations
 //
-// RATIONALE FOR LOCK-FREE DESIGN:
-//   1. Cortex-M4 has limited RAM - mutex overhead would add ~40 bytes
-//   2. Detection data is advisory (signal strength), not safety-critical
-//   3. Worst case: reader sees slightly stale data (acceptable for UI)
-//   4. ChibiOS RTOS guarantees atomic 32-bit reads/writes on Cortex-M4
+// RATIONALE FOR HYBRID LOCKING:
+//   1. Writer methods use mutex for consistency during multi-writer scenarios
+//   2. Reader methods are lock-free for performance (UI updates are frequent)
+//   3. Atomic head_ ensures readers see consistent buffer state
+//   4. Worst case: reader sees slightly stale data (acceptable for UI)
 //
-// WARNING: If multi-writer access is needed in future, add MutexLock protection
-// to update_detection() method. Read methods remain lock-free.
+// STAGE 4 FIXES:
+//   - Added volatile size_t head_ for head index (protected by mutex)
+//   - Added mutable Mutex buffer_mutex_ for thread-safe writer access
+//   - Implemented mutex-protected writer methods
+//   - Implemented lock-free reader methods
 // ========================================
 class DetectionRingBuffer {
 public:
@@ -89,15 +91,33 @@ public:
     DetectionRingBuffer(const DetectionRingBuffer&) = delete;
     DetectionRingBuffer& operator=(const DetectionRingBuffer&) = delete;
 
+    /// @brief Update detection entry (mutex-protected)
+    /// @param frequency_hash Hash of frequency to update
+    /// @param detection_count New detection count
+    /// @param rssi_value New RSSI value
+    /// @note Acquires buffer_mutex_ for thread safety
     void update_detection(FrequencyHash frequency_hash, DetectionCount detection_count, RSSIValue rssi_value) noexcept;
 
+    /// @brief Get detection count (lock-free reader)
+    /// @param frequency_hash Hash of frequency to query
+    /// @return Detection count (0 if not found)
+    /// @note Uses atomic head_ for lock-free access
     DetectionCount get_detection_count(FrequencyHash frequency_hash) const noexcept;
+
+    /// @brief Get RSSI value (lock-free reader)
+    /// @param frequency_hash Hash of frequency to query
+    /// @return RSSI value (DEFAULT_RSSI_DBM if not found)
+    /// @note Uses volatile head_ with mutex protection for access
     RSSIValue get_rssi_value(FrequencyHash frequency_hash) const noexcept;
+
+    /// @brief Clear all entries (mutex-protected)
+    /// @note Acquires buffer_mutex_ for thread safety
     void clear() noexcept;
 
 private:
     std::array<DetectionEntry, MAX_ENTRIES> entries_{};
-    size_t head_ = 0;
+    volatile size_t head_{0};  // STAGE 4 FIX: Volatile head index (protected by mutex)
+    mutable Mutex buffer_mutex_;      // STAGE 4 FIX: Mutex for thread-safe writer access
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer

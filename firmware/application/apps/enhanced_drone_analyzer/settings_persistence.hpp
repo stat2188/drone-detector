@@ -281,12 +281,18 @@ struct SettingsLoadBuffer {
 };
 
 // ===========================================
-// DIAMOND FIX: Zero-Initialized Static Buffer Accessor
+// STAGE 4 FIX: Thread-Local Buffer Pool for Settings Loading
 // ===========================================
-// SettingsLoadBuffer contains writable arrays that must be in RAM, not Flash
-// Zero-initialization ensures deterministic behavior and prevents undefined data
+// Replaces static buffer with thread-local storage to prevent race conditions
+// Each thread gets its own buffer, eliminating the need for mutex protection
+//
+// DIAMOND CODE: Zero-heap, thread-safe, deterministic behavior
+// Each thread's buffer is automatically initialized on first access
 inline SettingsLoadBuffer& get_load_buffer() {
-    static SettingsLoadBuffer buf{};  // Value initialization: zero-initializes all members
+    // STAGE 4 FIX: Use thread_local storage instead of static
+    // Each thread gets its own buffer, preventing race conditions
+    // No mutex needed - buffers are not shared between threads
+    thread_local SettingsLoadBuffer buf{};  // Value initialization: zero-initializes all members
     return buf;
 }
 

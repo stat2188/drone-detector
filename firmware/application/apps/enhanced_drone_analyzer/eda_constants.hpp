@@ -23,6 +23,7 @@ using RSSI = int32_t;
 using BinIndex = size_t;
 using Threshold = int32_t;
 using Decibel = int32_t;
+using Timestamp = uint32_t;
 
 namespace Constants {
 
@@ -192,6 +193,71 @@ constexpr uint32_t COORDINATOR_STACK_SIZE_6KB = 6144;  // Reduced from 12KB
 // ===== RSSI PARAMETERS =====
 constexpr int32_t RSSI_SILENCE_DBM = -120;
 constexpr int32_t RSSI_INVALID_DBM = -127;
+
+// ===== THREAD TIMEOUTS =====
+constexpr uint32_t THREAD_JOIN_TIMEOUT_MS = 5000;
+constexpr uint32_t THREAD_TERMINATION_TIMEOUT_MS = 3000;
+
+// ===== DATABASE PARAMETERS =====
+constexpr uint32_t MAX_DB_ENTRIES = 150;
+constexpr uint32_t DB_SYNC_INTERVAL_MS = 5000;
+constexpr uint32_t DB_LOAD_RETRY_COUNT = 3;
+constexpr uint32_t DB_LOAD_RETRY_DELAY_MS = 500;
+
+// ===== WIDEBAND SCANNING =====
+constexpr Frequency WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;
+constexpr Frequency WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;
+constexpr uint32_t WIDEBAND_SLICE_COUNT_DEFAULT = 10;
+constexpr uint32_t WIDEBAND_SLICE_COUNT_MIN = 1;
+constexpr uint32_t WIDEBAND_SLICE_COUNT_MAX = 20;
+
+// ===== DETECTION LOGGING =====
+constexpr uint32_t MAX_LOG_ENTRIES = 1000;
+constexpr uint32_t LOG_FLUSH_INTERVAL_MS = 10000;
+constexpr uint32_t LOG_FILE_MAX_SIZE_KB = 1024;
+
+// ===== DISPLAY PARAMETERS =====
+constexpr uint32_t DISPLAY_UPDATE_INTERVAL_MS = 100;
+constexpr uint32_t UI_REFRESH_RATE_MS = 50;
+constexpr uint32_t SCREEN_BLANK_TIMEOUT_MS = 60000;
+
+// ===== AUDIO PARAMETERS =====
+constexpr uint32_t AUDIO_COOLDOWN_MS = 100;
+constexpr uint32_t AUDIO_BEEP_DURATION_MS = 50;
+constexpr uint32_t AUDIO_BEEP_FREQUENCY_HZ = 800;
+
+// ===== FREQUENCY HASHING =====
+constexpr uint32_t FREQ_HASH_DIVISOR = 100000;
+constexpr uint32_t FREQ_HASH_TABLE_SIZE = 32;
+constexpr uint32_t FREQ_HASH_MASK = FREQ_HASH_TABLE_SIZE - 1;
+
+// ===== TIMESTAMPS =====
+constexpr Timestamp TIMESTAMP_WRAP_THRESHOLD = 0xFFFFFFFFUL / 2;
+constexpr uint32_t TIMESTAMP_MAX_AGE_MS = 60000;  // 1 minute
+
+// ===== ERROR HANDLING =====
+constexpr uint32_t ERROR_MESSAGE_DISPLAY_TIME_MS = 3000;
+constexpr uint32_t MAX_ERROR_MESSAGES = 10;
+
+// ===== MEMORY POOLS =====
+constexpr uint32_t BUFFER_POOL_SIZE = 8;
+constexpr uint32_t BUFFER_POOL_ENTRY_SIZE = 512;
+
+// ===== FILE I/O =====
+constexpr uint32_t FILE_READ_CHUNK_SIZE = 256;
+constexpr uint32_t FILE_WRITE_CHUNK_SIZE = 512;
+constexpr uint32_t FILE_OPEN_TIMEOUT_MS = 2000;
+
+// ===== SPECTRUM ANALYSIS =====
+constexpr uint8_t SPECTRUM_NOISE_FLOOR_DEFAULT = 20;
+constexpr uint8_t SPECTRUM_PEAK_THRESHOLD_DEFAULT = 10;
+constexpr uint32_t SPECTRUM_UPDATE_RATE_HZ = 60;
+
+// ===== THREAT LEVELS =====
+constexpr uint32_t THREAT_LEVEL_CRITICAL_THRESHOLD = 3;
+constexpr uint32_t THREAT_LEVEL_HIGH_THRESHOLD = 2;
+constexpr uint32_t THREAT_LEVEL_MEDIUM_THRESHOLD = 1;
+constexpr uint32_t THREAT_LEVEL_LOW_THRESHOLD = 0;
 
 // ===== SETTINGS STORAGE =====
 constexpr uint32_t SETTINGS_TEMPLATE_SIZE_4KB = 4096;
