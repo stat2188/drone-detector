@@ -82,17 +82,10 @@ msg_t ScanningCoordinator::scanning_thread_function(void* arg) noexcept {
 }
 
 msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
-    // FIX #11: Add exception handling in thread loop
-    // If scanner_.perform_scan_cycle throws exception, catch it to prevent thread hang
+    // DIAMOND CODE: No exceptions - perform scan cycle directly
+    // Error handling is managed by scanner_.perform_scan_cycle() via return codes
     while (scanning_active_.load(std::memory_order_acquire)) {
-        try {
-            scanner_.perform_scan_cycle(hardware_);
-        } catch (...) {
-            // Exception occurred - log error and continue
-            // In production, would log to error buffer
-            // For now, continue loop to maintain thread liveness
-        }
-        
+        scanner_.perform_scan_cycle(hardware_);
         chThdSleepMilliseconds(scan_interval_ms_);
     }
     scanning_active_.store(false, std::memory_order_release);

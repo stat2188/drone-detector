@@ -31,13 +31,11 @@ static inline void init_entry(DetectionEntry& entry) noexcept {
 // ========================================
 void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash, DetectionCount detection_count, RSSIValue rssi_value) noexcept {
     const Timestamp current_time = get_current_time_ticks();
-    
+
     // FIX #9: Add timestamp wrap handling for ChibiOS time
     // If timestamp wraps (current_time < WRAP_THRESHOLD and entry time > WRAP_THRESHOLD)
     // treat as very recent and reset entry timestamp
     constexpr Timestamp WRAP_THRESHOLD = 0xFFFFFFFFUL / 2;
-    
-    const EntryIndex start_idx = frequency_hash % MAX_ENTRIES;
 
     // FIX #20: Use better hash function with power-of-2 table
     // Replaces linear probe with O(n) worst case
