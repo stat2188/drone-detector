@@ -10,7 +10,6 @@ namespace ui::apps::enhanced_drone_analyzer {
 // ========================================
 constexpr size_t HASH_TABLE_SIZE = DetectionRingBuffer::MAX_ENTRIES;
 constexpr FrequencyHash EMPTY_HASH_MARKER = std::numeric_limits<FrequencyHash>::max();
-constexpr RSSIValue DEFAULT_RSSI_DBM = EDA::Constants::RSSI_INVALID_DBM;
 constexpr Timestamp ZERO_TIMESTAMP = 0;
 
 // ========================================

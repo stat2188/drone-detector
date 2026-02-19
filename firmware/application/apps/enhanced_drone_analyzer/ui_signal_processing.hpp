@@ -29,7 +29,10 @@ using EntryIndex = size_t;
 // CONSTANTS
 // ========================================
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
-static constexpr int32_t DEFAULT_RSSI_DBM = EDA::Constants::RSSI_INVALID_DBM;
+
+/// Default RSSI value when no signal is detected (invalid dBm marker)
+/// @note Uses internal linkage (static constexpr) to avoid ODR violations
+static constexpr RSSIValue DEFAULT_RSSI_DBM = EDA::Constants::RSSI_INVALID_DBM;
 
 // DIAMOND OPTIMIZATION: Using unified MedianFilter template
 // Replaces old WidebandMedianFilter class
