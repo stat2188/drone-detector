@@ -282,13 +282,9 @@ struct DroneDetectionMessage {
     systime_t timestamp;
 };
 
-struct DroneUpdateMessage {
-    enum class Type { DETECTION, STALE_REMOVAL, SCAN_COMPLETE } type;
-    union {
-        DroneDetectionMessage detection;
-        systime_t scan_complete_timestamp;
-    } data;
-};
+// DIAMOND FIX: Revision #9 - Remove Dead Code (LOW)
+// Removed DroneUpdateMessage struct - unused dead code
+// This struct was defined but never used in the codebase
 
 // Struct for drone signal parameters (prevents easily-swappable-parameters warning)
 struct DroneSignal {
@@ -591,16 +587,18 @@ struct DetectionParams {
         // Diamond Code: Zero heap allocation
         // Используем placement new для объектов с известным размером
 
+        // DIAMOND FIX: Revision #1 - Fix Static Storage Size (CRITICAL)
         // Статическое хранилище для FreqmanDB
-        // Размер подбираем с запасом (FreqmanDB ~2KB)
-        // Diamond Code: Reduced from 4KB to 2KB for stack safety
-        static constexpr size_t FREQ_DB_STORAGE_SIZE = EDA::Constants::FREQ_DB_STORAGE_SIZE_2KB;
+        // Размер подбираем с запасом (FreqmanDB ~4KB)
+        // Diamond Code: Increased to 4KB for FreqmanDB safety
+        static constexpr size_t FREQ_DB_STORAGE_SIZE = EDA::Constants::FREQ_DB_STORAGE_SIZE_4KB;
         alignas(alignof(FreqmanDB))
         static inline uint8_t freq_db_storage_[FREQ_DB_STORAGE_SIZE];
 
         // 🔴 FIX: Compile-time alignment verification
         static_assert(alignof(FreqmanDB) <= 16, "FreqmanDB alignment too large for static storage");
         static_assert(FREQ_DB_STORAGE_SIZE >= sizeof(FreqmanDB), "FREQ_DB_STORAGE_SIZE too small");
+        // FreqmanDB size validated by static_assert in eda_constants.hpp
 
         // Статическое хранилище для TrackedDrones
         // Размер: MAX_TRACKED_DRONES * sizeof(TrackedDrone) = 4 * ~200 = ~800 bytes

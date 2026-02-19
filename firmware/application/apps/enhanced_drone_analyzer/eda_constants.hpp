@@ -178,8 +178,17 @@ constexpr uint32_t DB_LOADING_STACK_SIZE_8KB = 8192;
 constexpr uint32_t POOL_SIZE_2KB = 2048;
 constexpr uint32_t POOL_SIZE_1KB = 1024;  // Diamond Code: Reduced for stack safety
 constexpr uint32_t MAX_STRING_LENGTH_256 = 256;
+// DIAMOND FIX: Revision #1 - Fix Static Storage Size (CRITICAL)
+// Changed from FREQ_DB_STORAGE_SIZE_2KB = 2048 to FREQ_DB_STORAGE_SIZE_4KB = 4096
+// Ensures FreqmanDB fits in static storage without overflow
 constexpr uint32_t FREQ_DB_STORAGE_SIZE_4KB = 4096;
 constexpr uint32_t FREQ_DB_STORAGE_SIZE_2KB = 2048;  // Diamond Code: Reduced for stack safety
+
+// Validate FreqmanDB size at compile time (single source of truth)
+// Note: FreqmanDB is defined in freqman_db.hpp, which is included by ui_enhanced_drone_analyzer.hpp
+// This static_assert ensures the static storage is large enough for FreqmanDB
+static_assert(sizeof(FreqmanDB) <= FREQ_DB_STORAGE_SIZE_4KB,
+              "FreqmanDB exceeds static storage size (4KB)");
 
 // ===== THREAD STACK SIZES (Phase 2 Optimizations) =====
 constexpr uint32_t WORKER_STACK_SIZE_4KB = 4096;  // Reduced from 8KB
