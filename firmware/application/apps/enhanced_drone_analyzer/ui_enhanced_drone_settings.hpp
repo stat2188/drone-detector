@@ -390,14 +390,13 @@ class DroneEntryEditorView : public View {
 public:
     explicit DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, Callback callback)
         : View(), nav_(nav), entry_(entry), on_save_fn_(std::move(callback)),
+          description_buffer_{entry.description},
           text_freq_{{8, 16, 64, 16}, "Freq:"},
           field_freq_{{8, 32}},
           text_desc_{{8, 64, 64, 16}, "Name:"},
           field_desc_{description_buffer_, {8, 80}, 28},
           button_save_{{8, 128, 100, 32}, "SAVE"},
           button_cancel_{{128, 128, 100, 32}, "CANCEL"} {
-        // DIAMOND OPTIMIZATION: Initialize char array from entry description (no heap allocation)
-        safe_strcpy(description_buffer_, entry.description, sizeof(description_buffer_));
         add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
         field_freq_.set_value(entry_.freq);
         button_save_.on_select = [this](Button&) { on_save(); };
@@ -412,8 +411,7 @@ private:
     NavigationView& nav_;
     DroneDbEntry entry_;
     Callback on_save_fn_;
-    // DIAMOND OPTIMIZATION: Fixed-size char array instead of std::string (zero heap allocation)
-    char description_buffer_[64];
+    std::string description_buffer_;
     Text text_freq_;
     FrequencyField field_freq_;
     Text text_desc_;
@@ -425,7 +423,8 @@ private:
     void on_save() noexcept {
         DroneDbEntry new_entry;
         new_entry.freq = field_freq_.value();
-        safe_strcpy(new_entry.description, description_buffer_, sizeof(new_entry.description));
+        strncpy(new_entry.description, description_buffer_.c_str(), sizeof(new_entry.description) - 1);
+        new_entry.description[sizeof(new_entry.description) - 1] = '\0';
         on_save_fn_(new_entry);
         nav_.pop();
     }
