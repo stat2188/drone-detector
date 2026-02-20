@@ -16,6 +16,9 @@ template class SettingsPersistence<DroneAnalyzerSettings>;
 // DIAMOND FIX: Settings Buffer Mutex Definition
 Mutex settings_buffer_mutex;
 
+// DIAMOND FIX: Errno Mutex Definition
+Mutex errno_mutex;
+
 // Phase 1 Optimization: Eliminated SettingsStaticBuffer (4KB) by writing directly to file
 // Saves ~2.4 KB of static RAM - see settings_persistence.hpp:456
 

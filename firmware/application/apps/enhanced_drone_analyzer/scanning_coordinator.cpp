@@ -19,6 +19,9 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
+// DIAMOND FIX: Coordinator Thread Working Area Definition
+stkalign_t ScanningCoordinator::coordinator_wa_[THD_WA_SIZE(ScanningCoordinator::COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
+
 // ===========================================
 // TYPE ALIASES (Semantic Types)
 // ===========================================
