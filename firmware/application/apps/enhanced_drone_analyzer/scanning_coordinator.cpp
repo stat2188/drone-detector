@@ -185,24 +185,3 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
 }
 
 }  // namespace ui::apps::enhanced_drone_analyzer
-
-// ===========================================
-// TrendUtils::TREND_NAMES Definition
-// ===========================================
-
-namespace ui::apps::enhanced_drone_analyzer::DiamondCore {
-
-/**
- * @brief Trend name lookup table
- * 
- * DIAMOND OPTIMIZATION: FLASH_STORAGE attribute ensures LUT is in Flash, not RAM
- * Saves ~40 bytes of RAM for this string array
- */
-const char* const TrendUtils::TREND_NAMES[] FLASH_STORAGE = {
-    "STATIC",      // 0
-    "APPROACHING", // 1
-    "RECEDING",    // 2
-    "UNKNOWN"      // 3
-};
-
-}  // namespace ui::apps::enhanced_drone_analyzer::DiamondCore
