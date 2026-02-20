@@ -406,7 +406,7 @@ public:
           button_save_{{8, 128, 100, 32}, "SAVE"},
           button_cancel_{{128, 128, 100, 32}, "CANCEL"} {
         // Initialize description_buffer_ with entry description
-        safe_strcpy(description_buffer_, entry.description, sizeof(description_buffer_));
+        description_buffer_ = entry.description;
         add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
         field_freq_.set_value(entry_.freq);
         button_save_.on_select = [this](Button&) { on_save(); };
@@ -425,9 +425,9 @@ private:
     NavigationView& nav_;
     DroneDbEntry entry_;
     Callback on_save_fn_;
-    // DIAMOND FIX: Replace std::string with fixed-size char array (zero heap allocation)
-    static constexpr size_t DESCRIPTION_BUFFER_SIZE = 64;
-    char description_buffer_[DESCRIPTION_BUFFER_SIZE];
+    // DIAMOND FIX: Use std::string to work with TextEdit widget (requires std::string&)
+    // Note: std::string is used here because TextEdit constructor requires std::string&
+    std::string description_buffer_;
     Text text_freq_;
     FrequencyField field_freq_;
     Text text_desc_;
@@ -439,7 +439,7 @@ private:
     void on_save() noexcept {
         DroneDbEntry new_entry;
         new_entry.freq = field_freq_.value();
-        safe_strcpy(new_entry.description, description_buffer_, sizeof(new_entry.description));
+        safe_strcpy(new_entry.description, description_buffer_.c_str(), sizeof(new_entry.description));
         on_save_fn_(new_entry);
         nav_.pop();
     }
