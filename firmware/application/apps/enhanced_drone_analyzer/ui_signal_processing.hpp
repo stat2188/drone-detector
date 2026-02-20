@@ -37,7 +37,11 @@ namespace ui::apps::enhanced_drone_analyzer {
 // ========================================
 // TYPE ALIASES (Semantic Types)
 // ========================================
-using FrequencyHash = size_t;
+// DIAMOND FIX: Changed FrequencyHash from size_t to uint64_t
+// This prevents FNV constant truncation warnings (64-bit constants fit without overflow)
+// On ARM Cortex-M4, this uses 64-bit operations (2 instructions per operation)
+// which is acceptable for hash operations that are not in the DSP loop.
+using FrequencyHash = uint64_t;
 using DetectionCount = uint8_t;
 using RSSIValue = int32_t;
 using Timestamp = uint32_t;
@@ -100,13 +104,27 @@ using WidebandMedianFilter = MedianFilter<int16_t, 11>;
  * CRITICAL FIX: Aligned to 4 bytes to ensure atomic 32-bit reads on ARM Cortex-M4.
  * CRITICAL FIX: Version field added to detect concurrent updates (not torn reads on 32-bit ARM).
  *
+ * DIAMOND FIX: FrequencyHash changed from size_t to uint64_t to prevent FNV constant truncation.
+ * This increased struct size from 24 to 28 bytes. The 4-byte increase per entry is acceptable
+ * for the embedded system (64 bytes total for 16 entries) and provides better hash quality.
+ *
  * On 32-bit ARM Cortex-M4:
- * - size_t is 4 bytes (atomic reads)
+ * - uint64_t is 8 bytes (requires 2 instructions for atomic access)
  * - Version field detects concurrent updates during read
  *
  * On 64-bit ARM:
- * - size_t is 8 bytes (can be torn)
+ * - uint64_t is 8 bytes (can be torn)
  * - Version field detects torn reads
+ *
+ * @note Memory layout with #pragma pack(push,4):
+ *       - version: 4 bytes (offset 0-3)
+ *       - frequency_hash: 8 bytes (offset 4-11)
+ *       - detection_count: 1 byte (offset 12)
+ *       - _padding1: 1 byte (offset 13)
+ *       - rssi_value: 4 bytes (offset 14-17)
+ *       - timestamp: 4 bytes (offset 18-21)
+ *       - _padding2: 2 bytes (offset 22-23)
+ *       Total: 28 bytes (4-byte aligned)
  */
 #pragma pack(push, 4)
 struct DetectionEntry {
@@ -120,7 +138,7 @@ struct DetectionEntry {
 };
 #pragma pack(pop)
 
-static_assert(sizeof(DetectionEntry) == 24, "DetectionEntry must be 24 bytes");
+static_assert(sizeof(DetectionEntry) == 28, "DetectionEntry must be 28 bytes");
 static_assert(alignof(DetectionEntry) == 4, "DetectionEntry must be 4-byte aligned");
 
 // ========================================
@@ -230,14 +248,28 @@ struct FrequencyHasher {
  *
  * ALLOCATION REQUIREMENT:
  * DetectionRingBuffer MUST be allocated as a member variable (BSS segment).
- * DO NOT allocate on stack - this causes stack overflow (416 bytes).
+ * DO NOT allocate on stack - this causes stack overflow (480 bytes).
  *
- * @note Memory usage: ~416 bytes (entries_[]: 384 bytes + head_: 4 bytes +
+ * @note Memory usage: ~480 bytes (entries_[]: 448 bytes + head_: 4 bytes +
  *       global_version_: 4 bytes + buffer_mutex_: ~24 bytes)
+ *
+ * DIAMOND FIX: Updated memory usage to reflect DetectionEntry size increase from 24 to 28 bytes
+ * due to FrequencyHash change from size_t to uint64_t (prevents FNV constant truncation).
  */
 class DetectionRingBuffer {
 public:
-    DetectionRingBuffer() noexcept = default;
+    // DIAMOND FIX: Explicit constructor with member initialization
+    // Eliminates compiler warnings about uninitialized members
+    // Initializes all entries to empty state on construction
+    DetectionRingBuffer() noexcept
+        : head_{},
+          global_version_{0},
+          buffer_mutex_{} {
+        // Initialize all entries to empty state
+        for (auto& entry : entries_) {
+            init_entry(entry, 0);
+        }
+    }
     ~DetectionRingBuffer() = default;
 
     DetectionRingBuffer(const DetectionRingBuffer&) = delete;

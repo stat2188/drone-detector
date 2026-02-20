@@ -440,7 +440,9 @@ inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
             // Handle SpectrumMode enum class (underlying type uint8_t, stored as uint32_t in LUT)
             if (strcmp(meta.key, "spectrum_mode") == 0) {
                 auto mode = *reinterpret_cast<const SpectrumMode*>(data);
-                return snprintf(buf + offset, max_size - offset, "%s=%u\n",
+                // DIAMOND FIX: Use PRIu32 macro for platform-independent format specifier
+                // uint32_t may be long unsigned int on some platforms, requiring %lu or PRIu32
+                return snprintf(buf + offset, max_size - offset, "%s=%" PRIu32 "\n",
                        meta.key, static_cast<uint32_t>(mode));
             }
             return snprintf(buf + offset, max_size - offset, "%s=%" PRIu32 "\n",

@@ -415,7 +415,11 @@ public:
 
     // DIAMOND OPTIMIZATION: noexcept for focus
     void focus() noexcept override { field_freq_.focus(); }
-    std::string_view title() const noexcept override { return "Edit Frequency"; }
+    // DIAMOND FIX: Changed return type from std::string_view to std::string
+    // The base class View::title() returns std::string, so we must match that signature
+    // Covariant return types only allow derived-to-base pointer/reference conversions
+    // string_view is NOT derived from string, so this was causing compilation errors
+    std::string title() const noexcept override { return "Edit Frequency"; }
 
 private:
     NavigationView& nav_;

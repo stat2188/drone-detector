@@ -546,15 +546,19 @@ inline void format_frequency_compact(char* buffer, size_t size, Frequency freq_h
         return;
     }
 
+    // DIAMOND FIX: Cast to uint64_t to avoid signed/unsigned comparison warnings
+    // Frequency is int64_t (rf::Frequency), but we compare with unsigned literals
+    const uint64_t freq_u64 = static_cast<uint64_t>(freq_hz);
+
     // GHz range
-    if (freq_hz >= 1'000'000'000ULL) {
+    if (freq_u64 >= 1'000'000'000ULL) {
         // Check for overflow before addition
-        if (freq_hz > UINT64_MAX - 500'000'000ULL) {
+        if (freq_u64 > UINT64_MAX - 500'000'000ULL) {
             // Clamp to max value
             snprintf(buffer, size, "%" PRIu64 "G", UINT64_MAX / 1'000'000'000ULL);
             return;
         }
-        uint64_t rounded = freq_hz + 500'000'000ULL;
+        uint64_t rounded = freq_u64 + 500'000'000ULL;
         uint32_t ghz = static_cast<uint32_t>(rounded / 1'000'000'000ULL);
         uint32_t decimal = static_cast<uint32_t>((rounded % 1'000'000'000ULL) / 100'000'000ULL);
 
@@ -565,18 +569,18 @@ inline void format_frequency_compact(char* buffer, size_t size, Frequency freq_h
         }
     }
     // MHz range
-    else if (freq_hz >= 1'000'000ULL) {
-        uint32_t mhz = static_cast<uint32_t>((freq_hz + 500'000ULL) / 1'000'000ULL);
+    else if (freq_u64 >= 1'000'000ULL) {
+        uint32_t mhz = static_cast<uint32_t>((freq_u64 + 500'000ULL) / 1'000'000ULL);
         snprintf(buffer, size, "%" PRIu32 "M", mhz);
     }
     // kHz range
-    else if (freq_hz >= 1'000ULL) {
-        uint32_t khz = static_cast<uint32_t>((freq_hz + 500ULL) / 1'000ULL);
+    else if (freq_u64 >= 1'000ULL) {
+        uint32_t khz = static_cast<uint32_t>((freq_u64 + 500ULL) / 1'000ULL);
         snprintf(buffer, size, "%" PRIu32 "k", khz);
     }
     // Hz range
     else {
-        snprintf(buffer, size, "%" PRIu64, static_cast<uint64_t>(freq_hz));
+        snprintf(buffer, size, "%" PRIu64, freq_u64);
     }
 }
 
