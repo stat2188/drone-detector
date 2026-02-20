@@ -27,7 +27,6 @@
 #include <array>
 #include <cstdint>
 #include <cstddef>
-#include <atomic>
 #include <limits>
 #include "ui_drone_common_types.hpp"
 #include "eda_optimized_utils.hpp"
@@ -142,60 +141,6 @@ static_assert(sizeof(DetectionEntry) == 28, "DetectionEntry must be 28 bytes");
 static_assert(alignof(DetectionEntry) == 4, "DetectionEntry must be 4-byte aligned");
 
 // ========================================
-// ATOMIC INDEX WRAPPER
-// ========================================
-/**
- * @brief Atomic index wrapper for thread-safe buffer indices
- *
- * Provides atomic operations on head/tail indices with proper memory ordering.
- * Uses std::atomic for proper synchronization on ARM Cortex-M4.
- *
- * @note Zero-overhead abstraction (optimizes to LDREX/STREX on ARM)
- */
-class AtomicIndex {
-public:
-    AtomicIndex() noexcept : value_(0) {}
-
-    /// @brief Atomic increment with modulo (power-of-2)
-    /// @param mask Bitmask for modulo operation (HASH_MASK)
-    /// @return Old value before increment
-    /// @note Uses release semantics for proper synchronization
-    size_t increment_and_wrap(size_t mask) noexcept {
-        size_t old_value = value_.load(std::memory_order_relaxed);
-        size_t new_value = (old_value + 1) & mask;
-        value_.store(new_value, std::memory_order_release);
-        return old_value;
-    }
-
-    /// @brief Atomic load with acquire semantics
-    /// @return Current index value
-    /// @note Acquire semantics ensure all subsequent reads see the store
-    size_t load_acquire() const noexcept {
-        return value_.load(std::memory_order_acquire);
-    }
-
-    /// @brief Atomic store with release semantics
-    /// @param value New value to store
-    /// @note Release semantics ensure all prior writes are visible
-    void store_release(size_t value) noexcept {
-        value_.store(value, std::memory_order_release);
-    }
-
-    /// @brief Atomic compare-and-swap
-    /// @param expected Expected value (updated on failure)
-    /// @param desired Desired value
-    /// @return true if swap succeeded, false otherwise
-    bool compare_exchange_weak(size_t& expected, size_t desired) noexcept {
-        return value_.compare_exchange_weak(expected, desired,
-                                          std::memory_order_acq_rel,
-                                          std::memory_order_acquire);
-    }
-
-private:
-    std::atomic<size_t> value_;
-};
-
-// ========================================
 // FNV-1a HASH FUNCTION
 // ========================================
 /**
@@ -307,7 +252,7 @@ public:
 
 private:
     std::array<DetectionEntry, DetectionBufferConstants::MAX_ENTRIES> entries_{};
-    AtomicIndex head_;                    ///< Atomic head index for ring buffer eviction
+    size_t head_;                         ///< Head index for ring buffer eviction
     uint32_t global_version_;             ///< Global version counter for concurrent update detection
     mutable Mutex buffer_mutex_;           ///< Mutex for writer synchronization
 
@@ -334,8 +279,6 @@ private:
     /// @return true if entry is consistent, false otherwise
     bool is_entry_consistent(const DetectionEntry& entry) const noexcept {
         const uint32_t version1 = entry.version;
-        // Memory barrier to ensure second read happens after first
-        std::atomic_thread_fence(std::memory_order_acquire);
         const uint32_t version2 = entry.version;
         return version1 == version2;
     }

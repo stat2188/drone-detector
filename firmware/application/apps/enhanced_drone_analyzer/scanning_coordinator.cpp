@@ -15,6 +15,7 @@
 #include "scanning_coordinator.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "diamond_core.hpp"
+#include "eda_raii.hpp"
 #include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
@@ -75,11 +76,14 @@ ScanningCoordinator::~ScanningCoordinator() noexcept {
 
 bool ScanningCoordinator::start_coordinated_scanning() noexcept {
     // Guard clause: Already scanning
-    if (scanning_active_.load(std::memory_order_acquire)) {
+    if (scanning_active_) {
         return false;
     }
-    
-    scanning_active_.store(true, std::memory_order_release);
+
+    {
+        CriticalSection cs;
+        scanning_active_ = true;
+    }
     
     // Create static thread with stack-based working area
     // ChibiOS chThdCreateStatic() returns nullptr on failure
@@ -93,7 +97,10 @@ bool ScanningCoordinator::start_coordinated_scanning() noexcept {
     
     // Guard clause: Thread creation failed
     if (!scanning_thread_) {
-        scanning_active_.store(false, std::memory_order_release);
+        {
+            CriticalSection cs;
+            scanning_active_ = false;
+        }
         return false;
     }
     
@@ -102,12 +109,15 @@ bool ScanningCoordinator::start_coordinated_scanning() noexcept {
 
 void ScanningCoordinator::stop_coordinated_scanning() noexcept {
     // Guard clause: Not scanning
-    if (!scanning_active_.load(std::memory_order_acquire)) {
+    if (!scanning_active_) {
         return;
     }
-    
+
     // Signal thread to stop
-    scanning_active_.store(false, std::memory_order_release);
+    {
+        CriticalSection cs;
+        scanning_active_ = false;
+    }
     
     // Wait for thread termination if it exists
     if (scanning_thread_) {
@@ -119,9 +129,9 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
 void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) noexcept {
     // Update scan interval
     scan_interval_ms_ = settings.scan_interval_ms;
-    
+
     // Guard clause: Not scanning, no need to update scanner
-    if (!scanning_active_.load(std::memory_order_acquire)) {
+    if (!scanning_active_) {
         return;
     }
     
@@ -150,8 +160,8 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // Counters for error detection
     TimeoutCount consecutive_timeouts = 0;
     TimeoutCount consecutive_scanner_failures = 0;
-    
-    while (scanning_active_.load(std::memory_order_acquire)) {
+
+    while (scanning_active_) {
         const systime_t cycle_start = chTimeNow();
         
         // Perform scan cycle
@@ -168,7 +178,10 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
             // Guard clause: Too many consecutive timeouts
             if (consecutive_timeouts >= CoordinatorConstants::MAX_CONSECUTIVE_TIMEOUTS) {
                 // Signal stop to coordinator
-                scanning_active_.store(false, std::memory_order_release);
+                {
+                    CriticalSection cs;
+                    scanning_active_ = false;
+                }
                 // DIAMOND FIX: Do NOT set scanning_thread_ = nullptr here
                 // Only the owner class should manage this pointer
                 chThdExit(ReturnCodes::TIMEOUT_ERROR);

@@ -109,13 +109,13 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
     }
 
     // Table full, evict oldest entry (ring buffer eviction)
-    const size_t evict_idx = head_.load_acquire();
+    const size_t evict_idx = head_;
     entries_[evict_idx].version = global_version_;
     entries_[evict_idx].frequency_hash = frequency_hash;
     entries_[evict_idx].detection_count = detection_count;
     entries_[evict_idx].rssi_value = rssi_value;
     entries_[evict_idx].timestamp = current_time;
-    head_.increment_and_wrap(DetectionBufferConstants::HASH_MASK);
+    head_ = (head_ + 1) & DetectionBufferConstants::HASH_MASK;
 
     recursion_depth--;
 }
@@ -138,8 +138,8 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
  * @return Detection count (0 if not found or concurrent update detected)
  */
 DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_hash) const noexcept {
-    // Lock-free reader: use atomic head_ for consistency
-    const size_t head_snapshot = head_.load_acquire();
+    // Acquire mutex for thread-safe access
+    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
 
     // Hash table lookup
     const size_t hash_idx = hash_index(frequency_hash);
@@ -190,8 +190,8 @@ DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_
  * @return RSSI value (DEFAULT_RSSI_DBM if not found or concurrent update detected)
  */
 RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) const noexcept {
-    // Lock-free reader: use atomic head_ for consistency
-    const size_t head_snapshot = head_.load_acquire();
+    // Acquire mutex for thread-safe access
+    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
 
     // Hash table lookup
     const size_t hash_idx = hash_index(frequency_hash);
@@ -250,7 +250,7 @@ void DetectionRingBuffer::clear() noexcept {
     }
 
     // Reset head index
-    head_.store_release(0);
+    head_ = 0;
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer

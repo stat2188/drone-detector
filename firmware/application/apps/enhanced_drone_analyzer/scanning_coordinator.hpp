@@ -15,7 +15,6 @@
 #ifndef SCANNING_COORDINATOR_HPP_
 #define SCANNING_COORDINATOR_HPP_
 
-#include <atomic>
 #include "ui_drone_common_types.hpp"
 #include "ui_navigation.hpp"
 #include "ui_drone_audio.hpp"
@@ -91,7 +90,7 @@ public:
      * @brief Check if scanning is currently active
      * @return true if scanning is active, false otherwise
      */
-    bool is_scanning_active() const noexcept { return scanning_active_.load(std::memory_order_acquire); }
+    bool is_scanning_active() const noexcept { return scanning_active_; }
 
     /**
      * @brief Update runtime parameters from settings
@@ -130,8 +129,8 @@ private:
     DroneScanner& scanner_;
     DroneDisplayController& display_controller_;
     ::AudioManager& audio_controller_;
-    
-    std::atomic<bool> scanning_active_{false};
+
+    volatile bool scanning_active_{false};
     ::Thread* scanning_thread_{nullptr};
     uint32_t scan_interval_ms_{EDA::Constants::DEFAULT_SCAN_INTERVAL_MS};
     
