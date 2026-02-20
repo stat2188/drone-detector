@@ -22,34 +22,6 @@ static constexpr size_t MAX_PATH_LEN = EDA::Constants::MAX_PATH_LENGTH;
 static constexpr size_t MAX_NAME_LEN = EDA::Constants::MAX_NAME_LENGTH;
 static constexpr size_t MAX_FORMAT_LEN = EDA::Constants::MAX_FORMAT_LENGTH;
 
-// Helper for safe string assignment (Zero-Heap, no null-padding overhead)
-static inline void safe_strcpy(char* dest, const char* src, size_t max_len) {
-    if (!dest || !src || max_len == 0) return;
-    
-    size_t i = 0;
-    while (i < max_len - 1 && src[i] != '\0') {
-        dest[i] = src[i];
-        ++i;
-    }
-    dest[i] = '\0';
-}
-
-// Helper for safe string concatenation (Zero-Heap, no null-padding overhead)
-static inline void safe_strcat(char* dest, const char* src, size_t max_len) {
-    if (!dest || !src || max_len == 0) return;
-
-    char* d = dest;
-    const char* s = src;
-
-    while (*d && static_cast<size_t>(d - dest) < max_len - 1) { ++d; }
-
-    size_t remaining = max_len - static_cast<size_t>(d - dest);
-    if (remaining == 0) return;
-
-    while (remaining > 1 && *s) { *d++ = *s++; --remaining; }
-    *d = '\0';
-}
-
 // ===========================================
 // DIAMOND FIX: PACKED STRUCTS TO MINIMIZE SIZE
 // ===========================================
@@ -131,70 +103,358 @@ struct DroneAnalyzerSettings {
 
 static_assert(sizeof(DroneAnalyzerSettings) <= 512, "DroneAnalyzerSettings exceeds 512 bytes");
 
-// FIX #27: Helper functions for explicit bitfield access (replaces bitfields for portability)
-// These functions provide type-safe access to bit flags without implementation-defined behavior
+// ===========================================
+// DIAMOND FIX: Unified Bitfield Access Layer
+// ===========================================
+// Single source of truth for bitfield operations
+// Eliminates dual access pattern (helper functions + direct bit manipulation)
+// Type-safe, constexpr, zero runtime overhead
+// Atomic on ARM Cortex-M4 (8-bit reads/writes are atomic)
+
+namespace BitfieldAccess {
+
+/**
+ * @brief Get bit value from flags register (uint8_t version)
+ * @tparam BitPos Bit position (0-7 for uint8_t)
+ * @param flags Flags register
+ * @return true if bit is set, false otherwise
+ * @note Compile-time constant, zero runtime overhead
+ * @note Atomic on ARM Cortex-M4 (8-bit read is atomic)
+ */
+template<uint8_t BitPos>
+inline constexpr bool get_bit(uint8_t flags) noexcept {
+    static_assert(BitPos < 8, "Bit position must be < 8 for uint8_t");
+    return (flags & (1U << BitPos)) != 0;
+}
+
+/**
+ * @brief Get bit value from flags register (uint32_t version)
+ * @tparam BitPos Bit position (0-31 for uint32_t)
+ * @param flags Flags register
+ * @return true if bit is set, false otherwise
+ * @note Compile-time constant, zero runtime overhead
+ */
+template<uint8_t BitPos>
+inline constexpr bool get_bit(uint32_t flags) noexcept {
+    static_assert(BitPos < 32, "Bit position must be < 32 for uint32_t");
+    return (flags & (1U << BitPos)) != 0;
+}
+
+/**
+ * @brief Set bit value in flags register (uint8_t version)
+ * @tparam BitPos Bit position (0-7 for uint8_t)
+ * @param flags Flags register (reference)
+ * @param value Bit value to set
+ * @note Atomic on ARM Cortex-M4 (8-bit write is atomic)
+ */
+template<uint8_t BitPos>
+inline constexpr void set_bit(uint8_t& flags, bool value) noexcept {
+    static_assert(BitPos < 8, "Bit position must be < 8 for uint8_t");
+    const uint8_t mask = static_cast<uint8_t>(1U << BitPos);
+    flags = (flags & ~mask) | (value ? mask : 0U);
+}
+
+/**
+ * @brief Set bit value in flags register (uint32_t version)
+ * @tparam BitPos Bit position (0-31 for uint32_t)
+ * @param flags Flags register (reference)
+ * @param value Bit value to set
+ */
+template<uint8_t BitPos>
+inline constexpr void set_bit(uint32_t& flags, bool value) noexcept {
+    static_assert(BitPos < 32, "Bit position must be < 32 for uint32_t");
+    const uint32_t mask = static_cast<uint32_t>(1U << BitPos);
+    flags = (flags & ~mask) | (value ? mask : 0U);
+}
+
+} // namespace BitfieldAccess
+
+// ===========================================
+// DIAMOND FIX: Named Bitfield Access Functions
+// ===========================================
+// These functions provide semantic access to bit flags
+// All use BitfieldAccess templates for type safety
+// Maintains API compatibility with existing code
 
 // Audio flags helpers (bit0: enable_alerts, bit1: repeat_alerts)
-inline bool audio_get_enable_alerts(const DroneAnalyzerSettings& s) noexcept { return (s.audio_flags & 0x01) != 0; }
-inline void audio_set_enable_alerts(DroneAnalyzerSettings& s, bool v) noexcept { s.audio_flags = (s.audio_flags & ~0x01) | (v ? 0x01 : 0); }
-inline bool audio_get_repeat_alerts(const DroneAnalyzerSettings& s) noexcept { return (s.audio_flags & 0x02) != 0; }
-inline void audio_set_repeat_alerts(DroneAnalyzerSettings& s, bool v) noexcept { s.audio_flags = (s.audio_flags & ~0x02) | (v ? 0x02 : 0); }
+inline bool audio_get_enable_alerts(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<0>(s.audio_flags);
+}
+inline void audio_set_enable_alerts(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<0>(s.audio_flags, v);
+}
+inline bool audio_get_repeat_alerts(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<1>(s.audio_flags);
+}
+inline void audio_set_repeat_alerts(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<1>(s.audio_flags, v);
+}
 
 // Hardware flags helpers (bit0: enable_real_hardware, bit1: demo_mode, bit2: iq_calibration_enabled, bit3: rf_amp_enabled)
-inline bool hw_get_enable_real_hardware(const DroneAnalyzerSettings& s) noexcept { return (s.hardware_flags & 0x01) != 0; }
-inline void hw_set_enable_real_hardware(DroneAnalyzerSettings& s, bool v) noexcept { s.hardware_flags = (s.hardware_flags & ~0x01) | (v ? 0x01 : 0); }
-inline bool hw_get_demo_mode(const DroneAnalyzerSettings& s) noexcept { return (s.hardware_flags & 0x02) != 0; }
-inline void hw_set_demo_mode(DroneAnalyzerSettings& s, bool v) noexcept { s.hardware_flags = (s.hardware_flags & ~0x02) | (v ? 0x02 : 0); }
-inline bool hw_get_iq_calibration_enabled(const DroneAnalyzerSettings& s) noexcept { return (s.hardware_flags & 0x04) != 0; }
-inline void hw_set_iq_calibration_enabled(DroneAnalyzerSettings& s, bool v) noexcept { s.hardware_flags = (s.hardware_flags & ~0x04) | (v ? 0x04 : 0); }
-inline bool hw_get_rf_amp_enabled(const DroneAnalyzerSettings& s) noexcept { return (s.hardware_flags & 0x08) != 0; }
-inline void hw_set_rf_amp_enabled(DroneAnalyzerSettings& s, bool v) noexcept { s.hardware_flags = (s.hardware_flags & ~0x08) | (v ? 0x08 : 0); }
+inline bool hw_get_enable_real_hardware(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<0>(s.hardware_flags);
+}
+inline void hw_set_enable_real_hardware(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<0>(s.hardware_flags, v);
+}
+inline bool hw_get_demo_mode(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<1>(s.hardware_flags);
+}
+inline void hw_set_demo_mode(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<1>(s.hardware_flags, v);
+}
+inline bool hw_get_iq_calibration_enabled(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<2>(s.hardware_flags);
+}
+inline void hw_set_iq_calibration_enabled(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<2>(s.hardware_flags, v);
+}
+inline bool hw_get_rf_amp_enabled(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<3>(s.hardware_flags);
+}
+inline void hw_set_rf_amp_enabled(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<3>(s.hardware_flags, v);
+}
 
 // Scanning flags helpers (bit0: enable_wideband_scanning, bit1: panoramic_mode_enabled, bit2: enable_intelligent_scanning)
-inline bool scan_get_enable_wideband_scanning(const DroneAnalyzerSettings& s) noexcept { return (s.scanning_flags & 0x01) != 0; }
-inline void scan_set_enable_wideband_scanning(DroneAnalyzerSettings& s, bool v) noexcept { s.scanning_flags = (s.scanning_flags & ~0x01) | (v ? 0x01 : 0); }
-inline bool scan_get_panoramic_mode_enabled(const DroneAnalyzerSettings& s) noexcept { return (s.scanning_flags & 0x02) != 0; }
-inline void scan_set_panoramic_mode_enabled(DroneAnalyzerSettings& s, bool v) noexcept { s.scanning_flags = (s.scanning_flags & ~0x02) | (v ? 0x02 : 0); }
-inline bool scan_get_enable_intelligent_scanning(const DroneAnalyzerSettings& s) noexcept { return (s.scanning_flags & 0x04) != 0; }
-inline void scan_set_enable_intelligent_scanning(DroneAnalyzerSettings& s, bool v) noexcept { s.scanning_flags = (s.scanning_flags & ~0x04) | (v ? 0x04 : 0); }
+inline bool scan_get_enable_wideband_scanning(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<0>(s.scanning_flags);
+}
+inline void scan_set_enable_wideband_scanning(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<0>(s.scanning_flags, v);
+}
+inline bool scan_get_panoramic_mode_enabled(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<1>(s.scanning_flags);
+}
+inline void scan_set_panoramic_mode_enabled(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<1>(s.scanning_flags, v);
+}
+inline bool scan_get_enable_intelligent_scanning(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<2>(s.scanning_flags);
+}
+inline void scan_set_enable_intelligent_scanning(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<2>(s.scanning_flags, v);
+}
 
 // Detection flags helpers (bit0: enable_fhss_detection, bit1: enable_intelligent_tracking)
-inline bool detect_get_enable_fhss_detection(const DroneAnalyzerSettings& s) noexcept { return (s.detection_flags & 0x01) != 0; }
-inline void detect_set_enable_fhss_detection(DroneAnalyzerSettings& s, bool v) noexcept { s.detection_flags = (s.detection_flags & ~0x01) | (v ? 0x01 : 0); }
-inline bool detect_get_enable_intelligent_tracking(const DroneAnalyzerSettings& s) noexcept { return (s.detection_flags & 0x02) != 0; }
-inline void detect_set_enable_intelligent_tracking(DroneAnalyzerSettings& s, bool v) noexcept { s.detection_flags = (s.detection_flags & ~0x02) | (v ? 0x02 : 0); }
+inline bool detect_get_enable_fhss_detection(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<0>(s.detection_flags);
+}
+inline void detect_set_enable_fhss_detection(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<0>(s.detection_flags, v);
+}
+inline bool detect_get_enable_intelligent_tracking(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<1>(s.detection_flags);
+}
+inline void detect_set_enable_intelligent_tracking(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<1>(s.detection_flags, v);
+}
 
 // Logging flags helpers (bit0: auto_save_logs, bit1: enable_session_logging, bit2: include_timestamp, bit3: include_rssi_values)
-inline bool log_get_auto_save_logs(const DroneAnalyzerSettings& s) noexcept { return (s.logging_flags & 0x01) != 0; }
-inline void log_set_auto_save_logs(DroneAnalyzerSettings& s, bool v) noexcept { s.logging_flags = (s.logging_flags & ~0x01) | (v ? 0x01 : 0); }
-inline bool log_get_enable_session_logging(const DroneAnalyzerSettings& s) noexcept { return (s.logging_flags & 0x02) != 0; }
-inline void log_set_enable_session_logging(DroneAnalyzerSettings& s, bool v) noexcept { s.logging_flags = (s.logging_flags & ~0x02) | (v ? 0x02 : 0); }
-inline bool log_get_include_timestamp(const DroneAnalyzerSettings& s) noexcept { return (s.logging_flags & 0x04) != 0; }
-inline void log_set_include_timestamp(DroneAnalyzerSettings& s, bool v) noexcept { s.logging_flags = (s.logging_flags & ~0x04) | (v ? 0x04 : 0); }
-inline bool log_get_include_rssi_values(const DroneAnalyzerSettings& s) noexcept { return (s.logging_flags & 0x08) != 0; }
-inline void log_set_include_rssi_values(DroneAnalyzerSettings& s, bool v) noexcept { s.logging_flags = (s.logging_flags & ~0x08) | (v ? 0x08 : 0); }
+inline bool log_get_auto_save_logs(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<0>(s.logging_flags);
+}
+inline void log_set_auto_save_logs(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<0>(s.logging_flags, v);
+}
+inline bool log_get_enable_session_logging(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<1>(s.logging_flags);
+}
+inline void log_set_enable_session_logging(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<1>(s.logging_flags, v);
+}
+inline bool log_get_include_timestamp(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<2>(s.logging_flags);
+}
+inline void log_set_include_timestamp(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<2>(s.logging_flags, v);
+}
+inline bool log_get_include_rssi_values(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<3>(s.logging_flags);
+}
+inline void log_set_include_rssi_values(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<3>(s.logging_flags, v);
+}
 
 // Display flags helpers (bit0: show_detailed_info, bit1: show_mini_spectrum, bit2: show_rssi_history, bit3: show_frequency_ruler, bit4: auto_ruler_style)
-inline bool disp_get_show_detailed_info(const DroneAnalyzerSettings& s) noexcept { return (s.display_flags & 0x01) != 0; }
-inline void disp_set_show_detailed_info(DroneAnalyzerSettings& s, bool v) noexcept { s.display_flags = (s.display_flags & ~0x01) | (v ? 0x01 : 0); }
-inline bool disp_get_show_mini_spectrum(const DroneAnalyzerSettings& s) noexcept { return (s.display_flags & 0x02) != 0; }
-inline void disp_set_show_mini_spectrum(DroneAnalyzerSettings& s, bool v) noexcept { s.display_flags = (s.display_flags & ~0x02) | (v ? 0x02 : 0); }
-inline bool disp_get_show_rssi_history(const DroneAnalyzerSettings& s) noexcept { return (s.display_flags & 0x04) != 0; }
-inline void disp_set_show_rssi_history(DroneAnalyzerSettings& s, bool v) noexcept { s.display_flags = (s.display_flags & ~0x04) | (v ? 0x04 : 0); }
-inline bool disp_get_show_frequency_ruler(const DroneAnalyzerSettings& s) noexcept { return (s.display_flags & 0x08) != 0; }
-inline void disp_set_show_frequency_ruler(DroneAnalyzerSettings& s, bool v) noexcept { s.display_flags = (s.display_flags & ~0x08) | (v ? 0x08 : 0); }
-inline bool disp_get_auto_ruler_style(const DroneAnalyzerSettings& s) noexcept { return (s.display_flags & 0x10) != 0; }
-inline void disp_set_auto_ruler_style(DroneAnalyzerSettings& s, bool v) noexcept { s.display_flags = (s.display_flags & ~0x10) | (v ? 0x10 : 0); }
+inline bool disp_get_show_detailed_info(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<0>(s.display_flags);
+}
+inline void disp_set_show_detailed_info(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<0>(s.display_flags, v);
+}
+inline bool disp_get_show_mini_spectrum(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<1>(s.display_flags);
+}
+inline void disp_set_show_mini_spectrum(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<1>(s.display_flags, v);
+}
+inline bool disp_get_show_rssi_history(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<2>(s.display_flags);
+}
+inline void disp_set_show_rssi_history(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<2>(s.display_flags, v);
+}
+inline bool disp_get_show_frequency_ruler(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<3>(s.display_flags);
+}
+inline void disp_set_show_frequency_ruler(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<3>(s.display_flags, v);
+}
+inline bool disp_get_auto_ruler_style(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<4>(s.display_flags);
+}
+inline void disp_set_auto_ruler_style(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<4>(s.display_flags, v);
+}
 
 // Profile flags helpers (bit0: enable_quick_profiles, bit1: auto_save_on_change)
-inline bool profile_get_enable_quick_profiles(const DroneAnalyzerSettings& s) noexcept { return (s.profile_flags & 0x01) != 0; }
-inline void profile_set_enable_quick_profiles(DroneAnalyzerSettings& s, bool v) noexcept { s.profile_flags = (s.profile_flags & ~0x01) | (v ? 0x01 : 0); }
-inline bool profile_get_auto_save_on_change(const DroneAnalyzerSettings& s) noexcept { return (s.profile_flags & 0x02) != 0; }
-inline void profile_set_auto_save_on_change(DroneAnalyzerSettings& s, bool v) noexcept { s.profile_flags = (s.profile_flags & ~0x02) | (v ? 0x02 : 0); }
+inline bool profile_get_enable_quick_profiles(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<0>(s.profile_flags);
+}
+inline void profile_set_enable_quick_profiles(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<0>(s.profile_flags, v);
+}
+inline bool profile_get_auto_save_on_change(const DroneAnalyzerSettings& s) noexcept {
+    return BitfieldAccess::get_bit<1>(s.profile_flags);
+}
+inline void profile_set_auto_save_on_change(DroneAnalyzerSettings& s, bool v) noexcept {
+    BitfieldAccess::set_bit<1>(s.profile_flags, v);
+}
 
 // Default wideband constants for scanner settings
 static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2400000000ULL;
 static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2500000000ULL;
+
+// ===========================================
+// DIAMOND FIX: Unified Frequency Validation
+// ===========================================
+// Single source of truth for frequency validation
+// Eliminates signed/unsigned type ambiguity
+// All frequencies use uint64_t (matches DroneAnalyzerSettings)
+// Cross-field validation ensures min < max
+
+namespace FrequencyValidation {
+
+/**
+ * @brief Check if a frequency value is within valid hardware range
+ * @param freq_hz Frequency value to validate (uint64_t)
+ * @return true if frequency is valid, false otherwise
+ *
+ * @note Uses uint64_t for consistency with DroneAnalyzerSettings
+ * @note Hardware limits: 1 MHz to 7.2 GHz (HackRF One)
+ * @note Safe limits: 50 MHz to 6 GHz (PLL stability)
+ *
+ * @see EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ
+ * @see EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ
+ */
+inline constexpr bool is_valid(uint64_t freq_hz) noexcept {
+    return freq_hz >= EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ &&
+           freq_hz <= EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+}
+
+/**
+ * @brief Check if a frequency value is within safe operating range
+ * @param freq_hz Frequency value to validate (uint64_t)
+ * @return true if frequency is safe, false otherwise
+ *
+ * @note Safe limits are tighter than hardware limits
+ * @note Ensures PLL stability and reliable operation
+ *
+ * @see EDA::Constants::FrequencyLimits::MIN_SAFE_FREQ
+ * @see EDA::Constants::FrequencyLimits::MAX_SAFE_FREQ
+ */
+inline constexpr bool is_safe(uint64_t freq_hz) noexcept {
+    return freq_hz >= EDA::Constants::FrequencyLimits::MIN_SAFE_FREQ &&
+           freq_hz <= EDA::Constants::FrequencyLimits::MAX_SAFE_FREQ;
+}
+
+/**
+ * @brief Check if a frequency range is valid (min < max)
+ * @param min_freq_hz Minimum frequency value (uint64_t)
+ * @param max_freq_hz Maximum frequency value (uint64_t)
+ * @return true if range is valid, false otherwise
+ *
+ * @note Performs both individual and cross-field validation
+ * @note Returns false if min >= max
+ * @note Returns false if either frequency is out of range
+ */
+inline constexpr bool is_range_valid(uint64_t min_freq_hz, uint64_t max_freq_hz) noexcept {
+    // Guard clause: Ensure both frequencies are individually valid
+    if (!is_valid(min_freq_hz) || !is_valid(max_freq_hz)) {
+        return false;
+    }
+    // Cross-field validation: min must be less than max
+    return min_freq_hz < max_freq_hz;
+}
+
+/**
+ * @brief Check if a frequency range is within safe operating limits
+ * @param min_freq_hz Minimum frequency value (uint64_t)
+ * @param max_freq_hz Maximum frequency value (uint64_t)
+ * @return true if range is safe, false otherwise
+ *
+ * @note Uses safe limits (tighter than hardware limits)
+ * @note Ensures PLL stability for the entire range
+ */
+inline constexpr bool is_range_safe(uint64_t min_freq_hz, uint64_t max_freq_hz) noexcept {
+    // Guard clause: Ensure both frequencies are individually safe
+    if (!is_safe(min_freq_hz) || !is_safe(max_freq_hz)) {
+        return false;
+    }
+    // Cross-field validation: min must be less than max
+    return min_freq_hz < max_freq_hz;
+}
+
+/**
+ * @brief Clamp frequency to valid hardware range
+ * @param freq_hz Frequency value to clamp (uint64_t)
+ * @return Clamped frequency value
+ *
+ * @note Returns MIN_HARDWARE_FREQ if freq is below minimum
+ * @note Returns MAX_HARDWARE_FREQ if freq is above maximum
+ * @note Returns freq unchanged if within valid range
+ */
+inline constexpr uint64_t clamp(uint64_t freq_hz) noexcept {
+    if (freq_hz < EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ) {
+        return EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
+    }
+    if (freq_hz > EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+        return EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+    }
+    return freq_hz;
+}
+
+} // namespace FrequencyValidation
+
+// ===========================================
+// DIAMOND FIX: Backward Compatibility Aliases
+// ===========================================
+// Maintains API compatibility with existing code
+// All functions delegate to FrequencyValidation namespace
+
+/**
+ * @brief Check if a frequency value is within valid hardware range
+ * @param freq_hz Frequency value to validate (uint64_t)
+ * @return true if frequency is valid, false otherwise
+ *
+ * @deprecated Use FrequencyValidation::is_valid() instead
+ */
+inline bool is_frequency_valid(uint64_t freq_hz) noexcept {
+    return FrequencyValidation::is_valid(freq_hz);
+}
+
+/**
+ * @brief Check if a frequency range is valid (min < max)
+ * @param min_freq_hz Minimum frequency value (uint64_t)
+ * @param max_freq_hz Maximum frequency value (uint64_t)
+ * @return true if range is valid, false otherwise
+ *
+ * @deprecated Use FrequencyValidation::is_range_valid() instead
+ */
+inline bool is_frequency_range_valid(uint64_t min_freq_hz, uint64_t max_freq_hz) noexcept {
+    return FrequencyValidation::is_range_valid(min_freq_hz, max_freq_hz);
+}
 
 // Enhanced enums for EDA
 enum class ThreatLevel : uint8_t {
@@ -247,7 +507,7 @@ public:
     static const char* get_translation(const char* key) noexcept;
 
 private:
-    static Language current_language_;
+    static std::atomic<Language> current_language_;
     static const char* get_english(const char* key) noexcept;
 };
 

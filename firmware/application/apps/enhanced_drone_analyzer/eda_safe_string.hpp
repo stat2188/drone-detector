@@ -12,16 +12,22 @@
  *
  * @target STM32F405 (ARM Cortex-M4, 128KB RAM)
  * @os ChibiOS (bare-metal RTOS)
+ *
+ * STACK USAGE WARNINGS:
+ * - FixedString<N> uses N bytes of stack memory
+ * - TinyString<8> uses 8 bytes
+ * - SmallString<16> uses 16 bytes
+ * - PathBuffer<256> uses 256 bytes (use sparingly)
+ * - Be mindful of stack depth when using large buffers in nested functions
  */
 
 #ifndef EDA_SAFE_STRING_HPP_
 #define EDA_SAFE_STRING_HPP_
 
 #include <cstddef>
-#include <cstring>
 #include <cstdint>
 #include <string_view>
-#include "eda_constants.hpp"
+#include <cassert>
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -318,6 +324,10 @@ inline size_t safe_strncpy(char* dest, const char* src, size_t n, size_t buffer_
  * @note Zero heap allocation
  * @note Always null-terminated
  * @note All operations are noexcept
+ *
+ * STACK USAGE:
+ *   This template uses N bytes of stack memory.
+ *   Be mindful of stack depth when using large buffers.
  */
 template<size_t N>
 class FixedString {
@@ -326,6 +336,7 @@ public:
     FixedString() noexcept {
         buffer_[0] = '\0';
         length_ = 0;
+        verify_invariants();
     }
 
     /**
@@ -334,6 +345,7 @@ public:
      */
     explicit FixedString(const char* str) noexcept {
         set(str);
+        verify_invariants();
     }
 
     /**
@@ -342,6 +354,7 @@ public:
      */
     explicit FixedString(std::string_view sv) noexcept {
         set(sv);
+        verify_invariants();
     }
 
     /**
@@ -351,6 +364,7 @@ public:
      */
     size_t set(const char* str) noexcept {
         length_ = safe_strcpy(buffer_, str, N);
+        verify_invariants();
         return length_;
     }
 
@@ -364,17 +378,21 @@ public:
         if (sv.empty()) {
             buffer_[0] = '\0';
             length_ = 0;
+            verify_invariants();
             return 0;
         }
 
         // Limit copy to buffer size - 1
         const size_t copy_len = (sv.size() < N - 1) ? sv.size() : N - 1;
         
-        // Copy characters
-        std::memcpy(buffer_, sv.data(), copy_len);
+        // Copy characters using explicit loop (no std::memcpy)
+        for (size_t i = 0; i < copy_len; ++i) {
+            buffer_[i] = sv.data()[i];
+        }
         buffer_[copy_len] = '\0';
         length_ = copy_len;
         
+        verify_invariants();
         return copy_len;
     }
 
@@ -386,6 +404,7 @@ public:
     size_t append(const char* str) noexcept {
         size_t appended = safe_strcat(buffer_, str, N);
         length_ = safe_strlen(buffer_, N);
+        verify_invariants();
         return appended;
     }
 
@@ -412,12 +431,40 @@ public:
         const size_t space = N - 1 - current_len;
         const size_t append_len = (sv.size() < space) ? sv.size() : space;
         
-        // Append characters
-        std::memcpy(buffer_ + current_len, sv.data(), append_len);
+        // Append characters using explicit loop (no std::memcpy)
+        for (size_t i = 0; i < append_len; ++i) {
+            buffer_[current_len + i] = sv.data()[i];
+        }
         buffer_[current_len + append_len] = '\0';
         length_ = current_len + append_len;
         
+        verify_invariants();
         return append_len;
+    }
+
+    /**
+     * @brief Check if string would fit when appended
+     * @param sv String view to check
+     * @return true if append would fit
+     */
+    bool would_fit_append(std::string_view sv) const noexcept {
+        size_t current_len = safe_strlen(buffer_, N);
+        return (current_len + sv.size()) < N;
+    }
+
+    /**
+     * @brief Check if string would fit when appended
+     * @param str C string to check
+     * @return true if append would fit
+     */
+    bool would_fit_append(const char* str) const noexcept {
+        if (!str) return true;
+        size_t current_len = safe_strlen(buffer_, N);
+        size_t str_len = 0;
+        while (str[str_len] != '\0' && (current_len + str_len) < N) {
+            ++str_len;
+        }
+        return (current_len + str_len) < N;
     }
 
     /**
@@ -426,6 +473,7 @@ public:
     void clear() noexcept {
         buffer_[0] = '\0';
         length_ = 0;
+        verify_invariants();
     }
 
     /**
@@ -469,6 +517,14 @@ public:
     }
 
     /**
+     * @brief Get stack usage in bytes
+     * @return Number of bytes used on stack
+     */
+    static constexpr size_t stack_usage() noexcept {
+        return N;
+    }
+
+    /**
      * @brief Check if string fits in buffer
      * @param str String to check
      * @return true if string fits
@@ -494,26 +550,53 @@ public:
 private:
     char buffer_[N];
     size_t length_;
+
+    /**
+     * @brief Verify class invariants (debug mode only)
+     *
+     * In debug builds, this function asserts that the internal state is consistent.
+     * In release builds, this function is a no-op.
+     */
+    inline void verify_invariants() const noexcept {
+#ifdef NDEBUG
+        // Release mode: no verification
+        (void)0;
+#else
+        // Debug mode: verify invariants
+        assert(length_ < N && "FixedString: length_ exceeds buffer capacity");
+        assert(buffer_[length_] == '\0' && "FixedString: buffer not null-terminated at length_");
+        assert(safe_strlen(buffer_, N) == length_ && "FixedString: length_ mismatch with actual string length");
+#endif
+    }
 };
 
 // ========================================
 // COMMON BUFFER TYPE ALIASES
 // ========================================
 
-/// @brief 64-character string buffer (for descriptions)
-using DescriptionBuffer = FixedString<64>;
+/// @brief 8-character string buffer (for tiny strings like IDs, status codes)
+/// @warning Uses 8 bytes of stack memory
+using TinyString = FixedString<8>;
+
+/// @brief 16-character string buffer (for short strings like names, labels)
+/// @warning Uses 16 bytes of stack memory
+using SmallString = FixedString<16>;
 
 /// @brief 32-character string buffer (for titles)
+/// @warning Uses 32 bytes of stack memory
 using TitleBuffer = FixedString<32>;
 
+/// @brief 64-character string buffer (for descriptions)
+/// @warning Uses 64 bytes of stack memory
+using DescriptionBuffer = FixedString<64>;
+
 /// @brief 128-character string buffer (for error messages)
+/// @warning Uses 128 bytes of stack memory
 using ErrorMessageBuffer = FixedString<128>;
 
 /// @brief 256-character string buffer (for file paths)
+/// @warning Uses 256 bytes of stack memory - use sparingly in deep call stacks
 using PathBuffer = FixedString<256>;
-
-/// @brief 16-character string buffer (for short names)
-using ShortNameBuffer = FixedString<16>;
 
 } // namespace ui::apps::enhanced_drone_analyzer
 

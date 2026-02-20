@@ -343,7 +343,7 @@ bool DroneScanner::load_frequency_database() {
 
     if (!freq_db_ptr_) return false;
 
-    auto db_path = get_freqman_path("DRONES");
+    auto db_path = get_freqman_path(settings_.freqman_path);
     bool sd_loaded = freq_db_ptr_->open(db_path);
 
     {
@@ -742,11 +742,11 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
         total_detections_++; // Protect counter
 
         // BUG-008 FIX: Hash can produce values up to 72000 (for 7.2GHz),
-        // but DetectionRingBuffer::MAX_ENTRIES is only 16.
-        // Use modulo to ensure safe index within buffer bounds.
+        // but DetectionBufferConstants::MAX_ENTRIES is only 16.
+        // Use bitwise AND with HASH_MASK for efficient power-of-2 modulo operation.
         constexpr size_t FREQ_HASH_DIVISOR = 100000;
         const size_t freq_hash_raw = static_cast<size_t>(entry.frequency_a / FREQ_HASH_DIVISOR);
-        const size_t freq_hash = freq_hash_raw % DetectionRingBuffer::MAX_ENTRIES;
+        const size_t freq_hash = freq_hash_raw & DetectionBufferConstants::HASH_MASK;
         int32_t effective_threshold = wideband_threshold;
 
         if (detection_ring_buffer_.get_rssi_value(freq_hash) < wideband_threshold) {
@@ -1216,7 +1216,7 @@ void DroneScanner::initialize_database_and_scanner() {
         MutexLock lock(data_mutex);
 
         // Try to open DRONES database first
-        auto db_path = get_freqman_path("DRONES");
+        auto db_path = get_freqman_path(settings_.freqman_path);
         bool db_opened = freq_db_ptr_->open(db_path);
 
         if (!db_opened || freq_db_ptr_->empty()) {
@@ -1347,7 +1347,7 @@ void DroneScanner::db_loading_thread_loop() {
     }
 
     bool db_success = false;
-    auto db_path = get_freqman_path("DRONES");
+    auto db_path = get_freqman_path(settings_.freqman_path);
 
     systime_t load_start = chTimeNow();
 

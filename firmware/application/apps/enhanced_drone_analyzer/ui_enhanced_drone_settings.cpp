@@ -63,7 +63,8 @@ private:
 bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept {
     // DIAMOND FIX: Revision #3 - Fix SD Card Race Condition (CRITICAL)
     // Acquire lock BEFORE checking status to prevent TOCTOU race
-    SDCardLock lock(sd_card_mutex);
+    // DIAMOND FIX: Use SettingsBufferLock for FatFS serialization
+    SettingsBufferLock lock;
     
     // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
@@ -81,13 +82,14 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
 
     auto& file = settings_file;
 
-    // 🔴 CRITICAL FIX: Move 2KB buffer from stack to static storage to prevent stack overflow
+    // DIAMOND FIX: Thread-local buffer for settings serialization
     // Scott Meyers Item 29: Use object pools to reduce allocation overhead
     // This replaces ~20 std::string allocations with a single char array
-    // Stack savings: 1024 bytes
+    // Stack savings: 1024 bytes per thread (thread-local storage)
     // MEDIUM PRIORITY FIX: Reduced from 4096 to 1024 bytes (saves ~3KB RAM)
+    // Thread-safe: Each thread gets its own buffer (no mutex needed)
     static constexpr size_t SETTINGS_BUFFER_SIZE = 1024;
-    static char settings_buffer[SETTINGS_BUFFER_SIZE];
+    thread_local char settings_buffer[SETTINGS_BUFFER_SIZE];
     size_t offset = 0;
 
     // Write header with timestamp
@@ -178,11 +180,12 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
 
     auto& file = settings_file;
 
-    // 🔴 CRITICAL FIX: Move 2KB buffer from stack to static storage to prevent stack overflow
-    // Stack savings: 1024 bytes
+    // DIAMOND FIX: Thread-local buffer for settings loading
+    // Stack savings: 1024 bytes per thread (thread-local storage)
     // MEDIUM PRIORITY FIX: Reduced from 4096 to 1024 bytes (saves ~3KB RAM)
+    // Thread-safe: Each thread gets its own buffer (no mutex needed)
     static constexpr size_t FILE_BUFFER_SIZE = 1024;
-    static char file_buffer[FILE_BUFFER_SIZE];
+    thread_local char file_buffer[FILE_BUFFER_SIZE];
     auto read_result = file.read(file_buffer, FILE_BUFFER_SIZE);
     
     if (read_result.is_error() || read_result.value() == 0) {
@@ -357,25 +360,35 @@ const char* EnhancedSettingsManager::get_communication_status() noexcept {
 }
 
 // DIAMOND OPTIMIZATION: noexcept for file creation
-void EnhancedSettingsManager::ensure_database_exists() noexcept {
-    // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
-    static constexpr const char* file_path = "/FREQMAN/DRONES.TXT";
+bool EnhancedSettingsManager::ensure_database_exists(const DroneAnalyzerSettings& settings) noexcept {
+    // DIAMOND FIX: Use settings.freqman_path instead of hardcoded "DRONES"
+    // Diamond Code: Use safe string operations with snprintf
+    static constexpr size_t kMaxPathLen = 64;
+    char file_path[kMaxPathLen];
+    
+    // Guard clause: Ensure freqman_path is valid
+    const char* freqman_name = (settings.freqman_path[0] != '\0') ? settings.freqman_path : "DRONES";
+    snprintf(file_path, sizeof(file_path), "/FREQMAN/%s.TXT", freqman_name);
     File check_file;
     if (check_file.open(file_path, true)) {
         check_file.close();
-        return;
+        return true;  // DIAMOND FIX: Return true when database exists
     }
 
     File create_file;
     if (create_file.open(file_path, false)) {
-        // 🔴 HIGH PRIORITY FIX: Check write result and handle errors
+        // DIAMOND FIX: Check write result and handle errors
         size_t content_len = strlen(DEFAULT_DRONE_DATABASE_CONTENT);
         auto write_result = create_file.write(DEFAULT_DRONE_DATABASE_CONTENT, content_len);
         if (write_result.is_error() || write_result.value() != content_len) {
             // Write failed - file may be incomplete
+            create_file.close();
+            return false;
         }
         create_file.close();
+        return true;  // DIAMOND FIX: Return success status
     }
+    return false;  // DIAMOND FIX: Return error status if file couldn't be opened
 }
 
 // DIAMOND OPTIMIZATION: const pointer, noexcept for file backup
@@ -397,11 +410,12 @@ void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept 
     FileRAII backup_file(backup_path, false);
     if (!backup_file.is_open()) return;
 
-    // 🔴 PHASE 4: Share static buffer between backup/restore functions to reduce RAM usage
-    // RAM savings: 512 bytes (was 1024 + 512 = 1536, now 1024)
+    // DIAMOND FIX: Thread-local buffer for backup/restore operations
+    // RAM savings: 512 bytes per thread (thread-local storage)
     // FIX #26: Further reduced from 1024 to 512 for additional RAM savings
+    // Thread-safe: Each thread gets its own buffer (no mutex needed)
     static constexpr size_t BUFFER_SIZE = 512;
-    static uint8_t buffer[BUFFER_SIZE];
+    thread_local uint8_t buffer[BUFFER_SIZE];
     size_t total_read = 0;
 
     while (total_read < orig_file.get().size()) {
@@ -435,10 +449,12 @@ void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept
     FileRAII original_file(filepath, false);
     if (!original_file.is_open()) return;
 
-    // 🔴 PHASE 4: Share static buffer with create_backup_file to reduce RAM usage
+    // DIAMOND FIX: Thread-local buffer for backup/restore operations
+    // RAM savings: 512 bytes per thread (thread-local storage)
     // FIX #26: Reduced from 1024 to 512 to match create_backup_file() buffer size
+    // Thread-safe: Each thread gets its own buffer (no mutex needed)
     static constexpr size_t BUFFER_SIZE = 512;
-    static uint8_t buffer[BUFFER_SIZE];
+    thread_local uint8_t buffer[BUFFER_SIZE];
 
     while (true) {
         auto read_res = backup_file.get().read(buffer, BUFFER_SIZE);
@@ -492,9 +508,11 @@ const char* EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) 
 }
 
 // DIAMOND OPTIMIZATION: noexcept for timestamp generation
+// DIAMOND FIX: Use thread_local buffer for thread safety
+// CRITICAL BUG FIX: Static buffer without mutex causes race condition
 const char* EnhancedSettingsManager::get_current_timestamp() noexcept {
-    // DIAMOND OPTIMIZATION: Return const char* to static buffer (no std::string allocation)
-    static char buffer[32];
+    // DIAMOND OPTIMIZATION: Return const char* to thread_local buffer (no std::string allocation)
+    thread_local char buffer[32];
     systime_t now = chTimeNow();
     snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)now);
     return buffer;
@@ -726,8 +744,8 @@ void HardwareSettingsView::load_current_settings() noexcept {
     checkbox_real_hardware_.set_value(hw_get_enable_real_hardware(settings));
     field_spectrum_mode_.set_selected_index(static_cast<int>(settings.spectrum_mode));
     number_bandwidth_.set_value(settings.hardware_bandwidth_hz);
-    number_min_freq_.set_value(settings.user_min_freq_hz);
-    number_max_freq_.set_value(settings.user_max_freq_hz);
+    number_min_freq_.set_value(static_cast<rf::Frequency>(settings.user_min_freq_hz));
+    number_max_freq_.set_value(static_cast<rf::Frequency>(settings.user_max_freq_hz));
 }
 
 // DIAMOND OPTIMIZATION: noexcept for settings save
@@ -905,7 +923,9 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View
     button_scanning_settings_.on_select = [this](Button&) { show_scanning_settings(); };
     button_load_defaults_.on_select = [this](Button&) { load_default_settings(); };
     button_about_author_.on_select = [this](Button&) { show_about_author(); };
-    EnhancedSettingsManager::ensure_database_exists();
+    // Initialize settings with defaults first (which includes freqman_path = "DRONES")
+    SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(current_settings_);
+    EnhancedSettingsManager::ensure_database_exists(current_settings_);
     SettingsPersistence<DroneAnalyzerSettings>::load(current_settings_);
 }
 // DIAMOND OPTIMIZATION: noexcept for focus and navigation
@@ -1035,12 +1055,16 @@ bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* f
         const auto& entry = view.entries[i];
         if (entry.freq == 0) continue;
         
+        // DIAMOND FIX: Use safe_strcpy for safe string operations
         char safe_desc[64];
-        size_t desc_len = strlen(entry.description);
+        safe_strcpy(safe_desc, entry.description, sizeof(safe_desc));
+        
+        // Replace commas with spaces for CSV safety
+        size_t desc_len = safe_strlen(safe_desc, sizeof(safe_desc));
         for (size_t j = 0; j < desc_len && j < sizeof(safe_desc) - 1; ++j) {
-            safe_desc[j] = (entry.description[j] == ',') ? ' ' : entry.description[j];
+            if (safe_desc[j] == ',') safe_desc[j] = ' ';
         }
-        safe_desc[desc_len < (sizeof(safe_desc) - 1) ? desc_len : sizeof(safe_desc) - 1] = '\0';
+        safe_desc[desc_len] = '\0';
         
         int written = snprintf(write_buffer + offset, WRITE_BUFFER_SIZE - offset,
                             "%llu,%s\n",
@@ -1048,23 +1072,27 @@ bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* f
                             safe_desc);
         
         if (written < 0 || offset + static_cast<size_t>(written) >= WRITE_BUFFER_SIZE) {
-            // Buffer full - flush and continue (simplified)
-            File file;
-            if (!file.open(file_path, false)) return false;
-            file.write(write_buffer, offset);
-            file.close();
+            // DIAMOND FIX: Use FileRAII to ensure proper cleanup
+            FileRAII file(file_path, false);
+            if (!file.is_open()) return false;
+            auto write_result = file.get().write(write_buffer, offset);
+            if (write_result.is_error() || write_result.value() != offset) {
+                return false;
+            }
             offset = 0;
         } else {
             offset += static_cast<size_t>(written);
         }
     }
     
-    // Final write
+    // DIAMOND FIX: Use FileRAII for final write
     if (offset > 0) {
-        File file;
-        if (!file.open(file_path, false)) return false;
-        file.write(write_buffer, offset);
-        file.close();
+        FileRAII file(file_path, false);
+        if (!file.is_open()) return false;
+        auto write_result = file.get().write(write_buffer, offset);
+        if (write_result.is_error() || write_result.value() != offset) {
+            return false;
+        }
     }
     
     return true;

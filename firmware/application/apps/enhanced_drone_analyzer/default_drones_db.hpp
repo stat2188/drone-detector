@@ -1,42 +1,106 @@
 // default_drones_db.hpp
+// Diamond Code: Flash-resident drone frequency database
+// Memory-safe, zero-heap, optimized for STM32F405 (128KB RAM)
 
 #pragma once
 
+#include <cstdint>
+
 namespace ui::apps::enhanced_drone_analyzer {
+
+// Flash storage attribute for Cortex-M4
+#ifdef __GNUC__
+    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
+#else
+    #define EDA_FLASH_CONST const
+#endif
 
 // ========================================
 // TYPE ALIASES (Semantic Types)
 // ========================================
+
+/**
+ * @brief Type alias for database content (Flash-resident string literal)
+ * @note Points to string literal in Flash (.rodata section), not heap
+ */
 using DatabaseContent = const char*;
+
+/**
+ * @brief Type alias for frequency values (Hz)
+ * @note Uses uint64_t to support frequencies up to 7.2 GHz
+ */
 using FrequencyHz = uint64_t;
 
 // ========================================
-// CONSTANTS
+// CONSTANTS (Flash-Resident)
 // ========================================
-namespace DatabaseConstants {
-    constexpr FrequencyHz TBS_CROSSFIRE_EU = 868000000ULL;
-    constexpr FrequencyHz TBS_CROSSFIRE_US = 915000000ULL;
-    constexpr FrequencyHz ELRS_868 = 866000000ULL;
-    constexpr FrequencyHz ELRS_915 = 915000000ULL;
-    constexpr FrequencyHz LRS_433 = 433050000ULL;
-    constexpr FrequencyHz DJI_CH1 = 2406500000ULL;
-    constexpr FrequencyHz DJI_CH3 = 2416500000ULL;
-    constexpr FrequencyHz DJI_CH5 = 2426500000ULL;
-    constexpr FrequencyHz DJI_CH7 = 2436500000ULL;
-    constexpr FrequencyHz FPV_RB_CH1 = 5658000000ULL;
-    constexpr FrequencyHz FPV_RB_CH2 = 5695000000ULL;
-    constexpr FrequencyHz FPV_RB_CH3 = 5732000000ULL;
-    constexpr FrequencyHz FPV_RB_CH4 = 5769000000ULL;
-    constexpr FrequencyHz DJI_FPV_CH1 = 5735000000ULL;
-    constexpr FrequencyHz WIFI_CH1 = 2412000000ULL;
-    constexpr FrequencyHz WIFI_CH6 = 2437000000ULL;
-    constexpr FrequencyHz WIFI_CH11 = 2462000000ULL;
-}
 
-// This large string literal will be compiled into binary.
-// Format: FREQMAN (Frequency, Description)
-// Phase 3 Optimization: Reduced from 31 to 15 entries (~384 bytes savings)
-constexpr DatabaseContent DEFAULT_DRONE_DATABASE_CONTENT =
+namespace DatabaseConstants {
+
+/// @brief TBS Crossfire EU frequency (868 MHz)
+constexpr FrequencyHz TBS_CROSSFIRE_EU = 868000000ULL;
+
+/// @brief TBS Crossfire US frequency (915 MHz)
+constexpr FrequencyHz TBS_CROSSFIRE_US = 915000000ULL;
+
+/// @brief ELRS 868 MHz frequency
+constexpr FrequencyHz ELRS_868 = 866000000ULL;
+
+/// @brief ELRS 915 MHz frequency
+constexpr FrequencyHz ELRS_915 = 915000000ULL;
+
+/// @brief LRS 433 MHz control frequency
+constexpr FrequencyHz LRS_433 = 433050000ULL;
+
+/// @brief DJI OcuSync/Lightbridge Channel 1 (2.4 GHz)
+constexpr FrequencyHz DJI_CH1 = 2406500000ULL;
+
+/// @brief DJI OcuSync/Lightbridge Channel 3 (2.4 GHz)
+constexpr FrequencyHz DJI_CH3 = 2416500000ULL;
+
+/// @brief DJI OcuSync/Lightbridge Channel 5 (2.4 GHz)
+constexpr FrequencyHz DJI_CH5 = 2426500000ULL;
+
+/// @brief DJI OcuSync/Lightbridge Channel 7 (2.4 GHz)
+constexpr FrequencyHz DJI_CH7 = 2436500000ULL;
+
+/// @brief FPV RaceBand Channel 1 (5.8 GHz)
+constexpr FrequencyHz FPV_RB_CH1 = 5658000000ULL;
+
+/// @brief FPV RaceBand Channel 2 (5.8 GHz)
+constexpr FrequencyHz FPV_RB_CH2 = 5695000000ULL;
+
+/// @brief FPV RaceBand Channel 3 (5.8 GHz)
+constexpr FrequencyHz FPV_RB_CH3 = 5732000000ULL;
+
+/// @brief FPV RaceBand Channel 4 (5.8 GHz)
+constexpr FrequencyHz FPV_RB_CH4 = 5769000000ULL;
+
+/// @brief DJI FPV System Channel 1 (5.8 GHz)
+constexpr FrequencyHz DJI_FPV_CH1 = 5735000000ULL;
+
+/// @brief WiFi Channel 1 (Parrot drones)
+constexpr FrequencyHz WIFI_CH1 = 2412000000ULL;
+
+/// @brief WiFi Channel 6 (Parrot drones)
+constexpr FrequencyHz WIFI_CH6 = 2437000000ULL;
+
+/// @brief WiFi Channel 11 (Parrot drones)
+constexpr FrequencyHz WIFI_CH11 = 2462000000ULL;
+
+} // namespace DatabaseConstants
+
+// ========================================
+// DATABASE CONTENT (Flash-Resident)
+// ========================================
+
+/**
+ * @brief Default drone database content (Flash-resident string literal)
+ * @note Compiled into binary (.rodata section), zero RAM usage at runtime
+ * @note Format: Freq(Hz), Description
+ * @note Reduced from 31 to 15 entries for memory efficiency (~384 bytes savings)
+ */
+EDA_FLASH_CONST constexpr DatabaseContent DEFAULT_DRONE_DATABASE_CONTENT =
     "# EDA Factory Drone Database\n"
     "# Format: Freq(Hz), Description\n"
     "\n"
@@ -71,4 +135,4 @@ constexpr DatabaseContent DEFAULT_DRONE_DATABASE_CONTENT =
     "2437000000,WiFi CH 6 (Parrot)\n"
     "2462000000,WiFi CH 11 (Parrot)\n";
 
-} // namespace
+} // namespace ui::apps::enhanced_drone_analyzer

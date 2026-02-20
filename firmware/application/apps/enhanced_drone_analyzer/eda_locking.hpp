@@ -49,7 +49,24 @@ enum class LockOrder : uint8_t {
     SPECTRUM_MUTEX = 3,    // DroneHardwareController::spectrum_mutex (spectrum_buffer_)
     LOGGER_MUTEX = 4,       // DroneDetectionLogger::mutex_ (ring_buffer_)
     SD_CARD_MUTEX = 5,      // Global sd_card_mutex (FatFS operations)
-    SETTINGS_MUTEX = 6      // Global settings_buffer_mutex (settings I/O)
+    SETTINGS_MUTEX = 6,      // Global settings_buffer_mutex (settings I/O)
+    ERRNO_MUTEX = 7         // Global errno_mutex (thread-safe errno access)
+};
+
+// ========================================
+// LOCK STACK TRACKING
+// ========================================
+/**
+ * @brief Maximum depth of nested lock tracking
+ */
+constexpr size_t MAX_LOCK_DEPTH = 8;
+
+/**
+ * @brief Lock stack entry for tracking nested locks
+ */
+struct LockStackEntry {
+    LockOrder order;
+    bool valid;
 };
 
 // ========================================
@@ -61,13 +78,13 @@ enum class LockOrder : uint8_t {
  * Tracks lock acquisition order to prevent deadlock violations.
  * Automatically unlocks when going out of scope.
  *
- * @tparam MutexType The mutex type (typically Mutex)
+ * @tparam MutexType The mutex type (typically mutex_t)
  * @tparam TryLock If true, uses non-blocking try-lock
  *
  * USAGE:
- *   ScopedLock<Mutex, false> lock(data_mutex, LockOrder::DATA_MUTEX);
+ *   ScopedLock<Mutex> lock1(data_mutex, LockOrder::DATA_MUTEX);
  *   // Critical section here
- *   // Lock automatically released when 'lock' goes out of scope
+ *   // Lock automatically released when 'lock1' goes out of scope
  *
  * @note Compile-time lock order validation
  * @note Zero-overhead abstraction (optimizes to direct chMtxLock/chMtxUnlock)
@@ -86,7 +103,8 @@ public:
         // Check lock order - ensure we're not violating the ordering rule
         // Use ChibiOS critical section for volatile access
         chSysLock();
-        if (order_ > current_max_order_) {
+        LockOrder current_max = get_current_max_order();
+        if (order_ > current_max) {
             chSysUnlock();
             
             if constexpr (TryLock) {
@@ -97,28 +115,25 @@ public:
             }
             
             if (locked_) {
-                // Update current lock order using critical section
-                chSysLock();
-                current_max_order_ = order_;
-                chSysUnlock();
+                // Push lock onto stack for proper restoration
+                push_lock(order_);
             }
         } else {
             chSysUnlock();
+            // CRITICAL FIX: Panic on order violation instead of silent failure
+            chDbgPanic("Lock order violation detected");
         }
-        // If order violation, silently skip (lock not acquired)
     }
 
     /// @brief Destructor - Releases lock and updates order tracking
     ~OrderedScopedLock() noexcept {
         if (locked_) {
+            // CRITICAL FIX: ChibiOS chMtxUnlock() takes no parameters
+            // It uses thread-local storage to track the mutex
             chMtxUnlock();
             
-            // Restore previous lock order using critical section
-            // Note: This is a simplified approach - in production,
-            // we'd track the full lock stack for precise restoration
-            chSysLock();
-            current_max_order_ = LockOrder::ATOMIC_FLAGS;
-            chSysUnlock();
+            // CRITICAL FIX: Pop lock from stack for proper restoration
+            pop_lock();
         }
     }
 
@@ -136,14 +151,46 @@ private:
     LockOrder order_;
     bool locked_;
     
-    // Thread-local storage for tracking current lock order
-    // Using volatile with ChibiOS critical sections for thread safety
-    static thread_local volatile LockOrder current_max_order_;
+    // Thread-local storage for tracking lock stack
+    static thread_local LockStackEntry lock_stack_[MAX_LOCK_DEPTH];
+    static thread_local size_t lock_stack_depth_;
+    
+    /// @brief Get current maximum lock order from stack
+    static LockOrder get_current_max_order() noexcept {
+        if (lock_stack_depth_ == 0) {
+            return LockOrder::ATOMIC_FLAGS;
+        }
+        return lock_stack_[lock_stack_depth_ - 1].order;
+    }
+    
+    /// @brief Push lock onto stack
+    void push_lock(LockOrder order) noexcept {
+        chSysLock();
+        if (lock_stack_depth_ < MAX_LOCK_DEPTH) {
+            lock_stack_[lock_stack_depth_].order = order;
+            lock_stack_[lock_stack_depth_].valid = true;
+            lock_stack_depth_++;
+        }
+        chSysUnlock();
+    }
+    
+    /// @brief Pop lock from stack
+    void pop_lock() noexcept {
+        chSysLock();
+        if (lock_stack_depth_ > 0) {
+            lock_stack_depth_--;
+            lock_stack_[lock_stack_depth_].valid = false;
+        }
+        chSysUnlock();
+    }
 };
 
 // Thread-local static member initialization
 template<typename MutexType, bool TryLock>
-thread_local volatile LockOrder OrderedScopedLock<MutexType, TryLock>::current_max_order_{LockOrder::ATOMIC_FLAGS};
+thread_local LockStackEntry OrderedScopedLock<MutexType, TryLock>::lock_stack_[MAX_LOCK_DEPTH] = {};
+
+template<typename MutexType, bool TryLock>
+thread_local size_t OrderedScopedLock<MutexType, TryLock>::lock_stack_depth_ = 0;
 
 // ========================================
 // TWO PHASE LOCK
@@ -199,13 +246,21 @@ public:
     bool acquire() noexcept {
         if (locked_) return true;
         
+        // Check lock order before acquiring
+        chSysLock();
+        LockOrder current_max = get_current_max_order();
+        if (order_ <= current_max) {
+            chSysUnlock();
+            chDbgPanic("Lock order violation detected");
+            return false;
+        }
+        chSysUnlock();
+        
         chMtxLock(&mtx_);
         locked_ = true;
         
-        // Update current lock order using critical section
-        chSysLock();
-        current_max_order_ = order_;
-        chSysUnlock();
+        // Push lock onto stack
+        push_lock(order_);
         
         return true;
     }
@@ -215,13 +270,13 @@ public:
      */
     void release() noexcept {
         if (locked_) {
-            chMtxUnlock(&mtx_);
+            // CRITICAL FIX: ChibiOS chMtxUnlock() takes no parameters
+            // It uses thread-local storage to track the mutex
+            chMtxUnlock();
             locked_ = false;
             
-            // Restore previous lock order using critical section
-            chSysLock();
-            current_max_order_ = LockOrder::ATOMIC_FLAGS;
-            chSysUnlock();
+            // CRITICAL FIX: Pop lock from stack for proper restoration
+            pop_lock();
         }
     }
 
@@ -247,14 +302,46 @@ private:
     LockOrder order_;
     bool locked_;
     
-    // Thread-local storage for tracking current lock order
-    // Using volatile with ChibiOS critical sections for thread safety
-    static thread_local volatile LockOrder current_max_order_;
+    // Thread-local storage for tracking lock stack
+    static thread_local LockStackEntry lock_stack_[MAX_LOCK_DEPTH];
+    static thread_local size_t lock_stack_depth_;
+    
+    /// @brief Get current maximum lock order from stack
+    static LockOrder get_current_max_order() noexcept {
+        if (lock_stack_depth_ == 0) {
+            return LockOrder::ATOMIC_FLAGS;
+        }
+        return lock_stack_[lock_stack_depth_ - 1].order;
+    }
+    
+    /// @brief Push lock onto stack
+    void push_lock(LockOrder order) noexcept {
+        chSysLock();
+        if (lock_stack_depth_ < MAX_LOCK_DEPTH) {
+            lock_stack_[lock_stack_depth_].order = order;
+            lock_stack_[lock_stack_depth_].valid = true;
+            lock_stack_depth_++;
+        }
+        chSysUnlock();
+    }
+    
+    /// @brief Pop lock from stack
+    void pop_lock() noexcept {
+        chSysLock();
+        if (lock_stack_depth_ > 0) {
+            lock_stack_depth_--;
+            lock_stack_[lock_stack_depth_].valid = false;
+        }
+        chSysUnlock();
+    }
 };
 
 // Thread-local static member initialization
 template<typename MutexType>
-thread_local volatile LockOrder TwoPhaseLock<MutexType>::current_max_order_{LockOrder::ATOMIC_FLAGS};
+thread_local LockStackEntry TwoPhaseLock<MutexType>::lock_stack_[MAX_LOCK_DEPTH] = {};
+
+template<typename MutexType>
+thread_local size_t TwoPhaseLock<MutexType>::lock_stack_depth_ = 0;
 
 // ========================================
 // STATIC STORAGE TEMPLATE
@@ -296,22 +383,27 @@ public:
      * @brief Construct object in-place using default constructor
      * @return true if construction succeeded, false if already constructed
      *
-     * @note Critical section extends through construction to prevent race condition
+     * @note CRITICAL FIX: Critical section does NOT extend through construction
+     *       to avoid priority inversion. Construction happens after flag is set.
      */
     bool construct() noexcept {
-        // Use critical section for thread-safe construction
+        // CRITICAL FIX: static_assert to ensure noexcept constructor
+        static_assert(std::is_nothrow_default_constructible<T>::value,
+                      "StaticStorage requires noexcept default constructor");
+        
+        // Use critical section only for flag check and set
         chSysLock();
         if (constructed_) {
             chSysUnlock();
             return false;  // Already constructed
         }
         constructed_ = true;
+        chSysUnlock();
         
-        // Use placement new to construct in static storage
-        // Construction happens INSIDE critical section to prevent race condition
+        // CRITICAL FIX: Construction happens OUTSIDE critical section
+        // to prevent priority inversion during long constructors
         new (&storage_) T();
         
-        chSysUnlock();
         return true;
     }
 
@@ -321,23 +413,28 @@ public:
      * @param args Constructor arguments
      * @return true if construction succeeded, false if already constructed
      *
-     * @note Critical section extends through construction to prevent race condition
+     * @note CRITICAL FIX: Critical section does NOT extend through construction
+     *       to avoid priority inversion. Construction happens after flag is set.
      */
     template<typename... Args>
     bool construct(Args&&... args) noexcept {
-        // Use critical section for thread-safe construction
+        // CRITICAL FIX: static_assert to ensure noexcept constructor
+        static_assert(std::is_nothrow_constructible<T, Args...>::value,
+                      "StaticStorage requires noexcept constructor with given arguments");
+        
+        // Use critical section only for flag check and set
         chSysLock();
         if (constructed_) {
             chSysUnlock();
             return false;  // Already constructed
         }
         constructed_ = true;
+        chSysUnlock();
         
-        // Use placement new to construct in static storage
-        // Construction happens INSIDE critical section to prevent race condition
+        // CRITICAL FIX: Construction happens OUTSIDE critical section
+        // to prevent priority inversion during long constructors
         new (&storage_) T(std::forward<Args>(args)...);
         
-        chSysUnlock();
         return true;
     }
 
@@ -345,59 +442,63 @@ public:
      * @brief Destroy the constructed object
      * @return true if object was destroyed, false if not constructed
      *
-     * @note Critical section extends through destruction to prevent race condition
+     * @note CRITICAL FIX: Critical section does NOT extend through destruction
+     *       to avoid priority inversion. Destruction happens after flag is cleared.
      */
     bool destroy() noexcept {
-        // Use critical section for thread-safe destruction
+        // Use critical section only for flag check
         chSysLock();
         if (!constructed_) {
             chSysUnlock();
             return false;  // Not constructed
         }
-        
-        // Call destructor explicitly
-        // Destruction happens INSIDE critical section to prevent race condition
-        reinterpret_cast<T*>(&storage_)->~T();
-        
         constructed_ = false;
         chSysUnlock();
+        
+        // CRITICAL FIX: Destruction happens OUTSIDE critical section
+        // to prevent priority inversion during long destructors
+        reinterpret_cast<T*>(&storage_)->~T();
+        
         return true;
     }
 
     /**
      * @brief Get pointer to stored object
      * @return Pointer to object (nullptr if not constructed)
+     *
+     * @note CRITICAL FIX: No critical section needed - volatile bool reads
+     *       are atomic on ARM Cortex-M, eliminating unnecessary overhead
      */
     T* get() noexcept {
-        // Read volatile flag with critical section for consistency
-        chSysLock();
-        bool is_constructed = constructed_;
-        chSysUnlock();
-        return is_constructed ? reinterpret_cast<T*>(&storage_) : nullptr;
+        // CRITICAL FIX: Removed overkill critical section - volatile bool
+        // reads are atomic on ARM Cortex-M
+        return constructed_ ? reinterpret_cast<T*>(&storage_) : nullptr;
     }
 
     /**
      * @brief Get const pointer to stored object
      * @return Const pointer to object (nullptr if not constructed)
+     *
+     * @note CRITICAL FIX: No critical section needed - volatile bool reads
+     *       are atomic on ARM Cortex-M, eliminating unnecessary overhead
      */
     const T* get() const noexcept {
-        // Read volatile flag with critical section for consistency
-        chSysLock();
-        bool is_constructed = constructed_;
-        chSysUnlock();
-        return is_constructed ? reinterpret_cast<const T*>(&storage_) : nullptr;
+        // CRITICAL FIX: Removed overkill critical section - volatile bool
+        // reads are atomic on ARM Cortex-M
+        return constructed_ ? reinterpret_cast<const T*>(&storage_) : nullptr;
     }
 
     /**
      * @brief Check if object has been constructed
      * @return true if constructed, false otherwise
+     *
+     * @note CRITICAL FIX: No critical section needed - volatile bool reads
+     *       are atomic on ARM Cortex-M, eliminating unnecessary overhead
      */
     bool is_constructed() const noexcept {
-        // Read volatile flag with critical section for consistency
-        chSysLock();
-        bool is_constructed = constructed_;
-        chSysUnlock();
-        return is_constructed;
+        // CRITICAL FIX: Removed overkill critical section - volatile bool
+        // reads are atomic on ARM Cortex-M
+        return constructed_;
     }
 
     /// @brief Arrow operator for convenient access
@@ -432,7 +533,7 @@ private:
     Storage storage_;
     
     // Volatile flag to track construction state
-    // Protected by ChibiOS critical sections for thread safety
+    // Protected by ChibiOS critical sections for thread safety during writes
     volatile bool constructed_;
 };
 
@@ -441,6 +542,8 @@ private:
 // ========================================
 // These aliases maintain compatibility with existing code
 
+// CRITICAL FIX: Use ChibiOS Mutex type (capital M, not mutex_t)
+// ChibiOS defines Mutex as a struct in chmtx.h
 using ScopedLock = OrderedScopedLock<Mutex, false>;
 using MutexLock = ScopedLock;
 using MutexTryLock = OrderedScopedLock<Mutex, true>;

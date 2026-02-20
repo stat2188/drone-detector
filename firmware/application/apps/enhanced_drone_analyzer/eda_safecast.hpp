@@ -4,6 +4,8 @@
  * STAGE 4 FIXES IMPLEMENTED:
  * - SafeCast: Type-safe numeric conversions with bounds checking
  * - safe_reinterpret_cast: Safe pointer casting with alignment checks
+ * - StrictMode: Compile-time enforcement for critical conversions
+ * - will_overflow/will_underflow: Pre-check helpers for conversions
  *
  * DIAMOND CODE STANDARDS:
  * - Zero-heap allocation
@@ -19,7 +21,6 @@
 #define EDA_SAFECAST_HPP_
 
 #include <cstdint>
-#include <cstring>
 #include <cassert>
 #include <type_traits>
 #include <limits>
@@ -38,18 +39,21 @@ namespace ui::apps::enhanced_drone_analyzer {
  *
  * @tparam To Target type
  * @tparam From Source type
- * @param value Value to convert
- * @return Converted value (clamped if out of range in release mode)
+ * @tparam StrictMode If true, fails at compile time for potentially unsafe conversions (default: false)
  *
  * USAGE:
  *   int64_t large_value = 1000000;
- *   int32_t safe_value = SafeCast<int32_t>::from(large_value);
+ *   int32_t safe_value = SafeCast<int32_t, int64_t, false>::from(large_value);
  *
- * @note Compile-time error if types have incompatible signs
+ *   // For critical code paths requiring compile-time safety:
+ *   int32_t strict_value = SafeCast<int32_t, int64_t, true>::from(large_value);
+ *
+ * @note Compile-time error if types have incompatible signs and StrictMode is true
  * @note Runtime assertion in debug mode on overflow/underflow
  * @note Clamps to target range in release mode
+ * @note In StrictMode, static_assert prevents compilation if conversion cannot be guaranteed safe
  */
-template<typename To, typename From>
+template<typename To, typename From, bool StrictMode = false>
 class SafeCast {
 public:
     /**
@@ -61,9 +65,11 @@ public:
         // Compile-time check: ensure target type is not smaller than source type
         // if both types are signed or both are unsigned
         static_assert(
+            !StrictMode || 
             (std::is_signed<To>::value == std::is_signed<From>::value) ||
             (sizeof(To) >= sizeof(From)),
-            "Unsafe conversion: target type may lose precision"
+            "SafeCast: Unsafe conversion in StrictMode - target type may lose precision. "
+            "Use StrictMode=false for runtime-checked conversion."
         );
 
         // Handle same-type conversion (no-op)
@@ -80,11 +86,11 @@ public:
                 constexpr To to_min = std::numeric_limits<To>::min();
                 constexpr To to_max = std::numeric_limits<To>::max();
                 if (value < static_cast<From>(to_min)) {
-                    assert(false && "SafeCast: underflow");
+                    assert(false && "SafeCast: underflow - value below target type minimum");
                     return to_min;
                 }
                 if (value > static_cast<From>(to_max)) {
-                    assert(false && "SafeCast: overflow");
+                    assert(false && "SafeCast: overflow - value above target type maximum");
                     return to_max;
                 }
                 return static_cast<To>(value);
@@ -99,7 +105,7 @@ public:
                 // Target is smaller - check upper bound
                 constexpr To to_max = std::numeric_limits<To>::max();
                 if (value > static_cast<From>(to_max)) {
-                    assert(false && "SafeCast: overflow");
+                    assert(false && "SafeCast: overflow - value above target type maximum");
                     return to_max;
                 }
                 return static_cast<To>(value);
@@ -109,13 +115,13 @@ public:
         // Handle signed-to-unsigned conversion
         if constexpr (!std::is_signed<To>::value && std::is_signed<From>::value) {
             if (value < 0) {
-                assert(false && "SafeCast: negative to unsigned");
+                assert(false && "SafeCast: negative to unsigned - cannot convert negative value to unsigned");
                 return 0;
             }
             constexpr To to_max = std::numeric_limits<To>::max();
             if (static_cast<std::make_unsigned_t<From>>(value) > 
                 static_cast<std::make_unsigned_t<From>>(to_max)) {
-                assert(false && "SafeCast: overflow");
+                assert(false && "SafeCast: overflow - value above target type maximum");
                 return to_max;
             }
             return static_cast<To>(value);
@@ -125,7 +131,7 @@ public:
         if constexpr (std::is_signed<To>::value && !std::is_signed<From>::value) {
             constexpr To to_max = std::numeric_limits<To>::max();
             if (value > static_cast<std::make_unsigned_t<From>>(to_max)) {
-                assert(false && "SafeCast: overflow");
+                assert(false && "SafeCast: overflow - value above target type maximum");
                 return to_max;
             }
             return static_cast<To>(value);
@@ -182,6 +188,95 @@ public:
 
         return true;
     }
+
+    /**
+     * @brief Check if value would overflow when converted to target type
+     * @param value Value to check
+     * @return true if conversion would overflow
+     */
+    static constexpr bool will_overflow(From value) noexcept {
+        // Handle same-type conversion
+        if constexpr (std::is_same<To, From>::value) {
+            return false;
+        }
+
+        // Handle signed-to-signed conversion
+        if constexpr (std::is_signed<To>::value && std::is_signed<From>::value) {
+            if constexpr (sizeof(To) >= sizeof(From)) {
+                return false;
+            } else {
+                constexpr To to_max = std::numeric_limits<To>::max();
+                return value > static_cast<From>(to_max);
+            }
+        }
+
+        // Handle unsigned-to-unsigned conversion
+        if constexpr (!std::is_signed<To>::value && !std::is_signed<From>::value) {
+            if constexpr (sizeof(To) >= sizeof(From)) {
+                return false;
+            } else {
+                constexpr To to_max = std::numeric_limits<To>::max();
+                return value > static_cast<From>(to_max);
+            }
+        }
+
+        // Handle signed-to-unsigned conversion
+        if constexpr (!std::is_signed<To>::value && std::is_signed<From>::value) {
+            if (value < 0) {
+                return false; // Negative values are underflow, not overflow
+            }
+            constexpr To to_max = std::numeric_limits<To>::max();
+            return static_cast<std::make_unsigned_t<From>>(value) > 
+                   static_cast<std::make_unsigned_t<From>>(to_max);
+        }
+
+        // Handle unsigned-to-signed conversion
+        if constexpr (std::is_signed<To>::value && !std::is_signed<From>::value) {
+            constexpr To to_max = std::numeric_limits<To>::max();
+            return value > static_cast<std::make_unsigned_t<From>>(to_max);
+        }
+
+        return false;
+    }
+
+    /**
+     * @brief Check if value would underflow when converted to target type
+     * @param value Value to check
+     * @return true if conversion would underflow
+     */
+    static constexpr bool will_underflow(From value) noexcept {
+        // Handle same-type conversion
+        if constexpr (std::is_same<To, From>::value) {
+            return false;
+        }
+
+        // Handle signed-to-signed conversion
+        if constexpr (std::is_signed<To>::value && std::is_signed<From>::value) {
+            if constexpr (sizeof(To) >= sizeof(From)) {
+                return false;
+            } else {
+                constexpr To to_min = std::numeric_limits<To>::min();
+                return value < static_cast<From>(to_min);
+            }
+        }
+
+        // Handle unsigned-to-unsigned conversion
+        if constexpr (!std::is_signed<To>::value && !std::is_signed<From>::value) {
+            return false; // Unsigned types cannot underflow
+        }
+
+        // Handle signed-to-unsigned conversion
+        if constexpr (!std::is_signed<To>::value && std::is_signed<From>::value) {
+            return value < 0;
+        }
+
+        // Handle unsigned-to-signed conversion
+        if constexpr (std::is_signed<To>::value && !std::is_signed<From>::value) {
+            return false; // Unsigned to signed cannot underflow
+        }
+
+        return false;
+    }
 };
 
 // ========================================
@@ -209,11 +304,13 @@ template<typename To, typename From>
 constexpr To safe_reinterpret_cast(From* ptr) noexcept {
     static_assert(alignof(typename std::remove_pointer<To>::type) <= 
                   alignof(typename std::remove_pointer<From>::type),
-                  "SafeCast: Target alignment exceeds source alignment");
+                  "SafeCast: Target alignment exceeds source alignment - "
+                  "this may cause undefined behavior on some platforms");
     static_assert(alignof(typename std::remove_pointer<To>::type) <= 
                   alignof(std::max_align_t),
-                  "SafeCast: Target alignment too large for platform");
-    assert(ptr != nullptr && "SafeCast: null pointer cast");
+                  "SafeCast: Target alignment too large for platform - "
+                  "maximum alignment requirement exceeded");
+    assert(ptr != nullptr && "SafeCast: null pointer cast - dereferencing will cause undefined behavior");
     return reinterpret_cast<To>(ptr);
 }
 
@@ -224,11 +321,13 @@ template<typename To, typename From>
 constexpr To safe_reinterpret_cast_volatile(From* ptr) noexcept {
     static_assert(alignof(typename std::remove_pointer<To>::type) <= 
                   alignof(typename std::remove_pointer<From>::type),
-                  "SafeCast: Target alignment exceeds source alignment");
+                  "SafeCast: Target alignment exceeds source alignment - "
+                  "this may cause undefined behavior on some platforms");
     static_assert(alignof(typename std::remove_pointer<To>::type) <= 
                   alignof(std::max_align_t),
-                  "SafeCast: Target alignment too large for platform");
-    assert(ptr != nullptr && "SafeCast: null pointer cast");
+                  "SafeCast: Target alignment too large for platform - "
+                  "maximum alignment requirement exceeded");
+    assert(ptr != nullptr && "SafeCast: null pointer cast - dereferencing will cause undefined behavior");
     return reinterpret_cast<To>(ptr);
 }
 
@@ -239,8 +338,9 @@ template<typename To>
 constexpr To safe_reinterpret_cast_addr(uintptr_t addr) noexcept {
     static_assert(alignof(typename std::remove_pointer<To>::type) <= 
                   alignof(std::max_align_t),
-                  "SafeCast: Target alignment too large for platform");
-    assert(addr != 0 && "SafeCast: zero address cast");
+                  "SafeCast: Target alignment too large for platform - "
+                  "maximum alignment requirement exceeded");
+    assert(addr != 0 && "SafeCast: zero address cast - dereferencing will cause undefined behavior");
     return reinterpret_cast<To>(addr);
 }
 
@@ -252,6 +352,7 @@ constexpr To safe_reinterpret_cast_addr(uintptr_t addr) noexcept {
  *
  * Performs bit-level type conversion (like std::bit_cast in C++20).
  * Requires both types to have the same size and be trivially copyable.
+ * Uses explicit byte-by-byte copy for C++14/17 constexpr compatibility.
  *
  * @tparam To Target type
  * @tparam From Source type
@@ -264,18 +365,28 @@ constexpr To safe_reinterpret_cast_addr(uintptr_t addr) noexcept {
  *
  * @note Compile-time error if types have different sizes
  * @note Compile-time error if types are not trivially copyable
+ * @note Uses explicit byte copy for C++14/17 constexpr compatibility
  */
 template<typename To, typename From>
 constexpr To safe_bit_cast(const From& value) noexcept {
     static_assert(sizeof(To) == sizeof(From), 
-                  "SafeCast: Types must have same size for bit_cast");
+                  "SafeCast: Types must have same size for bit_cast - "
+                  "source and target types have different sizes");
     static_assert(std::is_trivially_copyable<To>::value, 
-                  "SafeCast: Target type must be trivially copyable");
+                  "SafeCast: Target type must be trivially copyable - "
+                  "non-trivially-copyable types cannot be safely bit-cast");
     static_assert(std::is_trivially_copyable<From>::value, 
-                  "SafeCast: Source type must be trivially copyable");
+                  "SafeCast: Source type must be trivially copyable - "
+                  "non-trivially-copyable types cannot be safely bit-cast");
     
     To result{};
-    std::memcpy(&result, &value, sizeof(To));
+    // Use explicit byte-by-byte copy for C++14/17 constexpr compatibility
+    // (std::memcpy is not constexpr in C++14/17)
+    const uint8_t* src = reinterpret_cast<const uint8_t*>(&value);
+    uint8_t* dst = reinterpret_cast<uint8_t*>(&result);
+    for (size_t i = 0; i < sizeof(To); ++i) {
+        dst[i] = src[i];
+    }
     return result;
 }
 
@@ -287,7 +398,7 @@ constexpr To safe_bit_cast(const From& value) noexcept {
  */
 constexpr inline uint64_t safe_frequency_cast(int64_t freq_hz) noexcept {
     if (freq_hz < 0) {
-        assert(false && "SafeCast: negative frequency");
+        assert(false && "SafeCast: negative frequency - frequency values cannot be negative");
         return 0;
     }
     return static_cast<uint64_t>(freq_hz);
@@ -299,7 +410,7 @@ constexpr inline uint64_t safe_frequency_cast(int64_t freq_hz) noexcept {
 constexpr inline int64_t safe_frequency_cast_signed(uint64_t freq_hz) noexcept {
     constexpr uint64_t MAX_SAFE_FREQ = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
     if (freq_hz > MAX_SAFE_FREQ) {
-        assert(false && "SafeCast: frequency overflow");
+        assert(false && "SafeCast: frequency overflow - frequency value exceeds int64_t maximum");
         return std::numeric_limits<int64_t>::max();
     }
     return static_cast<int64_t>(freq_hz);

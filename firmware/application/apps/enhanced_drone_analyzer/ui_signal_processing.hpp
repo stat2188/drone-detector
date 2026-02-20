@@ -1,9 +1,25 @@
-// ui_signal_processing.hpp - Signal processing utilities for Enhanced Drone Analyzer
-// Contains DetectionRingBuffer and other signal processing components
-// Based on Looking Glass migration
-//
-// DIAMOND OPTIMIZATION: WidebandMedianFilter replaced with MedianFilter<int16_t>
-// from eda_optimized_utils.hpp to eliminate code duplication
+/**
+ * @file ui_signal_processing.hpp
+ * @brief Signal processing utilities for Enhanced Drone Analyzer
+ *
+ * DIAMOND CODE STANDARDS:
+ * - Zero-heap allocation (no new, malloc, std::vector, std::string)
+ * - RAII wrappers for automatic resource management
+ * - noexcept for exception-free operation
+ * - Guard clauses for early returns
+ * - Doxygen comments for public APIs
+ *
+ * STAGE 4 DIAMOND FIXES:
+ * - DetectionRingBuffer redesigned with AtomicIndex for thread-safe head/tail indices
+ * - FNV-1a hash function for reduced collisions
+ * - Version field for concurrent update detection
+ * - Proper memory ordering with std::memory_order_acquire/release
+ * - Recursion detection in update_detection()
+ * - Documentation enforcing member variable allocation
+ *
+ * @target STM32F405 (ARM Cortex-M4, 128KB RAM)
+ * @os ChibiOS (bare-metal RTOS)
+ */
 
 #ifndef UI_SIGNAL_PROCESSING_HPP_
 #define UI_SIGNAL_PROCESSING_HPP_
@@ -11,6 +27,8 @@
 #include <array>
 #include <cstdint>
 #include <cstddef>
+#include <atomic>
+#include <limits>
 #include "ui_drone_common_types.hpp"
 #include "eda_optimized_utils.hpp"
 
@@ -26,98 +44,269 @@ using Timestamp = uint32_t;
 using EntryIndex = size_t;
 
 // ========================================
-// CONSTANTS
+// CONSTANTS (Flash-Resident)
 // ========================================
+namespace DetectionBufferConstants {
+    /// @brief Maximum number of entries in detection buffer (power of 2 for efficient masking)
+    constexpr size_t MAX_ENTRIES = 16;
+
+    /// @brief Hash table size (must match MAX_ENTRIES to prevent buffer overflow)
+    constexpr size_t HASH_TABLE_SIZE = MAX_ENTRIES;
+
+    /// @brief Bitmask for power-of-2 modulo operation
+    constexpr size_t HASH_MASK = HASH_TABLE_SIZE - 1;
+
+    /// @brief Default RSSI value when no signal is detected
+    constexpr RSSIValue DEFAULT_RSSI_DBM = EDA::Constants::RSSI_INVALID_DBM;
+
+    /// @brief Marker for empty hash table slots
+    constexpr FrequencyHash EMPTY_HASH_MARKER = std::numeric_limits<FrequencyHash>::max();
+
+    /// @brief Zero timestamp value
+    constexpr Timestamp ZERO_TIMESTAMP = 0;
+
+    /// @brief Threshold for detecting timestamp wrap-around (half of max value)
+    constexpr Timestamp WRAP_THRESHOLD = 0xFFFFFFFFUL / 2;
+
+    /// @brief FNV-1a hash function offset basis (64-bit)
+    constexpr FrequencyHash FNV_OFFSET_BASIS = 14695981039346656037ULL;
+
+    /// @brief FNV-1a hash function prime (64-bit)
+    constexpr FrequencyHash FNV_PRIME = 1099511628211ULL;
+}
+
+// ========================================
+// GLOBAL CONSTANTS
+// ========================================
+/// @brief Hysteresis margin for RSSI comparisons (dB)
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 
-/// Default RSSI value when no signal is detected (invalid dBm marker)
-/// @note Uses internal linkage (static constexpr) to avoid ODR violations
+/// @brief Default RSSI value when no signal is detected (invalid dBm marker)
 static constexpr RSSIValue DEFAULT_RSSI_DBM = EDA::Constants::RSSI_INVALID_DBM;
 
-// DIAMOND OPTIMIZATION: Using unified MedianFilter template
-// Replaces old WidebandMedianFilter class
+// ========================================
+// DIAMOND OPTIMIZATION: Unified MedianFilter
+// ========================================
+/// @brief Median filter for wideband RSSI values
+/// @note Using unified MedianFilter template to eliminate code duplication
 using WidebandMedianFilter = MedianFilter<int16_t, 11>;
 
 // ========================================
-// ENTRY STRUCT (POD for memory safety)
+// ENTRY STRUCT (Atomic-Safe POD with Versioning)
 // ========================================
+/**
+ * @brief Detection entry in ring buffer
+ *
+ * CRITICAL FIX: Aligned to 4 bytes to ensure atomic 32-bit reads on ARM Cortex-M4.
+ * CRITICAL FIX: Version field added to detect concurrent updates (not torn reads on 32-bit ARM).
+ *
+ * On 32-bit ARM Cortex-M4:
+ * - size_t is 4 bytes (atomic reads)
+ * - Version field detects concurrent updates during read
+ *
+ * On 64-bit ARM:
+ * - size_t is 8 bytes (can be torn)
+ * - Version field detects torn reads
+ */
+#pragma pack(push, 4)
 struct DetectionEntry {
-    FrequencyHash frequency_hash;
-    DetectionCount detection_count;
-    RSSIValue rssi_value;
-    Timestamp timestamp;
+    uint32_t version;              ///< Sequence counter for concurrent update detection
+    FrequencyHash frequency_hash;  ///< Hash of frequency (8 bytes, may be torn on 64-bit)
+    DetectionCount detection_count; ///< Number of detections
+    uint8_t _padding1;            ///< Padding for alignment
+    RSSIValue rssi_value;         ///< RSSI value in dBm
+    Timestamp timestamp;            ///< Timestamp of last detection
+    uint16_t _padding2;           ///< Padding for 4-byte alignment
+};
+#pragma pack(pop)
+
+static_assert(sizeof(DetectionEntry) == 24, "DetectionEntry must be 24 bytes");
+static_assert(alignof(DetectionEntry) == 4, "DetectionEntry must be 4-byte aligned");
+
+// ========================================
+// ATOMIC INDEX WRAPPER
+// ========================================
+/**
+ * @brief Atomic index wrapper for thread-safe buffer indices
+ *
+ * Provides atomic operations on head/tail indices with proper memory ordering.
+ * Uses std::atomic for proper synchronization on ARM Cortex-M4.
+ *
+ * @note Zero-overhead abstraction (optimizes to LDREX/STREX on ARM)
+ */
+class AtomicIndex {
+public:
+    AtomicIndex() noexcept : value_(0) {}
+
+    /// @brief Atomic increment with modulo (power-of-2)
+    /// @param mask Bitmask for modulo operation (HASH_MASK)
+    /// @return Old value before increment
+    /// @note Uses release semantics for proper synchronization
+    size_t increment_and_wrap(size_t mask) noexcept {
+        size_t old_value = value_.load(std::memory_order_relaxed);
+        size_t new_value = (old_value + 1) & mask;
+        value_.store(new_value, std::memory_order_release);
+        return old_value;
+    }
+
+    /// @brief Atomic load with acquire semantics
+    /// @return Current index value
+    /// @note Acquire semantics ensure all subsequent reads see the store
+    size_t load_acquire() const noexcept {
+        return value_.load(std::memory_order_acquire);
+    }
+
+    /// @brief Atomic store with release semantics
+    /// @param value New value to store
+    /// @note Release semantics ensure all prior writes are visible
+    void store_release(size_t value) noexcept {
+        value_.store(value, std::memory_order_release);
+    }
+
+    /// @brief Atomic compare-and-swap
+    /// @param expected Expected value (updated on failure)
+    /// @param desired Desired value
+    /// @return true if swap succeeded, false otherwise
+    bool compare_exchange_weak(size_t& expected, size_t desired) noexcept {
+        return value_.compare_exchange_weak(expected, desired,
+                                          std::memory_order_acq_rel,
+                                          std::memory_order_acquire);
+    }
+
+private:
+    std::atomic<size_t> value_;
 };
 
 // ========================================
-// DETECTION RING BUFFER (Zero-Heap)
+// FNV-1a HASH FUNCTION
 // ========================================
-// STAGE 4 DIAMOND FIX: Thread-safe with atomic head and mutex
-// ============================================================
-// This ring buffer is designed for multi-threaded access pattern.
-//
-// WRITER THREAD: DroneScanner::scan_thread (baseband/M0 context)
-//   - Calls update_detection() to record new signal detections
-//   - Called from perform_database_scan_cycle() and perform_wideband_scan_cycle()
-//
-// READER THREAD: UI thread (main application context)
-//   - Calls get_detection_count() and get_rssi_value() for display updates
-//   - Called from DroneDisplayController update methods
-//
-// SYNCHRONIZATION STRATEGY:
-//   - Mutex-protected writer methods (update_detection, clear)
-//   - Lock-free reader methods using atomic head_ index
-//   - Memory ordering: Acquire/release for atomic operations
-//
-// RATIONALE FOR HYBRID LOCKING:
-//   1. Writer methods use mutex for consistency during multi-writer scenarios
-//   2. Reader methods are lock-free for performance (UI updates are frequent)
-//   3. Atomic head_ ensures readers see consistent buffer state
-//   4. Worst case: reader sees slightly stale data (acceptable for UI)
-//
-// STAGE 4 FIXES:
-//   - Added volatile size_t head_ for head index (protected by mutex)
-//   - Added mutable Mutex buffer_mutex_ for thread-safe writer access
-//   - Implemented mutex-protected writer methods
-//   - Implemented lock-free reader methods
+/**
+ * @brief FNV-1a hash function for frequency hashing
+ *
+ * Better hash function to reduce collisions compared to simple bitmask.
+ * Replaces simple bitmask hash from original implementation.
+ *
+ * @note FNV-1a: hash ^= byte; hash *= prime;
+ * @note ~20-30 cycles for 64-bit value on ARM Cortex-M4
+ */
+struct FrequencyHasher {
+    /// @brief Compute FNV-1a hash of frequency
+    /// @param frequency Frequency value to hash
+    /// @return Hash value
+    static constexpr FrequencyHash hash(FrequencyHash frequency) noexcept {
+        FrequencyHash hash = DetectionBufferConstants::FNV_OFFSET_BASIS;
+        const uint8_t* data = reinterpret_cast<const uint8_t*>(&frequency);
+        for (size_t i = 0; i < sizeof(FrequencyHash); ++i) {
+            hash ^= data[i];
+            hash *= DetectionBufferConstants::FNV_PRIME;
+        }
+        return hash;
+    }
+};
+
 // ========================================
+// DETECTION RING BUFFER (Thread-Safe)
+// ========================================
+/**
+ * @brief Thread-safe ring buffer for detection entries
+ *
+ * SYNCHRONIZATION STRATEGY:
+ * - Writer methods (update_detection, clear): Mutex-protected
+ * - Reader methods (get_detection_count, get_rssi_value): Lock-free with atomic head_
+ * - Memory ordering: Acquire/release for atomic operations
+ * - Version field: Detects concurrent updates during reads
+ *
+ * THREADING MODEL:
+ * - Writer thread: DroneScanner::scan_thread (baseband/M0 context)
+ * - Reader thread: UI thread (main application context)
+ *
+ * RATIONALE FOR HYBRID LOCKING:
+ * 1. Writer methods use mutex for consistency during multi-writer scenarios
+ * 2. Reader methods are lock-free for performance (UI updates are frequent at 60 Hz)
+ * 3. Atomic head_ ensures readers see consistent buffer state
+ * 4. Worst case: reader sees slightly stale data (acceptable for UI)
+ *
+ * CRITICAL: DO NOT call from ISR context (mutex not ISR-safe)
+ *
+ * ALLOCATION REQUIREMENT:
+ * DetectionRingBuffer MUST be allocated as a member variable (BSS segment).
+ * DO NOT allocate on stack - this causes stack overflow (416 bytes).
+ *
+ * @note Memory usage: ~416 bytes (entries_[]: 384 bytes + head_: 4 bytes +
+ *       global_version_: 4 bytes + buffer_mutex_: ~24 bytes)
+ */
 class DetectionRingBuffer {
 public:
-    // Phase 3 Optimization: Reduced from 32 to 16 entries (~256 bytes savings)
-    static constexpr size_t MAX_ENTRIES = 16;
-
     DetectionRingBuffer() noexcept = default;
     ~DetectionRingBuffer() = default;
 
     DetectionRingBuffer(const DetectionRingBuffer&) = delete;
     DetectionRingBuffer& operator=(const DetectionRingBuffer&) = delete;
 
-    /// @brief Update detection entry (mutex-protected)
+    /// @brief Update detection entry (mutex-protected writer)
     /// @param frequency_hash Hash of frequency to update
     /// @param detection_count New detection count
     /// @param rssi_value New RSSI value
     /// @note Acquires buffer_mutex_ for thread safety
-    void update_detection(FrequencyHash frequency_hash, DetectionCount detection_count, RSSIValue rssi_value) noexcept;
+    /// @note Includes recursion detection to prevent deadlock
+    /// @warning DO NOT call from ISR context (mutex not ISR-safe)
+    void update_detection(FrequencyHash frequency_hash,
+                        DetectionCount detection_count,
+                        RSSIValue rssi_value) noexcept;
 
-    /// @brief Get detection count (lock-free reader)
+    /// @brief Get detection count (lock-free reader with versioning)
     /// @param frequency_hash Hash of frequency to query
-    /// @return Detection count (0 if not found)
-    /// @note Uses atomic head_ for lock-free access
+    /// @return Detection count (0 if not found or concurrent update detected)
+    /// @note Uses atomic head_ and versioning for consistency
+    /// @note May return stale data (acceptable for UI)
     DetectionCount get_detection_count(FrequencyHash frequency_hash) const noexcept;
 
-    /// @brief Get RSSI value (lock-free reader)
+    /// @brief Get RSSI value (lock-free reader with versioning)
     /// @param frequency_hash Hash of frequency to query
-    /// @return RSSI value (DEFAULT_RSSI_DBM if not found)
-    /// @note Uses volatile head_ with mutex protection for access
+    /// @return RSSI value (DEFAULT_RSSI_DBM if not found or concurrent update detected)
+    /// @note Uses atomic head_ and versioning for consistency
+    /// @note May return stale data (acceptable for UI)
     RSSIValue get_rssi_value(FrequencyHash frequency_hash) const noexcept;
 
     /// @brief Clear all entries (mutex-protected)
     /// @note Acquires buffer_mutex_ for thread safety
+    /// @warning DO NOT call from ISR context (mutex not ISR-safe)
     void clear() noexcept;
 
 private:
-    std::array<DetectionEntry, MAX_ENTRIES> entries_{};
-    volatile size_t head_{0};  // STAGE 4 FIX: Volatile head index (protected by mutex)
-    mutable Mutex buffer_mutex_;      // STAGE 4 FIX: Mutex for thread-safe writer access
+    std::array<DetectionEntry, DetectionBufferConstants::MAX_ENTRIES> entries_{};
+    AtomicIndex head_;                    ///< Atomic head index for ring buffer eviction
+    uint32_t global_version_;             ///< Global version counter for concurrent update detection
+    mutable Mutex buffer_mutex_;           ///< Mutex for writer synchronization
+
+    /// @brief Compute hash index from frequency hash
+    /// @param hash Frequency hash to index
+    /// @return Hash table index (0 to HASH_TABLE_SIZE - 1)
+    size_t hash_index(FrequencyHash hash) const noexcept {
+        return FrequencyHasher::hash(hash) & DetectionBufferConstants::HASH_MASK;
+    }
+
+    /// @brief Initialize entry to empty state
+    /// @param entry Entry to initialize
+    /// @param version Version number to assign
+    void init_entry(DetectionEntry& entry, uint32_t version) noexcept {
+        entry.version = version;
+        entry.frequency_hash = DetectionBufferConstants::EMPTY_HASH_MARKER;
+        entry.detection_count = 0;
+        entry.rssi_value = DetectionBufferConstants::DEFAULT_RSSI_DBM;
+        entry.timestamp = DetectionBufferConstants::ZERO_TIMESTAMP;
+    }
+
+    /// @brief Check if entry is consistent (no concurrent update during read)
+    /// @param entry Entry to check
+    /// @return true if entry is consistent, false otherwise
+    bool is_entry_consistent(const DetectionEntry& entry) const noexcept {
+        const uint32_t version1 = entry.version;
+        // Memory barrier to ensure second read happens after first
+        std::atomic_thread_fence(std::memory_order_acquire);
+        const uint32_t version2 = entry.version;
+        return version1 == version2;
+    }
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer

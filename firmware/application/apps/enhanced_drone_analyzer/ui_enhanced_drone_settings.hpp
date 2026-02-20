@@ -48,7 +48,13 @@ namespace ui::apps::enhanced_drone_analyzer {
 class EnhancedSettingsManager {
 public:
     // DIAMOND OPTIMIZATION: noexcept for all methods
-    static void ensure_database_exists() noexcept;
+    /**
+     * @brief Ensure the frequency database file exists
+     * @param settings Settings containing freqman_path configuration
+     * @note Creates the database file with default content if it doesn't exist
+     * @return true if database exists or was created successfully, false on error
+     */
+    static bool ensure_database_exists(const DroneAnalyzerSettings& settings) noexcept;
     static bool save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept;
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) noexcept;
     static bool verify_comm_file_exists() noexcept;
@@ -301,8 +307,8 @@ private:
     Text text_real_hardware_{{28, 8, 224, 16}, "Use Real Hardware (Disable for Demo)"};
     OptionsField field_spectrum_mode_{{8, 32}, 10, { {"Ultra Narrow", 0}, {"Narrow", 1}, {"Medium", 2}, {"Wide", 3}, {"Ultra Wide", 4} }};
     NumberField number_bandwidth_{{8, 64}, 8, {1000000, 24000000}, 1000000, ' ', false};
-    NumberField number_min_freq_{{8, 96}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
-    NumberField number_max_freq_{{8, 128}, 10, {1000000, 6000000000ULL}, 1000000, ' ', false};
+    FrequencyField number_min_freq_{{8, 96}};
+    FrequencyField number_max_freq_{{8, 128}};
     Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings", false};
 
     // DIAMOND OPTIMIZATION: noexcept for all methods

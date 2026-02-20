@@ -66,18 +66,15 @@ extern Mutex sd_card_mutex;
 // See eda_locking.hpp for implementation details.
 //
 // USAGE:
-//   OrderedScopedLock<Mutex> lock(data_mutex, LockOrder::DATA_MUTEX);
-//   OrderedScopedLock<Mutex> lock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
+//   ScopedLock lock(data_mutex, LockOrder::DATA_MUTEX);
+//   ScopedLock lock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
 //
 // LOCK ORDER RULE:
 // Always acquire locks in ascending order (1 → 2 → 3 → 4 → 5)
 // Never acquire a lower-numbered lock while holding a higher-numbered lock
 //
-// Backward compatibility aliases for existing code
-using ScopedLock = OrderedScopedLock<Mutex, false>;
-using MutexLock = ScopedLock;
-using MutexTryLock = OrderedScopedLock<Mutex, true>;
-using SDCardLock = ScopedLock;
+// NOTE: Backward compatibility aliases (ScopedLock, MutexLock, MutexTryLock, SDCardLock)
+// are now defined in eda_locking.hpp to avoid duplication.
 
 struct preset_entry {
     Frequency min = 0;
