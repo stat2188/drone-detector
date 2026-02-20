@@ -85,20 +85,15 @@ static constexpr bool validate_table(
  * @param str2 Second string
  * @return true if strings are equal
  * @note Works in constexpr contexts (C++14 compatible)
- *       Character-by-character comparison to avoid pointer comparison issues
+ *       Pure character-by-character comparison, no pointer comparison
+ *       All operations are constant expressions for static_assert compatibility
  */
 static constexpr bool strings_equal(const char* str1, const char* str2) noexcept {
-    // Guard clause: if both pointers are the same, strings are equal
-    if (str1 == str2) {
-        return true;
-    }
-    
-    // Character-by-character comparison
+    // Character-by-character comparison (all operations are constexpr)
     while (*str1 && *str2 && *str1 == *str2) {
         ++str1;
         ++str2;
     }
-    
     // Strings are equal if both reached null terminator
     return *str1 == '\0' && *str2 == '\0';
 }
