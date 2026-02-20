@@ -193,6 +193,188 @@ template<typename MutexType, bool TryLock>
 thread_local size_t OrderedScopedLock<MutexType, TryLock>::lock_stack_depth_ = 0;
 
 // ========================================
+// CRITICAL SECTION (RAII ChibiOS Critical Section)
+// ========================================
+/**
+ * @brief RAII wrapper for ChibiOS critical section
+ *
+ * Disables interrupts on construction, re-enables on destruction.
+ * Used for very short critical sections (no blocking operations).
+ *
+ * USAGE:
+ *   {
+ *       CriticalSection cs;
+ *       // Critical section here (interrupts disabled)
+ *       // No blocking operations allowed!
+ *   }
+ *   // Interrupts re-enabled here
+ *
+ * @note Must be used for very short sections only
+ * @note No blocking operations (I/O, sleep) allowed inside critical section
+ * @warning DO NOT use with file I/O or long operations
+ */
+class CriticalSection {
+public:
+    /**
+     * @brief Constructor - Enters critical section (disables interrupts)
+     */
+    CriticalSection() noexcept {
+        chSysLock();
+    }
+
+    /**
+     * @brief Destructor - Exits critical section (re-enables interrupts)
+     */
+    ~CriticalSection() noexcept {
+        chSysUnlock();
+    }
+
+    /// @brief Non-copyable, non-movable (RAII requirement)
+    CriticalSection(const CriticalSection&) = delete;
+    CriticalSection& operator=(const CriticalSection&) = delete;
+    CriticalSection(CriticalSection&&) = delete;
+    CriticalSection& operator=(CriticalSection&&) = delete;
+};
+
+// ========================================
+// THREAD GUARD (RAII Thread Management)
+// ========================================
+/**
+ * @brief RAII wrapper for ChibiOS thread lifecycle
+ *
+ * Terminates and waits for thread on destruction.
+ * Ensures threads are properly cleaned up even on early returns.
+ *
+ * USAGE:
+ *   ThreadGuard guard(scanning_thread_);
+ *   // Thread will be automatically terminated when 'guard' goes out of scope
+ *
+ * @note Non-copyable, movable (supports move semantics)
+ * @note Thread is terminated and waited for in destructor
+ */
+class ThreadGuard {
+public:
+    /**
+     * @brief Constructor - Takes ownership of thread pointer
+     * @param thread Pointer to ChibiOS thread (may be nullptr)
+     */
+    explicit ThreadGuard(Thread* thread) noexcept : thread_(thread) {}
+
+    /**
+     * @brief Destructor - Terminates and waits for thread
+     *
+     * If thread pointer is not nullptr:
+     * 1. Signals thread to terminate
+     * 2. Waits for thread to exit
+     */
+    ~ThreadGuard() noexcept {
+        if (thread_) {
+            chThdTerminate(thread_);
+            chThdWait(thread_);
+            thread_ = nullptr;
+        }
+    }
+
+    /**
+     * @brief Move constructor - Transfers ownership
+     * @param other ThreadGuard to move from
+     */
+    ThreadGuard(ThreadGuard&& other) noexcept : thread_(other.thread_) {
+        other.thread_ = nullptr;
+    }
+
+    /**
+     * @brief Move assignment operator
+     * @param other ThreadGuard to move from
+     * @return Reference to this
+     */
+    ThreadGuard& operator=(ThreadGuard&& other) noexcept {
+        if (this != &other) {
+            // Clean up current thread
+            if (thread_) {
+                chThdTerminate(thread_);
+                chThdWait(thread_);
+            }
+            // Transfer ownership
+            thread_ = other.thread_;
+            other.thread_ = nullptr;
+        }
+        return *this;
+    }
+
+    /// @brief Non-copyable (RAII requirement)
+    ThreadGuard(const ThreadGuard&) = delete;
+    ThreadGuard& operator=(const ThreadGuard&) = delete;
+
+    /**
+     * @brief Release ownership without terminating thread
+     * @return Pointer to thread (caller takes ownership)
+     */
+    Thread* release() noexcept {
+        Thread* tmp = thread_;
+        thread_ = nullptr;
+        return tmp;
+    }
+
+    /**
+     * @brief Get thread pointer
+     * @return Pointer to thread (may be nullptr)
+     */
+    Thread* get() const noexcept { return thread_; }
+
+    /**
+     * @brief Check if thread is being managed
+     * @return true if thread pointer is not nullptr
+     */
+    bool has_thread() const noexcept { return thread_ != nullptr; }
+
+private:
+    Thread* thread_;
+};
+
+// ========================================
+// MUTEX INITIALIZER (RAII Mutex Setup)
+// ========================================
+/**
+ * @brief RAII wrapper for ChibiOS mutex initialization
+ *
+ * Initializes mutex on construction, does NOT clean up on destruction
+ * (ChibiOS mutexes are typically static and never de-initialized).
+ *
+ * USAGE:
+ *   MutexInitializer init(my_mutex);
+ *   // my_mutex is now initialized and ready to use
+ *
+ * @note Mutex is NOT de-initialized (ChibiOS design)
+ * @note Use for static mutexes that live for entire program lifetime
+ */
+class MutexInitializer {
+public:
+    /**
+     * @brief Constructor - Initializes mutex
+     * @param mtx Reference to mutex to initialize
+     */
+    explicit MutexInitializer(Mutex& mtx) noexcept : mtx_(mtx) {
+        chMtxInit(&mtx_);
+    }
+
+    /// @brief Destructor - Does nothing (ChibiOS mutexes are never de-initialized)
+    ~MutexInitializer() noexcept {
+        // ChibiOS mutexes are typically static and never de-initialized
+        // Leaving this empty is intentional
+    }
+
+    /// @brief Non-copyable, non-movable
+    MutexInitializer(const MutexInitializer&) = delete;
+    MutexInitializer& operator=(const MutexInitializer&) = delete;
+    MutexInitializer(MutexInitializer&&) = delete;
+    MutexInitializer& operator=(MutexInitializer&&) = delete;
+
+private:
+    Mutex& mtx_;
+};
+
+// ========================================
 // TWO PHASE LOCK
 // ========================================
 /**

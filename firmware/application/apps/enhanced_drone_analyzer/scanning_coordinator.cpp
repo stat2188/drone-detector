@@ -159,7 +159,9 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     
     // Counters for error detection
     TimeoutCount consecutive_timeouts = 0;
-    TimeoutCount consecutive_scanner_failures = 0;
+    // DEPRECATED: Removed unused variable consecutive_scanner_failures
+    // Reason: Variable was declared but never used, causing compiler warning
+    // TimeoutCount consecutive_scanner_failures = 0;
 
     while (scanning_active_) {
         const systime_t cycle_start = chTimeNow();
