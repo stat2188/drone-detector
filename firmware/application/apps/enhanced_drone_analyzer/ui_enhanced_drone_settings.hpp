@@ -398,15 +398,17 @@ template <typename Callback>
 class DroneEntryEditorView : public View {
 public:
     explicit DroneEntryEditorView(NavigationView& nav, const DroneDbEntry& entry, Callback callback)
-        : View(), nav_(nav), entry_(entry), on_save_fn_(std::move(callback)),
+        : View(),
+          nav_(nav),
+          entry_(entry),
+          on_save_fn_(std::move(callback)),
+          description_buffer_{entry.description},
           text_freq_{{8, 16, 64, 16}, "Freq:"},
           field_freq_{{8, 32}},
           text_desc_{{8, 64, 64, 16}, "Name:"},
           field_desc_{description_buffer_, {8, 80}, 28},
           button_save_{{8, 128, 100, 32}, "SAVE"},
           button_cancel_{{128, 128, 100, 32}, "CANCEL"} {
-        // Initialize description_buffer_ with entry description
-        description_buffer_ = entry.description;
         add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
         field_freq_.set_value(entry_.freq);
         button_save_.on_select = [this](Button&) { on_save(); };

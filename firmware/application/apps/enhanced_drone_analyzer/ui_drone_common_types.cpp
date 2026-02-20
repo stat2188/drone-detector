@@ -80,11 +80,36 @@ static constexpr bool validate_table(
 }
 
 /**
+ * @brief Compile-time string comparison for constexpr contexts
+ * @param str1 First string
+ * @param str2 Second string
+ * @return true if strings are equal
+ * @note Works in constexpr contexts (C++14 compatible)
+ *       Character-by-character comparison to avoid pointer comparison issues
+ */
+static constexpr bool strings_equal(const char* str1, const char* str2) noexcept {
+    // Guard clause: if both pointers are the same, strings are equal
+    if (str1 == str2) {
+        return true;
+    }
+    
+    // Character-by-character comparison
+    while (*str1 && *str2 && *str1 == *str2) {
+        ++str1;
+        ++str2;
+    }
+    
+    // Strings are equal if both reached null terminator
+    return *str1 == '\0' && *str2 == '\0';
+}
+
+/**
  * @brief Check for duplicate keys at compile time
  * @tparam N Table size
  * @param table Translation table
  * @return true if duplicate keys found
  * @note Compile-time only, no runtime overhead
+ *       Uses constexpr string comparison for static_assert compatibility
  */
 template<size_t N>
 static constexpr bool has_duplicate_keys(
@@ -92,9 +117,9 @@ static constexpr bool has_duplicate_keys(
 ) noexcept {
     for (size_t i = 0; i < N; ++i) {
         for (size_t j = i + 1; j < N; ++j) {
-            // CRITICAL FIX: Use strcmp for compile-time comparison
-            // Note: This requires table entries to be constexpr
-            if (table[i].key == table[j].key) {
+            // CRITICAL FIX: Use constexpr string comparison
+            // Pointer comparison is not a constant expression in C++14
+            if (strings_equal(table[i].key, table[j].key)) {
                 return true;
             }
         }
