@@ -36,6 +36,7 @@
 #include "diamond_core.hpp"
 #include "gradient.hpp"
 #include "eda_locking.hpp"  // STAGE 4 FIX: Lock order enforcement
+#include "eda_raii.hpp"
 #include "eda_safecast.hpp"  // STAGE 4 FIX: Safe type casting
 #include "baseband_api.hpp"
 #include "portapack.hpp"
@@ -310,17 +311,33 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
 }
 
 void DroneScanner::start_scanning() {
-    if (scanning_active_.load(std::memory_order_acquire)) return;
+    bool is_scanning;
+    {
+        raii::SystemLock lock;
+        is_scanning = scanning_active_;
+    }
+    if (is_scanning) return;
 
-    scanning_active_.store(true, std::memory_order_release);
+    {
+        raii::SystemLock lock;
+        scanning_active_ = true;
+    }
     scan_cycles_ = 0;
     total_detections_ = 0;
 }
 
 void DroneScanner::stop_scanning() {
-    if (!scanning_active_.load(std::memory_order_acquire)) return;
+    bool is_scanning;
+    {
+        raii::SystemLock lock;
+        is_scanning = scanning_active_;
+    }
+    if (!is_scanning) return;
 
-    scanning_active_.store(false, std::memory_order_release);
+    {
+        raii::SystemLock lock;
+        scanning_active_ = false;
+    }
 
     // Wait for scanning thread to complete
     if (scanning_thread_ != nullptr) {
@@ -401,7 +418,12 @@ const char* DroneScanner::scanning_mode_name() const {
 }
 
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
-    if (!scanning_active_.load(std::memory_order_acquire)) return;
+    bool is_scanning;
+    {
+        raii::SystemLock lock;
+        is_scanning = scanning_active_;
+    }
+    if (!is_scanning) return;
 
     // 🔴 ENHANCED: Adaptive timing with golden mean between speed and accuracy
     // Considering Cortex M4 limitations on Portapack (limited RAM, CPU)
@@ -470,7 +492,12 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     scan_cycles_++;
 
     // Adaptive sleep based on current situation
-    if (scanning_active_.load(std::memory_order_acquire)) {
+    bool is_scanning;
+    {
+        raii::SystemLock lock;
+        is_scanning = scanning_active_;
+    }
+    if (is_scanning) {
         chThdSleepMilliseconds(adaptive_interval);
     }
 }
@@ -523,7 +550,12 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         const auto& entry = entries_to_scan[i];
 
         // GUARD CLAUSE: Check scanning flag for immediate stop
-        if (!scanning_active_.load(std::memory_order_acquire)) return;
+        bool is_scanning;
+        {
+            raii::SystemLock lock;
+            is_scanning = scanning_active_;
+        }
+        if (!is_scanning) return;
 
         Frequency target_freq_hz = entry.frequency_a;
 
@@ -539,7 +571,12 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
         // Wait for PLL stabilization - broken into small chunks for responsiveness
         for (int w = 0; w < PLL_STABILIZATION_ITERATIONS; w++) {
-            if (!scanning_active_.load(std::memory_order_acquire)) return;
+            bool is_scanning;
+            {
+                raii::SystemLock lock;
+                is_scanning = scanning_active_;
+            }
+            if (!is_scanning) return;
             chThdSleepMilliseconds(PLL_STABILIZATION_DELAY_MS);
         }
 
@@ -988,7 +1025,11 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 
         // FIX #15: Use consistent memory ordering (relaxed for both)
         // Inconsistent memory ordering can cause subtle bugs
-        systime_t last_time = last_detection_log_time_.load(std::memory_order_relaxed);
+        systime_t last_time;
+        {
+            raii::SystemLock lock;
+            last_time = last_detection_log_time_;
+        }
 
         // Use chTimeNow() directly for timing - no CH_CFG_ST_FREQUENCY dependency
         if (now - last_time > 200) { // 200ms delay (10x more frequent than before)
@@ -996,7 +1037,8 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 // log_detection_async returns false if buffer is full,
                 // so built-in protection against hanging is already inside the logger.
                 if (detection_logger_.log_detection_async(log_entry_to_write)) {
-                    last_detection_log_time_.store(now, std::memory_order_relaxed);
+                    raii::SystemLock lock;
+                    last_detection_log_time_ = now;
                 }
             }
         }
@@ -1263,8 +1305,13 @@ void DroneScanner::sync_database() {
 void DroneScanner::cleanup_database_and_scanner() {
     sync_database();
 
-    if (db_loading_active_.load(std::memory_order_acquire)) {
-        db_loading_active_.store(false, std::memory_order_release);
+    bool was_loading;
+    {
+        raii::SystemLock lock;
+        was_loading = db_loading_active_;
+        db_loading_active_ = false;
+    }
+    if (was_loading) {
         if (db_loading_thread_ != nullptr) {
             chThdWait(db_loading_thread_);
             db_loading_thread_ = nullptr;
@@ -1313,20 +1360,29 @@ void DroneScanner::db_loading_thread_loop() {
     // Проверяем, не инициализированы ли уже
     if (freq_db_ptr_ != nullptr || tracked_drones_ptr_ != nullptr) {
         handle_scan_error("DB already initialized");
-        db_loading_active_.store(false, std::memory_order_release);
+        {
+            raii::SystemLock lock;
+            db_loading_active_ = false;
+        }
         return;
     }
 
     // Placement new для FreqmanDB
     if (reinterpret_cast<uintptr_t>(freq_db_storage_) % alignof(FreqmanDB) != 0) {
         handle_scan_error("Memory: freq_db_storage_ alignment error (async)");
-        db_loading_active_.store(false, std::memory_order_release);
+        {
+            raii::SystemLock lock;
+            db_loading_active_ = false;
+        }
         return;
     }
     freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
     if (!freq_db_ptr_) {
         handle_scan_error("Memory: FreqmanDB async alloc failed");
-        db_loading_active_.store(false, std::memory_order_release);
+        {
+            raii::SystemLock lock;
+            db_loading_active_ = false;
+        }
         return;
     }
 
@@ -1337,7 +1393,10 @@ void DroneScanner::db_loading_thread_loop() {
         handle_scan_error("Memory: tracked_drones async alloc failed");
         freq_db_ptr_->~FreqmanDB();
         freq_db_ptr_ = nullptr;
-        db_loading_active_.store(false, std::memory_order_release);
+        {
+            raii::SystemLock lock;
+            db_loading_active_ = false;
+        }
         return;
     }
 
@@ -1357,7 +1416,10 @@ void DroneScanner::db_loading_thread_loop() {
     while (sd_card::status() < sd_card::Status::Mounted) {
         if (chTimeNow() - start_time > MS2ST(5000)) {  // 5 second timeout
             handle_scan_error("SD card not ready");
-            db_loading_active_.store(false, std::memory_order_release);
+            {
+                raii::SystemLock lock;
+                db_loading_active_ = false;
+            }
             // Явный вызов деструкторов (placement new)
             if (freq_db_ptr_) {
                 freq_db_ptr_->~FreqmanDB();
@@ -1376,14 +1438,22 @@ void DroneScanner::db_loading_thread_loop() {
     {
         MutexLock lock(sd_card_mutex);
 
-    if (db_loading_active_.load(std::memory_order_acquire)) {
+    bool should_load;
+    {
+        raii::SystemLock lock;
+        should_load = db_loading_active_;
+    }
+    if (should_load) {
         db_success = freq_db_ptr_->open(db_path);
 
         if (db_success) {
             systime_t load_time = chTimeNow() - load_start;
             if (load_time > MS2ST(DB_LOAD_TIMEOUT_MS)) {
                 handle_scan_error("Database load timeout");
-                db_loading_active_.store(false, std::memory_order_release);
+                {
+                    raii::SystemLock lock;
+                    db_loading_active_ = false;
+                }
                 // Явный вызов деструкторов (placement new)
                 if (freq_db_ptr_) {
                     freq_db_ptr_->~FreqmanDB();
@@ -1399,8 +1469,12 @@ void DroneScanner::db_loading_thread_loop() {
     }
     }  // DIAMOND FIX: SDCardLock scope ends here
 
-    if ((db_loading_active_.load(std::memory_order_acquire)) &&
-        (!db_success || freq_db_ptr_->empty())) {
+    bool should_init;
+    {
+        raii::SystemLock lock;
+        should_init = db_loading_active_;
+    }
+    if (should_init && (!db_success || freq_db_ptr_->empty())) {
 
         // STAGE 4 FIX: Lock order enforcement - acquire data_mutex first, then sd_card_mutex
         // LOCK ORDER: DATA_MUTEX (2) → SD_CARD_MUTEX (5)
@@ -1414,7 +1488,12 @@ void DroneScanner::db_loading_thread_loop() {
             freq_db_ptr_->open(db_path, true);
 
             for (const auto& item : BUILTIN_DRONE_DB) {
-                if (!db_loading_active_.load(std::memory_order_acquire)) {
+                bool still_loading;
+                {
+                    raii::SystemLock lock;
+                    still_loading = db_loading_active_;
+                }
+                if (!still_loading) {
                     return;
                 }
 
@@ -1448,11 +1527,19 @@ void DroneScanner::db_loading_thread_loop() {
 
 // 🔴 FIX: Async database loading (non-blocking UI)
 void DroneScanner::initialize_database_async() {
-    if (db_loading_active_.load(std::memory_order_acquire)) {
+    bool is_loading;
+    {
+        raii::SystemLock lock;
+        is_loading = db_loading_active_;
+    }
+    if (is_loading) {
         return;  // Already loading or loaded
     }
 
-    db_loading_active_.store(true, std::memory_order_release);
+    {
+        raii::SystemLock lock;
+        db_loading_active_ = true;
+    }
 
     // ===========================================
     // ФАЗА 5.2: СОЗДАНИЕ ПОТОКА СО СТАТИЧЕСКИМ СТЕКОМ
@@ -1473,7 +1560,10 @@ void DroneScanner::initialize_database_async() {
         // GRACEFUL FAILURE: Do NOT run synchronously - would block UI thread
         // This should not happen with static stack allocation, but handle safely
         handle_scan_error("Scan unavailable - resource limit");
-        db_loading_active_.store(false, std::memory_order_release);
+        {
+            raii::SystemLock lock;
+            db_loading_active_ = false;
+        }
         freq_db_loaded_ = false;
         return;  // Keep UI responsive - early return on failure
     }
@@ -1482,7 +1572,12 @@ void DroneScanner::initialize_database_async() {
 
 // 🔴 FIX: Check if async loading finished
 bool DroneScanner::is_database_loading_complete() const {
-    return !db_loading_active_.load(std::memory_order_acquire) && freq_db_loaded_;
+    bool is_loading;
+    {
+        raii::SystemLock lock;
+        is_loading = db_loading_active_;
+    }
+    return !is_loading && freq_db_loaded_;
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
@@ -3110,12 +3205,18 @@ DroneUIController::~DroneUIController() {
 
 void DroneUIController::on_start_scan() {
     scanner_.start_scanning();
-    scanning_active_.store(true, std::memory_order_release);
+    {
+        raii::SystemLock lock;
+        scanning_active_ = true;
+    }
 }
 
 void DroneUIController::on_stop_scan() {
     scanner_.stop_scanning();
-    scanning_active_.store(false, std::memory_order_release);
+    {
+        raii::SystemLock lock;
+        scanning_active_ = false;
+    }
 }
 
 void DroneUIController::show_menu() {

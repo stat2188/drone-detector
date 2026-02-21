@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <array>
-#include <atomic>
 #include <memory>
 #include <cstdio>
 
@@ -19,6 +18,7 @@
 #include "color_lookup_unified.hpp"
 #include "eda_locking.hpp"  // STAGE 4 FIX: Lock order enforcement
 #include "eda_safecast.hpp"  // STAGE 4 FIX: Safe type casting
+#include "eda_raii.hpp"  // RAII utilities for system locking
 
 #include "ui.hpp"
 #include "ui_menu.hpp"
@@ -568,7 +568,7 @@ struct DetectionParams {
 
      Thread* scanning_thread_ = nullptr;
      mutable Mutex data_mutex;
-     std::atomic<bool> scanning_active_{false};
+     volatile bool scanning_active_{false};
     
     // ===========================================
     // DIAMOND OPTIMIZATION: Histogram Callback
@@ -617,11 +617,11 @@ struct DetectionParams {
         bool freq_db_loaded_ = false;
         size_t current_db_index_ = 0;
         Frequency last_scanned_frequency_ = 0;
-        std::atomic<systime_t> last_detection_log_time_{0};
+        volatile systime_t last_detection_log_time_{0};
 
         // 🔴 FIX: Async database loading to prevent UI freeze
         Thread* db_loading_thread_ = nullptr;
-        std::atomic<bool> db_loading_active_{false};
+        volatile bool db_loading_active_{false};
 
        // ===========================================
         // ФАЗА 5.1: СТАТИЧЕСКИЙ СТЕК ДЛЯ ПОТОКА
@@ -633,11 +633,11 @@ struct DetectionParams {
 
           static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
-      std::atomic<uint32_t> scan_cycles_{0};
-      std::atomic<uint32_t> total_detections_{0};
+      volatile uint32_t scan_cycles_{0};
+      volatile uint32_t total_detections_{0};
 
       ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
-      std::atomic<bool> is_real_mode_{true};
+      volatile bool is_real_mode_{true};
 
      size_t tracked_count_ = 0;
 
@@ -721,25 +721,29 @@ public:
     void clear_rssi_flag();
     bool is_rssi_fresh() const;
 
-    // 🔴 FIXED: TOCTOU race condition - atomic check-and-fetch method
+    // 🔴 FIXED: TOCTOU race condition - critical section check-and-fetch method
     bool get_rssi_if_fresh(int32_t& out_rssi) {
-        // Atomic check-and-fetch to prevent TOCTOU race
-        bool was_fresh = rssi_updated_.exchange(false, std::memory_order_acq_rel);
-        if (was_fresh) {
-            out_rssi = last_valid_rssi_.load(std::memory_order_acquire);
+        // Critical section check-and-fetch to prevent TOCTOU race
+        CriticalSection lock;
+        if (!rssi_updated_) {
+            return false;
         }
-        return was_fresh;
+        out_rssi = last_valid_rssi_;
+        rssi_updated_ = false;
+        return true;
     }
 
-    // NEW: Spectrum data access method (atomic check-and-fetch to avoid TOCTOU race)
+    // NEW: Spectrum data access method (critical section check-and-fetch to avoid TOCTOU race)
     bool get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer) {
-        // Atomic check-and-fetch to prevent TOCTOU race
-        bool was_fresh = spectrum_updated_.exchange(false, std::memory_order_acq_rel);
-        if (was_fresh) {
-            MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
-            out_db_buffer = last_spectrum_db_;
+        // Critical section check-and-fetch to prevent TOCTOU race
+        CriticalSection lock;
+        if (!spectrum_updated_) {
+            return false;
         }
-        return was_fresh;
+        MutexLock lock2(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
+        out_db_buffer = last_spectrum_db_;
+        spectrum_updated_ = false;
+        return true;
     }
     bool try_get_latest_spectrum(std::array<uint8_t, 256>& out_db_buffer) {
         MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
@@ -747,7 +751,8 @@ public:
         return true;
     }
     void clear_spectrum_flag() {
-        spectrum_updated_.store(false, std::memory_order_release);
+        CriticalSection lock;
+        spectrum_updated_ = false;
     }
 
     // 🔴 FIX: Public method to set spectrum FIFO (called from parent View)
@@ -774,9 +779,9 @@ private:
     // 🔴 FIX: Spectrum data buffer and synchronization
     std::array<uint8_t, 256> last_spectrum_db_;
     mutable Mutex spectrum_mutex_;
-    
-    // 🔴 FIX: Replace volatile with atomic with explicit memory ordering
-    std::atomic<bool> spectrum_updated_{false};
+
+    // 🔴 FIX: Replace atomic with volatile (protected by critical sections)
+    volatile bool spectrum_updated_{false};
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
@@ -784,10 +789,10 @@ private:
     RxRadioState radio_state_;
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
-    
-    // 🔴 FIX: Replace volatile with atomic with explicit memory ordering
-    std::atomic<bool> rssi_updated_{false};
-    std::atomic<int32_t> last_valid_rssi_{-120};
+
+    // 🔴 FIX: Replace atomic with volatile (protected by critical sections)
+    volatile bool rssi_updated_{false};
+    volatile int32_t last_valid_rssi_{-120};
     
     // 🔴 FIX: Moved message handlers to parent View to prevent MsgDblReg
     // Only ChannelStatistics handler remains here as it's unique
@@ -1488,7 +1493,7 @@ private:
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
     ::AudioManager& audio_mgr_;
-    std::atomic<bool> scanning_active_{false};
+    volatile bool scanning_active_{false};
     DroneDisplayController* display_controller_ = nullptr;
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 

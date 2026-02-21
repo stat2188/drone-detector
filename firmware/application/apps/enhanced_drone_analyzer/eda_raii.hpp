@@ -33,6 +33,74 @@ namespace ui::apps::enhanced_drone_analyzer {
 // All RAII wrappers are now defined in eda_locking.hpp
 // This header provides backward compatibility for existing code
 
+} // namespace ui::apps::enhanced_drone_analyzer
+
+// ========================================
+// RAAI NAMESPACE (for SystemLock and MutexLock)
+// ========================================
+namespace raii {
+
+/**
+ * @brief RAII wrapper for ChibiOS system lock (critical section)
+ *
+ * Provides exception-safe (though exceptions are disabled) critical section
+ * management. Locks on construction, unlocks on destruction.
+ *
+ * USAGE:
+ *   {
+ *       SystemLock lock;
+ *       // Critical section here (interrupts disabled)
+ *       // No blocking operations allowed!
+ *   }
+ *   // Interrupts re-enabled here
+ *
+ * @note Must be used for very short sections only
+ * @note No blocking operations (I/O, sleep) allowed inside critical section
+ */
+class SystemLock {
+public:
+    SystemLock() noexcept { chSysLock(); }
+    ~SystemLock() noexcept { chSysUnlock(); }
+
+    // Non-copyable, non-movable
+    SystemLock(const SystemLock&) = delete;
+    SystemLock& operator=(const SystemLock&) = delete;
+};
+
+/**
+ * @brief RAII wrapper for ChibiOS mutex lock
+ *
+ * Provides exception-safe mutex management. Locks on construction,
+ * unlocks on destruction.
+ *
+ * USAGE:
+ *   {
+ *       MutexLock lock(&my_mutex);
+ *       // Critical section here
+ *   }
+ *   // Mutex automatically unlocked here
+ *
+ * @note ChibiOS chMtxUnlock() takes no parameters (uses thread-local storage)
+ */
+class MutexLock {
+public:
+    explicit MutexLock(Mutex* mutex) noexcept : mutex_(mutex) {
+        chMtxLock(mutex_);
+    }
+    ~MutexLock() noexcept { chMtxUnlock(); }
+
+    // Non-copyable, non-movable
+    MutexLock(const MutexLock&) = delete;
+    MutexLock& operator=(const MutexLock&) = delete;
+
+private:
+    Mutex* mutex_;
+};
+
+} // namespace raii
+
+namespace ui::apps::enhanced_drone_analyzer {
+
 // The following classes are available from eda_locking.hpp:
 // - CriticalSection: RAII wrapper for ChibiOS critical sections
 // - ThreadGuard: RAII wrapper for ChibiOS thread lifecycle
