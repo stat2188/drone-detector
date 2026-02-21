@@ -492,7 +492,6 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     scan_cycles_++;
 
     // Adaptive sleep based on current situation
-    bool is_scanning;
     {
         raii::SystemLock lock;
         is_scanning = scanning_active_;
