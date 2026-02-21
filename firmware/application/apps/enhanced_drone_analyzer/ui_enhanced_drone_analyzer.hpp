@@ -86,16 +86,15 @@ enum class LockOrder : uint8_t {
 // ===========================================
 // Diamond Code: Define explicit stack sizes to prevent stack overflow
 // Scott Meyers Item 15: Prefer constexpr to #define
-constexpr size_t SCANNING_THREAD_STACK_SIZE = 3072;  // 3KB
-constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // 2KB
+constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;  // 2KB (reduced from 3KB to save memory)
+constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // 2KB (unchanged)
 
 // ===========================================
-// FIX #2: Explicit Thread Stack Sizes
+// STAGE 4 FIX: Stack Usage Monitoring
 // ===========================================
-// Diamond Code: Define explicit stack sizes to prevent stack overflow
-// Scott Meyers Item 15: Prefer constexpr to #define
-constexpr size_t SCANNING_THREAD_STACK_SIZE = 3072;  // 3KB
-constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // 2KB
+// Stack monitoring constants for detecting stack overflow conditions
+constexpr uint32_t STACK_CANARY_VALUE = 0xDEADBEEF;  ///< Canary value for stack overflow detection
+constexpr size_t MIN_STACK_FREE_THRESHOLD = 512;     ///< Minimum safe stack free bytes
 
 // ===========================================
 // DIAMOND FIX: Global SD Card Mutex Protection
@@ -348,6 +347,7 @@ public:
     // Statistics for monitoring
     uint32_t get_dropped_logs_count() const { return dropped_logs_; }
     uint32_t get_logged_count() const { return logged_count_; }
+    uint32_t get_overflow_count() const { return overflow_count_; }
 
 private:
     // --- THREADING PRIMITIVES ---
@@ -368,8 +368,9 @@ private:
     // - ChibiOS thread context: ~256 bytes
     // - Stack safety margin: ~3644 bytes (to prevent overflow under heavy I/O load)
     // Phase 2 Optimization: Reduced from 8KB to 4KB for memory savings
+    // STAGE 4 Optimization: Reduced from 4KB to 3KB for additional memory savings
     // Scott Meyers Item 15: Prefer constexpr to #define
-    static constexpr size_t WORKER_STACK_SIZE = 4096;
+    static constexpr size_t WORKER_STACK_SIZE = 3072;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
 
 
@@ -379,7 +380,8 @@ private:
     systime_t session_start_ = 0;               // Declared 7th
     uint32_t logged_count_ = 0;                 // Declared 8th
     uint32_t dropped_logs_ = 0;                 // Declared 9th
-    bool header_written_ = false;               // Declared 10th
+    uint32_t overflow_count_ = 0;               // Declared 10th - Counter for ring buffer overflows
+    bool header_written_ = false;               // Declared 11th
 
     // --- ASYNC BUFFERING ---
     static constexpr size_t BUFFER_SIZE = 32;   // Declared 11th
@@ -1787,6 +1789,24 @@ public:
     // 🔴 ФАЗА 2.2: Deferred initialization methods
     void step_deferred_initialization();
     void update_init_progress_display();
+
+    // ===========================================
+    // STAGE 4 FIX: Stack Usage Monitoring
+    // ===========================================
+    /**
+     * @brief Check stack usage and log warnings if low
+     * @param thread_name Name of the thread for logging
+     * @param stack_size Total stack size for the thread
+     */
+    void check_stack_usage(const char* thread_name, size_t stack_size);
+
+    // ===========================================
+    // STAGE 4 FIX: Memory Pressure Monitoring
+    // ===========================================
+    /**
+     * @brief Check memory pressure and log warnings if critical
+     */
+    void check_memory_pressure();
 
     // 🔴 ФАЗА 2.3: Initialization state variables
     InitState init_state_ = InitState::CONSTRUCTED;

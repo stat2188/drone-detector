@@ -90,6 +90,9 @@ constexpr int32_t NOISE_FLOOR_RSSI = -110;          ///< Noise floor RSSI (dBm)
 constexpr int32_t MIN_VALID_RSSI = -110;             ///< Minimum valid RSSI (dBm)
 constexpr int32_t MAX_VALID_RSSI = 10;               ///< Maximum valid RSSI (dBm)
 
+// ===== DETECTION THRESHOLDS =====
+constexpr int32_t MAX_CONSECUTIVE_FAILURES = 10;  ///< Max allowed hardware failures before abort
+
 // ===== SPECTRAL ANALYSIS =====
 constexpr uint8_t SPECTRAL_SNR_THRESHOLD = 10;       ///< Spectral SNR threshold (dB)
 constexpr uint8_t SPECTRAL_PEAK_THRESHOLD_DB = 6;    ///< Spectral peak threshold (dB)
@@ -207,7 +210,7 @@ constexpr uint32_t THREAD_JOIN_TIMEOUT_MS = 5000;      ///< Thread join timeout 
 constexpr uint32_t THREAD_TERMINATION_TIMEOUT_MS = 3000; ///< Thread termination timeout (ms)
 
 // ===== DATABASE PARAMETERS =====
-constexpr uint32_t MAX_DB_ENTRIES = 150;               ///< Maximum database entries
+constexpr uint32_t MAX_DB_ENTRIES = 75;                ///< Maximum database entries (reduced from 150 to save 2KB RAM)
 constexpr uint32_t DB_SYNC_INTERVAL_MS = 5000;         ///< Database sync interval (ms)
 constexpr uint32_t DB_LOAD_RETRY_COUNT = 3;            ///< Database load retry count
 constexpr uint32_t DB_LOAD_RETRY_DELAY_MS = 500;       ///< Database load retry delay (ms)
@@ -218,7 +221,7 @@ constexpr uint32_t WIDEBAND_SLICE_COUNT_MIN = 1;       ///< Minimum wideband sli
 constexpr uint32_t WIDEBAND_SLICE_COUNT_MAX = 20;      ///< Maximum wideband slice count
 
 // ===== DETECTION LOGGING =====
-constexpr uint32_t MAX_LOG_ENTRIES = 1000;             ///< Maximum log entries
+constexpr uint32_t MAX_LOG_ENTRIES = 500;              ///< Maximum log entries (reduced from 1000 to save memory)
 constexpr uint32_t LOG_FLUSH_INTERVAL_MS = 10000;      ///< Log flush interval (ms)
 constexpr uint32_t LOG_FILE_MAX_SIZE_KB = 1024;        ///< Log file max size (KB)
 
