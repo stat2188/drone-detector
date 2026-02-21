@@ -1402,6 +1402,25 @@ void DroneScanner::db_loading_thread_loop() {
                 freq_db_loaded_ = false;
                 return;
             }
+
+            // 🔴 FIX #H1: Set flags when database loads successfully on first attempt
+            // If db_success is true and database is not empty, the code below
+            // (lines 1408-1467) won't execute, leaving initialization_complete_ and
+            // freq_db_constructed_ flags unset. This causes is_initialization_complete()
+            // to always return false, preventing phases 3-6 from completing.
+            if (!freq_db_ptr_->empty()) {
+                freq_db_loaded_ = true;
+                freq_db_constructed_ = true;
+                {
+                    raii::SystemLock lock;
+                    initialization_complete_ = true;
+                }
+                {
+                    raii::SystemLock lock;
+                    db_loading_active_ = false;
+                }
+                return;
+            }
         }
     }
 
