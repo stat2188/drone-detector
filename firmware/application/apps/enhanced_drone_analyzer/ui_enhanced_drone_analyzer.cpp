@@ -221,42 +221,84 @@ EDA_FLASH_CONST const std::array<DroneScanner::BuiltinDroneFreq, DroneScanner::B
 // DIAMOND FIX: Settings stored by VALUE (not reference)
 // Constructor accepts settings by value and stores a copy
 // This eliminates lifetime dependency issues
+//
+// DIAMOND FIX: Member Initialization Order (STAGE 4 FIX)
+// C++ Standard: Members are initialized in declaration order, NOT initializer list order
+// This initializer list now matches the exact declaration order in the header file
+// to eliminate compiler warnings and improve code maintainability.
+//
+// Declaration order (ui_enhanced_drone_analyzer.hpp):
+// 1. entries_to_scan_ (line 636)
+// 2. stale_indices_ (line 639)
+// 3. scanning_thread_ (line 644)
+// 4. data_mutex (line 645)
+// 5. scanning_active_ (line 649)
+// 6. histogram_callback_ (line 655)
+// 7. histogram_callback_user_data_ (line 656)
+// 8. freq_db_ptr_ (line 693)
+// 9. tracked_drones_ptr_ (line 694)
+// 10. freq_db_constructed_ (line 698)
+// 11. tracked_drones_constructed_ (line 699)
+// 12. freq_db_loaded_ (line 702)
+// 13. current_db_index_ (line 703)
+// 14. last_scanned_frequency_ (line 704)
+// 15. last_detection_log_time_ (line 708)
+// 16. db_loading_thread_ (line 711)
+// 17. db_loading_active_ (line 715)
+// 18. initialization_complete_ (line 722)
+// 19. scan_cycles_ (line 737)
+// 20. total_detections_ (line 738)
+// 21. scanning_mode_ (line 740)
+// 22. is_real_mode_ (line 744)
+// 23. tracked_count_ (line 746)
+// 24. approaching_count_ (line 749)
+// 25. receding_count_ (line 750)
+// 26. static_count_ (line 751)
+// 27. max_detected_threat_ (line 753)
+// 28. last_valid_rssi_ (line 754)
+// 29. wideband_scan_data_ (line 757)
+// 30. detection_logger_ (line 758)
+// 31. detection_ring_buffer_ (line 759)
+// 32. spectrum_data_ (line 763)
+// 33. histogram_buffer_ (line 768)
+// 34. settings_ (line 773)
+// 35. last_scan_error_ (line 776)
 DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
-    : scanning_thread_(nullptr),           // Declared 1st
-        data_mutex(),                       // Declared 2nd
-        scanning_active_(false),           // Declared 3rd
-        entries_to_scan_(),               // Declared 4th (FIXED: matches declaration order)
-        stale_indices_(),                   // Declared 5th
-        histogram_callback_(nullptr),       // Declared 6th (FIXED: matches declaration order)
-        histogram_callback_user_data_(nullptr), // Declared 7th (FIXED: matches declaration order)
-        freq_db_ptr_(nullptr),              // Declared 8th
-        tracked_drones_ptr_(nullptr),       // Declared 9th
-        freq_db_constructed_(false),         // Declared 10th
-        tracked_drones_constructed_(false), // Declared 11th
-        freq_db_loaded_(false),             // Declared 12th
-        current_db_index_(0),               // Declared 13th
-        last_scanned_frequency_(0),         // Declared 14th
-        last_detection_log_time_(0),        // Declared 15th
-        db_loading_thread_(nullptr),        // Declared 16th
-        db_loading_active_{false},          // Declared 17th
-        initialization_complete_{false},    // Declared 18th
-        scan_cycles_(0),                    // Declared 19th
-        total_detections_(0),               // Declared 20th
-        scanning_mode_(DroneScanner::ScanningMode::DATABASE), // Declared 21st
-        is_real_mode_(true),                // Declared 22nd
-        tracked_count_(0),                  // Declared 23rd
-        approaching_count_(0),              // Declared 24th
-        receding_count_(0),                 // Declared 25th
-        static_count_(0),                   // Declared 26th
-        max_detected_threat_(ThreatLevel::NONE), // Declared 27th
-        last_valid_rssi_(-120),             // Declared 28th
-        wideband_scan_data_(),              // Declared 29th
-        detection_logger_(),                // Declared 30th
-        detection_ring_buffer_(),           // Declared 31st
-        spectrum_data_(),                   // Declared 32nd
-        histogram_buffer_(),                // Declared 33rd (FIXED: matches declaration order)
-        settings_(std::move(settings)),     // Declared 34th (DIAMOND FIX: Move settings into member)
-        last_scan_error_(nullptr)          // Declared 35th
+    : entries_to_scan_(),               // Declared 1st (line 636)
+      stale_indices_(),                  // Declared 2nd (line 639)
+      scanning_thread_(nullptr),          // Declared 3rd (line 644)
+      data_mutex(),                      // Declared 4th (line 645)
+      scanning_active_(false),            // Declared 5th (line 649)
+      histogram_callback_(nullptr),        // Declared 6th (line 655)
+      histogram_callback_user_data_(nullptr), // Declared 7th (line 656)
+      freq_db_ptr_(nullptr),             // Declared 8th (line 693)
+      tracked_drones_ptr_(nullptr),      // Declared 9th (line 694)
+      freq_db_constructed_(false),        // Declared 10th (line 698)
+      tracked_drones_constructed_(false), // Declared 11th (line 699)
+      freq_db_loaded_(false),            // Declared 12th (line 702)
+      current_db_index_(0),              // Declared 13th (line 703)
+      last_scanned_frequency_(0),        // Declared 14th (line 704)
+      last_detection_log_time_(0),       // Declared 15th (line 708)
+      db_loading_thread_(nullptr),       // Declared 16th (line 711)
+      db_loading_active_{false},         // Declared 17th (line 715)
+      initialization_complete_{false},   // Declared 18th (line 722)
+      scan_cycles_(0),                  // Declared 19th (line 737)
+      total_detections_(0),             // Declared 20th (line 738)
+      scanning_mode_(DroneScanner::ScanningMode::DATABASE), // Declared 21st (line 740)
+      is_real_mode_(true),              // Declared 22nd (line 744)
+      tracked_count_(0),                // Declared 23rd (line 746)
+      approaching_count_(0),            // Declared 24th (line 749)
+      receding_count_(0),               // Declared 25th (line 750)
+      static_count_(0),                 // Declared 26th (line 751)
+      max_detected_threat_(ThreatLevel::NONE), // Declared 27th (line 753)
+      last_valid_rssi_(-120),           // Declared 28th (line 754)
+      wideband_scan_data_(),            // Declared 29th (line 757)
+      detection_logger_(),              // Declared 30th (line 758)
+      detection_ring_buffer_(),         // Declared 31st (line 759)
+      spectrum_data_(),                 // Declared 32nd (line 763)
+      histogram_buffer_(),              // Declared 33rd (line 768)
+      settings_(std::move(settings)),   // Declared 34th (line 773) - DIAMOND FIX: Move semantics
+      last_scan_error_(nullptr)         // Declared 35th (line 776)
 {
     // Initialize mutex properly to fix race condition
     chMtxInit(&data_mutex);
