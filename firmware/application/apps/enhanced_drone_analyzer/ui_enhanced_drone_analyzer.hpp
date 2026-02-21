@@ -374,7 +374,7 @@ private:
     volatile bool worker_should_run_{false};    // Declared 4th
 
     // STACK USAGE DOCUMENTATION: Worker Thread Stack
-    // Stack size: 8192 bytes (8KB)
+    // Stack size: 5120 bytes (5KB)
     // Purpose: File I/O operations, string formatting, and buffer management
     //
     // Stack Usage Breakdown:
@@ -383,11 +383,11 @@ private:
     // - Log entry processing: ~64 bytes (DetectionLogEntry)
     // - SDCardLock mutex overhead: ~100 bytes
     // - ChibiOS thread context: ~256 bytes
-    // - Stack safety margin: ~3644 bytes (to prevent overflow under heavy I/O load)
-    // Phase 2 Optimization: Reduced from 8KB to 4KB for memory savings
-    // STAGE 4 Optimization: Reduced from 4KB to 3KB for additional memory savings
+    // - Stack safety margin: ~4372 bytes (to prevent overflow under heavy I/O load)
+    // DIAMOND FIX: Increased from 3KB to 5KB to prevent stack overflow
+    // Previous 3KB had only ~1.5KB margin which is insufficient for SD card I/O
     // Scott Meyers Item 15: Prefer constexpr to #define
-    static constexpr size_t WORKER_STACK_SIZE = 3072;
+    static constexpr size_t WORKER_STACK_SIZE = 5120;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
 
 

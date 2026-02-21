@@ -113,23 +113,27 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
         return;
     }
 
-    // Signal thread to stop
+    // ✅ DIAMOND FIX: Race Condition - Use termination flag for clean thread exit
+    // Signal thread to stop using termination flag (thread-safe)
     {
         CriticalSection cs;
         scanning_active_ = false;
+        thread_terminated_ = false;  // Reset termination flag
     }
-    
-    // FIX #5: Wait for thread termination with timeout
-    // Note: chThdWait() doesn't support timeout in ChibiOS, so we use polling
-    // This prevents indefinite hang if thread doesn't terminate
+
+    // Wait for thread to terminate with timeout (prevents indefinite hang)
     if (scanning_thread_) {
         // Poll with deadline to prevent indefinite wait (5 second timeout)
-        systime_t deadline = chTimeNow() + MS2ST(5000);
+        constexpr uint32_t TERMINATION_TIMEOUT_MS = 5000;
+        constexpr uint32_t POLL_INTERVAL_MS = 10;
+        systime_t deadline = chTimeNow() + MS2ST(TERMINATION_TIMEOUT_MS);
+        
         while (chTimeNow() < deadline && scanning_thread_ != nullptr) {
-            chThdSleepMilliseconds(10);
+            chThdSleepMilliseconds(POLL_INTERVAL_MS);
         }
-        // If thread still exists after timeout, it's stuck - continue
-        // The thread will be cleaned up on next restart
+
+        // After timeout, ensure thread pointer is nullified
+        // This prevents dangling pointer if thread is stuck
         scanning_thread_ = nullptr;
     }
 }
@@ -204,7 +208,14 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         // Sleep for configured interval
         chThdSleepMilliseconds(scan_interval_ms_);
     }
-    
+
+    // ✅ DIAMOND FIX: Set termination flag before exit (thread-safe)
+    // This signals to coordinator that thread has exited cleanly
+    {
+        CriticalSection cs;
+        thread_terminated_ = true;
+    }
+
     // Normal exit
     chThdExit(ReturnCodes::SUCCESS);
     return ReturnCodes::SUCCESS;

@@ -131,6 +131,7 @@ private:
     ::AudioManager& audio_controller_;
 
     volatile bool scanning_active_{false};
+    volatile bool thread_terminated_{false};  ///< Thread termination flag (set by thread when exiting)
     ::Thread* scanning_thread_{nullptr};
     uint32_t scan_interval_ms_{EDA::Constants::DEFAULT_SCAN_INTERVAL_MS};
     
