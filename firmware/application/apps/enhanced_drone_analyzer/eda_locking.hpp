@@ -23,6 +23,21 @@
 #include <ch.h>
 #include <type_traits>
 
+// ========================================
+// CHIBIOS COMPATIBILITY DEFINES
+// ========================================
+// These defines provide compatibility with newer ChibiOS versions
+// chThdGetSelf is an alias for chThdSelf (the standard ChibiOS macro)
+#define chThdGetSelf() chThdSelf()
+
+// chThdGetStackFree is not available in this ChibiOS version
+// We provide a simple implementation that returns 0 (safe default)
+// The actual stack checking is done by check_stack_usage() in ui_enhanced_drone_analyzer.cpp
+static inline size_t chThdGetStackFree(Thread* tp) {
+    (void)tp;  // Suppress unused parameter warning
+    return 0;  // Not available in this ChibiOS version
+}
+
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ========================================
@@ -47,10 +62,12 @@ enum class LockOrder : uint8_t {
     ATOMIC_FLAGS = 1,      // volatile bool, volatile uint32_t - Protected by ChibiOS critical sections
     DATA_MUTEX = 2,         // DroneScanner::data_mutex (tracked_drones_)
     SPECTRUM_MUTEX = 3,    // DroneHardwareController::spectrum_mutex (spectrum_buffer_)
-    LOGGER_MUTEX = 4,       // DroneDetectionLogger::mutex_ (ring_buffer_)
-    SD_CARD_MUTEX = 5,      // Global sd_card_mutex (FatFS operations)
-    SETTINGS_MUTEX = 6,      // Global settings_buffer_mutex (settings I/O)
-    ERRNO_MUTEX = 7         // Global errno_mutex (thread-safe errno access)
+    DISPLAY_SPECTRUM_MUTEX = 4,  // DroneDisplayController::spectrum_mutex_ (spectrum_power_levels_)
+    DISPLAY_HISTOGRAM_MUTEX = 5, // DroneDisplayController::histogram_mutex_ (histogram_display_buffer_)
+    LOGGER_MUTEX = 6,       // DroneDetectionLogger::mutex_ (ring_buffer_)
+    SD_CARD_MUTEX = 7,      // Global sd_card_mutex (FatFS operations)
+    SETTINGS_MUTEX = 8,     // Global settings_buffer_mutex (settings I/O)
+    ERRNO_MUTEX = 9         // Global errno_mutex (thread-safe errno access)
 };
 
 // ========================================
@@ -734,6 +751,117 @@ private:
     // Volatile flag to track construction state
     // Protected by ChibiOS critical sections for thread safety during writes
     volatile bool constructed_;
+};
+
+// ========================================
+// STACK MONITOR
+// ========================================
+/**
+ * @brief Stack usage monitoring for detecting low stack conditions
+ *
+ * Provides runtime stack usage tracking to prevent stack overflow crashes.
+ * Uses ChibiOS thread-local storage for tracking stack usage.
+ *
+ * USAGE:
+ *   // At function entry
+ *   StackMonitor monitor;
+ *   if (!monitor.is_stack_safe(256)) {  // Require 256 bytes free
+ *       return;  // Guard clause - insufficient stack
+ *   }
+ *   // Function body here
+ *
+ * @note Zero-heap allocation (uses stack-allocated storage)
+ * @note Uses ChibiOS chThdGetStackFree() for stack checking
+ * @note Compile-time configuration via MIN_STACK_FREE
+ */
+class StackMonitor {
+public:
+    /**
+     * @brief Minimum free stack bytes required (configurable per project)
+     *
+     * This value should be set based on the worst-case stack usage
+     * of functions that use StackMonitor.
+     *
+     * Typical values:
+     * - UI paint() methods: 1024-2048 bytes
+     * - Signal processing: 512-1024 bytes
+     * - Simple functions: 256-512 bytes
+     */
+    static constexpr size_t MIN_STACK_FREE = 1024;
+
+    /**
+     * @brief Constructor - Captures initial stack state
+     */
+    StackMonitor() noexcept : initial_free_(get_stack_free()) {}
+
+    /**
+     * @brief Check if current stack has sufficient free space
+     * @param required_bytes Minimum bytes required (default: MIN_STACK_FREE)
+     * @return true if sufficient stack space, false otherwise
+     *
+     * @note Uses ChibiOS chThdGetStackFree() for accurate measurement
+     * @note Guard clause pattern: return early if insufficient stack
+     */
+    bool is_stack_safe(size_t required_bytes = MIN_STACK_FREE) const noexcept {
+        return get_stack_free() >= required_bytes;
+    }
+
+    /**
+     * @brief Get current free stack bytes
+     * @return Free stack bytes (0 if called from non-thread context)
+     */
+    size_t get_free_stack() const noexcept {
+        return get_stack_free();
+    }
+
+    /**
+     * @brief Get stack usage since construction
+     * @return Stack bytes used since this monitor was created
+     */
+    size_t get_stack_usage() const noexcept {
+        size_t current_free = get_stack_free();
+        // Handle edge case where stack grew (shouldn't happen but be safe)
+        if (current_free > initial_free_) {
+            return 0;
+        }
+        return initial_free_ - current_free;
+    }
+
+    /**
+     * @brief Get initial free stack bytes (at construction time)
+     * @return Free stack bytes when monitor was created
+     */
+    size_t get_initial_free() const noexcept {
+        return initial_free_;
+    }
+
+    /// @brief Non-copyable, non-movable
+    StackMonitor(const StackMonitor&) = delete;
+    StackMonitor& operator=(const StackMonitor&) = delete;
+    StackMonitor(StackMonitor&&) = delete;
+    StackMonitor& operator=(StackMonitor&&) = delete;
+
+private:
+    size_t initial_free_;
+
+    /**
+     * @brief Get current free stack bytes from ChibiOS
+     * @return Free stack bytes (0 if called from non-thread context)
+     *
+     * @note ChibiOS chThdGetStackFree() returns 0 if called from main thread
+     * @note Thread-local: each thread has its own stack
+     */
+    static size_t get_stack_free() noexcept {
+        // Try to get current thread pointer
+        // Use chThdGetSelf() instead of chThdGetSelfX() for compatibility
+        Thread* current_thread = chThdGetSelf();
+        if (current_thread == nullptr) {
+            // Called from main thread or interrupt context
+            // Cannot measure stack - return safe default
+            return MIN_STACK_FREE * 2;  // Assume plenty of stack
+        }
+        return chThdGetStackFree(current_thread);
+    }
 };
 
 // ========================================

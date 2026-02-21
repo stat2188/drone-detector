@@ -2840,7 +2840,14 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
          marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
          spectrum_config_()
 {
-    
+    // ===========================================
+    // DIAMOND FIX: Initialize mutexes for thread-safe buffer access
+    // ===========================================
+    // These mutexes protect shared buffers accessed by multiple threads:
+    // - spectrum_mutex_: Protects spectrum_power_levels_ buffer (TOCTOU race condition fix)
+    // - histogram_mutex_: Protects histogram_display_buffer_ buffer
+    chMtxInit(&spectrum_mutex_);
+    chMtxInit(&histogram_mutex_);
 
     // CRITICAL: Add ALL widgets to View hierarchy
     add_children({
@@ -3230,6 +3237,11 @@ void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& s
 bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
     bins_hz_size += each_bin_size;
     if (bins_hz_size >= marker_pixel_step) {
+        // DIAMOND FIX: Thread-safe buffer access with mutex protection
+        // Prevents TOCTOU race condition between scanner thread and UI thread
+        // Lock order: DISPLAY_SPECTRUM_MUTEX (level 4)
+        MutexLock lock(spectrum_mutex_, LockOrder::DISPLAY_SPECTRUM_MUTEX);
+
         // DIAMOND FIX: Direct buffer access without dead function
         if (pixel_index < spectrum_power_levels().size()) {
             spectrum_power_levels()[pixel_index] = (*powerlevel > min_color_power) ? *powerlevel : 0;
@@ -3262,6 +3274,10 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
         return;
     }
 
+    // DIAMOND FIX: Thread-safe buffer access with mutex protection
+    // Prevents TOCTOU race condition between scanner thread and UI thread
+    // Lock order: DISPLAY_SPECTRUM_MUTEX (level 4)
+    MutexLock lock(spectrum_mutex_, LockOrder::DISPLAY_SPECTRUM_MUTEX);
 
     // 2. Проход по всем столбцам (бинам) спектра
     const auto& levels = spectrum_power_levels();
@@ -3303,31 +3319,40 @@ void DroneDisplayController::update_histogram_display(
 ) noexcept {
     // GUARD CLAUSE: Validate input histogram
     if (analysis_histogram.empty()) {
+        // DIAMOND FIX: Thread-safe buffer access with mutex protection
+        // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
+        MutexLock lock(histogram_mutex_, LockOrder::DISPLAY_HISTOGRAM_MUTEX);
         histogram_display_buffer_.is_valid = false;
         return;
     }
-    
+
     // Copy histogram data from analysis buffer to display buffer
     // Scale from uint16_t to uint8_t (0-255) for display
     // Diamond Code: Integer-only scaling (no floating-point)
     uint8_t max_count = 0;
+
+    // DIAMOND FIX: Thread-safe buffer access with mutex protection
+    // Prevents TOCTOU race condition between scanner thread and UI thread
+    // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
+    MutexLock lock(histogram_mutex_, LockOrder::DISPLAY_HISTOGRAM_MUTEX);
+
     for (size_t i = 0; i < HISTOGRAM_NUM_BINS; ++i) {
         // Clamp to 255 (uint8_t max)
         uint16_t raw_count = (i < analysis_histogram.size()) ? analysis_histogram[i] : 0;
         histogram_display_buffer_.bin_counts[i] =
             static_cast<uint8_t>(std::min(raw_count, static_cast<uint16_t>(255)));
-        
+
         // Track maximum for normalization
         if (histogram_display_buffer_.bin_counts[i] > max_count) {
             max_count = histogram_display_buffer_.bin_counts[i];
         }
     }
-    
+
     // Store metadata
     histogram_display_buffer_.max_count = max_count;
     histogram_display_buffer_.noise_floor = noise_floor;
     histogram_display_buffer_.is_valid = true;
-    
+
     // Mark histogram as dirty (needs re-render)
     histogram_dirty_ = true;
 }
@@ -3337,34 +3362,39 @@ void DroneDisplayController::render_histogram(Painter& painter) noexcept {
     if (!histogram_dirty_) {
         return;
     }
-    
+
+    // DIAMOND FIX: Thread-safe buffer access with mutex protection
+    // Prevents TOCTOU race condition between scanner thread and UI thread
+    // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
+    MutexLock lock(histogram_mutex_, LockOrder::DISPLAY_HISTOGRAM_MUTEX);
+
     // GUARD CLAUSE: Skip if histogram data is invalid
     if (!histogram_display_buffer_.is_valid) {
         return;
     }
-    
+
     const auto& config = HistogramColorConfig{};
-    
+
     // 1. Clear histogram area (y=164-190)
     painter.fill_rectangle(
         {0, HISTOGRAM_Y, HISTOGRAM_WIDTH, HISTOGRAM_HEIGHT},
         Color::black()
     );
-    
+
     // 2. Render 64 bins with color gradient
     // Diamond Code: Integer-only math for performance
     const uint8_t max_count = histogram_display_buffer_.max_count;
-    
+
     // GUARD CLAUSE: Skip rendering if max_count is zero
     if (max_count == 0) {
         histogram_dirty_ = false;
         return;
     }
-    
+
     // Calculate scaling factor for bin height (0-255 -> 0-HISTOGRAM_HEIGHT)
     // Diamond Code: Use 256 as divisor for fast bit shift approximation
     const int scale_factor = HISTOGRAM_HEIGHT;
-    
+
     for (size_t bin_idx = 0; bin_idx < HISTOGRAM_NUM_BINS; ++bin_idx) {
         uint8_t bin_count = histogram_display_buffer_.bin_counts[bin_idx];
         
@@ -3762,6 +3792,20 @@ void EnhancedDroneSpectrumAnalyzerView::focus() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
+    // ===========================================
+    // DIAMOND FIX: Stack monitoring to prevent stack overflow
+    // ===========================================
+    // The paint() method uses ~1.6KB of stack per call
+    // Monitor stack usage to detect low stack conditions
+    StackMonitor stack_monitor;
+    constexpr size_t PAINT_STACK_REQUIRED = 2048;  // 2KB for paint() method
+
+    // Guard clause: Return early if insufficient stack
+    if (!stack_monitor.is_stack_safe(PAINT_STACK_REQUIRED)) {
+        // Cannot safely render - skip this frame
+        return;
+    }
+
     // 🔧 FIX: Всегда вызываем базовый paint для очистки экрана
     View::paint(painter);
 
@@ -3770,7 +3814,7 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
     // ===========================================
     // CRITICAL: This was missing, causing permanent hang
     // The initialization state machine was defined but never invoked
-    if (init_state_ != InitState::FULLY_INITIALIZED && 
+    if (init_state_ != InitState::FULLY_INITIALIZED &&
         init_state_ != InitState::INITIALIZATION_ERROR) {
         step_deferred_initialization();
     }

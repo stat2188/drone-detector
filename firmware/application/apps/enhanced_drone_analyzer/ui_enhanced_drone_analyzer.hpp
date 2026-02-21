@@ -1519,6 +1519,26 @@ private:
     // Dirty flag for histogram rendering optimization
     bool histogram_dirty_ = false;
 
+    // ===========================================
+    // DIAMOND FIX: Thread-Safe Buffer Protection
+    // ===========================================
+    // Mutexes for protecting shared buffers accessed by multiple threads
+    // - spectrum_mutex_: Protects spectrum_power_levels_ buffer
+    // - histogram_mutex_: Protects histogram_display_buffer_ buffer
+    //
+    // LOCK ORDER RULE:
+    // Always acquire locks in ascending order:
+    //   1. SPECTRUM_MUTEX (spectrum_mutex_)
+    //   2. HISTOGRAM_MUTEX (histogram_mutex_)
+    //
+    // These mutexes prevent TOCTOU race conditions between:
+    // - Scanner thread: Writes to spectrum_power_levels_ via process_bins()
+    // - UI thread: Reads from spectrum_power_levels_ via render_bar_spectrum()
+    // - Scanner thread: Writes to histogram_display_buffer_ via update_histogram_display()
+    // - UI thread: Reads from histogram_display_buffer_ via render_histogram()
+    mutable Mutex spectrum_mutex_;  ///< Protects spectrum_power_levels_ buffer
+    mutable Mutex histogram_mutex_; ///< Protects histogram_display_buffer_ buffer
+
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, DroneConstants::MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
