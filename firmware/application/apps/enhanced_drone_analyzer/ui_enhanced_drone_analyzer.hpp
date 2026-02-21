@@ -731,9 +731,9 @@ struct DetectionParams {
 
           static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
-      // Diamond Code: Use volatile uint32_t with GCC __atomic_fetch_add for hardware atomic operations
-      // Uses ARM Cortex-M4 LDREX/STREX instructions for thread-safe counter access without libatomic
-      // __ATOMIC_RELAXED memory order is sufficient for simple counter increments
+      // Diamond Code: Use volatile uint32_t with mutex protection for thread-safe counter access
+      // volatile uint32_t reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+      // Protected by data_mutex for write operations to ensure thread safety
       volatile uint32_t scan_cycles_{0};
       volatile uint32_t total_detections_{0};
 

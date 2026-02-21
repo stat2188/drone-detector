@@ -225,36 +225,36 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
     : scanning_thread_(nullptr),           // Declared 1st
         data_mutex(),                       // Declared 2nd
         scanning_active_(false),           // Declared 3rd
-        histogram_callback_(nullptr),       // Declared 4th
-        entries_to_scan_(),                 // Declared 5th (FIXED: entries_to_scan_ before histogram_callback_user_data_)
-        stale_indices_(),                   // Declared 6th
-        freq_db_ptr_(nullptr),              // Declared 7th
-        tracked_drones_ptr_(nullptr),       // Declared 8th
-        freq_db_constructed_(false),         // Declared 9th
-        tracked_drones_constructed_(false), // Declared 10th
-        freq_db_loaded_(false),             // Declared 11th
-        current_db_index_(0),               // Declared 12th
-        last_scanned_frequency_(0),         // Declared 13th
-        last_detection_log_time_(0),        // Declared 14th
-        db_loading_thread_(nullptr),        // Declared 15th
-        db_loading_active_{false},          // Declared 16th
-        initialization_complete_{false},    // Declared 17th
-        scan_cycles_(0),                    // Declared 18th
-        total_detections_(0),               // Declared 19th
-        scanning_mode_(DroneScanner::ScanningMode::DATABASE), // Declared 20th
-        is_real_mode_(true),                // Declared 21st
-        tracked_count_(0),                  // Declared 22nd
-        approaching_count_(0),              // Declared 23rd
-        receding_count_(0),                 // Declared 24th
-        static_count_(0),                   // Declared 25th
-        max_detected_threat_(ThreatLevel::NONE), // Declared 26th
-        last_valid_rssi_(-120),             // Declared 27th
-        wideband_scan_data_(),              // Declared 28th
-        detection_logger_(),                // Declared 29th
-        detection_ring_buffer_(),           // Declared 30th
-        spectrum_data_(),                   // Declared 31st
-        histogram_buffer_(),                // Declared 32nd
-        histogram_callback_user_data_(nullptr), // Declared 33rd (FIXED: after histogram_buffer_)
+        entries_to_scan_(),               // Declared 4th (FIXED: matches declaration order)
+        stale_indices_(),                   // Declared 5th
+        histogram_callback_(nullptr),       // Declared 6th (FIXED: matches declaration order)
+        histogram_callback_user_data_(nullptr), // Declared 7th (FIXED: matches declaration order)
+        freq_db_ptr_(nullptr),              // Declared 8th
+        tracked_drones_ptr_(nullptr),       // Declared 9th
+        freq_db_constructed_(false),         // Declared 10th
+        tracked_drones_constructed_(false), // Declared 11th
+        freq_db_loaded_(false),             // Declared 12th
+        current_db_index_(0),               // Declared 13th
+        last_scanned_frequency_(0),         // Declared 14th
+        last_detection_log_time_(0),        // Declared 15th
+        db_loading_thread_(nullptr),        // Declared 16th
+        db_loading_active_{false},          // Declared 17th
+        initialization_complete_{false},    // Declared 18th
+        scan_cycles_(0),                    // Declared 19th
+        total_detections_(0),               // Declared 20th
+        scanning_mode_(DroneScanner::ScanningMode::DATABASE), // Declared 21st
+        is_real_mode_(true),                // Declared 22nd
+        tracked_count_(0),                  // Declared 23rd
+        approaching_count_(0),              // Declared 24th
+        receding_count_(0),                 // Declared 25th
+        static_count_(0),                   // Declared 26th
+        max_detected_threat_(ThreatLevel::NONE), // Declared 27th
+        last_valid_rssi_(-120),             // Declared 28th
+        wideband_scan_data_(),              // Declared 29th
+        detection_logger_(),                // Declared 30th
+        detection_ring_buffer_(),           // Declared 31st
+        spectrum_data_(),                   // Declared 32nd
+        histogram_buffer_(),                // Declared 33rd (FIXED: matches declaration order)
         settings_(std::move(settings)),     // Declared 34th (DIAMOND FIX: Move settings into member)
         last_scan_error_(nullptr)          // Declared 35th
 {
@@ -550,9 +550,12 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
         (this->*DroneScanner::SCAN_FUNCTIONS[mode_idx])(hardware);  // Вызов метода через указатель
     }
 
-    // Diamond Code: Use GCC __atomic_fetch_add for hardware atomic increment on ARM Cortex-M4
-    // This provides thread-safe counter without libatomic dependency
-    __atomic_fetch_add(&scan_cycles_, 1, __ATOMIC_RELAXED);
+    // Diamond Code: Increment scan_cycles_ with mutex protection for thread safety
+    // volatile uint32_t reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+    {
+        MutexLock lock(data_mutex);
+        scan_cycles_++;
+    }
 
     // Adaptive sleep based on current situation
     {
@@ -857,9 +860,9 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     {
         MutexLock lock(data_mutex);
 
-        // Diamond Code: Use GCC __atomic_fetch_add for hardware atomic increment on ARM Cortex-M4
-        // This provides thread-safe counter without libatomic dependency
-        __atomic_fetch_add(&total_detections_, 1, __ATOMIC_RELAXED);
+        // Diamond Code: Increment total_detections_ with mutex protection for thread safety
+        // volatile uint32_t reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+        total_detections_++;
 
         // BUG-008 FIX: Hash can produce values up to 72000 (for 7.2GHz),
         // but DetectionBufferConstants::MAX_ENTRIES is only 16.
@@ -930,9 +933,9 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
     {
         MutexLock lock(data_mutex);
 
-        // Diamond Code: Use GCC __atomic_fetch_add for hardware atomic increment on ARM Cortex-M4
-        // This provides thread-safe counter without libatomic dependency
-        __atomic_fetch_add(&total_detections_, 1, __ATOMIC_RELAXED);
+        // Diamond Code: Increment total_detections_ with mutex protection for thread safety
+        // volatile uint32_t reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+        total_detections_++;
 
         // Guard clause: Prevent division by zero
         if (entry.frequency_a == 0) {
@@ -1046,9 +1049,9 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     {
         MutexLock lock(data_mutex);
 
-        // Diamond Code: Use GCC __atomic_fetch_add for hardware atomic increment on ARM Cortex-M4
-        // This provides thread-safe counter without libatomic dependency
-        __atomic_fetch_add(&total_detections_, 1, __ATOMIC_RELAXED);
+        // Diamond Code: Increment total_detections_ with mutex protection for thread safety
+        // volatile uint32_t reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+        total_detections_++;
 
         // Guard clause: Prevent division by zero
         if (entry.frequency_a == 0) {
