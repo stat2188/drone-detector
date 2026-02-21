@@ -77,13 +77,9 @@ private:
 // ===========================================
 // DIAMOND OPTIMIZATION: Replaced std::map with constexpr LUT for zero heap allocation
 // DIAMOND OPTIMIZATION: Translation manager with zero heap allocation
+// Language is hardcoded to English only
 class DroneAnalyzerSettingsManager_Translations {
 public:
-    static Language current_language_;
-    
-    // DIAMOND OPTIMIZATION: noexcept for simple getters/setters
-    static void set_language(Language lang) noexcept { current_language_ = lang; }
-    static Language get_language() noexcept { return current_language_; }
     static const char* translate(const char* key) noexcept;
     static const char* get_translation(const char* key) noexcept;
 
@@ -92,7 +88,7 @@ private:
         const char* key;
         const char* value;
     };
-    
+
     static constexpr TranslationEntry translations_english[] = {
         {"save_settings", "Save Settings"},
         {"load_settings", "Load Settings"},
@@ -102,7 +98,7 @@ private:
         {"rssi_threshold", "RSSI Threshold"},
         {"spectrum_mode", "Spectrum Mode"}
     };
-    
+
     static constexpr size_t translations_count = sizeof(translations_english) / sizeof(TranslationEntry);
 };
 

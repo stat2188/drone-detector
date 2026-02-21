@@ -38,7 +38,6 @@
 #include <cstdio>
 #include <inttypes.h>
 #include <array>
-#include <atomic>
 #include <ch.h>
 #include "eda_safe_string.hpp"
 #include "eda_constants.hpp"
@@ -685,14 +684,10 @@ struct SettingsLoadBuffer {
  * @note DIAMOND FIX: Add initialization flag to ensure proper initialization
  * @note Zero-heap, thread-safe, deterministic behavior
  */
-inline SettingsLoadBuffer& get_load_buffer() {
-    // Use thread_local storage instead of static
-    // Each thread gets its own buffer, preventing race conditions
-    // No mutex needed - buffers are not shared between threads
-    thread_local SettingsLoadBuffer buf{};  // Value initialization: zero-initializes all members
+inline SettingsLoadBuffer& get_load_buffer() noexcept {
+    thread_local SettingsLoadBuffer buf{};
     thread_local bool initialized = false;
 
-    // Ensure buffer is initialized on first access
     if (!initialized) {
         buf.line_buffer[0] = '\0';
         buf.read_buffer[0] = '\0';

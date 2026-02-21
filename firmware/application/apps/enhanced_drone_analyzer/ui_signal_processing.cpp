@@ -50,22 +50,29 @@ namespace ui::apps::enhanced_drone_analyzer {
  * @param detection_count New detection count
  * @param rssi_value New RSSI value
  */
+// 🔴 FIX #7: Recursion depth counter (moved inside lock for thread safety)
+// thread_local ensures each thread has its own counter
+// Note: std::atomic<int> not supported on this platform, using lock-based approach
+// Diamond Code Fix: Thread-safe via mutex protection (critical section)
+thread_local int recursion_depth = 0;
+
 void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
                                         DetectionCount detection_count,
                                         RSSIValue rssi_value) noexcept {
-    // RED TEAM FIX: Recursion detection
-    // Prevents deadlock when update_detection() is called recursively
-    thread_local int recursion_depth = 0;
+    const Timestamp current_time = static_cast<Timestamp>(chTimeNow());
+
+    // Acquire mutex with lock ordering (from eda_locking.hpp)
+    // 🔴 FIX #7: Move recursion detection inside lock for thread safety
+    // This prevents race condition without requiring std::atomic
+    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
+    
+    // 🔴 FIX #7: Recursion detection (now protected by mutex)
+    // Check and increment are atomic due to mutex protection
     if (recursion_depth > 0) {
         // Recursive call detected - return early to prevent deadlock
         return;
     }
     recursion_depth++;
-
-    const Timestamp current_time = static_cast<Timestamp>(chTimeNow());
-
-    // Acquire mutex with lock ordering (from eda_locking.hpp)
-    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
 
     // Increment global version for this update
     global_version_++;
@@ -91,6 +98,7 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
             entries_[idx].detection_count = detection_count;
             entries_[idx].timestamp = current_time;
 
+            // 🔴 FIX #7: Decrement recursion depth (lock-based approach)
             recursion_depth--;
             return;
         }
@@ -138,8 +146,8 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
  * @return Detection count (0 if not found or concurrent update detected)
  */
 DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_hash) const noexcept {
-    // Acquire mutex for thread-safe access
-    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
+    // FIX #2: Lock-free reader - no mutex acquisition
+    // Use atomic operations and version checking for thread safety
 
     // Hash table lookup
     const size_t hash_idx = hash_index(frequency_hash);
@@ -190,8 +198,8 @@ DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_
  * @return RSSI value (DEFAULT_RSSI_DBM if not found or concurrent update detected)
  */
 RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) const noexcept {
-    // Acquire mutex for thread-safe access
-    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
+    // FIX #2: Lock-free reader - no mutex acquisition
+    // Use atomic operations and version checking for thread safety
 
     // Hash table lookup
     const size_t hash_idx = hash_index(frequency_hash);

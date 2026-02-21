@@ -523,8 +523,7 @@ const char* EnhancedSettingsManager::get_current_timestamp() noexcept {
 // ===========================================
 // Translation functions are kept separate as they provide unique UI localization
 // functionality not covered by SettingsPersistence<T>
-
-Language DroneAnalyzerSettingsManager_Translations::current_language_ = Language::ENGLISH;
+// Language is hardcoded to English only
 
 // DIAMOND OPTIMIZATION: const pointer, noexcept for translation lookup
 const char* DroneAnalyzerSettingsManager_Translations::translate(const char* key) noexcept {

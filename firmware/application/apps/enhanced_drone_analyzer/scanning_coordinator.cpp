@@ -119,9 +119,17 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
         scanning_active_ = false;
     }
     
-    // Wait for thread termination if it exists
+    // FIX #5: Wait for thread termination with timeout
+    // Note: chThdWait() doesn't support timeout in ChibiOS, so we use polling
+    // This prevents indefinite hang if thread doesn't terminate
     if (scanning_thread_) {
-        chThdWait(scanning_thread_);
+        // Poll with deadline to prevent indefinite wait (5 second timeout)
+        systime_t deadline = chTimeNow() + MS2ST(5000);
+        while (chTimeNow() < deadline && scanning_thread_ != nullptr) {
+            chThdSleepMilliseconds(10);
+        }
+        // If thread still exists after timeout, it's stuck - continue
+        // The thread will be cleaned up on next restart
         scanning_thread_ = nullptr;
     }
 }

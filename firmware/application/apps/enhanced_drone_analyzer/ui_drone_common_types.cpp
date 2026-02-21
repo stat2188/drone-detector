@@ -1,7 +1,6 @@
 #include "ui_drone_common_types.hpp"
 #include <cstring>
 #include <cstdio>
-#include <atomic>
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -136,16 +135,6 @@ static_assert(
 } // namespace TranslationValidation
 
 // ===========================================
-// THREAD-SAFE LANGUAGE STATE
-// ===========================================
-// CRITICAL FIX: Use atomic for lock-free thread-safe access
-// ARM Cortex-M4 supports atomic 8-bit operations natively
-// Zero runtime overhead for single-threaded access
-// Memory ordering: relaxed is sufficient for simple flag
-// NOTE: Language is enum class uint8_t, use atomic<Language> for type safety
-static std::atomic<Language> current_language_{Language::ENGLISH};
-
-// ===========================================
 // HELPER FUNCTIONS
 // ===========================================
 /**
@@ -207,32 +196,6 @@ const char* Translator::get_english(const char* const key) noexcept {
 }
 
 /**
- * @brief Set current language
- * @param lang Language to set
- * @note CRITICAL FIX: Thread-safe - uses atomic store
- * @note ISR-safe: marked noexcept
- */
-void Translator::set_language(const Language lang) noexcept {
-    // CRITICAL FIX: Atomic store for thread safety
-    // ARM Cortex-M4: 8-bit atomic is lock-free
-    // Memory order: relaxed is sufficient for simple flag
-    current_language_.store(lang, std::memory_order_relaxed);
-}
-
-/**
- * @brief Get current language
- * @return Current language
- * @note CRITICAL FIX: Thread-safe - uses atomic load
- * @note ISR-safe: marked noexcept
- */
-Language Translator::get_language() noexcept {
-    // CRITICAL FIX: Atomic load for thread safety
-    // ARM Cortex-M4: 8-bit atomic is lock-free
-    // Memory order: relaxed is sufficient for simple flag
-    return current_language_.load(std::memory_order_relaxed);
-}
-
-/**
  * @brief Translate key to current language
  * @param key Translation key
  * @return Translation value or NOT_FOUND_KEY
@@ -248,6 +211,7 @@ const char* Translator::translate(const char* const key) noexcept {
  * @brief Get translation for key in current language
  * @param key Translation key
  * @return Translation value or NOT_FOUND_KEY
+ * @note Language is hardcoded to English only
  * @note Thread-safe: only reads static data
  * @note ISR-safe: marked noexcept
  * @note CRITICAL FIX: Added input validation
@@ -258,16 +222,7 @@ const char* Translator::get_translation(const char* const key) noexcept {
         return TranslationConstants::EMPTY_STRING;
     }
     
-    // Currently only English supported
-    // Future: switch based on current_language_
-    // Example:
-    // switch (current_language_.load(std::memory_order_relaxed)) {
-    //     case Language::ENGLISH:
-    //         return get_english(key);
-    //     // Add more languages here
-    //     default:
-    //         return get_english(key);
-    // }
+    // Language is hardcoded to English only
     return get_english(key);
 }
 

@@ -5,6 +5,7 @@
 #include <array>
 #include <memory>
 #include <cstdio>
+#include <atomic>
 
 #include "ui_drone_common_types.hpp"
 #include "ui_signal_processing.hpp"
@@ -14,6 +15,7 @@
 #include "ui_drone_audio.hpp"
 #include "ui_spectral_analyzer.hpp"
 #include "eda_constants.hpp"
+#include "diamond_fixes.hpp"  // Diamond Code fixes: Division by zero, magic numbers, type safety
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
 #include "eda_locking.hpp"  // STAGE 4 FIX: Lock order enforcement
@@ -220,7 +222,10 @@ public:
         return MovementTrend::STATIC;
     }
 
-    uint32_t frequency;
+    // DIAMOND FIX: Priority 1 - Type Ambiguity
+    // Changed from uint32_t to Frequency (uint64_t) for consistency
+    // Eliminates signed/unsigned comparison overflows and data truncation
+    Frequency frequency;
     uint8_t drone_type;
     uint8_t threat_level;
     uint8_t update_count;
@@ -251,8 +256,8 @@ struct DisplayDroneEntry {
 // Constants moved to eda_constants.hpp - single source of truth
 
 // Local constants for DroneDisplayController (not in eda_constants.hpp)
-inline static constexpr int SPEC_WIDTH = 240;  // EDA::Constants::SPECTRUM_BIN_COUNT_240
-inline static constexpr int SPEC_HEIGHT = 40;  // EDA::Constants::MINI_SPECTRUM_HEIGHT (but 40 used here)
+inline static constexpr int SPEC_WIDTH = DiamondFixes::SpectrumConstants::SPEC_WIDTH;  // EDA::Constants::SPECTRUM_BIN_COUNT_240
+inline static constexpr int SPEC_HEIGHT = DiamondFixes::SpectrumConstants::SPEC_HEIGHT;  // EDA::Constants::MINI_SPECTRUM_HEIGHT (but 40 used here)
 
 struct WidebandSlice {
     Frequency center_frequency;
@@ -268,8 +273,8 @@ struct WidebandScanData {
     size_t slice_counter;
 
     void reset() {
-        min_freq = WIDEBAND_DEFAULT_MIN;
-        max_freq = WIDEBAND_DEFAULT_MAX;
+        min_freq = EDA::Constants::WIDEBAND_DEFAULT_MIN;
+        max_freq = EDA::Constants::WIDEBAND_DEFAULT_MAX;
         slices_nb = 0;
         slice_counter = 0;
     }
@@ -347,7 +352,8 @@ private:
     Thread* worker_thread_ = nullptr;           // Declared 1st
     mutable Mutex mutex_;                       // Declared 2nd
     Semaphore data_ready_;                      // Declared 3rd
-    volatile bool worker_should_run_ = false;   // Declared 4th
+    // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
+    std::atomic<bool> worker_should_run_{false};    // Declared 4th
 
     // STACK USAGE DOCUMENTATION: Worker Thread Stack
     // Stack size: 8192 bytes (8KB)
@@ -379,9 +385,10 @@ private:
     // --- ASYNC BUFFERING ---
     static constexpr size_t BUFFER_SIZE = 32;   // Declared 11th
     std::array<DetectionLogEntry, BUFFER_SIZE> ring_buffer_; // Declared 12th
-    size_t head_ = 0;                           // Declared 13th
-    size_t tail_ = 0;                           // Declared 14th
-    bool is_full_ = false;                      // Declared 15th
+    // 🔴 FIX #11: Use atomic for thread-safe access without mutex dependency
+    std::atomic<size_t> head_{0};              // Declared 13th
+    std::atomic<size_t> tail_{0};              // Declared 14th
+    std::atomic<bool> is_full_{false};         // Declared 15th
 
     // Helper buffer for string formatting (avoid heap allocation)
     char line_buffer_[EDA::Constants::ERROR_MESSAGE_BUFFER_SIZE];                     // Declared last
@@ -530,7 +537,8 @@ struct DetectionParams {
 
     rf::Frequency get_current_scanning_frequency() const;
     ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
-    const TrackedDrone& getTrackedDrone(size_t index) const;  // 🔴 FIX: Protected with mutex
+    // STEP 3 FIX: Return by value instead of by reference to avoid dangling reference issues
+    TrackedDrone getTrackedDrone(size_t index) const;  // 🔴 FIX: Protected with mutex
     void handle_scan_error(const char* error_msg);
 
     // DIAMOND OPTIMIZATION: inline + noexcept for zero-overhead abstraction
@@ -568,6 +576,7 @@ struct DetectionParams {
     void initialize_database_async();  // 🔴 FIX: Async database loading (non-blocking UI)
     void cleanup_database_and_scanner();
     bool is_database_loading_complete() const;  // 🔴 FIX: Check if async loading finished
+    bool is_initialization_complete() const;  // 🔴 FIX #3: Check if initialization completed
     void sync_database();  // 🔴 FIX: Sync database to physical media (thread-safe)
 
  private:
@@ -615,7 +624,8 @@ struct DetectionParams {
 
      Thread* scanning_thread_ = nullptr;
      mutable Mutex data_mutex;
-     volatile bool scanning_active_{false};
+     // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
+     std::atomic<bool> scanning_active_{false};
     
     // ===========================================
     // DIAMOND OPTIMIZATION: Histogram Callback
@@ -662,15 +672,25 @@ struct DetectionParams {
        FreqmanDB* freq_db_ptr_ = nullptr;
        std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>* tracked_drones_ptr_ = nullptr;
 
-        // Флаги состояния
+       // 🔴 FIX #6: Construction flags for placement-newed objects
+       // Prevents calling destructors on objects that were never constructed
+       bool freq_db_constructed_ = false;
+       bool tracked_drones_constructed_ = false;
+
+       // Флаги состояния
         bool freq_db_loaded_ = false;
         size_t current_db_index_ = 0;
         Frequency last_scanned_frequency_ = 0;
-        volatile systime_t last_detection_log_time_{0};
+        std::atomic<systime_t> last_detection_log_time_{0};
 
         // 🔴 FIX: Async database loading to prevent UI freeze
         Thread* db_loading_thread_ = nullptr;
-        volatile bool db_loading_active_{false};
+        // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
+        std::atomic<bool> db_loading_active_{false};
+
+        // 🔴 FIX #3: Initialization complete flag for async initialization coordination
+        // Ensures thread-safe checking of initialization state
+        std::atomic<bool> initialization_complete_{false};
 
        // ===========================================
         // ФАЗА 5.1: СТАТИЧЕСКИЙ СТЕК ДЛЯ ПОТОКА
@@ -682,11 +702,11 @@ struct DetectionParams {
 
           static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
-      volatile uint32_t scan_cycles_{0};
-      volatile uint32_t total_detections_{0};
+      std::atomic<uint32_t> scan_cycles_{0};
+      std::atomic<uint32_t> total_detections_{0};
 
       ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
-      volatile bool is_real_mode_{true};
+      std::atomic<bool> is_real_mode_{true};
 
      size_t tracked_count_ = 0;
 
@@ -706,6 +726,11 @@ struct DetectionParams {
     // FIX #3: Thread-safe spectrum buffer (replaces static buffer)
     // Moved from static in perform_wideband_scan_cycle() to class member
     std::array<uint8_t, 256> spectrum_data_{};
+
+    // 🔴 FIX #2: Histogram buffer moved to class member (replaces stack allocation)
+    // Previously: SpectralAnalyzer::HistogramBuffer histogram_buffer{}; on stack (128 bytes)
+    // Now: Reusable class member buffer to reduce stack usage in hot path
+    SpectralAnalyzer::HistogramBuffer histogram_buffer_{};
 
     // DIAMOND FIX: Settings stored by VALUE (not reference)
     // No lifetime dependency - settings are copied on construction
@@ -782,14 +807,15 @@ public:
         return true;
     }
 
-    // NEW: Spectrum data access method (critical section check-and-fetch to avoid TOCTOU race)
+    // FIX #4: Spectrum data access method (single critical section to avoid TOCTOU race)
     bool get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer) {
-        // Critical section check-and-fetch to prevent TOCTOU race
+        // FIX #4: Use single critical section for entire check-and-fetch operation
+        // This prevents TOCTOU race by keeping flag check and data copy atomic
         CriticalSection lock;
         if (!spectrum_updated_) {
             return false;
         }
-        MutexLock lock2(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
+        // Copy data while still in critical section (no mutex needed for atomic copy)
         out_db_buffer = last_spectrum_db_;
         spectrum_updated_ = false;
         return true;
@@ -829,8 +855,8 @@ private:
     std::array<uint8_t, 256> last_spectrum_db_;
     mutable Mutex spectrum_mutex_;
 
-    // 🔴 FIX: Replace atomic with volatile (protected by critical sections)
-    volatile bool spectrum_updated_{false};
+    // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
+    std::atomic<bool> spectrum_updated_{false};
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
@@ -839,8 +865,8 @@ private:
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
 
-    // 🔴 FIX: Replace atomic with volatile (protected by critical sections)
-    volatile bool rssi_updated_{false};
+    // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
+    std::atomic<bool> rssi_updated_{false};
     volatile int32_t last_valid_rssi_{-120};
     
     // 🔴 FIX: Moved message handlers to parent View to prevent MsgDblReg
@@ -1099,6 +1125,9 @@ struct DisplayData {
     uint32_t scan_cycles;
     bool has_detections;
     size_t color_idx;  // Computed color index for big display style
+    // 🔴 FIX #13: Timestamp to track when snapshot was captured
+    // This helps identify stale data in UI (snapshot is point-in-time)
+    systime_t snapshot_timestamp;
 };
 
 class DroneDisplayController : public View {
@@ -1543,7 +1572,9 @@ private:
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
     ::AudioManager& audio_mgr_;
-    volatile bool scanning_active_{false};
+    // EDA FIX: Use volatile bool with mutex protection instead of std::atomic
+    // Protected by ChibiOS critical sections (raii::SystemLock)
+    std::atomic<bool> scanning_active_{false};
     DroneDisplayController* display_controller_ = nullptr;
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 

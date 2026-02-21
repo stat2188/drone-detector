@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cinttypes>
 #include <array>
+#include <limits>
 #include "rf_path.hpp"
 
 // Flash storage attribute for Cortex-M4
@@ -106,6 +107,7 @@ constexpr uint32_t MAX_SCAN_INTERVAL_MS = 10000;     ///< Maximum scan interval 
 constexpr uint32_t DEFAULT_SCAN_INTERVAL_MS = 1000;  ///< Default scan interval (ms)
 constexpr uint8_t MIN_DETECTION_COUNT = 3;           ///< Minimum detection count
 constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;   ///< Alert persistence threshold
+constexpr uint32_t STALE_DRONE_TIMEOUT_MS = 30000;   ///< Stale drone timeout (ms, 30 seconds)
 
 // ===== ADAPTIVE SCAN INTERVALS =====
 constexpr uint32_t FAST_SCAN_INTERVAL_MS = 250;          ///< Fast scan interval (CRITICAL threat)
@@ -130,9 +132,14 @@ constexpr uint32_t CONFIDENCE_MAX = 10;                  ///< Maximum confidence
 constexpr uint32_t RSSI_TIMEOUT_MS = 60;                  ///< RSSI timeout (ms)
 constexpr uint32_t RSSI_POLL_DELAY_MS = 2;                ///< RSSI poll delay (ms)
 constexpr uint32_t PLL_STABILIZATION_ITERATIONS = 3;      ///< PLL stabilization iterations
+constexpr uint32_t PLL_STABILIZATION_DELAY_MS = 10;       ///< PLL stabilization delay (ms)
 constexpr uint32_t SPECTRUM_TIMEOUT_MS = 32;              ///< Spectrum timeout (ms)
 constexpr uint32_t CHECK_INTERVAL_MS = 2;                ///< Check interval (ms)
+constexpr uint32_t SCAN_CYCLE_CHECK_INTERVAL = 50;        ///< Scan cycle check interval (ms)
 constexpr uint32_t MAX_SCAN_BATCH_SIZE = 10;             ///< Maximum scan batch size
+
+// ===== SCAN CONSTANTS =====
+constexpr uint32_t HYBRID_SCAN_DIVISOR = 2;             ///< Hybrid scan divisor (alternate between wideband/database)
 
 // ===== MOVEMENT TREND =====
 constexpr int32_t MOVEMENT_TREND_THRESHOLD_APPROACHING = 3;   ///< Approaching threshold
@@ -185,6 +192,10 @@ constexpr uint8_t SPECTRUM_NOISE_FLOOR_DEFAULT = 20;   ///< Default spectrum noi
 constexpr uint8_t SPECTRUM_PEAK_THRESHOLD_DEFAULT = 10;///< Default spectrum peak threshold
 constexpr uint32_t SPECTRUM_UPDATE_RATE_HZ = 60;      ///< Spectrum update rate (Hz)
 
+// ===== UI CONSTANTS =====
+constexpr size_t LAST_TEXT_BUFFER_SIZE = 128;            ///< Last text buffer size (bytes)
+constexpr size_t CARD_TEXT_BUFFER_SIZE = 64;             ///< Card text buffer size (bytes)
+
 // ===== BUFFER SIZES =====
 constexpr uint32_t ERROR_MESSAGE_BUFFER_SIZE = 128;   ///< Error message buffer size
 constexpr uint32_t DEFAULT_BUFFER_SIZE_4KB = 4096;    ///< Default buffer size (4KB)
@@ -208,12 +219,14 @@ constexpr int32_t RSSI_INVALID_DBM = -127;             ///< Invalid RSSI value (
 // ===== THREAD TIMEOUTS =====
 constexpr uint32_t THREAD_JOIN_TIMEOUT_MS = 5000;      ///< Thread join timeout (ms)
 constexpr uint32_t THREAD_TERMINATION_TIMEOUT_MS = 3000; ///< Thread termination timeout (ms)
+constexpr uint32_t THREAD_TERMINATION_POLL_INTERVAL_MS = 10; ///< Thread termination poll interval (ms)
 
 // ===== DATABASE PARAMETERS =====
 constexpr uint32_t MAX_DB_ENTRIES = 75;                ///< Maximum database entries (reduced from 150 to save 2KB RAM)
 constexpr uint32_t DB_SYNC_INTERVAL_MS = 5000;         ///< Database sync interval (ms)
 constexpr uint32_t DB_LOAD_RETRY_COUNT = 3;            ///< Database load retry count
 constexpr uint32_t DB_LOAD_RETRY_DELAY_MS = 500;       ///< Database load retry delay (ms)
+constexpr uint32_t SD_CARD_MOUNT_TIMEOUT_MS = 5000;    ///< SD card mount timeout (ms)
 
 // ===== WIDEBAND SCANNING =====
 constexpr uint32_t WIDEBAND_SLICE_COUNT_DEFAULT = 10;  ///< Default wideband slice count
@@ -224,6 +237,9 @@ constexpr uint32_t WIDEBAND_SLICE_COUNT_MAX = 20;      ///< Maximum wideband sli
 constexpr uint32_t MAX_LOG_ENTRIES = 500;              ///< Maximum log entries (reduced from 1000 to save memory)
 constexpr uint32_t LOG_FLUSH_INTERVAL_MS = 10000;      ///< Log flush interval (ms)
 constexpr uint32_t LOG_FILE_MAX_SIZE_KB = 1024;        ///< Log file max size (KB)
+constexpr uint32_t LOG_LINE_BUFFER_SIZE = 128;         ///< Log line buffer size (bytes)
+constexpr uint32_t LOG_WRITE_INTERVAL_MS = 200;        ///< Log write interval (ms, prevents I/O blocking)
+constexpr uint32_t DETECTION_RING_BUFFER_SIZE = 32;    ///< Detection ring buffer size (entries)
 
 // ===== FREQUENCY HASHING =====
 constexpr uint32_t FREQ_HASH_DIVISOR = 100000;         ///< Frequency hash divisor
@@ -587,6 +603,45 @@ inline void format_frequency_compact(char* buffer, size_t size, Frequency freq_h
     }
 }
 
+/**
+ * @brief Format frequency to string (fixed-point, integer-only version)
+ * @param buffer Output buffer (must be at least 32 bytes)
+ * @param size Buffer size
+ * @param freq_hz Frequency in Hz
+ * @note Integer-only arithmetic for better performance on embedded systems
+ * @note Marked noexcept for ISR safety
+ */
+inline void format_frequency_fixed(char* buffer, size_t size, Frequency freq_hz) noexcept {
+    if (!buffer || size < 32) return;
+    
+    uint64_t freq_u64 = static_cast<uint64_t>(freq_hz);
+    
+    // GHz range (integer division only)
+    if (freq_u64 >= 1'000'000'000ULL) {
+        uint32_t ghz = static_cast<uint32_t>(freq_u64 / 1'000'000'000ULL);
+        uint32_t decimal = static_cast<uint32_t>((freq_u64 % 1'000'000'000ULL) / 100'000'000ULL);
+        if (decimal > 0) {
+            snprintf(buffer, size, "%" PRIu32 ".%" PRIu32 "G", ghz, decimal);
+        } else {
+            snprintf(buffer, size, "%" PRIu32 "G", ghz);
+        }
+    }
+    // MHz range
+    else if (freq_u64 >= 1'000'000ULL) {
+        uint32_t mhz = static_cast<uint32_t>((freq_u64 + 500'000ULL) / 1'000'000ULL);
+        snprintf(buffer, size, "%" PRIu32 "M", mhz);
+    }
+    // kHz range
+    else if (freq_u64 >= 1'000ULL) {
+        uint32_t khz = static_cast<uint32_t>((freq_u64 + 500ULL) / 1'000ULL);
+        snprintf(buffer, size, "%" PRIu32 "k", khz);
+    }
+    // Hz range
+    else {
+        snprintf(buffer, size, "%" PRIu64, freq_u64);
+    }
+}
+
 } // namespace Formatting
 
 // ========================================
@@ -721,6 +776,51 @@ constexpr To safe_reinterpret_cast_addr(uintptr_t addr) noexcept {
     static_assert(alignof(To) <= alignof(std::max_align_t), "Target alignment too large");
     return reinterpret_cast<To>(addr);
 }
+
+// ========================================
+// SAFE ARITHMETIC HELPERS
+// ========================================
+
+namespace SafeArithmetic {
+
+/**
+ * @brief Check if addition would overflow
+ * @tparam T Integer type
+ * @param a First operand
+ * @param b Second operand
+ * @return true if addition would overflow
+ */
+template<typename T>
+constexpr bool would_add_overflow(T a, T b) noexcept {
+    return a > std::numeric_limits<T>::max() - b;
+}
+
+/**
+ * @brief Check if multiplication would overflow
+ * @tparam T Integer type
+ * @param a First operand
+ * @param b Second operand
+ * @return true if multiplication would overflow
+ */
+template<typename T>
+constexpr bool would_mul_overflow(T a, T b) noexcept {
+    return a != 0 && b > std::numeric_limits<T>::max() / a;
+}
+
+/**
+ * @brief Checked addition with clamping
+ * @tparam T Integer type
+ * @param a First operand
+ * @param b Second operand
+ * @param clamp_value Value to clamp to on overflow
+ * @return a + b, or clamp_value if overflow would occur
+ */
+template<typename T>
+constexpr T checked_add(T a, T b, T clamp_value) noexcept {
+    return would_add_overflow(a, b) ? clamp_value : a + b;
+}
+
+} // namespace SafeArithmetic
 
 } // namespace EDA
 

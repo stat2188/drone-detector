@@ -322,10 +322,6 @@ inline void profile_set_auto_save_on_change(DroneAnalyzerSettings& s, bool v) no
     BitfieldAccess::set_bit<1>(s.profile_flags, v);
 }
 
-// Default wideband constants for scanner settings
-static constexpr uint32_t WIDEBAND_DEFAULT_MIN = 2400000000ULL;
-static constexpr uint32_t WIDEBAND_DEFAULT_MAX = 2500000000ULL;
-
 // ===========================================
 // DIAMOND FIX: Unified Frequency Validation
 // ===========================================
@@ -487,10 +483,6 @@ enum class MovementTrend : uint8_t {
     UNKNOWN = 3
 };
 
-enum class Language : uint8_t {
-    ENGLISH = 0
-};
-
 // DIAMOND OPTIMIZATION: constexpr LUTs instead of std::string comparisons
 // Scott Meyers Item 15: Prefer constexpr to #define
 // RAM savings: all strings stored in Flash, 0 heap allocation
@@ -501,13 +493,11 @@ struct TranslationEntry {
 
 class Translator {
 public:
-    static void set_language(Language lang) noexcept;
-    static Language get_language() noexcept;
+    // Language is hardcoded to English only
     static const char* translate(const char* key) noexcept;
     static const char* get_translation(const char* key) noexcept;
 
 private:
-    static std::atomic<Language> current_language_;
     static const char* get_english(const char* key) noexcept;
 };
 
