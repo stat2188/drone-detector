@@ -2843,24 +2843,23 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
        compact_frequency_ruler_({0, 68, screen_width, 12}),
        displayed_drones_(),
           // 🔴 ФАЗА 1.5: Static buffers initialization
-          detected_drones_count_(0),
-          buffers_allocated_(false),
-         threat_bins_(), threat_bins_count_(0),
-         waterfall_line_index_(0),
-         spectrum_gradient_(), spectrum_fifo_(nullptr),
-         pixel_index(0), bins_hz_size(0), each_bin_size(100000), min_color_power(0),
-         marker_pixel_step(1000000), max_power(0), range_max_power(0), mode(0),
-         spectrum_config_()
+           detected_drones_count_(0),
+           buffers_allocated_(false),
+          threat_bins_(), threat_bins_count_(0),
+           waterfall_line_index_(0),
+           spectrum_gradient_(), spectrum_fifo_(nullptr),
+           pixel_index(0), bins_hz_size(0), each_bin_size(DEFAULT_EACH_BIN_SIZE_HZ), min_color_power(DEFAULT_MIN_COLOR_POWER),
+           marker_pixel_step(DEFAULT_MARKER_PIXEL_STEP_HZ), max_power(0), range_max_power(0), mode_(DroneDisplayController::DisplayRenderMode::SPECTRUM),
+           spectrum_config_(),
+      // ===========================================
+      // DIAMOND FIX: Initialize mutexes in member initialization list
+      // ===========================================
+      // The Mutex class constructor calls chMtxInit() internally.
+      // This ensures proper construction order and eliminates -Weffc++ warning.
+      // Lock order: SPECTRUM_MUTEX (level 1), HISTOGRAM_MUTEX (level 2)
+      spectrum_mutex_(),
+      histogram_mutex_()
 {
-    // ===========================================
-    // DIAMOND FIX: Initialize mutexes for thread-safe buffer access
-    // ===========================================
-    // These mutexes protect shared buffers accessed by multiple threads:
-    // - spectrum_mutex_: Protects spectrum_power_levels_ buffer (TOCTOU race condition fix)
-    // - histogram_mutex_: Protects histogram_display_buffer_ buffer
-    chMtxInit(&spectrum_mutex_);
-    chMtxInit(&histogram_mutex_);
-
     // CRITICAL: Add ALL widgets to View hierarchy
     add_children({
         &big_display_,
@@ -3422,16 +3421,19 @@ void DroneDisplayController::render_histogram(Painter& painter) noexcept {
         const int bin_x = static_cast<int>(bin_idx * HISTOGRAM_BIN_WIDTH);
         const int bin_width = static_cast<int>(HISTOGRAM_BIN_WIDTH);
         
+        // ===========================================
+        // DIAMOND FIX: Use named constants for color thresholds
+        // ===========================================
         // Calculate color level based on signal strength
         // Diamond Code: Integer-only color mapping
         uint8_t color_level;
-        if (bin_count <= 51) {           // 0-20%
+        if (bin_count <= HISTOGRAM_COLOR_THRESHOLD_20PCT) {           // 0-20%
             color_level = 0;  // dark_grey (noise floor)
-        } else if (bin_count <= 102) {    // 20-40%
+        } else if (bin_count <= HISTOGRAM_COLOR_THRESHOLD_40PCT) {    // 20-40%
             color_level = 1;  // blue (low signal)
-        } else if (bin_count <= 153) {    // 40-60%
+        } else if (bin_count <= HISTOGRAM_COLOR_THRESHOLD_60PCT) {    // 40-60%
             color_level = 2;  // cyan (medium signal)
-        } else if (bin_count <= 204) {    // 60-80%
+        } else if (bin_count <= HISTOGRAM_COLOR_THRESHOLD_80PCT) {    // 60-80%
             color_level = 3;  // yellow (high signal)
         } else {                           // 80-100%
             color_level = 4;  // red (peak signal)
@@ -3452,6 +3454,22 @@ void DroneDisplayController::render_histogram(Painter& painter) noexcept {
     
     // 3. Mark histogram as clean (rendered)
     histogram_dirty_ = false;
+}
+
+void DroneDisplayController::clear_histogram_area(Painter& painter) noexcept {
+    constexpr auto HISTOGRAM_Y = 164;
+    constexpr auto HISTOGRAM_HEIGHT = 26;
+    constexpr auto HISTOGRAM_X = 8;
+    constexpr auto HISTOGRAM_WIDTH = 304;
+
+    const Rect histogram_rect{
+        HISTOGRAM_X,
+        HISTOGRAM_Y,
+        HISTOGRAM_WIDTH,
+        HISTOGRAM_HEIGHT
+    };
+
+    painter.fill_rectangle(histogram_rect, Color::black());
 }
 
 void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, MAX_DISPLAYED_DRONES>& drones) {
@@ -3872,9 +3890,16 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
     // 🔴 SAFETY: Дополнительная проверка буферов
     if (display_controller_.are_buffers_valid()) {
         display_controller_.render_bar_spectrum(painter);
-        // DIAMOND OPTIMIZATION: Render histogram after bar spectrum
-        // Histogram is positioned at y=164-190 (below bar spectrum)
-        display_controller_.render_histogram(painter);
+
+        // Handle histogram display based on mode
+        if (display_controller_.get_display_mode() == ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::HISTOGRAM) {
+            // DIAMOND OPTIMIZATION: Render histogram after bar spectrum
+            // Histogram is positioned at y=164-190 (below bar spectrum)
+            display_controller_.render_histogram(painter);
+        } else {
+            // Clear histogram area when not in histogram mode
+            display_controller_.clear_histogram_area(painter);
+        }
     }
 }
 
@@ -3892,6 +3917,15 @@ bool EnhancedDroneSpectrumAnalyzerView::on_key(const KeyEvent key) {
 
 bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
     return View::on_touch(event);
+}
+
+void EnhancedDroneSpectrumAnalyzerView::on_toggle_display_mode() {
+    const auto current_mode = display_controller_.get_display_mode();
+    const auto new_mode = (current_mode == ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::SPECTRUM)
+                          ? ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::HISTOGRAM
+                          : ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::SPECTRUM;
+    display_controller_.set_display_mode(new_mode);
+    set_dirty();  // Trigger repaint
 }
 
 // ===========================================

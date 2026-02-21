@@ -1171,6 +1171,52 @@ struct DisplayData {
 
 class DroneDisplayController : public View {
 public:
+    // ===========================================
+    // DIAMOND CODE: Spectrum Configuration Constants
+    // ===========================================
+    // Scott Meyers Item 15: Prefer constexpr to #define
+    // All constants stored in Flash (zero RAM overhead)
+    
+    /// @brief Default frequency width per spectrum bin (100 kHz)
+    static constexpr uint32_t DEFAULT_EACH_BIN_SIZE_HZ = 100000;
+    
+    /// @brief Default frequency step for spectrum markers (1 MHz)
+    static constexpr uint32_t DEFAULT_MARKER_PIXEL_STEP_HZ = 1000000;
+    
+    /// @brief Default minimum color power level
+    static constexpr uint8_t DEFAULT_MIN_COLOR_POWER = 0;
+    
+    // ===========================================
+    // DIAMOND CODE: Histogram Color Thresholds
+    // ===========================================
+    // Thresholds for histogram color mapping (0-255 scale)
+    // Stored in Flash (zero RAM overhead)
+    
+    /// @brief 20% threshold (51 = 0.20 * 255)
+    static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_20PCT = 51;
+    
+    /// @brief 40% threshold (102 = 0.40 * 255)
+    static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_40PCT = 102;
+    
+    /// @brief 60% threshold (153 = 0.60 * 255)
+    static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_60PCT = 153;
+    
+    /// @brief 80% threshold (204 = 0.80 * 255)
+    static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_80PCT = 204;
+    
+    // ===========================================
+    // DIAMOND CODE: Display Mode Enumeration
+    // ===========================================
+    // Scott Meyers Item 6: Prefer enums to #define
+    // Type-safe display mode selection
+
+    /// @brief Display mode enumeration for type safety
+    enum class DisplayRenderMode : uint8_t {
+        DEFAULT = 0,  ///< Default mode
+        SPECTRUM = 1, ///< Spectrum display mode
+        HISTOGRAM = 2  ///< Histogram display mode
+    };
+
     // 🔴 OPTIMIZATION: Static buffer sizes to prevent heap allocation in constructor
     static constexpr size_t SPECTRUM_ROW_SIZE = 240;
     static constexpr size_t RENDER_LINE_SIZE = 240;
@@ -1246,6 +1292,22 @@ public:
     /// @brief Render histogram to display
     /// @param painter Painter object for rendering
     void render_histogram(Painter& painter) noexcept;
+
+    /// @brief Clear the histogram display area
+    /// @param painter The painter to use for clearing
+    void clear_histogram_area(Painter& painter) noexcept;
+
+    /// @brief Get the current display mode
+    /// @return Current display mode (SPECTRUM or HISTOGRAM)
+    DisplayRenderMode get_display_mode() const noexcept {
+        return mode_;
+    }
+
+    /// @brief Set the display mode
+    /// @param new_mode The new display mode to set
+    void set_display_mode(DisplayRenderMode new_mode) noexcept {
+        mode_ = new_mode;
+    }
 
     void update_detection_display(const DroneScanner& scanner);
     void update_trends_display(size_t approaching, size_t static_count, size_t receding);
@@ -1554,7 +1616,7 @@ private:
     uint32_t marker_pixel_step = 1000000;
     uint8_t max_power = 0;
     uint8_t range_max_power = 0;
-    int mode = 0;
+    DisplayRenderMode mode_ = DisplayRenderMode::SPECTRUM;
 
     SpectrumConfig spectrum_config_;
 
@@ -1663,6 +1725,9 @@ public:
     bool on_touch(const TouchEvent event) override;
     void on_show() override;
     void on_hide() override;
+
+    /// @brief Toggle between spectrum and histogram display modes
+    void on_toggle_display_mode();
 
     // ===========================================
     // INITIALIZATION STATE
