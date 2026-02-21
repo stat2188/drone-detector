@@ -73,13 +73,6 @@ using rf::Frequency;
 //
 // NOTE: LockOrder enum is already defined in eda_locking.hpp
 // This file just references it for consistency
-enum class LockOrder : uint8_t {
-    DATA = 2,         // DroneScanner::data_mutex
-    SPECTRUM = 3,        // DroneHardwareController::spectrum_mutex
-    SD_CARD = 5,         // Global sd_card_mutex
-    SETTINGS = 6,       // Global settings_buffer_mutex
-    ERRNO = 7             // Global errno_mutex
-};
 
 // ===========================================
 // FIX #2: Explicit Thread Stack Sizes
