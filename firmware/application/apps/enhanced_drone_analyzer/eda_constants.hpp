@@ -227,6 +227,11 @@ constexpr uint32_t DB_SYNC_INTERVAL_MS = 5000;         ///< Database sync interv
 constexpr uint32_t DB_LOAD_RETRY_COUNT = 3;            ///< Database load retry count
 constexpr uint32_t DB_LOAD_RETRY_DELAY_MS = 500;       ///< Database load retry delay (ms)
 constexpr uint32_t SD_CARD_MOUNT_TIMEOUT_MS = 5000;    ///< SD card mount timeout (ms)
+constexpr uint32_t SD_CARD_POLL_INTERVAL_MS = 100;     ///< SD card poll interval (ms)
+constexpr uint32_t SD_CARD_POLL_INTERVAL_SHORT_MS = 50; ///< SD card poll interval short (ms)
+constexpr uint32_t SETTINGS_LOAD_TIMEOUT_MS = 2000;    ///< Settings load timeout (ms)
+constexpr uint32_t PLL_STABILIZATION_DELAY_MS = 1;    ///< PLL stabilization delay (ms)
+constexpr uint32_t BASEBOARD_STOP_DELAY_MS = 10;       ///< Baseband stop delay (ms)
 
 // ===== WIDEBAND SCANNING =====
 constexpr uint32_t WIDEBAND_SLICE_COUNT_DEFAULT = 10;  ///< Default wideband slice count

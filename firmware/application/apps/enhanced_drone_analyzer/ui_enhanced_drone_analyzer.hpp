@@ -138,6 +138,8 @@ namespace UIStyles {
 
 class TrackedDrone {
 public:
+    // 🔴 FIX #L8: Remove redundant in-class default initialization
+    // Diamond Code: Use member initializer list only, no in-class default initialization
     TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
                      last_seen(0), rssi(EDA::Constants::RSSI_SILENCE_DBM), rssi_history_{}, timestamp_history_{}, history_index_(0) {
@@ -241,19 +243,21 @@ public:
     // DIAMOND FIX: Priority 1 - Type Ambiguity
     // Changed from uint32_t to Frequency (uint64_t) for consistency
     // Eliminates signed/unsigned comparison overflows and data truncation
+    // 🔴 FIX #L8: Remove redundant in-class default initialization
+    // Diamond Code: All members are initialized in constructor, no need for defaults
     Frequency frequency;
     uint8_t drone_type;
     uint8_t threat_level;
     uint8_t update_count;
     systime_t last_seen;
-    int32_t rssi = -120;
+    int32_t rssi;
 
 private:
     // Phase 3 Optimization: Reduced from 8 to 4 entries (~96 bytes savings)
     inline static constexpr size_t MAX_HISTORY = 4;
     int16_t rssi_history_[MAX_HISTORY];
-    systime_t timestamp_history_[MAX_HISTORY] = {0};
-    size_t history_index_ = 0;
+    systime_t timestamp_history_[MAX_HISTORY];
+    size_t history_index_;
 };
 
 struct DisplayDroneEntry {
@@ -1663,12 +1667,38 @@ static constexpr const char* DEFAULT_SPECTRUM_FILE = "DEFAULT";
 
 class DroneUIController {
 public:
+    // ===========================================
+    // INITIALIZATION PATTERN
+    // ===========================================
+    // Constructor does NOT take display_controller as parameter.
+    // Instead, display_controller_ is set via set_display_controller() after construction.
+    //
+    // This two-phase initialization pattern makes the initialization order
+    // independent of member declaration order in the parent class.
+    //
+    // Benefits:
+    // - No fragile dependency on declaration order
+    // - ui_controller_ can be declared before display_controller_
+    // - display_controller_ can be declared anywhere in the parent class
+    //
+    // Usage in EnhancedDroneSpectrumAnalyzerView:
+    //   1. Construct ui_controller_ (display_controller_ = nullptr)
+    //   2. Construct display_controller_
+    //   3. Call ui_controller_.set_display_controller(&display_controller_)
+    //
+    // Constructor without display_controller - set via set_display_controller() after construction
+    // This makes initialization order independent of member declaration order
     DroneUIController(NavigationView& nav,
                      DroneHardwareController& hardware,
                      DroneScanner& scanner,
-                     ::AudioManager& audio_mgr,
-                     DroneDisplayController& display_controller);
+                     ::AudioManager& audio_mgr);
     ~DroneUIController();
+
+    // Set display_controller after construction - allows flexible initialization order
+    // Must be called AFTER display_controller_ is constructed in parent class
+    void set_display_controller(DroneDisplayController* display_controller) {
+        display_controller_ = display_controller;
+    }
 
     void on_start_scan();
     void on_stop_scan();
@@ -1736,13 +1766,14 @@ public:
     enum class InitState : uint8_t {
         CONSTRUCTED = 0,           // Constructor completed
         BUFFERS_ALLOCATED,         // display buffers heap-allocated
-        DATABASE_LOADED,           // scanner_.initialize_database_and_scanner() completed
+        DATABASE_LOADING,           // DIAMOND FIX #4: Async database loading in progress
+        DATABASE_LOADED,           // Async database loading complete
         HARDWARE_READY,            // hardware_.on_hardware_show() completed
         UI_LAYOUT_READY,           // initialize_modern_layout() completed
         SETTINGS_LOADED,           // SettingsPersistence::load() completed
          COORDINATOR_READY,         // coordinator thread creation prepared
-         FULLY_INITIALIZED = 7,     // Ready for operation
-         INITIALIZATION_ERROR = 8   // Timeout or critical error (NEW!)
+         FULLY_INITIALIZED = 8,    // Ready for operation
+         INITIALIZATION_ERROR = 9  // Timeout or critical error
      };
 
  private:
@@ -1836,13 +1867,39 @@ public:
 
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
+    // ===========================================
+    // INITIALIZATION ORDER AND DEPENDENCIES
+    // ===========================================
+    // Members are initialized in declaration order by C++ standard.
+    // The following order ensures proper initialization:
+    //
+    // 1. nav_ (reference) - already initialized by caller
+    // 2. settings_ - default-constructed, no dependencies
+    // 3. hardware_ - initialized with SpectrumMode::MEDIUM, no dependencies
+    // 4. scanner_ - initialized with default settings, depends on settings_ only
+    // 5. audio_ - default-constructed, no dependencies
+    // 6. ui_controller_ - initialized with nav_, hardware_, scanner_, audio_
+    //    - display_controller_ is NOT passed to constructor
+    //    - display_controller_ is set via set_display_controller() AFTER construction
+    //    - This makes initialization order independent of declaration order
+    // 7. display_controller_ - initialized with rect, no dependencies
+    // 8. scanning_coordinator_ - initialized with nav_, hardware_, scanner_, display_controller_, audio_
+    //
+    // CRITICAL: ui_controller_ stores display_controller_ as a POINTER (not reference)
+    // This allows ui_controller_ to be constructed before display_controller_.
+    // The pointer is set via set_display_controller() in constructor body.
+    //
     // Stack-allocated objects following Mayhem pattern
     DroneHardwareController hardware_;
     DroneScanner scanner_;
     ::AudioManager audio_;
 
-    DroneDisplayController display_controller_;
+    // INITIALIZATION ORDER FIX: ui_controller_ declared before display_controller_
+    // The display_controller dependency is now set via set_display_controller() after construction,
+    // making initialization order independent of member declaration order.
+    // This eliminates the fragile dependency on declaration order.
     DroneUIController ui_controller_;
+    DroneDisplayController display_controller_;
     ScanningCoordinator scanning_coordinator_;
 
     SmartThreatHeader smart_header_;

@@ -207,7 +207,7 @@ public:
     // Eliminates compiler warnings about uninitialized members
     // Initializes all entries to empty state on construction
     DetectionRingBuffer() noexcept
-        : head_{},
+        : head_{0},  // 🔴 FIX #M6: Explicitly initialize head_ to 0
           global_version_{0},
           buffer_mutex_{} {
         // Initialize all entries to empty state

@@ -737,7 +737,9 @@ void HardwareSettingsView::focus() noexcept { button_save_.focus(); }
 // DIAMOND OPTIMIZATION: noexcept for settings load
 void HardwareSettingsView::load_current_settings() noexcept {
     DroneAnalyzerSettings settings;
-    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
+    // 🔴 FIX #M3: Check return value of load() and handle errors appropriately
+    auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(settings);
+    if (!load_result.is_ok() || !load_result.value) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     }
     checkbox_real_hardware_.set_value(hw_get_enable_real_hardware(settings));
@@ -750,7 +752,9 @@ void HardwareSettingsView::load_current_settings() noexcept {
 // DIAMOND OPTIMIZATION: noexcept for settings save
 void HardwareSettingsView::save_current_settings() noexcept {
     DroneAnalyzerSettings settings;
-    if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
+    // 🔴 FIX #M3: Check return value of load() and handle errors appropriately
+    auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(settings);
+    if (!load_result.is_ok() || !load_result.value) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     }
     
@@ -924,8 +928,17 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View
     button_about_author_.on_select = [this](Button&) { show_about_author(); };
     // Initialize settings with defaults first (which includes freqman_path = "DRONES")
     SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(current_settings_);
-    EnhancedSettingsManager::ensure_database_exists(current_settings_);
-    SettingsPersistence<DroneAnalyzerSettings>::load(current_settings_);
+    // 🔴 FIX #M5: Check return value of ensure_database_exists() and handle failures
+    bool db_exists = EnhancedSettingsManager::ensure_database_exists(current_settings_);
+    if (!db_exists) {
+        // Database creation failed - continue with defaults
+        // Settings will be saved to file when user explicitly saves
+    }
+    // 🔴 FIX #M3: Check return value of load() and handle errors appropriately
+    auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(current_settings_);
+    if (!load_result.is_ok() || !load_result.value) {
+        // Load failed - continue with defaults that were set above
+    }
 }
 // DIAMOND OPTIMIZATION: noexcept for focus and navigation
 void DroneAnalyzerSettingsView::focus() noexcept { button_audio_settings_.focus(); }

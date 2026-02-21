@@ -61,17 +61,18 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
                                         RSSIValue rssi_value) noexcept {
     const Timestamp current_time = static_cast<Timestamp>(chTimeNow());
 
-    // Acquire mutex with lock ordering (from eda_locking.hpp)
-    // 🔴 FIX #7: Move recursion detection inside lock for thread safety
-    // This prevents race condition without requiring std::atomic
-    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
-    
-    // 🔴 FIX #7: Recursion detection (now protected by mutex)
-    // Check and increment are atomic due to mutex protection
+    // 🔴 FIX #M4: Check recursion depth BEFORE acquiring mutex
+    // This prevents potential deadlock if recursion occurs during lock acquisition
     if (recursion_depth > 0) {
         // Recursive call detected - return early to prevent deadlock
         return;
     }
+
+    // Acquire mutex with lock ordering (from eda_locking.hpp)
+    // 🔴 FIX #M4: Only acquire mutex if not recursing
+    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
+    
+    // 🔴 FIX #M4: Increment recursion depth after lock acquisition
     recursion_depth++;
 
     // Increment global version for this update
