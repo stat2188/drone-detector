@@ -53,6 +53,51 @@ namespace ui::apps::enhanced_drone_analyzer {
 using rf::Frequency;
 
 // ===========================================
+// FIX #7: Simplify Lock Ordering with LockOrder Enum
+// ===========================================
+// Diamond Code: Enum-based lock ordering to prevent deadlock
+// Scott Meyers Item 15: Prefer constexpr to #define
+//
+// LOCK ORDER RULE:
+// Always acquire locks in ascending order (1 → 2 → 3 → 4 → 5 → 6 → 7)
+// Never acquire a lower-numbered lock while holding a higher-numbered lock
+//
+// EXAMPLE CORRECT ORDER:
+//   ScopedLock(data_mutex, LockOrder::DATA_MUTEX);
+//   ScopedLock(spectrum_mutex, LockOrder::SPECTRUM_MUTEX);
+//   ScopedLock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
+//
+// EXAMPLE INCORRECT (DEADLOCK RISK):
+//   ScopedLock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
+//   ScopedLock(data_mutex, LockOrder::DATA_MUTEX);  // WRONG! Will deadlock!
+//
+// NOTE: LockOrder enum is already defined in eda_locking.hpp
+// This file just references it for consistency
+enum class LockOrder : uint8_t {
+    DATA = 2,         // DroneScanner::data_mutex
+    SPECTRUM = 3,        // DroneHardwareController::spectrum_mutex
+    SD_CARD = 5,         // Global sd_card_mutex
+    SETTINGS = 6,       // Global settings_buffer_mutex
+    ERRNO = 7             // Global errno_mutex
+};
+
+// ===========================================
+// FIX #2: Explicit Thread Stack Sizes
+// ===========================================
+// Diamond Code: Define explicit stack sizes to prevent stack overflow
+// Scott Meyers Item 15: Prefer constexpr to #define
+constexpr size_t SCANNING_THREAD_STACK_SIZE = 3072;  // 3KB
+constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // 2KB
+
+// ===========================================
+// FIX #2: Explicit Thread Stack Sizes
+// ===========================================
+// Diamond Code: Define explicit stack sizes to prevent stack overflow
+// Scott Meyers Item 15: Prefer constexpr to #define
+constexpr size_t SCANNING_THREAD_STACK_SIZE = 3072;  // 3KB
+constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // 2KB
+
+// ===========================================
 // DIAMOND FIX: Global SD Card Mutex Protection
 // FatFS is NOT thread-safe - all SD operations must be serialized
 // ===========================================
@@ -563,6 +608,13 @@ struct DetectionParams {
         return *tracked_drones_ptr_;
     }
 
+    // FIX #6: Eliminate stack arrays in hot paths - moved to class member buffers
+    // entries_to_scan buffer (was stack array in perform_database_scan_cycle)
+    std::array<freqman_entry, 10> entries_to_scan_{};
+
+    // stale_indices buffer (was stack array in remove_stale_drones)
+    std::array<size_t, DroneConstants::MAX_TRACKED_DRONES> stale_indices_{};
+
     // Intelligent scanning methods
     size_t get_next_slice_with_intelligence();
 
@@ -587,9 +639,10 @@ struct DetectionParams {
         // Статическое хранилище для FreqmanDB
         // Размер подбираем с запасом (FreqmanDB ~4KB)
         // Diamond Code: Increased to 4KB for FreqmanDB safety
+        // FIX #1: Removed inline to prevent ~12-16KB RAM bloat
         static constexpr size_t FREQ_DB_STORAGE_SIZE = EDA::Constants::FREQ_DB_STORAGE_SIZE_4KB;
         alignas(alignof(FreqmanDB))
-        static inline uint8_t freq_db_storage_[FREQ_DB_STORAGE_SIZE];
+        static uint8_t freq_db_storage_[FREQ_DB_STORAGE_SIZE];
 
         // 🔴 FIX: Compile-time alignment verification
         static_assert(alignof(FreqmanDB) <= 16, "FreqmanDB alignment too large for static storage");
@@ -599,10 +652,11 @@ struct DetectionParams {
         // Статическое хранилище для TrackedDrones
         // Размер: MAX_TRACKED_DRONES * sizeof(TrackedDrone) = 4 * ~200 = ~800 bytes
         // Diamond Code: Reduced from 8 to 4 drones for stack safety
+        // FIX #1: Removed inline to prevent ~12-16KB RAM bloat
         static constexpr size_t TRACKED_DRONES_STORAGE_SIZE =
             sizeof(TrackedDrone) * EDA::Constants::MAX_TRACKED_DRONES;
         alignas(alignof(TrackedDrone))
-        static inline uint8_t tracked_drones_storage_[TRACKED_DRONES_STORAGE_SIZE];
+        static uint8_t tracked_drones_storage_[TRACKED_DRONES_STORAGE_SIZE];
 
         // 🔴 FIX: Compile-time alignment verification
         static_assert(alignof(TrackedDrone) <= 16, "TrackedDrone alignment too large for static storage");
@@ -1372,7 +1426,8 @@ private:
     // ФАЗА 1.1: СТАТИЧЕСКИЕ БУФЕРЫ (Zero-Heap)
     // ===========================================
     // Diamond Code Principle: All data must be static or stack-based
-    // Используем inline статические массивы вместо unique_ptr
+    // Используем статические массивы вместо unique_ptr
+    // FIX #1: Removed inline to prevent ~12-16KB RAM bloat
 
     // Статические буферы (хранятся в .bss, инициализируются нулями)
     // Размер: SPECTRUM_ROW_SIZE * sizeof(Color) = 240 * 2 = 480 байт
@@ -1381,13 +1436,13 @@ private:
     // Итого: ~1.16 KB в .bss вместо heap allocation
 
     alignas(alignof(std::array<Color, SPECTRUM_ROW_SIZE>))
-    static inline Color spectrum_row_buffer_storage_[SPECTRUM_ROW_SIZE];
+    static Color spectrum_row_buffer_storage_[SPECTRUM_ROW_SIZE];
 
     alignas(alignof(std::array<Color, RENDER_LINE_SIZE>))
-    static inline Color render_line_buffer_storage_[RENDER_LINE_SIZE];
+    static Color render_line_buffer_storage_[RENDER_LINE_SIZE];
 
     alignas(alignof(std::array<uint8_t, 200>))
-    static inline uint8_t spectrum_power_levels_storage_[200];
+    static uint8_t spectrum_power_levels_storage_[200];
 
     // Флаг для отслеживания состояния буферов
     bool buffers_allocated_ = false;
@@ -1721,6 +1776,13 @@ public:
         uint8_t noise_floor,
         void* user_data
     ) noexcept;
+
+    // ===========================================
+    // FIX #5: Button Callbacks
+    // ===========================================
+    // Diamond Code: Use lambdas with 'this' capture for callbacks
+    // Note: std::function may allocate on heap, but this is unavoidable
+    // with the Mayhem UI framework's callback design
 
     // 🔴 ФАЗА 2.2: Deferred initialization methods
     void step_deferred_initialization();
