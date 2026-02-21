@@ -1,23 +1,6 @@
 /**
  * @file color_lookup_unified.hpp
  * @brief Unified Color Lookup Table - Diamond Code Refinement
- * 
- * DIAMOND STANDARD: Memory-safe, optimized, zero-allocation
- * 
- * FEATURES:
- * - ✅ Correct RGB888 → RGB565 conversion
- * - ✅ Eliminated code duplication (HEADER_STYLES, CARD_STYLES)
- * - ✅ DRONE_COLORS: 11 types (matches DroneType enum)
- * - ✅ All data stored in Flash (constexpr FLASH_STORAGE)
- * - ✅ O(1) lookup with bounds checking
- * - ✅ noexcept on all functions
- * - ✅ constexpr where possible
- * 
- * MEMORY: 0 bytes RAM (all data in Flash)
- * PERFORMANCE: O(1) lookup, compile-time evaluation
- * 
- * @author Diamond Core Protocol Refinement
- * @version 2.0.0
  */
 
 #ifndef COLOR_LOOKUP_UNIFIED_HPP_
@@ -35,17 +18,13 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ===========================================
-// TYPE ALIASES (Semantic Types)
-// ===========================================
+// Type Aliases (Semantic Types)
 using RGB888 = uint32_t;
 using RGB565 = uint16_t;
 using RGB888Component = uint8_t;
 using ColorIndex = uint8_t;
 
-// ===========================================
-// CONSTANTS
-// ===========================================
+// Constants
 namespace ColorConstants {
     constexpr RGB888Component RED_MASK_888 = 0xFF;
     constexpr RGB888Component GREEN_MASK_888 = 0xFF;
@@ -61,7 +40,6 @@ namespace ColorConstants {
     constexpr int RED_565_SHIFT = 8;
     constexpr int GREEN_565_SHIFT = 3;
     constexpr int BLUE_565_RIGHT_SHIFT = 3;  // Right shift for blue component
-    
     // Array bounds
     constexpr uint8_t THREAT_LEVEL_COUNT = 6;
     constexpr uint8_t DRONE_TYPE_COUNT = 11;
@@ -69,21 +47,14 @@ namespace ColorConstants {
     constexpr uint8_t SPECTRUM_MODE_COUNT = 5;
 }
 
-// ===========================================
-// RGB888 → RGB565 CONVERTER (constexpr)
-// ===========================================
+// RGB888 → RGB565 Converter (constexpr)
 // Color format (ui.hpp): rrrrrGGGGGGbbbbb (RGB565, 16-bit)
 // LUT format: 0xRRGGBB (RGB888, 24-bit)
-//
-// R888 → R565: truncate 3 LSB bits (8 → 5)
-// G888 → G665: truncate 2 LSB bits (8 → 6)
-// B888 → B565: truncate 3 LSB bits (8 → 5)
+// R888 → R565: truncate 3 LSB bits, G888 → G665: truncate 2 LSB bits, B888 → B565: truncate 3 LSB bits
 
 struct ColorConverter {
     /**
      * @brief Convert RGB888 to RGB565 (O(1), constexpr)
-     * @param rgb888 24-bit RGB value (0xRRGGBB)
-     * @return 16-bit RGB565 value
      */
     static constexpr RGB565 rgb888_to_rgb565(const RGB888 rgb888) noexcept {
         const RGB888Component r = (rgb888 >> ColorConstants::RED_SHIFT) & ColorConstants::RED_MASK_888;
@@ -99,23 +70,18 @@ struct ColorConverter {
 
     /**
      * @brief Convert RGB888 to Color object (O(1), constexpr)
-     * @param rgb888 24-bit RGB value (0xRRGGBB)
-     * @return Color object for UI rendering
      */
     static constexpr Color rgb888_to_color(const RGB888 rgb888) noexcept {
         return Color(rgb888_to_rgb565(rgb888));
     }
 };
 
-// ===========================================
-// UNIFIED THREAT COLORS (6 levels)
-// ===========================================
+// Unified Threat Colors (6 levels)
 // Eliminates duplication: HEADER_STYLES + CARD_STYLES + THREAT_COLORS
-// Stored in Flash (constexpr FLASH_STORAGE), 0 bytes RAM
 
 struct ThreatColorLUT {
     /**
-     * @brief Threat level indicator colors (bright display)
+     * @brief Threat level indicator colors
      */
     static constexpr uint16_t COLORS[ColorConstants::THREAT_LEVEL_COUNT] FLASH_STORAGE = {
         ColorConverter::rgb888_to_rgb565(0xFF0000),   // Red - NONE (0)
@@ -160,8 +126,6 @@ struct ThreatColorLUT {
     
     /**
      * @brief Get card background color (O(1) lookup with bounds checking)
-     * @param threat Threat level index (0-4)
-     * @return Color object for card background
      */
     static inline Color card_bg_color(uint8_t threat) noexcept {
         if (threat >= ColorConstants::CARD_STYLE_COUNT) {
@@ -172,8 +136,6 @@ struct ThreatColorLUT {
     
     /**
      * @brief Get card text color (O(1) lookup with bounds checking)
-     * @param threat Threat level index (0-4)
-     * @return Color object for card text
      */
     static inline Color card_text_color(uint8_t threat) noexcept {
         if (threat >= ColorConstants::CARD_STYLE_COUNT) {
@@ -183,10 +145,8 @@ struct ThreatColorLUT {
     }
 };
 
-// ===========================================
-// UNIFIED DRONE COLORS (11 types)
-// ===========================================
-// Matches DroneType enum (ui_drone_common_types.hpp)
+// Unified Drone Colors (11 types)
+// Matches DroneType enum
 
 struct DroneColorLUT {
     /**
@@ -221,9 +181,7 @@ struct DroneColorLUT {
     }
 };
 
-// ===========================================
-// UNIFIED COLOR ACCESS
-// ===========================================
+// Unified Color Access
 // Combines ThreatColorLUT and DroneColorLUT
 
 struct UnifiedColorLookup {
@@ -247,8 +205,6 @@ struct UnifiedColorLookup {
     
     /**
      * @brief Get card background color
-     * @param threat Threat level index (0-4)
-     * @return Color object for card background
      */
     static inline Color card_bg(uint8_t threat) noexcept {
         return ThreatColorLUT::card_bg_color(threat);
@@ -256,8 +212,6 @@ struct UnifiedColorLookup {
     
     /**
      * @brief Get card text color
-     * @param threat Threat level index (0-4)
-     * @return Color object for card text
      */
     static inline Color card_text(uint8_t threat) noexcept {
         return ThreatColorLUT::card_text_color(threat);
@@ -265,25 +219,19 @@ struct UnifiedColorLookup {
     
     /**
      * @brief Get header bar color (used in SmartThreatHeader)
-     * @param threat Threat level index (0-5)
-     * @return Color object for header bar
      */
     static inline Color header_bar(uint8_t threat) noexcept {
-        // For header use threat_color (bright display)
+        // For header use threat_color
         return ThreatColorLUT::threat_color(threat);
     }
 };
 
-// ===========================================
-// UNIFIED STRING LOOKUP TABLES (SSOT)
-// ===========================================
+// Unified String Lookup Tables (SSOT)
 // Eliminates duplicates from: diamond_core.hpp, eda_optimized_utils.hpp, ui_enhanced_drone_settings.cpp
-// Correctly sized for all enum values
-// Stored in Flash (constexpr FLASH_STORAGE), 0 bytes RAM
 
 struct UnifiedStringLookup {
     /**
-     * @brief Threat level names (6 levels: matches ThreatLevel enum)
+     * @brief Threat level names (6 levels)
      */
     static constexpr const char* const THREAT_NAMES[ColorConstants::THREAT_LEVEL_COUNT] FLASH_STORAGE = {
         "NONE",       // NONE (0)
@@ -295,7 +243,7 @@ struct UnifiedStringLookup {
     };
 
     /**
-     * @brief Drone type names (11 types: matches DroneType enum)
+     * @brief Drone type names (11 types)
      */
     static constexpr const char* const DRONE_TYPE_NAMES[ColorConstants::DRONE_TYPE_COUNT] FLASH_STORAGE = {
         "Unknown",        // UNKNOWN (0)
@@ -312,7 +260,7 @@ struct UnifiedStringLookup {
     };
 
     /**
-     * @brief Spectrum mode names (5 modes: matches SpectrumMode enum)
+     * @brief Spectrum mode names (5 modes)
      */
     static constexpr const char* const SPECTRUM_MODE_NAMES[ColorConstants::SPECTRUM_MODE_COUNT] FLASH_STORAGE = {
         "NARROW",       // NARROW (0)

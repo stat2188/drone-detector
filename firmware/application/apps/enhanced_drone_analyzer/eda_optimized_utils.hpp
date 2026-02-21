@@ -1,28 +1,6 @@
 /**
  * @file eda_optimized_utils.hpp
  * @brief Diamond-Optimized Utilities for Enhanced Drone Analyzer
- * 
- * GOALS:
- * - Eliminate code duplication through templates and LUTs
- * - Reduce binary size by unifying isomorphic logic
- * - Maintain zero heap allocation (all stack-based)
- * - Scott Meyers Effective C++ best practices applied
- * 
- * CONSTRAINTS:
- * - Cortex-M4 (ARMv7E-M)
- * - No heap allocation
- * - Strict memory constraints (128KB RAM)
- * - C++17 constexpr support
- * 
- * USAGE:
- * Include this file AFTER your standard includes.
- * Requires: <array>, <algorithm>, <cstdint>
- *           - Frequency type (int64_t)
- *           - Color, DroneType, ThreatLevel enums
- *           - to_string_dec_int() function
- * 
- * @author Mayhem Firmware Team
- * @version 2.0 (Diamond Code)
  */
 
 #ifndef EDA_OPTIMIZED_UTILS_HPP_
@@ -38,13 +16,7 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ===========================================
-// TYPE ALIASES (Semantic Types)
-// ===========================================
-/**
- * @brief Index type for buffer access
- * @note Using uint16_t for memory efficiency (supports up to 65535 elements)
- */
+// Type Aliases (Semantic Types)
 using BufferIndex = uint16_t;
 
 /**
@@ -53,75 +25,35 @@ using BufferIndex = uint16_t;
  */
 using WindowSize = uint16_t;
 
-// ===========================================
-// NAMED CONSTANTS (No Magic Numbers)
-// ===========================================
-/**
- * @brief RSSI threshold constants for threat classification
- */
+// Named Constants (No Magic Numbers)
 namespace RSSIThresholds {
-    constexpr int32_t CRITICAL = -50;  ///< Critical threat level RSSI
-    constexpr int32_t HIGH = -60;      ///< High threat level RSSI
-    constexpr int32_t MEDIUM = -70;    ///< Medium threat level RSSI
-    constexpr int32_t LOW = -80;       ///< Low threat level RSSI
+    constexpr int32_t CRITICAL = -50;
+    constexpr int32_t HIGH = -60;
+    constexpr int32_t MEDIUM = -70;
+    constexpr int32_t LOW = -80;
 }
-
-/**
- * @brief SNR threshold constants for threat classification
- */
 namespace SNRThresholds {
-    // Military drone thresholds
-    constexpr uint8_t MILITARY_CRITICAL = 15;  ///< Critical SNR for military drones
-    constexpr uint8_t MILITARY_HIGH = 10;      ///< High SNR for military drones
-    
-    // FPV racing drone thresholds
-    constexpr uint8_t FPV_HIGH = 20;    ///< High SNR for FPV drones
-    constexpr uint8_t FPV_MEDIUM = 10; ///< Medium SNR for FPV drones
-    constexpr uint8_t FPV_LOW = 5;     ///< Low SNR for FPV drones
-    
-    // Commercial drone thresholds
-    constexpr uint8_t COMMERCIAL_CRITICAL = 25; ///< Critical SNR for commercial drones
-    constexpr uint8_t COMMERCIAL_HIGH = 15;    ///< High SNR for commercial drones
-    constexpr uint8_t COMMERCIAL_MEDIUM = 10;  ///< Medium SNR for commercial drones
-    constexpr uint8_t COMMERCIAL_LOW = 5;      ///< Low SNR for commercial drones
+    constexpr uint8_t MILITARY_CRITICAL = 15;
+    constexpr uint8_t MILITARY_HIGH = 10;
+    constexpr uint8_t FPV_HIGH = 20;
+    constexpr uint8_t FPV_MEDIUM = 10;
+    constexpr uint8_t FPV_LOW = 5;
+    constexpr uint8_t COMMERCIAL_CRITICAL = 25;
+    constexpr uint8_t COMMERCIAL_HIGH = 15;
+    constexpr uint8_t COMMERCIAL_MEDIUM = 10;
+    constexpr uint8_t COMMERCIAL_LOW = 5;
 }
-
-/**
- * @brief Trend symbol constants
- */
 namespace TrendConstants {
-    constexpr uint8_t NUM_SYMBOLS = 4;  ///< Number of trend symbols
+    constexpr uint8_t NUM_SYMBOLS = 4;
 }
-
-/**
- * @brief Buffer size constants
- */
 namespace BufferSizes {
-    constexpr size_t ERROR_BUFFER_SIZE = 128;  ///< Size of error message buffer
-    constexpr size_t FREQ_BUFFER_SIZE = 32;   ///< Size of frequency formatting buffer
+    constexpr size_t ERROR_BUFFER_SIZE = 128;
+    constexpr size_t FREQ_BUFFER_SIZE = 32;
 }
-
-// ===========================================
-// UNIFIED MEDIAN FILTER TEMPLATE
-// ===========================================
-/**
- * @brief Unified median filter template
- * 
- * Eliminates duplicate WidebandMedianFilter and FastMedianFilter
- * Scott Meyers Item 41: Understand implicit interfaces
- * 
- * @tparam T Value type (must be copyable and comparable)
- * @tparam N Window size (must be power of 2 for optimal performance)
- * 
- * @note Uses in-place QuickSelect algorithm for O(n) average time complexity
- * @note Zero heap allocation - all operations on stack
- */
 template<typename T, WindowSize N = 11>
 class MedianFilter {
 public:
-    /**
-     * @brief Constructor - initializes empty filter
-     */
+    /// @brief Constructor - initializes empty filter
     constexpr MedianFilter() noexcept : window_{}, head_(0), full_(false) {
     }
 
@@ -157,7 +89,7 @@ public:
             return T{};
         }
 
-        // Create temporary copy for sorting (safe for N <= 256)
+        // Create temporary copy for sorting
         std::array<T, N> temp{};
         for (WindowSize i = 0; i < current_size; ++i) {
             temp[i] = window_[i];
@@ -213,72 +145,34 @@ private:
     bool full_;                ///< Whether window has wrapped around
 };
 
-// ===========================================
-// MOVED TO UNIFIED LOOKUP TABLES
-// ===========================================
-// Spectrum mode names:    UnifiedStringLookup::SPECTRUM_MODE_NAMES
-// Threat colors:          UnifiedColorLookup::threat()
-// Drone colors:            UnifiedColorLookup::drone()
-// Threat names:            UnifiedStringLookup::threat_name()
-// Drone type names:        UnifiedStringLookup::drone_type_name()
-// Single source of truth:  color_lookup_unified.hpp
-
-// ===========================================
-// CACHED VALUE HELPER
-// ===========================================
-/**
- * @brief Cached value helper with dirty flag tracking
- * 
- * Eliminates duplicate Check-Before-Update logic
- * Scott Meyers Item 11: Handle assignment to self in operator=
- * 
- * @tparam T Value type
- */
+// Moved to Unified Lookup Tables (color_lookup_unified.hpp)
 template<typename T>
 class CachedValue {
 public:
-    /**
-     * @brief Constructor with optional initial value
-     * @param initial_value Initial value (defaults to T{})
-     */
+    /// @brief Constructor with optional initial value
     explicit constexpr CachedValue(const T& initial_value = T{}) noexcept
         : value_(initial_value), dirty_(true) {}
 
-    /**
-     * @brief Update value and track if changed
-     * @param new_value New value to set
-     * @return true if value changed, false if unchanged
-     */
+    /// @brief Update value and track if changed
     bool update(const T& new_value) noexcept {
         if (value_ != new_value) {
             value_ = new_value;
             dirty_ = true;
-            return true;  // Changed
+            return true;
         }
-        return false;  // Unchanged
+        return false;
     }
 
-    /**
-     * @brief Check if value has been modified since last clear
-     * @return true if dirty (modified), false if clean
-     */
+    /// @brief Check if value has been modified since last clear
     constexpr bool is_dirty() const noexcept { return dirty_; }
 
-    /**
-     * @brief Clear dirty flag
-     */
+    /// @brief Clear dirty flag
     void clear_dirty() noexcept { dirty_ = false; }
 
-    /**
-     * @brief Get const reference to value
-     * @return Const reference to stored value
-     */
+    /// @brief Get const reference to value
     constexpr const T& get() const noexcept { return value_; }
 
-    /**
-     * @brief Get mutable reference to value
-     * @return Mutable reference to stored value
-     */
+    /// @brief Get mutable reference to value
     T& get() noexcept { return value_; }
 
 private:
@@ -286,14 +180,7 @@ private:
     bool dirty_; ///< Dirty flag (true if modified since last clear)
 };
 
-// ===========================================
-// CONSTANTS FOR FREQUENCY VALIDATION
-// ===========================================
-/**
- * @brief Frequency validation constants
- * 
- * All frequencies in Hz
- */
+// Constants for Frequency Validation
 namespace FrequencyValidationConstants {
     constexpr int64_t MIN_HARDWARE_FREQ = 1'000'000LL;      ///< Minimum hardware frequency (1 MHz)
     constexpr int64_t MAX_HARDWARE_FREQ = 7'200'000'000LL; ///< Maximum hardware frequency (7.2 GHz)
@@ -308,85 +195,39 @@ namespace FrequencyValidationConstants {
 }
 
 // ===========================================
-// CONSTEXPR FREQUENCY VALIDATION
-// ===========================================
-/**
- * @brief Frequency validation utilities
- * 
- * Eliminates duplicate frequency range checking
- * Scott Meyers Item 15: Prefer constexpr to #define
- * 
- * @note All functions are constexpr and noexcept for compile-time evaluation
- */
+// Constexpr Frequency Validation
 struct FrequencyValidator {
-    /**
-     * @brief Check if frequency is within hardware limits
-     * @param hz Frequency in Hz
-     * @return true if valid, false otherwise
-     */
+    /// @brief Check if frequency is within hardware limits
     static constexpr bool is_valid_frequency(int64_t hz) noexcept {
         return EDA::Validation::validate_frequency(hz);
     }
 
-    /**
-     * @brief Check if frequency is in 2.4 GHz band
-     * @param hz Frequency in Hz
-     * @return true if in 2.4 GHz band, false otherwise
-     */
+    /// @brief Check if frequency is in 2.4 GHz band
     static constexpr bool is_valid_2_4ghz_band(int64_t hz) noexcept {
         return EDA::Validation::is_2_4ghz_band(hz);
     }
 
-    /**
-     * @brief Check if frequency is in 5.8 GHz band
-     * @param hz Frequency in Hz
-     * @return true if in 5.8 GHz band, false otherwise
-     */
+    /// @brief Check if frequency is in 5.8 GHz band
     static constexpr bool is_valid_5_8ghz_band(int64_t hz) noexcept {
         return EDA::Validation::is_5_8ghz_band(hz);
     }
 
-    /**
-     * @brief Check if frequency is in military band
-     * @param hz Frequency in Hz
-     * @return true if in military band, false otherwise
-     */
+    /// @brief Check if frequency is in military band
     static constexpr bool is_valid_military_band(int64_t hz) noexcept {
         return EDA::Validation::is_military_band(hz);
     }
 
-    /**
-     * @brief Check if frequency is in 433 MHz ISM band
-     * @param hz Frequency in Hz
-     * @return true if in 433 MHz ISM band, false otherwise
-     */
+    /// @brief Check if frequency is in 433 MHz ISM band
     static constexpr bool is_valid_433mhz_ism(int64_t hz) noexcept {
         return EDA::Validation::is_433mhz_band(hz);
     }
 };
 
-// ===========================================
-// DRONE TYPE DETECTION
-// ===========================================
-/**
- * @brief Drone type detection from frequency
- * 
- * Eliminates duplicate identify_drone_type() functions
- * 
- * @note All functions are constexpr and noexcept
- */
+// Drone Type Detection
 struct DroneTypeDetector {
     /**
      * @brief Detect drone type from operating frequency
-     * @param hz Frequency in Hz
-     * @return Detected drone type
-     * 
-     * Detection rules:
-     * - 2.4 GHz band → MAVIC (DJI typically uses 2.4GHz)
-     * - 5.8 GHz band → FPV_RACING (5.8GHz is common for FPV)
-     * - Military band → MILITARY_DRONE
-     * - 433 MHz ISM band → DIY_DRONE
-     * - Other → UNKNOWN
+     * @note 2.4 GHz band → MAVIC, 5.8 GHz band → FPV_RACING, Military band → MILITARY_DRONE, 433 MHz ISM band → DIY_DRONE
      */
     static constexpr DroneType from_frequency(int64_t hz) noexcept {
         // 2.4 GHz band
@@ -409,22 +250,9 @@ struct DroneTypeDetector {
     }
 };
 
-// ===========================================
-// FREQUENCY FORMATTER
-// ===========================================
-/**
- * @brief Frequency formatting utilities
- * 
- * Eliminates duplicate frequency formatting logic
- * Scott Meyers Item 25: Consider support for implicit interfaces
- * 
- * @note All formatting is non-allocating (uses provided buffers)
- * @note Frequency is defined as `using Frequency = int64_t;` in ui_drone_common_types.hpp
- */
+// Frequency Formatter
 struct FrequencyFormatter {
-    /**
-     * @brief Format type enumeration
-     */
+    /// @brief Format type enumeration
     enum class Format {
         COMPACT_GHZ,      ///< "2.4G" - for tight spaces
         COMPACT_MHZ,      ///< "2400" - for MHz values
@@ -436,13 +264,7 @@ struct FrequencyFormatter {
 
     /**
      * @brief Format frequency to buffer (non-allocating)
-     * @param buffer Output buffer (must be at least buffer_size bytes)
-     * @param buffer_size Size of output buffer
-     * @param freq_hz Frequency in Hz
-     * @param fmt Format type
-     * 
      * @note Writes directly to user-provided buffer (no malloc/free)
-     * @note Buffer is null-terminated
      */
     static void format_to_buffer(char* __restrict__ buffer, size_t buffer_size, 
                                   int64_t freq_hz, Format fmt) noexcept {
@@ -516,40 +338,18 @@ struct FrequencyFormatter {
         }
     }
 
-    /**
-     * @brief Format frequency to short string (compact GHz format)
-     * @param buffer Output buffer
-     * @param buffer_size Size of output buffer
-     * @param freq_hz Frequency in Hz
-     */
+    /// @brief Format frequency to short string (compact GHz format)
     static void to_string_short_freq_buffer(char* __restrict__ buffer, size_t buffer_size, 
                                               int64_t freq_hz) noexcept {
         format_to_buffer(buffer, buffer_size, freq_hz, Format::COMPACT_GHZ);
     }
 };
 
-// ===========================================
-// THREAT CLASSIFICATION
-// ===========================================
-/**
- * @brief Threat classification utilities
- * 
- * Eliminates duplicate threat classification logic
- * 
- * @note All functions are constexpr and noexcept
- */
+// Threat Classification
 struct ThreatClassifier {
     /**
      * @brief Classify threat level by RSSI
-     * @param rssi_db RSSI value in dB
-     * @return Threat level
-     * 
-     * Classification rules:
-     * - >= -50 dB → CRITICAL
-     * - >= -60 dB → HIGH
-     * - >= -70 dB → MEDIUM
-     * - >= -80 dB → LOW
-     * - < -80 dB → NONE
+     * @note >= -50 dB → CRITICAL, >= -60 dB → HIGH, >= -70 dB → MEDIUM, >= -80 dB → LOW, < -80 dB → NONE
      */
     static constexpr ThreatLevel from_rssi(int32_t rssi_db) noexcept {
         if (rssi_db >= RSSIThresholds::CRITICAL) return ThreatLevel::CRITICAL;
@@ -561,24 +361,17 @@ struct ThreatClassifier {
 
     /**
      * @brief Classify threat level by SNR and drone type
-     * @param snr Signal-to-noise ratio
-     * @param type Drone type (as uint8_t)
-     * @return Threat level
-     * 
-     * Classification rules:
-     * - Military drones: Always higher threat (CRITICAL at SNR>=15, HIGH at SNR>=10)
-     * - FPV racing: Variable threat (HIGH at SNR>=20, MEDIUM at SNR>=10, LOW at SNR>=5)
-     * - Commercial drones: Moderate threat (CRITICAL at SNR>=25, HIGH at SNR>=15, etc.)
+     * @note Military: CRITICAL at SNR>=15, HIGH at SNR>=10, FPV: HIGH at SNR>=20, MEDIUM at SNR>=10, LOW at SNR>=5, Commercial: CRITICAL at SNR>=25, HIGH at SNR>=15
      */
     static constexpr ThreatLevel from_snr_and_type(uint8_t snr, uint8_t type) noexcept {
-        // Military drones (type=8) = always high threat
+        // Military drones (type=8)
         if (type == static_cast<uint8_t>(DroneType::MILITARY_DRONE)) {
             if (snr >= SNRThresholds::MILITARY_CRITICAL) return ThreatLevel::CRITICAL;
             if (snr >= SNRThresholds::MILITARY_HIGH) return ThreatLevel::HIGH;
             return ThreatLevel::MEDIUM;
         }
 
-        // FPV racing (type=10) = variable threat
+        // FPV racing (type=10)
         if (type == static_cast<uint8_t>(DroneType::FPV_RACING)) {
             if (snr >= SNRThresholds::FPV_HIGH) return ThreatLevel::HIGH;
             if (snr >= SNRThresholds::FPV_MEDIUM) return ThreatLevel::MEDIUM;
@@ -586,7 +379,7 @@ struct ThreatClassifier {
             return ThreatLevel::NONE;
         }
 
-        // Commercial drones (MAVIC=1, PHANTOM=3) = moderate threat
+        // Commercial drones (MAVIC=1, PHANTOM=3)
         if (snr >= SNRThresholds::COMMERCIAL_CRITICAL) return ThreatLevel::CRITICAL;
         if (snr >= SNRThresholds::COMMERCIAL_HIGH) return ThreatLevel::HIGH;
         if (snr >= SNRThresholds::COMMERCIAL_MEDIUM) return ThreatLevel::MEDIUM;
@@ -595,25 +388,11 @@ struct ThreatClassifier {
     }
 };
 
-// ===========================================
-// TREND SYMBOL LOOKUP
-// ===========================================
-/**
- * @brief Trend symbol lookup table
- * 
- * Eliminates duplicate switch statements for trend symbols
- * 
- * @note All data is constexpr (placed in Flash)
- */
+// Trend Symbol Lookup
 struct TrendSymbols {
     /**
      * @brief Trend symbol lookup table
-     * 
-     * Symbols:
-     * - '=': STATIC (trend value 0)
-     * - '^': APPROACHING (trend value 1)
-     * - 'v': RECEDING (trend value 2)
-     * - '~': UNKNOWN (trend value 3)
+     * @note '=': STATIC (0), '^': APPROACHING (1), 'v': RECEDING (2), '~': UNKNOWN (3)
      */
     static constexpr char SYMBOLS[TrendConstants::NUM_SYMBOLS] = {
         '=',  // STATIC (0)
@@ -622,111 +401,44 @@ struct TrendSymbols {
         '~'   // UNKNOWN (3)
     };
 
-    /**
-     * @brief Get trend symbol from trend value
-     * @param trend Trend value (0-3)
-     * @return Trend character
-     * 
-     * @note Returns '~' (UNKNOWN) for invalid trend values
-     */
+    /// @brief Get trend symbol from trend value
     static constexpr char from_trend(uint8_t trend) noexcept {
         return (trend < TrendConstants::NUM_SYMBOLS) ? SYMBOLS[trend] : SYMBOLS[3];
     }
 };
 
-// ===========================================
-// SAFE BUFFER ACCESS HELPER
-// ===========================================
-/**
- * @brief Safe buffer access with bounds checking
- * 
- * Eliminates duplicate bounds checking for array access
- * Scott Meyers Item 17: Understand special member function generation
- * 
- * @tparam T Element type
- * @tparam N Array size
- */
+// Safe Buffer Access Helper
 template<typename T, size_t N>
 struct SafeBufferAccess {
-    /**
-     * @brief Get element from array with bounds checking
-     * @param arr Reference to array
-     * @param idx Index to access
-     * @param fallback Fallback value if index is out of bounds
-     * @return Reference to array element or fallback
-     */
+    /// @brief Get element from array with bounds checking
     static constexpr T& get(std::array<T, N>& arr, size_t idx, T& fallback) noexcept {
         return (idx < N) ? arr[idx] : fallback;
     }
 
-    /**
-     * @brief Get const element from array with bounds checking
-     * @param arr Reference to const array
-     * @param idx Index to access
-     * @param fallback Fallback value if index is out of bounds
-     * @return Const reference to array element or fallback
-     */
+    /// @brief Get const element from array with bounds checking
     static constexpr const T& get(const std::array<T, N>& arr, size_t idx, 
                                    const T& fallback) noexcept {
         return (idx < N) ? arr[idx] : fallback;
     }
 
-    /**
-     * @brief Check if index is valid for array
-     * @param idx Index to check
-     * @return true if index is valid
-     */
+    /// @brief Check if index is valid for array
     static constexpr bool is_valid(size_t idx) noexcept {
         return idx < N;
     }
 };
 
-// ===========================================
-// STATUS FORMATTING HELPER
-// ===========================================
-/**
- * @brief Status formatting helper
- * 
- * Eliminates repeated snprintf + widget.set patterns
- * Scott Meyers Item 25: Consider support for implicit interfaces
- * 
- * @note Zero heap allocation - uses stack-allocated buffers
- */
+// Status Formatting Helper
 struct StatusFormatter {
-    /**
-     * @brief Format arguments to buffer (non-allocating)
-     * @tparam N Buffer size
-     * @tparam Args Argument types
-     * @param buffer Output buffer
-     * @param fmt Format string
-     * @param args Format arguments
-     */
+    /// @brief Format arguments to buffer (non-allocating)
     template<size_t N, typename... Args>
     static void format_to(char (&buffer)[N], const char* fmt, Args&&... args) noexcept {
         snprintf(buffer, N, fmt, std::forward<Args>(args)...);
     }
 };
 
-// ===========================================
-// VALIDATOR ERROR FORMATTER
-// ===========================================
-/**
- * @brief Validator error formatting utilities
- * 
- * Eliminates duplicate error formatting in validators
- * 
- * @note Zero heap allocation - uses provided buffers
- */
+// Validator Error Formatter
 struct ValidatorFormatter {
-    /**
-     * @brief Format out-of-range error for int64_t
-     * @param buffer Output buffer
-     * @param buffer_size Size of output buffer
-     * @param name Parameter name
-     * @param value Invalid value
-     * @param min Minimum valid value
-     * @param max Maximum valid value
-     */
+    /// @brief Format out-of-range error for int64_t
     static void out_of_range(char* __restrict__ buffer, size_t buffer_size,
                               const char* name, int64_t value, 
                               int64_t min, int64_t max) noexcept {
@@ -736,15 +448,7 @@ struct ValidatorFormatter {
                  static_cast<long long>(min), static_cast<long long>(max));
     }
 
-    /**
-     * @brief Format out-of-range error for uint64_t
-     * @param buffer Output buffer
-     * @param buffer_size Size of output buffer
-     * @param name Parameter name
-     * @param value Invalid value
-     * @param min Minimum valid value
-     * @param max Maximum valid value
-     */
+    /// @brief Format out-of-range error for uint64_t
     static void out_of_range(char* __restrict__ buffer, size_t buffer_size,
                               const char* name, uint64_t value, 
                               uint64_t min, uint64_t max) noexcept {
@@ -755,15 +459,7 @@ struct ValidatorFormatter {
                  static_cast<unsigned long long>(max));
     }
 
-    /**
-     * @brief Format out-of-range error for int32_t
-     * @param buffer Output buffer
-     * @param buffer_size Size of output buffer
-     * @param name Parameter name
-     * @param value Invalid value
-     * @param min Minimum valid value
-     * @param max Maximum valid value
-     */
+    /// @brief Format out-of-range error for int32_t
     static void out_of_range(char* __restrict__ buffer, size_t buffer_size,
                               const char* name, int32_t value, 
                               int32_t min, int32_t max) noexcept {
@@ -773,15 +469,7 @@ struct ValidatorFormatter {
                      static_cast<int64_t>(max));
     }
 
-    /**
-     * @brief Format out-of-range error for uint32_t
-     * @param buffer Output buffer
-     * @param buffer_size Size of output buffer
-     * @param name Parameter name
-     * @param value Invalid value
-     * @param min Minimum valid value
-     * @param max Maximum valid value
-     */
+    /// @brief Format out-of-range error for uint32_t
     static void out_of_range(char* __restrict__ buffer, size_t buffer_size,
                               const char* name, uint32_t value, 
                               uint32_t min, uint32_t max) noexcept {
@@ -792,12 +480,7 @@ struct ValidatorFormatter {
     }
 };
 
-// ===========================================
-// REMOVED DUPLICATE CODE
-// ===========================================
-// Removed duplicate FrequencyFormat class
-// Use EDA::Formatting::format_frequency() instead
-// Single source of truth in eda_constants.hpp
+// Removed duplicate code - use EDA::Formatting::format_frequency() instead
 
 } // namespace ui::apps::enhanced_drone_analyzer
 

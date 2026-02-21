@@ -1,6 +1,4 @@
-// default_drones_db.hpp
 // Diamond Code: Flash-resident drone frequency database
-// Memory-safe, zero-heap, optimized for STM32F405 (128KB RAM)
 
 #pragma once
 
@@ -15,9 +13,7 @@ namespace ui::apps::enhanced_drone_analyzer {
     #define EDA_FLASH_CONST const
 #endif
 
-// ========================================
-// TYPE ALIASES (Semantic Types)
-// ========================================
+// Type Aliases (Semantic Types)
 
 /**
  * @brief Type alias for database content (Flash-resident string literal)
@@ -31,9 +27,7 @@ using DatabaseContent = const char*;
  */
 using FrequencyHz = uint64_t;
 
-// ========================================
-// CONSTANTS (Flash-Resident)
-// ========================================
+// Constants (Flash-Resident)
 
 namespace DatabaseConstants {
 
@@ -90,9 +84,7 @@ constexpr FrequencyHz WIFI_CH11 = 2462000000ULL;
 
 } // namespace DatabaseConstants
 
-// ========================================
-// DATABASE CONTENT (Flash-Resident)
-// ========================================
+// Database Content (Flash-Resident)
 
 /**
  * @brief Default drone database content (Flash-resident string literal)

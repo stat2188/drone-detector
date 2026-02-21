@@ -4,15 +4,7 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ===========================================
-// DIAMOND OPTIMIZATION: constexpr LUTs for translations
-// ===========================================
-// Scott Meyers Item 15: Prefer constexpr to #define
-// All strings stored in Flash, no RAM used
-// O(n) array search faster than std::string comparison
-// CRITICAL FIX: Consolidated from duplicate translation systems
-// - Removed: DroneAnalyzerSettingsManager_Translations
-// - Consolidated: All translations in ENGLISH_TRANSLATIONS
+// constexpr LUTs for translations (Flash storage, no RAM used)
 
 static constexpr TranslationEntry ENGLISH_TRANSLATIONS[] = {
     {"load_database", "Load Database"},
@@ -36,22 +28,17 @@ static constexpr TranslationEntry ENGLISH_TRANSLATIONS[] = {
 static constexpr size_t ENGLISH_TRANSLATION_COUNT =
     sizeof(ENGLISH_TRANSLATIONS) / sizeof(TranslationEntry);
 
-// ===========================================
-// CONSTANTS
-// ===========================================
+// Constants
 namespace TranslationConstants {
     constexpr size_t NULL_KEY_RESULT = 0;
     constexpr char NULL_TERMINATOR = '\0';
     
-    // CRITICAL FIX: Safe return values (Flash-resident string literals)
-    // Prevents use-after-free when returning original key pointer
+    // Safe return values (Flash-resident string literals)
     constexpr const char* EMPTY_STRING = "";
     constexpr const char* NOT_FOUND_KEY = "";
 }
 
-// ===========================================
-// COMPILE-TIME VALIDATION
-// ===========================================
+// Compile-time validation
 namespace TranslationValidation {
 
 /**
@@ -66,7 +53,7 @@ static constexpr bool validate_table(
     const TranslationEntry (&table)[N]
 ) noexcept {
     for (size_t i = 0; i < N; ++i) {
-        // CRITICAL FIX: Check for null pointers
+        // Check for null pointers
         if (table[i].key == nullptr || table[i].value == nullptr) {
             return false;
         }

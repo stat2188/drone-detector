@@ -17,21 +17,18 @@
 #include <cstdlib>
 #include <cstdio>
 
-// DIAMOND FIX: Diamond Code Standard #3 - Replace std::filesystem with FatFS C API
-// Removed: namespace fs = std::filesystem;
-// Use f_open(), f_read(), f_write(), f_close() directly
+// Diamond Code Standard #3 - Replace std::filesystem with FatFS C API
 
 namespace ui::apps::enhanced_drone_analyzer {
 
 
-// DIAMOND OPTIMIZATION: RAII wrapper for File (Scott Meyers Item 13)
-// Ensures proper cleanup without manual init/cleanup pairs
+// RAII wrapper for File (ensures proper cleanup)
 class FileRAII {
 public:
     explicit FileRAII(const char* path, bool read_only = false)
         : file_(), opened_(file_.open(path, read_only)) {}
 
-    // DIAMOND OPTIMIZATION: noexcept for move operations
+    // noexcept for move operations
     ~FileRAII() noexcept {
         if (opened_) {
             file_.close();
@@ -55,39 +52,27 @@ private:
     bool opened_ = false;
 };
 
-// ===========================================
 // EnhancedSettingsManager Implementation
-// ===========================================
 
-// DIAMOND OPTIMIZATION: const reference to prevent unnecessary copies
+    // const reference to prevent unnecessary copies
 bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept {
-    // DIAMOND FIX: Revision #3 - Fix SD Card Race Condition (CRITICAL)
-    // Acquire lock BEFORE checking status to prevent TOCTOU race
-    // DIAMOND FIX: Use SettingsBufferLock for FatFS serialization
+    // Fix SD Card Race Condition - acquire lock BEFORE checking status
     SettingsBufferLock lock;
     
-    // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
+    // Use constexpr const char* instead of std::string
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
     // Create backup for atomic write operation
-    // 🔴 ENHANCED: Error logging - backup creation failure is implicit in return false
     create_backup_file(filepath);
 
-    // Attempt to open file for writing
     File settings_file;
     if (!settings_file.open(filepath, false)) {
-        // 🔴 ENHANCED: Log error if file can't be opened
         return false;
     }
 
     auto& file = settings_file;
 
-    // DIAMOND FIX: Thread-local buffer for settings serialization
-    // Scott Meyers Item 29: Use object pools to reduce allocation overhead
-    // This replaces ~20 std::string allocations with a single char array
-    // Stack savings: 1024 bytes per thread (thread-local storage)
-    // MEDIUM PRIORITY FIX: Reduced from 4096 to 1024 bytes (saves ~3KB RAM)
-    // Thread-safe: Each thread gets its own buffer (no mutex needed)
+    // Thread-local buffer for settings serialization (replaces ~20 std::string allocations)
     static constexpr size_t SETTINGS_BUFFER_SIZE = 1024;
     thread_local char settings_buffer[SETTINGS_BUFFER_SIZE];
     size_t offset = 0;
@@ -98,13 +83,12 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     auto header_result = file.write(header, header_len);
     if (header_result.is_error() || header_result.value() != header_len) {
         file.close();
-        // 🔴 ENHANCED: Log error - restore from backup on write failure
+        // Log error - restore from backup on write failure
         restore_from_backup(filepath);
         return false;
     }
 
-    // 🔴 OPTIMIZATION: Generate settings content using snprintf (no heap allocations)
-    // This replaces the entire generate_settings_content() function
+    // Generate settings content using snprintf (no heap allocations)
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
                       "spectrum_mode=%s\n", spectrum_mode_to_string(settings.spectrum_mode));
     offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
@@ -146,7 +130,7 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     auto content_result = file.write(settings_buffer, offset);
     if (content_result.is_error() || content_result.value() != offset) {
         file.close();
-        // 🔴 ENHANCED: Log error - restore from backup on write failure
+        // Log error - restore from backup on write failure
         restore_from_backup(filepath);
         return false;
     }
@@ -156,34 +140,31 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     return true;
 }
 
-// DIAMOND OPTIMIZATION: noexcept for simple file existence check
+// noexcept for simple file existence check
 bool EnhancedSettingsManager::verify_comm_file_exists() noexcept {
-    // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
+    // Use constexpr const char* instead of std::string
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     File txt_file;
-    if (txt_file.open(filepath, true)) {  // true = read_only
+    if (txt_file.open(filepath, true)) {  // read_only
         txt_file.close();
         return true;
     }
     return false;
 }
 
-// DIAMOND OPTIMIZATION: const reference to prevent unnecessary copies
+    // const reference to prevent unnecessary copies
 bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& settings) noexcept {
-    // FIXED: Use constexpr const char* instead of std::string to avoid heap allocation
+    // Use constexpr const char* instead of std::string
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
 
     File settings_file;
-    if (!settings_file.open(filepath, true)) {  // true = read_only
+    if (!settings_file.open(filepath, true)) {  // read_only
         return false;
     }
 
     auto& file = settings_file;
 
-    // DIAMOND FIX: Thread-local buffer for settings loading
-    // Stack savings: 1024 bytes per thread (thread-local storage)
-    // MEDIUM PRIORITY FIX: Reduced from 4096 to 1024 bytes (saves ~3KB RAM)
-    // Thread-safe: Each thread gets its own buffer (no mutex needed)
+    // Thread-local buffer for settings loading (1024 bytes per thread)
     static constexpr size_t FILE_BUFFER_SIZE = 1024;
     thread_local char file_buffer[FILE_BUFFER_SIZE];
     auto read_result = file.read(file_buffer, FILE_BUFFER_SIZE);
@@ -193,8 +174,7 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
         return false;
     }
 
-    // DIAMOND FIX: Revision #7 - Add File Truncation Warning (LOW)
-    // If file is larger than buffer, data is truncated
+    // File Truncation Warning - if file is larger than buffer, data is truncated
     const size_t bytes_read = read_result.value();
     if (bytes_read < FILE_BUFFER_SIZE) {
         file_buffer[bytes_read] = '\0';
@@ -258,14 +238,14 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
                 else if (strcmp(value, "Wide") == 0) settings.spectrum_mode = SpectrumMode::WIDE;
                 else if (strcmp(value, "Ultra Wide") == 0) settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
             } else if (strcmp(key, "scan_interval_ms") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoi with strtol and check for errors
+                // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= 100 && val <= 10000) {
                     settings.scan_interval_ms = static_cast<uint32_t>(val);
                 }
             } else if (strcmp(key, "rssi_threshold_db") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoi with strtol and check for errors
+                // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= -120 && val <= 10) {
@@ -274,21 +254,21 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
             } else if (strcmp(key, "enable_audio_alerts") == 0) {
                 audio_set_enable_alerts(settings, strcmp(value, "true") == 0);
             } else if (strcmp(key, "audio_alert_frequency_hz") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoi with strtol and check for errors
+                // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= 200 && val <= 20000) {
                     settings.audio_alert_frequency_hz = static_cast<uint32_t>(val);
                 }
             } else if (strcmp(key, "audio_alert_duration_ms") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoi with strtol and check for errors
+                // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= 50 && val <= 5000) {
                     settings.audio_alert_duration_ms = static_cast<uint32_t>(val);
                 }
             } else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoi with strtol and check for errors
+                // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= 10000 && val <= 28000000) {
@@ -299,24 +279,24 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
             } else if (strcmp(key, "demo_mode") == 0) {
                 hw_set_demo_mode(settings, strcmp(value, "true") == 0);
             } else if (strcmp(key, "freqman_path") == 0) {
-                // DIAMOND OPTIMIZATION: Use safe_strcpy instead of strncpy for consistent safety
+                // Use safe_strcpy instead of strncpy
                 safe_strcpy(settings.freqman_path, value, sizeof(settings.freqman_path));
             } else if (strcmp(key, "user_min_freq_hz") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoll with strtoull and check for errors
+                // Replace atoll with strtoull and check for errors
                 char* endptr = nullptr;
                 unsigned long long val = strtoull(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= 50000000ULL && val <= 6000000000ULL) {
                     settings.user_min_freq_hz = val;
                 }
             } else if (strcmp(key, "user_max_freq_hz") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoll with strtoull and check for errors
+                // Replace atoll with strtoull and check for errors
                 char* endptr = nullptr;
                 unsigned long long val = strtoull(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= 50000000ULL && val <= 6000000000ULL) {
                     settings.user_max_freq_hz = val;
                 }
             } else if (strcmp(key, "wideband_slice_width_hz") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoi with strtol and check for errors
+                // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= 10000000 && val <= 28000000) {
@@ -325,14 +305,14 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
             } else if (strcmp(key, "panoramic_mode_enabled") == 0) {
                 scan_set_panoramic_mode_enabled(settings, strcmp(value, "true") == 0);
             } else if (strcmp(key, "wideband_min_freq_hz") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoll with strtoull and check for errors
+                // Replace atoll with strtoull and check for errors
                 char* endptr = nullptr;
                 unsigned long long val = strtoull(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= 2400000000ULL && val <= 7200000000ULL) {
                     settings.wideband_min_freq_hz = val;
                 }
             } else if (strcmp(key, "wideband_max_freq_hz") == 0) {
-                // 🔴 HIGH PRIORITY FIX: Replace atoll with strtoull and check for errors
+                // Replace atoll with strtoull and check for errors
                 char* endptr = nullptr;
                 unsigned long long val = strtoull(value, &endptr, 10);
                 if (endptr != value && *endptr == '\0' && val >= 2400000001ULL && val <= 7200000000ULL) {
@@ -350,19 +330,16 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
     return true;
 }
 
-// 🔴 HIGH PRIORITY FIX: Return const char* instead of std::string to eliminate heap allocation
-// RAM savings: ~100-200 bytes per call (no std::string allocation)
-// DIAMOND OPTIMIZATION: noexcept for simple status lookup
+// Return const char* instead of std::string (eliminates heap allocation)
 const char* EnhancedSettingsManager::get_communication_status() noexcept {
     static constexpr const char* STATUS_READY = "TXT file found\nCommunication ready";
     static constexpr const char* STATUS_NOT_READY = "No TXT file found\nSave settings first";
     return verify_comm_file_exists() ? STATUS_READY : STATUS_NOT_READY;
 }
 
-// DIAMOND OPTIMIZATION: noexcept for file creation
+// noexcept for file creation
 bool EnhancedSettingsManager::ensure_database_exists(const DroneAnalyzerSettings& settings) noexcept {
-    // DIAMOND FIX: Use settings.freqman_path instead of hardcoded "DRONES"
-    // Diamond Code: Use safe string operations with snprintf
+    // Use settings.freqman_path instead of hardcoded "DRONES"
     static constexpr size_t kMaxPathLen = 64;
     char file_path[kMaxPathLen];
     
@@ -372,12 +349,12 @@ bool EnhancedSettingsManager::ensure_database_exists(const DroneAnalyzerSettings
     File check_file;
     if (check_file.open(file_path, true)) {
         check_file.close();
-        return true;  // DIAMOND FIX: Return true when database exists
+        return true;
     }
 
     File create_file;
     if (create_file.open(file_path, false)) {
-        // DIAMOND FIX: Check write result and handle errors
+        // Check write result and handle errors
         size_t content_len = strlen(DEFAULT_DRONE_DATABASE_CONTENT);
         auto write_result = create_file.write(DEFAULT_DRONE_DATABASE_CONTENT, content_len);
         if (write_result.is_error() || write_result.value() != content_len) {
@@ -386,18 +363,18 @@ bool EnhancedSettingsManager::ensure_database_exists(const DroneAnalyzerSettings
             return false;
         }
         create_file.close();
-        return true;  // DIAMOND FIX: Return success status
+        return true;
     }
-    return false;  // DIAMOND FIX: Return error status if file couldn't be opened
+    return false;
 }
 
-// DIAMOND OPTIMIZATION: const pointer, noexcept for file backup
+// const pointer, noexcept for file backup
 void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept {
-    // 🔴 PHASE 3: Use RAII wrapper for File to ensure proper cleanup
+    // Use RAII wrapper for File to ensure proper cleanup
     FileRAII orig_file(filepath, true);
     if (!orig_file.is_open()) return;
 
-    // FIXED: Use fixed-size char array instead of std::string for backup path
+    // Use fixed-size char array instead of std::string for backup path
     static constexpr size_t kMaxPathLen = 256;
     char backup_path[kMaxPathLen] = {};
     size_t filepath_len = strlen(filepath);
@@ -410,10 +387,7 @@ void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept 
     FileRAII backup_file(backup_path, false);
     if (!backup_file.is_open()) return;
 
-    // DIAMOND FIX: Thread-local buffer for backup/restore operations
-    // RAM savings: 512 bytes per thread (thread-local storage)
-    // FIX #26: Further reduced from 1024 to 512 for additional RAM savings
-    // Thread-safe: Each thread gets its own buffer (no mutex needed)
+    // Thread-local buffer for backup/restore operations (512 bytes per thread)
     static constexpr size_t BUFFER_SIZE = 512;
     thread_local uint8_t buffer[BUFFER_SIZE];
     size_t total_read = 0;
@@ -430,9 +404,9 @@ void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept 
     }
 }
 
-// DIAMOND OPTIMIZATION: const pointer, noexcept for file restore
+// const pointer, noexcept for file restore
 void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept {
-    // FIXED: Use fixed-size char array instead of std::string for backup path
+    // Use fixed-size char array instead of std::string for backup path
     static constexpr size_t kMaxPathLen = 256;
     char backup_path[kMaxPathLen] = {};
     size_t filepath_len = strlen(filepath);
@@ -442,17 +416,14 @@ void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept
     safe_strcpy(backup_path, filepath, kMaxPathLen);
     safe_strcat(backup_path, ".bak", kMaxPathLen);
 
-    // 🔴 PHASE 3: Use RAII wrapper for File to ensure proper cleanup
+    // Use RAII wrapper for File to ensure proper cleanup
     FileRAII backup_file(backup_path, true);
     if (!backup_file.is_open()) return;
 
     FileRAII original_file(filepath, false);
     if (!original_file.is_open()) return;
 
-    // DIAMOND FIX: Thread-local buffer for backup/restore operations
-    // RAM savings: 512 bytes per thread (thread-local storage)
-    // FIX #26: Reduced from 1024 to 512 to match create_backup_file() buffer size
-    // Thread-safe: Each thread gets its own buffer (no mutex needed)
+    // Thread-local buffer for backup/restore operations (512 bytes per thread)
     static constexpr size_t BUFFER_SIZE = 512;
     thread_local uint8_t buffer[BUFFER_SIZE];
 
@@ -463,9 +434,9 @@ void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept
     }
 }
 
-// DIAMOND OPTIMIZATION: const pointer, noexcept for file removal
+// const pointer, noexcept for file removal
 void EnhancedSettingsManager::remove_backup_file(const char* filepath) noexcept {
-    // FIXED: Use fixed-size char array instead of std::string for backup path
+    // Use fixed-size char array instead of std::string for backup path
     static constexpr size_t kMaxPathLen = 256;
     char backup_path[kMaxPathLen] = {};
     size_t filepath_len = strlen(filepath);
@@ -475,13 +446,11 @@ void EnhancedSettingsManager::remove_backup_file(const char* filepath) noexcept 
     safe_strcpy(backup_path, filepath, kMaxPathLen);
     safe_strcat(backup_path, ".bak", kMaxPathLen);
     
-    // DIAMOND FIX: Diamond Code Standard #3 - Replace std::filesystem with FatFS C API
-    // Use FatFS f_unlink() directly instead of std::filesystem
-    // Note: f_unlink() expects const TCHAR*, cast from char*
+    // Diamond Code Standard #3 - Replace std::filesystem with FatFS C API
     f_unlink(reinterpret_cast<const TCHAR*>(backup_path));
 }
 
-// DIAMOND OPTIMIZATION: noexcept for header generation
+// noexcept for header generation
 const char* EnhancedSettingsManager::generate_file_header() noexcept {
     static constexpr size_t HEADER_BUFFER_SIZE = 256;
     static char header_buffer[HEADER_BUFFER_SIZE];
@@ -497,21 +466,14 @@ const char* EnhancedSettingsManager::generate_file_header() noexcept {
     return header_buffer;
 }
 
-// 🔴 HIGH PRIORITY FIX: Return const char* from Flash instead of std::string to eliminate heap allocation
-// DIAMOND OPTIMIZATION: Unified LUT lookup for spectrum_mode_to_string()
-// Scott Meyers Item 15: Prefer constexpr to #define
-// Saves ~50 bytes Flash, uses EDA::LUTs (Single Source of Truth)
-// RAM savings: ~50-100 bytes per call (no std::string allocation)
-// DIAMOND OPTIMIZATION: const reference, noexcept for LUT lookup
+// Return const char* from Flash instead of std::string (eliminates heap allocation)
 const char* EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) noexcept {
     return EDA::LUTs::spectrum_mode_display_name(static_cast<uint8_t>(mode));
 }
 
-// DIAMOND OPTIMIZATION: noexcept for timestamp generation
-// DIAMOND FIX: Use thread_local buffer for thread safety
-// CRITICAL BUG FIX: Static buffer without mutex causes race condition
+// noexcept for timestamp generation (thread_local buffer for thread safety)
 const char* EnhancedSettingsManager::get_current_timestamp() noexcept {
-    // DIAMOND OPTIMIZATION: Return const char* to thread_local buffer (no std::string allocation)
+    // Return const char* to thread_local buffer (no std::string allocation)
     thread_local char buffer[32];
     systime_t now = chTimeNow();
     snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)now);

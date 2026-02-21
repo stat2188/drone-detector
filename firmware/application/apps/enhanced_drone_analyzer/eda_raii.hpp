@@ -1,22 +1,6 @@
 /**
  * @file eda_raii.hpp
  * @brief RAII Wrappers for Enhanced Drone Analyzer
- *
- * DIAMOND CODE STANDARDS:
- * - Zero-heap allocation (no new, malloc, std::vector, std::string)
- * - RAII wrappers for automatic resource management
- * - noexcept for exception-free operation
- * - Guard clauses for early returns
- * - Doxygen comments for public APIs
- *
- * CONSOLIDATION FIX:
- * - All RAII wrappers consolidated into eda_locking.hpp
- * - This header provides backward compatibility by including eda_locking.hpp
- * - Removed duplicate definitions to fix compilation errors
- * - NO std::atomic usage (not supported on STM32F405/ChibiOS)
- *
- * @target STM32F405 (ARM Cortex-M4, 128KB RAM)
- * @os ChibiOS (bare-metal RTOS)
  */
 
 #ifndef EDA_RAII_HPP_
@@ -27,11 +11,7 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ========================================
-// BACKWARD COMPATIBILITY
-// ========================================
-// All RAII wrappers are now defined in eda_locking.hpp
-// This header provides backward compatibility for existing code
+// Backward compatibility: All RAII wrappers are now defined in eda_locking.hpp
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
@@ -42,18 +22,6 @@ namespace raii {
 
 /**
  * @brief RAII wrapper for ChibiOS system lock (critical section)
- *
- * Provides exception-safe (though exceptions are disabled) critical section
- * management. Locks on construction, unlocks on destruction.
- *
- * USAGE:
- *   {
- *       SystemLock lock;
- *       // Critical section here (interrupts disabled)
- *       // No blocking operations allowed!
- *   }
- *   // Interrupts re-enabled here
- *
  * @note Must be used for very short sections only
  * @note No blocking operations (I/O, sleep) allowed inside critical section
  */

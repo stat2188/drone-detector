@@ -2,7 +2,7 @@
  * @file diamond_core.hpp
  * @brief Diamond Core Optimization Layer - Diamond Code Refinement
  * 
- * DIAMOND STANDARD: Memory-safe, optimized, zero-allocation
+// Memory-safe, optimized, zero-allocation
  * 
  * PURPOSE: Zero-cost abstractions that eliminate code duplication
  * PRINCIPLES:
@@ -42,9 +42,7 @@
 
 namespace ui::apps::enhanced_drone_analyzer::DiamondCore {
 
-// ===========================================
-// TYPE ALIASES (Semantic Types)
-// ===========================================
+// Type Aliases (Semantic Types)
 using TrendIndex = uint8_t;
 using ThreatIndex = uint8_t;
 using RSSIValue = int32_t;
@@ -75,9 +73,7 @@ namespace ErrorCodes {
     constexpr FrequencyHz FREQUENCY_ERROR = UINT64_MAX;  // Error code for frequency parsing
 }
 
-// ===========================================
-// MOVEMENT TREND UTILITIES
-// ===========================================
+// Movement Trend Utilities
 
 struct TrendUtils {
     /**

@@ -1,6 +1,4 @@
-// eda_constants.hpp
 // Diamond Code: Flash-resident constants and utilities for Enhanced Drone Analyzer
-// Memory-safe, zero-heap, optimized for STM32F405 (128KB RAM)
 
 #ifndef EDA_CONSTANTS_HPP_
 #define EDA_CONSTANTS_HPP_
@@ -20,9 +18,7 @@
 
 namespace EDA {
 
-// ========================================
-// TYPE ALIASES (Semantic Types)
-// ========================================
+// Type Aliases (Semantic Types)
 
 using Frequency = rf::Frequency;  ///< Frequency type (uint64_t, Hz)
 using RSSI = int32_t;              ///< Received Signal Strength Indicator (dBm)
@@ -31,13 +27,11 @@ using Threshold = int32_t;         ///< Threshold value (dBm)
 using Decibel = int32_t;           ///< Decibel value (dB)
 using Timestamp = uint32_t;        ///< Timestamp (ms)
 
-// ========================================
-// CONSTANTS (Flash-Resident)
-// ========================================
+// Constants (Flash-Resident)
 
 namespace Constants {
 
-// ===== FREQUENCY LIMITS =====
+// Frequency limits
 namespace FrequencyLimits {
     constexpr Frequency MIN_HARDWARE_FREQ =     1'000'000ULL;  ///< Minimum hardware frequency (1 MHz)
     constexpr Frequency MAX_HARDWARE_FREQ =  7'200'000'000ULL;  ///< Maximum hardware frequency (7.2 GHz)
@@ -45,13 +39,13 @@ namespace FrequencyLimits {
     constexpr Frequency MAX_SAFE_FREQ =     6'000'000'000ULL;  ///< Maximum safe frequency (6 GHz, PLL stability)
 }
 
-// ===== SCANNING MODES =====
+// Scanning modes
 enum class ScanningMode : uint8_t {
     STRICT_DRONE = 0,  ///< Scan only drone frequencies
     FULL_SPECTRUM = 1  ///< Scan full spectrum
 };
 
-// ===== FREQUENCY RANGES =====
+// Frequency ranges
 constexpr Frequency MIN_433MHZ = 433'000'000ULL;     ///< 433 MHz band minimum
 constexpr Frequency MAX_433MHZ = 435'000'000ULL;     ///< 433 MHz band maximum
 
@@ -68,10 +62,10 @@ constexpr Frequency MIN_58GHZ = 5'725'000'000ULL;    ///< 5.8 GHz band minimum
 constexpr Frequency MAX_58GHZ = 5'875'000'000ULL;    ///< 5.8 GHz band maximum
 constexpr Frequency DEFAULT_58GHZ_CENTER = 5'800'000'000ULL;  ///< Default 5.8 GHz center frequency
 
-// ===== FREQUENCY THRESHOLDS =====
+// Frequency thresholds
 constexpr Frequency BAND_SPLIT_FREQ_5GHZ = 5'000'000'000ULL;  ///< Band split frequency (5 GHz)
 
-// ===== SIGNAL WIDTHS =====
+// Signal widths
 constexpr uint32_t NARROWBAND_DRONE_MAX_WIDTH_HZ = 2'500'000ULL;   ///< Narrowband drone max width (Hz)
 constexpr uint32_t WIDEBAND_WIFI_MIN_WIDTH_HZ = 10'000'000ULL;      ///< Wideband WiFi min width (Hz)
 constexpr uint32_t WIDEBAND_DEFAULT_SLICE_WIDTH = 22'000'000ULL;    ///< Default wideband slice width (Hz)
@@ -80,7 +74,7 @@ constexpr Frequency WIDEBAND_DEFAULT_MIN = 2'400'000'000ULL;        ///< Default
 constexpr Frequency WIDEBAND_DEFAULT_MAX = 2'500'000'000ULL;        ///< Default wideband maximum frequency
 constexpr uint32_t WIDEBAND_SLICE_WIDTH = WIDEBAND_DEFAULT_SLICE_WIDTH;  ///< Wideband slice width alias
 
-// ===== RSSI THRESHOLDS =====
+// RSSI thresholds
 constexpr int32_t DEFAULT_RSSI_THRESHOLD_DB = -90;  ///< Default RSSI threshold (dBm)
 constexpr int32_t WIDEBAND_RSSI_THRESHOLD_DB = -80;  ///< Wideband RSSI threshold (dBm)
 constexpr int32_t CRITICAL_RSSI_DB = -50;            ///< Critical RSSI (dBm)
@@ -91,10 +85,10 @@ constexpr int32_t NOISE_FLOOR_RSSI = -110;          ///< Noise floor RSSI (dBm)
 constexpr int32_t MIN_VALID_RSSI = -110;             ///< Minimum valid RSSI (dBm)
 constexpr int32_t MAX_VALID_RSSI = 10;               ///< Maximum valid RSSI (dBm)
 
-// ===== DETECTION THRESHOLDS =====
+// Detection thresholds
 constexpr int32_t MAX_CONSECUTIVE_FAILURES = 10;  ///< Max allowed hardware failures before abort
 
-// ===== SPECTRAL ANALYSIS =====
+// Spectral analysis
 constexpr uint8_t SPECTRAL_SNR_THRESHOLD = 10;       ///< Spectral SNR threshold (dB)
 constexpr uint8_t SPECTRAL_PEAK_THRESHOLD_DB = 6;    ///< Spectral peak threshold (dB)
 constexpr size_t SPECTRAL_VALID_BIN_START = 8;       ///< Valid spectral bin start index

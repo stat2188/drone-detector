@@ -1,24 +1,6 @@
 /**
  * @file ui_signal_processing.cpp
  * @brief Implementation of signal processing utilities for Enhanced Drone Analyzer
- *
- * DIAMOND CODE STANDARDS:
- * - Zero-heap allocation (no new, malloc, std::vector, std::string)
- * - RAII wrappers for automatic resource management
- * - noexcept for exception-free operation
- * - Guard clauses for early returns
- * - Doxygen comments for public APIs
- *
- * STAGE 4 DIAMOND FIXES:
- * - DetectionRingBuffer implementation with AtomicIndex
- * - FNV-1a hash function for reduced collisions
- * - Version field for concurrent update detection
- * - Proper memory ordering with std::memory_order_acquire/release
- * - Recursion detection in update_detection()
- * - Timestamp wrap-around handling
- *
- * @target STM32F405 (ARM Cortex-M4, 128KB RAM)
- * @os ChibiOS (bare-metal RTOS)
  */
 
 #include "ui_signal_processing.hpp"
@@ -29,9 +11,7 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ========================================
-// IMPLEMENTATION: update_detection()
-// ========================================
+// Implementation: update_detection()
 /**
  * @brief Update detection entry (mutex-protected writer)
  *
@@ -50,10 +30,7 @@ namespace ui::apps::enhanced_drone_analyzer {
  * @param detection_count New detection count
  * @param rssi_value New RSSI value
  */
-// 🔴 FIX #7: Recursion depth counter (moved inside lock for thread safety)
-// thread_local ensures each thread has its own counter
-// Note: std::atomic<int> not supported on this platform, using lock-based approach
-// Diamond Code Fix: Thread-safe via mutex protection (critical section)
+// Recursion depth counter (moved inside lock for thread safety)
 thread_local int recursion_depth = 0;
 
 void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
@@ -61,18 +38,16 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
                                         RSSIValue rssi_value) noexcept {
     const Timestamp current_time = static_cast<Timestamp>(chTimeNow());
 
-    // 🔴 FIX #M4: Check recursion depth BEFORE acquiring mutex
-    // This prevents potential deadlock if recursion occurs during lock acquisition
+    // Check recursion depth BEFORE acquiring mutex
     if (recursion_depth > 0) {
         // Recursive call detected - return early to prevent deadlock
         return;
     }
 
     // Acquire mutex with lock ordering (from eda_locking.hpp)
-    // 🔴 FIX #M4: Only acquire mutex if not recursing
     OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
     
-    // 🔴 FIX #M4: Increment recursion depth after lock acquisition
+    // Increment recursion depth after lock acquisition
     recursion_depth++;
 
     // Increment global version for this update

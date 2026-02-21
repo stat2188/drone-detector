@@ -3,14 +3,11 @@
 #ifndef __UI_ENHANCED_DRONE_SETTINGS_HPP__
 #define __UI_ENHANCED_DRONE_SETTINGS_HPP__
 
-// ===========================================
-// PART 1: COMMON TYPES (Shared with Scanner App)
-// ===========================================
+// Part 1: Common Types (Shared with Scanner App)
 
 #include <cstdint>
 #include <array>
-// MEDIUM PRIORITY FIX: Removed <functional> to eliminate std::function heap allocation
-// std::function allocates on heap - replaced with raw function pointers
+// Removed <functional> to eliminate std::function heap allocation
 
 // UI framework includes
 #include "ui.hpp"
@@ -19,13 +16,12 @@
 #include "ui_tabview.hpp"
 #include "ui_freq_field.hpp"
 
-// Include common types from local header
 #include "ui_drone_common_types.hpp"
 
-// DIAMOND OPTIMIZATION: Unified settings persistence
+// Unified settings persistence
 #include "settings_persistence.hpp"
 
-// DIAMOND FIX: Safe string operations (zero heap allocation)
+// Safe string operations (zero heap allocation)
 #include "eda_safe_string.hpp"
 
 // DEPRECATED: Old unified settings files removed
@@ -40,14 +36,13 @@ using rf::Frequency;
 namespace ui::apps::enhanced_drone_analyzer {
 
 /**
- * PHASE 7: ENHANCED SETTINGS MANAGER WITH TXT FILE COMMUNICATION
- * Uses file.hpp API for robust SD card communication with scanner module
- * DIAMOND OPTIMIZATION: All methods use const char* instead of std::string (zero heap allocation)
+ * Enhanced Settings Manager with TXT file communication
+ * All methods use const char* instead of std::string (zero heap allocation)
  */
-// DIAMOND OPTIMIZATION: Settings manager with zero heap allocation
+// Settings manager with zero heap allocation
 class EnhancedSettingsManager {
 public:
-    // DIAMOND OPTIMIZATION: noexcept for all methods
+    // noexcept for all methods
     /**
      * @brief Ensure the frequency database file exists
      * @param settings Settings containing freqman_path configuration
@@ -58,26 +53,22 @@ public:
     static bool save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept;
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) noexcept;
     static bool verify_comm_file_exists() noexcept;
-    // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string
+    // Return const char* from Flash instead of std::string
     static const char* get_communication_status() noexcept;
 
 private:
     static void create_backup_file(const char* filepath) noexcept;
     static void restore_from_backup(const char* filepath) noexcept;
     static void remove_backup_file(const char* filepath) noexcept;
-    // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string_view
+    // Return const char* from Flash instead of std::string_view
     static const char* generate_file_header() noexcept;
-    // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string
+    // Return const char* from Flash instead of std::string
     static const char* spectrum_mode_to_string(SpectrumMode mode) noexcept;
     static const char* get_current_timestamp() noexcept;
 };
 
-// ===========================================
-// ACTIVE: Translation Functions (Kept for UI)
-// ===========================================
-// DIAMOND OPTIMIZATION: Replaced std::map with constexpr LUT for zero heap allocation
-// DIAMOND OPTIMIZATION: Translation manager with zero heap allocation
-// Language is hardcoded to English only
+// Translation Functions (Kept for UI)
+// Replaced std::map with constexpr LUT for zero heap allocation
 class DroneAnalyzerSettingsManager_Translations {
 public:
     static const char* translate(const char* key) noexcept;
@@ -102,55 +93,46 @@ private:
     static constexpr size_t translations_count = sizeof(translations_english) / sizeof(TranslationEntry);
 };
 
-// MEDIUM PRIORITY FIX: Replaced std::function with raw function pointer to eliminate heap allocation
-// std::function allocates on heap - raw function pointers are stack-only
-// For stateful callbacks, use template-based approach (see DronePresetSelector below)
+// Replaced std::function with raw function pointer to eliminate heap allocation
 // using PresetMenuView = void(*)(const DronePreset&); // REMOVED - use template-based approach
 // using FilteredPresetMenuView = void(*)(const DronePreset&, const std::vector<DronePreset>&); // DEPRECATED - not used
 
-// DIAMOND OPTIMIZATION: Preset manager with zero heap allocation
+// Preset manager with zero heap allocation
 class DroneFrequencyPresets {
 public:
-    // DIAMOND OPTIMIZATION: Named constants for preset counts
+    // Named constants for preset counts
     static constexpr size_t PRESETS_COUNT = 5;
     static constexpr size_t AVAILABLE_TYPES_COUNT = 7;
     
-    // DIAMOND OPTIMIZATION: noexcept for all methods
+    // noexcept for all methods
     static const std::array<DronePreset, PRESETS_COUNT>& get_all_presets() noexcept;
     static const char* const* get_preset_names() noexcept;
     static const DroneType* get_available_types() noexcept;
     static size_t get_preset_count() noexcept;
     static size_t get_available_types_count() noexcept;
-    // DIAMOND OPTIMIZATION: Return const char* from Flash instead of std::string
+    // Return const char* from Flash instead of std::string
     static const char* get_type_display_name(DroneType type) noexcept;
     static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset) noexcept;
 };
 
-// CRITICAL FIX: Replaced std::function with template-based callbacks
-// std::function heap-allocates when capturing - FORBIDDEN in embedded systems
-// Scott Meyers Item 30: Understand the ins and outs of inlining
-// Template-based approach enables compile-time polymorphism with zero heap allocation
+// Replaced std::function with template-based callbacks (zero heap allocation)
 
-// Functor for config updates - zero heap allocation, fixed storage
-// DIAMOND OPTIMIZATION: Functor for config updates - zero heap allocation
+// Functor for config updates (zero heap allocation, fixed storage)
 struct ConfigUpdaterCallback {
     DroneAnalyzerSettings* config_ptr;
     
     constexpr explicit ConfigUpdaterCallback(DroneAnalyzerSettings& config) noexcept
         : config_ptr(&config) {}
     
-    // DIAMOND OPTIMIZATION: noexcept for operator()
+    // noexcept for operator()
     void operator()(const DronePreset& preset) const noexcept {
-        // DIAMOND OPTIMIZATION: Guard clause to reduce nesting
+        // Guard clause to reduce nesting
         if (!config_ptr) return;
         DroneFrequencyPresets::apply_preset(*config_ptr, preset);
     }
 };
 
-// CRITICAL FIX: Template-based callback system - zero heap allocation
-// Scott Meyers Item 46: Define non-member functions inside templates when type conversions are needed
-// Template parameter Callback accepts any callable type (lambda, functor, function pointer)
-// This eliminates std::function which heap-allocates when capturing state
+// Template-based callback system (zero heap allocation)
 template <typename PresetContainer, typename Callback>
 class PresetMenuViewImpl : public MenuView {
 public:
@@ -173,9 +155,9 @@ private:
     Callback on_selected_fn_;  // Template parameter - no heap allocation
     const PresetContainer& presets_;
 
-    // DIAMOND OPTIMIZATION: noexcept for key handling
+    // noexcept for key handling
     bool on_key(const KeyEvent key) noexcept override {
-        // DIAMOND OPTIMIZATION: Guard clause for early return
+        // Guard clause for early return
         if (key != KeyEvent::Select) return MenuView::on_key(key);
         
         size_t idx = highlighted_index();
@@ -186,11 +168,10 @@ private:
     }
 };
 
-// DIAMOND OPTIMIZATION: Preset selector with zero heap allocation
+// Preset selector with zero heap allocation
 class DronePresetSelector {
 public:
-    // Template-based callback - accepts any callable type without heap allocation
-    // Implementation must be in header for implicit template instantiation
+    // Template-based callback (accepts any callable type without heap allocation)
     template <typename Callback>
     static void show_preset_menu(NavigationView& nav, Callback callback) noexcept {
         const auto preset_names = DroneFrequencyPresets::get_preset_names();

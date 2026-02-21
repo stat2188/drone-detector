@@ -31,9 +31,7 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ========================================
-// SAFE STRING COPY
-// ========================================
+// Safe String Copy
 
 /**
  * @brief Safely copy string with bounds checking
@@ -87,9 +85,7 @@ inline size_t safe_strcpy(char* dest, const char* src, size_t buffer_size) noexc
     return i;
 }
 
-// ========================================
-// SAFE STRING CONCATENATE
-// ========================================
+// Safe String Concatenate
 
 /**
  * @brief Safely concatenate string with bounds checking

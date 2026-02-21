@@ -14,12 +14,12 @@
 #include "ui_drone_audio.hpp"
 #include "ui_spectral_analyzer.hpp"
 #include "eda_constants.hpp"
-#include "diamond_fixes.hpp"  // Diamond Code fixes: Division by zero, magic numbers, type safety
+#include "diamond_fixes.hpp"
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
-#include "eda_locking.hpp"  // STAGE 4 FIX: Lock order enforcement
-#include "eda_safecast.hpp"  // STAGE 4 FIX: Safe type casting
-#include "eda_raii.hpp"  // RAII utilities for system locking
+#include "eda_locking.hpp"
+#include "eda_safecast.hpp"
+#include "eda_raii.hpp"
 
 #include "ui.hpp"
 #include "ui_menu.hpp"
@@ -48,71 +48,26 @@
 
 class LogFile;
 
-// Application specific namespace starts here to ensure all classes are properly scoped
 namespace ui::apps::enhanced_drone_analyzer {
 
 using rf::Frequency;
 
-// ===========================================
-// FIX #7: Simplify Lock Ordering with LockOrder Enum
-// ===========================================
-// Diamond Code: Enum-based lock ordering to prevent deadlock
-// Scott Meyers Item 15: Prefer constexpr to #define
-//
-// LOCK ORDER RULE:
-// Always acquire locks in ascending order (1 → 2 → 3 → 4 → 5 → 6 → 7)
+// Lock Order: Always acquire locks in ascending order (1 → 2 → 3 → 4 → 5 → 6 → 7)
 // Never acquire a lower-numbered lock while holding a higher-numbered lock
-//
-// EXAMPLE CORRECT ORDER:
-//   ScopedLock(data_mutex, LockOrder::DATA_MUTEX);
-//   ScopedLock(spectrum_mutex, LockOrder::SPECTRUM_MUTEX);
-//   ScopedLock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
-//
-// EXAMPLE INCORRECT (DEADLOCK RISK):
-//   ScopedLock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
-//   ScopedLock(data_mutex, LockOrder::DATA_MUTEX);  // WRONG! Will deadlock!
-//
-// NOTE: LockOrder enum is already defined in eda_locking.hpp
-// This file just references it for consistency
 
-// ===========================================
-// FIX #2: Explicit Thread Stack Sizes
-// ===========================================
-// Diamond Code: Define explicit stack sizes to prevent stack overflow
-// Scott Meyers Item 15: Prefer constexpr to #define
-constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;  // 2KB (reduced from 3KB to save memory)
-constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // 2KB (unchanged)
+// Explicit thread stack sizes
+constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;  // 2KB
+constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // 2KB
 
-// ===========================================
-// STAGE 4 FIX: Stack Usage Monitoring
-// ===========================================
-// Stack monitoring constants for detecting stack overflow conditions
-constexpr uint32_t STACK_CANARY_VALUE = 0xDEADBEEF;  ///< Canary value for stack overflow detection
-constexpr size_t MIN_STACK_FREE_THRESHOLD = 512;     ///< Minimum safe stack free bytes
+// Stack monitoring constants
+constexpr uint32_t STACK_CANARY_VALUE = 0xDEADBEEF;  // Canary value for stack overflow detection
+constexpr size_t MIN_STACK_FREE_THRESHOLD = 512;     // Minimum safe stack free bytes
 
-// ===========================================
-// DIAMOND FIX: Global SD Card Mutex Protection
-// FatFS is NOT thread-safe - all SD operations must be serialized
-// ===========================================
+// Global SD Card Mutex Protection (FatFS is NOT thread-safe)
 
 extern Mutex sd_card_mutex;
 
-// ===========================================
-// STAGE 4 FIX: Use OrderedScopedLock for Deadlock Prevention
-// ===========================================
-// OrderedScopedLock enforces lock order to prevent deadlock violations.
-// See eda_locking.hpp for implementation details.
-//
-// USAGE:
-//   ScopedLock lock(data_mutex, LockOrder::DATA_MUTEX);
-//   ScopedLock lock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
-//
-// LOCK ORDER RULE:
-// Always acquire locks in ascending order (1 → 2 → 3 → 4 → 5)
-// Never acquire a lower-numbered lock while holding a higher-numbered lock
-//
-// NOTE: Backward compatibility aliases (ScopedLock, MutexLock, MutexTryLock, SDCardLock)
-// are now defined in eda_locking.hpp to avoid duplication.
+// OrderedScopedLock enforces lock order to prevent deadlock violations
 
 struct preset_entry {
     Frequency min = 0;
@@ -125,7 +80,6 @@ struct RssiMeasurement {
     systime_t timestamp_ms;
 };
 
-// Constants moved to eda_constants.hpp - single source of truth
 
 namespace UIStyles {
     EDA_FLASH_CONST inline static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
@@ -138,17 +92,14 @@ namespace UIStyles {
 
 class TrackedDrone {
 public:
-    // 🔴 FIX #L8: Remove redundant in-class default initialization
-    // Diamond Code: Use member initializer list only, no in-class default initialization
     TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
                      last_seen(0), rssi(EDA::Constants::RSSI_SILENCE_DBM), rssi_history_{}, timestamp_history_{}, history_index_(0) {
-        // Initialize array with "silence" (-120 dBm), not zeros
         std::fill(std::begin(rssi_history_), std::end(rssi_history_), EDA::Constants::RSSI_SILENCE_DBM);
         std::fill(std::begin(timestamp_history_), std::end(timestamp_history_), 0);
     }
 
-    // Diamond Code: Explicit copy constructor to avoid deprecated implicit copy constructor warning
+    // Explicit copy constructor to avoid deprecated implicit copy constructor warning
     TrackedDrone(const TrackedDrone& other) : frequency(other.frequency),
                      drone_type(other.drone_type),
                      threat_level(other.threat_level),
@@ -158,7 +109,6 @@ public:
                      rssi_history_{},
                      timestamp_history_{},
                      history_index_(other.history_index_) {
-        // Copy history arrays
         for(size_t i=0; i<MAX_HISTORY; i++) {
             rssi_history_[i] = other.rssi_history_[i];
             timestamp_history_[i] = other.timestamp_history_[i];
@@ -182,7 +132,7 @@ public:
         return *this;
     }
 
-    // DIAMOND OPTIMIZATION: inline enables compiler optimization, noexcept avoids exception handling overhead
+    // inline enables compiler optimization, noexcept avoids exception handling overhead
     inline void add_rssi(const RssiMeasurement& measurement) noexcept {
         rssi_history_[history_index_] = measurement.rssi_db;
         timestamp_history_[history_index_] = measurement.timestamp_ms;
@@ -196,8 +146,7 @@ public:
         }
     }
 
-    // DIAMOND OPTIMIZATION: inline + noexcept + loop unrolling for MAX_HISTORY=8
-    // Eliminates loop overhead, saves ~20 CPU cycles per call
+    // inline + noexcept + loop unrolling for MAX_HISTORY=8
     inline MovementTrend get_trend() const noexcept {
         if (update_count < EDA::Constants::MOVEMENT_TREND_MIN_HISTORY) return MovementTrend::UNKNOWN;
 
@@ -253,7 +202,7 @@ public:
     int32_t rssi;
 
 private:
-    // Phase 3 Optimization: Reduced from 8 to 4 entries (~96 bytes savings)
+    // Reduced from 8 to 4 entries (~96 bytes savings)
     inline static constexpr size_t MAX_HISTORY = 4;
     int16_t rssi_history_[MAX_HISTORY];
     systime_t timestamp_history_[MAX_HISTORY];
@@ -271,11 +220,8 @@ struct DisplayDroneEntry {
     MovementTrend trend = MovementTrend::UNKNOWN;
 };
 
-// Removed duplicate constants - using from eda_constants.hpp
-// MAX_TRACKED_DRONES, MAX_DISPLAYED_DRONES defined in eda_constants.hpp
-// Constants moved to eda_constants.hpp - single source of truth
 
-// Local constants for DroneDisplayController (not in eda_constants.hpp)
+// Local constants for DroneDisplayController
 inline static constexpr int SPEC_WIDTH = DiamondFixes::SpectrumConstants::SPEC_WIDTH;  // EDA::Constants::SPECTRUM_BIN_COUNT_240
 inline static constexpr int SPEC_HEIGHT = DiamondFixes::SpectrumConstants::SPEC_HEIGHT;  // EDA::Constants::MINI_SPECTRUM_HEIGHT (but 40 used here)
 
@@ -288,7 +234,7 @@ struct WidebandScanData {
     Frequency min_freq;
     Frequency max_freq;
     size_t slices_nb;
-    // Phase 3 Optimization: Reduced from 20 to 10 slices (~200 bytes savings)
+    // Reduced from 20 to 10 slices (~200 bytes savings)
     WidebandSlice slices[10];
     size_t slice_counter;
 
@@ -308,17 +254,14 @@ struct DroneDetectionMessage {
     systime_t timestamp;
 };
 
-// DIAMOND FIX: Revision #9 - Remove Dead Code (LOW)
 // Removed DroneUpdateMessage struct - unused dead code
-// This struct was defined but never used in the codebase
 
-// Struct for drone signal parameters (prevents easily-swappable-parameters warning)
 struct DroneSignal {
     Frequency frequency_hz;
     int32_t rssi_db;
 };
 
-// 🔴 NEW: Enhanced Settings Validation with detailed checks
+// Enhanced Settings Validation with detailed checks
 class EnhancedDroneSettingsValidator {
 public:
 struct ValidationResult {
@@ -339,7 +282,7 @@ private:
     static bool validate_bandwidth(uint32_t bandwidth_hz, char* error, size_t error_size);
     static bool validate_frequency_range(Frequency min_hz, Frequency max_hz, char* error, size_t error_size);
     
-    // Enhanced frequency validation with drone band checks
+    // Frequency validation with drone band checks
     static bool is_known_drone_band(Frequency freq);
     static bool is_ism_band(Frequency freq);
     static void format_frequency_hz(Frequency freq, char* buffer, size_t buffer_size);
@@ -350,7 +293,7 @@ public:
     DroneDetectionLogger();
     ~DroneDetectionLogger();
 
-    // Producer method - called by scanner thread (non-blocking)
+    // Producer method - called by scanner thread
     bool log_detection_async(const DetectionLogEntry& entry);
     
     // Consumer lifecycle methods
@@ -368,61 +311,52 @@ public:
     uint32_t get_overflow_count() const { return overflow_count_; }
 
 private:
-    // --- THREADING PRIMITIVES ---
-    Thread* worker_thread_ = nullptr;           // Declared 1st
-    mutable Mutex mutex_;                       // Declared 2nd
-    Semaphore data_ready_;                      // Declared 3rd
-    // Diamond Code: Use volatile bool for thread-safe flag access
+    // Threading primitives
+    Thread* worker_thread_ = nullptr;
+    mutable Mutex mutex_;
+    Semaphore data_ready_;
     // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-    // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
-    volatile bool worker_should_run_{false};    // Declared 4th
+    volatile bool worker_should_run_{false};
 
-    // STACK USAGE DOCUMENTATION: Worker Thread Stack
-    // Stack size: 5120 bytes (5KB)
-    // Purpose: File I/O operations, string formatting, and buffer management
-    //
+    // Worker Thread Stack: 5120 bytes (5KB)
     // Stack Usage Breakdown:
     // - CSV line formatting: ~128 bytes (line_buffer_)
-    // - File operations (fopen/fwrite): ~200 bytes (C standard library overhead)
+    // - File operations (fopen/fwrite): ~200 bytes
     // - Log entry processing: ~64 bytes (DetectionLogEntry)
     // - SDCardLock mutex overhead: ~100 bytes
     // - ChibiOS thread context: ~256 bytes
-    // - Stack safety margin: ~4372 bytes (to prevent overflow under heavy I/O load)
-    // DIAMOND FIX: Increased from 3KB to 5KB to prevent stack overflow
-    // Previous 3KB had only ~1.5KB margin which is insufficient for SD card I/O
-    // Scott Meyers Item 15: Prefer constexpr to #define
+    // - Stack safety margin: ~4372 bytes
     static constexpr size_t WORKER_STACK_SIZE = 5120;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
 
 
-    // --- FILE I/O ---
-    LogFile csv_log_;                           // Declared 5th
-    bool session_active_ = false;               // Declared 6th
-    systime_t session_start_ = 0;               // Declared 7th
-    uint32_t logged_count_ = 0;                 // Declared 8th
-    uint32_t dropped_logs_ = 0;                 // Declared 9th
-    uint32_t overflow_count_ = 0;               // Declared 10th - Counter for ring buffer overflows
-    bool header_written_ = false;               // Declared 11th
+    // File I/O
+    LogFile csv_log_;
+    bool session_active_ = false;
+    systime_t session_start_ = 0;
+    uint32_t logged_count_ = 0;
+    uint32_t dropped_logs_ = 0;
+    uint32_t overflow_count_ = 0;               // Counter for ring buffer overflows
+    bool header_written_ = false;
 
-    // --- ASYNC BUFFERING ---
-    static constexpr size_t BUFFER_SIZE = 32;   // Declared 11th
-    std::array<DetectionLogEntry, BUFFER_SIZE> ring_buffer_; // Declared 12th
-    // Diamond Code: Use volatile with mutex protection for thread-safe ring buffer access
+    // Async buffering
+    static constexpr size_t BUFFER_SIZE = 32;
+    std::array<DetectionLogEntry, BUFFER_SIZE> ring_buffer_;
     // volatile prevents compiler optimization; mutex_ provides thread synchronization
-    volatile size_t head_{0};              // Declared 13th
-    volatile size_t tail_{0};              // Declared 14th
-    volatile bool is_full_{false};         // Declared 15th
+    volatile size_t head_{0};
+    volatile size_t tail_{0};
+    volatile bool is_full_{false};
 
     // Helper buffer for string formatting (avoid heap allocation)
-    char line_buffer_[EDA::Constants::ERROR_MESSAGE_BUFFER_SIZE];                     // Declared last
+    char line_buffer_[EDA::Constants::ERROR_MESSAGE_BUFFER_SIZE];
 
-    // --- INTERNAL METHODS ---
+    // Internal methods
     static msg_t worker_thread_entry(void* arg);
     void worker_loop();
     bool write_entry_to_sd(const DetectionLogEntry& entry);
     bool ensure_csv_header();
 
-    // 🔴 OPTIMIZED: generate_log_filename() - returns constexpr string (Flash storage)
+    // generate_log_filename() - returns constexpr string (Flash storage)
     const char* generate_log_filename() const;
 
     DroneDetectionLogger(const DroneDetectionLogger&) = delete;
@@ -431,29 +365,16 @@ private:
 
 class DroneScanner {
 public:
-    // ===========================================
-    // DIAMOND FIX: Settings Lifetime - Value Semantics
-    // ===========================================
-    // CRITICAL FIX: DroneScanner now stores settings by VALUE (not reference)
-    //
-    // Benefits:
-    // - No lifetime dependency issues
-    // - Thread-safe access without additional locking
-    // - Simpler ownership model
-    //
-    // Memory Trade-off:
-    // - Adds ~100 bytes to DroneScanner size (acceptable for 192KB RAM)
-    // - Eliminates risk of dangling reference bugs
-    //
-    // Built-in database structure for frequencies
+    // DroneScanner stores settings by VALUE (not reference)
+    // Benefits: No lifetime dependency, thread-safe access, simpler ownership
+    // Memory trade-off: Adds ~100 bytes to DroneScanner size (acceptable for 192KB RAM)
     struct BuiltinDroneFreq {
         Frequency freq;
         const char* desc;
         DroneType type;
     };
 
-    // 🔴 OPTIMIZATION: constexpr array instead of vector to avoid heap allocation
-    // Scott Meyers Item 15: Prefer constexpr to #define and const
+    // constexpr array instead of vector to avoid heap allocation
     static constexpr size_t BUILTIN_DB_SIZE = 17;
     static const std::array<BuiltinDroneFreq, BUILTIN_DB_SIZE> BUILTIN_DRONE_DB;
 
@@ -468,19 +389,18 @@ public:
         HYBRID
     };
 
-    // DIAMOND FIX: Constructor accepts settings by value to eliminate lifetime dependency
-    // Settings are copied on construction, no reference held
+    // Constructor accepts settings by value to eliminate lifetime dependency
     DroneScanner(DroneAnalyzerSettings settings);
     ~DroneScanner();
 
     void start_scanning();
     void stop_scanning();
-    // DIAMOND OPTIMIZATION: inline + noexcept for zero-overhead abstraction
+    // inline + noexcept for zero-overhead abstraction
     inline bool is_scanning_active() const noexcept { return scanning_active_; }
     bool load_frequency_database();
     size_t get_database_size() const;
 
-    // DIAMOND OPTIMIZATION: inline + noexcept for zero-overhead abstraction
+    // inline + noexcept for zero-overhead abstraction
     inline ScanningMode get_scanning_mode() const noexcept { return scanning_mode_; }
     const char* scanning_mode_name() const;
     void set_scanning_mode(ScanningMode mode);
@@ -488,17 +408,16 @@ public:
     void switch_to_real_mode();
     void switch_to_demo_mode();
 
-    // DIAMOND FIX: Method to update scanner's settings from view's settings
-    // Required because scanner now stores settings by value (not reference)
+    // Update scanner's settings from view's settings
     void update_settings(const DroneAnalyzerSettings& settings) {
-        settings_ = settings;  // Copy settings into scanner's own copy
+        settings_ = settings;
     }
 
     void update_scan_range(Frequency min_freq, Frequency max_freq) {
-        // 🔴 FIX: Validate frequency range before use
+        // Validate frequency range before use
         if (!EDA::Validation::validate_frequency(min_freq) || 
             !EDA::Validation::validate_frequency(max_freq)) {
-            return;  // Invalid frequency - reject silently
+            return;
         }
         
         if (min_freq >= max_freq) return;
@@ -514,7 +433,6 @@ public:
     int32_t get_detection_rssi_safe(size_t freq_hash) const;
     uint8_t get_detection_count_safe(size_t freq_hash) const;
 
-// Struct for drone detection parameters (prevents easily-swappable-parameters warning)
 struct DetectionParams {
     DroneType type;
     Frequency frequency_hz;
@@ -522,20 +440,8 @@ struct DetectionParams {
     ThreatLevel threat_level;
 };
 
-    // ===========================================
-    // DIAMOND OPTIMIZATION: Histogram Data Flow
-    // ===========================================
-    // Callback for histogram data: SpectralAnalyzer → Scanner → Display
-    // Diamond Code: Function pointer with user data (no heap allocation, no std::function)
-    //
-    // USAGE:
-    //   scanner.set_histogram_callback(StaticHistogramCallback, this);
-    //   // In static callback:
-    //   auto* view = static_cast<EnhancedDroneSpectrumAnalyzerView*>(user_data);
-    //   view->display_controller_.update_histogram_display(histogram, noise_floor);
-    //
-    // NOTE: User data pointer allows static function to access class instance
-    // without lambda captures (which can't be converted to function pointers)
+    // Histogram Data Flow: SpectralAnalyzer → Scanner → Display
+    // Function pointer with user data (no heap allocation, no std::function)
     using HistogramCallback = void(*)(const SpectralAnalyzer::HistogramBuffer&, uint8_t noise_floor, void* user_data) noexcept;
     
     /// @brief Set histogram callback for data flow from SpectralAnalyzer to DisplayController
@@ -593,21 +499,20 @@ struct DetectionParams {
 
     bool try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const;
 
-      // 🔴 FIX: Public API for safe initialization
-    // These methods must be public to allow lazy initialization after constructor
+    // Public API for safe initialization
     void initialize_database_and_scanner();
-    void initialize_database_async();  // 🔴 FIX: Async database loading (non-blocking UI)
+    void initialize_database_async();
     void cleanup_database_and_scanner();
-    bool is_database_loading_complete() const;  // 🔴 FIX: Check if async loading finished
-    bool is_initialization_complete() const;  // 🔴 FIX #3: Check if initialization completed
-    void sync_database();  // 🔴 FIX: Sync database to physical media (thread-safe)
+    bool is_database_loading_complete() const;
+    bool is_initialization_complete() const;
+    void sync_database();
 
  private:
     void reset_scan_cycles();
     void initialize_wideband_scanning();
     void setup_wideband_range(Frequency min_freq, Frequency max_freq);
 
-    // 🔴 FIX: Async database loading methods
+    // Async database loading methods
     static msg_t db_loading_thread_entry(void* arg);
     void db_loading_thread_loop();
     void wideband_detection_override(const freqman_entry& entry, int32_t rssi, int32_t threshold_override);
@@ -635,8 +540,7 @@ struct DetectionParams {
         return *tracked_drones_ptr_;
     }
 
-    // FIX #6: Eliminate stack arrays in hot paths - moved to class member buffers
-    // entries_to_scan buffer (was stack array in perform_database_scan_cycle)
+    // Eliminate stack arrays in hot paths - moved to class member buffers
     std::array<freqman_entry, 10> entries_to_scan_{};
 
     // stale_indices buffer (was stack array in remove_stale_drones)
@@ -647,104 +551,70 @@ struct DetectionParams {
 
      Thread* scanning_thread_ = nullptr;
      mutable Mutex data_mutex;
-     // Diamond Code: Use volatile bool for thread-safe flag access
      // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-     // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
      volatile bool scanning_active_{false};
     
-    // ===========================================
-    // DIAMOND OPTIMIZATION: Histogram Callback
-    // ===========================================
-    // Function pointer for histogram data flow (no heap allocation)
+    // Histogram Callback (function pointer for histogram data flow)
     HistogramCallback histogram_callback_ = nullptr;
     void* histogram_callback_user_data_ = nullptr;
 
-        // ===========================================
-        // ФАЗА 3.1: СТАТИЧЕСКИЕ ХРАНИЛИЩА ДЛЯ SCANNER
-        // ===========================================
-        // Diamond Code: Zero heap allocation
-        // Используем placement new для объектов с известным размером
+        // Static storage for Scanner (zero heap allocation)
 
-        // DIAMOND FIX: Revision #1 - Fix Static Storage Size (CRITICAL)
-        // Статическое хранилище для FreqmanDB
-        // Размер подбираем с запасом (FreqmanDB ~4KB)
-        // Diamond Code: Increased to 4KB for FreqmanDB safety
-        // FIX #1: Removed inline to prevent ~12-16KB RAM bloat
+        // Static storage for FreqmanDB (4KB for safety)
         static constexpr size_t FREQ_DB_STORAGE_SIZE = EDA::Constants::FREQ_DB_STORAGE_SIZE_4KB;
         alignas(alignof(FreqmanDB))
         static uint8_t freq_db_storage_[FREQ_DB_STORAGE_SIZE];
 
-        // 🔴 FIX: Compile-time alignment verification
+        // Compile-time alignment verification
         static_assert(alignof(FreqmanDB) <= 16, "FreqmanDB alignment too large for static storage");
         static_assert(FREQ_DB_STORAGE_SIZE >= sizeof(FreqmanDB), "FREQ_DB_STORAGE_SIZE too small");
         // FreqmanDB size validated by static_assert in eda_constants.hpp
 
-        // Статическое хранилище для TrackedDrones
-        // Размер: MAX_TRACKED_DRONES * sizeof(TrackedDrone) = 4 * ~200 = ~800 bytes
-        // Diamond Code: Reduced from 8 to 4 drones for stack safety
-        // FIX #1: Removed inline to prevent ~12-16KB RAM bloat
+        // Static storage for TrackedDrones (~800 bytes)
         static constexpr size_t TRACKED_DRONES_STORAGE_SIZE =
             sizeof(TrackedDrone) * EDA::Constants::MAX_TRACKED_DRONES;
         alignas(alignof(TrackedDrone))
         static uint8_t tracked_drones_storage_[TRACKED_DRONES_STORAGE_SIZE];
 
-        // 🔴 FIX: Compile-time alignment verification
+        // Compile-time alignment verification
         static_assert(alignof(TrackedDrone) <= 16, "TrackedDrone alignment too large for static storage");
         static_assert(TRACKED_DRONES_STORAGE_SIZE >= sizeof(std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>),
                      "TRACKED_DRONES_STORAGE_SIZE too small");
 
-       // Указатели на объекты, созданные через placement new
+       // Pointers to objects created via placement new
        FreqmanDB* freq_db_ptr_ = nullptr;
        std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>* tracked_drones_ptr_ = nullptr;
 
-       // 🔴 FIX #6: Construction flags for placement-newed objects
-       // Prevents calling destructors on objects that were never constructed
+       // Construction flags for placement-newed objects
        bool freq_db_constructed_ = false;
        bool tracked_drones_constructed_ = false;
 
-       // Флаги состояния
+       // State flags
         bool freq_db_loaded_ = false;
         size_t current_db_index_ = 0;
         Frequency last_scanned_frequency_ = 0;
-        // Diamond Code: Use volatile for thread-safe timestamp access
-        // volatile uint32_t reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-        // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+        // volatile for thread-safe timestamp access
         volatile systime_t last_detection_log_time_{0};
 
-        // 🔴 FIX: Async database loading to prevent UI freeze
+        // Async database loading to prevent UI freeze
         Thread* db_loading_thread_ = nullptr;
-        // Diamond Code: Use volatile bool for thread-safe flag access
         // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-        // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
         volatile bool db_loading_active_{false};
 
-        // 🔴 FIX #3: Initialization complete flag for async initialization coordination
-        // Ensures thread-safe checking of initialization state
-        // Diamond Code: Use volatile bool for thread-safe flag access
-        // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-        // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+        // Initialization complete flag for async initialization coordination
         volatile bool initialization_complete_{false};
 
-       // ===========================================
-        // ФАЗА 5.1: СТАТИЧЕСКИЙ СТЕК ДЛЯ ПОТОКА
-        // ===========================================
-        // Diamond Code: Thread stack из статической памяти
-        // Phase 2 Optimization: Increased to 8KB for thread safety
-        // Scott Meyers Item 15: Prefer constexpr to #define
+       // Static thread stack (8KB for thread safety)
         static constexpr size_t DB_LOADING_STACK_SIZE = 8192;  // 8KB
 
           static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
-      // Diamond Code: Use volatile uint32_t with mutex protection for thread-safe counter access
-      // volatile uint32_t reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-      // Protected by data_mutex for write operations to ensure thread safety
+      // volatile uint32_t with mutex protection for thread-safe counter access
       volatile uint32_t scan_cycles_{0};
       volatile uint32_t total_detections_{0};
 
       ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
-      // Diamond Code: Use volatile bool for thread-safe flag access
       // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-      // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
       volatile bool is_real_mode_{true};
 
      size_t tracked_count_ = 0;
@@ -762,30 +632,21 @@ struct DetectionParams {
     DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
     
-    // FIX #3: Thread-safe spectrum buffer (replaces static buffer)
-    // Moved from static in perform_wideband_scan_cycle() to class member
+    // Thread-safe spectrum buffer (replaces static buffer)
     std::array<uint8_t, 256> spectrum_data_{};
 
-    // 🔴 FIX #2: Histogram buffer moved to class member (replaces stack allocation)
-    // Previously: SpectralAnalyzer::HistogramBuffer histogram_buffer{}; on stack (128 bytes)
-    // Now: Reusable class member buffer to reduce stack usage in hot path
+    // Histogram buffer moved to class member (replaces stack allocation)
     SpectralAnalyzer::HistogramBuffer histogram_buffer_{};
 
-    // DIAMOND FIX: Settings stored by VALUE (not reference)
-    // No lifetime dependency - settings are copied on construction
-    // Thread-safe access without additional locking
+    // Settings stored by VALUE (not reference)
     DroneAnalyzerSettings settings_;
     
     // Last scan error for diagnostics
     const char* last_scan_error_ = nullptr;
 
-    // ===========================================
-    // DIAMOND OPTIMIZATION: LUTs в конце класса (после всех объявлений)
-    // ===========================================
-    // Scott Meyers Item 15: Prefer constexpr to #define
-    // Все LUT объявлены здесь для доступа к private членам/методам
+    // LUTs at end of class (after all declarations)
     
-    // LUT для MovementTrend счётчиков (указатели на члены класса)
+    // LUT for MovementTrend counters (pointers to class members)
     static constexpr size_t DroneScanner::* const TREND_COUNTERS[] = {
         &DroneScanner::static_count_,      // STATIC = 0
         &DroneScanner::approaching_count_, // APPROACHING = 1
@@ -794,7 +655,7 @@ struct DetectionParams {
     };
     static_assert(sizeof(TREND_COUNTERS) / sizeof(size_t DroneScanner::*) == 4, "TREND_COUNTERS size");
     
-    // LUT для функций сканирования (указатели на методы класса)
+    // LUT for scanning functions (pointers to class methods)
     static constexpr void (DroneScanner::* const SCAN_FUNCTIONS[])(DroneHardwareController&) = {
         &DroneScanner::perform_database_scan_cycle,    // DATABASE = 0
         &DroneScanner::perform_wideband_scan_cycle,   // WIDEBAND_CONTINUOUS = 1
@@ -834,9 +695,8 @@ public:
     void clear_rssi_flag();
     bool is_rssi_fresh() const;
 
-    // 🔴 FIXED: TOCTOU race condition - critical section check-and-fetch method
+    // TOCTOU race condition fix - critical section check-and-fetch method
     bool get_rssi_if_fresh(int32_t& out_rssi) {
-        // Critical section check-and-fetch to prevent TOCTOU race
         CriticalSection lock;
         if (!rssi_updated_) {
             return false;
@@ -846,15 +706,13 @@ public:
         return true;
     }
 
-    // FIX #4: Spectrum data access method (single critical section to avoid TOCTOU race)
+    // Spectrum data access method (single critical section to avoid TOCTOU race)
     bool get_latest_spectrum_if_fresh(std::array<uint8_t, 256>& out_db_buffer) {
-        // FIX #4: Use single critical section for entire check-and-fetch operation
-        // This prevents TOCTOU race by keeping flag check and data copy atomic
+        // Single critical section for entire check-and-fetch operation
         CriticalSection lock;
         if (!spectrum_updated_) {
             return false;
         }
-        // Copy data while still in critical section (no mutex needed for atomic copy)
         out_db_buffer = last_spectrum_db_;
         spectrum_updated_ = false;
         return true;
@@ -869,7 +727,7 @@ public:
         spectrum_updated_ = false;
     }
 
-    // 🔴 FIX: Public method to set spectrum FIFO (called from parent View)
+    // Public method to set spectrum FIFO (called from parent View)
     void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
         spectrum_fifo_ = fifo;
     }
@@ -890,7 +748,7 @@ private:
     int32_t get_configured_sampling_rate() const;
     int32_t get_configured_bandwidth() const;
     
-    // 🔴 FIX: Spectrum data buffer and synchronization
+    // Spectrum data buffer and synchronization
     std::array<uint8_t, 256> last_spectrum_db_;
     mutable Mutex spectrum_mutex_;
 
@@ -951,8 +809,7 @@ private:
 
     void paint(Painter& painter) override;
 
-    // ✅ ОПТИМИЗАЦИЯ: Использует UnifiedColorLookup вместо дублирующего LUT
-    // Все threat colours хранятся во Flash (color_lookup_unified.hpp)
+    // Uses UnifiedColorLookup instead of duplicate LUT
 
     // Cached previous values for Check-Before-Update optimization
     ThreatLevel last_threat_ = ThreatLevel::NONE;
@@ -961,8 +818,8 @@ private:
     size_t last_approaching_ = 0;
     size_t last_static_ = 0;
     size_t last_receding_ = 0;
-    char last_text_[128];  // Fixed-size buffer instead of std::string (no heap allocation)
-    size_t last_text_len_ = 0;  // OPTIMIZATION: Cached text length to avoid strlen() in paint()
+    char last_text_[128];  // Fixed-size buffer instead of std::string
+    size_t last_text_len_ = 0;  // Cached text length to avoid strlen() in paint()
 };
 
 class ThreatCard : public View {
@@ -990,18 +847,16 @@ private:
     MovementTrend last_trend_ = MovementTrend::UNKNOWN;
     int32_t last_rssi_ = -120;
     char last_threat_name_[16];
-    size_t last_card_text_len_ = 0;  // OPTIMIZATION: Cached text length to avoid strlen() in paint()
+    size_t last_card_text_len_ = 0;  // Cached text length to avoid strlen() in paint()
 
     void paint(Painter& painter) override;
 
-    // ✅ ОПТИМИЗАЦИЯ: Использует UnifiedColorLookup вместо дублирующего LUT
-    // Все threat colours хранятся во Flash (color_lookup_unified.hpp)
+    // Uses UnifiedColorLookup instead of duplicate LUT
 };
 
 enum class DisplayMode : uint8_t { SCANNING = 0, ALERT = 1, NORMAL = 2 };
 
-// DIAMOND OPTIMIZATION: constexpr Style LUTs для ConsoleStatusBar (хранятся во Flash)
-// Scott Meyers Item 15: Prefer constexpr to #define
+// constexpr Style LUTs for ConsoleStatusBar (stored in Flash)
 struct StatusStyleConfig {
     uint32_t bg_color;
     uint32_t text_color;
@@ -1012,8 +867,7 @@ public:
     explicit ConsoleStatusBar(size_t bar_index = 0, Rect parent_rect = {0, 0, screen_width, 16});
     ~ConsoleStatusBar() = default;
 
-    // DIAMOND OPTIMIZATION: const char* вместо const std::string& для экономии RAM
-    // Scott Meyers Item 1: View C++ as a federation of languages
+    // const char* instead of const std::string& to save RAM
     void update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles = 0, uint32_t detections = 0);
     void update_alert_status(ThreatLevel threat, size_t total_drones, const char* alert_msg);
     void update_normal_status(const char* primary, const char* secondary);
@@ -1023,8 +877,7 @@ public:
     ConsoleStatusBar& operator=(const ConsoleStatusBar&) = delete;
 
 private:
-    // DIAMOND OPTIMIZATION: constexpr массивы стилей (во Flash, ноль RAM)
-    // Scott Meyers Item 15: Prefer constexpr to #define
+    // constexpr style arrays (Flash storage, zero RAM)
     EDA_FLASH_CONST inline static constexpr StatusStyleConfig STATUS_STYLES[] = {
         {0x001F, 0xFFFF},  // Синий фон, белый текст (SCANNING)
         {0xFFFF, 0x0000}   // Белый фон, черный текст (STOPPED)
@@ -1035,13 +888,11 @@ private:
         {0xFFE0, 0x0000}   // Желтый фон, черный текст (MEDIUM)
     };
 
-    // DIAMOND OPTIMIZATION: Unified icon LUT для всех уровней угрозы
-    // Хранится во Flash, ноль RAM
+    // Unified icon LUT for all threat levels (Flash storage, zero RAM)
     EDA_FLASH_CONST inline static constexpr const char* ALERT_ICONS[] = {"(i)", "[!]", "[O]", "[X]", "[!!]"};
     static_assert(sizeof(ALERT_ICONS) / sizeof(const char*) == 5, "ALERT_ICONS size");
 
-    // DIAMOND OPTIMIZATION: Unified style LUT для alert режимов
-    // Устраняет дублирование ALERT_STYLES + runtime ветвление
+    // Unified style LUT for alert modes
     struct AlertStyleEntry {
         uint32_t bg_color;
         uint32_t text_color;
@@ -1053,10 +904,7 @@ private:
     };
     static_assert(sizeof(ALERT_STYLES) / sizeof(AlertStyleEntry) == 2, "ALERT_STYLES size");
 
-    // DIAMOND OPTIMIZATION: Progress Bar LUT
-    // Предвычисленные прогресс-бары для экономии CPU cycles
-    // Хранится во Flash, ноль RAM
-    // Исправлено: Перемещено в ConsoleStatusBar (где используется)
+    // Progress Bar LUT (pre-computed progress bars to save CPU cycles)
     struct ProgressBarEntry {
         uint8_t bars;
         const char* pattern;
@@ -1075,10 +923,7 @@ private:
     };
     static_assert(sizeof(PROGRESS_PATTERNS) / sizeof(ProgressBarEntry) == 9, "PROGRESS_PATTERNS size");
 
-    // DIAMOND OPTIMIZATION: Display Mode Rendering LUT
-    // Data-driven rendering for paint() - eliminates if statement
-    // Maps DisplayMode -> (visibility_mask, bar_color)
-    // Scott Meyers Item 15: Prefer constexpr to #define
+    // Display Mode Rendering LUT (data-driven rendering for paint())
     struct DisplayModeLayout {
         uint8_t visibility_mask;
         uint32_t bar_color;
@@ -1095,7 +940,7 @@ private:
     DisplayMode mode_ = DisplayMode::NORMAL;
     Rect parent_rect_;
     
-    // OPTIMIZATION: Cached text lengths to avoid strlen() in paint()
+    // Cached text lengths to avoid strlen() in paint()
     size_t last_progress_len_ = 0;
     size_t last_alert_len_ = 0;
     size_t last_normal_len_ = 0;
@@ -1133,7 +978,7 @@ public:
     bool should_use_mhz_labels() const;
 
 private:
-    // DIAMOND OPTIMIZATION: constexpr constants (stored in Flash)
+    // constexpr constants (stored in Flash)
     static constexpr int RULER_HEIGHT = 12;
     static constexpr int TICK_HEIGHT_MAJOR = 10;
     static constexpr int TICK_HEIGHT_MINOR = 6;
@@ -1152,8 +997,7 @@ private:
     void format_compact_label(char* buffer, size_t buffer_size, Frequency freq);
 };
 
-// FIX #28: Display data structure for UI/DSP separation
-// Diamond Code pattern: Separate data fetching from UI rendering
+// Display data structure for UI/DSP separation
 struct DisplayData {
     // Phase 1: Data fetched from scanner (DSP/logic layer)
     bool is_scanning;
@@ -1168,18 +1012,13 @@ struct DisplayData {
     uint32_t scan_cycles;
     bool has_detections;
     size_t color_idx;  // Computed color index for big display style
-    // 🔴 FIX #13: Timestamp to track when snapshot was captured
-    // This helps identify stale data in UI (snapshot is point-in-time)
+    // Timestamp to track when snapshot was captured
     systime_t snapshot_timestamp;
 };
 
 class DroneDisplayController : public View {
 public:
-    // ===========================================
-    // DIAMOND CODE: Spectrum Configuration Constants
-    // ===========================================
-    // Scott Meyers Item 15: Prefer constexpr to #define
-    // All constants stored in Flash (zero RAM overhead)
+    // Spectrum Configuration Constants (Flash storage, zero RAM overhead)
     
     /// @brief Default frequency width per spectrum bin (100 kHz)
     static constexpr uint32_t DEFAULT_EACH_BIN_SIZE_HZ = 100000;
@@ -1190,11 +1029,7 @@ public:
     /// @brief Default minimum color power level
     static constexpr uint8_t DEFAULT_MIN_COLOR_POWER = 0;
     
-    // ===========================================
-    // DIAMOND CODE: Histogram Color Thresholds
-    // ===========================================
-    // Thresholds for histogram color mapping (0-255 scale)
-    // Stored in Flash (zero RAM overhead)
+    // Histogram Color Thresholds (0-255 scale, Flash storage)
     
     /// @brief 20% threshold (51 = 0.20 * 255)
     static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_20PCT = 51;
@@ -1208,11 +1043,7 @@ public:
     /// @brief 80% threshold (204 = 0.80 * 255)
     static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_80PCT = 204;
     
-    // ===========================================
-    // DIAMOND CODE: Display Mode Enumeration
-    // ===========================================
-    // Scott Meyers Item 6: Prefer enums to #define
-    // Type-safe display mode selection
+    // Display Mode Enumeration (type-safe display mode selection)
 
     /// @brief Display mode enumeration for type safety
     enum class DisplayRenderMode : uint8_t {
@@ -1221,19 +1052,15 @@ public:
         HISTOGRAM = 2  ///< Histogram display mode
     };
 
-    // 🔴 OPTIMIZATION: Static buffer sizes to prevent heap allocation in constructor
+    // Static buffer sizes to prevent heap allocation in constructor
     static constexpr size_t SPECTRUM_ROW_SIZE = 240;
     static constexpr size_t RENDER_LINE_SIZE = 240;
     static constexpr size_t WATERFALL_SIZE = 40 * 240;  // 9.6KB waterfall buffer
     static constexpr size_t MAX_UI_DRONES = 3;  // Reduced from 16 to 3 for memory savings
     
-    // ===========================================
-    // DIAMOND OPTIMIZATION: Histogram Display Buffer
-    // ===========================================
-    // Zero-heap histogram display buffer (static storage in .bss)
+    // Histogram Display Buffer (zero-heap, static storage in .bss)
     struct HistogramDisplayBuffer {
-        // 64 bins, each storing count (0-255)
-        // Total: 64 bytes
+        // 64 bins, each storing count (0-255), total: 64 bytes
         alignas(4) uint8_t bin_counts[64];
         
         // Metadata for rendering
@@ -1270,10 +1097,10 @@ public:
     Text& text_drone_2() { return text_drone_2_; }
     Text& text_drone_3() { return text_drone_3_; }
 
-    // DIAMOND OPTIMIZATION: прямой доступ к массиву вместо switch (строки 2486-2491)
+    // Direct array access instead of switch
     static constexpr size_t NUM_DRONE_TEXT_WIDGETS = 3;
 
-    // ФАЗА 2.2: Возвращаем ссылку на статический массив
+    // Return reference to static array
     std::array<DisplayDroneEntry, MAX_UI_DRONES>& detected_drones() {
         return *reinterpret_cast<std::array<DisplayDroneEntry, MAX_UI_DRONES>*>(detected_drones_storage_);
     }
@@ -1281,20 +1108,15 @@ public:
         return *reinterpret_cast<const std::array<DisplayDroneEntry, MAX_UI_DRONES>*>(detected_drones_storage_);
     }
 
-    // ===========================================
-    // DIAMOND OPTIMIZATION: Histogram Display Methods
-    // ===========================================
+    // Histogram Display Methods
     
     /// @brief Update histogram display buffer with new data
-    /// @param analysis_histogram Histogram buffer from SpectralAnalyzer (64 bins)
-    /// @param noise_floor Noise floor value from spectral analysis
     void update_histogram_display(
         const SpectralAnalyzer::HistogramBuffer& analysis_histogram,
         uint8_t noise_floor
     ) noexcept;
     
     /// @brief Render histogram to display
-    /// @param painter Painter object for rendering
     void render_histogram(Painter& painter) noexcept;
 
     /// @brief Clear the histogram display area
@@ -1336,20 +1158,16 @@ public:
     void apply_display_settings(const DroneAnalyzerSettings& settings);
     CompactFrequencyRuler& compact_frequency_ruler() { return compact_frequency_ruler_; }
 
-    // 🔴 FIX: Buffer allocation/deallocation (deferred from constructor)
+    // Buffer allocation/deallocation (deferred from constructor)
     void allocate_buffers();
     void deallocate_buffers();
     
-    // 🔴 DIAMOND OPTIMIZATION: Buffer validation methods (защита от UB)
+    // Buffer validation methods (protection against UB)
     bool are_buffers_allocated() const;
     bool are_buffers_valid() const;
     bool allocate_buffers_from_pool();
 
-    // ===========================================
-    // ФАЗА 1.2: МЕТОДЫ ДОСТУПА К СТАТИЧЕСКИМ БУФЕРАМ
-    // ===========================================
-    // Возвращаем ссылку на статический массив
-    // О(1) доступ, нет dereference overhead
+    // Methods for accessing static buffers (O(1) access, no dereference overhead)
 
     using SpectrumRowBuffer = std::array<Color, SPECTRUM_ROW_SIZE>;
     using RenderLineBuffer = std::array<Color, RENDER_LINE_SIZE>;
@@ -1377,18 +1195,14 @@ public:
     }
 
 
-    // 🔴 FIX: Public methods for parent View message delegation
+    // Public methods for parent View message delegation
     void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
         spectrum_fifo_ = fifo;
     }
 
-    // 🔴 REMOVED: frequency_ruler_ member (Dead Code - duplicate never used)
-    // REASON: FrequencyRuler class was removed (duplicate of CompactFrequencyRuler)
-    //         Only compact_frequency_ruler_ is used in apply_display_settings()
-    //
-    // FrequencyRuler frequency_ruler_{{0, 68, screen_width, 12}};
+    // REMOVED: frequency_ruler_ member (Dead Code - duplicate never used)
 
-    // DIAMOND OPTIMIZATION: constexpr LUT в Flash вместо switch/if-else (экономия ROM)
+    // constexpr LUT in Flash instead of switch/if-else (saves ROM)
     static constexpr RulerStyle RULER_STYLE_LUT[] = {
         RulerStyle::COMPACT_GHZ,  // 0
         RulerStyle::COMPACT_GHZ,  // 1
@@ -1399,7 +1213,7 @@ public:
         RulerStyle::SPACED_GHZ    // 6
     };
 
-    // DIAMOND OPTIMIZATION: enum class для типов сигналов (вместо string comparison)
+    // enum class for signal types (instead of string comparison)
     enum class SignalType : uint8_t {
         DEFAULT = 0,
         DIGITAL = 1,
@@ -1407,7 +1221,7 @@ public:
         NOISE = 3
     };
 
-    // DIAMOND OPTIMIZATION: constexpr LUT для типов сигналов (без if-else)
+    // constexpr LUT for signal types (no if-else)
     static constexpr struct SignalTypeConfig {
         const char* name;
         Color color;
@@ -1419,7 +1233,7 @@ public:
     };
     static_assert(sizeof(SIGNAL_TYPE_CONFIG) == sizeof(SignalTypeConfig) * 4, "SIGNAL_TYPE_CONFIG size");
 
-    // DIAMOND OPTIMизация: constexpr LUT для цветов big_display (без каскадного if-else)
+    // constexpr LUT for big_display colors (no cascading if-else)
     static constexpr const Color BIG_DISPLAY_COLORS[] = {
         Color::dark_grey(),      // Idle/Default
         Color::green(),          // Scanning (Green)
@@ -1428,14 +1242,14 @@ public:
         Color::red()            // High+ threat (Red)
     };
 
-    // DIAMOND OPTIMIZATION: конфигурация для bar spectrum (заменяет waterfall)
+    // Bar spectrum configuration (replaces waterfall)
     struct BarSpectrumConfig {
         static constexpr int WATERFALL_Y_START = 81;
         static constexpr int BAR_HEIGHT_MAX = DroneConstants::MINI_SPECTRUM_HEIGHT;
         static constexpr uint8_t NOISE_THRESHOLD = 10;
-        static constexpr uint8_t PEAK_SHARPNESS_THRESHOLD = 15; // Баланс: 15 единиц
+        static constexpr uint8_t PEAK_SHARPNESS_THRESHOLD = 15;
 
-        // Цвета для bar spectrum (в Flash)
+        // Bar spectrum colors (Flash storage)
         static constexpr Color BAR_COLORS[] = {
             Color::blue(),          // 0: Wideband/Plateau (WiFi, Video) - Blue
             Color::red(),           // 1: Sharp Peak (Drone Control) - Red
@@ -1443,11 +1257,7 @@ public:
         };
     };
     
-    // ===========================================
-    // DIAMOND OPTIMIZATION: Histogram Color LUT (Flash storage)
-    // ===========================================
-    // Pre-computed color gradient for histogram visualization
-    // Scott Meyers Item 15: Prefer constexpr to #define
+    // Histogram Color LUT (Flash storage)
     struct HistogramColorConfig {
         // 5-level gradient from noise floor to peak signal
         static constexpr Color HISTOGRAM_COLORS[] = {
@@ -1467,7 +1277,7 @@ public:
 
     static constexpr const char* DRONE_DISPLAY_FORMAT = "%s %s %-4lddB %c";
 
-    // DIAMOND OPTIMIZATION: constexpr Style для big_display (вместо локальных массивов)
+    // constexpr Style for big_display (instead of local arrays)
     static constexpr Style BIG_DISPLAY_STYLES[] = {
         {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[0]},
         {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[1]},
@@ -1476,17 +1286,12 @@ public:
         {font::fixed_8x16, Color::black(), BIG_DISPLAY_COLORS[4]}
     };
 
-    // ===========================================
-    // DIAMOND OPTIMIZATION: Frequency Formatting LUT
-    // ===========================================
-    // Scott Meyers Item 15: Prefer constexpr to #define
-    // Устраняет каскадный if/else в render_drone_text_display()
-    // Хранится во Flash, ноль RAM, O(1) lookup
+    // Frequency Formatting LUT (Flash storage, O(1) lookup)
     struct FrequencyFormatEntry {
         int64_t min_freq;
         const char* format;
-        int64_t divider;       // Делитель для целой части
-        int64_t decimal_div;  // Делитель для дробной части
+        int64_t divider;       // Integer part divider
+        int64_t decimal_div;  // Fractional part divider
     };
 
     static constexpr FrequencyFormatEntry FREQ_FORMAT_TABLE[] = {
@@ -1516,53 +1321,41 @@ private:
     Text text_drone_3_{{screen_width - 120, 178, 120, 16}, ""};
     Text text_signal_type_{{screen_width - 80, 80, 80, 16}, "SIGNAL: --"};  // Debug: Signal type marker
 
-    // DIAMOND OPTIMизация: хелпер для индексного доступа к виджетам (без switch)
+    // Helper for indexed widget access (no switch)
     Text* drone_text_widget(size_t index) {
         static Text* const widgets[] = {&text_drone_1_, &text_drone_2_, &text_drone_3_};
         return (index < NUM_DRONE_TEXT_WIDGETS) ? widgets[index] : nullptr;
     }
     
-    // OPTIMIZATION: Cached drone display strings for Check-Before-Update pattern
-    // Avoids redundant Text::set() calls when content hasn't changed
+    // Cached drone display strings for Check-Before-Update pattern
     char last_drone_text_0_[64] = {0};
     char last_drone_text_1_[64] = {0};
     char last_drone_text_2_[64] = {0};
 
     CompactFrequencyRuler compact_frequency_ruler_{{0, 68, screen_width, 12}};
-    // 🔴 REMOVED: frequency_ruler_ member (Dead Code - duplicate never used)
-    // FrequencyRuler frequency_ruler_{{0, 68, screen_width, 12}};
+    // REMOVED: frequency_ruler_ member (Dead Code)
 
-    // ===========================================
-    // ФАЗА 2.1: СТАТИЧЕСКИЙ МАССИВ DETECTED_DRONES
-    // ===========================================
-    // Diamond Code: Zero heap allocation
-    // Размер: MAX_UI_DRONES * sizeof(DisplayDroneEntry) = 3 * ~80 = ~240 bytes
+    // Static array DETECTED_DRONES (zero heap allocation, ~240 bytes)
 
-    // Diamond Code: Member declaration order MUST match constructor initializer list order
-    // Declaration order: displayed_drones_ -> detected_drones_count_
-    // Constructor order: displayed_drones_() -> detected_drones_count_(0)
+    // Member declaration order MUST match constructor initializer list order
     std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
 
-    // Статический массив вместо unique_ptr
+    // Static array instead of unique_ptr
     alignas(alignof(DisplayDroneEntry))
     static DisplayDroneEntry detected_drones_storage_[MAX_UI_DRONES];
 
-    // Счётчик используемых элементов
+    // Counter for used elements
     size_t detected_drones_count_ = 0;
 
 
-    // ===========================================
-    // ФАЗА 1.1: СТАТИЧЕСКИЕ БУФЕРЫ (Zero-Heap)
-    // ===========================================
+    // Static buffers (Zero-Heap)
     // Diamond Code Principle: All data must be static or stack-based
-    // Используем статические массивы вместо unique_ptr
-    // FIX #1: Removed inline to prevent ~12-16KB RAM bloat
 
-    // Статические буферы (хранятся в .bss, инициализируются нулями)
-    // Размер: SPECTRUM_ROW_SIZE * sizeof(Color) = 240 * 2 = 480 байт
-    // Размер: RENDER_LINE_SIZE * sizeof(Color) = 240 * 2 = 480 байт
-    // Размер: 200 * sizeof(uint8_t) = 200 байт
-    // Итого: ~1.16 KB в .bss вместо heap allocation
+    // Static buffers (stored in .bss, initialized to zeros)
+    // SPECTRUM_ROW_SIZE * sizeof(Color) = 240 * 2 = 480 bytes
+    // RENDER_LINE_SIZE * sizeof(Color) = 240 * 2 = 480 bytes
+    // 200 * sizeof(uint8_t) = 200 bytes
+    // Total: ~1.16 KB in .bss instead of heap allocation
 
     alignas(alignof(std::array<Color, SPECTRUM_ROW_SIZE>))
     static Color spectrum_row_buffer_storage_[SPECTRUM_ROW_SIZE];
@@ -1624,34 +1417,30 @@ private:
 
     SpectrumConfig spectrum_config_;
 
-    // 🎯 Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
-    // UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type))
-    // UnifiedColorLookup::drone(static_cast<uint8_t>(type))
-    // UnifiedColorLookup::threat(static_cast<uint8_t>(level))
-    // UnifiedStringLookup::threat_name(static_cast<uint8_t>(level))
+    // Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
 
-    // DIAMOND OPTIMIZATION: анализ формы сигнала для bar spectrum (без SpectralAnalyzer)
+    // Signal shape analysis for bar spectrum (no SpectralAnalyzer)
     inline size_t get_bar_color_index(size_t x, uint8_t power) const {
-        // 🔴 ФАЗА 1.5: Для статических буферов проверка упрощается
+        // For static buffers, check is simplified
         if (!buffers_allocated_) {
             return 2; // Unknown/Noise (Grey)
         }
 
-        // Острый пик (narrowband drone control): текущее > соседей на 15+
-        // Широкий сигнал (wideband video/WiFi): все примерно равны
+        // Sharp peak (narrowband drone control): current > neighbors by 15+
+        // Wideband signal (wideband video/WiFi): all approximately equal
         const auto& levels = spectrum_power_levels();
         if (x > 0 && x < levels.size() - 1) {
             uint8_t prev = levels[x - 1];
             uint8_t next = levels[x + 1];
 
-            // Логика "Острого пика": текущий ВЫШЕ соседей на 15+ единиц
+            // Sharp peak logic: current HIGHER than neighbors by 15+ units
             if (power > prev + BarSpectrumConfig::PEAK_SHARPNESS_THRESHOLD &&
                 power > next + BarSpectrumConfig::PEAK_SHARPNESS_THRESHOLD) {
                 return 1; // Sharp Peak (Red)
             }
         }
 
-        // Широкий сигнал: Blue
+        // Wideband signal: Blue
         return 0; // Wideband (Blue)
     }
 
@@ -1694,8 +1483,7 @@ public:
                      ::AudioManager& audio_mgr);
     ~DroneUIController();
 
-    // Set display_controller after construction - allows flexible initialization order
-    // Must be called AFTER display_controller_ is constructed in parent class
+    // Set display_controller after construction
     void set_display_controller(DroneDisplayController* display_controller) {
         display_controller_ = display_controller;
     }
@@ -1723,9 +1511,7 @@ private:
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
     ::AudioManager& audio_mgr_;
-    // Diamond Code: Use volatile bool for thread-safe flag access
     // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-    // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
     volatile bool scanning_active_{false};
     DroneDisplayController* display_controller_ = nullptr;
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
@@ -1759,10 +1545,7 @@ public:
     /// @brief Toggle between spectrum and histogram display modes
     void on_toggle_display_mode();
 
-    // ===========================================
-    // INITIALIZATION STATE
-    // ===========================================
-    // 🔴 ФАЗА 2.1: Deferred initialization state machine
+    // Deferred initialization state machine
     enum class InitState : uint8_t {
         CONSTRUCTED = 0,           // Constructor completed
         BUFFERS_ALLOCATED,         // display buffers heap-allocated
@@ -1777,9 +1560,7 @@ public:
      };
 
  private:
-    // 🔴 DIAMOND OPTIMIZATION: Forward declarations for phase initialization methods
-    // Scott Meyers Item 11: Handle assignment to self in operator=
-    // These methods declared here for use in constexpr LUT
+    // Forward declarations for phase initialization methods
     void init_phase_allocate_buffers();
     void init_phase_load_database();
     void init_phase_init_hardware();
@@ -1787,22 +1568,14 @@ public:
     void init_phase_load_settings();
     void init_phase_finalize();
 
-    // ===========================================
-    // INITIALIZATION TIMING CONSTANTS
-    // ===========================================
-    // Scott Meyers Item 15: Prefer constexpr to #define
-    // Eliminates magic numbers, improves maintainability
+    // Initialization timing constants (eliminates magic numbers)
     struct InitTiming {
-        // ===========================================
-        // ФАЗА 4.1: ИСПРАВЛЕННЫЕ ЗАДЕРЖКИ
-        // ===========================================
-        // Задержки указывают, когда ЗАПУСТИТЬ фазу от начала
-        // Каждая фаза должна иметь достаточное время для выполнения
+        // Corrected delays (each phase must have sufficient time to execute)
 
         static constexpr uint32_t TIMEOUT_MS = 15000;  // 15 сек (увеличено)
         static constexpr uint32_t PHASE_INTERVAL_MS = 50;
 
-        // Кумулятивные задержки (каждая фаза + минимум 200мс на выполнение)
+        // Cumulative delays (each phase + minimum 200ms for execution)
         static constexpr uint32_t PHASE_DELAY_0_MS = 50;     // Allocate buffers
         static constexpr uint32_t PHASE_DELAY_1_MS = 300;    // Database (50 + 250 for async)
         static constexpr uint32_t PHASE_DELAY_2_MS = 500;    // Hardware (300 + 200)
@@ -1814,7 +1587,7 @@ public:
     };
 
 
-    // DIAMOND OPTIMIZATION: constexpr LUT для сообщений инициализации в Flash
+    // constexpr LUT for initialization messages in Flash
     static constexpr const char* const INIT_STATUS_MESSAGES[] = {
         "Starting up...",      // CONSTRUCTED = 0
         "Buffers ready",       // BUFFERS_ALLOCATED = 1
@@ -1832,13 +1605,12 @@ public:
         "ERROR"               // INITIALIZATION_ERROR = 8
     };
 
-    // 🔴 DIAMOND OPTIMIZATION: constexpr LUT для фаз инициализации (хранится во Flash)
-    // Scott Meyers Item 15: Prefer constexpr to #define
+    // constexpr LUT for initialization phases (Flash storage)
  
     struct InitPhaseConfig {
-        const char* const name;           // Строка во Flash (const char*)
-        uint32_t delay_ms;               // Задержка в мс
-        void (EnhancedDroneSpectrumAnalyzerView::*init_func)();  // Сырой указатель на метод
+        const char* const name;           // String in Flash (const char*)
+        uint32_t delay_ms;               // Delay in ms
+        void (EnhancedDroneSpectrumAnalyzerView::*init_func)();  // Raw method pointer
     };
 
     static constexpr InitPhaseConfig INIT_PHASES[] = {
@@ -1851,7 +1623,7 @@ public:
     };
 
 
-    // 🔴 DIAMOND OPTIMIZATION: constexpr массив для сообщений об ошибках (Flash)
+    // constexpr array for error messages (Flash storage)
     EDA_FLASH_CONST static constexpr const char* const ERROR_MESSAGES[] = {
         "No error",           // NONE = 0
         "Init timeout",       // GENERAL_TIMEOUT = 1
@@ -1867,29 +1639,8 @@ public:
 
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
-    // ===========================================
-    // INITIALIZATION ORDER AND DEPENDENCIES
-    // ===========================================
-    // Members are initialized in declaration order by C++ standard.
-    // The following order ensures proper initialization:
-    //
-    // 1. nav_ (reference) - already initialized by caller
-    // 2. settings_ - default-constructed, no dependencies
-    // 3. hardware_ - initialized with SpectrumMode::MEDIUM, no dependencies
-    // 4. scanner_ - initialized with default settings, depends on settings_ only
-    // 5. audio_ - default-constructed, no dependencies
-    // 6. ui_controller_ - initialized with nav_, hardware_, scanner_, audio_
-    //    - display_controller_ is NOT passed to constructor
-    //    - display_controller_ is set via set_display_controller() AFTER construction
-    //    - This makes initialization order independent of declaration order
-    // 7. display_controller_ - initialized with rect, no dependencies
-    // 8. scanning_coordinator_ - initialized with nav_, hardware_, scanner_, display_controller_, audio_
-    //
-    // CRITICAL: ui_controller_ stores display_controller_ as a POINTER (not reference)
-    // This allows ui_controller_ to be constructed before display_controller_.
-    // The pointer is set via set_display_controller() in constructor body.
-    //
-    // Stack-allocated objects following Mayhem pattern
+    // Initialization order ensures proper initialization
+    // CRITICAL: ui_controller_ stores display_controller_ as POINTER (not reference)
     DroneHardwareController hardware_;
     DroneScanner scanner_;
     ::AudioManager audio_;
@@ -1948,11 +1699,10 @@ public:
                 return;
             }
 
-            // Normal operation mode
-            // 1. Process spectrum data in display controller
+            // Normal operation mode: Process spectrum data in display controller
             display_controller_.process_frame_sync();
 
-            // 2. Handle scanner updates in main view
+            // Handle scanner updates in main view
             this->handle_scanner_update();
         }
     };
@@ -1969,16 +1719,7 @@ public:
     void set_scanning_mode_from_index(size_t index);
     void add_ui_elements();
 
-    // ===========================================
-    // DIAMOND OPTIMIZATION: Static Histogram Callback
-    // ===========================================
-    // Static callback function for histogram data flow (no lambda captures)
-    // This allows passing 'this' pointer via user_data parameter
-    // Diamond Code: Function pointer (no heap allocation, no std::function)
-    //
-    // @param histogram Histogram buffer from SpectralAnalyzer (64 bins)
-    // @param noise_floor Noise floor value from spectral analysis
-    // @param user_data User data pointer (typically 'this' pointer to view instance)
+    // Static histogram callback (no lambda captures, no heap allocation)
     static void static_histogram_callback(
         const SpectralAnalyzer::HistogramBuffer& histogram,
         uint8_t noise_floor,
@@ -1992,17 +1733,13 @@ public:
     // Note: std::function may allocate on heap, but this is unavoidable
     // with the Mayhem UI framework's callback design
 
-    // 🔴 ФАЗА 2.2: Deferred initialization methods
+    // Deferred initialization methods
     void step_deferred_initialization();
     void update_init_progress_display();
 
-    // ===========================================
-    // STAGE 4 FIX: Stack Usage Monitoring
-    // ===========================================
+    // Stack Usage Monitoring
     /**
      * @brief Check stack usage and log warnings if low
-     * @param thread_name Name of the thread for logging
-     * @param stack_size Total stack size for the thread
      */
     void check_stack_usage(const char* thread_name, size_t stack_size);
 
@@ -2014,13 +1751,13 @@ public:
      */
     void check_memory_pressure();
 
-    // 🔴 ФАЗА 2.3: Initialization state variables
+    // Initialization state variables
     InitState init_state_ = InitState::CONSTRUCTED;
     systime_t init_start_time_ = 0;
     systime_t last_init_progress_ = 0;
     bool initialization_in_progress_ = false;
     
-    // 🔴 DIAMOND OPTIMIZATION: Error handling enum
+    // Error handling enum
     enum class InitError : uint8_t {
         NONE = 0,
         GENERAL_TIMEOUT = 1,
@@ -2044,7 +1781,7 @@ private:
     systime_t timer_start_ = 0;
 };
 
-// --- НОВЫЙ КЛАСС ДЛЯ НАСТРОЙКИ ДИАПАЗОНА ---
+// New class for frequency range setup
 class FrequencyRangeSetupView : public View {
 public:
     FrequencyRangeSetupView(NavigationView& nav, DroneUIController& controller);
@@ -2055,7 +1792,7 @@ private:
     NavigationView& nav_;
     DroneUIController& controller_;
     
-    // Виджеты интерфейса
+    // Interface widgets
     Text text_title_ { { 4, 4, 224, 16 }, "Panoramic Spectrum" };
     
     Text label_min_ { { 4, 36, 80, 16 }, "Start Freq:" };

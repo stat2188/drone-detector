@@ -1,20 +1,5 @@
 /**
  * Diamond Code: Safe Type Casting Utilities
- *
- * STAGE 4 FIXES IMPLEMENTED:
- * - SafeCast: Type-safe numeric conversions with bounds checking
- * - safe_reinterpret_cast: Safe pointer casting with alignment checks
- * - StrictMode: Compile-time enforcement for critical conversions
- * - will_overflow/will_underflow: Pre-check helpers for conversions
- *
- * DIAMOND CODE STANDARDS:
- * - Zero-heap allocation
- * - Compile-time validation (static_assert)
- * - Runtime bounds checking (assert in debug, no-op in release)
- * - constexpr for compile-time evaluation
- * - noexcept for exception-free operation
- * - Guard clauses for early error returns
- * - Doxygen comments for public APIs
  */
 
 #ifndef EDA_SAFECAST_HPP_
