@@ -90,7 +90,7 @@ namespace HeapMonitor {
     /// @note Logs free heap size and warnings if low
     inline void log_heap_status() noexcept {
         size_t free_heap = get_free_heap();
-        constexpr size_t HEAP_WARNING_THRESHOLD = 8192;  // 8KB warning threshold
+        [[maybe_unused]] constexpr size_t HEAP_WARNING_THRESHOLD = 8192;  // 8KB warning threshold
         constexpr size_t HEAP_CRITICAL_THRESHOLD = 4096;  // 4KB critical threshold
 
         if (free_heap < HEAP_CRITICAL_THRESHOLD) {
@@ -226,35 +226,35 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
         data_mutex(),                       // Declared 2nd
         scanning_active_(false),           // Declared 3rd
         histogram_callback_(nullptr),       // Declared 4th
-        histogram_callback_user_data_(nullptr), // Declared 5th
-        entries_to_scan_(),                 // Declared 6th
-        stale_indices_(),                   // Declared 7th
-        freq_db_ptr_(nullptr),              // Declared 8th
-        tracked_drones_ptr_(nullptr),       // Declared 9th
-        freq_db_constructed_(false),         // Declared 10th
-        tracked_drones_constructed_(false), // Declared 11th
-        freq_db_loaded_(false),             // Declared 12th
-        current_db_index_(0),               // Declared 13th
-        last_scanned_frequency_(0),         // Declared 14th
-        last_detection_log_time_(0),        // Declared 15th
-        db_loading_thread_(nullptr),        // Declared 16th
-        db_loading_active_{false},          // Declared 17th
-        initialization_complete_{false},    // Declared 18th
-        scan_cycles_(0),                    // Declared 19th
-        total_detections_(0),               // Declared 20th
-        scanning_mode_(DroneScanner::ScanningMode::DATABASE), // Declared 21st
-        is_real_mode_(true),                // Declared 22nd
-        tracked_count_(0),                  // Declared 23rd
-        approaching_count_(0),              // Declared 24th
-        receding_count_(0),                 // Declared 25th
-        static_count_(0),                   // Declared 26th
-        max_detected_threat_(ThreatLevel::NONE), // Declared 27th
-        last_valid_rssi_(-120),             // Declared 28th
-        wideband_scan_data_(),              // Declared 29th
-        detection_logger_(),                // Declared 30th
-        detection_ring_buffer_(),           // Declared 31st
-        spectrum_data_(),                   // Declared 32nd
-        histogram_buffer_(),                // Declared 33rd
+        entries_to_scan_(),                 // Declared 5th (FIXED: entries_to_scan_ before histogram_callback_user_data_)
+        stale_indices_(),                   // Declared 6th
+        freq_db_ptr_(nullptr),              // Declared 7th
+        tracked_drones_ptr_(nullptr),       // Declared 8th
+        freq_db_constructed_(false),         // Declared 9th
+        tracked_drones_constructed_(false), // Declared 10th
+        freq_db_loaded_(false),             // Declared 11th
+        current_db_index_(0),               // Declared 12th
+        last_scanned_frequency_(0),         // Declared 13th
+        last_detection_log_time_(0),        // Declared 14th
+        db_loading_thread_(nullptr),        // Declared 15th
+        db_loading_active_{false},          // Declared 16th
+        initialization_complete_{false},    // Declared 17th
+        scan_cycles_(0),                    // Declared 18th
+        total_detections_(0),               // Declared 19th
+        scanning_mode_(DroneScanner::ScanningMode::DATABASE), // Declared 20th
+        is_real_mode_(true),                // Declared 21st
+        tracked_count_(0),                  // Declared 22nd
+        approaching_count_(0),              // Declared 23rd
+        receding_count_(0),                 // Declared 24th
+        static_count_(0),                   // Declared 25th
+        max_detected_threat_(ThreatLevel::NONE), // Declared 26th
+        last_valid_rssi_(-120),             // Declared 27th
+        wideband_scan_data_(),              // Declared 28th
+        detection_logger_(),                // Declared 29th
+        detection_ring_buffer_(),           // Declared 30th
+        spectrum_data_(),                   // Declared 31st
+        histogram_buffer_(),                // Declared 32nd
+        histogram_callback_user_data_(nullptr), // Declared 33rd (FIXED: after histogram_buffer_)
         settings_(std::move(settings)),     // Declared 34th (DIAMOND FIX: Move settings into member)
         last_scan_error_(nullptr)          // Declared 35th
 {
@@ -550,7 +550,9 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
         (this->*DroneScanner::SCAN_FUNCTIONS[mode_idx])(hardware);  // Вызов метода через указатель
     }
 
-    scan_cycles_++;
+    // Diamond Code: Use GCC __atomic_fetch_add for hardware atomic increment on ARM Cortex-M4
+    // This provides thread-safe counter without libatomic dependency
+    __atomic_fetch_add(&scan_cycles_, 1, __ATOMIC_RELAXED);
 
     // Adaptive sleep based on current situation
     {
@@ -855,7 +857,9 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     {
         MutexLock lock(data_mutex);
 
-        total_detections_++; // Protect counter
+        // Diamond Code: Use GCC __atomic_fetch_add for hardware atomic increment on ARM Cortex-M4
+        // This provides thread-safe counter without libatomic dependency
+        __atomic_fetch_add(&total_detections_, 1, __ATOMIC_RELAXED);
 
         // BUG-008 FIX: Hash can produce values up to 72000 (for 7.2GHz),
         // but DetectionBufferConstants::MAX_ENTRIES is only 16.
@@ -926,7 +930,9 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
     {
         MutexLock lock(data_mutex);
 
-        total_detections_++; // Protect counter
+        // Diamond Code: Use GCC __atomic_fetch_add for hardware atomic increment on ARM Cortex-M4
+        // This provides thread-safe counter without libatomic dependency
+        __atomic_fetch_add(&total_detections_, 1, __ATOMIC_RELAXED);
 
         // Guard clause: Prevent division by zero
         if (entry.frequency_a == 0) {
@@ -1040,7 +1046,9 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     {
         MutexLock lock(data_mutex);
 
-        total_detections_++;
+        // Diamond Code: Use GCC __atomic_fetch_add for hardware atomic increment on ARM Cortex-M4
+        // This provides thread-safe counter without libatomic dependency
+        __atomic_fetch_add(&total_detections_, 1, __ATOMIC_RELAXED);
 
         // Guard clause: Prevent division by zero
         if (entry.frequency_a == 0) {
@@ -1731,7 +1739,9 @@ bool DroneScanner::is_database_loading_complete() const {
 
 // 🔴 FIX #3: Check if initialization completed (thread-safe)
 bool DroneScanner::is_initialization_complete() const {
-    return initialization_complete_.load(std::memory_order_acquire);
+    // Diamond Code: Use raii::SystemLock for atomic read of volatile bool on ARM Cortex-M4
+    raii::SystemLock lock;
+    return initialization_complete_;
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
@@ -1860,8 +1870,8 @@ void DroneDetectionLogger::end_session() {
 bool DroneDetectionLogger::log_detection_async(const DetectionLogEntry& entry) {
     MutexLock lock(mutex_); // Блокировка на микросекунды
 
-    // 🔴 FIX #11: Use atomic operations for thread-safe access
-    if (is_full_.load(std::memory_order_relaxed)) {
+    // Diamond Code: Direct volatile access is safe because mutex_ provides thread safety
+    if (is_full_) {
         // 🔴 FIX: Circular buffer - overwrite oldest entry instead of dropping
         // This ensures we always have the most recent data for analysis
         // Track overwrites for statistics and debugging
@@ -1875,16 +1885,16 @@ bool DroneDetectionLogger::log_detection_async(const DetectionLogEntry& entry) {
         }
 
         // Overwrite oldest entry (tail position)
-        tail_.store((tail_.load(std::memory_order_relaxed) + 1) % BUFFER_SIZE, std::memory_order_relaxed);
+        tail_ = (tail_ + 1) % BUFFER_SIZE;
     }
 
     // Копируем данные в буфер
-    size_t current_head = head_.load(std::memory_order_relaxed);
+    size_t current_head = head_;
     ring_buffer_[current_head] = entry;
-    head_.store((current_head + 1) % BUFFER_SIZE, std::memory_order_relaxed);
+    head_ = (current_head + 1) % BUFFER_SIZE;
 
-    if (head_.load(std::memory_order_relaxed) == tail_.load(std::memory_order_relaxed)) {
-        is_full_.store(true, std::memory_order_relaxed);
+    if (head_ == tail_) {
+        is_full_ = true;
     }
 
     // Сигнализируем рабочему потоку
@@ -2010,15 +2020,15 @@ void DroneDetectionLogger::worker_loop() {
 
         {
             MutexLock lock(mutex_);
-            if (head_.load(std::memory_order_relaxed) != tail_.load(std::memory_order_relaxed) ||
-                is_full_.load(std::memory_order_relaxed)) {
-                entry_to_write = ring_buffer_[tail_.load(std::memory_order_relaxed)];
-                tail_.store((tail_.load(std::memory_order_relaxed) + 1) % BUFFER_SIZE, std::memory_order_relaxed);
-                is_full_.store(false, std::memory_order_relaxed);
+            // Diamond Code: Direct volatile access is safe because mutex_ provides thread safety
+            if (head_ != tail_ || is_full_) {
+                entry_to_write = ring_buffer_[tail_];
+                tail_ = (tail_ + 1) % BUFFER_SIZE;
+                is_full_ = false;
                 has_data = true;
 
                 // Проверяем есть ли ещё данные
-                has_more_data = (head_.load(std::memory_order_relaxed) != tail_.load(std::memory_order_relaxed));
+                has_more_data = (head_ != tail_);
             }
             // 🔴 FIX #12: Signal semaphore while still holding mutex
             // This prevents race condition where buffer state changes between
@@ -4716,13 +4726,13 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
  * @brief Check stack usage and log warnings if low
  * @param thread_name Name of the thread for logging
  * @param stack_size Total stack size for the thread
- * 
+ *
  * @note This function uses the ChibiOS stack fill pattern (0x55) to estimate
  *       free stack space. This is compatible with ChibiOS versions that have
  *       CH_DBG_FILL_THREADS enabled. If stack filling is not enabled, this
  *       function will conservatively report 0 free bytes.
  */
-void EnhancedDroneSpectrumAnalyzerView::check_stack_usage(const char* thread_name, size_t stack_size) {
+void EnhancedDroneSpectrumAnalyzerView::check_stack_usage([[maybe_unused]] const char* thread_name, size_t stack_size) {
     // Get current thread pointer using available ChibiOS API
     Thread* current_thread = chThdSelf();
     

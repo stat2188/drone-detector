@@ -5,7 +5,6 @@
 #include <array>
 #include <memory>
 #include <cstdio>
-#include <atomic>
 
 #include "ui_drone_common_types.hpp"
 #include "ui_signal_processing.hpp"
@@ -145,6 +144,23 @@ public:
         // Initialize array with "silence" (-120 dBm), not zeros
         std::fill(std::begin(rssi_history_), std::end(rssi_history_), EDA::Constants::RSSI_SILENCE_DBM);
         std::fill(std::begin(timestamp_history_), std::end(timestamp_history_), 0);
+    }
+
+    // Diamond Code: Explicit copy constructor to avoid deprecated implicit copy constructor warning
+    TrackedDrone(const TrackedDrone& other) : frequency(other.frequency),
+                     drone_type(other.drone_type),
+                     threat_level(other.threat_level),
+                     update_count(other.update_count),
+                     last_seen(other.last_seen),
+                     rssi(other.rssi),
+                     rssi_history_{},
+                     timestamp_history_{},
+                     history_index_(other.history_index_) {
+        // Copy history arrays
+        for(size_t i=0; i<MAX_HISTORY; i++) {
+            rssi_history_[i] = other.rssi_history_[i];
+            timestamp_history_[i] = other.timestamp_history_[i];
+        }
     }
 
     TrackedDrone& operator=(const TrackedDrone& other) {
@@ -352,8 +368,10 @@ private:
     Thread* worker_thread_ = nullptr;           // Declared 1st
     mutable Mutex mutex_;                       // Declared 2nd
     Semaphore data_ready_;                      // Declared 3rd
-    // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
-    std::atomic<bool> worker_should_run_{false};    // Declared 4th
+    // Diamond Code: Use volatile bool for thread-safe flag access
+    // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+    // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+    volatile bool worker_should_run_{false};    // Declared 4th
 
     // STACK USAGE DOCUMENTATION: Worker Thread Stack
     // Stack size: 8192 bytes (8KB)
@@ -385,10 +403,11 @@ private:
     // --- ASYNC BUFFERING ---
     static constexpr size_t BUFFER_SIZE = 32;   // Declared 11th
     std::array<DetectionLogEntry, BUFFER_SIZE> ring_buffer_; // Declared 12th
-    // 🔴 FIX #11: Use atomic for thread-safe access without mutex dependency
-    std::atomic<size_t> head_{0};              // Declared 13th
-    std::atomic<size_t> tail_{0};              // Declared 14th
-    std::atomic<bool> is_full_{false};         // Declared 15th
+    // Diamond Code: Use volatile with mutex protection for thread-safe ring buffer access
+    // volatile prevents compiler optimization; mutex_ provides thread synchronization
+    volatile size_t head_{0};              // Declared 13th
+    volatile size_t tail_{0};              // Declared 14th
+    volatile bool is_full_{false};         // Declared 15th
 
     // Helper buffer for string formatting (avoid heap allocation)
     char line_buffer_[EDA::Constants::ERROR_MESSAGE_BUFFER_SIZE];                     // Declared last
@@ -624,8 +643,10 @@ struct DetectionParams {
 
      Thread* scanning_thread_ = nullptr;
      mutable Mutex data_mutex;
-     // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
-     std::atomic<bool> scanning_active_{false};
+     // Diamond Code: Use volatile bool for thread-safe flag access
+     // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+     // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+     volatile bool scanning_active_{false};
     
     // ===========================================
     // DIAMOND OPTIMIZATION: Histogram Callback
@@ -681,16 +702,24 @@ struct DetectionParams {
         bool freq_db_loaded_ = false;
         size_t current_db_index_ = 0;
         Frequency last_scanned_frequency_ = 0;
-        std::atomic<systime_t> last_detection_log_time_{0};
+        // Diamond Code: Use volatile for thread-safe timestamp access
+        // volatile uint32_t reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+        // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+        volatile systime_t last_detection_log_time_{0};
 
         // 🔴 FIX: Async database loading to prevent UI freeze
         Thread* db_loading_thread_ = nullptr;
-        // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
-        std::atomic<bool> db_loading_active_{false};
+        // Diamond Code: Use volatile bool for thread-safe flag access
+        // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+        // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+        volatile bool db_loading_active_{false};
 
         // 🔴 FIX #3: Initialization complete flag for async initialization coordination
         // Ensures thread-safe checking of initialization state
-        std::atomic<bool> initialization_complete_{false};
+        // Diamond Code: Use volatile bool for thread-safe flag access
+        // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+        // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+        volatile bool initialization_complete_{false};
 
        // ===========================================
         // ФАЗА 5.1: СТАТИЧЕСКИЙ СТЕК ДЛЯ ПОТОКА
@@ -702,11 +731,17 @@ struct DetectionParams {
 
           static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
-      std::atomic<uint32_t> scan_cycles_{0};
-      std::atomic<uint32_t> total_detections_{0};
+      // Diamond Code: Use volatile uint32_t with GCC __atomic_fetch_add for hardware atomic operations
+      // Uses ARM Cortex-M4 LDREX/STREX instructions for thread-safe counter access without libatomic
+      // __ATOMIC_RELAXED memory order is sufficient for simple counter increments
+      volatile uint32_t scan_cycles_{0};
+      volatile uint32_t total_detections_{0};
 
       ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
-      std::atomic<bool> is_real_mode_{true};
+      // Diamond Code: Use volatile bool for thread-safe flag access
+      // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+      // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+      volatile bool is_real_mode_{true};
 
      size_t tracked_count_ = 0;
 
@@ -855,8 +890,10 @@ private:
     std::array<uint8_t, 256> last_spectrum_db_;
     mutable Mutex spectrum_mutex_;
 
-    // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
-    std::atomic<bool> spectrum_updated_{false};
+    // Diamond Code: Use volatile bool for thread-safe flag access
+    // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+    // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+    volatile bool spectrum_updated_{false};
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
@@ -865,8 +902,10 @@ private:
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
 
-    // STEP 1 FIX: Use std::atomic<bool> for thread-safe flag access
-    std::atomic<bool> rssi_updated_{false};
+    // Diamond Code: Use volatile bool for thread-safe flag access
+    // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+    // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+    volatile bool rssi_updated_{false};
     volatile int32_t last_valid_rssi_{-120};
     
     // 🔴 FIX: Moved message handlers to parent View to prevent MsgDblReg
@@ -1572,9 +1611,10 @@ private:
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
     ::AudioManager& audio_mgr_;
-    // EDA FIX: Use volatile bool with mutex protection instead of std::atomic
-    // Protected by ChibiOS critical sections (raii::SystemLock)
-    std::atomic<bool> scanning_active_{false};
+    // Diamond Code: Use volatile bool for thread-safe flag access
+    // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+    // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+    volatile bool scanning_active_{false};
     DroneDisplayController* display_controller_ = nullptr;
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
