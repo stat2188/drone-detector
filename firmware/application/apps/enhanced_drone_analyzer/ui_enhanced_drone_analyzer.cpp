@@ -1356,6 +1356,16 @@ void DroneScanner::db_loading_thread_loop() {
         should_load = db_loading_active_;
     }
     if (should_load) {
+        // 🔴 FIX: Defensive null check before dereferencing freq_db_ptr_
+        // This provides additional safety if initialization somehow fails
+        if (!freq_db_ptr_) {
+            handle_scan_error("Database pointer is null during async loading");
+            {
+                raii::SystemLock lock;
+                db_loading_active_ = false;
+            }
+            return;
+        }
         db_success = freq_db_ptr_->open(db_path);
 
         if (db_success) {
@@ -1388,7 +1398,8 @@ void DroneScanner::db_loading_thread_loop() {
             // (lines 1408-1467) won't execute, leaving initialization_complete_ and
             // freq_db_constructed_ flags unset. This causes is_initialization_complete()
             // to always return false, preventing phases 3-6 from completing.
-            if (!freq_db_ptr_->empty()) {
+            // 🔴 FIX: Defensive null check before dereferencing freq_db_ptr_
+            if (freq_db_ptr_ && !freq_db_ptr_->empty()) {
                 freq_db_loaded_ = true;
                 freq_db_constructed_ = true;
                 {
@@ -1415,6 +1426,16 @@ void DroneScanner::db_loading_thread_loop() {
         {
             TwoPhaseLock<Mutex> data_lock(data_mutex, LockOrder::DATA_MUTEX);
             
+            // 🔴 FIX: Defensive null check before dereferencing freq_db_ptr_
+            // This provides additional safety if initialization somehow fails
+            if (!freq_db_ptr_) {
+                handle_scan_error("Database pointer is null during database initialization");
+                {
+                    raii::SystemLock lock;
+                    db_loading_active_ = false;
+                }
+                return;
+            }
             freq_db_ptr_->open(db_path, true);
 
             for (const auto& item : BUILTIN_DRONE_DB) {
@@ -1477,6 +1498,12 @@ void DroneScanner::initialize_database_async() {
         return;  // Already loading or loaded
     }
 
+    // 🔴 FIX: Initialize database and scanner BEFORE creating the loading thread
+    // This ensures freq_db_ptr_ and tracked_drones_ptr_ are properly initialized
+    // via placement new before any async operations begin, preventing M0 guru
+    // meditation errors from null pointer dereferences.
+    initialize_database_and_scanner();
+
     {
         raii::SystemLock lock;
         db_loading_active_ = true;
@@ -1517,7 +1544,9 @@ bool DroneScanner::is_database_loading_complete() const {
         raii::SystemLock lock;
         is_loading = db_loading_active_;
     }
-    return !is_loading && freq_db_loaded_;
+    // 🔴 FIX: Check that freq_db_ptr_ is not null in addition to checking freq_db_loaded_ flag
+    // This ensures the database is properly initialized before reporting completion
+    return !is_loading && freq_db_loaded_ && (freq_db_ptr_ != nullptr);
 }
 
 bool DroneScanner::is_initialization_complete() const {
