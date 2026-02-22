@@ -1296,14 +1296,9 @@ void DroneScanner::db_loading_thread_loop() {
         return;
     }
     freq_db_ptr_ = reinterpret_cast<FreqmanDB*>(freq_db_storage_);
-    if (!freq_db_ptr_) {
-        handle_scan_error("Memory: FreqmanDB reinterpret_cast failed");
-        {
-            raii::SystemLock lock;
-            db_loading_active_ = false;
-        }
-        return;
-    }
+    // 🔴 FIX #M1: Remove meaningless null check after reinterpret_cast
+    // reinterpret_cast from a valid pointer never returns nullptr
+    // Alignment check above is sufficient
 
     // Runtime alignment verification for tracked_drones_storage_
     if (reinterpret_cast<uintptr_t>(tracked_drones_storage_) % alignof(std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>) != 0) {
@@ -1318,15 +1313,9 @@ void DroneScanner::db_loading_thread_loop() {
 
     // Use reinterpret_cast on aligned buffer
     tracked_drones_ptr_ = reinterpret_cast<std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>*>(tracked_drones_storage_);
-    if (!tracked_drones_ptr_) {
-        handle_scan_error("Memory: tracked_drones reinterpret_cast failed");
-        freq_db_ptr_ = nullptr;
-        {
-            raii::SystemLock lock;
-            db_loading_active_ = false;
-        }
-        return;
-    }
+    // 🔴 FIX #M2: Remove meaningless null check after reinterpret_cast
+    // reinterpret_cast from a valid pointer never returns nullptr
+    // Alignment check above is sufficient
 
     // Initialize elements
     for (auto& drone : *tracked_drones_ptr_) {
@@ -1512,19 +1501,14 @@ void DroneScanner::initialize_database_async() {
         this                               // Argument
     );
 
-    // Verify thread creation result
+    // FIX #2: Verify stack size matches constant
+    static_assert(sizeof(db_loading_wa_) >= DroneScanner::DB_LOADING_STACK_SIZE,
+                 "db_loading_wa_ size mismatch with DB_LOADING_STACK_SIZE");
+
+    // 🔴 FIX #M5: Single thread creation check (removed duplicate)
+    // chThdCreateStatic with static stack should never fail, but handle gracefully
     if (db_loading_thread_ == nullptr) {
         handle_scan_error("Failed to create db_loading_thread");
-        {
-            raii::SystemLock lock;
-            db_loading_active_ = false;
-        }
-        return;
-    }
-
-    if (db_loading_thread_ == nullptr) {
-        // Do NOT run synchronously - would block UI thread
-        handle_scan_error("Scan unavailable - resource limit");
         {
             raii::SystemLock lock;
             db_loading_active_ = false;
@@ -1787,11 +1771,13 @@ void DroneDetectionLogger::worker_loop() {
             init_complete = initialization_complete_;
         }
         if (!init_complete) {
-            chThdSleepMilliseconds(100);
+            // 🔴 FIX #L5: Use constant instead of magic number
+            chThdSleepMilliseconds(EDA::Constants::SD_CARD_POLL_INTERVAL_MS);
             continue;
         }
 
-        chSemWaitTimeout(&data_ready_, MS2ST(1000));
+        // 🔴 FIX #L4: Use constant instead of magic number (1 second timeout)
+        chSemWaitTimeout(&data_ready_, MS2ST(EDA::Constants::SETTINGS_LOAD_TIMEOUT_MS));
         
         {
             raii::SystemLock lock;
@@ -3615,7 +3601,8 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
     systime_t now = chTimeNow();
     call_count++;
     
-    if (now - last_log_time > MS2ST(1000)) {
+    // 🔴 FIX #L4: Use constant instead of magic number (1 second timeout)
+    if (now - last_log_time > MS2ST(EDA::Constants::SETTINGS_LOAD_TIMEOUT_MS)) {
         last_log_time = now;
         // Log current state for debugging
         char debug_buf[64];

@@ -178,7 +178,8 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     while (scanning_active_) {
         // Check initialization state - wait until initialization is complete
         if (!scanner_.is_initialization_complete()) {
-            chThdSleepMilliseconds(100);
+            // 🔴 FIX #L5: Use constant instead of magic number
+            chThdSleepMilliseconds(EDA::Constants::SD_CARD_POLL_INTERVAL_MS);
             continue;
         }
 
