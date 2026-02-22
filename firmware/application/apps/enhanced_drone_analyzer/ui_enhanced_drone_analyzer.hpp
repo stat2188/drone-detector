@@ -57,7 +57,7 @@ using rf::Frequency;
 
 // Explicit thread stack sizes
 constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;  // 2KB
-constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // 2KB
+constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 1536;  // 1.5KB (optimized for memory)
 
 // Stack monitoring constants
 constexpr uint32_t STACK_CANARY_VALUE = 0xDEADBEEF;  // Canary value for stack overflow detection
@@ -304,6 +304,16 @@ public:
     void start_session();
     void end_session();
     bool is_session_active() const { return session_active_; }
+    
+    // Initialization state management
+    void set_initialization_complete(bool complete) {
+        raii::SystemLock lock;
+        initialization_complete_ = complete;
+    }
+    bool is_initialization_complete() const {
+        raii::SystemLock lock;
+        return initialization_complete_;
+    }
 
     // Statistics for monitoring
     uint32_t get_dropped_logs_count() const { return dropped_logs_; }
@@ -317,16 +327,17 @@ private:
     Semaphore data_ready_;
     // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
     volatile bool worker_should_run_{false};
+    volatile bool initialization_complete_{false};  // Flag to signal system initialization is complete
 
-    // Worker Thread Stack: 5120 bytes (5KB)
+    // Worker Thread Stack: 3072 bytes (3KB optimized)
     // Stack Usage Breakdown:
     // - CSV line formatting: ~128 bytes (line_buffer_)
     // - File operations (fopen/fwrite): ~200 bytes
     // - Log entry processing: ~64 bytes (DetectionLogEntry)
     // - SDCardLock mutex overhead: ~100 bytes
     // - ChibiOS thread context: ~256 bytes
-    // - Stack safety margin: ~4372 bytes
-    static constexpr size_t WORKER_STACK_SIZE = 5120;
+    // - Stack safety margin: ~2324 bytes
+    static constexpr size_t WORKER_STACK_SIZE = 3072;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
 
 
@@ -604,8 +615,8 @@ struct DetectionParams {
         // Initialization complete flag for async initialization coordination
         volatile bool initialization_complete_{false};
 
-       // Static thread stack (8KB for thread safety)
-        static constexpr size_t DB_LOADING_STACK_SIZE = 8192;  // 8KB
+       // Static thread stack (4KB optimized for memory)
+        static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4KB (optimized for memory)
 
           static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
@@ -1545,6 +1556,18 @@ public:
     /// @brief Toggle between spectrum and histogram display modes
     void on_toggle_display_mode();
 
+    /// @brief Request global shutdown - sets shutdown flag and stops all threads
+    void request_global_shutdown() {
+        raii::SystemLock lock;
+        global_shutdown_requested_ = true;
+    }
+
+    /// @brief Check if global shutdown has been requested
+    bool is_global_shutdown_requested() const {
+        raii::SystemLock lock;
+        return global_shutdown_requested_;
+    }
+
     // Deferred initialization state machine
     enum class InitState : uint8_t {
         CONSTRUCTED = 0,           // Constructor completed
@@ -1756,6 +1779,9 @@ public:
     systime_t init_start_time_ = 0;
     systime_t last_init_progress_ = 0;
     bool initialization_in_progress_ = false;
+    
+    // Global shutdown flag for all threads
+    volatile bool global_shutdown_requested_ = false;
     
     // Error handling enum
     enum class InitError : uint8_t {

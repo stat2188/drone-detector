@@ -129,7 +129,7 @@ private:
     // DIAMOND OPTIMIZATION: Stack-based thread working area
     // Scott Meyers Item 15: Prefer constexpr to #define
     // FIX #2: Use explicit stack size constant from ui_enhanced_drone_analyzer.hpp
-    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // 2KB
+    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 1536;  // 1.5KB (optimized for memory)
     static WORKING_AREA(coordinator_wa_, COORDINATOR_THREAD_STACK_SIZE);
 };
 

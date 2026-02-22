@@ -1779,7 +1779,18 @@ void DroneDetectionLogger::worker_loop() {
             should_run = worker_should_run_;
         }
         if (!should_run) break;
-        
+
+        // Check initialization state - wait until initialization is complete
+        bool init_complete;
+        {
+            raii::SystemLock lock;
+            init_complete = initialization_complete_;
+        }
+        if (!init_complete) {
+            chThdSleepMilliseconds(100);
+            continue;
+        }
+
         chSemWaitTimeout(&data_ready_, MS2ST(1000));
         
         {
@@ -3398,6 +3409,9 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 }
 
 EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
+    // Request global shutdown - signals all threads to stop
+    request_global_shutdown();
+
     // TODO[FIXED]: STEP 2.1: Destruction order
     // 1. Stop activity (in dependency order)
     scanning_coordinator_.stop_coordinated_scanning();
@@ -3901,7 +3915,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
     handle_scanner_update();
     init_state_ = InitState::FULLY_INITIALIZED;
     status_bar_.update_normal_status("EDA", "Ready");
-    
+
     // 🔴 FIX: Automatically start scanning thread after initialization
     start_scanning_thread();
 }

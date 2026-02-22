@@ -165,10 +165,10 @@ msg_t ScanningCoordinator::scanning_thread_function(void* arg) noexcept {
 msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // DIAMOND CODE: No exceptions - perform scan cycle directly
     // Error handling is managed via return codes
-    
+
     // Convert timeout constant to ChibiOS systime_t
     constexpr systime_t SCAN_CYCLE_TIMEOUT_ST = MS2ST(CoordinatorConstants::SCAN_CYCLE_TIMEOUT_MS);
-    
+
     // Counters for error detection
     TimeoutCount consecutive_timeouts = 0;
     // DEPRECATED: Removed unused variable consecutive_scanner_failures
@@ -176,8 +176,14 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // TimeoutCount consecutive_scanner_failures = 0;
 
     while (scanning_active_) {
+        // Check initialization state - wait until initialization is complete
+        if (!scanner_.is_initialization_complete()) {
+            chThdSleepMilliseconds(100);
+            continue;
+        }
+
         const systime_t cycle_start = chTimeNow();
-        
+
         // Perform scan cycle
         // Note: We don't check return value here as scanner handles its own errors
         // Future enhancement: Add scanner error handling if needed
