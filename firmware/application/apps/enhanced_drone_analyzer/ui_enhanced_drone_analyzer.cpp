@@ -29,6 +29,7 @@
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_spectral_analyzer.hpp"
 #include "sd_card.hpp"
+#include "lpc43xx_cpp.hpp"
 
 #include <algorithm>
 #include <array>
@@ -3507,7 +3508,7 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
         }
         return;
     }
-    
+
     // Additional buffer check
     if (display_controller_.are_buffers_valid()) {
         display_controller_.render_bar_spectrum(painter);
@@ -3850,11 +3851,17 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     // ФАЗА 6.4: ЗАЩИЩЁННАЯ ЗАГРУЗКА НАСТРОЕК
     // ===========================================
 
+    // 🔴 FIX: Disable M4 interrupts before SD card operations
+    // This prevents M4Core_IRQHandler from firing while M0 is locked
+    lpc43xx::creg::m4txevent::disable();
+
     // Проверяем доступность SD карты с таймаутом
     systime_t sd_start = chTimeNow();
     while (sd_card::status() < sd_card::Status::Mounted) {
         // 🔴 FIX #L4: Use constant instead of magic number 1s timeout
         if ((chTimeNow() - sd_start) > MS2ST(EDA::Constants::SD_CARD_MOUNT_TIMEOUT_MS)) {
+            // 🔴 FIX: Re-enable M4 interrupts before returning
+            lpc43xx::creg::m4txevent::enable();
             // 🔴 FIX #M7: Reset to default settings on SD card timeout
             status_bar_.update_normal_status("INIT", "No SD - defaults");
             SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings_);
@@ -3875,6 +3882,8 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
 
     systime_t elapsed = chTimeNow() - settings_start;
     if (elapsed >= SETTINGS_LOAD_TIMEOUT_MS) {
+        // 🔴 FIX: Re-enable M4 interrupts before returning
+        lpc43xx::creg::m4txevent::enable();
         // Reset to default settings on timeout
         status_bar_.update_normal_status("WARN", "Settings timeout");
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings_);
@@ -3888,6 +3897,9 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     } else {
         status_bar_.update_normal_status("INIT", "Settings loaded");
     }
+
+    // 🔴 FIX: Re-enable M4 interrupts after SD card operations complete
+    lpc43xx::creg::m4txevent::enable();
 
     button_audio_.set_text(audio_get_enable_alerts(settings_) ? "AUDIO: ON" : "AUDIO: OFF");
     scanner_.update_scan_range(settings_.wideband_min_freq_hz,

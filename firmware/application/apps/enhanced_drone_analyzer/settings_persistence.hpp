@@ -44,6 +44,7 @@
 #include "ui_drone_common_types.hpp"
 #include "eda_locking.hpp"
 #include "sd_card.hpp"
+#include "lpc43xx_cpp.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -698,6 +699,41 @@ inline SettingsLoadBuffer& get_load_buffer() noexcept {
 }
 
 // ===========================================
+// M4 INTERRUPT MASKING (RAII)
+// ===========================================
+/**
+ * @brief RAII wrapper for M4 interrupt masking
+ *
+ * Disables M4 interrupts during critical sections to prevent
+ * race conditions with M4Core_IRQHandler. This prevents SV#8
+ * hard faults when M4 interrupts fire while M0 kernel is locked.
+ *
+ * Usage:
+ *   {
+ *       M4InterruptMask m4_mask;  // Disables M4 interrupts
+ *       // Perform SD card operations here
+ *   }  // Automatically re-enables M4 interrupts
+ *
+ * @note Diamond Code: noexcept, deleted copy/move for safety
+ * @note Uses creg::m4txevent for M4->M0 interrupt control
+ */
+class M4InterruptMask {
+public:
+    M4InterruptMask() noexcept {
+        // Disable M4->M0 interrupt
+        lpc43xx::creg::m4txevent::disable();
+    }
+
+    ~M4InterruptMask() noexcept {
+        // Re-enable M4->M0 interrupt
+        lpc43xx::creg::m4txevent::enable();
+    }
+
+    M4InterruptMask(const M4InterruptMask&) = delete;
+    M4InterruptMask& operator=(const M4InterruptMask&) = delete;
+};
+
+// ===========================================
 // SETTINGS PERSISTENCE TEMPLATE
 // ===========================================
 /**
@@ -746,6 +782,9 @@ private:
 // ===========================================
 template<typename T>
 EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
+    // 🔴 FIX: Mask M4 interrupts during file I/O to prevent SV#8 hard fault
+    M4InterruptMask m4_mask;
+
     // Validate SD card status with timeout
     systime_t sd_check_start = chTimeNow();
     while (sd_card::status() < sd_card::Status::Mounted) {
