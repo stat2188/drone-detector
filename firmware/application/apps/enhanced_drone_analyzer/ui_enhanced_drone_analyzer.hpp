@@ -1064,9 +1064,6 @@ public:
     };
 
     // Static buffer sizes to prevent heap allocation in constructor
-    static constexpr size_t SPECTRUM_ROW_SIZE = 240;
-    static constexpr size_t RENDER_LINE_SIZE = 240;
-    static constexpr size_t WATERFALL_SIZE = 40 * 240;  // 9.6KB waterfall buffer
     static constexpr size_t MAX_UI_DRONES = 3;  // Reduced from 16 to 3 for memory savings
     
     // Histogram Display Buffer (zero-heap, static storage in .bss)
@@ -1144,6 +1141,13 @@ public:
     /// @param new_mode The new display mode to set
     void set_display_mode(DisplayRenderMode new_mode) noexcept {
         mode_ = new_mode;
+        // ===========================================
+        // DIAMOND FIX: Reset histogram_dirty_ when switching to histogram mode
+        // ===========================================
+        // This ensures the histogram is rendered immediately after mode switch
+        if (new_mode == DisplayRenderMode::HISTOGRAM) {
+            histogram_dirty_ = true;
+        }
     }
 
     void update_detection_display(const DroneScanner& scanner);
@@ -1180,23 +1184,7 @@ public:
 
     // Methods for accessing static buffers (O(1) access, no dereference overhead)
 
-    using SpectrumRowBuffer = std::array<Color, SPECTRUM_ROW_SIZE>;
-    using RenderLineBuffer = std::array<Color, RENDER_LINE_SIZE>;
     using PowerLevelsBuffer = std::array<uint8_t, 200>;
-
-    SpectrumRowBuffer& spectrum_row_buffer() {
-        return *reinterpret_cast<SpectrumRowBuffer*>(spectrum_row_buffer_storage_);
-    }
-    const SpectrumRowBuffer& spectrum_row_buffer() const {
-        return *reinterpret_cast<const SpectrumRowBuffer*>(spectrum_row_buffer_storage_);
-    }
-
-    RenderLineBuffer& render_line_buffer() {
-        return *reinterpret_cast<RenderLineBuffer*>(render_line_buffer_storage_);
-    }
-    const RenderLineBuffer& render_line_buffer() const {
-        return *reinterpret_cast<const RenderLineBuffer*>(render_line_buffer_storage_);
-    }
 
     PowerLevelsBuffer& spectrum_power_levels() {
         return *reinterpret_cast<PowerLevelsBuffer*>(spectrum_power_levels_storage_);
@@ -1363,16 +1351,8 @@ private:
     // Diamond Code Principle: All data must be static or stack-based
 
     // Static buffers (stored in .bss, initialized to zeros)
-    // SPECTRUM_ROW_SIZE * sizeof(Color) = 240 * 2 = 480 bytes
-    // RENDER_LINE_SIZE * sizeof(Color) = 240 * 2 = 480 bytes
     // 200 * sizeof(uint8_t) = 200 bytes
-    // Total: ~1.16 KB in .bss instead of heap allocation
-
-    alignas(alignof(std::array<Color, SPECTRUM_ROW_SIZE>))
-    static Color spectrum_row_buffer_storage_[SPECTRUM_ROW_SIZE];
-
-    alignas(alignof(std::array<Color, RENDER_LINE_SIZE>))
-    static Color render_line_buffer_storage_[RENDER_LINE_SIZE];
+    // Total: ~200 bytes in .bss instead of heap allocation
 
     alignas(alignof(std::array<uint8_t, 200>))
     static uint8_t spectrum_power_levels_storage_[200];
@@ -1412,7 +1392,6 @@ private:
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, DroneConstants::MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
-    size_t waterfall_line_index_ = 0;
 
     Gradient spectrum_gradient_;
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;

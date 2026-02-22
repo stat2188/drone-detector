@@ -104,12 +104,6 @@ uint8_t DroneScanner::freq_db_storage_[DroneScanner::FREQ_DB_STORAGE_SIZE];
 alignas(alignof(TrackedDrone))
 uint8_t DroneScanner::tracked_drones_storage_[DroneScanner::TRACKED_DRONES_STORAGE_SIZE];
 
-alignas(alignof(std::array<Color, DroneDisplayController::SPECTRUM_ROW_SIZE>))
-Color DroneDisplayController::spectrum_row_buffer_storage_[DroneDisplayController::SPECTRUM_ROW_SIZE];
-
-alignas(alignof(std::array<Color, DroneDisplayController::RENDER_LINE_SIZE>))
-Color DroneDisplayController::render_line_buffer_storage_[DroneDisplayController::RENDER_LINE_SIZE];
-
 alignas(alignof(std::array<uint8_t, 200>))
 uint8_t DroneDisplayController::spectrum_power_levels_storage_[200];
 
@@ -2495,15 +2489,14 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
        text_drone_3_({screen_width - 120, 178, 120, 16}, ""),
        compact_frequency_ruler_({0, 68, screen_width, 12}),
        displayed_drones_(),
-          // Static buffers initialization
-           detected_drones_count_(0),
-           buffers_allocated_(false),
-          threat_bins_(), threat_bins_count_(0),
-           waterfall_line_index_(0),
-           spectrum_gradient_(), spectrum_fifo_(nullptr),
-           pixel_index(0), bins_hz_size(0), each_bin_size(DEFAULT_EACH_BIN_SIZE_HZ), min_color_power(DEFAULT_MIN_COLOR_POWER),
-           marker_pixel_step(DEFAULT_MARKER_PIXEL_STEP_HZ), max_power(0), range_max_power(0), mode_(DroneDisplayController::DisplayRenderMode::SPECTRUM),
-           spectrum_config_(),
+           // Static buffers initialization
+            detected_drones_count_(0),
+            buffers_allocated_(false),
+           threat_bins_(), threat_bins_count_(0),
+            spectrum_gradient_(), spectrum_fifo_(nullptr),
+            pixel_index(0), bins_hz_size(0), each_bin_size(DEFAULT_EACH_BIN_SIZE_HZ), min_color_power(DEFAULT_MIN_COLOR_POWER),
+            marker_pixel_step(DEFAULT_MARKER_PIXEL_STEP_HZ), max_power(0), range_max_power(0), mode_(DroneDisplayController::DisplayRenderMode::SPECTRUM),
+            spectrum_config_(),
       // Initialize mutexes in member initialization list
       // Lock order: SPECTRUM_MUTEX (level 1), HISTOGRAM_MUTEX (level 2)
       spectrum_mutex_(),
@@ -2575,6 +2568,13 @@ void DroneDisplayController::deallocate_buffers() {
     // Clear buffer contents to prevent stale data usage
     // DIAMOND OPTIMIZATION: Zero-initialize all buffers
     std::fill(spectrum_power_levels().begin(), spectrum_power_levels().end(), 0);
+
+    // ===========================================
+    // DIAMOND FIX: Clear histogram display buffer
+    // ===========================================
+    // Clear histogram buffer to prevent stale data usage
+    std::fill(std::begin(histogram_display_buffer_.bin_counts),
+              std::end(histogram_display_buffer_.bin_counts), 0);
 }
 
 
@@ -2882,11 +2882,11 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
     const auto& config = BarSpectrumConfig{};
 
     // Clear spectrum area
-    const int waterfall_y_start = config.WATERFALL_Y_START;
+    const int bar_spectrum_y_start = config.WATERFALL_Y_START;
     const int spectrum_height = config.BAR_HEIGHT_MAX;
 
     painter.fill_rectangle(
-        {0, waterfall_y_start, EDA::Constants::MINI_SPECTRUM_WIDTH, spectrum_height},
+        {0, bar_spectrum_y_start, EDA::Constants::MINI_SPECTRUM_WIDTH, spectrum_height},
         Color::black()
     );
 
@@ -2919,7 +2919,7 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
         size_t color_idx = get_bar_color_index(x, power);
 
         // Draw bar
-        int y_top = (waterfall_y_start + spectrum_height) - bar_height;
+        int y_top = (bar_spectrum_y_start + spectrum_height) - bar_height;
         painter.fill_rectangle(
             {static_cast<int>(x), y_top, 1, bar_height},
             config.BAR_COLORS[color_idx]
@@ -2969,14 +2969,18 @@ void DroneDisplayController::update_histogram_display(
 }
 
 void DroneDisplayController::render_histogram(Painter& painter) noexcept {
-    // Guard clause: Skip rendering if data hasn't changed
-    if (!histogram_dirty_) {
-        return;
-    }
-
+    // ===========================================
+    // DIAMOND FIX #5: Protect histogram_dirty_ with histogram_mutex_
+    // ===========================================
     // Thread-safe buffer access with mutex protection
     // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
     MutexLock lock(histogram_mutex_, LockOrder::DISPLAY_HISTOGRAM_MUTEX);
+
+    // Guard clause: Skip rendering if data hasn't changed
+    // Check is now protected by histogram_mutex_ to prevent race condition
+    if (!histogram_dirty_) {
+        return;
+    }
 
     // Guard clause: Skip if histogram data is invalid
     if (!histogram_display_buffer_.is_valid) {
@@ -3049,13 +3053,12 @@ void DroneDisplayController::render_histogram(Painter& painter) noexcept {
 }
 
 void DroneDisplayController::clear_histogram_area(Painter& painter) noexcept {
-    constexpr auto HISTOGRAM_Y = 164;
-    constexpr auto HISTOGRAM_HEIGHT = 26;
-    constexpr auto HISTOGRAM_X = 8;
-    constexpr auto HISTOGRAM_WIDTH = 304;
-
+    // ===========================================
+    // DIAMOND FIX #4: Use class constants instead of hardcoded values
+    // ===========================================
+    // Using class constants ensures consistency and maintainability
     const Rect histogram_rect{
-        HISTOGRAM_X,
+        8,  // HISTOGRAM_X (not defined as class constant)
         HISTOGRAM_Y,
         HISTOGRAM_WIDTH,
         HISTOGRAM_HEIGHT
@@ -3699,6 +3702,17 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers() {
         return;
     }
 
+    // ===========================================
+    // DIAMOND FIX #1: Register histogram callback early
+    // ===========================================
+    // Connect scanner histogram callback to display controller
+    // Diamond Code: Function pointer with user data (no heap allocation, no std::function)
+    // Data flow: SpectralAnalyzer → Scanner → DisplayController
+    // NOTE: Using static function with 'this' as user data to avoid lambda captures
+    // BUG FIX: Moved from init_phase_finalize() to prevent race condition where
+    // callback could be invoked before buffers are fully allocated
+    scanner_.set_histogram_callback(&EnhancedDroneSpectrumAnalyzerView::static_histogram_callback, this);
+
     status_bar_.update_normal_status("INIT", "Phase 1: Buffers OK");
     init_state_ = InitState::BUFFERS_ALLOCATED;
 }
@@ -3889,15 +3903,6 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
         status_bar_.update_normal_status("ERROR", "Scanner not ready");
         return;
     }
-
-    // ===========================================
-    // DIAMOND OPTIMIZATION: Wire histogram data flow
-    // ===========================================
-    // Connect scanner histogram callback to display controller
-    // Diamond Code: Function pointer with user data (no heap allocation, no std::function)
-    // Data flow: SpectralAnalyzer → Scanner → DisplayController
-    // NOTE: Using static function with 'this' as user data to avoid lambda captures
-    scanner_.set_histogram_callback(&EnhancedDroneSpectrumAnalyzerView::static_histogram_callback, this);
 
     handle_scanner_update();
     init_state_ = InitState::FULLY_INITIALIZED;
