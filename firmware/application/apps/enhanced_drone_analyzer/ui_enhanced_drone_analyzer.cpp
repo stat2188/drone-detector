@@ -81,9 +81,6 @@ constexpr inline uint64_t ceil_div_u64(uint64_t numerator, uint64_t denominator)
 
 // SD card mutex (FatFS is NOT thread-safe)
 Mutex sd_card_mutex;
-static struct MutexInitializer {
-    MutexInitializer() { chMtxInit(&sd_card_mutex); }
-} sd_card_mutex_initializer_;
 
 // ScanningMode LUT (strings in Flash)
 EDA_FLASH_CONST inline static constexpr const char* const SCANNING_MODE_NAMES[] = {
@@ -2487,20 +2484,23 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
        text_drone_1_({screen_width - 120, 146, 120, 16}, ""),
        text_drone_2_({screen_width - 120, 162, 120, 16}, ""),
        text_drone_3_({screen_width - 120, 178, 120, 16}, ""),
+       text_signal_type_({screen_width - 80, 80, 80, 16}, "SIGNAL: --"),
        compact_frequency_ruler_({0, 68, screen_width, 12}),
        displayed_drones_(),
-           // Static buffers initialization
-            detected_drones_count_(0),
-            buffers_allocated_(false),
-           threat_bins_(), threat_bins_count_(0),
-            spectrum_gradient_(), spectrum_fifo_(nullptr),
-            pixel_index(0), bins_hz_size(0), each_bin_size(DEFAULT_EACH_BIN_SIZE_HZ), min_color_power(DEFAULT_MIN_COLOR_POWER),
-            marker_pixel_step(DEFAULT_MARKER_PIXEL_STEP_HZ), max_power(0), range_max_power(0), mode_(DroneDisplayController::DisplayRenderMode::SPECTRUM),
-            spectrum_config_(),
+            // Static buffers initialization
+             detected_drones_count_(0),
+             buffers_allocated_(false),
+            histogram_display_buffer_(),
+            histogram_dirty_(false),
       // Initialize mutexes in member initialization list
       // Lock order: SPECTRUM_MUTEX (level 1), HISTOGRAM_MUTEX (level 2)
       spectrum_mutex_(),
-      histogram_mutex_()
+      histogram_mutex_(),
+            threat_bins_(), threat_bins_count_(0),
+             spectrum_gradient_(), spectrum_fifo_(nullptr),
+             pixel_index(0), bins_hz_size(0), each_bin_size(DEFAULT_EACH_BIN_SIZE_HZ), min_color_power(DEFAULT_MIN_COLOR_POWER),
+             marker_pixel_step(DEFAULT_MARKER_PIXEL_STEP_HZ), max_power(0), range_max_power(0), mode_(DroneDisplayController::DisplayRenderMode::SPECTRUM),
+             spectrum_config_()
 {
     // Add ALL widgets to View hierarchy
     add_children({
