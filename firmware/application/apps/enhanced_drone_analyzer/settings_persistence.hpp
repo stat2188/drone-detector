@@ -654,18 +654,18 @@ static constexpr systime_t READ_TIMEOUT_MS = 5000;
 /**
  * @brief Settings load buffer structure
  *
- * Stack usage: 400 bytes total
- * - LINE_BUFFER_SIZE: 144 bytes
- * - READ_BUFFER_SIZE: 256 bytes
+ * Stack usage: 256 bytes total (FIX #3: Reduced from 400 bytes)
+ * - LINE_BUFFER_SIZE: 128 bytes (reduced from 144)
+ * - READ_BUFFER_SIZE: 128 bytes (reduced from 256)
  */
 struct SettingsLoadBuffer {
     /// @brief Line buffer for individual settings lines
-    /// @note 144 bytes: 128 bytes max line + 16 byte safety margin
-    static constexpr size_t LINE_BUFFER_SIZE = 144;
+    /// @note 128 bytes: 112 bytes max line + 16 byte safety margin (FIX #3)
+    static constexpr size_t LINE_BUFFER_SIZE = 128;
 
     /// @brief Read buffer for raw SD card data
-    /// @note 256 bytes: ChibiOS sector size friendly
-    static constexpr size_t READ_BUFFER_SIZE = 256;
+    /// @note 128 bytes: Reduced to save stack space (FIX #3)
+    static constexpr size_t READ_BUFFER_SIZE = 128;
 
     char line_buffer[LINE_BUFFER_SIZE];
     char read_buffer[READ_BUFFER_SIZE];

@@ -2393,8 +2393,8 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
 
     if (detections > 0) {
         set_display_mode(DisplayMode::ALERT);
-        // Use StatusFormatter
-        char alert_buffer[64];
+        // FIX #4: Use thread-local buffer to reduce stack usage
+        thread_local char alert_buffer[64];
         StatusFormatter::format_to(alert_buffer, "[!] DETECTED: %lu threats found!",
                                   static_cast<unsigned long>(detections));
         alert_text_.set(alert_buffer);
@@ -2416,8 +2416,8 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
     size_t icon_idx = std::min(static_cast<size_t>(threat), size_t(4));
     const char* alert_icon = ALERT_ICONS[icon_idx];
 
-    // Use StatusFormatter
-    char buffer[64];
+    // FIX #4: Use thread-local buffer to reduce stack usage
+    thread_local char buffer[64];
     StatusFormatter::format_to(buffer, "%s ALERT: %lu drones | %s",
                              alert_icon,
                              static_cast<unsigned long>(total_drones),
@@ -3214,9 +3214,9 @@ void DroneUIController::on_set_center_freq() {
 }
 
 void DroneUIController::show_hardware_status() {
-    // Use constant instead of magic number
-    char buffer[EDA::Constants::LAST_TEXT_BUFFER_SIZE];
-    char freq_buf[32];
+    // FIX #4: Use thread-local buffers to reduce stack usage
+    thread_local char buffer[EDA::Constants::LAST_TEXT_BUFFER_SIZE];
+    thread_local char freq_buf[32];
     uint32_t band_mhz = hardware_.get_spectrum_bandwidth() / 1000000ULL;
     FrequencyFormatter::format_to_buffer(freq_buf, sizeof(freq_buf), hardware_.get_spectrum_center_frequency(),
                                      FrequencyFormatter::Format::STANDARD_GHZ);
@@ -3464,12 +3464,9 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
     // 🔧 FIX: Всегда вызываем базовый paint для очистки экрана
     View::paint(painter);
 
-    // Execute deferred initialization
-    // CRITICAL: This was missing, causing permanent hang
-    if (init_state_ != InitState::FULLY_INITIALIZED &&
-        init_state_ != InitState::INITIALIZATION_ERROR) {
-        step_deferred_initialization();
-    }
+    // FIX #2: Do NOT call step_deferred_initialization() from paint()
+    // This prevents nested stack frames that cause M0 stack overflow
+    // Initialization is now handled by continue_initialization() called from UI event loop
 
     // 🔧 FIX: Показываем сообщение об ошибке с возможностью выхода
     if (init_state_ == InitState::INITIALIZATION_ERROR) {
@@ -3523,6 +3520,10 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
             display_controller_.clear_histogram_area(painter);
         }
     }
+
+    // FIX #2: Continue initialization after rendering is complete
+    // This prevents nested stack frames by calling initialization after paint() returns
+    continue_initialization();
 }
 
 bool EnhancedDroneSpectrumAnalyzerView::on_key(const KeyEvent key) {
@@ -3965,12 +3966,27 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
 
     status_bar_.update_normal_status("INIT", "Phase 0: Ready");
     
-    // 🔧 FIX: Force immediate first initialization step
-    // This ensures initialization starts even if paint() is delayed
-    step_deferred_initialization();
+    // FIX #2: Call continue_initialization() instead of step_deferred_initialization()
+    // This ensures initialization runs from UI event loop, not nested in paint()
+    continue_initialization();
     
     // 🔧 FIX: Force redraw to show status bar
     set_dirty();
+}
+
+void EnhancedDroneSpectrumAnalyzerView::continue_initialization() {
+    // FIX #2: Continue deferred initialization from UI event loop
+    // This prevents nested stack frames that cause M0 stack overflow
+    if (init_state_ != InitState::FULLY_INITIALIZED &&
+        init_state_ != InitState::INITIALIZATION_ERROR) {
+        step_deferred_initialization();
+        
+        // Schedule next call if initialization is not complete
+        if (init_state_ != InitState::FULLY_INITIALIZED &&
+            init_state_ != InitState::INITIALIZATION_ERROR) {
+            set_dirty();  // Trigger repaint which will call continue_initialization() again
+        }
+    }
 }
 
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {

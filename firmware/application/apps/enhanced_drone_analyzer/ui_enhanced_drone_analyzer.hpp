@@ -1535,6 +1535,10 @@ public:
     /// @brief Toggle between spectrum and histogram display modes
     void on_toggle_display_mode();
 
+    /// @brief Continue deferred initialization (called from UI event loop, not paint)
+    /// This prevents nested stack frames that cause M0 stack overflow
+    void continue_initialization();
+
     /// @brief Request global shutdown - sets shutdown flag and stops all threads
     void request_global_shutdown() {
         raii::SystemLock lock;
