@@ -12,7 +12,7 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// Type Aliases (Semantic Types)
+// T1pe Aliases (Semantic Types)
 using AudioFrequency = uint32_t;
 using AudioDuration = uint32_t;
 using AudioVolume = uint8_t;
