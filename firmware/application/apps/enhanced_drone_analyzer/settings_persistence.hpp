@@ -146,8 +146,8 @@ inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base =
     }
 
     // RED TEAM FIX: Protect errno access with mutex
-    // DIAMOND FIX: Use DATA_MUTEX lock order (value 2) instead of ERRNO_MUTEX
-    MutexLock lock(errno_mutex, LockOrder::DATA_MUTEX);
+    // DIAMOND FIX: Use ERRNO_MUTEX lock order (value 2)
+    MutexLock lock(errno_mutex, LockOrder::ERRNO_MUTEX);
     errno = 0;
     char* endptr = nullptr;
     unsigned long long val = strtoull(str, &endptr, base);
@@ -189,8 +189,8 @@ inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 1
     }
 
     // RED TEAM FIX: Protect errno access with mutex
-    // DIAMOND FIX: Use DATA_MUTEX lock order (value 2) instead of ERRNO_MUTEX
-    MutexLock lock(errno_mutex, LockOrder::DATA_MUTEX);
+    // DIAMOND FIX: Use ERRNO_MUTEX lock order (value 2)
+    MutexLock lock(errno_mutex, LockOrder::ERRNO_MUTEX);
     errno = 0;
     char* endptr = nullptr;
     long long val = strtoll(str, &endptr, base);

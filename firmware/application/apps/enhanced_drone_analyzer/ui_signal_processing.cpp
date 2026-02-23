@@ -10,8 +10,6 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 // Implementation: update_detection()
 // * * @brief Update detection entry (mutex-protected writer) * * Updates or creates a detection entry for the given frequency hash. * Uses linear probing with FNV-1a hash for collision resolution. * Evicts oldest entry when hash table is full (ring buffer eviction). * * SYNCHRONIZATION: * - Acquires buffer_mutex_ for exclusive access * - Increments global_version_ for concurrent update detection * - Stores head_ with release semantics * * RED TEAM FIX: Recursion detection prevents deadlock when called recursively. * * @param frequency_hash Hash of frequency to update * @param detection_count New detection count * @param rssi_value New RSSI value
-// Recursion depth counter (moved inside lock for thread safety)
-thread_local int recursion_depth = 0;
 
 void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
                                         DetectionCount detection_count,
@@ -19,7 +17,7 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
     const Timestamp current_time = static_cast<Timestamp>(chTimeNow());
 
     // Check recursion depth BEFORE acquiring mutex
-    if (recursion_depth > 0) {
+    if (recursion_depth_ > 0) {
         // Recursive call detected - return early to prevent deadlock
         return;
     }
@@ -28,7 +26,7 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
     OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
     
     // Increment recursion depth after lock acquisition
-    recursion_depth++;
+    recursion_depth_++;
 
     // Increment global version for this update
     global_version_++;
@@ -55,7 +53,7 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
             entries_[idx].timestamp = current_time;
 
             // FIX #7: Decrement recursion depth (lock-based approach)
-            recursion_depth--;
+            recursion_depth_--;
             return;
         }
 
@@ -67,7 +65,7 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
             entries_[idx].rssi_value = rssi_value;
             entries_[idx].timestamp = current_time;
 
-            recursion_depth--;
+            recursion_depth_--;
             return;
         }
     }
@@ -81,7 +79,7 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
     entries_[evict_idx].timestamp = current_time;
     head_ = (head_ + 1) & DetectionBufferConstants::HASH_MASK;
 
-    recursion_depth--;
+    recursion_depth_--;
 }
 
 // IMPLEMENTATION: get_detection_count()

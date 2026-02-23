@@ -111,7 +111,8 @@ public:
     DetectionRingBuffer() noexcept
         : head_{0},
           global_version_{0},
-          buffer_mutex_{} {
+          buffer_mutex_{},
+          recursion_depth_{0} {
         for (auto& entry : entries_) {
             init_entry(entry, 0);
         }
@@ -156,6 +157,7 @@ private:
     size_t head_;                         ///< Head index for ring buffer eviction
     uint32_t global_version_;             ///< Global version counter for concurrent update detection
     mutable Mutex buffer_mutex_;           ///< Mutex for writer synchronization
+    int recursion_depth_;                 ///< Recursion depth counter for deadlock prevention
 
     // / @brief Compute hash index from frequency hash
     // / @param hash Frequency hash to index

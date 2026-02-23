@@ -28,11 +28,20 @@ namespace ui::apps::enhanced_drone_analyzer {
 // This prevents circular wait conditions that lead to deadlocks.
 enum class LockOrder : uint8_t {
     ATOMIC_FLAGS = 1,      // Protected by ChibiOS critical sections (volatile bool, volatile uint32_t)
-    DATA_MUTEX = 2,        // DroneScanner::data_mutex (tracked_drones_)
-    SPECTRUM_MUTEX = 3,   // DroneHardwareController::spectrum_mutex (spectrum_buffer_)
-    LOGGER_MUTEX = 4,      // DroneDetectionLogger::mutex_ (ring_buffer_)
-    SD_CARD_MUTEX = 5      // Global sd_card_mutex (FatFS operations)
+    ERRNO_MUTEX = 2,       // Global errno_mutex (thread-safe errno access)
+    DATA_MUTEX = 3,        // DroneScanner::data_mutex (tracked_drones_)
+    SPECTRUM_MUTEX = 4,    // DroneHardwareController::spectrum_mutex (spectrum_buffer_)
+    LOGGER_MUTEX = 5,      // DroneDetectionLogger::mutex_ (ring_buffer_)
+    SD_CARD_MUTEX = 6      // Global sd_card_mutex (FatFS operations)
 };
+
+// Lock order validation static assertions
+static_assert(static_cast<uint8_t>(LockOrder::ATOMIC_FLAGS) == 1, "LockOrder value changed");
+static_assert(static_cast<uint8_t>(LockOrder::ERRNO_MUTEX) == 2, "LockOrder value changed");
+static_assert(static_cast<uint8_t>(LockOrder::DATA_MUTEX) == 3, "LockOrder value changed");
+static_assert(static_cast<uint8_t>(LockOrder::SPECTRUM_MUTEX) == 4, "LockOrder value changed");
+static_assert(static_cast<uint8_t>(LockOrder::LOGGER_MUTEX) == 5, "LockOrder value changed");
+static_assert(static_cast<uint8_t>(LockOrder::SD_CARD_MUTEX) == 6, "LockOrder value changed");
 
 // Lock Stack Tracking
 constexpr size_t MAX_LOCK_DEPTH = 8;

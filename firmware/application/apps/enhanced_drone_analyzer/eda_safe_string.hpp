@@ -318,7 +318,7 @@ using SmallString = FixedString<16>;
 using TitleBuffer = FixedString<32>;
 using DescriptionBuffer = FixedString<64>;
 using ErrorMessageBuffer = FixedString<128>;
-using PathBuffer = FixedString<256>;
+using PathBuffer = FixedString<128>;
 
 } // namespace ui::apps::enhanced_drone_analyzer
 

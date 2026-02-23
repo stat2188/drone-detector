@@ -8,6 +8,7 @@
 #include "baseband_api.hpp"
 #include "ui_drone_common_types.hpp"
 #include "eda_constants.hpp"
+#include "eda_locking.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -27,36 +28,6 @@ namespace AudioConstants {
     EDA_FLASH_CONST constexpr uint32_t BEEP_SAMPLE_RATE = 24000;
 }
 
-// RAII Mutex Lock Guard (Exception-Safe Locking)
-class MutexLockGuard {
-public:
-    explicit MutexLockGuard(Mutex& mutex) noexcept : mutex_(mutex), locked_(true) {
-        chMtxLock(&mutex_);
-    }
-
-    ~MutexLockGuard() noexcept {
-        if (locked_) {
-            chMtxUnlock();
-        }
-    }
-
-    // Explicit unlock for early release
-    void unlock() noexcept {
-        if (locked_) {
-            chMtxUnlock();
-            locked_ = false;
-        }
-    }
-
-    // Disable copy and move
-    MutexLockGuard(const MutexLockGuard&) = delete;
-    MutexLockGuard& operator=(const MutexLockGuard&) = delete;
-
-private:
-    Mutex& mutex_;
-    bool locked_;
-};
-
 // Audio Alert Manager
 struct AudioAlertManager {
     // * * @brief Get mutex reference * @note ChibiOS static initialization - no double-checked locking needed
@@ -72,39 +43,40 @@ struct AudioAlertManager {
             return;
         }
 
-        // Single lock acquisition
-        MutexLockGuard lock(get_mutex());
-
-        // Guard clause: Early return if audio disabled
-        if (!audio_enabled_) {
-            return;
-        }
-
-        // Extracted cooldown check as helper method
-        if (!is_cooldown_expired()) {
-            return;
-        }
-
-        // Update timestamp and play alert
-        last_alert_timestamp_ = chTimeNow();
-
-        // Get frequency for threat level
+        // Get frequency for threat level (outside lock to avoid holding lock during computation)
         const AudioFrequency freq_hz = get_frequency_for_threat_level(level);
 
-        // Unlock before baseband call to avoid holding lock during I/O
-        lock.unlock();
+        // Single lock acquisition
+        {
+            OrderedScopedLock<Mutex> lock(get_mutex());
+
+            // Guard clause: Early return if audio disabled
+            if (!audio_enabled_) {
+                return;
+            }
+
+            // Extracted cooldown check as helper method
+            if (!is_cooldown_expired()) {
+                return;
+            }
+
+            // Update timestamp
+            last_alert_timestamp_ = chTimeNow();
+        }
+
+        // Call baseband after releasing lock to avoid holding lock during I/O
         baseband::request_audio_beep(freq_hz, AudioConstants::BEEP_SAMPLE_RATE, AudioConstants::BEEP_DURATION);
     }
 
     // / @brief Enable or disable audio alerts
     static void set_enabled(bool enable) noexcept {
-        MutexLockGuard lock(get_mutex());
+        OrderedScopedLock<Mutex> lock(get_mutex());
         audio_enabled_ = enable;
     }
 
     // / @brief Check if audio alerts are enabled
     static bool is_enabled() noexcept {
-        MutexLockGuard lock(get_mutex());
+        OrderedScopedLock<Mutex> lock(get_mutex());
         return audio_enabled_;
     }
 
@@ -117,7 +89,7 @@ struct AudioAlertManager {
             cooldown_ms = 10000;
         }
 
-        MutexLockGuard lock(get_mutex());
+        OrderedScopedLock<Mutex> lock(get_mutex());
         cooldown_ms_ = cooldown_ms;
     }
 
