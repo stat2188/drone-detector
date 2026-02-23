@@ -1,7 +1,4 @@
-/**
- * @file color_lookup_unified.hpp
- * @brief Unified Color Lookup Table - Diamond Code Refinement
- */
+// * * @file color_lookup_unified.hpp * @brief Unified Color Lookup Table - Diamond Code Refinement
 
 #ifndef COLOR_LOOKUP_UNIFIED_HPP_
 #define COLOR_LOOKUP_UNIFIED_HPP_
@@ -47,15 +44,13 @@ namespace ColorConstants {
     constexpr uint8_t SPECTRUM_MODE_COUNT = 5;
 }
 
-// RGB888 → RGB565 Converter (constexpr)
+// RGB888  RGB565 Converter (constexpr)
 // Color format (ui.hpp): rrrrrGGGGGGbbbbb (RGB565, 16-bit)
 // LUT format: 0xRRGGBB (RGB888, 24-bit)
-// R888 → R565: truncate 3 LSB bits, G888 → G665: truncate 2 LSB bits, B888 → B565: truncate 3 LSB bits
+// R888  R565: truncate 3 LSB bits, G888  G665: truncate 2 LSB bits, B888  B565: truncate 3 LSB bits
 
 struct ColorConverter {
-    /**
-     * @brief Convert RGB888 to RGB565 (O(1), constexpr)
-     */
+    // * * @brief Convert RGB888 to RGB565 (O(1), constexpr)
     static constexpr RGB565 rgb888_to_rgb565(const RGB888 rgb888) noexcept {
         const RGB888Component r = (rgb888 >> ColorConstants::RED_SHIFT) & ColorConstants::RED_MASK_888;
         const RGB888Component g = (rgb888 >> ColorConstants::GREEN_SHIFT) & ColorConstants::GREEN_MASK_888;
@@ -68,9 +63,7 @@ struct ColorConverter {
         return r565 | g565 | b565;
     }
 
-    /**
-     * @brief Convert RGB888 to Color object (O(1), constexpr)
-     */
+    // * * @brief Convert RGB888 to Color object (O(1), constexpr)
     static constexpr Color rgb888_to_color(const RGB888 rgb888) noexcept {
         return Color(rgb888_to_rgb565(rgb888));
     }
@@ -80,9 +73,7 @@ struct ColorConverter {
 // Eliminates duplication: HEADER_STYLES + CARD_STYLES + THREAT_COLORS
 
 struct ThreatColorLUT {
-    /**
-     * @brief Threat level indicator colors
-     */
+    // * * @brief Threat level indicator colors
     static constexpr uint16_t COLORS[ColorConstants::THREAT_LEVEL_COUNT] FLASH_STORAGE = {
         ColorConverter::rgb888_to_rgb565(0xFF0000),   // Red - NONE (0)
         ColorConverter::rgb888_to_rgb565(0x00FF00),   // Green - LOW (1)
@@ -94,9 +85,7 @@ struct ThreatColorLUT {
     static_assert(sizeof(COLORS) == sizeof(uint16_t) * ColorConstants::THREAT_LEVEL_COUNT, 
                   "COLORS size mismatch");
     
-    /**
-     * @brief Card styles (background + text) - UNIFIED
-     */
+    // * * @brief Card styles (background + text) - UNIFIED
     struct CardStyle {
         uint16_t bg_color;
         uint16_t text_color;
@@ -112,11 +101,7 @@ struct ThreatColorLUT {
     static_assert(sizeof(CARD_STYLES) == sizeof(CardStyle) * ColorConstants::CARD_STYLE_COUNT, 
                   "CARD_STYLES size mismatch");
     
-    /**
-     * @brief Get threat level color (O(1) lookup with bounds checking)
-     * @param level Threat level index (0-5)
-     * @return Color object for the threat level
-     */
+    // * * @brief Get threat level color (O(1) lookup with bounds checking) * @param level Threat level index (0-5) * @return Color object for the threat level
     static inline Color threat_color(uint8_t level) noexcept {
         if (level >= ColorConstants::THREAT_LEVEL_COUNT) {
             level = ColorConstants::THREAT_LEVEL_COUNT - 1;  // Default to UNKNOWN
@@ -124,9 +109,7 @@ struct ThreatColorLUT {
         return Color(COLORS[level]);
     }
     
-    /**
-     * @brief Get card background color (O(1) lookup with bounds checking)
-     */
+    // * * @brief Get card background color (O(1) lookup with bounds checking)
     static inline Color card_bg_color(uint8_t threat) noexcept {
         if (threat >= ColorConstants::CARD_STYLE_COUNT) {
             threat = ColorConstants::CARD_STYLE_COUNT - 1;  // Default to CRITICAL
@@ -134,9 +117,7 @@ struct ThreatColorLUT {
         return Color(CARD_STYLES[threat].bg_color);
     }
     
-    /**
-     * @brief Get card text color (O(1) lookup with bounds checking)
-     */
+    // * * @brief Get card text color (O(1) lookup with bounds checking)
     static inline Color card_text_color(uint8_t threat) noexcept {
         if (threat >= ColorConstants::CARD_STYLE_COUNT) {
             threat = ColorConstants::CARD_STYLE_COUNT - 1;  // Default to CRITICAL
@@ -149,9 +130,7 @@ struct ThreatColorLUT {
 // Matches DroneType enum
 
 struct DroneColorLUT {
-    /**
-     * @brief Drone type indicator colors
-     */
+    // * * @brief Drone type indicator colors
     static constexpr uint16_t COLORS[ColorConstants::DRONE_TYPE_COUNT] FLASH_STORAGE = {
         ColorConverter::rgb888_to_rgb565(0xFFFFFF),   // White - UNKNOWN (0)
         ColorConverter::rgb888_to_rgb565(0xFF0000),   // Red - MAVIC (1)
@@ -168,11 +147,7 @@ struct DroneColorLUT {
     static_assert(sizeof(COLORS) == sizeof(uint16_t) * ColorConstants::DRONE_TYPE_COUNT, 
                   "COLORS size mismatch");
     
-    /**
-     * @brief Get drone type color (O(1) lookup with bounds checking)
-     * @param type Drone type index (0-10)
-     * @return Color object for the drone type
-     */
+    // * * @brief Get drone type color (O(1) lookup with bounds checking) * @param type Drone type index (0-10) * @return Color object for the drone type
     static inline Color drone_color(uint8_t type) noexcept {
         if (type >= ColorConstants::DRONE_TYPE_COUNT) {
             type = 0;  // Default to UNKNOWN
@@ -185,41 +160,27 @@ struct DroneColorLUT {
 // Combines ThreatColorLUT and DroneColorLUT
 
 struct UnifiedColorLookup {
-    /**
-     * @brief Get threat level color
-     * @param level Threat level index (0-5)
-     * @return Color object for the threat level
-     */
+    // * * @brief Get threat level color * @param level Threat level index (0-5) * @return Color object for the threat level
     static inline Color threat(uint8_t level) noexcept {
         return ThreatColorLUT::threat_color(level);
     }
     
-    /**
-     * @brief Get drone type color
-     * @param type Drone type index (0-10)
-     * @return Color object for the drone type
-     */
+    // * * @brief Get drone type color * @param type Drone type index (0-10) * @return Color object for the drone type
     static inline Color drone(uint8_t type) noexcept {
         return DroneColorLUT::drone_color(type);
     }
     
-    /**
-     * @brief Get card background color
-     */
+    // * * @brief Get card background color
     static inline Color card_bg(uint8_t threat) noexcept {
         return ThreatColorLUT::card_bg_color(threat);
     }
     
-    /**
-     * @brief Get card text color
-     */
+    // * * @brief Get card text color
     static inline Color card_text(uint8_t threat) noexcept {
         return ThreatColorLUT::card_text_color(threat);
     }
     
-    /**
-     * @brief Get header bar color (used in SmartThreatHeader)
-     */
+    // * * @brief Get header bar color (used in SmartThreatHeader)
     static inline Color header_bar(uint8_t threat) noexcept {
         // For header use threat_color
         return ThreatColorLUT::threat_color(threat);
@@ -230,9 +191,7 @@ struct UnifiedColorLookup {
 // Eliminates duplicates from: diamond_core.hpp, eda_optimized_utils.hpp, ui_enhanced_drone_settings.cpp
 
 struct UnifiedStringLookup {
-    /**
-     * @brief Threat level names (6 levels)
-     */
+    // * * @brief Threat level names (6 levels)
     static constexpr const char* const THREAT_NAMES[ColorConstants::THREAT_LEVEL_COUNT] FLASH_STORAGE = {
         "NONE",       // NONE (0)
         "LOW",        // LOW (1)
@@ -242,9 +201,7 @@ struct UnifiedStringLookup {
         "UNKNOWN"     // UNKNOWN (5)
     };
 
-    /**
-     * @brief Drone type names (11 types)
-     */
+    // * * @brief Drone type names (11 types)
     static constexpr const char* const DRONE_TYPE_NAMES[ColorConstants::DRONE_TYPE_COUNT] FLASH_STORAGE = {
         "Unknown",        // UNKNOWN (0)
         "DJI Mavic",      // MAVIC (1)
@@ -259,9 +216,7 @@ struct UnifiedStringLookup {
         "FPV Racing"      // FPV_RACING (10)
     };
 
-    /**
-     * @brief Spectrum mode names (5 modes)
-     */
+    // * * @brief Spectrum mode names (5 modes)
     static constexpr const char* const SPECTRUM_MODE_NAMES[ColorConstants::SPECTRUM_MODE_COUNT] FLASH_STORAGE = {
         "NARROW",       // NARROW (0)
         "MEDIUM",       // MEDIUM (1)
@@ -270,18 +225,12 @@ struct UnifiedStringLookup {
         "ULTRA_NARROW"  // ULTRA_NARROW (4)
     };
 
-    /**
-     * @brief Threat level symbols (for compact display)
-     */
+    // * * @brief Threat level symbols (for compact display)
     static constexpr char THREAT_SYMBOLS[ColorConstants::THREAT_LEVEL_COUNT] FLASH_STORAGE = {
         '-', 'i', 'O', '!', '!', '?'  // NONE, LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN
     };
 
-    /**
-     * @brief Get threat level name (O(1) lookup with bounds checking)
-     * @param level Threat level index (0-5)
-     * @return String literal for the threat level
-     */
+    // * * @brief Get threat level name (O(1) lookup with bounds checking) * @param level Threat level index (0-5) * @return String literal for the threat level
     static constexpr const char* threat_name(uint8_t level) noexcept {
         if (level >= ColorConstants::THREAT_LEVEL_COUNT) {
             return THREAT_NAMES[ColorConstants::THREAT_LEVEL_COUNT - 1];  // "UNKNOWN"
@@ -289,11 +238,7 @@ struct UnifiedStringLookup {
         return THREAT_NAMES[level];
     }
 
-    /**
-     * @brief Get drone type name (O(1) lookup with bounds checking)
-     * @param type Drone type index (0-10)
-     * @return String literal for the drone type
-     */
+    // * * @brief Get drone type name (O(1) lookup with bounds checking) * @param type Drone type index (0-10) * @return String literal for the drone type
     static constexpr const char* drone_type_name(uint8_t type) noexcept {
         if (type >= ColorConstants::DRONE_TYPE_COUNT) {
             return DRONE_TYPE_NAMES[0];  // "Unknown"
@@ -301,11 +246,7 @@ struct UnifiedStringLookup {
         return DRONE_TYPE_NAMES[type];
     }
 
-    /**
-     * @brief Get spectrum mode name (O(1) lookup with bounds checking)
-     * @param mode Spectrum mode index (0-4)
-     * @return String literal for the spectrum mode
-     */
+    // * * @brief Get spectrum mode name (O(1) lookup with bounds checking) * @param mode Spectrum mode index (0-4) * @return String literal for the spectrum mode
     static constexpr const char* spectrum_mode_name(uint8_t mode) noexcept {
         if (mode >= ColorConstants::SPECTRUM_MODE_COUNT) {
             return SPECTRUM_MODE_NAMES[1];  // "MEDIUM"
@@ -313,11 +254,7 @@ struct UnifiedStringLookup {
         return SPECTRUM_MODE_NAMES[mode];
     }
 
-    /**
-     * @brief Get threat level symbol (O(1) lookup with bounds checking)
-     * @param level Threat level index (0-5)
-     * @return Single character symbol for the threat level
-     */
+    // * * @brief Get threat level symbol (O(1) lookup with bounds checking) * @param level Threat level index (0-5) * @return Single character symbol for the threat level
     static constexpr char threat_symbol(uint8_t level) noexcept {
         if (level >= ColorConstants::THREAT_LEVEL_COUNT) {
             return THREAT_SYMBOLS[ColorConstants::THREAT_LEVEL_COUNT - 1];  // '?'

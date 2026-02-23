@@ -21,7 +21,6 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-
 // RAII wrapper for File (ensures proper cleanup)
 class FileRAII {
 public:
@@ -480,9 +479,7 @@ const char* EnhancedSettingsManager::get_current_timestamp() noexcept {
     return buffer;
 }
 
-// ===========================================
-// ACTIVE: Translation Functions Implementation
-// ===========================================
+// Translation Functions Implementation
 // Translation functions are kept separate as they provide unique UI localization
 // functionality not covered by SettingsPersistence<T>
 // Language is hardcoded to English only
@@ -502,11 +499,9 @@ const char* DroneAnalyzerSettingsManager_Translations::get_translation(const cha
     return translate(key);
 }
 
-// ===========================================
-// DroneFrequencyPresets Implementation (ACTIVE)
-// ===========================================
+// DroneFrequencyPresets Implementation
 
-// 🔴 OPTIMIZATION: static const array instead of vector to avoid heap allocation
+// OPTIMIZATION: static const array instead of vector to avoid heap allocation
 // Scott Meyers Item 15: Prefer static const to #define
 // Note: DronePreset now uses char arrays (zero-heap), so can be constexpr-constructible
 static const std::array<ui::apps::enhanced_drone_analyzer::DronePreset, 5> default_presets = {{
@@ -604,8 +599,7 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui
     return true;
 }
 
-// ============ DronePresetSelector Implementation ============
-// Note: PresetMenuViewImpl template is now defined in the header file
+// DronePresetSelector Implementation
 
 // DIAMOND OPTIMIZATION: Zero-allocation preset filtering using stack allocation
 // Scott Meyers Item 29: Use object pools to reduce allocation overhead
@@ -663,7 +657,7 @@ ConfigUpdaterCallback DronePresetSelector::create_config_updater(DroneAnalyzerSe
     return ConfigUpdaterCallback{config_to_update};
 }
 
-// ============ DroneFrequencyEntry Implementation ============
+// DroneFrequencyEntry Implementation
 
 // DIAMOND FIX: Add noexcept to match header declaration
 DroneFrequencyEntry::DroneFrequencyEntry(Frequency freq, DroneType type, ThreatLevel threat,
@@ -678,9 +672,7 @@ bool DroneFrequencyEntry::is_valid() const noexcept {
            bandwidth_hz > 0;
 }
 
-// ===========================================
 // UI IMPLEMENTATIONS
-// ===========================================
 
 // HardwareSettingsView
 HardwareSettingsView::HardwareSettingsView(NavigationView& nav) : nav_(nav) {
@@ -690,16 +682,16 @@ HardwareSettingsView::HardwareSettingsView(NavigationView& nav) : nav_(nav) {
 }
 // DIAMOND FIX: Add noexcept to match header declaration
 void HardwareSettingsView::focus() noexcept { button_save_.focus(); }
-// DIAMOND OPTIMIZATION: Unified LUT lookup для SpectrumMode conversion
+// DIAMOND OPTIMIZATION: Unified LUT lookup  SpectrumMode conversion
 // Scott Meyers Item 15: Prefer constexpr to #define
-// Экономия RAM: LUT хранится во Flash, ноль heap allocation
-// Ускорение: O(1) lookup вместо 5-branch switch
-// ИСПОЛЬЗУЕТ: EDA::LUTs::spectrum_mode_ui_index() (SSOT)
+// RAM: LUT   Flash,  heap allocation
+// : O(1) lookup  5-branch switch
+// : EDA::LUTs::spectrum_mode_ui_index() (SSOT)
 
 // DIAMOND OPTIMIZATION: noexcept for settings load
 void HardwareSettingsView::load_current_settings() noexcept {
     DroneAnalyzerSettings settings;
-    // 🔴 FIX #M3: Check return value of load() and handle errors appropriately
+    // FIX #M3: Check return value of load() and handle errors appropriately
     auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(settings);
     if (!load_result.is_ok() || !load_result.value) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
@@ -714,7 +706,7 @@ void HardwareSettingsView::load_current_settings() noexcept {
 // DIAMOND OPTIMIZATION: noexcept for settings save
 void HardwareSettingsView::save_current_settings() noexcept {
     DroneAnalyzerSettings settings;
-    // 🔴 FIX #M3: Check return value of load() and handle errors appropriately
+    // FIX #M3: Check return value of load() and handle errors appropriately
     auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(settings);
     if (!load_result.is_ok() || !load_result.value) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
@@ -881,7 +873,6 @@ void ScanningSettingsView::on_wideband_enabled_changed() noexcept {}
 DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View(), nav_(nav), current_settings_{} {
     add_children({&text_title_, &button_audio_settings_, &button_hardware_settings_, &button_scanning_settings_,
                   &button_load_defaults_, &button_about_author_});
-    // DEPRECATED: button_tabbed_settings_ removed - use individual settings views
     // button_tabbed_settings_.on_select = [this](Button&) { show_tabbed_settings(); };
     button_audio_settings_.on_select = [this](Button&) { show_audio_settings(); };
     button_hardware_settings_.on_select = [this](Button&) { show_hardware_settings(); };
@@ -890,13 +881,13 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View
     button_about_author_.on_select = [this](Button&) { show_about_author(); };
     // Initialize settings with defaults first (which includes freqman_path = "DRONES")
     SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(current_settings_);
-    // 🔴 FIX #M5: Check return value of ensure_database_exists() and handle failures
+    // FIX #M5: Check return value of ensure_database_exists() and handle failures
     bool db_exists = EnhancedSettingsManager::ensure_database_exists(current_settings_);
     if (!db_exists) {
         // Database creation failed - continue with defaults
         // Settings will be saved to file when user explicitly saves
     }
-    // 🔴 FIX #M3: Check return value of load() and handle errors appropriately
+    // FIX #M3: Check return value of load() and handle errors appropriately
     auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(current_settings_);
     if (!load_result.is_ok() || !load_result.value) {
         // Load failed - continue with defaults that were set above
@@ -1071,8 +1062,6 @@ bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* f
     
     return true;
 }
-
-
 
 // DroneDatabaseListView
 DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav) 

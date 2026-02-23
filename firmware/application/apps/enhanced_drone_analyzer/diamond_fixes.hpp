@@ -1,7 +1,4 @@
-/**
- * @file diamond_fixes.hpp
- * @brief Critical fixes for Enhanced Drone Analyzer - Diamond Code Pipeline Results
- */
+// * * @file diamond_fixes.hpp * @brief Critical fixes for Enhanced Drone Analyzer - Diamond Code Pipeline Results
 
 #ifndef DIAMOND_FIXES_HPP_
 #define DIAMOND_FIXES_HPP_
@@ -16,11 +13,7 @@ namespace DiamondFixes {
 
 // Fix #1: Division by Zero Protection
 
-/**
- * @brief Safe frequency hash calculation with zero check
- * @param frequency_hz Frequency in Hz (must be non-zero)
- * @return Frequency hash value (0-31)
- */
+// * * @brief Safe frequency hash calculation with zero check * @param frequency_hz Frequency in Hz (must be non-zero) * @return Frequency hash value (0-31)
 inline constexpr size_t safe_frequency_hash(EDA::Frequency frequency_hz) noexcept {
     // Guard clause: Prevent division by zero
     if (frequency_hz == 0) {
@@ -35,44 +28,34 @@ inline constexpr size_t safe_frequency_hash(EDA::Frequency frequency_hz) noexcep
 // Fix #2: Magic Number Constants
 
 namespace ConfidenceConstants {
-    /// @brief Confidence percentage for RSSI-based detections
+    // / @brief Confidence percentage for RSSI-based detections
     constexpr uint8_t RSSI_CONFIDENCE = 85;
     
-    /// @brief Confidence percentage for spectral analysis detections
+    // / @brief Confidence percentage for spectral analysis detections
     constexpr uint8_t SPECTRAL_CONFIDENCE = 90;
     
-    /// @brief Maximum systime_t value (for overflow handling)
+    // / @brief Maximum systime_t value (for overflow handling)
     constexpr uint32_t MAX_SYSTIME_VALUE = 0xFFFFFFFFUL;
 }
 
 namespace SpectrumConstants {
-    /// @brief Spectrum width in pixels
+    // / @brief Spectrum width in pixels
     constexpr int SPEC_WIDTH = 240;
     
-    /// @brief Spectrum height in pixels
+    // / @brief Spectrum height in pixels
     constexpr int SPEC_HEIGHT = 40;
 }
 
 // Fix #3: Type-Safe Frequency Comparison
 
-/**
- * @brief Type-safe frequency comparison
- * @param freq1 First frequency (EDA::Frequency)
- * @param freq2 Second frequency (EDA::Frequency)
- * @return true if frequencies are equal, false otherwise
- */
+// * * @brief Type-safe frequency comparison * @param freq1 First frequency (EDA::Frequency) * @param freq2 Second frequency (EDA::Frequency) * @return true if frequencies are equal, false otherwise
 inline constexpr bool frequency_equal(EDA::Frequency freq1, EDA::Frequency freq2) noexcept {
     return freq1 == freq2;
 }
 
 // Fix #4: Safe Deadline Calculation
 
-/**
- * @brief Safe deadline calculation with overflow protection
- * @param current_time Current system time
- * @param timeout_ms Timeout in milliseconds
- * @return Deadline time (with overflow handling)
- */
+// * * @brief Safe deadline calculation with overflow protection * @param current_time Current system time * @param timeout_ms Timeout in milliseconds * @return Deadline time (with overflow handling)
 inline constexpr systime_t safe_deadline(systime_t current_time, uint32_t timeout_ms) noexcept {
     uint32_t timeout_ticks = MS2ST(timeout_ms);
     

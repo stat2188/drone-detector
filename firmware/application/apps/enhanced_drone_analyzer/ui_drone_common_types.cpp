@@ -41,13 +41,7 @@ namespace TranslationConstants {
 // Compile-time validation
 namespace TranslationValidation {
 
-/**
- * @brief Validate translation table at compile time
- * @tparam N Table size
- * @param table Translation table
- * @return true if all entries are valid
- * @note Compile-time only, no runtime overhead
- */
+// * * @brief Validate translation table at compile time * @tparam N Table size * @param table Translation table * @return true if all entries are valid * @note Compile-time only, no runtime overhead
 template<size_t N>
 static constexpr bool validate_table(
     const TranslationEntry (&table)[N]
@@ -65,15 +59,7 @@ static constexpr bool validate_table(
     return true;
 }
 
-/**
- * @brief Compile-time string comparison for constexpr contexts
- * @param str1 First string
- * @param str2 Second string
- * @return true if strings are equal
- * @note Works in constexpr contexts (C++14 compatible)
- *       Pure character-by-character comparison, no pointer comparison
- *       All operations are constant expressions for static_assert compatibility
- */
+// * * @brief Compile-time string comparison for constexpr contexts * @param str1 First string * @param str2 Second string * @return true if strings are equal * @note Works in constexpr contexts (C++14 compatible) * Pure character-by-character comparison, no pointer comparison * All operations are constant expressions for static_assert compatibility
 static constexpr bool strings_equal(const char* str1, const char* str2) noexcept {
     // Character-by-character comparison (all operations are constexpr)
     while (*str1 && *str2 && *str1 == *str2) {
@@ -84,14 +70,7 @@ static constexpr bool strings_equal(const char* str1, const char* str2) noexcept
     return *str1 == '\0' && *str2 == '\0';
 }
 
-/**
- * @brief Check for duplicate keys at compile time
- * @tparam N Table size
- * @param table Translation table
- * @return true if duplicate keys found
- * @note Compile-time only, no runtime overhead
- *       Uses constexpr string comparison for static_assert compatibility
- */
+// * * @brief Check for duplicate keys at compile time * @tparam N Table size * @param table Translation table * @return true if duplicate keys found * @note Compile-time only, no runtime overhead * Uses constexpr string comparison for static_assert compatibility
 template<size_t N>
 static constexpr bool has_duplicate_keys(
     const TranslationEntry (&table)[N]
@@ -121,20 +100,8 @@ static_assert(
 
 } // namespace TranslationValidation
 
-// ===========================================
 // HELPER FUNCTIONS
-// ===========================================
-/**
- * @brief Fast key-based lookup (O(n) where n=15, faster than std::string)
- * @tparam N Table size (compile-time constant)
- * @param key Translation key to look up
- * @param table Translation table
- * @return Translation value or NOT_FOUND_KEY if not found
- * @note Returns EMPTY_STRING for null key
- * @note Thread-safe: no shared state modified
- * @note ISR-safe: marked noexcept
- * @note Compile-time bounds checking via template parameter
- */
+// * * @brief Fast key-based lookup (O(n) where n=15, faster than std::string) * @tparam N Table size (compile-time constant) * @param key Translation key to look up * @param table Translation table * @return Translation value or NOT_FOUND_KEY if not found * @note Returns EMPTY_STRING for null key * @note Thread-safe: no shared state modified * @note ISR-safe: marked noexcept * @note Compile-time bounds checking via template parameter
 template<size_t N>
 static constexpr const char* lookup_translation(
     const char* const key,
@@ -161,18 +128,9 @@ static constexpr const char* lookup_translation(
     return TranslationConstants::NOT_FOUND_KEY;
 }
 
-// ===========================================
 // TRANSLATOR IMPLEMENTATIONS
-// ===========================================
 
-/**
- * @brief Get English translation
- * @param key Translation key
- * @return Translation value or NOT_FOUND_KEY
- * @note Thread-safe: only reads static data
- * @note ISR-safe: marked noexcept
- * @note CRITICAL FIX: Added input validation
- */
+// * * @brief Get English translation * @param key Translation key * @return Translation value or NOT_FOUND_KEY * @note Thread-safe: only reads static data * @note ISR-safe: marked noexcept * @note CRITICAL FIX: Added input validation
 const char* Translator::get_english(const char* const key) noexcept {
     // CRITICAL FIX: Guard clause - validate input
     if (!key) {
@@ -182,27 +140,12 @@ const char* Translator::get_english(const char* const key) noexcept {
     return lookup_translation(key, ENGLISH_TRANSLATIONS);
 }
 
-/**
- * @brief Translate key to current language
- * @param key Translation key
- * @return Translation value or NOT_FOUND_KEY
- * @note Currently only English supported
- * @note Thread-safe: only reads static data
- * @note ISR-safe: marked noexcept
- */
+// * * @brief Translate key to current language * @param key Translation key * @return Translation value or NOT_FOUND_KEY * @note Currently only English supported * @note Thread-safe: only reads static data * @note ISR-safe: marked noexcept
 const char* Translator::translate(const char* const key) noexcept {
     return get_translation(key);
 }
 
-/**
- * @brief Get translation for key in current language
- * @param key Translation key
- * @return Translation value or NOT_FOUND_KEY
- * @note Language is hardcoded to English only
- * @note Thread-safe: only reads static data
- * @note ISR-safe: marked noexcept
- * @note CRITICAL FIX: Added input validation
- */
+// * * @brief Get translation for key in current language * @param key Translation key * @return Translation value or NOT_FOUND_KEY * @note Language is hardcoded to English only * @note Thread-safe: only reads static data * @note ISR-safe: marked noexcept * @note CRITICAL FIX: Added input validation
 const char* Translator::get_translation(const char* const key) noexcept {
     // CRITICAL FIX: Guard clause - validate input
     if (!key) {

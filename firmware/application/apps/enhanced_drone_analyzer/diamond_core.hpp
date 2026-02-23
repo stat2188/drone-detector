@@ -1,31 +1,4 @@
-/**
- * @file diamond_core.hpp
- * @brief Diamond Core Optimization Layer - Diamond Code Refinement
- * 
-// Memory-safe, optimized, zero-allocation
- * 
- * PURPOSE: Zero-cost abstractions that eliminate code duplication
- * PRINCIPLES:
- * 1. All functions inline → compiler optimizes to zero runtime overhead
- * 2. constexpr → compile-time evaluation where possible
- * 3. No heap allocation → stack-only operations
- * 4. Type-safe → use existing enums from project
- * 5. noexcept → exception safety for embedded systems
- * 
- * FEATURES:
- * - ✅ Eliminates ~350 lines of duplicate code
- * - ✅ Saves ~600 bytes of ROM (duplicate constants)
- * - ✅ Improves readability by 40%
- * - ✅ Integer-only frequency parsing (no floating point)
- * - ✅ All data in Flash (constexpr FLASH_STORAGE)
- * - ✅ Guard clauses for better readability
- * 
- * MEMORY: 0 bytes RAM (all data in Flash)
- * PERFORMANCE: O(1) lookup, ~50 cycles for frequency parsing
- * 
- * @author Diamond Core Protocol Refinement
- * @version 2.0.0
- */
+// * * @file diamond_core.hpp * @brief Diamond Core Optimization Layer - Diamond Code Refinement * // Memory-safe, optimized, zero-allocation * * PURPOSE: Zero-cost abstractions that eliminate code duplication * PRINCIPLES: * 1. All functions inline  compiler optimizes to zero runtime overhead * 2. constexpr  compile-time evaluation where possible * 3. No heap allocation  stack-only operations * 4. Type-safe  use existing enums from project * 5. noexcept  exception safety for embedded systems * * FEATURES: * -  Eliminates ~350 lines of duplicate code * -  Saves ~600 bytes of ROM (duplicate constants) * -  Improves readability by 40% * -  Integer-only frequency parsing (no floating point) * -  All data in Flash (constexpr FLASH_STORAGE) * -  Guard clauses for better readability * * MEMORY: 0 bytes RAM (all data in Flash) * PERFORMANCE: O(1) lookup, ~50 cycles for frequency parsing * * @author Diamond Core Protocol Refinement * @version 2.0.0
 
 #ifndef DIAMOND_CORE_HPP_
 #define DIAMOND_CORE_HPP_
@@ -48,9 +21,7 @@ using ThreatIndex = uint8_t;
 using RSSIValue = int32_t;
 using FrequencyHz = uint64_t;
 
-// ===========================================
 // CONSTANTS
-// ===========================================
 namespace TrendConstants {
     constexpr TrendIndex STATIC = 0;
     constexpr TrendIndex APPROACHING = 1;
@@ -76,11 +47,7 @@ namespace ErrorCodes {
 // Movement Trend Utilities
 
 struct TrendUtils {
-    /**
-     * @brief Get trend symbol character
-     * @param trend_idx Trend index (0-3)
-     * @return Single character symbol
-     */
+    // * * @brief Get trend symbol character * @param trend_idx Trend index (0-3) * @return Single character symbol
     static inline char symbol(const TrendIndex trend_idx) noexcept {
         switch (trend_idx) {
             case TrendConstants::APPROACHING: return TrendConstants::APPROACHING_SYMBOL;
@@ -91,9 +58,7 @@ struct TrendUtils {
         }
     }
 
-    /**
-     * @brief Trend name strings (stored in Flash)
-     */
+    // * * @brief Trend name strings (stored in Flash)
     static constexpr const char* const TREND_NAMES[TrendConstants::MAX_TREND_INDEX] FLASH_STORAGE = {
         "Static",      // STATIC (0)
         "Approaching", // APPROACHING (1)
@@ -101,11 +66,7 @@ struct TrendUtils {
         "Unknown"      // UNKNOWN (3)
     };
 
-    /**
-     * @brief Get trend name string
-     * @param trend_idx Trend index (0-3)
-     * @return String literal for the trend
-     */
+    // * * @brief Get trend name string * @param trend_idx Trend index (0-3) * @return String literal for the trend
     static inline const char* name(const TrendIndex trend_idx) noexcept {
         if (trend_idx >= TrendConstants::MAX_TREND_INDEX) {
             return TREND_NAMES[TrendConstants::UNKNOWN];
@@ -114,15 +75,10 @@ struct TrendUtils {
     }
 };
 
-// ===========================================
 // RSSI THRESHOLD UTILITIES
-// ===========================================
 
 struct RSSIUtils {
-    /**
-     * @brief RSSI threshold values for threat levels (stored in Flash)
-     * Maps threat level (0-4) to minimum RSSI value required
-     */
+    // * * @brief RSSI threshold values for threat levels (stored in Flash) * Maps threat level (0-4) to minimum RSSI value required
     static constexpr RSSIValue THRESHOLDS[RSSIConstants::MAX_THREAT_INDEX] FLASH_STORAGE = {
         -120,  // NONE (0)
         -100,  // LOW (1)
@@ -131,11 +87,7 @@ struct RSSIUtils {
         -50    // CRITICAL (4)
     };
 
-    /**
-     * @brief Get RSSI threshold for a threat level
-     * @param threat_idx Threat level index (0-4)
-     * @return Minimum RSSI value for the threat level
-     */
+    // * * @brief Get RSSI threshold for a threat level * @param threat_idx Threat level index (0-4) * @return Minimum RSSI value for the threat level
     static inline RSSIValue threshold(const ThreatIndex threat_idx) noexcept {
         if (threat_idx >= RSSIConstants::MAX_THREAT_INDEX) {
             return THRESHOLDS[0];  // Default to NONE threshold
@@ -143,38 +95,23 @@ struct RSSIUtils {
         return THRESHOLDS[threat_idx];
     }
 
-    /**
-     * @brief Validate RSSI against threshold
-     * @param rssi RSSI value to validate
-     * @param threat_idx Threat level index (0-4)
-     * @return true if RSSI meets or exceeds threshold
-     */
+    // * * @brief Validate RSSI against threshold * @param rssi RSSI value to validate * @param threat_idx Threat level index (0-4) * @return true if RSSI meets or exceeds threshold
     static inline bool validate_rssi(const RSSIValue rssi, const ThreatIndex threat_idx) noexcept {
         return rssi >= threshold(threat_idx);
     }
 
-    /**
-     * @brief Check if RSSI indicates strong signal
-     * @param rssi RSSI value to check
-     * @return true if RSSI >= -70 dBm
-     */
+    // * * @brief Check if RSSI indicates strong signal * @param rssi RSSI value to check * @return true if RSSI >= -70 dBm
     static inline bool is_strong(const RSSIValue rssi) noexcept {
         return rssi >= RSSIConstants::STRONG_THRESHOLD;
     }
 
-    /**
-     * @brief Check if RSSI indicates weak signal
-     * @param rssi RSSI value to check
-     * @return true if RSSI <= -100 dBm
-     */
+    // * * @brief Check if RSSI indicates weak signal * @param rssi RSSI value to check * @return true if RSSI <= -100 dBm
     static inline bool is_weak(const RSSIValue rssi) noexcept {
         return rssi <= RSSIConstants::WEAK_THRESHOLD;
     }
 };
 
-// ===========================================
 // INTEGER-ONLY FREQUENCY PARSER
-// ===========================================
 // DIAMOND FIX: Eliminates strtod() and double arithmetic
 // - Cortex-M4F lacks double FPU (only float), making strtod() ~100x slower
 // - All frequency operations are integer-based, eliminating floating point overhead
@@ -198,10 +135,7 @@ namespace FrequencyParserConstants {
 }
 
 struct FrequencyParser {
-    /**
-     * @brief Precomputed multipliers for decimal places (stored in Flash)
-     * MULTIPLIERS[digits] = 10^(6 - digits) for 0-6 decimal digits
-     */
+    // * * @brief Precomputed multipliers for decimal places (stored in Flash) * MULTIPLIERS[digits] = 10^(6 - digits) for 0-6 decimal digits
     static constexpr uint64_t MULTIPLIERS[FrequencyParserConstants::MULTIPLIER_COUNT] FLASH_STORAGE = {
         1000000ULL,  // 10^6 (0 decimal digits)
         100000ULL,   // 10^5 (1 decimal digit)
@@ -212,18 +146,7 @@ struct FrequencyParser {
         1ULL         // 10^0 (6 decimal digits)
     };
 
-    /**
-     * @brief Parse frequency string in MHz format (e.g., "2400.5" -> 2400500000 Hz)
-     * 
-     * @param str Null-terminated string containing frequency in MHz
-     * @return Frequency in Hz, or UINT64_MAX on error
-     * 
-     * Error conditions:
-     * - Null pointer or empty string
-     * - Non-numeric characters
-     * - Overflow during conversion
-     * - Frequency outside hardware range (1 MHz - 7200 MHz)
-     */
+    // * * @brief Parse frequency string in MHz format (e.g., "2400.5" -> 2400500000 Hz) * * @param str Null-terminated string containing frequency in MHz * @return Frequency in Hz, or UINT64_MAX on error * * Error conditions: * - Null pointer or empty string * - Non-numeric characters * - Overflow during conversion * - Frequency outside hardware range (1 MHz - 7200 MHz)
     static inline FrequencyHz parse_mhz_string(const char* str) noexcept {
         // Guard clause: null or empty string
         if (str == nullptr || *str == '\0') {
@@ -297,17 +220,7 @@ struct FrequencyParser {
         return result;
     }
 
-    /**
-     * @brief Parse frequency string in Hz format (e.g., "2400500000" -> 2400500000 Hz)
-     * 
-     * @param str Null-terminated string containing frequency in Hz
-     * @return Frequency in Hz, or UINT64_MAX on error
-     * 
-     * Error conditions:
-     * - Null pointer or empty string
-     * - Non-numeric characters
-     * - Overflow during conversion
-     */
+    // * * @brief Parse frequency string in Hz format (e.g., "2400500000" -> 2400500000 Hz) * * @param str Null-terminated string containing frequency in Hz * @return Frequency in Hz, or UINT64_MAX on error * * Error conditions: * - Null pointer or empty string * - Non-numeric characters * - Overflow during conversion
     static inline FrequencyHz parse_hz_string(const char* str) noexcept {
         // Guard clause: null or empty string
         if (str == nullptr || *str == '\0') {
@@ -335,11 +248,7 @@ struct FrequencyParser {
         return hz;
     }
 
-    /**
-     * @brief Validate frequency is within hardware limits
-     * @param freq_hz Frequency in Hz to validate
-     * @return true if frequency is within valid range (1 MHz - 7200 MHz)
-     */
+    // * * @brief Validate frequency is within hardware limits * @param freq_hz Frequency in Hz to validate * @return true if frequency is within valid range (1 MHz - 7200 MHz)
     static inline bool is_valid_frequency(const FrequencyHz freq_hz) noexcept {
         return freq_hz >= FrequencyParserConstants::MIN_HARDWARE_FREQ_HZ && 
                freq_hz <= FrequencyParserConstants::MAX_HARDWARE_FREQ_HZ;

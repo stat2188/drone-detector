@@ -1,7 +1,4 @@
-/**
- * Diamond-Optimized Settings Persistence Implementation
- * Explicit template instantiation for DroneAnalyzerSettings
- */
+// * * Diamond-Optimized Settings Persistence Implementation * Explicit template instantiation for DroneAnalyzerSettings
 
 #include "settings_persistence.hpp"
 #include "ui_drone_common_types.hpp"

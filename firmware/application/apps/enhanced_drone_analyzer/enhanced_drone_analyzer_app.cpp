@@ -1,7 +1,4 @@
-/*
- * Enhanced Drone Analyzer - Main Entry Point
- * Fixed: Section name matches external_app.ld (added 'app_' prefix)
- */
+// * Enhanced Drone Analyzer - Main Entry Point * Fixed: Section name matches external_app.ld (added 'app_' prefix)
 
 #include "ui_navigation.hpp"
 #include "portapack.hpp"
@@ -17,9 +14,7 @@ using namespace portapack;
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ========================================
-// TYPE ALIASES (Semantic Types)
-// ========================================
+// TYPE ALIASES
 using AppNavigationView = ui::NavigationView;
 
 void initialize_app(AppNavigationView& nav) noexcept {

@@ -1,16 +1,4 @@
-/**
- * @file scanning_coordinator.cpp
- * @brief Coordinate scanning operations for Enhanced Drone Analyzer
- * 
- * DIAMOND CODE PRINCIPLES:
- * - Zero heap allocation: All memory is stack-allocated or in Flash
- * - No exceptions: All functions are noexcept
- * - Type-safe: Uses semantic type aliases
- * - Memory-safe: Uses ChibiOS RTOS for thread management
- * 
- * @author Diamond Code Pipeline
- * @date 2026-02-20
- */
+// * * @file scanning_coordinator.cpp * @brief Coordinate scanning operations for Enhanced Drone Analyzer * * DIAMOND CODE PRINCIPLES: * - Zero heap allocation: All memory is stack-allocated or in Flash * - No exceptions: All functions are noexcept * - Type-safe: Uses semantic type aliases * - Memory-safe: Uses ChibiOS RTOS for thread management * * @author Diamond Code Pipeline * @date 2026-02-20
 
 #include "scanning_coordinator.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
@@ -23,14 +11,10 @@ namespace ui::apps::enhanced_drone_analyzer {
 // DIAMOND FIX: Coordinator Thread Working Area Definition
 stkalign_t ScanningCoordinator::coordinator_wa_[THD_WA_SIZE(ScanningCoordinator::COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 
-// ===========================================
-// TYPE ALIASES (Semantic Types)
-// ===========================================
+// TYPE ALIASES
 using TimeoutCount = uint32_t;
 
-// ===========================================
-// CONSTANTS (Named, No Magic Numbers)
-// ===========================================
+// CONSTANTS
 namespace CoordinatorConstants {
     // Scan cycle timeout in milliseconds
     constexpr uint32_t SCAN_CYCLE_TIMEOUT_MS = 10000;
@@ -42,18 +26,14 @@ namespace CoordinatorConstants {
     constexpr TimeoutCount MAX_CONSECUTIVE_SCANNER_FAILURES = 5;
 }
 
-// ===========================================
 // RETURN CODES
-// ===========================================
 namespace ReturnCodes {
     constexpr msg_t SUCCESS = 0;
     constexpr msg_t TIMEOUT_ERROR = -1;
     constexpr msg_t SCANNER_ERROR = -2;
 }
 
-// ===========================================
 // ScanningCoordinator Implementation
-// ===========================================
 
 ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
                                         DroneHardwareController& hardware,
@@ -113,7 +93,7 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
         return;
     }
 
-    // ✅ DIAMOND FIX: Race Condition - Use termination flag for clean thread exit
+    // DIAMOND FIX: Race Condition - Use termination flag for clean thread exit
     // Signal thread to stop using termination flag (thread-safe)
     {
         CriticalSection cs;
@@ -171,14 +151,13 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
 
     // Counters for error detection
     TimeoutCount consecutive_timeouts = 0;
-    // DEPRECATED: Removed unused variable consecutive_scanner_failures
     // Reason: Variable was declared but never used, causing compiler warning
     // TimeoutCount consecutive_scanner_failures = 0;
 
     while (scanning_active_) {
         // Check initialization state - wait until initialization is complete
         if (!scanner_.is_initialization_complete()) {
-            // 🔴 FIX #L5: Use constant instead of magic number
+            // FIX #L5: Use constant instead of magic number
             chThdSleepMilliseconds(EDA::Constants::SD_CARD_POLL_INTERVAL_MS);
             continue;
         }
@@ -216,7 +195,7 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         chThdSleepMilliseconds(scan_interval_ms_);
     }
 
-    // ✅ DIAMOND FIX: Set termination flag before exit (thread-safe)
+    // DIAMOND FIX: Set termination flag before exit (thread-safe)
     // This signals to coordinator that thread has exited cleanly
     {
         CriticalSection cs;

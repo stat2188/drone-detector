@@ -52,7 +52,7 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 using rf::Frequency;
 
-// Lock Order: Always acquire locks in ascending order (1 → 2 → 3 → 4 → 5 → 6 → 7)
+// Lock Order: Always acquire locks in ascending order (1  2  3  4  5  6  7)
 // Never acquire a lower-numbered lock while holding a higher-numbered lock
 
 // Explicit thread stack sizes
@@ -80,7 +80,6 @@ struct RssiMeasurement {
     systime_t timestamp_ms;
 };
 
-
 namespace UIStyles {
     EDA_FLASH_CONST inline static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
     EDA_FLASH_CONST inline static constexpr Style YELLOW_STYLE{font::fixed_8x16, Color::black(), Color::yellow()};
@@ -99,7 +98,6 @@ public:
         std::fill(std::begin(timestamp_history_), std::end(timestamp_history_), 0);
     }
 
-    // Explicit copy constructor to avoid deprecated implicit copy constructor warning
     TrackedDrone(const TrackedDrone& other) : frequency(other.frequency),
                      drone_type(other.drone_type),
                      threat_level(other.threat_level),
@@ -192,7 +190,7 @@ public:
     // DIAMOND FIX: Priority 1 - Type Ambiguity
     // Changed from uint32_t to Frequency (uint64_t) for consistency
     // Eliminates signed/unsigned comparison overflows and data truncation
-    // 🔴 FIX #L8: Remove redundant in-class default initialization
+    // FIX #L8: Remove redundant in-class default initialization
     // Diamond Code: All members are initialized in constructor, no need for defaults
     Frequency frequency;
     uint8_t drone_type;
@@ -219,7 +217,6 @@ struct DisplayDroneEntry {
     Color display_color = Color::white();
     MovementTrend trend = MovementTrend::UNKNOWN;
 };
-
 
 // Local constants for DroneDisplayController
 inline static constexpr int SPEC_WIDTH = DiamondFixes::SpectrumConstants::SPEC_WIDTH;  // EDA::Constants::SPECTRUM_BIN_COUNT_240
@@ -253,8 +250,6 @@ struct DroneDetectionMessage {
     ThreatLevel threat_level;
     systime_t timestamp;
 };
-
-// Removed DroneUpdateMessage struct - unused dead code
 
 struct DroneSignal {
     Frequency frequency_hz;
@@ -339,7 +334,6 @@ private:
     // - Stack safety margin: ~2324 bytes
     static constexpr size_t WORKER_STACK_SIZE = 3072;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
-
 
     // File I/O
     LogFile csv_log_;
@@ -451,14 +445,14 @@ struct DetectionParams {
     ThreatLevel threat_level;
 };
 
-    // Histogram Data Flow: SpectralAnalyzer → Scanner → Display
+    // Histogram Data Flow: SpectralAnalyzer  Scanner  Display
     // Function pointer with user data (no heap allocation, no std::function)
     using HistogramCallback = void(*)(const SpectralAnalyzer::HistogramBuffer&, uint8_t noise_floor, void* user_data) noexcept;
     
-    /// @brief Set histogram callback for data flow from SpectralAnalyzer to DisplayController
-    /// @param callback Function pointer to receive histogram data
-    /// @param user_data User data pointer (typically 'this' pointer)
-    /// @note Callback is called from scanner thread (must be thread-safe)
+    // / @brief Set histogram callback for data flow from SpectralAnalyzer to DisplayController
+    // / @param callback Function pointer to receive histogram data
+    // / @param user_data User data pointer (typically 'this' pointer)
+    // / @note Callback is called from scanner thread (must be thread-safe)
     void set_histogram_callback(HistogramCallback callback, void* user_data = nullptr) noexcept {
         histogram_callback_ = callback;
         histogram_callback_user_data_ = user_data;
@@ -478,7 +472,7 @@ struct DetectionParams {
     rf::Frequency get_current_scanning_frequency() const;
     ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
     // STEP 3 FIX: Return by value instead of by reference to avoid dangling reference issues
-    TrackedDrone getTrackedDrone(size_t index) const;  // 🔴 FIX: Protected with mutex
+    TrackedDrone getTrackedDrone(size_t index) const;  // FIX: Protected with mutex
     void handle_scan_error(const char* error_msg);
 
     // DIAMOND OPTIMIZATION: inline + noexcept for zero-overhead abstraction
@@ -495,7 +489,7 @@ struct DetectionParams {
     DroneScanner& operator=(const DroneScanner&) = delete;
     DroneScanner& operator=(DroneScanner&&) = delete;
 
-    // 🎯 Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
+    // Use UnifiedStringLookup and UnifiedColorLookup directly at call sites
     // UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type))
     // UnifiedColorLookup::drone(static_cast<uint8_t>(type))
 
@@ -629,7 +623,6 @@ struct DetectionParams {
       volatile bool is_real_mode_{true};
 
      size_t tracked_count_ = 0;
-
 
     size_t approaching_count_ = 0;
     size_t receding_count_ = 0;
@@ -781,7 +774,7 @@ private:
     volatile bool rssi_updated_{false};
     volatile int32_t last_valid_rssi_{-120};
     
-    // 🔴 FIX: Moved message handlers to parent View to prevent MsgDblReg
+    // FIX: Moved message handlers to parent View to prevent MsgDblReg
     // Only ChannelStatistics handler remains here as it's unique
     
     MessageHandlerRegistration message_handler_channel_statistics_ {
@@ -1031,32 +1024,32 @@ class DroneDisplayController : public View {
 public:
     // Spectrum Configuration Constants (Flash storage, zero RAM overhead)
     
-    /// @brief Default frequency width per spectrum bin (100 kHz)
+    // / @brief Default frequency width per spectrum bin (100 kHz)
     static constexpr uint32_t DEFAULT_EACH_BIN_SIZE_HZ = 100000;
     
-    /// @brief Default frequency step for spectrum markers (1 MHz)
+    // / @brief Default frequency step for spectrum markers (1 MHz)
     static constexpr uint32_t DEFAULT_MARKER_PIXEL_STEP_HZ = 1000000;
     
-    /// @brief Default minimum color power level
+    // / @brief Default minimum color power level
     static constexpr uint8_t DEFAULT_MIN_COLOR_POWER = 0;
     
     // Histogram Color Thresholds (0-255 scale, Flash storage)
     
-    /// @brief 20% threshold (51 = 0.20 * 255)
+    // / @brief 20% threshold (51 = 0.20 * 255)
     static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_20PCT = 51;
     
-    /// @brief 40% threshold (102 = 0.40 * 255)
+    // / @brief 40% threshold (102 = 0.40 * 255)
     static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_40PCT = 102;
     
-    /// @brief 60% threshold (153 = 0.60 * 255)
+    // / @brief 60% threshold (153 = 0.60 * 255)
     static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_60PCT = 153;
     
-    /// @brief 80% threshold (204 = 0.80 * 255)
+    // / @brief 80% threshold (204 = 0.80 * 255)
     static constexpr uint8_t HISTOGRAM_COLOR_THRESHOLD_80PCT = 204;
     
     // Display Mode Enumeration (type-safe display mode selection)
 
-    /// @brief Display mode enumeration for type safety
+    // / @brief Display mode enumeration for type safety
     enum class DisplayRenderMode : uint8_t {
         DEFAULT = 0,  ///< Default mode
         SPECTRUM = 1, ///< Spectrum display mode
@@ -1076,7 +1069,7 @@ public:
         uint8_t noise_floor;    // Noise floor from spectral analysis
         bool is_valid;          // Buffer contains valid data
         
-        /// @brief Clear histogram buffer
+        // / @brief Clear histogram buffer
         void clear() noexcept {
             std::fill(std::begin(bin_counts), std::end(bin_counts), 0);
             max_count = 0;
@@ -1118,32 +1111,30 @@ public:
 
     // Histogram Display Methods
     
-    /// @brief Update histogram display buffer with new data
+    // / @brief Update histogram display buffer with new data
     void update_histogram_display(
         const SpectralAnalyzer::HistogramBuffer& analysis_histogram,
         uint8_t noise_floor
     ) noexcept;
     
-    /// @brief Render histogram to display
+    // / @brief Render histogram to display
     void render_histogram(Painter& painter) noexcept;
 
-    /// @brief Clear the histogram display area
-    /// @param painter The painter to use for clearing
+    // / @brief Clear the histogram display area
+    // / @param painter The painter to use for clearing
     void clear_histogram_area(Painter& painter) noexcept;
 
-    /// @brief Get the current display mode
-    /// @return Current display mode (SPECTRUM or HISTOGRAM)
+    // / @brief Get the current display mode
+    // / @return Current display mode (SPECTRUM or HISTOGRAM)
     DisplayRenderMode get_display_mode() const noexcept {
         return mode_;
     }
 
-    /// @brief Set the display mode
-    /// @param new_mode The new display mode to set
+    // / @brief Set the display mode
+    // / @param new_mode The new display mode to set
     void set_display_mode(DisplayRenderMode new_mode) noexcept {
         mode_ = new_mode;
-        // ===========================================
         // DIAMOND FIX: Reset histogram_dirty_ when switching to histogram mode
-        // ===========================================
         // This ensures the histogram is rendered immediately after mode switch
         if (new_mode == DisplayRenderMode::HISTOGRAM) {
             histogram_dirty_ = true;
@@ -1192,7 +1183,6 @@ public:
     const PowerLevelsBuffer& spectrum_power_levels() const {
         return *reinterpret_cast<const PowerLevelsBuffer*>(spectrum_power_levels_storage_);
     }
-
 
     // Public methods for parent View message delegation
     void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) {
@@ -1346,7 +1336,6 @@ private:
     // Counter for used elements
     size_t detected_drones_count_ = 0;
 
-
     // Static buffers (Zero-Heap)
     // Diamond Code Principle: All data must be static or stack-based
 
@@ -1357,30 +1346,23 @@ private:
     alignas(alignof(std::array<uint8_t, 200>))
     static uint8_t spectrum_power_levels_storage_[200];
 
-    // Флаг для отслеживания состояния буферов
     bool buffers_allocated_ = false;
     
-    // ===========================================
     // DIAMOND OPTIMIZATION: Histogram Display Buffer
-    // ===========================================
     // Zero-heap histogram display buffer (static storage in .bss)
     HistogramDisplayBuffer histogram_display_buffer_{};
     
     // Dirty flag for histogram rendering optimization
     bool histogram_dirty_ = false;
 
-    // ===========================================
     // DIAMOND FIX: Thread-Safe Buffer Protection
-    // ===========================================
     // Mutexes for protecting shared buffers accessed by multiple threads
     // - spectrum_mutex_: Protects spectrum_power_levels_ buffer
     // - histogram_mutex_: Protects histogram_display_buffer_ buffer
-    //
     // LOCK ORDER RULE:
     // Always acquire locks in ascending order:
-    //   1. SPECTRUM_MUTEX (spectrum_mutex_)
-    //   2. HISTOGRAM_MUTEX (histogram_mutex_)
-    //
+    // 1. SPECTRUM_MUTEX (spectrum_mutex_)
+    // 2. HISTOGRAM_MUTEX (histogram_mutex_)
     // These mutexes prevent TOCTOU race conditions between:
     // - Scanner thread: Writes to spectrum_power_levels_ via process_bins()
     // - UI thread: Reads from spectrum_power_levels_ via render_bar_spectrum()
@@ -1434,7 +1416,6 @@ private:
         return 0; // Wideband (Blue)
     }
 
-
     void handle_channel_spectrum(const ChannelSpectrum& spectrum);
 };
 
@@ -1446,25 +1427,19 @@ static constexpr const char* DEFAULT_SPECTRUM_FILE = "DEFAULT";
 
 class DroneUIController {
 public:
-    // ===========================================
     // INITIALIZATION PATTERN
-    // ===========================================
     // Constructor does NOT take display_controller as parameter.
     // Instead, display_controller_ is set via set_display_controller() after construction.
-    //
     // This two-phase initialization pattern makes the initialization order
     // independent of member declaration order in the parent class.
-    //
     // Benefits:
     // - No fragile dependency on declaration order
     // - ui_controller_ can be declared before display_controller_
     // - display_controller_ can be declared anywhere in the parent class
-    //
     // Usage in EnhancedDroneSpectrumAnalyzerView:
-    //   1. Construct ui_controller_ (display_controller_ = nullptr)
-    //   2. Construct display_controller_
-    //   3. Call ui_controller_.set_display_controller(&display_controller_)
-    //
+    // 1. Construct ui_controller_ (display_controller_ = nullptr)
+    // 2. Construct display_controller_
+    // 3. Call ui_controller_.set_display_controller(&display_controller_)
     // Constructor without display_controller - set via set_display_controller() after construction
     // This makes initialization order independent of member declaration order
     DroneUIController(NavigationView& nav,
@@ -1532,20 +1507,20 @@ public:
     void on_show() override;
     void on_hide() override;
 
-    /// @brief Toggle between spectrum and histogram display modes
+    // / @brief Toggle between spectrum and histogram display modes
     void on_toggle_display_mode();
 
-    /// @brief Continue deferred initialization (called from UI event loop, not paint)
-    /// This prevents nested stack frames that cause M0 stack overflow
+    // / @brief Continue deferred initialization (called from UI event loop, not paint)
+    // / This prevents nested stack frames that cause M0 stack overflow
     void continue_initialization();
 
-    /// @brief Request global shutdown - sets shutdown flag and stops all threads
+    // / @brief Request global shutdown - sets shutdown flag and stops all threads
     void request_global_shutdown() {
         raii::SystemLock lock;
         global_shutdown_requested_ = true;
     }
 
-    /// @brief Check if global shutdown has been requested
+    // / @brief Check if global shutdown has been requested
     bool is_global_shutdown_requested() const {
         raii::SystemLock lock;
         return global_shutdown_requested_;
@@ -1592,7 +1567,6 @@ public:
         static constexpr uint8_t MAX_PHASES = 6;
     };
 
-
     // constexpr LUT for initialization messages in Flash
     static constexpr const char* const INIT_STATUS_MESSAGES[] = {
         "Starting up...",      // CONSTRUCTED = 0
@@ -1628,7 +1602,6 @@ public:
         {"Finalizing...",           InitTiming::PHASE_DELAY_5_MS, &EnhancedDroneSpectrumAnalyzerView::init_phase_finalize}
     };
 
-
     // constexpr array for error messages (Flash storage)
     EDA_FLASH_CONST static constexpr const char* const ERROR_MESSAGES[] = {
         "No error",           // NONE = 0
@@ -1640,8 +1613,6 @@ public:
 
  private:
     NavigationView& nav_;
-
-    
 
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
@@ -1671,7 +1642,7 @@ public:
 
     bool scanning_active_ = false;
 
-    // 🔴 FIX: Unified message handlers to prevent MsgDblReg
+    // FIX: Unified message handlers to prevent MsgDblReg
     // These handlers delegate to controllers and internal methods
     
     MessageHandlerRegistration message_handler_spectrum_config_ {
@@ -1687,10 +1658,10 @@ public:
     MessageHandlerRegistration message_handler_frame_sync_ {
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
-            // 🔴 DIAMOND OPTIMIZATION: Enhanced initialization with timeout protection
+            // DIAMOND OPTIMIZATION: Enhanced initialization with timeout protection
             // Executed every frame (~16ms at 60 FPS)
             if (init_state_ == InitState::INITIALIZATION_ERROR) {
-                // Не обновляем UI, ошибка уже показана
+                // UI,
                 return;
             }
             
@@ -1700,7 +1671,7 @@ public:
                 return;
             }
 
-            // 🔴 SAFETY: Проверка валидности буферов перед операциями
+            // SAFETY:
             if (!display_controller_.are_buffers_valid()) {
                 return;
             }
@@ -1732,9 +1703,7 @@ public:
         void* user_data
     ) noexcept;
 
-    // ===========================================
     // FIX #5: Button Callbacks
-    // ===========================================
     // Diamond Code: Use lambdas with 'this' capture for callbacks
     // Note: std::function may allocate on heap, but this is unavoidable
     // with the Mayhem UI framework's callback design
@@ -1744,17 +1713,11 @@ public:
     void update_init_progress_display();
 
     // Stack Usage Monitoring
-    /**
-     * @brief Check stack usage and log warnings if low
-     */
+    // * * @brief Check stack usage and log warnings if low
     void check_stack_usage(const char* thread_name, size_t stack_size);
 
-    // ===========================================
     // STAGE 4 FIX: Memory Pressure Monitoring
-    // ===========================================
-    /**
-     * @brief Check memory pressure and log warnings if critical
-     */
+    // * * @brief Check memory pressure and log warnings if critical
     void check_memory_pressure();
 
     // Initialization state variables
@@ -1776,7 +1739,6 @@ public:
     };
     InitError init_error_ = InitError::NONE;
 };
-
 
 class LoadingScreenView : public View {
 public:

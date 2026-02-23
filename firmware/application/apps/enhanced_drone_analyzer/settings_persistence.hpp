@@ -1,34 +1,6 @@
-/**
- * @file settings_persistence.hpp
- * @brief Diamond-Optimized Settings Persistence for Enhanced Drone Analyzer
- *
- * DIAMOND CODE STANDARDS:
- * - Zero-heap allocation (no new, malloc, std::vector, std::string)
- * - RAII wrappers for automatic resource management
- * - noexcept for exception-free operation
- * - Guard clauses for early returns
- * - Doxygen comments for public APIs
- *
- * FEATURES:
- * - Single template for all settings types (eliminates code duplication)
- * - Look-up table for settings parsing (eliminates 50+ if-else)
- * - Single-pass buffer serialization (eliminates 50+ SD write syscalls)
- * - Zero heap allocation (all stack-based)
- * - Compile-time validation (static_assert)
- *
- * STAGE 4 DIAMOND FIXES:
- * - errno_mutex protection around all errno access (Red Team fix)
- * - SettingsBufferLock RAII wrapper for settings I/O
- * - Thread-local buffer for settings loading
- * - Fixed-point division for settings validation
- * - Safe string parsing with error detection
- *
- * RED TEAM FIX: All errno access is now protected by errno_mutex to prevent
- * race conditions when multiple threads call strtoull()/strtoll().
- *
- * @target STM32F405 (ARM Cortex-M4, 128KB RAM)
- * @os ChibiOS (bare-metal RTOS)
- */
+// Settings persistence for Enhanced Drone Analyzer
+// Zero-heap, RAII, template-based implementation
+// Target: STM32F405 (ARM Cortex-M4)
 
 #ifndef SETTINGS_PERSISTENCE_HPP_
 #define SETTINGS_PERSISTENCE_HPP_
@@ -48,55 +20,15 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ===========================================
-// DIAMOND FIX: Settings Buffer Mutex Protection
-// ===========================================
-/**
- * @brief Mutex for settings buffer serialization
- *
- * FatFS is NOT thread-safe - all settings buffer access must be serialized.
- * This mutex protects the settings buffer during load/save operations.
- */
 extern Mutex settings_buffer_mutex;
-
-/**
- * @brief Mutex for errno protection
- *
- * RED TEAM FIX: errno is a global variable that is not thread-safe.
- * Multiple threads calling strtoull()/strtoll() can corrupt each other's errno values.
- * This mutex serializes all errno access to prevent race conditions.
- *
- * @note Lock order: DATA_MUTEX (value 2) - lowest priority mutex
- */
 extern Mutex errno_mutex;
 
-// ===========================================
-// FLASH STORAGE ATTRIBUTE
-// ===========================================
 #ifdef __GNUC__
     #define FLASH_STORAGE __attribute__((section(".rodata")))
 #else
     #define FLASH_STORAGE
 #endif
 
-// ===========================================
-// SETTINGS STRUCT (Zero-Heap)
-// ===========================================
-// NOTE: DroneAnalyzerSettings is defined in ui_drone_common_types.hpp
-// This header uses that definition for consistency across the codebase.
-// The struct has the following key members:
-// - uint8_t audio_flags, hardware_flags, scanning_flags, detection_flags, logging_flags, display_flags, profile_flags
-// - SpectrumMode spectrum_mode (enum class)
-// - uint64_t user_min_freq_hz, user_max_freq_hz, wideband_min_freq_hz, wideband_max_freq_hz
-// - Fixed-size char arrays for paths and names
-// See ui_drone_common_types.hpp for the complete definition.
-
-// ===========================================
-// SETTINGS METADATA (Flash-Resident)
-// ===========================================
-/**
- * @brief Setting type enumeration
- */
 enum SettingType : uint8_t {
     TYPE_BOOL = 0,
     TYPE_UINT32 = 1,
@@ -106,48 +38,30 @@ enum SettingType : uint8_t {
     TYPE_BITFIELD = 5
 };
 
-/**
- * @brief Setting metadata structure
- */
 struct SettingMetadata {
-    const char* key;        ///< Setting key string
-    uint16_t offset;        ///< Offset in DroneAnalyzerSettings struct
-    uint8_t type;          ///< Setting type
-    uint8_t bit_pos;       ///< Bit position for bitfield types
-    int64_t min_val;       ///< Minimum value
-    int64_t max_val;       ///< Maximum value
-    const char* default_str; ///< Default value string
+    const char* key;
+    uint16_t offset;
+    uint8_t type;
+    uint8_t bit_pos;
+    int64_t min_val;
+    int64_t max_val;
+    const char* default_str;
 };
 
-// ===========================================
-// SETTINGS METADATA MACROS
-// ===========================================
 #define SET_META(name, type_code, min, max, def) \
     { #name, static_cast<uint16_t>(offsetof(DroneAnalyzerSettings, name)), type_code, 0xFF, min, max, def }
 
 #define SET_META_BIT(name, bit_idx, def) \
     { #name, static_cast<uint16_t>(offsetof(DroneAnalyzerSettings, name)), TYPE_BITFIELD, bit_idx, 0, 1, def }
 
-// ===========================================
-// SETTINGS LOOKUP TABLE (Flash-Resident)
-// ===========================================
-// NOTE: This LUT must match DroneAnalyzerSettings from ui_drone_common_types.hpp
-// Key type differences from previous version:
-// - Flags are uint8_t (not uint32_t)
-// - spectrum_mode is SpectrumMode enum class (not uint32_t)
-// - Several fields are uint8_t (not uint32_t)
 constexpr size_t SETTINGS_COUNT = 52;
 
 inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
-    // Audio settings
     SET_META_BIT(audio_flags, 0, "true"),
     SET_META(audio_alert_frequency_hz, TYPE_UINT32, 200, 20000, "800"),
     SET_META(audio_alert_duration_ms, TYPE_UINT32, 50, 5000, "500"),
     SET_META(audio_volume_level, TYPE_UINT32, 0, 100, "50"),
     SET_META_BIT(audio_flags, 1, "false"),
-
-    // Spectrum settings - spectrum_mode is SpectrumMode enum class (underlying type uint8_t)
-    SET_META(spectrum_mode, TYPE_UINT32, 0, 4, "1"),
     SET_META(hardware_bandwidth_hz, TYPE_UINT32, 10000, 28000000, "24000000"),
     SET_META_BIT(hardware_flags, 0, "true"),
     SET_META_BIT(hardware_flags, 1, "false"),
@@ -197,57 +111,24 @@ inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
     SET_META(compact_ruler_tick_count, TYPE_UINT32, 3, 8, "4"),
     SET_META_BIT(display_flags, 4, "true"),
 
-    // Profile settings
     SET_META(current_profile_name, TYPE_STR, 32, 0, "Default"),
     SET_META_BIT(profile_flags, 0, "true"),
     SET_META_BIT(profile_flags, 1, "false"),
 
-    // File paths
     SET_META(freqman_path, TYPE_STR, 32, 0, "DRONES"),
     SET_META(settings_file_path, TYPE_STR, 64, 0, "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt"),
     SET_META(settings_version, TYPE_UINT32, 1, 999, "2")
 };
 
-// ===========================================
-// HELPER FUNCTIONS
-// ===========================================
-/**
- * @brief Check if value is in range
- * @param val Value to check
- * @param min_val Minimum value
- * @param max_val Maximum value
- * @return true if value is in range
- */
 inline bool is_value_in_range(int64_t val, int64_t min_val, int64_t max_val) {
     return val >= min_val && val <= max_val;
 }
 
-/**
- * @brief Safe string length calculation with null check
- * @param str String to measure
- * @return Length of string, or 0 if null
- */
 inline size_t const_strlen(const char* str) noexcept {
     return str ? strlen(str) : 0;
 }
 
-// ===========================================
-// RED TEAM FIX: Safe String Parsing with errno Protection
-// ===========================================
-/**
- * @brief Safely parse unsigned integer from string (errno protected)
- *
- * RED TEAM FIX: All errno access is protected by errno_mutex to prevent
- * race conditions when multiple threads call strtoull().
- *
- * @param str String to parse
- * @param base Number base (default 10)
- * @return EDA::ErrorResult<uint64_t> with parsed value or error
- *
- * @note Handles overflow, partial parsing, and invalid input
- * @note Clears errno before parsing to detect overflow
- * @note Skips leading whitespace for robustness
- */
+// RED TEAM FIX: Safe String Parsing
 inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base = 10) noexcept {
     // Guard clause: null or empty string
     if (!str || *str == '\0') {
@@ -271,17 +152,14 @@ inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base =
     char* endptr = nullptr;
     unsigned long long val = strtoull(str, &endptr, base);
 
-    // Check for overflow
     if (errno == ERANGE) {
         return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
     }
 
-    // Check if parsing failed
     if (endptr == nullptr || endptr == str) {
         return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
 
-    // Check if entire string was consumed (skip trailing whitespace)
     const char* p = endptr;
     while (*p == ' ' || *p == '\t' || *p == '\r') {
         p++;
@@ -293,20 +171,7 @@ inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base =
     return EDA::ErrorResult<uint64_t>::ok(static_cast<uint64_t>(val));
 }
 
-/**
- * @brief Safely parse signed integer from string (errno protected)
- *
- * RED TEAM FIX: All errno access is protected by errno_mutex to prevent
- * race conditions when multiple threads call strtoll().
- *
- * @param str String to parse
- * @param base Number base (default 10)
- * @return EDA::ErrorResult<int64_t> with parsed value or error
- *
- * @note Handles overflow, partial parsing, and invalid input
- * @note Clears errno before parsing to detect overflow
- * @note Skips leading whitespace for robustness
- */
+// * * @brief Safely parse signed integer from string (errno protected) * * RED TEAM FIX: All errno access is protected by errno_mutex to prevent * race conditions when multiple threads call strtoll(). * * @param str String to parse * @param base Number base (default 10) * @return EDA::ErrorResult<int64_t> with parsed value or error * * @note Handles overflow, partial parsing, and invalid input * @note Clears errno before parsing to detect overflow * @note Skips leading whitespace for robustness
 inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 10) noexcept {
     // Guard clause: null or empty string
     if (!str || *str == '\0') {
@@ -330,17 +195,14 @@ inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 1
     char* endptr = nullptr;
     long long val = strtoll(str, &endptr, base);
 
-    // Check for overflow
     if (errno == ERANGE) {
         return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
     }
 
-    // Check if parsing failed
     if (endptr == nullptr || endptr == str) {
         return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
 
-    // Check if entire string was consumed (skip trailing whitespace)
     const char* p = endptr;
     while (*p == ' ' || *p == '\t' || *p == '\r') {
         p++;
@@ -352,14 +214,7 @@ inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 1
     return EDA::ErrorResult<int64_t>::ok(static_cast<int64_t>(val));
 }
 
-/**
- * @brief Safely parse boolean from string
- * @param str String to parse
- * @return EDA::ErrorResult<bool> with parsed value or error
- *
- * @note Accepts "true" or "false" (case-sensitive)
- * @note Rejects partial matches like "trueX"
- */
+// * * @brief Safely parse boolean from string * @param str String to parse * @return EDA::ErrorResult<bool> with parsed value or error * * @note Accepts "true" or "false" (case-sensitive) * @note Rejects partial matches like "trueX"
 inline EDA::ErrorResult<bool> safe_str_to_bool(const char* str) noexcept {
     // Guard clause: null or empty string
     if (!str || *str == '\0') {
@@ -388,17 +243,8 @@ inline EDA::ErrorResult<bool> safe_str_to_bool(const char* str) noexcept {
     return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
 }
 
-// ===========================================
 // SETTINGS BUFFER LOCK (RAII)
-// ===========================================
-/**
- * @brief RAII wrapper for settings buffer mutex
- *
- * Ensures mutex is always unlocked when scope exits.
- *
- * @note Diamond Code: noexcept, deleted copy/move for safety
- * @note Uses ChibiOS chMtxUnlock() without parameter (newer API)
- */
+// * * @brief RAII wrapper for settings buffer mutex * * Ensures mutex is always unlocked when scope exits. * * @note Diamond Code: noexcept, deleted copy/move for safety * @note Uses ChibiOS chMtxUnlock() without parameter (newer API)
 class SettingsBufferLock {
 public:
     SettingsBufferLock() noexcept {
@@ -413,20 +259,8 @@ public:
     SettingsBufferLock& operator=(const SettingsBufferLock&) = delete;
 };
 
-// ===========================================
 // SETTINGS SERIALIZATION HELPER
-// ===========================================
-/**
- * @brief Serialize setting to buffer
- * @param buf Output buffer
- * @param offset Offset in buffer
- * @param max_size Maximum buffer size
- * @param s Settings struct
- * @param meta Setting metadata
- * @return Number of bytes written
- *
- * @note Handles SpectrumMode enum class (stored as uint8_t underlying type)
- */
+// * * @brief Serialize setting to buffer * @param buf Output buffer * @param offset Offset in buffer * @param max_size Maximum buffer size * @param s Settings struct * @param meta Setting metadata * @return Number of bytes written * * @note Handles SpectrumMode enum class (stored as uint8_t underlying type)
 inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
                                 const DroneAnalyzerSettings& s, const SettingMetadata& meta) {
     // Guard clause: null check for buffer pointer
@@ -467,32 +301,15 @@ inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
     return 0;
 }
 
-// ===========================================
 // DISPATCH OPERATION ENUM
-// ===========================================
 enum class DispatchOp : uint8_t {
     PARSE,      ///< Parse string value
     RESET,       ///< Reset to default value
     VALIDATE    ///< Validate current value
 };
 
-// ===========================================
 // DISPATCH BY TYPE HELPER
-// ===========================================
-/**
- * @brief Dispatch setting value based on type and operation
- *
- * @param op Operation to perform (PARSE, RESET, VALIDATE)
- * @param data_ptr Pointer to setting data in DroneAnalyzerSettings struct
- * @param meta Metadata for setting
- * @param value_str String value to parse (for PARSE operation)
- * @return true if operation succeeded, false otherwise
- *
- * @note DIAMOND FIX: Uses safe parsing functions with error detection
- * @note CRITICAL BUG FIX: Replaced unsafe strtoul/strtol with safe_str_to_uint64/safe_str_to_int64
- * @note CRITICAL BUG FIX: Replaced insecure strncmp("true", 4) with safe_str_to_bool
- * @note Handles SpectrumMode enum class (stored as uint8_t underlying type)
- */
+// * * @brief Dispatch setting value based on type and operation * * @param op Operation to perform (PARSE, RESET, VALIDATE) * @param data_ptr Pointer to setting data in DroneAnalyzerSettings struct * @param meta Metadata for setting * @param value_str String value to parse (for PARSE operation) * @return true if operation succeeded, false otherwise * * @note DIAMOND FIX: Uses safe parsing functions with error detection * @note CRITICAL BUG FIX: Replaced unsafe strtoul/strtol with safe_str_to_uint64/safe_str_to_int64 * @note CRITICAL BUG FIX: Replaced insecure strncmp("true", 4) with safe_str_to_bool * @note Handles SpectrumMode enum class (stored as uint8_t underlying type)
 inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
                           const SettingMetadata& meta, char* value_str = nullptr) noexcept {
     switch (meta.type) {
@@ -640,86 +457,40 @@ inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
     return false;
 }
 
-// ===========================================
-// SETTINGS LOAD BUFFER
-// ===========================================
-/**
- * @brief Stack usage documentation for settings loading buffers
- *
- * SD card and file reading timeout constants
- * Prevents system freeze on SD card failures or corrupted files
- */
+// SETTINGS LOAD BUFFER (Timeouts)
 static constexpr systime_t SD_CARD_MOUNT_TIMEOUT_MS = 2000;
 static constexpr size_t MAX_READ_ITERATIONS = 10000;
 static constexpr systime_t READ_TIMEOUT_MS = 5000;
 
-/**
- * @brief Settings load buffer structure
- *
- * Stack usage: 256 bytes total (FIX #3: Reduced from 400 bytes)
- * - LINE_BUFFER_SIZE: 128 bytes (reduced from 144)
- * - READ_BUFFER_SIZE: 128 bytes (reduced from 256)
- */
+// * * @brief Settings load buffer structure * * Stack usage: 256 bytes total (FIX #3: Reduced from 400 bytes) * - LINE_BUFFER_SIZE: 128 bytes (reduced from 144) * - READ_BUFFER_SIZE: 128 bytes (reduced from 256)
 struct SettingsLoadBuffer {
-    /// @brief Line buffer for individual settings lines
-    /// @note 128 bytes: 112 bytes max line + 16 byte safety margin (FIX #3)
+    // / @brief Line buffer for individual settings lines
+    // / @note 128 bytes: 112 bytes max line + 16 byte safety margin (FIX #3)
     static constexpr size_t LINE_BUFFER_SIZE = 128;
 
-    /// @brief Read buffer for raw SD card data
-    /// @note 128 bytes: Reduced to save stack space (FIX #3)
+    // / @brief Read buffer for raw SD card data
+    // / @note 128 bytes: Reduced to save stack space (FIX #3)
     static constexpr size_t READ_BUFFER_SIZE = 128;
 
     char line_buffer[LINE_BUFFER_SIZE];
     char read_buffer[READ_BUFFER_SIZE];
 };
 
-// ===========================================
-// SETTINGS LOAD BUFFER
-// ===========================================
-/**
- * @brief Get settings load buffer
- *
- * Returns a reference to a static buffer used for loading settings from SD card.
- * The buffer is protected by settings_buffer_mutex to ensure thread safety.
- *
- * @return Reference to settings load buffer
- *
- * @note Zero-heap, thread-safe via settings_buffer_mutex
- * @note Buffer is reused across multiple load operations
- */
+// SETTINGS LOAD BUFFER (Getter)
 inline SettingsLoadBuffer& get_load_buffer() noexcept {
     static SettingsLoadBuffer buffer{};
     return buffer;
 }
 
-// ===========================================
-// M4 INTERRUPT MASKING (RAII)
-// ===========================================
-/**
- * @brief RAII wrapper for M4 interrupt masking
- *
- * Disables M4 interrupts during critical sections to prevent
- * race conditions with M4Core_IRQHandler. This prevents SV#8
- * hard faults when M4 interrupts fire while M0 kernel is locked.
- *
- * Usage:
- *   {
- *       M4InterruptMask m4_mask;  // Disables M4 interrupts
- *       // Perform SD card operations here
- *   }  // Automatically re-enables M4 interrupts
- *
- * @note Diamond Code: noexcept, deleted copy/move for safety
- * @note Uses creg::m4txevent for M4->M0 interrupt control
- */
+// M4 INTERRUPT MASKING
+// * * @brief RAII wrapper for M4 interrupt masking * * Disables M4 interrupts during critical sections to prevent * race conditions with M4Core_IRQHandler. This prevents SV#8 * hard faults when M4 interrupts fire while M0 kernel is locked. * * Usage: * { * M4InterruptMask m4_mask; // Disables M4 interrupts * // Perform SD card operations here * } // Automatically re-enables M4 interrupts * * @note Diamond Code: noexcept, deleted copy/move for safety * @note Uses creg::m4txevent for M4->M0 interrupt control
 class M4InterruptMask {
 public:
     M4InterruptMask() noexcept {
-        // Disable M4->M0 interrupt
         lpc43xx::creg::m4txevent::disable();
     }
 
     ~M4InterruptMask() noexcept {
-        // Re-enable M4->M0 interrupt
         lpc43xx::creg::m4txevent::enable();
     }
 
@@ -727,56 +498,45 @@ public:
     M4InterruptMask& operator=(const M4InterruptMask&) = delete;
 };
 
-// ===========================================
 // SETTINGS PERSISTENCE TEMPLATE
-// ===========================================
-/**
- * @brief Settings persistence template
- *
- * Provides load/save/reset/validate operations for any settings type.
- * Uses look-up table for efficient parsing and validation.
- *
- * @tparam T Settings type (must be compatible with SETTINGS_LUT)
- */
+// * * @brief Settings persistence template * * Provides load/save/reset/validate operations for any settings type. * Uses look-up table for efficient parsing and validation. * * @tparam T Settings type (must be compatible with SETTINGS_LUT)
 template<typename T>
 class SettingsPersistence {
 public:
-    /// @brief Load settings from file
-    /// @param settings Settings struct to populate
-    /// @return EDA::ErrorResult<bool> with success/failure
+    // / @brief Load settings from file
+    // / @param settings Settings struct to populate
+    // / @return EDA::ErrorResult<bool> with success/failure
     static EDA::ErrorResult<bool> load(T& settings);
 
-    /// @brief Save settings to file
-    /// @param settings Settings struct to save
-    /// @return EDA::ErrorResult<bool> with success/failure
+    // / @brief Save settings to file
+    // / @param settings Settings struct to save
+    // / @return EDA::ErrorResult<bool> with success/failure
     static EDA::ErrorResult<bool> save(const T& settings);
 
-    /// @brief Reset settings to defaults
-    /// @param settings Settings struct to reset
+    // / @brief Reset settings to defaults
+    // / @param settings Settings struct to reset
     static void reset(T& settings);
 
-    /// @brief Validate settings values
-    /// @param settings Settings struct to validate
-    /// @return EDA::ErrorResult<bool> with success/failure
+    // / @brief Validate settings values
+    // / @param settings Settings struct to validate
+    // / @return EDA::ErrorResult<bool> with success/failure
     static EDA::ErrorResult<bool> validate(const T& settings);
 
-    /// @brief Compatibility alias for reset_to_defaults
+    // / @brief Compatibility alias for reset_to_defaults
     static void reset_to_defaults(T& settings) { reset(settings); }
 
 private:
-    /// @brief Parse single settings line
-    /// @param line Line to parse
-    /// @param settings Settings struct to update
-    /// @return true if parsing succeeded
+    // / @brief Parse single settings line
+    // / @param line Line to parse
+    // / @param settings Settings struct to update
+    // / @return true if parsing succeeded
     static bool parse_line(char* line, T& settings);
 };
 
-// ===========================================
 // IMPLEMENTATION: load()
-// ===========================================
 template<typename T>
 EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
-    // 🔴 FIX: Mask M4 interrupts during file I/O to prevent SV#8 hard fault
+    // FIX: Mask M4 interrupts during file I/O to prevent SV#8 hard fault
     M4InterruptMask m4_mask;
 
     // Validate SD card status with timeout
@@ -873,9 +633,7 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
     return EDA::ErrorResult<bool>::ok(true);
 }
 
-// ===========================================
 // IMPLEMENTATION: parse_line()
-// ===========================================
 template<typename T>
 bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
     // Guard clause: null or empty line
@@ -937,9 +695,7 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
     return true;
 }
 
-// ===========================================
 // IMPLEMENTATION: save()
-// ===========================================
 template<typename T>
 EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
     SettingsBufferLock lock;
@@ -982,9 +738,7 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
     return EDA::ErrorResult<bool>::ok(true);
 }
 
-// ===========================================
 // IMPLEMENTATION: reset()
-// ===========================================
 template<typename T>
 void SettingsPersistence<T>::reset(T& settings) {
     for (size_t i = 0; i < SETTINGS_COUNT; i++) {
@@ -994,9 +748,7 @@ void SettingsPersistence<T>::reset(T& settings) {
     }
 }
 
-// ===========================================
 // IMPLEMENTATION: validate()
-// ===========================================
 template<typename T>
 EDA::ErrorResult<bool> SettingsPersistence<T>::validate(const T& settings) {
     for (size_t i = 0; i < SETTINGS_COUNT; i++) {

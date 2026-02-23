@@ -1,8 +1,3 @@
-/**
- * @file eda_raii.hpp
- * @brief RAII Wrappers for Enhanced Drone Analyzer
- */
-
 #ifndef EDA_RAII_HPP_
 #define EDA_RAII_HPP_
 
@@ -15,16 +10,10 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
-// ========================================
-// RAAI NAMESPACE (for SystemLock and MutexLock)
-// ========================================
 namespace raii {
 
-/**
- * @brief RAII wrapper for ChibiOS system lock (critical section)
- * @note Must be used for very short sections only
- * @note No blocking operations (I/O, sleep) allowed inside critical section
- */
+// RAII wrapper for ChibiOS system lock (critical section)
+// Must be used for very short sections only - no blocking operations allowed
 class SystemLock {
 public:
     SystemLock() noexcept { chSysLock(); }
@@ -39,75 +28,33 @@ public:
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-/**
- * @brief Atomic flag using volatile bool with ChibiOS critical sections
- *
- * Provides atomic operations on a boolean flag without using std::atomic.
- * Uses ChibiOS critical sections (chSysLock/chSysUnlock) for synchronization.
- *
- * DIAMOND FIX: Correct compare_and_swap implementation to prevent race condition.
- * The original implementation had a TOCTOU vulnerability where the check and
- * set were not atomic, allowing another thread to modify the value between them.
- *
- * USAGE:
- *   AtomicFlag flag;
- *   flag.set(true);
- *   if (flag.get()) { ... }
- *   flag.compare_and_swap(true, false);  // Atomic test-and-set
- *
- * @note Uses volatile bool for atomicity on ARM Cortex-M
- * @note Protected by ChibiOS critical sections
- * @note Zero-overhead abstraction (no std::atomic)
- */
+// Atomic flag using volatile bool with ChibiOS critical sections
+// Provides atomic operations on a boolean flag without using std::atomic
+// Uses ChibiOS critical sections (chSysLock/chSysUnlock) for synchronization
+// DIAMOND FIX: Correct compare_and_swap implementation to prevent race condition
 class AtomicFlag {
 public:
-    /// @brief Default constructor - initializes to false
+    // Default constructor - initializes to false
     constexpr AtomicFlag() noexcept : value_(false) {}
 
-    /// @brief Constructor with initial value
+    // Constructor with initial value
     constexpr explicit AtomicFlag(bool initial) noexcept : value_(initial) {}
 
-    /**
-     * @brief Get current value
-     * @return Current flag value
-     * @note Volatile bool reads are atomic on ARM Cortex-M
-     */
+    // Get current value
+    // Volatile bool reads are atomic on ARM Cortex-M
     bool get() const noexcept {
         return value_;
     }
 
-    /**
-     * @brief Set flag to specified value
-     * @param value New value
-     * @note Thread-safe: Uses critical section
-     */
+    // Set flag to specified value (thread-safe: uses critical section)
     void set(bool value) noexcept {
         chSysLock();
         value_ = value;
         chSysUnlock();
     }
 
-    /**
-     * @brief Atomic compare-and-swap operation
-     *
-     * Atomically compares the current value with expected, and if equal,
-     * sets it to desired. This is a lock-free atomic operation.
-     *
-     * DIAMOND FIX: Original implementation had race condition:
-     *   bool success = (value_ == expected);  // NOT ATOMIC
-     *   if (success) { value_ = desired; }
-     *
-     * Fixed implementation reads value atomically and performs swap in critical section:
-     *   bool actual = value_;  // Atomic read
-     *   if (actual == expected) { value_ = desired; }  // Atomic write
-     *
-     * @param expected Expected current value
-     * @param desired Value to set if expected matches
-     * @return true if swap succeeded, false otherwise
-     *
-     * @note Thread-safe: Uses critical section
-     * @note Returns true only if value was expected and swap succeeded
-     */
+    // Atomic compare-and-swap operation
+    // DIAMOND FIX: Original implementation had race condition - fixed with atomic read/write in critical section
     bool compare_and_swap(bool expected, bool desired) noexcept {
         chSysLock();
         bool actual = value_;  // Atomic read
@@ -118,14 +65,7 @@ public:
         return actual == expected;
     }
 
-    /**
-     * @brief Test-and-set operation
-     *
-     * Atomically sets the flag to true and returns the previous value.
-     *
-     * @return Previous value of the flag
-     * @note Thread-safe: Uses critical section
-     */
+    // Test-and-set operation (thread-safe: uses critical section)
     bool test_and_set() noexcept {
         chSysLock();
         bool previous = value_;
@@ -134,22 +74,19 @@ public:
         return previous;
     }
 
-    /**
-     * @brief Clear flag (set to false)
-     * @note Thread-safe: Uses critical section
-     */
+    // Clear flag (set to false) - thread-safe via critical section
     void clear() noexcept {
         chSysLock();
         value_ = false;
         chSysUnlock();
     }
 
-    /// @brief Non-copyable
+    // Non-copyable
     AtomicFlag(const AtomicFlag&) = delete;
     AtomicFlag& operator=(const AtomicFlag&) = delete;
 
 private:
-    /// @brief Flag value (volatile for atomicity on ARM Cortex-M)
+    // Flag value (volatile for atomicity on ARM Cortex-M)
     volatile bool value_;
 };
 
@@ -157,21 +94,8 @@ private:
 
 namespace raii {
 
-/**
- * @brief RAII wrapper for ChibiOS mutex lock
- *
- * Provides exception-safe mutex management. Locks on construction,
- * unlocks on destruction.
- *
- * USAGE:
- *   {
- *       MutexLock lock(&my_mutex);
- *       // Critical section here
- *   }
- *   // Mutex automatically unlocked here
- *
- * @note ChibiOS chMtxUnlock() takes no parameters (uses thread-local storage)
- */
+// RAII wrapper for ChibiOS mutex lock
+// Provides exception-safe mutex management - locks on construction, unlocks on destruction
 class MutexLock {
 public:
     explicit MutexLock(Mutex* mutex) noexcept : mutex_(mutex) {
@@ -205,229 +129,149 @@ namespace ui::apps::enhanced_drone_analyzer {
 // - MutexTryLock: Alias for OrderedScopedLock<Mutex, true>
 // - SDCardLock: Alias for ScopedLock
 
-// ============================================================
-// DEPRECATED: Removed to fix duplicate definitions
-// Reason: Duplicate with eda_locking.hpp, uses std::atomic (not supported)
-// ============================================================
 // The following code was originally in this file but has been moved to
 // eda_locking.hpp to avoid duplication and compilation errors.
 // It is preserved here for reference purposes only.
 
-// ============================================================
-// DEPRECATED: Removed <atomic> include
-// Reason: std::atomic not supported on STM32F405/ChibiOS
-// ============================================================
-// #include <atomic>
+// std::atomic not supported on STM32F405/ChibiOS
 
-// ============================================================
-// DEPRECATED: LockOrder enum
-// Reason: Moved to eda_locking.hpp to avoid duplicate definitions
-// ============================================================
-// /**
-//  * @brief Lock ordering levels to prevent deadlock
-//  *
-//  * LOCK ORDER RULE:
-//  * Always acquire locks in ascending order (1 → 2 → 3 → 4 → 5)
-//  * Never acquire a lower-numbered lock while holding a higher-numbered lock
-//  */
+// Lock ordering levels to prevent deadlock
+// LOCK ORDER RULE: Always acquire locks in ascending order (1 < 2 < 3 < 4 < 5)
+// Never acquire a lower-numbered lock while holding a higher-numbered lock
 // enum class LockOrder : uint8_t {
-//     ATOMIC_FLAGS = 1,      // volatile bool, volatile uint32_t - Protected by ChibiOS critical sections
-//     DATA_MUTEX = 2,         // DroneScanner::data_mutex (tracked_drones_)
-//     SPECTRUM_MUTEX = 3,    // DroneHardwareController::spectrum_mutex (spectrum_buffer_)
-//     LOGGER_MUTEX = 4,       // DroneDetectionLogger::mutex_ (ring_buffer_)
-//     SD_CARD_MUTEX = 5,      // Global sd_card_mutex (FatFS operations)
-//     SETTINGS_MUTEX = 6,      // Global settings_buffer_mutex (settings I/O)
-//     ERRNO_MUTEX = 7         // Global errno_mutex (thread-safe errno access)
+// ATOMIC_FLAGS = 1,      // volatile bool, volatile uint32_t - Protected by ChibiOS critical sections
+// DATA_MUTEX = 2,         // DroneScanner::data_mutex (tracked_drones_)
+// SPECTRUM_MUTEX = 3,    // DroneHardwareController::spectrum_mutex (spectrum_buffer_)
+// LOGGER_MUTEX = 4,       // DroneDetectionLogger::mutex_ (ring_buffer_)
+// SD_CARD_MUTEX = 5,      // Global sd_card_mutex (FatFS operations)
+// SETTINGS_MUTEX = 6,      // Global settings_buffer_mutex (settings I/O)
+// ERRNO_MUTEX = 7         // Global errno_mutex (thread-safe errno access)
 // };
 
-// ============================================================
-// DEPRECATED: LockResult enum
-// Reason: Moved to eda_locking.hpp to avoid duplicate definitions
-// ============================================================
-// /**
-//  * @brief Result of lock acquisition attempt
-//  */
+// Result of lock acquisition attempt
 // enum class LockResult : uint8_t {
-//     SUCCESS = 0,           // Lock acquired successfully
-//     WOULD_BLOCK = 1,       // TryLock would block (lock already held)
-//     ORDER_VIOLATION = 2   // Lock order violation detected
+// SUCCESS = 0,           // Lock acquired successfully
+// WOULD_BLOCK = 1,       // TryLock would block (lock already held)
+// ORDER_VIOLATION = 2   // Lock order violation detected
 // };
 
-// ============================================================
-// DEPRECATED: LockStack struct
-// Reason: Moved to eda_locking.hpp to avoid duplicate definitions
-// ============================================================
-// /**
-//  * @brief Maximum depth of nested lock tracking
-//  */
+// Maximum depth of nested lock tracking
 // constexpr size_t MAX_LOCK_DEPTH = 8;
-//
-// /**
-//  * @brief Lock stack entry for tracking nested locks
-//  */
+// Lock stack entry for tracking nested locks
 // struct LockStackEntry {
-//     LockOrder order;
-//     bool valid;
+// LockOrder order;
+// bool valid;
 // };
 
-// ============================================================
-// DEPRECATED: LockOrderTracker class
-// Reason: Moved to eda_locking.hpp to avoid duplicate definitions
-// ============================================================
-// /**
-//  * @brief Tracks lock acquisition order to prevent deadlocks
-//  *
-//  * Uses thread-local storage to maintain a stack of held locks.
-//  * Validates that locks are always acquired in ascending order.
-//  */
+// Tracks lock acquisition order to prevent deadlocks
+// Uses thread-local storage to maintain a stack of held locks
 // class LockOrderTracker {
 // public:
-//     /**
-//      * @brief Check if acquiring a lock would violate ordering rules
-//      * @param order Lock order level to check
-//      * @return true if order is valid, false otherwise
-//      */
-//     static bool validate_lock_order(LockOrder order) noexcept {
-//         chSysLock();
-//         LockOrder current_max = get_current_max_order();
-//         bool valid = (order > current_max);
-//         chSysUnlock();
-//         return valid;
-//     }
-//
-//     /**
-//      * @brief Push a lock onto the stack
-//      * @param order Lock order level
-//      */
-//     static void push_lock(LockOrder order) noexcept {
-//         chSysLock();
-//         if (lock_stack_depth_ < MAX_LOCK_DEPTH) {
-//             lock_stack_[lock_stack_depth_].order = order;
-//             lock_stack_[lock_stack_depth_].valid = true;
-//             lock_stack_depth_++;
-//         }
-//         chSysUnlock();
-//     }
-//
-//     /**
-//      * @brief Pop a lock from the stack
-//      */
-//     static void pop_lock() noexcept {
-//         chSysLock();
-//         if (lock_stack_depth_ > 0) {
-//             lock_stack_depth_--;
-//             lock_stack_[lock_stack_depth_].valid = false;
-//         }
-//         chSysUnlock();
-//     }
-//
+// static bool validate_lock_order(LockOrder order) noexcept {
+// chSysLock();
+// LockOrder current_max = get_current_max_order();
+// bool valid = (order > current_max);
+// chSysUnlock();
+// return valid;
+// }
+// static void push_lock(LockOrder order) noexcept {
+// chSysLock();
+// if (lock_stack_depth_ < MAX_LOCK_DEPTH) {
+// lock_stack_[lock_stack_depth_].order = order;
+// lock_stack_[lock_stack_depth_].valid = true;
+// lock_stack_depth_++;
+// }
+// chSysUnlock();
+// }
+// static void pop_lock() noexcept {
+// chSysLock();
+// if (lock_stack_depth_ > 0) {
+// lock_stack_depth_--;
+// lock_stack_[lock_stack_depth_].valid = false;
+// }
+// chSysUnlock();
+// }
 // private:
-//     static thread_local LockStackEntry lock_stack_[MAX_LOCK_DEPTH];
-//     static thread_local size_t lock_stack_depth_;
-//
-//     static LockOrder get_current_max_order() noexcept {
-//         if (lock_stack_depth_ == 0) {
-//             return LockOrder::ATOMIC_FLAGS;
-//         }
-//         return lock_stack_[lock_stack_depth_ - 1].order;
-//     }
+// static thread_local LockStackEntry lock_stack_[MAX_LOCK_DEPTH];
+// static thread_local size_t lock_stack_depth_;
+// static LockOrder get_current_max_order() noexcept {
+// if (lock_stack_depth_ == 0) {
+// return LockOrder::ATOMIC_FLAGS;
+// }
+// return lock_stack_[lock_stack_depth_ - 1].order;
+// }
 // };
 
-// ============================================================
-// DEPRECATED: ScopedLock class
-// Reason: Moved to eda_locking.hpp as OrderedScopedLock
-// ============================================================
-// /**
-//  * @brief RAII lock wrapper with deadlock prevention
-//  *
-//  * Tracks lock acquisition order to prevent deadlock violations.
-//  * Automatically unlocks when going out of scope.
-//  *
-//  * @tparam MutexType The mutex type (typically mutex_t)
-//  * @tparam TryLock If true, uses non-blocking try-lock
-//  */
+// RAII lock wrapper with deadlock prevention
+// Tracks lock acquisition order to prevent deadlock violations
+// Automatically unlocks when going out of scope
 // template<typename MutexType, bool TryLock = false>
 // class ScopedLock {
 // public:
-//     explicit ScopedLock(MutexType& mtx, LockOrder order = LockOrder::DATA_MUTEX) noexcept
-//         : mtx_(mtx), order_(order), locked_(false) {
-//
-//         // Check lock order - ensure we're not violating the ordering rule
-//         chSysLock();
-//         LockOrder current_max = get_current_max_order();
-//         if (order_ > current_max) {
-//             chSysUnlock();
-//
-//             if constexpr (TryLock) {
-//                 locked_ = (chMtxTryLock(&mtx_) == true);
-//             } else {
-//                 chMtxLock(&mtx_);
-//                 locked_ = true;
-//             }
-//
-//             if (locked_) {
-//                 push_lock(order_);
-//             }
-//         } else {
-//             chSysUnlock();
-//             chDbgPanic("Lock order violation detected");
-//         }
-//     }
-//
-//     ~ScopedLock() noexcept {
-//         if (locked_) {
-//             chMtxUnlock();
-//             pop_lock();
-//         }
-//     }
-//
-//     bool is_locked() const noexcept { return locked_; }
-//
-//     ScopedLock(const ScopedLock&) = delete;
-//     ScopedLock& operator=(const ScopedLock&) = delete;
-//     ScopedLock(ScopedLock&&) = delete;
-//     ScopedLock& operator=(ScopedLock&&) = delete;
-//
+// explicit ScopedLock(MutexType& mtx, LockOrder order = LockOrder::DATA_MUTEX) noexcept
+// : mtx_(mtx), order_(order), locked_(false) {
+// // Check lock order - ensure we're not violating the ordering rule
+// chSysLock();
+// LockOrder current_max = get_current_max_order();
+// if (order_ > current_max) {
+// chSysUnlock();
+// if constexpr (TryLock) {
+// locked_ = (chMtxTryLock(&mtx_) == true);
+// } else {
+// chMtxLock(&mtx_);
+// locked_ = true;
+// }
+// if (locked_) {
+// push_lock(order_);
+// }
+// } else {
+// chSysUnlock();
+// chDbgPanic("Lock order violation detected");
+// }
+// }
+// ~ScopedLock() noexcept {
+// if (locked_) {
+// chMtxUnlock();
+// pop_lock();
+// }
+// }
+// bool is_locked() const noexcept { return locked_; }
+// ScopedLock(const ScopedLock&) = delete;
+// ScopedLock& operator=(const ScopedLock&) = delete;
+// ScopedLock(ScopedLock&&) = delete;
+// ScopedLock& operator=(ScopedLock&&) = delete;
 // private:
-//     MutexType& mtx_;
-//     LockOrder order_;
-//     bool locked_;
-//
-//     static thread_local LockStackEntry lock_stack_[MAX_LOCK_DEPTH];
-//     static thread_local size_t lock_stack_depth_;
-//
-//     static LockOrder get_current_max_order() noexcept {
-//         if (lock_stack_depth_ == 0) {
-//             return LockOrder::ATOMIC_FLAGS;
-//         }
-//         return lock_stack_[lock_stack_depth_ - 1].order;
-//     }
-//
-//     void push_lock(LockOrder order) noexcept {
-//         chSysLock();
-//         if (lock_stack_depth_ < MAX_LOCK_DEPTH) {
-//             lock_stack_[lock_stack_depth_].order = order;
-//             lock_stack_[lock_stack_depth_].valid = true;
-//             lock_stack_depth_++;
-//         }
-//         chSysUnlock();
-//     }
-//
-//     void pop_lock() noexcept {
-//         chSysLock();
-//         if (lock_stack_depth_ > 0) {
-//             lock_stack_depth_--;
-//             lock_stack_[lock_stack_depth_].valid = false;
-//         }
-//         chSysUnlock();
-//     }
+// MutexType& mtx_;
+// LockOrder order_;
+// bool locked_;
+// static thread_local LockStackEntry lock_stack_[MAX_LOCK_DEPTH];
+// static thread_local size_t lock_stack_depth_;
+// static LockOrder get_current_max_order() noexcept {
+// if (lock_stack_depth_ == 0) {
+// return LockOrder::ATOMIC_FLAGS;
+// }
+// return lock_stack_[lock_stack_depth_ - 1].order;
+// }
+// void push_lock(LockOrder order) noexcept {
+// chSysLock();
+// if (lock_stack_depth_ < MAX_LOCK_DEPTH) {
+// lock_stack_[lock_stack_depth_].order = order;
+// lock_stack_[lock_stack_depth_].valid = true;
+// lock_stack_depth_++;
+// }
+// chSysUnlock();
+// }
+// void pop_lock() noexcept {
+// chSysLock();
+// if (lock_stack_depth_ > 0) {
+// lock_stack_depth_--;
+// lock_stack_[lock_stack_depth_].valid = false;
+// }
+// chSysUnlock();
+// }
 // };
 
-// ============================================================
-// DEPRECATED: Type aliases
-// Reason: Moved to eda_locking.hpp to avoid duplicate definitions
-// ============================================================
-// // CRITICAL FIX: Use ChibiOS Mutex type (capital M, not mutex_t)
+// CRITICAL FIX: Use ChibiOS Mutex type (capital M, not mutex_t)
 // using ScopedLock = OrderedScopedLock<Mutex, false>;
 // using MutexLock = ScopedLock;
 // using MutexTryLock = OrderedScopedLock<Mutex, true>;

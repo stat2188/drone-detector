@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <array>
-// Removed <functional> to eliminate std::function heap allocation
 
 // UI framework includes
 #include "ui.hpp"
@@ -24,7 +23,6 @@
 // Safe string operations (zero heap allocation)
 #include "eda_safe_string.hpp"
 
-// DEPRECATED: Old unified settings files removed
 // #include "eda_unified_settings.hpp"
 // #include "eda_unified_settings_manager.hpp"
 // #include "eda_tabbed_settings_view.hpp"
@@ -35,20 +33,12 @@ using rf::Frequency;
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-/**
- * Enhanced Settings Manager with TXT file communication
- * All methods use const char* instead of std::string (zero heap allocation)
- */
+// * * Enhanced Settings Manager with TXT file communication * All methods use const char* instead of std::string (zero heap allocation)
 // Settings manager with zero heap allocation
 class EnhancedSettingsManager {
 public:
     // noexcept for all methods
-    /**
-     * @brief Ensure the frequency database file exists
-     * @param settings Settings containing freqman_path configuration
-     * @note Creates the database file with default content if it doesn't exist
-     * @return true if database exists or was created successfully, false on error
-     */
+    // * * @brief Ensure the frequency database file exists * @param settings Settings containing freqman_path configuration * @note Creates the database file with default content if it doesn't exist * @return true if database exists or was created successfully, false on error
     static bool ensure_database_exists(const DroneAnalyzerSettings& settings) noexcept;
     static bool save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept;
     static bool load_settings_from_txt(DroneAnalyzerSettings& settings) noexcept;
@@ -95,7 +85,6 @@ private:
 
 // Replaced std::function with raw function pointer to eliminate heap allocation
 // using PresetMenuView = void(*)(const DronePreset&); // REMOVED - use template-based approach
-// using FilteredPresetMenuView = void(*)(const DronePreset&, const std::vector<DronePreset>&); // DEPRECATED - not used
 
 // Preset manager with zero heap allocation
 class DroneFrequencyPresets {
@@ -238,9 +227,7 @@ public:
     static bool save_database(const DatabaseView& view, const char* file_path = "/FREQMAN/DRONES.TXT") noexcept;
 };
 
-// ===========================================
-// PART 3: SETTINGS UI CLASSES
-// ===========================================
+// SETTINGS UI CLASSES
 
 // DIAMOND OPTIMIZATION: Audio settings view with zero heap allocation
 class AudioSettingsView : public View {
@@ -252,7 +239,6 @@ public:
 
 private:
     NavigationView& nav_;
-    // DroneAudioSettings audio_settings_;  // DEPRECATED - now using DroneAnalyzerSettings directly
     Checkbox checkbox_audio_enabled_{{8, 8}, 20, "Enable Audio Alerts", false};
     Text text_audio_enabled_{{28, 8, 200, 16}, "Enable Audio Alerts"};
     NumberField number_alert_frequency_{{8, 32}, 5, {200, 2000}, 50, ' ', false};
@@ -450,5 +436,4 @@ private:
 } // namespace ui::apps::enhanced_drone_analyzer
 
 #endif // __UI_ENHANCED_DRONE_SETTINGS_HPP__
-
 

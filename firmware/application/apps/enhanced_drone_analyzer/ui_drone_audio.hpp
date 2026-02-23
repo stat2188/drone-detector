@@ -59,19 +59,13 @@ private:
 
 // Audio Alert Manager
 struct AudioAlertManager {
-    /**
-     * @brief Get mutex reference
-     * @note ChibiOS static initialization - no double-checked locking needed
-     */
+    // * * @brief Get mutex reference * @note ChibiOS static initialization - no double-checked locking needed
     static Mutex& get_mutex() noexcept {
         static Mutex audio_mutex{};
         return audio_mutex;
     }
 
-    /**
-     * @brief Play audio alert for specified threat level
-     * @note FIX #3: Eliminated TOCTOU race condition, FIX #5: systime_t overflow handled by ChibiOS
-     */
+    // * * @brief Play audio alert for specified threat level * @note FIX #3: Eliminated TOCTOU race condition, FIX #5: systime_t overflow handled by ChibiOS
     static void play_alert(ThreatLevel level) noexcept {
         // Guard clause: Early return for NONE threat level
         if (level == ThreatLevel::NONE) {
@@ -102,21 +96,19 @@ struct AudioAlertManager {
         baseband::request_audio_beep(freq_hz, AudioConstants::BEEP_SAMPLE_RATE, AudioConstants::BEEP_DURATION);
     }
 
-    /// @brief Enable or disable audio alerts
+    // / @brief Enable or disable audio alerts
     static void set_enabled(bool enable) noexcept {
         MutexLockGuard lock(get_mutex());
         audio_enabled_ = enable;
     }
 
-    /// @brief Check if audio alerts are enabled
+    // / @brief Check if audio alerts are enabled
     static bool is_enabled() noexcept {
         MutexLockGuard lock(get_mutex());
         return audio_enabled_;
     }
 
-    /**
-     * @brief Set cooldown period between alerts
-     */
+    // * * @brief Set cooldown period between alerts
     static void set_cooldown_ms(CooldownMs cooldown_ms) noexcept {
         // Input validation: clamp to reasonable range
         if (cooldown_ms < 10) {
@@ -130,20 +122,14 @@ struct AudioAlertManager {
     }
 
 private:
-    /**
-     * @brief Check if cooldown period has expired
-     * @note FIX #5: systime_t overflow handled by ChibiOS
-     */
+    // * * @brief Check if cooldown period has expired * @note FIX #5: systime_t overflow handled by ChibiOS
     static bool is_cooldown_expired() noexcept {
         const systime_t now = chTimeNow();
         const systime_t elapsed_ticks = now - last_alert_timestamp_;
         return elapsed_ticks >= MS2ST(cooldown_ms_);
     }
 
-    /**
-     * @brief Get audio frequency for threat level
-     * @note FIX #7: Removed redundant default case, FIX #4: Returns uint32_t to match baseband API
-     */
+    // * * @brief Get audio frequency for threat level * @note FIX #7: Removed redundant default case, FIX #4: Returns uint32_t to match baseband API
     static AudioFrequency get_frequency_for_threat_level(ThreatLevel level) noexcept {
         switch (level) {
             case ThreatLevel::LOW:
@@ -184,23 +170,23 @@ public:
     AudioManager() = default;
     ~AudioManager() = default;
 
-    /// @brief Check if audio is enabled
+    // / @brief Check if audio is enabled
     bool is_audio_enabled() const {
         return ui::apps::enhanced_drone_analyzer::AudioAlertManager::is_enabled();
     }
 
-    /// @brief Toggle audio enable state
+    // / @brief Toggle audio enable state
     void toggle_audio() {
         const bool current = ui::apps::enhanced_drone_analyzer::AudioAlertManager::is_enabled();
         ui::apps::enhanced_drone_analyzer::AudioAlertManager::set_enabled(!current);
     }
 
-    /// @brief Play detection beep for threat level
+    // / @brief Play detection beep for threat level
     void play_detection_beep(ui::apps::enhanced_drone_analyzer::ThreatLevel threat) {
         ui::apps::enhanced_drone_analyzer::AudioAlertManager::play_alert(threat);
     }
 
-    /// @brief Stop audio (no-op for simple beeps)
+    // / @brief Stop audio (no-op for simple beeps)
     void stop_audio() {
         // Simple beeps don't persist
     }
