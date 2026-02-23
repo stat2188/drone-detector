@@ -56,7 +56,7 @@ using rf::Frequency;
 // Never acquire a lower-numbered lock while holding a higher-numbered lock
 
 // Explicit thread stack sizes
-constexpr size_t SCANNING_THREAD_STACK_SIZE = 2048;  // 2KB
+constexpr size_t SCANNING_THREAD_STACK_SIZE = 4096;  // 4KB (FIX: Increased from 2KB for stack overflow prevention)
 constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 1536;  // 1.5KB (optimized for memory)
 
 // Stack monitoring constants
@@ -550,6 +550,38 @@ struct DetectionParams {
 
     // stale_indices buffer (was stack array in remove_stale_drones)
     std::array<size_t, DroneConstants::MAX_TRACKED_DRONES> stale_indices_{};
+
+    // Boolean array for tracking stale drones (heap-free member variable)
+    // Using uint8_t instead of std::array<bool> for deterministic size
+    uint8_t is_stale_[EDA::Constants::MAX_TRACKED_DRONES]{};
+
+    // UI rendering buffers (moved from stack to heap-free class member)
+    char ui_freq_buf_[16]{};
+    char ui_summary_buffer_[48]{};
+    char ui_status_buffer_[48]{};
+    char ui_stats_buffer_[48]{};
+
+    // Stack monitoring
+    static constexpr size_t STACK_CANARY_SIZE = 32;
+    uint8_t stack_canary_[STACK_CANARY_SIZE];
+
+    // Helper functions for buffer access
+    inline std::array<freqman_entry, 10>& get_entries_to_scan() noexcept {
+        return entries_to_scan_;
+    }
+
+    inline bool check_stack_canary() const noexcept {
+        for (size_t i = 0; i < STACK_CANARY_SIZE; ++i) {
+            if (stack_canary_[i] != 0xDE) return false;
+        }
+        return true;
+    }
+
+    inline void init_stack_canary() noexcept {
+        for (size_t i = 0; i < STACK_CANARY_SIZE; ++i) {
+            stack_canary_[i] = 0xDE;
+        }
+    }
 
     // Intelligent scanning methods
     size_t get_next_slice_with_intelligence();

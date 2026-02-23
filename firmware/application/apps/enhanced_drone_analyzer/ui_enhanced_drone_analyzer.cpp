@@ -177,6 +177,9 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       settings_(std::move(settings)),
       last_scan_error_(nullptr)
 {
+    // Initialize stack canary for overflow detection
+    init_stack_canary();
+
     chMtxInit(&data_mutex);
     // Lazy initialization: FreqmanDB and tracked_drones allocated later from heap
     initialize_wideband_scanning();
@@ -436,6 +439,12 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 }
 
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
+    // Stack overflow detection check
+    if (!check_stack_canary()) {
+        // Stack overflow detected - reinitialize canary to prevent further corruption
+        init_stack_canary();
+    }
+
     size_t total_entries = 0;
 
     {
@@ -451,7 +460,8 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     const size_t batch_size = std::min(static_cast<size_t>(EDA::Constants::MAX_SCAN_BATCH_SIZE), total_entries);
 
-    std::array<freqman_entry, EDA::Constants::MAX_SCAN_BATCH_SIZE> entries_to_scan{};
+    // Use class member variable instead of stack allocation (heap-free)
+    auto& entries_to_scan = entries_to_scan_;
     size_t entries_count = 0;
 
     {
@@ -1016,6 +1026,12 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
 }
 
 void DroneScanner::remove_stale_drones() {
+    // Stack overflow detection check
+    if (!check_stack_canary()) {
+        // Stack overflow detected - reinitialize canary to prevent further corruption
+        init_stack_canary();
+    }
+
     const systime_t STALE_TIMEOUT = EDA::Constants::STALE_DRONE_TIMEOUT_MS;
     systime_t current_time = chTimeNow();
 
@@ -1040,15 +1056,19 @@ void DroneScanner::remove_stale_drones() {
     size_t write_index = 0;
     size_t num_valid = 0;
 
-    std::array<bool, EDA::Constants::MAX_TRACKED_DRONES> is_stale{};
+    // Use class member variable instead of stack allocation (heap-free)
+    // Reset is_stale array
+    for (size_t i = 0; i < EDA::Constants::MAX_TRACKED_DRONES; ++i) {
+        is_stale_[i] = 0;
+    }
     for (size_t i = 0; i < stale_count; ++i) {
         if (stale_indices_[i] < tracked_count_) {
-            is_stale[stale_indices_[i]] = true;
+            is_stale_[stale_indices_[i]] = 1;
         }
     }
 
     for (size_t read_index = 0; read_index < tracked_count_; ++read_index) {
-        if (!is_stale[read_index]) {
+        if (!is_stale_[read_index]) {
             if (write_index != read_index) {
                 tracked_drones()[write_index] = tracked_drones()[read_index];
             }
@@ -2616,8 +2636,8 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     // Render UI using fetched data only - no scanner calls
     if (data.is_scanning) {
         if (data.current_freq > 0) {
-            // Use buffer-based formatting
-            char freq_buf[16];
+            // Use static thread-local buffer instead of stack allocation (heap-free)
+            static thread_local char freq_buf[16]{};
             FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), data.current_freq);
             big_display_.set(freq_buf);
         } else {
@@ -2635,7 +2655,8 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     }
 
     if (data.has_detections) {
-        char summary_buffer[48];
+        // Use static thread-local buffer instead of stack allocation (heap-free)
+        static thread_local char summary_buffer[48]{};
         const char* threat_name = UnifiedStringLookup::threat_name(static_cast<uint8_t>(data.max_threat));
         // Use StatusFormatter
         StatusFormatter::format_to(summary_buffer, "THREAT: %s | <%lu ~%lu >%lu",
@@ -2650,7 +2671,8 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
         text_threat_summary_.set_style(&UIStyles::GREEN_STYLE);
     }
 
-    char status_buffer[48];
+    // Use static thread-local buffer instead of stack allocation (heap-free)
+    static thread_local char status_buffer[48]{};
     if (data.is_scanning) {
         // Use const char* instead of std::string (saves RAM)
         const char* mode_str = data.is_real_mode ? "REAL" : "DEMO";
@@ -2661,7 +2683,8 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     }
     text_status_info_.set(status_buffer);
 
-    char stats_buffer[48];
+    // Use static thread-local buffer instead of stack allocation (heap-free)
+    static thread_local char stats_buffer[48]{};
     if (data.is_scanning && data.total_freqs > 0) {
         size_t current_idx = 0;
         // Use StatusFormatter
