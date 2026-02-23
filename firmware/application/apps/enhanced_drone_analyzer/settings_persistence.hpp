@@ -66,7 +66,7 @@ extern Mutex settings_buffer_mutex;
  * Multiple threads calling strtoull()/strtoll() can corrupt each other's errno values.
  * This mutex serializes all errno access to prevent race conditions.
  *
- * @note Lock order: ERRNO_MUTEX (highest priority, value 7)
+ * @note Lock order: DATA_MUTEX (value 2) - lowest priority mutex
  */
 extern Mutex errno_mutex;
 
@@ -265,7 +265,8 @@ inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base =
     }
 
     // RED TEAM FIX: Protect errno access with mutex
-    MutexLock lock(errno_mutex, LockOrder::ERRNO_MUTEX);
+    // DIAMOND FIX: Use DATA_MUTEX lock order (value 2) instead of ERRNO_MUTEX
+    MutexLock lock(errno_mutex, LockOrder::DATA_MUTEX);
     errno = 0;
     char* endptr = nullptr;
     unsigned long long val = strtoull(str, &endptr, base);
@@ -323,7 +324,8 @@ inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 1
     }
 
     // RED TEAM FIX: Protect errno access with mutex
-    MutexLock lock(errno_mutex, LockOrder::ERRNO_MUTEX);
+    // DIAMOND FIX: Use DATA_MUTEX lock order (value 2) instead of ERRNO_MUTEX
+    MutexLock lock(errno_mutex, LockOrder::DATA_MUTEX);
     errno = 0;
     char* endptr = nullptr;
     long long val = strtoll(str, &endptr, base);
@@ -672,30 +674,22 @@ struct SettingsLoadBuffer {
 };
 
 // ===========================================
-// THREAD-LOCAL BUFFER POOL
+// SETTINGS LOAD BUFFER
 // ===========================================
 /**
- * @brief Get thread-local settings load buffer
+ * @brief Get settings load buffer
  *
- * Replaces static buffer with thread-local storage to prevent race conditions.
- * Each thread gets its own buffer, eliminating need for mutex protection.
+ * Returns a reference to a static buffer used for loading settings from SD card.
+ * The buffer is protected by settings_buffer_mutex to ensure thread safety.
  *
- * @return Reference to thread-local buffer
+ * @return Reference to settings load buffer
  *
- * @note DIAMOND FIX: Add initialization flag to ensure proper initialization
- * @note Zero-heap, thread-safe, deterministic behavior
+ * @note Zero-heap, thread-safe via settings_buffer_mutex
+ * @note Buffer is reused across multiple load operations
  */
 inline SettingsLoadBuffer& get_load_buffer() noexcept {
-    thread_local SettingsLoadBuffer buf{};
-    thread_local bool initialized = false;
-
-    if (!initialized) {
-        buf.line_buffer[0] = '\0';
-        buf.read_buffer[0] = '\0';
-        initialized = true;
-    }
-
-    return buf;
+    static SettingsLoadBuffer buffer{};
+    return buffer;
 }
 
 // ===========================================
@@ -839,7 +833,9 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
 
             if (c == '\n') {
                 // Explicit bounds check before null terminator write
-                if (line_idx < SettingsLoadBuffer::LINE_BUFFER_SIZE) {
+                // DIAMOND FIX: Consistent bounds checking before null terminator write
+                // Use LINE_BUFFER_SIZE - 1 to ensure space for null terminator
+                if (line_idx < (SettingsLoadBuffer::LINE_BUFFER_SIZE - 1)) {
                     line_buffer[line_idx] = '\0';
                     parse_line(line_buffer, settings);
                 }
@@ -851,7 +847,8 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
                     return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
                 }
             } else if (c != '\r' && line_idx < (SettingsLoadBuffer::LINE_BUFFER_SIZE - 1)) {
-                // Use actual buffer size for bounds checking
+                // DIAMOND FIX: Consistent bounds checking for character storage
+                // Always leave space for null terminator
                 line_buffer[line_idx++] = c;
             }
         }
@@ -865,8 +862,9 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::TIMEOUT);
     }
 
-    // Handle last line without newline (with bounds checking)
-    if (line_idx > 0 && line_idx < SettingsLoadBuffer::LINE_BUFFER_SIZE) {
+    // Handle last line without newline (with consistent bounds checking)
+    // DIAMOND FIX: Use LINE_BUFFER_SIZE - 1 to ensure space for null terminator
+    if (line_idx > 0 && line_idx < (SettingsLoadBuffer::LINE_BUFFER_SIZE - 1)) {
         line_buffer[line_idx] = '\0';
         parse_line(line_buffer, settings);
     }

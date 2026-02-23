@@ -410,30 +410,35 @@ public:
      * @return Number of characters appended
      */
     size_t append(std::string_view sv) noexcept {
-        // Guard clause: Check for empty view
-        if (sv.empty()) {
+        // Find current length
+        size_t current_len = safe_strlen(buffer_, N);
+
+        // DIAMOND FIX: Ensure null-termination when buffer is full
+        // Guard clause: Buffer is already full
+        if (current_len >= N - 1) {
+            buffer_[current_len] = '\0';  // Ensure null-termination
+            length_ = current_len;
+            verify_invariants();
             return 0;
         }
 
-        // Find current length
-        size_t current_len = safe_strlen(buffer_, N);
-        
-        // Guard clause: Buffer is already full
-        if (current_len >= N - 1) {
+        // Guard clause: Check for empty view
+        if (sv.empty()) {
+            verify_invariants();
             return 0;
         }
 
         // Calculate how many characters we can append
         const size_t space = N - 1 - current_len;
         const size_t append_len = (sv.size() < space) ? sv.size() : space;
-        
+
         // Append characters using explicit loop (no std::memcpy)
         for (size_t i = 0; i < append_len; ++i) {
             buffer_[current_len + i] = sv.data()[i];
         }
-        buffer_[current_len + append_len] = '\0';
+        buffer_[current_len + append_len] = '\0';  // Always null-terminate
         length_ = current_len + append_len;
-        
+
         verify_invariants();
         return append_len;
     }

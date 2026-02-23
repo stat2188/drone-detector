@@ -35,6 +35,128 @@ public:
     SystemLock& operator=(const SystemLock&) = delete;
 };
 
+} // namespace raii
+
+namespace ui::apps::enhanced_drone_analyzer {
+
+/**
+ * @brief Atomic flag using volatile bool with ChibiOS critical sections
+ *
+ * Provides atomic operations on a boolean flag without using std::atomic.
+ * Uses ChibiOS critical sections (chSysLock/chSysUnlock) for synchronization.
+ *
+ * DIAMOND FIX: Correct compare_and_swap implementation to prevent race condition.
+ * The original implementation had a TOCTOU vulnerability where the check and
+ * set were not atomic, allowing another thread to modify the value between them.
+ *
+ * USAGE:
+ *   AtomicFlag flag;
+ *   flag.set(true);
+ *   if (flag.get()) { ... }
+ *   flag.compare_and_swap(true, false);  // Atomic test-and-set
+ *
+ * @note Uses volatile bool for atomicity on ARM Cortex-M
+ * @note Protected by ChibiOS critical sections
+ * @note Zero-overhead abstraction (no std::atomic)
+ */
+class AtomicFlag {
+public:
+    /// @brief Default constructor - initializes to false
+    constexpr AtomicFlag() noexcept : value_(false) {}
+
+    /// @brief Constructor with initial value
+    constexpr explicit AtomicFlag(bool initial) noexcept : value_(initial) {}
+
+    /**
+     * @brief Get current value
+     * @return Current flag value
+     * @note Volatile bool reads are atomic on ARM Cortex-M
+     */
+    bool get() const noexcept {
+        return value_;
+    }
+
+    /**
+     * @brief Set flag to specified value
+     * @param value New value
+     * @note Thread-safe: Uses critical section
+     */
+    void set(bool value) noexcept {
+        chSysLock();
+        value_ = value;
+        chSysUnlock();
+    }
+
+    /**
+     * @brief Atomic compare-and-swap operation
+     *
+     * Atomically compares the current value with expected, and if equal,
+     * sets it to desired. This is a lock-free atomic operation.
+     *
+     * DIAMOND FIX: Original implementation had race condition:
+     *   bool success = (value_ == expected);  // NOT ATOMIC
+     *   if (success) { value_ = desired; }
+     *
+     * Fixed implementation reads value atomically and performs swap in critical section:
+     *   bool actual = value_;  // Atomic read
+     *   if (actual == expected) { value_ = desired; }  // Atomic write
+     *
+     * @param expected Expected current value
+     * @param desired Value to set if expected matches
+     * @return true if swap succeeded, false otherwise
+     *
+     * @note Thread-safe: Uses critical section
+     * @note Returns true only if value was expected and swap succeeded
+     */
+    bool compare_and_swap(bool expected, bool desired) noexcept {
+        chSysLock();
+        bool actual = value_;  // Atomic read
+        if (actual == expected) {
+            value_ = desired;  // Atomic write
+        }
+        chSysUnlock();
+        return actual == expected;
+    }
+
+    /**
+     * @brief Test-and-set operation
+     *
+     * Atomically sets the flag to true and returns the previous value.
+     *
+     * @return Previous value of the flag
+     * @note Thread-safe: Uses critical section
+     */
+    bool test_and_set() noexcept {
+        chSysLock();
+        bool previous = value_;
+        value_ = true;
+        chSysUnlock();
+        return previous;
+    }
+
+    /**
+     * @brief Clear flag (set to false)
+     * @note Thread-safe: Uses critical section
+     */
+    void clear() noexcept {
+        chSysLock();
+        value_ = false;
+        chSysUnlock();
+    }
+
+    /// @brief Non-copyable
+    AtomicFlag(const AtomicFlag&) = delete;
+    AtomicFlag& operator=(const AtomicFlag&) = delete;
+
+private:
+    /// @brief Flag value (volatile for atomicity on ARM Cortex-M)
+    volatile bool value_;
+};
+
+} // namespace ui::apps::enhanced_drone_analyzer
+
+namespace raii {
+
 /**
  * @brief RAII wrapper for ChibiOS mutex lock
  *

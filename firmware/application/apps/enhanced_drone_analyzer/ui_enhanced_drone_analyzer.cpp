@@ -2892,7 +2892,7 @@ bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
     if (bins_hz_size >= marker_pixel_step) {
         // Thread-safe buffer access with mutex protection
         // Lock order: DISPLAY_SPECTRUM_MUTEX (level 4)
-        MutexLock lock(spectrum_mutex_, LockOrder::DISPLAY_SPECTRUM_MUTEX);
+        MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
 
         if (pixel_index < spectrum_power_levels().size()) {
             spectrum_power_levels()[pixel_index] = (*powerlevel > min_color_power) ? *powerlevel : 0;
@@ -2927,7 +2927,7 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
 
     // Thread-safe buffer access with mutex protection
     // Lock order: DISPLAY_SPECTRUM_MUTEX (level 4)
-    MutexLock lock(spectrum_mutex_, LockOrder::DISPLAY_SPECTRUM_MUTEX);
+        MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
 
     // Iterate through all spectrum bins
     const auto& levels = spectrum_power_levels();
@@ -2968,7 +2968,7 @@ void DroneDisplayController::update_histogram_display(
     if (analysis_histogram.empty()) {
         // Thread-safe buffer access with mutex protection
         // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
-        MutexLock lock(histogram_mutex_, LockOrder::DISPLAY_HISTOGRAM_MUTEX);
+        MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
         histogram_display_buffer_.is_valid = false;
         return;
     }
@@ -2979,7 +2979,7 @@ void DroneDisplayController::update_histogram_display(
 
     // Thread-safe buffer access with mutex protection
     // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
-    MutexLock lock(histogram_mutex_, LockOrder::DISPLAY_HISTOGRAM_MUTEX);
+        MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
 
     for (size_t i = 0; i < HISTOGRAM_NUM_BINS; ++i) {
         uint16_t raw_count = (i < analysis_histogram.size()) ? analysis_histogram[i] : 0;
@@ -3004,7 +3004,7 @@ void DroneDisplayController::render_histogram(Painter& painter) noexcept {
     // ===========================================
     // Thread-safe buffer access with mutex protection
     // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
-    MutexLock lock(histogram_mutex_, LockOrder::DISPLAY_HISTOGRAM_MUTEX);
+        MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
 
     // Guard clause: Skip rendering if data hasn't changed
     // Check is now protected by histogram_mutex_ to prevent race condition
@@ -3646,18 +3646,18 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
     }
     
     // 🔴 SAFETY: Защита от повторного вызова (re-entrancy)
-    if (initialization_in_progress_) return;
-    
+    // DIAMOND FIX: Use atomic test-and-set to prevent TOCTOU vulnerability
+    if (!initialization_in_progress_.compare_and_swap(false, true)) {
+        return;
+    }
+
     // 🔴 SAFETY: Проверка на ошибку (если уже в ERROR state - выходим)
     if (init_state_ == InitState::INITIALIZATION_ERROR) {
         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0,
                                       ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]);
-        initialization_in_progress_ = false;
+        initialization_in_progress_.clear();
         return;
     }
-    
-    // 🔴 SAFETY: Установка флага (для защиты от re-entrancy)
-    initialization_in_progress_ = true;
 
     // Check timeout (protects from hangs)
     systime_t elapsed = chTimeNow() - init_start_time_;
@@ -3671,7 +3671,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
         
         init_state_ = InitState::INITIALIZATION_ERROR;
         init_error_ = InitError::GENERAL_TIMEOUT;
-        initialization_in_progress_ = false;
+        initialization_in_progress_.clear();
         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init timeout!");
         return;
     }
@@ -3695,12 +3695,12 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
 
             // Exit if error occurred
             if (init_state_ == InitState::INITIALIZATION_ERROR) {
-                initialization_in_progress_ = false;
+                initialization_in_progress_.clear();
                 return;
             }
-            
+
             // Exit if phase returns with error
-            if (!initialization_in_progress_) {
+            if (!initialization_in_progress_.get()) {
                 return;
             }
 
@@ -3719,7 +3719,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
     }
     
     // Reset flag (allow repeated calls)
-    initialization_in_progress_ = false;
+    initialization_in_progress_.clear();
 }
 
 // Phase Initialization Methods (each method checks state before execution)
@@ -3729,7 +3729,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers() {
     if (!display_controller_.allocate_buffers_from_pool()) {
         init_error_ = InitError::ALLOCATION_FAILED;
         init_state_ = InitState::INITIALIZATION_ERROR;
-        initialization_in_progress_ = false;
+        initialization_in_progress_.clear();
         return;
     }
 
@@ -3941,7 +3941,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
     if (!scanner_.is_initialization_complete()) {
         init_state_ = InitState::INITIALIZATION_ERROR;
         init_error_ = InitError::DATABASE_ERROR;
-        initialization_in_progress_ = false;
+        initialization_in_progress_.clear();
         status_bar_.update_normal_status("ERROR", "Scanner not ready");
         return;
     }
@@ -3961,7 +3961,7 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
     init_state_ = InitState::CONSTRUCTED;
     init_start_time_ = chTimeNow();
     last_init_progress_ = 0;
-    initialization_in_progress_ = false;
+    initialization_in_progress_.clear();
     init_error_ = InitError::NONE;
 
     status_bar_.update_normal_status("INIT", "Phase 0: Ready");

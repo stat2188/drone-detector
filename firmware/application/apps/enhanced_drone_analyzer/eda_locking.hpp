@@ -20,16 +20,23 @@ static inline size_t chThdGetStackFree(Thread* tp) {
 namespace ui::apps::enhanced_drone_analyzer {
 
 // Lock Order Constants (always acquire in ascending order)
+//
+// DIAMOND FIX: Aligned with existing 5-level hierarchy to prevent deadlocks.
+// The original blueprint defined 9 lock levels, but the existing codebase
+// uses a 5-level hierarchy. This fix aligns the LockOrder enum with the
+// actual implementation to avoid contradictions and ensure proper lock ordering.
+//
+// LOCK ORDER RULE:
+// Always acquire locks in ascending order (1 → 2 → 3 → 4 → 5)
+// Never acquire a lower-numbered lock while holding a higher-numbered lock
+//
+// This prevents circular wait conditions that lead to deadlocks.
 enum class LockOrder : uint8_t {
-    ATOMIC_FLAGS = 1,      // Protected by ChibiOS critical sections
-    DATA_MUTEX = 2,         // DroneScanner::data_mutex
-    SPECTRUM_MUTEX = 3,    // DroneHardwareController::spectrum_mutex
-    DISPLAY_SPECTRUM_MUTEX = 4,  // DroneDisplayController::spectrum_mutex_
-    DISPLAY_HISTOGRAM_MUTEX = 5, // DroneDisplayController::histogram_mutex_
-    LOGGER_MUTEX = 6,       // DroneDetectionLogger::mutex_
-    SD_CARD_MUTEX = 7,      // Global sd_card_mutex
-    SETTINGS_MUTEX = 8,     // Global settings_buffer_mutex
-    ERRNO_MUTEX = 9         // Global errno_mutex
+    ATOMIC_FLAGS = 1,      // Protected by ChibiOS critical sections (volatile bool, volatile uint32_t)
+    DATA_MUTEX = 2,        // DroneScanner::data_mutex (tracked_drones_)
+    SPECTRUM_MUTEX = 3,   // DroneHardwareController::spectrum_mutex (spectrum_buffer_)
+    LOGGER_MUTEX = 4,      // DroneDetectionLogger::mutex_ (ring_buffer_)
+    SD_CARD_MUTEX = 5      // Global sd_card_mutex (FatFS operations)
 };
 
 // Lock Stack Tracking

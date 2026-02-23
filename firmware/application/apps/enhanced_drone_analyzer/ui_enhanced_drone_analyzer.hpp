@@ -1761,7 +1761,8 @@ public:
     InitState init_state_ = InitState::CONSTRUCTED;
     systime_t init_start_time_ = 0;
     systime_t last_init_progress_ = 0;
-    bool initialization_in_progress_ = false;
+    // DIAMOND FIX: Use AtomicFlag for thread-safe test-and-set operation
+    AtomicFlag initialization_in_progress_;
     
     // Global shutdown flag for all threads
     volatile bool global_shutdown_requested_ = false;
