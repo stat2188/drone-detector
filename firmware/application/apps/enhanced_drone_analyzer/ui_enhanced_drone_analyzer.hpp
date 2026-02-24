@@ -129,10 +129,9 @@ public:
         return *this;
     }
 
-    // [[nodiscard]] - Return value should not be ignored (C++17 best practice)
     // noexcept - No exceptions on STM32 (embedded constraint)
     // inline - Enables compiler optimization for hot path
-    [[nodiscard]] inline void add_rssi(const RssiMeasurement& measurement) noexcept {
+    inline void add_rssi(const RssiMeasurement& measurement) noexcept {
         rssi_history_[history_index_] = measurement.rssi_db;
         timestamp_history_[history_index_] = measurement.timestamp_ms;
         history_index_ = (history_index_ + 1) % MAX_HISTORY;

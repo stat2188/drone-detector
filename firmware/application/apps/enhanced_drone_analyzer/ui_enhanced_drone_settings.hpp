@@ -96,7 +96,7 @@ struct ConfigUpdaterCallback {
     void operator()(const DronePreset& preset) const noexcept {
         // Guard clause to reduce nesting
         if (!config_ptr) return;
-        DroneFrequencyPresets::apply_preset(*config_ptr, preset);
+        (void)DroneFrequencyPresets::apply_preset(*config_ptr, preset);
     }
 };
 
