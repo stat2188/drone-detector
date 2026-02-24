@@ -6,7 +6,6 @@
 #include <cstdint>
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
-#include "eda_raii.hpp"  // For raii::SystemLock
 
 namespace ui::apps::enhanced_drone_analyzer {
 namespace DiamondFixes {

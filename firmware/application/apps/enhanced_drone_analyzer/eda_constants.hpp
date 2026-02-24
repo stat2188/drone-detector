@@ -260,6 +260,15 @@ constexpr size_t MAX_PATH_LENGTH = 64;
 constexpr size_t MAX_NAME_LENGTH = 32;
 constexpr size_t MAX_FORMAT_LENGTH = 8;
 
+// Magic number replacements
+constexpr int32_t HIGH_DENSITY_DETECTION_THRESHOLD = 5;
+constexpr int32_t WIDEBAND_SLICE_COUNT_MIN = 1;
+constexpr int32_t WIDEBAND_SLICE_COUNT_MAX = 20;
+constexpr int32_t NEGATIVE_RANGE_INDICATOR = -1;
+constexpr int32_t ZERO_FREQUENCY = 0;
+constexpr int32_t SINGLE_SLICE = 1;
+constexpr int32_t MAX_SLICE_INDEX = 10;
+
 } // namespace Constants
 
 // Validation Utilities

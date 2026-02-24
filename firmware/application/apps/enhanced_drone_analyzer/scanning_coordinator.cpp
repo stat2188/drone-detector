@@ -3,7 +3,6 @@
 #include "scanning_coordinator.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "diamond_core.hpp"
-#include "eda_raii.hpp"
 #include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
@@ -108,12 +107,13 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
         constexpr uint32_t POLL_INTERVAL_MS = 10;
         systime_t deadline = chTimeNow() + MS2ST(TERMINATION_TIMEOUT_MS);
         
-        while (chTimeNow() < deadline && scanning_thread_ != nullptr) {
+        // Wait for thread to set termination flag before nullifying pointer
+        while (chTimeNow() < deadline && !thread_terminated_) {
             chThdSleepMilliseconds(POLL_INTERVAL_MS);
         }
 
-        // After timeout, ensure thread pointer is nullified
-        // This prevents dangling pointer if thread is stuck
+        // Only nullify pointer after thread has set termination flag
+        // This prevents race condition where pointer is nullified before thread exits
         scanning_thread_ = nullptr;
     }
 }
@@ -180,6 +180,14 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
                     CriticalSection cs;
                     scanning_active_ = false;
                 }
+                
+                // DIAMOND FIX: Set termination flag before exit (thread-safe)
+                // This signals to coordinator that thread has exited cleanly
+                {
+                    CriticalSection cs;
+                    thread_terminated_ = true;
+                }
+                
                 // DIAMOND FIX: Do NOT set scanning_thread_ = nullptr here
                 // Only the owner class should manage this pointer
                 chThdExit(ReturnCodes::TIMEOUT_ERROR);

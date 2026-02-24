@@ -20,9 +20,6 @@
 // Unified settings persistence
 #include "settings_persistence.hpp"
 
-// Safe string operations (zero heap allocation)
-#include "eda_safe_string.hpp"
-
 // #include "eda_unified_settings.hpp"
 // #include "eda_unified_settings_manager.hpp"
 // #include "eda_tabbed_settings_view.hpp"
@@ -347,14 +344,15 @@ public:
           nav_(nav),
           entry_(entry),
           on_save_fn_(std::move(callback)),
-          description_buffer_{entry.description},
+          description_buffer_{},
           text_freq_{{8, 16, 64, 16}, "Freq:"},
           field_freq_{{8, 32}},
           text_desc_{{8, 64, 64, 16}, "Name:"},
-          field_desc_{description_buffer_, {8, 80}, 28},
+          field_desc_{description_buffer_, 64, {8, 80}, 28},
           button_save_{{8, 128, 100, 32}, "SAVE"},
           button_cancel_{{128, 128, 100, 32}, "CANCEL"} {
         add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
+        snprintf(description_buffer_, sizeof(description_buffer_), "%s", entry.description);
         field_freq_.set_value(entry_.freq);
         button_save_.on_select = [this](Button&) { on_save(); };
         button_cancel_.on_select = [this](Button&) { on_cancel(); };
@@ -372,9 +370,8 @@ private:
     NavigationView& nav_;
     DroneDbEntry entry_;
     Callback on_save_fn_;
-    // DIAMOND FIX: Use std::string to work with TextEdit widget (requires std::string&)
-    // Note: std::string is used here because TextEdit constructor requires std::string&
-    std::string description_buffer_;
+    // DIAMOND FIX: Fixed-size char array instead of std::string (zero heap allocation)
+    char description_buffer_[64];
     Text text_freq_;
     FrequencyField field_freq_;
     Text text_desc_;
@@ -386,7 +383,7 @@ private:
     void on_save() noexcept {
         DroneDbEntry new_entry;
         new_entry.freq = field_freq_.value();
-        safe_strcpy(new_entry.description, description_buffer_.c_str(), sizeof(new_entry.description));
+        snprintf(new_entry.description, sizeof(new_entry.description), "%s", description_buffer_);
         on_save_fn_(new_entry);
         nav_.pop();
     }

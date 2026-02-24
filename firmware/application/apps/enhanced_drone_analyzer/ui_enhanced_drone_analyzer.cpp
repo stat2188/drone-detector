@@ -1,7 +1,7 @@
 // Thread Safety Notes
 // Locking Order: 1.ATOMIC_FLAGS 2.data_mutex 3.spectrum_mutex 4.logger_mutex 5.sd_card_mutex
 // Always acquire in order 1->2->3->4->5; sd_card_mutex must be LAST
-// Use MutexLock RAII for automatic unlock; raii::SystemLock for volatile bool
+// Use MutexLock RAII for automatic unlock; CriticalSection for volatile bool
 
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "settings_persistence.hpp"
@@ -13,8 +13,6 @@
 #include "diamond_fixes.hpp"
 #include "gradient.hpp"
 #include "eda_locking.hpp"
-#include "eda_raii.hpp"
-#include "eda_safecast.hpp"
 #include "baseband_api.hpp"
 #include "portapack.hpp"
 #include "ui_navigation.hpp"
@@ -213,14 +211,14 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
     const uint64_t width_u64 = static_cast<uint64_t>(settings_.wideband_slice_width_hz);
     if (scanning_range > static_cast<Frequency>(settings_.wideband_slice_width_hz)) {
         // Check for overflow BEFORE addition
-        if (scanning_range < 0) {
-            wideband_scan_data_.slices_nb = 1;
+        if (scanning_range < EDA::Constants::NEGATIVE_RANGE_INDICATOR) {
+            wideband_scan_data_.slices_nb = EDA::Constants::WIDEBAND_SLICE_COUNT_MIN;
         } else {
             const uint64_t range_u64 = static_cast<uint64_t>(scanning_range);
 
             // Check for overflow
             if (UINT64_MAX - range_u64 < width_u64) {
-                wideband_scan_data_.slices_nb = 1;
+                wideband_scan_data_.slices_nb = EDA::Constants::WIDEBAND_SLICE_COUNT_MIN;
             } else {
                 // Use constexpr ceil_div_u64 for compiler optimization
                 uint64_t range_plus_width = range_u64 + width_u64;
@@ -266,39 +264,25 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
                        });
     } else {
         wideband_scan_data_.slices[0].center_frequency = (safe_max + safe_min) / 2;
-        wideband_scan_data_.slices_nb = 1;
+        wideband_scan_data_.slices_nb = EDA::Constants::WIDEBAND_SLICE_COUNT_MIN;
     }
     wideband_scan_data_.slice_counter = 0;
 }
 
 void DroneScanner::start_scanning() {
-    bool is_scanning;
-    {
-        raii::SystemLock lock;
-        is_scanning = scanning_active_;
-    }
+    bool is_scanning = scanning_active_;
     if (is_scanning) return;
 
-    {
-        raii::SystemLock lock;
-        scanning_active_ = true;
-    }
+    scanning_active_ = true;
     scan_cycles_ = 0;
     total_detections_ = 0;
 }
 
 void DroneScanner::stop_scanning() {
-    bool is_scanning;
-    {
-        raii::SystemLock lock;
-        is_scanning = scanning_active_;
-    }
+    bool is_scanning = scanning_active_;
     if (!is_scanning) return;
 
-    {
-        raii::SystemLock lock;
-        scanning_active_ = false;
-    }
+    scanning_active_ = false;
 
     if (scanning_thread_ != nullptr) {
         chThdWait(scanning_thread_);
@@ -318,7 +302,6 @@ bool DroneScanner::load_frequency_database() {
     options.load_hamradios = true;
     options.load_repeaters = true;
 
-    raii::SystemLock sys_lock;
     if (!freq_db_ptr_ || !freq_db_constructed_) {
         return false;
     }
@@ -380,11 +363,7 @@ const char* DroneScanner::scanning_mode_name() const {
 }
 
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
-    bool is_scanning;
-    {
-        raii::SystemLock lock;
-        is_scanning = scanning_active_;
-    }
+    bool is_scanning = scanning_active_;
     if (!is_scanning) return;
 
     using namespace EDA::Constants;
@@ -412,7 +391,7 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     }
 
     // Additional adjustment for high detection density
-    static constexpr size_t HIGH_DENSITY_DETECTION_THRESHOLD = 5;
+    static constexpr size_t HIGH_DENSITY_DETECTION_THRESHOLD = EDA::Constants::HIGH_DENSITY_DETECTION_THRESHOLD;
     if (current_detections > HIGH_DENSITY_DETECTION_THRESHOLD) {
         adaptive_interval = (adaptive_interval < HIGH_DENSITY_SCAN_CAP_MS) ? adaptive_interval : HIGH_DENSITY_SCAN_CAP_MS;
     }
@@ -429,10 +408,7 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
         scan_cycles_++;
     }
 
-    {
-        raii::SystemLock lock;
-        is_scanning = scanning_active_;
-    }
+    is_scanning = scanning_active_;
     if (is_scanning) {
         chThdSleepMilliseconds(adaptive_interval);
     }
@@ -450,7 +426,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
     {
         MutexLock lock(data_mutex);
         if (!freq_db_ptr_ || freq_db_ptr_->empty()) {
-            if (scan_cycles_ % 50 == 0) {
+            if (scan_cycles_ % EDA::Constants::SCAN_CYCLE_CHECK_INTERVAL == 0) {
                 handle_scan_error("Database is empty");
             }
             return;
@@ -490,11 +466,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         const auto& entry = entries_to_scan[i];
 
         // Guard clause: check scanning flag
-        bool is_scanning;
-        {
-            raii::SystemLock lock;
-            is_scanning = scanning_active_;
-        }
+        bool is_scanning = scanning_active_;
         if (!is_scanning) return;
 
         Frequency target_freq_hz = entry.frequency_a;
@@ -507,11 +479,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
         // Wait for PLL stabilization
         for (int w = 0; w < PLL_STABILIZATION_ITERATIONS; w++) {
-            bool is_scanning;
-            {
-                raii::SystemLock lock;
-                is_scanning = scanning_active_;
-            }
+            is_scanning = scanning_active_;
             if (!is_scanning) return;
             chThdSleepMilliseconds(PLL_STABILIZATION_DELAY_MS);
         }
@@ -671,7 +639,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     ThreatLevel threat_level = ThreatLevel::UNKNOWN;
 
     // Validate frequency before division
-    if (entry.frequency_a == 0) {
+    if (entry.frequency_a == EDA::Constants::ZERO_FREQUENCY) {
         return;
     }
     
@@ -721,7 +689,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
                     0    // snr - default value
                 };
 
-                update_tracked_drone_internal({detected_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(rssi), threat_level});
+                update_tracked_drone({detected_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(rssi), threat_level});
             }
         } else {
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
@@ -758,7 +726,7 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
         total_detections_++;
 
         // Guard clause: Prevent division by zero
-        if (entry.frequency_a == 0) {
+        if (entry.frequency_a == EDA::Constants::ZERO_FREQUENCY) {
             return;
         }
         size_t freq_hash = DiamondFixes::safe_frequency_hash(entry.frequency_a);
@@ -792,7 +760,7 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
                     analysis_result.snr               // Calibration: Signal-to-Noise Ratio
                 };
 
-                update_tracked_drone_internal({drone_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(effective_rssi), threat_level});
+                update_tracked_drone({drone_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(effective_rssi), threat_level});
             }
         } else {
             // Counter decrement logic...
@@ -874,7 +842,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         total_detections_++;
 
         // Guard clause: Prevent division by zero
-        if (entry.frequency_a == 0) {
+        if (entry.frequency_a == EDA::Constants::ZERO_FREQUENCY) {
             return;
         }
         size_t freq_hash = DiamondFixes::safe_frequency_hash(entry.frequency_a);
@@ -917,7 +885,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 log_entry_to_write.snr = 0;
 
                 // Update drone tracking for UI
-                update_tracked_drone_internal({detected_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(rssi), threat_level});
+                update_tracked_drone({detected_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(rssi), threat_level});
             }
         } else {
             // "Leaky bucket" logic
@@ -941,11 +909,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         systime_t now = chTimeNow();
 
         // FIX #15: Use consistent memory ordering
-        systime_t last_time;
-        {
-            raii::SystemLock lock;
-            last_time = last_detection_log_time_;
-        }
+        systime_t last_time = last_detection_log_time_;
 
         // Use chTimeNow() directly for timing - no CH_CFG_ST_FREQUENCY dependency
         // DIAMOND FIX: Priority 2 - Replace magic number with constant
@@ -954,7 +918,6 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 // log_detection_async returns false if buffer is full
                 // so built-in protection against hanging is already inside the logger.
                 if (detection_logger_.log_detection_async(log_entry_to_write)) {
-                    raii::SystemLock lock;
                     last_detection_log_time_ = now;
                 }
             }
@@ -969,20 +932,14 @@ void DroneScanner::send_drone_detection_message(const DetectionParams& params) {
 
 void DroneScanner::update_tracked_drone(const DetectionParams& params) {
     // Only update internal data - UI will read via snapshot
-    // FIXED: Added mutex lock to prevent race condition
+    // Single mutex lock acquisition at the start
     MutexLock lock(data_mutex);
-    update_tracked_drone_internal(params);
-}
-
-void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) {
+    
     Frequency frequency = params.frequency_hz;
     DroneType type = params.type;
     int32_t rssi = params.rssi_db;
     ThreatLevel threat_level = params.threat_level;
-    // @pre Caller MUST hold data_mutex.
-    // @note This is an internal optimization to avoid double-locking when called
-    // from within a critical section. Use update_tracked_drone() for external calls.
-    // @invariant Assumes exclusive access to tracked_drones_ array.
+    
     for (size_t i = 0; i < tracked_count_; ++i) {
         if (DiamondFixes::frequency_equal(tracked_drones()[i].frequency, frequency) && tracked_drones()[i].update_count > 0) {
             tracked_drones()[i].add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
@@ -1022,7 +979,6 @@ void DroneScanner::update_tracked_drone_internal(const DetectionParams& params) 
     oldest_drone.drone_type = static_cast<uint8_t>(type);
     oldest_drone.threat_level = static_cast<uint8_t>(threat_level);
     oldest_drone.add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
-
 }
 
 void DroneScanner::remove_stale_drones() {
@@ -1227,12 +1183,8 @@ void DroneScanner::sync_database() {
 void DroneScanner::cleanup_database_and_scanner() {
     sync_database();
 
-    bool was_loading;
-    {
-        raii::SystemLock lock;
-        was_loading = db_loading_active_;
-        db_loading_active_ = false;
-    }
+    bool was_loading = db_loading_active_;
+    db_loading_active_ = false;
     if (was_loading) {
         if (db_loading_thread_ != nullptr) {
             chThdWait(db_loading_thread_);
@@ -1275,20 +1227,14 @@ void DroneScanner::db_loading_thread_loop() {
     // Check if already initialized
     if (freq_db_ptr_ != nullptr || tracked_drones_ptr_ != nullptr) {
         handle_scan_error("DB already initialized");
-        {
-            raii::SystemLock lock;
-            db_loading_active_ = false;
-        }
+        db_loading_active_ = false;
         return;
     }
 
     // Use reinterpret_cast on aligned buffer
     if (reinterpret_cast<uintptr_t>(freq_db_storage_) % alignof(FreqmanDB) != 0) {
         handle_scan_error("Memory: freq_db_storage_ alignment error (async)");
-        {
-            raii::SystemLock lock;
-            db_loading_active_ = false;
-        }
+        db_loading_active_ = false;
         return;
     }
     freq_db_ptr_ = reinterpret_cast<FreqmanDB*>(freq_db_storage_);
@@ -1300,10 +1246,7 @@ void DroneScanner::db_loading_thread_loop() {
     if (reinterpret_cast<uintptr_t>(tracked_drones_storage_) % alignof(std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>) != 0) {
         handle_scan_error("Memory: tracked_drones_storage_ alignment error (async)");
         freq_db_ptr_ = nullptr;
-        {
-            raii::SystemLock lock;
-            db_loading_active_ = false;
-        }
+        db_loading_active_ = false;
         return;
     }
 
@@ -1331,10 +1274,7 @@ void DroneScanner::db_loading_thread_loop() {
     while (sd_card::status() < sd_card::Status::Mounted) {
         if (chTimeNow() - start_time > MS2ST(EDA::Constants::SD_CARD_MOUNT_TIMEOUT_MS)) {
             handle_scan_error("SD card not ready");
-            {
-                raii::SystemLock lock;
-                db_loading_active_ = false;
-            }
+            db_loading_active_ = false;
             // Ensure proper cleanup of placement-newed objects on timeout
             if (freq_db_ptr_ && freq_db_constructed_) {
                 freq_db_ptr_->~FreqmanDB();
@@ -1355,20 +1295,13 @@ void DroneScanner::db_loading_thread_loop() {
     }
 
     // Maintain proper lock order: DATA_MUTEX  SD_CARD_MUTEX
-    bool should_load;
-    {
-        raii::SystemLock lock;
-        should_load = db_loading_active_;
-    }
+    bool should_load = db_loading_active_;
     if (should_load) {
         // FIX: Defensive null check before dereferencing freq_db_ptr_
         // This provides additional safety if initialization somehow fails
         if (!freq_db_ptr_) {
             handle_scan_error("Database pointer is null during async loading");
-            {
-                raii::SystemLock lock;
-                db_loading_active_ = false;
-            }
+            db_loading_active_ = false;
             return;
         }
         db_success = freq_db_ptr_->open(db_path);
@@ -1377,10 +1310,7 @@ void DroneScanner::db_loading_thread_loop() {
             systime_t load_time = chTimeNow() - load_start;
             if (load_time > MS2ST(DB_LOAD_TIMEOUT_MS)) {
                 handle_scan_error("Database load timeout");
-                {
-                    raii::SystemLock lock;
-                    db_loading_active_ = false;
-                }
+                db_loading_active_ = false;
                 // FIX #4 & #6: Ensure proper cleanup of placement-newed objects on timeout
                 // Only call destructors if construction succeeded
                 if (freq_db_ptr_ && freq_db_constructed_) {
@@ -1407,24 +1337,14 @@ void DroneScanner::db_loading_thread_loop() {
             if (freq_db_ptr_ && !freq_db_ptr_->empty()) {
                 freq_db_loaded_ = true;
                 freq_db_constructed_ = true;
-                {
-                    raii::SystemLock lock;
-                    initialization_complete_ = true;
-                }
-                {
-                    raii::SystemLock lock;
-                    db_loading_active_ = false;
-                }
+                initialization_complete_ = true;
+                db_loading_active_ = false;
                 return;
             }
         }
     }
 
-    bool should_init;
-    {
-        raii::SystemLock lock;
-        should_init = db_loading_active_;
-    }
+    bool should_init = db_loading_active_;
     if (should_init && (!db_success || freq_db_ptr_->empty())) {
 
         // Phase 1: Acquire data_mutex for database modifications
@@ -1435,20 +1355,13 @@ void DroneScanner::db_loading_thread_loop() {
             // This provides additional safety if initialization somehow fails
             if (!freq_db_ptr_) {
                 handle_scan_error("Database pointer is null during database initialization");
-                {
-                    raii::SystemLock lock;
-                    db_loading_active_ = false;
-                }
+                db_loading_active_ = false;
                 return;
             }
             freq_db_ptr_->open(db_path, true);
 
             for (const auto& item : BUILTIN_DRONE_DB) {
-                bool still_loading;
-                {
-                    raii::SystemLock lock;
-                    still_loading = db_loading_active_;
-                }
+                bool still_loading = db_loading_active_;
                 // DIAMOND FIX #6: Early return if loading was stopped externally
                 // Note: No flag reset needed here - the caller who stopped loading
                 // should have already reset the flags. This is a cooperative cancellation.
@@ -1483,22 +1396,15 @@ void DroneScanner::db_loading_thread_loop() {
 
         // Set freq_db_constructed_ flag at end of thread
         freq_db_constructed_ = true;
-
+        
         // Set initialization_complete_ flag at end of thread
-        {
-            raii::SystemLock lock;
-            initialization_complete_ = true;
-        }
+        initialization_complete_ = true;
     }
 }
 
 // Async database loading (non-blocking UI)
 void DroneScanner::initialize_database_async() {
-    bool is_loading;
-    {
-        raii::SystemLock lock;
-        is_loading = db_loading_active_;
-    }
+    bool is_loading = db_loading_active_;
     if (is_loading) {
         return;  // Already loading or loaded
     }
@@ -1509,10 +1415,7 @@ void DroneScanner::initialize_database_async() {
     // meditation errors from null pointer dereferences.
     initialize_database_and_scanner();
 
-    {
-        raii::SystemLock lock;
-        db_loading_active_ = true;
-    }
+    db_loading_active_ = true;
 
     // Use chThdCreateStatic instead of chThdCreateFromHeap
 
@@ -1532,10 +1435,7 @@ void DroneScanner::initialize_database_async() {
     // chThdCreateStatic with static stack should never fail, but handle gracefully
     if (db_loading_thread_ == nullptr) {
         handle_scan_error("Failed to create db_loading_thread");
-        {
-            raii::SystemLock lock;
-            db_loading_active_ = false;
-        }
+        db_loading_active_ = false;
         freq_db_loaded_ = false;
         return;  // Keep UI responsive - early return on failure
     }
@@ -1543,23 +1443,17 @@ void DroneScanner::initialize_database_async() {
 
 // Check if async loading finished
 bool DroneScanner::is_database_loading_complete() const {
-    bool is_loading;
-    {
-        raii::SystemLock lock;
-        is_loading = db_loading_active_;
-    }
+    bool is_loading = db_loading_active_;
     // FIX: Check that freq_db_ptr_ is not null in addition to checking freq_db_loaded_ flag
     // This ensures the database is properly initialized before reporting completion
     return !is_loading && freq_db_loaded_ && (freq_db_ptr_ != nullptr);
 }
 
 bool DroneScanner::is_initialization_complete() const {
-    raii::SystemLock lock;
     return initialization_complete_;
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
-    raii::SystemLock lock;
 
     if (!freq_db_ptr_ || !freq_db_loaded_) {
         return 433000000;  // Default fallback frequency
@@ -1702,10 +1596,7 @@ bool DroneDetectionLogger::log_detection_async(const DetectionLogEntry& entry) {
 void DroneDetectionLogger::start_worker() {
     if (worker_thread_) return;
 
-    {
-        raii::SystemLock lock;
-        worker_should_run_ = true;
-    }
+    worker_should_run_ = true;
     // Create worker thread with static stack
     worker_thread_ = chThdCreateStatic(
         worker_wa_,
@@ -1757,10 +1648,7 @@ namespace StackSafety {
 void DroneDetectionLogger::stop_worker() {
     if (!worker_thread_) return;
 
-    {
-        raii::SystemLock lock;
-        worker_should_run_ = false;
-    }
+    worker_should_run_ = false;
     chSemSignal(&data_ready_);
     
     // Thread termination timeout (1 second)
@@ -1780,19 +1668,11 @@ msg_t DroneDetectionLogger::worker_thread_entry(void* arg) {
 
 void DroneDetectionLogger::worker_loop() {
     while (true) {
-        bool should_run;
-        {
-            raii::SystemLock lock;
-            should_run = worker_should_run_;
-        }
+        bool should_run = worker_should_run_;
         if (!should_run) break;
 
         // Check initialization state - wait until initialization is complete
-        bool init_complete;
-        {
-            raii::SystemLock lock;
-            init_complete = initialization_complete_;
-        }
+        bool init_complete = initialization_complete_;
         if (!init_complete) {
             // FIX #L5: Use constant instead of magic number
             chThdSleepMilliseconds(EDA::Constants::SD_CARD_POLL_INTERVAL_MS);
@@ -1802,10 +1682,7 @@ void DroneDetectionLogger::worker_loop() {
         // FIX #L4: Use constant instead of magic number (1 second timeout)
         chSemWaitTimeout(&data_ready_, MS2ST(EDA::Constants::SETTINGS_LOAD_TIMEOUT_MS));
         
-        {
-            raii::SystemLock lock;
-            should_run = worker_should_run_;
-        }
+        should_run = worker_should_run_;
         if (!should_run) break;
 
         DetectionLogEntry entry_to_write;
@@ -2085,7 +1962,7 @@ int32_t DroneHardwareController::get_real_rssi_from_hardware(Frequency target_fr
     return last_valid_rssi_;
 }
 
-// ISR-safe: uses raii::SystemLock (critical section) instead of mutex
+// ISR-safe: uses CriticalSection instead of mutex
 void DroneHardwareController::handle_channel_spectrum_config(const ChannelSpectrumConfigMessage* const message) {
     if (message) {
         spectrum_fifo_ = message->fifo;
@@ -2113,7 +1990,7 @@ bool DroneHardwareController::is_rssi_fresh() const {
 
 void DroneHardwareController::process_channel_spectrum_data(const ChannelSpectrum& spectrum) {
     // ISR-safe: use critical section instead of mutex
-    raii::SystemLock lock;
+    CriticalSection lock;
 
     size_t count = std::min(spectrum.db.size(), last_spectrum_db_.size());
     std::copy(spectrum.db.begin(), spectrum.db.begin() + count, last_spectrum_db_.begin());
@@ -2191,7 +2068,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     }
     threat_status_main_.set(buffer);
     threat_status_main_.set_style(&UIStyles::RED_STYLE);
-    safe_strcpy(last_text_, buffer, sizeof(last_text_));
+    snprintf(last_text_, sizeof(last_text_), "%s", buffer);
     
     // Cache text length to avoid strlen() in paint()
     last_text_len_ = strlen(last_text_);
@@ -2309,7 +2186,7 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
     last_threat_ = drone.threat;
     last_trend_ = drone.trend;
     last_rssi_ = drone.rssi;
-    safe_strcpy(last_threat_name_, drone.type_name, sizeof(last_threat_name_));
+    snprintf(last_threat_name_, sizeof(last_threat_name_), "%s", drone.type_name);
     is_active_ = true;
 
     // Use TrendSymbols for O(1) lookup
@@ -2735,7 +2612,7 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
             detected_drones()[i].threat = threat;
             detected_drones()[i].type = type;
             detected_drones()[i].last_seen = now;
-            safe_strcpy(detected_drones()[i].type_name, UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type)), sizeof(detected_drones()[i].type_name));
+            snprintf(detected_drones()[i].type_name, sizeof(detected_drones()[i].type_name), "%s", UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type)));
             detected_drones()[i].display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(type));
             sort_drones_by_rssi();
             render_drone_text_display();
@@ -2750,7 +2627,7 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
         entry.threat = threat;
         entry.type = type;
         entry.last_seen = now;
-        safe_strcpy(entry.type_name, UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type)), sizeof(entry.type_name));
+        snprintf(entry.type_name, sizeof(entry.type_name), "%s", UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type)));
         entry.display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(type));
         entry.trend = MovementTrend::STATIC;
         detected_drones_count_++;
@@ -2793,7 +2670,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
             entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
             entry.rssi = drone_data.rssi;
             entry.last_seen = drone_data.last_seen;
-            safe_strcpy(entry.type_name, UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(entry.type)), sizeof(entry.type_name));
+            snprintf(entry.type_name, sizeof(entry.type_name), "%s", UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(entry.type)));
             entry.display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(entry.type));
             entry.trend = drone_data.get_trend();
             detected_drones_count_++;
@@ -2820,7 +2697,7 @@ void DroneDisplayController::render_drone_text_display() {
     text_drone_2_.set("");
     text_drone_3_.set("");
 
-    size_t drone_count = std::min(displayed_drones_.size(), size_t(3));
+    size_t drone_count = std::min(displayed_drones_.size(), EDA::Constants::MAX_DISPLAYED_DRONES);
     for (size_t i = 0; i < drone_count; ++i) {
         const auto& drone = displayed_drones_[i];
         char buffer[64];
@@ -3155,8 +3032,9 @@ DroneUIController::DroneUIController(NavigationView& nav,
     bool current = audio_get_enable_alerts(settings_);
     audio_set_enable_alerts(settings_, !current);
     const char* status = audio_get_enable_alerts(settings_) ? "ENABLED" : "DISABLED";
-    safe_strcpy(buffer, "Alerts ", sizeof(buffer));
-    safe_strcat(buffer, status, sizeof(buffer));
+    snprintf(buffer, sizeof(buffer), "%s", "Alerts ");
+    size_t current_len = strlen(buffer);
+    snprintf(buffer + current_len, sizeof(buffer) - current_len, "%s", status);
     nav_.display_modal("Audio Alerts", buffer);
 }
 
@@ -3165,18 +3043,12 @@ DroneUIController::~DroneUIController() {
 
 void DroneUIController::on_start_scan() {
     scanner_.start_scanning();
-    {
-        raii::SystemLock lock;
-        scanning_active_ = true;
-    }
+    scanning_active_ = true;
 }
 
 void DroneUIController::on_stop_scan() {
     scanner_.stop_scanning();
-    {
-        raii::SystemLock lock;
-        scanning_active_ = false;
-    }
+    scanning_active_ = false;
 }
 
 void DroneUIController::show_menu() {
@@ -3617,97 +3489,103 @@ void EnhancedDroneSpectrumAnalyzerView::static_histogram_callback(
 // - Database loading is guaranteed complete before hardware init
 // - Settings loading waits for database completion
 // - More predictable initialization behavior
-void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() {
-    // Add logging at entry
-    static systime_t last_log_time = 0;
-    static int call_count = 0;
-    systime_t now = chTimeNow();
-    call_count++;
-    
-    // FIX #L4: Use constant instead of magic number (1 second timeout)
-    if (now - last_log_time > MS2ST(EDA::Constants::SETTINGS_LOAD_TIMEOUT_MS)) {
-        last_log_time = now;
-        // Log current state for debugging
-        char debug_buf[64];
-        snprintf(debug_buf, sizeof(debug_buf), "Init: state=%d, calls=%d",
-                 static_cast<int>(init_state_), call_count);
-        status_bar_.update_normal_status("DEBUG", debug_buf);
-    }
-    
-    // SAFETY:     (re-entrancy)
-    // DIAMOND FIX: Use atomic test-and-set to prevent TOCTOU vulnerability
-    if (!initialization_in_progress_.compare_and_swap(false, true)) {
+void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() noexcept {
+    // SAFETY: Guard clause for re-entrancy protection
+    // Single-threaded context (UI event loop only) - no synchronization needed
+    if (initialization_in_progress_) {
         return;
     }
+    initialization_in_progress_ = true;
 
-    // SAFETY:    (   ERROR state - )
+    // SAFETY: Handle ERROR state - no further processing needed
     if (init_state_ == InitState::INITIALIZATION_ERROR) {
         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0,
                                       ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]);
-        initialization_in_progress_.clear();
+        initialization_in_progress_ = false;
         return;
     }
 
     // Check timeout (protects from hangs)
     systime_t elapsed = chTimeNow() - init_start_time_;
     if (elapsed > MS2ST(InitTiming::TIMEOUT_MS)) {
-        // Add proper cleanup in timeout path
-        
+        // Proper cleanup in timeout path
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings_);
         
-        // Note: Database loading thread will complete on its own
+        // Database loading thread will complete on its own
         // The initialization state machine will handle the incomplete state
         
         init_state_ = InitState::INITIALIZATION_ERROR;
         init_error_ = InitError::GENERAL_TIMEOUT;
-        initialization_in_progress_.clear();
+        initialization_in_progress_ = false;
         status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init timeout!");
         return;
     }
 
-    // EVENT-DRIVEN MAIN LOOP: Execute phases based on state completion
-    // Instead of time-based delays, we now check if the current phase is complete
-    // before moving to the next phase. This eliminates race conditions.
-    for (uint8_t i = 0; i < InitTiming::MAX_PHASES; ++i) {
-        // LUT lookup instead of switch (O(1) lookup)
-        const auto& phase = INIT_PHASES[i];
-
-        // Check if this phase is the next one to execute based on current state
-        uint8_t expected_state = static_cast<uint8_t>(InitState::CONSTRUCTED) + i + 1;
+    // Single-level dispatch using LUT - eliminates deep call hierarchy
+    // Phase functions are called directly based on current state index
+    constexpr size_t NUM_PHASES = 6;
+    using PhaseFunc = void (EnhancedDroneSpectrumAnalyzerView::*)();
+    
+    static constexpr std::array<PhaseFunc, NUM_PHASES> PHASE_FUNCS = {{
+        &EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers,
+        &EnhancedDroneSpectrumAnalyzerView::init_phase_load_database,
+        &EnhancedDroneSpectrumAnalyzerView::init_phase_init_hardware,
+        &EnhancedDroneSpectrumAnalyzerView::init_phase_setup_ui,
+        &EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings,
+        &EnhancedDroneSpectrumAnalyzerView::init_phase_finalize
+    }};
+    
+    // Map current state to phase function index
+    // CONSTRUCTED (0) -> index 0 -> init_phase_allocate_buffers
+    // BUFFERS_ALLOCATED (1) -> index 1 -> init_phase_load_database
+    // DATABASE_LOADED (3) -> index 2 -> init_phase_init_hardware
+    // HARDWARE_READY (4) -> index 3 -> init_phase_setup_ui
+    // UI_LAYOUT_READY (5) -> index 4 -> init_phase_load_settings
+    // SETTINGS_LOADED (6) -> index 5 -> init_phase_finalize
+    uint8_t state_idx = static_cast<uint8_t>(init_state_);
+    
+    // State-to-index mapping: skip intermediate states
+    // DATABASE_LOADING (2) and COORDINATOR_READY (7) are handled by phase functions
+    uint8_t phase_idx = state_idx;
+    if (state_idx > 2) phase_idx--;  // Skip DATABASE_LOADING (state 2)
+    if (state_idx > 6) phase_idx--;  // Skip COORDINATOR_READY (state 7)
+    
+    // Skip DATABASE_LOADING state - it's an intermediate state handled by init_phase_load_database
+    if (init_state_ == InitState::DATABASE_LOADING || init_state_ == InitState::COORDINATOR_READY) {
+        initialization_in_progress_ = false;
+        return;
+    }
+    
+    if (phase_idx < NUM_PHASES) {
+        // Execute phase function
+        (this->*PHASE_FUNCS[phase_idx])();
         
-        // Only execute if current state matches expected state for this phase
-        if (static_cast<uint8_t>(init_state_) + 1 == expected_state) {
-            // EVENT-DRIVEN: Execute phase and let it determine when to transition
-            // Phase functions now check for actual completion before transitioning
-            (this->*phase.init_func)();
-
-            // Exit if error occurred
-            if (init_state_ == InitState::INITIALIZATION_ERROR) {
-                initialization_in_progress_.clear();
-                return;
-            }
-
-            // Exit if phase returns with error
-            if (!initialization_in_progress_.get()) {
-                return;
-            }
-
-            // Update UI if state changed
-            const char* status_msg = phase.name;
-            // FIX: Special message for database loading
-            if (init_state_ == InitState::DATABASE_LOADING && !scanner_.is_database_loading_complete()) {
-                status_msg = "Loading database...";
-            }
-            status_bar_.update_normal_status("INIT", status_msg);
-            
-            // Only execute one phase per call - this ensures proper event-driven flow
-            // The phase will transition state when complete, and we'll be called again
-            break;
+        // Exit if error occurred
+        if (init_state_ == InitState::INITIALIZATION_ERROR) {
+            initialization_in_progress_ = false;
+            return;
         }
+        
+        // Update UI status based on phase
+        static constexpr const char* const PHASE_NAMES[NUM_PHASES] = {
+            "Allocating buffers...",
+            "Loading database...",
+            "Initializing hardware...",
+            "Setting up UI...",
+            "Loading settings...",
+            "Finalizing..."
+        };
+        
+        const char* status_msg = PHASE_NAMES[phase_idx];
+        // Special message for database loading
+        if (init_state_ == InitState::DATABASE_LOADING && !scanner_.is_database_loading_complete()) {
+            status_msg = "Loading database...";
+        }
+        status_bar_.update_normal_status("INIT", status_msg);
     }
     
     // Reset flag (allow repeated calls)
-    initialization_in_progress_.clear();
+    initialization_in_progress_ = false;
 }
 
 // Phase Initialization Methods (each method checks state before execution)
@@ -3717,7 +3595,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers() {
     if (!display_controller_.allocate_buffers_from_pool()) {
         init_error_ = InitError::ALLOCATION_FAILED;
         init_state_ = InitState::INITIALIZATION_ERROR;
-        initialization_in_progress_.clear();
+        initialization_in_progress_ = false;
         return;
     }
 
@@ -3925,7 +3803,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
     if (!scanner_.is_initialization_complete()) {
         init_state_ = InitState::INITIALIZATION_ERROR;
         init_error_ = InitError::DATABASE_ERROR;
-        initialization_in_progress_.clear();
+        initialization_in_progress_ = false;
         status_bar_.update_normal_status("ERROR", "Scanner not ready");
         return;
     }
@@ -3945,7 +3823,7 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
     init_state_ = InitState::CONSTRUCTED;
     init_start_time_ = chTimeNow();
     last_init_progress_ = 0;
-    initialization_in_progress_.clear();
+    initialization_in_progress_ = false;
     init_error_ = InitError::NONE;
 
     status_bar_.update_normal_status("INIT", "Phase 0: Ready");
@@ -4081,7 +3959,7 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
             StatusFormatter::format_to(secondary_buffer, "Total detections: %lu",
                                       static_cast<unsigned long>(total_detections));
         } else {
-            safe_strcpy(secondary_buffer, "Awaiting commands", sizeof(secondary_buffer));
+            snprintf(secondary_buffer, sizeof(secondary_buffer), "%s", "Awaiting commands");
         }
         status_bar_.update_normal_status(primary_msg, secondary_buffer);
         return;

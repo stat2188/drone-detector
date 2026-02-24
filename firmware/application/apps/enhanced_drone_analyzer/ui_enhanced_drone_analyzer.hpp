@@ -18,8 +18,6 @@
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
 #include "eda_locking.hpp"
-#include "eda_safecast.hpp"
-#include "eda_raii.hpp"
 
 #include "ui.hpp"
 #include "ui_menu.hpp"
@@ -276,11 +274,9 @@ public:
     
     // Initialization state management
     void set_initialization_complete(bool complete) {
-        raii::SystemLock lock;
         initialization_complete_ = complete;
     }
     bool is_initialization_complete() const {
-        raii::SystemLock lock;
         return initialization_complete_;
     }
 
@@ -763,7 +759,7 @@ private:
 
     // Diamond Code: Use volatile bool for thread-safe flag access
     // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-    // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+    // Protected by CriticalSection (chSysLock/chSysUnlock) for write operations
     volatile bool spectrum_updated_{false};
 
     SpectrumMode spectrum_mode_;
@@ -775,7 +771,7 @@ private:
 
     // Diamond Code: Use volatile bool for thread-safe flag access
     // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-    // Protected by raii::SystemLock (chSysLock/chSysUnlock) for write operations
+    // Protected by CriticalSection (chSysLock/chSysUnlock) for write operations
     volatile bool rssi_updated_{false};
     volatile int32_t last_valid_rssi_{-120};
     
@@ -1521,13 +1517,13 @@ public:
 
     // / @brief Request global shutdown - sets shutdown flag and stops all threads
     void request_global_shutdown() {
-        raii::SystemLock lock;
+        CriticalSection lock;
         global_shutdown_requested_ = true;
     }
 
     // / @brief Check if global shutdown has been requested
     bool is_global_shutdown_requested() const {
-        raii::SystemLock lock;
+        CriticalSection lock;
         return global_shutdown_requested_;
     }
 
@@ -1714,7 +1710,7 @@ public:
     // with the Mayhem UI framework's callback design
 
     // Deferred initialization methods
-    void step_deferred_initialization();
+    void step_deferred_initialization() noexcept;
     void update_init_progress_display();
 
     // Stack Usage Monitoring
@@ -1729,8 +1725,8 @@ public:
     InitState init_state_ = InitState::CONSTRUCTED;
     systime_t init_start_time_ = 0;
     systime_t last_init_progress_ = 0;
-    // DIAMOND FIX: Use AtomicFlag for thread-safe test-and-set operation
-    AtomicFlag initialization_in_progress_;
+    // Initialization progress flag (single-threaded, no synchronization needed)
+    bool initialization_in_progress_ = false;
     
     // Global shutdown flag for all threads
     volatile bool global_shutdown_requested_ = false;

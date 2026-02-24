@@ -11,7 +11,6 @@
 #include <inttypes.h>
 #include <array>
 #include <ch.h>
-#include "eda_safe_string.hpp"
 #include "eda_constants.hpp"
 #include "ui_drone_common_types.hpp"
 #include "eda_locking.hpp"
@@ -19,6 +18,50 @@
 #include "lpc43xx_cpp.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
+
+// Inline wrapper for strnlen (not available in all environments)
+inline size_t strnlen_wrapper(const char* str, size_t max_len) noexcept {
+    if (!str) return 0;
+    size_t len = 0;
+    while (len < max_len && str[len] != '\0') {
+        ++len;
+    }
+    return len;
+}
+
+/**
+ * @brief Safe string copy with overlap detection
+ * @param dest Destination buffer
+ * @param src Source string
+ * @param max_len Maximum number of characters to copy (including null terminator)
+ * @note Handles overlapping buffers using memmove semantics
+ * @note Returns void for compatibility with existing call sites
+ * @note If max_len is 0 or pointers are null, returns without modification
+ */
+inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
+    // Guard clauses for null pointers and zero length
+    if (!dest || !src || max_len == 0) {
+        return;
+    }
+
+    // Check for overlapping buffers (src < dest && src + max_len > dest)
+    // This is the forward overlap case that would corrupt data with memcpy
+    if (src < dest && src + max_len > dest) {
+        // Overlap detected - use memmove for safety
+        // memmove handles overlapping buffers correctly
+        memmove(dest, src, max_len);
+        dest[max_len - 1] = '\0';  // Ensure null termination
+        return;
+    }
+
+    // No overlap - use fast character-by-character copy
+    size_t i = 0;
+    while (i < max_len - 1 && src[i] != '\0') {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';  // Always null terminate
+}
 
 extern Mutex settings_buffer_mutex;
 extern Mutex errno_mutex;
@@ -639,7 +682,7 @@ bool SettingsPersistence<T>::parse_line(char* line, T& settings) {
     // Guard clause: null or empty line
     if (!line || *line == '\0') return true;
 
-    size_t line_len = safe_strlen(line, EDA::Constants::MAX_LINE_LENGTH);
+    size_t line_len = strnlen_wrapper(line, EDA::Constants::MAX_LINE_LENGTH);
     if (line_len == 0) return true;
 
     char* equals = static_cast<char*>(memchr(line, '=', line_len));

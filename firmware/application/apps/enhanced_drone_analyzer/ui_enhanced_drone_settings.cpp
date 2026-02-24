@@ -21,6 +21,16 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
+// Inline wrapper for strnlen (not available in all environments)
+inline size_t strnlen_wrapper(const char* str, size_t max_len) noexcept {
+    if (!str) return 0;
+    size_t len = 0;
+    while (len < max_len && str[len] != '\0') {
+        ++len;
+    }
+    return len;
+}
+
 // RAII wrapper for File (ensures proper cleanup)
 class FileRAII {
 public:
@@ -281,8 +291,7 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
             } else if (strcmp(key, "demo_mode") == 0) {
                 hw_set_demo_mode(settings, strcmp(value, "true") == 0);
             } else if (strcmp(key, "freqman_path") == 0) {
-                // Use safe_strcpy instead of strncpy
-                safe_strcpy(settings.freqman_path, value, sizeof(settings.freqman_path));
+                snprintf(settings.freqman_path, sizeof(settings.freqman_path), "%s", value);
             } else if (strcmp(key, "user_min_freq_hz") == 0) {
                 // Replace atoll with strtoull and check for errors
                 char* endptr = nullptr;
@@ -383,8 +392,9 @@ void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept 
     if (filepath_len >= kMaxPathLen - 4) {
         return;  // Path too long
     }
-    safe_strcpy(backup_path, filepath, kMaxPathLen);
-    safe_strcat(backup_path, ".bak", kMaxPathLen);
+    snprintf(backup_path, kMaxPathLen, "%s", filepath);
+    size_t current_len = strlen(backup_path);
+    snprintf(backup_path + current_len, kMaxPathLen - current_len, "%s", ".bak");
 
     FileRAII backup_file(backup_path, false);
     if (!backup_file.is_open()) return;
@@ -415,8 +425,9 @@ void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept
     if (filepath_len >= kMaxPathLen - 4) {
         return;  // Path too long
     }
-    safe_strcpy(backup_path, filepath, kMaxPathLen);
-    safe_strcat(backup_path, ".bak", kMaxPathLen);
+    snprintf(backup_path, kMaxPathLen, "%s", filepath);
+    size_t current_len = strlen(backup_path);
+    snprintf(backup_path + current_len, kMaxPathLen - current_len, "%s", ".bak");
 
     // Use RAII wrapper for File to ensure proper cleanup
     FileRAII backup_file(backup_path, true);
@@ -445,8 +456,9 @@ void EnhancedSettingsManager::remove_backup_file(const char* filepath) noexcept 
     if (filepath_len >= kMaxPathLen - 4) {
         return;  // Path too long
     }
-    safe_strcpy(backup_path, filepath, kMaxPathLen);
-    safe_strcat(backup_path, ".bak", kMaxPathLen);
+    snprintf(backup_path, kMaxPathLen, "%s", filepath);
+    size_t current_len = strlen(backup_path);
+    snprintf(backup_path + current_len, kMaxPathLen - current_len, "%s", ".bak");
     
     // Diamond Code Standard #3 - Replace std::filesystem with FatFS C API
     f_unlink(reinterpret_cast<const TCHAR*>(backup_path));
@@ -592,7 +604,7 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui
         config.user_max_freq_hz = USER_MAX_FREQ;
     }
 
-    safe_strcpy(config.freqman_path, "DRONES", ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN);
+    snprintf(config.freqman_path, ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN, "%s", "DRONES");
     disp_set_show_detailed_info(config, true);
 
     return true;
@@ -947,45 +959,10 @@ DroneDatabaseManager::DatabaseView DroneDatabaseManager::load_database(const cha
             if (c == '\n' || c == '\r') {
                 line_buffer[line_ptr] = '\0';
                 
-                // Parse line
-                if (line_buffer[0] != '\0' && line_buffer[0] != '#') {
-                    // Find comma separator
-                    char* comma = static_cast<char*>(memchr(line_buffer, ',', line_ptr));
-                    if (comma) {
-                        *comma = '\0';
-                        DroneDbEntry entry{};
-                        entry.freq = strtoull(line_buffer, nullptr, 10);
-
-                        // Validate desc is within line_buffer bounds
-                        char* desc = comma + 1;
-                        size_t desc_offset = static_cast<size_t>(desc - line_buffer);
-                        if (desc_offset >= LINE_BUFFER_SIZE) {
-                            line_ptr = 0;
-                            continue;
-                        }
-
-                        // Skip leading spaces (with bounds check)
-                        while (desc_offset < LINE_BUFFER_SIZE - 1 && *desc == ' ') {
-                            desc++;
-                            desc_offset++;
-                        }
-
-                        // Safe copy with explicit length
-                        size_t max_desc_len = LINE_BUFFER_SIZE - desc_offset;
-                        size_t copy_len = sizeof(entry.description) - 1;
-                        if (max_desc_len < copy_len) {
-                            copy_len = max_desc_len;
-                        }
-
-                        for (size_t j = 0; j < copy_len && desc[j] != '\0'; ++j) {
-                            entry.description[j] = desc[j];
-                        }
-                        entry.description[copy_len] = '\0';
-
-                        if (entry.freq > 0) {
-                            view.entries[view.count++] = entry;
-                        }
-                    }
+                // Parse line using DroneDatabaseParser
+                ParseResult parse_result = DroneDatabaseParser::parse_line(line_buffer, line_ptr);
+                if (parse_result.success) {
+                    view.entries[view.count++] = parse_result.entry;
                 }
                 
                 line_ptr = 0;
@@ -1019,12 +996,12 @@ bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* f
         const auto& entry = view.entries[i];
         if (entry.freq == 0) continue;
         
-        // DIAMOND FIX: Use safe_strcpy for safe string operations
+        // DIAMOND FIX: Use snprintf for safe string operations
         char safe_desc[64];
-        safe_strcpy(safe_desc, entry.description, sizeof(safe_desc));
+        snprintf(safe_desc, sizeof(safe_desc), "%s", entry.description);
         
         // Replace commas with spaces for CSV safety
-        size_t desc_len = safe_strlen(safe_desc, sizeof(safe_desc));
+        size_t desc_len = strnlen_wrapper(safe_desc, sizeof(safe_desc));
         for (size_t j = 0; j < desc_len && j < sizeof(safe_desc) - 1; ++j) {
             if (safe_desc[j] == ',') safe_desc[j] = ' ';
         }
@@ -1154,5 +1131,82 @@ bool DroneDatabaseListView::on_key(const KeyEvent key) noexcept {
     }
     return View::on_key(key);
 }
+
+// CSV Parser for Drone Database - Extracted for separation of concerns
+namespace {
+// DIAMOND OPTIMIZATION: POD struct for parse result (zero heap allocation)
+struct ParseResult {
+    DroneDbEntry entry{};
+    bool success = false;
+};
+
+// DIAMOND OPTIMIZATION: Static parser class with zero heap allocation
+class DroneDatabaseParser {
+public:
+    // DIAMOND OPTIMIZATION: Static method with noexcept for performance
+    // Parses a single CSV line and returns ParseResult
+    // Format: "frequency,description" or "# comment"
+    static ParseResult parse_line(const char* line, size_t line_length) noexcept {
+        ParseResult result{};
+        
+        // Handle empty lines
+        if (line_length == 0 || line[0] == '\0') {
+            return result;
+        }
+        
+        // Handle comment lines (lines starting with #)
+        if (line[0] == '#') {
+            return result;
+        }
+        
+        // Find comma separator
+        const char* comma = static_cast<const char*>(memchr(line, ',', line_length));
+        if (!comma) {
+            return result;
+        }
+        
+        // Calculate frequency string length
+        size_t freq_length = static_cast<size_t>(comma - line);
+        if (freq_length == 0) {
+            return result;
+        }
+        
+        // Parse frequency
+        char freq_str[64];
+        size_t copy_len = (freq_length < sizeof(freq_str) - 1) ? freq_length : sizeof(freq_str) - 1;
+        for (size_t i = 0; i < copy_len; ++i) {
+            freq_str[i] = line[i];
+        }
+        freq_str[copy_len] = '\0';
+        
+        result.entry.freq = strtoull(freq_str, nullptr, 10);
+        
+        // Calculate description pointer and length
+        const char* desc = comma + 1;
+        size_t desc_offset = static_cast<size_t>(desc - line);
+        size_t desc_length = line_length - desc_offset;
+        
+        // Skip leading spaces
+        while (desc_length > 0 && *desc == ' ') {
+            desc++;
+            desc_length--;
+        }
+        
+        // Safe copy description with bounds checking
+        size_t max_desc_len = sizeof(result.entry.description) - 1;
+        size_t actual_copy_len = (desc_length < max_desc_len) ? desc_length : max_desc_len;
+        
+        for (size_t j = 0; j < actual_copy_len && desc[j] != '\0'; ++j) {
+            result.entry.description[j] = desc[j];
+        }
+        result.entry.description[actual_copy_len] = '\0';
+        
+        // Mark as successful only if frequency is valid
+        result.success = (result.entry.freq > 0);
+        
+        return result;
+    }
+};
+} // anonymous namespace
 
 } // namespace ui::apps::enhanced_drone_analyzer
