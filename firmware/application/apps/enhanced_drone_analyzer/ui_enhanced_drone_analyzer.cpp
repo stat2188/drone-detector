@@ -292,6 +292,17 @@ void DroneScanner::stop_scanning() {
     remove_stale_drones();
 }
 
+// ============================================================================
+// SCANNING FLOW: Database Loading
+// ============================================================================
+// Flow: on_show() -> init_phase_load_database() -> initialize_database_async()
+//       -> db_loading_thread_loop() -> UnifiedDroneDatabase
+// 
+// Stage 4 Integration: This legacy method now delegates to UnifiedDroneDatabase
+// for the actual frequency data. The FreqmanDB is kept for file I/O compatibility.
+// 
+// TODO: Future refactoring should fully migrate to UnifiedDroneDatabase
+// and remove the dual-database complexity.
 bool DroneScanner::load_frequency_database() {
     current_db_index_ = 0;
 
@@ -343,6 +354,33 @@ bool DroneScanner::load_frequency_database() {
     return !freq_db_ptr_->empty();
 }
 
+// Stage 4: Database observer callback for real-time sync
+void DroneScanner::database_change_callback(const DatabaseChangeEvent& event, void* user_data) {
+    auto* scanner = static_cast<DroneScanner*>(user_data);
+    if (scanner == nullptr) return;
+    
+    switch (event.type) {
+        case DatabaseEventType::ENTRY_ADDED:
+        case DatabaseEventType::ENTRY_DELETED:
+        case DatabaseEventType::DATABASE_RELOADED:
+            // Signal scanner to reload frequency list
+            scanner->database_needs_reload_ = true;
+            break;
+        default:
+            break;
+    }
+}
+
+void DroneScanner::register_database_observer() {
+    auto& db = UnifiedDroneDatabase::instance();
+    db.add_observer(&DroneScanner::database_change_callback, this);
+}
+
+void DroneScanner::unregister_database_observer() {
+    auto& db = UnifiedDroneDatabase::instance();
+    db.remove_observer(&DroneScanner::database_change_callback);
+}
+
 size_t DroneScanner::get_database_size() const {
     return freq_db_ptr_->entry_count();
 }
@@ -362,9 +400,29 @@ const char* DroneScanner::scanning_mode_name() const {
     return (idx < 3) ? SCANNING_MODE_NAMES[idx] : "Unknown";
 }
 
+// ============================================================================
+// SCANNING FLOW: Main Scan Cycle
+// ============================================================================
+// Flow: perform_scan_cycle() -> SCAN_FUNCTIONS LUT -> perform_database_scan_cycle()
+//       or perform_wideband_scan_cycle() or perform_hybrid_scan_cycle()
+//
+// Adaptive Scanning: Scan interval adjusts based on threat level:
+// - CRITICAL threat: FAST_SCAN_INTERVAL_MS (50ms)
+// - HIGH threat: HIGH_THREAT_SCAN_INTERVAL_MS (100ms)
+// - MEDIUM threat: NORMAL_SCAN_INTERVAL_MS (200ms)
+// - No detections: Progressive slowdown up to VERY_SLOW_SCAN_INTERVAL_MS (2000ms)
+//
+// LUT-based dispatch: SCAN_FUNCTIONS array provides O(1) dispatch to scan method
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
+    // Guard clause: Early return if not scanning
     bool is_scanning = scanning_active_;
     if (!is_scanning) return;
+
+    // Stage 4: Check if database needs reload due to observer notification
+    if (database_needs_reload_) {
+        database_needs_reload_ = false;
+        load_frequency_database();
+    }
 
     using namespace EDA::Constants;
     uint32_t base_interval = DEFAULT_SCAN_INTERVAL_MS;
@@ -414,6 +472,21 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     }
 }
 
+// ============================================================================
+// SCANNING FLOW: Database Scan Cycle
+// ============================================================================
+// Flow: perform_database_scan_cycle() -> hardware.tune_to_frequency() -> 
+//       hardware.get_current_rssi() -> process_rssi_detection()
+//
+// Hardware Tuning Sequence:
+// 1. Validate frequency range (MIN_HARDWARE_FREQ to MAX_HARDWARE_FREQ)
+// 2. Tune radio via receiver_model.set_target_frequency()
+// 3. Wait for PLL stabilization (PLL_STABILIZATION_ITERATIONS * PLL_STABILIZATION_DELAY_MS)
+// 4. Acquire RSSI measurement with timeout (RSSI_TIMEOUT_MS)
+// 5. Process detection if signal captured
+//
+// Memory Optimization: Uses class member buffers (entries_to_scan_) instead of
+// stack allocation to prevent stack overflow on STM32F405 (192KB RAM)
 void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware) {
     // Stack overflow detection check
     if (!check_stack_canary()) {
@@ -791,19 +864,35 @@ void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) 
     }
 }
 
+// ============================================================================
+// SCANNING FLOW: Detection Processing
+// ============================================================================
+// Flow: process_rssi_detection() -> DetectionRingBuffer -> update_tracked_drone()
+//       -> detection_logger_.log_detection_async()
+//
+// Detection Algorithm:
+// 1. Validate RSSI and frequency using DiamondCore utilities
+// 2. Filter by drone bands (433MHz, 868/915MHz, 2.4GHz, 5.8GHz)
+// 3. Classify threat level using ThreatClassifier::from_rssi()
+// 4. Update detection ring buffer with hysteresis
+// 5. Update tracked drone list if detection count >= MIN_DETECTION_COUNT
+// 6. Log detection asynchronously (non-blocking)
+//
+// Thread Safety: Uses MutexLock for all shared data access
+// Memory: Uses class member buffers to avoid stack allocation
 void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rssi) {
     // DIAMOND OPTIMIZATION: Using DiamondCore validation utilities
-    // 1. RSSI validation (using DiamondCore RSSI utilities)
+    // Guard clause: RSSI validation (using DiamondCore RSSI utilities)
     if (!EDA::Validation::validate_rssi(rssi)) {
         return;
     }
 
-    // 2. Frequency validation (using DiamondCore validation)
+    // Guard clause: Frequency validation (using DiamondCore validation)
     if (!EDA::Validation::validate_frequency(entry.frequency_a)) {
         return;
     }
 
-    // 3. Drone band filtering (433MHz - 5.8GHz)
+    // Guard clause: Drone band filtering (433MHz - 5.8GHz)
     if (!EDA::Validation::is_433mhz_band(entry.frequency_a) &&
         !EDA::Validation::is_2_4ghz_band(entry.frequency_a) &&
         !EDA::Validation::is_5_8ghz_band(entry.frequency_a) &&
@@ -930,6 +1019,18 @@ void DroneScanner::send_drone_detection_message(const DetectionParams& params) {
     update_tracked_drone(params);
 }
 
+// ============================================================================
+// SCANNING FLOW: Tracked Drone Update
+// ============================================================================
+// Flow: update_tracked_drone() -> TrackedDrone::add_rssi() -> update_tracking_counts()
+//
+// Tracked Drone Management:
+// - MAX_TRACKED_DRONES (10) fixed-size array (zero heap allocation)
+// - Each TrackedDrone stores MAX_HISTORY (3) RSSI samples for trend calculation
+// - Oldest entry replaced when array is full
+//
+// Thread Safety: Called from scanner thread, data protected by data_mutex
+// Memory: Uses placement new on static storage (tracked_drones_storage_)
 void DroneScanner::update_tracked_drone(const DetectionParams& params) {
     // Only update internal data - UI will read via snapshot
     // Single mutex lock acquisition at the start
@@ -2473,11 +2574,24 @@ void DroneDisplayController::deallocate_buffers() {
               std::end(histogram_display_buffer_.bin_counts), 0);
 }
 
+// ============================================================================
+// SCANNING FLOW: UI Update
+// ============================================================================
+// Flow: handle_scanner_update() -> update_detection_display() -> 
+//       get_tracked_drones_snapshot() -> sort_drones_by_rssi() -> render_drone_text_display()
+//
+// UI/DSP Separation Pattern (Diamond Code):
+// Phase 1: DATA FETCHING (DSP/Logic Layer) - no UI calls
+//   - Fetch all data from scanner into local DisplayData struct
+//   - Ensures atomic data fetching and consistent UI rendering
+// Phase 2: UI RENDERING (Presentation Layer) - no data fetching
+//   - Render UI using fetched data only
+//   - No scanner calls during rendering
+//
+// Thread Safety: Uses snapshot pattern to avoid holding mutex during render
+// Memory: Uses static thread_local buffers to avoid stack allocation
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
-    // Separate UI/DSP logic - Diamond Code pattern
-    // Phase 1: Data fetching (DSP/logic layer) - no UI calls
-    // Phase 2: UI rendering (presentation layer) - no data fetching
-    // This separation ensures atomic data fetching and consistent UI rendering
+    // Guard clause: Early return if buffers not allocated
     if (!buffers_allocated_) {
         return;
     }

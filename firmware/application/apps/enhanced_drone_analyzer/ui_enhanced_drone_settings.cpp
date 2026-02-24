@@ -8,7 +8,8 @@
 #include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
-#include "default_drones_db.hpp"
+#include "eda_unified_database.hpp"
+#include "eda_database_parser.hpp"
 #include "file.hpp"
 #include "portapack.hpp"
 #include "string_format.hpp"
@@ -346,37 +347,6 @@ const char* EnhancedSettingsManager::get_communication_status() noexcept {
     static constexpr const char* STATUS_READY = "TXT file found\nCommunication ready";
     static constexpr const char* STATUS_NOT_READY = "No TXT file found\nSave settings first";
     return verify_comm_file_exists() ? STATUS_READY : STATUS_NOT_READY;
-}
-
-// noexcept for file creation
-bool EnhancedSettingsManager::ensure_database_exists(const DroneAnalyzerSettings& settings) noexcept {
-    // Use settings.freqman_path instead of hardcoded "DRONES"
-    static constexpr size_t kMaxPathLen = 64;
-    char file_path[kMaxPathLen];
-    
-    // Guard clause: Ensure freqman_path is valid
-    const char* freqman_name = (settings.freqman_path[0] != '\0') ? settings.freqman_path : "DRONES";
-    snprintf(file_path, sizeof(file_path), "/FREQMAN/%s.TXT", freqman_name);
-    File check_file;
-    if (check_file.open(file_path, true)) {
-        check_file.close();
-        return true;
-    }
-
-    File create_file;
-    if (create_file.open(file_path, false)) {
-        // Check write result and handle errors
-        size_t content_len = strlen(DEFAULT_DRONE_DATABASE_CONTENT);
-        auto write_result = create_file.write(DEFAULT_DRONE_DATABASE_CONTENT, content_len);
-        if (write_result.is_error() || write_result.value() != content_len) {
-            // Write failed - file may be incomplete
-            create_file.close();
-            return false;
-        }
-        create_file.close();
-        return true;
-    }
-    return false;
 }
 
 // const pointer, noexcept for file backup
@@ -892,12 +862,6 @@ DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View
     button_about_author_.on_select = [this](Button&) { show_about_author(); };
     // Initialize settings with defaults first (which includes freqman_path = "DRONES")
     SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(current_settings_);
-    // FIX #M5: Check return value of ensure_database_exists() and handle failures
-    bool db_exists = EnhancedSettingsManager::ensure_database_exists(current_settings_);
-    if (!db_exists) {
-        // Database creation failed - continue with defaults
-        // Settings will be saved to file when user explicitly saves
-    }
     // FIX #M3: Check return value of load() and handle errors appropriately
     auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(current_settings_);
     if (!load_result.is_ok() || !load_result.value) {
@@ -929,114 +893,90 @@ void DroneAnalyzerSettingsView::show_about_author() noexcept {
 }
 
 // DroneDatabaseManager
+// Stage 4: Updated to use UnifiedDroneDatabase
 // DIAMOND OPTIMIZATION: const pointer, noexcept for database load
 DroneDatabaseManager::DatabaseView DroneDatabaseManager::load_database(const char* file_path) noexcept {
     DatabaseView view{};
     
-    File file;
-    if (!file.open(file_path, true)) return view;
-
-    // FIX #8: Increase line buffer from 256 to 512 bytes to prevent buffer overflow
-    // DIAMOND OPTIMIZATION: Stack-allocated line buffer (zero heap)
-    // Diamond Code: Strong typing - size_t for array indices
-    constexpr size_t LINE_BUFFER_SIZE = 512;
-    char line_buffer[LINE_BUFFER_SIZE];
-    size_t line_ptr = 0;
+    // Use UnifiedDroneDatabase for loading
+    auto& db = UnifiedDroneDatabase::instance();
     
-    constexpr size_t READ_BUFFER_SIZE = 256;
-    char read_buffer[READ_BUFFER_SIZE];
-    
-    size_t total_read = 0;
-    while (total_read < file.size() && view.count < MAX_DATABASE_ENTRIES) {
-        auto read_res = file.read(read_buffer, READ_BUFFER_SIZE);
-        if (read_res.is_error()) break;
-        
-        size_t bytes_read = read_res.value();
-        
-        for (size_t i = 0; i < bytes_read && view.count < MAX_DATABASE_ENTRIES; ++i) {
-            char c = read_buffer[i];
-            
-            if (c == '\n' || c == '\r') {
-                line_buffer[line_ptr] = '\0';
-                
-                // Parse line using DroneDatabaseParser
-                ParseResult parse_result = DroneDatabaseParser::parse_line(line_buffer, line_ptr);
-                if (parse_result.success) {
-                    view.entries[view.count++] = parse_result.entry;
-                }
-                
-                line_ptr = 0;
-            } else if (line_ptr < LINE_BUFFER_SIZE - 1) {
-                line_buffer[line_ptr++] = c;
-            }
-        }
-        
-        total_read += bytes_read;
+    // Initialize and load from file
+    if (!db.initialize()) {
+        return view;
     }
     
-    file.close();
+    if (!db.load(file_path)) {
+        // Return empty view if load fails
+        return view;
+    }
+    
+    // Convert UnifiedDroneDatabase entries to DatabaseView format
+    size_t db_count = db.size();
+    size_t count = 0;
+    
+    for (size_t i = 0; i < db_count && count < MAX_DATABASE_ENTRIES; ++i) {
+        const UnifiedDroneEntry* entry = db.get_entry(i);
+        if (entry == nullptr || entry->frequency_hz == 0) continue;
+        
+        view.entries[count].freq = entry->frequency_hz;
+        
+        // Copy description safely (max 63 chars + null terminator)
+        size_t desc_len = 0;
+        while (desc_len < 63 && entry->description[desc_len] != '\0') {
+            view.entries[count].description[desc_len] = entry->description[desc_len];
+            desc_len++;
+        }
+        view.entries[count].description[desc_len] = '\0';
+        
+        count++;
+    }
+    
+    view.count = count;
     return view;
 }
 
 // DIAMOND OPTIMIZATION: const reference, const pointer, noexcept for database save
+// Stage 4: Updated to use UnifiedDroneDatabase with validation
 bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* file_path) noexcept {
-    // DIAMOND OPTIMIZATION: Stack-allocated buffer (zero heap)
-    // MEDIUM PRIORITY FIX: Reduced from 4096 to 2048 bytes (saves ~2KB RAM)
-    // FIX #26: Further reduced from 2048 to 1024 for additional RAM savings
-    constexpr size_t WRITE_BUFFER_SIZE = 1024;
-    char write_buffer[WRITE_BUFFER_SIZE];
-    size_t offset = 0;
+    auto& db = UnifiedDroneDatabase::instance();
     
-    // Write header
-    offset += snprintf(write_buffer + offset, WRITE_BUFFER_SIZE - offset,
-                      "frequency,description\n# EDA User Database\n");
+    // Clear database for fresh import
+    db.clear();
     
-    // Write entries
+    // Validate and add entries
     for (size_t i = 0; i < view.count; ++i) {
         const auto& entry = view.entries[i];
         if (entry.freq == 0) continue;
         
-        // DIAMOND FIX: Use snprintf for safe string operations
-        char safe_desc[64];
-        snprintf(safe_desc, sizeof(safe_desc), "%s", entry.description);
+        // Create UnifiedDroneEntry for validation
+        UnifiedDroneEntry unified_entry;
+        unified_entry.frequency_hz = entry.freq;
         
-        // Replace commas with spaces for CSV safety
-        size_t desc_len = strnlen_wrapper(safe_desc, sizeof(safe_desc));
-        for (size_t j = 0; j < desc_len && j < sizeof(safe_desc) - 1; ++j) {
-            if (safe_desc[j] == ',') safe_desc[j] = ' ';
+        // Copy description safely (max 31 chars + null terminator for UnifiedDroneEntry)
+        size_t desc_len = 0;
+        while (desc_len < 31 && entry.description[desc_len] != '\0') {
+            unified_entry.description[desc_len] = entry.description[desc_len];
+            desc_len++;
         }
-        safe_desc[desc_len] = '\0';
+        unified_entry.description[desc_len] = '\0';
         
-        int written = snprintf(write_buffer + offset, WRITE_BUFFER_SIZE - offset,
-                            "%llu,%s\n",
-                            static_cast<unsigned long long>(entry.freq),
-                            safe_desc);
-        
-        if (written < 0 || offset + static_cast<size_t>(written) >= WRITE_BUFFER_SIZE) {
-            // DIAMOND FIX: Use FileRAII to ensure proper cleanup
-            FileRAII file(file_path, false);
-            if (!file.is_open()) return false;
-            auto write_result = file.get().write(write_buffer, offset);
-            if (write_result.is_error() || write_result.value() != offset) {
-                return false;
-            }
-            offset = 0;
-        } else {
-            offset += static_cast<size_t>(written);
+        // Validate entry before adding
+        auto validation = FrequencyValidation::validate_entry(unified_entry);
+        if (!validation.valid) {
+            // Skip invalid entries but continue processing
+            continue;
         }
+        
+        // Add to unified database
+        db.add_entry(unified_entry);
     }
     
-    // DIAMOND FIX: Use FileRAII for final write
-    if (offset > 0) {
-        FileRAII file(file_path, false);
-        if (!file.is_open()) return false;
-        auto write_result = file.get().write(write_buffer, offset);
-        if (write_result.is_error() || write_result.value() != offset) {
-            return false;
-        }
-    }
+    // Save to file
+    bool success = db.save(file_path);
     
-    return true;
+    // Observers are automatically notified by save()
+    return success;
 }
 
 // DroneDatabaseListView
@@ -1132,6 +1072,17 @@ bool DroneDatabaseListView::on_key(const KeyEvent key) noexcept {
     return View::on_key(key);
 }
 
+// =============================================================================
+// DISABLED: Duplicate DroneDatabaseParser class
+// This class has been replaced by the unified DatabaseParser namespace in
+// eda_database_parser.hpp. The new implementation provides:
+//   - DatabaseParser::parse_freqman_line() for freqman format
+//   - DatabaseParser::parse_csv_line() for CSV format
+//   - DatabaseParser::parse_line() for auto-detect format
+//   - DatabaseParser::write_freqman_line() for writing freqman format
+//   - DatabaseParser::write_csv_line() for writing CSV format
+// =============================================================================
+#if 0
 // CSV Parser for Drone Database - Extracted for separation of concerns
 namespace {
 // DIAMOND OPTIMIZATION: POD struct for parse result (zero heap allocation)
@@ -1208,5 +1159,6 @@ public:
     }
 };
 } // anonymous namespace
+#endif // DISABLED: Duplicate DroneDatabaseParser - use DatabaseParser from eda_database_parser.hpp
 
 } // namespace ui::apps::enhanced_drone_analyzer

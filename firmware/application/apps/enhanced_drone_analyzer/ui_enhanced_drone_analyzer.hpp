@@ -18,6 +18,7 @@
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
 #include "eda_locking.hpp"
+#include "eda_unified_database.hpp"
 
 #include "ui.hpp"
 #include "ui_menu.hpp"
@@ -128,8 +129,10 @@ public:
         return *this;
     }
 
-    // inline enables compiler optimization, noexcept avoids exception handling overhead
-    inline void add_rssi(const RssiMeasurement& measurement) noexcept {
+    // [[nodiscard]] - Return value should not be ignored (C++17 best practice)
+    // noexcept - No exceptions on STM32 (embedded constraint)
+    // inline - Enables compiler optimization for hot path
+    [[nodiscard]] inline void add_rssi(const RssiMeasurement& measurement) noexcept {
         rssi_history_[history_index_] = measurement.rssi_db;
         timestamp_history_[history_index_] = measurement.timestamp_ms;
         history_index_ = (history_index_ + 1) % MAX_HISTORY;
@@ -142,8 +145,9 @@ public:
         }
     }
 
+    // [[nodiscard]] - Trend value must be used by caller
     // inline + noexcept + loop unrolling for MAX_HISTORY=3
-    inline MovementTrend get_trend() const noexcept {
+    [[nodiscard]] inline MovementTrend get_trend() const noexcept {
         if (update_count < EDA::Constants::MOVEMENT_TREND_MIN_HISTORY) return MovementTrend::UNKNOWN;
 
         // Compile-time constants for better optimization
@@ -370,14 +374,22 @@ public:
 
     void start_scanning();
     void stop_scanning();
+    // [[nodiscard]] - Scanning state must be used by caller
     // inline + noexcept for zero-overhead abstraction
-    inline bool is_scanning_active() const noexcept { return scanning_active_; }
+    [[nodiscard]] inline bool is_scanning_active() const noexcept { return scanning_active_; }
+    
+    // LEGACY: load_frequency_database() - Now uses UnifiedDroneDatabase
+    // This method is kept for backward compatibility but internally uses
+    // the unified database. See initialize_database_and_scanner() for new code.
     bool load_frequency_database();
-    size_t get_database_size() const;
+    
+    [[nodiscard]] size_t get_database_size() const;
 
+    // [[nodiscard]] - Mode value must be used by caller
     // inline + noexcept for zero-overhead abstraction
-    inline ScanningMode get_scanning_mode() const noexcept { return scanning_mode_; }
-    const char* scanning_mode_name() const;
+    [[nodiscard]] inline ScanningMode get_scanning_mode() const noexcept { return scanning_mode_; }
+    
+    [[nodiscard]] const char* scanning_mode_name() const;
     void set_scanning_mode(ScanningMode mode);
 
     void switch_to_real_mode();
@@ -405,8 +417,11 @@ public:
         setup_wideband_range(min_freq, max_freq);
     }
 
-    int32_t get_detection_rssi_safe(size_t freq_hash) const;
-    uint8_t get_detection_count_safe(size_t freq_hash) const;
+    // [[nodiscard]] - Detection RSSI must be used by caller
+    [[nodiscard]] int32_t get_detection_rssi_safe(size_t freq_hash) const;
+    
+    // [[nodiscard]] - Detection count must be used by caller
+    [[nodiscard]] uint8_t get_detection_count_safe(size_t freq_hash) const;
 
 struct DetectionParams {
     DroneType type;
@@ -442,16 +457,18 @@ struct DetectionParams {
     rf::Frequency get_current_scanning_frequency() const;
     ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
     // STEP 3 FIX: Return by value instead of by reference to avoid dangling reference issues
-    TrackedDrone getTrackedDrone(size_t index) const;  // FIX: Protected with mutex
+    // [[nodiscard]] - TrackedDrone data must be used by caller
+    [[nodiscard]] TrackedDrone getTrackedDrone(size_t index) const;  // FIX: Protected with mutex
     void handle_scan_error(const char* error_msg);
 
     // DIAMOND OPTIMIZATION: inline + noexcept for zero-overhead abstraction
-    inline size_t get_approaching_count() const noexcept { return approaching_count_; }
-    inline size_t get_receding_count() const noexcept { return receding_count_; }
-    inline size_t get_static_count() const noexcept { return static_count_; }
-    inline uint32_t get_total_detections() const noexcept { return total_detections_; }
-    inline uint32_t get_scan_cycles() const noexcept { return scan_cycles_; }
-    inline bool is_real_mode() const noexcept { return is_real_mode_; }
+    // [[nodiscard]] - Counter values must be used by caller
+    [[nodiscard]] inline size_t get_approaching_count() const noexcept { return approaching_count_; }
+    [[nodiscard]] inline size_t get_receding_count() const noexcept { return receding_count_; }
+    [[nodiscard]] inline size_t get_static_count() const noexcept { return static_count_; }
+    [[nodiscard]] inline uint32_t get_total_detections() const noexcept { return total_detections_; }
+    [[nodiscard]] inline uint32_t get_scan_cycles() const noexcept { return scan_cycles_; }
+    [[nodiscard]] inline bool is_real_mode() const noexcept { return is_real_mode_; }
 
     DroneScanner(const DroneScanner&) = delete;
     DroneScanner(DroneScanner&&) = delete;
@@ -462,24 +479,50 @@ struct DetectionParams {
     // UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type))
     // UnifiedColorLookup::drone(static_cast<uint8_t>(type))
 
-    Frequency get_current_radio_frequency() const;
+    // [[nodiscard]] - Frequency value must be used by caller
+    [[nodiscard]] Frequency get_current_radio_frequency() const;
 
+    // ============================================================================
+    // SCANNING FLOW: Data Structures for Thread-Safe Drone Tracking
+    // ============================================================================
+    // Flow: Scanner Thread -> DroneSnapshot -> UI Thread
+    // 1. Scanner thread updates TrackedDrone objects under mutex
+    // 2. UI thread calls get_tracked_drones_snapshot() to get a copy
+    // 3. UI thread renders from the snapshot (no mutex held during render)
     struct DroneSnapshot {
         TrackedDrone drones[EDA::Constants::MAX_TRACKED_DRONES];
         size_t count = 0;
     };
 
-    DroneSnapshot get_tracked_drones_snapshot() const;
+    // [[nodiscard]] - Snapshot data must be used by caller
+    [[nodiscard]] DroneSnapshot get_tracked_drones_snapshot() const;
 
-    bool try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const;
+    [[nodiscard]] bool try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const;
 
+    // ============================================================================
+    // SCANNING FLOW: Database Initialization
+    // ============================================================================
+    // Flow: on_show() -> init_phase_load_database() -> initialize_database_async()
+    //       -> db_loading_thread_loop() -> UnifiedDroneDatabase
+    // 
+    // Stage 4 Integration: Now uses UnifiedDroneDatabase as single source of truth
+    // Legacy FreqmanDB code is kept for backward compatibility but delegates to
+    // UnifiedDroneDatabase internally.
+    
     // Public API for safe initialization
     void initialize_database_and_scanner();
     void initialize_database_async();
     void cleanup_database_and_scanner();
-    bool is_database_loading_complete() const;
-    bool is_initialization_complete() const;
+    
+    // [[nodiscard]] - Initialization status must be checked by caller
+    [[nodiscard]] bool is_database_loading_complete() const;
+    [[nodiscard]] bool is_initialization_complete() const;
     void sync_database();
+    
+    // Stage 4: Database observer methods for UnifiedDroneDatabase
+    static void database_change_callback(const DatabaseChangeEvent& event, void* user_data);
+    void register_database_observer();
+    void unregister_database_observer();
 
  private:
     void reset_scan_cycles();
@@ -609,6 +652,9 @@ struct DetectionParams {
 
         // Initialization complete flag for async initialization coordination
         volatile bool initialization_complete_{false};
+        
+        // Stage 4: Database reload flag for observer pattern
+        volatile bool database_needs_reload_{false};
 
        // Static thread stack (4KB optimized for memory)
         static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4KB (optimized for memory)

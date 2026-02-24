@@ -196,6 +196,16 @@ constexpr uint32_t THREAD_TERMINATION_TIMEOUT_MS = 3000;
 constexpr uint32_t THREAD_TERMINATION_POLL_INTERVAL_MS = 10;
 
 // Database Parameters
+// Stage 4: Unified Database Constants
+// Memory Budget: 120 entries × 48 bytes = 5,760 bytes (fits within 8KB limit)
+// See plans/stage4_unified_database_architecture.md for memory calculations
+constexpr size_t MAX_DATABASE_ENTRIES = 120;           // Unified limit for drone database
+constexpr size_t MAX_DESCRIPTION_LENGTH = 32;          // Max description length (matches freqman)
+constexpr size_t MAX_DATABASE_OBSERVERS = 4;           // Max observer callbacks (zero-heap)
+constexpr size_t DATABASE_ENTRY_SIZE = 48;             // sizeof(UnifiedDroneEntry)
+constexpr size_t DATABASE_STORAGE_SIZE = MAX_DATABASE_ENTRIES * DATABASE_ENTRY_SIZE;  // 5,760 bytes
+
+// Legacy constants (kept for backward compatibility)
 constexpr uint32_t MAX_DB_ENTRIES = 75;
 constexpr uint32_t DB_SYNC_INTERVAL_MS = 5000;
 constexpr uint32_t DB_LOAD_RETRY_COUNT = 3;

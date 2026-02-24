@@ -35,13 +35,12 @@ namespace ui::apps::enhanced_drone_analyzer {
 class EnhancedSettingsManager {
 public:
     // noexcept for all methods
-    // * * @brief Ensure the frequency database file exists * @param settings Settings containing freqman_path configuration * @note Creates the database file with default content if it doesn't exist * @return true if database exists or was created successfully, false on error
-    static bool ensure_database_exists(const DroneAnalyzerSettings& settings) noexcept;
-    static bool save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept;
-    static bool load_settings_from_txt(DroneAnalyzerSettings& settings) noexcept;
-    static bool verify_comm_file_exists() noexcept;
+    // [[nodiscard]] - Save/load success must be checked by caller
+    [[nodiscard]] static bool save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept;
+    [[nodiscard]] static bool load_settings_from_txt(DroneAnalyzerSettings& settings) noexcept;
+    [[nodiscard]] static bool verify_comm_file_exists() noexcept;
     // Return const char* from Flash instead of std::string
-    static const char* get_communication_status() noexcept;
+    [[nodiscard]] static const char* get_communication_status() noexcept;
 
 private:
     static void create_backup_file(const char* filepath) noexcept;
@@ -73,14 +72,15 @@ public:
     static constexpr size_t AVAILABLE_TYPES_COUNT = 7;
     
     // noexcept for all methods
-    static const std::array<DronePreset, PRESETS_COUNT>& get_all_presets() noexcept;
-    static const char* const* get_preset_names() noexcept;
-    static const DroneType* get_available_types() noexcept;
-    static size_t get_preset_count() noexcept;
-    static size_t get_available_types_count() noexcept;
+    // [[nodiscard]] - Return values must be used by caller
+    [[nodiscard]] static const std::array<DronePreset, PRESETS_COUNT>& get_all_presets() noexcept;
+    [[nodiscard]] static const char* const* get_preset_names() noexcept;
+    [[nodiscard]] static const DroneType* get_available_types() noexcept;
+    [[nodiscard]] static size_t get_preset_count() noexcept;
+    [[nodiscard]] static size_t get_available_types_count() noexcept;
     // Return const char* from Flash instead of std::string
-    static const char* get_type_display_name(DroneType type) noexcept;
-    static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset) noexcept;
+    [[nodiscard]] static const char* get_type_display_name(DroneType type) noexcept;
+    [[nodiscard]] static bool apply_preset(DroneAnalyzerSettings& config, const DronePreset& preset) noexcept;
 };
 
 // Replaced std::function with template-based callbacks (zero heap allocation)
@@ -168,7 +168,8 @@ struct DroneFrequencyEntry {
     DroneFrequencyEntry(Frequency freq, DroneType type, ThreatLevel threat,
                        int32_t rssi_thresh, uint32_t bw_hz, const char* desc) noexcept;
 
-    bool is_valid() const noexcept;
+    // [[nodiscard]] - Validation result must be used
+    [[nodiscard]] bool is_valid() const noexcept;
 };
 
 // DIAMOND OPTIMIZATION: Fixed-size array instead of std::vector (zero heap allocation)
@@ -184,6 +185,11 @@ struct DroneDbEntry {
 
 // Database manager class
 // DIAMOND OPTIMIZATION: Database manager with zero heap allocation
+// 
+// LEGACY NOTE: This class is being phased out in favor of UnifiedDroneDatabase.
+// It remains for backward compatibility with older settings files.
+// New code should use UnifiedDroneDatabase directly.
+// See eda_unified_database.hpp for the new implementation.
 class DroneDatabaseManager {
 public:
     // DIAMOND OPTIMIZATION: Named constant for max entries
@@ -194,16 +200,20 @@ public:
         DroneDbEntry entries[MAX_DATABASE_ENTRIES];
         size_t count = 0;
         
-        constexpr bool is_valid() const noexcept { return count > 0; }
-        constexpr const DroneDbEntry& operator[](size_t idx) const noexcept {
+        // [[nodiscard]] - Validation must be checked
+        [[nodiscard]] constexpr bool is_valid() const noexcept { return count > 0; }
+        // [[nodiscard]] - Entry access must be used
+        [[nodiscard]] constexpr const DroneDbEntry& operator[](size_t idx) const noexcept {
             return (idx < count) ? entries[idx] : entries[0];
         }
-        constexpr size_t size() const noexcept { return count; }
+        // [[nodiscard]] - Size must be used
+        [[nodiscard]] constexpr size_t size() const noexcept { return count; }
     };
     
     // DIAMOND OPTIMIZATION: noexcept for all methods
-    static DatabaseView load_database(const char* file_path = "/FREQMAN/DRONES.TXT") noexcept;
-    static bool save_database(const DatabaseView& view, const char* file_path = "/FREQMAN/DRONES.TXT") noexcept;
+    // [[nodiscard]] - Database load/save success must be checked
+    [[nodiscard]] static DatabaseView load_database(const char* file_path = "/FREQMAN/DRONES.TXT") noexcept;
+    [[nodiscard]] static bool save_database(const DatabaseView& view, const char* file_path = "/FREQMAN/DRONES.TXT") noexcept;
 };
 
 // SETTINGS UI CLASSES

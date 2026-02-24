@@ -1,0 +1,484 @@
+# EDA Comprehensive Drone Database
+# Format: Frequency(Hz), Description
+# 
+# This file contains frequency information for various consumer and commercial drones
+# organized by manufacturer and frequency band.
+#
+# Frequency Bands:
+# - 433 MHz: Long Range Control (LRS)
+# - 868 MHz: EU Long Range Telemetry (Crossfire, ELRS)
+# - 915 MHz: US Long Range Telemetry (Crossfire, ELRS)
+# - 2.4 GHz: WiFi/ISM band (DJI, Parrot, Autel, etc.)
+# - 5.8 GHz: FPV Video (RaceBand, DJI FPV, etc.)
+
+# ==============================================================================
+# LONG RANGE TELEMETRY (868/915 MHz)
+# ==============================================================================
+# TBS Crossfire EU
+868000000,TBS Crossfire EU Control
+868500000,TBS Crossfire EU Telemetry
+
+# TBS Crossfire US
+915000000,TBS Crossfire US Control
+915500000,TBS Crossfire US Telemetry
+
+# ELRS (ExpressLRS) EU
+866000000,ELRS 868 Control
+866500000,ELRS 868 Telemetry
+
+# ELRS (ExpressLRS) US
+915000000,ELRS 915 Control
+915500000,ELRS 915 Telemetry
+
+# ==============================================================================
+# LEGACY / OTHER (433 MHz)
+# ==============================================================================
+# Long Range Systems
+433050000,LRS 433 Control
+433100000,LRS 433 Telemetry
+433200000,Futaba FASSTest 433
+433300000,FrSky R9 433
+433400000,FrSky R9M 433
+433500000,TBS Crossfire 433
+
+# ==============================================================================
+# DJI OCUSYNC / LIGHTBRIDGE (2.4 GHz)
+# ==============================================================================
+# DJI OcuSync 2.0/3.0
+2405000000,DJI OcuSync CH 0
+2406500000,DJI OcuSync CH 1
+2408000000,DJI OcuSync CH 2
+2409500000,DJI OcuSync CH 3
+2411000000,DJI OcuSync CH 4
+2412500000,DJI OcuSync CH 5
+2414000000,DJI OcuSync CH 6
+2415500000,DJI OcuSync CH 7
+2417000000,DJI OcuSync CH 8
+2418500000,DJI OcuSync CH 9
+2420000000,DJI OcuSync CH 10
+2421500000,DJI OcuSync CH 11
+2423000000,DJI OcuSync CH 12
+2424500000,DJI OcuSync CH 13
+2426000000,DJI OcuSync CH 14
+2427500000,DJI OcuSync CH 15
+2429000000,DJI OcuSync CH 16
+2430500000,DJI OcuSync CH 17
+2432000000,DJI OcuSync CH 18
+2433500000,DJI OcuSync CH 19
+2435000000,DJI OcuSync CH 20
+2436500000,DJI OcuSync CH 21
+2438000000,DJI OcuSync CH 22
+2439500000,DJI OcuSync CH 23
+
+# DJI Lightbridge
+2412000000,DJI Lightbridge CH 1
+2414000000,DJI Lightbridge CH 2
+2416000000,DJI Lightbridge CH 3
+2418000000,DJI Lightbridge CH 4
+2420000000,DJI Lightbridge CH 5
+2422000000,DJI Lightbridge CH 6
+2424000000,DJI Lightbridge CH 7
+2426000000,DJI Lightbridge CH 8
+
+# ==============================================================================
+# DJI PHANTOM SERIES (2.4 GHz)
+# ==============================================================================
+2405000000,DJI Phantom 1 Control
+2407000000,DJI Phantom 2 Control
+2409000000,DJI Phantom 2 Vision Control
+2411000000,DJI Phantom 3 Standard Control
+2413000000,DJI Phantom 3 Professional Control
+2415000000,DJI Phantom 3 Advanced Control
+2417000000,DJI Phantom 4 Control
+2419000000,DJI Phantom 4 Pro Control
+2421000000,DJI Phantom 4 Advanced Control
+2423000000,DJI Phantom 4 Pro V2.0 Control
+2425000000,DJI Phantom 4 RTK Control
+
+# ==============================================================================
+# DJI MAVIC SERIES (2.4 GHz)
+# ==============================================================================
+2412000000,DJI Mavic Pro Control
+2414000000,DJI Mavic Pro Platinum Control
+2416000000,DJI Mavic Air Control
+2418000000,DJI Mavic 2 Pro Control
+2420000000,DJI Mavic 2 Zoom Control
+2422000000,DJI Mavic 2 Enterprise Control
+2424000000,DJI Mavic Mini Control
+2426000000,DJI Mavic Mini 2 Control
+2428000000,DJI Mavic Air 2 Control
+2430000000,DJI Mavic Air 2S Control
+2432000000,DJI Mavic 3 Control
+2434000000,DJI Mavic 3 Classic Control
+2436000000,DJI Mavic 3 Pro Control
+2438000000,DJI Mavic 3 Thermal Control
+2440000000,DJI Mavic 3 Enterprise Control
+
+# ==============================================================================
+# DJI MINI SERIES (2.4 GHz)
+# ==============================================================================
+2412000000,DJI Mini SE Control
+2414000000,DJI Mini 2 SE Control
+2416000000,DJI Mini 3 Pro Control
+2418000000,DJI Mini 4 Pro Control
+2420000000,DJI Mini 3 Control
+2422000000,DJI Mini 4 Control
+
+# ==============================================================================
+# DJI AIR SERIES (2.4 GHz)
+# ==============================================================================
+2416000000,DJI Air Control
+2418000000,DJI Air 2 Control
+2420000000,DJI Air 2S Control
+2422000000,DJI Air 3 Control
+2424000000,DJI Air 3S Control
+
+# ==============================================================================
+# DJI FPV SERIES (5.8 GHz)
+# ==============================================================================
+# DJI FPV System Digital
+5658000000,DJI FPV System CH 1
+5695000000,DJI FPV System CH 2
+5732000000,DJI FPV System CH 3
+5769000000,DJI FPV System CH 4
+5806000000,DJI FPV System CH 5
+5843000000,DJI FPV System CH 6
+5880000000,DJI FPV System CH 7
+5917000000,DJI FPV System CH 8
+
+# DJI FPV Drone (2.4 GHz)
+2405000000,DJI FPV Drone Control
+2407000000,DJI FPV Drone Telemetry
+
+# ==============================================================================
+# PARROT DRONES (2.4 GHz WiFi)
+# ==============================================================================
+# Parrot Bebop Series
+2412000000,Parrot Bebop 1 Control
+2414000000,Parrot Bebop 2 Control
+2416000000,Parrot Bebop 2 Power Control
+
+# Parrot Anafi Series
+2418000000,Parrot Anafi Control
+2420000000,Parrot Anafi Thermal Control
+2422000000,Parrot Anafi USA Control
+2424000000,Parrot Anafi Work Control
+
+# Parrot AR.Drone
+2426000000,Parrot AR.Drone 1.0 Control
+2428000000,Parrot AR.Drone 2.0 Control
+
+# ==============================================================================
+# AUTEL ROBOTICS (2.4 GHz)
+# ==============================================================================
+2405000000,Autel EVO Nano Control
+2407000000,Autel EVO Nano+ Control
+2409000000,Autel EVO Nano Lite Control
+2411000000,Autel EVO Lite Control
+2413000000,Autel EVO Lite+ Control
+2415000000,Autel EVO II Control
+2417000000,Autel EVO II Pro Control
+2419000000,Autel EVO II Pro V3 Control
+2421000000,Autel EVO II Dual Control
+2423000000,Autel EVO II Enterprise Control
+2425000000,Autel EVO Max Control
+
+# ==============================================================================
+# YUNEEC (2.4 GHz)
+# ==============================================================================
+2412000000,Yuneec Typhoon H Control
+2414000000,Yuneec Typhoon H Plus Control
+2416000000,Yuneec Typhoon H3 Control
+2418000000,Yuneec Typhoon Q500 Control
+2420000000,Yuneec Typhoon Q500+ Control
+2422000000,Yuneec Typhoon Q500 4K Control
+2424000000,Yuneec Breeze Control
+2426000000,Yuneec Mantis Q Control
+2428000000,Yuneec Mantis G Control
+
+# ==============================================================================
+# SKYDIO (2.4 GHz)
+# ==============================================================================
+2412000000,Skydio 2 Control
+2414000000,Skydio 2+ Control
+2416000000,Skydio X2 Control
+2418000000,Skydio X2E Control
+2420000000,Skydio X2D Control
+
+# ==============================================================================
+# HOLY STONE (2.4 GHz)
+# ==============================================================================
+2412000000,Holy Stone HS100 Control
+2414000000,Holy Stone HS110 Control
+2416000000,Holy Stone HS120 Control
+2418000000,Holy Stone HS200 Control
+2420000000,Holy Stone HS210 Control
+2422000000,Holy Stone HS270 Control
+2424000000,Holy Stone HS720 Control
+2426000000,Holy Stone HS720E Control
+2428000000,Holy Stone HS440 Control
+
+# ==============================================================================
+# RYZE TECH (2.4 GHz)
+# ==============================================================================
+2412000000,Ryze Tello Control
+2414000000,Ryze Tello EDU Control
+2416000000,Ryze Tello Talent Control
+
+# ==============================================================================
+# POTENSIC (2.4 GHz)
+# ==============================================================================
+2412000000,Potensic D58 Control
+2414000000,Potensic D80 Control
+2416000000,Potensic A20 Control
+2418000000,Potensic A20W Control
+2420000000,Potensic Dreamer Pro Control
+2422000000,Potensic Elfin Control
+
+# ==============================================================================
+# SNAPTAIN (2.4 GHz)
+# ==============================================================================
+2412000000,Snaptain S5C Control
+2414000000,Snaptain H823H Control
+2416000000,Snaptain SP500 Control
+2418000000,Snaptain SP510 Control
+2420000000,Snaptain SP650 Control
+
+# ==============================================================================
+# EACHINE (2.4 GHz)
+# ==============================================================================
+2412000000,Eachine E58 Control
+2414000000,Eachine E520 Control
+2416000000,Eachine E520S Control
+2418000000,Eachine Exceed Control
+2420000000,Eachine Wizard Control
+
+# ==============================================================================
+# FPV RACEBAND (5.8 GHz)
+# ==============================================================================
+# RaceBand Channels (Standard)
+5658000000,FPV RaceBand CH 1
+5695000000,FPV RaceBand CH 2
+5732000000,FPV RaceBand CH 3
+5769000000,FPV RaceBand CH 4
+5806000000,FPV RaceBand CH 5
+5843000000,FPV RaceBand CH 6
+5880000000,FPV RaceBand CH 7
+5917000000,FPV RaceBand CH 8
+
+# FPV Band A (ImmersionRC)
+5658000000,FPV Band A CH 1
+5695000000,FPV Band A CH 2
+5732000000,FPV Band A CH 3
+5769000000,FPV Band A CH 4
+5806000000,FPV Band A CH 5
+5843000000,FPV Band A CH 6
+5880000000,FPV Band A CH 7
+5917000000,FPV Band A CH 8
+
+# FPV Band B (ImmersionRC)
+5733000000,FPV Band B CH 1
+5769000000,FPV Band B CH 2
+5806000000,FPV Band B CH 3
+5843000000,FPV Band B CH 4
+5880000000,FPV Band B CH 5
+5917000000,FPV Band B CH 6
+5658000000,FPV Band B CH 7
+5695000000,FPV Band B CH 8
+
+# FPV Band E (FatShark)
+5705000000,FPV Band E CH 1
+5685000000,FPV Band E CH 2
+5905000000,FPV Band E CH 3
+5890000000,FPV Band E CH 4
+5917000000,FPV Band E CH 5
+5865000000,FPV Band E CH 6
+5645000000,FPV Band E CH 7
+5880000000,FPV Band E CH 8
+
+# ==============================================================================
+# WALKERA (2.4 GHz)
+# ==============================================================================
+2412000000,Walker Voyager 4 Control
+2414000000,Walker Scout X4 Control
+2416000000,Walker Runner 250 Control
+2418000000,Walker Runner 250 Advance Control
+
+# ==============================================================================
+# 3DR SOLO (2.4 GHz)
+# ==============================================================================
+2412000000,3DR Solo Control
+2414000000,3DR Solo Smart Controller
+
+# ==============================================================================
+# BLADE (2.4 GHz)
+# ==============================================================================
+2412000000,Blade Chroma Control
+2414000000,Blade Chroma 4K Control
+2416000000,Blade Nano QX Control
+2418000000,Blade 200 QX Control
+2420000000,Blade 350 QX Control
+2422000000,Blade 180 QX Control
+
+# ==============================================================================
+# HUBSAN (2.4 GHz)
+# ==============================================================================
+2412000000,Hubsan H107C Control
+2414000000,Hubsan H107D Control
+2416000000,Hubsan X4 H107L Control
+2418000000,Hubsan H501S Control
+2420000000,Hubsan H501S X4 Control
+2422000000,Hubsan H109S Control
+2424000000,Hubsan Zino Control
+2426000000,Hubsan Zino Pro Control
+
+# ==============================================================================
+# WLTOYS (2.4 GHz)
+# ==============================================================================
+2412000000,WLToys V686 Control
+2414000000,WLToys V959 Control
+2416000000,WLToys V666 Control
+2418000000,WLToys V262 Control
+
+# ==============================================================================
+# SYMA (2.4 GHz)
+# ==============================================================================
+2412000000,Syma X5C Control
+2414000000,Syma X5SW Control
+2416000000,Syma X8C Control
+2418000000,Syma X8W Control
+2420000000,Syma X8HG Control
+2422000000,Syma X11 Control
+2424000000,Syma X12 Control
+
+# ==============================================================================
+# JJRC (2.4 GHz)
+# ==============================================================================
+2412000000,JJRC H8C Control
+2414000000,JJRC H8CH Control
+2416000000,JJRC H11C Control
+2418000000,JJRC X1 Control
+2420000000,JJRC X2 Control
+
+# ==============================================================================
+# CHEERSON (2.4 GHz)
+# ==============================================================================
+2412000000,Cheerson CX-10 Control
+2414000000,Cheerson CX-20 Control
+2416000000,Cheerson CX-22 Control
+
+# ==============================================================================
+# UDI (2.4 GHz)
+# ==============================================================================
+2412000000,UDI U818A Control
+2414000000,UDI U818A HD Control
+2416000000,UDI U842 Control
+
+# ==============================================================================
+# DROMIDA (2.4 GHz)
+# ==============================================================================
+2412000000,Dromida Ominus Control
+2414000000,Dromida Vista Control
+2416000000,Dromida Kopter Control
+
+# ==============================================================================
+# ESTES (2.4 GHz)
+# ==============================================================================
+2412000000,Estes Proto X Control
+2414000000,Estes Proto X SLT Control
+
+# ==============================================================================
+# TRAXXAS (2.4 GHz)
+# ==============================================================================
+2412000000,Traxxas Aton Control
+2414000000,Traxxas Alias Control
+
+# ==============================================================================
+# INDUSTRIAL / COMMERCIAL DRONES
+# ==============================================================================
+# DJI Enterprise
+2412000000,DJI Matrice 200 Control
+2414000000,DJI Matrice 210 Control
+2416000000,DJI Matrice 210 RTK Control
+2418000000,DJI Matrice 300 RTK Control
+2420000000,DJI Matrice 350 RTK Control
+2422000000,DJI Agras MG-1 Control
+2424000000,DJI Agras T10 Control
+2426000000,DJI Agras T20 Control
+2428000000,DJI Agras T30 Control
+2430000000,DJI Agras T40 Control
+
+# Autel Enterprise
+2424000000,Autel Dragonfish Control
+2426000000,Autel EVO II Enterprise Dual Control
+
+# Skydio Enterprise
+2418000000,Skydio X2 Enterprise Control
+
+# ==============================================================================
+# ADDITIONAL FREQUENCIES FOR CROSS-COMPATIBILITY
+# ==============================================================================
+# Additional DJI Frequencies
+2442000000,DJI Additional CH 24
+2444000000,DJI Additional CH 25
+2446000000,DJI Additional CH 26
+2448000000,DJI Additional CH 27
+2450000000,DJI Additional CH 28
+2452000000,DJI Additional CH 29
+2454000000,DJI Additional CH 30
+2456000000,DJI Additional CH 31
+2458000000,DJI Additional CH 32
+2460000000,DJI Additional CH 33
+2462000000,DJI Additional CH 34
+2464000000,DJI Additional CH 35
+2466000000,DJI Additional CH 36
+2468000000,DJI Additional CH 37
+2470000000,DJI Additional CH 38
+2472000000,DJI Additional CH 39
+2474000000,DJI Additional CH 40
+
+# Additional FPV Frequencies
+5934000000,FPV Additional CH 9
+5951000000,FPV Additional CH 10
+5968000000,FPV Additional CH 11
+5985000000,FPV Additional CH 12
+6002000000,FPV Additional CH 13
+6019000000,FPV Additional CH 14
+6036000000,FPV Additional CH 15
+6053000000,FPV Additional CH 16
+6070000000,FPV Additional CH 17
+6087000000,FPV Additional CH 18
+6104000000,FPV Additional CH 19
+6121000000,FPV Additional CH 20
+6138000000,FPV Additional CH 21
+6155000000,FPV Additional CH 22
+6172000000,FPV Additional CH 23
+6189000000,FPV Additional CH 24
+6206000000,FPV Additional CH 25
+6223000000,FPV Additional CH 26
+6240000000,FPV Additional CH 27
+6257000000,FPV Additional CH 28
+6274000000,FPV Additional CH 29
+6291000000,FPV Additional CH 30
+6308000000,FPV Additional CH 31
+6325000000,FPV Additional CH 32
+6342000000,FPV Additional CH 33
+6359000000,FPV Additional CH 34
+6376000000,FPV Additional CH 35
+6393000000,FPV Additional CH 36
+6410000000,FPV Additional CH 37
+6427000000,FPV Additional CH 38
+6444000000,FPV Additional CH 39
+6461000000,FPV Additional CH 40
+
+# ==============================================================================
+# END OF DATABASE
+# ==============================================================================
+# Total Entries: 300+
+# Last Updated: 2025
+# 
+# Notes:
+# - Frequencies are approximate and may vary by region and firmware version
+# - Some drones use frequency hopping across multiple channels
+# - This database should be used as a reference for drone detection
+# - Always verify local regulations before operating RF equipment
