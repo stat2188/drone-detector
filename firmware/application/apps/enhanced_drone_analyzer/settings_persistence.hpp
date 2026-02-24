@@ -97,7 +97,7 @@ struct SettingMetadata {
 #define SET_META_BIT(name, bit_idx, def) \
     { #name, static_cast<uint16_t>(offsetof(DroneAnalyzerSettings, name)), TYPE_BITFIELD, bit_idx, 0, 1, def }
 
-constexpr size_t SETTINGS_COUNT = 52;
+constexpr size_t SETTINGS_COUNT = 51;
 
 inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
     SET_META_BIT(audio_flags, 0, "true"),

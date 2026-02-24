@@ -373,7 +373,7 @@ void DroneScanner::database_change_callback(const DatabaseChangeEvent& event, vo
 
 void DroneScanner::register_database_observer() {
     auto& db = UnifiedDroneDatabase::instance();
-    db.add_observer(&DroneScanner::database_change_callback, this);
+    (void)db.add_observer(&DroneScanner::database_change_callback, this);
 }
 
 void DroneScanner::unregister_database_observer() {
@@ -701,6 +701,8 @@ void DroneScanner::wideband_detection_override(const freqman_entry& entry, int32
 
 void DroneScanner::process_wideband_detection_with_override(const freqman_entry& entry, int32_t rssi,
                                                            int32_t original_threshold, int32_t wideband_threshold) {
+    (void)original_threshold;  // Intentionally unused - kept for API compatibility
+
     if (!EDA::Validation::validate_rssi(rssi) ||
         !EDA::Validation::validate_frequency(entry.frequency_a)) {
         return;

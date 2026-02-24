@@ -22,16 +22,6 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// Inline wrapper for strnlen (not available in all environments)
-inline size_t strnlen_wrapper(const char* str, size_t max_len) noexcept {
-    if (!str) return 0;
-    size_t len = 0;
-    while (len < max_len && str[len] != '\0') {
-        ++len;
-    }
-    return len;
-}
-
 // RAII wrapper for File (ensures proper cleanup)
 class FileRAII {
 public:
@@ -967,9 +957,9 @@ bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* f
             // Skip invalid entries but continue processing
             continue;
         }
-        
+
         // Add to unified database
-        db.add_entry(unified_entry);
+        (void)db.add_entry(unified_entry);
     }
     
     // Save to file
@@ -1060,7 +1050,7 @@ void DroneDatabaseListView::on_entry_selected(size_t index) noexcept {
 }
 
 // DIAMOND OPTIMIZATION: noexcept for save
-void DroneDatabaseListView::save_changes() noexcept { DroneDatabaseManager::save_database(database_view_); }
+void DroneDatabaseListView::save_changes() noexcept { (void)DroneDatabaseManager::save_database(database_view_); }
 
 // DIAMOND OPTIMIZATION: noexcept for key handling
 bool DroneDatabaseListView::on_key(const KeyEvent key) noexcept {
