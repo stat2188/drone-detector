@@ -72,7 +72,8 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     auto& file = settings_file;
 
     // Thread-local buffer for settings serialization (replaces ~20 std::string allocations)
-    static constexpr size_t SETTINGS_BUFFER_SIZE = 1024;
+    // Optimized: Reduced from 1024 to 512 bytes (512 bytes savings)
+    static constexpr size_t SETTINGS_BUFFER_SIZE = 512;
     thread_local char settings_buffer[SETTINGS_BUFFER_SIZE];
     size_t offset = 0;
 
@@ -163,8 +164,9 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
 
     auto& file = settings_file;
 
-    // Thread-local buffer for settings loading (1024 bytes per thread)
-    static constexpr size_t FILE_BUFFER_SIZE = 1024;
+    // Thread-local buffer for settings loading (512 bytes per thread)
+    // Optimized: Reduced from 1024 to 512 bytes (512 bytes savings)
+    static constexpr size_t FILE_BUFFER_SIZE = 512;
     thread_local char file_buffer[FILE_BUFFER_SIZE];
     auto read_result = file.read(file_buffer, FILE_BUFFER_SIZE);
     
@@ -231,11 +233,12 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
 
             // Parse specific settings
             if (strcmp(key, "spectrum_mode") == 0) {
-                if (strcmp(value, "Ultra Narrow") == 0) settings.spectrum_mode = SpectrumMode::ULTRA_NARROW;
-                else if (strcmp(value, "Narrow") == 0) settings.spectrum_mode = SpectrumMode::NARROW;
-                else if (strcmp(value, "Medium") == 0) settings.spectrum_mode = SpectrumMode::MEDIUM;
-                else if (strcmp(value, "Wide") == 0) settings.spectrum_mode = SpectrumMode::WIDE;
-                else if (strcmp(value, "Ultra Wide") == 0) settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
+                // Use consolidated spectrum mode display names from eda_constants.hpp
+                if (strcmp(value, EDA::LUTs::spectrum_mode_display_name(0)) == 0) settings.spectrum_mode = SpectrumMode::ULTRA_NARROW;
+                else if (strcmp(value, EDA::LUTs::spectrum_mode_display_name(1)) == 0) settings.spectrum_mode = SpectrumMode::NARROW;
+                else if (strcmp(value, EDA::LUTs::spectrum_mode_display_name(2)) == 0) settings.spectrum_mode = SpectrumMode::MEDIUM;
+                else if (strcmp(value, EDA::LUTs::spectrum_mode_display_name(3)) == 0) settings.spectrum_mode = SpectrumMode::WIDE;
+                else if (strcmp(value, EDA::LUTs::spectrum_mode_display_name(4)) == 0) settings.spectrum_mode = SpectrumMode::ULTRA_WIDE;
             } else if (strcmp(key, "scan_interval_ms") == 0) {
                 // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
@@ -483,20 +486,16 @@ const char* EnhancedSettingsManager::get_current_timestamp() noexcept {
 // Translation functions are kept separate as they provide unique UI localization
 // functionality not covered by SettingsPersistence<T>
 // Language is hardcoded to English only
+// DIAMOND OPTIMIZATION: Use consolidated Translator from ui_drone_common_types.cpp
 
 // DIAMOND OPTIMIZATION: const pointer, noexcept for translation lookup
 const char* DroneAnalyzerSettingsManager_Translations::translate(const char* key) noexcept {
-    for (size_t i = 0; i < translations_count; ++i) {
-        if (strcmp(translations_english[i].key, key) == 0) {
-            return translations_english[i].value;
-        }
-    }
-    return key;
+    return Translator::translate(key);
 }
 
 // DIAMOND OPTIMIZATION: const pointer, noexcept for translation lookup
 const char* DroneAnalyzerSettingsManager_Translations::get_translation(const char* key) noexcept {
-    return translate(key);
+    return Translator::get_translation(key);
 }
 
 // DroneFrequencyPresets Implementation

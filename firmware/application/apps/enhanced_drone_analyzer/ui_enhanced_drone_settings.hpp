@@ -63,24 +63,6 @@ class DroneAnalyzerSettingsManager_Translations {
 public:
     static const char* translate(const char* key) noexcept;
     static const char* get_translation(const char* key) noexcept;
-
-private:
-    struct TranslationEntry {
-        const char* key;
-        const char* value;
-    };
-
-    static constexpr TranslationEntry translations_english[] = {
-        {"save_settings", "Save Settings"},
-        {"load_settings", "Load Settings"},
-        {"audio_settings", "Audio Settings"},
-        {"hardware_settings", "Hardware Settings"},
-        {"scan_interval", "Scan Interval"},
-        {"rssi_threshold", "RSSI Threshold"},
-        {"spectrum_mode", "Spectrum Mode"}
-    };
-
-    static constexpr size_t translations_count = sizeof(translations_english) / sizeof(TranslationEntry);
 };
 
 // Replaced std::function with raw function pointer to eliminate heap allocation

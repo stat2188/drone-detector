@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include "ui.hpp"  // For Color class
+#include "eda_constants.hpp"  // For EDA::LUTs::spectrum_mode_short_name
 
 // Flash storage attributes for Cortex-M4
 #ifdef __GNUC__
@@ -216,15 +217,6 @@ struct UnifiedStringLookup {
         "FPV Racing"      // FPV_RACING (10)
     };
 
-    // * * @brief Spectrum mode names (5 modes)
-    static constexpr const char* const SPECTRUM_MODE_NAMES[ColorConstants::SPECTRUM_MODE_COUNT] FLASH_STORAGE = {
-        "NARROW",       // NARROW (0)
-        "MEDIUM",       // MEDIUM (1)
-        "WIDE",         // WIDE (2)
-        "ULTRA_WIDE",   // ULTRA_WIDE (3)
-        "ULTRA_NARROW"  // ULTRA_NARROW (4)
-    };
-
     // * * @brief Threat level symbols (for compact display)
     static constexpr char THREAT_SYMBOLS[ColorConstants::THREAT_LEVEL_COUNT] FLASH_STORAGE = {
         '-', 'i', 'O', '!', '!', '?'  // NONE, LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN
@@ -248,10 +240,7 @@ struct UnifiedStringLookup {
 
     // * * @brief Get spectrum mode name (O(1) lookup with bounds checking) * @param mode Spectrum mode index (0-4) * @return String literal for the spectrum mode
     static constexpr const char* spectrum_mode_name(uint8_t mode) noexcept {
-        if (mode >= ColorConstants::SPECTRUM_MODE_COUNT) {
-            return SPECTRUM_MODE_NAMES[1];  // "MEDIUM"
-        }
-        return SPECTRUM_MODE_NAMES[mode];
+        return EDA::LUTs::spectrum_mode_short_name(mode);
     }
 
     // * * @brief Get threat level symbol (O(1) lookup with bounds checking) * @param level Threat level index (0-5) * @return Single character symbol for the threat level
@@ -264,12 +253,10 @@ struct UnifiedStringLookup {
 };
 
 // Compile-time assertions for array sizes
-static_assert(sizeof(UnifiedStringLookup::THREAT_NAMES) == sizeof(const char*) * ColorConstants::THREAT_LEVEL_COUNT, 
+static_assert(sizeof(UnifiedStringLookup::THREAT_NAMES) == sizeof(const char*) * ColorConstants::THREAT_LEVEL_COUNT,
               "THREAT_NAMES size");
-static_assert(sizeof(UnifiedStringLookup::DRONE_TYPE_NAMES) == sizeof(const char*) * ColorConstants::DRONE_TYPE_COUNT, 
+static_assert(sizeof(UnifiedStringLookup::DRONE_TYPE_NAMES) == sizeof(const char*) * ColorConstants::DRONE_TYPE_COUNT,
               "DRONE_TYPE_NAMES size");
-static_assert(sizeof(UnifiedStringLookup::SPECTRUM_MODE_NAMES) == sizeof(const char*) * ColorConstants::SPECTRUM_MODE_COUNT, 
-              "SPECTRUM_MODE_NAMES size");
 
 } // namespace ui::apps::enhanced_drone_analyzer
 

@@ -124,7 +124,6 @@ namespace FrequencyParserConstants {
     constexpr uint64_t MHZ_TO_HZ = 1000000ULL;
     constexpr uint64_t MAX_MHZ = 7200ULL;
     constexpr uint8_t MAX_DECIMAL_DIGITS = 6;
-    constexpr uint8_t MULTIPLIER_COUNT = 7;
     constexpr uint64_t MIN_HARDWARE_FREQ_HZ = 1000000ULL;
     constexpr uint64_t MAX_HARDWARE_FREQ_HZ = 7200000000ULL;
     constexpr uint8_t DIGIT_ZERO = '0';
@@ -135,18 +134,14 @@ namespace FrequencyParserConstants {
 }
 
 struct FrequencyParser {
-    // * * @brief Precomputed multipliers for decimal places (stored in Flash) * MULTIPLIERS[digits] = 10^(6 - digits) for 0-6 decimal digits
-    static constexpr uint64_t MULTIPLIERS[FrequencyParserConstants::MULTIPLIER_COUNT] FLASH_STORAGE = {
-        1000000ULL,  // 10^6 (0 decimal digits)
-        100000ULL,   // 10^5 (1 decimal digit)
-        10000ULL,    // 10^4 (2 decimal digits)
-        1000ULL,     // 10^3 (3 decimal digits)
-        100ULL,      // 10^2 (4 decimal digits)
-        10ULL,       // 10^1 (5 decimal digits)
-        1ULL         // 10^0 (6 decimal digits)
-    };
-
-    // * * @brief Parse frequency string in MHz format (e.g., "2400.5" -> 2400500000 Hz) * * @param str Null-terminated string containing frequency in MHz * @return Frequency in Hz, or UINT64_MAX on error * * Error conditions: * - Null pointer or empty string * - Non-numeric characters * - Overflow during conversion * - Frequency outside hardware range (1 MHz - 7200 MHz)
+    // / @brief Parse frequency string in MHz format (e.g., "2400.5" -> 2400500000 Hz)
+    // / @param str Null-terminated string containing frequency in MHz
+    // / @return Frequency in Hz, or UINT64_MAX on error
+    // / @note Error conditions:
+    // /   - Null pointer or empty string
+    // /   - Non-numeric characters
+    // /   - Overflow during conversion
+    // /   - Frequency outside hardware range (1 MHz - 7200 MHz)
     static inline FrequencyHz parse_mhz_string(const char* str) noexcept {
         // Guard clause: null or empty string
         if (str == nullptr || *str == '\0') {
@@ -178,10 +173,9 @@ struct FrequencyParser {
         
         // Parse fractional part (if present)
         uint64_t hz_fraction = 0;
+        uint64_t divisor = 1;
         if (*str == FrequencyParserConstants::DECIMAL_POINT) {
             str++;
-            
-            uint8_t digits = 0;
             
             // Parse up to MAX_DECIMAL_DIGITS decimal digits
             for (int i = 0; i < FrequencyParserConstants::MAX_DECIMAL_DIGITS; i++) {
@@ -191,15 +185,12 @@ struct FrequencyParser {
                 
                 uint8_t digit = static_cast<uint8_t>(*str - FrequencyParserConstants::DIGIT_ZERO);
                 hz_fraction = hz_fraction * 10 + digit;
-                digits++;
+                divisor *= 10;
                 str++;
             }
             
-            // Convert fractional part to Hz using precomputed multiplier
-            // Guard clause: ensure digits is within bounds
-            if (digits < FrequencyParserConstants::MULTIPLIER_COUNT) {
-                hz_fraction *= MULTIPLIERS[digits];
-            }
+            // Convert fractional part to Hz: (fraction * 1000000) / divisor
+            hz_fraction = (hz_fraction * FrequencyParserConstants::MHZ_TO_HZ) / divisor;
         }
         
         // Convert MHz to Hz
@@ -260,8 +251,6 @@ static_assert(sizeof(RSSIUtils::THRESHOLDS) == sizeof(RSSIValue) * RSSIConstants
               "THRESHOLDS size mismatch");
 static_assert(sizeof(TrendUtils::TREND_NAMES) == sizeof(const char*) * TrendConstants::MAX_TREND_INDEX,
               "TREND_NAMES size mismatch");
-static_assert(sizeof(FrequencyParser::MULTIPLIERS) == sizeof(uint64_t) * FrequencyParserConstants::MULTIPLIER_COUNT,
-              "MULTIPLIERS size mismatch");
 
 } // namespace ui::apps::enhanced_drone_analyzer::DiamondCore
 

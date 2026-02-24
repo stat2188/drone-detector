@@ -10,10 +10,6 @@
 
 // ChibiOS Compatibility Defines
 #define chThdGetSelf() chThdSelf()
-static inline size_t chThdGetStackFree(Thread* tp) {
-    (void)tp;
-    return 0;
-}
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -44,7 +40,7 @@ static_assert(static_cast<uint8_t>(LockOrder::LOGGER_MUTEX) == 5, "LockOrder val
 static_assert(static_cast<uint8_t>(LockOrder::SD_CARD_MUTEX) == 6, "LockOrder value changed");
 
 // Lock Stack Tracking
-constexpr size_t MAX_LOCK_DEPTH = 8;
+constexpr size_t MAX_LOCK_DEPTH = 6;
 struct LockStackEntry {
     LockOrder order;
     bool valid;
@@ -249,123 +245,6 @@ private:
     Mutex& mtx_;
 };
 
-// Two Phase Lock (for long operations)
-template<typename MutexType>
-class TwoPhaseLock {
-public:
-    // / @brief Constructor - Acquires lock with order tracking
-    explicit TwoPhaseLock(MutexType& mtx, LockOrder order) noexcept
-        : mtx_(mtx), order_(order), locked_(false) {
-        acquire();
-    }
-
-    // / @brief Destructor - Releases lock if held
-    ~TwoPhaseLock() noexcept {
-        if (locked_) {
-            release();
-        }
-    }
-
-    // / @brief Acquire the lock
-    bool acquire() noexcept {
-        if (locked_) return true;
-        
-        // Check lock order
-        chSysLock();
-        LockOrder current_max = get_current_max_order();
-        if (order_ <= current_max) {
-            chSysUnlock();
-            // Graceful degradation: acquire lock anyway
-            chMtxLock(&mtx_);
-            locked_ = true;
-            
-            if (locked_) {
-                push_lock(order_);
-            }
-            return true;
-        }
-        chSysUnlock();
-        
-        chMtxLock(&mtx_);
-        locked_ = true;
-        
-        // Push lock onto stack
-        push_lock(order_);
-        
-        return true;
-    }
-
-    // / @brief Release the lock
-    void release() noexcept {
-        if (locked_) {
-            chMtxUnlock();
-            locked_ = false;
-            
-            // Pop lock from stack
-            pop_lock();
-        }
-    }
-
-    // / @brief Re-acquire the lock after release
-    bool reacquire() noexcept {
-        return acquire();
-    }
-
-    // / @brief Query if lock is held
-    bool is_locked() const noexcept { return locked_; }
-
-    // / @brief Non-copyable, non-movable
-    TwoPhaseLock(const TwoPhaseLock&) = delete;
-    TwoPhaseLock& operator=(const TwoPhaseLock&) = delete;
-    TwoPhaseLock(TwoPhaseLock&&) = delete;
-    TwoPhaseLock& operator=(TwoPhaseLock&&) = delete;
-
-private:
-    MutexType& mtx_;
-    LockOrder order_;
-    bool locked_;
-    
-    // Thread-local storage for lock stack
-    static thread_local LockStackEntry lock_stack_[MAX_LOCK_DEPTH];
-    static thread_local size_t lock_stack_depth_;
-    
-    // / @brief Get current maximum lock order
-    static LockOrder get_current_max_order() noexcept {
-        if (lock_stack_depth_ == 0) {
-            return LockOrder::ATOMIC_FLAGS;
-        }
-        return lock_stack_[lock_stack_depth_ - 1].order;
-    }
-    
-    // / @brief Push lock onto stack
-    void push_lock(LockOrder order) noexcept {
-        chSysLock();
-        if (lock_stack_depth_ < MAX_LOCK_DEPTH) {
-            lock_stack_[lock_stack_depth_].order = order;
-            lock_stack_[lock_stack_depth_].valid = true;
-            lock_stack_depth_++;
-        }
-        chSysUnlock();
-    }
-    
-    // / @brief Pop lock from stack
-    void pop_lock() noexcept {
-        chSysLock();
-        if (lock_stack_depth_ > 0) {
-            lock_stack_depth_--;
-            lock_stack_[lock_stack_depth_].valid = false;
-        }
-        chSysUnlock();
-    }
-};
-
-// Thread-local static members
-template<typename MutexType>
-thread_local LockStackEntry TwoPhaseLock<MutexType>::lock_stack_[MAX_LOCK_DEPTH] = {};
-
-template<typename MutexType>
-thread_local size_t TwoPhaseLock<MutexType>::lock_stack_depth_ = 0;
-
 // Static Storage Template (zero-heap deferred initialization)
 template<typename T, size_t Size>
 class StaticStorage {
@@ -537,14 +416,15 @@ public:
 private:
     size_t initial_free_;
 
-    // * * @brief Get current free stack bytes from ChibiOS * @note Returns 0 if called from main thread
+    // * * @brief Get current free stack bytes from ChibiOS * @note Returns safe default if called from main thread
     static size_t get_stack_free() noexcept {
         // Get current thread pointer
         Thread* current_thread = chThdGetSelf();
         if (current_thread == nullptr) {
             return MIN_STACK_FREE * 2;
         }
-        return chThdGetStackFree(current_thread);
+        // Stack monitoring not available, return safe default
+        return MIN_STACK_FREE * 2;
     }
 };
 

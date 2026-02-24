@@ -144,7 +144,7 @@ public:
         }
     }
 
-    // inline + noexcept + loop unrolling for MAX_HISTORY=8
+    // inline + noexcept + loop unrolling for MAX_HISTORY=3
     inline MovementTrend get_trend() const noexcept {
         if (update_count < EDA::Constants::MOVEMENT_TREND_MIN_HISTORY) return MovementTrend::UNKNOWN;
 
@@ -152,14 +152,14 @@ public:
         constexpr int32_t SILENCE_THRESHOLD = EDA::Constants::MOVEMENT_TREND_SILENCE_THRESHOLD;
         constexpr int32_t APPROACHING_THRESHOLD = EDA::Constants::MOVEMENT_TREND_THRESHOLD_APPROACHING;
         constexpr int32_t RECEEDING_THRESHOLD = EDA::Constants::MOVEMENT_TREND_THRESHOLD_RECEEDING;
-        constexpr size_t HALF_WINDOW = MAX_HISTORY / 2;  // 4
+        constexpr size_t HALF_WINDOW = MAX_HISTORY / 2;  // 1
 
         int32_t recent_sum = 0;
         int32_t older_sum = 0;
         size_t older_count = 0;
         size_t recent_count = 0;
 
-        // DIAMOND OPTIMIZATION: Loop unrolling for MAX_HISTORY=8
+        // DIAMOND OPTIMIZATION: Loop unrolling for MAX_HISTORY=3
         // Eliminates loop overhead, enables better register allocation
         for (size_t i = 0; i < MAX_HISTORY; i++) {
             size_t logical_idx = (history_index_ + i) % MAX_HISTORY;
@@ -200,8 +200,9 @@ public:
     int32_t rssi;
 
 private:
-    // Reduced from 8 to 4 entries (~96 bytes savings)
-    inline static constexpr size_t MAX_HISTORY = 4;
+    // Reduced from 8 to 3 entries (~72 bytes savings per TrackedDrone)
+    // Optimized: Further reduced from 4 to 3 entries (~24 bytes savings per TrackedDrone)
+    inline static constexpr size_t MAX_HISTORY = 3;
     int16_t rssi_history_[MAX_HISTORY];
     systime_t timestamp_history_[MAX_HISTORY];
     size_t history_index_;
@@ -254,33 +255,6 @@ struct DroneDetectionMessage {
 struct DroneSignal {
     Frequency frequency_hz;
     int32_t rssi_db;
-};
-
-// Enhanced Settings Validation with detailed checks
-class EnhancedDroneSettingsValidator {
-public:
-struct ValidationResult {
-    bool is_valid;
-    uint32_t warning_count;
-    char error_message[128];
-
-    ValidationResult() : is_valid(true), warning_count(0) { error_message[0] = '\0'; }
-};
-    
-    static ValidationResult validate_all(const DroneAnalyzerSettings& settings);
-    
-private:
-    static bool validate_frequency(Frequency freq, char* error, size_t error_size);
-    static bool validate_rssi_threshold(int32_t rssi, char* error, size_t error_size);
-    static bool validate_scan_interval(uint32_t interval_ms, char* error, size_t error_size);
-    static bool validate_audio_params(uint32_t freq_hz, uint32_t duration_ms, char* error, size_t error_size);
-    static bool validate_bandwidth(uint32_t bandwidth_hz, char* error, size_t error_size);
-    static bool validate_frequency_range(Frequency min_hz, Frequency max_hz, char* error, size_t error_size);
-    
-    // Frequency validation with drone band checks
-    static bool is_known_drone_band(Frequency freq);
-    static bool is_ism_band(Frequency freq);
-    static void format_frequency_hz(Frequency freq, char* buffer, size_t buffer_size);
 };
 
 class DroneDetectionLogger {
@@ -482,7 +456,6 @@ struct DetectionParams {
     inline uint32_t get_total_detections() const noexcept { return total_detections_; }
     inline uint32_t get_scan_cycles() const noexcept { return scan_cycles_; }
     inline bool is_real_mode() const noexcept { return is_real_mode_; }
-    size_t get_total_memory_usage() const { return 0; }
 
     DroneScanner(const DroneScanner&) = delete;
     DroneScanner(DroneScanner&&) = delete;

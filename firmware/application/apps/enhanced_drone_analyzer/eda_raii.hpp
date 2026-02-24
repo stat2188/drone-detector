@@ -120,7 +120,6 @@ namespace ui::apps::enhanced_drone_analyzer {
 // - ThreadGuard: RAII wrapper for ChibiOS thread lifecycle
 // - MutexInitializer: RAII wrapper for ChibiOS mutex initialization
 // - OrderedScopedLock: RAII lock wrapper with deadlock prevention
-// - TwoPhaseLock: Two-phase lock for long operations
 // - StaticStorage: Zero-heap deferred initialization pattern
 
 // Type aliases are also available from eda_locking.hpp:

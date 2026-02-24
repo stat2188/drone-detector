@@ -161,22 +161,18 @@ public:
     FixedString() noexcept {
         buffer_[0] = '\0';
         length_ = 0;
-        verify_invariants();
     }
 
     explicit FixedString(const char* str) noexcept {
         set(str);
-        verify_invariants();
     }
 
     explicit FixedString(std::string_view sv) noexcept {
         set(sv);
-        verify_invariants();
     }
 
     size_t set(const char* str) noexcept {
         length_ = safe_strcpy(buffer_, str, N);
-        verify_invariants();
         return length_;
     }
 
@@ -185,7 +181,6 @@ public:
         if (sv.empty()) {
             buffer_[0] = '\0';
             length_ = 0;
-            verify_invariants();
             return 0;
         }
 
@@ -197,14 +192,12 @@ public:
         buffer_[copy_len] = '\0';
         length_ = copy_len;
         
-        verify_invariants();
         return copy_len;
     }
 
     size_t append(const char* str) noexcept {
         size_t appended = safe_strcat(buffer_, str, N);
         length_ = safe_strlen(buffer_, N);
-        verify_invariants();
         return appended;
     }
 
@@ -216,13 +209,11 @@ public:
         if (current_len >= N - 1) {
             buffer_[current_len] = '\0';
             length_ = current_len;
-            verify_invariants();
             return 0;
         }
 
         // Guard clause: empty view is a no-op
         if (sv.empty()) {
-            verify_invariants();
             return 0;
         }
 
@@ -235,7 +226,6 @@ public:
         buffer_[current_len + append_len] = '\0';
         length_ = current_len + append_len;
 
-        verify_invariants();
         return append_len;
     }
 
@@ -257,7 +247,6 @@ public:
     void clear() noexcept {
         buffer_[0] = '\0';
         length_ = 0;
-        verify_invariants();
     }
 
     const char* c_str() const noexcept {

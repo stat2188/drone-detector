@@ -20,12 +20,6 @@ using BufferIndex = uint16_t;
 using WindowSize = uint16_t;
 
 // Named Constants (No Magic Numbers)
-namespace RSSIThresholds {
-    constexpr int32_t CRITICAL = -50;
-    constexpr int32_t HIGH = -60;
-    constexpr int32_t MEDIUM = -70;
-    constexpr int32_t LOW = -80;
-}
 namespace SNRThresholds {
     constexpr uint8_t MILITARY_CRITICAL = 15;
     constexpr uint8_t MILITARY_HIGH = 10;
@@ -124,55 +118,6 @@ private:
     BufferIndex head_;         ///< Current write position
     bool full_;                ///< Whether window has wrapped around
 };
-
-// Moved to Unified Lookup Tables (color_lookup_unified.hpp)
-template<typename T>
-class CachedValue {
-public:
-    // / @brief Constructor with optional initial value
-    explicit constexpr CachedValue(const T& initial_value = T{}) noexcept
-        : value_(initial_value), dirty_(true) {}
-
-    // / @brief Update value and track if changed
-    bool update(const T& new_value) noexcept {
-        if (value_ != new_value) {
-            value_ = new_value;
-            dirty_ = true;
-            return true;
-        }
-        return false;
-    }
-
-    // / @brief Check if value has been modified since last clear
-    constexpr bool is_dirty() const noexcept { return dirty_; }
-
-    // / @brief Clear dirty flag
-    void clear_dirty() noexcept { dirty_ = false; }
-
-    // / @brief Get const reference to value
-    constexpr const T& get() const noexcept { return value_; }
-
-    // / @brief Get mutable reference to value
-    T& get() noexcept { return value_; }
-
-private:
-    T value_;   ///< Stored value
-    bool dirty_; ///< Dirty flag (true if modified since last clear)
-};
-
-// Constants for Frequency Validation
-namespace FrequencyValidationConstants {
-    constexpr int64_t MIN_HARDWARE_FREQ = 1'000'000LL;      ///< Minimum hardware frequency (1 MHz)
-    constexpr int64_t MAX_HARDWARE_FREQ = 7'200'000'000LL; ///< Maximum hardware frequency (7.2 GHz)
-    constexpr int64_t MIN_2_4GHZ = 2'400'000'000LL;        ///< Minimum 2.4 GHz band
-    constexpr int64_t MAX_2_4GHZ = 2'483'500'000LL;        ///< Maximum 2.4 GHz band
-    constexpr int64_t MIN_5_8GHZ = 5'725'000'000LL;        ///< Minimum 5.8 GHz band
-    constexpr int64_t MAX_5_8GHZ = 5'875'000'000LL;        ///< Maximum 5.8 GHz band
-    constexpr int64_t MIN_MILITARY = 860'000'000LL;        ///< Minimum military band
-    constexpr int64_t MAX_MILITARY = 930'000'000LL;        ///< Maximum military band
-    constexpr int64_t MIN_433MHZ = 433'000'000LL;          ///< Minimum 433 MHz ISM band
-    constexpr int64_t MAX_433MHZ = 435'000'000LL;          ///< Maximum 433 MHz ISM band
-}
 
 // Constexpr Frequency Validation
 struct FrequencyValidator {
@@ -322,10 +267,10 @@ struct FrequencyFormatter {
 struct ThreatClassifier {
     // * * @brief Classify threat level by RSSI * @note >= -50 dB  CRITICAL, >= -60 dB  HIGH, >= -70 dB  MEDIUM, >= -80 dB  LOW, < -80 dB  NONE
     static constexpr ThreatLevel from_rssi(int32_t rssi_db) noexcept {
-        if (rssi_db >= RSSIThresholds::CRITICAL) return ThreatLevel::CRITICAL;
-        if (rssi_db >= RSSIThresholds::HIGH) return ThreatLevel::HIGH;
-        if (rssi_db >= RSSIThresholds::MEDIUM) return ThreatLevel::MEDIUM;
-        if (rssi_db >= RSSIThresholds::LOW) return ThreatLevel::LOW;
+        if (rssi_db >= EDA::Constants::CRITICAL_RSSI_DB) return ThreatLevel::CRITICAL;
+        if (rssi_db >= EDA::Constants::HIGH_RSSI_DB) return ThreatLevel::HIGH;
+        if (rssi_db >= EDA::Constants::MEDIUM_RSSI_DB) return ThreatLevel::MEDIUM;
+        if (rssi_db >= EDA::Constants::LOW_RSSI_DB) return ThreatLevel::LOW;
         return ThreatLevel::NONE;
     }
 
@@ -371,76 +316,12 @@ struct TrendSymbols {
     }
 };
 
-// Safe Buffer Access Helper
-template<typename T, size_t N>
-struct SafeBufferAccess {
-    // / @brief Get element from array with bounds checking
-    static constexpr T& get(std::array<T, N>& arr, size_t idx, T& fallback) noexcept {
-        return (idx < N) ? arr[idx] : fallback;
-    }
-
-    // / @brief Get const element from array with bounds checking
-    static constexpr const T& get(const std::array<T, N>& arr, size_t idx, 
-                                   const T& fallback) noexcept {
-        return (idx < N) ? arr[idx] : fallback;
-    }
-
-    // / @brief Check if index is valid for array
-    static constexpr bool is_valid(size_t idx) noexcept {
-        return idx < N;
-    }
-};
-
 // Status Formatting Helper
 struct StatusFormatter {
     // / @brief Format arguments to buffer (non-allocating)
     template<size_t N, typename... Args>
     static void format_to(char (&buffer)[N], const char* fmt, Args&&... args) noexcept {
         snprintf(buffer, N, fmt, std::forward<Args>(args)...);
-    }
-};
-
-// Validator Error Formatter
-struct ValidatorFormatter {
-    // / @brief Format out-of-range error for int64_t
-    static void out_of_range(char* __restrict__ buffer, size_t buffer_size,
-                              const char* name, int64_t value, 
-                              int64_t min, int64_t max) noexcept {
-        if (!buffer || buffer_size == 0) return;
-        snprintf(buffer, buffer_size, "%s %lld invalid (must be %lld to %lld)",
-                 name, static_cast<long long>(value),
-                 static_cast<long long>(min), static_cast<long long>(max));
-    }
-
-    // / @brief Format out-of-range error for uint64_t
-    static void out_of_range(char* __restrict__ buffer, size_t buffer_size,
-                              const char* name, uint64_t value, 
-                              uint64_t min, uint64_t max) noexcept {
-        if (!buffer || buffer_size == 0) return;
-        snprintf(buffer, buffer_size, "%s %llu invalid (must be %llu to %llu)",
-                 name, static_cast<unsigned long long>(value),
-                 static_cast<unsigned long long>(min), 
-                 static_cast<unsigned long long>(max));
-    }
-
-    // / @brief Format out-of-range error for int32_t
-    static void out_of_range(char* __restrict__ buffer, size_t buffer_size,
-                              const char* name, int32_t value, 
-                              int32_t min, int32_t max) noexcept {
-        out_of_range(buffer, buffer_size, name, 
-                     static_cast<int64_t>(value), 
-                     static_cast<int64_t>(min), 
-                     static_cast<int64_t>(max));
-    }
-
-    // / @brief Format out-of-range error for uint32_t
-    static void out_of_range(char* __restrict__ buffer, size_t buffer_size,
-                              const char* name, uint32_t value, 
-                              uint32_t min, uint32_t max) noexcept {
-        out_of_range(buffer, buffer_size, name, 
-                     static_cast<uint64_t>(value), 
-                     static_cast<uint64_t>(min), 
-                     static_cast<uint64_t>(max));
     }
 };
 
