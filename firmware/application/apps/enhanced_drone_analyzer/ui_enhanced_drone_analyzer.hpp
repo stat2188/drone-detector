@@ -469,7 +469,7 @@ struct DetectionParams {
     Frequency get_current_radio_frequency() const;
 
     struct DroneSnapshot {
-        TrackedDrone drones[DroneConstants::MAX_TRACKED_DRONES];
+        TrackedDrone drones[EDA::Constants::MAX_TRACKED_DRONES];
         size_t count = 0;
     };
 
@@ -511,10 +511,10 @@ struct DetectionParams {
     void update_tracking_counts();
 
     // Helper for heap-allocated tracked_drones_ access
-    std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>& tracked_drones() {
+    std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>& tracked_drones() {
         return *tracked_drones_ptr_;
     }
-    const std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>& tracked_drones() const {
+    const std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>& tracked_drones() const {
         return *tracked_drones_ptr_;
     }
 
@@ -522,7 +522,7 @@ struct DetectionParams {
     std::array<freqman_entry, 10> entries_to_scan_{};
 
     // stale_indices buffer (was stack array in remove_stale_drones)
-    std::array<size_t, DroneConstants::MAX_TRACKED_DRONES> stale_indices_{};
+    std::array<size_t, EDA::Constants::MAX_TRACKED_DRONES> stale_indices_{};
 
     // Boolean array for tracking stale drones (heap-free member variable)
     // Using uint8_t instead of std::array<bool> for deterministic size
@@ -593,7 +593,7 @@ struct DetectionParams {
 
        // Pointers to objects created via placement new
        FreqmanDB* freq_db_ptr_ = nullptr;
-       std::array<TrackedDrone, DroneConstants::MAX_TRACKED_DRONES>* tracked_drones_ptr_ = nullptr;
+       std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>* tracked_drones_ptr_ = nullptr;
 
        // Construction flags for placement-newed objects
        bool freq_db_constructed_ = false;
@@ -1160,7 +1160,7 @@ public:
     bool process_bins(uint8_t* power_level);
 
     void render_bar_spectrum(Painter& painter);
-    void highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES>& drones);
+    void highlight_threat_zones_in_spectrum(const std::array<DisplayDroneEntry, EDA::Constants::MAX_DISPLAYED_DRONES>& drones);
     size_t frequency_to_spectrum_bin(Frequency freq_hz) const;
     void clear_spectrum_buffers();
     void set_spectrum_range(Frequency min_freq, Frequency max_freq);
@@ -1239,7 +1239,7 @@ public:
     // Bar spectrum configuration (replaces waterfall)
     struct BarSpectrumConfig {
         static constexpr int WATERFALL_Y_START = 81;
-        static constexpr int BAR_HEIGHT_MAX = DroneConstants::MINI_SPECTRUM_HEIGHT;
+        static constexpr int BAR_HEIGHT_MAX = EDA::Constants::MINI_SPECTRUM_HEIGHT;
         static constexpr uint8_t NOISE_THRESHOLD = 10;
         static constexpr uint8_t PEAK_SHARPNESS_THRESHOLD = 15;
 
@@ -1332,7 +1332,7 @@ private:
     // Static array DETECTED_DRONES (zero heap allocation, ~240 bytes)
 
     // Member declaration order MUST match constructor initializer list order
-    std::array<DisplayDroneEntry, DroneConstants::MAX_DISPLAYED_DRONES> displayed_drones_;
+    std::array<DisplayDroneEntry, EDA::Constants::MAX_DISPLAYED_DRONES> displayed_drones_;
 
     // Static array instead of unique_ptr
     alignas(alignof(DisplayDroneEntry))
@@ -1377,7 +1377,7 @@ private:
     mutable Mutex histogram_mutex_; ///< Protects histogram_display_buffer_ buffer
 
     struct ThreatBin { size_t bin; ThreatLevel threat; };
-    std::array<ThreatBin, DroneConstants::MAX_DISPLAYED_DRONES> threat_bins_;
+    std::array<ThreatBin, EDA::Constants::MAX_DISPLAYED_DRONES> threat_bins_;
     size_t threat_bins_count_ = 0;
 
     Gradient spectrum_gradient_;

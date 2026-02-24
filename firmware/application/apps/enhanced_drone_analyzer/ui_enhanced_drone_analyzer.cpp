@@ -3298,7 +3298,7 @@ void FrequencyRangeSetupView::on_save() {
     // Get slice width from settings
     uint64_t new_slice_width = controller_.settings().wideband_slice_width_hz;
     
-    // Validation - use unified constants from DroneConstants
+    // Validation - use unified constants from EDA::Constants
     if (new_min >= new_max) {
         nav_.display_modal("Error", "Min freq must be < Max freq");
         return;
