@@ -286,7 +286,7 @@ jobs:
       - name: Install clang-format
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format
+          sudo apt-get install -y clang-format-18
 
       - name: Run Clang-Format Check
         run: |
@@ -299,7 +299,7 @@ jobs:
             if [ -f "$file" ]; then
               # Create temporary file with formatted content
               TEMP_FILE=$(mktemp)
-              clang-format "$file" > "$TEMP_FILE"
+              clang-format-18 -style=file "$file" > "$TEMP_FILE"
 
               # Compare with original
               if ! diff -q "$file" "$TEMP_FILE" >/dev/null 2>&1; then
@@ -317,7 +317,7 @@ jobs:
           for file in firmware/application/apps/enhanced_drone_analyzer/*.hpp; do
             if [ -f "$file" ]; then
               TEMP_FILE=$(mktemp)
-              clang-format "$file" > "$TEMP_FILE"
+              clang-format-18 -style=file "$file" > "$TEMP_FILE"
 
               if ! diff -q "$file" "$TEMP_FILE" >/dev/null 2>&1; then
                 # Plain-text output for readability
@@ -338,7 +338,7 @@ jobs:
           if [ "$FORMAT_ISSUES" -gt "0" ]; then
             echo ""
             echo "::error title=Formatting Failed::Found $FORMAT_ISSUES files with formatting issues"
-            echo "Run 'clang-format -i <file>' to fix formatting issues"
+            echo "Run 'clang-format-18 -style=file -i <file>' to fix formatting issues"
             echo "Or use the 'Auto-Fix Formatting' workflow to fix automatically"
             exit 1
           else
@@ -363,7 +363,7 @@ jobs:
       - name: Install clang-format
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format
+          sudo apt-get install -y clang-format-18
 
       - name: Fix All Formatting Issues
         run: |
@@ -372,7 +372,7 @@ jobs:
           # Format all .cpp files
           for file in firmware/application/apps/enhanced_drone_analyzer/*.cpp; do
             if [ -f "$file" ]; then
-              clang-format -i "$file"
+              clang-format-18 -style=file -i "$file"
               echo "✓ Formatted: $(basename $file)"
             fi
           done
@@ -380,7 +380,7 @@ jobs:
           # Format all .hpp files
           for file in firmware/application/apps/enhanced_drone_analyzer/*.hpp; do
             if [ -f "$file" ]; then
-              clang-format -i "$file"
+              clang-format-18 -style=file -i "$file"
               echo "✓ Formatted: $(basename $file)"
             fi
           done
