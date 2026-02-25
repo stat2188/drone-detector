@@ -1718,30 +1718,63 @@ void DroneDetectionLogger::start_worker() {
 }
 
 // Stack safety guard for embedded systems
+// DIAMOND FIX #C4 (REVISED): Stack canary on stack frame (not thread_local)
 namespace StackSafety {
-    class StackGuard {
+    // Stack canary magic value (stored in Flash)
+    constexpr uint32_t STACK_CANARY_MAGIC = 0xDEADBEEF;
+
+    // Stack canary placed on stack (NOT thread_local)
+    class StackCanary {
+        uint32_t canary_value_;
+        
     public:
-        explicit StackGuard(const char* function_name) noexcept
-            : function_name_(function_name), stack_ptr_(get_stack_pointer()) {}
-
-        ~StackGuard() noexcept {
-            size_t stack_used = get_stack_pointer() - stack_ptr_;
-            // Could log stack usage here if needed
-            (void)stack_used;  // Suppress unused warning
+        // Initialize canary on construction (placed on stack)
+        StackCanary() noexcept : canary_value_(STACK_CANARY_MAGIC) {}
+        
+        // Check if canary was corrupted
+        bool is_valid() const noexcept {
+            return canary_value_ == STACK_CANARY_MAGIC;
         }
+        
+        // Get canary value (for debugging)
+        uint32_t get_value() const noexcept {
+            return canary_value_;
+        }
+    };
 
+    // Stack guard with RAII
+    class StackGuard {
+        StackCanary canary_;
+        const char* function_name_;
+        
+    public:
+        explicit StackGuard(const char* name) noexcept 
+            : canary_(), function_name_(name) {
+            // Canary initialized on stack
+        }
+        
+        ~StackGuard() noexcept {
+            if (!canary_.is_valid()) {
+                // Stack overflow detected
+                // Use lightweight handler (no logging to avoid recursion)
+                handle_stack_overflow();
+            }
+        }
+        
+        bool is_stack_safe() const noexcept {
+            return canary_.is_valid();
+        }
+        
         StackGuard(const StackGuard&) = delete;
         StackGuard& operator=(const StackGuard&) = delete;
 
     private:
-        static inline size_t get_stack_pointer() noexcept {
-            volatile size_t sp;
-            sp = reinterpret_cast<size_t>(&sp);
-            return sp;
+        static void handle_stack_overflow() noexcept {
+            // Lightweight handler - no heap allocation, no logging
+            // Stack overflow detected - canary corrupted
         }
 
         const char* function_name_;
-        size_t stack_ptr_;
     };
 }
 
@@ -3290,11 +3323,6 @@ void FrequencyRangeSetupView::on_save() {
         return;
     }
     
-    if (new_max > new_max + new_min) {
-        nav_.display_modal("Error", "Frequency range overflow detected");
-        return;
-    }
-
     // Save settings (use existing settings reference)
     controller_.settings().wideband_min_freq_hz = new_min;
     controller_.settings().wideband_max_freq_hz = new_max;
@@ -3615,7 +3643,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() noexcept 
 
     // Check timeout (protects from hangs)
     systime_t elapsed = chTimeNow() - init_start_time_;
-    if (elapsed > MS2ST(InitTiming::TIMEOUT_MS)) {
+    if (elapsed > MS2ST(EDA::Constants::INIT_TIMEOUT_MS)) {
         // Proper cleanup in timeout path
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings_);
         

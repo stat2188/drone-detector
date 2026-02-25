@@ -224,6 +224,8 @@ public:
     explicit AudioSettingsView(NavigationView& nav);
     ~AudioSettingsView() = default;
     void focus() noexcept override;
+    // TODO: Fix #C1 - Change return type to std::string_view to eliminate heap allocation
+    // See: plans/stage2_critical_fixes.md
     std::string title() const override { return "Audio Settings"; }
 
 private:
@@ -251,6 +253,8 @@ public:
     explicit HardwareSettingsView(NavigationView& nav);
     ~HardwareSettingsView() = default;
     void focus() noexcept override;
+    // TODO: Fix #C1 - Change return type to std::string_view to eliminate heap allocation
+    // See: plans/stage2_critical_fixes.md
     std::string title() const override { return "Hardware Settings"; }
 
 private:
@@ -277,6 +281,8 @@ public:
     explicit ScanningSettingsView(NavigationView& nav);
     ~ScanningSettingsView() = default;
     void focus() noexcept override;
+    // TODO: Fix #C1 - Change return type to std::string_view to eliminate heap allocation
+    // See: plans/stage2_critical_fixes.md
     std::string title() const override { return "Scanning Settings"; }
 
 private:
@@ -303,6 +309,8 @@ public:
     explicit DroneAnalyzerSettingsView(NavigationView& nav);
     ~DroneAnalyzerSettingsView() override = default;
     void focus() noexcept override;
+    // TODO: Fix #C1 - Change return type to std::string_view to eliminate heap allocation
+    // See: plans/stage2_critical_fixes.md
     std::string title() const override { return "EDA Settings"; }
 
  private:
@@ -330,6 +338,8 @@ public:
     explicit LoadingView(NavigationView& nav, const char* loading_text = "Loading...");
     ~LoadingView() = default;
     void focus() noexcept override;
+    // TODO: Fix #C1 - Change return type to std::string_view to eliminate heap allocation
+    // See: plans/stage2_critical_fixes.md
     std::string title() const override { return "Loading"; }
     void paint(Painter& painter) override;
     void on_show() override;
@@ -407,6 +417,8 @@ class DroneDatabaseListView : public View {
 public:
     explicit DroneDatabaseListView(NavigationView& nav);
     void focus() noexcept override;
+    // TODO: Fix #C1 - Change return type to std::string_view to eliminate heap allocation
+    // See: plans/stage2_critical_fixes.md
     std::string title() const override { return "Manage Database"; }
 
 private:

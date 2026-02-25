@@ -194,6 +194,7 @@ constexpr int32_t RSSI_INVALID_DBM = -127;
 constexpr uint32_t THREAD_JOIN_TIMEOUT_MS = 5000;
 constexpr uint32_t THREAD_TERMINATION_TIMEOUT_MS = 3000;
 constexpr uint32_t THREAD_TERMINATION_POLL_INTERVAL_MS = 10;
+constexpr uint32_t INIT_TIMEOUT_MS = 10000;  // 10 seconds for full initialization (6 phases including DB loading)
 
 // Database Parameters
 // Stage 4: Unified Database Constants
