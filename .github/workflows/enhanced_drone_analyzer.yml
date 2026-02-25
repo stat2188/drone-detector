@@ -443,10 +443,11 @@ jobs:
           fi
 
           # Check for RAII wrapper class definition
-          if grep -q "class MutexLock" firmware/application/apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.hpp 2>/dev/null; then
-            echo "✅ MutexLock RAII class defined"
+          # Note: MutexLock is defined as type alias in eda_locking.hpp
+          if grep -q "MutexLock" firmware/application/apps/enhanced_drone_analyzer/eda_locking.hpp 2>/dev/null; then
+            echo "✅ MutexLock RAII wrapper defined"
           else
-            echo "::error title=Missing RAII Wrapper::MutexLock class not found!"
+            echo "::error title=Missing RAII Wrapper::MutexLock not found in eda_locking.hpp!"
             exit 1
           fi
 
@@ -706,14 +707,11 @@ jobs:
         run: |
           echo "=== Building Pure Logic Classes for Unit Testing ==="
 
-          # Create build directory
-          mkdir -p build/tests
-
           # Compile test files (standalone)
-          cd firmware/application/apps/enhanced_drone_analyzer/tests
-          g++ -std=c++17 -O2 -Wall -Wextra test_median_filter.cpp -o build/test_median_filter || true
-          g++ -std=c++17 -O2 -Wall -Wextra test_spectral_analyzer.cpp -o build/test_spectral_analyzer || true
-          g++ -std=c++17 -O2 -Wall -Wextra test_drone_validation.cpp -o build/test_drone_validation || true
+          # Note: Tests are in firmware/test/enhanced_drone_analyzer/
+          cd firmware/test/enhanced_drone_analyzer
+          mkdir -p build
+          g++ -std=c++17 -O2 -Wall -Wextra -I../include main.cpp test_stack_usage.cpp test_database_parser.cpp test_settings_persistence.cpp -o build/enhanced_drone_analyzer_test
 
           echo "✅ Host build check completed"
 
@@ -739,33 +737,18 @@ jobs:
         run: |
           echo "=== Running Unit Tests ==="
 
-          cd firmware/application/apps/enhanced_drone_analyzer/tests
+          # Note: Tests are in firmware/test/enhanced_drone_analyzer/
+          cd firmware/test/enhanced_drone_analyzer
 
           # Build tests directory
           mkdir -p build
 
-          # Compile test_median_filter
-          echo "Compiling test_median_filter..."
-          g++ -std=c++17 -O2 -Wall -Wextra test_median_filter.cpp -o build/test_median_filter
-          if [ -f build/test_median_filter ]; then
-            echo "Running test_median_filter..."
-            ./build/test_median_filter
-          fi
-
-          # Compile test_spectral_analyzer
-          echo "Compiling test_spectral_analyzer..."
-          g++ -std=c++17 -O2 -Wall -Wextra test_spectral_analyzer.cpp -o build/test_spectral_analyzer
-          if [ -f build/test_spectral_analyzer ]; then
-            echo "Running test_spectral_analyzer..."
-            ./build/test_spectral_analyzer
-          fi
-
-          # Compile test_drone_validation
-          echo "Compiling test_drone_validation..."
-          g++ -std=c++17 -O2 -Wall -Wextra test_drone_validation.cpp -o build/test_drone_validation
-          if [ -f build/test_drone_validation ]; then
-            echo "Running test_drone_validation..."
-            ./build/test_drone_validation
+          # Compile enhanced_drone_analyzer_test
+          echo "Compiling enhanced_drone_analyzer_test..."
+          g++ -std=c++17 -O2 -Wall -Wextra -I../include main.cpp test_stack_usage.cpp test_database_parser.cpp test_settings_persistence.cpp -o build/enhanced_drone_analyzer_test
+          if [ -f build/enhanced_drone_analyzer_test ]; then
+            echo "Running enhanced_drone_analyzer_test..."
+            ./build/enhanced_drone_analyzer_test
           fi
 
           echo "✅ All unit tests passed"
@@ -775,7 +758,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-results
-          path: firmware/application/apps/enhanced_drone_analyzer/tests/build/
+          path: firmware/test/enhanced_drone_analyzer/build/
 
   # ==============================================
   # FINAL: Combined Status
