@@ -51,12 +51,6 @@ void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
 
         // Check for existing entry
         if (entries_[idx].frequency_hash == frequency_hash) {
-            // Handle timestamp wrap-around
-            if (current_time < DetectionBufferConstants::WRAP_THRESHOLD &&
-                entries_[idx].timestamp > DetectionBufferConstants::WRAP_THRESHOLD) {
-                entries_[idx].timestamp = DetectionBufferConstants::ZERO_TIMESTAMP;
-            }
-
             // Update entry with new version
             entries_[idx].version = global_version_;
             entries_[idx].rssi_value = rssi_value;

@@ -330,7 +330,7 @@ inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
             return snprintf(buf + offset, max_size - offset, "%s=%" PRId32 "\n",
                    meta.key, *reinterpret_cast<const int32_t*>(data));
         case TYPE_UINT64:
-            return snprintf(buf + offset, max_size - offset, "%s=%llu\n",
+            return snprintf(buf + offset, max_size - offset, "%s=%" PRIu64 "\n",
                    meta.key, *reinterpret_cast<const uint64_t*>(data));
         case TYPE_STR:
             return snprintf(buf + offset, max_size - offset, "%s=%s\n",

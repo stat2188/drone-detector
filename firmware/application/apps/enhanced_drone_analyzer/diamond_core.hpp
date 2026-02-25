@@ -173,9 +173,9 @@ struct FrequencyParser {
         
         // Parse fractional part (if present)
         uint64_t hz_fraction = 0;
-        uint64_t divisor = 1;
         if (*str == FrequencyParserConstants::DECIMAL_POINT) {
             str++;
+            uint64_t divisor = 1;
             
             // Parse up to MAX_DECIMAL_DIGITS decimal digits
             for (int i = 0; i < FrequencyParserConstants::MAX_DECIMAL_DIGITS; i++) {

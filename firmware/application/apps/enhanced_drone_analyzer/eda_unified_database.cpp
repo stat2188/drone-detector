@@ -39,7 +39,7 @@ UnifiedDroneDatabase::UnifiedDroneDatabase() noexcept
 // ============================================================================
 
 bool UnifiedDroneDatabase::initialize() noexcept {
-    MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
     
     if (initialized_) {
         return true;  // Already initialized
@@ -56,7 +56,7 @@ bool UnifiedDroneDatabase::initialize() noexcept {
 }
 
 bool UnifiedDroneDatabase::load(const char* path) noexcept {
-    MutexLock lock(mutex_, LockOrder::SD_CARD_MUTEX);
+    MutexLock db_lock(mutex_, LockOrder::SD_CARD_MUTEX);
     
     if (!initialized_) {
         return false;
@@ -144,7 +144,7 @@ bool UnifiedDroneDatabase::load(const char* path) noexcept {
 }
 
 bool UnifiedDroneDatabase::save(const char* path) noexcept {
-    MutexLock lock(mutex_, LockOrder::SD_CARD_MUTEX);
+    MutexLock db_lock(mutex_, LockOrder::SD_CARD_MUTEX);
     
     if (!initialized_) {
         return false;
@@ -192,7 +192,7 @@ bool UnifiedDroneDatabase::save(const char* path) noexcept {
 }
 
 void UnifiedDroneDatabase::clear() noexcept {
-    MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
     
     for (auto& entry : entries_) {
         entry.clear();
@@ -240,7 +240,7 @@ const UnifiedDroneEntry* UnifiedDroneDatabase::get_entry(size_t index) const noe
 // ============================================================================
 
 int UnifiedDroneDatabase::add_entry(const UnifiedDroneEntry& entry) noexcept {
-    MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
     
     if (!initialized_) {
         return -1;
@@ -279,7 +279,7 @@ int UnifiedDroneDatabase::add_entry(const UnifiedDroneEntry& entry) noexcept {
 }
 
 bool UnifiedDroneDatabase::update_entry(size_t index, const UnifiedDroneEntry& entry) noexcept {
-    MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
     
     if (!initialized_) {
         return false;
@@ -315,7 +315,7 @@ bool UnifiedDroneDatabase::update_entry(size_t index, const UnifiedDroneEntry& e
 }
 
 bool UnifiedDroneDatabase::delete_entry(size_t index) noexcept {
-    MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
     
     if (!initialized_) {
         return false;
@@ -356,7 +356,7 @@ bool UnifiedDroneDatabase::delete_entry(size_t index) noexcept {
 // ============================================================================
 
 bool UnifiedDroneDatabase::add_observer(DatabaseObserverCallback callback, void* user_data) noexcept {
-    MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
     
     if (callback == nullptr) {
         return false;
@@ -376,8 +376,8 @@ bool UnifiedDroneDatabase::add_observer(DatabaseObserverCallback callback, void*
     return false;
 }
 
-void UnifiedDroneDatabase::remove_observer(DatabaseObserverCallback callback) noexcept {
-    MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
+void UnifiedDroneDatabase::remove_observer(const DatabaseObserverCallback callback) noexcept {
+    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
     
     for (auto& observer : observers_) {
         if (observer.callback == callback) {
@@ -411,7 +411,7 @@ bool UnifiedDroneDatabase::validate_entry(const UnifiedDroneEntry& entry) const 
 // ============================================================================
 
 DatabaseStats UnifiedDroneDatabase::get_stats() const noexcept {
-    MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
     return stats_;
 }
 

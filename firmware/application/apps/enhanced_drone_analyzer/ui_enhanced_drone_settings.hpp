@@ -405,7 +405,7 @@ private:
 // DIAMOND OPTIMIZATION: Database list view with zero heap allocation
 class DroneDatabaseListView : public View {
 public:
-    DroneDatabaseListView(NavigationView& nav);
+    explicit DroneDatabaseListView(NavigationView& nav);
     void focus() noexcept override;
     std::string title() const override { return "Manage Database"; }
 

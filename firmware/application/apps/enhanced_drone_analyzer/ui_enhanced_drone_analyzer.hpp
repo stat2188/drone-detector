@@ -368,7 +368,7 @@ public:
     };
 
     // Constructor accepts settings by value to eliminate lifetime dependency
-    DroneScanner(DroneAnalyzerSettings settings);
+    explicit DroneScanner(DroneAnalyzerSettings settings);
     ~DroneScanner();
 
     void start_scanning();

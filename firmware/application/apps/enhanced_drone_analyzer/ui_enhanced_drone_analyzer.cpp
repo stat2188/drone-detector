@@ -318,12 +318,11 @@ bool DroneScanner::load_frequency_database() {
     }
 
     auto db_path = get_freqman_path(settings_.freqman_path);
-    bool sd_loaded = false;
 
     {
         MutexLock lock(data_mutex);
 
-        sd_loaded = freq_db_ptr_->open(db_path);
+        bool sd_loaded = freq_db_ptr_->open(db_path);
 
         if (!sd_loaded || freq_db_ptr_->empty()) {
             freq_db_ptr_->open(db_path, true);
@@ -341,8 +340,6 @@ bool DroneScanner::load_frequency_database() {
             }
 
             sync_database();
-
-            sd_loaded = !freq_db_ptr_->empty();
         }
     }
 
@@ -1790,7 +1787,6 @@ void DroneDetectionLogger::worker_loop() {
 
         DetectionLogEntry entry_to_write;
         bool has_data = false;
-        bool has_more_data = false;
 
         {
             MutexLock lock(mutex_);
@@ -1801,13 +1797,13 @@ void DroneDetectionLogger::worker_loop() {
                 is_full_ = false;
                 has_data = true;
 
-                has_more_data = (head_ != tail_);
-            }
-            // FIX #12: Signal semaphore while still holding mutex
-            // This prevents race condition where buffer state changes between
-            // checking has_more_data and signaling the semaphore
-            if (has_more_data) {
-                chSemSignal(&data_ready_);
+                bool has_more_data = (head_ != tail_);
+                // FIX #12: Signal semaphore while still holding mutex
+                // This prevents race condition where buffer state changes between
+                // checking has_more_data and signaling the semaphore
+                if (has_more_data) {
+                    chSemSignal(&data_ready_);
+                }
             }
         }
 
@@ -2399,12 +2395,12 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
 
     // Table-driven style selection
     // O(1) lookup  runtime : CRITICAL=0 (RED),  =1 (YELLOW)
-    static const Style ALERT_STYLES[] = {
+    static const Style ALERT_TEXT_STYLES[] = {
         {font::fixed_8x16, Color::black(), Color(THREAT_STYLES[0].bg_color)}, // CRITICAL (RED)
         {font::fixed_8x16, Color::black(), Color(THREAT_STYLES[1].bg_color)}  // MEDIUM (YELLOW)
     };
     size_t style_idx = (threat >= ThreatLevel::CRITICAL) ? 0 : 1;
-    alert_text_.set_style(&ALERT_STYLES[style_idx]);
+    alert_text_.set_style(&ALERT_TEXT_STYLES[style_idx]);
     set_dirty();
 }
 
@@ -2614,10 +2610,6 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
     data.is_real_mode = scanner.is_real_mode();
     data.scan_cycles = scanner.get_scan_cycles();
     data.has_detections = (data.approaching_count + data.receding_count + data.static_count) > 0;
-    
-    // FIX #13: Set timestamp when snapshot is captured
-    // This helps identify stale data in UI (snapshot is point-in-time)
-    data.snapshot_timestamp = chTimeNow();
     
     // Determine color index (logic only, no UI calls)
     data.color_idx = (data.max_threat >= ThreatLevel::HIGH) ? 4 :
@@ -2858,8 +2850,8 @@ void DroneDisplayController::render_drone_text_display() {
 }
 
 void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& spectrum) {
-    uint8_t current_bin_power = 0;
     for (size_t bin = 0; bin < MINI_SPECTRUM_WIDTH; bin++) {
+        uint8_t current_bin_power;
         if (bin < spectrum.db.size()) {
             current_bin_power = spectrum.db[bin];
         } else {
@@ -3683,7 +3675,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() noexcept 
         }
         
         // Update UI status based on phase
-        static constexpr const char* const PHASE_NAMES[NUM_PHASES] = {
+        static constexpr const char* const INIT_PHASE_NAMES[NUM_PHASES] = {
             "Allocating buffers...",
             "Loading database...",
             "Initializing hardware...",
@@ -3692,7 +3684,7 @@ void EnhancedDroneSpectrumAnalyzerView::step_deferred_initialization() noexcept 
             "Finalizing..."
         };
         
-        const char* status_msg = PHASE_NAMES[phase_idx];
+        const char* status_msg = INIT_PHASE_NAMES[phase_idx];
         // Special message for database loading
         if (init_state_ == InitState::DATABASE_LOADING && !scanner_.is_database_loading_complete()) {
             status_msg = "Loading database...";

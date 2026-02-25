@@ -911,9 +911,9 @@ DroneDatabaseManager::DatabaseView DroneDatabaseManager::load_database(const cha
         
         view.entries[count].freq = entry->frequency_hz;
         
-        // Copy description safely (max 63 chars + null terminator)
+        // Copy description safely (max 31 chars + null terminator)
         size_t desc_len = 0;
-        while (desc_len < 63 && entry->description[desc_len] != '\0') {
+        while (desc_len < 31 && entry->description[desc_len] != '\0') {
             view.entries[count].description[desc_len] = entry->description[desc_len];
             desc_len++;
         }
