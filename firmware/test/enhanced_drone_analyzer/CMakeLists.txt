@@ -37,13 +37,6 @@ add_executable(enhanced_drone_analyzer_test EXCLUDE_FROM_ALL
 	${PROJECT_SOURCE_DIR}/test_stack_usage.cpp
 	${PROJECT_SOURCE_DIR}/test_database_parser.cpp
 	${PROJECT_SOURCE_DIR}/test_settings_persistence.cpp
-
-	# Source files from enhanced_drone_analyzer application
-	${PROJECT_SOURCE_DIR}/../../application/apps/enhanced_drone_analyzer/eda_database_parser.hpp
-	${PROJECT_SOURCE_DIR}/../../application/apps/enhanced_drone_analyzer/eda_unified_database.hpp
-	${PROJECT_SOURCE_DIR}/../../application/apps/enhanced_drone_analyzer/settings_persistence.hpp
-	${PROJECT_SOURCE_DIR}/../../application/apps/enhanced_drone_analyzer/ui_drone_common_types.hpp
-	${PROJECT_SOURCE_DIR}/../../application/apps/enhanced_drone_analyzer/eda_constants.hpp
 )
 
 target_include_directories(enhanced_drone_analyzer_test PRIVATE

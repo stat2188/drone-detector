@@ -733,7 +733,7 @@ SCENARIO("Write freqman entry with description") {
     GIVEN("An entry with frequency and description") {
         ui::apps::enhanced_drone_analyzer::UnifiedDroneEntry entry;
         entry.frequency_hz = 5800000000ULL;
-        strcpy(entry.description, "FPV Drone");
+        ui::apps::enhanced_drone_analyzer::DatabaseParser::safe_strcpy(entry.description, "FPV Drone", sizeof(entry.description));
 
         WHEN("Writing to buffer") {
             char buffer[64];
@@ -802,7 +802,7 @@ SCENARIO("Write CSV entry with description") {
     GIVEN("An entry with frequency and description") {
         ui::apps::enhanced_drone_analyzer::UnifiedDroneEntry entry;
         entry.frequency_hz = 5800000000ULL;
-        strcpy(entry.description, "FPV Drone");
+        ui::apps::enhanced_drone_analyzer::DatabaseParser::safe_strcpy(entry.description, "FPV Drone", sizeof(entry.description));
 
         WHEN("Writing to buffer") {
             char buffer[64];

@@ -845,7 +845,7 @@ SCENARIO("Dispatch string setting") {
         }
 
         WHEN("Resetting to default") {
-            strcpy(settings.log_format, "JSON");
+            safe_strcpy(settings.log_format, "JSON", sizeof(settings.log_format));
             bool result = dispatch_by_type(DispatchOp::RESET,
                                           reinterpret_cast<uint8_t*>(&settings.log_format),
                                           meta, nullptr);
@@ -961,7 +961,7 @@ SCENARIO("Serialize string setting") {
     GIVEN("A string setting") {
         using namespace ui::apps::enhanced_drone_analyzer;
         DroneAnalyzerSettings settings;
-        strcpy(settings.log_format, "JSON");
+        safe_strcpy(settings.log_format, "JSON", sizeof(settings.log_format));
         SettingMetadata meta = SET_META(log_format, TYPE_STR, 8, 0, "CSV");
 
         WHEN("Serializing to buffer") {
