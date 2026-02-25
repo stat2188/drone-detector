@@ -214,46 +214,55 @@ jobs:
         run: |
           echo "=== Generating Summary ==="
 
+          # Access environment variables set in previous steps
+          # These were set using: echo "var_name=value" >> $GITHUB_ENV
+          ERROR_COUNT="${error_count:-0}"
+          WARNING_COUNT="${warning_count:-0}"
+          INFO_COUNT="${info_count:-0}"
+          TIDY_WARNINGS="${tidy_warnings:-0}"
+          MUTEX_ERRORS="${mutex_errors:-0}"
+          MUTEX_WARNINGS="${mutex_warnings:-0}"
+
           # Write to GitHub Actions summary with fallback
           {
             echo "## Enhanced Drone Analyzer - Static Analysis Summary"
             echo ""
             echo "### Cppcheck Results"
-            echo "- Real Errors (severity=error): ${{ env.error_count }}"
-            echo "- Warnings (severity=warning): ${{ env.warning_count }}"
-            echo "- Info Messages (severity=information): ${{ env.info_count }}"
+            echo "- Real Errors (severity=error): $ERROR_COUNT"
+            echo "- Warnings (severity=warning): $WARNING_COUNT"
+            echo "- Info Messages (severity=information): $INFO_COUNT"
             echo ""
             echo "> **Note:** Info messages are typically false positives from missing system headers (ch.h, etc.)"
             echo ""
             echo "### Clang-Tidy Thread Safety"
-            echo "- Warnings: ${{ env.tidy_warnings }}"
+            echo "- Warnings: $TIDY_WARNINGS"
             echo ""
             echo "### Mutex Pattern Verification"
-            echo "- Errors: ${{ env.mutex_errors }}"
-            echo "- Warnings: ${{ env.mutex_warnings }}"
+            echo "- Errors: $MUTEX_ERRORS"
+            echo "- Warnings: $MUTEX_WARNINGS"
             echo ""
           } >> $GITHUB_STEP_SUMMARY 2>/dev/null || {
             echo "=== Static Analysis Summary ==="
-            echo "Cppcheck Errors: ${{ env.error_count }}"
-            echo "Cppcheck Warnings: ${{ env.warning_count }}"
-            echo "Clang-Tidy Warnings: ${{ env.tidy_warnings }}"
-            echo "Mutex Errors: ${{ env.mutex_errors }}"
-            echo "Mutex Warnings: ${{ env.mutex_warnings }}"
+            echo "Cppcheck Errors: $ERROR_COUNT"
+            echo "Cppcheck Warnings: $WARNING_COUNT"
+            echo "Clang-Tidy Warnings: $TIDY_WARNINGS"
+            echo "Mutex Errors: $MUTEX_ERRORS"
+            echo "Mutex Warnings: $MUTEX_WARNINGS"
           }
 
           # Determine overall result
           # Only fail on real errors (severity=error), NOT information messages
-          REAL_ERRORS=${{ env.error_count }}
-          MUTEX_ERRORS=${{ env.mutex_errors }}
+          REAL_ERRORS="$ERROR_COUNT"
+          MUTEX_ERRORS_VAR="$MUTEX_ERRORS"
 
-          if [ "$REAL_ERRORS" -gt "0" ] || [ "$MUTEX_ERRORS" -gt "0" ]; then
+          if [ "$REAL_ERRORS" -gt "0" ] || [ "$MUTEX_ERRORS_VAR" -gt "0" ]; then
             echo "❌ **CI FAILED**: Critical issues found" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "CI FAILED: Critical issues found"
             echo ""
-            echo "Real errors: $REAL_ERRORS, Mutex errors: $MUTEX_ERRORS" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Real errors: $REAL_ERRORS, Mutex errors: $MUTEX_ERRORS"
+            echo "Real errors: $REAL_ERRORS, Mutex errors: $MUTEX_ERRORS_VAR" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Real errors: $REAL_ERRORS, Mutex errors: $MUTEX_ERRORS_VAR"
             echo ""
             echo "Please review the analysis results above and fix the errors." >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Please fix the errors."
             exit 1
-          elif [ "${{ env.warning_count }}" -gt "0" ] || [ "${{ env.tidy_warnings }}" -gt "0" ] || [ "${{ env.mutex_warnings }}" -gt "0" ]; then
+          elif [ "$WARNING_COUNT" -gt "0" ] || [ "$TIDY_WARNINGS" -gt "0" ] || [ "$MUTEX_WARNINGS" -gt "0" ]; then
             echo "✅ **CI PASSED with warnings**: Code has some issues but no critical errors" >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "CI PASSED with warnings"
             echo ""
             echo "Consider reviewing the warnings for potential improvements." >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Review warnings for improvements."
