@@ -83,6 +83,8 @@ CompileFlags:
     - "-I./firmware"
     - "-I./firmware/application"
     - "-I./firmware/application/apps"
+    # CRITICAL FIX: Add EDA module include path
+    - "-I./firmware/application/apps/enhanced_drone_analyzer"
     - "-I./firmware/application/ui"
     - "-I./firmware/application/hw"
     - "-I./firmware/application/protocols"

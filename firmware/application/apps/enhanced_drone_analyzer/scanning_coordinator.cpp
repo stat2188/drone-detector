@@ -1,5 +1,7 @@
 // * * @file scanning_coordinator.cpp * @brief Coordinate scanning operations for Enhanced Drone Analyzer * * DIAMOND CODE PRINCIPLES: * - Zero heap allocation: All memory is stack-allocated or in Flash * - No exceptions: All functions are noexcept * - Type-safe: Uses semantic type aliases * - Memory-safe: Uses ChibiOS RTOS for thread management * * @author Diamond Code Pipeline * @date 2026-02-20
 
+#include <cstdint>  // For uint32_t
+#include "eda_locking.hpp"  // For CriticalSection
 #include "scanning_coordinator.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "diamond_core.hpp"

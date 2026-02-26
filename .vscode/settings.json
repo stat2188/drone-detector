@@ -115,5 +115,6 @@
         }
     },
     
-    "terminal.integrated.defaultProfile.windows": "MSYS2 UCRT64"
+    // Default terminal profile removed - you can now choose terminals manually
+    // "terminal.integrated.defaultProfile.windows": "MSYS2 UCRT64"
 }

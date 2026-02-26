@@ -530,11 +530,11 @@ inline SettingsLoadBuffer& get_load_buffer() noexcept {
 class M4InterruptMask {
 public:
     M4InterruptMask() noexcept {
-        lpc43xx::creg::m4txevent::disable();
+        lpc43xx::cgu::pll1::disable();
     }
 
     ~M4InterruptMask() noexcept {
-        lpc43xx::creg::m4txevent::enable();
+        lpc43xx::cgu::pll1::enable();
     }
 
     M4InterruptMask(const M4InterruptMask&) = delete;

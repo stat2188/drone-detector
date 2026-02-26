@@ -74,6 +74,7 @@ private:
     // Scott Meyers Item 15: Prefer constexpr to #define
     // FIX #2: Use explicit stack size constant from ui_enhanced_drone_analyzer.hpp
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // (optimized for memory - reduced from 4KB to 2KB)
+    static constexpr size_t coordinator_wa_ = THD_WA_SIZE(1024);
     static WORKING_AREA(coordinator_wa_, COORDINATOR_THREAD_STACK_SIZE);
 };
 
