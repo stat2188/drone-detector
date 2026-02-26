@@ -16,6 +16,7 @@
 #include "eda_locking.hpp"
 #include "sd_card.hpp"
 #include "lpc43xx_cpp.hpp"
+#include "file.hpp"  // For File
 
 namespace ui::apps::enhanced_drone_analyzer {
 

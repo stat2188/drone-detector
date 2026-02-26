@@ -8,6 +8,7 @@
 #include <cstddef>  // For size_t
 #include "ui_navigation.hpp"
 #include "eda_constants.hpp"
+#include <ch.h>  // For stkalign_t and THD_WA_SIZE
 
 class AudioManager;
 
@@ -75,8 +76,9 @@ private:
     // Scott Meyers Item 15: Prefer constexpr to #define
     // FIX #2: Use explicit stack size constant from ui_enhanced_drone_analyzer.hpp
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // (optimized for memory - reduced from 4KB to 2KB)
-    static constexpr size_t coordinator_wa_ = THD_WA_SIZE(1024);
-    static WORKING_AREA(coordinator_wa_, COORDINATOR_THREAD_STACK_SIZE);
+    
+    // Thread working area (defined in .cpp file to avoid ODR issues)
+    static stkalign_t coordinator_wa_[THD_WA_SIZE(COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 };
 
 }  // namespace ui::apps::enhanced_drone_analyzer

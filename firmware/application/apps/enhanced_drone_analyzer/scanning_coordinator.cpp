@@ -4,6 +4,8 @@
 #include "eda_locking.hpp"  // For CriticalSection
 #include "scanning_coordinator.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
+#include "ui_drone_common_types.hpp"  // For DroneAnalyzerSettings
+#include "ui_navigation.hpp"  // For NavigationView
 #include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
