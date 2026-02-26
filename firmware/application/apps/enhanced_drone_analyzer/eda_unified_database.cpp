@@ -4,6 +4,7 @@
 #include "eda_unified_database.hpp"
 #include "eda_database_parser.hpp"
 #include "file.hpp"
+#include "eda_locking.hpp"
 #include <cstdio>
 #include <cstring>
 
