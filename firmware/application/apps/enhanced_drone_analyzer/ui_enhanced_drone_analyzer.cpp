@@ -743,7 +743,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
         if (rssi >= effective_threshold) {
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
             current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
-            detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
+            detection_ring_buffer_.update_detection({freq_hash, current_count, rssi});
 
             if (current_count >= MIN_DETECTION_COUNT) {
                 should_log = true;
@@ -768,9 +768,9 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
             int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
             if (current_count > 0) {
                 current_count--;
-                detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
+                detection_ring_buffer_.update_detection({freq_hash, current_count, stored_rssi});
             } else {
-                detection_ring_buffer_.update_detection(freq_hash, 0, -120);
+                detection_ring_buffer_.update_detection({freq_hash, 0, -120});
             }
         }
     }
@@ -814,7 +814,7 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
         if (effective_rssi >= effective_threshold) {
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
             current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
-            detection_ring_buffer_.update_detection(freq_hash, current_count, effective_rssi);
+            detection_ring_buffer_.update_detection({freq_hash, current_count, effective_rssi});
 
             if (current_count >= MIN_DETECTION_COUNT) {
                 should_log = true;
@@ -840,9 +840,9 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
             int32_t stored_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
             if (current_count > 0) {
                 current_count--;
-                detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
+                detection_ring_buffer_.update_detection({freq_hash, current_count, stored_rssi});
             } else {
-                detection_ring_buffer_.update_detection(freq_hash, 0, -120);
+                detection_ring_buffer_.update_detection({freq_hash, 0, -120});
             }
         }
     }
@@ -952,7 +952,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
             current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
 
             // Write to buffer (safe)
-            detection_ring_buffer_.update_detection(freq_hash, current_count, rssi);
+            detection_ring_buffer_.update_detection({freq_hash, current_count, rssi});
 
             if (current_count >= MIN_DETECTION_COUNT) {
                 // We DON'T write log here. We only prepare data.
@@ -982,9 +982,9 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 
             if (current_count > 0) {
                 current_count--;
-                detection_ring_buffer_.update_detection(freq_hash, current_count, stored_rssi);
+                detection_ring_buffer_.update_detection({freq_hash, current_count, stored_rssi});
             } else {
-                detection_ring_buffer_.update_detection(freq_hash, 0, -120);
+                detection_ring_buffer_.update_detection({freq_hash, 0, -120});
             }
         }
     }

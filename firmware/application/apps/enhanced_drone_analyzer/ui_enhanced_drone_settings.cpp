@@ -9,10 +9,11 @@
 #include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
 #include "eda_unified_database.hpp"
-#include "eda_database_parser.hpp"
+// Note: eda_database_parser.hpp is not used (only referenced in comments)
 #include "file.hpp"
-#include "portapack.hpp"
-#include "string_format.hpp"
+#include "ff.h"
+// Note: portapack.hpp is not used in this file
+// Note: string_format.hpp is not used in this file
 #include <algorithm>
 #include <cstring>
 #include <cstdlib>
@@ -970,14 +971,25 @@ bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* f
 }
 
 // DroneDatabaseListView
-DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav) 
-    : View(), nav_(nav), database_view_() {
+// Static member definitions (required for ODR compliance)
+DroneDatabaseManager::DatabaseView DroneDatabaseListView::g_database_view{};
+Mutex DroneDatabaseListView::g_database_mutex{};
+bool DroneDatabaseListView::g_database_loaded = false;  // Note: No volatile needed - mutex provides synchronization
+
+DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav)
+    : View(), nav_(nav) {
     add_children({&menu_view_});
-    database_view_ = DroneDatabaseManager::load_database();
+    // Lock mutex before accessing static member
+    MutexLock lock(g_database_mutex, LockOrder::DATA_MUTEX);
+    // Lazy initialization: only load database once
+    if (!g_database_loaded) {
+        g_database_view = DroneDatabaseManager::load_database();
+        g_database_loaded = true;
+    }
     menu_view_.clear();
     menu_view_.add_item({"[+ ADD NEW FREQUENCY]", Color::white(), nullptr, nullptr});
-    for (size_t i = 0; i < database_view_.count; ++i) {
-        const auto& entry = database_view_.entries[i];
+    for (size_t i = 0; i < g_database_view.count; ++i) {
+        const auto& entry = g_database_view.entries[i];
         constexpr size_t FREQ_BUF_SIZE = 24;
         char freq_buf[FREQ_BUF_SIZE];
         FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), entry.freq);
@@ -999,13 +1011,14 @@ void DroneDatabaseListView::on_entry_selected(size_t index) noexcept {
     if (index == 0) {
         DroneDbEntry empty_entry;
         auto on_add = [this](const DroneDbEntry& entry) {
-            if (entry.freq != 0 && database_view_.count < DroneDatabaseManager::MAX_DATABASE_ENTRIES) {
-                database_view_.entries[database_view_.count++] = entry;
-                save_changes();
+            MutexLock lock(g_database_mutex, LockOrder::DATA_MUTEX);
+            if (entry.freq != 0 && g_database_view.count < DroneDatabaseManager::MAX_DATABASE_ENTRIES) {
+                g_database_view.entries[g_database_view.count++] = entry;
+                save_changes_locked();  // Use unlocked version since we already hold the mutex
                 menu_view_.clear();
                 menu_view_.add_item({"[+ ADD NEW FREQUENCY]", Color::white(), nullptr, nullptr});
-                for (size_t i = 0; i < database_view_.count; ++i) {
-                    const auto& entry = database_view_.entries[i];
+                for (size_t i = 0; i < g_database_view.count; ++i) {
+                    const auto& entry = g_database_view.entries[i];
                     constexpr size_t FREQ_BUF_SIZE = 24;
                     char freq_buf[FREQ_BUF_SIZE];
                     FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), entry.freq);
@@ -1024,13 +1037,14 @@ void DroneDatabaseListView::on_entry_selected(size_t index) noexcept {
     } else {
         size_t entry_index = index - 1;
         auto on_edit = [this, entry_index](const DroneDbEntry& entry) {
+            MutexLock lock(g_database_mutex, LockOrder::DATA_MUTEX);
             if (entry.freq != 0) {
-                database_view_.entries[entry_index] = entry;
-                save_changes();
+                g_database_view.entries[entry_index] = entry;
+                save_changes_locked();  // Use unlocked version since we already hold the mutex
                 menu_view_.clear();
                 menu_view_.add_item({"[+ ADD NEW FREQUENCY]", Color::white(), nullptr, nullptr});
-                for (size_t i = 0; i < database_view_.count; ++i) {
-                    const auto& entry = database_view_.entries[i];
+                for (size_t i = 0; i < g_database_view.count; ++i) {
+                    const auto& entry = g_database_view.entries[i];
                     constexpr size_t FREQ_BUF_SIZE = 24;
                     char freq_buf[FREQ_BUF_SIZE];
                     FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), entry.freq);
@@ -1045,12 +1059,22 @@ void DroneDatabaseListView::on_entry_selected(size_t index) noexcept {
             }
         };
         using EditorViewT = DroneEntryEditorView<decltype(on_edit)>;
-        nav_.push<EditorViewT>(database_view_.entries[entry_index], std::move(on_edit));
+        nav_.push<EditorViewT>(g_database_view.entries[entry_index], std::move(on_edit));
     }
 }
 
 // DIAMOND OPTIMIZATION: noexcept for save
-void DroneDatabaseListView::save_changes() noexcept { (void)DroneDatabaseManager::save_database(database_view_); }
+// Note: Assumes g_database_mutex is already held by caller
+// This prevents deadlock when called from on_entry_selected() which already holds the lock
+void DroneDatabaseListView::save_changes_locked() noexcept {
+    (void)DroneDatabaseManager::save_database(g_database_view);
+}
+
+// Public wrapper that acquires the lock for external callers
+void DroneDatabaseListView::save_changes() noexcept {
+    MutexLock lock(g_database_mutex, LockOrder::DATA_MUTEX);
+    save_changes_locked();
+}
 
 // DIAMOND OPTIMIZATION: noexcept for key handling
 bool DroneDatabaseListView::on_key(const KeyEvent key) noexcept {

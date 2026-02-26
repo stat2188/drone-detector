@@ -55,13 +55,25 @@ namespace DetectionBufferConstants {
 // / @brief Hysteresis margin for RSSI comparisons (dB)
 static constexpr int32_t HYSTERESIS_MARGIN_DB = 5;
 
-// / @brief Default RSSI value when no signal is detected (invalid dBm marker)
-static constexpr RSSIValue DEFAULT_RSSI_DBM = EDA::Constants::RSSI_INVALID_DBM;
-
 // DIAMOND OPTIMIZATION: Unified MedianFilter
 // / @brief Median filter for wideband RSSI values
 // / @note Using unified MedianFilter template to eliminate code duplication
 using WidebandMedianFilter = MedianFilter<int16_t, 11>;
+
+// DETECTION UPDATE STRUCT (Type-Safe Parameters)
+// / @brief Detection update parameters (prevents parameter swapping bugs)
+// / @note Groups related parameters into a single POD struct for type safety
+// / @note DIAMOND FIX: Addresses Clang warning about convertible parameters
+// / @note Memory layout: 16 bytes total (8+1+3pad+4), 4-byte aligned
+#pragma pack(push, 4)
+struct DetectionUpdate {
+    FrequencyHash frequency_hash;  ///< Hash of frequency to update
+    DetectionCount detection_count; ///< Number of detections
+    RSSIValue rssi_value;         ///< RSSI value in dBm
+};
+#pragma pack(pop)
+
+static_assert(sizeof(DetectionUpdate) == 16, "DetectionUpdate must be 16 bytes (4-byte aligned)");
 
 // ENTRY STRUCT (Atomic-Safe POD)
 // / @brief Detection entry in ring buffer
@@ -155,15 +167,12 @@ public:
     DetectionRingBuffer& operator=(const DetectionRingBuffer&) = delete;
 
     // / @brief Update detection entry (mutex-protected writer)
-    // / @param frequency_hash Hash of frequency to update
-    // / @param detection_count New detection count
-    // / @param rssi_value New RSSI value
+    // / @param update Detection update parameters (frequency_hash, detection_count, rssi_value)
     // / @note Acquires buffer_mutex_ for thread safety
     // / @note Includes recursion detection to prevent deadlock
     // / @warning DO NOT call from ISR context (mutex not ISR-safe)
-    void update_detection(FrequencyHash frequency_hash,
-                        DetectionCount detection_count,
-                        RSSIValue rssi_value) noexcept;
+    // / @note DIAMOND FIX: Uses DetectionUpdate struct to prevent parameter swapping
+    void update_detection(const DetectionUpdate& update) noexcept;
 
     // / @brief Get detection count (lock-free reader with versioning)
     // / @param frequency_hash Hash of frequency to query

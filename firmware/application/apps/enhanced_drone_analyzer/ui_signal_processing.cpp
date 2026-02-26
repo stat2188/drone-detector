@@ -18,13 +18,13 @@ namespace ui::apps::enhanced_drone_analyzer {
 // /   - Increments global_version_ for concurrent update detection
 // /   - Stores head_ with release semantics
 // / @note RED TEAM FIX: Recursion detection prevents deadlock when called recursively.
-// / @param frequency_hash Hash of frequency to update
-// / @param detection_count New detection count
-// / @param rssi_value New RSSI value
+// / @note DIAMOND FIX: Uses DetectionUpdate struct to prevent parameter swapping
+// / @param update Detection update parameters (frequency_hash, detection_count, rssi_value)
 
-void DetectionRingBuffer::update_detection(FrequencyHash frequency_hash,
-                                        DetectionCount detection_count,
-                                        RSSIValue rssi_value) noexcept {
+void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexcept {
+    const FrequencyHash frequency_hash = update.frequency_hash;
+    const DetectionCount detection_count = update.detection_count;
+    const RSSIValue rssi_value = update.rssi_value;
     const Timestamp current_time = static_cast<Timestamp>(chTimeNow());
 
     // Check recursion depth BEFORE acquiring mutex
