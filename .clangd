@@ -1,201 +1,175 @@
-# ==============================================================================
-# Clangd configuration for HackRF Mayhem firmware
-# ==============================================================================
-# Target: ARM Cortex-M0 (LPC43xx M0 core) - PortaPack H1
-# Toolchain: arm-none-eabi-gcc (10.3.1)
-# Build System: CMake
-# ==============================================================================
-# This configuration is based on the actual compile_commands.json from the build system
-# All flags and include paths match the actual CMake build configuration
-# ==============================================================================
+# =============================================================================
+# clangd Configuration for HackRF Mayhem / PortaPack Firmware
+# Target: LPC43xx_M0 (ARM Cortex-M0, NXP LPC4330)
+# Compiler: arm-none-eabi-g++ (GNU Arm Embedded Toolchain 9.3.1)
+# clangd: MSYS2 UCRT64 Clang 18.x
+# =============================================================================
+#
+# IMPORTANT:
+# 1. Place this file as ".clangd" (with leading dot!) in project ROOT
+# 2. File must be in YAML format (not JSON!)
+# 3. clangd uses CLANG compiler for analysis, but queries GCC for includes
+# =============================================================================
 
 CompileFlags:
+  # ---------------------------------------------------------------------------
+  # Compiler Selection - Query GCC driver for system includes
+  # CRITICAL: This tells clangd to extract include paths from GCC
+  # ---------------------------------------------------------------------------
+  Compiler: C:/Program Files (x86)/GNU Arm Embedded Toolchain/9 2020-q2-update/bin/arm-none-eabi-g++.exe
+
+  # ---------------------------------------------------------------------------
+  # Core Compiler Flags - Compatible with both GCC and Clang
+  # ---------------------------------------------------------------------------
   Add:
-    # ========================================================================
-    # Project include paths (relative to workspace root)
-    # These match the actual include paths from compile_commands.json
-    # ========================================================================
-    - "firmware/application"
-    - "firmware/application/."  # Current directory for generated headers
-    - "firmware/common"
-    - "firmware/application/ui"
-    - "firmware/application/hw"
-    - "firmware/application/apps"
-    - "firmware/application/protocols"
-    - "firmware/application/bmps"
-    - "firmware/chibios/os/hal/include"
-    - "firmware/chibios/os/ports/common/ARMCMx"
-    - "firmware/chibios/os/ports/common/ARMCMx/CMSIS/include"
-    - "firmware/chibios/os/ports/GCC/ARMCMx"
-    - "firmware/chibios/os/kernel/include"
-    - "firmware/chibios/os/various"
-    - "firmware/chibios/test"
-    - "firmware/chibios-portapack/boards/PORTAPACK_APPLICATION"
-    - "firmware/chibios-portapack/os/hal/platforms/LPC43xx_M0"
-    - "firmware/chibios-portapack/os/hal/platforms/LPC43xx"
-    - "firmware/chibios-portapack/os/ports/GCC/ARMCMx/LPC43xx_M0"
-    - "firmware/chibios-portapack/ext/fatfs/src"
-    - "hackrf/firmware/libopencm3/include"
-    - "hackrf/firmware/common"
-    - "hackrf/firmware"
-    - "build/firmware/application"  # Generated headers from CMake
-
-    # ========================================================================
-    # ARM toolchain system include paths
-    # These paths allow Clangd to find <cstdint>, <array>, <algorithm>, etc.
-    # ========================================================================
-    #
-    # IMPORTANT: The path below is configured for the current system's ARM toolchain.
-    # Developers on other systems or with different toolchain installations MUST
-    # update these paths to match their environment.
-    #
-    # To find your toolchain paths, run: arm-none-eabi-g++ -v
-    #
-    # Example paths for common ARM toolchain installations:
-    #
-    # Windows (x86): C:/Program Files (x86)/GNU Arm Embedded Toolchain/<version>/
-    # Windows (x64): C:/Program Files/GNU Arm Embedded Toolchain/<version>/
-    # Linux/macOS: /usr/arm-none-eabi/ or /usr/local/gcc-arm-none-eabi-/
-    #
-    # ARM toolchain v10.3.1 (current installation)
-    - "C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/arm-none-eabi/include/c++/10.3.1"
-    - "C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/arm-none-eabi/include/c++/10.3.1/arm-none-eabi"
-    - "C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/lib/gcc/arm-none-eabi/10.3.1/include"
-    - "C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/lib/gcc/arm-none-eabi/10.3.1/include-fixed"
-    - "C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/arm-none-eabi/include"
-
-    # ========================================================================
-    # Compiler flags for ARM Cortex-M0 (LPC43xx M0 core)
-    # NOTE: These flags are from the actual compile_commands.json
-    # ========================================================================
-    - "-mcpu=cortex-m0"      # From compile_commands.json (M0 core)
-    - "-mthumb"              # From compile_commands.json
-    - "-mfloat-abi=soft"     # From compile_commands.json (M0 has no FPU)
-    - "-mno-thumb-interwork" # From compile_commands.json
-
-    # ========================================================================
-    # C++20 standard (matches CMakeLists.txt:41-46)
-    # ========================================================================
-    - "-std=c++20"
-
-    # ========================================================================
-    # Embedded-specific flags (from compile_commands.json)
-    # ========================================================================
-    - "-fno-rtti"
-    - "-fno-exceptions"
-    - "-fno-common"          # From compile_commands.json
-    - "-ffunction-sections"  # From compile_commands.json
-    - "-fdata-sections"      # From compile_commands.json
-    - "-Os"                  # Optimize for size (from compile_commands.json)
-
-    # ========================================================================
-    # Warning flags (matches CMakeLists.txt:404-407)
-    # ========================================================================
-    - "-Wall"
-    - "-Wextra"
-    - "-Wno-psabi"
-    - "-Wuninitialized"
-    - "-Weffc++"
-    - "-Wno-volatile"
-
-    # ========================================================================
-    # Defines (from compile_commands.json)
-    # ========================================================================
-    - "-DCORTEX_USE_FPU=FALSE"  # M0 core has no FPU
-    - "-DTHUMB_NO_INTERWORKING"
-    - "-DTHUMB_PRESENT"
+    # C++ Standard - GNU extensions have partial Clang support
+    - "-std=gnu++20"
+    
+    # Target Architecture - ARM Cortex-M0 (LPC43xx_M0 subsystem)
+    - "-mcpu=cortex-m0"
+    - "-mthumb"
+    
+    # NOTE: FPU is DISABLED for this project (USE_FPU=no in CMake)
+    
+    # Preprocessor Defines - Target Hardware
     - "-DLPC43XX"
-    - "-DLPC43XX_M0"
+    - "-DLPC43xx_M0"
     - "-D__NEWLIB__"
     - "-DHACKRF_ONE"
     - "-DTOOLCHAIN_GCC"
     - "-DTOOLCHAIN_GCC_ARM"
     - "-D_RANDOM_TCC=0"
     - "-DTHUMB"
-    - "-DGCC_VERSION_MISMATCH=1"  # From compile_commands.json
+    
+    # Preprocessor Defines - Board
+    - "-DBOARD_PORTAPACK_APPLICATION"
+    
+    # Preprocessor Defines - ChibiOS
+    - "-DCH_KERNEL_MAJOR=3"
+    - "-DCH_KERNEL_MINOR=0"
+    - "-DCH_USE_REGISTRY=TRUE"
+    - "-DCH_USE_WAIT_EXIT=TRUE"
+    - "-DCH_USE_HEAP=TRUE"
+    - "-DCH_USE_MUTEXES=TRUE"
+    - "-DCH_USE_EVENTS=TRUE"
+    - "-DCH_USE_MESSAGES=TRUE"
+    
+    # Disable exceptions and RTTI (embedded constraints)
+    - "-fno-exceptions"
+    - "-fno-rtti"
+    - "-fno-threadsafe-statics"
+    
+    # Optimization flags for analysis
+    - "-Os"
+    - "-g"
+    - "-ffunction-sections"
+    - "-fdata-sections"
+    
+    # Warnings (compatible with Clang)
+    - "-Wall"
+    - "-Wextra"
+    - "-Wuninitialized"
+    - "-Wno-volatile"
+    - "-Wno-unused-parameter"
+    - "-Wno-missing-field-initializers"
+    # Clang-specific: suppress GCC-only warnings
+    - "-Wno-unknown-warning-option"
+    - "-Wno-gnu-alignof-expression"
+    
+    # -------------------------------------------------------------------------
+    # Project Include Paths - Root and Application
+    # -------------------------------------------------------------------------
+    - "-I."
+    - "-I./firmware"
+    - "-I./firmware/application"
+    - "-I./firmware/application/apps"
+    - "-I./firmware/application/ui"
+    - "-I./firmware/application/hw"
+    - "-I./firmware/application/protocols"
+    - "-I./firmware/application/bmps"
+    
+    # Common and Baseband
+    - "-I./firmware/common"
+    - "-I./firmware/baseband"
+    - "-I./hardware"
+    
+    # ChibiOS Include Paths
+    - "-I./firmware/chibios-portapack/boards/PORTAPACK_APPLICATION"
+    - "-I./firmware/chibios-portapack/os/hal/include"
+    - "-I./firmware/chibios-portapack/os/rt/include"
+    - "-I./firmware/chibios-portapack/os/hal/platforms/LPC43xx_M0"
+    - "-I./firmware/chibios-portapack/os/hal/platforms/LPC43xx"
+    - "-I./firmware/chibios-portapack/os/ports/GCC/ARMCMx/LPC43xx_M0"
+    - "-I./firmware/chibios-portapack/os/common/ports/ARMCMx"
+    - "-I./firmware/chibios-portapack/os/various"
+    - "-I./firmware/chibios-portapack/os/various/fatfs_bindings"
+    
+    # HackRF Include Paths
+    - "-I./hackrf/firmware/libopencm3/include"
+    - "-I./hackrf/firmware/common"
+    - "-I./hackrf/firmware"
+    
+    # External Library Include Paths
+    - "-I./firmware/application/external"
+    
+    # Build Directory Include (for generated files)
+    - "-I./firmware/build/application"
 
+  # ---------------------------------------------------------------------------
+  # Remove GCC-specific flags that Clang doesn't understand
+  # ---------------------------------------------------------------------------
   Remove:
-    # ========================================================================
-    # Remove conflicting flags from clangd defaults
-    # ========================================================================
+    - "-msse*"
     - "-march=*"
-    - "-mtune=*"
-    # Remove flags that may cause issues with Clangd
-    - "-fno-builtin"
-    # Remove linker specs (not needed for clangd analysis)
+    - "-mfpu=*"
+    - "-mfloat-abi=*"
     - "--specs=*"
+    - "-flto"
+    - "-Weffc++"
+    - "-Wno-psabi"
 
-# ==============================================================================
-# Index configuration
-# ==============================================================================
-Index:
-  # Background indexing for faster code navigation
-  Background: Build
-
-# ==============================================================================
-# Diagnostics configuration
-# ==============================================================================
+# =============================================================================
+# Diagnostics Configuration (SINGLE SECTION - no duplicates!)
+# =============================================================================
 Diagnostics:
-  # Allow indirect includes (don't warn about missing includes)
-  MissingIncludes: None
-  # Enforce strict checking of unused include files
+  Suppress:
+    - "pp_file_not_found"
+    - "missing-prototypes"
+    - "strict-prototypes"
+    # Suppress errors for GCC-specific constructs
+    - "gcc_compat"
+  
   UnusedIncludes: Strict
-
-  # ========================================================================
-  # Clang-tidy checks configuration
-  # ========================================================================
+  MissingIncludes: Strict
+  
   ClangTidy:
     Add:
-      # Enable useful checks for embedded development
-      - "modernize-*"
-      - "performance-*"
-      - "readability-*"
       - "bugprone-*"
-      - "cppcoreguidelines-*"
+      - "performance-*"
     Remove:
-      # Disable checks that are not suitable for embedded systems
-      - "cppcoreguidelines-avoid-magic-numbers"
-      - "cppcoreguidelines-pro-type-vararg"
-      - "cppcoreguidelines-pro-bounds-array-to-pointer-decay"
-      - "modernize-use-trailing-return-type"
       - "readability-magic-numbers"
       - "readability-identifier-length"
-      - "cppcoreguidelines-avoid-c-arrays"
-      - "modernize-avoid-c-arrays"
+      - "cppcoreguidelines-pro-type-vararg"
       - "cppcoreguidelines-pro-bounds-pointer-arithmetic"
-      - "cppcoreguidelines-pro-type-reinterpret-cast"
-      - "cppcoreguidelines-pro-type-const-cast"
-      - "cppcoreguidelines-pro-type-cstyle-cast"
-      # Disable overly strict initialization checks for embedded code
-      - "cppcoreguidelines-init-variables"
-      # Disable easily-swappable-parameters check (false positive for distinct types)
-      - "bugprone-easily-swappable-parameters"
+      - "modernize-*"  # Embedded code often uses older patterns intentionally
 
-# ==============================================================================
-# Completion configuration
-# ==============================================================================
-Completion:
-  # Include code completion for all scopes
-  AllScopes: Yes
-  # Show function arguments in completion
-  ArgumentLists: Yes
-  # Enable snippet insertion in completions
-  EnableSnippets: Yes
+# =============================================================================
+# Index Settings
+# =============================================================================
+Index:
+  StandardLibrary: No
+  Background: Build
 
-# ==============================================================================
-# Hover configuration
-# ==============================================================================
+# =============================================================================
+# Hover and InlayHints
+# =============================================================================
 Hover:
-  # Show documentation in hover
   ShowAKA: Yes
 
-# ==============================================================================
-# Inlay hints configuration
-# ==============================================================================
 InlayHints:
-  # Enable parameter name hints
-  ParameterNames: Yes
-  # Enable type hints for deduced types
-  DeducedTypes: Yes
-  # Designator inlay hints
   Designators: Yes
+  ParameterNames: Yes
+  DeducedTypes: Yes
+
+Completion:
+  AllScopes: Yes

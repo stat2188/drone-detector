@@ -1,3 +1,141 @@
 {
-    "C_Cpp.default.compilerPath": "C:/msys64/mingw64/bin/gcc.exe"
+    // =============================================================================
+    // VS Code Settings for HackRF Mayhem Development
+    // File: .vscode/settings.json
+    // =============================================================================
+    //
+    // clangd configuration for ARM cross-compilation project
+    // =============================================================================
+    
+    // ---------------------------------------------------------------------------
+    // clangd Configuration
+    // ---------------------------------------------------------------------------
+    "clangd.path": "C:/msys64/ucrt64/bin/clangd.exe",
+    "clangd.arguments": [
+        // CRITICAL: Query GCC driver for ARM system includes
+        "--query-driver=C:/Program Files (x86)/GNU Arm Embedded Toolchain/**/arm-none-eabi-g++*.exe",
+        
+        // Background indexing for faster responses
+        "--background-index",
+        
+        // Enable clang-tidy static analysis
+        "--clang-tidy",
+        
+        // Header insertion strategy
+        "--header-insertion=iwyu",
+        
+        // Detailed completion with function signatures
+        "--completion-style=detailed",
+        "--function-arg-placeholders",
+        
+        // Fallback style for formatting
+        "--fallback-style=llvm",
+        
+        // Logging level (use 'error' for minimal output, 'info' for debugging)
+        "--log=info",
+        
+        // Pretty-print JSON output
+        "--pretty",
+        
+        // CRITICAL: Use compile_commands.json if available
+        "--compile-commands-dir=${workspaceFolder}",
+        
+        // Limit memory usage (important for large projects)
+        "--limit-results=50",
+        
+        // Enable header context for better code completion
+        "--header-insertion-decorators"
+    ],
+    
+    // Disable Microsoft C/C++ IntelliSense (REQUIRED for clangd!)
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.autocomplete": "disabled",
+    "C_Cpp.errorSquiggles": "disabled",
+    
+    // ---------------------------------------------------------------------------
+    // Editor Configuration
+    // ---------------------------------------------------------------------------
+    "editor.formatOnSave": false,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    
+    // ---------------------------------------------------------------------------
+    // Files Configuration
+    // ---------------------------------------------------------------------------
+    "files.associations": {
+        "*.h": "c",
+        "*.hpp": "cpp",
+        "*.cpp": "cpp",
+        "*.c": "c",
+        
+        // ChibiOS headers
+        "ch.h": "c",
+        "hal.h": "c",
+        
+        // LPC43xx headers
+        "lpc43xx.h": "c",
+        "lpc43xx_m0.h": "c",
+        
+        // PortaPack headers
+        "portapack.hpp": "cpp",
+        "ui_widget.hpp": "cpp",
+        "ui_navigation.hpp": "cpp",
+        "ais_packet.hpp": "cpp",
+        "baseband_api.hpp": "cpp",
+        "event_m0.hpp": "cpp"
+    },
+    
+    // Exclude patterns for file search
+    "files.exclude": {
+        "**/.git": true,
+        "**/build": true,
+        "**/.cache": true
+    },
+    
+    // Search exclude patterns
+    "search.exclude": {
+        "**/build": true,
+        "**/.cache": true
+    },
+    
+    // ---------------------------------------------------------------------------
+    // Terminal Configuration (MSYS2)
+    // ---------------------------------------------------------------------------
+    "terminal.integrated.profiles.windows": {
+        "MSYS2 UCRT64": {
+            "path": "C:\\msys64\\ucrt64.exe",
+            "args": ["--defterm", "--here"]
+        },
+        "MSYS2 Bash": {
+            "path": "C:\\msys64\\usr\\bin\\bash.exe",
+            "args": ["--login", "-i"]
+        },
+        "Command Prompt": {
+            "path": "C:\\Windows\\System32\\cmd.exe"
+        }
+    },
+    
+    "terminal.integrated.defaultProfile.windows": "MSYS2 UCRT64",
+    "editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "scope": "googletest.failed",
+                "settings": {
+                    "foreground": "#f00"
+                }
+            },
+            {
+                "scope": "googletest.passed",
+                "settings": {
+                    "foreground": "#0f0"
+                }
+            },
+            {
+                "scope": "googletest.run",
+                "settings": {
+                    "foreground": "#0f0"
+                }
+            }
+        ]
+    }
 }
