@@ -9,9 +9,7 @@
 #include <array>
 #include <cstring>
 #include <ch.h>
-#include <chtypes.h>
 #include "eda_constants.hpp"
-#include "eda_locking.hpp"
 #include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

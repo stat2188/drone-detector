@@ -4,7 +4,6 @@
 #include "eda_unified_database.hpp"
 #include "eda_database_parser.hpp"
 #include "file.hpp"
-#include "sd_card.hpp"
 #include <cstdio>
 #include <cstring>
 

@@ -4,8 +4,9 @@
 #define SCANNING_COORDINATOR_HPP_
 
 #include "ui_drone_common_types.hpp"
+#include <cstdint>  // For uint32_t
+#include <cstddef>  // For size_t
 #include "ui_navigation.hpp"
-#include "ui_drone_audio.hpp"
 #include "eda_constants.hpp"
 
 class AudioManager;

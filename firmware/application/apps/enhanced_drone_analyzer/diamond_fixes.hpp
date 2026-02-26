@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include "eda_constants.hpp"
-#include "eda_locking.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 namespace DiamondFixes {

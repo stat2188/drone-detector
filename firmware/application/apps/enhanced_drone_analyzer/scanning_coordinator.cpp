@@ -4,7 +4,6 @@
 #include "eda_locking.hpp"  // For CriticalSection
 #include "scanning_coordinator.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
-#include "diamond_core.hpp"
 #include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
