@@ -19,6 +19,14 @@ class DroneHardwareController;
 class DroneScanner;
 class DroneDisplayController;
 
+// * @brief Result codes for start_coordinated_scanning() operation
+enum class StartResult {
+    SUCCESS,                      ///< Scanning thread started successfully
+    ALREADY_ACTIVE,               ///< Scanning is already active
+    INITIALIZATION_NOT_COMPLETE,  ///< Database initialization not complete yet
+    THREAD_CREATION_FAILED        ///< Thread creation failed (chThdCreateStatic returned nullptr)
+};
+
 // * * @brief Scanning coordinator for drone detection operations * * Manages the scanning thread lifecycle and coordinates between * hardware, scanner, display, and audio components. * * DIAMOND OPTIMIZATIONS: * - Stack-only allocation (8KB working area) * - Atomic flag for thread-safe state management * - No heap allocation (std::atomic<bool> only)
 class ScanningCoordinator {
 public:
@@ -38,8 +46,13 @@ public:
     ScanningCoordinator& operator=(const ScanningCoordinator&) = delete;
     ScanningCoordinator& operator=(ScanningCoordinator&&) = delete;
 
-    // * * @brief Start the coordinated scanning thread * @return true if thread started successfully, false otherwise * * Uses ChibiOS chThdCreateStatic() for stack-based thread creation. * Returns false if thread creation fails or already running.
-    bool start_coordinated_scanning() noexcept;
+    // * @brief Start the coordinated scanning thread
+    // @return StartResult indicating success or reason for failure
+    // * Uses ChibiOS chThdCreateStatic() for stack-based thread creation.
+    // * Returns ALREADY_ACTIVE if scanning is already running.
+    // * Returns INITIALIZATION_NOT_COMPLETE if database initialization is not complete yet.
+    // * Returns THREAD_CREATION_FAILED if chThdCreateStatic returns nullptr.
+    StartResult start_coordinated_scanning() noexcept;
 
     // * * @brief Stop the coordinated scanning thread * * Sets the atomic flag and waits for thread termination. * Safe to call multiple times.
     void stop_coordinated_scanning() noexcept;
@@ -69,6 +82,10 @@ private:
 
     volatile bool scanning_active_{false};
     volatile bool thread_terminated_{false};  ///< Thread termination flag (set by thread when exiting)
+    // DIAMOND NOTE: thread_generation_ is a uint32_t that could theoretically wrap after 2^32 thread starts.
+    // This is extremely unlikely in practice (would require ~4 billion thread restarts), but documented for completeness.
+    // On ARM Cortex-M4, 32-bit reads are atomic, so this is safe for the current use case.
+    volatile uint32_t thread_generation_{0};  ///< Thread generation counter (prevents missed signals during restart)
     ::Thread* scanning_thread_{nullptr};
     uint32_t scan_interval_ms_{EDA::Constants::DEFAULT_SCAN_INTERVAL_MS};
     

@@ -3560,9 +3560,11 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
         }
     }
 
-    // FIX #2: Continue initialization after rendering is complete
-    // This prevents nested stack frames by calling initialization after paint() returns
-    continue_initialization();
+    // Stack Overflow Prevention: Do NOT call continue_initialization() from paint()!
+    // Calling continue_initialization() from paint() creates nested stack frames that
+    // exceed the 4KB stack limit. The message_handler_frame_sync_ already handles
+    // initialization by calling step_deferred_initialization() from the UI event loop,
+    // not from paint(). The initialization continues naturally via the frame sync handler.
 }
 
 bool EnhancedDroneSpectrumAnalyzerView::on_key(const KeyEvent key) {
@@ -4047,7 +4049,28 @@ void EnhancedDroneSpectrumAnalyzerView::on_hide() {
 
 void EnhancedDroneSpectrumAnalyzerView::start_scanning_thread() {
     if (scanning_coordinator_.is_scanning_active()) return;
-    scanning_coordinator_.start_coordinated_scanning();
+    
+    const auto result = scanning_coordinator_.start_coordinated_scanning();
+    
+    // Handle different start results
+    switch (result) {
+        case ScanningCoordinator::StartResult::SUCCESS:
+            // Scanning started successfully
+            break;
+        case ScanningCoordinator::StartResult::ALREADY_ACTIVE:
+            // Already active (shouldn't happen due to guard clause above)
+            break;
+        case ScanningCoordinator::StartResult::INITIALIZATION_NOT_COMPLETE:
+            // Database initialization not complete yet
+            // The UI event loop will retry on next frame sync
+            // See message_handler_frame_sync_ in ui_enhanced_drone_analyzer.hpp:1721
+            break;
+        case ScanningCoordinator::StartResult::THREAD_CREATION_FAILED:
+            // Thread creation failed - this is a critical error
+            // Log the error and notify user
+            display_controller_.show_error_message("Failed to start scanning thread");
+            break;
+    }
 }
 
 void EnhancedDroneSpectrumAnalyzerView::stop_scanning_thread() {
