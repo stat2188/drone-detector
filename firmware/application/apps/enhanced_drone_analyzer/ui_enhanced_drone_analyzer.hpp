@@ -12,6 +12,7 @@
 #include "eda_unified_database.hpp"
 #include "gradient.hpp"
 #include "scanning_coordinator.hpp"
+#include "ui_drone_audio.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_spectral_analyzer.hpp"
 #include "ui_signal_processing.hpp"
@@ -435,9 +436,6 @@ struct DetectionParams {
     void send_drone_detection_message(const DetectionParams& params);
 
     void update_tracked_drone(const DetectionParams& params);
-
-    void update_tracked_drone_internal(const DetectionParams& params);
-    // @note: Caller MUST hold data_mutex. This method assumes the mutex is already acquired.
 
     void remove_stale_drones();
 

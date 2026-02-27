@@ -7,7 +7,8 @@
 #include <cinttypes>
 #include <array>
 #include <limits>
-#include "rf_path.hpp"
+#include "utility.hpp"  // Provides int64_t, int32_t, uint32_t, uint8_t, size_t
+#include "rf_path.hpp"  // Provides rf::Frequency (int64_t)
 
 // Flash storage attribute for Cortex-M4
 #ifdef __GNUC__
@@ -18,7 +19,9 @@
 
 namespace EDA {
 
-using Frequency = rf::Frequency;
+// DIAMOND FIX: Define Frequency as int64_t for self-contained type safety
+// This matches rf::Frequency definition in rf_path.hpp but eliminates namespace resolution issues
+using Frequency = int64_t;
 using RSSI = int32_t;
 using BinIndex = size_t;
 using Threshold = int32_t;
@@ -30,8 +33,8 @@ namespace Constants {
 namespace FrequencyLimits {
     constexpr Frequency MIN_HARDWARE_FREQ =     1'000'000ULL;
     constexpr Frequency MAX_HARDWARE_FREQ =  7'200'000'000ULL;
-    constexpr Frequency MIN_SAFE_FREQ =        50'000'000ULL;
-    constexpr Frequency MAX_SAFE_FREQ =     6'000'000'000ULL;
+    constexpr Frequency MIN_SAFE_FREQ =        50'000'000ULL;  // 50 MHz - Minimum safe frequency
+    constexpr Frequency MAX_SAFE_FREQ =     7'200'000'000ULL;  // 7200 MHz - Maximum safe frequency (updated per requirements)
 }
 
 enum class ScanningMode : uint8_t {

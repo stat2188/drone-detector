@@ -10,17 +10,11 @@
 #include "eda_constants.hpp"
 #include "diamond_core.hpp"
 #include "diamond_fixes.hpp"
-#include "gradient.hpp"
 #include "eda_locking.hpp"
 #include "baseband_api.hpp"
 #include "portapack.hpp"
 #include "ui_navigation.hpp"
-#include "ui_receiver.hpp"
-#include "file_path.hpp"
-#include "string_format.hpp"
 #include "file.hpp"
-#include "tone_key.hpp"
-#include "rtc_time.hpp"
 #include "ui_fileman.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_enhanced_drone_settings.hpp"
@@ -38,7 +32,6 @@
 #include <utility>  // For std::move
 
 using namespace portapack;
-using namespace tonekey;
 #include <ch.h>
 #include <chmsg.h>
 
@@ -1298,7 +1291,7 @@ void DroneScanner::cleanup_database_and_scanner() {
     // Explicit destructor calls for placement new
     // Only call destructor if construction succeeded
     if (tracked_drones_ptr_ != nullptr && tracked_drones_constructed_) {
-        tracked_drones_ptr_->~array();
+        tracked_drones_ptr_->std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>::~array();
         tracked_drones_constructed_ = false;
         tracked_drones_ptr_ = nullptr;
     }
@@ -1382,7 +1375,7 @@ void DroneScanner::db_loading_thread_loop() {
                 freq_db_ptr_ = nullptr;
             }
             if (tracked_drones_ptr_ && tracked_drones_constructed_) {
-                tracked_drones_ptr_->~array();
+                tracked_drones_ptr_->std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>::~array();
                 tracked_drones_constructed_ = false;
                 tracked_drones_ptr_ = nullptr;
             }
@@ -1418,11 +1411,11 @@ void DroneScanner::db_loading_thread_loop() {
                     freq_db_constructed_ = false;
                     freq_db_ptr_ = nullptr;
                 }
-                if (tracked_drones_ptr_ && tracked_drones_constructed_) {
-                    tracked_drones_ptr_->~array();
-                    tracked_drones_constructed_ = false;
-                    tracked_drones_ptr_ = nullptr;
-                }
+            if (tracked_drones_ptr_ && tracked_drones_constructed_) {
+                tracked_drones_ptr_->std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>::~array();
+                tracked_drones_constructed_ = false;
+                tracked_drones_ptr_ = nullptr;
+            }
                 initialization_complete_ = false;
                 freq_db_loaded_ = false;
                 return;
