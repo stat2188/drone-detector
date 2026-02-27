@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include "eda_constants.hpp"
+#include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

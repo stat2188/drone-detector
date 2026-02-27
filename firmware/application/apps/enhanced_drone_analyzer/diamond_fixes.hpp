@@ -4,6 +4,7 @@
 #define DIAMOND_FIXES_HPP_
 
 #include <cstdint>
+#include <ch.h>
 #include "eda_constants.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

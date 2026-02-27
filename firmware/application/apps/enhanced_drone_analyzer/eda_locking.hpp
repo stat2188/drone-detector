@@ -7,6 +7,7 @@
 #include <new>
 #include <ch.h>
 #include <type_traits>
+#include <utility>
 
 // ChibiOS Compatibility Defines
 #define chThdGetSelf() chThdSelf()

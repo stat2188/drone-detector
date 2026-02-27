@@ -1,7 +1,7 @@
 // ui_enhanced_drone_settings.hpp
 
-#ifndef __UI_ENHANCED_DRONE_SETTINGS_HPP__
-#define __UI_ENHANCED_DRONE_SETTINGS_HPP__
+#ifndef UI_ENHANCED_DRONE_SETTINGS_HPP_
+#define UI_ENHANCED_DRONE_SETTINGS_HPP_
 
 // Part 1: Common Types (Shared with Scanner App)
 
@@ -522,4 +522,4 @@ private:
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
-#endif // __UI_ENHANCED_DRONE_SETTINGS_HPP__
+#endif // UI_ENHANCED_DRONE_SETTINGS_HPP_
