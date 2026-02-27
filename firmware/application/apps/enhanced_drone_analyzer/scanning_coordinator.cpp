@@ -1,14 +1,33 @@
 // * * @file scanning_coordinator.cpp * @brief Coordinate scanning operations for Enhanced Drone Analyzer * * DIAMOND CODE PRINCIPLES: * - Zero heap allocation: All memory is stack-allocated or in Flash * - No exceptions: All functions are noexcept * - Type-safe: Uses semantic type aliases * - Memory-safe: Uses ChibiOS RTOS for thread management * * @author Diamond Code Pipeline * @date 2026-02-20
 
 #include <cstdint>  // For uint32_t
-#include "eda_locking.hpp"  // For CriticalSection
+// DIAMOND FIX: Removed eda_locking.hpp dependency
+// - Eliminated thread_local lock stack tracking (caused double memory access)
+// - Added simple CriticalSection wrapper below
 #include "scanning_coordinator.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "ui_drone_common_types.hpp"  // For DroneAnalyzerSettings
 #include "ui_navigation.hpp"  // For NavigationView
+#include "radio.hpp"  // For rf::Frequency type
 #include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
+
+// DIAMOND FIX: Simple CriticalSection wrapper (replaces eda_locking.hpp)
+// Minimal RAII wrapper for ChibiOS chSysLock/chSysUnlock
+class CriticalSection {
+public:
+    CriticalSection() noexcept {
+        chSysLock();
+    }
+
+    ~CriticalSection() noexcept {
+        chSysUnlock();
+    }
+
+    CriticalSection(const CriticalSection&) = delete;
+    CriticalSection& operator=(const CriticalSection&) = delete;
+};
 
 // DIAMOND FIX: Coordinator Thread Working Area Definition
 stkalign_t ScanningCoordinator::coordinator_wa_[THD_WA_SIZE(ScanningCoordinator::COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
@@ -131,7 +150,7 @@ void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings&
     }
     
     // Update scanner frequency range
-    // DIAMOND FIX: Type-safe frequency comparison (Frequency is int64_t, settings are uint64_t)
+    // DIAMOND FIX: Type-safe frequency comparison (int64_t for frequency values)
     // Compare uint64_t value directly against INT64_MAX before casting to prevent overflow
     constexpr uint64_t INT64_MAX_U64 = 9223372036854775807ULL;
     
@@ -139,8 +158,8 @@ void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings&
     uint64_t min_freq = (settings.wideband_min_freq_hz > INT64_MAX_U64) ? INT64_MAX_U64 : settings.wideband_min_freq_hz;
     uint64_t max_freq = (settings.wideband_max_freq_hz > INT64_MAX_U64) ? INT64_MAX_U64 : settings.wideband_max_freq_hz;
     
-    scanner_.update_scan_range(static_cast<Frequency>(min_freq),
-                               static_cast<Frequency>(max_freq));
+    scanner_.update_scan_range(static_cast<int64_t>(min_freq),
+                               static_cast<int64_t>(max_freq));
 }
 
 void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summary) noexcept {

@@ -4,11 +4,37 @@
 #include "eda_unified_database.hpp"
 #include "eda_database_parser.hpp"
 #include "file.hpp"
-#include "eda_locking.hpp"
+// DIAMOND FIX: Removed eda_locking.hpp dependency
+// - Eliminated thread_local lock stack tracking (caused double memory access)
+// - Added simple MutexLock wrapper below
 #include <cstdio>
 #include <cstring>
+#include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
+
+// DIAMOND FIX: Simple MutexLock wrapper (replaces OrderedScopedLock)
+// Eliminates complex lock ordering and thread_local storage
+class MutexLock {
+public:
+    explicit MutexLock(Mutex& mtx) noexcept : mtx_(mtx), locked_(false) {
+        chMtxLock(&mtx_);
+        locked_ = true;
+    }
+
+    ~MutexLock() noexcept {
+        if (locked_) {
+            chMtxUnlock();
+        }
+    }
+
+    MutexLock(const MutexLock&) = delete;
+    MutexLock& operator=(const MutexLock&) = delete;
+
+private:
+    Mutex& mtx_;
+    bool locked_;
+};
 
 // ============================================================================
 // Constructor
@@ -39,7 +65,7 @@ UnifiedDroneDatabase::UnifiedDroneDatabase() noexcept
 // ============================================================================
 
 bool UnifiedDroneDatabase::initialize() noexcept {
-    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_);
     
     if (initialized_) {
         return true;  // Already initialized
@@ -56,7 +82,7 @@ bool UnifiedDroneDatabase::initialize() noexcept {
 }
 
 bool UnifiedDroneDatabase::load(const char* path) noexcept {
-    MutexLock db_lock(mutex_, LockOrder::SD_CARD_MUTEX);
+    MutexLock db_lock(mutex_);
     
     if (!initialized_) {
         return false;
@@ -144,7 +170,7 @@ bool UnifiedDroneDatabase::load(const char* path) noexcept {
 }
 
 bool UnifiedDroneDatabase::save(const char* path) noexcept {
-    MutexLock db_lock(mutex_, LockOrder::SD_CARD_MUTEX);
+    MutexLock db_lock(mutex_);
     
     if (!initialized_) {
         return false;
@@ -192,7 +218,7 @@ bool UnifiedDroneDatabase::save(const char* path) noexcept {
 }
 
 void UnifiedDroneDatabase::clear() noexcept {
-    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_);
     
     for (auto& entry : entries_) {
         entry.clear();
@@ -240,7 +266,7 @@ const UnifiedDroneEntry* UnifiedDroneDatabase::get_entry(size_t index) const noe
 // ============================================================================
 
 int UnifiedDroneDatabase::add_entry(const UnifiedDroneEntry& entry) noexcept {
-    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_);
     
     if (!initialized_) {
         return -1;
@@ -279,7 +305,7 @@ int UnifiedDroneDatabase::add_entry(const UnifiedDroneEntry& entry) noexcept {
 }
 
 bool UnifiedDroneDatabase::update_entry(size_t index, const UnifiedDroneEntry& entry) noexcept {
-    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_);
     
     if (!initialized_) {
         return false;
@@ -315,7 +341,7 @@ bool UnifiedDroneDatabase::update_entry(size_t index, const UnifiedDroneEntry& e
 }
 
 bool UnifiedDroneDatabase::delete_entry(size_t index) noexcept {
-    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_);
     
     if (!initialized_) {
         return false;
@@ -356,7 +382,7 @@ bool UnifiedDroneDatabase::delete_entry(size_t index) noexcept {
 // ============================================================================
 
 bool UnifiedDroneDatabase::add_observer(DatabaseObserverCallback callback, void* user_data) noexcept {
-    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_);
     
     if (callback == nullptr) {
         return false;
@@ -377,7 +403,7 @@ bool UnifiedDroneDatabase::add_observer(DatabaseObserverCallback callback, void*
 }
 
 void UnifiedDroneDatabase::remove_observer(const DatabaseObserverCallback callback) noexcept {
-    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_);
     
     for (auto& observer : observers_) {
         if (observer.callback == callback) {
@@ -411,7 +437,7 @@ bool UnifiedDroneDatabase::validate_entry(const UnifiedDroneEntry& entry) const 
 // ============================================================================
 
 DatabaseStats UnifiedDroneDatabase::get_stats() const noexcept {
-    MutexLock db_lock(mutex_, LockOrder::DATA_MUTEX);
+    MutexLock db_lock(mutex_);
     return stats_;
 }
 

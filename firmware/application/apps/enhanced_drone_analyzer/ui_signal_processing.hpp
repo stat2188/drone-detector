@@ -1,6 +1,11 @@
 // Signal processing utilities for Enhanced Drone Analyzer
 // Zero-heap, RAII, noexcept, thread-safe implementations
 // Target: STM32F405 (ARM Cortex-M4)
+//
+// DIAMOND FIX: Removed eda_locking.hpp dependency
+// - Eliminated thread_local lock stack tracking (caused double memory access)
+// - Replaced OrderedScopedLock with direct ChibiOS mutex calls
+// - Saves ~2 KB per thread from stack allocation issues
 
 #ifndef UI_SIGNAL_PROCESSING_HPP_
 #define UI_SIGNAL_PROCESSING_HPP_
@@ -9,9 +14,33 @@
 #include <cstdint>
 #include <cstddef>
 #include <limits>
+#include <ch.h>
 #include "eda_optimized_utils.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
+
+// Simple RAII Mutex Lock (ChibiOS wrapper)
+// DIAMOND FIX: Minimal wrapper to eliminate complex OrderedScopedLock
+class MutexLock {
+public:
+    explicit MutexLock(Mutex& mtx) noexcept : mtx_(mtx), locked_(false) {
+        chMtxLock(&mtx_);
+        locked_ = true;
+    }
+
+    ~MutexLock() noexcept {
+        if (locked_) {
+            chMtxUnlock();
+        }
+    }
+
+    MutexLock(const MutexLock&) = delete;
+    MutexLock& operator=(const MutexLock&) = delete;
+
+private:
+    Mutex& mtx_;
+    bool locked_;
+};
 
 // TYPE ALIASES
 // DIAMOND FIX: Changed FrequencyHash from size_t to uint64_t

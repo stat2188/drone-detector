@@ -26,13 +26,38 @@
 
 // Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
-#include "eda_locking.hpp"
+// DIAMOND FIX: Removed eda_locking.hpp dependency
+// - Eliminated thread_local lock stack tracking (caused double memory access)
+// - Replaced OrderedScopedLock with simple MutexLock wrapper
 #include "file.hpp"
 #include "lpc43xx_cpp.hpp"
 #include "sd_card.hpp"
 #include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
+
+// DIAMOND FIX: Simple MutexLock wrapper (replaces OrderedScopedLock)
+// Eliminates complex lock ordering and thread_local storage
+class MutexLock {
+public:
+    explicit MutexLock(Mutex& mtx) noexcept : mtx_(mtx), locked_(false) {
+        chMtxLock(&mtx_);
+        locked_ = true;
+    }
+
+    ~MutexLock() noexcept {
+        if (locked_) {
+            chMtxUnlock();
+        }
+    }
+
+    MutexLock(const MutexLock&) = delete;
+    MutexLock& operator=(const MutexLock&) = delete;
+
+private:
+    Mutex& mtx_;
+    bool locked_;
+};
 
 // Inline wrapper for strnlen (not available in all environments)
 inline size_t strnlen_wrapper(const char* str, size_t max_len) noexcept {
@@ -204,8 +229,8 @@ inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base =
     }
 
     // RED TEAM FIX: Protect errno access with mutex
-    // DIAMOND FIX: Use ERRNO_MUTEX lock order (value 2)
-    MutexLock lock(errno_mutex, LockOrder::ERRNO_MUTEX);
+    // DIAMOND FIX: Removed LockOrder - simple mutex lock only
+    MutexLock lock(errno_mutex);
     errno = 0;
     char* endptr = nullptr;
     unsigned long long val = strtoull(str, &endptr, base);
@@ -247,8 +272,8 @@ inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 1
     }
 
     // RED TEAM FIX: Protect errno access with mutex
-    // DIAMOND FIX: Use ERRNO_MUTEX lock order (value 2)
-    MutexLock lock(errno_mutex, LockOrder::ERRNO_MUTEX);
+    // DIAMOND FIX: Removed LockOrder - simple mutex lock only
+    MutexLock lock(errno_mutex);
     errno = 0;
     char* endptr = nullptr;
     long long val = strtoll(str, &endptr, base);
@@ -773,7 +798,9 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
 
     // Write header
     constexpr char SETTINGS_TEMPLATE[] = "# EDA Settings v2\n";
-    auto write_result = file.write(SETTINGS_TEMPLATE, const_strlen(SETTINGS_TEMPLATE));
+    // DIAMOND FIX: Explicit cast to const void* and File::Size for embedded compatibility
+    auto write_result = file.write(static_cast<const void*>(SETTINGS_TEMPLATE),
+                                static_cast<File::Size>(const_strlen(SETTINGS_TEMPLATE)));
     if (write_result.is_error()) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
     }
@@ -782,12 +809,13 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
     // Use small stack buffer for each line (128 bytes)
     char line_buffer[128];
     for (size_t i = 0; i < SETTINGS_COUNT; ++i) {
-        int written = serialize_setting(line_buffer, 0, sizeof(line_buffer), settings, SETTINGS_LUT[i]);
-        if (written <= 0 || static_cast<size_t>(written) > sizeof(line_buffer)) {
+        size_t written = serialize_setting(line_buffer, 0, sizeof(line_buffer), settings, SETTINGS_LUT[i]);
+        if (written <= 0 || written > sizeof(line_buffer)) {
             return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::BUFFER_OVERFLOW);
         }
 
-        write_result = file.write(line_buffer, static_cast<File::Size>(written));
+        // DIAMOND FIX: Explicit cast to const void* for File::write() compatibility
+        write_result = file.write(static_cast<const void*>(line_buffer), static_cast<File::Size>(written));
         if (write_result.is_error()) {
             return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
         }
