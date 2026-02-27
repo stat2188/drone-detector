@@ -4,37 +4,15 @@
 #include "eda_unified_database.hpp"
 #include "eda_database_parser.hpp"
 #include "file.hpp"
-// DIAMOND FIX: Removed eda_locking.hpp dependency
-// - Eliminated thread_local lock stack tracking (caused double memory access)
-// - Added simple MutexLock wrapper below
+// DIAMOND FIX: Include unified eda_locking.hpp for MutexLock
+// - Uses unified MutexLock RAII wrapper from eda_locking.hpp
+// - Includes LockOrder parameter for deadlock prevention
+#include "eda_locking.hpp"
 #include <cstdio>
 #include <cstring>
 #include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
-
-// DIAMOND FIX: Simple MutexLock wrapper (replaces OrderedScopedLock)
-// Eliminates complex lock ordering and thread_local storage
-class MutexLock {
-public:
-    explicit MutexLock(Mutex& mtx) noexcept : mtx_(mtx), locked_(false) {
-        chMtxLock(&mtx_);
-        locked_ = true;
-    }
-
-    ~MutexLock() noexcept {
-        if (locked_) {
-            chMtxUnlock();
-        }
-    }
-
-    MutexLock(const MutexLock&) = delete;
-    MutexLock& operator=(const MutexLock&) = delete;
-
-private:
-    Mutex& mtx_;
-    bool locked_;
-};
 
 // ============================================================================
 // Constructor

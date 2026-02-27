@@ -55,7 +55,8 @@ constexpr size_t MIN_STACK_FREE_THRESHOLD = 512;     // Minimum safe stack free 
 
 extern Mutex sd_card_mutex;
 
-// OrderedScopedLock enforces lock order to prevent deadlock violations
+// Lock Order: Always acquire locks in ascending order (ATOMIC_FLAGS < DATA_MUTEX < SPECTRUM_MUTEX < LOGGER_MUTEX < SD_CARD_MUTEX)
+// Use MutexLock from eda_locking.hpp with LockOrder parameter to prevent deadlock violations
 
 struct preset_entry {
     Frequency min = 0;
@@ -440,20 +441,22 @@ struct DetectionParams {
     void remove_stale_drones();
 
     rf::Frequency get_current_scanning_frequency() const;
-    ThreatLevel get_max_detected_threat() const { return max_detected_threat_; }
+    // THREAD SAFETY FIX: Non-inline to enable mutex protection for concurrent access
+    // [[nodiscard]] - Threat level must be used by caller
+    [[nodiscard]] ThreatLevel get_max_detected_threat() const;
     // STEP 3 FIX: Return by value instead of by reference to avoid dangling reference issues
     // [[nodiscard]] - TrackedDrone data must be used by caller
     [[nodiscard]] TrackedDrone getTrackedDrone(size_t index) const;  // FIX: Protected with mutex
     void handle_scan_error(const char* error_msg);
 
-    // DIAMOND OPTIMIZATION: inline + noexcept for zero-overhead abstraction
+    // THREAD SAFETY FIX: Non-inline to enable mutex protection for concurrent access
     // [[nodiscard]] - Counter values must be used by caller
-    [[nodiscard]] inline size_t get_approaching_count() const noexcept { return approaching_count_; }
-    [[nodiscard]] inline size_t get_receding_count() const noexcept { return receding_count_; }
-    [[nodiscard]] inline size_t get_static_count() const noexcept { return static_count_; }
-    [[nodiscard]] inline uint32_t get_total_detections() const noexcept { return total_detections_; }
-    [[nodiscard]] inline uint32_t get_scan_cycles() const noexcept { return scan_cycles_; }
-    [[nodiscard]] inline bool is_real_mode() const noexcept { return is_real_mode_; }
+    [[nodiscard]] size_t get_approaching_count() const;
+    [[nodiscard]] size_t get_receding_count() const;
+    [[nodiscard]] size_t get_static_count() const;
+    [[nodiscard]] uint32_t get_total_detections() const;
+    [[nodiscard]] uint32_t get_scan_cycles() const;
+    [[nodiscard]] bool is_real_mode() const noexcept { return is_real_mode_; }
 
     DroneScanner(const DroneScanner&) = delete;
     DroneScanner(DroneScanner&&) = delete;
@@ -483,6 +486,23 @@ struct DetectionParams {
     [[nodiscard]] DroneSnapshot get_tracked_drones_snapshot() const;
 
     [[nodiscard]] bool try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) const;
+
+    // ============================================================================
+    // SCANNER STATE SNAPSHOT: Thread-Safe Scanner State Access
+    // ============================================================================
+    // Provides atomic snapshot of scanner state to prevent TOCTOU issues
+    // when multiple state variables need to be read consistently.
+    struct ScannerStateSnapshot {
+        ThreatLevel max_detected_threat;
+        size_t approaching_count;
+        size_t static_count;
+        size_t receding_count;
+        bool scanning_active;
+    };
+
+    // [[nodiscard]] - Snapshot data must be used by caller
+    // Returns atomic snapshot of scanner state with single mutex acquisition
+    [[nodiscard]] ScannerStateSnapshot get_state_snapshot() const;
 
     // ============================================================================
     // SCANNING FLOW: Database Initialization

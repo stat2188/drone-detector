@@ -1,33 +1,17 @@
 // * * @file scanning_coordinator.cpp * @brief Coordinate scanning operations for Enhanced Drone Analyzer * * DIAMOND CODE PRINCIPLES: * - Zero heap allocation: All memory is stack-allocated or in Flash * - No exceptions: All functions are noexcept * - Type-safe: Uses semantic type aliases * - Memory-safe: Uses ChibiOS RTOS for thread management * * @author Diamond Code Pipeline * @date 2026-02-20
 
 #include <cstdint>  // For uint32_t
-// DIAMOND FIX: Removed eda_locking.hpp dependency
-// - Eliminated thread_local lock stack tracking (caused double memory access)
-// - Added simple CriticalSection wrapper below
-#include "scanning_coordinator.hpp"
-#include "ui_enhanced_drone_analyzer.hpp"
-#include "ui_drone_common_types.hpp"  // For DroneAnalyzerSettings
-#include "ui_navigation.hpp"  // For NavigationView
-#include "radio.hpp"  // For rf::Frequency type
-#include <ch.h>
+#include <ch.h>      // ChibiOS RTOS (third-party library)
+
+// Project-specific headers (alphabetical order)
+#include "eda_locking.hpp"                  // DIAMOND FIX: Unified CriticalSection
+#include "radio.hpp"                        // For rf::Frequency type
+#include "scanning_coordinator.hpp"          // Corresponding header
+#include "ui_drone_common_types.hpp"        // For DroneAnalyzerSettings
+#include "ui_enhanced_drone_analyzer.hpp"    // Scanner interface
+#include "ui_navigation.hpp"                 // For NavigationView
 
 namespace ui::apps::enhanced_drone_analyzer {
-
-// DIAMOND FIX: Simple CriticalSection wrapper (replaces eda_locking.hpp)
-// Minimal RAII wrapper for ChibiOS chSysLock/chSysUnlock
-class CriticalSection {
-public:
-    CriticalSection() noexcept {
-        chSysLock();
-    }
-
-    ~CriticalSection() noexcept {
-        chSysUnlock();
-    }
-
-    CriticalSection(const CriticalSection&) = delete;
-    CriticalSection& operator=(const CriticalSection&) = delete;
-};
 
 // DIAMOND FIX: Coordinator Thread Working Area Definition
 stkalign_t ScanningCoordinator::coordinator_wa_[THD_WA_SIZE(ScanningCoordinator::COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];

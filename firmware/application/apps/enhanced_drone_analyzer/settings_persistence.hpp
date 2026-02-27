@@ -26,38 +26,16 @@
 
 // Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
-// DIAMOND FIX: Removed eda_locking.hpp dependency
-// - Eliminated thread_local lock stack tracking (caused double memory access)
-// - Replaced OrderedScopedLock with simple MutexLock wrapper
+// DIAMOND FIX: Include unified eda_locking.hpp for MutexLock
+// - Uses unified MutexLock RAII wrapper from eda_locking.hpp
+// - Includes LockOrder parameter for deadlock prevention
+#include "eda_locking.hpp"
 #include "file.hpp"
 #include "lpc43xx_cpp.hpp"
 #include "sd_card.hpp"
 #include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
-
-// DIAMOND FIX: Simple MutexLock wrapper (replaces OrderedScopedLock)
-// Eliminates complex lock ordering and thread_local storage
-class MutexLock {
-public:
-    explicit MutexLock(Mutex& mtx) noexcept : mtx_(mtx), locked_(false) {
-        chMtxLock(&mtx_);
-        locked_ = true;
-    }
-
-    ~MutexLock() noexcept {
-        if (locked_) {
-            chMtxUnlock();
-        }
-    }
-
-    MutexLock(const MutexLock&) = delete;
-    MutexLock& operator=(const MutexLock&) = delete;
-
-private:
-    Mutex& mtx_;
-    bool locked_;
-};
 
 // Inline wrapper for strnlen (not available in all environments)
 inline size_t strnlen_wrapper(const char* str, size_t max_len) noexcept {

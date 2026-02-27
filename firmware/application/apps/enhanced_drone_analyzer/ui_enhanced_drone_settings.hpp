@@ -3,19 +3,19 @@
 #ifndef UI_ENHANCED_DRONE_SETTINGS_HPP_
 #define UI_ENHANCED_DRONE_SETTINGS_HPP_
 
-// Part 1: Common Types (Shared with Scanner App)
-
-#include <cstdint>
+// Standard C++ headers (alphabetical order)
 #include <array>
+#include <cstddef>   // For size_t
+#include <cstdint>
 #include <string_view>
-#include <cstddef>  // For size_t
 
-// UI framework includes
+// UI framework includes (alphabetical order)
 #include "ui.hpp"
+#include "ui_freq_field.hpp"
 #include "ui_navigation.hpp"
 #include "ui_widget.hpp"
-#include "ui_freq_field.hpp"
 
+// Project-specific headers (alphabetical order)
 #include "ui_drone_common_types.hpp"
 
 // Unified settings persistence

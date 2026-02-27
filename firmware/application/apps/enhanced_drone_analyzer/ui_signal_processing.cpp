@@ -1,7 +1,6 @@
 // * * @file ui_signal_processing.cpp * @brief Implementation of signal processing utilities for Enhanced Drone Analyzer
 
 #include "ui_signal_processing.hpp"
-#include "eda_locking.hpp"
 #include <algorithm>
 #include <ch.h>
 #include <limits>
@@ -33,8 +32,9 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
         return;
     }
 
-    // Acquire mutex with lock ordering (from eda_locking.hpp)
-    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
+    // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
+    // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
+    MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
     
     // Increment recursion depth after lock acquisition
     recursion_depth_++;
@@ -164,8 +164,9 @@ RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) cons
 // IMPLEMENTATION: clear()
 // * * @brief Clear all entries (mutex-protected) * * Resets all entries to empty state and resets head index. * * SYNCHRONIZATION: * - Acquires buffer_mutex_ for exclusive access * - Increments global_version_ for concurrent update detection * - Resets head_ with release semantics
 void DetectionRingBuffer::clear() noexcept {
-    // Acquire mutex with lock ordering (from eda_locking.hpp)
-    OrderedScopedLock<Mutex> lock(buffer_mutex_, LockOrder::DATA_MUTEX);
+    // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
+    // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
+    MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
 
     // Increment global version
     global_version_++;

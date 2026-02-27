@@ -49,7 +49,7 @@ struct AudioAlertManager {
 
         // Single lock acquisition
         {
-            OrderedScopedLock<Mutex> lock(get_mutex());
+            MutexLock lock(get_mutex());
 
             // Guard clause: Early return if audio disabled
             if (!audio_enabled_) {
@@ -71,13 +71,13 @@ struct AudioAlertManager {
 
     // / @brief Enable or disable audio alerts
     static void set_enabled(bool enable) noexcept {
-        OrderedScopedLock<Mutex> lock(get_mutex());
+        MutexLock lock(get_mutex());
         audio_enabled_ = enable;
     }
 
     // / @brief Check if audio alerts are enabled
     static bool is_enabled() noexcept {
-        OrderedScopedLock<Mutex> lock(get_mutex());
+        MutexLock lock(get_mutex());
         return audio_enabled_;
     }
 
@@ -90,7 +90,7 @@ struct AudioAlertManager {
             cooldown_ms = 10000;
         }
 
-        OrderedScopedLock<Mutex> lock(get_mutex());
+        MutexLock lock(get_mutex());
         cooldown_ms_ = cooldown_ms;
     }
 

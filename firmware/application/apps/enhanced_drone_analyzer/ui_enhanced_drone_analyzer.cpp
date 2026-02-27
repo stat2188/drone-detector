@@ -1564,6 +1564,61 @@ Frequency DroneScanner::get_current_radio_frequency() const {
     return get_current_scanning_frequency();
 }
 
+// ============================================================================
+// THREAD SAFETY FIX: Mutex-protected getter methods for concurrent access
+// These methods are called from UI thread while scanner thread updates values.
+// Lock order: DATA_MUTEX (level 1) for detection data and tracking state
+// ============================================================================
+
+ThreatLevel DroneScanner::get_max_detected_threat() const {
+    MutexLock lock(data_mutex);
+    return max_detected_threat_;
+}
+
+size_t DroneScanner::get_approaching_count() const {
+    MutexLock lock(data_mutex);
+    return approaching_count_;
+}
+
+size_t DroneScanner::get_receding_count() const {
+    MutexLock lock(data_mutex);
+    return receding_count_;
+}
+
+size_t DroneScanner::get_static_count() const {
+    MutexLock lock(data_mutex);
+    return static_count_;
+}
+
+uint32_t DroneScanner::get_total_detections() const {
+    MutexLock lock(data_mutex);
+    return total_detections_;
+}
+
+uint32_t DroneScanner::get_scan_cycles() const {
+    MutexLock lock(data_mutex);
+    return scan_cycles_;
+}
+
+// ============================================================================
+// SCANNER STATE SNAPSHOT IMPLEMENTATION
+// ============================================================================
+
+DroneScanner::ScannerStateSnapshot DroneScanner::get_state_snapshot() const {
+    ScannerStateSnapshot snapshot;
+    MutexLock lock(data_mutex);
+    snapshot.max_detected_threat = max_detected_threat_;
+    snapshot.approaching_count = approaching_count_;
+    snapshot.static_count = static_count_;
+    snapshot.receding_count = receding_count_;
+    snapshot.scanning_active = scanning_active_;
+    return snapshot;
+}
+
+// ============================================================================
+// END OF THREAD SAFETY FIX
+// ============================================================================
+
 TrackedDrone DroneScanner::getTrackedDrone(size_t index) const {
     MutexLock lock(data_mutex);
     if (index < tracked_count_) {
@@ -3001,8 +3056,8 @@ void DroneDisplayController::update_histogram_display(
 void DroneDisplayController::render_histogram(Painter& painter) noexcept {
     // DIAMOND FIX #5: Protect histogram_dirty_ with histogram_mutex_
     // Thread-safe buffer access with mutex protection
-    // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
-        MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
+    // Lock order: SPECTRUM_MUTEX (level 2) for histogram data
+    MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
 
     // Guard clause: Skip rendering if data hasn't changed
     // Check is now protected by histogram_mutex_ to prevent race condition
@@ -4092,12 +4147,22 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
         return;
     }
 
-    // Cache scanner state (single read)
-    ThreatLevel max_threat = scanner_.get_max_detected_threat();
-    size_t approaching = scanner_.get_approaching_count();
-    size_t static_count = scanner_.get_static_count();
-    size_t receding = scanner_.get_receding_count();
-    bool is_scanning = scanner_.is_scanning_active();
+    // THREAD SAFETY FIX: Acquire mutex once for atomic snapshot of scanner state
+    // This prevents TOCTOU (Time-Of-Check-Time-Of-Use) issues
+    // where the state could change between reads.
+    //
+    // Lock order: DATA_MUTEX (level 1) for detection data and tracking state
+    // The get_state_snapshot() method provides thread-safe access with single mutex acquisition.
+    // Acquiring the mutex once here is more efficient than acquiring it separately
+    // for each getter call.
+
+    const auto snapshot = scanner_.get_state_snapshot();
+    const ThreatLevel max_threat = snapshot.max_detected_threat;
+    const size_t approaching = snapshot.approaching_count;
+    const size_t static_count = snapshot.static_count;
+    const size_t receding = snapshot.receding_count;
+    const bool is_scanning = snapshot.scanning_active;
+    
     Frequency current_freq = scanner_.get_current_scanning_frequency();
 
     // Trigger audio alerts based on threat level (with debouncing)

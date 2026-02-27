@@ -246,14 +246,14 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
                 // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
-                if (endptr != value && *endptr == '\0' && val >= 100 && val <= 10000) {
+                if (endptr != value && *endptr == '\0' && val >= EDA::Constants::MIN_SCAN_INTERVAL_MS && val <= EDA::Constants::MAX_SCAN_INTERVAL_MS) {
                     settings.scan_interval_ms = static_cast<uint32_t>(val);
                 }
             } else if (strcmp(key, "rssi_threshold_db") == 0) {
                 // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
-                if (endptr != value && *endptr == '\0' && val >= -120 && val <= 10) {
+                if (endptr != value && *endptr == '\0' && val >= EDA::Constants::RSSI_INVALID_DBM && val <= EDA::Constants::MAX_VALID_RSSI) {
                     settings.rssi_threshold_db = static_cast<int32_t>(val);
                 }
             } else if (strcmp(key, "enable_audio_alerts") == 0) {
@@ -262,21 +262,21 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
                 // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
-                if (endptr != value && *endptr == '\0' && val >= 200 && val <= 20000) {
+                if (endptr != value && *endptr == '\0' && val >= EDA::Constants::MIN_AUDIO_FREQ && val <= EDA::Constants::MAX_AUDIO_FREQ) {
                     settings.audio_alert_frequency_hz = static_cast<uint32_t>(val);
                 }
             } else if (strcmp(key, "audio_alert_duration_ms") == 0) {
                 // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
-                if (endptr != value && *endptr == '\0' && val >= 50 && val <= 5000) {
+                if (endptr != value && *endptr == '\0' && val >= EDA::Constants::MIN_AUDIO_DURATION && val <= EDA::Constants::MAX_AUDIO_DURATION) {
                     settings.audio_alert_duration_ms = static_cast<uint32_t>(val);
                 }
             } else if (strcmp(key, "hardware_bandwidth_hz") == 0) {
                 // Replace atoi with strtol and check for errors
                 char* endptr = nullptr;
                 long val = strtol(value, &endptr, 10);
-                if (endptr != value && *endptr == '\0' && val >= 10000 && val <= 28000000) {
+                if (endptr != value && *endptr == '\0' && val >= EDA::Constants::MIN_BANDWIDTH && val <= EDA::Constants::MAX_BANDWIDTH) {
                     settings.hardware_bandwidth_hz = static_cast<uint32_t>(val);
                 }
             } else if (strcmp(key, "enable_real_hardware") == 0) {
