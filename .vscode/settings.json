@@ -1,3 +1,11 @@
 {
-    "C_Cpp.default.compilerPath": "C:/msys64/mingw64/bin/gcc.exe"
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "clangd.arguments": [
+        "--background-index",
+        "--clang-tidy",
+        "--header-insertion=iwyu",
+        "--completion-style=detailed",
+        "--function-arg-placeholders",
+        "--fallback-style=llvm"
+    ]
 }

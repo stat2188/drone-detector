@@ -6,7 +6,6 @@
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "eda_constants.hpp"
-#include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
 #include "eda_unified_database.hpp"
 // Note: eda_database_parser.hpp is not used (only referenced in comments)
@@ -14,10 +13,12 @@
 #include "ff.h"
 // Note: portapack.hpp is not used in this file
 // Note: string_format.hpp is not used in this file
+// Standard library headers for embedded C++ (STM32F405)
 #include <algorithm>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <utility>  // For std::move (used in FileRAII move constructor)
 
 // Diamond Code Standard #3 - Replace std::filesystem with FatFS C API
 

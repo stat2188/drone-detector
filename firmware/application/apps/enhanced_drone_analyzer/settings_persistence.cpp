@@ -1,5 +1,17 @@
-// * * Diamond-Optimized Settings Persistence Implementation * Explicit template instantiation for DroneAnalyzerSettings
+// * * Diamond-Optimized Settings Persistence Implementation
+// * * Explicit template instantiation for DroneAnalyzerSettings
 
+// Standard C++ headers (alphabetical order)
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <inttypes.h>
+
+// ChibiOS headers
+#include <ch.h>
+
+// Project-specific headers (alphabetical order)
 #include "settings_persistence.hpp"
 #include "ui_drone_common_types.hpp"
 

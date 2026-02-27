@@ -4,6 +4,7 @@
 #define UI_DRONE_AUDIO_HPP_
 
 #include <stdint.h>
+#include <type_traits>
 #include <ch.h>
 #include "baseband_api.hpp"
 #include "ui_drone_common_types.hpp"

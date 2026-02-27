@@ -6,7 +6,6 @@
 #include "ui_enhanced_drone_analyzer.hpp"
 #include "settings_persistence.hpp"
 #include "ui_drone_audio.hpp"
-#include "eda_optimized_utils.hpp"
 #include "color_lookup_unified.hpp"
 #include "eda_constants.hpp"
 #include "diamond_core.hpp"
@@ -36,6 +35,7 @@
 #include <cstring>
 #include <cstdarg>
 #include <cinttypes>
+#include <utility>  // For std::move
 
 using namespace portapack;
 using namespace tonekey;

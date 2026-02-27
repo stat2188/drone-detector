@@ -87,7 +87,7 @@ public:
     ~OrderedScopedLock() noexcept {
         if (locked_) {
             chMtxUnlock();
-            
+
             // Pop lock from stack
             pop_lock();
         }

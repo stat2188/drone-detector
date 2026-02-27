@@ -28,6 +28,8 @@ CompileFlags:
     # Target Architecture - ARM Cortex-M0 (LPC43xx_M0 subsystem)
     - "-mcpu=cortex-m0"
     - "-mthumb"
+    - "-mfloat-abi=soft"
+    - "-fno-common"
     
     # NOTE: FPU is DISABLED for this project (USE_FPU=no in CMake)
     
@@ -40,6 +42,10 @@ CompileFlags:
     - "-DTOOLCHAIN_GCC_ARM"
     - "-D_RANDOM_TCC=0"
     - "-DTHUMB"
+    - "-DCORTEX_USE_FPU=FALSE"
+    - "-DTHUMB_NO_INTERWORKING"
+    - "-DTHUMB_PRESENT"
+    - "-DGCC_VERSION_MISMATCH=1"
     
     # Preprocessor Defines - Board
     - "-DBOARD_PORTAPACK_APPLICATION"
@@ -99,6 +105,8 @@ CompileFlags:
     - "-I./firmware/chibios-portapack/boards/PORTAPACK_APPLICATION"
     - "-I./firmware/chibios-portapack/os/hal/include"
     - "-I./firmware/chibios-portapack/os/rt/include"
+    - "-I./firmware/chibios/os/kernel/include"
+    - "-I./firmware/chibios/os/ports/GCC/ARMCMx"
     - "-I./firmware/chibios-portapack/os/hal/platforms/LPC43xx_M0"
     - "-I./firmware/chibios-portapack/os/hal/platforms/LPC43xx"
     - "-I./firmware/chibios-portapack/os/ports/GCC/ARMCMx/LPC43xx_M0"
@@ -116,6 +124,9 @@ CompileFlags:
     
     # Build Directory Include (for generated files)
     - "-I./firmware/build/application"
+    - "-I./firmware/application/."
+    - "-I./firmware/chibios/os/ports/common/ARMCMx/CMSIS/include"
+    - "-I./firmware/chibios-portapack/ext/fatfs/src"
 
   # ---------------------------------------------------------------------------
   # Remove GCC-specific flags that Clang doesn't understand
@@ -140,10 +151,10 @@ Diagnostics:
     - "strict-prototypes"
     # Suppress errors for GCC-specific constructs
     - "gcc_compat"
-  
+
   UnusedIncludes: Strict
   MissingIncludes: Strict
-  
+
   ClangTidy:
     Add:
       - "bugprone-*"

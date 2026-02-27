@@ -131,8 +131,16 @@ void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings&
     }
     
     // Update scanner frequency range
-    scanner_.update_scan_range(settings.wideband_min_freq_hz,
-                               settings.wideband_max_freq_hz);
+    // DIAMOND FIX: Type-safe frequency comparison (Frequency is int64_t, settings are uint64_t)
+    // Compare uint64_t value directly against INT64_MAX before casting to prevent overflow
+    constexpr uint64_t INT64_MAX_U64 = 9223372036854775807ULL;
+    
+    // Clamp frequency values to int64_t range if needed
+    uint64_t min_freq = (settings.wideband_min_freq_hz > INT64_MAX_U64) ? INT64_MAX_U64 : settings.wideband_min_freq_hz;
+    uint64_t max_freq = (settings.wideband_max_freq_hz > INT64_MAX_U64) ? INT64_MAX_U64 : settings.wideband_max_freq_hz;
+    
+    scanner_.update_scan_range(static_cast<Frequency>(min_freq),
+                               static_cast<Frequency>(max_freq));
 }
 
 void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summary) noexcept {

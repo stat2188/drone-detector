@@ -3,26 +3,22 @@
 
 #include <cstdint>
 #include <array>
-#include <memory>
-#include <cstdio>
+#include <algorithm>
+#include <cstddef>
 
-#include "ui_drone_common_types.hpp"
-#include "ui_signal_processing.hpp"
-#include "settings_persistence.hpp"
-#include "scanning_coordinator.hpp"
-#include "gradient.hpp"
-#include "ui_drone_audio.hpp"
-#include "ui_spectral_analyzer.hpp"
-#include "eda_constants.hpp"
 #include "diamond_fixes.hpp"
-#include "eda_optimized_utils.hpp"
-#include "color_lookup_unified.hpp"
+#include "eda_constants.hpp"
 #include "eda_locking.hpp"
 #include "eda_unified_database.hpp"
+#include "gradient.hpp"
+#include "scanning_coordinator.hpp"
+#include "ui_drone_common_types.hpp"
+#include "ui_spectral_analyzer.hpp"
+#include "ui_signal_processing.hpp"
 
 #include "ui.hpp"
-#include "ui_menu.hpp"
-#include "ui_enhanced_drone_settings.hpp"
+#include "ui_painter.hpp"
+#include "ui_font_fixed_8x16.hpp"
 #include "event_m0.hpp"
 #include "ui_widget.hpp"
 #include "message.hpp"
@@ -34,16 +30,8 @@
 #include <chtypes.h>
 
 #include "radio_state.hpp"
-#include "baseband_api.hpp"
-#include "portapack.hpp"
-#include "radio.hpp"
-#include "irq_controls.hpp"
 
 #include "ui_navigation.hpp"
-#include "app_settings.hpp"
-#include "string_format.hpp"
-#include "tone_key.hpp"
-#include "message_queue.hpp"
 
 class LogFile;
 
@@ -55,7 +43,7 @@ using rf::Frequency;
 // Never acquire a lower-numbered lock while holding a higher-numbered lock
 
 // Explicit thread stack sizes
-constexpr size_t SCANNING_THREAD_STACK_SIZE = 4096;  // 4KB (FIX: Increased from 2KB for stack overflow prevention)
+constexpr size_t SCANNING_THREAD_STACK_SIZE = 5120;  // 5KB (25% safety margin for stack overflow prevention)
 constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 1536;  // 1.5KB (optimized for memory)
 
 // Stack monitoring constants

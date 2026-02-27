@@ -5,18 +5,26 @@
 #ifndef SETTINGS_PERSISTENCE_HPP_
 #define SETTINGS_PERSISTENCE_HPP_
 
+// Standard C++ headers (alphabetical order)
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cerrno>
 #include <inttypes.h>
 #include <array>
+
+// ChibiOS headers
 #include <ch.h>
+
+// Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
-#include "ui_drone_common_types.hpp"
 #include "eda_locking.hpp"
-#include "sd_card.hpp"
+#include "file.hpp"
 #include "lpc43xx_cpp.hpp"
-#include "file.hpp"  // For File
+#include "sd_card.hpp"
+#include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

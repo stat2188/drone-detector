@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <cstddef>
 #include <limits>
-#include "ui_drone_common_types.hpp"
 #include "eda_optimized_utils.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
