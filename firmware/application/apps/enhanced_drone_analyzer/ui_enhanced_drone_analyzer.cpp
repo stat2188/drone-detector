@@ -1766,8 +1766,6 @@ namespace StackSafety {
             // Lightweight handler - no heap allocation, no logging
             // Stack overflow detected - canary corrupted
         }
-
-        const char* function_name_;
     };
 }
 

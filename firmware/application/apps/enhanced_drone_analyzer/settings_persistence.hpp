@@ -15,6 +15,12 @@
 #include <inttypes.h>
 #include <array>
 
+// Standard C headers for Clang compatibility in embedded environment
+#include <string.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <stdio.h>
+
 // ChibiOS headers
 #include <ch.h>
 
