@@ -5,23 +5,17 @@
 #ifndef SETTINGS_PERSISTENCE_HPP_
 #define SETTINGS_PERSISTENCE_HPP_
 
-// Standard C++ headers (alphabetical order)
+// C++ standard library headers (alphabetical order)
+#include <array>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cerrno>
 #include <inttypes.h>
-#include <array>
 
-// Standard C headers for Clang compatibility in embedded environment
-#include <string.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <stdio.h>
-
-// ChibiOS headers
+// Third-party library headers
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)

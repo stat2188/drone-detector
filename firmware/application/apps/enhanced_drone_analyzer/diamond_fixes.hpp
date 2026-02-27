@@ -3,8 +3,13 @@
 #ifndef DIAMOND_FIXES_HPP_
 #define DIAMOND_FIXES_HPP_
 
+// C++ standard library headers (alphabetical order)
 #include <cstdint>
+
+// Third-party library headers
 #include <ch.h>
+
+// Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

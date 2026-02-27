@@ -1,38 +1,39 @@
 #ifndef UI_ENHANCED_DRONE_ANALYZER_HPP_
 #define UI_ENHANCED_DRONE_ANALYZER_HPP_
 
-#include <cstdint>
-#include <array>
+// C++ standard library headers (alphabetical order)
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <cstdint>
 
+// Third-party library headers (alphabetical order)
+#include <ch.h>
+#include <chtypes.h>
+
+// Project-specific headers (alphabetical order)
 #include "diamond_fixes.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
 #include "eda_unified_database.hpp"
+#include "event_m0.hpp"
+#include "freqman.hpp"
+#include "freqman_db.hpp"
 #include "gradient.hpp"
+#include "log_file.hpp"
+#include "message.hpp"
+#include "radio_state.hpp"
 #include "scanning_coordinator.hpp"
+#include "ui.hpp"
 #include "ui_drone_audio.hpp"
 #include "ui_drone_common_types.hpp"
-#include "ui_spectral_analyzer.hpp"
-#include "ui_signal_processing.hpp"
-
-#include "ui.hpp"
-#include "ui_painter.hpp"
+#include "ui_enhanced_drone_settings.hpp"
 #include "ui_font_fixed_8x16.hpp"
-#include "event_m0.hpp"
-#include "ui_widget.hpp"
-#include "message.hpp"
-
-#include "freqman_db.hpp"
-#include "freqman.hpp"
-#include "log_file.hpp"
-#include <ch.h>
-#include <chtypes.h>
-
-#include "radio_state.hpp"
-
 #include "ui_navigation.hpp"
+#include "ui_painter.hpp"
+#include "ui_signal_processing.hpp"
+#include "ui_spectral_analyzer.hpp"
+#include "ui_widget.hpp"
 
 class LogFile;
 

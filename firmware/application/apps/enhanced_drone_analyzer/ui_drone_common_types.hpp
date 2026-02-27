@@ -1,11 +1,14 @@
 #ifndef UI_DRONE_COMMON_TYPES_HPP_
 #define UI_DRONE_COMMON_TYPES_HPP_
 
+// C++ standard library headers (alphabetical order)
 #include <cstdint>
 #include <cstring>
+
+// Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
-#include "radio.hpp"
 #include "file.hpp"
+#include "radio.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

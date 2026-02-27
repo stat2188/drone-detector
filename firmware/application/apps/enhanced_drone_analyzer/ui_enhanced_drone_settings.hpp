@@ -3,20 +3,18 @@
 #ifndef UI_ENHANCED_DRONE_SETTINGS_HPP_
 #define UI_ENHANCED_DRONE_SETTINGS_HPP_
 
-// Standard C++ headers (alphabetical order)
+// C++ standard library headers (alphabetical order)
 #include <array>
-#include <cstddef>   // For size_t
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 
-// UI framework includes (alphabetical order)
+// Project-specific headers (alphabetical order)
 #include "ui.hpp"
+#include "ui_drone_common_types.hpp"
 #include "ui_freq_field.hpp"
 #include "ui_navigation.hpp"
 #include "ui_widget.hpp"
-
-// Project-specific headers (alphabetical order)
-#include "ui_drone_common_types.hpp"
 
 // Unified settings persistence
 // Note: settings_persistence.hpp is included in the .cpp file

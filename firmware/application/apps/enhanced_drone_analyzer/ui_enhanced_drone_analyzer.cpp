@@ -3,37 +3,45 @@
 // Always acquire in order 1->2->3->4->5; sd_card_mutex must be LAST
 // Use MutexLock RAII for automatic unlock; CriticalSection for volatile bool
 
+// Corresponding header (must be first)
 #include "ui_enhanced_drone_analyzer.hpp"
-#include "settings_persistence.hpp"
-#include "ui_drone_audio.hpp"
-#include "color_lookup_unified.hpp"
-#include "eda_constants.hpp"
-#include "diamond_core.hpp"
-#include "diamond_fixes.hpp"
-#include "eda_locking.hpp"
-#include "baseband_api.hpp"
-#include "portapack.hpp"
-#include "ui_navigation.hpp"
-#include "file.hpp"
-#include "ui_fileman.hpp"
-#include "ui_drone_common_types.hpp"
-#include "ui_enhanced_drone_settings.hpp"
-#include "ui_spectral_analyzer.hpp"
-#include "sd_card.hpp"
-#include "lpc43xx_cpp.hpp"
 
+// C++ standard library headers (alphabetical order)
 #include <algorithm>
 #include <array>
-#include <cstdlib>
 #include <cctype>
-#include <cstring>
-#include <cstdarg>
 #include <cinttypes>
+#include <cstdarg>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <utility>  // For std::move
 
-using namespace portapack;
+// Third-party library headers (alphabetical order)
 #include <ch.h>
 #include <chmsg.h>
+
+// Project-specific headers (alphabetical order)
+#include "baseband_api.hpp"
+#include "color_lookup_unified.hpp"
+#include "diamond_core.hpp"
+#include "diamond_fixes.hpp"
+#include "eda_constants.hpp"
+#include "eda_locking.hpp"
+#include "file.hpp"
+#include "lpc43xx_cpp.hpp"
+#include "portapack.hpp"
+#include "scanning_coordinator.hpp"
+#include "sd_card.hpp"
+#include "settings_persistence.hpp"
+#include "ui_drone_audio.hpp"
+#include "ui_drone_common_types.hpp"
+#include "ui_enhanced_drone_settings.hpp"
+#include "ui_fileman.hpp"
+#include "ui_navigation.hpp"
+#include "ui_spectral_analyzer.hpp"
+
+using namespace portapack;
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -4067,8 +4075,8 @@ void EnhancedDroneSpectrumAnalyzerView::start_scanning_thread() {
             break;
         case ScanningCoordinator::StartResult::THREAD_CREATION_FAILED:
             // Thread creation failed - this is a critical error
-            // Log the error and notify user
-            display_controller_.show_error_message("Failed to start scanning thread");
+            // Display error message to user
+            display_controller_.text_status_info().set("Thread creation failed");
             break;
     }
 }

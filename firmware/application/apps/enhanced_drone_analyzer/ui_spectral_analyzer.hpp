@@ -1,14 +1,17 @@
 #ifndef UI_SPECTRAL_ANALYZER_HPP_
 #define UI_SPECTRAL_ANALYZER_HPP_
 
-#include <cstdint>
-#include <array>
+// C++ standard library headers (alphabetical order)
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <cstring>
-#include "ui_drone_common_types.hpp"
-#include "radio.hpp"
-#include "eda_optimized_utils.hpp"
+
+// Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
+#include "eda_optimized_utils.hpp"
+#include "radio.hpp"
+#include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

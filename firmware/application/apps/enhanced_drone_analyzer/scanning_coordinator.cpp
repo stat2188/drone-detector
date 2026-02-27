@@ -7,16 +7,21 @@
 // * @author Diamond Code Pipeline
 // * @date 2026-02-27
 
-#include <cstdint>  // For uint32_t
-#include <ch.h>      // ChibiOS RTOS (third-party library)
+// Corresponding header (must be first)
+#include "scanning_coordinator.hpp"
+
+// C++ standard library headers (alphabetical order)
+#include <cstdint>
+
+// Third-party library headers
+#include <ch.h>  // ChibiOS RTOS
 
 // Project-specific headers (alphabetical order)
-#include "eda_locking.hpp"                  // Unified CriticalSection
-#include "radio.hpp"                        // For rf::Frequency type
-#include "scanning_coordinator.hpp"          // Corresponding header
-#include "ui_drone_common_types.hpp"        // For DroneAnalyzerSettings
-#include "ui_enhanced_drone_analyzer.hpp"    // Scanner interface
-#include "ui_navigation.hpp"                 // For NavigationView
+#include "eda_locking.hpp"               // Unified CriticalSection
+#include "radio.hpp"                     // For rf::Frequency type
+#include "ui_drone_common_types.hpp"     // For DroneAnalyzerSettings
+#include "ui_enhanced_drone_analyzer.hpp" // Scanner interface
+#include "ui_navigation.hpp"              // For NavigationView
 
 namespace ui::apps::enhanced_drone_analyzer {
 

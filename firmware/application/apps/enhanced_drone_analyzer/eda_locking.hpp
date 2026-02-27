@@ -1,28 +1,31 @@
 /**
  * @file eda_locking.hpp
  * @brief Unified mutex wrapper for Enhanced Drone Analyzer
- * 
+ *
  * DIAMOND FIX #1: Create eda_locking.hpp with bug fix (chMtxUnlock(&mtx_))
  * - Provides RAII pattern for ChibiOS mutexes
  * - Lock ordering constants to prevent deadlock
  * - Unified MutexLock class replacing OrderedScopedLock
- * 
+ *
  * Target: STM32F405 (ARM Cortex-M4)
  * Environment: ChibiOS RTOS
- * 
+ *
  * Thread Safety Notes:
  * - Locking Order: 1.ATOMIC_FLAGS 2.data_mutex 3.spectrum_mutex 4.logger_mutex 5.sd_card_mutex
  * - Always acquire in order 1->2->3->4->5; sd_card_mutex must be LAST
  * - Use MutexLock RAII for automatic unlock
- * 
+ *
  * @note DO NOT call from ISR context (mutex not ISR-safe)
  */
 
 #ifndef EDA_LOCKING_HPP_
 #define EDA_LOCKING_HPP_
 
-#include <ch.h>
+// C++ standard library headers (alphabetical order)
 #include <cstdint>
+
+// Third-party library headers
+#include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
 

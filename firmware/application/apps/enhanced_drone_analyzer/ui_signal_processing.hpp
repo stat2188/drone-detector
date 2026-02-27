@@ -10,13 +10,18 @@
 #ifndef UI_SIGNAL_PROCESSING_HPP_
 #define UI_SIGNAL_PROCESSING_HPP_
 
+// C++ standard library headers (alphabetical order)
 #include <array>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+
+// Third-party library headers
 #include <ch.h>
-#include "eda_optimized_utils.hpp"
+
+// Project-specific headers (alphabetical order)
 #include "eda_locking.hpp"
+#include "eda_optimized_utils.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

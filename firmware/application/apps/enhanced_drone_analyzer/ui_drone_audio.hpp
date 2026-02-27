@@ -3,13 +3,20 @@
 #ifndef UI_DRONE_AUDIO_HPP_
 #define UI_DRONE_AUDIO_HPP_
 
+// C standard library headers (alphabetical order)
 #include <stdint.h>
+
+// C++ standard library headers (alphabetical order)
 #include <type_traits>
+
+// Third-party library headers
 #include <ch.h>
+
+// Project-specific headers (alphabetical order)
 #include "baseband_api.hpp"
-#include "ui_drone_common_types.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
+#include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

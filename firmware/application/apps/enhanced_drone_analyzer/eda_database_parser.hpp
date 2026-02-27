@@ -4,10 +4,14 @@
 #ifndef EDA_DATABASE_PARSER_HPP_
 #define EDA_DATABASE_PARSER_HPP_
 
-#include <cstdint>
+// C++ standard library headers (alphabetical order)
 #include <cstddef>
-#include <cstring>
 #include <cstdio>
+#include <cstdint>
+#include <cstring>
+#include <inttypes.h>
+
+// Project-specific headers (alphabetical order)
 #include "eda_unified_database.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

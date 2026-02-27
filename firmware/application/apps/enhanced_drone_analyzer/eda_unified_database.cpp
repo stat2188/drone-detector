@@ -1,16 +1,23 @@
 // Unified Database Implementation for Enhanced Drone Analyzer
 // Stage 4: Single Source of Truth for Drone Frequency Database
 
+// Corresponding header (must be first)
 #include "eda_unified_database.hpp"
+
+// C++ standard library headers (alphabetical order)
+#include <cstdio>
+#include <cstring>
+
+// Third-party library headers
+#include <ch.h>
+
+// Project-specific headers (alphabetical order)
 #include "eda_database_parser.hpp"
-#include "file.hpp"
 // DIAMOND FIX: Include unified eda_locking.hpp for MutexLock
 // - Uses unified MutexLock RAII wrapper from eda_locking.hpp
 // - Includes LockOrder parameter for deadlock prevention
 #include "eda_locking.hpp"
-#include <cstdio>
-#include <cstring>
-#include <ch.h>
+#include "file.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

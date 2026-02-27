@@ -1,18 +1,22 @@
 // * * Diamond-Optimized Settings Persistence Implementation
 // * * Explicit template instantiation for DroneAnalyzerSettings
 
-// Standard C++ headers (alphabetical order)
+// Corresponding header (must be first)
+#include "settings_persistence.hpp"
+
+// C standard library headers (alphabetical order)
+#include <inttypes.h>
+
+// C++ standard library headers (alphabetical order)
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <inttypes.h>
 
-// ChibiOS headers
+// Third-party library headers
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
-#include "settings_persistence.hpp"
 #include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

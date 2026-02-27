@@ -1,24 +1,30 @@
 // ui_enhanced_drone_settings.cpp - Unified implementation for Enhanced Drone Analyzer Settings
 // The app tries to load the interface but doesn't crash in hard failure mode for 5 minutes.
 
-#include "ui_drone_common_types.hpp"
-#include "settings_persistence.hpp"
+// Corresponding header (must be first)
 #include "ui_enhanced_drone_settings.hpp"
-#include "ui_enhanced_drone_analyzer.hpp"
-#include "eda_constants.hpp"
-#include "color_lookup_unified.hpp"
-#include "eda_unified_database.hpp"
-// Note: eda_database_parser.hpp is not used (only referenced in comments)
-#include "file.hpp"
+
+// C++ standard library headers (alphabetical order)
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <utility>  // For std::move (used in FileRAII move constructor)
+
+// Third-party library headers
 #include "ff.h"
+
+// Project-specific headers (alphabetical order)
+#include "color_lookup_unified.hpp"
+#include "eda_constants.hpp"
+#include "eda_unified_database.hpp"
+#include "file.hpp"
+// Note: eda_database_parser.hpp is not used (only referenced in comments)
+#include "settings_persistence.hpp"
+#include "ui_drone_common_types.hpp"
+#include "ui_enhanced_drone_analyzer.hpp"
 // Note: portapack.hpp is not used in this file
 // Note: string_format.hpp is not used in this file
-// Standard library headers for embedded C++ (STM32F405)
-#include <algorithm>
-#include <cstring>
-#include <cstdlib>
-#include <cstdio>
-#include <utility>  // For std::move (used in FileRAII move constructor)
 
 // Diamond Code Standard #3 - Replace std::filesystem with FatFS C API
 

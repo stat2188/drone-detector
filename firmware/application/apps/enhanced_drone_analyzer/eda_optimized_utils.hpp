@@ -3,12 +3,17 @@
 #ifndef EDA_OPTIMIZED_UTILS_HPP_
 #define EDA_OPTIMIZED_UTILS_HPP_
 
-#include <array>
-#include <algorithm>
-#include <cstdint>
+// C standard library headers (alphabetical order)
 #include <inttypes.h>
+
+// C++ standard library headers (alphabetical order)
+#include <algorithm>
+#include <array>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+
+// Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
 #include "ui_drone_common_types.hpp"
 

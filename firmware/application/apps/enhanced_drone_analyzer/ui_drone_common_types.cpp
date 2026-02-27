@@ -1,6 +1,9 @@
+// Corresponding header (must be first)
 #include "ui_drone_common_types.hpp"
-#include <cstring>
+
+// C++ standard library headers (alphabetical order)
 #include <cstdio>
+#include <cstring>
 
 namespace ui::apps::enhanced_drone_analyzer {
 

@@ -4,11 +4,16 @@
 #ifndef EDA_UNIFIED_DATABASE_HPP_
 #define EDA_UNIFIED_DATABASE_HPP_
 
-#include <cstdint>
-#include <cstddef>
+// C++ standard library headers (alphabetical order)
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+
+// Third-party library headers
 #include <ch.h>
+
+// Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
 #include "ui_drone_common_types.hpp"
 

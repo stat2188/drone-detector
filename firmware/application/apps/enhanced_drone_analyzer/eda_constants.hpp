@@ -3,12 +3,15 @@
 #ifndef EDA_CONSTANTS_HPP_
 #define EDA_CONSTANTS_HPP_
 
-#include <cstdint>
-#include <cinttypes>
+// C++ standard library headers (alphabetical order)
 #include <array>
+#include <cinttypes>
+#include <cstdint>
 #include <limits>
-#include "utility.hpp"  // Provides int64_t, int32_t, uint32_t, uint8_t, size_t
-#include "rf_path.hpp"  // Provides rf::Frequency (int64_t)
+
+// Project-specific headers (alphabetical order)
+#include "rf_path.hpp"      // Provides rf::Frequency (int64_t)
+#include "utility.hpp"      // Provides int64_t, int32_t, uint32_t, uint8_t, size_t
 
 // Flash storage attribute for Cortex-M4
 #ifdef __GNUC__

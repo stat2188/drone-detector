@@ -1,9 +1,14 @@
 // * * @file ui_signal_processing.cpp * @brief Implementation of signal processing utilities for Enhanced Drone Analyzer
 
+// Corresponding header (must be first)
 #include "ui_signal_processing.hpp"
+
+// C++ standard library headers (alphabetical order)
 #include <algorithm>
-#include <ch.h>
 #include <limits>
+
+// Third-party library headers
+#include <ch.h>
 
 namespace ui::apps::enhanced_drone_analyzer {
 

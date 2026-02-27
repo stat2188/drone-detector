@@ -3,12 +3,17 @@
 #ifndef SCANNING_COORDINATOR_HPP_
 #define SCANNING_COORDINATOR_HPP_
 
-#include "ui_drone_common_types.hpp"
-#include <cstdint>  // For uint32_t
-#include <cstddef>  // For size_t
-#include "ui_navigation.hpp"
-#include "eda_constants.hpp"
+// C++ standard library headers (alphabetical order)
+#include <cstddef>
+#include <cstdint>
+
+// Third-party library headers
 #include <ch.h>  // For stkalign_t and THD_WA_SIZE
+
+// Project-specific headers (alphabetical order)
+#include "eda_constants.hpp"
+#include "ui_drone_common_types.hpp"
+#include "ui_navigation.hpp"
 
 class AudioManager;
 
