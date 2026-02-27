@@ -7,11 +7,9 @@
 
 // C++ standard library headers (alphabetical order)
 #include <array>
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <inttypes.h>
 
@@ -76,7 +74,6 @@ inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
 }
 
 extern Mutex settings_buffer_mutex;
-extern Mutex errno_mutex;
 
 #ifdef __GNUC__
     #define FLASH_STORAGE __attribute__((section(".rodata")))
@@ -183,10 +180,34 @@ inline size_t const_strlen(const char* str) noexcept {
     return str ? strlen(str) : 0;
 }
 
-// RED TEAM FIX: Safe String Parsing
-inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base = 10) noexcept {
+// Constants for integer parsing
+constexpr uint8_t INVALID_DIGIT = 255;  // Marker for invalid digit value
+constexpr uint64_t INT64_MIN_ABS = 0x8000000000000000ULL;  // Absolute value of INT64_MIN (9223372036854775808)
+
+/**
+ * @brief Parse unsigned 64-bit integer from string without using strtoull
+ *
+ * Custom integer parsing function that avoids forbidden heap allocation functions.
+ * Does not use errno or stdlib functions like strtoull.
+ *
+ * @param str String to parse
+ * @param base Number base (2-36, default 10)
+ * @return EDA::ErrorResult<uint64_t> with parsed value or error
+ *
+ * @note Supports bases 2-36
+ * @note Skips leading whitespace
+ * @note Rejects trailing non-whitespace characters
+ * @note Detects overflow during parsing
+ * @note No heap allocation, no exceptions
+ */
+inline EDA::ErrorResult<uint64_t> parse_uint64(const char* str, int base = 10) noexcept {
     // Guard clause: null or empty string
     if (!str || *str == '\0') {
+        return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
+    }
+
+    // Validate base
+    if (base < 2 || base > 36) {
         return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
 
@@ -200,36 +221,98 @@ inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base =
         return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
 
-    // RED TEAM FIX: Protect errno access with mutex
-    // DIAMOND FIX: Removed LockOrder - simple mutex lock only
-    MutexLock lock(errno_mutex);
-    errno = 0;
-    char* endptr = nullptr;
-    unsigned long long val = strtoull(str, &endptr, base);
-
-    if (errno == ERANGE) {
-        return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+    // Parse digits until non-digit character
+    uint64_t result = 0;
+    bool has_digits = false;
+    
+    while (*str != '\0') {
+        uint8_t digit_val = INVALID_DIGIT;
+        
+        if (*str >= '0' && *str <= '9') {
+            digit_val = static_cast<uint8_t>(*str - '0');
+        } else if (*str >= 'A' && *str <= 'Z') {
+            digit_val = static_cast<uint8_t>(*str - 'A' + 10);
+        } else if (*str >= 'a' && *str <= 'z') {
+            digit_val = static_cast<uint8_t>(*str - 'a' + 10);
+        }
+        
+        // Stop parsing at first non-digit character
+        if (digit_val == INVALID_DIGIT || digit_val >= static_cast<uint8_t>(base)) {
+            break;
+        }
+        
+        // Check for overflow before multiplying
+        if (result > UINT64_MAX / static_cast<uint64_t>(base)) {
+            return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+        }
+        
+        result *= static_cast<uint64_t>(base);
+        
+        // Check for overflow before adding
+        if (result > UINT64_MAX - static_cast<uint64_t>(digit_val)) {
+            return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+        }
+        
+        result += static_cast<uint64_t>(digit_val);
+        has_digits = true;
+        str++;
     }
-
-    if (endptr == nullptr || endptr == str) {
+    
+    if (!has_digits) {
         return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
-
-    const char* p = endptr;
-    while (*p == ' ' || *p == '\t' || *p == '\r') {
-        p++;
+    
+    // Skip trailing whitespace
+    while (*str == ' ' || *str == '\t' || *str == '\r' || *str == '\n') {
+        str++;
     }
-    if (*p != '\0') {
+    
+    // Reject any trailing non-whitespace characters
+    if (*str != '\0') {
         return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
-
-    return EDA::ErrorResult<uint64_t>::ok(static_cast<uint64_t>(val));
+    
+    return EDA::ErrorResult<uint64_t>::ok(result);
 }
 
-// * * @brief Safely parse signed integer from string (errno protected) * * RED TEAM FIX: All errno access is protected by errno_mutex to prevent * race conditions when multiple threads call strtoll(). * * @param str String to parse * @param base Number base (default 10) * @return EDA::ErrorResult<int64_t> with parsed value or error * * @note Handles overflow, partial parsing, and invalid input * @note Clears errno before parsing to detect overflow * @note Skips leading whitespace for robustness
-inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 10) noexcept {
+/**
+ * @brief Safe string to uint64 conversion (wrapper for parse_uint64)
+ *
+ * Maintains backward compatibility with existing code.
+ *
+ * @param str String to parse
+ * @param base Number base (default 10)
+ * @return EDA::ErrorResult<uint64_t> with parsed value or error
+ */
+inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base = 10) noexcept {
+    return parse_uint64(str, base);
+}
+
+/**
+ * @brief Parse signed 64-bit integer from string without using strtoll
+ *
+ * Custom integer parsing function that avoids forbidden heap allocation functions.
+ * Does not use errno or stdlib functions like strtoll.
+ *
+ * @param str String to parse
+ * @param base Number base (2-36, default 10)
+ * @return EDA::ErrorResult<int64_t> with parsed value or error
+ *
+ * @note Supports bases 2-36
+ * @note Supports optional leading '+' or '-'
+ * @note Skips leading whitespace
+ * @note Rejects trailing non-whitespace characters
+ * @note Detects overflow during parsing
+ * @note No heap allocation, no exceptions
+ */
+inline EDA::ErrorResult<int64_t> parse_int64(const char* str, int base = 10) noexcept {
     // Guard clause: null or empty string
     if (!str || *str == '\0') {
+        return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
+    }
+
+    // Validate base
+    if (base < 2 || base > 36) {
         return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
 
@@ -243,30 +326,93 @@ inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 1
         return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
 
-    // RED TEAM FIX: Protect errno access with mutex
-    // DIAMOND FIX: Removed LockOrder - simple mutex lock only
-    MutexLock lock(errno_mutex);
-    errno = 0;
-    char* endptr = nullptr;
-    long long val = strtoll(str, &endptr, base);
-
-    if (errno == ERANGE) {
-        return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+    // Parse sign
+    bool is_negative = false;
+    if (*str == '+') {
+        str++;
+    } else if (*str == '-') {
+        is_negative = true;
+        str++;
     }
 
-    if (endptr == nullptr || endptr == str) {
+    // Parse magnitude as unsigned
+    uint64_t magnitude = 0;
+    bool has_digits = false;
+    
+    while (*str != '\0') {
+        uint8_t digit_val = INVALID_DIGIT;
+        
+        if (*str >= '0' && *str <= '9') {
+            digit_val = static_cast<uint8_t>(*str - '0');
+        } else if (*str >= 'A' && *str <= 'Z') {
+            digit_val = static_cast<uint8_t>(*str - 'A' + 10);
+        } else if (*str >= 'a' && *str <= 'z') {
+            digit_val = static_cast<uint8_t>(*str - 'a' + 10);
+        }
+        
+        // Stop parsing at first non-digit character
+        if (digit_val == INVALID_DIGIT || digit_val >= static_cast<uint8_t>(base)) {
+            break;
+        }
+        
+        // Check for overflow before multiplying
+        if (magnitude > UINT64_MAX / static_cast<uint64_t>(base)) {
+            return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+        }
+        
+        magnitude *= static_cast<uint64_t>(base);
+        
+        // Check for overflow before adding
+        if (magnitude > UINT64_MAX - static_cast<uint64_t>(digit_val)) {
+            return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+        }
+        
+        magnitude += static_cast<uint64_t>(digit_val);
+        has_digits = true;
+        str++;
+    }
+    
+    if (!has_digits) {
         return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
-
-    const char* p = endptr;
-    while (*p == ' ' || *p == '\t' || *p == '\r') {
-        p++;
+    
+    // Skip trailing whitespace
+    while (*str == ' ' || *str == '\t' || *str == '\r' || *str == '\n') {
+        str++;
     }
-    if (*p != '\0') {
+    
+    // Reject any trailing non-whitespace characters
+    if (*str != '\0') {
         return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
+    
+    // Apply sign and check for signed overflow
+    if (is_negative) {
+        // Check if magnitude exceeds INT64_MIN absolute value
+        if (magnitude > INT64_MIN_ABS) {
+            return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+        }
+        return EDA::ErrorResult<int64_t>::ok(-static_cast<int64_t>(magnitude));
+    } else {
+        // Check if magnitude exceeds INT64_MAX
+        if (magnitude > static_cast<uint64_t>(INT64_MAX)) {
+            return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
+        }
+        return EDA::ErrorResult<int64_t>::ok(static_cast<int64_t>(magnitude));
+    }
+}
 
-    return EDA::ErrorResult<int64_t>::ok(static_cast<int64_t>(val));
+/**
+ * @brief Safe string to int64 conversion (wrapper for parse_int64)
+ *
+ * Maintains backward compatibility with existing code.
+ *
+ * @param str String to parse
+ * @param base Number base (default 10)
+ * @return EDA::ErrorResult<int64_t> with parsed value or error
+ */
+inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 10) noexcept {
+    return parse_int64(str, base);
 }
 
 // * * @brief Safely parse boolean from string * @param str String to parse * @return EDA::ErrorResult<bool> with parsed value or error * * @note Accepts "true" or "false" (case-sensitive) * @note Rejects partial matches like "trueX"

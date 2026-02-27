@@ -27,9 +27,6 @@ template class SettingsPersistence<DroneAnalyzerSettings>;
 // Settings Buffer Mutex Definition
 Mutex settings_buffer_mutex;
 
-// Errno Mutex Definition
-Mutex errno_mutex;
-
 // Phase 1 Optimization: Eliminated SettingsStaticBuffer (4KB) by writing directly to file
 
 // Load buffer now uses instance members in get_load_buffer()

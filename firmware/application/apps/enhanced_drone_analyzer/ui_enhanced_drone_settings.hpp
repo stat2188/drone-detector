@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 // Project-specific headers (alphabetical order)
@@ -224,9 +225,10 @@ public:
     explicit AudioSettingsView(NavigationView& nav);
     ~AudioSettingsView() = default;
     void focus() noexcept override;
-    // DIAMOND FIX #C2: Added noexcept to title() for consistency
+    // DIAMOND FIX: Added noexcept to title() for consistency
     // Note: Returns std::string to match base class View::title() signature
-    // Framework-level change required to use std::string_view
+    // Framework-level change required to use std::string_view or const char*
+    // This is a documented framework limitation (technical debt)
     std::string title() const noexcept override { return "Audio Settings"; }
 
 private:
@@ -254,9 +256,10 @@ public:
     explicit HardwareSettingsView(NavigationView& nav);
     ~HardwareSettingsView() = default;
     void focus() noexcept override;
-    // DIAMOND FIX #C2: Added noexcept to title() for consistency
+    // DIAMOND FIX: Added noexcept to title() for consistency
     // Note: Returns std::string to match base class View::title() signature
-    // Framework-level change required to use std::string_view
+    // Framework-level change required to use std::string_view or const char*
+    // This is a documented framework limitation (technical debt)
     std::string title() const noexcept override { return "Hardware Settings"; }
 
 private:
@@ -283,9 +286,10 @@ public:
     explicit ScanningSettingsView(NavigationView& nav);
     ~ScanningSettingsView() = default;
     void focus() noexcept override;
-    // DIAMOND FIX #C2: Added noexcept to title() for consistency
+    // DIAMOND FIX: Added noexcept to title() for consistency
     // Note: Returns std::string to match base class View::title() signature
-    // Framework-level change required to use std::string_view
+    // Framework-level change required to use std::string_view or const char*
+    // This is a documented framework limitation (technical debt)
     std::string title() const noexcept override { return "Scanning Settings"; }
 
 private:
@@ -312,9 +316,10 @@ public:
     explicit DroneAnalyzerSettingsView(NavigationView& nav);
     ~DroneAnalyzerSettingsView() override = default;
     void focus() noexcept override;
-    // DIAMOND FIX #C2: Added noexcept to title() for consistency
+    // DIAMOND FIX: Added noexcept to title() for consistency
     // Note: Returns std::string to match base class View::title() signature
-    // Framework-level change required to use std::string_view
+    // Framework-level change required to use std::string_view or const char*
+    // This is a documented framework limitation (technical debt)
     std::string title() const noexcept override { return "EDA Settings"; }
 
  private:
@@ -342,9 +347,10 @@ public:
     explicit LoadingView(NavigationView& nav, const char* loading_text = "Loading...");
     ~LoadingView() = default;
     void focus() noexcept override;
-    // DIAMOND FIX #C2: Added noexcept to title() for consistency
+    // DIAMOND FIX: Added noexcept to title() for consistency
     // Note: Returns std::string to match base class View::title() signature
-    // Framework-level change required to use std::string_view
+    // Framework-level change required to use std::string_view or const char*
+    // This is a documented framework limitation (technical debt)
     std::string title() const noexcept override { return "Loading"; }
     void paint(Painter& painter) override;
     void on_show() override;
@@ -383,18 +389,14 @@ public:
           nav_(nav),
           entry_(entry),
           on_save_fn_(std::move(callback)),
-          // NOTE: description_buffer_ uses std::string due to TextEdit widget constraint
-          // - TextEdit constructor requires std::string&
-          // - No set_buffer() method exists
-          // - Framework-level technical debt (see TECHNICAL DEBT section below)
-          description_buffer_(entry.description),
+          description_widget_buffer_(entry.description),  // For TextEdit widget (framework limitation)
           text_freq_{{8, 16, 64, 16}, "Freq:"},
           field_freq_{{8, 32}},
           text_desc_{{8, 64, 64, 16}, "Name:"},
           // DIAMOND FIX #M2: Replaced magic number 28 with named constant FIELD_DESC_HEIGHT
-          field_desc_{description_buffer_, 
+          field_desc_{description_widget_buffer_,  // Use widget buffer for TextEdit
                      DroneEntryEditorViewConstants::FIELD_DESC_MAX_LENGTH,
-                     {DroneEntryEditorViewConstants::FIELD_DESC_RECT.x, 
+                     {DroneEntryEditorViewConstants::FIELD_DESC_RECT.x,
                       DroneEntryEditorViewConstants::FIELD_DESC_RECT.y},
                      DroneEntryEditorViewConstants::FIELD_DESC_HEIGHT},
           button_save_{{8, 128, 100, 32}, "SAVE"},
@@ -407,50 +409,37 @@ public:
 
     // DIAMOND OPTIMIZATION: noexcept for focus
     void focus() noexcept override { field_freq_.focus(); }
-    // DIAMOND FIX #C2: Added noexcept to title() for consistency
+    // DIAMOND FIX: Added noexcept to title() for consistency
     // Note: Returns std::string to match base class View::title() signature
-    // Framework-level change required to use std::string_view
+    // Framework-level change required to use std::string_view or const char*
+    // This is a documented framework limitation (technical debt)
     std::string title() const noexcept override { return "Edit Frequency"; }
 
 private:
     // ============================================================================
-    // TECHNICAL DEBT: std::string description_buffer_
+    // TECHNICAL DEBT: TextEdit widget requires std::string& (heap allocation)
     // ============================================================================
-    // ISSUE: Heap allocation for description_buffer_
-    // CAUSE: TextEdit widget constraint (requires std::string&, no set_buffer())
-    // IMPACT: 
+    // ISSUE: TextEdit widget constraint (requires std::string&, no set_buffer())
+    // IMPACT:
     //   - Heap allocation on view construction (~100-200 bytes)
     //   - Heap fragmentation from frequent view creation/destruction
     //   - Violates Diamond Code constraint: "NO dynamic memory"
-    // 
-    // SSO BEHAVIOR (ARM Cortex-M4, GCC):
-    //   - Strings ≤ 15-23 bytes: Stored inline (no heap allocation)
-    //   - Strings > 15-23 bytes: Heap allocation required
-    //   - 64-char descriptions: Always allocate heap
-    // 
-    // OPTIONS CONSIDERED:
-    //   A. Keep std::string (CHOSEN)
-    //      - Pros: No framework changes required
-    //      - Cons: Heap allocation, Diamond Code violation
-    //   
-    //   B. Create custom FixedTextEdit widget
-    //      - Pros: Eliminates heap allocation
-    //      - Cons: Major framework rewrite, high risk, breaking changes
-    //   
-    //   C. Defer fix (document as technical debt)
-    //      - Pros: Acknowledges issue, tracks for future
-    //      - Cons: Doesn't fix problem
-    // 
-    // DECISION: Option A - Keep std::string, document as technical debt
+    //
+    // FRAMEWORK LIMITATION:
+    //   - TextEdit widget (ui_widget.hpp) only accepts std::string& in constructor
+    //   - No set_buffer() method exists to use fixed-size char array
+    //   - This is a framework-level issue, not EDA-specific
+    //
+    // DECISION: Keep std::string for TextEdit widget compatibility
     // JUSTIFICATION:
     //   - Framework-level issue, not EDA-specific
     //   - Requires TextEdit widget rewrite (affects entire codebase)
     //   - Risk outweighs benefit for single module
     //   - Documented for future framework-wide fix
-    // 
+    //
     // MIGRATION PATH (when TextEdit widget is fixed):
     //   1. Add set_buffer() method to TextEdit widget
-    //   2. Replace std::string description_buffer_ with char description_buffer_[64]
+    //   2. Replace std::string description_widget_buffer_ with char description_buffer_[64]
     //   3. Update constructor: field_desc_.set_buffer(description_buffer_, sizeof(description_buffer_))
     //   4. Update on_save(): safe_strcpy(new_entry.description, description_buffer_, ...)
     //
@@ -459,7 +448,9 @@ private:
     NavigationView& nav_;
     DroneDbEntry entry_;
     Callback on_save_fn_;
-    std::string description_buffer_;
+    // Note: TextEdit widget requires std::string&, so heap allocation still occurs.
+    // This is a framework limitation that cannot be fixed without modifying TextEdit.
+    std::string description_widget_buffer_;
     Text text_freq_;
     FrequencyField field_freq_;
     Text text_desc_;
@@ -471,7 +462,9 @@ private:
     void on_save() noexcept {
         DroneDbEntry new_entry;
         new_entry.freq = field_freq_.value();
-        snprintf(new_entry.description, sizeof(new_entry.description), "%s", description_buffer_.c_str());
+        // Copy from description_widget_buffer_ (modified by TextEdit widget)
+        // The TextEdit widget modifies description_widget_buffer_ during user editing
+        safe_strcpy(new_entry.description, description_widget_buffer_.c_str(), sizeof(new_entry.description));
         on_save_fn_(new_entry);
         nav_.pop();
     }
@@ -488,9 +481,10 @@ public:
     explicit DroneDatabaseListView(NavigationView& nav);
     ~DroneDatabaseListView() = default;
     void focus() noexcept override;
-    // DIAMOND FIX #C2: Added noexcept to title() for consistency
+    // DIAMOND FIX: Added noexcept to title() for consistency
     // Note: Returns std::string to match base class View::title() signature
-    // Framework-level change required to use std::string_view
+    // Framework-level change required to use std::string_view or const char*
+    // This is a documented framework limitation (technical debt)
     std::string title() const noexcept override { return "Manage Database"; }
 
 private:
