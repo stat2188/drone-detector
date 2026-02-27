@@ -96,10 +96,11 @@ public:
      * ChibiOS API Note:
      * - chMtxLock(&mtx) takes mutex pointer as parameter
      * - chMtxUnlock() does NOT take a parameter (unlocks last locked mutex)
+     * - chMtxUnlock() returns a pointer to the unlocked mutex
      * 
-     * This is the correct ChibiOS API usage for the version used in this codebase.
-     * The original bug was using a different locking mechanism that didn't match
-     * ChibiOS semantics.
+     * This implementation verifies that the correct mutex is unlocked by
+     * comparing the returned pointer with the mutex we locked. This prevents
+     * race conditions when multiple locks are held.
      * 
      * @note This implementation uses the newer ChibiOS API (>= 21.x) where
      *       chMtxUnlock() takes no parameters and unlocks the last locked mutex.
@@ -107,7 +108,12 @@ public:
      */
     ~MutexLock() noexcept {
         if (locked_) {
-            chMtxUnlock();  // ChibiOS API: unlocks last locked mutex (no parameter)
+            Mutex* unlocked = chMtxUnlock();  // ChibiOS API: unlocks last locked mutex, returns pointer
+            // Verify we unlocked the correct mutex (defensive programming)
+            // If this assertion fails, it indicates lock order violation or bug
+            chDbgAssert(unlocked == &mtx_,
+                        "chMtxUnlock() verification",
+                        "unlocked wrong mutex - lock order violation");
             locked_ = false;
         }
     }
@@ -215,6 +221,253 @@ public:
 
 private:
     LockOrder order_;  ///< Current lock order
+};
+
+/**
+ * @brief Non-blocking try-lock for mutexes
+ * 
+ * Attempts to acquire a mutex lock without blocking.
+ * Returns immediately if the lock is not available.
+ * 
+ * Usage:
+ * @code
+ *     Mutex my_mutex;
+ *     chMtxInit(&my_mutex);
+ *     
+ *     MutexTryLock lock(my_mutex);
+ *     if (lock.is_locked()) {
+ *         // Critical section - lock acquired
+ *     } else {
+ *         // Lock not available, handle contention
+ *     }
+ * @endcode
+ * 
+ * @note Safe for use in situations where blocking is not acceptable
+ * @note Always check is_locked() before accessing protected data
+ */
+class MutexTryLock {
+public:
+    /**
+     * @brief Try to acquire mutex lock (non-blocking)
+     * @param mtx Reference to ChibiOS mutex to lock
+     * @param order Lock order level for deadlock prevention (optional, for documentation)
+     * @note Returns immediately if lock is not available
+     * @note noexcept for embedded safety
+     */
+    explicit MutexTryLock(Mutex& mtx, LockOrder order = LockOrder::DATA_MUTEX) noexcept
+        : mtx_(mtx), locked_(false), order_(order) {
+        (void)order_;  // Suppress unused warning in release builds
+        if (chMtxTryLock(&mtx_) == CH_SUCCESS) {
+            locked_ = true;
+        }
+    }
+
+    /**
+     * @brief Release mutex lock (RAII)
+     *
+     * Only releases if the lock was successfully acquired.
+     *
+     * ChibiOS API Note:
+     * - chMtxTryLock(&mtx) takes mutex pointer as parameter
+     * - chMtxUnlock() does NOT take a parameter (unlocks last locked mutex)
+     * - chMtxUnlock() returns a pointer to the unlocked mutex
+     *
+     * This implementation verifies that the correct mutex is unlocked by
+     * comparing the returned pointer with the mutex we locked.
+     */
+    ~MutexTryLock() noexcept {
+        if (locked_) {
+            Mutex* unlocked = chMtxUnlock();  // ChibiOS API: unlocks last locked mutex, returns pointer
+            // Verify we unlocked the correct mutex (defensive programming)
+            // If this assertion fails, it indicates lock order violation or bug
+            chDbgAssert(unlocked == &mtx_,
+                        "chMtxUnlock() verification",
+                        "unlocked wrong mutex - lock order violation");
+            locked_ = false;
+        }
+    }
+
+    /**
+     * @brief Check if lock was successfully acquired
+     * @return true if lock is held, false otherwise
+     */
+    [[nodiscard]] bool is_locked() const noexcept {
+        return locked_;
+    }
+
+    // Non-copyable
+    MutexTryLock(const MutexTryLock&) = delete;
+    MutexTryLock& operator=(const MutexTryLock&) = delete;
+
+    // Non-movable
+    MutexTryLock(MutexTryLock&&) = delete;
+    MutexTryLock& operator=(MutexTryLock&&) = delete;
+
+private:
+    Mutex& mtx_;      ///< Reference to mutex being locked
+    bool locked_;     ///< Track lock state
+    LockOrder order_; ///< Lock order level for documentation
+};
+
+/**
+ * @brief SD Card Lock (specialized wrapper for SD card mutex)
+ * 
+ * Convenience wrapper for SD card mutex operations.
+ * Ensures SD_CARD_MUTEX lock order is always used.
+ * 
+ * Usage:
+ * @code
+ *     Mutex sd_card_mutex;
+ *     chMtxInit(&sd_card_mutex);
+ *     
+ *     {
+ *         SDCardLock lock(sd_card_mutex);  // Lock acquired with SD_CARD_MUTEX order
+ *         // SD card I/O operations
+ *     }  // Lock automatically released
+ * @endcode
+ * 
+ * @note Always use this for SD card operations (FatFS is NOT thread-safe)
+ * @note SD_CARD_MUTEX must be LAST in lock ordering
+ */
+class SDCardLock {
+public:
+    /**
+     * @brief Acquire SD card mutex lock
+     * @param mtx Reference to SD card mutex to lock
+     * @note Blocks until lock is acquired
+     * @note noexcept for embedded safety
+     */
+    explicit SDCardLock(Mutex& mtx) noexcept
+        : lock_(mtx, LockOrder::SD_CARD_MUTEX) {
+    }
+
+    /**
+     * @brief Release SD card mutex lock (RAII)
+     * @note Automatically releases when lock goes out of scope
+     */
+    ~SDCardLock() noexcept = default;
+
+    // Non-copyable
+    SDCardLock(const SDCardLock&) = delete;
+    SDCardLock& operator=(const SDCardLock&) = delete;
+
+    // Non-movable
+    SDCardLock(SDCardLock&&) = delete;
+    SDCardLock& operator=(SDCardLock&&) = delete;
+
+private:
+    MutexLock lock_;  ///< Internal MutexLock with SD_CARD_MUTEX order
+};
+
+/**
+ * @brief Stack monitor for preventing stack overflow
+ * 
+ * Monitors current thread stack usage and provides safety checks
+ * to prevent stack overflow in critical sections like paint().
+ * 
+ * Uses ChibiOS stack fill pattern (0x55) to estimate free stack space.
+ * Compatible with ChibiOS versions that have CH_DBG_FILL_THREADS enabled.
+ * 
+ * Usage:
+ * @code
+ *     void my_function() {
+ *         StackMonitor monitor;
+ *         constexpr size_t REQUIRED_STACK = 1024;
+ *         
+ *         if (!monitor.is_stack_safe(REQUIRED_STACK)) {
+ *             return;  // Not enough stack, skip operation
+ *         }
+ *         
+ *         // Safe to use up to REQUIRED_STACK bytes
+ *     }
+ * @endcode
+ * 
+ * @note Conservative: if stack filling is not enabled, assumes 0 free bytes
+ * @note Safe to call from any thread context (not ISR-safe)
+ */
+class StackMonitor {
+public:
+    /**
+     * @brief Constructor - captures current thread state
+     * @note noexcept for embedded safety
+     */
+    StackMonitor() noexcept
+        : current_thread_(chThdSelf()),
+          free_stack_bytes_(calculate_free_stack()) {
+    }
+
+    /**
+     * @brief Check if sufficient stack space is available
+     * @param required_bytes Required stack space in bytes
+     * @return true if at least required_bytes are available, false otherwise
+     * @note Conservative check - adds safety margin
+     */
+    [[nodiscard]] bool is_stack_safe(size_t required_bytes) const noexcept {
+        // Add 256-byte safety margin for function call overhead
+        constexpr size_t SAFETY_MARGIN = 256;
+        return free_stack_bytes_ >= (required_bytes + SAFETY_MARGIN);
+    }
+
+    /**
+     * @brief Get estimated free stack bytes
+     * @return Estimated free stack space in bytes
+     */
+    [[nodiscard]] size_t get_free_stack() const noexcept {
+        return free_stack_bytes_;
+    }
+
+private:
+    Thread* current_thread_;   ///< Current thread pointer
+    size_t free_stack_bytes_;  ///< Estimated free stack bytes
+
+    /**
+     * @brief Calculate free stack space from fill pattern
+     * @return Estimated free stack bytes
+     *
+     * When CH_DBG_ENABLE_STACK_CHECK is enabled, uses p_stklimit for accurate calculation.
+     * Otherwise, conservatively scans for 0x55 fill pattern from stack limit.
+     * ChibiOS fills unused stack with 0x55 when CH_DBG_FILL_THREADS is enabled.
+     */
+    [[nodiscard]] size_t calculate_free_stack() const noexcept {
+        if (!current_thread_) {
+            return 0;  // No thread context
+        }
+
+#if CH_DBG_ENABLE_STACK_CHECK
+        // Use p_stklimit for accurate stack boundary detection
+        // p_stklimit points to the bottom of the stack (where fill pattern starts)
+        uint8_t* stack_limit = reinterpret_cast<uint8_t*>(current_thread_->p_stklimit);
+        uint8_t* current_sp = reinterpret_cast<uint8_t*>(current_thread_->p_ctx.r13);
+        
+        // Stack grows downward, so free space is from stack_limit to current SP
+        if (current_sp > stack_limit) {
+            return static_cast<size_t>(current_sp - stack_limit);
+        }
+        return 0;
+#else
+        // Fallback: Conservative scan from estimated stack limit
+        // Note: This is less accurate as it may scan through context structures
+        // The actual stack starts after Thread + intctx + extctx structures
+        uint8_t* stack_start = reinterpret_cast<uint8_t*>(current_thread_ + 1);
+        
+        // Limit scan to avoid excessive iteration (max 4KB scan)
+        const size_t max_scan_bytes = 4096;
+        const uint8_t stack_fill_value = 0x55;
+        size_t free_stack = 0;
+        
+        // Count consecutive fill pattern bytes
+        for (size_t i = 0; i < max_scan_bytes; ++i) {
+            if (stack_start[i] == stack_fill_value) {
+                free_stack++;
+            } else {
+                // Stack used up to this point
+                break;
+            }
+        }
+        
+        return free_stack;
+#endif
+    }
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer

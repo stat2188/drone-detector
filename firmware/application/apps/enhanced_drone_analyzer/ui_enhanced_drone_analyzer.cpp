@@ -1442,7 +1442,7 @@ void DroneScanner::db_loading_thread_loop() {
 
         // Phase 1: Acquire data_mutex for database modifications
         {
-            OrderedScopedLock<Mutex> data_lock(data_mutex, LockOrder::DATA_MUTEX);
+            MutexLock data_lock(data_mutex, LockOrder::DATA_MUTEX);
             
             // FIX: Defensive null check before dereferencing freq_db_ptr_
             // This provides additional safety if initialization somehow fails
