@@ -455,14 +455,13 @@ private:
     //   2. Replace std::string description_buffer_ with char description_buffer_[64]
     //   3. Update constructor: field_desc_.set_buffer(description_buffer_, sizeof(description_buffer_))
     //   4. Update on_save(): safe_strcpy(new_entry.description, description_buffer_, ...)
-    // 
+    //
     // REFERENCE: ui_widget.hpp:724-736 (TextEdit widget definition)
     // ============================================================================
-    std::string description_buffer_;
-    
     NavigationView& nav_;
     DroneDbEntry entry_;
     Callback on_save_fn_;
+    std::string description_buffer_;
     Text text_freq_;
     FrequencyField field_freq_;
     Text text_desc_;
