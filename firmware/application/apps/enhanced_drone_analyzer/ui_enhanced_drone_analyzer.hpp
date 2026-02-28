@@ -35,7 +35,8 @@
 #include "ui_spectral_analyzer.hpp"
 #include "ui_widget.hpp"
 
-class LogFile;
+// Note: LogFile is now fully included via log_file.hpp above
+// No forward declaration needed - this fixes incomplete type issue at line 297
 
 namespace ui::apps::enhanced_drone_analyzer {
 

@@ -41,9 +41,10 @@
 #include "ui_navigation.hpp"
 #include "ui_spectral_analyzer.hpp"
 
-using namespace portapack;
-
 namespace ui::apps::enhanced_drone_analyzer {
+
+// NOTE: using namespace portapack; removed to prevent namespace pollution
+// Use explicit portapack:: qualifications where needed
 
 using namespace EDA::Constants;
 
