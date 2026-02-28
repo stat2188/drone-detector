@@ -46,7 +46,8 @@ using rf::Frequency;
 
 // Explicit thread stack sizes
 constexpr size_t SCANNING_THREAD_STACK_SIZE = 5120;  // 5KB (25% safety margin for stack overflow prevention)
-constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 1536;  // 1.5KB (optimized for memory)
+// FIX #SO-1: Increased from 1536 to 2048 bytes (33% increase) to prevent stack overflow
+constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;
 
 // Stack monitoring constants
 constexpr uint32_t STACK_CANARY_VALUE = 0xDEADBEEF;  // Canary value for stack overflow detection
@@ -288,15 +289,8 @@ private:
     volatile bool worker_should_run_{false};
     volatile bool initialization_complete_{false};  // Flag to signal system initialization is complete
 
-    // Worker Thread Stack: 3072 bytes (3KB optimized)
-    // Stack Usage Breakdown:
-    // - CSV line formatting: ~128 bytes (line_buffer_)
-    // - File operations (fopen/fwrite): ~200 bytes
-    // - Log entry processing: ~64 bytes (DetectionLogEntry)
-    // - SDCardLock mutex overhead: ~100 bytes
-    // - ChibiOS thread context: ~256 bytes
-    // - Stack safety margin: ~2324 bytes
-    static constexpr size_t WORKER_STACK_SIZE = 3072;
+    // FIX #SO-1: Increased from 3072 to 4096 bytes (33% increase) to prevent stack overflow
+    static constexpr size_t WORKER_STACK_SIZE = 4096;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
 
     // File I/O

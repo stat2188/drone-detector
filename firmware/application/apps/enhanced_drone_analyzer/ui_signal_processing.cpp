@@ -1,4 +1,4 @@
-// * * @file ui_signal_processing.cpp * @brief Implementation of signal processing utilities for Enhanced Drone Analyzer
+// * @file ui_signal_processing.cpp * @brief Implementation of signal processing utilities for Enhanced Drone Analyzer
 
 // Corresponding header (must be first)
 #include "ui_signal_processing.hpp"
@@ -14,7 +14,7 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 // Implementation: update_detection()
 // / @brief Update detection entry (mutex-protected writer)
-// / @note Updates or creates a detection entry for the given frequency hash.
+// / @note Updates or creates a detection entry for given frequency hash.
 // / @note Uses linear probing with simple modulo-based hash for collision resolution.
 // / @note Evicts oldest entry when hash table is full (ring buffer eviction).
 // / @note SYNCHRONIZATION:
@@ -40,7 +40,7 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
     // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
     // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
     MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
-    
+
     // Increment recursion depth after lock acquisition
     recursion_depth_++;
 
@@ -93,10 +93,17 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
 }
 
 // IMPLEMENTATION: get_detection_count()
-// * * @brief Get detection count (lock-free reader with versioning) * * Lock-free reader using atomic head_ and version checking. * May return stale data if concurrent update is in progress (acceptable for UI). * * SYNCHRONIZATION: * - Loads atomic head_ with acquire semantics * - Double-checks version to detect concurrent updates * - No mutex lock (lock-free for performance) * * @param frequency_hash Hash of frequency to query * @return Detection count (0 if not found or concurrent update detected)
+// * * @brief Get detection count (mutex-protected reader)
+// * * FIX #RC-2: Full mutex protection (was lock-free)
+// * * SYNCHRONIZATION:
+// * * - Acquires buffer_mutex_ for exclusive access
+// * * - Ensures consistent read of entry state
+// * * - Eliminates torn reads and inconsistent state
+// * * @param frequency_hash Hash of frequency to query
+// * @return Detection count (0 if not found)
 DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_hash) const noexcept {
-    // FIX #2: Lock-free reader - no mutex acquisition
-    // Use atomic operations and version checking for thread safety
+    // FIX #RC-2: Full mutex protection (was lock-free)
+    MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
 
     // Hash table lookup
     const size_t hash_idx = hash_index(frequency_hash);
@@ -107,17 +114,7 @@ DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_
 
         // Check for matching entry
         if (entries_[idx].frequency_hash == frequency_hash) {
-            // Double-check version to detect concurrent updates
-            const uint32_t version1 = entries_[idx].version;
-            const DetectionCount count = entries_[idx].detection_count;
-            const uint32_t version2 = entries_[idx].version;
-
-            // Version changed during read -> concurrent update detected
-            if (version1 != version2) {
-                return 0;  // Return default (stale data acceptable for UI)
-            }
-
-            return count;
+            return entries_[idx].detection_count;
         }
 
         // Check for empty slot (not found)
@@ -130,10 +127,17 @@ DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_
 }
 
 // IMPLEMENTATION: get_rssi_value()
-// * * @brief Get RSSI value (lock-free reader with versioning) * * Lock-free reader using atomic head_ and version checking. * May return stale data if concurrent update is in progress (acceptable for UI). * * SYNCHRONIZATION: * - Loads atomic head_ with acquire semantics * - Double-checks version to detect concurrent updates * - No mutex lock (lock-free for performance) * * @param frequency_hash Hash of frequency to query * @return RSSI value (DEFAULT_RSSI_DBM if not found or concurrent update detected)
+// * * @brief Get RSSI value (mutex-protected reader)
+// * * FIX #RC-2: Full mutex protection (was lock-free)
+// * * SYNCHRONIZATION:
+// * * - Acquires buffer_mutex_ for exclusive access
+// * * - Ensures consistent read of entry state
+// * * - Eliminates torn reads and inconsistent state
+// * * @param frequency_hash Hash of frequency to query
+// * @return RSSI value (DEFAULT_RSSI_DBM if not found)
 RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) const noexcept {
-    // FIX #2: Lock-free reader - no mutex acquisition
-    // Use atomic operations and version checking for thread safety
+    // FIX #RC-2: Full mutex protection (was lock-free)
+    MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
 
     // Hash table lookup
     const size_t hash_idx = hash_index(frequency_hash);
@@ -144,17 +148,7 @@ RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) cons
 
         // Check for matching entry
         if (entries_[idx].frequency_hash == frequency_hash) {
-            // Double-check version to detect concurrent updates
-            const uint32_t version1 = entries_[idx].version;
-            const RSSIValue rssi = entries_[idx].rssi_value;
-            const uint32_t version2 = entries_[idx].version;
-
-            // Version changed during read -> concurrent update detected
-            if (version1 != version2) {
-                return DetectionBufferConstants::DEFAULT_RSSI_DBM;  // Return default
-            }
-
-            return rssi;
+            return entries_[idx].rssi_value;
         }
 
         // Check for empty slot (not found)
@@ -167,7 +161,12 @@ RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) cons
 }
 
 // IMPLEMENTATION: clear()
-// * * @brief Clear all entries (mutex-protected) * * Resets all entries to empty state and resets head index. * * SYNCHRONIZATION: * - Acquires buffer_mutex_ for exclusive access * - Increments global_version_ for concurrent update detection * - Resets head_ with release semantics
+// * * @brief Clear all entries (mutex-protected)
+// * * Resets all entries to empty state and resets head index.
+// * * SYNCHRONIZATION:
+// * * - Acquires buffer_mutex_ for exclusive access
+// * * - Increments global_version_ for concurrent update detection
+// * * - Resets head_ with release semantics
 void DetectionRingBuffer::clear() noexcept {
     // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
     // Lock order: DATA_MUTEX (level 1) for detection data and frequency database

@@ -12,6 +12,8 @@
 
 // C++ standard library headers (alphabetical order)
 #include <cstdint>
+#include <cstring>
+#include <new>  // For placement new
 
 // Third-party library headers
 #include <ch.h>         // ChibiOS RTOS
@@ -19,7 +21,7 @@
 #include "chmtx.h"      // ChibiOS mutex functions
 
 // Project-specific headers (alphabetical order)
-#include "eda_locking.hpp"               // Unified CriticalSection
+#include "eda_locking.hpp"               // Unified MutexLock
 #include "radio.hpp"                     // For rf::Frequency type
 #include "ui_drone_common_types.hpp"     // For DroneAnalyzerSettings
 #include "ui_enhanced_drone_analyzer.hpp" // Scanner interface
@@ -27,12 +29,26 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// FIX #4: Static instance counter to prevent multiple ScanningCoordinator instances
-// Multiple instances would share the same static working area, causing stack corruption
-static volatile uint32_t coordinator_instance_count_ = 0;
+// ============================================================================
+// SINGLETON STORAGE DEFINITION
+// ============================================================================
+
+// Singleton instance storage (BSS segment, zero-initialized)
+ScanningCoordinator* ScanningCoordinator::instance_ptr_ = nullptr;
+Mutex ScanningCoordinator::init_mutex_;
+bool ScanningCoordinator::initialized_ = false;
+
+// Static initializer for init_mutex_ (called before main)
+namespace {
+    struct InitMutexInitializer {
+        InitMutexInitializer() noexcept {
+            chMtxInit(&ScanningCoordinator::init_mutex_);
+        }
+    } init_mutex_initializer;
+}
 
 // Coordinator Thread Working Area Definition
-// FIX #3: Use class member constant (1536, matching ui_enhanced_drone_analyzer.hpp)
+// FIX #SO-1: Increased from 1536 to 2048 bytes
 stkalign_t ScanningCoordinator::coordinator_wa_[THD_WA_SIZE(ScanningCoordinator::COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 
 // TYPE ALIASES
@@ -58,10 +74,55 @@ namespace ReturnCodes {
     constexpr msg_t SUCCESS = 0;
     constexpr msg_t TIMEOUT_ERROR = -1;
     constexpr msg_t SCANNER_ERROR = -2;
-    constexpr msg_t INITIALIZATION_TIMEOUT = -3;  // New return code for initialization timeout
+    constexpr msg_t INITIALIZATION_TIMEOUT = -3;
 }
 
-// ScanningCoordinator Implementation
+// ============================================================================
+// SINGLETON IMPLEMENTATION
+// ============================================================================
+
+/**
+ * @brief Get singleton instance
+ * @return Reference to singleton instance
+ * @note Must call initialize() before using instance
+ */
+ScanningCoordinator& ScanningCoordinator::instance() noexcept {
+    return *instance_ptr_;
+}
+
+/**
+ * @brief Initialize singleton instance
+ * @param nav Navigation view reference
+ * @param hardware Hardware controller reference
+ * @param scanner Scanner reference
+ * @param display_controller Display controller reference
+ * @param audio_controller Audio controller reference
+ * @return true if initialization successful, false if already initialized
+ * @note Can only be called once per program lifetime
+ */
+bool ScanningCoordinator::initialize(NavigationView& nav,
+                                   DroneHardwareController& hardware,
+                                   DroneScanner& scanner,
+                                   DroneDisplayController& display_controller,
+                                   ::AudioManager& audio_controller) noexcept {
+    MutexLock lock(init_mutex_, LockOrder::DATA_MUTEX);
+
+    // Guard clause: Already initialized
+    if (initialized_) {
+        return false;
+    }
+
+    // Allocate instance on heap (single allocation, never freed)
+    // Note: This is acceptable for singleton pattern as instance lives for entire program lifetime
+    instance_ptr_ = new ScanningCoordinator(nav, hardware, scanner, display_controller, audio_controller);
+
+    initialized_ = true;
+    return true;
+}
+
+// ============================================================================
+// CONSTRUCTOR / DESTRUCTOR
+// ============================================================================
 
 ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
                                          DroneHardwareController& hardware,
@@ -73,59 +134,40 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
     , scanner_(scanner)
     , display_controller_(display_controller)
     , audio_controller_(audio_controller)
+    , state_mutex_{}
+    , thread_mutex_{}
     , scanning_active_(false)
+    , thread_terminated_(false)
+    , thread_generation_(0)
     , scanning_thread_(nullptr)
     , scan_interval_ms_(EDA::Constants::DEFAULT_SCAN_INTERVAL_MS)
-    , thread_terminated_(false)  // Track thread termination
 {
-    // FIX #4: Prevent multiple ScanningCoordinator instances
-    // Multiple instances would share the same static working area, causing stack corruption
-    if (coordinator_instance_count_ > 0) {
-        // Halt the system if multiple instances are detected
-        while (true) {
-            // Infinite loop to halt execution
-        }
-    }
-    coordinator_instance_count_ = 1;
-    
-    // FIX #3: Initialize mutex for thread creation protection
+    chMtxInit(&state_mutex_);
     chMtxInit(&thread_mutex_);
 }
 
 ScanningCoordinator::~ScanningCoordinator() noexcept {
     stop_coordinated_scanning();
-    // FIX #4: Decrement instance counter to allow a new instance to be created
-    coordinator_instance_count_ = 0;
 }
 
 StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
-    // FIX #3: Add mutex protection for thread creation
-    chMtxLock(&thread_mutex_);
+    MutexLock thread_lock(thread_mutex_, LockOrder::DATA_MUTEX);
+    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
 
     // Guard clause: Already scanning
-    // FIX: Use CriticalSection for consistent access to scanning_active_
-    {
-        CriticalSection cs;
-        if (scanning_active_) {
-            chMtxUnlock();
-            return StartResult::ALREADY_ACTIVE;
-        }
+    if (scanning_active_) {
+        return StartResult::ALREADY_ACTIVE;
     }
 
     // Check initialization complete before starting scanning
     // Prevents scanning from starting before database is loaded
     if (!scanner_.is_initialization_complete()) {
-        chMtxUnlock();
-        // Initialization not complete - cannot start scanning yet
         return StartResult::INITIALIZATION_NOT_COMPLETE;
     }
 
-    {
-        CriticalSection cs;
-        scanning_active_ = true;
-        thread_terminated_ = false;  // Reset termination flag (only when starting, not when stopping)
-        thread_generation_++;  // Increment generation counter to prevent missed signals
-    }
+    scanning_active_ = true;
+    thread_terminated_ = false;
+    thread_generation_++;
 
     // Create static thread with stack-based working area
     // ChibiOS chThdCreateStatic() returns nullptr on failure
@@ -139,81 +181,79 @@ StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
 
     // Guard clause: Thread creation failed
     if (!scanning_thread_) {
-        {
-            CriticalSection cs;
-            scanning_active_ = false;
-            thread_terminated_ = false;  // FIX: Reset termination flag when thread creation fails
-        }
-        chMtxUnlock();
+        scanning_active_ = false;
+        thread_terminated_ = false;
         return StartResult::THREAD_CREATION_FAILED;
     }
 
-    chMtxUnlock();
     return StartResult::SUCCESS;
 }
 
 void ScanningCoordinator::stop_coordinated_scanning() noexcept {
-    // FIX: Combine read-modify-write into single critical section to prevent race condition
+    MutexLock thread_lock(thread_mutex_, LockOrder::DATA_MUTEX);
+
     bool was_scanning;
+    uint32_t expected_generation;
     {
-        CriticalSection cs;
+        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
         was_scanning = scanning_active_;
+        if (!was_scanning) {
+            return;
+        }
+        expected_generation = thread_generation_;
         scanning_active_ = false;
-        // thread_terminated_ flag is NOT reset here - only reset in start_coordinated_scanning()
     }
 
-    // Guard clause: Not scanning
-    if (!was_scanning) {
-        return;
-    }
-
-    // Signal thread to stop using termination flag (thread-safe)
-    // CRITICAL: thread_terminated_ is only reset when STARTING scanning, not when STOPPING.
-    // This prevents race condition where coordinator waits indefinitely for a signal
-    // that was already set by the previous thread.
-
-    // Wait for thread to terminate with timeout (prevents indefinite hang)
-    // Capture current generation to prevent waiting for old thread's signal
-    const uint32_t expected_generation = thread_generation_;
-
-    // Poll with deadline to prevent indefinite wait (5 second timeout)
+    // Wait for thread to terminate with timeout
     constexpr uint32_t TERMINATION_TIMEOUT_MS = 5000;
     constexpr uint32_t POLL_INTERVAL_MS = 10;
     systime_t deadline = chTimeNow() + MS2ST(TERMINATION_TIMEOUT_MS);
 
-    // Wait for thread to set termination flag before nullifying pointer
-    // Only wait if generation matches (prevents missed signal race condition)
-    while (chTimeNow() < deadline && !thread_terminated_ && thread_generation_ == expected_generation) {
+    bool terminated = false;
+    while (chTimeNow() < deadline) {
+        {
+            MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
+            if (thread_terminated_ && thread_generation_ == expected_generation) {
+                terminated = true;
+                break;
+            }
+        }
         chThdSleepMilliseconds(POLL_INTERVAL_MS);
     }
 
-    // Only nullify pointer after thread has set termination flag
-    // This prevents race condition where pointer is nullified before thread exits
     scanning_thread_ = nullptr;
+}
+
+bool ScanningCoordinator::is_scanning_active() const noexcept {
+    // FIX #RC-1: Full mutex protection for state access
+    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
+    return scanning_active_;
 }
 
 void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) noexcept {
     // Update scan interval
-    scan_interval_ms_ = settings.scan_interval_ms;
+    {
+        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
+        scan_interval_ms_ = settings.scan_interval_ms;
+    }
 
     // Guard clause: Not scanning, no need to update scanner
-    // FIX: Use CriticalSection for consistent access to scanning_active_
     {
-        CriticalSection cs;
+        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
         if (!scanning_active_) {
             return;
         }
     }
-    
+
     // Update scanner frequency range
     // DIAMOND FIX: Type-safe frequency comparison (int64_t for frequency values)
     // Compare uint64_t value directly against INT64_MAX before casting to prevent overflow
     constexpr uint64_t INT64_MAX_U64 = 9223372036854775807ULL;
-    
+
     // Clamp frequency values to int64_t range if needed
     uint64_t min_freq = (settings.wideband_min_freq_hz > INT64_MAX_U64) ? INT64_MAX_U64 : settings.wideband_min_freq_hz;
     uint64_t max_freq = (settings.wideband_max_freq_hz > INT64_MAX_U64) ? INT64_MAX_U64 : settings.wideband_max_freq_hz;
-    
+
     scanner_.update_scan_range(static_cast<int64_t>(min_freq),
                                static_cast<int64_t>(max_freq));
 }
@@ -233,9 +273,13 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // Error handling is managed via return codes
 
     // Capture thread generation at start to prevent "missed signal" race condition
-    // during thread restart: each thread start increments the counter, thread only
+    // during thread restart: each thread start increments counter, thread only
     // sets termination flag if generation matches, coordinator waits for matching generation.
-    const uint32_t my_generation = thread_generation_;
+    uint32_t my_generation;
+    {
+        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
+        my_generation = thread_generation_;
+    }
 
     // Convert timeout constant to ChibiOS systime_t
     constexpr systime_t SCAN_CYCLE_TIMEOUT_ST = MS2ST(CoordinatorConstants::SCAN_CYCLE_TIMEOUT_MS);
@@ -243,17 +287,24 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // Counters for error detection
     TimeoutCount consecutive_timeouts = 0;
 
-    // Track initialization wait time outside the loop to ensure timeout is
+    // Track initialization wait time outside loop to ensure timeout is
     // calculated correctly across loop iterations
     systime_t init_wait_start_time = chTimeNow();
 
-    // FIX: Document synchronization pattern for scanning_active_ access
-    // - All writes to scanning_active_ are protected by CriticalSection
-    // - Reads in while loop are unprotected but use volatile to prevent caching
-    // - On ARM Cortex-M4, 32-bit reads are atomic
-    // - Loop may execute one extra iteration after scanning_active_ is set to false,
-    //   which is acceptable for this use case
-    while (scanning_active_) {
+    // FIX #RC-1: Document synchronization pattern for scanning_active_ access
+    // - All reads/writes to scanning_active_ are protected by state_mutex_
+    // - No lock-free reads - all state access is synchronized
+    while (true) {
+        // Check if still active (with mutex protection)
+        bool active;
+        {
+            MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
+            active = scanning_active_;
+        }
+        if (!active) {
+            break;
+        }
+
         // Check initialization complete with timeout to prevent infinite loop
         if (!scanner_.is_initialization_complete()) {
             // Check if initialization timeout has been reached
@@ -261,14 +312,14 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
             if (init_wait_time > MS2ST(CoordinatorConstants::INITIALIZATION_TIMEOUT_MS)) {
                 // Initialization timeout - signal stop to coordinator
                 {
-                    CriticalSection cs;
+                    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
                     scanning_active_ = false;
                 }
 
                 // Set termination flag before exit (thread-safe)
                 // Only set flag if generation matches (prevents missed signal race condition)
                 {
-                    CriticalSection cs;
+                    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
                     if (thread_generation_ == my_generation) {
                         thread_terminated_ = true;
                     }
@@ -304,14 +355,14 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
             if (consecutive_timeouts >= CoordinatorConstants::MAX_CONSECUTIVE_TIMEOUTS) {
                 // Signal stop to coordinator
                 {
-                    CriticalSection cs;
+                    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
                     scanning_active_ = false;
                 }
 
                 // Set termination flag before exit (thread-safe)
                 // Only set flag if generation matches (prevents missed signal race condition)
                 {
-                    CriticalSection cs;
+                    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
                     if (thread_generation_ == my_generation) {
                         thread_terminated_ = true;
                     }
@@ -325,13 +376,18 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         }
 
         // Sleep for configured interval
-        chThdSleepMilliseconds(scan_interval_ms_);
+        uint32_t interval_ms;
+        {
+            MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
+            interval_ms = scan_interval_ms_;
+        }
+        chThdSleepMilliseconds(interval_ms);
     }
 
     // Set termination flag before exit (thread-safe)
     // Only set flag if generation matches (prevents missed signal race condition)
     {
-        CriticalSection cs;
+        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
         if (thread_generation_ == my_generation) {
             thread_terminated_ = true;
         }

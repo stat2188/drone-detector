@@ -989,7 +989,9 @@ bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* f
 // Static member definitions (required for ODR compliance)
 DroneDatabaseManager::DatabaseView DroneDatabaseListView::g_database_view{};
 Mutex DroneDatabaseListView::g_database_mutex{};
-bool DroneDatabaseListView::g_database_loaded = false;  // Note: No volatile needed - mutex provides synchronization
+// FIX: std::atomic<bool> for proper atomic operations and thread safety
+// Access must be protected by g_database_mutex for consistency with g_database_view
+std::atomic<bool> DroneDatabaseListView::g_database_loaded{false};
 
 DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav)
     : View(), nav_(nav) {
