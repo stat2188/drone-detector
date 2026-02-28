@@ -29,6 +29,7 @@
 #include "ui_drone_common_types.hpp"
 #include "ui_enhanced_drone_settings.hpp"
 #include "ui_font_fixed_8x16.hpp"
+#include "ui_menu.hpp"
 #include "ui_navigation.hpp"
 #include "ui_painter.hpp"
 #include "ui_signal_processing.hpp"

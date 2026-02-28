@@ -144,6 +144,9 @@ static_assert(std::is_same<AudioFrequency, uint32_t>::value,
 
 } // namespace ui::apps::enhanced_drone_analyzer
 
+// Import ThreatLevel type for use outside the namespace
+using ui::apps::enhanced_drone_analyzer::ThreatLevel;
+
 // Class-Compatible Interface (maintains API compatibility)
 class AudioManager {
 public:

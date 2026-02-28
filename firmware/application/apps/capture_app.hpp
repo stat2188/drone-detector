@@ -23,6 +23,7 @@
 #ifndef __CAPTURE_APP_HPP__
 #define __CAPTURE_APP_HPP__
 
+#include "ui.hpp"
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
 #include "ui_receiver.hpp"
@@ -44,7 +45,7 @@ class CaptureAppView : public View {
     void focus() override;
     void set_parent_rect(const Rect new_parent_rect) override;
 
-    std::string title() const override { return "Capture"; };
+    const char* title() const override { return "Capture"; };
 
    private:
     static constexpr ui::Dim header_height = 3 * 16;
