@@ -11,14 +11,12 @@
 #include <string_view>
 
 // Project-specific headers (alphabetical order)
+#include "settings_persistence.hpp"
 #include "ui.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_freq_field.hpp"
 #include "ui_navigation.hpp"
 #include "ui_widget.hpp"
-
-// Unified settings persistence
-// Note: settings_persistence.hpp is included in the .cpp file
 
 // #include "eda_unified_settings.hpp"
 // #include "eda_unified_settings_manager.hpp"
