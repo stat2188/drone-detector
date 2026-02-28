@@ -1777,8 +1777,8 @@ public:
     InitState init_state_ = InitState::CONSTRUCTED;
     systime_t init_start_time_ = 0;
     systime_t last_init_progress_ = 0;
-    // Initialization progress flag (single-threaded, no synchronization needed)
-    bool initialization_in_progress_ = false;
+    // FIX: Initialization progress flag with volatile for thread safety (std::atomic not available in embedded environment)
+    volatile bool initialization_in_progress_{false};
     
     // Global shutdown flag for all threads
     volatile bool global_shutdown_requested_ = false;

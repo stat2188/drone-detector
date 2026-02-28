@@ -85,6 +85,9 @@ private:
     DroneDisplayController& display_controller_;
     ::AudioManager& audio_controller_;
 
+    // FIX #3: Add mutex for thread creation protection
+    Mutex thread_mutex_;
+
     volatile bool scanning_active_{false};
     volatile bool thread_terminated_{false};  ///< Thread termination flag (set by thread when exiting)
     // DIAMOND NOTE: thread_generation_ is a uint32_t that could theoretically wrap after 2^32 thread starts.
@@ -96,8 +99,9 @@ private:
     
     // DIAMOND OPTIMIZATION: Stack-based thread working area
     // Scott Meyers Item 15: Prefer constexpr to #define
-    // FIX #2: Use explicit stack size constant from ui_enhanced_drone_analyzer.hpp
-    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;  // (optimized for memory - reduced from 4KB to 2KB)
+    // FIX #3: Use stack size matching ui_enhanced_drone_analyzer.hpp (COORDINATOR_THREAD_STACK_SIZE = 1536)
+    // Note: Value hardcoded to avoid circular dependency (ui_enhanced_drone_analyzer.hpp includes this file)
+    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 1536;  // 1.5KB (matching ui_enhanced_drone_analyzer.hpp)
     
     // Thread working area (defined in .cpp file to avoid ODR issues)
     static stkalign_t coordinator_wa_[THD_WA_SIZE(COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];

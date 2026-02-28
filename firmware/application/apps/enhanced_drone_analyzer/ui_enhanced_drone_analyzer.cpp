@@ -3906,17 +3906,17 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
 
     // 6.4:
 
-    // FIX: Disable M4 interrupts before SD card operations
+    // FIX: Use RAII guard to ensure M4 interrupts are always re-enabled
     // This prevents M4Core_IRQHandler from firing while M0 is locked
-    lpc43xx::creg::m4txevent::disable();
+    // The guard automatically re-enables interrupts on scope exit
+    M4InterruptGuard interrupt_guard;
 
     // SD
     systime_t sd_start = chTimeNow();
     while (sd_card::status() < sd_card::Status::Mounted) {
         // FIX #L4: Use constant instead of magic number 1s timeout
         if ((chTimeNow() - sd_start) > MS2ST(EDA::Constants::SD_CARD_MOUNT_TIMEOUT_MS)) {
-            // FIX: Re-enable M4 interrupts before returning
-            lpc43xx::creg::m4txevent::enable();
+            // FIX: M4InterruptGuard automatically re-enables interrupts on return
             // FIX #M7: Reset to default settings on SD card timeout
             status_bar_.update_normal_status("INIT", "No SD - defaults");
             SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings_);
@@ -3937,8 +3937,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
 
     systime_t elapsed = chTimeNow() - settings_start;
     if (elapsed >= SETTINGS_LOAD_TIMEOUT_MS) {
-        // FIX: Re-enable M4 interrupts before returning
-        lpc43xx::creg::m4txevent::enable();
+        // FIX: M4InterruptGuard automatically re-enables interrupts on return
         // Reset to default settings on timeout
         status_bar_.update_normal_status("WARN", "Settings timeout");
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings_);
@@ -3953,8 +3952,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
         status_bar_.update_normal_status("INIT", "Settings loaded");
     }
 
-    // FIX: Re-enable M4 interrupts after SD card operations complete
-    lpc43xx::creg::m4txevent::enable();
+    // FIX: M4InterruptGuard automatically re-enables interrupts on scope exit
 
     button_audio_.set_text(audio_get_enable_alerts(settings_) ? "AUDIO: ON" : "AUDIO: OFF");
     scanner_.update_scan_range(settings_.wideband_min_freq_hz,
@@ -4056,24 +4054,30 @@ void EnhancedDroneSpectrumAnalyzerView::on_hide() {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::start_scanning_thread() {
+    // CRITICAL FIX: Verify initialization before starting
+    if (init_state_ != InitState::FULLY_INITIALIZED) {
+        status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Not initialized");
+        return;
+    }
+
     if (scanning_coordinator_.is_scanning_active()) return;
-    
+
     const auto result = scanning_coordinator_.start_coordinated_scanning();
-    
+
     // Handle different start results
     switch (result) {
-        case ScanningCoordinator::StartResult::SUCCESS:
+        case StartResult::SUCCESS:
             // Scanning started successfully
             break;
-        case ScanningCoordinator::StartResult::ALREADY_ACTIVE:
+        case StartResult::ALREADY_ACTIVE:
             // Already active (shouldn't happen due to guard clause above)
             break;
-        case ScanningCoordinator::StartResult::INITIALIZATION_NOT_COMPLETE:
+        case StartResult::INITIALIZATION_NOT_COMPLETE:
             // Database initialization not complete yet
             // The UI event loop will retry on next frame sync
             // See message_handler_frame_sync_ in ui_enhanced_drone_analyzer.hpp:1721
             break;
-        case ScanningCoordinator::StartResult::THREAD_CREATION_FAILED:
+        case StartResult::THREAD_CREATION_FAILED:
             // Thread creation failed - this is a critical error
             // Display error message to user
             display_controller_.text_status_info().set("Thread creation failed");
@@ -4249,6 +4253,10 @@ void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
     };
 
     button_audio_.on_select = [this](Button&) {
+        // FIX: Verify initialization state before allowing user interaction
+        if (init_state_ != InitState::FULLY_INITIALIZED) {
+            return;
+        }
         bool current = audio_get_enable_alerts(this->settings_);
         audio_set_enable_alerts(this->settings_, !current);
         this->button_audio_.set_text(audio_get_enable_alerts(this->settings_) ? "AUDIO: ON" : "AUDIO: OFF");
@@ -4256,6 +4264,10 @@ void EnhancedDroneSpectrumAnalyzerView::setup_button_handlers() {
     };
 
     field_scanning_mode_.on_change = [this](size_t index, int32_t value) {
+        // FIX: Verify initialization state before allowing user interaction
+        if (init_state_ != InitState::FULLY_INITIALIZED) {
+            return;
+        }
         (void)value;  // Silence unused parameter warning
         this->set_scanning_mode_from_index(index);
     };

@@ -14,7 +14,9 @@
 #include <cstdint>
 
 // Third-party library headers
-#include <ch.h>  // ChibiOS RTOS
+#include <ch.h>         // ChibiOS RTOS
+#include "chthreads.h"  // ChibiOS threading functions
+#include "chmtx.h"      // ChibiOS mutex functions
 
 // Project-specific headers (alphabetical order)
 #include "eda_locking.hpp"               // Unified CriticalSection
@@ -25,7 +27,12 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
+// FIX #4: Static instance counter to prevent multiple ScanningCoordinator instances
+// Multiple instances would share the same static working area, causing stack corruption
+static volatile uint32_t coordinator_instance_count_ = 0;
+
 // Coordinator Thread Working Area Definition
+// FIX #3: Use class member constant (1536, matching ui_enhanced_drone_analyzer.hpp)
 stkalign_t ScanningCoordinator::coordinator_wa_[THD_WA_SIZE(ScanningCoordinator::COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 
 // TYPE ALIASES
@@ -71,21 +78,44 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
     , scan_interval_ms_(EDA::Constants::DEFAULT_SCAN_INTERVAL_MS)
     , thread_terminated_(false)  // Track thread termination
 {
+    // FIX #4: Prevent multiple ScanningCoordinator instances
+    // Multiple instances would share the same static working area, causing stack corruption
+    if (coordinator_instance_count_ > 0) {
+        // Halt the system if multiple instances are detected
+        while (true) {
+            // Infinite loop to halt execution
+        }
+    }
+    coordinator_instance_count_ = 1;
+    
+    // FIX #3: Initialize mutex for thread creation protection
+    chMtxInit(&thread_mutex_);
 }
 
 ScanningCoordinator::~ScanningCoordinator() noexcept {
     stop_coordinated_scanning();
+    // FIX #4: Decrement instance counter to allow a new instance to be created
+    coordinator_instance_count_ = 0;
 }
 
 StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
+    // FIX #3: Add mutex protection for thread creation
+    chMtxLock(&thread_mutex_);
+
     // Guard clause: Already scanning
-    if (scanning_active_) {
-        return StartResult::ALREADY_ACTIVE;
+    // FIX: Use CriticalSection for consistent access to scanning_active_
+    {
+        CriticalSection cs;
+        if (scanning_active_) {
+            chMtxUnlock();
+            return StartResult::ALREADY_ACTIVE;
+        }
     }
 
     // Check initialization complete before starting scanning
     // Prevents scanning from starting before database is loaded
     if (!scanner_.is_initialization_complete()) {
+        chMtxUnlock();
         // Initialization not complete - cannot start scanning yet
         return StartResult::INITIALIZATION_NOT_COMPLETE;
     }
@@ -112,16 +142,28 @@ StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
         {
             CriticalSection cs;
             scanning_active_ = false;
+            thread_terminated_ = false;  // FIX: Reset termination flag when thread creation fails
         }
+        chMtxUnlock();
         return StartResult::THREAD_CREATION_FAILED;
     }
-    
+
+    chMtxUnlock();
     return StartResult::SUCCESS;
 }
 
 void ScanningCoordinator::stop_coordinated_scanning() noexcept {
+    // FIX: Combine read-modify-write into single critical section to prevent race condition
+    bool was_scanning;
+    {
+        CriticalSection cs;
+        was_scanning = scanning_active_;
+        scanning_active_ = false;
+        // thread_terminated_ flag is NOT reset here - only reset in start_coordinated_scanning()
+    }
+
     // Guard clause: Not scanning
-    if (!scanning_active_) {
+    if (!was_scanning) {
         return;
     }
 
@@ -129,11 +171,6 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
     // CRITICAL: thread_terminated_ is only reset when STARTING scanning, not when STOPPING.
     // This prevents race condition where coordinator waits indefinitely for a signal
     // that was already set by the previous thread.
-    {
-        CriticalSection cs;
-        scanning_active_ = false;
-        // thread_terminated_ flag is NOT reset here - only reset in start_coordinated_scanning()
-    }
 
     // Wait for thread to terminate with timeout (prevents indefinite hang)
     // Capture current generation to prevent waiting for old thread's signal
@@ -158,10 +195,14 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
 void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) noexcept {
     // Update scan interval
     scan_interval_ms_ = settings.scan_interval_ms;
-    
+
     // Guard clause: Not scanning, no need to update scanner
-    if (!scanning_active_) {
-        return;
+    // FIX: Use CriticalSection for consistent access to scanning_active_
+    {
+        CriticalSection cs;
+        if (!scanning_active_) {
+            return;
+        }
     }
     
     // Update scanner frequency range
@@ -206,6 +247,12 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // calculated correctly across loop iterations
     systime_t init_wait_start_time = chTimeNow();
 
+    // FIX: Document synchronization pattern for scanning_active_ access
+    // - All writes to scanning_active_ are protected by CriticalSection
+    // - Reads in while loop are unprotected but use volatile to prevent caching
+    // - On ARM Cortex-M4, 32-bit reads are atomic
+    // - Loop may execute one extra iteration after scanning_active_ is set to false,
+    //   which is acceptable for this use case
     while (scanning_active_) {
         // Check initialization complete with timeout to prevent infinite loop
         if (!scanner_.is_initialization_complete()) {
