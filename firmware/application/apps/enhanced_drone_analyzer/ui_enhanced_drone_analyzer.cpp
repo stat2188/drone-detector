@@ -3210,7 +3210,7 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
 DroneUIController::DroneUIController(NavigationView& nav,
                                           DroneHardwareController& hardware,
                                           DroneScanner& scanner,
-                                          ::AudioManager& audio_mgr)
+                                          AudioManager& audio_mgr)
     : nav_(nav),
       hardware_(hardware),
       scanner_(scanner),

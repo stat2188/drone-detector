@@ -15,9 +15,10 @@
 #include "ui_drone_common_types.hpp"
 #include "ui_navigation.hpp"
 
-class AudioManager;
-
 namespace ui::apps::enhanced_drone_analyzer {
+
+// Forward declaration
+class AudioManager;
 
 // Forward declarations
 class DroneHardwareController;
@@ -51,7 +52,7 @@ public:
                                         DroneHardwareController& hardware,
                                         DroneScanner& scanner,
                                         DroneDisplayController& display_controller,
-                                        ::AudioManager& audio_controller) noexcept;
+                                        AudioManager& audio_controller) noexcept;
 
     // * @brief Start the coordinated scanning thread
     // @return StartResult indicating success or reason for failure
@@ -80,7 +81,7 @@ private:
                        DroneHardwareController& hardware,
                        DroneScanner& scanner,
                        DroneDisplayController& display_controller,
-                       ::AudioManager& audio_controller) noexcept;
+                       AudioManager& audio_controller) noexcept;
 
     // * * @brief Static thread entry point for ChibiOS * @param arg Pointer to ScanningCoordinator instance * @return Thread exit code
     static msg_t scanning_thread_function(void* arg) noexcept;
@@ -93,7 +94,7 @@ private:
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
     DroneDisplayController& display_controller_;
-    ::AudioManager& audio_controller_;
+    AudioManager& audio_controller_;
 
     // FIX #RC-1: Thread synchronization
     mutable Mutex state_mutex_;     ///< Protects scanning_active_, thread_terminated_, thread_generation_

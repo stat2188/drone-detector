@@ -142,34 +142,29 @@ static_assert(std::is_same<AudioFrequency, uint32_t>::value,
     #error "EDA_FLASH_CONST must be defined for Flash storage optimization"
 #endif
 
-} // namespace ui::apps::enhanced_drone_analyzer
-
-// Import ThreatLevel type for use outside the namespace
-using ui::apps::enhanced_drone_analyzer::ThreatLevel;
-
 // Class-Compatible Interface (maintains API compatibility)
 class AudioManager {
 public:
     AudioManager() = default;
     ~AudioManager() = default;
 
-    // / @brief Check if audio is enabled
+    /// @brief Check if audio is enabled
     bool is_audio_enabled() const {
-        return ui::apps::enhanced_drone_analyzer::AudioAlertManager::is_enabled();
+        return AudioAlertManager::is_enabled();
     }
 
-    // / @brief Toggle audio enable state
+    /// @brief Toggle audio enable state
     void toggle_audio() {
-        const bool current = ui::apps::enhanced_drone_analyzer::AudioAlertManager::is_enabled();
-        ui::apps::enhanced_drone_analyzer::AudioAlertManager::set_enabled(!current);
+        const bool current = AudioAlertManager::is_enabled();
+        AudioAlertManager::set_enabled(!current);
     }
 
-    // / @brief Play detection beep for threat level
-    void play_detection_beep(ui::apps::enhanced_drone_analyzer::ThreatLevel threat) {
-        ui::apps::enhanced_drone_analyzer::AudioAlertManager::play_alert(threat);
+    /// @brief Play detection beep for threat level
+    void play_detection_beep(ThreatLevel threat) {
+        AudioAlertManager::play_alert(threat);
     }
 
-    // / @brief Stop audio (no-op for simple beeps)
+    /// @brief Stop audio (no-op for simple beeps)
     void stop_audio() {
         // Simple beeps don't persist
     }
@@ -178,8 +173,9 @@ public:
 // Drone Audio Settings
 struct DroneAudioSettings {
     bool audio_enabled = true;
-    ui::apps::enhanced_drone_analyzer::ThreatLevel test_threat_level =
-        ui::apps::enhanced_drone_analyzer::ThreatLevel::HIGH;
+    ThreatLevel test_threat_level = ThreatLevel::HIGH;
 };
+
+} // namespace ui::apps::enhanced_drone_analyzer
 
 #endif // UI_DRONE_AUDIO_HPP_

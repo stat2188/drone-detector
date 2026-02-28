@@ -104,7 +104,7 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
                                    DroneHardwareController& hardware,
                                    DroneScanner& scanner,
                                    DroneDisplayController& display_controller,
-                                   ::AudioManager& audio_controller) noexcept {
+                                   AudioManager& audio_controller) noexcept {
     MutexLock lock(init_mutex_, LockOrder::DATA_MUTEX);
 
     // Guard clause: Already initialized
@@ -128,7 +128,7 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
                                          DroneHardwareController& hardware,
                                          DroneScanner& scanner,
                                          DroneDisplayController& display_controller,
-                                         ::AudioManager& audio_controller) noexcept
+                                         AudioManager& audio_controller) noexcept
     : nav_(nav)
     , hardware_(hardware)
     , scanner_(scanner)
