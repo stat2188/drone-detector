@@ -117,7 +117,7 @@ public:
             chDbgAssert(unlocked == &mtx_,
                         "chMtxUnlock() verification",
                         "unlocked wrong mutex - lock order violation");
-            locked_ = false;
+            // No need to set locked_ = false since object is being destroyed
         }
     }
 
@@ -286,7 +286,7 @@ public:
             chDbgAssert(unlocked == &mtx_,
                         "chMtxUnlock() verification",
                         "unlocked wrong mutex - lock order violation");
-            locked_ = false;
+            // No need to set locked_ = false since object is being destroyed
         }
     }
 
@@ -448,10 +448,9 @@ private:
         }
         return 0;
 #else
-        // Fallback: Conservative scan from estimated stack limit
-        // Note: This is less accurate as it may scan through context structures
-        // The actual stack starts after Thread + intctx + extctx structures
-        uint8_t* stack_start = reinterpret_cast<uint8_t*>(current_thread_ + 1);
+        // Fallback: Conservative scan from p_stklimit for safe boundary detection
+        // Use ChibiOS-provided p_stklimit field instead of unsafe pointer arithmetic
+        uint8_t* stack_start = reinterpret_cast<uint8_t*>(current_thread_->p_stklimit);
         
         // Limit scan to avoid excessive iteration (max 4KB scan)
         const size_t max_scan_bytes = 4096;
