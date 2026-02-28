@@ -5,7 +5,6 @@
 
 // C++ standard library headers (alphabetical order)
 #include <array>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -587,12 +586,13 @@ private:
     // Lock order: DATA_MUTEX (3) - consistent with existing lock hierarchy
     static DroneDatabaseManager::DatabaseView g_database_view;
     static Mutex g_database_mutex;
-    // FIX: Use std::atomic<bool> for proper atomic operations and thread safety
+    // DIAMOND FIX: Use volatile bool for thread safety (std::atomic not available in embedded environment)
     // PROBLEM: Non-atomic bool flag accessed without proper synchronization
-    // SOLUTION: std::atomic<bool> provides atomic load/store operations with memory ordering
-    // NOTE: Access must still be protected by g_database_mutex for consistency with g_database_view
-    static std::atomic<bool> g_database_loaded;  // Flag to track if database has been loaded
-                                               // CRITICAL: Must access with g_database_mutex held
+    // SOLUTION: volatile bool ensures compiler doesn't optimize away reads/writes
+    // NOTE: Access is protected by g_database_mutex for consistency with g_database_view
+    // Matches pattern in ui_enhanced_drone_analyzer.hpp:1775 (volatile bool initialization_in_progress_)
+    static volatile bool g_database_loaded;  // Flag to track if database has been loaded
+                                            // CRITICAL: Must access with g_database_mutex held
     
     MenuView menu_view_{{0, 0, 240, 168}};
 

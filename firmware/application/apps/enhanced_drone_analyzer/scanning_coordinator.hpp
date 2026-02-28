@@ -120,6 +120,6 @@ public:
 
 private:
 
-}  // namespace ui::apps::enhanced_drone_analyzer
+};  // namespace ui::apps::enhanced_drone_analyzer
 
 #endif  // SCANNING_COORDINATOR_HPP_
