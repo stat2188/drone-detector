@@ -85,8 +85,24 @@ namespace ReturnCodes {
  * @brief Get singleton instance
  * @return Reference to singleton instance
  * @note Must call initialize() before using instance
+ * @note CRITICAL: This method will halt the system if called before initialize()
  */
 ScanningCoordinator& ScanningCoordinator::instance() noexcept {
+    // CRITICAL: Instance must be initialized before use
+    // Dereferencing a null pointer causes undefined behavior (system crash)
+    if (!instance_ptr_) {
+        // Log critical error before halting
+        // TODO: Implement proper error logging system
+        // For now, trigger breakpoint for debugging (in debug builds)
+        // and infinite loop as last resort (in release builds)
+        #ifdef DEBUG
+            __BKPT();  // Breakpoint for debugger
+        #endif
+        while (true) {
+            // Infinite loop to halt execution
+            // System watchdog will trigger reset if configured
+        }
+    }
     return *instance_ptr_;
 }
 
@@ -259,6 +275,10 @@ void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings&
 }
 
 void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summary) noexcept {
+    // Guard clause: null pointer check for summary parameter
+    if (!summary) {
+        return;
+    }
     // Placeholder for future implementation
     // DIAMOND OPTIMIZATION: Uses const char* instead of std::string (zero heap allocation)
 }

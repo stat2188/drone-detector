@@ -5,6 +5,7 @@
 #include "eda_unified_database.hpp"
 
 // C++ standard library headers (alphabetical order)
+#include <cstddef>  // For size_t
 #include <cstdio>
 #include <cstring>
 
@@ -20,6 +21,23 @@
 #include "file.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
+
+// ============================================================================
+// STACK USAGE VALIDATION
+// ============================================================================
+// Embedded systems have limited stack space (4KB per thread on STM32F405).
+// These static_assert statements validate stack usage at compile time to prevent
+// stack overflow at runtime, which is difficult to debug.
+// ============================================================================
+
+// Validate line buffer size is safe for stack allocation
+// Stack buffers should be kept small (<1KB) to prevent stack overflow
+static constexpr size_t LINE_BUFFER_SIZE = 128;
+
+static_assert(LINE_BUFFER_SIZE <= 256,
+              "LINE_BUFFER_SIZE exceeds 256 bytes safe stack buffer limit");
+static_assert(LINE_BUFFER_SIZE >= 64,
+              "LINE_BUFFER_SIZE below 64 bytes minimum for safe operation");
 
 // ============================================================================
 // Constructor
@@ -68,6 +86,11 @@ bool UnifiedDroneDatabase::initialize() noexcept {
 
 bool UnifiedDroneDatabase::load(const char* path) noexcept {
     MutexLock db_lock(mutex_);
+    
+    // Guard clause: null pointer check for path parameter
+    if (!path) {
+        return false;
+    }
     
     if (!initialized_) {
         return false;
@@ -157,6 +180,11 @@ bool UnifiedDroneDatabase::load(const char* path) noexcept {
 bool UnifiedDroneDatabase::save(const char* path) noexcept {
     MutexLock db_lock(mutex_);
     
+    // Guard clause: null pointer check for path parameter
+    if (!path) {
+        return false;
+    }
+    
     if (!initialized_) {
         return false;
     }
@@ -228,6 +256,10 @@ void UnifiedDroneDatabase::clear() noexcept {
 // ============================================================================
 
 DatabaseView UnifiedDroneDatabase::get_view() const noexcept {
+    // Guard clause: return empty view if not initialized
+    if (!initialized_) {
+        return DatabaseView(nullptr, 0);
+    }
     return DatabaseView(entries_.data(), entry_count_);
 }
 

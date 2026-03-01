@@ -55,6 +55,31 @@ constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;
 constexpr uint32_t STACK_CANARY_VALUE = 0xDEADBEEF;  // Canary value for stack overflow detection
 constexpr size_t MIN_STACK_FREE_THRESHOLD = 512;     // Minimum safe stack free bytes
 
+// ============================================================================
+// STACK USAGE VALIDATION
+// ============================================================================
+// Embedded systems have limited stack space (4KB per thread on STM32F405).
+// These static_assert statements validate stack usage at compile time to prevent
+// stack overflow at runtime, which is difficult to debug.
+// ============================================================================
+
+// Validate thread stack sizes are within reasonable limits
+// STM32F405 has 4KB stack per thread by default, but some threads can use more
+static_assert(SCANNING_THREAD_STACK_SIZE <= 8192,
+              "SCANNING_THREAD_STACK_SIZE exceeds 8KB thread stack limit");
+static_assert(SCANNING_THREAD_STACK_SIZE >= 4096,
+              "SCANNING_THREAD_STACK_SIZE below 4KB minimum for safe operation");
+static_assert(COORDINATOR_THREAD_STACK_SIZE <= 4096,
+              "COORDINATOR_THREAD_STACK_SIZE exceeds 4KB thread stack limit");
+static_assert(COORDINATOR_THREAD_STACK_SIZE >= 1024,
+              "COORDINATOR_THREAD_STACK_SIZE below 1KB minimum for safe operation");
+
+// Validate stack monitoring constants
+static_assert(MIN_STACK_FREE_THRESHOLD <= 1024,
+              "MIN_STACK_FREE_THRESHOLD exceeds 1KB, too conservative");
+static_assert(MIN_STACK_FREE_THRESHOLD >= 128,
+              "MIN_STACK_FREE_THRESHOLD below 128 bytes, unsafe");
+
 // Global SD Card Mutex Protection (FatFS is NOT thread-safe)
 
 extern Mutex sd_card_mutex;
@@ -1548,7 +1573,28 @@ public:
     EnhancedDroneSpectrumAnalyzerView& operator=(const EnhancedDroneSpectrumAnalyzerView&) = delete;
 
     void focus() override;
-    std::string title() const override { return "EDA"; };
+    
+    // ============================================================================
+    // HEAP ALLOCATION WORKAROUND FOR title() METHOD
+    // ============================================================================
+    // PROBLEM: View::title() returns std::string causing heap allocation (~50-200 bytes)
+    //   - Framework limitation: base class requires std::string return type
+    //   - Cannot modify framework (outside EDA directory)
+    // WORKAROUND: Added title_string_view() for zero-allocation internal use
+    //   - Use title_string_view() internally in EDA code (zero heap allocation)
+    //   - Keep title() for framework compatibility (causes heap allocation)
+    //   - Full fix requires framework change to support std::string_view or const char*
+    // ============================================================================
+    
+    // Zero-allocation version for internal EDA use (preferred)
+    [[nodiscard]] static constexpr const char* title_string_view() noexcept {
+        return "EDA";
+    }
+    
+    // Framework-compatible version (causes heap allocation, kept for compatibility)
+    std::string title() const override {
+        return title_string_view();
+    }
 
     void paint(Painter& painter) override;
     bool on_key(const KeyEvent key) override;

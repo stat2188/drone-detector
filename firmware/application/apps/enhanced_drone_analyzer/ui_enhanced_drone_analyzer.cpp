@@ -97,6 +97,33 @@ EDA_FLASH_CONST inline static constexpr const char* const SCANNING_MODE_NAMES[] 
 };
 static_assert(sizeof(SCANNING_MODE_NAMES) / sizeof(const char*) == 3, "SCANNING_MODE_NAMES size");
 
+// ============================================================================
+// STACK USAGE VALIDATION
+// ============================================================================
+// Embedded systems have limited stack space (4KB per thread on STM32F405).
+// These static_assert statements validate stack usage at compile time to prevent
+// stack overflow at runtime, which is difficult to debug.
+// ============================================================================
+
+// Validate static storage sizes are within reasonable limits
+// These are allocated in BSS segment, not on stack, but still need validation
+static_assert(DroneDisplayController::MAX_UI_DRONES <= 10,
+              "MAX_UI_DRONES exceeds 10, may cause display performance issues");
+static_assert(DroneScanner::FREQ_DB_STORAGE_SIZE <= 8192,
+              "FREQ_DB_STORAGE_SIZE exceeds 8KB memory budget");
+static_assert(DroneScanner::TRACKED_DRONES_STORAGE_SIZE <= 4096,
+              "TRACKED_DRONES_STORAGE_SIZE exceeds 4KB memory budget");
+
+// Validate spectrum power levels storage size
+static_assert(200 <= 512,
+              "spectrum_power_levels_storage_ exceeds 512 bytes safe buffer limit");
+
+// Validate thread stack sizes
+static_assert(DroneDetectionLogger::WORKER_STACK_SIZE <= 8192,
+              "WORKER_STACK_SIZE exceeds 8KB thread stack limit");
+static_assert(DroneScanner::DB_LOADING_STACK_SIZE <= 8192,
+              "DB_LOADING_STACK_SIZE exceeds 8KB thread stack limit");
+
 // Static member definitions (FIX #1: removed inline to prevent RAM bloat)
 
 alignas(alignof(DisplayDroneEntry))

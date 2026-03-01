@@ -286,6 +286,62 @@ constexpr int32_t MAX_SLICE_INDEX = 10;
 
 } // namespace Constants
 
+// ============================================================================
+// STACK USAGE VALIDATION
+// ============================================================================
+// Embedded systems have limited stack space (4KB per thread on STM32F405).
+// These static_assert statements validate stack usage at compile time to prevent
+// stack overflow at runtime, which is difficult to debug.
+// ============================================================================
+
+// Validate thread stack sizes are within reasonable limits
+// STM32F405 has 4KB stack per thread, so we need to ensure thread stacks
+// don't exceed this limit or leave insufficient room for function calls
+static_assert(Constants::WORKER_STACK_SIZE_4KB <= 4096,
+              "WORKER_STACK_SIZE_4KB exceeds 4KB thread stack limit on STM32F405");
+static_assert(Constants::DB_LOADING_STACK_SIZE_4KB <= 4096,
+              "DB_LOADING_STACK_SIZE_4KB exceeds 4KB thread stack limit on STM32F405");
+static_assert(Constants::COORDINATOR_STACK_SIZE_6KB <= 6144,
+              "COORDINATOR_STACK_SIZE_6KB exceeds 6KB thread stack limit");
+
+// Validate buffer sizes are safe for stack allocation
+// Stack buffers should be kept small (<1KB) to prevent stack overflow
+static_assert(Constants::POOL_SIZE_1KB <= 1024,
+              "POOL_SIZE_1KB exceeds 1KB safe stack buffer limit");
+static_assert(Constants::POOL_SIZE_2KB <= 2048,
+              "POOL_SIZE_2KB exceeds 2KB safe stack buffer limit");
+
+// Validate spectrum and database storage sizes
+// These are typically allocated in static storage, not on stack
+static_assert(Constants::SPECTRUM_BIN_COUNT == 256,
+              "SPECTRUM_BIN_COUNT must be 256 for consistent FFT output");
+static_assert(Constants::SPECTRUM_BIN_COUNT_240 == 240,
+              "SPECTRUM_BIN_COUNT_240 must be 240 for display width");
+static_assert(Constants::DATABASE_STORAGE_SIZE <= 8192,
+              "DATABASE_STORAGE_SIZE exceeds 8KB memory budget");
+
+// Validate text buffer sizes are safe for stack allocation
+static_assert(Constants::LAST_TEXT_BUFFER_SIZE <= 256,
+              "LAST_TEXT_BUFFER_SIZE exceeds 256 bytes safe stack buffer limit");
+static_assert(Constants::CARD_TEXT_BUFFER_SIZE <= 128,
+              "CARD_TEXT_BUFFER_SIZE exceeds 128 bytes safe stack buffer limit");
+
+// Validate error message buffer size
+static_assert(Constants::ERROR_MESSAGE_BUFFER_SIZE <= 256,
+              "ERROR_MESSAGE_BUFFER_SIZE exceeds 256 bytes safe stack buffer limit");
+
+// Validate settings template sizes
+static_assert(Constants::SETTINGS_TEMPLATE_SIZE_4KB <= 4096,
+              "SETTINGS_TEMPLATE_SIZE_4KB exceeds 4KB safe stack buffer limit");
+static_assert(Constants::SETTINGS_TEMPLATE_SIZE_2KB <= 2048,
+              "SETTINGS_TEMPLATE_SIZE_2KB exceeds 2KB safe stack buffer limit");
+
+// Validate database entry size and count
+static_assert(Constants::DATABASE_ENTRY_SIZE <= 64,
+              "DATABASE_ENTRY_SIZE exceeds 64 bytes, may cause memory bloat");
+static_assert(Constants::MAX_DATABASE_ENTRIES <= 150,
+              "MAX_DATABASE_ENTRIES exceeds 150, may exceed memory budget");
+
 // Validation Utilities
 
 namespace Validation {

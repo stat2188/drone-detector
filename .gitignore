@@ -1,6 +1,7 @@
 /firmware/baseband/*.img
 /firmware/application/application.bin
 /CMakeCache.txt
+/*/CMakeCache.txt
 /Makefile
 /firmware/Makefile
 /firmware/baseband/Makefile

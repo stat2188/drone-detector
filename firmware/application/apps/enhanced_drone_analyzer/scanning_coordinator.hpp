@@ -110,6 +110,21 @@ private:
     // FIX #SO-1: Increased from 1536 to 2048 bytes (33% increase) to prevent stack overflow
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;
 
+    // ============================================================================
+    // STACK USAGE VALIDATION
+    // ============================================================================
+    // Embedded systems have limited stack space (4KB per thread on STM32F405).
+    // These static_assert statements validate stack usage at compile time to prevent
+    // stack overflow at runtime, which is difficult to debug.
+    // ============================================================================
+
+    // Validate coordinator thread stack size is within reasonable limits
+    // Coordinator thread has minimal stack usage, so 2KB is sufficient
+    static_assert(COORDINATOR_THREAD_STACK_SIZE <= 4096,
+                  "COORDINATOR_THREAD_STACK_SIZE exceeds 4KB thread stack limit");
+    static_assert(COORDINATOR_THREAD_STACK_SIZE >= 1024,
+                  "COORDINATOR_THREAD_STACK_SIZE below 1KB minimum for safe operation");
+
     // Thread working area (defined in .cpp file to avoid ODR issues)
     static stkalign_t coordinator_wa_[THD_WA_SIZE(COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 

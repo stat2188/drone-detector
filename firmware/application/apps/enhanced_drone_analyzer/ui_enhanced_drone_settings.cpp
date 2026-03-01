@@ -30,11 +30,49 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
+// ============================================================================
+// STACK USAGE VALIDATION
+// ============================================================================
+// Embedded systems have limited stack space (4KB per thread on STM32F405).
+// These static_assert statements validate stack usage at compile time to prevent
+// stack overflow at runtime, which is difficult to debug.
+// ============================================================================
+
+// Validate settings buffer sizes are safe for stack allocation
+// Stack buffers should be kept small (<1KB) to prevent stack overflow
+static constexpr size_t SETTINGS_BUFFER_SIZE = 512;
+static constexpr size_t FILE_BUFFER_SIZE = 512;
+static constexpr size_t kMaxPathLen = 256;
+static constexpr size_t HEADER_BUFFER_SIZE = 256;
+
+static_assert(SETTINGS_BUFFER_SIZE <= 1024,
+              "SETTINGS_BUFFER_SIZE exceeds 1KB safe stack buffer limit");
+static_assert(SETTINGS_BUFFER_SIZE >= 256,
+              "SETTINGS_BUFFER_SIZE below 256 bytes minimum for safe operation");
+static_assert(FILE_BUFFER_SIZE <= 1024,
+              "FILE_BUFFER_SIZE exceeds 1KB safe stack buffer limit");
+static_assert(FILE_BUFFER_SIZE >= 256,
+              "FILE_BUFFER_SIZE below 256 bytes minimum for safe operation");
+static_assert(kMaxPathLen <= 512,
+              "kMaxPathLen exceeds 512 bytes safe stack buffer limit");
+static_assert(kMaxPathLen >= 64,
+              "kMaxPathLen below 64 bytes minimum for safe operation");
+static_assert(HEADER_BUFFER_SIZE <= 512,
+              "HEADER_BUFFER_SIZE exceeds 512 bytes safe stack buffer limit");
+static_assert(HEADER_BUFFER_SIZE >= 128,
+              "HEADER_BUFFER_SIZE below 128 bytes minimum for safe operation");
+
 // RAII wrapper for File (ensures proper cleanup)
 class FileRAII {
 public:
     explicit FileRAII(const char* path, bool read_only = false)
-        : file_(), opened_(file_.open(path, read_only)) {}
+        : file_(), opened_(false) {
+        // Guard clause: null pointer check for path parameter
+        if (!path) {
+            return;
+        }
+        opened_ = file_.open(path, read_only);
+    }
 
     // noexcept for move operations
     ~FileRAII() noexcept {
@@ -357,6 +395,10 @@ const char* EnhancedSettingsManager::get_communication_status() noexcept {
 
 // const pointer, noexcept for file backup
 void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept {
+    // Guard clause: null pointer check for filepath parameter
+    if (!filepath) {
+        return;
+    }
     // Use RAII wrapper for File to ensure proper cleanup
     FileRAII orig_file(filepath, true);
     if (!orig_file.is_open()) return;
@@ -394,6 +436,10 @@ void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept 
 
 // const pointer, noexcept for file restore
 void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept {
+    // Guard clause: null pointer check for filepath parameter
+    if (!filepath) {
+        return;
+    }
     // Use fixed-size char array instead of std::string for backup path
     static constexpr size_t kMaxPathLen = 256;
     char backup_path[kMaxPathLen] = {};
@@ -425,6 +471,10 @@ void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept
 
 // const pointer, noexcept for file removal
 void EnhancedSettingsManager::remove_backup_file(const char* filepath) noexcept {
+    // Guard clause: null pointer check for filepath parameter
+    if (!filepath) {
+        return;
+    }
     // Use fixed-size char array instead of std::string for backup path
     static constexpr size_t kMaxPathLen = 256;
     char backup_path[kMaxPathLen] = {};

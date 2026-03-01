@@ -635,6 +635,15 @@ digitalrain_app_IS_TOP_LEVEL:STATIC=OFF
 digitalrain_app_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/standalone/digitalrain
 
 //Value Computed by CMake
+enhanced_drone_analyzer_test_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/test/enhanced_drone_analyzer
+
+//Value Computed by CMake
+enhanced_drone_analyzer_test_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+enhanced_drone_analyzer_test_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/test/enhanced_drone_analyzer
+
+//Value Computed by CMake
 firmware_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build
 
 //Value Computed by CMake
@@ -788,9 +797,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=9
-//ADVANCED property for variable: CMAKE_OBJCOPY
-CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=10
 //objcopy tool
 CMAKE_OBJCOPY:INTERNAL=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/arm-none-eabi/bin/objcopy
 //ADVANCED property for variable: CMAKE_OBJDUMP
