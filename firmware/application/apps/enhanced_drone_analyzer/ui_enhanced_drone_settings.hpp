@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -622,12 +623,16 @@ private:
             temp_string_constructed_ = true;
         }
         
-        // Destroy std::string using explicit destructor call
+        // Destroy std::string using std::destroy_at (C++17 standard)
+        // DIAMOND FIX: Replaced manual destructor call with std::destroy_at
+        // This is the modern, safe C++17 way to destroy objects constructed with placement new
+        // Previous: str_ptr->~std::string(); (incorrect syntax - caused compilation error)
+        // Current: std::destroy_at(str_ptr); (correct, idiomatic C++17)
         void destroy_temp_string() noexcept {
             if (temp_string_constructed_) {
-                // Call destructor on the std::string object in aligned storage
+                // Call std::destroy_at on the std::string object in aligned storage
                 std::string* str_ptr = reinterpret_cast<std::string*>(&temp_string_storage_);
-                str_ptr->~std::string();
+                std::destroy_at(str_ptr);
                 temp_string_constructed_ = false;
             }
         }
