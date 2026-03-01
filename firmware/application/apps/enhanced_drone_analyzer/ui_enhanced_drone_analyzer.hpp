@@ -42,6 +42,10 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 using rf::Frequency;
+// Import global ui namespace to prevent namespace pollution
+// Within this namespace, unqualified Color, font::, Style, screen_width, screen_height
+// would resolve to ui::apps::enhanced_drone_analyzer::Color, etc. instead of ui::Color
+using namespace ::ui;
 
 // Lock Order: Always acquire locks in ascending order (1  2  3  4  5  6  7)
 // Never acquire a lower-numbered lock while holding a higher-numbered lock

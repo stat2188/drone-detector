@@ -136,6 +136,8 @@ public:
 
 private:
 
-};  // namespace ui::apps::enhanced_drone_analyzer
+};  // class ScanningCoordinator
+
+}  // namespace ui::apps::enhanced_drone_analyzer
 
 #endif  // SCANNING_COORDINATOR_HPP_

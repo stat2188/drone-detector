@@ -29,6 +29,11 @@ using rf::Frequency;
 
 namespace ui::apps::enhanced_drone_analyzer {
 
+// Import global ui namespace to prevent namespace pollution
+// Within this namespace, unqualified Color, font::, Style, screen_width, screen_height
+// would resolve to ui::apps::enhanced_drone_analyzer::Color, etc. instead of ui::Color
+using namespace ::ui;
+
 // * * Enhanced Settings Manager with TXT file communication * All methods use const char* instead of std::string (zero heap allocation)
 // Settings manager with zero heap allocation
 class EnhancedSettingsManager {
@@ -622,7 +627,7 @@ private:
             if (temp_string_constructed_) {
                 // Call destructor on the std::string object in aligned storage
                 std::string* str_ptr = reinterpret_cast<std::string*>(&temp_string_storage_);
-                str_ptr->~string();
+                str_ptr->~std::string();
                 temp_string_constructed_ = false;
             }
         }
