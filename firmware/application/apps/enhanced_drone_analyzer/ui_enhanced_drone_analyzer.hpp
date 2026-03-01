@@ -87,8 +87,8 @@ public:
     TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
                      threat_level(static_cast<uint8_t>(ThreatLevel::NONE)), update_count(0),
                      last_seen(0), rssi(EDA::Constants::RSSI_SILENCE_DBM), rssi_history_{}, timestamp_history_{}, history_index_(0) {
-        std::fill(std::begin(rssi_history_), std::end(rssi_history_), EDA::Constants::RSSI_SILENCE_DBM);
-        std::fill(std::begin(timestamp_history_), std::end(timestamp_history_), 0);
+        for (auto& val : rssi_history_) val = EDA::Constants::RSSI_SILENCE_DBM;
+        for (auto& val : timestamp_history_) val = 0;
     }
 
     TrackedDrone(const TrackedDrone& other) : frequency(other.frequency),
@@ -341,7 +341,7 @@ public:
 
     // constexpr array instead of vector to avoid heap allocation
     static constexpr size_t BUILTIN_DB_SIZE = 17;
-    static const std::array<BuiltinDroneFreq, BUILTIN_DB_SIZE> BUILTIN_DRONE_DB;
+    static const BuiltinDroneFreq BUILTIN_DRONE_DB[BUILTIN_DB_SIZE];
 
     // Database timeout constants (Flash storage)
     static constexpr uint32_t DB_LOAD_TIMEOUT_MS = 2000;     // 2 seconds max for DB load
@@ -1841,7 +1841,7 @@ public:
 
 private:
     NavigationView& nav_;
-    ui::MenuView menu_view_{{0, 16, screen_width, screen_height - 16}};
+    ::ui::MenuView menu_view_{{0, 16, screen_width, screen_height - 16}};
 };
 
 // Forward declaration of integrated settings view

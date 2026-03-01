@@ -3,12 +3,18 @@
 // Always acquire in order 1->2->3->4->5; sd_card_mutex must be LAST
 // Use MutexLock RAII for automatic unlock; CriticalSection for volatile bool
 
+// Forward declarations for types used in static storage
+namespace ui::apps::enhanced_drone_analyzer {
+    struct DisplayDroneEntry;
+    struct TrackedDrone;
+    struct FreqmanDB;
+}
+
 // Corresponding header (must be first)
 #include "ui_enhanced_drone_analyzer.hpp"
 
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <cinttypes>
 #include <cstdarg>
@@ -102,7 +108,7 @@ uint8_t DroneScanner::freq_db_storage_[DroneScanner::FREQ_DB_STORAGE_SIZE];
 alignas(alignof(TrackedDrone))
 uint8_t DroneScanner::tracked_drones_storage_[DroneScanner::TRACKED_DRONES_STORAGE_SIZE];
 
-alignas(alignof(std::array<uint8_t, 200>))
+alignas(alignof(uint8_t))
 uint8_t DroneDisplayController::spectrum_power_levels_storage_[200];
 
 stkalign_t DroneDetectionLogger::worker_wa_[THD_WA_SIZE(DroneDetectionLogger::WORKER_STACK_SIZE) / sizeof(stkalign_t)];
@@ -110,7 +116,7 @@ stkalign_t DroneDetectionLogger::worker_wa_[THD_WA_SIZE(DroneDetectionLogger::WO
 stkalign_t DroneScanner::db_loading_wa_[THD_WA_SIZE(DroneScanner::DB_LOADING_STACK_SIZE) / sizeof(stkalign_t)];
 
 // Built-in drone frequency DB (reduced from 31 to 15 entries)
-EDA_FLASH_CONST const std::array<DroneScanner::BuiltinDroneFreq, DroneScanner::BUILTIN_DB_SIZE> DroneScanner::BUILTIN_DRONE_DB = {{
+EDA_FLASH_CONST const DroneScanner::BuiltinDroneFreq DroneScanner::BUILTIN_DRONE_DB[DroneScanner::BUILTIN_DB_SIZE] = {{
     // LRS / Control
     { 868000000, "TBS Crossfire EU", DroneType::MILITARY_DRONE },
     { 915000000, "TBS Crossfire US", DroneType::MILITARY_DRONE },
