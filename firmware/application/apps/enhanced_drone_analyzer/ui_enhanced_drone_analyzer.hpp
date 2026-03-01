@@ -6,6 +6,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <cstdio>
+#include <utility>
 
 // Third-party library headers (alphabetical order)
 #include <ch.h>
@@ -283,6 +286,9 @@ struct DroneSignal {
 
 class DroneDetectionLogger {
 public:
+    // FIX #3: Public access to WORKER_STACK_SIZE for static_assert validation
+    static constexpr size_t WORKER_STACK_SIZE = 4096;
+    
     DroneDetectionLogger();
     ~DroneDetectionLogger();
 
@@ -321,7 +327,6 @@ private:
     volatile bool initialization_complete_{false};  // Flag to signal system initialization is complete
 
     // FIX #SO-1: Increased from 3072 to 4096 bytes (33% increase) to prevent stack overflow
-    static constexpr size_t WORKER_STACK_SIZE = 4096;
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
 
     // File I/O
@@ -359,6 +364,12 @@ private:
 
 class DroneScanner {
 public:
+    // FIX #3: Public access to storage size constants for static_assert validation
+    static constexpr size_t FREQ_DB_STORAGE_SIZE = EDA::Constants::FREQ_DB_STORAGE_SIZE_4KB;
+    static constexpr size_t TRACKED_DRONES_STORAGE_SIZE =
+        sizeof(TrackedDrone) * EDA::Constants::MAX_TRACKED_DRONES;
+    static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4KB (optimized for memory)
+
     // DroneScanner stores settings by VALUE (not reference)
     // Benefits: No lifetime dependency, thread-safe access, simpler ownership
     // Memory trade-off: Adds ~100 bytes to DroneScanner size (acceptable for 192KB RAM)
@@ -640,8 +651,8 @@ struct DetectionParams {
 
         // Static storage for Scanner (zero heap allocation)
 
+        // FIX #3: Storage size constants already declared in public section
         // Static storage for FreqmanDB (4KB for safety)
-        static constexpr size_t FREQ_DB_STORAGE_SIZE = EDA::Constants::FREQ_DB_STORAGE_SIZE_4KB;
         alignas(alignof(FreqmanDB))
         static uint8_t freq_db_storage_[FREQ_DB_STORAGE_SIZE];
 
@@ -650,9 +661,8 @@ struct DetectionParams {
         static_assert(FREQ_DB_STORAGE_SIZE >= sizeof(FreqmanDB), "FREQ_DB_STORAGE_SIZE too small");
         // FreqmanDB size validated by static_assert in eda_constants.hpp
 
+        // FIX #3: Storage size constants already declared in public section
         // Static storage for TrackedDrones (~800 bytes)
-        static constexpr size_t TRACKED_DRONES_STORAGE_SIZE =
-            sizeof(TrackedDrone) * EDA::Constants::MAX_TRACKED_DRONES;
         alignas(alignof(TrackedDrone))
         static uint8_t tracked_drones_storage_[TRACKED_DRONES_STORAGE_SIZE];
 
@@ -682,15 +692,14 @@ struct DetectionParams {
         volatile bool db_loading_active_{false};
 
         // Initialization complete flag for async initialization coordination
-        volatile bool initialization_complete_{false};
-        
-        // Stage 4: Database reload flag for observer pattern
-        volatile bool database_needs_reload_{false};
-
-       // Static thread stack (4KB optimized for memory)
-        static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4KB (optimized for memory)
-
-          static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
+         volatile bool initialization_complete_{false};
+         
+         // Stage 4: Database reload flag for observer pattern
+         volatile bool database_needs_reload_{false};
+ 
+        // FIX #3: DB_LOADING_STACK_SIZE already declared in public section
+        // Static thread stack (4KB optimized for memory)
+           static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
       // volatile uint32_t with mutex protection for thread-safe counter access
       volatile uint32_t scan_cycles_{0};

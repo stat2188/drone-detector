@@ -3,20 +3,19 @@
 // Always acquire in order 1->2->3->4->5; sd_card_mutex must be LAST
 // Use MutexLock RAII for automatic unlock; CriticalSection for volatile bool
 
-// Forward declarations for types used in static storage
-namespace ui::apps::enhanced_drone_analyzer {
-    struct DisplayDroneEntry;
-    struct TrackedDrone;
-    struct FreqmanDB;
-}
+// FIX #1: Removed incorrect forward declarations
+// FreqmanDB is in freqman namespace, not ui::apps::enhanced_drone_analyzer
+// freqman_db.hpp is already included in the header file, no forward declaration needed
 
 // Corresponding header (must be first)
 #include "ui_enhanced_drone_analyzer.hpp"
 
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cinttypes>
+#include <cstddef>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdlib>
@@ -35,14 +34,11 @@ namespace ui::apps::enhanced_drone_analyzer {
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
 #include "file.hpp"
-#include "lpc43xx_cpp.hpp"
 #include "portapack.hpp"
 #include "scanning_coordinator.hpp"
 #include "sd_card.hpp"
-#include "settings_persistence.hpp"
 #include "ui_drone_audio.hpp"
 #include "ui_drone_common_types.hpp"
-#include "ui_enhanced_drone_settings.hpp"
 #include "ui_fileman.hpp"
 #include "ui_navigation.hpp"
 #include "ui_spectral_analyzer.hpp"
@@ -511,8 +507,9 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
 //       hardware.get_current_rssi() -> process_rssi_detection()
 //
 // Hardware Tuning Sequence:
+// FIX #4: Add portapack:: namespace qualifier to receiver_model
 // 1. Validate frequency range (MIN_HARDWARE_FREQ to MAX_HARDWARE_FREQ)
-// 2. Tune radio via receiver_model.set_target_frequency()
+// 2. Tune radio via portapack::receiver_model.set_target_frequency()
 // 3. Wait for PLL stabilization (PLL_STABILIZATION_ITERATIONS * PLL_STABILIZATION_DELAY_MS)
 // 4. Acquire RSSI measurement with timeout (RSSI_TIMEOUT_MS)
 // 5. Process detection if signal captured

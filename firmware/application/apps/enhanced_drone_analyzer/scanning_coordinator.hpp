@@ -129,10 +129,10 @@ private:
     static stkalign_t coordinator_wa_[THD_WA_SIZE(COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 
 public:
-    // Singleton state
+    // FIX #7: Singleton state with volatile flag for thread safety
     static ScanningCoordinator* instance_ptr_;  ///< Singleton instance pointer
     static Mutex init_mutex_;                   ///< Protects singleton initialization
-    static bool initialized_;                   ///< Tracks if singleton has been initialized
+    static volatile bool initialized_;           ///< Tracks if singleton has been initialized (volatile for thread safety)
 
 private:
 

@@ -33,10 +33,11 @@ namespace ui::apps::enhanced_drone_analyzer {
 // SINGLETON STORAGE DEFINITION
 // ============================================================================
 
+// FIX #7: Singleton instance storage with volatile flag for thread safety
 // Singleton instance storage (BSS segment, zero-initialized)
 ScanningCoordinator* ScanningCoordinator::instance_ptr_ = nullptr;
 Mutex ScanningCoordinator::init_mutex_;
-bool ScanningCoordinator::initialized_ = false;
+volatile bool ScanningCoordinator::initialized_ = false;  // volatile for thread-safe singleton pattern
 
 // Static initializer for init_mutex_ (called before main)
 namespace {
@@ -88,6 +89,10 @@ namespace ReturnCodes {
  * @note CRITICAL: This method will halt the system if called before initialize()
  */
 ScanningCoordinator& ScanningCoordinator::instance() noexcept {
+    // FIX #7: Memory barrier before reading volatile flag (using ChibiOS API)
+    chSysLock();
+    chSysUnlock();
+    
     // CRITICAL: Instance must be initialized before use
     // Dereferencing a null pointer causes undefined behavior (system crash)
     if (!instance_ptr_) {
@@ -103,6 +108,7 @@ ScanningCoordinator& ScanningCoordinator::instance() noexcept {
             // System watchdog will trigger reset if configured
         }
     }
+    
     return *instance_ptr_;
 }
 
@@ -121,10 +127,14 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
                                    DroneScanner& scanner,
                                    DroneDisplayController& display_controller,
                                    AudioManager& audio_controller) noexcept {
+    // FIX #7: Memory barrier before reading volatile flag
+    chSysLock();
+    
     MutexLock lock(init_mutex_, LockOrder::DATA_MUTEX);
 
     // Guard clause: Already initialized
     if (initialized_) {
+        chSysUnlock();
         return false;
     }
 
@@ -132,7 +142,10 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
     // Note: This is acceptable for singleton pattern as instance lives for entire program lifetime
     instance_ptr_ = new ScanningCoordinator(nav, hardware, scanner, display_controller, audio_controller);
 
+    // FIX #7: Memory barrier after writing volatile flag
     initialized_ = true;
+    chSysUnlock();
+    
     return true;
 }
 
