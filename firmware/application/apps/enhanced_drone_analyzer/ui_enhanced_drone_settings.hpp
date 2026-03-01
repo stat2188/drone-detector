@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <type_traits>  // For std::aligned_storage_t (FixedStringBuffer workaround)
 
 // Project-specific headers (alphabetical order)
 #include "settings_persistence.hpp"
@@ -621,7 +620,9 @@ private:
         // Destroy std::string using explicit destructor call
         void destroy_temp_string() noexcept {
             if (temp_string_constructed_) {
-                get_temp_string().~std::string();
+                // Call destructor on the std::string object in aligned storage
+                std::string* str_ptr = reinterpret_cast<std::string*>(&temp_string_storage_);
+                str_ptr->~string();
                 temp_string_constructed_ = false;
             }
         }
