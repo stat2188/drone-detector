@@ -14,8 +14,10 @@
  * - Locking Order: 1.ATOMIC_FLAGS 2.data_mutex 3.spectrum_mutex 4.logger_mutex 5.sd_card_mutex
  * - Always acquire in order 1->2->3->4->5; sd_card_mutex must be LAST
  * - Use MutexLock RAII for automatic unlock
+ * - Use CriticalSection for ISR-safe interrupt control
  *
  * @note DO NOT call from ISR context (mutex not ISR-safe)
+ * @note For interrupt control, use CriticalSection class (not M4InterruptGuard - removed)
  */
 
 #ifndef EDA_LOCKING_HPP_
@@ -470,51 +472,6 @@ private:
         return free_stack;
 #endif
     }
-};
-
-/**
- * @brief RAII guard for M4 interrupt management
- *
- * Ensures M4 interrupts are always re-enabled when leaving scope,
- * even on early returns or exceptions.
- *
- * Usage:
- * @code
- *     void my_function() {
- *         M4InterruptGuard interrupt_guard;  // Disables M4 interrupts
- *         // Critical section with interrupts disabled
- *         // Early returns are safe - interrupts auto-enabled
- *     }  // Interrupts re-enabled here
- * @endcode
- *
- * @note Prevents interrupt leaks by guaranteeing re-enable on scope exit
- * @note Non-copyable, non-movable for safety
- */
-class M4InterruptGuard {
-public:
-    /**
-     * @brief Constructor - disables M4 interrupts
-     * @note noexcept for embedded safety
-     */
-    M4InterruptGuard() noexcept {
-        lpc43xx::creg::m4txevent::disable();
-    }
-
-    /**
-     * @brief Destructor - re-enables M4 interrupts
-     * @note noexcept for embedded safety
-     */
-    ~M4InterruptGuard() noexcept {
-        lpc43xx::creg::m4txevent::enable();
-    }
-
-    // Non-copyable
-    M4InterruptGuard(const M4InterruptGuard&) = delete;
-    M4InterruptGuard& operator=(const M4InterruptGuard&) = delete;
-
-    // Non-movable
-    M4InterruptGuard(M4InterruptGuard&&) = delete;
-    M4InterruptGuard& operator=(M4InterruptGuard&&) = delete;
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer
