@@ -522,7 +522,12 @@ private:
     class FixedStringBuffer {
     public:
         explicit FixedStringBuffer(char* buffer, size_t capacity) noexcept
-            : buffer_(buffer), capacity_(capacity), size_(0), temp_string_constructed_(false) {
+            : buffer_(buffer),
+              capacity_(capacity),
+              size_(0),
+              temp_string_constructed_(false),
+              temp_string_storage_{}  // Initialize union storage
+        {
             buffer_[0] = '\0';
         }
 
