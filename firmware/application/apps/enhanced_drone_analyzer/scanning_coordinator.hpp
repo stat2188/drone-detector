@@ -77,6 +77,7 @@ public:
 
 private:
     // * * @brief Private constructor for singleton pattern * @param nav Navigation view reference * @param hardware Hardware controller reference * @param scanner Scanner reference * @param display_controller Display controller reference * @param audio_controller Audio controller reference
+    // DIAMOND FIX: Constructor must be noexcept for static storage pattern
     ScanningCoordinator(NavigationView& nav,
                        DroneHardwareController& hardware,
                        DroneScanner& scanner,
@@ -130,9 +131,11 @@ private:
 
 public:
     // FIX #7: Singleton state with volatile flag for thread safety
+    // DIAMOND FIX: Static storage pattern (no heap allocation)
     static ScanningCoordinator* instance_ptr_;  ///< Singleton instance pointer
     static Mutex init_mutex_;                   ///< Protects singleton initialization
     static volatile bool initialized_;           ///< Tracks if singleton has been initialized (volatile for thread safety)
+    static volatile bool instance_constructed_;  ///< Tracks if placement new was called (volatile for thread safety)
 
 private:
 

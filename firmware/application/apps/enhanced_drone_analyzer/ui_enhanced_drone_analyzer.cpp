@@ -82,6 +82,15 @@ constexpr inline uint64_t ceil_div_u64(uint64_t numerator, uint64_t denominator)
     return (numerator + denominator - 1) / denominator;
 }
 
+// DIAMOND FIX: Named constants for magic numbers (replaces magic values with semantic names)
+namespace MagicNumberConstants {
+    // Maximum scan cycles before capping progressive slowdown
+    constexpr uint32_t PROGRESSIVE_SLOWDOWN_MAX_CYCLES = 39;
+
+    // Number of scanning modes (DATABASE, WIDEBAND_CONTINUOUS, HYBRID)
+    constexpr uint8_t SCANNING_MODE_COUNT = 3;
+}
+
 // SD card mutex (FatFS is NOT thread-safe)
 Mutex sd_card_mutex;
 
@@ -469,7 +478,10 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
         adaptive_interval = SLOW_SCAN_INTERVAL_MS;
     } else if (current_detections == 0 && scan_cycles_ > PROGRESSIVE_SLOWDOWN_DIVISOR) {
         uint32_t cycles_value = get_scan_cycles();
-        uint32_t cycles_clamped = (cycles_value < 39) ? cycles_value : 39;
+        // DIAMOND FIX: Replace magic number 39 with semantic constant
+        uint32_t cycles_clamped = (cycles_value < MagicNumberConstants::PROGRESSIVE_SLOWDOWN_MAX_CYCLES) ?
+                                  cycles_value :
+                                  MagicNumberConstants::PROGRESSIVE_SLOWDOWN_MAX_CYCLES;
         uint32_t slowdown_multiplier = SLOWDOWN_MULTIPLIER_LUT[cycles_clamped];
         uint32_t interval_calc = base_interval * slowdown_multiplier;
         adaptive_interval = (interval_calc < VERY_SLOW_SCAN_INTERVAL_MS) ? interval_calc : VERY_SLOW_SCAN_INTERVAL_MS;
@@ -484,7 +496,8 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     chThdSleepMilliseconds(adaptive_interval);
 
     uint8_t mode_idx = static_cast<uint8_t>(scanning_mode_);
-    if (mode_idx < 3) {
+    // DIAMOND FIX: Replace magic number 3 with semantic constant
+    if (mode_idx < MagicNumberConstants::SCANNING_MODE_COUNT) {
         (this->*DroneScanner::SCAN_FUNCTIONS[mode_idx])(hardware);
     }
 

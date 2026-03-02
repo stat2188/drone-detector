@@ -13,7 +13,14 @@
 // C++ standard library headers (alphabetical order)
 #include <cstdint>
 #include <cstring>
-#include <new>  // For placement new
+#include <new>  // For placement new (static storage pattern) - required for singleton initialization
+
+// DIAMOND FIX: Define placement new operator manually for embedded systems
+// This is required because the embedded toolchain may not provide it
+// Must be defined at global scope, not inside namespace
+inline void* operator new(size_t, void* ptr) noexcept {
+    return ptr;
+}
 
 // Third-party library headers
 #include <ch.h>         // ChibiOS RTOS
@@ -34,10 +41,31 @@ namespace ui::apps::enhanced_drone_analyzer {
 // ============================================================================
 
 // FIX #7: Singleton instance storage with volatile flag for thread safety
-// Singleton instance storage (BSS segment, zero-initialized)
+// DIAMOND FIX: Static storage pattern (no heap allocation)
+// Uses static instance directly for zero-allocation singleton
+// Static instance (BSS segment, zero-initialized)
+alignas(ScanningCoordinator)
+static uint8_t instance_storage_[sizeof(ScanningCoordinator)];
+
+// Singleton instance pointer (initialized to nullptr, set to &instance_storage_ after construction)
 ScanningCoordinator* ScanningCoordinator::instance_ptr_ = nullptr;
 Mutex ScanningCoordinator::init_mutex_;
 volatile bool ScanningCoordinator::initialized_ = false;  // volatile for thread-safe singleton pattern
+volatile bool ScanningCoordinator::instance_constructed_ = false;  // tracks if instance was constructed
+
+// Helper function to manually construct instance in static storage (no heap allocation)
+// Uses placement new with static storage
+static ScanningCoordinator* construct_instance_in_static_storage(
+    NavigationView& nav,
+    DroneHardwareController& hardware,
+    DroneScanner& scanner,
+    DroneDisplayController& display_controller,
+    AudioManager& audio_controller) noexcept {
+    // Cast byte array to pointer type
+    auto* ptr = reinterpret_cast<ScanningCoordinator*>(instance_storage_);
+    // Manual construction using placement new with explicit void* cast
+    return new (static_cast<void*>(ptr)) ScanningCoordinator(nav, hardware, scanner, display_controller, audio_controller);
+}
 
 // Static initializer for init_mutex_ (called before main)
 namespace {
@@ -54,6 +82,9 @@ stkalign_t ScanningCoordinator::coordinator_wa_[THD_WA_SIZE(ScanningCoordinator:
 
 // TYPE ALIASES
 using TimeoutCount = uint32_t;
+// DIAMOND FIX: Semantic type for frequency values (Hz)
+// Use Frequency (int64_t) consistently throughout to match rf::Frequency definition
+using FrequencyHz = int64_t;
 
 // CONSTANTS
 namespace CoordinatorConstants {
@@ -138,9 +169,11 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
         return false;
     }
 
-    // Allocate instance on heap (single allocation, never freed)
+    // DIAMOND FIX: Use manual construction with static storage (no heap allocation)
     // Note: This is acceptable for singleton pattern as instance lives for entire program lifetime
-    instance_ptr_ = new ScanningCoordinator(nav, hardware, scanner, display_controller, audio_controller);
+    // Static storage pattern eliminates heap allocation and fragmentation
+    instance_ptr_ = construct_instance_in_static_storage(nav, hardware, scanner, display_controller, audio_controller);
+    instance_constructed_ = true;
 
     // FIX #7: Memory barrier after writing volatile flag
     initialized_ = true;
@@ -273,16 +306,20 @@ void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings&
     }
 
     // Update scanner frequency range
-    // DIAMOND FIX: Type-safe frequency comparison (int64_t for frequency values)
-    // Compare uint64_t value directly against INT64_MAX before casting to prevent overflow
+    // DIAMOND FIX: Type-safe frequency comparison using consistent FrequencyHz (int64_t) type
+    // Prevents overflow when converting from uint64_t settings to int64_t Frequency type
     constexpr uint64_t INT64_MAX_U64 = 9223372036854775807ULL;
 
-    // Clamp frequency values to int64_t range if needed
-    uint64_t min_freq = (settings.wideband_min_freq_hz > INT64_MAX_U64) ? INT64_MAX_U64 : settings.wideband_min_freq_hz;
-    uint64_t max_freq = (settings.wideband_max_freq_hz > INT64_MAX_U64) ? INT64_MAX_U64 : settings.wideband_max_freq_hz;
+    // Clamp frequency values to int64_t range if needed (prevent overflow)
+    // Use FrequencyHz (int64_t) consistently to match rf::Frequency definition
+    FrequencyHz min_freq = (settings.wideband_min_freq_hz > INT64_MAX_U64) ?
+                          static_cast<FrequencyHz>(INT64_MAX_U64) :
+                          static_cast<FrequencyHz>(settings.wideband_min_freq_hz);
+    FrequencyHz max_freq = (settings.wideband_max_freq_hz > INT64_MAX_U64) ?
+                          static_cast<FrequencyHz>(INT64_MAX_U64) :
+                          static_cast<FrequencyHz>(settings.wideband_max_freq_hz);
 
-    scanner_.update_scan_range(static_cast<int64_t>(min_freq),
-                               static_cast<int64_t>(max_freq));
+    scanner_.update_scan_range(min_freq, max_freq);
 }
 
 void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summary) noexcept {
