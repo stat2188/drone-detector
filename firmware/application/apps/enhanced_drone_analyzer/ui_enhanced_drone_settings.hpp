@@ -517,7 +517,8 @@ private:
     // ============================================================================
 
     // Custom wrapper for fixed-size char buffer (provides std::string interface)
-    // FIX: Eliminates heap allocation for TextEdit widget using placement new with aligned storage
+    // FIX: Eliminates heap allocation for TextEdit widget using placement new with union storage
+    // DIAMOND FIX: Replaced std::aligned_storage_t (deprecated in C++23) with union-based storage
     class FixedStringBuffer {
     public:
         explicit FixedStringBuffer(char* buffer, size_t capacity) noexcept
@@ -601,21 +602,30 @@ private:
 
     private:
         // ============================================================================
-        // WORKAROUND: Placement new with aligned storage for lazy std::string construction
+        // WORKAROUND: Union-based storage for lazy std::string construction
         // ============================================================================
         // PROBLEM: std::string member causes heap allocation during construction
-        // SOLUTION: Use aligned_storage to reserve space, construct only when needed
+        // SOLUTION: Use union to reserve space, construct only when needed
         // BENEFIT: Zero heap allocation unless TextEdit widget actually uses operator std::string&()
+        // DIAMOND FIX: Replaced std::aligned_storage_t (deprecated in C++23) with union
         // ============================================================================
         
-        // Type alias for aligned storage (sufficient for std::string on most platforms)
-        using TempStringStorage = std::aligned_storage_t<sizeof(std::string), alignof(std::string)>;
+        // Union-based storage for std::string (replaces deprecated std::aligned_storage_t)
+        union StringStorage {
+            alignas(std::string) unsigned char buffer[sizeof(std::string)];
+            
+            // Default constructor initializes buffer to zero
+            constexpr StringStorage() noexcept : buffer{} {}
+            
+            // Destructor is trivial for union
+            ~StringStorage() {}
+        };
         
-        // Validate that aligned storage is sufficient for std::string
-        static_assert(sizeof(TempStringStorage) >= sizeof(std::string),
-                     "TempStringStorage must be large enough to hold std::string");
-        static_assert(alignof(TempStringStorage) >= alignof(std::string),
-                     "TempStringStorage must have sufficient alignment for std::string");
+        // Validate that union storage is sufficient for std::string
+        static_assert(sizeof(StringStorage) >= sizeof(std::string),
+                     "StringStorage must be large enough to hold std::string");
+        static_assert(alignof(StringStorage) >= alignof(std::string),
+                     "StringStorage must have sufficient alignment for std::string");
         
         // Construct std::string in-place using placement new
         void construct_temp_string() noexcept {
@@ -626,15 +636,19 @@ private:
         }
         
         // Destroy std::string using std::destroy_at (C++17 standard)
-        // DIAMOND FIX: Replaced manual destructor call with std::destroy_at
+        // DIAMOND FIX: Added explicit null checks to prevent undefined behavior
         // This is the modern, safe C++17 way to destroy objects constructed with placement new
-        // Previous: str_ptr->~std::string(); (incorrect syntax - caused compilation error)
-        // Current: std::destroy_at(str_ptr); (correct, idiomatic C++17)
         void destroy_temp_string() noexcept {
             if (temp_string_constructed_) {
-                // Call std::destroy_at on the std::string object in aligned storage
+                // Get pointer to std::string object in union storage
                 std::string* str_ptr = reinterpret_cast<std::string*>(&temp_string_storage_);
-                std::destroy_at(str_ptr);
+                
+                // DIAMOND FIX: Add explicit null check to prevent undefined behavior
+                // Although str_ptr should never be null here, we check for safety
+                if (str_ptr != nullptr) {
+                    // Call std::destroy_at on the std::string object in union storage
+                    std::destroy_at(str_ptr);
+                }
                 temp_string_constructed_ = false;
             }
         }
@@ -652,7 +666,7 @@ private:
         char* buffer_;                    // Fixed-size buffer (non-owning)
         size_t capacity_;                // Buffer capacity
         size_t size_;                   // Current string length
-        TempStringStorage temp_string_storage_;  // Aligned storage for std::string (no heap allocation)
+        StringStorage temp_string_storage_;  // Union storage for std::string (no heap allocation)
         bool temp_string_constructed_;   // Track if std::string is constructed in storage
     };
 
