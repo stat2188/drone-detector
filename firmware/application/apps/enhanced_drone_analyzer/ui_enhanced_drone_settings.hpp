@@ -447,7 +447,6 @@ public:
           nav_(nav),
           entry_(entry),
           on_save_fn_(std::move(callback)),
-          description_widget_buffer_(entry.description),  // For TextEdit widget (framework limitation)
           text_freq_{{8, 16, 64, 16}, "Freq:"},
           field_freq_{{8, 32}},
           text_desc_{{8, 64, 64, 16}, "Name:"},
@@ -459,6 +458,9 @@ public:
                      DroneEntryEditorViewConstants::FIELD_DESC_HEIGHT},
           button_save_{{8, 128, 100, 32}, "SAVE"},
           button_cancel_{{128, 128, 100, 32}, "CANCEL"} {
+        // Copy entry description to description_buffer_ for FixedStringBuffer
+        std::strncpy(description_buffer_, entry.description, DESCRIPTION_BUFFER_SIZE);
+        description_buffer_[DESCRIPTION_BUFFER_SIZE - 1] = '\0';
         add_children({&text_freq_, &field_freq_, &text_desc_, &field_desc_, &button_save_, &button_cancel_});
         field_freq_.set_value(entry_.freq);
         button_save_.on_select = [this](Button&) { on_save(); };

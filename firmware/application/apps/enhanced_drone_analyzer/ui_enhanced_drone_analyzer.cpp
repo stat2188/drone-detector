@@ -3494,7 +3494,10 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
 {
     // FIX: Initialize ScanningCoordinator singleton (must be called before using instance())
     // This creates the singleton instance and sets up all dependencies
-    ScanningCoordinator::initialize(nav, hardware_, scanner_, display_controller_, audio_);
+    if (!ScanningCoordinator::initialize(nav, hardware_, scanner_, display_controller_, audio_)) {
+        // Handle initialization failure - log error or set error state
+        display_controller_.text_status_info().set("Coordinator init failed");
+    }
 
     // FIX: Set the pointer member to reference the singleton instance
     // Using a pointer instead of a reference avoids undefined behavior from const_cast rebinding
