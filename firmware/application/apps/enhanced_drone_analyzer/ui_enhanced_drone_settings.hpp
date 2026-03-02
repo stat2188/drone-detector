@@ -525,8 +525,8 @@ private:
             : buffer_(buffer),
               capacity_(capacity),
               size_(0),
-              temp_string_constructed_(false),
-              temp_string_storage_{}  // Initialize union storage
+              temp_string_storage_{},  // Initialize union storage (declared at line 674)
+              temp_string_constructed_(false)  // Initialize flag (declared at line 675)
         {
             buffer_[0] = '\0';
         }
