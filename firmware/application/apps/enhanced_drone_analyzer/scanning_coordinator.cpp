@@ -238,12 +238,10 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
     constexpr uint32_t POLL_INTERVAL_MS = 10;
     systime_t deadline = chTimeNow() + MS2ST(TERMINATION_TIMEOUT_MS);
 
-    bool terminated = false;
     while (chTimeNow() < deadline) {
         {
             MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
             if (thread_terminated_ && thread_generation_ == expected_generation) {
-                terminated = true;
                 break;
             }
         }
