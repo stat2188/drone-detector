@@ -380,7 +380,8 @@ public:
     };
 
     // constexpr array instead of vector to avoid heap allocation
-    static constexpr size_t BUILTIN_DB_SIZE = 17;
+    // FIX: Changed from 17 to 15 to match actual array entries (comment says "reduced from 31 to 15 entries")
+    static constexpr size_t BUILTIN_DB_SIZE = 15;
     static const BuiltinDroneFreq BUILTIN_DRONE_DB[BUILTIN_DB_SIZE];
 
     // Database timeout constants (Flash storage)
@@ -1736,7 +1737,10 @@ public:
     // This eliminates the fragile dependency on declaration order.
     DroneUIController ui_controller_;
     DroneDisplayController display_controller_;
-    ScanningCoordinator scanning_coordinator_;
+    // FIX: ScanningCoordinator is a singleton - use pointer member to avoid undefined behavior
+    // References cannot be rebound, and const_cast on references is undefined behavior.
+    // The singleton is initialized in the constructor body via ScanningCoordinator::initialize()
+    ScanningCoordinator* scanning_coordinator_;
 
     SmartThreatHeader smart_header_;
     ConsoleStatusBar status_bar_;

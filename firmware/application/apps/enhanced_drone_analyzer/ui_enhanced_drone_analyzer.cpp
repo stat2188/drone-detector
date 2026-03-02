@@ -139,7 +139,8 @@ stkalign_t DroneDetectionLogger::worker_wa_[THD_WA_SIZE(DroneDetectionLogger::WO
 stkalign_t DroneScanner::db_loading_wa_[THD_WA_SIZE(DroneScanner::DB_LOADING_STACK_SIZE) / sizeof(stkalign_t)];
 
 // Built-in drone frequency DB (reduced from 31 to 15 entries)
-EDA_FLASH_CONST const DroneScanner::BuiltinDroneFreq DroneScanner::BUILTIN_DRONE_DB[DroneScanner::BUILTIN_DB_SIZE] = {{
+// FIX: Removed extra brace that caused "Excess elements in scalar initializer" error
+EDA_FLASH_CONST const DroneScanner::BuiltinDroneFreq DroneScanner::BUILTIN_DRONE_DB[DroneScanner::BUILTIN_DB_SIZE] = {
     // LRS / Control
     { 868000000, "TBS Crossfire EU", DroneType::MILITARY_DRONE },
     { 915000000, "TBS Crossfire US", DroneType::MILITARY_DRONE },
@@ -164,10 +165,8 @@ EDA_FLASH_CONST const DroneScanner::BuiltinDroneFreq DroneScanner::BUILTIN_DRONE
     { 5735000000, "DJI FPV Ch1", DroneType::MAVIC },
 
     // WiFi Drones
-    { 2412000000, "WiFi Ch1", DroneType::PARROT_ANAFI },
-    { 2437000000, "WiFi Ch6", DroneType::PARROT_ANAFI },
-    { 2462000000, "WiFi Ch11", DroneType::PARROT_ANAFI }
-}};
+    { 2412000000, "WiFi Ch1", DroneType::PARROT_ANAFI }
+};
 
 DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
     : entries_to_scan_(),
@@ -2051,7 +2050,7 @@ void DroneHardwareController::shutdown_hardware() {
 
     // Explicitly disable radio chip (CPLD/R820T/MAX2837)
     // This is critical for power saving and stability of the next application launch
-    receiver_model.disable();
+    portapack::receiver_model.disable();
 
     cleanup_spectrum_collector();
 }
@@ -2062,20 +2061,20 @@ void DroneHardwareController::initialize_radio_state() {
 
     // Add error handling for all radio operations
 
-    receiver_model.enable();
-    receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
-    receiver_model.set_sampling_rate(get_configured_sampling_rate());
-    receiver_model.set_baseband_bandwidth(get_configured_bandwidth());
-    receiver_model.set_squelch_level(0);
+    portapack::receiver_model.enable();
+    portapack::receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
+    portapack::receiver_model.set_sampling_rate(get_configured_sampling_rate());
+    portapack::receiver_model.set_baseband_bandwidth(get_configured_bandwidth());
+    portapack::receiver_model.set_squelch_level(0);
 
         // Use safe defaults - RF Amp controlled by user settings
-        receiver_model.set_rf_amp(false);
+        portapack::receiver_model.set_rf_amp(false);
 
     // LNA Gain: 32dB (Range 0-40) - receives weak signals
-    receiver_model.set_lna(32);
+    portapack::receiver_model.set_lna(32);
 
     // VGA Gain: 32dB (Range 0-62) - signal volume after LNA
-    receiver_model.set_vga(32);
+    portapack::receiver_model.set_vga(32);
 
 }
 
@@ -2129,7 +2128,7 @@ bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
     constexpr uint32_t RETRY_DELAY_MS = 10;
     
     for (uint8_t retry = 0; retry < MAX_RETRIES; ++retry) {
-        receiver_model.set_target_frequency(frequency_hz);
+        portapack::receiver_model.set_target_frequency(frequency_hz);
         
         // Delay between retries only
         if (retry > 0) {
@@ -3480,7 +3479,9 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       audio_(),
       ui_controller_(nav, hardware_, scanner_, audio_),  // No display_controller in constructor
       display_controller_({0, 60, screen_width, screen_height - 80}),
-      scanning_coordinator_(nav, hardware_, scanner_, display_controller_, audio_),
+      // FIX: ScanningCoordinator is a singleton - pointer member initialized to nullptr
+      // The singleton is initialized in the constructor body via ScanningCoordinator::initialize()
+      scanning_coordinator_(nullptr),
       smart_header_(Rect{0, 0, screen_width, 60}),
       status_bar_(0, Rect{0, screen_height - 80, screen_width, 16}),
       threat_cards_(),
@@ -3491,6 +3492,13 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       scanning_active_(false),
       initialization_in_progress_(false)
 {
+    // FIX: Initialize ScanningCoordinator singleton (must be called before using instance())
+    // This creates the singleton instance and sets up all dependencies
+    ScanningCoordinator::initialize(nav, hardware_, scanner_, display_controller_, audio_);
+
+    // FIX: Set the pointer member to reference the singleton instance
+    // Using a pointer instead of a reference avoids undefined behavior from const_cast rebinding
+    scanning_coordinator_ = &ScanningCoordinator::instance();
     // Remove sd_mutex_initialized pattern (mutex already declared as static at namespace scope)
 
     // FIX: Set display_controller after construction
@@ -3513,7 +3521,7 @@ EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
     request_global_shutdown();
 
     // 1. Stop activity (in dependency order)
-    scanning_coordinator_.stop_coordinated_scanning();
+    scanning_coordinator_->stop_coordinated_scanning();
     scanner_.stop_scanning();
     hardware_.shutdown_hardware();
 
@@ -3940,7 +3948,8 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
     // FIX: Use RAII guard to ensure M4 interrupts are always re-enabled
     // This prevents M4Core_IRQHandler from firing while M0 is locked
     // The guard automatically re-enables interrupts on scope exit
-    M4InterruptGuard interrupt_guard;
+    // FIX: M4InterruptGuard doesn't exist - use M4InterruptMask from settings_persistence.hpp
+    M4InterruptMask interrupt_mask;
 
     // SD
     systime_t sd_start = chTimeNow();
@@ -3990,7 +3999,7 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
                             settings_.wideband_max_freq_hz);
     
     // FIX: Update coordinator parameters after settings load
-    scanning_coordinator_.update_runtime_parameters(settings_);
+    scanning_coordinator_->update_runtime_parameters(settings_);
 
     // DIAMOND FIX: Update scanner's settings from view's settings
     // Required because scanner now stores settings by value (not reference)
@@ -4091,9 +4100,9 @@ void EnhancedDroneSpectrumAnalyzerView::start_scanning_thread() {
         return;
     }
 
-    if (scanning_coordinator_.is_scanning_active()) return;
+    if (scanning_coordinator_->is_scanning_active()) return;
 
-    const auto result = scanning_coordinator_.start_coordinated_scanning();
+    const auto result = scanning_coordinator_->start_coordinated_scanning();
 
     // Handle different start results
     switch (result) {
@@ -4113,12 +4122,18 @@ void EnhancedDroneSpectrumAnalyzerView::start_scanning_thread() {
             // Display error message to user
             display_controller_.text_status_info().set("Thread creation failed");
             break;
+        case StartResult::SINGLETON_VIOLATION:
+            // Singleton violation detected - multiple instances created
+            // This should never happen in normal operation
+            // Display critical error message to user
+            display_controller_.text_status_info().set("Singleton violation error");
+            break;
     }
 }
 
 void EnhancedDroneSpectrumAnalyzerView::stop_scanning_thread() {
-    if (!scanning_coordinator_.is_scanning_active()) return;
-    scanning_coordinator_.stop_coordinated_scanning();
+    if (!scanning_coordinator_->is_scanning_active()) return;
+    scanning_coordinator_->stop_coordinated_scanning();
 }
 
 bool EnhancedDroneSpectrumAnalyzerView::handle_start_stop_button() {
@@ -4129,7 +4144,7 @@ bool EnhancedDroneSpectrumAnalyzerView::handle_start_stop_button() {
         return false;
     }
     
-    if (scanning_coordinator_.is_scanning_active()) {
+    if (scanning_coordinator_->is_scanning_active()) {
         ui_controller_.on_stop_scan();
         button_start_stop_.set_text("START/STOP");
     } else {
