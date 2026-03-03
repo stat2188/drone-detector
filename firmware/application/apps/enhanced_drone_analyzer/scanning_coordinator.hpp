@@ -155,6 +155,10 @@ enum class StartResult {
 // - Full mutex protection for thread-safe state management
 // - No heap allocation
 class ScanningCoordinator {
+    // Allow StaticStorage to access private constructor
+    template <typename T>
+    friend class StaticStorage;
+
 public:
     // Destroy the Scanning Coordinator object
     // Ensures scanning thread is stopped before destruction.

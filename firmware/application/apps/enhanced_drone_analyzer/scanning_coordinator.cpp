@@ -13,14 +13,7 @@
 // C++ standard library headers (alphabetical order)
 #include <cstdint>
 #include <cstring>
-
-// DIAMOND FIX #1: Define placement new operator manually for embedded systems
-// This is required because the embedded toolchain may not provide it
-// Must be defined at global scope, not inside namespace
-// No <new> header included - zero heap allocation
-inline void* operator new(size_t, void* ptr) noexcept {
-    return ptr;
-}
+#include <new>  // Required for placement new operator
 
 // Third-party library headers
 #include <ch.h>         // ChibiOS RTOS
