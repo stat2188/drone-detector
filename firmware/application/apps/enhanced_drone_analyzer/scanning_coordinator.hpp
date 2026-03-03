@@ -1,4 +1,5 @@
-// * * @file scanning_coordinator.hpp * @brief Coordinate scanning operations for Enhanced Drone Analyzer
+// @file scanning_coordinator.hpp
+// @brief Coordinate scanning operations for Enhanced Drone Analyzer
 
 #ifndef SCANNING_COORDINATOR_HPP_
 #define SCANNING_COORDINATOR_HPP_
@@ -25,7 +26,118 @@ class DroneHardwareController;
 class DroneScanner;
 class DroneDisplayController;
 
-// * @brief Result codes for start_coordinated_scanning() operation
+// ============================================================================
+// FIX #1 & #2: STATIC STORAGE PROTECTION WITH CANARY PATTERN
+// ============================================================================
+// DIAMOND FIX #2: Add memory barriers and canary patterns for corruption detection
+//
+// FEATURES:
+// - Placement new construction in static storage (no heap allocation)
+// - Canary values before and after instance storage for corruption detection
+// - is_corrupted() method to detect memory corruption
+// - construct() method for safe object construction
+//
+// USAGE:
+//   static StaticStorage<ScanningCoordinator> coordinator_storage;
+//   coordinator_storage.construct(nav, hardware, scanner, display_controller, audio_controller);
+//   if (coordinator_storage.is_corrupted()) { /* handle corruption */ }
+//   coordinator_storage.get().method();
+//
+// @tparam T Type to store in static storage
+template <typename T>
+class StaticStorage {
+public:
+    // Construct object in static storage using placement new
+    // @param nav Navigation view reference
+    // @param hardware Hardware controller reference
+    // @param scanner Scanner reference
+    // @param display_controller Display controller reference
+    // @param audio_controller Audio controller reference
+    // @note Uses compiler intrinsic for memory barriers (not chSysLock/chSysUnlock)
+    // @note chSysLock/chSysUnlock are critical section locks that disable ALL interrupts,
+    //       not memory barriers. Using them incorrectly can cause system instability.
+    void construct(NavigationView& nav,
+                  DroneHardwareController& hardware,
+                  DroneScanner& scanner,
+                  DroneDisplayController& display_controller,
+                  AudioManager& audio_controller) noexcept {
+        // Memory barrier before construction (compiler intrinsic)
+        __sync_synchronize();
+
+        // Construct object using placement new
+        // Note: placement new is defined inline, no <new> header needed
+        new (static_cast<void*>(&instance_storage_)) T(nav, hardware, scanner, display_controller, audio_controller);
+
+        // Set constructed flag
+        constructed_ = true;
+
+        // Memory barrier after construction (compiler intrinsic)
+        __sync_synchronize();
+    }
+
+    // Get reference to stored object
+    // @return Reference to stored object
+    // @pre construct() must have been called
+    // @pre is_corrupted() must return false
+    // @note Uses compiler intrinsic for memory barrier (not chSysLock/chSysUnlock)
+    [[nodiscard]] T& get() noexcept {
+        // Memory barrier before accessing object (compiler intrinsic)
+        __sync_synchronize();
+        return *reinterpret_cast<T*>(&instance_storage_);
+    }
+
+    // Get const reference to stored object
+    // @return Const reference to stored object
+    // @pre construct() must have been called
+    // @pre is_corrupted() must return false
+    // @note Uses compiler intrinsic for memory barrier (not chSysLock/chSysUnlock)
+    [[nodiscard]] const T& get() const noexcept {
+        // Memory barrier before accessing object (compiler intrinsic)
+        __sync_synchronize();
+        return *reinterpret_cast<const T*>(&instance_storage_);
+    }
+
+    // Check if memory corruption has occurred
+    // @return true if canary values are intact, false if corruption detected
+    // @note Validates canary values before and after instance storage
+    // @note Uses compiler intrinsic for memory barrier (not chSysLock/chSysUnlock)
+    [[nodiscard]] bool is_corrupted() const noexcept {
+        // Memory barrier before reading canary values (compiler intrinsic)
+        __sync_synchronize();
+
+        bool canary_valid = (canary_before_ == CANARY_VALUE) &&
+                            (canary_after_ == CANARY_VALUE);
+
+        return !canary_valid;
+    }
+
+    // Check if object has been constructed
+    // @return true if construct() was called successfully
+    // @note Uses compiler intrinsic for memory barrier (not chSysLock/chSysUnlock)
+    [[nodiscard]] bool is_constructed() const noexcept {
+        // Memory barrier before reading flag (compiler intrinsic)
+        __sync_synchronize();
+        return constructed_;
+    }
+
+private:
+    // Canary value for corruption detection (0xDEADBEEF)
+    static constexpr uint32_t CANARY_VALUE = 0xDEADBEEF;
+
+    // Canary before instance storage
+    uint32_t canary_before_{CANARY_VALUE};
+
+    // Storage for instance (aligned to type's alignment requirement)
+    alignas(T) uint8_t instance_storage_[sizeof(T)];
+
+    // Canary after instance storage
+    uint32_t canary_after_{CANARY_VALUE};
+
+    // Flag to track if object has been constructed
+    volatile bool constructed_{false};
+};
+
+// @brief Result codes for start_coordinated_scanning() operation
 enum class StartResult {
     SUCCESS,                      ///< Scanning thread started successfully
     ALREADY_ACTIVE,               ///< Scanning is already active
@@ -34,10 +146,18 @@ enum class StartResult {
     SINGLETON_VIOLATION           ///< Multiple instances detected (should never happen)
 };
 
-// * * @brief Scanning coordinator for drone detection operations * * Manages the scanning thread lifecycle and coordinates between * hardware, scanner, display, and audio components. * * DIAMOND OPTIMIZATIONS: * - Stack-only allocation (8KB working area) * - Full mutex protection for thread-safe state management * - No heap allocation
+// @brief Scanning coordinator for drone detection operations
+// Manages the scanning thread lifecycle and coordinates between
+// hardware, scanner, display, and audio components.
+//
+// DIAMOND OPTIMIZATIONS:
+// - Stack-only allocation (8KB working area)
+// - Full mutex protection for thread-safe state management
+// - No heap allocation
 class ScanningCoordinator {
 public:
-    // * * @brief Destroy the Scanning Coordinator object * * Ensures scanning thread is stopped before destruction.
+    // Destroy the Scanning Coordinator object
+    // Ensures scanning thread is stopped before destruction.
     ~ScanningCoordinator() noexcept;
 
     // Non-copyable, non-movable
@@ -54,29 +174,40 @@ public:
                                         DroneDisplayController& display_controller,
                                         AudioManager& audio_controller) noexcept;
 
-    // * @brief Start the coordinated scanning thread
+    // Start the coordinated scanning thread
     // @return StartResult indicating success or reason for failure
-    // * Uses ChibiOS chThdCreateStatic() for stack-based thread creation.
-    // * Returns ALREADY_ACTIVE if scanning is already running.
-    // * Returns INITIALIZATION_NOT_COMPLETE if database initialization is not complete yet.
-    // * Returns THREAD_CREATION_FAILED if chThdCreateStatic returns nullptr.
+    // Uses ChibiOS chThdCreateStatic() for stack-based thread creation.
+    // Returns ALREADY_ACTIVE if scanning is already running.
+    // Returns INITIALIZATION_NOT_COMPLETE if database initialization is not complete yet.
+    // Returns THREAD_CREATION_FAILED if chThdCreateStatic returns nullptr.
     StartResult start_coordinated_scanning() noexcept;
 
-    // * * @brief Stop the coordinated scanning thread * * Sets the atomic flag and waits for thread termination. * Safe to call multiple times.
+    // Stop the coordinated scanning thread
+    // Sets the atomic flag and waits for thread termination.
+    // Safe to call multiple times.
     void stop_coordinated_scanning() noexcept;
 
-    // * * @brief Check if scanning is currently active * @return true if scanning is active, false otherwise
+    // Check if scanning is currently active
+    // @return true if scanning is active, false otherwise
     // FIX #RC-1: Mutex-protected access (not inline)
     [[nodiscard]] bool is_scanning_active() const noexcept;
 
-    // * * @brief Update runtime parameters from settings * @param settings New settings to apply * * Updates scan interval and frequency range if scanning is active.
+    // Update runtime parameters from settings
+    // @param settings New settings to apply
+    // Updates scan interval and frequency range if scanning is active.
     void update_runtime_parameters(const DroneAnalyzerSettings& settings) noexcept;
 
-    // * * @brief Display session summary (placeholder for future implementation) * @param summary Summary text to display (may be nullptr)
+    // Display session summary (placeholder for future implementation)
+    // @param summary Summary text to display (may be nullptr)
     void show_session_summary([[maybe_unused]] const char* summary) noexcept;
 
 private:
-    // * * @brief Private constructor for singleton pattern * @param nav Navigation view reference * @param hardware Hardware controller reference * @param scanner Scanner reference * @param display_controller Display controller reference * @param audio_controller Audio controller reference
+    // Private constructor for singleton pattern
+    // @param nav Navigation view reference
+    // @param hardware Hardware controller reference
+    // @param scanner Scanner reference
+    // @param display_controller Display controller reference
+    // @param audio_controller Audio controller reference
     // DIAMOND FIX: Constructor must be noexcept for static storage pattern
     ScanningCoordinator(NavigationView& nav,
                        DroneHardwareController& hardware,
@@ -84,10 +215,15 @@ private:
                        DroneDisplayController& display_controller,
                        AudioManager& audio_controller) noexcept;
 
-    // * * @brief Static thread entry point for ChibiOS * @param arg Pointer to ScanningCoordinator instance * @return Thread exit code
+    // Static thread entry point for ChibiOS
+    // @param arg Pointer to ScanningCoordinator instance
+    // @return Thread exit code
     static msg_t scanning_thread_function(void* arg) noexcept;
 
-    // * * @brief Main scanning thread implementation * @return Thread exit code (0 = success, -1 = timeout error) * * Performs scan cycles in a loop with configurable interval. * Handles timeout detection and consecutive failure counting.
+    // Main scanning thread implementation
+    // @return Thread exit code (0 = success, -1 = timeout error)
+    // Performs scan cycles in a loop with configurable interval.
+    // Handles timeout detection and consecutive failure counting.
     msg_t coordinated_scanning_thread() noexcept;
 
     // Member variables

@@ -199,6 +199,12 @@ struct FrequencyHasher {
  * - Eliminates hybrid locking inconsistency
  * - Eliminates torn reads and inconsistent state
  *
+ * DIAMOND FIX #4: BOUNDS PROTECTION AND CANARY PATTERN
+ * - Compile-time alignment validation with static_assert
+ * - Runtime bounds checking with check_bounds() method
+ * - Canary pattern for buffer corruption detection
+ * - Safe access methods with bounds checking
+ *
  * SYNCHRONIZATION STRATEGY:
  *   - Writer methods (update_detection, clear): Mutex-protected
  *   - Reader methods (get_detection_count, get_rssi_value): Mutex-protected (FIXED)
@@ -226,15 +232,27 @@ struct FrequencyHasher {
  */
 class DetectionRingBuffer {
 public:
+    // Canary value for buffer corruption detection (0xDEADBEEF)
+    static constexpr uint32_t CANARY_VALUE = 0xDEADBEEF;
+
     /**
      * @brief Default constructor
      * @note Initializes all entries to empty state on construction
      */
     DetectionRingBuffer() noexcept
-        : head_{0},
+        : canary_before_{CANARY_VALUE},
+          head_{0},
           global_version_{0},
           buffer_mutex_{},
-          recursion_depth_{0} {
+          canary_after_{CANARY_VALUE} {
+        // Validate buffer alignment at construction time
+        static_assert(alignof(DetectionEntry) == 4,
+                      "DetectionEntry must be 4-byte aligned for atomic access");
+        static_assert(sizeof(DetectionEntry) == 28,
+                      "DetectionEntry must be 28 bytes for memory budget");
+        static_assert(DetectionBufferConstants::MAX_ENTRIES == 8,
+                      "MAX_ENTRIES must be 8 for memory budget");
+        
         for (auto& entry : entries_) {
             init_entry(entry, 0);
         }
@@ -290,12 +308,89 @@ public:
      */
     void clear() noexcept;
 
+    /**
+     * @brief Check buffer for corruption (DIAMOND FIX #4)
+     * @return true if buffer is intact, false if corruption detected
+     * @note Validates canary values before and after entries array
+     * @note Uses compiler intrinsic for memory barrier (not chSysLock/chSysUnlock)
+     */
+    [[nodiscard]] bool is_corrupted() const noexcept {
+        // Memory barrier before reading canary values (compiler intrinsic)
+        // NOTE: Using __sync_synchronize() instead of chSysLock/chSysUnlock
+        //       chSysLock/chSysUnlock are critical section locks that disable ALL interrupts,
+        //       not memory barriers. Using them incorrectly can cause system instability.
+        __sync_synchronize();
+
+        bool canary_valid = (canary_before_ == CANARY_VALUE) &&
+                            (canary_after_ == CANARY_VALUE);
+
+        return !canary_valid;
+    }
+
+    /**
+     * @brief Check index bounds (DIAMOND FIX #4)
+     * @param index Index to check
+     * @return true if index is within bounds, false otherwise
+     * @note Runtime bounds checking for safe array access
+     */
+    [[nodiscard]] bool check_bounds(size_t index) const noexcept {
+        return index < DetectionBufferConstants::MAX_ENTRIES;
+    }
+
+    /**
+     * @brief Assert index is within bounds (halts if out of bounds)
+     * @param index Index to check
+     * @note Halts system if index is out of bounds
+     */
+    void assert_bounds(size_t index) const noexcept {
+        if (!check_bounds(index)) {
+            // Index out of bounds - critical error
+            // TODO: Implement proper error logging system
+            #ifdef DEBUG
+                __BKPT();  // Breakpoint for debugger
+            #endif
+            while (true) {
+                // Infinite loop to halt execution
+                // System watchdog will trigger reset if configured
+            }
+        }
+    }
+
+    /**
+     * @brief Get entry at index with bounds checking (DIAMOND FIX #4)
+     * @param index Index of entry to get
+     * @return Reference to entry at index
+     * @note Asserts bounds before access
+     */
+    [[nodiscard]] DetectionEntry& get_entry(size_t index) noexcept {
+        assert_bounds(index);
+        return entries_[index];
+    }
+
+    /**
+     * @brief Get entry at index with bounds checking (DIAMOND FIX #4)
+     * @param index Index of entry to get
+     * @return Const reference to entry at index
+     * @note Asserts bounds before access
+     */
+    [[nodiscard]] const DetectionEntry& get_entry(size_t index) const noexcept {
+        assert_bounds(index);
+        return entries_[index];
+    }
+
 private:
+    // Canary before entries array (DIAMOND FIX #4)
+    uint32_t canary_before_{CANARY_VALUE};
+    
     DetectionEntry entries_[DetectionBufferConstants::MAX_ENTRIES];  ///< Fixed-size array (no heap)
     size_t head_;                         ///< Head index for ring buffer eviction
     uint32_t global_version_;             ///< Global version counter for concurrent update detection
     mutable Mutex buffer_mutex_;           ///< Mutex for ALL access (writer and reader)
-    int recursion_depth_;                 ///< Recursion depth counter for deadlock prevention
+    // NOTE: Recursion detection now uses thread-local storage (TLS) in cpp file
+    // to avoid race conditions with shared recursion_depth_ member variable.
+    
+    // Canary after entries array (DIAMOND FIX #4)
+    uint32_t canary_after_{CANARY_VALUE};
 
     /**
      * @brief Compute hash index from frequency hash

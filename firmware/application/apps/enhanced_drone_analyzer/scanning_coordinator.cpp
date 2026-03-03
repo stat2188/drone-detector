@@ -13,11 +13,11 @@
 // C++ standard library headers (alphabetical order)
 #include <cstdint>
 #include <cstring>
-#include <new>  // For placement new (static storage pattern) - required for singleton initialization
 
-// DIAMOND FIX: Define placement new operator manually for embedded systems
+// DIAMOND FIX #1: Define placement new operator manually for embedded systems
 // This is required because the embedded toolchain may not provide it
 // Must be defined at global scope, not inside namespace
+// No <new> header included - zero heap allocation
 inline void* operator new(size_t, void* ptr) noexcept {
     return ptr;
 }
@@ -40,32 +40,16 @@ namespace ui::apps::enhanced_drone_analyzer {
 // SINGLETON STORAGE DEFINITION
 // ============================================================================
 
-// FIX #7: Singleton instance storage with volatile flag for thread safety
-// DIAMOND FIX: Static storage pattern (no heap allocation)
-// Uses static instance directly for zero-allocation singleton
-// Static instance (BSS segment, zero-initialized)
-alignas(ScanningCoordinator)
-static uint8_t instance_storage_[sizeof(ScanningCoordinator)];
+// FIX #1 & #2: Static storage with canary pattern for corruption detection
+// DIAMOND FIX: Use StaticStorage class with canary values and memory barriers
+// No heap allocation - all memory is in static storage
+static StaticStorage<ScanningCoordinator> coordinator_storage;
 
-// Singleton instance pointer (initialized to nullptr, set to &instance_storage_ after construction)
+// Singleton instance pointer (initialized to nullptr, set to &coordinator_storage after construction)
 ScanningCoordinator* ScanningCoordinator::instance_ptr_ = nullptr;
 Mutex ScanningCoordinator::init_mutex_;
 volatile bool ScanningCoordinator::initialized_ = false;  // volatile for thread-safe singleton pattern
 volatile bool ScanningCoordinator::instance_constructed_ = false;  // tracks if instance was constructed
-
-// Helper function to manually construct instance in static storage (no heap allocation)
-// Uses placement new with static storage
-static ScanningCoordinator* construct_instance_in_static_storage(
-    NavigationView& nav,
-    DroneHardwareController& hardware,
-    DroneScanner& scanner,
-    DroneDisplayController& display_controller,
-    AudioManager& audio_controller) noexcept {
-    // Cast byte array to pointer type
-    auto* ptr = reinterpret_cast<ScanningCoordinator*>(instance_storage_);
-    // Manual construction using placement new with explicit void* cast
-    return new (static_cast<void*>(ptr)) ScanningCoordinator(nav, hardware, scanner, display_controller, audio_controller);
-}
 
 // Static initializer for init_mutex_ (called before main)
 namespace {
@@ -120,10 +104,12 @@ namespace ReturnCodes {
  * @note CRITICAL: This method will halt the system if called before initialize()
  */
 ScanningCoordinator& ScanningCoordinator::instance() noexcept {
-    // FIX #7: Memory barrier before reading volatile flag (using ChibiOS API)
-    chSysLock();
-    chSysUnlock();
-    
+    // FIX #1 & #2: Memory barrier before reading volatile flag (compiler intrinsic)
+    // NOTE: Using __sync_synchronize() instead of chSysLock/chSysUnlock
+    //       chSysLock/chSysUnlock are critical section locks that disable ALL interrupts,
+    //       not memory barriers. Using them incorrectly can cause system instability.
+    __sync_synchronize();
+
     // CRITICAL: Instance must be initialized before use
     // Dereferencing a null pointer causes undefined behavior (system crash)
     if (!instance_ptr_) {
@@ -139,7 +125,20 @@ ScanningCoordinator& ScanningCoordinator::instance() noexcept {
             // System watchdog will trigger reset if configured
         }
     }
-    
+
+    // FIX #1 & #2: Check for memory corruption using canary pattern
+    if (coordinator_storage.is_corrupted()) {
+        // Memory corruption detected - critical error
+        // TODO: Implement proper error logging system
+        #ifdef DEBUG
+            __BKPT();  // Breakpoint for debugger
+        #endif
+        while (true) {
+            // Infinite loop to halt execution
+            // System watchdog will trigger reset if configured
+        }
+    }
+
     return *instance_ptr_;
 }
 
@@ -158,27 +157,39 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
                                    DroneScanner& scanner,
                                    DroneDisplayController& display_controller,
                                    AudioManager& audio_controller) noexcept {
-    // FIX #7: Memory barrier before reading volatile flag
-    chSysLock();
-    
+    // FIX #1 & #2: Memory barrier before reading volatile flag (compiler intrinsic)
+    // NOTE: Using __sync_synchronize() instead of chSysLock/chSysUnlock
+    //       chSysLock/chSysUnlock are critical section locks that disable ALL interrupts,
+    //       not memory barriers. Using them incorrectly can cause system instability.
+    __sync_synchronize();
+
     MutexLock lock(init_mutex_, LockOrder::DATA_MUTEX);
 
     // Guard clause: Already initialized
     if (initialized_) {
-        chSysUnlock();
         return false;
     }
 
-    // DIAMOND FIX: Use manual construction with static storage (no heap allocation)
-    // Note: This is acceptable for singleton pattern as instance lives for entire program lifetime
-    // Static storage pattern eliminates heap allocation and fragmentation
-    instance_ptr_ = construct_instance_in_static_storage(nav, hardware, scanner, display_controller, audio_controller);
+    // FIX #1 & #2: Use StaticStorage class with canary pattern (no heap allocation)
+    // StaticStorage provides memory corruption detection via canary values
+    // and uses compiler intrinsic memory barriers for thread safety
+    coordinator_storage.construct(nav, hardware, scanner, display_controller, audio_controller);
+
+    // Check for memory corruption after construction
+    if (coordinator_storage.is_corrupted()) {
+        // Memory corruption detected - critical error
+        // TODO: Implement proper error logging system
+        return false;
+    }
+
+    // Set instance pointer to constructed object
+    instance_ptr_ = &coordinator_storage.get();
     instance_constructed_ = true;
 
-    // FIX #7: Memory barrier after writing volatile flag
+    // FIX #1 & #2: Memory barrier after writing volatile flag (compiler intrinsic)
     initialized_ = true;
-    chSysUnlock();
-    
+    __sync_synchronize();
+
     return true;
 }
 

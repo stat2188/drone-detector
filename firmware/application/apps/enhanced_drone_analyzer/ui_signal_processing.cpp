@@ -31,18 +31,24 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
     const RSSIValue rssi_value = update.rssi_value;
     const Timestamp current_time = static_cast<Timestamp>(chTimeNow());
 
-    // Check recursion depth BEFORE acquiring mutex
-    if (recursion_depth_ > 0) {
+    // FIX: Use thread-local storage for recursion detection to avoid race condition
+    // Previous implementation checked recursion_depth_ after acquiring mutex, which
+    // could allow two threads to both check and increment before either sees the change.
+    // Thread-local storage ensures each thread has its own recursion counter.
+    static thread_local int tls_recursion_depth = 0;
+
+    // Check recursion depth before acquiring mutex (no race condition with TLS)
+    if (tls_recursion_depth > 0) {
         // Recursive call detected - return early to prevent deadlock
         return;
     }
 
+    // Increment recursion depth (TLS is thread-safe)
+    tls_recursion_depth++;
+
     // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
     // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
     MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
-
-    // Increment recursion depth after lock acquisition
-    recursion_depth_++;
 
     // Increment global version for this update
     global_version_++;
@@ -62,8 +68,8 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
             entries_[idx].detection_count = detection_count;
             entries_[idx].timestamp = current_time;
 
-            // FIX #7: Decrement recursion depth (lock-based approach)
-            recursion_depth_--;
+            // Decrement thread-local recursion depth
+            tls_recursion_depth--;
             return;
         }
 
@@ -75,7 +81,7 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
             entries_[idx].rssi_value = rssi_value;
             entries_[idx].timestamp = current_time;
 
-            recursion_depth_--;
+            tls_recursion_depth--;
             return;
         }
     }
@@ -89,7 +95,7 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
     entries_[evict_idx].timestamp = current_time;
     head_ = (head_ + 1) & DetectionBufferConstants::HASH_MASK;
 
-    recursion_depth_--;
+    tls_recursion_depth--;
 }
 
 // IMPLEMENTATION: get_detection_count()
