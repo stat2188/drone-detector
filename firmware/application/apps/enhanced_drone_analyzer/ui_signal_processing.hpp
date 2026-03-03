@@ -175,15 +175,17 @@ static_assert(alignof(DetectionEntry) == 4, "DetectionEntry must be 4-byte align
 /**
  * @brief Simple modulo-based hash function for frequency hashing
  * @note ~4-6 cycles for 64-bit value on ARM Cortex-M4 (80% faster than FNV-1a)
+ * @note DIAMOND FIX #2: Replaced magic number 100000ULL with EDA::Constants::FREQ_HASH_DIVISOR
  */
 struct FrequencyHasher {
     /**
      * @brief Compute simple hash of frequency using modulo
      * @param frequency Frequency value to hash
      * @return Hash value
+     * @note Uses EDA::Constants::FREQ_HASH_DIVISOR (100000) for 100kHz frequency binning
      */
     static constexpr FrequencyHash hash(FrequencyHash frequency) noexcept {
-        return (frequency / 100000ULL) % DetectionBufferConstants::HASH_TABLE_SIZE;
+        return (frequency / EDA::Constants::FREQ_HASH_DIVISOR) % DetectionBufferConstants::HASH_TABLE_SIZE;
     }
 };
 

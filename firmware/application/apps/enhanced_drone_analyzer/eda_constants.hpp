@@ -31,6 +31,226 @@ using Threshold = int32_t;
 using Decibel = int32_t;
 using Timestamp = uint32_t;
 
+// ============================================================================
+// TYPE-SAFE FREQUENCY CONSTANTS (DIAMOND FIX #5)
+// ============================================================================
+// These constants provide type-safe frequency values with conversion functions
+// to eliminate signed/unsigned comparison overflows and data truncation.
+//
+// Benefits:
+// - Type-safe: All frequency operations use consistent int64_t type
+// - No implicit conversions: Prevents accidental data truncation
+// - Self-documenting: Constant names clearly indicate frequency values
+// - Validation: Built-in range checking for all frequency operations
+// ============================================================================
+
+namespace FrequencyConstants {
+
+// ============================================================================
+// FREQUENCY CONVERSION FUNCTIONS
+// ============================================================================
+
+/**
+ * @brief Safely convert uint64_t to Frequency (int64_t)
+ * @param freq_hz Frequency in Hz as unsigned 64-bit
+ * @return Frequency as signed 64-bit
+ * @note Validates range to prevent overflow
+ * @note Returns 0 if value exceeds Frequency range
+ */
+constexpr Frequency from_uint64(uint64_t freq_hz) noexcept {
+    // Check for overflow before conversion
+    if (freq_hz > static_cast<uint64_t>(INT64_MAX)) {
+        return 0;  // Invalid frequency
+    }
+    return static_cast<Frequency>(freq_hz);
+}
+
+/**
+ * @brief Safely convert Frequency (int64_t) to uint64_t
+ * @param freq_hz Frequency in Hz as signed 64-bit
+ * @return Frequency as unsigned 64-bit
+ * @note Validates range to prevent overflow
+ * @note Returns 0 if value is negative
+ */
+constexpr uint64_t to_uint64(Frequency freq_hz) noexcept {
+    // Check for negative values
+    if (freq_hz < 0) {
+        return 0;  // Invalid frequency
+    }
+    return static_cast<uint64_t>(freq_hz);
+}
+
+/**
+ * @brief Validate frequency is within hardware limits
+ * @param freq_hz Frequency to validate
+ * @return true if valid, false otherwise
+ */
+constexpr bool is_valid(Frequency freq_hz) noexcept {
+    return freq_hz >= Constants::FrequencyLimits::MIN_HARDWARE_FREQ &&
+           freq_hz <= Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+}
+
+/**
+ * @brief Clamp frequency to hardware limits
+ * @param freq_hz Frequency to clamp
+ * @return Clamped frequency within valid range
+ */
+constexpr Frequency clamp(Frequency freq_hz) noexcept {
+    if (freq_hz < Constants::FrequencyLimits::MIN_HARDWARE_FREQ) {
+        return Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
+    }
+    if (freq_hz > Constants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+        return Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+    }
+    return freq_hz;
+}
+
+// ============================================================================
+// FREQUENCY BAND CONSTANTS
+// ============================================================================
+
+/**
+ * @brief 433 MHz ISM band constants
+ */
+constexpr Frequency MIN_433MHZ = 433'000'000LL;
+constexpr Frequency MAX_433MHZ = 435'000'000LL;
+constexpr Frequency CENTER_433MHZ = 434'000'000LL;
+
+/**
+ * @brief 900 MHz ISM band constants
+ */
+constexpr Frequency MIN_900MHZ = 860'000'000LL;
+constexpr Frequency MAX_900MHZ = 930'000'000LL;
+constexpr Frequency CENTER_900MHZ = 895'000'000LL;
+
+/**
+ * @brief 2.4 GHz ISM band constants
+ */
+constexpr Frequency MIN_24GHZ = 2'400'000'000LL;
+constexpr Frequency MAX_24GHZ = 2'483'500'000LL;
+constexpr Frequency CENTER_24GHZ = 2'450'000'000LL;
+constexpr Frequency WIDEBAND_24GHZ_MIN = 2'400'000'000LL;
+constexpr Frequency WIDEBAND_24GHZ_MAX = 2'500'000'000LL;
+
+/**
+ * @brief 5.8 GHz ISM band constants
+ */
+constexpr Frequency MIN_58GHZ = 5'725'000'000LL;
+constexpr Frequency MAX_58GHZ = 5'875'000'000LL;
+constexpr Frequency CENTER_58GHZ = 5'800'000'000LL;
+
+/**
+ * @brief Band split frequency (5 GHz)
+ */
+constexpr Frequency BAND_SPLIT_FREQ_5GHZ = 5'000'000'000LL;
+
+// ============================================================================
+// DJI OCUSYNC FREQUENCIES
+// ============================================================================
+
+/**
+ * @brief DJI OcuSync 1 frequency
+ */
+constexpr Frequency DJI_OCUSYNC_1 = 2'406'500'000LL;
+
+/**
+ * @brief DJI OcuSync 3 frequency
+ */
+constexpr Frequency DJI_OCUSYNC_3 = 2'416'500'000LL;
+
+/**
+ * @brief DJI OcuSync 5 frequency
+ */
+constexpr Frequency DJI_OCUSYNC_5 = 2'426'500'000LL;
+
+/**
+ * @brief DJI OcuSync 7 frequency
+ */
+constexpr Frequency DJI_OCUSYNC_7 = 2'436'500'000LL;
+
+// ============================================================================
+// FPV RACEBAND FREQUENCIES (5.8 GHz)
+// ============================================================================
+
+/**
+ * @brief RaceBand 1 frequency
+ */
+constexpr Frequency RACEBAND_1 = 5'658'000'000LL;
+
+/**
+ * @brief RaceBand 2 frequency
+ */
+constexpr Frequency RACEBAND_2 = 5'695'000'000LL;
+
+/**
+ * @brief RaceBand 3 frequency
+ */
+constexpr Frequency RACEBAND_3 = 5'732'000'000LL;
+
+/**
+ * @brief RaceBand 4 frequency
+ */
+constexpr Frequency RACEBAND_4 = 5'769'000'000LL;
+
+// ============================================================================
+// CONTROL LINK FREQUENCIES
+// ============================================================================
+
+/**
+ * @brief TBS Crossfire EU frequency (868 MHz)
+ */
+constexpr Frequency TBS_CROSSFIRE_EU = 868'000'000LL;
+
+/**
+ * @brief TBS Crossfire US frequency (915 MHz)
+ */
+constexpr Frequency TBS_CROSSFIRE_US = 915'000'000LL;
+
+/**
+ * @brief ELRS 868 MHz frequency
+ */
+constexpr Frequency ELRS_868MHZ = 866'000'000LL;
+
+/**
+ * @brief ELRS 915 MHz frequency
+ */
+constexpr Frequency ELRS_915MHZ = 915'000'000LL;
+
+/**
+ * @brief LRS 433 Ch1 frequency
+ */
+constexpr Frequency LRS_433_CH1 = 433'050'000LL;
+
+// ============================================================================
+// WIFI FREQUENCIES
+// ============================================================================
+
+/**
+ * @brief WiFi Channel 1 frequency
+ */
+constexpr Frequency WIFI_CH1 = 2'412'000'000LL;
+
+// ============================================================================
+// SPECIAL FREQUENCY VALUES
+// ============================================================================
+
+/**
+ * @brief Zero frequency (invalid/unset)
+ */
+constexpr Frequency ZERO = 0LL;
+
+/**
+ * @brief Minimum valid frequency (1 MHz)
+ */
+constexpr Frequency MIN_VALID = 1'000'000LL;
+
+/**
+ * @brief Maximum valid frequency (7.2 GHz)
+ */
+constexpr Frequency MAX_VALID = 7'200'000'000LL;
+
+} // namespace FrequencyConstants
+
 namespace Constants {
 
 namespace FrequencyLimits {
@@ -237,7 +457,9 @@ constexpr uint32_t LOG_WRITE_INTERVAL_MS = 200;
 constexpr uint32_t DETECTION_RING_BUFFER_SIZE = 32;
 
 // Frequency Hashing
-constexpr uint32_t FREQ_HASH_DIVISOR = 100000;
+// DIAMOND FIX #2: Changed from uint32_t to uint64_t to match hash function usage
+// This eliminates type mismatch warnings and ensures consistent 64-bit arithmetic
+constexpr uint64_t FREQ_HASH_DIVISOR = 100000ULL;
 constexpr uint32_t FREQ_HASH_TABLE_SIZE = 32;
 constexpr uint32_t FREQ_HASH_MASK = FREQ_HASH_TABLE_SIZE - 1;
 

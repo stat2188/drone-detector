@@ -218,8 +218,10 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
     init_stack_canary();
 
     chMtxInit(&data_mutex);
+    // DIAMOND FIX #4: Wideband scanning initialization moved to initialize_database_and_scanner()
+    // to ensure proper initialization order: database -> wideband scanning
+    // This prevents premature execution before database is fully loaded
     // Lazy initialization: FreqmanDB and tracked_drones allocated later from heap
-    initialize_wideband_scanning();
 }
 
 DroneScanner::~DroneScanner() {
@@ -1309,6 +1311,11 @@ void DroneScanner::initialize_database_and_scanner() {
 
         freq_db_loaded_ = true;
     }
+
+    // DIAMOND FIX #4: Initialize wideband scanning AFTER database initialization
+    // This ensures proper initialization order: database -> wideband scanning
+    // Prevents premature execution before database is fully loaded
+    initialize_wideband_scanning();
 
     // Mark initialization as complete
     initialization_complete_ = true;

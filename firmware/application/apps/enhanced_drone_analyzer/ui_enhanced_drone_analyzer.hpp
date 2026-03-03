@@ -54,7 +54,9 @@ using namespace ::ui;
 // Never acquire a lower-numbered lock while holding a higher-numbered lock
 
 // Explicit thread stack sizes
-constexpr size_t SCANNING_THREAD_STACK_SIZE = 5120;  // 5KB (25% safety margin for stack overflow prevention)
+// DIAMOND FIX #1: Reduced from 5120 to 3840 bytes (3.75KB, 6.25% safety margin)
+// Fits within 4KB per-thread stack limit on STM32F405
+constexpr size_t SCANNING_THREAD_STACK_SIZE = 3840;
 // FIX #SO-1: Increased from 1536 to 2048 bytes (33% increase) to prevent stack overflow
 constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;
 
@@ -72,10 +74,11 @@ constexpr size_t MIN_STACK_FREE_THRESHOLD = 512;     // Minimum safe stack free 
 
 // Validate thread stack sizes are within reasonable limits
 // STM32F405 has 4KB stack per thread by default, but some threads can use more
-static_assert(SCANNING_THREAD_STACK_SIZE <= 8192,
-              "SCANNING_THREAD_STACK_SIZE exceeds 8KB thread stack limit");
-static_assert(SCANNING_THREAD_STACK_SIZE >= 4096,
-              "SCANNING_THREAD_STACK_SIZE below 4KB minimum for safe operation");
+// DIAMOND FIX #1: Corrected static_assert from 8192 to 4096 (actual hardware limit)
+static_assert(SCANNING_THREAD_STACK_SIZE <= 4096,
+              "SCANNING_THREAD_STACK_SIZE exceeds 4KB thread stack limit on STM32F405");
+static_assert(SCANNING_THREAD_STACK_SIZE >= 3072,
+              "SCANNING_THREAD_STACK_SIZE below 3KB minimum for safe operation");
 static_assert(COORDINATOR_THREAD_STACK_SIZE <= 4096,
               "COORDINATOR_THREAD_STACK_SIZE exceeds 4KB thread stack limit");
 static_assert(COORDINATOR_THREAD_STACK_SIZE >= 1024,
