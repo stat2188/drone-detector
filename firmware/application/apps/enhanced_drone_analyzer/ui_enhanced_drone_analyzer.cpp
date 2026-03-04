@@ -4433,10 +4433,12 @@ namespace {
 
     // Alert message mapping from ThreatLevel to const char* (Flash storage)
     static constexpr const char* ALERT_MSG_LUT[] = {
-        "Threats detected",   // NONE/LOW = 0,1
+        "Threats detected",   // NONE = 0
+        "Threats detected",   // LOW = 1
         "Threats detected",   // MEDIUM = 2
         "HIGH THREATS!",      // HIGH = 3
-        "CRITICAL THREATS!"   // CRITICAL = 4
+        "CRITICAL THREATS!",  // CRITICAL = 4
+        "UNKNOWN THREAT"      // UNKNOWN = 5
     };
 }
 
@@ -4505,9 +4507,11 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     } else {
         size_t total_drones = approaching + static_count + receding;
         // LUT lookup instead of ternary (Flash string, zero RAM allocation)
-        const char* alert_msg = ALERT_MSG_LUT[
-            std::min(static_cast<uint8_t>(max_threat), static_cast<uint8_t>(ThreatLevel::CRITICAL))
-        ];
+        // Manual min to avoid std::min during static initialization
+        const uint8_t threat_idx = static_cast<uint8_t>(max_threat);
+        const uint8_t max_idx = static_cast<uint8_t>(ThreatLevel::UNKNOWN);
+        const uint8_t alert_idx = (threat_idx < max_idx) ? threat_idx : max_idx;
+        const char* alert_msg = ALERT_MSG_LUT[alert_idx];
         status_bar_.update_alert_status(max_threat, total_drones, alert_msg);
     }
 

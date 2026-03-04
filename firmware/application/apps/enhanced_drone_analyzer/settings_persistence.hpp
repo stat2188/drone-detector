@@ -696,7 +696,8 @@ inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
 }
 
 // SETTINGS LOAD BUFFER (Timeouts)
-static constexpr systime_t SD_CARD_MOUNT_TIMEOUT_MS = 2000;
+// Note: SD_CARD_MOUNT_TIMEOUT_MS is now defined in eda_constants.hpp as EDA::Constants::SD_CARD_MOUNT_TIMEOUT_MS
+// This eliminates duplicate constants and ensures consistent timeout behavior across the codebase
 static constexpr size_t MAX_READ_ITERATIONS = 10000;
 static constexpr systime_t READ_TIMEOUT_MS = 5000;
 
@@ -780,10 +781,10 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
     // Validate SD card status with timeout
     systime_t sd_check_start = chTimeNow();
     while (sd_card::status() < sd_card::Status::Mounted) {
-        if ((chTimeNow() - sd_check_start) > MS2ST(SD_CARD_MOUNT_TIMEOUT_MS)) {
+        if ((chTimeNow() - sd_check_start) > MS2ST(EDA::Constants::SD_CARD_MOUNT_TIMEOUT_MS)) {
             return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::TIMEOUT);
         }
-        chThdSleepMilliseconds(50);
+        chThdSleepMilliseconds(EDA::Constants::SD_CARD_POLL_INTERVAL_SHORT_MS);
     }
 
     File file;
