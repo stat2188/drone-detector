@@ -147,6 +147,11 @@ BarSpectrumRenderData calculate_bar_render_data(
     int spectrum_height,
     const BarSpectrumConfig& config
 ) noexcept {
+    // Suppress unused parameter warning: x_position is intentionally unused
+    // This function calculates only vertical rendering data (y_top, bar_height, color_idx)
+    // while the caller manages horizontal positioning (separation of concerns)
+    (void)x_position;
+    
     BarSpectrumRenderData result;
     
     // Noise threshold check (DSP/Logic)
@@ -221,7 +226,14 @@ HistogramBinRenderData calculate_histogram_bin_render_data(
     
     // Calculate bin dimensions (DSP/Logic)
     const int scale_factor = config.HISTOGRAM_HEIGHT;
-    result.bin_height = (static_cast<int>(bin_count) * scale_factor) / 256;
+    
+    // Normalize bin height against actual max_count for proper scaling
+    // Guard clause: avoid division by zero if max_count is 0
+    if (max_count == 0) {
+        result.bin_height = 0;
+    } else {
+        result.bin_height = (static_cast<int>(bin_count) * scale_factor) / static_cast<int>(max_count);
+    }
     if (result.bin_height < 1) result.bin_height = 1;
     if (result.bin_height > config.HISTOGRAM_HEIGHT) result.bin_height = config.HISTOGRAM_HEIGHT;
     
