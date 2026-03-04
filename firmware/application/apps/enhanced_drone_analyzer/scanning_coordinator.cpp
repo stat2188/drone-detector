@@ -40,7 +40,8 @@ namespace ui::apps::enhanced_drone_analyzer {
 static StaticStorage<ScanningCoordinator> coordinator_storage;
 
 // Singleton instance pointer (initialized to nullptr, set to &coordinator_storage after construction)
-ScanningCoordinator* ScanningCoordinator::instance_ptr_ = nullptr;
+// NOTE: volatile qualifier is required to match header declaration for thread safety
+volatile ScanningCoordinator* ScanningCoordinator::instance_ptr_ = nullptr;
 Mutex ScanningCoordinator::init_mutex_;
 volatile bool ScanningCoordinator::initialized_ = false;  // volatile for thread-safe singleton pattern
 volatile bool ScanningCoordinator::instance_constructed_ = false;  // tracks if instance was constructed
@@ -134,7 +135,13 @@ ScanningCoordinator& ScanningCoordinator::instance() noexcept {
         }
     }
 
-    return *instance_ptr_;
+    // Cast volatile pointer to non-volatile for return
+    // SAFETY: This is safe because:
+    // 1. The pointer is only modified during initialization (protected by mutex and memory barriers)
+    // 2. After initialization, the pointer itself is not modified - only read
+    // 3. The object it points to is not volatile - only the pointer is volatile for thread-safe publication
+    // 4. The memory barrier before reading ensures visibility of the pointer value
+    return *const_cast<ScanningCoordinator*>(instance_ptr_);
 }
 
 /**
