@@ -80,31 +80,6 @@ constexpr uint64_t to_uint64(Frequency freq_hz) noexcept {
     return static_cast<uint64_t>(freq_hz);
 }
 
-/**
- * @brief Validate frequency is within hardware limits
- * @param freq_hz Frequency to validate
- * @return true if valid, false otherwise
- */
-constexpr bool is_valid(Frequency freq_hz) noexcept {
-    return freq_hz >= Constants::FrequencyLimits::MIN_HARDWARE_FREQ &&
-           freq_hz <= Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
-}
-
-/**
- * @brief Clamp frequency to hardware limits
- * @param freq_hz Frequency to clamp
- * @return Clamped frequency within valid range
- */
-constexpr Frequency clamp(Frequency freq_hz) noexcept {
-    if (freq_hz < Constants::FrequencyLimits::MIN_HARDWARE_FREQ) {
-        return Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
-    }
-    if (freq_hz > Constants::FrequencyLimits::MAX_HARDWARE_FREQ) {
-        return Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
-    }
-    return freq_hz;
-}
-
 // ============================================================================
 // FREQUENCY BAND CONSTANTS
 // ============================================================================
@@ -507,6 +482,35 @@ constexpr int32_t SINGLE_SLICE = 1;
 constexpr int32_t MAX_SLICE_INDEX = 10;
 
 } // namespace Constants
+
+// ============================================================================
+// FREQUENCY VALIDATION FUNCTIONS (moved here to fix forward reference issue)
+// ============================================================================
+
+/**
+ * @brief Validate frequency is within hardware limits
+ * @param freq_hz Frequency to validate
+ * @return true if valid, false otherwise
+ */
+constexpr bool FrequencyConstants::is_valid(Frequency freq_hz) noexcept {
+    return freq_hz >= Constants::FrequencyLimits::MIN_HARDWARE_FREQ &&
+           freq_hz <= Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+}
+
+/**
+ * @brief Clamp frequency to hardware limits
+ * @param freq_hz Frequency to clamp
+ * @return Clamped frequency within valid range
+ */
+constexpr Frequency FrequencyConstants::clamp(Frequency freq_hz) noexcept {
+    if (freq_hz < Constants::FrequencyLimits::MIN_HARDWARE_FREQ) {
+        return Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
+    }
+    if (freq_hz > Constants::FrequencyLimits::MAX_HARDWARE_FREQ) {
+        return Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
+    }
+    return freq_hz;
+}
 
 // ============================================================================
 // STACK USAGE VALIDATION

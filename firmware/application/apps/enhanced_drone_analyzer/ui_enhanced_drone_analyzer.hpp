@@ -52,6 +52,16 @@ namespace freqman {
     class FreqmanDB;
 }
 
+// Forward declarations for EDA types to fix compilation errors
+// These types are defined later in this file or in other headers
+namespace ui::apps::enhanced_drone_analyzer {
+    class DroneHardwareController;
+    class ScanningCoordinator;
+}
+
+// Forward declaration for DatabaseChangeEvent (defined in eda_unified_database.hpp)
+struct DatabaseChangeEvent;
+
 // Note: LogFile is now fully included via log_file.hpp above
 // No forward declaration needed - this fixes incomplete type issue at line 297
 
