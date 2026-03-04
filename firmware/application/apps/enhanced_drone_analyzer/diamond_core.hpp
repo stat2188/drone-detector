@@ -306,4 +306,13 @@ inline constexpr systime_t safe_deadline(systime_t current_time, uint32_t timeou
 
 } // namespace ui::apps::enhanced_drone_analyzer::DiamondCore
 
+// ============================================================================
+// DIAMOND FIXES NAMESPACE ALIAS
+// ============================================================================
+// Provides backward compatibility for code that references DiamondFixes namespace
+namespace ui::apps::enhanced_drone_analyzer::DiamondFixes {
+    // Alias all DiamondCore functions to DiamondFixes namespace
+    using DiamondCore::safe_frequency_hash;
+}
+
 #endif // DIAMOND_CORE_HPP_

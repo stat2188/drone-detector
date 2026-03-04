@@ -31,8 +31,11 @@
 #include "color_lookup_unified.hpp"
 #include "diamond_core.hpp"
 // diamond_fixes.hpp content merged into diamond_core.hpp
+#include "dsp_display_types.hpp"
+#include "dsp_spectrum_processor.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
+#include "eda_unified_database.hpp"
 #include "file.hpp"
 #include "portapack.hpp"
 #include "scanning_coordinator.hpp"
@@ -3057,14 +3060,30 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     // Mutex is locked only for the copying time (microseconds)
     auto snapshot = scanner.get_tracked_drones_snapshot();
 
-    // Step 2: Filter stale drones using DSP layer function
+    // Step 2: Convert DroneSnapshot to FilteredDronesSnapshot
+    // This converts TrackedDrone objects to TrackedDroneData structs
+    dsp::FilteredDronesSnapshot converted_snapshot;
+    converted_snapshot.count = 0;
+    for (size_t i = 0; i < snapshot.count && converted_snapshot.count < 10; ++i) {
+        const auto& tracked_drone = snapshot.drones[i];
+        auto& drone_data = converted_snapshot.drones[converted_snapshot.count];
+        drone_data.frequency = tracked_drone.frequency;
+        drone_data.drone_type = static_cast<uint8_t>(tracked_drone.drone_type);
+        drone_data.threat_level = static_cast<uint8_t>(tracked_drone.threat_level);
+        drone_data.rssi = tracked_drone.rssi;
+        drone_data.last_seen = tracked_drone.last_seen;
+        drone_data.trend = tracked_drone.get_trend();
+        converted_snapshot.count++;
+    }
+
+    // Step 3: Filter stale drones using DSP layer function
     const systime_t STALE_TIMEOUT = 30000;
     systime_t now = chTimeNow();
 
     // DIAMOND CODE PRINCIPLE: Use DSP layer for filtering logic
     // This separates filtering logic from UI rendering
     dsp::FilteredDronesSnapshot filtered_snapshot = dsp::filter_stale_drones(
-        snapshot, STALE_TIMEOUT, now
+        converted_snapshot, STALE_TIMEOUT, now
     );
 
     // Step 3: Copy filtered drones to display buffer
@@ -3080,7 +3099,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
         entry.last_seen = drone_data.last_seen;
         snprintf(entry.type_name, sizeof(entry.type_name), "%s", UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(entry.type)));
         entry.display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(entry.type));
-        entry.trend = drone_data.get_trend();
+        entry.trend = drone_data.trend;
         detected_drones_count_++;
     }
 
@@ -3254,7 +3273,7 @@ void DroneDisplayController::update_histogram_display(
     
     // Pre-scale histogram data using utility function (DSP layer)
     dsp::HistogramDisplayBuffer scaled_histogram = dsp::scale_histogram_for_display(
-        temp_histogram, noise_floor
+        temp_histogram, 64, noise_floor
     );
     
     // Copy to display buffer (UI only)

@@ -60,12 +60,10 @@ namespace ui::apps::enhanced_drone_analyzer {
 }
 
 // Forward declaration for DatabaseChangeEvent (defined in eda_unified_database.hpp)
-struct DatabaseChangeEvent;
-
-// Note: LogFile is now fully included via log_file.hpp above
-// No forward declaration needed - this fixes incomplete type issue at line 297
-
+// Note: DatabaseChangeEvent is in ui::apps::enhanced_drone_analyzer namespace
+// Full definition is available after including eda_unified_database.hpp
 namespace ui::apps::enhanced_drone_analyzer {
+    struct DatabaseChangeEvent;
 
 using rf::Frequency;
 // Import global ui namespace to prevent namespace pollution
