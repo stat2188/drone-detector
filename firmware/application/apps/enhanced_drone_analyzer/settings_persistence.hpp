@@ -78,8 +78,9 @@ inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
     dest[i] = '\0';  // Always null terminate
 }
 
-// Settings Buffer Mutex Definition (merged from settings_persistence.cpp)
-Mutex settings_buffer_mutex;
+// Settings Buffer Mutex Declaration (merged from settings_persistence.cpp)
+// Definition is in ui_enhanced_drone_settings.cpp
+extern Mutex settings_buffer_mutex;
 
 #ifdef __GNUC__
     #define FLASH_STORAGE __attribute__((section(".rodata")))

@@ -28,6 +28,11 @@
 
 // Diamond Code Standard #3 - Replace std::filesystem with FatFS C API
 
+// Settings Buffer Mutex Definition
+// Protects settings buffer during load/save operations
+// Corresponding declaration in settings_persistence.hpp
+Mutex settings_buffer_mutex;
+
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ============================================================================
