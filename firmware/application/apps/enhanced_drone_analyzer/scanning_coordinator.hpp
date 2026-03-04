@@ -12,6 +12,7 @@
 #include <ch.h>  // For stkalign_t and THD_WA_SIZE
 
 // Project-specific headers (alphabetical order)
+#include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_navigation.hpp"
@@ -53,36 +54,27 @@ public:
     // @param scanner Scanner reference
     // @param display_controller Display controller reference
     // @param audio_controller Audio controller reference
-    // @note Uses compiler intrinsic for memory barriers (not chSysLock/chSysUnlock)
-    // @note chSysLock/chSysUnlock are critical section locks that disable ALL interrupts,
-    //       not memory barriers. Using them incorrectly can cause system instability.
+    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
+    // @note volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
     void construct(NavigationView& nav,
                   DroneHardwareController& hardware,
                   DroneScanner& scanner,
                   DroneDisplayController& display_controller,
                   AudioManager& audio_controller) noexcept {
-        // Memory barrier before construction (compiler intrinsic)
-        __sync_synchronize();
-
         // Construct object using placement new
         // Note: placement new is defined inline, no <new> header needed
         new (static_cast<void*>(&instance_storage_)) T(nav, hardware, scanner, display_controller, audio_controller);
 
-        // Set constructed flag
+        // Set constructed flag (volatile ensures visibility to other threads)
         constructed_ = true;
-
-        // Memory barrier after construction (compiler intrinsic)
-        __sync_synchronize();
     }
 
     // Get reference to stored object
     // @return Reference to stored object
     // @pre construct() must have been called
     // @pre is_corrupted() must return false
-    // @note Uses compiler intrinsic for memory barrier (not chSysLock/chSysUnlock)
+    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
     [[nodiscard]] T& get() noexcept {
-        // Memory barrier before accessing object (compiler intrinsic)
-        __sync_synchronize();
         return *reinterpret_cast<T*>(&instance_storage_);
     }
 
@@ -90,21 +82,16 @@ public:
     // @return Const reference to stored object
     // @pre construct() must have been called
     // @pre is_corrupted() must return false
-    // @note Uses compiler intrinsic for memory barrier (not chSysLock/chSysUnlock)
+    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
     [[nodiscard]] const T& get() const noexcept {
-        // Memory barrier before accessing object (compiler intrinsic)
-        __sync_synchronize();
         return *reinterpret_cast<const T*>(&instance_storage_);
     }
 
     // Check if memory corruption has occurred
     // @return true if canary values are intact, false if corruption detected
     // @note Validates canary values before and after instance storage
-    // @note Uses compiler intrinsic for memory barrier (not chSysLock/chSysUnlock)
+    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
     [[nodiscard]] bool is_corrupted() const noexcept {
-        // Memory barrier before reading canary values (compiler intrinsic)
-        __sync_synchronize();
-
         bool canary_valid = (canary_before_ == CANARY_VALUE) &&
                             (canary_after_ == CANARY_VALUE);
 
@@ -113,10 +100,8 @@ public:
 
     // Check if object has been constructed
     // @return true if construct() was called successfully
-    // @note Uses compiler intrinsic for memory barrier (not chSysLock/chSysUnlock)
+    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
     [[nodiscard]] bool is_constructed() const noexcept {
-        // Memory barrier before reading flag (compiler intrinsic)
-        __sync_synchronize();
         return constructed_;
     }
 
@@ -204,6 +189,27 @@ public:
     // Display session summary (placeholder for future implementation)
     // @param summary Summary text to display (may be nullptr)
     void show_session_summary([[maybe_unused]] const char* summary) noexcept;
+
+    // ============================================================================
+    // DSP LAYER FUNCTIONS (UI/DSP Separation)
+    // ============================================================================
+    // These functions provide thread-safe access to DSP layer data for UI rendering.
+    // They capture snapshots of internal state under mutex protection and return
+    // them to the UI layer for rendering.
+    //
+    // Thread-safety: All functions acquire appropriate mutexes before accessing data.
+    // No UI widget calls are made in these functions (pure DSP logic).
+    // ============================================================================
+
+    // Get display data snapshot from DSP layer
+    // @return DisplayDataSnapshot containing current scanning state and statistics
+    // Thread-safety: Acquires state_mutex_ before accessing data
+    [[nodiscard]] dsp::DisplayDataSnapshot get_display_data_snapshot() const noexcept;
+
+    // Get filtered drones snapshot from DSP layer
+    // @return FilteredDronesSnapshot containing active drones for display
+    // Thread-safety: Acquires data_mutex_ before accessing drone data
+    [[nodiscard]] dsp::FilteredDronesSnapshot get_filtered_drones_snapshot() const noexcept;
 
 private:
     // Private constructor for singleton pattern

@@ -152,7 +152,14 @@ private:
         
         size_t idx = highlighted_index();
         if (idx < presets_.size()) {
-            on_selected_fn_(presets_[idx]);
+            // CRITICAL FIX #4: Validate callback before dereferencing
+            // Prevents null function pointer dereference (undefined behavior)
+            // Template parameter Callback can be a function pointer, which may be null
+            // Note: For functors/lambdas, this check is always true (objects are never null)
+            // For function pointers, this prevents null pointer dereference
+            if (on_selected_fn_) {
+                on_selected_fn_(presets_[idx]);
+            }
         }
         return true;
     }
@@ -704,12 +711,22 @@ private:
 
         // Copy from description_widget_buffer_ (now synced from temp_string_)
         safe_strcpy(new_entry.description, description_widget_buffer_.c_str(), sizeof(new_entry.description));
-        on_save_fn_(new_entry);
+        // CRITICAL FIX #4: Validate callback before dereferencing
+        // Prevents null function pointer dereference (undefined behavior)
+        // Template parameter Callback can be a function pointer, which may be null
+        if (on_save_fn_) {
+            on_save_fn_(new_entry);
+        }
         nav_.pop();
     }
     void on_cancel() noexcept {
         DroneDbEntry empty_entry{0};
-        on_save_fn_(empty_entry);
+        // CRITICAL FIX #4: Validate callback before dereferencing
+        // Prevents null function pointer dereference (undefined behavior)
+        // Template parameter Callback can be a function pointer, which may be null
+        if (on_save_fn_) {
+            on_save_fn_(empty_entry);
+        }
         nav_.pop();
     }
 };

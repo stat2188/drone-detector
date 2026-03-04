@@ -21,6 +21,7 @@
 #include "chmtx.h"      // ChibiOS mutex functions
 
 // Project-specific headers (alphabetical order)
+#include "dsp_display_types.hpp"         // DSP/UI communication types
 #include "eda_locking.hpp"               // Unified MutexLock
 #include "radio.hpp"                     // For rf::Frequency type
 #include "ui_drone_common_types.hpp"     // For DroneAnalyzerSettings
@@ -97,11 +98,12 @@ namespace ReturnCodes {
  * @note CRITICAL: This method will halt the system if called before initialize()
  */
 ScanningCoordinator& ScanningCoordinator::instance() noexcept {
-    // FIX #1 & #2: Memory barrier before reading volatile flag (compiler intrinsic)
-    // NOTE: Using __sync_synchronize() instead of chSysLock/chSysUnlock
+    // FIX #3: Memory barrier before reading volatile flag using __atomic_thread_fence()
+    // NOTE: Using __atomic_thread_fence(__ATOMIC_SEQ_CST) for full memory barrier
+    //       This is the modern C++11/C11 standard for memory barriers
     //       chSysLock/chSysUnlock are critical section locks that disable ALL interrupts,
     //       not memory barriers. Using them incorrectly can cause system instability.
-    __sync_synchronize();
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
     // CRITICAL: Instance must be initialized before use
     // Dereferencing a null pointer causes undefined behavior (system crash)
@@ -150,11 +152,12 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
                                    DroneScanner& scanner,
                                    DroneDisplayController& display_controller,
                                    AudioManager& audio_controller) noexcept {
-    // FIX #1 & #2: Memory barrier before reading volatile flag (compiler intrinsic)
-    // NOTE: Using __sync_synchronize() instead of chSysLock/chSysUnlock
+    // FIX #3: Memory barrier before reading volatile flag using __atomic_thread_fence()
+    // NOTE: Using __atomic_thread_fence(__ATOMIC_SEQ_CST) for full memory barrier
+    //       This is the modern C++11/C11 standard for memory barriers
     //       chSysLock/chSysUnlock are critical section locks that disable ALL interrupts,
     //       not memory barriers. Using them incorrectly can cause system instability.
-    __sync_synchronize();
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
     MutexLock lock(init_mutex_, LockOrder::DATA_MUTEX);
 
@@ -179,9 +182,9 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
     instance_ptr_ = &coordinator_storage.get();
     instance_constructed_ = true;
 
-    // FIX #1 & #2: Memory barrier after writing volatile flag (compiler intrinsic)
+    // FIX #3: Memory barrier after writing volatile flag using __atomic_thread_fence()
     initialized_ = true;
-    __sync_synchronize();
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
     return true;
 }
@@ -333,6 +336,96 @@ void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summ
     }
     // Placeholder for future implementation
     // DIAMOND OPTIMIZATION: Uses const char* instead of std::string (zero heap allocation)
+}
+
+// ============================================================================
+// DSP LAYER FUNCTIONS (UI/DSP Separation)
+// ============================================================================
+
+/**
+ * @brief Get display data snapshot from DSP layer
+ * 
+ * This function captures a snapshot of all display data from the DSP layer
+ * for UI rendering. It includes scanning state, threat levels, drone counts,
+ * and pre-calculated color indices.
+ * 
+ * Thread-safety: Acquires state_mutex_ before accessing data.
+ * No UI widget calls are made in this function (pure DSP logic).
+ * 
+ * @return DisplayDataSnapshot containing current scanning state and statistics
+ */
+dsp::DisplayDataSnapshot ScanningCoordinator::get_display_data_snapshot() const noexcept {
+    dsp::DisplayDataSnapshot snapshot;
+
+    // Acquire mutex to access scanning state
+    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
+
+    // Capture scanning state
+    snapshot.is_scanning = scanning_active_;
+
+    // Get current frequency from scanner
+    snapshot.current_freq = scanner_.get_current_scanning_frequency();
+
+    // Get total frequencies from database
+    snapshot.total_freqs = scanner_.get_database_size();
+
+    // Get threat level from scanner
+    snapshot.max_threat = scanner_.get_max_detected_threat();
+
+    // Get drone counts from scanner
+    snapshot.approaching_count = scanner_.get_approaching_count();
+    snapshot.receding_count = scanner_.get_receding_count();
+    snapshot.static_count = scanner_.get_static_count();
+    snapshot.total_detections = scanner_.get_total_detections();
+
+    // Get scan cycles from scanner
+    snapshot.scan_cycles = scanner_.get_scan_cycles();
+
+    // Get real mode flag from scanner
+    snapshot.is_real_mode = scanner_.is_real_mode();
+
+    // Set has_detections flag
+    snapshot.has_detections = (snapshot.total_detections > 0);
+
+    // Pre-calculate color index based on threat level
+    // Clamp to valid range (0-4) to prevent out-of-bounds array access
+    // BIG_DISPLAY_STYLES has 5 elements (indices 0-4)
+    uint8_t threat_value = static_cast<uint8_t>(snapshot.max_threat);
+    snapshot.color_idx = (threat_value > 4) ? 4 : threat_value;
+
+    return snapshot;
+}
+
+/**
+ * @brief Get filtered drones snapshot from DSP layer
+ * 
+ * This function captures a snapshot of filtered drone data from the DSP layer
+ * for UI rendering. It includes only active drones that have been seen recently.
+ * 
+ * Thread-safety: Acquires data_mutex_ before accessing drone data.
+ * No UI widget calls are made in this function (pure DSP logic).
+ * 
+ * @return FilteredDronesSnapshot containing active drones for display
+ */
+dsp::FilteredDronesSnapshot ScanningCoordinator::get_filtered_drones_snapshot() const noexcept {
+    dsp::FilteredDronesSnapshot snapshot;
+
+    // Get tracked drones snapshot from scanner
+    DroneScanner::DroneSnapshot drone_snapshot = scanner_.get_tracked_drones_snapshot();
+
+    // Copy tracked drones to filtered snapshot (max 10)
+    snapshot.count = (drone_snapshot.count < 10) ? drone_snapshot.count : 10;
+    for (size_t i = 0; i < snapshot.count; ++i) {
+        // Copy TrackedDrone to TrackedDroneData structure
+        snapshot.drones[i].frequency = drone_snapshot.drones[i].frequency;
+        snapshot.drones[i].drone_type = drone_snapshot.drones[i].drone_type;
+        snapshot.drones[i].threat_level = drone_snapshot.drones[i].threat_level;
+        snapshot.drones[i].rssi = drone_snapshot.drones[i].rssi;
+        snapshot.drones[i].last_seen = drone_snapshot.drones[i].last_seen;
+        snapshot.drones[i].trend = drone_snapshot.drones[i].get_trend();
+    }
+
+    return snapshot;
 }
 
 msg_t ScanningCoordinator::scanning_thread_function(void* arg) noexcept {

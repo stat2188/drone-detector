@@ -14,19 +14,25 @@
 #include <ch.h>
 #include <chtypes.h>
 
+// ============================================================================
+// DIAMOND FIX #5: SEPARATION OF CONCERNS - FORWARD DECLARATIONS
+// ============================================================================
+// Removed direct includes of DSP and database headers to prevent circular dependencies.
+// Using forward declarations where possible, only including headers that are required
+// for inline functions or template instantiations.
+// ============================================================================
+
 // Project-specific headers (alphabetical order)
 #include "diamond_fixes.hpp"
+#include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
-#include "eda_unified_database.hpp"
 #include "event_m0.hpp"
 #include "freqman.hpp"
-#include "freqman_db.hpp"
 #include "gradient.hpp"
 #include "log_file.hpp"
 #include "message.hpp"
 #include "radio_state.hpp"
-#include "scanning_coordinator.hpp"
 #include "ui.hpp"
 #include "ui_drone_audio.hpp"
 #include "ui_drone_common_types.hpp"
@@ -38,6 +44,12 @@
 #include "ui_signal_processing.hpp"
 #include "ui_spectral_analyzer.hpp"
 #include "ui_widget.hpp"
+
+// Forward declarations for database classes (included in .cpp file)
+// This prevents circular dependencies and improves compilation time
+namespace freqman {
+    class FreqmanDB;
+}
 
 // Note: LogFile is now fully included via log_file.hpp above
 // No forward declaration needed - this fixes incomplete type issue at line 297
@@ -623,9 +635,48 @@ struct DetectionParams {
     static constexpr size_t STACK_CANARY_SIZE = 32;
     uint8_t stack_canary_[STACK_CANARY_SIZE];
 
+    // ============================================================================
+    // DIAMOND FIX #8: BOUNDS CHECKING FOR STATIC STORAGE
+    // ============================================================================
+    // Safe access methods for static storage arrays with bounds checking.
+    // All access methods validate indices before dereferencing to prevent buffer overflows.
+    // ============================================================================
+
     // Helper functions for buffer access
     inline std::array<freqman_entry, 10>& get_entries_to_scan() noexcept {
         return entries_to_scan_;
+    }
+
+    // Safe access to entries_to_scan_ with bounds checking
+    // @param index Index to access (0-9)
+    // @return Reference to entry at index, or first entry if out of bounds
+    // @note Returns first entry instead of throwing to avoid exceptions (Diamond Code constraint)
+    inline freqman_entry& get_entry_to_scan(size_t index) noexcept {
+        return (index < 10) ? entries_to_scan_[index] : entries_to_scan_[0];
+    }
+
+    // Safe access to stale_indices_ with bounds checking
+    // @param index Index to access (0-MAX_TRACKED_DRONES-1)
+    // @return Reference to index at position, or first index if out of bounds
+    inline size_t& get_stale_index(size_t index) noexcept {
+        return (index < EDA::Constants::MAX_TRACKED_DRONES) ?
+                stale_indices_[index] : stale_indices_[0];
+    }
+
+    // Safe access to tracked_drones_ with bounds checking
+    // @param index Index to access (0-MAX_TRACKED_DRONES-1)
+    // @return Reference to tracked drone at index, or first drone if out of bounds
+    inline TrackedDrone& get_tracked_drone_safe(size_t index) noexcept {
+        return (index < EDA::Constants::MAX_TRACKED_DRONES) ?
+                (*tracked_drones_ptr_)[index] : (*tracked_drones_ptr_)[0];
+    }
+
+    // Safe const access to tracked_drones_ with bounds checking
+    // @param index Index to access (0-MAX_TRACKED_DRONES-1)
+    // @return Const reference to tracked drone at index, or first drone if out of bounds
+    inline const TrackedDrone& get_tracked_drone_safe(size_t index) const noexcept {
+        return (index < EDA::Constants::MAX_TRACKED_DRONES) ?
+                (*tracked_drones_ptr_)[index] : (*tracked_drones_ptr_)[0];
     }
 
     inline bool check_stack_canary() const noexcept {
@@ -1242,6 +1293,24 @@ public:
     void sort_drones_by_rssi();
     void render_drone_text_display();
 
+    // ============================================================================
+    // DSP LAYER FUNCTIONS (UI/DSP Separation)
+    // ============================================================================
+    // These functions use DSP layer utilities to prepare data for UI rendering.
+    // They separate text formatting (DSP logic) from UI rendering (presentation logic).
+    //
+    // Thread-safety: These functions are called from UI thread only.
+    // No UI widget calls are made in these functions (pure DSP logic).
+    // ============================================================================
+
+    // Update display data snapshot from DSP layer
+    // @param snapshot Display data snapshot from coordinator
+    void update_display_data_snapshot(const dsp::DisplayDataSnapshot& snapshot) noexcept;
+
+    // Update filtered drones snapshot from DSP layer
+    // @param snapshot Filtered drones snapshot from coordinator
+    void update_filtered_drones_snapshot(const dsp::FilteredDronesSnapshot& snapshot) noexcept;
+
     void process_mini_spectrum_data(const ChannelSpectrum& spectrum);
     bool process_bins(uint8_t* power_level);
 
@@ -1660,6 +1729,37 @@ public:
     void init_phase_setup_ui();
     void init_phase_load_settings();
     void init_phase_finalize();
+
+    // ============================================================================
+    // PHASE 5: VIEW LAYER UPDATES - UI/DSP Separation
+    // ============================================================================
+    // These functions extract rendering logic from paint() to eliminate UI/DSP mixing
+    // Each function is a pure UI rendering function with no DSP/signal processing
+    // ============================================================================
+
+    /**
+     * @brief Render initialization error screen
+     * @param painter Painter instance for rendering
+     * @note Pure UI rendering - no DSP logic
+     * @note Called when init_state_ == InitState::INITIALIZATION_ERROR
+     */
+    void render_initialization_error(Painter& painter) noexcept;
+
+    /**
+     * @brief Render loading progress screen
+     * @param painter Painter instance for rendering
+     * @note Pure UI rendering - no DSP logic
+     * @note Called when init_state_ != InitState::FULLY_INITIALIZED and not error
+     */
+    void render_loading_progress(Painter& painter) noexcept;
+
+    /**
+     * @brief Render normal spectrum display
+     * @param painter Painter instance for rendering
+     * @note Pure UI rendering - no DSP logic
+     * @note Called when init_state_ == InitState::FULLY_INITIALIZED
+     */
+    void render_normal_display(Painter& painter) noexcept;
 
     // Initialization timing constants (eliminates magic numbers)
     struct InitTiming {

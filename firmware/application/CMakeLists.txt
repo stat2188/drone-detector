@@ -317,12 +317,10 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/settings_persistence.cpp
 	apps/enhanced_drone_analyzer/ui_signal_processing.cpp
 	apps/enhanced_drone_analyzer/scanning_coordinator.cpp
+	# DSP/UI Separation: New DSP layer files
+	apps/enhanced_drone_analyzer/dsp_display_utils.cpp
+	apps/enhanced_drone_analyzer/dsp_spectrum_processor.cpp
 
-	# DEPRECATED: Legacy files moved to "Legacy settings/" folder - replaced by unified DroneAnalyzerSettings
-	# apps/enhanced_drone_analyzer/eda_settings_manager.cpp
-	# apps/enhanced_drone_analyzer/eda_tabbed_settings_view.cpp
-	# apps/enhanced_drone_analyzer/eda_unified_settings.cpp
-	# apps/enhanced_drone_analyzer/ui_spectrum_settings.cpp
 	protocols/aprs.cpp
 	protocols/ax25.cpp
 	protocols/dcs.cpp

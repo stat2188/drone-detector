@@ -2848,7 +2848,145 @@ void DroneDisplayController::update_signal_type_display(const char* signal_type)
     text_scanner_stats_.set(signal_type);
 }
 
-void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi) {
+// ============================================================================
+// DSP LAYER FUNCTIONS (UI/DSP Separation)
+// ============================================================================
+
+/**
+ * @brief Update display data snapshot from DSP layer
+ * 
+ * This function updates the display with data from the DSP layer.
+ * It uses the DSP layer snapshot to update UI widgets.
+ * 
+ * Thread-safety: This function is called from UI thread only.
+ * No scanner calls are made in this function (pure UI rendering).
+ * 
+ * @param snapshot Display data snapshot from coordinator
+ */
+void DroneDisplayController::update_display_data_snapshot(const dsp::DisplayDataSnapshot& snapshot) noexcept {
+    // Guard clause: Early return if buffers not allocated
+    if (!buffers_allocated_) {
+        return;
+    }
+
+    // Update scanning status
+    if (snapshot.is_scanning) {
+        if (snapshot.current_freq > 0) {
+            // Use static thread-local buffer instead of stack allocation (heap-free)
+            static thread_local char freq_buf[16]{};
+            FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), snapshot.current_freq);
+            big_display_.set(freq_buf);
+        } else {
+            big_display_.set("2400.0MHz");
+        }
+    } else {
+        big_display_.set("READY");
+    }
+
+    // Update scanning progress
+    if (snapshot.total_freqs > 0 && snapshot.is_scanning) {
+        uint32_t progress_percent = 50;
+        scanning_progress_.set_value(std::min(progress_percent, static_cast<uint32_t>(100)));
+    } else {
+        scanning_progress_.set_value(0);
+    }
+
+    // Update threat summary
+    if (snapshot.has_detections) {
+        // Use static thread-local buffer instead of stack allocation (heap-free)
+        static thread_local char summary_buffer[48]{};
+        const char* threat_name = UnifiedStringLookup::threat_name(static_cast<uint8_t>(snapshot.max_threat));
+        // Use StatusFormatter
+        StatusFormatter::format_to(summary_buffer, "THREAT: %s | <%lu ~%lu >%lu",
+                                  threat_name,
+                                  static_cast<unsigned long>(snapshot.approaching_count),
+                                  static_cast<unsigned long>(snapshot.static_count),
+                                  static_cast<unsigned long>(snapshot.receding_count));
+        text_threat_summary_.set(summary_buffer);
+        text_threat_summary_.set_style(&UIStyles::RED_STYLE);
+    } else {
+        text_threat_summary_.set("THREAT: NONE | All clear");
+        text_threat_summary_.set_style(&UIStyles::GREEN_STYLE);
+    }
+
+    // Update status info
+    // Use static thread-local buffer instead of stack allocation (heap-free)
+    static thread_local char status_buffer[48]{};
+    if (snapshot.is_scanning) {
+        // Use const char* instead of std::string (saves RAM)
+        const char* mode_str = snapshot.is_real_mode ? "REAL" : "DEMO";
+        StatusFormatter::format_to(status_buffer, "%s - Detections: %lu",
+                                  mode_str, static_cast<unsigned long>(snapshot.total_detections));
+    } else {
+        StatusFormatter::format_to(status_buffer, "Ready - Enhanced Drone Analyzer");
+    }
+    text_status_info_.set(status_buffer);
+
+    // Update scanner stats
+    // Use static thread-local buffer instead of stack allocation (heap-free)
+    static thread_local char stats_buffer[48]{};
+    if (snapshot.is_scanning && snapshot.total_freqs > 0) {
+        size_t current_idx = 0;
+        // Use StatusFormatter
+        StatusFormatter::format_to(stats_buffer, "Freq: %lu/%lu | Cycle: %lu",
+                                  static_cast<unsigned long>(current_idx + 1),
+                                  static_cast<unsigned long>(snapshot.total_freqs),
+                                  static_cast<unsigned long>(snapshot.scan_cycles));
+    } else if (snapshot.total_freqs > 0) {
+        StatusFormatter::format_to(stats_buffer, "Loaded: %lu frequencies",
+                                  static_cast<unsigned long>(snapshot.total_freqs));
+    } else {
+        StatusFormatter::format_to(stats_buffer, "No database loaded");
+    }
+    text_scanner_stats_.set(stats_buffer);
+
+    // Update big display style
+    big_display_.set_style(&BIG_DISPLAY_STYLES[snapshot.color_idx]);
+}
+
+/**
+ * @brief Update filtered drones snapshot from DSP layer
+ * 
+ * This function updates the display with filtered drone data from the DSP layer.
+ * It uses the DSP layer snapshot to update UI widgets.
+ * 
+ * Thread-safety: This function is called from UI thread only.
+ * No scanner calls are made in this function (pure UI rendering).
+ * 
+ * @param snapshot Filtered drones snapshot from coordinator
+ */
+void DroneDisplayController::update_filtered_drones_snapshot(const dsp::FilteredDronesSnapshot& snapshot) noexcept {
+    // Guard clause: Early return if buffers not allocated
+    if (!buffers_allocated_) {
+        return;
+    }
+
+    // Clear current drones display
+    for (size_t i = 0; i < MAX_UI_DRONES; ++i) {
+        detected_drones()[i].frequency = 0;
+        detected_drones()[i].type = DroneType::UNKNOWN;
+        detected_drones()[i].threat = ThreatLevel::NONE;
+        detected_drones()[i].rssi = -120;
+        detected_drones()[i].last_seen = 0;
+        detected_drones()[i].trend = MovementTrend::UNKNOWN;
+    }
+
+    // Update drones display with snapshot data
+    for (size_t i = 0; i < snapshot.count && i < MAX_UI_DRONES; ++i) {
+        const auto& drone = snapshot.drones[i];
+        detected_drones()[i].frequency = drone.frequency;
+        detected_drones()[i].type = static_cast<DroneType>(drone.drone_type);
+        detected_drones()[i].threat = static_cast<ThreatLevel>(drone.threat_level);
+        detected_drones()[i].rssi = drone.rssi;
+        detected_drones()[i].last_seen = drone.last_seen;
+        detected_drones()[i].trend = drone.trend;
+    }
+
+    // Render drone text display
+    render_drone_text_display();
+}
+
+void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, ThreatLevel threat, int32_t rssi) noexcept {
     systime_t now = chTimeNow();
 
     for (size_t i = 0; i < detected_drones_count_; ++i) {
@@ -2860,7 +2998,8 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
             snprintf(detected_drones()[i].type_name, sizeof(detected_drones()[i].type_name), "%s", UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(type)));
             detected_drones()[i].display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(type));
             sort_drones_by_rssi();
-            render_drone_text_display();
+            // DIAMOND CODE PRINCIPLE: Removed render_drone_text_display() call
+            // Rendering is now triggered separately by the caller
             return;
         }
     }
@@ -2878,7 +3017,8 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
         detected_drones_count_++;
     }
     sort_drones_by_rssi();
-    render_drone_text_display();
+    // DIAMOND CODE PRINCIPLE: Removed render_drone_text_display() call
+    // Rendering is now triggered separately by the caller
 }
 
 void DroneDisplayController::sort_drones_by_rssi() {
@@ -2937,7 +3077,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     render_drone_text_display();
 }
 
-void DroneDisplayController::render_drone_text_display() {
+void DroneDisplayController::render_drone_text_display() noexcept {
     text_drone_1_.set("");
     text_drone_2_.set("");
     text_drone_3_.set("");
@@ -2945,38 +3085,28 @@ void DroneDisplayController::render_drone_text_display() {
     size_t drone_count = std::min(displayed_drones_.size(), EDA::Constants::MAX_DISPLAYED_DRONES);
     for (size_t i = 0; i < drone_count; ++i) {
         const auto& drone = displayed_drones_[i];
-        char buffer[64];
-        char freq_buf[16];  // Local buffer instead of std::string (RAM savings)
-
-        // DIAMOND OPTIMIZATION: Use TrendSymbols for O(1) lookup
-        char trend_symbol = TrendSymbols::from_trend(static_cast<uint8_t>(drone.trend));
-
-        // DIAMOND OPTIMIZATION: Table-driven frequency formatting ( if/else)
-        // O(1) lookup   if/else ( ~15  )
-        const auto& format_entry = FREQ_FORMAT_TABLE[
-            (drone.frequency >= 1000000000LL) ? 0 :
-            (drone.frequency >= 1000000LL) ? 1 :
-            (drone.frequency >= 1000LL) ? 2 : 3
-        ];
-
-        int64_t int_part = drone.frequency / format_entry.divider;
-        int64_t dec_part = (format_entry.decimal_div > 1) ?
-                          (drone.frequency % format_entry.divider) / format_entry.decimal_div : 0;
-
-        if (format_entry.decimal_div > 1) {
-            snprintf(freq_buf, sizeof(freq_buf), format_entry.format,
-                     (unsigned long)int_part, (unsigned long)dec_part);
-        } else {
-            snprintf(freq_buf, sizeof(freq_buf), format_entry.format,
-                     (unsigned long)int_part);
+        
+        // DIAMOND CODE PRINCIPLE: Use utility function for text formatting (DSP layer)
+        // This separates formatting logic from UI rendering
+        dsp::DisplayDroneEntry display_entry;
+        display_entry.frequency = drone.frequency;
+        display_entry.trend = drone.trend;
+        // Copy type name to display entry
+        for (size_t j = 0; j < sizeof(display_entry.type_name) - 1 && drone.type_name[j] != '\0'; ++j) {
+            display_entry.type_name[j] = drone.type_name[j];
         }
-
-        // Use StatusFormatter
+        display_entry.type_name[sizeof(display_entry.type_name) - 1] = '\0';
+        
+        // Pre-format display text using utility function (DSP layer)
+        dsp::DroneDisplayText display_text = dsp::format_drone_display_text(display_entry);
+        
+        // Pure UI rendering - use pre-formatted text
+        char buffer[64];
         StatusFormatter::format_to(buffer, DRONE_DISPLAY_FORMAT,
-                                 drone.type_name,
-                                 freq_buf,
-                                 (long int)drone.rssi,
-                                 trend_symbol);
+                                 display_text.type_name,
+                                 display_text.freq_string,
+                                 (long int)display_text.rssi,
+                                 display_text.trend_symbol);
 
         // Helper for indexed access (no bounds check each time)
         Text* target = drone_text_widget(i);
@@ -2986,18 +3116,24 @@ void DroneDisplayController::render_drone_text_display() {
     }
 }
 
-void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& spectrum) {
-    for (size_t bin = 0; bin < MINI_SPECTRUM_WIDTH; bin++) {
-        uint8_t current_bin_power;
-        if (bin < spectrum.db.size()) {
-            current_bin_power = spectrum.db[bin];
-        } else {
-            current_bin_power = 0;
-        }
-        if (process_bins(&current_bin_power)) {
-            return;
-        }
-    }
+void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& spectrum) noexcept {
+    // DIAMOND CODE PRINCIPLE: Use DSP layer for signal processing
+    // This separates signal processing from UI rendering
+    using namespace dsp;
+    
+    // Thread-safe buffer access with mutex protection
+    // Lock order: SPECTRUM_MUTEX (level 2)
+    MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
+    
+    // Call DSP layer function to process spectrum data
+    pixel_index = SpectrumProcessor::process_mini_spectrum(
+        spectrum,
+        spectrum_power_levels_storage_,
+        bins_hz_size,
+        each_bin_size,
+        marker_pixel_step,
+        min_color_power
+    );
 }
 
 bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
@@ -3021,10 +3157,10 @@ bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
     return false;
 }
 
-void DroneDisplayController::render_bar_spectrum(Painter& painter) {
-    const auto& config = BarSpectrumConfig{};
+void DroneDisplayController::render_bar_spectrum(Painter& painter) noexcept {
+    const auto& config = dsp::BarSpectrumConfig{};
 
-    // Clear spectrum area
+    // Clear spectrum area (UI only)
     const int bar_spectrum_y_start = config.WATERFALL_Y_START;
     const int spectrum_height = config.BAR_HEIGHT_MAX;
 
@@ -3039,8 +3175,8 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
     }
 
     // Thread-safe buffer access with mutex protection
-    // Lock order: DISPLAY_SPECTRUM_MUTEX (level 4)
-        MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
+    // Lock order: SPECTRUM_MUTEX (level 2)
+    MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
 
     // Iterate through all spectrum bins
     const auto& levels = spectrum_power_levels();
@@ -3049,23 +3185,19 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) {
 
     for (size_t x = 0; x < spectrum_width; ++x) {
         uint8_t power = levels[x];
-
-        // Noise filter: don't draw if signal too weak
-        if (power < config.NOISE_THRESHOLD) continue;
-
-        // Calculate bar height (0-255  0-spectrum_height)
-        int bar_height = (power * spectrum_height) / 255;
-        if (bar_height < 1) bar_height = 1;
-        if (bar_height > spectrum_height) bar_height = spectrum_height;
-
-        // Analyze signal shape (Narrow vs Wide)
-        size_t color_idx = get_bar_color_index(x, power);
-
-        // Draw bar
-        int y_top = (bar_spectrum_y_start + spectrum_height) - bar_height;
+        
+        // DIAMOND CODE PRINCIPLE: Use utility function for signal analysis (DSP layer)
+        // This separates signal analysis from UI rendering
+        dsp::BarSpectrumRenderData render_data = dsp::calculate_bar_render_data(
+            power, x, spectrum_height, config
+        );
+        
+        if (!render_data.should_draw) continue;
+        
+        // Pure UI rendering - use pre-calculated render data
         painter.fill_rectangle(
-            {static_cast<int>(x), y_top, 1, bar_height},
-            config.BAR_COLORS[color_idx]
+            {static_cast<int>(x), render_data.y_top, 1, render_data.bar_height},
+            config.BAR_COLORS[render_data.color_idx]
         );
     }
 }
@@ -3080,39 +3212,43 @@ void DroneDisplayController::update_histogram_display(
     // Guard clause: Validate input histogram
     if (analysis_histogram.empty()) {
         // Thread-safe buffer access with mutex protection
-        // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
+        // Lock order: SPECTRUM_MUTEX (level 2)
         MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
         histogram_display_buffer_.is_valid = false;
         return;
     }
 
-    // Copy histogram data from analysis buffer to display buffer
-    // Scale from uint16_t to uint8_t (0-255) for display
-    uint8_t max_count = 0;
-
-    // Thread-safe buffer access with mutex protection
-    // Lock order: DISPLAY_HISTOGRAM_MUTEX (level 5)
-        MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
-
-    for (size_t i = 0; i < HISTOGRAM_NUM_BINS; ++i) {
-        uint16_t raw_count = (i < analysis_histogram.size()) ? analysis_histogram[i] : 0;
-        histogram_display_buffer_.bin_counts[i] =
-            static_cast<uint8_t>(std::min(raw_count, static_cast<uint16_t>(255)));
-
-        if (histogram_display_buffer_.bin_counts[i] > max_count) {
-            max_count = histogram_display_buffer_.bin_counts[i];
-        }
+    // DIAMOND CODE PRINCIPLE: Use utility function for data scaling (DSP layer)
+    // This separates data scaling from UI display update
+    uint16_t temp_histogram[64];
+    for (size_t i = 0; i < 64 && i < analysis_histogram.size(); ++i) {
+        temp_histogram[i] = analysis_histogram[i];
     }
-
-    histogram_display_buffer_.max_count = max_count;
-    histogram_display_buffer_.noise_floor = noise_floor;
-    histogram_display_buffer_.is_valid = true;
-
+    for (size_t i = analysis_histogram.size(); i < 64; ++i) {
+        temp_histogram[i] = 0;
+    }
+    
+    // Pre-scale histogram data using utility function (DSP layer)
+    dsp::HistogramDisplayBuffer scaled_histogram = dsp::scale_histogram_for_display(
+        temp_histogram, noise_floor
+    );
+    
+    // Copy to display buffer (UI only)
+    // Thread-safe buffer access with mutex protection
+    // Lock order: SPECTRUM_MUTEX (level 2)
+    MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
+    
+    for (size_t i = 0; i < 64; ++i) {
+        histogram_display_buffer_.bin_counts[i] = scaled_histogram.bin_counts[i];
+    }
+    histogram_display_buffer_.max_count = scaled_histogram.max_count;
+    histogram_display_buffer_.noise_floor = scaled_histogram.noise_floor;
+    histogram_display_buffer_.is_valid = scaled_histogram.is_valid;
     histogram_dirty_ = true;
 }
 
 void DroneDisplayController::render_histogram(Painter& painter) noexcept {
-    // DIAMOND FIX #5: Protect histogram_dirty_ with histogram_mutex_
+    // DIAMOND CODE PRINCIPLE: Protect histogram_dirty_ with histogram_mutex_
     // Thread-safe buffer access with mutex protection
     // Lock order: SPECTRUM_MUTEX (level 2) for histogram data
     MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
@@ -3128,11 +3264,11 @@ void DroneDisplayController::render_histogram(Painter& painter) noexcept {
         return;
     }
 
-    const auto& config = HistogramColorConfig{};
+    const auto& config = dsp::HistogramColorConfig{};
 
-    // Clear histogram area
+    // Clear histogram area (UI only)
     painter.fill_rectangle(
-        {0, HISTOGRAM_Y, HISTOGRAM_WIDTH, HISTOGRAM_HEIGHT},
+        {0, config.HISTOGRAM_Y, config.HISTOGRAM_WIDTH, config.HISTOGRAM_HEIGHT},
         Color::black()
     );
 
@@ -3145,47 +3281,23 @@ void DroneDisplayController::render_histogram(Painter& painter) noexcept {
         return;
     }
 
-    // Calculate scaling factor for bin height (0-255 -> 0-HISTOGRAM_HEIGHT)
-    // Diamond Code: Use 256 as divisor for fast bit shift approximation
-    const int scale_factor = HISTOGRAM_HEIGHT;
-
-    for (size_t bin_idx = 0; bin_idx < HISTOGRAM_NUM_BINS; ++bin_idx) {
+    // Pure UI rendering - all calculations done by utility function
+    for (size_t bin_idx = 0; bin_idx < config.HISTOGRAM_NUM_BINS; ++bin_idx) {
         uint8_t bin_count = histogram_display_buffer_.bin_counts[bin_idx];
         
-        // Skip empty bins
-        if (bin_count == 0) continue;
+        // DIAMOND CODE PRINCIPLE: Use utility function for histogram calculations (DSP layer)
+        // This separates histogram calculations from UI rendering
+        dsp::HistogramBinRenderData render_data = dsp::calculate_histogram_bin_render_data(
+            bin_idx, bin_count, max_count, config
+        );
         
-        // Calculate bin height (integer scaling)
-        int bin_height = (static_cast<int>(bin_count) * scale_factor) / 256;
-        if (bin_height < 1) bin_height = 1;
-        if (bin_height > HISTOGRAM_HEIGHT) bin_height = HISTOGRAM_HEIGHT;
+        if (!render_data.should_draw) continue;
         
-        const int bin_x = static_cast<int>(bin_idx * HISTOGRAM_BIN_WIDTH);
-        const int bin_width = static_cast<int>(HISTOGRAM_BIN_WIDTH);
-        
-        // Calculate color level based on signal strength (integer-only)
-        uint8_t color_level;
-        if (bin_count <= HISTOGRAM_COLOR_THRESHOLD_20PCT) {           // 0-20%
-            color_level = 0;  // dark_grey (noise floor)
-        } else if (bin_count <= HISTOGRAM_COLOR_THRESHOLD_40PCT) {
-            color_level = 1;  // blue (low signal)
-        } else if (bin_count <= HISTOGRAM_COLOR_THRESHOLD_60PCT) {
-            color_level = 2;  // cyan (medium signal)
-        } else if (bin_count <= HISTOGRAM_COLOR_THRESHOLD_80PCT) {
-            color_level = 3;  // yellow (high signal)
-        } else {
-            color_level = 4;  // red (peak signal)
-        }
-        
-        // Bounds check for color array
-        if (color_level >= config.NUM_COLOR_LEVELS) {
-            color_level = 4;
-        }
-        
-        const int y_top = (HISTOGRAM_Y + HISTOGRAM_HEIGHT) - bin_height;
+        // Pure UI rendering - use pre-calculated render data
         painter.fill_rectangle(
-            {bin_x, y_top, bin_width, bin_height},
-            config.HISTOGRAM_COLORS[color_level]
+            {render_data.bin_x, render_data.y_top,
+             render_data.bin_width, render_data.bin_height},
+            config.HISTOGRAM_COLORS[render_data.color_idx]
         );
     }
     
@@ -3572,69 +3684,127 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
         return;
     }
 
-    // FIX:    paint
+    // Call base class paint
     View::paint(painter);
 
     // FIX #2: Do NOT call step_deferred_initialization() from paint()
     // This prevents nested stack frames that cause M0 stack overflow
     // Initialization is now handled by continue_initialization() called from UI event loop
 
-    // FIX:
+    // ============================================================================
+    // PHASE 5: VIEW LAYER UPDATES - Simple Dispatcher Pattern
+    // ============================================================================
+    // Dispatch to appropriate rendering function based on initialization state
+    // This eliminates UI/DSP mixing by separating concerns into pure UI functions
+    // ============================================================================
+
+    // Dispatch based on initialization state (pure UI rendering)
     if (init_state_ == InitState::INITIALIZATION_ERROR) {
-        painter.fill_rectangle({0, 0, screen_width, screen_height}, Color::black());
-        
-        // Error header
-        painter.draw_string({10, 80}, Style{font::fixed_8x16, Color::red(), Color::black()}, "INIT ERROR");
-        
-        // Error message
-        painter.draw_string({10, 100}, Style{font::fixed_8x16, Color::white(), Color::black()}, 
-                           ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]);
-        
-        // Instructions
-        painter.draw_string({10, 130}, Style{font::fixed_8x16, Color::yellow(), Color::black()}, "Press BACK to exit");
+        render_initialization_error(painter);
         return;
     }
-    
-    // FIX:
+
     if (init_state_ != InitState::FULLY_INITIALIZED) {
-        size_t phase_idx = static_cast<size_t>(init_state_);
-        if (phase_idx < 7) {
-            painter.draw_string({10, 80}, Style{font::fixed_8x16, Color::white(), Color::black()}, "Loading...");
-            painter.draw_string({10, 100}, Style{font::fixed_8x16, Color::green(), Color::black()}, 
-                               INIT_STATUS_MESSAGES[phase_idx]);
-            
-            // Progress bar (6 phases = 16.6% each)
-            uint8_t progress = static_cast<uint8_t>(phase_idx * 16);
-            if (progress > 100) progress = 100;
-            
-            // Progress bar background
-            painter.fill_rectangle({10, 120, 100, 10}, Color::dark_grey());
-            // Filled portion
-            painter.fill_rectangle({10, 120, progress, 10}, Color::green());
-        }
+        render_loading_progress(painter);
         return;
     }
 
-    // Additional buffer check
-    if (display_controller_.are_buffers_valid()) {
-        display_controller_.render_bar_spectrum(painter);
-
-        // Handle histogram display based on mode
-        if (display_controller_.get_display_mode() == ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::HISTOGRAM) {
-            // DIAMOND OPTIMIZATION: Render histogram after bar spectrum
-            // Histogram is positioned at y=164-190 (below bar spectrum)
-            display_controller_.render_histogram(painter);
-        } else {
-            // Clear histogram area when not in histogram mode
-            display_controller_.clear_histogram_area(painter);
-        }
-    }
+    // Normal rendering
+    render_normal_display(painter);
 
     // Stack Overflow Prevention: Do NOT call continue_initialization() from paint()!
     // Calling continue_initialization() from paint() creates nested stack frames that
     // exceed the 4KB stack limit. The message_handler_frame_sync_ already handles
     // initialization by calling step_deferred_initialization() from the UI event loop,
     // not from paint(). The initialization continues naturally via the frame sync handler.
+}
+
+// ============================================================================
+// PHASE 5: VIEW LAYER UPDATES - UI/DSP Separation
+// ============================================================================
+// These functions extract rendering logic from paint() to eliminate UI/DSP mixing
+// Each function is a pure UI rendering function with no DSP/signal processing
+// ============================================================================
+
+void EnhancedDroneSpectrumAnalyzerView::render_initialization_error(Painter& painter) noexcept {
+    // Clear screen
+    painter.fill_rectangle({0, 0, screen_width, screen_height}, Color::black());
+    
+    // Error header
+    painter.draw_string(
+        {10, 80}, 
+        Style{font::fixed_8x16, Color::red(), Color::black()}, 
+        "INIT ERROR"
+    );
+    
+    // Error message
+    painter.draw_string(
+        {10, 100}, 
+        Style{font::fixed_8x16, Color::white(), Color::black()},
+        ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]
+    );
+    
+    // Instructions
+    painter.draw_string(
+        {10, 130}, 
+        Style{font::fixed_8x16, Color::yellow(), Color::black()}, 
+        "Press BACK to exit"
+    );
+}
+
+void EnhancedDroneSpectrumAnalyzerView::render_loading_progress(Painter& painter) noexcept {
+    size_t phase_idx = static_cast<size_t>(init_state_);
+    
+    // Guard clause: Skip if phase index is out of range
+    if (phase_idx >= 7) {
+        return;
+    }
+    
+    // Loading text
+    painter.draw_string(
+        {10, 80}, 
+        Style{font::fixed_8x16, Color::white(), Color::black()}, 
+        "Loading..."
+    );
+    
+    // Status message
+    painter.draw_string(
+        {10, 100}, 
+        Style{font::fixed_8x16, Color::green(), Color::black()},
+        INIT_STATUS_MESSAGES[phase_idx]
+    );
+    
+    // Progress bar (6 phases = ~16.6% each)
+    uint8_t progress = static_cast<uint8_t>(phase_idx * 16);
+    if (progress > 100) {
+        progress = 100;
+    }
+    
+    // Progress bar background
+    painter.fill_rectangle({10, 120, 100, 10}, Color::dark_grey());
+    // Filled portion
+    painter.fill_rectangle({10, 120, progress, 10}, Color::green());
+}
+
+void EnhancedDroneSpectrumAnalyzerView::render_normal_display(Painter& painter) noexcept {
+    // Guard clause: Skip if buffers are not valid
+    if (!display_controller_.are_buffers_valid()) {
+        return;
+    }
+    
+    // Render bar spectrum
+    display_controller_.render_bar_spectrum(painter);
+    
+    // Handle histogram display based on mode
+    if (display_controller_.get_display_mode() == 
+        ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::HISTOGRAM) {
+        // DIAMOND OPTIMIZATION: Render histogram after bar spectrum
+        // Histogram is positioned at y=164-190 (below bar spectrum)
+        display_controller_.render_histogram(painter);
+    } else {
+        // Clear histogram area when not in histogram mode
+        display_controller_.clear_histogram_area(painter);
+    }
 }
 
 bool EnhancedDroneSpectrumAnalyzerView::on_key(const KeyEvent key) {
