@@ -224,6 +224,24 @@ constexpr Frequency MIN_VALID = 1'000'000LL;
  */
 constexpr Frequency MAX_VALID = 7'200'000'000LL;
 
+// ============================================================================
+// FREQUENCY VALIDATION FUNCTIONS (declarations)
+// ============================================================================
+
+/**
+ * @brief Validate frequency is within hardware limits
+ * @param freq_hz Frequency to validate
+ * @return true if valid, false otherwise
+ */
+constexpr bool is_valid(Frequency freq_hz) noexcept;
+
+/**
+ * @brief Clamp frequency to hardware limits
+ * @param freq_hz Frequency to clamp
+ * @return Clamped frequency within valid range
+ */
+constexpr Frequency clamp(Frequency freq_hz) noexcept;
+
 } // namespace FrequencyConstants
 
 namespace Constants {
