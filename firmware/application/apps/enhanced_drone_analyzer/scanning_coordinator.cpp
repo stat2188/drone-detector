@@ -46,13 +46,20 @@ Mutex ScanningCoordinator::init_mutex_;
 volatile bool ScanningCoordinator::initialized_ = false;  // volatile for thread-safe singleton pattern
 volatile bool ScanningCoordinator::instance_constructed_ = false;  // tracks if instance was constructed
 
-// Static initializer for init_mutex_ (called before main)
-namespace {
-    struct InitMutexInitializer {
-        InitMutexInitializer() noexcept {
-            chMtxInit(&ScanningCoordinator::init_mutex_);
-        }
-    } init_mutex_initializer;
+// ============================================================================
+// RED TEAM FIX #CRITICAL FLAW #5: Explicit initialization function
+// ============================================================================
+// Initialize EDA mutexes after ChibiOS RTOS is ready.
+// Must be called AFTER chSysInit() in main() to prevent undefined behavior.
+//
+// @note This replaces the static initializer pattern which runs before main()
+//       and before chSysInit(), causing undefined behavior with ChibiOS mutexes.
+void initialize_eda_mutexes() noexcept {
+    // Initialize ScanningCoordinator mutex
+    chMtxInit(&ScanningCoordinator::init_mutex_);
+    
+    // Initialize other EDA mutexes here
+    // (Add additional mutex initializations as needed)
 }
 
 // Coordinator Thread Working Area Definition
@@ -99,11 +106,10 @@ namespace ReturnCodes {
  * @note CRITICAL: This method will halt the system if called before initialize()
  */
 ScanningCoordinator& ScanningCoordinator::instance() noexcept {
-    // FIX #3: Memory barrier before reading volatile flag using __atomic_thread_fence()
+    // RED TEAM FIX #CRITICAL FLAW #1: Use hardware memory barrier for thread-safe singleton access
     // NOTE: Using __atomic_thread_fence(__ATOMIC_SEQ_CST) for full memory barrier
-    //       This is the modern C++11/C11 standard for memory barriers
-    //       chSysLock/chSysUnlock are critical section locks that disable ALL interrupts,
-    //       not memory barriers. Using them incorrectly can cause system instability.
+    //       This ensures proper memory ordering across all CPU cores and prevents
+    //       race conditions in the double-checked locking pattern.
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
     // CRITICAL: Instance must be initialized before use
@@ -159,11 +165,10 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
                                    DroneScanner& scanner,
                                    DroneDisplayController& display_controller,
                                    AudioManager& audio_controller) noexcept {
-    // FIX #3: Memory barrier before reading volatile flag using __atomic_thread_fence()
+    // RED TEAM FIX #CRITICAL FLAW #1: Use hardware memory barrier for thread-safe singleton access
     // NOTE: Using __atomic_thread_fence(__ATOMIC_SEQ_CST) for full memory barrier
-    //       This is the modern C++11/C11 standard for memory barriers
-    //       chSysLock/chSysUnlock are critical section locks that disable ALL interrupts,
-    //       not memory barriers. Using them incorrectly can cause system instability.
+    //       This ensures proper memory ordering across all CPU cores and prevents
+    //       race conditions in the double-checked locking pattern.
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
     MutexLock lock(init_mutex_, LockOrder::DATA_MUTEX);
@@ -187,9 +192,12 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
 
     // Set instance pointer to constructed object
     instance_ptr_ = &coordinator_storage.get();
-    instance_constructed_ = true;
+   instance_constructed_ = true;
 
-    // FIX #3: Memory barrier after writing volatile flag using __atomic_thread_fence()
+    // RED TEAM FIX #CRITICAL FLAW #1: Use hardware memory barrier for thread-safe singleton access
+    // NOTE: Using __atomic_thread_fence(__ATOMIC_SEQ_CST) for full memory barrier
+    //       This ensures proper memory ordering across all CPU cores and prevents
+    //       race conditions in the double-checked locking pattern.
     initialized_ = true;
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
@@ -498,10 +506,9 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
                 }
 
                 chThdExit(ReturnCodes::INITIALIZATION_TIMEOUT);
-                return ReturnCodes::INITIALIZATION_TIMEOUT;
             }
 
-            // Use constant instead of magic number
+            // Wait before retrying
             chThdSleepMilliseconds(EDA::Constants::SD_CARD_POLL_INTERVAL_MS);
             continue;
         }
@@ -547,7 +554,7 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
             consecutive_timeouts = 0;
         }
 
-        // Sleep for configured interval
+        // Sleep for scan interval
         uint32_t interval_ms;
         {
             MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);

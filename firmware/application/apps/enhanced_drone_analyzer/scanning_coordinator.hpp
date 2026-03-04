@@ -279,6 +279,7 @@ public:
     // FIX #7: Singleton state with volatile flag for thread safety
     // DIAMOND FIX: Static storage pattern (no heap allocation)
     // RED TEAM FIX #P0-3: Make instance_ptr_ volatile for double-checked locking pattern
+    // RED TEAM FIX #CRITICAL FLAW #5: Remove static initializer, use explicit init function
     static volatile ScanningCoordinator* instance_ptr_;  ///< Singleton instance pointer (volatile for thread safety)
     static Mutex init_mutex_;                   ///< Protects singleton initialization
     static volatile bool initialized_;           ///< Tracks if singleton has been initialized (volatile for thread safety)
@@ -287,6 +288,17 @@ public:
 private:
 
 };  // class ScanningCoordinator
+
+// ============================================================================
+// RED TEAM FIX #CRITICAL FLAW #5: Explicit initialization function
+// ============================================================================
+// Function to initialize EDA mutexes after ChibiOS RTOS is ready.
+// Must be called AFTER chSysInit() in main() to prevent undefined behavior.
+//
+// @note This replaces the static initializer pattern which runs before main()
+//       and before chSysInit(), causing undefined behavior with ChibiOS mutexes.
+// ============================================================================
+void initialize_eda_mutexes() noexcept;
 
 }  // namespace ui::apps::enhanced_drone_analyzer
 
