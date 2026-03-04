@@ -255,6 +255,14 @@ private:
     size_t history_index_;
 };
 
+// ============================================================================
+// DIAMOND FIX #P0-CRITICAL #1: TrackedDronesArray Type Alias
+// ============================================================================
+// Type alias for tracked drones array to simplify destructor calls
+// and ensure consistent usage throughout the codebase.
+// ============================================================================
+using TrackedDronesArray = std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>;
+
 struct DisplayDroneEntry {
     Frequency frequency = 0;
     DroneType type = DroneType::UNKNOWN;
@@ -326,10 +334,10 @@ public:
     
     // Initialization state management
     void set_initialization_complete(bool complete) {
-        initialization_complete_ = complete;
+        initialization_complete_.store(complete);
     }
     bool is_initialization_complete() const {
-        return initialization_complete_;
+        return initialization_complete_.load();
     }
 
     // Statistics for monitoring
@@ -344,7 +352,7 @@ private:
     Semaphore data_ready_;
     // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
     volatile bool worker_should_run_{false};
-    volatile bool initialization_complete_{false};  // Flag to signal system initialization is complete
+    AtomicFlag initialization_complete_;  // DIAMOND FIX #P1-HIGH #2: AtomicFlag for thread-safe flag
 
     // FIX #SO-1: Increased from 3072 to 4096 bytes (33% increase) to prevent stack overflow
     static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
@@ -740,19 +748,20 @@ struct DetectionParams {
        bool tracked_drones_constructed_ = false;
 
        // State flags
-        bool freq_db_loaded_ = false;
-        size_t current_db_index_ = 0;
+         AtomicFlag freq_db_loaded_;  // DIAMOND FIX #P1-HIGH #2: AtomicFlag for thread-safe flag (constexpr constructor initializes to false)
+         size_t current_db_index_ = 0;
         Frequency last_scanned_frequency_ = 0;
         // volatile for thread-safe timestamp access
         volatile systime_t last_detection_log_time_{0};
 
-        // Async database loading to prevent UI freeze
-        Thread* db_loading_thread_ = nullptr;
-        // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-        volatile bool db_loading_active_{false};
+         // Async database loading to prevent UI freeze
+         Thread* db_loading_thread_ = nullptr;
+         // DIAMOND FIX #P1-HIGH #2: AtomicFlag for thread-safe flag (constexpr constructor initializes to false)
+         AtomicFlag db_loading_active_;
 
-        // Initialization complete flag for async initialization coordination
-         volatile bool initialization_complete_{false};
+         // Initialization complete flag for async initialization coordination
+         // DIAMOND FIX #P1-HIGH #2: AtomicFlag for thread-safe flag (constexpr constructor initializes to false)
+         AtomicFlag initialization_complete_;
          
          // Stage 4: Database reload flag for observer pattern
          volatile bool database_needs_reload_{false};

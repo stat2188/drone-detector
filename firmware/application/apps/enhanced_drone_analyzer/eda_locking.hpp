@@ -32,6 +32,74 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 /**
+ * @brief Atomic flag for thread-safe boolean flags
+ *
+ * DIAMOND FIX #P1-HIGH #2: AtomicFlag class for thread-safe boolean flags
+ * - Provides atomic load/store operations for boolean flags
+ * - Uses GCC built-in atomic operations (__atomic_load_n, __atomic_store_n, __atomic_exchange_n)
+ * - Zero-overhead abstraction: compiles to single atomic instructions on ARM Cortex-M4
+ * - Memory impact: 4 bytes per AtomicFlag instance (volatile int value_)
+ *
+ * Usage:
+ * @code
+ *     AtomicFlag flag;
+ *
+ *     // Thread 1: Set flag
+ *     flag.store(true);
+ *
+ *     // Thread 2: Check flag
+ *     if (flag.load()) {
+ *         // Flag is set
+ *     }
+ *
+ *     // Thread 3: Atomic exchange
+ *     bool old_value = flag.exchange(false);
+ * @endcode
+ *
+ * @note This is lock-free and safe for use in ISRs
+ * @note Uses acquire/release memory ordering for optimal performance on ARM Cortex-M4
+ */
+class AtomicFlag {
+public:
+    /**
+     * @brief Default constructor - initializes flag to false
+     * @note noexcept for embedded safety
+     */
+    constexpr AtomicFlag() noexcept : value_(0) {}
+
+    /**
+     * @brief Load current flag value (acquire semantics)
+     * @return Current flag value (true if set, false otherwise)
+     * @note Acquire semantics ensure all subsequent reads/writes happen after this load
+     */
+    [[nodiscard]] bool load() const noexcept {
+        return __atomic_load_n(&value_, __ATOMIC_ACQUIRE) != 0;
+    }
+
+    /**
+     * @brief Store new flag value (release semantics)
+     * @param new_value New flag value to store
+     * @note Release semantics ensure all prior reads/writes happen before this store
+     */
+    void store(bool new_value) noexcept {
+        __atomic_store_n(&value_, new_value ? 1 : 0, __ATOMIC_RELEASE);
+    }
+
+    /**
+     * @brief Atomically exchange flag value (acquire-release semantics)
+     * @param new_value New flag value to store
+     * @return Previous flag value (before exchange)
+     * @note Acquire-release semantics for full memory barrier
+     */
+    [[nodiscard]] bool exchange(bool new_value) noexcept {
+        return __atomic_exchange_n(&value_, new_value ? 1 : 0, __ATOMIC_ACQ_REL) != 0;
+    }
+
+private:
+    volatile int value_;  ///< Atomic flag value (4 bytes, aligned for atomic access)
+};
+
+/**
  * @brief Lock ordering levels for deadlock prevention
  * 
  * CRITICAL: Always acquire locks in ascending order of LockOrder values

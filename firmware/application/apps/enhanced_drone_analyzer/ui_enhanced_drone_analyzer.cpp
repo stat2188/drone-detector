@@ -391,7 +391,7 @@ bool DroneScanner::load_frequency_database() {
         handle_scan_error("Large database loaded");
     }
 
-    freq_db_loaded_ = true;
+    freq_db_loaded_.store(true);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
     return !freq_db_ptr_->empty();
 }
 
@@ -791,7 +791,10 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
 
         if (rssi >= effective_threshold) {
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
-            current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
+            // DIAMOND FIX #P2-MEDIUM #6: Saturated increment (no overflow)
+            if (current_count < 255) {
+                current_count++;
+            }
             detection_ring_buffer_.update_detection({freq_hash, current_count, rssi});
 
             if (current_count >= MIN_DETECTION_COUNT) {
@@ -862,7 +865,10 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
 
         if (effective_rssi >= effective_threshold) {
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
-            current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
+            // DIAMOND FIX #P2-MEDIUM #6: Saturated increment (no overflow)
+            if (current_count < 255) {
+                current_count++;
+            }
             detection_ring_buffer_.update_detection({freq_hash, current_count, effective_rssi});
 
             if (current_count >= MIN_DETECTION_COUNT) {
@@ -998,7 +1004,10 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
 
         if (rssi >= base_threshold) {
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
-            current_count = std::min(static_cast<uint8_t>(current_count + 1), static_cast<uint8_t>(255));
+            // DIAMOND FIX #P2-MEDIUM #6: Saturated increment (no overflow)
+            if (current_count < 255) {
+                current_count++;
+            }
 
             // Write to buffer (safe)
             detection_ring_buffer_.update_detection({freq_hash, current_count, rssi});
@@ -1312,7 +1321,7 @@ void DroneScanner::initialize_database_and_scanner() {
             current_db_index_ = 0;
         }
 
-        freq_db_loaded_ = true;
+        freq_db_loaded_.store(true);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
     }
 
     // DIAMOND FIX #4: Initialize wideband scanning AFTER database initialization
@@ -1321,7 +1330,7 @@ void DroneScanner::initialize_database_and_scanner() {
     initialize_wideband_scanning();
 
     // Mark initialization as complete
-    initialization_complete_ = true;
+    initialization_complete_.store(true);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
 }
 
 void DroneScanner::sync_database() {
@@ -1337,8 +1346,8 @@ void DroneScanner::sync_database() {
 void DroneScanner::cleanup_database_and_scanner() {
     sync_database();
 
-    bool was_loading = db_loading_active_;
-    db_loading_active_ = false;
+    bool was_loading = db_loading_active_.load();  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.load()
+    db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
     if (was_loading) {
         if (db_loading_thread_ != nullptr) {
             chThdWait(db_loading_thread_);
@@ -1352,7 +1361,7 @@ void DroneScanner::cleanup_database_and_scanner() {
     // Explicit destructor calls for placement new
     // Only call destructor if construction succeeded
     if (tracked_drones_ptr_ != nullptr && tracked_drones_constructed_) {
-        tracked_drones_ptr_->std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>::~array();
+        tracked_drones_ptr_->~TrackedDronesArray();  // DIAMOND FIX #P0-CRITICAL #1: Correct destructor syntax
         tracked_drones_constructed_ = false;
         tracked_drones_ptr_ = nullptr;
     }
@@ -1381,14 +1390,14 @@ void DroneScanner::db_loading_thread_loop() {
     // Check if already initialized
     if (freq_db_ptr_ != nullptr || tracked_drones_ptr_ != nullptr) {
         handle_scan_error("DB already initialized");
-        db_loading_active_ = false;
+        db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
         return;
     }
 
     // Use reinterpret_cast on aligned buffer
     if (reinterpret_cast<uintptr_t>(freq_db_storage_) % alignof(FreqmanDB) != 0) {
         handle_scan_error("Memory: freq_db_storage_ alignment error (async)");
-        db_loading_active_ = false;
+        db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
         return;
     }
     freq_db_ptr_ = reinterpret_cast<FreqmanDB*>(freq_db_storage_);
@@ -1400,7 +1409,7 @@ void DroneScanner::db_loading_thread_loop() {
     if (reinterpret_cast<uintptr_t>(tracked_drones_storage_) % alignof(std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>) != 0) {
         handle_scan_error("Memory: tracked_drones_storage_ alignment error (async)");
         freq_db_ptr_ = nullptr;
-        db_loading_active_ = false;
+        db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
         return;
     }
 
@@ -1428,7 +1437,7 @@ void DroneScanner::db_loading_thread_loop() {
     while (sd_card::status() < sd_card::Status::Mounted) {
         if (chTimeNow() - start_time > MS2ST(EDA::Constants::SD_CARD_MOUNT_TIMEOUT_MS)) {
             handle_scan_error("SD card not ready");
-            db_loading_active_ = false;
+            db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
             // Ensure proper cleanup of placement-newed objects on timeout
             if (freq_db_ptr_ && freq_db_constructed_) {
                 freq_db_ptr_->~FreqmanDB();
@@ -1436,26 +1445,26 @@ void DroneScanner::db_loading_thread_loop() {
                 freq_db_ptr_ = nullptr;
             }
             if (tracked_drones_ptr_ && tracked_drones_constructed_) {
-                tracked_drones_ptr_->std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>::~array();
+                tracked_drones_ptr_->~TrackedDronesArray();  // DIAMOND FIX #P0-CRITICAL #1: Correct destructor syntax
                 tracked_drones_constructed_ = false;
                 tracked_drones_ptr_ = nullptr;
             }
             // FIX #16: Always reset initialization complete flag on error
-            initialization_complete_ = false;
-            freq_db_loaded_ = false;  // Also reset database loaded flag
+            initialization_complete_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
+            freq_db_loaded_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store() - Also reset database loaded flag
             return;
         }
         chThdSleepMilliseconds(EDA::Constants::SD_CARD_POLL_INTERVAL_MS);
     }
 
     // Maintain proper lock order: DATA_MUTEX  SD_CARD_MUTEX
-    bool should_load = db_loading_active_;
+    bool should_load = db_loading_active_.load();  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.load()
     if (should_load) {
         // FIX: Defensive null check before dereferencing freq_db_ptr_
         // This provides additional safety if initialization somehow fails
         if (!freq_db_ptr_) {
             handle_scan_error("Database pointer is null during async loading");
-            db_loading_active_ = false;
+            db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
             return;
         }
         db_success = freq_db_ptr_->open(db_path);
@@ -1464,7 +1473,7 @@ void DroneScanner::db_loading_thread_loop() {
             systime_t load_time = chTimeNow() - load_start;
             if (load_time > MS2ST(DB_LOAD_TIMEOUT_MS)) {
                 handle_scan_error("Database load timeout");
-                db_loading_active_ = false;
+                db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
                 // FIX #4 & #6: Ensure proper cleanup of placement-newed objects on timeout
                 // Only call destructors if construction succeeded
                 if (freq_db_ptr_ && freq_db_constructed_) {
@@ -1473,12 +1482,12 @@ void DroneScanner::db_loading_thread_loop() {
                     freq_db_ptr_ = nullptr;
                 }
             if (tracked_drones_ptr_ && tracked_drones_constructed_) {
-                tracked_drones_ptr_->std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>::~array();
+                tracked_drones_ptr_->~TrackedDronesArray();  // DIAMOND FIX #P0-CRITICAL #1: Correct destructor syntax
                 tracked_drones_constructed_ = false;
                 tracked_drones_ptr_ = nullptr;
             }
-                initialization_complete_ = false;
-                freq_db_loaded_ = false;
+                initialization_complete_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
+                freq_db_loaded_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
                 return;
             }
 
@@ -1489,10 +1498,10 @@ void DroneScanner::db_loading_thread_loop() {
             // to always return false, preventing phases 3-6 from completing.
             // FIX: Defensive null check before dereferencing freq_db_ptr_
             if (freq_db_ptr_ && !freq_db_ptr_->empty()) {
-                freq_db_loaded_ = true;
+                freq_db_loaded_.store(true);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
                 freq_db_constructed_ = true;
-                initialization_complete_ = true;
-                db_loading_active_ = false;
+                initialization_complete_.store(true);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
+                db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
                 return;
             }
         }
@@ -1509,7 +1518,7 @@ void DroneScanner::db_loading_thread_loop() {
             // This provides additional safety if initialization somehow fails
             if (!freq_db_ptr_) {
                 handle_scan_error("Database pointer is null during database initialization");
-                db_loading_active_ = false;
+                db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
                 return;
             }
             freq_db_ptr_->open(db_path, true);
@@ -1539,7 +1548,7 @@ void DroneScanner::db_loading_thread_loop() {
             }
 
             current_db_index_ = 0;
-            freq_db_loaded_ = true;
+            freq_db_loaded_.store(true);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
         }  // data_lock released here
 
         // Phase 2: Acquire sd_card_mutex for sync_database()
@@ -1552,7 +1561,7 @@ void DroneScanner::db_loading_thread_loop() {
         freq_db_constructed_ = true;
         
         // Set initialization_complete_ flag at end of thread
-        initialization_complete_ = true;
+        initialization_complete_.store(true);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
     }
 }
 
@@ -1589,22 +1598,22 @@ void DroneScanner::initialize_database_async() {
     // chThdCreateStatic with static stack should never fail, but handle gracefully
     if (db_loading_thread_ == nullptr) {
         handle_scan_error("Failed to create db_loading_thread");
-        db_loading_active_ = false;
-        freq_db_loaded_ = false;
+        db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
+        freq_db_loaded_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
         return;  // Keep UI responsive - early return on failure
     }
 }
 
 // Check if async loading finished
 bool DroneScanner::is_database_loading_complete() const {
-    bool is_loading = db_loading_active_;
+    bool is_loading = db_loading_active_.load();  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.load()
     // FIX: Check that freq_db_ptr_ is not null in addition to checking freq_db_loaded_ flag
     // This ensures the database is properly initialized before reporting completion
-    return !is_loading && freq_db_loaded_ && (freq_db_ptr_ != nullptr);
+    return !is_loading && freq_db_loaded_.load() && (freq_db_ptr_ != nullptr);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.load()
 }
 
 bool DroneScanner::is_initialization_complete() const {
-    return initialization_complete_;
+    return initialization_complete_.load();  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.load()
 }
 
 Frequency DroneScanner::get_current_scanning_frequency() const {
@@ -2153,16 +2162,19 @@ bool DroneHardwareController::tune_to_frequency(Frequency frequency_hz) {
     for (uint8_t retry = 0; retry < MAX_RETRIES; ++retry) {
         portapack::receiver_model.set_target_frequency(frequency_hz);
         
-        // Delay between retries only
-        if (retry > 0) {
-            chThdSleepMilliseconds(RETRY_DELAY_MS);
+        // Verify frequency was set correctly
+        Frequency actual_freq = portapack::receiver_model.target_frequency();
+        if (actual_freq == frequency_hz) {
+            return true;  // Success
         }
         
-        // Assume success if no exception occurs
-        return true;
+        // Delay before retry
+        if (retry < MAX_RETRIES - 1) {
+            chThdSleepMilliseconds(RETRY_DELAY_MS);
+        }
     }
     
-    return false;
+    return false;  // All retries failed
 }
 
 void DroneHardwareController::start_spectrum_streaming() {

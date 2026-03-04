@@ -306,6 +306,7 @@ constexpr uint32_t MIN_SCAN_INTERVAL_MS = 100;
 constexpr uint32_t MAX_SCAN_INTERVAL_MS = 10000;
 constexpr uint32_t DEFAULT_SCAN_INTERVAL_MS = 1000;
 constexpr uint8_t MIN_DETECTION_COUNT = 3;
+constexpr uint8_t MAX_DETECTION_COUNT = 255;  // DIAMOND FIX #P2-MEDIUM #10-12: Magic number replacement
 constexpr uint32_t ALERT_PERSISTENCE_THRESHOLD = 3;
 constexpr uint32_t STALE_DRONE_TIMEOUT_MS = 30000;
 
