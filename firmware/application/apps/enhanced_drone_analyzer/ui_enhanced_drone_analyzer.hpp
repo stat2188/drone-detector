@@ -66,10 +66,6 @@ namespace ui::apps::enhanced_drone_analyzer {
     struct DatabaseChangeEvent;
 
 using rf::Frequency;
-// Import global ui namespace to prevent namespace pollution
-// Within this namespace, unqualified Color, font::, Style, screen_width, screen_height
-// would resolve to ui::apps::enhanced_drone_analyzer::Color, etc. instead of ui::Color
-using namespace ::ui;
 
 // Lock Order: Always acquire locks in ascending order (1  2  3  4  5  6  7)
 // Never acquire a lower-numbered lock while holding a higher-numbered lock
@@ -1547,11 +1543,11 @@ private:
     Gradient spectrum_gradient_;
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     size_t pixel_index = 0;
-    uint32_t bins_hz_size = 0;
-    uint32_t each_bin_size = 100000;
+    size_t bins_hz_size = 0;
+    size_t each_bin_size = 100000;
     uint8_t min_color_power = 0;
     const uint8_t ignore_dc = 4;
-    uint32_t marker_pixel_step = 1000000;
+    size_t marker_pixel_step = 1000000;
     uint8_t max_power = 0;
     uint8_t range_max_power = 0;
     DisplayRenderMode mode_ = DisplayRenderMode::SPECTRUM;
