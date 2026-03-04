@@ -129,7 +129,8 @@ public:
     PresetMenuViewImpl(NavigationView& nav, const char* const* names, size_t count,
                        Callback on_selected, const PresetContainer& presets)
         : MenuView(), nav_(nav), names_(names), name_count_(count),
-          on_selected_fn_(std::move(on_selected)), presets_(presets) {
+          on_selected_fn_(std::move(on_selected)), presets_(presets),
+          has_on_selected_fn_(true) {
         for (size_t i = 0; i < name_count_; ++i) {
             add_item({names_[i], Color::white(), nullptr, nullptr});
         }
@@ -144,6 +145,7 @@ private:
     size_t name_count_;
     Callback on_selected_fn_;  // Template parameter - no heap allocation
     const PresetContainer& presets_;
+    bool has_on_selected_fn_;  // Track if callback is set (lambda-to-bool fix)
 
     // noexcept for key handling
     bool on_key(const KeyEvent key) noexcept override {
@@ -157,7 +159,9 @@ private:
             // Template parameter Callback can be a function pointer, which may be null
             // Note: For functors/lambdas, this check is always true (objects are never null)
             // For function pointers, this prevents null pointer dereference
-            if (on_selected_fn_) {
+            // FIXED: Use has_on_selected_fn_ flag instead of direct callback check
+            // because lambdas don't have implicit conversion to bool
+            if (has_on_selected_fn_) {
                 on_selected_fn_(presets_[idx]);
             }
         }
@@ -454,6 +458,7 @@ public:
           nav_(nav),
           entry_(entry),
           on_save_fn_(std::move(callback)),
+          has_on_save_fn_(true),
           text_freq_{{8, 16, 64, 16}, "Freq:"},
           field_freq_{{8, 32}},
           text_desc_{{8, 64, 64, 16}, "Name:"},
@@ -685,6 +690,7 @@ private:
     NavigationView& nav_;
     DroneDbEntry entry_;
     Callback on_save_fn_;
+    bool has_on_save_fn_;  // Track if callback is set (lambda-to-bool fix)
 
     // CRITICAL FIX: Fixed-size buffer instead of std::string (zero heap allocation)
     // Uses FixedStringBuffer wrapper to provide std::string interface for TextEdit
@@ -714,7 +720,9 @@ private:
         // CRITICAL FIX #4: Validate callback before dereferencing
         // Prevents null function pointer dereference (undefined behavior)
         // Template parameter Callback can be a function pointer, which may be null
-        if (on_save_fn_) {
+        // FIXED: Use has_on_save_fn_ flag instead of direct callback check
+        // because lambdas don't have implicit conversion to bool
+        if (has_on_save_fn_) {
             on_save_fn_(new_entry);
         }
         nav_.pop();
@@ -724,7 +732,9 @@ private:
         // CRITICAL FIX #4: Validate callback before dereferencing
         // Prevents null function pointer dereference (undefined behavior)
         // Template parameter Callback can be a function pointer, which may be null
-        if (on_save_fn_) {
+        // FIXED: Use has_on_save_fn_ flag instead of direct callback check
+        // because lambdas don't have implicit conversion to bool
+        if (has_on_save_fn_) {
             on_save_fn_(empty_entry);
         }
         nav_.pop();
