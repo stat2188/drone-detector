@@ -6,6 +6,12 @@
 // Minimal includes - rely on project's existing headers
 #include <cstdint>
 
+// Third-party library headers
+#include <ch.h>
+
+// Project-specific headers (alphabetical order)
+#include "eda_constants.hpp"
+
 // Flash storage attributes for Cortex-M4
 #ifdef __GNUC__
     #define FLASH_STORAGE __attribute__((section(".rodata")))
@@ -251,6 +257,52 @@ static_assert(sizeof(RSSIUtils::THRESHOLDS) == sizeof(RSSIValue) * RSSIConstants
               "THRESHOLDS size mismatch");
 static_assert(sizeof(TrendUtils::TREND_NAMES) == sizeof(const char*) * TrendConstants::MAX_TREND_INDEX,
               "TREND_NAMES size mismatch");
+
+// ============================================================================
+// DIAMOND FIXES (merged from diamond_fixes.hpp)
+// ============================================================================
+
+// Fix #1: Division by Zero Protection
+inline constexpr size_t safe_frequency_hash(EDA::Frequency frequency_hz) noexcept {
+    // Guard clause: Prevent division by zero
+    if (frequency_hz == 0) {
+        return 0;
+    }
+
+    // Use named constant instead of magic number 100000
+    return static_cast<size_t>(frequency_hz / EDA::Constants::FREQ_HASH_DIVISOR)
+           & EDA::Constants::FREQ_HASH_MASK;
+}
+
+// Fix #2: Magic Number Constants
+namespace ConfidenceConstants {
+    constexpr uint8_t RSSI_CONFIDENCE = 85;
+    constexpr uint8_t SPECTRAL_CONFIDENCE = 90;
+    constexpr uint32_t MAX_SYSTIME_VALUE = 0xFFFFFFFFUL;
+}
+
+namespace SpectrumConstants {
+    constexpr int SPEC_WIDTH = 240;
+    constexpr int SPEC_HEIGHT = 40;
+}
+
+// Fix #3: Type-Safe Frequency Comparison
+inline constexpr bool frequency_equal(EDA::Frequency freq1, EDA::Frequency freq2) noexcept {
+    return freq1 == freq2;
+}
+
+// Fix #4: Safe Deadline Calculation
+inline constexpr systime_t safe_deadline(systime_t current_time, uint32_t timeout_ms) noexcept {
+    uint32_t timeout_ticks = MS2ST(timeout_ms);
+
+    // Check for overflow before addition
+    if (current_time > ConfidenceConstants::MAX_SYSTIME_VALUE - timeout_ticks) {
+        // Overflow would occur - return max value
+        return ConfidenceConstants::MAX_SYSTIME_VALUE;
+    }
+
+    return current_time + timeout_ticks;
+}
 
 } // namespace ui::apps::enhanced_drone_analyzer::DiamondCore
 

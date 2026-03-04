@@ -46,11 +46,11 @@ class SpectrumProcessor {
 public:
     /**
      * @brief Process mini spectrum data into display bins
-     * 
+     *
      * This method processes raw spectrum data and converts it into
      * display bins suitable for UI rendering. It handles frequency
      * scaling and power level filtering.
-     * 
+     *
      * @param spectrum Input spectrum data
      * @param power_levels Output power levels array (240 bins)
      * @param bins_hz_size Running Hz accumulator (stateful, updated by reference)
@@ -58,18 +58,45 @@ public:
      * @param marker_pixel_step Hz per pixel
      * @param min_color_power Minimum power to display
      * @return Updated pixel index
-     * 
+     *
      * @note This is a pure DSP function with no UI dependencies
      * @note noexcept for embedded safety
+     * @note Implementation merged from dsp_spectrum_processor.cpp
      */
-    static size_t process_mini_spectrum(
+    static inline size_t process_mini_spectrum(
         const ChannelSpectrum& spectrum,
         uint8_t power_levels[240],
         size_t& bins_hz_size,
         Frequency each_bin_size,
         Frequency marker_pixel_step,
         uint8_t min_color_power
-    ) noexcept;
+    ) noexcept {
+        size_t pixel_index = 0;
+
+        for (size_t bin = 0; bin < MINI_SPECTRUM_WIDTH; bin++) {
+            uint8_t current_bin_power;
+            if (bin < spectrum.db.size()) {
+                current_bin_power = spectrum.db[bin];
+            } else {
+                current_bin_power = 0;
+            }
+
+            bins_hz_size += each_bin_size;
+            if (bins_hz_size >= marker_pixel_step) {
+                // Bounds check BEFORE array access to prevent buffer overflow
+                if (pixel_index < 240) {
+                    power_levels[pixel_index] = (current_bin_power > min_color_power) ?
+                                                current_bin_power : 0;
+                }
+                current_bin_power = 0;
+
+                bins_hz_size -= marker_pixel_step;
+                pixel_index++;
+            }
+        }
+
+        return pixel_index;
+    }
     
 private:
     static constexpr size_t MINI_SPECTRUM_WIDTH = 240;

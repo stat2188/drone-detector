@@ -23,7 +23,8 @@
 // ============================================================================
 
 // Project-specific headers (alphabetical order)
-#include "diamond_fixes.hpp"
+// diamond_fixes.hpp content merged into diamond_core.hpp
+#include "diamond_core.hpp"
 #include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
@@ -262,8 +263,8 @@ struct DisplayDroneEntry {
 };
 
 // Local constants for DroneDisplayController
-inline static constexpr int SPEC_WIDTH = DiamondFixes::SpectrumConstants::SPEC_WIDTH;  // EDA::Constants::SPECTRUM_BIN_COUNT_240
-inline static constexpr int SPEC_HEIGHT = DiamondFixes::SpectrumConstants::SPEC_HEIGHT;  // EDA::Constants::MINI_SPECTRUM_HEIGHT (but 40 used here)
+inline static constexpr int SPEC_WIDTH = DiamondCore::SpectrumConstants::SPEC_WIDTH;  // EDA::Constants::SPECTRUM_BIN_COUNT_240
+inline static constexpr int SPEC_HEIGHT = DiamondCore::SpectrumConstants::SPEC_HEIGHT;  // EDA::Constants::MINI_SPECTRUM_HEIGHT (but 40 used here)
 
 struct WidebandSlice {
     Frequency center_frequency;

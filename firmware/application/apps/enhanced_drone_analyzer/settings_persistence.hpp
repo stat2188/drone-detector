@@ -78,7 +78,8 @@ inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
     dest[i] = '\0';  // Always null terminate
 }
 
-extern Mutex settings_buffer_mutex;
+// Settings Buffer Mutex Definition (merged from settings_persistence.cpp)
+Mutex settings_buffer_mutex;
 
 #ifdef __GNUC__
     #define FLASH_STORAGE __attribute__((section(".rodata")))
@@ -1058,6 +1059,10 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::validate(const T& settings) {
 
     return EDA::ErrorResult<bool>::ok(true);
 }
+
+// Explicit template instantiation for DroneAnalyzerSettings (merged from settings_persistence.cpp)
+// This ensures the template is instantiated for the specific settings type
+template class SettingsPersistence<DroneAnalyzerSettings>;
 
 } // namespace ui::apps::enhanced_drone_analyzer
 

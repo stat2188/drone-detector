@@ -281,6 +281,50 @@ HistogramDisplayBuffer scale_histogram_for_display(
     uint8_t noise_floor
 ) noexcept;
 
+// ============================================================================
+// DRONE FILTERING AND SORTING (DSP Layer)
+// ============================================================================
+
+/**
+ * @brief Filter drones by stale timeout
+ * 
+ * This function filters out drones that have not been seen recently.
+ * It returns a filtered snapshot containing only active drones.
+ * 
+ * @param snapshot Input snapshot of tracked drones
+ * @param stale_timeout_ms Timeout in milliseconds for stale detection
+ * @param now Current timestamp in milliseconds
+ * @return Filtered snapshot with only active drones
+ * 
+ * @note This is a pure DSP filtering function with no UI dependencies
+ * @note noexcept for embedded safety
+ */
+FilteredDronesSnapshot filter_stale_drones(
+    const FilteredDronesSnapshot& snapshot,
+    systime_t stale_timeout_ms,
+    systime_t now
+) noexcept;
+
+/**
+ * @brief Sort drones by RSSI, threat level, and last seen
+ * 
+ * This function sorts an array of TrackedDroneData entries by:
+ * 1. RSSI (descending - stronger signals first)
+ * 2. Threat level (descending - higher threats first)
+ * 3. Last seen timestamp (descending - more recent first)
+ * 
+ * @param drones Array of drone data to sort
+ * @param count Number of drones in array
+ * 
+ * @note This is a pure DSP sorting function with no UI dependencies
+ * @note Uses insertion sort for small arrays (O(n^2) worst case, but O(n) for nearly sorted)
+ * @note noexcept for embedded safety
+ */
+void sort_drones_by_priority(
+    TrackedDroneData drones[],
+    size_t count
+) noexcept;
+
 } // namespace ui::apps::enhanced_drone_analyzer::dsp
 
 #endif // DSP_DISPLAY_TYPES_HPP_

@@ -278,7 +278,8 @@ private:
 public:
     // FIX #7: Singleton state with volatile flag for thread safety
     // DIAMOND FIX: Static storage pattern (no heap allocation)
-    static ScanningCoordinator* instance_ptr_;  ///< Singleton instance pointer
+    // RED TEAM FIX #P0-3: Make instance_ptr_ volatile for double-checked locking pattern
+    static volatile ScanningCoordinator* instance_ptr_;  ///< Singleton instance pointer (volatile for thread safety)
     static Mutex init_mutex_;                   ///< Protects singleton initialization
     static volatile bool initialized_;           ///< Tracks if singleton has been initialized (volatile for thread safety)
     static volatile bool instance_constructed_;  ///< Tracks if placement new was called (volatile for thread safety)

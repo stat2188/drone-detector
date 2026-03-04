@@ -30,7 +30,7 @@
 #include "baseband_api.hpp"
 #include "color_lookup_unified.hpp"
 #include "diamond_core.hpp"
-#include "diamond_fixes.hpp"
+// diamond_fixes.hpp content merged into diamond_core.hpp
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
 #include "file.hpp"
@@ -657,7 +657,7 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         
         // Check for overflow
         if (deadline < current_time) {
-            deadline = DiamondFixes::ConfidenceConstants::MAX_SYSTIME_VALUE;  // Max systime_t value
+            deadline = DiamondCore::ConfidenceConstants::MAX_SYSTIME_VALUE;  // Max systime_t value
         }
         
         bool spectrum_received = false;
@@ -801,7 +801,7 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
                     threat_level,
                     detected_type,
                     current_count,
-                    DiamondFixes::ConfidenceConstants::RSSI_CONFIDENCE,  // 85% confidence as integer
+                    DiamondCore::ConfidenceConstants::RSSI_CONFIDENCE,  // 85% confidence as integer
                     0,   // width_bins - default value
                     0,   // signal_width_hz - default value
                     0    // snr - default value
@@ -872,7 +872,7 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
                     threat_level,
                     drone_type,
                     current_count,
-                    DiamondFixes::ConfidenceConstants::SPECTRAL_CONFIDENCE,  // 90% confidence for spectral analysis
+                    DiamondCore::ConfidenceConstants::SPECTRAL_CONFIDENCE,  // 90% confidence for spectral analysis
                     analysis_result.width_bins,        // Calibration: signal width in bins
                     analysis_result.signal_width_hz,   // Calibration: signal width in Hz
                     analysis_result.snr               // Calibration: Signal-to-Noise Ratio
@@ -979,7 +979,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         if (entry.frequency_a == EDA::Constants::ZERO_FREQUENCY) {
             return;
         }
-        size_t freq_hash = DiamondFixes::safe_frequency_hash(entry.frequency_a);
+        size_t freq_hash = DiamondCore::safe_frequency_hash(entry.frequency_a);
         int32_t prev_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
         int32_t base_threshold = -90;
 
@@ -1087,7 +1087,7 @@ void DroneScanner::update_tracked_drone(const DetectionParams& params) {
     ThreatLevel threat_level = params.threat_level;
     
     for (size_t i = 0; i < tracked_count_; ++i) {
-        if (DiamondFixes::frequency_equal(tracked_drones()[i].frequency, frequency) && tracked_drones()[i].update_count > 0) {
+        if (DiamondCore::frequency_equal(tracked_drones()[i].frequency, frequency) && tracked_drones()[i].update_count > 0) {
             tracked_drones()[i].add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
             tracked_drones()[i].drone_type = static_cast<uint8_t>(type);
             tracked_drones()[i].threat_level = static_cast<uint8_t>(threat_level);
@@ -3022,12 +3022,34 @@ void DroneDisplayController::add_detected_drone(Frequency freq, DroneType type, 
 }
 
 void DroneDisplayController::sort_drones_by_rssi() {
-    std::sort(detected_drones().begin(), detected_drones().end(),
-              [](const DisplayDroneEntry& a, const DisplayDroneEntry& b) {
-                  if (a.rssi != b.rssi) return a.rssi > b.rssi;
-                  if (a.threat != b.threat) return static_cast<int>(a.threat) > static_cast<int>(b.threat);
-                  return a.last_seen > b.last_seen;
-              });
+    // DIAMOND CODE PRINCIPLE: Use DSP layer for sorting logic
+    // This separates sorting logic from UI rendering
+    // Convert DisplayDroneEntry to TrackedDroneData for DSP sorting
+    dsp::TrackedDroneData temp_drones[MAX_UI_DRONES];
+    for (size_t i = 0; i < detected_drones_count_; ++i) {
+        const auto& entry = detected_drones()[i];
+        temp_drones[i].frequency = entry.frequency;
+        temp_drones[i].drone_type = static_cast<uint8_t>(entry.type);
+        temp_drones[i].threat_level = static_cast<uint8_t>(entry.threat);
+        temp_drones[i].rssi = entry.rssi;
+        temp_drones[i].last_seen = entry.last_seen;
+        temp_drones[i].trend = entry.trend;
+    }
+    
+    // Sort using DSP layer function
+    dsp::sort_drones_by_priority(temp_drones, detected_drones_count_);
+    
+    // Copy sorted drones back to display buffer
+    for (size_t i = 0; i < detected_drones_count_; ++i) {
+        const auto& drone = temp_drones[i];
+        auto& entry = detected_drones()[i];
+        entry.frequency = drone.frequency;
+        entry.type = static_cast<DroneType>(drone.drone_type);
+        entry.threat = static_cast<ThreatLevel>(drone.threat_level);
+        entry.rssi = drone.rssi;
+        entry.last_seen = drone.last_seen;
+        entry.trend = drone.trend;
+    }
 }
 
 void DroneDisplayController::update_drones_display(const DroneScanner& scanner) {
@@ -3035,34 +3057,36 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     // Mutex is locked only for the copying time (microseconds)
     auto snapshot = scanner.get_tracked_drones_snapshot();
 
-    // Step 2: Work with local snapshot copy
-
+    // Step 2: Filter stale drones using DSP layer function
     const systime_t STALE_TIMEOUT = 30000;
     systime_t now = chTimeNow();
 
+    // DIAMOND CODE PRINCIPLE: Use DSP layer for filtering logic
+    // This separates filtering logic from UI rendering
+    dsp::FilteredDronesSnapshot filtered_snapshot = dsp::filter_stale_drones(
+        snapshot, STALE_TIMEOUT, now
+    );
+
+    // Step 3: Copy filtered drones to display buffer
     detected_drones_count_ = 0;
 
-    for (size_t i = 0; i < snapshot.count; ++i) {
-        const auto& drone_data = snapshot.drones[i];
-
-        // Stale check (duplicate logic for UI filtering)
-        if ((now - drone_data.last_seen) > STALE_TIMEOUT) continue;
-
-        if (detected_drones_count_ < MAX_UI_DRONES) {
-            auto& entry = detected_drones()[detected_drones_count_];
-            entry.frequency = drone_data.frequency;
-            entry.type = static_cast<DroneType>(drone_data.drone_type);
-            entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
-            entry.rssi = drone_data.rssi;
-            entry.last_seen = drone_data.last_seen;
-            snprintf(entry.type_name, sizeof(entry.type_name), "%s", UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(entry.type)));
-            entry.display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(entry.type));
-            entry.trend = drone_data.get_trend();
-            detected_drones_count_++;
-        }
+    for (size_t i = 0; i < filtered_snapshot.count && detected_drones_count_ < MAX_UI_DRONES; ++i) {
+        const auto& drone_data = filtered_snapshot.drones[i];
+        auto& entry = detected_drones()[detected_drones_count_];
+        entry.frequency = drone_data.frequency;
+        entry.type = static_cast<DroneType>(drone_data.drone_type);
+        entry.threat = static_cast<ThreatLevel>(drone_data.threat_level);
+        entry.rssi = drone_data.rssi;
+        entry.last_seen = drone_data.last_seen;
+        snprintf(entry.type_name, sizeof(entry.type_name), "%s", UnifiedStringLookup::drone_type_name(static_cast<uint8_t>(entry.type)));
+        entry.display_color = UnifiedColorLookup::drone(static_cast<uint8_t>(entry.type));
+        entry.trend = drone_data.get_trend();
+        detected_drones_count_++;
     }
 
-    // Step 3: Sorting and rendering
+    // Step 4: Sort using DSP layer function
+    // DIAMOND CODE PRINCIPLE: Use DSP layer for sorting logic
+    // This separates sorting logic from UI rendering
     sort_drones_by_rssi();
 
     // Remaining code for updating display_drones_ and calling render

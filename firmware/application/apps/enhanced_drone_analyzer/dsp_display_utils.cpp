@@ -297,4 +297,117 @@ HistogramDisplayBuffer scale_histogram_for_display(
     return result;
 }
 
+// ============================================================================
+// DRONE FILTERING AND SORTING IMPLEMENTATIONS
+// ============================================================================
+
+/**
+ * @brief Filter drones by stale timeout
+ * 
+ * This function filters out drones that have not been seen recently.
+ * It returns a filtered snapshot containing only active drones.
+ * 
+ * @param snapshot Input snapshot of tracked drones
+ * @param stale_timeout_ms Timeout in milliseconds for stale detection
+ * @param now Current timestamp in milliseconds
+ * @return Filtered snapshot with only active drones
+ * 
+ * @note This is a pure DSP filtering function with no UI dependencies
+ * @note noexcept for embedded safety
+ */
+FilteredDronesSnapshot filter_stale_drones(
+    const FilteredDronesSnapshot& snapshot,
+    systime_t stale_timeout_ms,
+    systime_t now
+) noexcept {
+    FilteredDronesSnapshot result;
+    result.count = 0;
+    
+    // Filter out stale drones
+    for (size_t i = 0; i < snapshot.count && result.count < 10; ++i) {
+        const auto& drone = snapshot.drones[i];
+        
+        // Check if drone is stale (not seen recently)
+        if ((now - drone.last_seen) <= stale_timeout_ms) {
+            // Drone is active, add to result
+            result.drones[result.count] = drone;
+            result.count++;
+        }
+    }
+    
+    return result;
+}
+
+/**
+ * @brief Sort drones by RSSI, threat level, and last seen
+ * 
+ * This function sorts an array of TrackedDroneData entries by:
+ * 1. RSSI (descending - stronger signals first)
+ * 2. Threat level (descending - higher threats first)
+ * 3. Last seen timestamp (descending - more recent first)
+ * 
+ * @param drones Array of drone data to sort
+ * @param count Number of drones in array
+ * 
+ * @note This is a pure DSP sorting function with no UI dependencies
+ * @note Uses insertion sort for small arrays (O(n^2) worst case, but O(n) for nearly sorted)
+ * @note noexcept for embedded safety
+ */
+void sort_drones_by_priority(
+    TrackedDroneData drones[],
+    size_t count
+) noexcept {
+    // Guard clause: Nothing to sort
+    if (count <= 1) {
+        return;
+    }
+    
+    // Use insertion sort for small arrays (typically < 10 drones)
+    // Insertion sort is efficient for small datasets and nearly sorted data
+    for (size_t i = 1; i < count; ++i) {
+        TrackedDroneData key = drones[i];
+        size_t j = i;
+        
+        // Shift elements that are greater than key to the right
+        while (j > 0) {
+            const auto& prev = drones[j - 1];
+            const auto& curr = key;
+            
+            // Compare by RSSI (descending)
+            if (prev.rssi > curr.rssi) {
+                break;  // Previous is stronger, stop shifting
+            }
+            if (prev.rssi < curr.rssi) {
+                // Current is stronger, shift previous to the right
+                drones[j] = prev;
+                j--;
+                continue;
+            }
+            
+            // RSSI is equal, compare by threat level (descending)
+            if (prev.threat_level > curr.threat_level) {
+                break;  // Previous has higher threat, stop shifting
+            }
+            if (prev.threat_level < curr.threat_level) {
+                // Current has higher threat, shift previous to the right
+                drones[j] = prev;
+                j--;
+                continue;
+            }
+            
+            // Threat level is equal, compare by last seen (descending)
+            if (prev.last_seen >= curr.last_seen) {
+                break;  // Previous is more recent or equal, stop shifting
+            }
+            
+            // Current is more recent, shift previous to the right
+            drones[j] = prev;
+            j--;
+        }
+        
+        // Insert key at correct position
+        drones[j] = key;
+    }
+}
+
 } // namespace ui::apps::enhanced_drone_analyzer::dsp
