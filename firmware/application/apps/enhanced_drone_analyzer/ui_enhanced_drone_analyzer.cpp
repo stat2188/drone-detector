@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <new>  // For placement new
 #include <utility>  // For std::move
 
 // Third-party library headers (alphabetical order)
@@ -221,14 +222,59 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
     init_stack_canary();
 
     chMtxInit(&data_mutex);
+
+    // FIX #8: Initialize pointers to static storage in constructor
+    // This prevents nullptr dereferences and ensures objects are always available
+    // Runtime alignment verification before placement new
+    if (reinterpret_cast<uintptr_t>(freq_db_storage_) % alignof(FreqmanDB) != 0) {
+        freq_db_ptr_ = nullptr;
+        freq_db_constructed_ = false;
+    } else {
+        // Use placement new on aligned buffer to properly construct the object
+        freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
+        freq_db_constructed_ = true;
+    }
+
+    // Runtime alignment verification for tracked_drones storage
+    if (reinterpret_cast<uintptr_t>(tracked_drones_storage_) % alignof(TrackedDrone) != 0) {
+        tracked_drones_ptr_ = nullptr;
+        tracked_drones_constructed_ = false;
+    } else {
+        // Create TrackedDrone array in static storage using placement new
+        tracked_drones_ptr_ = new (tracked_drones_storage_)
+            std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>();
+        tracked_drones_constructed_ = true;
+    }
+
+    // Initialize TrackedDrone array to default state
+    if (tracked_drones_ptr_ && tracked_drones_constructed_) {
+        for (auto& drone : *tracked_drones_ptr_) {
+            drone = TrackedDrone();  // Default construct
+        }
+    }
+
     // DIAMOND FIX #4: Wideband scanning initialization moved to initialize_database_and_scanner()
     // to ensure proper initialization order: database -> wideband scanning
     // This prevents premature execution before database is fully loaded
-    // Lazy initialization: FreqmanDB and tracked_drones allocated later from heap
 }
 
 DroneScanner::~DroneScanner() {
     stop_scanning();
+    
+    // FIX #8: Explicitly destroy placement-newed objects
+    // This prevents resource leaks and ensures proper cleanup
+    if (freq_db_ptr_ && freq_db_constructed_) {
+        freq_db_ptr_->~FreqmanDB();
+        freq_db_ptr_ = nullptr;
+        freq_db_constructed_ = false;
+    }
+    
+    if (tracked_drones_ptr_ && tracked_drones_constructed_) {
+        tracked_drones_ptr_->~array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>();
+        tracked_drones_ptr_ = nullptr;
+        tracked_drones_constructed_ = false;
+    }
+    
     cleanup_database_and_scanner();
     // ChibiOS mutexes auto-cleaned with the object
 }
@@ -1616,6 +1662,18 @@ bool DroneScanner::is_initialization_complete() const {
     return initialization_complete_.load();  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.load()
 }
 
+// FIX #6: Database validation method
+bool DroneScanner::is_database_valid() const {
+    // Check if database pointer is valid and database is loaded
+    if (!freq_db_ptr_ || !freq_db_loaded_.load()) {
+        return false;
+    }
+    
+    // Check if database has at least one entry
+    uint32_t entry_count = freq_db_ptr_->entry_count();
+    return entry_count > 0;
+}
+
 Frequency DroneScanner::get_current_scanning_frequency() const {
 
     if (!freq_db_ptr_ || !freq_db_loaded_) {
@@ -1774,18 +1832,39 @@ DroneDetectionLogger::~DroneDetectionLogger() {
     end_session();
 }
 
-void DroneDetectionLogger::start_session() {
-    if (session_active_) return;
+// FIX #1: Changed return type to bool to indicate success/failure
+// start_session() now checks if SD card is mounted before activating session
+bool DroneDetectionLogger::start_session() {
+    if (session_active_) {
+        return true;  // Already active, consider success
+    }
+    
+    // Check if SD card is mounted before starting session
+    if (sd_card::status() != sd_card::Status::Mounted) {
+        return false;  // SD card not mounted, cannot start session
+    }
+    
     session_active_ = true;
     session_start_ = chTimeNow();
     logged_count_ = 0;
     dropped_logs_ = 0;
     header_written_ = false;
+    return true;
 }
 
-void DroneDetectionLogger::end_session() {
-    if (!session_active_) return;
+// FIX #1: Renamed from end_session() for clarity, now returns bool
+bool DroneDetectionLogger::stop_session() {
+    if (!session_active_) {
+        return true;  // Already inactive, consider success
+    }
+    
     session_active_ = false;
+    return true;
+}
+
+// Keep end_session() for backward compatibility
+void DroneDetectionLogger::end_session() {
+    stop_session();
 }
 
 // Producer method - called by scanner thread
@@ -2700,6 +2779,18 @@ bool DroneDisplayController::are_buffers_valid() const {
     // DIAMOND OPTIMIZATION: Direct flag access (O(1), zero overhead)
     // For static buffers, "valid" means "allocated and ready"
     return buffers_allocated_;
+}
+
+/**
+ * @brief Initialize UI widgets and add them to View hierarchy
+ * @return true if initialization succeeded
+ * @note Widgets are added in constructor via add_children()
+ * @note This method is provided for API consistency
+ */
+bool DroneDisplayController::initialize_widgets() noexcept {
+    // Widgets are already added in constructor via add_children()
+    // This method is provided for API consistency
+    return true;
 }
 
 // Guard clause: Deallocates display buffers (static, just marks as not ready)
@@ -4329,6 +4420,31 @@ void EnhancedDroneSpectrumAnalyzerView::continue_initialization() {
     }
 }
 
+// FIX #3: Begin initialization process (called from Start button)
+bool EnhancedDroneSpectrumAnalyzerView::begin_initialization() noexcept {
+    // Only begin initialization if not already initialized
+    if (init_state_ == InitState::FULLY_INITIALIZED) {
+        return true;  // Already initialized, consider success
+    }
+    
+    if (init_state_ == InitState::INITIALIZATION_ERROR) {
+        // Reset error state and try again
+        init_state_ = InitState::CONSTRUCTED;
+        init_start_time_ = chTimeNow();
+        last_init_progress_ = 0;
+        initialization_in_progress_ = false;
+        init_error_ = InitError::NONE;
+    }
+    
+    // Set flag to indicate initialization was requested by user
+    initialization_requested_ = true;
+    
+    // Start the initialization process
+    continue_initialization();
+    
+    return true;
+}
+
 void EnhancedDroneSpectrumAnalyzerView::on_hide() {
     stop_scanning_thread();
     scanner_.stop_scanning();
@@ -4382,6 +4498,36 @@ void EnhancedDroneSpectrumAnalyzerView::start_scanning_thread() {
 void EnhancedDroneSpectrumAnalyzerView::stop_scanning_thread() {
     if (!scanning_coordinator_->is_scanning_active()) return;
     scanning_coordinator_->stop_coordinated_scanning();
+}
+
+// FIX #3: Added public methods for explicit scanning control
+bool EnhancedDroneSpectrumAnalyzerView::start_scanning() {
+    // Check initialization state before starting scanning
+    if (init_state_ != InitState::FULLY_INITIALIZED) {
+        return false;
+    }
+    
+    // Check if already scanning
+    if (scanning_coordinator_->is_scanning_active()) {
+        return true;  // Already active, consider success
+    }
+    
+    // Start scanning
+    const auto result = scanning_coordinator_->start_coordinated_scanning();
+    
+    // Return true on success or already active
+    return (result == StartResult::SUCCESS || result == StartResult::ALREADY_ACTIVE);
+}
+
+bool EnhancedDroneSpectrumAnalyzerView::stop_scanning() {
+    // Check if scanning is active
+    if (!scanning_coordinator_->is_scanning_active()) {
+        return true;  // Not active, consider success
+    }
+    
+    // Stop scanning
+    scanning_coordinator_->stop_coordinated_scanning();
+    return true;
 }
 
 bool EnhancedDroneSpectrumAnalyzerView::handle_start_stop_button() {

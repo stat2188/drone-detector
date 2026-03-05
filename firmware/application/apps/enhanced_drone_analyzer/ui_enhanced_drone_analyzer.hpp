@@ -328,8 +328,11 @@ public:
     void stop_worker();
 
     // Session management
-    void start_session();
-    void end_session();
+    // FIX #1: Changed return type to bool to indicate success/failure
+    // start_session() now checks if SD card is mounted before activating session
+    [[nodiscard]] bool start_session();
+    [[nodiscard]] bool stop_session();  // Renamed from end_session() for clarity
+    void end_session();  // Keep for backward compatibility
     bool is_session_active() const { return session_active_; }
     
     // Initialization state management
@@ -588,6 +591,14 @@ struct DetectionParams {
     // [[nodiscard]] - Initialization status must be checked by caller
     [[nodiscard]] bool is_database_loading_complete() const;
     [[nodiscard]] bool is_initialization_complete() const;
+    
+    // FIX #6: Database validation method
+    /**
+     * @brief Check if database is valid (not empty)
+     * @return true if database is valid, false otherwise
+     * @note Called after database loading to verify data integrity
+     */
+    [[nodiscard]] bool is_database_valid() const;
     void sync_database();
     
     // Stage 4: Database observer methods for UnifiedDroneDatabase
@@ -1346,6 +1357,14 @@ public:
     bool are_buffers_allocated() const;
     bool are_buffers_valid() const;
     bool allocate_buffers_from_pool();
+    
+    /**
+     * @brief Initialize UI widgets and add them to View hierarchy
+     * @return true if initialization succeeded, false otherwise
+     * @note Widgets are added in constructor via add_children()
+     * @note This method is provided for API consistency
+     */
+    bool initialize_widgets() noexcept;
 
     // Methods for accessing static buffers (O(1) access, no dereference overhead)
 
@@ -1521,7 +1540,7 @@ private:
     static uint8_t spectrum_power_levels_storage_[200];
 
     bool buffers_allocated_ = false;
-    
+
     // DIAMOND OPTIMIZATION: Histogram Display Buffer
     // Zero-heap histogram display buffer (static storage in .bss)
     HistogramDisplayBuffer histogram_display_buffer_{};
@@ -1708,6 +1727,12 @@ public:
     // / @brief Continue deferred initialization (called from UI event loop, not paint)
     // / This prevents nested stack frames that cause M0 stack overflow
     void continue_initialization();
+    
+    // / @brief Begin initialization process (called from Start button)
+    // / @return true if initialization started successfully, false otherwise
+    // /note This method is called when user presses Start button
+    // /note Prevents automatic initialization on on_show()
+    [[nodiscard]] bool begin_initialization() noexcept;
 
     // / @brief Request global shutdown - sets shutdown flag and stops all threads
     void request_global_shutdown() {
@@ -1736,6 +1761,9 @@ public:
      };
 
  private:
+    // FIX #2: Coordinator initialization method (moved from constructor)
+    [[nodiscard]] bool initialize_coordinator();
+    
     // Forward declarations for phase initialization methods
     void init_phase_allocate_buffers();
     void init_phase_load_database();
@@ -1791,6 +1819,9 @@ public:
         static constexpr uint32_t PHASE_DELAY_5_MS = 1100;   // Finalize (900 + 200)
 
         static constexpr uint8_t MAX_PHASES = 6;
+        
+        // FIX #6: Database loading timeout (5 seconds)
+        static constexpr uint32_t DATABASE_LOAD_TIMEOUT_MS = 5000;
     };
 
     // constexpr LUT for initialization messages in Flash
@@ -1870,6 +1901,12 @@ public:
     OptionsField field_scanning_mode_;
 
     bool scanning_active_ = false;
+    
+    // FIX #5: Flag to track if initialization was requested by user
+    bool initialization_requested_ = false;
+    
+    // FIX #6: Database loading start time for timeout detection
+    systime_t database_load_start_time_ = 0;
 
     // FIX: Unified message handlers to prevent MsgDblReg
     // These handlers delegate to controllers and internal methods
@@ -1915,6 +1952,11 @@ public:
 
     void start_scanning_thread();
     void stop_scanning_thread();
+    
+    // FIX #3: Added public methods for explicit scanning control
+    [[nodiscard]] bool start_scanning();
+    [[nodiscard]] bool stop_scanning();
+    
     bool handle_start_stop_button();
     bool handle_menu_button();
     void initialize_modern_layout();
