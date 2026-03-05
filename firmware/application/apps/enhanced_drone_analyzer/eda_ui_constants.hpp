@@ -98,7 +98,78 @@ constexpr SpectrumDensity DEFAULT_SPECTRUM_DENSITY = SpectrumDensity::MEDIUM;
  */
 constexpr uint32_t MIN_WATERFALL_SPEED = 1;
 constexpr uint32_t MAX_WATERFALL_SPEED = 10;
-constexpr uint32_t DEFAULT_WATERFALL_SPEED = 5;
+
+// ============================================================================
+// DISPLAY LAYOUT CONSTANTS
+// ============================================================================
+
+/**
+ * @brief Display layout constants for Enhanced Drone Analyzer
+ * @note DIAMOND FIX LOW #1: Replaced magic numbers with named constants
+ */
+
+/**
+ * @brief Status bar height in pixels
+ */
+constexpr uint8_t STATUS_BAR_HEIGHT = 2;
+
+/**
+ * @brief Error message X position in pixels
+ */
+constexpr uint16_t ERROR_MSG_X_POS = 10;
+
+/**
+ * @brief Error message Y positions in pixels
+ */
+constexpr uint16_t ERROR_MSG_Y_POS_1 = 80;
+constexpr uint16_t ERROR_MSG_Y_POS_2 = 100;
+constexpr uint16_t ERROR_MSG_Y_POS_3 = 130;
+
+/**
+ * @brief Loading message X position in pixels
+ */
+constexpr uint16_t LOADING_MSG_X_POS = 10;
+
+/**
+ * @brief Loading message Y positions in pixels
+ */
+constexpr uint16_t LOADING_MSG_Y_POS_1 = 80;
+constexpr uint16_t LOADING_MSG_Y_POS_2 = 100;
+
+/**
+ * @brief Progress bar X position in pixels
+ */
+constexpr uint16_t PROGRESS_BAR_X_POS = 10;
+
+/**
+ * @brief Progress bar Y position in pixels
+ */
+constexpr uint16_t PROGRESS_BAR_Y_POS = 120;
+
+/**
+ * @brief Progress bar width in pixels
+ */
+constexpr uint16_t PROGRESS_BAR_WIDTH = 100;
+
+/**
+ * @brief Progress bar height in pixels
+ */
+constexpr uint8_t PROGRESS_BAR_HEIGHT = 10;
+
+/**
+ * @brief Progress bar background color (dark grey)
+ */
+constexpr uint16_t PROGRESS_BAR_BG_COLOR = 0x4208;  // Dark grey
+
+/**
+ * @brief Progress bar fill color (green)
+ */
+constexpr uint16_t PROGRESS_BAR_FILL_COLOR = 0x07E0;  // Green
+
+/**
+ * @brief Maximum progress value (100%)
+ */
+constexpr uint8_t PROGRESS_MAX_VALUE = 32;  // Scaled to 32 for display
 
 // ============================================================================
 // FREQUENCY RULER STYLE

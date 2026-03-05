@@ -157,6 +157,17 @@ public:
 
     // Singleton pattern enforcement
     static ScanningCoordinator& instance() noexcept;
+    
+    // DIAMOND FIX #CRITICAL #2: Safe instance access with cooperative termination
+    /**
+     * @brief Get singleton instance safely (returns nullptr if not initialized)
+     * @return Pointer to singleton instance, or nullptr if not initialized
+     * @note Returns nullptr instead of halting system if called before initialize()
+     * @note Uses double-checked locking with memory barriers for thread safety
+     * @note This is the recommended method for optional singleton access
+     */
+    [[nodiscard]] static ScanningCoordinator* instance_safe() noexcept;
+    
     [[nodiscard]] static bool initialize(NavigationView& nav,
                                         DroneHardwareController& hardware,
                                         DroneScanner& scanner,

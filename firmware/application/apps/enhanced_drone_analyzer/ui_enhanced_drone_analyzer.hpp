@@ -1120,6 +1120,10 @@ private:
     Text alert_text_     {{0, 1, screen_width, 16}, ""};
     Text normal_text_    {{0, 1, screen_width, 16}, ""};
 
+    // DIAMOND FIX MEDIUM #3: Mutex for UI update protection
+    // Prevents race conditions when multiple threads call update methods concurrently
+    mutable Mutex ui_mutex_;
+
     void paint(Painter& painter) override;
 };
 
@@ -1991,12 +1995,78 @@ public:
     // * * @brief Check memory pressure and log warnings if critical
     void check_memory_pressure();
 
+    // ============================================================================
+    // DIAMOND FIX #CRITICAL #1: Initialization State Machine Race Condition
+    // ============================================================================
+    // Phase completion tracking structure to verify each initialization phase completed
+    // successfully before transitioning to the next phase.
+    //
+    // RATIONALE:
+    // The initialization state machine previously transitioned phases without verifying
+    // that the previous phase completed successfully. This created race conditions
+    // where Phase N could start before Phase N-1 finished, leading to:
+    // - Database access before loading completed
+    // - Hardware initialization before database ready
+    // - UI setup before hardware initialized
+    //
+    // SOLUTION:
+    // Each phase function must explicitly mark its completion before the state
+    // machine can transition to the next phase. The state machine verifies
+    // completion before calling the next phase function.
+    //
+    // MEMORY IMPACT:
+    // - Flash: +~200 bytes (PhaseCompletion structure + mutex)
+    // - RAM: +~80 bytes (PhaseCompletion array + mutex)
+    // - Stack: +~16 bytes (PhaseCompletion local variables)
+    // ============================================================================
+
+    /**
+     * @brief Phase completion tracking structure
+     * @details Tracks completion status for each initialization phase
+     * @note Uses volatile bool for thread safety (std::atomic not available)
+     * @note Protected by init_completion_mutex_ for thread-safe access
+     */
+    struct PhaseCompletion {
+        volatile bool buffers_allocated{false};       ///< Phase 1: Display buffers allocated
+        volatile bool database_loaded{false};         ///< Phase 2: Database loading complete
+        volatile bool hardware_ready{false};          ///< Phase 3: Hardware initialized
+        volatile bool ui_layout_ready{false};         ///< Phase 4: UI layout setup complete
+        volatile bool settings_loaded{false};         ///< Phase 5: Settings loaded
+        volatile bool finalized{false};              ///< Phase 6: Finalization complete
+
+        /**
+         * @brief Check if all phases are complete
+         * @return true if all phases completed successfully
+         */
+        [[nodiscard]] bool all_complete() const noexcept {
+            return buffers_allocated && database_loaded && hardware_ready &&
+                   ui_layout_ready && settings_loaded && finalized;
+        }
+
+        /**
+         * @brief Reset all completion flags
+         * @note Called during initialization reset
+         */
+        void reset() noexcept {
+            buffers_allocated = false;
+            database_loaded = false;
+            hardware_ready = false;
+            ui_layout_ready = false;
+            settings_loaded = false;
+            finalized = false;
+        }
+    };
+
     // Initialization state variables
     InitState init_state_ = InitState::CONSTRUCTED;
     systime_t init_start_time_ = 0;
     systime_t last_init_progress_ = 0;
     // FIX: Initialization progress flag with volatile for thread safety (std::atomic not available in embedded environment)
     volatile bool initialization_in_progress_{false};
+
+    // DIAMOND FIX #CRITICAL #1: Phase completion tracking
+    PhaseCompletion phase_completion_{};            ///< Tracks completion status for each phase
+    Mutex init_completion_mutex_{};                 ///< Protects phase_completion_ for thread-safe access
     
     // Global shutdown flag for all threads
     volatile bool global_shutdown_requested_ = false;

@@ -150,6 +150,46 @@ ScanningCoordinator& ScanningCoordinator::instance() noexcept {
     return *const_cast<ScanningCoordinator*>(instance_ptr_);
 }
 
+// ============================================================================
+// DIAMOND FIX #CRITICAL #2: Safe instance access with cooperative termination
+// ============================================================================
+/**
+ * @brief Get singleton instance safely (returns nullptr if not initialized)
+ * @return Pointer to singleton instance, or nullptr if not initialized
+ * @note Returns nullptr instead of halting system if called before initialize()
+ * @note Uses double-checked locking with memory barriers for thread safety
+ * @note This is the recommended method for optional singleton access
+ */
+ScanningCoordinator* ScanningCoordinator::instance_safe() noexcept {
+    // Double-checked locking pattern with memory barriers
+    // First check without lock (fast path for already-initialized case)
+    if (initialized_ && instance_ptr_) {
+        // Memory barrier ensures visibility of initialized flag and pointer
+        __atomic_thread_fence(__ATOMIC_SEQ_CST);
+        return const_cast<ScanningCoordinator*>(instance_ptr_);
+    }
+
+    // Slow path: acquire mutex and check again
+    MutexLock lock(init_mutex_, LockOrder::DATA_MUTEX);
+    
+    // Memory barrier after acquiring lock ensures proper memory ordering
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    
+    // Second check under lock protection
+    if (!initialized_ || !instance_ptr_) {
+        // Cooperative termination: return nullptr instead of halting system
+        // This allows caller to handle the error gracefully
+        return nullptr;
+    }
+
+    // Memory barrier before returning ensures visibility of pointer
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    
+    // Return pointer (not reference) to allow nullptr return
+    return const_cast<ScanningCoordinator*>(instance_ptr_);
+}
+
+
 /**
  * @brief Initialize singleton instance
  * @param nav Navigation view reference
