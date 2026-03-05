@@ -2144,7 +2144,12 @@ void DroneDetectionLogger::start_worker() {
         return;
     }
 
-    start_session();
+    // Check if session started successfully
+    if (!start_session()) {
+        // Session failed to start (SD card not mounted)
+        // Worker thread will exit when worker_should_run_ is checked in worker_loop()
+        worker_should_run_ = false;
+    }
 }
 
 // Stack safety guard for embedded systems
