@@ -1370,6 +1370,31 @@ public:
      */
     bool initialize_widgets() noexcept;
 
+    // ============================================================================
+    // PUBLIC MUTEX ACCESSORS FOR CALLBACK FUNCTIONS
+    // ============================================================================
+    // These methods are public to allow static callback functions (like
+    // static_histogram_callback) to safely access the histogram mutex and
+    // check if histogram updates are safe. This implements the copy-on-write
+    // pattern for thread-safe histogram updates.
+    // ============================================================================
+
+    /**
+     * @brief Get reference to histogram mutex for external locking
+     * @return Reference to histogram_mutex_
+     * @note This allows external code (like callback functions) to safely access the mutex
+     */
+    Mutex& get_histogram_mutex() noexcept { return histogram_mutex_; }
+
+    /**
+     * @brief Check if histogram update is safe (no update in progress)
+     * @return true if safe to update histogram, false if update is in progress
+     * @note Used by callback functions to implement copy-on-write pattern
+     */
+    [[nodiscard]] bool is_histogram_update_safe() const noexcept {
+        return !histogram_dirty_;
+    }
+
     // Methods for accessing static buffers (O(1) access, no dereference overhead)
 
     using PowerLevelsBuffer = std::array<uint8_t, 200>;
@@ -1584,23 +1609,6 @@ private:
     uint8_t range_max_power = 0;
 
     DisplayRenderMode mode_ = DisplayRenderMode::SPECTRUM;
-
-    // Public accessor for histogram_mutex_ (thread-safe access from callback)
-    /**
-     * @brief Get reference to histogram mutex for external locking
-     * @return Reference to histogram_mutex_
-     * @note This allows external code (like callback functions) to safely access the mutex
-     */
-    Mutex& get_histogram_mutex() noexcept { return histogram_mutex_; }
-
-    /**
-     * @brief Check if histogram update is safe (no update in progress)
-     * @return true if safe to update histogram, false if update is in progress
-     * @note Used by callback functions to implement copy-on-write pattern
-     */
-    [[nodiscard]] bool is_histogram_update_safe() const noexcept {
-        return !histogram_dirty_;
-    }
 
     SpectrumConfig spectrum_config_;
 

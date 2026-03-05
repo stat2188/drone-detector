@@ -2011,7 +2011,7 @@ DroneDetectionLogger::DroneDetectionLogger()
       mutex_(),
       data_ready_(),
       worker_should_run_(false),
-      initialization_complete_(false),
+      initialization_complete_(),
       csv_log_(),
       session_active_(false),
       session_start_(0),
