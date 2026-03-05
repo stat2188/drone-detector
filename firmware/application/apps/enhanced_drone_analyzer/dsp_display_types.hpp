@@ -32,16 +32,62 @@ namespace ui::apps::enhanced_drone_analyzer::dsp {
 // Use int64_t as Frequency type (consistent with rf::Frequency in rf_path.hpp)
 using Frequency = int64_t;
 
+// PHASE 4 FIX #13: Define RSSIValue type alias for consistency
+// Matches ui_signal_processing.hpp: using RSSIValue = int32_t;
+using RSSIValue = int32_t;
+
+// ============================================================================
+// PHASE 3 FIX #9: Named constants for magic numbers
+// ============================================================================
+
+/**
+ * @brief Named constants for display types
+ *
+ * PHASE 3 FIX #9: Define MAX_FILTERED_DRONES = 10
+ * - Replaces magic number 10 with named constant
+ * - Maximum number of drones to display in filtered list
+ * - Limits UI rendering complexity and stack usage
+ */
+namespace DisplayTypeConstants {
+    /**
+     * @brief Maximum number of filtered drones to display
+     * @note Replaces magic number 10 in FilteredDronesSnapshot
+     * @note Limits UI rendering complexity and stack usage
+     */
+    static constexpr size_t MAX_FILTERED_DRONES = 10;
+
+    /**
+     * @brief Maximum length for drone type name
+     * @note Replaces magic number 16 in DisplayDroneEntry
+     */
+    static constexpr size_t MAX_DRONE_TYPE_NAME_LENGTH = 16;
+
+    /**
+     * @brief Maximum length for frequency string
+     * @note Replaces magic number 16 in DroneDisplayText
+     */
+    static constexpr size_t MAX_FREQ_STRING_LENGTH = 16;
+
+    /**
+     * @brief Number of color levels for threat display
+     * @note Replaces magic number 5 in color arrays
+     */
+    static constexpr size_t NUM_COLOR_LEVELS = 5;
+}
+
 /**
  * @brief Display drone entry for UI rendering
- * 
+ *
  * This structure contains drone data that has been prepared for UI display.
  * It includes frequency, type name, RSSI, and trend information.
+ *
+ * PHASE 3 FIX #9: Replaced magic number 16 with MAX_DRONE_TYPE_NAME_LENGTH
+ * PHASE 4 FIX #13: Use RSSIValue consistently instead of int32_t
  */
 struct DisplayDroneEntry {
-    char type_name[16];            ///< Drone type name (e.g., "MAVIC")
+    char type_name[DisplayTypeConstants::MAX_DRONE_TYPE_NAME_LENGTH];  ///< Drone type name (e.g., "MAVIC")
     Frequency frequency;            ///< Drone frequency in Hz
-    int32_t rssi;                 ///< RSSI in dBm
+    RSSIValue rssi;               ///< RSSI in dBm (PHASE 4 FIX #13: Use RSSIValue)
     MovementTrend trend;           ///< Movement trend
 };
 
@@ -73,46 +119,53 @@ struct DisplayDataSnapshot {
 
 /**
  * @brief Tracked drone data for UI display
- * 
+ *
  * This structure contains drone data that has been filtered and
  * prepared for UI display. It includes frequency, type, threat level,
  * RSSI, and trend information.
+ *
+ * PHASE 4 FIX #13: Use RSSIValue consistently instead of int32_t
+ * PHASE 4 FIX #12: Use systime_t consistently for timestamps
  */
 struct TrackedDroneData {
     Frequency frequency;            ///< Drone frequency in Hz
     uint8_t drone_type;            ///< Drone type (DroneType enum)
     uint8_t threat_level;          ///< Threat level (ThreatLevel enum)
-    int32_t rssi;                 ///< RSSI in dBm
-    systime_t last_seen;           ///< Last seen timestamp
+    RSSIValue rssi;               ///< RSSI in dBm (PHASE 4 FIX #13: Use RSSIValue)
+    systime_t last_seen;           ///< Last seen timestamp (PHASE 4 FIX #12: Use systime_t)
     MovementTrend trend;           ///< Movement trend
 };
 
 /**
  * @brief Filtered drones snapshot for UI rendering
- * 
+ *
  * This structure provides a snapshot of filtered drone data from the DSP layer
  * to the UI layer. It includes only active drones that have been seen recently.
- * 
+ *
  * Thread-safety: Snapshot should be captured under mutex and then
  * used without further synchronization.
+ *
+ * PHASE 3 FIX #9: Replaced magic number 10 with MAX_FILTERED_DRONES
  */
 struct FilteredDronesSnapshot {
     size_t count;                                          ///< Number of drones in snapshot
-    TrackedDroneData drones[10];                           ///< Filtered drone data (max 10)
+    TrackedDroneData drones[DisplayTypeConstants::MAX_FILTERED_DRONES];  ///< Filtered drone data (max MAX_FILTERED_DRONES)
 };
 
 /**
  * @brief Drone display text for UI rendering
- * 
+ *
  * This structure contains pre-formatted text data for rendering a drone entry.
  * It includes the type name, formatted frequency string, RSSI, and trend symbol.
- * 
+ *
  * This structure is used to separate text formatting (DSP logic) from
  * UI rendering (presentation logic).
+ *
+ * PHASE 3 FIX #9: Replaced magic numbers 16 with MAX_DRONE_TYPE_NAME_LENGTH and MAX_FREQ_STRING_LENGTH
  */
 struct DroneDisplayText {
-    char type_name[16];            ///< Drone type name (e.g., "MAVIC")
-    char freq_string[16];          ///< Formatted frequency string (e.g., "2.400GHz")
+    char type_name[DisplayTypeConstants::MAX_DRONE_TYPE_NAME_LENGTH];  ///< Drone type name (e.g., "MAVIC")
+    char freq_string[DisplayTypeConstants::MAX_FREQ_STRING_LENGTH];  ///< Formatted frequency string (e.g., "2.400GHz")
     int32_t rssi;                 ///< RSSI in dBm
     char trend_symbol;             ///< Trend symbol ('=', '^', 'v', '~')
 };
@@ -183,14 +236,15 @@ struct FreqFormatEntry {
 
 /**
  * @brief Frequency format table for different frequency ranges
- * 
+ *
  * This table provides formatting parameters for displaying frequencies
  * at different scales. The index is determined by the frequency magnitude.
- * 
+ *
+ * PHASE 5 FIX #16: Move to Flash using EDA_FLASH_CONST constexpr (~64 bytes)
  * Note: inline constexpr to avoid ODR violations when header is included
  * in multiple translation units.
  */
-inline constexpr FreqFormatEntry FREQ_FORMAT_TABLE[] = {
+EDA_FLASH_CONST inline static constexpr FreqFormatEntry FREQ_FORMAT_TABLE[] = {
     {1000000000LL, 100000000LL, "%lu.%03lu GHz"},  // >= 1 GHz
     {1000000LL, 100000LL, "%lu.%03lu MHz"},        // >= 1 MHz
     {1000LL, 100LL, "%lu.%02lu kHz"},            // >= 1 kHz
@@ -213,8 +267,10 @@ struct BarSpectrumConfig {
     static constexpr uint8_t COLOR_THRESHOLD_MED_HIGH = 150; ///< Medium-high power threshold (60%)
     static constexpr uint8_t COLOR_THRESHOLD_HIGH = 200;  ///< High power threshold (80%)
     
-    /// Bar colors for different power levels (5 levels)
-    static constexpr uint32_t BAR_COLORS[] = {
+    /// Bar colors for different power levels (NUM_COLOR_LEVELS levels)
+    /// PHASE 3 FIX #9: Replaced magic number 5 with NUM_COLOR_LEVELS
+    /// PHASE 5 FIX #15: Move to Flash using EDA_FLASH_CONST constexpr (~20 bytes)
+    EDA_FLASH_CONST static constexpr uint32_t BAR_COLORS[DisplayTypeConstants::NUM_COLOR_LEVELS] = {
         0x001F,  // Blue (low)
         0x07E0,  // Green (medium-low)
         0xFFE0,  // Yellow (medium)
@@ -235,7 +291,9 @@ struct HistogramColorConfig {
     static constexpr int HISTOGRAM_NUM_BINS = 64;    ///< Number of histogram bins
     static constexpr int HISTOGRAM_BIN_WIDTH = HISTOGRAM_WIDTH / HISTOGRAM_NUM_BINS;  // 3.75px/bin
 
-    static constexpr size_t NUM_COLOR_LEVELS = 5;     ///< Number of color levels
+    /// PHASE 3 FIX #9: Moved NUM_COLOR_LEVELS to DisplayTypeConstants namespace
+    /// This constant is now defined in DisplayTypeConstants namespace
+    static constexpr size_t NUM_COLOR_LEVELS = DisplayTypeConstants::NUM_COLOR_LEVELS;
 
     // Color level thresholds (0-255 scale)
     static constexpr uint8_t COLOR_THRESHOLD_20PCT = 51;   ///< 20% threshold
@@ -243,8 +301,10 @@ struct HistogramColorConfig {
     static constexpr uint8_t COLOR_THRESHOLD_60PCT = 153;  ///< 60% threshold
     static constexpr uint8_t COLOR_THRESHOLD_80PCT = 204;  ///< 80% threshold
 
-    /// Histogram colors for different signal levels (5 levels)
-    static constexpr uint32_t HISTOGRAM_COLORS[] = {
+    /// Histogram colors for different signal levels (NUM_COLOR_LEVELS levels)
+    /// PHASE 3 FIX #9: Replaced magic number 5 with NUM_COLOR_LEVELS
+    /// PHASE 5 FIX #15: Move to Flash using EDA_FLASH_CONST constexpr (~20 bytes)
+    EDA_FLASH_CONST static constexpr uint32_t HISTOGRAM_COLORS[DisplayTypeConstants::NUM_COLOR_LEVELS] = {
         0x001F,  // Blue (20%)
         0x07E0,  // Green (40%)
         0xFFE0,  // Yellow (60%)
@@ -254,8 +314,9 @@ struct HistogramColorConfig {
 };
 
 // Compile-time size validation
+// PHASE 3 FIX #9: Updated static_assert comments to reference named constants
 static_assert(sizeof(DisplayDataSnapshot) <= 64, "DisplayDataSnapshot exceeds 64 bytes");
-static_assert(sizeof(FilteredDronesSnapshot) <= 640, "FilteredDronesSnapshot exceeds 640 bytes");
+static_assert(sizeof(FilteredDronesSnapshot) <= 640, "FilteredDronesSnapshot exceeds 640 bytes (MAX_FILTERED_DRONES * 64 bytes per drone)");
 static_assert(sizeof(DroneDisplayText) <= 48, "DroneDisplayText exceeds 48 bytes");
 static_assert(sizeof(BarSpectrumRenderData) <= 24, "BarSpectrumRenderData exceeds 24 bytes");
 static_assert(sizeof(HistogramDisplayBuffer) <= 67, "HistogramDisplayBuffer exceeds 67 bytes");

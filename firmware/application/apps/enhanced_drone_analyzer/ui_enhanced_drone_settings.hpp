@@ -90,36 +90,39 @@ public:
 
 // Replaced std::function with template-based callbacks (zero heap allocation)
 
-// CRITICAL FIX: ConfigUpdaterCallback with dangling pointer protection
+// PHASE 2 FIX #6: ConfigUpdaterCallback with value copy to prevent dangling pointer
 // Functor for config updates (zero heap allocation, fixed storage)
 //
-// PROBLEM: Raw pointer to DroneAnalyzerSettings can become invalid if parent view is destroyed
-// SOLUTION: Add validation and documentation to prevent use-after-free
+// PROBLEM (ORIGINAL): Raw pointer to DroneAnalyzerSettings can become invalid if parent view is destroyed
+// SOLUTION (FIXED): Copy settings by value into callback to prevent use-after-free
 //
-// USAGE CONSTRAINTS:
-// 1. Callback must be used immediately (not stored for later use)
-// 2. Parent view must remain alive while callback is in use
-// 3. This is designed for short-lived menu interactions only
+// USAGE:
+// 1. Create callback with settings copy: ConfigUpdaterCallback callback(settings);
+// 2. Use callback to apply preset: callback(preset);
+// 3. Retrieve modified settings: const auto& modified = callback.get_settings();
+// 4. Save modified settings back to original: settings = modified;
 //
-// ALTERNATIVE (for long-lived callbacks):
-// - Copy settings by value into callback (DroneAnalyzerSettings config_copy)
-// - Add get_settings() method to retrieve modified copy
-// - Caller must save settings after callback returns
+// BENEFITS:
+// - Safe to store callback for later use (no dangling pointer risk)
+// - Thread-safe (no shared mutable state)
+// - Zero heap allocation (DroneAnalyzerSettings is POD struct)
 struct ConfigUpdaterCallback {
-    DroneAnalyzerSettings* config_ptr;
+    DroneAnalyzerSettings config_copy;
 
-    constexpr explicit ConfigUpdaterCallback(DroneAnalyzerSettings& config) noexcept
-        : config_ptr(&config) {}
+    constexpr explicit ConfigUpdaterCallback(const DroneAnalyzerSettings& config) noexcept
+        : config_copy(config) {}
 
-    // CRITICAL FIX: Validate pointer before dereferencing
-    // Prevents use-after-free if parent view was destroyed
+    // Apply preset to settings copy
     // noexcept for operator()
-    void operator()(const DronePreset& preset) const noexcept {
-        // Guard clause to reduce nesting and prevent nullptr dereference
-        if (!config_ptr) return;
-        (void)DroneFrequencyPresets::apply_preset(*config_ptr, preset);
+    void operator()(const DronePreset& preset) noexcept {
+        (void)DroneFrequencyPresets::apply_preset(config_copy, preset);
     }
 
+    // Get modified settings copy
+    // Returns const reference to avoid unnecessary copy
+    [[nodiscard]] const DroneAnalyzerSettings& get_settings() const noexcept {
+        return config_copy;
+    }
 };
 
 // Template-based callback system (zero heap allocation)

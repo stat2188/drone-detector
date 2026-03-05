@@ -1,7 +1,7 @@
 # =============================================================================
 # clangd Configuration for HackRF Mayhem / PortaPack Firmware
 # Target: LPC43xx_M0 (ARM Cortex-M0, NXP LPC4330)
-# Compiler: arm-none-eabi-g++ (GNU Arm Embedded Toolchain 10.3.1)
+# Compiler: arm-none-eabi-g++ (GNU Arm Embedded Toolchain)
 # clangd: MSYS2 UCRT64 Clang 18.x
 # =============================================================================
 #
@@ -9,6 +9,9 @@
 # 1. Place this file as ".clangd" (with leading dot!) in project ROOT
 # 2. File must be in YAML format (not JSON!)
 # 3. clangd uses CLANG compiler for analysis, but queries GCC for includes
+#
+# CMake Tools Kits File:
+#   C:\Users\Max\AppData\Local\CMakeTools\cmake-tools-kits.json
 # =============================================================================
 
 CompileFlags:
@@ -16,7 +19,7 @@ CompileFlags:
   # Compiler Selection - Query GCC driver for system includes
   # CRITICAL: This tells clangd to extract include paths from GCC
   # ---------------------------------------------------------------------------
-  Compiler: C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-g++.exe
+  Compiler: C:/SysGCC/arm-eabi/bin/arm-none-eabi-g++.exe
 
   # ---------------------------------------------------------------------------
   # Core Compiler Flags - Compatible with both GCC and Clang

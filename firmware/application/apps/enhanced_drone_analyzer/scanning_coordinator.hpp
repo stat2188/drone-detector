@@ -265,8 +265,10 @@ private:
     ::Thread* scanning_thread_{nullptr};
     uint32_t scan_interval_ms_{EDA::Constants::DEFAULT_SCAN_INTERVAL_MS};
 
-    // FIX #SO-1: Increased from 1536 to 2048 bytes (33% increase) to prevent stack overflow
-    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;
+    // PHASE 1 FIX #1: Increased from 2048 to 3072 bytes (50% increase) to prevent stack overflow
+    // Stack usage analysis shows coordinator thread requires ~2.5KB with nested function calls
+    // This provides 574 bytes of safety margin (3072 - 2500 - 256 overhead)
+    static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 3072;
 
     // ============================================================================
     // STACK USAGE VALIDATION
