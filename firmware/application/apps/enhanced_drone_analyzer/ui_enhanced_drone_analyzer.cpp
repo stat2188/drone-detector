@@ -36,11 +36,13 @@
 #include "dsp_spectrum_processor.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
+#include "eda_ui_constants.hpp"
 #include "eda_unified_database.hpp"
 #include "file.hpp"
 #include "portapack.hpp"
 #include "scanning_coordinator.hpp"
 #include "sd_card.hpp"
+#include "stack_canary.hpp"
 #include "ui_drone_audio.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_fileman.hpp"
@@ -97,6 +99,51 @@ namespace MagicNumberConstants {
 
 // SD card mutex (FatFS is NOT thread-safe)
 Mutex sd_card_mutex;
+
+// ============================================================================
+// PLL Constants for wideband scan cycle
+// ============================================================================
+/**
+ * @brief Constants for PLL lock verification in wideband scanning
+ * @note Moved from function scope to file scope for proper C++ compliance
+ */
+namespace PllConstants {
+    constexpr uint32_t MAX_PLL_LOCK_RETRIES = 5;           ///< Maximum PLL lock retry attempts
+    constexpr uint32_t PLL_LOCK_POLL_INTERVAL_MS = 5;   ///< Poll interval for PLL lock status
+    constexpr uint32_t PLL_LOCK_TIMEOUT_MS = 100;    ///< Timeout for PLL lock verification
+}
+
+// ============================================================================
+// Audio Alert Cooldown Constants
+// ============================================================================
+/**
+ * @brief Constants for audio alert cooldown management
+ * @note Moved from function scope to file scope for proper C++ compliance
+ */
+namespace AudioCooldown {
+    // Cooldown state tracking
+    static systime_t last_alert_time_ = 0;
+    static constexpr uint32_t ALERT_COOLDOWN_MS = 2000;  // 2 second cooldown between alerts
+
+    /**
+     * @brief Check if cooldown period has elapsed
+     * @return true if cooldown has elapsed, false otherwise
+     * @note Uses ChibiOS time primitives for accurate timing
+     */
+    inline bool is_cooldown_elapsed() noexcept {
+        systime_t current_time = chTimeNow();
+        systime_t elapsed = current_time - last_alert_time_;
+        return elapsed >= MS2ST(ALERT_COOLDOWN_MS);
+    }
+
+    /**
+     * @brief Update last alert time
+     * @note Call after playing alert to reset cooldown timer
+     */
+    inline void update_last_alert_time() noexcept {
+        last_alert_time_ = chTimeNow();
+    }
+}
 
 // ScanningMode LUT (strings in Flash)
 EDA_FLASH_CONST inline static constexpr const char* const SCANNING_MODE_NAMES[] = {
@@ -735,13 +782,6 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
  * @note Adds graceful degradation if PLL never locks
  */
 void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware) {
-    // Constants for PLL lock verification
-    namespace PllConstants {
-        constexpr uint32_t MAX_PLL_LOCK_RETRIES = 5;           ///< Maximum PLL lock retry attempts
-        constexpr uint32_t PLL_LOCK_POLL_INTERVAL_MS = 5;   ///< Poll interval for PLL lock status
-        constexpr uint32_t PLL_LOCK_TIMEOUT_MS = 100;    ///< Timeout for PLL lock verification
-    }
-    
     if (wideband_scan_data_.slices_nb == 0) {
         setup_wideband_range(WIDEBAND_DEFAULT_MIN, WIDEBAND_DEFAULT_MAX);
     }
@@ -766,8 +806,8 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
                 // PLL lock timeout - use fallback frequency
                 // DIAMOND FIX #CRITICAL #3: Fallback to default frequency if PLL never locks
                 // This ensures system continues with degraded functionality instead of hanging
-                status_bar_.update_normal_status("WARN", "PLL timeout");
-                
+                // Note: status_bar_ not available in DroneScanner context
+
                 // Use default frequency (100 MHz) as fallback
                 constexpr Frequency DEFAULT_FALLBACK_FREQ_HZ = 100000000;
                 hardware.tune_to_frequency(DEFAULT_FALLBACK_FREQ_HZ);
@@ -787,7 +827,7 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         if (!pll_locked) {
             // DIAMOND FIX #CRITICAL #3: Graceful degradation on PLL lock failure
             // System continues with degraded functionality instead of hanging
-            status_bar_.update_normal_status("WARN", "PLL unlock failed");
+            // Note: status_bar_ not available in DroneScanner context
         }
         
         // 2. Wait for PLL stabilization (original delay)
@@ -4153,21 +4193,21 @@ void EnhancedDroneSpectrumAnalyzerView::render_initialization_error(Painter& pai
     
     // Error header
     painter.draw_string(
-        {EDA::UIConstants::ERROR_MSG_X_POS, EDA::UIConstants::ERROR_MSG_Y_POS_1},
+        {UIConstants::ERROR_MSG_X_POS, UIConstants::ERROR_MSG_Y_POS_1},
         Style{font::fixed_8x16, Color::red(), Color::black()},
         "INIT ERROR"
     );
     
     // Error message
     painter.draw_string(
-        {EDA::UIConstants::ERROR_MSG_X_POS, EDA::UIConstants::ERROR_MSG_Y_POS_2},
+        {UIConstants::ERROR_MSG_X_POS, UIConstants::ERROR_MSG_Y_POS_2},
         Style{font::fixed_8x16, Color::white(), Color::black()},
         ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]
     );
     
     // Instructions
     painter.draw_string(
-        {EDA::UIConstants::ERROR_MSG_X_POS, EDA::UIConstants::ERROR_MSG_Y_POS_3},
+        {UIConstants::ERROR_MSG_X_POS, UIConstants::ERROR_MSG_Y_POS_3},
         Style{font::fixed_8x16, Color::yellow(), Color::black()},
         "Press BACK to exit"
     );
@@ -4189,14 +4229,14 @@ void EnhancedDroneSpectrumAnalyzerView::render_loading_progress(Painter& painter
     
     // Loading text
     painter.draw_string(
-        {EDA::UIConstants::LOADING_MSG_X_POS, EDA::UIConstants::LOADING_MSG_Y_POS_1},
+        {UIConstants::LOADING_MSG_X_POS, UIConstants::LOADING_MSG_Y_POS_1},
         Style{font::fixed_8x16, Color::white(), Color::black()},
         "Loading..."
     );
     
     // Status message
     painter.draw_string(
-        {EDA::UIConstants::LOADING_MSG_X_POS, EDA::UIConstants::LOADING_MSG_Y_POS_2},
+        {UIConstants::LOADING_MSG_X_POS, UIConstants::LOADING_MSG_Y_POS_2},
         Style{font::fixed_8x16, Color::green(), Color::black()},
         INIT_STATUS_MESSAGES[phase_idx]
     );
@@ -4209,14 +4249,14 @@ void EnhancedDroneSpectrumAnalyzerView::render_loading_progress(Painter& painter
     
     // Progress bar background
     painter.fill_rectangle(
-        {EDA::UIConstants::PROGRESS_BAR_X_POS, EDA::UIConstants::PROGRESS_BAR_Y_POS,
-         EDA::UIConstants::PROGRESS_BAR_WIDTH, EDA::UIConstants::PROGRESS_BAR_HEIGHT},
+        {UIConstants::PROGRESS_BAR_X_POS, UIConstants::PROGRESS_BAR_Y_POS,
+         EDA::UIConstants::PROGRESS_BAR_WIDTH, EDA::Constants::PROGRESS_BAR_HEIGHT},
         Color(EDA::UIConstants::PROGRESS_BAR_BG_COLOR));
     // Filled portion
     painter.fill_rectangle(
-        {EDA::UIConstants::PROGRESS_BAR_X_POS, EDA::UIConstants::PROGRESS_BAR_Y_POS,
-         progress, EDA::UIConstants::PROGRESS_BAR_HEIGHT},
-        Color(EDA::UIConstants::PROGRESS_BAR_FILL_COLOR));
+        {UIConstants::PROGRESS_BAR_X_POS, UIConstants::PROGRESS_BAR_Y_POS,
+         progress, EDA::Constants::PROGRESS_BAR_HEIGHT},
+        Color(EDA::Constants::PROGRESS_BAR_FILL_COLOR));
 }
 
 void EnhancedDroneSpectrumAnalyzerView::render_normal_display(Painter& painter) noexcept {
@@ -5036,36 +5076,7 @@ void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
     // ============================================================================
     // DIAMOND FIX #HIGH #2: Audio Alert Cooldown Not Set
     // ============================================================================
-    
-    // DIAMOND FIX #HIGH #2: Audio alert cooldown timer with proper state management
-    // Uses ChibiOS timer primitives for cooldown tracking
-    // Implements cooldown verification before playing alert
-    // Prevents rapid repeated alerts that could saturate baseband queue
-    namespace AudioCooldown {
-        // Cooldown state tracking
-        static systime_t last_alert_time_ = 0;
-        static constexpr uint32_t ALERT_COOLDOWN_MS = 2000;  // 2 second cooldown between alerts
-        
-        /**
-         * @brief Check if cooldown period has elapsed
-         * @return true if cooldown has elapsed, false otherwise
-         * @note Uses ChibiOS time primitives for accurate timing
-         */
-        inline bool is_cooldown_elapsed() noexcept {
-            systime_t current_time = chTimeNow();
-            systime_t elapsed = current_time - last_alert_time_;
-            return elapsed >= MS2ST(ALERT_COOLDOWN_MS);
-        }
-        
-        /**
-         * @brief Update last alert time
-         * @note Call after playing alert to reset cooldown timer
-         */
-        inline void update_last_alert_time() noexcept {
-            last_alert_time_ = chTimeNow();
-        }
-    }
-    
+
     // Trigger audio alerts based on threat level (with debouncing)
     // AudioAlertManager::play_alert() has built-in debouncing to prevent baseband queue saturation
     // baseband::send_message() uses busy-wait spin loop

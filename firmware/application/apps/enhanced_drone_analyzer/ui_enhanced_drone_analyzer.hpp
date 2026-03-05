@@ -1579,10 +1579,28 @@ private:
     size_t each_bin_size = 100000;
     uint8_t min_color_power = 0;
     const uint8_t ignore_dc = 4;
-    size_t marker_pixel_step = 1000000;
+    uint8_t marker_pixel_step = 100000;
     uint8_t max_power = 0;
     uint8_t range_max_power = 0;
+
     DisplayRenderMode mode_ = DisplayRenderMode::SPECTRUM;
+
+    // Public accessor for histogram_mutex_ (thread-safe access from callback)
+    /**
+     * @brief Get reference to histogram mutex for external locking
+     * @return Reference to histogram_mutex_
+     * @note This allows external code (like callback functions) to safely access the mutex
+     */
+    Mutex& get_histogram_mutex() noexcept { return histogram_mutex_; }
+
+    /**
+     * @brief Check if histogram update is safe (no update in progress)
+     * @return true if safe to update histogram, false if update is in progress
+     * @note Used by callback functions to implement copy-on-write pattern
+     */
+    [[nodiscard]] bool is_histogram_update_safe() const noexcept {
+        return !histogram_dirty_;
+    }
 
     SpectrumConfig spectrum_config_;
 

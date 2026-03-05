@@ -95,6 +95,26 @@ public:
         return __atomic_exchange_n(&value_, new_value ? 1 : 0, __ATOMIC_ACQ_REL) != 0;
     }
 
+    /**
+     * @brief Explicit conversion to bool (load with acquire semantics)
+     * @return Current flag value as bool
+     * @note Allows implicit conversion to bool in conditional contexts
+     */
+    explicit operator bool() const noexcept {
+        return load();
+    }
+
+    /**
+     * @brief Assignment operator from bool (store with release semantics)
+     * @param new_value New flag value to store
+     * @return Reference to this AtomicFlag
+     * @note Allows direct assignment from bool
+     */
+    AtomicFlag& operator=(bool new_value) noexcept {
+        store(new_value);
+        return *this;
+    }
+
 private:
     volatile int value_;  ///< Atomic flag value (4 bytes, aligned for atomic access)
 };

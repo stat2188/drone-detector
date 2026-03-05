@@ -799,7 +799,7 @@ CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
 CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=10
 //objcopy tool
-CMAKE_OBJCOPY:INTERNAL=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/arm-none-eabi/bin/objcopy
+CMAKE_OBJCOPY:INTERNAL=C:/SysGCC/arm-eabi/arm-none-eabi/bin/objcopy
 //ADVANCED property for variable: CMAKE_OBJDUMP
 CMAKE_OBJDUMP-ADVANCED:INTERNAL=1
 //Platform information initialized
