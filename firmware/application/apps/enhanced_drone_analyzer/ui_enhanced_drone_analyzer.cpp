@@ -1824,7 +1824,9 @@ DroneDetectionLogger::DroneDetectionLogger()
     
     chSemInit(&data_ready_, 0);
     
-    start_session();
+    // DIAMOND FIX #P0-CRITICAL #1: Removed start_session() from constructor
+    // Session is now started in start_worker() when worker thread is ready
+    // This prevents race condition where session is active but no worker is processing entries
 }
 
 DroneDetectionLogger::~DroneDetectionLogger() {
@@ -3770,16 +3772,26 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       scanning_active_(false),
       initialization_in_progress_(false)
 {
-    // FIX: Initialize ScanningCoordinator singleton (must be called before using instance())
+    // DIAMOND FIX #P1-HIGH #6: Add error handling for ScanningCoordinator singleton access
+    // Initialize ScanningCoordinator singleton (must be called before using instance())
     // This creates the singleton instance and sets up all dependencies
     if (!ScanningCoordinator::initialize(nav, hardware_, scanner_, display_controller_, audio_)) {
         // Handle initialization failure - log error or set error state
         display_controller_.text_status_info().set("Coordinator init failed");
+        scanning_coordinator_ = nullptr;
+        return;
     }
 
-    // FIX: Set the pointer member to reference the singleton instance
+    // DIAMOND FIX #P1-HIGH #6: Verify initialization succeeded before accessing instance
+    // ScanningCoordinator::instance() has critical check that halts system if called before initialization
     // Using a pointer instead of a reference avoids undefined behavior from const_cast rebinding
     scanning_coordinator_ = &ScanningCoordinator::instance();
+    
+    // Additional safety check: Verify scanning_coordinator_ is not null
+    if (!scanning_coordinator_) {
+        display_controller_.text_status_info().set("Coordinator instance null");
+        return;
+    }
     // Remove sd_mutex_initialized pattern (mutex already declared as static at namespace scope)
 
     // FIX: Set display_controller after construction
@@ -4169,14 +4181,9 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_allocate_buffers() {
         return;
     }
 
-    // DIAMOND FIX #1: Register histogram callback early
-    // Connect scanner histogram callback to display controller
-    // Diamond Code: Function pointer with user data (no heap allocation, no std::function)
-    // Data flow: SpectralAnalyzer  Scanner  DisplayController
-    // NOTE: Using static function with 'this' as user data to avoid lambda captures
-    // BUG FIX: Moved from init_phase_finalize() to prevent race condition where
-    // callback could be invoked before buffers are fully allocated
-    scanner_.set_histogram_callback(&EnhancedDroneSpectrumAnalyzerView::static_histogram_callback, this);
+    // DIAMOND FIX #P1-HIGH #2: Histogram callback registration moved to init_phase_finalize()
+    // This ensures callback is only registered after database is fully loaded
+    // preventing premature callback invocation before database is ready
 
     status_bar_.update_normal_status("INIT", "Phase 1: Buffers OK");
     init_state_ = InitState::BUFFERS_ALLOCATED;
@@ -4366,6 +4373,11 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
         return;
     }
 
+    // DIAMOND FIX #P1-HIGH #2: Register histogram callback after database is loaded
+    // This ensures callback is only registered when database is fully initialized
+    // preventing premature callback invocation before database is ready
+    scanner_.set_histogram_callback(&EnhancedDroneSpectrumAnalyzerView::static_histogram_callback, this);
+
     // DIAMOND FIX #3: Verify initialization is complete before starting
     // start_scanning_thread() is called without verifying that scanner_.is_initialization_complete()
     // returns true. This prevents starting scanning if the scanner is not fully initialized.
@@ -4388,6 +4400,10 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
 void EnhancedDroneSpectrumAnalyzerView::on_show() {
     View::on_show();
 
+    // DIAMOND FIX #P1-HIGH #3: Removed automatic initialization call
+    // Initialization now only starts when user presses Start button
+    // This prevents premature execution without user interaction
+
     // FIX: Reset initialization state
     init_state_ = InitState::CONSTRUCTED;
     init_start_time_ = chTimeNow();
@@ -4395,11 +4411,10 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
     initialization_in_progress_ = false;
     init_error_ = InitError::NONE;
 
-    status_bar_.update_normal_status("INIT", "Phase 0: Ready");
+    status_bar_.update_normal_status("EDA", "Press START to initialize");
     
-    // FIX #2: Call continue_initialization() instead of step_deferred_initialization()
-    // This ensures initialization runs from UI event loop, not nested in paint()
-    continue_initialization();
+    // DIAMOND FIX #P1-HIGH #3: Removed continue_initialization() call
+    // User must now press Start button to begin initialization
     
     // FIX: Force redraw to show status bar
     set_dirty();
@@ -4531,11 +4546,19 @@ bool EnhancedDroneSpectrumAnalyzerView::stop_scanning() {
 }
 
 bool EnhancedDroneSpectrumAnalyzerView::handle_start_stop_button() {
-    // CRITICAL FIX: Check initialization state before starting scanning
+    // DIAMOND FIX #P1-HIGH #4: Add begin_initialization() call when not initialized
+    // This allows user to trigger initialization by pressing Start button
     if (init_state_ != InitState::FULLY_INITIALIZED) {
-        // Show error message to user
-        status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Not initialized");
-        return false;
+        // Attempt to begin initialization
+        if (begin_initialization()) {
+            status_bar_.update_normal_status("INIT", "Initializing...");
+            button_start_stop_.set_text("INITIALIZING...");
+            return true;
+        } else {
+            // Show error message to user
+            status_bar_.update_alert_status(ThreatLevel::CRITICAL, 0, "Init failed");
+            return false;
+        }
     }
     
     if (scanning_coordinator_->is_scanning_active()) {
