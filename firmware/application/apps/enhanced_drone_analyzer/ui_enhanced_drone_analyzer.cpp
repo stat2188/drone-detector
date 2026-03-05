@@ -1729,7 +1729,7 @@ void DroneScanner::db_loading_thread_loop() {
         }
     }
 
-    bool should_init = db_loading_active_;
+    bool should_init = db_loading_active_.load();
     if (should_init && (!db_success || freq_db_ptr_->empty())) {
 
         // Phase 1: Acquire data_mutex for database modifications
@@ -1746,7 +1746,7 @@ void DroneScanner::db_loading_thread_loop() {
             freq_db_ptr_->open(db_path, true);
 
             for (const auto& item : BUILTIN_DRONE_DB) {
-                bool still_loading = db_loading_active_;
+                bool still_loading = db_loading_active_.load();
                 // DIAMOND FIX #6: Early return if loading was stopped externally
                 // Note: No flag reset needed here - the caller who stopped loading
                 // should have already reset the flags. This is a cooperative cancellation.
@@ -1789,7 +1789,7 @@ void DroneScanner::db_loading_thread_loop() {
 
 // Async database loading (non-blocking UI)
 void DroneScanner::initialize_database_async() {
-    bool is_loading = db_loading_active_;
+    bool is_loading = db_loading_active_.load();
     if (is_loading) {
         return;  // Already loading or loaded
     }
@@ -2011,6 +2011,7 @@ DroneDetectionLogger::DroneDetectionLogger()
       mutex_(),
       data_ready_(),
       worker_should_run_(false),
+      initialization_complete_(false),
       csv_log_(),
       session_active_(false),
       session_start_(0),
@@ -2069,7 +2070,7 @@ bool DroneDetectionLogger::stop_session() {
 
 // Keep end_session() for backward compatibility
 void DroneDetectionLogger::end_session() {
-    stop_session();
+    (void)stop_session();  // Explicitly ignore return value for backward compatibility
 }
 
 /**
@@ -2232,7 +2233,7 @@ void DroneDetectionLogger::worker_loop() {
         if (!should_run) break;
 
         // Check initialization state - wait until initialization is complete
-        bool init_complete = initialization_complete_;
+        bool init_complete = initialization_complete_.load();
         if (!init_complete) {
             // FIX #L5: Use constant instead of magic number
             chThdSleepMilliseconds(EDA::Constants::SD_CARD_POLL_INTERVAL_MS);
@@ -2796,7 +2797,7 @@ void ThreatCard::paint(Painter& painter) {
 }
 
 ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
-    : View(parent_rect), bar_index_(bar_index), parent_rect_(parent_rect) {
+    : View(parent_rect), bar_index_(bar_index), parent_rect_(parent_rect), ui_mutex_() {
     add_children({&progress_text_, &alert_text_, &normal_text_});
     set_display_mode(DisplayMode::NORMAL);
 }
@@ -4250,13 +4251,13 @@ void EnhancedDroneSpectrumAnalyzerView::render_loading_progress(Painter& painter
     // Progress bar background
     painter.fill_rectangle(
         {UIConstants::PROGRESS_BAR_X_POS, UIConstants::PROGRESS_BAR_Y_POS,
-         EDA::UIConstants::PROGRESS_BAR_WIDTH, EDA::Constants::PROGRESS_BAR_HEIGHT},
-        Color(EDA::UIConstants::PROGRESS_BAR_BG_COLOR));
+         UIConstants::PROGRESS_BAR_WIDTH, UIConstants::PROGRESS_BAR_HEIGHT},
+        Color(UIConstants::PROGRESS_BAR_BG_COLOR));
     // Filled portion
     painter.fill_rectangle(
         {UIConstants::PROGRESS_BAR_X_POS, UIConstants::PROGRESS_BAR_Y_POS,
-         progress, EDA::Constants::PROGRESS_BAR_HEIGHT},
-        Color(EDA::Constants::PROGRESS_BAR_FILL_COLOR));
+         progress, UIConstants::PROGRESS_BAR_HEIGHT},
+        Color(UIConstants::PROGRESS_BAR_FILL_COLOR));
 }
 
 void EnhancedDroneSpectrumAnalyzerView::render_normal_display(Painter& painter) noexcept {
@@ -4381,12 +4382,12 @@ void EnhancedDroneSpectrumAnalyzerView::static_histogram_callback(
     // DIAMOND FIX #HIGH #3: Acquire histogram mutex before forwarding data
     // This prevents race condition where callback is called while histogram is being updated
     // Lock order: SPECTRUM_MUTEX (level 2) - must be consistent with other accesses
-    MutexLock histogram_lock(view->display_controller_.histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
+    MutexLock histogram_lock(view->display_controller_.get_histogram_mutex(), LockOrder::SPECTRUM_MUTEX);
     
     // DIAMOND FIX #HIGH #3: Check if histogram update is in progress
     // If histogram is currently being updated, skip this callback to prevent race condition
     // This implements copy-on-write pattern - we only update if no write is in progress
-    if (!view->display_controller_.is_histogram_update_safe()) {
+    if (view->display_controller_.is_histogram_update_safe()) {
         // Forward histogram data to display controller
         view->display_controller_.update_histogram_display(histogram, noise_floor);
     }

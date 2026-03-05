@@ -1579,7 +1579,7 @@ private:
     size_t each_bin_size = 100000;
     uint8_t min_color_power = 0;
     const uint8_t ignore_dc = 4;
-    uint8_t marker_pixel_step = 100000;
+    uint32_t marker_pixel_step = 100000;
     uint8_t max_power = 0;
     uint8_t range_max_power = 0;
 
