@@ -8,6 +8,7 @@
 // Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
 #include "file.hpp"
+#include "memory_pool_manager.hpp"
 #include "radio.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
@@ -22,6 +23,30 @@ static constexpr size_t MAX_FORMAT_LEN = EDA::Constants::MAX_FORMAT_LENGTH;
 
 #pragma pack(push, 1)
 
+/**
+ * @brief Drone analyzer settings structure
+ *
+ * This structure contains all configurable settings for the drone analyzer application.
+ * It includes audio, hardware, scanning, detection, logging, display, and profile settings.
+ *
+ * MEMORY POOL INTEGRATION:
+ * - Uses memory pool allocation to prevent stack overflow
+ * - Factory methods provide safe allocation/deallocation
+ * - Thread-safe allocation using ChibiOS mutexes
+ *
+ * USAGE EXAMPLE:
+ * @code
+ *   // Allocate from memory pool
+ *   DroneAnalyzerSettings* settings = DroneAnalyzerSettings::allocate_from_pool();
+ *   if (settings) {
+ *       // Use settings...
+ *       settings->audio_flags = 0x01;
+ *
+ *       // Deallocate when done
+ *       DroneAnalyzerSettings::deallocate_to_pool(settings);
+ *   }
+ * @endcode
+ */
 struct DroneAnalyzerSettings {
     // Audio settings
     uint8_t audio_flags = 0x01;  // bit0: enable_alerts, bit1: repeat_alerts
@@ -84,6 +109,59 @@ struct DroneAnalyzerSettings {
     char freqman_path[MAX_NAME_LEN] = "DRONES";
     char settings_file_path[MAX_PATH_LEN] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     uint32_t settings_version = 2;
+
+    /**
+     * @brief Allocate DroneAnalyzerSettings from memory pool
+     * @return Pointer to allocated settings, or nullptr if pool exhausted
+     * @note Thread-safe (mutex-protected)
+     * @note Does not throw (noexcept)
+     * @note Returns nullptr if pool is exhausted (overflow protection)
+     *
+     * USAGE:
+     * @code
+     *   DroneAnalyzerSettings* settings = DroneAnalyzerSettings::allocate_from_pool();
+     *   if (settings) {
+     *       // Use settings...
+     *       DroneAnalyzerSettings::deallocate_to_pool(settings);
+     *   }
+     * @endcode
+     *
+     * MEMORY USAGE:
+     * - Pool size: 2 blocks (PoolConfig::DRONE_ANALYZER_SETTINGS_POOL_SIZE)
+     * - Block size: 512 bytes (PoolBlockSizes::DRONE_ANALYZER_SETTINGS_SIZE)
+     * - Total pool memory: 1124 bytes (100 overhead + 2 * 512)
+     * - Typical usage: 1-2 instances (one global, one for temporary copies)
+     *
+     * THREAD SAFETY:
+     * - Thread-safe allocation via MemoryPoolManager::allocate()
+     * - Multiple threads can allocate/deallocate concurrently
+     * - Statistics are updated atomically under mutex
+     */
+    [[nodiscard]] static DroneAnalyzerSettings* allocate_from_pool() noexcept;
+
+    /**
+     * @brief Deallocate DroneAnalyzerSettings back to memory pool
+     * @param ptr Pointer to settings to deallocate
+     * @note Thread-safe (mutex-protected)
+     * @note Safe to call with nullptr (no-op)
+     * @note Does not throw (noexcept)
+     *
+     * USAGE:
+     * @code
+     *   DroneAnalyzerSettings::deallocate_to_pool(settings);
+     * @endcode
+     *
+     * MEMORY SAFETY:
+     * - Returns memory to pool for reuse
+     * - No memory leaks (deallocate must be called for each allocation)
+     * - Safe to call multiple times with same pointer (idempotent)
+     *
+     * THREAD SAFETY:
+     * - Thread-safe deallocation via MemoryPoolManager::deallocate()
+     * - Multiple threads can deallocate concurrently
+     * - Statistics are updated atomically under mutex
+     */
+    static void deallocate_to_pool(DroneAnalyzerSettings* ptr) noexcept;
 };
 
 #pragma pack(pop)

@@ -808,10 +808,11 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
                 // This ensures system continues with degraded functionality instead of hanging
                 // Note: status_bar_ not available in DroneScanner context
 
+                // DIAMOND FIX #P2-MED #6: Use named constant for fallback frequency
                 // Use default frequency (100 MHz) as fallback
-                constexpr Frequency DEFAULT_FALLBACK_FREQ_HZ = 100000000;
+                constexpr Frequency DEFAULT_FALLBACK_FREQ_HZ = EDA::Constants::DEFAULT_FALLBACK_FREQUENCY_HZ;
                 hardware.tune_to_frequency(DEFAULT_FALLBACK_FREQ_HZ);
-                
+
                 // Wait for stabilization at fallback frequency
                 chThdSleepMilliseconds(EDA::Constants::PLL_STABILIZATION_DELAY_MS);
                 pll_locked = true;
@@ -951,10 +952,18 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
     }
     
     // Threat level logic
-    if (rssi > -70) threat_level = ThreatLevel::HIGH;
-    else if (rssi > -80) threat_level = ThreatLevel::LOW;
-    else threat_level = ThreatLevel::UNKNOWN;
-    if (entry.frequency_a >= 2'400'000'000 && entry.frequency_a <= 2'500'000'000) {
+    // DIAMOND FIX #P2-MED #3, #4: Replace magic numbers with named constants
+    if (rssi > EDA::Constants::ThreatLevelThresholds::HIGH_RSSI_THRESHOLD_DB) {
+        threat_level = ThreatLevel::HIGH;
+    } else if (rssi > EDA::Constants::ThreatLevelThresholds::LOW_RSSI_THRESHOLD_DB) {
+        threat_level = ThreatLevel::LOW;
+    } else {
+        threat_level = ThreatLevel::UNKNOWN;
+    }
+
+    // DIAMOND FIX #P2-MED #5: Replace 2.4 GHz band magic numbers with named constants
+    if (entry.frequency_a >= EDA::Constants::FrequencyBandThresholds::WIDEBAND_24GHZ_MIN_HZ &&
+        entry.frequency_a <= EDA::Constants::FrequencyBandThresholds::WIDEBAND_24GHZ_MAX_HZ) {
         threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
     }
 
@@ -1617,7 +1626,11 @@ void DroneScanner::db_loading_thread_loop() {
     }
 
     // Use reinterpret_cast on aligned buffer
-    if (reinterpret_cast<uintptr_t>(freq_db_storage_) % alignof(FreqmanDB) != 0) {
+    // DIAMOND FIX #P2-MED #7: Use direct comparison for alignment check (more reliable than modulo)
+    // Direct comparison avoids potential issues with modulo operator and is more readable
+    constexpr uintptr_t FREQMAN_DB_ALIGNMENT = alignof(FreqmanDB);
+    const uintptr_t freq_db_addr = reinterpret_cast<uintptr_t>(freq_db_storage_);
+    if ((freq_db_addr & (FREQMAN_DB_ALIGNMENT - 1)) != 0) {
         handle_scan_error("Memory: freq_db_storage_ alignment error (async)");
         db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
         return;
@@ -1628,7 +1641,11 @@ void DroneScanner::db_loading_thread_loop() {
     // Alignment check above is sufficient
 
     // Runtime alignment verification for tracked_drones_storage_
-    if (reinterpret_cast<uintptr_t>(tracked_drones_storage_) % alignof(std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>) != 0) {
+    // DIAMOND FIX #P2-MED #7: Use direct comparison for alignment check
+    using TrackedDronesArray = std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>;
+    constexpr uintptr_t TRACKED_DRONES_ALIGNMENT = alignof(TrackedDronesArray);
+    const uintptr_t tracked_drones_addr = reinterpret_cast<uintptr_t>(tracked_drones_storage_);
+    if ((tracked_drones_addr & (TRACKED_DRONES_ALIGNMENT - 1)) != 0) {
         handle_scan_error("Memory: tracked_drones_storage_ alignment error (async)");
         freq_db_ptr_ = nullptr;
         db_loading_active_.store(false);  // DIAMOND FIX #P1-HIGH #2: Use AtomicFlag.store()
@@ -4085,12 +4102,14 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
         return;
     }
 
-    // DIAMOND FIX #P1-HIGH #6: Verify initialization succeeded before accessing instance
-    // ScanningCoordinator::instance() has critical check that halts system if called before initialization
+    // P0-STOP FIX #3: Migrated to instance_safe() for safe singleton access
+    // ScanningCoordinator::instance() is deprecated and halts the system if called before initialization
+    // ScanningCoordinator::instance_safe() returns nullptr if not initialized, allowing graceful error handling
     // Using a pointer instead of a reference avoids undefined behavior from const_cast rebinding
-    scanning_coordinator_ = &ScanningCoordinator::instance();
-    
-    // Additional safety check: Verify scanning_coordinator_ is not null
+    scanning_coordinator_ = ScanningCoordinator::instance_safe();
+
+    // P0-STOP FIX #3: Null pointer check after instance_safe() call
+    // instance_safe() returns nullptr if not initialized, so we must check before using
     if (!scanning_coordinator_) {
         display_controller_.text_status_info().set("Coordinator instance null");
         return;

@@ -12,6 +12,7 @@
 // CRITICAL FIXES APPLIED:
 // - RC-2: Replaced hybrid locking with full mutex protection for DetectionRingBuffer
 // - All reader methods now use mutex protection (eliminates torn reads)
+// - Memory Pool Integration: Added factory methods for memory pool allocation
 
 #ifndef UI_SIGNAL_PROCESSING_HPP_
 #define UI_SIGNAL_PROCESSING_HPP_
@@ -28,6 +29,7 @@
 // Project-specific headers (alphabetical order)
 #include "eda_locking.hpp"
 #include "eda_optimized_utils.hpp"
+#include "memory_pool_manager.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -238,6 +240,48 @@ public:
     static constexpr uint32_t CANARY_VALUE = 0xDEADBEEF;
 
     /**
+     * @brief Factory method to create DetectionRingBuffer from memory pool
+     * @return Pointer to allocated DetectionRingBuffer, or nullptr if pool exhausted
+     * @note Thread-safe (mutex-protected)
+     * @note Returns nullptr if pool is exhausted (overflow protection)
+     * @note Caller is responsible for deallocating using MemoryPoolManager::deallocate()
+     *
+     * USAGE:
+     * @code
+     *   // Allocate DetectionRingBuffer from pool
+     *   DetectionRingBuffer* buffer = DetectionRingBuffer::allocate_from_pool();
+     *   if (buffer) {
+     *       // Use buffer...
+     *       buffer->update_detection(update);
+     *
+     *       // Deallocate when done
+     *       MemoryPoolManager::deallocate(PoolType::DETECTION_RING_BUFFER, buffer);
+     *   }
+     * @endcode
+     *
+     * MEMORY POOL INTEGRATION:
+     * - This method allocates DetectionRingBuffer from memory pool instead of stack
+     * - Prevents stack overflow when creating DetectionRingBuffer instances
+     * - Uses RAII wrapper for automatic deallocation (recommended)
+     * - Thread-safe allocation and deallocation
+     */
+    [[nodiscard]] static DetectionRingBuffer* allocate_from_pool() noexcept;
+
+    /**
+     * @brief Deallocate DetectionRingBuffer back to memory pool
+     * @param ptr Pointer to DetectionRingBuffer to deallocate
+     * @note Thread-safe (mutex-protected)
+     * @note Safe to call with nullptr (no-op)
+     *
+     * USAGE:
+     * @code
+     *   // Deallocate DetectionRingBuffer
+     *   DetectionRingBuffer::deallocate_to_pool(buffer);
+     * @endcode
+     */
+    static void deallocate_to_pool(DetectionRingBuffer* ptr) noexcept;
+
+    /**
      * @brief Default constructor
      * @note Initializes all entries to empty state on construction
      */
@@ -262,6 +306,8 @@ public:
 
     /**
      * @brief Destructor
+     * @note ChibiOS mutexes do not require explicit deinitialization
+     * @note The Mutex structure is automatically cleaned up when the object is destroyed
      */
     ~DetectionRingBuffer() = default;
 

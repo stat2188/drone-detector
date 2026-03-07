@@ -2,8 +2,17 @@
 #include "ui_drone_common_types.hpp"
 
 // C++ standard library headers (alphabetical order)
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+
+// Third-party library headers
+#include <ch.h>
+
+// Project-specific headers (alphabetical order)
+#include "eda_locking.hpp"
+#include "memory_pool_manager.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -157,6 +166,102 @@ const char* Translator::get_translation(const char* const key) noexcept {
     
     // Language is hardcoded to English only
     return get_english(key);
+}
+
+// ============================================================================
+// MEMORY POOL FACTORY METHODS - DroneAnalyzerSettings
+// ============================================================================
+
+/**
+ * @brief Allocate DroneAnalyzerSettings from memory pool
+ * @return Pointer to allocated settings, or nullptr if pool exhausted
+ *
+ * This function allocates a DroneAnalyzerSettings from the memory pool
+ * to prevent stack overflow when allocating large structures on the stack.
+ *
+ * Thread-safety: Uses MemoryPoolManager which is mutex-protected
+ * No exceptions: All operations are noexcept
+ * Overflow protection: Returns nullptr if pool is exhausted
+ *
+ * USAGE:
+ * @code
+ *   DroneAnalyzerSettings* settings = DroneAnalyzerSettings::allocate_from_pool();
+ *   if (settings) {
+ *       // Use settings...
+ *       settings->audio_flags = 0x01;
+ *
+ *       // Deallocate when done
+ *       DroneAnalyzerSettings::deallocate_to_pool(settings);
+ *   }
+ * @endcode
+ *
+ * MEMORY USAGE:
+ * - Pool size: 2 blocks (PoolConfig::DRONE_ANALYZER_SETTINGS_POOL_SIZE)
+ * - Block size: 512 bytes (PoolBlockSizes::DRONE_ANALYZER_SETTINGS_SIZE)
+ * - Total pool memory: 1124 bytes (100 overhead + 2 * 512)
+ * - Typical usage: 1-2 instances (one global, one for temporary copies)
+ *
+ * THREAD SAFETY:
+ * - Thread-safe allocation via MemoryPoolManager::allocate()
+ * - Multiple threads can allocate/deallocate concurrently
+ * - Statistics are updated atomically under mutex
+ */
+DroneAnalyzerSettings* DroneAnalyzerSettings::allocate_from_pool() noexcept {
+    // Allocate from memory pool using MemoryPoolManager
+    // Returns nullptr if pool is exhausted (overflow protection)
+    void* ptr = MemoryPoolManager::allocate(PoolType::DRONE_ANALYZER_SETTINGS);
+
+    // Guard clause: Allocation failed (pool exhausted)
+    if (!ptr) {
+        return nullptr;
+    }
+
+    // Zero-initialize the allocated memory
+    // This ensures all fields are in a known state
+    // Use manual initialization for embedded compatibility (no memset dependency)
+    uint8_t* byte_ptr = static_cast<uint8_t*>(ptr);
+    for (size_t i = 0; i < sizeof(DroneAnalyzerSettings); ++i) {
+        byte_ptr[i] = 0;
+    }
+
+    // Return typed pointer
+    return static_cast<DroneAnalyzerSettings*>(ptr);
+}
+
+/**
+ * @brief Deallocate DroneAnalyzerSettings back to memory pool
+ * @param ptr Pointer to settings to deallocate
+ *
+ * This function returns a DroneAnalyzerSettings to the memory pool
+ * for reuse by future allocations.
+ *
+ * Thread-safety: Uses MemoryPoolManager which is mutex-protected
+ * No exceptions: All operations are noexcept
+ * Null pointer handling: Safe to call with nullptr (no-op)
+ *
+ * USAGE:
+ * @code
+ *   DroneAnalyzerSettings::deallocate_to_pool(settings);
+ * @endcode
+ *
+ * MEMORY SAFETY:
+ * - Returns memory to pool for reuse
+ * - No memory leaks (deallocate must be called for each allocation)
+ * - Safe to call multiple times with same pointer (idempotent)
+ *
+ * THREAD SAFETY:
+ * - Thread-safe deallocation via MemoryPoolManager::deallocate()
+ * - Multiple threads can deallocate concurrently
+ * - Statistics are updated atomically under mutex
+ */
+void DroneAnalyzerSettings::deallocate_to_pool(DroneAnalyzerSettings* ptr) noexcept {
+    // Guard clause: Null pointer (no-op)
+    if (!ptr) {
+        return;
+    }
+
+    // Return memory to pool using MemoryPoolManager
+    MemoryPoolManager::deallocate(PoolType::DRONE_ANALYZER_SETTINGS, ptr);
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer

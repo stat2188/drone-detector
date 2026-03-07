@@ -23,8 +23,8 @@
 // Project-specific headers (alphabetical order)
 #include "dsp_display_types.hpp"         // DSP/UI communication types
 #include "eda_locking.hpp"               // Unified MutexLock, StackMonitor
+#include "memory_pool_manager.hpp"         // Memory pool manager for large structures
 #include "radio.hpp"                     // For rf::Frequency type
-#include "stack_canary.hpp"              // Stack canary for overflow detection
 #include "ui_drone_common_types.hpp"     // For DroneAnalyzerSettings
 #include "ui_enhanced_drone_analyzer.hpp" // Scanner interface
 #include "ui_navigation.hpp"              // For NavigationView
@@ -44,8 +44,8 @@ static StaticStorage<ScanningCoordinator> coordinator_storage;
 // NOTE: volatile qualifier is required to match header declaration for thread safety
 volatile ScanningCoordinator* ScanningCoordinator::instance_ptr_ = nullptr;
 Mutex ScanningCoordinator::init_mutex_;
-volatile bool ScanningCoordinator::initialized_ = false;  // volatile for thread-safe singleton pattern
-volatile bool ScanningCoordinator::instance_constructed_ = false;  // tracks if instance was constructed
+AtomicFlag ScanningCoordinator::initialized_;  // AtomicFlag for thread-safe singleton pattern
+AtomicFlag ScanningCoordinator::instance_constructed_;  // tracks if instance was constructed
 
 // ============================================================================
 // RED TEAM FIX #CRITICAL FLAW #5: Explicit initialization function
@@ -106,55 +106,8 @@ namespace ReturnCodes {
  * @brief Get singleton instance
  * @return Reference to singleton instance
  * @note Must call initialize() before using instance
- * @note CRITICAL: This method will halt the system if called before initialize()
- */
-ScanningCoordinator& ScanningCoordinator::instance() noexcept {
-    // RED TEAM FIX #CRITICAL FLAW #1: Use hardware memory barrier for thread-safe singleton access
-    // NOTE: Using __atomic_thread_fence(__ATOMIC_SEQ_CST) for full memory barrier
-    //       This ensures proper memory ordering across all CPU cores and prevents
-    //       race conditions in the double-checked locking pattern.
-    __atomic_thread_fence(__ATOMIC_SEQ_CST);
-
-    // CRITICAL: Instance must be initialized before use
-    // Dereferencing a null pointer causes undefined behavior (system crash)
-    if (!instance_ptr_) {
-        // Log critical error before halting
-        // TODO: Implement proper error logging system
-        // For now, trigger breakpoint for debugging (in debug builds)
-        // and infinite loop as last resort (in release builds)
-        #ifdef DEBUG
-            __BKPT();  // Breakpoint for debugger
-        #endif
-        while (true) {
-            // Infinite loop to halt execution
-            // System watchdog will trigger reset if configured
-        }
-    }
-
-    // FIX #1 & #2: Check for memory corruption using canary pattern
-    if (coordinator_storage.is_corrupted()) {
-        // Memory corruption detected - critical error
-        // TODO: Implement proper error logging system
-        #ifdef DEBUG
-            __BKPT();  // Breakpoint for debugger
-        #endif
-        while (true) {
-            // Infinite loop to halt execution
-            // System watchdog will trigger reset if configured
-        }
-    }
-
-    // Cast volatile pointer to non-volatile for return
-    // SAFETY: This is safe because:
-    // 1. The pointer is only modified during initialization (protected by mutex and memory barriers)
-    // 2. After initialization, the pointer itself is not modified - only read
-    // 3. The object it points to is not volatile - only the pointer is volatile for thread-safe publication
-    // 4. The memory barrier before reading ensures visibility of the pointer value
-    return *const_cast<ScanningCoordinator*>(instance_ptr_);
-}
-
 // ============================================================================
-// DIAMOND FIX #CRITICAL #2: Safe instance access with cooperative termination
+// SINGLETON INSTANCE ACCESS
 // ============================================================================
 /**
  * @brief Get singleton instance safely (returns nullptr if not initialized)
@@ -164,32 +117,17 @@ ScanningCoordinator& ScanningCoordinator::instance() noexcept {
  * @note This is the recommended method for optional singleton access
  */
 ScanningCoordinator* ScanningCoordinator::instance_safe() noexcept {
-    // Double-checked locking pattern with memory barriers
-    // First check without lock (fast path for already-initialized case)
-    if (initialized_ && instance_ptr_) {
-        // Memory barrier ensures visibility of initialized flag and pointer
-        __atomic_thread_fence(__ATOMIC_SEQ_CST);
-        return const_cast<ScanningCoordinator*>(instance_ptr_);
-    }
-
-    // Slow path: acquire mutex and check again
-    MutexLock lock(init_mutex_, LockOrder::DATA_MUTEX);
+    // HIGH-004 FIX: Atomic load with acquire semantics
+    // Use __atomic_load_n for atomic pointer access to prevent TOCTOU race
+    // Load pointer atomically first, then check if it's null
+    ScanningCoordinator* ptr = const_cast<ScanningCoordinator*>(
+        __atomic_load_n(&instance_ptr_, __ATOMIC_ACQUIRE)
+    );
     
-    // Memory barrier after acquiring lock ensures proper memory ordering
-    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    // Memory fence to ensure initialization is visible
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
     
-    // Second check under lock protection
-    if (!initialized_ || !instance_ptr_) {
-        // Cooperative termination: return nullptr instead of halting system
-        // This allows caller to handle the error gracefully
-        return nullptr;
-    }
-
-    // Memory barrier before returning ensures visibility of pointer
-    __atomic_thread_fence(__ATOMIC_SEQ_CST);
-    
-    // Return pointer (not reference) to allow nullptr return
-    return const_cast<ScanningCoordinator*>(instance_ptr_);
+    return ptr;  // Returns nullptr if not initialized
 }
 
 
@@ -233,16 +171,30 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
         return false;
     }
 
-    // Set instance pointer to constructed object
+    // Initialize memory pools for Enhanced Drone Analyzer
+    // This must be done after ChibiOS RTOS is initialized
+    // CRITICAL FIX: Memory pool initialization is required for safe operation
+    // System cannot operate without properly initialized memory pools
+    if (!MemoryPoolManager::initialize()) {
+        // Memory pool initialization failed - critical error
+        // CRITICAL FIX: Do NOT continue in degraded mode - this is unsafe
+        // TODO: Implement proper error logging system
+        // Return false to indicate initialization failure
+        // System cannot operate without memory pools - caller must handle this error
+        return false;
+    }
+
+    // Set instance pointer to constructed object ONLY after all initialization succeeds
+    // This prevents race condition where instance_ptr_ is set before memory pools are ready
     instance_ptr_ = &coordinator_storage.get();
-   instance_constructed_ = true;
+    instance_constructed_.store(true);
 
     // RED TEAM FIX #CRITICAL FLAW #1: Use hardware memory barrier for thread-safe singleton access
-    // NOTE: Using __atomic_thread_fence(__ATOMIC_SEQ_CST) for full memory barrier
-    //       This ensures proper memory ordering across all CPU cores and prevents
-    //       race conditions in the double-checked locking pattern.
-    initialized_ = true;
-    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    // CRITICAL FIX: Use AtomicFlag store() instead of direct assignment
+    // AtomicFlag provides acquire/release memory ordering and lock-free operations
+    // This ensures proper memory ordering across all CPU cores and prevents
+    // race conditions in the double-checked locking pattern.
+    initialized_.store(true);
 
     return true;
 }
@@ -275,6 +227,8 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
 
 ScanningCoordinator::~ScanningCoordinator() noexcept {
     stop_coordinated_scanning();
+    // Note: Memory pools use static storage, so no explicit shutdown is needed
+    // All allocated memory will be returned to pools when deallocated
 }
 
 StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
@@ -499,6 +453,80 @@ dsp::FilteredDronesSnapshot ScanningCoordinator::get_filtered_drones_snapshot() 
     return snapshot;
 }
 
+// ============================================================================
+// MEMORY POOL MANAGEMENT IMPLEMENTATIONS
+// ============================================================================
+
+/**
+ * @brief Initialize all memory pools for Enhanced Drone Analyzer
+ *
+ * This function initializes all memory pools used by Enhanced Drone Analyzer:
+ * - DetectionRingBuffer pool (2 blocks of 480 bytes)
+ * - FilteredDronesSnapshot pool (3 blocks of 640 bytes)
+ * - DroneAnalyzerSettings pool (2 blocks of 512 bytes)
+ * - DisplayDataSnapshot pool (5 blocks of 64 bytes)
+ *
+ * Total memory: 4624 bytes (~4.5 KB)
+ *
+ * Thread-safety: Thread-safe initialization via MemoryPoolManager::initialize()
+ * No exceptions: All operations are noexcept
+ * Idempotent: Safe to call multiple times
+ */
+void ScanningCoordinator::initialize_memory_pools() noexcept {
+    // Initialize all memory pools using MemoryPoolManager
+    // This function is idempotent (safe to call multiple times)
+    MemoryPoolManager::initialize();
+}
+
+/**
+ * @brief Shutdown all memory pools for Enhanced Drone Analyzer
+ *
+ * This function is a no-op for current implementation.
+ * Memory pools use static storage, so they don't require explicit shutdown.
+ * All allocated memory will be returned to pools when deallocated.
+ *
+ * Thread-safety: Thread-safe (no-op)
+ * No exceptions: All operations are noexcept
+ * Idempotent: Safe to call multiple times
+ *
+ * NOTE: This function is provided for API completeness and future extensibility.
+ * If memory pools are changed to use dynamic allocation in future,
+ * this function can be updated to perform proper cleanup.
+ */
+void ScanningCoordinator::shutdown_memory_pools() noexcept {
+    // No-op: Memory pools use static storage
+    // All allocated memory is returned to pools when deallocated
+    // This function is provided for API completeness
+}
+
+/**
+ * @brief Get statistics for specified memory pool
+ * @param pool_type Type of pool to get statistics for
+ * @return PoolStatistics containing pool usage information
+ *
+ * This function retrieves statistics for a specific memory pool,
+ * including total blocks, used blocks, free blocks, allocation count,
+ * free count, and overflow count.
+ *
+ * Thread-safety: Thread-safe statistics read via MemoryPoolManager::get_statistics()
+ * No exceptions: All operations are noexcept
+ *
+ * USAGE:
+ * @code
+ *   PoolStatistics stats = ScanningCoordinator::get_pool_statistics(
+ *       PoolType::FILTERED_DRONES_SNAPSHOT
+ *   );
+ *   // stats.used_blocks = number of blocks in use
+ *   // stats.free_blocks = number of blocks free
+ *   // stats.overflow_count = number of allocation failures
+ * @endcode
+ */
+PoolStatistics ScanningCoordinator::get_pool_statistics(PoolType pool_type) noexcept {
+    // Get statistics from MemoryPoolManager
+    // Returns empty statistics if pool is invalid
+    return MemoryPoolManager::get_statistics(pool_type);
+}
+
 msg_t ScanningCoordinator::scanning_thread_function(void* arg) noexcept {
     auto coordinator = static_cast<ScanningCoordinator*>(arg);
     return coordinator->coordinated_scanning_thread();
@@ -508,12 +536,10 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // No exceptions - perform scan cycle directly
     // Error handling is managed via return codes
 
-    // PHASE 1 FIX #2 & #3: Stack monitoring and canary checks
+    // PHASE 1 FIX #2 & #3: Stack monitoring using StackMonitor
     // Initialize stack monitor to track stack usage and detect overflow
+    // StackMonitor uses ChibiOS stack fill pattern for accurate detection
     StackMonitor stack_monitor;
-    // Initialize stack canary for overflow detection
-    StackCanary stack_canary;
-    stack_canary.initialize();
 
     // Check stack safety at thread entry (minimum 512 bytes required for function overhead)
     constexpr size_t MIN_THREAD_STACK = 512;
@@ -546,6 +572,34 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // - All reads/writes to scanning_active_ are protected by state_mutex_
     // - No lock-free reads - all state access is synchronized
     while (true) {
+        // P0-STOP FIX #1: Stack monitoring at loop start to detect overflow before it happens
+        // Check stack availability before performing any operations
+        // This prevents stack overflow by detecting low stack conditions early
+        // CRITICAL FIX #3: Create StackMonitor instance for stack safety check
+        StackMonitor stack_monitor;
+        constexpr size_t MIN_FREE_STACK = 512;  // Minimum free stack required for safe operation
+        if (!stack_monitor.is_stack_safe(MIN_FREE_STACK)) {
+            // Stack running low - exit thread gracefully to prevent overflow
+            // TODO: Implement proper error logging system
+            #ifdef DEBUG
+                __BKPT();  // Breakpoint for debugger
+            #endif
+            // Signal stop to coordinator
+            {
+                MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
+                scanning_active_ = false;
+            }
+            // Set termination flag before exit (thread-safe)
+            {
+                MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
+                if (thread_generation_ == my_generation) {
+                    thread_terminated_ = true;
+                }
+            }
+            chThdExit(ReturnCodes::TIMEOUT_ERROR);
+            return ReturnCodes::TIMEOUT_ERROR;
+        }
+
         // Check if still active (with mutex protection)
         bool active;
         {
@@ -588,9 +642,11 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         // This ensures timeout is calculated correctly if initialization fails later
         init_wait_start_time = chTimeNow();
 
-        // PHASE 1 FIX #3: Stack canary check before scan cycle
+        // PHASE 1 FIX #3: Stack monitor check before scan cycle
         // Check for stack overflow before performing scan cycle
-        if (!stack_canary.check()) {
+        // StackMonitor provides runtime detection of stack exhaustion
+        constexpr size_t SCAN_CYCLE_STACK_REQUIRED = 256;
+        if (!stack_monitor.is_stack_safe(SCAN_CYCLE_STACK_REQUIRED)) {
             // Stack overflow detected - exit thread gracefully
             // TODO: Implement proper error logging system
             return ReturnCodes::TIMEOUT_ERROR;

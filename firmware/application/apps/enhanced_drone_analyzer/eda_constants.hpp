@@ -32,6 +32,49 @@ using Decibel = int32_t;
 using Timestamp = uint32_t;
 
 // ============================================================================
+// P3-LOW #2: FrequencyHash Type Documentation
+// ============================================================================
+
+/**
+ * @brief Frequency hash type for efficient frequency lookup
+ * @details This type is used to hash frequencies into a fixed-size table for O(1) lookup.
+ *          The hash is computed by dividing the frequency by a constant divisor and masking
+ *          with a hash mask to ensure the result fits within the hash table size.
+ *
+ *          Formula: hash = (frequency / FREQ_HASH_DIVISOR) & FREQ_HASH_MASK
+ *
+ *          Example: For frequency 2400500000 Hz:
+ *            - hash = (2400500000 / 100000) & 31
+ *            - hash = 24005 & 31
+ *            - hash = 5
+ *
+ * @note This type is size_t to match the hash table index type
+ * @see EDA::Constants::FREQ_HASH_DIVISOR
+ * @see EDA::Constants::FREQ_HASH_MASK
+ * @see EDA::Constants::FREQ_HASH_TABLE_SIZE
+ *
+ * USAGE EXAMPLE:
+ * @code
+ *   // Compute hash for a frequency
+ *   Frequency freq_hz = 2400500000LL;  // 2.4005 GHz
+ *   FrequencyHash hash = DiamondCore::safe_frequency_hash(freq_hz);
+ *
+ *   // Use hash to index into hash table
+ *   auto& entry = hash_table[hash];
+ * @endcode
+ *
+ * THREAD SAFETY:
+ * - Thread-safe: No mutable state, pure computation
+ * - ISR-safe: No blocking operations, no dynamic memory allocation
+ *
+ * PERFORMANCE:
+ * - Time complexity: O(1)
+ * - CPU cycles: ~5-10 cycles (single division + bitwise AND)
+ * - Memory: 0 bytes (compile-time constant)
+ */
+using FrequencyHash = size_t;
+
+// ============================================================================
 // TYPE-SAFE FREQUENCY CONSTANTS (DIAMOND FIX #5)
 // ============================================================================
 // These constants provide type-safe frequency values with conversion functions
@@ -499,6 +542,59 @@ constexpr int32_t NEGATIVE_RANGE_INDICATOR = -1;
 constexpr int32_t ZERO_FREQUENCY = 0;
 constexpr int32_t SINGLE_SLICE = 1;
 constexpr int32_t MAX_SLICE_INDEX = 10;
+
+// ============================================================================
+// P2-MEDIUM #3, #4, #5: Threat Level and Frequency Band Constants
+// ============================================================================
+
+/**
+ * @brief RSSI threshold constants for threat level determination
+ * @note These values are used to classify signal strength into threat levels
+ * @see ThreatLevel enum in ui_drone_common_types.hpp
+ */
+namespace ThreatLevelThresholds {
+    /**
+     * @brief High threat RSSI threshold (dBm)
+     * @note Signals stronger than -70 dBm are considered high threat
+     */
+    constexpr int32_t HIGH_RSSI_THRESHOLD_DB = -70;
+
+    /**
+     * @brief Low threat RSSI threshold (dBm)
+     * @note Signals between -80 and -70 dBm are considered low threat
+     */
+    constexpr int32_t LOW_RSSI_THRESHOLD_DB = -80;
+
+    /**
+     * @brief Unknown threat RSSI threshold (dBm)
+     * @note Signals weaker than -80 dBm are considered unknown threat
+     */
+    constexpr int32_t UNKNOWN_RSSI_THRESHOLD_DB = -85;
+}
+
+/**
+ * @brief Frequency band constants for threat level determination
+ * @note 2.4 GHz band is commonly used by consumer drones
+ */
+namespace FrequencyBandThresholds {
+    /**
+     * @brief Minimum 2.4 GHz wideband frequency (Hz)
+     * @note Lower bound of the 2.4 GHz ISM band used for wideband scanning
+     */
+    constexpr Frequency WIDEBAND_24GHZ_MIN_HZ = 2'400'000'000LL;
+
+    /**
+     * @brief Maximum 2.4 GHz wideband frequency (Hz)
+     * @note Upper bound of the 2.4 GHz ISM band used for wideband scanning
+     */
+    constexpr Frequency WIDEBAND_24GHZ_MAX_HZ = 2'500'000'000LL;
+}
+
+/**
+ * @brief Default fallback frequency for PLL lock failures
+ * @note Used when PLL fails to lock, ensures system continues with degraded functionality
+ */
+constexpr Frequency DEFAULT_FALLBACK_FREQUENCY_HZ = 100'000'000LL;
 
 } // namespace Constants
 

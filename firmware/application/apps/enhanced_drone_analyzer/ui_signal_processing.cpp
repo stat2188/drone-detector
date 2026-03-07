@@ -6,6 +6,7 @@
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
 #include <limits>
+#include <new>
 
 // Third-party library headers
 #include <ch.h>
@@ -188,6 +189,83 @@ void DetectionRingBuffer::clear() noexcept {
 
     // Reset head index
     head_ = 0;
+}
+
+// ============================================================================
+// MEMORY POOL FACTORY METHOD IMPLEMENTATIONS
+// ============================================================================
+
+/**
+ * @brief Factory method to create DetectionRingBuffer from memory pool
+ * @return Pointer to allocated DetectionRingBuffer, or nullptr if pool exhausted
+ * @note Thread-safe (mutex-protected)
+ * @note Returns nullptr if pool is exhausted (overflow protection)
+ * @note Caller is responsible for deallocating using MemoryPoolManager::deallocate()
+ *
+ * MEMORY POOL INTEGRATION:
+ * - This method allocates DetectionRingBuffer from memory pool instead of stack
+ * - Prevents stack overflow when creating DetectionRingBuffer instances
+ * - Uses RAII wrapper for automatic deallocation (recommended)
+ * - Thread-safe allocation and deallocation
+ */
+DetectionRingBuffer* DetectionRingBuffer::allocate_from_pool() noexcept {
+    // Allocate from memory pool
+    void* ptr = ui::apps::enhanced_drone_analyzer::MemoryPoolManager::allocate(PoolType::DETECTION_RING_BUFFER);
+    
+    // Guard clause: Allocation failed
+    if (!ptr) {
+        return nullptr;
+    }
+    
+    // Manually construct DetectionRingBuffer in allocated memory
+    // This avoids placement new which can cause compiler issues
+    DetectionRingBuffer* buffer = static_cast<DetectionRingBuffer*>(ptr);
+    
+    // Initialize canaries
+    buffer->canary_before_ = DetectionRingBuffer::CANARY_VALUE;
+    buffer->canary_after_ = DetectionRingBuffer::CANARY_VALUE;
+    
+    // Initialize other members
+    buffer->head_ = 0;
+    buffer->global_version_ = 0;
+    
+    // Initialize mutex using ChibiOS API
+    chMtxInit(&buffer->buffer_mutex_);
+    
+    // Initialize all entries
+    for (size_t i = 0; i < DetectionBufferConstants::MAX_ENTRIES; ++i) {
+        buffer->init_entry(buffer->entries_[i], 0);
+    }
+    
+    return buffer;
+}
+
+/**
+ * @brief Deallocate DetectionRingBuffer back to memory pool
+ * @param ptr Pointer to DetectionRingBuffer to deallocate
+ * @note Thread-safe (mutex-protected)
+ * @note Safe to call with nullptr (no-op)
+ *
+ * MEMORY POOL INTEGRATION:
+ * - This method deallocates DetectionRingBuffer back to memory pool
+ * - Calls destructor before deallocating
+ * - Thread-safe deallocation
+ *
+ * NOTE: ChibiOS mutexes do not require explicit deinitialization.
+ * The Mutex structure is automatically cleaned up when the object is destroyed.
+ */
+void DetectionRingBuffer::deallocate_to_pool(DetectionRingBuffer* ptr) noexcept {
+    // Guard clause: Null pointer (no-op)
+    if (!ptr) {
+        return;
+    }
+
+    // Call destructor to properly clean up DetectionRingBuffer
+    // ChibiOS mutexes do not require explicit deinitialization
+    ptr->~DetectionRingBuffer();
+
+    // Deallocate to memory pool
+    MemoryPoolManager::deallocate(PoolType::DETECTION_RING_BUFFER, ptr);
 }
 
 } // namespace ui::apps::enhanced_drone_analyzer

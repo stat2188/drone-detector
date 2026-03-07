@@ -74,8 +74,17 @@ using rf::Frequency;
 // DIAMOND FIX #1: Reduced from 5120 to 3840 bytes (3.75KB, 6.25% safety margin)
 // Fits within 4KB per-thread stack limit on STM32F405
 constexpr size_t SCANNING_THREAD_STACK_SIZE = 3840;
-// FIX #SO-1: Increased from 1536 to 2048 bytes (33% increase) to prevent stack overflow
-constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 2048;
+// HIGH-003 FIX: Increased from 2048 to 4096 bytes (4KB, 100% increase) to prevent stack overflow
+// Red Team analysis showed 2048 bytes is insufficient for deep call stacks
+// New size provides adequate margin for:
+// - Function call overhead: ~256 bytes
+// - Local variables: ~512 bytes
+// - Mutex locks: ~128 bytes
+// - Memory pool allocations: ~512 bytes
+// - ISR nesting: ~512 bytes
+// - Safety margin: ~2176 bytes (53%)
+// Total: ~4096 bytes (fits within 4KB limit)
+constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 4096;
 
 // Stack monitoring constants
 constexpr uint32_t STACK_CANARY_VALUE = 0xDEADBEEF;  // Canary value for stack overflow detection
@@ -96,10 +105,11 @@ static_assert(SCANNING_THREAD_STACK_SIZE <= 4096,
               "SCANNING_THREAD_STACK_SIZE exceeds 4KB thread stack limit on STM32F405");
 static_assert(SCANNING_THREAD_STACK_SIZE >= 3072,
               "SCANNING_THREAD_STACK_SIZE below 3KB minimum for safe operation");
+// HIGH-003 FIX: Updated COORDINATOR_THREAD_STACK_SIZE validation for new size (4096 bytes)
 static_assert(COORDINATOR_THREAD_STACK_SIZE <= 4096,
               "COORDINATOR_THREAD_STACK_SIZE exceeds 4KB thread stack limit");
-static_assert(COORDINATOR_THREAD_STACK_SIZE >= 1024,
-              "COORDINATOR_THREAD_STACK_SIZE below 1KB minimum for safe operation");
+static_assert(COORDINATOR_THREAD_STACK_SIZE >= 4096,
+              "COORDINATOR_THREAD_STACK_SIZE below 4KB minimum for safe operation");
 
 // Validate stack monitoring constants
 static_assert(MIN_STACK_FREE_THRESHOLD <= 1024,
