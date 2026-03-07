@@ -124,12 +124,6 @@ extern Mutex sd_card_mutex;
 // Lock Order: Always acquire locks in ascending order (ATOMIC_FLAGS < DATA_MUTEX < SPECTRUM_MUTEX < LOGGER_MUTEX < SD_CARD_MUTEX)
 // Use MutexLock from eda_locking.hpp with LockOrder parameter to prevent deadlock violations
 
-struct preset_entry {
-    Frequency min = 0;
-    Frequency max = 0;
-    char label[32];
-};
-
 struct RssiMeasurement {
     int16_t rssi_db;
     systime_t timestamp_ms;
@@ -315,11 +309,6 @@ struct DroneDetectionMessage {
     int32_t rssi;
     ThreatLevel threat_level;
     systime_t timestamp;
-};
-
-struct DroneSignal {
-    Frequency frequency_hz;
-    int32_t rssi_db;
 };
 
 class DroneDetectionLogger {

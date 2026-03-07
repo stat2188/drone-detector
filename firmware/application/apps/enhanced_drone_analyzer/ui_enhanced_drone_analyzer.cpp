@@ -62,16 +62,6 @@ namespace HeapMonitor {
         chHeapStatus(NULL, &heap_free);
         return heap_free;
     }
-
-    inline void log_heap_status() noexcept {
-        size_t free_heap = get_free_heap();
-        [[maybe_unused]] constexpr size_t HEAP_WARNING_THRESHOLD = 8192;
-        constexpr size_t HEAP_CRITICAL_THRESHOLD = 4096;
-
-        if (free_heap < HEAP_CRITICAL_THRESHOLD) {
-            // Log critical heap warning
-        }
-    }
 }
 
 // Progressive slowdown multiplier LUT (eliminates runtime division)

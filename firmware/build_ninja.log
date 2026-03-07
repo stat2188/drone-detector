@@ -1,0 +1,16 @@
+[1/395] Generating portapack_cpld_20150901_data.cpp
+FAILED: [code=101] firmware/application/portapack_cpld_20150901_data.cpp C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/application/portapack_cpld_20150901_data.cpp 
+C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Max\Desktop\M\mayhem-firmware\firmware\build\firmware\application && C:\Users\Max\Desktop\M\mayhem-firmware\firmware\tools\extract_cpld_data.py C:/Users/Max/Desktop/M/mayhem-firmware/hardware/portapack_h1/cpld/20150901/output_files/portapack_h1_cpld.svf rev_20150901 >C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/application/portapack_cpld_20150901_data.cpp"
+Unable to create process using '"C:\Program Files\WindowsApps\PythonSoftwareFoundation.PythonManager_25.2.240.0_x64__3847v3x7pw1km\python3.exe" "C:\Users\Max\Desktop\M\mayhem-firmware\firmware\tools\extract_cpld_data.py"  C:/Users/Max/Desktop/M/mayhem-firmware/hardware/portapack_h1/cpld/20150901/output_files/portapack_h1_cpld.svf rev_20150901 ': ???????? ? ???????.
+
+[2/395] Generating portapack_cpld_20170522_data.cpp
+FAILED: [code=101] firmware/application/portapack_cpld_20170522_data.cpp C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/application/portapack_cpld_20170522_data.cpp 
+C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Max\Desktop\M\mayhem-firmware\firmware\build\firmware\application && C:\Users\Max\Desktop\M\mayhem-firmware\firmware\tools\extract_cpld_data.py C:/Users/Max/Desktop/M/mayhem-firmware/hardware/portapack_h1/cpld/20170522/output_files/portapack_h1_cpld.svf rev_20170522 >C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/application/portapack_cpld_20170522_data.cpp"
+Unable to create process using '"C:\Program Files\WindowsApps\PythonSoftwareFoundation.PythonManager_25.2.240.0_x64__3847v3x7pw1km\python3.exe" "C:\Users\Max\Desktop\M\mayhem-firmware\firmware\tools\extract_cpld_data.py"  C:/Users/Max/Desktop/M/mayhem-firmware/hardware/portapack_h1/cpld/20170522/output_files/portapack_h1_cpld.svf rev_20170522 ': ???????? ? ???????.
+
+[3/395] Generating hackrf_cpld_data.cpp
+FAILED: [code=101] firmware/application/hackrf_cpld_data.cpp C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/application/hackrf_cpld_data.cpp 
+C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Max\Desktop\M\mayhem-firmware\firmware\build\firmware\application && C:\Users\Max\Desktop\M\mayhem-firmware\hackrf\firmware\tools\cpld_bitstream.py --xsvf C:/Users/Max/Desktop/M/mayhem-firmware/hackrf/firmware/cpld/sgpio_if/default.xsvf --portapack-data C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/application/hackrf_cpld_data.cpp"
+Unable to create process using '"C:\Program Files\WindowsApps\PythonSoftwareFoundation.PythonManager_25.2.240.0_x64__3847v3x7pw1km\python3.exe" "C:\Users\Max\Desktop\M\mayhem-firmware\hackrf\firmware\tools\cpld_bitstream.py"  --xsvf C:/Users/Max/Desktop/M/mayhem-firmware/hackrf/firmware/cpld/sgpio_if/default.xsvf --portapack-data C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/application/hackrf_cpld_data.cpp': ???????? ? ???????.
+
+ninja: build stopped: subcommand failed.

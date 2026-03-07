@@ -43,10 +43,6 @@
 #include "ui_navigation.hpp"
 #include "ui_widget.hpp"
 
-// #include "eda_unified_settings.hpp"
-// #include "eda_unified_settings_manager.hpp"
-// #include "eda_tabbed_settings_view.hpp"
-
 // Note: radio.hpp is not needed here - rf::Frequency is already defined in ui_widget.hpp
 // Note: eda_locking.hpp is included transitively through settings_persistence.hpp in the .cpp file
 

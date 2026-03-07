@@ -157,7 +157,6 @@ const char* Translator::translate(const char* const key) noexcept {
     return get_translation(key);
 }
 
-// * * @brief Get translation for key in current language * @param key Translation key * @return Translation value or NOT_FOUND_KEY * @note Language is hardcoded to English only * @note Thread-safe: only reads static data * @note ISR-safe: marked noexcept * @note CRITICAL FIX: Added input validation
 const char* Translator::get_translation(const char* const key) noexcept {
     // CRITICAL FIX: Guard clause - validate input
     if (!key) {

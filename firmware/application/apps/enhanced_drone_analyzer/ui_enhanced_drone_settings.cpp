@@ -915,7 +915,6 @@ void ScanningSettingsView::on_wideband_enabled_changed() noexcept {}
 DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View(), nav_(nav), current_settings_{} {
     add_children({&text_title_, &button_audio_settings_, &button_hardware_settings_, &button_scanning_settings_,
                   &button_load_defaults_, &button_about_author_});
-    // button_tabbed_settings_.on_select = [this](Button&) { show_tabbed_settings(); };
     button_audio_settings_.on_select = [this](Button&) { show_audio_settings(); };
     button_hardware_settings_.on_select = [this](Button&) { show_hardware_settings(); };
     button_scanning_settings_.on_select = [this](Button&) { show_scanning_settings(); };

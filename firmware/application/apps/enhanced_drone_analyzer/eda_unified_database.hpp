@@ -250,10 +250,18 @@ public:
     
     // Load from file (replaces current content)
     // [[nodiscard]] - Load success must be checked
+    //
+    // NOTE: This method is currently stubbed and always returns false.
+    // File API compatibility needs review before implementation.
+    // See eda_unified_database.cpp for detailed implementation requirements.
     [[nodiscard]] bool load(const char* path = "/FREQMAN/DRONES.TXT") noexcept;
     
     // Save to file
     // [[nodiscard]] - Save success must be checked
+    //
+    // NOTE: This method is currently stubbed and always returns false.
+    // File API compatibility needs review before implementation.
+    // See eda_unified_database.cpp for detailed implementation requirements.
     [[nodiscard]] bool save(const char* path = "/FREQMAN/DRONES.TXT") noexcept;
     
     // Clear all entries

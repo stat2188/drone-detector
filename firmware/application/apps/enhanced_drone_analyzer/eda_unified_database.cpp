@@ -263,8 +263,35 @@ bool UnifiedDroneDatabase::load(const char* file_path) noexcept {
     
     MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
     
-    // TODO: File I/O implementation needs review for File::read/write() API compatibility
-    // For now, return false to indicate not implemented
+    // ========================================================================
+    // STUBBED METHOD - NOT IMPLEMENTED
+    // ========================================================================
+    // This method is intentionally stubbed and always returns false.
+    //
+    // WHY STUBBED:
+    // The File API (File::read/write) needs review for compatibility with the
+    // current firmware architecture. The database file format and parsing
+    // logic require careful design to ensure thread-safe operation and proper
+    // error handling.
+    //
+    // IMPLEMENTATION REQUIREMENTS:
+    // 1. Review File API documentation and usage patterns in other modules
+    // 2. Define file format specification (binary or text-based)
+    // 3. Implement parsing logic for UnifiedDroneEntry structures
+    // 4. Add validation for loaded data
+    // 5. Handle file I/O errors gracefully
+    // 6. Ensure atomic load operation (clear old entries only after successful load)
+    // 7. Update statistics (load_count)
+    // 8. Notify observers of DATABASE_RELOADED event
+    //
+    // CURRENT BEHAVIOR:
+    // - Always returns false to indicate failure
+    // - Database remains unchanged
+    // - No side effects
+    //
+    // TODO: Implement file loading when File API compatibility is verified
+    // ========================================================================
+    
     (void)file_path;  // Suppress unused warning
     return false;
 }
@@ -277,8 +304,35 @@ bool UnifiedDroneDatabase::save(const char* file_path) noexcept {
     
     MutexLock lock(mutex_, LockOrder::DATA_MUTEX);
     
-    // TODO: File I/O implementation needs review for File::write() API compatibility
-    // For now, return false to indicate not implemented
+    // ========================================================================
+    // STUBBED METHOD - NOT IMPLEMENTED
+    // ========================================================================
+    // This method is intentionally stubbed and always returns false.
+    //
+    // WHY STUBBED:
+    // The File API (File::write) needs review for compatibility with the
+    // current firmware architecture. The database file format and serialization
+    // logic require careful design to ensure thread-safe operation and proper
+    // error handling.
+    //
+    // IMPLEMENTATION REQUIREMENTS:
+    // 1. Review File API documentation and usage patterns in other modules
+    // 2. Define file format specification (binary or text-based)
+    // 3. Implement serialization logic for UnifiedDroneEntry structures
+    // 4. Add header/metadata to file (version, entry count, checksum)
+    // 5. Handle file I/O errors gracefully (disk full, write failure)
+    // 6. Ensure atomic write operation (write to temp file, then rename)
+    // 7. Update statistics (save_count)
+    // 8. Consider file compression if space is limited
+    //
+    // CURRENT BEHAVIOR:
+    // - Always returns false to indicate failure
+    // - No file is created or modified
+    // - Database content remains unchanged
+    //
+    // TODO: Implement file saving when File API compatibility is verified
+    // ========================================================================
+    
     (void)file_path;  // Suppress unused warning
     return false;
 }

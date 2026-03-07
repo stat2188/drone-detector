@@ -410,15 +410,6 @@ constexpr uint32_t AUDIO_BEEP_FREQUENCY_HZ = 800;
 constexpr uint32_t MIN_BANDWIDTH = 10000;
 constexpr uint32_t MAX_BANDWIDTH = 28000000;
 
-// UI Dimensions
-constexpr uint32_t SCREEN_WIDTH = 240;
-constexpr uint32_t SCREEN_HEIGHT = 320;
-constexpr uint32_t TEXT_HEIGHT = 16;
-constexpr uint32_t TEXT_LINE_HEIGHT = 24;
-constexpr uint32_t DISPLAY_UPDATE_INTERVAL_MS = 100;
-constexpr uint32_t UI_REFRESH_RATE_MS = 50;
-constexpr uint32_t SCREEN_BLANK_TIMEOUT_MS = 60000;
-
 // Spectrum Parameters
 constexpr uint32_t SPECTRUM_BIN_COUNT = 256;
 constexpr uint32_t SPECTRUM_BIN_COUNT_240 = 240;

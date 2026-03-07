@@ -26,69 +26,6 @@ namespace ui::apps::enhanced_drone_analyzer {
 namespace UIConstants {
 
 // ============================================================================
-// COLOR SCHEME
-// ============================================================================
-
-/**
- * @brief Color scheme options for the UI
- * @note Stored as string in settings ("DARK", "LIGHT", etc.)
- */
-enum class ColorScheme : uint8_t {
-    DARK = 0,      ///< Dark theme (default)
-    LIGHT = 1,     ///< Light theme
-    HIGH_CONTRAST = 2,  ///< High contrast theme
-    CUSTOM = 3      ///< Custom theme (user-defined)
-};
-
-/**
- * @brief Default color scheme
- */
-constexpr ColorScheme DEFAULT_COLOR_SCHEME = ColorScheme::DARK;
-
-/**
- * @brief Maximum color scheme string length
- */
-constexpr size_t COLOR_SCHEME_STRING_MAX_LENGTH = 32;
-
-// ============================================================================
-// FONT SIZE
-// ============================================================================
-
-/**
- * @brief Font size options for the UI
- * @note Stored as uint32_t in settings (0, 1, 2)
- */
-enum class FontSize : uint8_t {
-    SMALL = 0,      ///< Small font (8x16)
-    MEDIUM = 1,     ///< Medium font (default)
-    LARGE = 2        ///< Large font (12x24)
-};
-
-/**
- * @brief Default font size
- */
-constexpr FontSize DEFAULT_FONT_SIZE = FontSize::MEDIUM;
-
-// ============================================================================
-// SPECTRUM DENSITY
-// ============================================================================
-
-/**
- * @brief Spectrum display density options
- * @note Controls how many spectrum bins are displayed
- */
-enum class SpectrumDensity : uint8_t {
-    LOW = 0,        ///< Low density (fewer bins, faster rendering)
-    MEDIUM = 1,     ///< Medium density (default)
-    HIGH = 2         ///< High density (more bins, slower rendering)
-};
-
-/**
- * @brief Default spectrum density
- */
-constexpr SpectrumDensity DEFAULT_SPECTRUM_DENSITY = SpectrumDensity::MEDIUM;
-
-// ============================================================================
 // WATERFALL SPEED
 // ============================================================================
 
