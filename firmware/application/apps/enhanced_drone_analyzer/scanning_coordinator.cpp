@@ -55,10 +55,21 @@ AtomicFlag ScanningCoordinator::instance_constructed_;  // tracks if instance wa
 //
 // @note This replaces the static initializer pattern which runs before main()
 //       and before chSysInit(), causing undefined behavior with ChibiOS mutexes.
+//
+// P1-HIGH FIX #E003: Initialize all static Mutex objects
+// - Static Mutex objects require explicit initialization after ChibiOS RTOS is ready
+// - chMtxInit() must be called after chSysInit() to avoid undefined behavior
+// - This function initializes all EDA mutexes in one place
 void initialize_eda_mutexes() noexcept {
     // Initialize ScanningCoordinator mutex
     chMtxInit(&ScanningCoordinator::init_mutex_);
-    
+
+    // Initialize MemoryPoolManager global mutex
+    // P1-HIGH FIX #E003: Added explicit initialization for global_mutex_
+    // - Must be initialized before calling MemoryPoolManager::initialize()
+    // - Prevents undefined behavior from using uninitialized mutex
+    ui::apps::enhanced_drone_analyzer::MemoryPoolManager::initialize_global_mutex();
+
     // Initialize other EDA mutexes here
     // (Add additional mutex initializations as needed)
 }
@@ -102,19 +113,20 @@ namespace ReturnCodes {
 // SINGLETON IMPLEMENTATION
 // ============================================================================
 
-/**
- * @brief Get singleton instance
- * @return Reference to singleton instance
- * @note Must call initialize() before using instance
 // ============================================================================
 // SINGLETON INSTANCE ACCESS
 // ============================================================================
+
 /**
  * @brief Get singleton instance safely (returns nullptr if not initialized)
  * @return Pointer to singleton instance, or nullptr if not initialized
  * @note Returns nullptr instead of halting system if called before initialize()
  * @note Uses double-checked locking with memory barriers for thread safety
  * @note This is the recommended method for optional singleton access
+ *
+ * P3-LOW FIX #E005: Fixed malformed comment block
+ * - Removed incomplete comment block that was never closed
+ * - Properly formatted documentation comment
  */
 ScanningCoordinator* ScanningCoordinator::instance_safe() noexcept {
     // HIGH-004 FIX: Atomic load with acquire semantics
@@ -175,7 +187,8 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
     // This must be done after ChibiOS RTOS is initialized
     // CRITICAL FIX: Memory pool initialization is required for safe operation
     // System cannot operate without properly initialized memory pools
-    if (!MemoryPoolManager::initialize()) {
+    // P1-HIGH FIX #E007: Check return value of initialize_memory_pools()
+    if (!initialize_memory_pools()) {
         // Memory pool initialization failed - critical error
         // CRITICAL FIX: Do NOT continue in degraded mode - this is unsafe
         // TODO: Implement proper error logging system
@@ -235,7 +248,8 @@ StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
     // PHASE 2 FIX #4: Lock order validation to prevent deadlock
     // Lock ordering: thread_mutex_ (DATA_MUTEX) -> state_mutex_ (DATA_MUTEX)
     // Both locks are at DATA_MUTEX level, so order is determined by acquisition sequence
-    LockOrderValidator lock_validator(LockOrder::DATA_MUTEX);
+    // P2-MED FIX #E006: Removed unused LockOrderValidator variable
+    // Lock order is enforced by consistent acquisition sequence
 
     MutexLock thread_lock(thread_mutex_, LockOrder::DATA_MUTEX);
     MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
@@ -461,21 +475,29 @@ dsp::FilteredDronesSnapshot ScanningCoordinator::get_filtered_drones_snapshot() 
  * @brief Initialize all memory pools for Enhanced Drone Analyzer
  *
  * This function initializes all memory pools used by Enhanced Drone Analyzer:
- * - DetectionRingBuffer pool (2 blocks of 480 bytes)
- * - FilteredDronesSnapshot pool (3 blocks of 640 bytes)
- * - DroneAnalyzerSettings pool (2 blocks of 512 bytes)
- * - DisplayDataSnapshot pool (5 blocks of 64 bytes)
+ * - DetectionRingBuffer pool (1 block of 480 bytes)
+ * - FilteredDronesSnapshot pool (2 blocks of 640 bytes)
+ * - DroneAnalyzerSettings pool (1 block of 512 bytes)
+ * - DisplayDataSnapshot pool (3 blocks of 64 bytes)
  *
- * Total memory: 4624 bytes (~4.5 KB)
+ * Total memory: 2864 bytes (~2.8 KB)
  *
  * Thread-safety: Thread-safe initialization via MemoryPoolManager::initialize()
  * No exceptions: All operations are noexcept
  * Idempotent: Safe to call multiple times
+ *
+ * P1-HIGH FIX #E007: Check return value of MemoryPoolManager::initialize()
+ * - Returns false if initialization fails (e.g., memory pool storage misaligned)
+ * - System cannot operate without properly initialized memory pools
+ * - Caller must handle initialization failure
+ *
+ * @return true if initialization successful, false otherwise
  */
-void ScanningCoordinator::initialize_memory_pools() noexcept {
+[[nodiscard]] bool ScanningCoordinator::initialize_memory_pools() noexcept {
     // Initialize all memory pools using MemoryPoolManager
     // This function is idempotent (safe to call multiple times)
-    MemoryPoolManager::initialize();
+    // P1-HIGH FIX #E007: Check return value for initialization failure
+    return MemoryPoolManager::initialize();
 }
 
 /**

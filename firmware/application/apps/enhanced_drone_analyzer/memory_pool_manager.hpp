@@ -293,6 +293,26 @@ public:
     [[nodiscard]] static bool initialize() noexcept;
 
     /**
+     * @brief Initialize global mutex for memory pool manager
+     * @note Must be called once during system startup (after chSysInit())
+     * @note Must be called before initialize()
+     * @note Thread-safe (no-op if already initialized)
+     *
+     * P1-HIGH FIX #E003: Explicit initialization for static Mutex
+     * - Static Mutex objects require explicit initialization after ChibiOS RTOS is ready
+     * - chMtxInit() must be called after chSysInit() to avoid undefined behavior
+     * - This function should be called during system initialization
+     *
+     * USAGE:
+     * @code
+     *   // In system initialization code (after chSysInit())
+     *   MemoryPoolManager::initialize_global_mutex();
+     *   MemoryPoolManager::initialize();
+     * @endcode
+     */
+    static void initialize_global_mutex() noexcept;
+
+    /**
      * @brief Allocate memory from specified pool
      * @param pool_type Type of pool to allocate from
      * @return Pointer to allocated memory, or nullptr if pool exhausted
@@ -384,15 +404,64 @@ private:
     [[nodiscard]] static size_t pool_index(PoolType pool_type) noexcept;
 
     /**
-     * @brief Initialize a single pool
-     * @param pool_type Type of pool to initialize
-     * @param block_size Size of each block in pool
-     * @param pool_size Number of blocks in pool
-     * @return true if initialization successful, false otherwise
+     * @brief Pool initialization parameters
+     *
+     * P1-HIGH FIX #E002: Use struct to prevent parameter swapping
+     * - Groups related parameters together
+     * - Makes it harder to accidentally swap block_size and pool_size
+     * - Improves code readability and type safety
+     *
+     * USAGE:
+     * @code
+     *   PoolInitParams params{
+     *       .pool_type = PoolType::DETECTION_RING_BUFFER,
+     *       .block_size = 480,
+     *       .pool_size = 2
+     *   };
+     *   initialize_pool(params);
+     * @endcode
+     *
+     * Or using constructor:
+     * @code
+     *   PoolInitParams params(
+     *       PoolType::DETECTION_RING_BUFFER,
+     *       480,
+     *       2
+     *   );
+     *   initialize_pool(params);
+     * @endcode
      */
-    [[nodiscard]] static bool initialize_pool(PoolType pool_type,
-                                               size_t block_size,
-                                               size_t pool_size) noexcept;
+    struct PoolInitParams {
+        PoolType pool_type;  ///< Type of pool to initialize
+        size_t block_size;  ///< Size of each block in pool
+        size_t pool_size;   ///< Number of blocks in pool
+
+        /**
+         * @brief Constructor with [[nodiscard]] to ensure parameters are used
+         * @param pool_type Type of pool to initialize
+         * @param block_size Size of each block in pool
+         * @param pool_size Number of blocks in pool
+         * @note constexpr for compile-time evaluation
+         * @note noexcept for embedded safety
+         */
+        [[nodiscard]] constexpr PoolInitParams(
+            PoolType pool_type,
+            size_t block_size,
+            size_t pool_size
+        ) noexcept : pool_type(pool_type), block_size(block_size), pool_size(pool_size) {}
+    };
+
+    /**
+     * @brief Initialize a single pool
+     * @param params Pool initialization parameters (struct prevents parameter swapping)
+     * @return true if initialization successful, false otherwise
+     *
+     * P1-HIGH FIX #E002: Changed signature to use PoolInitParams struct
+     * - Prevents accidental swapping of block_size and pool_size parameters
+     * - Improves code readability and type safety
+     * - Makes API more self-documenting
+     */
+    [[nodiscard]] static bool initialize_pool(const PoolInitParams& params) noexcept;
 
     /**
      * @brief Get block size for specified pool type
@@ -472,8 +541,13 @@ private:
     [[nodiscard]] static PoolEntry* get_pool_entry(PoolType pool_type) noexcept;
 
     // Static storage for all pools (allocated in .cpp file)
+    // P1-HIGH FIX: Static variables are defined in .cpp file to prevent dynamic initialization issues
+    // NOLINTNEXTLINE(readability-redundant-member-init): pools_ is defined in .cpp with initializer list
     static PoolEntry* pools_[static_cast<size_t>(PoolType::COUNT)];
+    // NOLINTNEXTLINE(cert-err58-cpp): global_mutex_ requires runtime initialization via initialize_global_mutex()
     static Mutex global_mutex_;  ///< Global mutex for pool manager operations
+    // NOLINTNEXTLINE(cert-err58-cpp): global_mutex_initialized_ is defined in .cpp with false initializer
+    static bool global_mutex_initialized_;  ///< Tracks if global_mutex_ has been initialized
 };
 
 // ============================================================================

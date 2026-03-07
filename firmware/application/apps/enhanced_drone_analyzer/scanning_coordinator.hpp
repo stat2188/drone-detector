@@ -129,13 +129,20 @@ private:
     volatile bool constructed_{false};
 };
 
-// @brief Result codes for start_coordinated_scanning() operation
-enum class StartResult {
+/**
+ * @brief Result codes for start_coordinated_scanning() operation
+ *
+ * P2-MED FIX #E004: Changed from int to uint8_t for memory efficiency
+ * - Reduces enum size from 4 bytes to 1 byte
+ * - Saves 3 bytes per StartResult variable/return value
+ * - No impact on functionality (enum has < 256 values)
+ */
+enum class StartResult : uint8_t {
     SUCCESS,                      ///< Scanning thread started successfully
     ALREADY_ACTIVE,               ///< Scanning is already active
     INITIALIZATION_NOT_COMPLETE,  ///< Database initialization not complete yet
     THREAD_CREATION_FAILED,       ///< Thread creation failed (chThdCreateStatic returned nullptr)
-    SINGLETON_VIOLATION           ///< Multiple instances detected (should never happen)
+    SINGLETON_VIOLATION          ///< Multiple instances detected (should never happen)
 };
 
 // @brief Scanning coordinator for drone detection operations
@@ -237,17 +244,19 @@ public:
      * @note Safe to call multiple times (idempotent)
      *
      * This function initializes all memory pools used by the Enhanced Drone Analyzer:
-     * - DetectionRingBuffer pool (2 blocks of 480 bytes)
-     * - FilteredDronesSnapshot pool (3 blocks of 640 bytes)
-     * - DroneAnalyzerSettings pool (2 blocks of 512 bytes)
-     * - DisplayDataSnapshot pool (5 blocks of 64 bytes)
+     * - DetectionRingBuffer pool (1 block of 480 bytes)
+     * - FilteredDronesSnapshot pool (2 blocks of 640 bytes)
+     * - DroneAnalyzerSettings pool (1 block of 512 bytes)
+     * - DisplayDataSnapshot pool (3 blocks of 64 bytes)
      *
-     * Total memory: 4624 bytes (~4.5 KB)
+     * Total memory: 2864 bytes (~2.8 KB)
      *
      * USAGE:
      * @code
      *   // In system initialization code (after chSysInit())
-     *   ScanningCoordinator::initialize_memory_pools();
+     *   if (!ScanningCoordinator::initialize_memory_pools()) {
+     *       // Handle initialization failure
+     *   }
      * @endcode
      *
      * THREAD SAFETY:
@@ -259,8 +268,12 @@ public:
      * - Static allocation (no heap allocation for pool storage)
      * - Automatic bounds checking (returns false on failure)
      * - No memory leaks (shutdown_memory_pools() must be called)
+     *
+     * P1-HIGH FIX #E007: Returns bool to indicate initialization success/failure
+     * - Caller must check return value to ensure memory pools are properly initialized
+     * - System cannot operate without properly initialized memory pools
      */
-    static void initialize_memory_pools() noexcept;
+    [[nodiscard]] static bool initialize_memory_pools() noexcept;
 
     /**
      * @brief Shutdown all memory pools for Enhanced Drone Analyzer
@@ -408,6 +421,8 @@ private:
                   "COORDINATOR_THREAD_STACK_SIZE below 1KB minimum for safe operation");
 
     // Thread working area (defined in .cpp file to avoid ODR issues)
+    // P1-HIGH FIX: Static variable is defined in .cpp file to prevent dynamic initialization issues
+    // NOLINTNEXTLINE(cert-err58-cpp): coordinator_wa_ is defined in .cpp with compile-time constant size
     static stkalign_t coordinator_wa_[THD_WA_SIZE(COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 
 public:
@@ -418,9 +433,14 @@ public:
     // CRITICAL FIX: Use AtomicFlag instead of volatile bool for proper memory barriers
     // volatile alone doesn't guarantee proper synchronization on ARM Cortex-M4
     // AtomicFlag provides acquire/release memory ordering and lock-free operations
+    // P1-HIGH FIX: Static variables are defined in .cpp file to prevent dynamic initialization issues
+    // NOLINTNEXTLINE(cert-err58-cpp): instance_ptr_ is defined in .cpp with nullptr initializer
     static volatile ScanningCoordinator* instance_ptr_;  ///< Singleton instance pointer (volatile for thread safety)
+    // NOLINTNEXTLINE(cert-err58-cpp): init_mutex_ requires runtime initialization via initialize_eda_mutexes()
     static Mutex init_mutex_;                   ///< Protects singleton initialization
+    // NOLINTNEXTLINE(cert-err58-cpp): initialized_ uses default constructor which is safe for AtomicFlag
     static AtomicFlag initialized_;           ///< Tracks if singleton has been initialized (AtomicFlag for thread safety)
+    // NOLINTNEXTLINE(cert-err58-cpp): instance_constructed_ uses default constructor which is safe for AtomicFlag
     static AtomicFlag instance_constructed_;  ///< Tracks if placement new was called (AtomicFlag for thread safety)
 
 private:

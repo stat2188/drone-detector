@@ -5,7 +5,6 @@
 
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
-#include <limits>
 #include <new>
 
 // Third-party library headers

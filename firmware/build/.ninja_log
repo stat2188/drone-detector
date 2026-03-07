@@ -1,0 +1,9 @@
+# ninja log v5
+125	855	7945995738979604	hackrf/firmware/blinky/libopencm3_blinky-prefix/src/libopencm3_blinky-stamp/libopencm3_blinky-mkdir	5350a21e99b36245
+125	855	7945995738979604	C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/hackrf/firmware/blinky/libopencm3_blinky-prefix/src/libopencm3_blinky-stamp/libopencm3_blinky-mkdir	5350a21e99b36245
+140	873	7945995739159605	hackrf/firmware/hackrf_usb/libopencm3_hackrf_usb-prefix/src/libopencm3_hackrf_usb-stamp/libopencm3_hackrf_usb-mkdir	2a40d68cb9391c27
+140	873	7945995739159605	C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/hackrf/firmware/hackrf_usb/libopencm3_hackrf_usb-prefix/src/libopencm3_hackrf_usb-stamp/libopencm3_hackrf_usb-mkdir	2a40d68cb9391c27
+873	1295	7945995746709604	hackrf/firmware/hackrf_usb/libopencm3_hackrf_usb-prefix/src/libopencm3_hackrf_usb-stamp/libopencm3_hackrf_usb-download	88502535d5adf34d
+873	1295	7945995746709604	C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/hackrf/firmware/hackrf_usb/libopencm3_hackrf_usb-prefix/src/libopencm3_hackrf_usb-stamp/libopencm3_hackrf_usb-download	88502535d5adf34d
+856	1297	7945995746789592	hackrf/firmware/blinky/libopencm3_blinky-prefix/src/libopencm3_blinky-stamp/libopencm3_blinky-download	a42e4e4a1b8ee79
+856	1297	7945995746789592	C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/hackrf/firmware/blinky/libopencm3_blinky-prefix/src/libopencm3_blinky-stamp/libopencm3_blinky-download	a42e4e4a1b8ee79

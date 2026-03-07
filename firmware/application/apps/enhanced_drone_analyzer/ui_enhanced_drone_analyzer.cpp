@@ -42,7 +42,6 @@
 #include "portapack.hpp"
 #include "scanning_coordinator.hpp"
 #include "sd_card.hpp"
-#include "stack_canary.hpp"
 #include "ui_drone_audio.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_fileman.hpp"
@@ -1592,7 +1591,10 @@ void DroneScanner::cleanup_database_and_scanner() {
     // Explicit destructor calls for placement new
     // Only call destructor if construction succeeded
     if (tracked_drones_ptr_ != nullptr && tracked_drones_constructed_) {
-        tracked_drones_ptr_->~TrackedDronesArray();  // DIAMOND FIX #P0-CRITICAL #1: Correct destructor syntax
+        // DIAMOND FIX: Call destructor of std::array<TrackedDrone, MAX_TRACKED_DRONES>
+        // Use type alias defined in header (ui_enhanced_drone_analyzer.hpp:274)
+        using TrackedDronesArray = std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>;
+        tracked_drones_ptr_->~TrackedDronesArray();
         tracked_drones_constructed_ = false;
         tracked_drones_ptr_ = nullptr;
     }
@@ -1642,8 +1644,8 @@ void DroneScanner::db_loading_thread_loop() {
 
     // Runtime alignment verification for tracked_drones_storage_
     // DIAMOND FIX #P2-MED #7: Use direct comparison for alignment check
-    using TrackedDronesArray = std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>;
-    constexpr uintptr_t TRACKED_DRONES_ALIGNMENT = alignof(TrackedDronesArray);
+    // Note: TrackedDronesArray type alias is defined in header (ui_enhanced_drone_analyzer.hpp:274)
+    constexpr uintptr_t TRACKED_DRONES_ALIGNMENT = alignof(std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>);
     const uintptr_t tracked_drones_addr = reinterpret_cast<uintptr_t>(tracked_drones_storage_);
     if ((tracked_drones_addr & (TRACKED_DRONES_ALIGNMENT - 1)) != 0) {
         handle_scan_error("Memory: tracked_drones_storage_ alignment error (async)");
@@ -1684,7 +1686,9 @@ void DroneScanner::db_loading_thread_loop() {
                 freq_db_ptr_ = nullptr;
             }
             if (tracked_drones_ptr_ && tracked_drones_constructed_) {
-                tracked_drones_ptr_->~TrackedDronesArray();  // DIAMOND FIX #P0-CRITICAL #1: Correct destructor syntax
+                // DIAMOND FIX: Call destructor of std::array<TrackedDrone, MAX_TRACKED_DRONES>
+                using TrackedDronesArray = std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>;
+                tracked_drones_ptr_->~TrackedDronesArray();
                 tracked_drones_constructed_ = false;
                 tracked_drones_ptr_ = nullptr;
             }
@@ -1721,7 +1725,9 @@ void DroneScanner::db_loading_thread_loop() {
                     freq_db_ptr_ = nullptr;
                 }
             if (tracked_drones_ptr_ && tracked_drones_constructed_) {
-                tracked_drones_ptr_->~TrackedDronesArray();  // DIAMOND FIX #P0-CRITICAL #1: Correct destructor syntax
+                // DIAMOND FIX: Call destructor of std::array<TrackedDrone, MAX_TRACKED_DRONES>
+                using TrackedDronesArray = std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>;
+                tracked_drones_ptr_->~TrackedDronesArray();
                 tracked_drones_constructed_ = false;
                 tracked_drones_ptr_ = nullptr;
             }
@@ -2041,7 +2047,7 @@ DroneDetectionLogger::DroneDetectionLogger()
       is_full_(false),
       line_buffer_() {
     chMtxInit(&mutex_);
-    memset(line_buffer_, 0, sizeof(line_buffer_));
+    std::memset(line_buffer_, 0, sizeof(line_buffer_));
     
     chSemInit(&data_ready_, 0);
     
@@ -3635,8 +3641,10 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) noexcept {
         
         // DIAMOND CODE PRINCIPLE: Use utility function for signal analysis (DSP layer)
         // This separates signal analysis from UI rendering
+        // P1-HIGH FIX: Use BarRenderParams struct to prevent parameter swapping
+        const dsp::BarRenderParams params{power, x};
         dsp::BarSpectrumRenderData render_data = dsp::calculate_bar_render_data(
-            power, x, spectrum_height, config
+            params, spectrum_height, config
         );
         
         if (!render_data.should_draw) continue;
@@ -3697,8 +3705,10 @@ void DroneDisplayController::update_histogram_display(
     }
     
     // Pre-scale histogram data using utility function (DSP layer)
+    // P1-HIGH FIX: Use HistogramScaleParams struct to prevent parameter swapping
+    const dsp::HistogramScaleParams params{64, noise_floor};
     dsp::HistogramDisplayBuffer scaled_histogram = dsp::scale_histogram_for_display(
-        temp_histogram, 64, noise_floor
+        temp_histogram, params
     );
     
     // Copy to display buffer (UI only)
@@ -3755,8 +3765,10 @@ void DroneDisplayController::render_histogram(Painter& painter) noexcept {
         
         // DIAMOND CODE PRINCIPLE: Use utility function for histogram calculations (DSP layer)
         // This separates histogram calculations from UI rendering
+        // P1-HIGH FIX: Use HistogramBinRenderParams struct to prevent parameter swapping
+        const dsp::HistogramBinRenderParams params{bin_idx, bin_count};
         dsp::HistogramBinRenderData render_data = dsp::calculate_histogram_bin_render_data(
-            bin_idx, bin_count, max_count, config
+            params, max_count, config
         );
         
         if (!render_data.should_draw) continue;

@@ -17,10 +17,6 @@ using rf::Frequency;
 
 enum class SpectrumMode : uint8_t { NARROW = 0, MEDIUM = 1, WIDE = 2, ULTRA_WIDE = 3, ULTRA_NARROW = 4 };
 
-static constexpr size_t MAX_PATH_LEN = EDA::Constants::MAX_PATH_LENGTH;
-static constexpr size_t MAX_NAME_LEN = EDA::Constants::MAX_NAME_LENGTH;
-static constexpr size_t MAX_FORMAT_LEN = EDA::Constants::MAX_FORMAT_LENGTH;
-
 #pragma pack(push, 1)
 
 /**
@@ -86,14 +82,14 @@ struct DroneAnalyzerSettings {
     // Logging settings
     uint8_t logging_flags = 0x0F;  // bit0: auto_save_logs, bit1: enable_session_logging, bit2: include_timestamp, bit3: include_rssi_values
 
-    char log_file_path[MAX_PATH_LEN] = "/eda_logs";
-    char log_format[MAX_FORMAT_LEN] = "CSV";
+    char log_file_path[EDA::Constants::MAX_PATH_LENGTH] = "/eda_logs";
+    char log_format[EDA::Constants::MAX_FORMAT_LENGTH] = "CSV";
     uint32_t max_log_file_size_kb = 1024;
 
     // Display settings
     uint8_t display_flags = 0x1F;  // bit0: show_detailed_info, bit1: show_mini_spectrum, bit2: show_rssi_history, bit3: show_frequency_ruler, bit4: auto_ruler_style
 
-    char color_scheme[MAX_NAME_LEN] = "DARK";
+    char color_scheme[EDA::Constants::MAX_NAME_LENGTH] = "DARK";
     uint8_t font_size = 0;
     uint8_t spectrum_density = 1;
     uint8_t waterfall_speed = 5;
@@ -103,11 +99,11 @@ struct DroneAnalyzerSettings {
     // Profile settings
     uint8_t profile_flags = 0x01;  // bit0: enable_quick_profiles, bit1: auto_save_on_change
 
-    char current_profile_name[MAX_NAME_LEN] = "Default";
+    char current_profile_name[EDA::Constants::MAX_NAME_LENGTH] = "Default";
 
     // System settings
-    char freqman_path[MAX_NAME_LEN] = "DRONES";
-    char settings_file_path[MAX_PATH_LEN] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    char freqman_path[EDA::Constants::MAX_NAME_LENGTH] = "DRONES";
+    char settings_file_path[EDA::Constants::MAX_PATH_LENGTH] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     uint32_t settings_version = 2;
 
     /**
@@ -127,10 +123,10 @@ struct DroneAnalyzerSettings {
      * @endcode
      *
      * MEMORY USAGE:
-     * - Pool size: 2 blocks (PoolConfig::DRONE_ANALYZER_SETTINGS_POOL_SIZE)
+     * - Pool size: 1 block (PoolConfig::DRONE_ANALYZER_SETTINGS_POOL_SIZE)
      * - Block size: 512 bytes (PoolBlockSizes::DRONE_ANALYZER_SETTINGS_SIZE)
-     * - Total pool memory: 1124 bytes (100 overhead + 2 * 512)
-     * - Typical usage: 1-2 instances (one global, one for temporary copies)
+     * - Total pool memory: 612 bytes (100 overhead + 1 * 512)
+     * - Typical usage: 1 instance (global settings)
      *
      * THREAD SAFETY:
      * - Thread-safe allocation via MemoryPoolManager::allocate()
@@ -436,9 +432,9 @@ private:
 };
 
 struct DronePreset {
-    char display_name[MAX_NAME_LEN];
-    char name_template[MAX_NAME_LEN];
-    Frequency frequency_hz;
+    char display_name[EDA::Constants::MAX_NAME_LENGTH];
+    char name_template[EDA::Constants::MAX_NAME_LENGTH];
+    EDA::Frequency frequency_hz;
     ThreatLevel threat_level;
     DroneType drone_type;
 

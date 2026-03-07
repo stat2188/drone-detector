@@ -414,6 +414,63 @@ struct HistogramColorConfig {
     };
 };
 
+// ============================================================================
+// PARAMETER STRUCTS FOR DSP FUNCTIONS (Prevent Swappable Parameters)
+// ============================================================================
+// P1-HIGH FIX: Create parameter structs to prevent parameter swapping issues
+// These structs group convertible types (uint8_t, size_t) to prevent accidental swapping
+
+/**
+ * @brief Parameters for calculate_bar_render_data function
+ * 
+ * Groups power and x_position parameters to prevent accidental swapping.
+ * Both parameters are convertible types (uint8_t and size_t), so grouping
+ * them in a struct prevents the compiler from warning about potential swaps.
+ * 
+ * DIAMOND CODE PRINCIPLES:
+ * - Type-safe: Uses semantic type aliases
+ * - Stack-only: No heap allocation
+ * - noexcept: All functions are noexcept
+ */
+struct BarRenderParams {
+    uint8_t power;       ///< Power level (0-255)
+    size_t x_position;   ///< X position in spectrum
+};
+
+/**
+ * @brief Parameters for calculate_histogram_bin_render_data function
+ * 
+ * Groups bin_idx and bin_count parameters to prevent accidental swapping.
+ * Both parameters are convertible types (size_t and uint8_t), so grouping
+ * them in a struct prevents the compiler from warning about potential swaps.
+ * 
+ * DIAMOND CODE PRINCIPLES:
+ * - Type-safe: Uses semantic type aliases
+ * - Stack-only: No heap allocation
+ * - noexcept: All functions are noexcept
+ */
+struct HistogramBinRenderParams {
+    size_t bin_idx;      ///< Bin index in histogram
+    uint8_t bin_count;   ///< Bin count (0-255)
+};
+
+/**
+ * @brief Parameters for scale_histogram_for_display function
+ * 
+ * Groups histogram_size and noise_floor parameters to prevent accidental swapping.
+ * Both parameters are convertible types (size_t and uint8_t), so grouping
+ * them in a struct prevents the compiler from warning about potential swaps.
+ * 
+ * DIAMOND CODE PRINCIPLES:
+ * - Type-safe: Uses semantic type aliases
+ * - Stack-only: No heap allocation
+ * - noexcept: All functions are noexcept
+ */
+struct HistogramScaleParams {
+    size_t histogram_size;  ///< Size of histogram buffer
+    uint8_t noise_floor;    ///< Noise floor from spectral analysis
+};
+
 // Compile-time size validation
 // PHASE 3 FIX #9: Updated static_assert comments to reference named constants
 static_assert(sizeof(DisplayDataSnapshot) <= 64, "DisplayDataSnapshot exceeds 64 bytes");
@@ -422,25 +479,25 @@ static_assert(sizeof(DroneDisplayText) <= 48, "DroneDisplayText exceeds 48 bytes
 static_assert(sizeof(BarSpectrumRenderData) <= 24, "BarSpectrumRenderData exceeds 24 bytes");
 static_assert(sizeof(HistogramDisplayBuffer) <= 67, "HistogramDisplayBuffer exceeds 67 bytes");
 static_assert(sizeof(HistogramBinRenderData) <= 32, "HistogramBinRenderData exceeds 32 bytes");
+static_assert(sizeof(BarRenderParams) <= 16, "BarRenderParams exceeds 16 bytes");
+static_assert(sizeof(HistogramBinRenderParams) <= 16, "HistogramBinRenderParams exceeds 16 bytes");
+static_assert(sizeof(HistogramScaleParams) <= 16, "HistogramScaleParams exceeds 16 bytes");
 
 // Forward declarations for utility functions (implemented in dsp_display_utils.cpp)
 DroneDisplayText format_drone_display_text(const DisplayDroneEntry& drone) noexcept;
 BarSpectrumRenderData calculate_bar_render_data(
-    uint8_t power,
-    size_t x_position,
+    const BarRenderParams& params,
     int spectrum_height,
     const BarSpectrumConfig& config
 ) noexcept;
 HistogramBinRenderData calculate_histogram_bin_render_data(
-    size_t bin_idx,
-    uint8_t bin_count,
+    const HistogramBinRenderParams& params,
     uint8_t max_count,
     const HistogramColorConfig& config
 ) noexcept;
 HistogramDisplayBuffer scale_histogram_for_display(
     const uint16_t* analysis_histogram,
-    size_t histogram_size,
-    uint8_t noise_floor
+    const HistogramScaleParams& params
 ) noexcept;
 
 // ============================================================================

@@ -15,18 +15,21 @@
 ########################
 
 //Path to a program.
-CMAKE_ADDR2LINE:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-addr2line.exe
+CMAKE_ADDR2LINE:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-addr2line.exe
 
 //Path to a program.
-CMAKE_AR:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-ar.exe
+CMAKE_AR:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-ar.exe
+
+//ASM compiler
+CMAKE_ASM_COMPILER:STRING=C:/SysGCC/arm-eabi/bin/arm-none-eabi-gcc.exe
 
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_ASM_COMPILER_AR:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-gcc-ar.exe
+CMAKE_ASM_COMPILER_AR:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-gcc-ar.exe
 
 //A wrapper around 'ranlib' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_ASM_COMPILER_RANLIB:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-gcc-ranlib.exe
+CMAKE_ASM_COMPILER_RANLIB:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-gcc-ranlib.exe
 
 //Flags used by the ASM compiler during all build types.
 CMAKE_ASM_FLAGS:STRING=
@@ -47,13 +50,16 @@ CMAKE_ASM_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 // MinSizeRel ...
 CMAKE_BUILD_TYPE:STRING=
 
+//CXX compiler
+CMAKE_CXX_COMPILER:STRING=C:/SysGCC/arm-eabi/bin/arm-none-eabi-g++.exe
+
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_CXX_COMPILER_AR:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-gcc-ar.exe
+CMAKE_CXX_COMPILER_AR:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-gcc-ar.exe
 
 //A wrapper around 'ranlib' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_CXX_COMPILER_RANLIB:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-gcc-ranlib.exe
+CMAKE_CXX_COMPILER_RANLIB:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-gcc-ranlib.exe
 
 //Flags used by the CXX compiler during all build types.
 CMAKE_CXX_FLAGS:STRING=
@@ -70,13 +76,16 @@ CMAKE_CXX_FLAGS_RELEASE:STRING=-O3 -DNDEBUG
 //Flags used by the CXX compiler during RELWITHDEBINFO builds.
 CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG
 
+//C compiler
+CMAKE_C_COMPILER:STRING=C:/SysGCC/arm-eabi/bin/arm-none-eabi-gcc.exe
+
 //A wrapper around 'ar' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_C_COMPILER_AR:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-gcc-ar.exe
+CMAKE_C_COMPILER_AR:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-gcc-ar.exe
 
 //A wrapper around 'ranlib' adding the appropriate '--plugin' option
 // for the GCC compiler
-CMAKE_C_COMPILER_RANLIB:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-gcc-ranlib.exe
+CMAKE_C_COMPILER_RANLIB:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-gcc-ranlib.exe
 
 //Flags used by the C compiler during all build types.
 CMAKE_C_FLAGS:STRING=
@@ -121,10 +130,10 @@ CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=
 CMAKE_FIND_PACKAGE_REDIRECTS_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/CMakeFiles/pkgRedirects
 
 //Install path prefix, prepended onto install directories.
-CMAKE_INSTALL_PREFIX:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/arm-none-eabi
+CMAKE_INSTALL_PREFIX:FILEPATH=C:/SysGCC/arm-eabi/arm-none-eabi
 
 //Path to a program.
-CMAKE_LINKER:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-ld.exe
+CMAKE_LINKER:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-ld.exe
 
 //Program used to build from build.ninja files.
 CMAKE_MAKE_PROGRAM:FILEPATH=C:/Users/Max/AppData/Local/Programs/Python/Python310/Scripts/ninja.exe
@@ -150,10 +159,10 @@ CMAKE_MODULE_LINKER_FLAGS_RELEASE:STRING=
 CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 
 //Path to a program.
-CMAKE_NM:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-nm.exe
+CMAKE_NM:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-nm.exe
 
 //Path to a program.
-CMAKE_OBJDUMP:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-objdump.exe
+CMAKE_OBJDUMP:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-objdump.exe
 
 //Value Computed by CMake
 CMAKE_PROJECT_COMPAT_VERSION:STATIC=
@@ -165,13 +174,13 @@ CMAKE_PROJECT_DESCRIPTION:STATIC=
 CMAKE_PROJECT_HOMEPAGE_URL:STATIC=
 
 //Value Computed by CMake
-CMAKE_PROJECT_NAME:STATIC=firmware
+CMAKE_PROJECT_NAME:STATIC=portapack-h1
 
 //Path to a program.
-CMAKE_RANLIB:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-ranlib.exe
+CMAKE_RANLIB:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-ranlib.exe
 
 //Path to a program.
-CMAKE_READELF:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-readelf.exe
+CMAKE_READELF:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-readelf.exe
 
 //Flags used by the linker during the creation of shared libraries
 // during all build types.
@@ -221,7 +230,7 @@ CMAKE_STATIC_LINKER_FLAGS_RELEASE:STRING=
 CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 
 //Path to a program.
-CMAKE_STRIP:FILEPATH=C:/Program Files (x86)/GNU Arm Embedded Toolchain/10 2021.10/bin/arm-none-eabi-strip.exe
+CMAKE_STRIP:FILEPATH=C:/SysGCC/arm-eabi/bin/arm-none-eabi-strip.exe
 
 //Path to a program.
 CMAKE_TAPI:FILEPATH=CMAKE_TAPI-NOTFOUND
@@ -235,11 +244,12 @@ CMAKE_TOOLCHAIN_FILE:FILEPATH=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/to
 // Studio IDE projects all commands are done without /nologo.
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
-//No help, variable specified on the command line.
-EXPECTED_GCC_VERSION:UNINITIALIZED=10.3.1
+//Enable ccache, please keep an eye on this because sometimes it's
+// not quite stable and generated unusable binary
+USE_CCACHE:BOOL=OFF
 
 //Value Computed by CMake
-application_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/application
+application_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/application
 
 //Value Computed by CMake
 application_IS_TOP_LEVEL:STATIC=OFF
@@ -248,7 +258,7 @@ application_IS_TOP_LEVEL:STATIC=OFF
 application_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/application
 
 //Value Computed by CMake
-application_test_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/test/application
+application_test_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/test/application
 
 //Value Computed by CMake
 application_test_IS_TOP_LEVEL:STATIC=OFF
@@ -257,7 +267,7 @@ application_test_IS_TOP_LEVEL:STATIC=OFF
 application_test_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/test/application
 
 //Value Computed by CMake
-baseband_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_IS_TOP_LEVEL:STATIC=OFF
@@ -266,7 +276,7 @@ baseband_IS_TOP_LEVEL:STATIC=OFF
 baseband_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_acars_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_acars_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_acars_IS_TOP_LEVEL:STATIC=OFF
@@ -275,7 +285,7 @@ baseband_acars_IS_TOP_LEVEL:STATIC=OFF
 baseband_acars_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_adsbtx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_adsbtx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_adsbtx_IS_TOP_LEVEL:STATIC=OFF
@@ -284,7 +294,7 @@ baseband_adsbtx_IS_TOP_LEVEL:STATIC=OFF
 baseband_adsbtx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_afskrx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_afskrx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_afskrx_IS_TOP_LEVEL:STATIC=OFF
@@ -293,7 +303,7 @@ baseband_afskrx_IS_TOP_LEVEL:STATIC=OFF
 baseband_afskrx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_afsktx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_afsktx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_afsktx_IS_TOP_LEVEL:STATIC=OFF
@@ -302,7 +312,7 @@ baseband_afsktx_IS_TOP_LEVEL:STATIC=OFF
 baseband_afsktx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_am_audio_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_am_audio_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_am_audio_IS_TOP_LEVEL:STATIC=OFF
@@ -311,7 +321,7 @@ baseband_am_audio_IS_TOP_LEVEL:STATIC=OFF
 baseband_am_audio_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_am_tv_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_am_tv_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_am_tv_IS_TOP_LEVEL:STATIC=OFF
@@ -320,7 +330,7 @@ baseband_am_tv_IS_TOP_LEVEL:STATIC=OFF
 baseband_am_tv_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_audio_beep_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_audio_beep_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_audio_beep_IS_TOP_LEVEL:STATIC=OFF
@@ -329,7 +339,7 @@ baseband_audio_beep_IS_TOP_LEVEL:STATIC=OFF
 baseband_audio_beep_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_audio_tx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_audio_tx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_audio_tx_IS_TOP_LEVEL:STATIC=OFF
@@ -338,7 +348,7 @@ baseband_audio_tx_IS_TOP_LEVEL:STATIC=OFF
 baseband_audio_tx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_btletx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_btletx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_btletx_IS_TOP_LEVEL:STATIC=OFF
@@ -347,7 +357,7 @@ baseband_btletx_IS_TOP_LEVEL:STATIC=OFF
 baseband_btletx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_capture_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_capture_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_capture_IS_TOP_LEVEL:STATIC=OFF
@@ -356,7 +366,7 @@ baseband_capture_IS_TOP_LEVEL:STATIC=OFF
 baseband_capture_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_epirb_rx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_epirb_rx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_epirb_rx_IS_TOP_LEVEL:STATIC=OFF
@@ -365,7 +375,7 @@ baseband_epirb_rx_IS_TOP_LEVEL:STATIC=OFF
 baseband_epirb_rx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_ert_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_ert_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_ert_IS_TOP_LEVEL:STATIC=OFF
@@ -374,7 +384,7 @@ baseband_ert_IS_TOP_LEVEL:STATIC=OFF
 baseband_ert_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_flash_utility_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_flash_utility_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_flash_utility_IS_TOP_LEVEL:STATIC=OFF
@@ -383,7 +393,7 @@ baseband_flash_utility_IS_TOP_LEVEL:STATIC=OFF
 baseband_flash_utility_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_flex_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_flex_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_flex_IS_TOP_LEVEL:STATIC=OFF
@@ -392,7 +402,7 @@ baseband_flex_IS_TOP_LEVEL:STATIC=OFF
 baseband_flex_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_fsktx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_fsktx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_fsktx_IS_TOP_LEVEL:STATIC=OFF
@@ -401,7 +411,7 @@ baseband_fsktx_IS_TOP_LEVEL:STATIC=OFF
 baseband_fsktx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_gps_sim_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_gps_sim_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_gps_sim_IS_TOP_LEVEL:STATIC=OFF
@@ -410,7 +420,7 @@ baseband_gps_sim_IS_TOP_LEVEL:STATIC=OFF
 baseband_gps_sim_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_jammer_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_jammer_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_jammer_IS_TOP_LEVEL:STATIC=OFF
@@ -419,7 +429,7 @@ baseband_jammer_IS_TOP_LEVEL:STATIC=OFF
 baseband_jammer_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_mic_tx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_mic_tx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_mic_tx_IS_TOP_LEVEL:STATIC=OFF
@@ -428,7 +438,7 @@ baseband_mic_tx_IS_TOP_LEVEL:STATIC=OFF
 baseband_mic_tx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_nfm_audio_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_nfm_audio_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_nfm_audio_IS_TOP_LEVEL:STATIC=OFF
@@ -437,7 +447,7 @@ baseband_nfm_audio_IS_TOP_LEVEL:STATIC=OFF
 baseband_nfm_audio_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_noaaapt_rx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_noaaapt_rx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_noaaapt_rx_IS_TOP_LEVEL:STATIC=OFF
@@ -446,7 +456,7 @@ baseband_noaaapt_rx_IS_TOP_LEVEL:STATIC=OFF
 baseband_noaaapt_rx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_nrfrx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_nrfrx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_nrfrx_IS_TOP_LEVEL:STATIC=OFF
@@ -455,7 +465,7 @@ baseband_nrfrx_IS_TOP_LEVEL:STATIC=OFF
 baseband_nrfrx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_ook_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_ook_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_ook_IS_TOP_LEVEL:STATIC=OFF
@@ -464,7 +474,7 @@ baseband_ook_IS_TOP_LEVEL:STATIC=OFF
 baseband_ook_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_ookstream_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_ookstream_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_ookstream_IS_TOP_LEVEL:STATIC=OFF
@@ -473,7 +483,7 @@ baseband_ookstream_IS_TOP_LEVEL:STATIC=OFF
 baseband_ookstream_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_pocsag2_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_pocsag2_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_pocsag2_IS_TOP_LEVEL:STATIC=OFF
@@ -482,7 +492,7 @@ baseband_pocsag2_IS_TOP_LEVEL:STATIC=OFF
 baseband_pocsag2_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_protoview_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_protoview_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_protoview_IS_TOP_LEVEL:STATIC=OFF
@@ -491,7 +501,7 @@ baseband_protoview_IS_TOP_LEVEL:STATIC=OFF
 baseband_protoview_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_replay_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_replay_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_replay_IS_TOP_LEVEL:STATIC=OFF
@@ -500,7 +510,7 @@ baseband_replay_IS_TOP_LEVEL:STATIC=OFF
 baseband_replay_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_sd_over_usb_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_sd_over_usb_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_sd_over_usb_IS_TOP_LEVEL:STATIC=OFF
@@ -509,7 +519,7 @@ baseband_sd_over_usb_IS_TOP_LEVEL:STATIC=OFF
 baseband_sd_over_usb_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_shared_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_shared_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_shared_IS_TOP_LEVEL:STATIC=OFF
@@ -518,7 +528,7 @@ baseband_shared_IS_TOP_LEVEL:STATIC=OFF
 baseband_shared_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_siggen_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_siggen_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_siggen_IS_TOP_LEVEL:STATIC=OFF
@@ -527,7 +537,7 @@ baseband_siggen_IS_TOP_LEVEL:STATIC=OFF
 baseband_siggen_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_spectrum_painter_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_spectrum_painter_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_spectrum_painter_IS_TOP_LEVEL:STATIC=OFF
@@ -536,7 +546,7 @@ baseband_spectrum_painter_IS_TOP_LEVEL:STATIC=OFF
 baseband_spectrum_painter_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_sstvrx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_sstvrx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_sstvrx_IS_TOP_LEVEL:STATIC=OFF
@@ -545,7 +555,7 @@ baseband_sstvrx_IS_TOP_LEVEL:STATIC=OFF
 baseband_sstvrx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_sstvtx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_sstvtx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_sstvtx_IS_TOP_LEVEL:STATIC=OFF
@@ -554,7 +564,7 @@ baseband_sstvtx_IS_TOP_LEVEL:STATIC=OFF
 baseband_sstvtx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_subcar_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_subcar_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_subcar_IS_TOP_LEVEL:STATIC=OFF
@@ -563,7 +573,7 @@ baseband_subcar_IS_TOP_LEVEL:STATIC=OFF
 baseband_subcar_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_subghzd_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_subghzd_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_subghzd_IS_TOP_LEVEL:STATIC=OFF
@@ -572,7 +582,7 @@ baseband_subghzd_IS_TOP_LEVEL:STATIC=OFF
 baseband_subghzd_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_test_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/test/baseband
+baseband_test_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/test/baseband
 
 //Value Computed by CMake
 baseband_test_IS_TOP_LEVEL:STATIC=OFF
@@ -581,7 +591,7 @@ baseband_test_IS_TOP_LEVEL:STATIC=OFF
 baseband_test_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/test/baseband
 
 //Value Computed by CMake
-baseband_tones_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_tones_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_tones_IS_TOP_LEVEL:STATIC=OFF
@@ -590,7 +600,7 @@ baseband_tones_IS_TOP_LEVEL:STATIC=OFF
 baseband_tones_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_tpms_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_tpms_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_tpms_IS_TOP_LEVEL:STATIC=OFF
@@ -599,7 +609,7 @@ baseband_tpms_IS_TOP_LEVEL:STATIC=OFF
 baseband_tpms_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_wefaxrx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_wefaxrx_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_wefaxrx_IS_TOP_LEVEL:STATIC=OFF
@@ -608,7 +618,7 @@ baseband_wefaxrx_IS_TOP_LEVEL:STATIC=OFF
 baseband_wefaxrx_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_wfm_audio_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_wfm_audio_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_wfm_audio_IS_TOP_LEVEL:STATIC=OFF
@@ -617,7 +627,7 @@ baseband_wfm_audio_IS_TOP_LEVEL:STATIC=OFF
 baseband_wfm_audio_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-baseband_wideband_spectrum_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/baseband
+baseband_wideband_spectrum_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/baseband
 
 //Value Computed by CMake
 baseband_wideband_spectrum_IS_TOP_LEVEL:STATIC=OFF
@@ -626,7 +636,16 @@ baseband_wideband_spectrum_IS_TOP_LEVEL:STATIC=OFF
 baseband_wideband_spectrum_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/baseband
 
 //Value Computed by CMake
-digitalrain_app_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/standalone/digitalrain
+blinky_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/hackrf/firmware/blinky
+
+//Value Computed by CMake
+blinky_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+blinky_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/hackrf/firmware/blinky
+
+//Value Computed by CMake
+digitalrain_app_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/standalone/digitalrain
 
 //Value Computed by CMake
 digitalrain_app_IS_TOP_LEVEL:STATIC=OFF
@@ -635,7 +654,7 @@ digitalrain_app_IS_TOP_LEVEL:STATIC=OFF
 digitalrain_app_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/standalone/digitalrain
 
 //Value Computed by CMake
-enhanced_drone_analyzer_test_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/test/enhanced_drone_analyzer
+enhanced_drone_analyzer_test_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/test/enhanced_drone_analyzer
 
 //Value Computed by CMake
 enhanced_drone_analyzer_test_IS_TOP_LEVEL:STATIC=OFF
@@ -644,16 +663,34 @@ enhanced_drone_analyzer_test_IS_TOP_LEVEL:STATIC=OFF
 enhanced_drone_analyzer_test_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/test/enhanced_drone_analyzer
 
 //Value Computed by CMake
-firmware_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build
+firmware_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware
 
 //Value Computed by CMake
-firmware_IS_TOP_LEVEL:STATIC=ON
+firmware_IS_TOP_LEVEL:STATIC=OFF
 
 //Value Computed by CMake
 firmware_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware
 
 //Value Computed by CMake
-pacman_app_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/standalone/pacman
+hackrf_firmware_all_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/hackrf/firmware
+
+//Value Computed by CMake
+hackrf_firmware_all_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+hackrf_firmware_all_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/hackrf/firmware
+
+//Value Computed by CMake
+hackrf_usb_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/hackrf/firmware/hackrf_usb
+
+//Value Computed by CMake
+hackrf_usb_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+hackrf_usb_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/hackrf/firmware/hackrf_usb
+
+//Value Computed by CMake
+pacman_app_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/standalone/pacman
 
 //Value Computed by CMake
 pacman_app_IS_TOP_LEVEL:STATIC=OFF
@@ -662,7 +699,16 @@ pacman_app_IS_TOP_LEVEL:STATIC=OFF
 pacman_app_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/standalone/pacman
 
 //Value Computed by CMake
-standalone_apps_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/standalone
+portapack-h1_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build
+
+//Value Computed by CMake
+portapack-h1_IS_TOP_LEVEL:STATIC=ON
+
+//Value Computed by CMake
+portapack-h1_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware
+
+//Value Computed by CMake
+standalone_apps_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/standalone
 
 //Value Computed by CMake
 standalone_apps_IS_TOP_LEVEL:STATIC=OFF
@@ -671,7 +717,7 @@ standalone_apps_IS_TOP_LEVEL:STATIC=OFF
 standalone_apps_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/standalone
 
 //Value Computed by CMake
-tests_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/test
+tests_BINARY_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/build/firmware/test
 
 //Value Computed by CMake
 tests_IS_TOP_LEVEL:STATIC=OFF
@@ -688,6 +734,8 @@ tests_SOURCE_DIR:STATIC=C:/Users/Max/Desktop/M/mayhem-firmware/firmware/test
 CMAKE_ADDR2LINE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_AR
 CMAKE_AR-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_ASM_COMPILER
+CMAKE_ASM_COMPILER-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_ASM_COMPILER_AR
 CMAKE_ASM_COMPILER_AR-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_ASM_COMPILER_RANLIB
@@ -717,6 +765,8 @@ CMAKE_COMMAND:INTERNAL=C:/Program Files/CMake/bin/cmake.exe
 CMAKE_CPACK_COMMAND:INTERNAL=C:/Program Files/CMake/bin/cpack.exe
 //Path to ctest program executable.
 CMAKE_CTEST_COMMAND:INTERNAL=C:/Program Files/CMake/bin/ctest.exe
+//ADVANCED property for variable: CMAKE_CXX_COMPILER
+CMAKE_CXX_COMPILER-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_CXX_COMPILER_AR
 CMAKE_CXX_COMPILER_AR-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_CXX_COMPILER_RANLIB
@@ -731,6 +781,8 @@ CMAKE_CXX_FLAGS_MINSIZEREL-ADVANCED:INTERNAL=1
 CMAKE_CXX_FLAGS_RELEASE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_CXX_FLAGS_RELWITHDEBINFO
 CMAKE_CXX_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: CMAKE_C_COMPILER
+CMAKE_C_COMPILER-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_C_COMPILER_AR
 CMAKE_C_COMPILER_AR-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_C_COMPILER_RANLIB
@@ -777,7 +829,7 @@ CMAKE_GENERATOR_PLATFORM:INTERNAL=
 CMAKE_GENERATOR_TOOLSET:INTERNAL=
 //Source directory with the top level CMakeLists.txt file for this
 // project
-CMAKE_HOME_DIRECTORY:INTERNAL=C:/Users/Max/Desktop/M/mayhem-firmware/firmware
+CMAKE_HOME_DIRECTORY:INTERNAL=C:/Users/Max/Desktop/M/mayhem-firmware
 //ADVANCED property for variable: CMAKE_LINKER
 CMAKE_LINKER-ADVANCED:INTERNAL=1
 //Name of CMakeLists files to read
@@ -797,7 +849,9 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=10
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=14
+//ADVANCED property for variable: CMAKE_OBJCOPY
+CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //objcopy tool
 CMAKE_OBJCOPY:INTERNAL=C:/SysGCC/arm-eabi/arm-none-eabi/bin/objcopy
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -841,5 +895,5 @@ CMAKE_TAPI-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
 //Test cpp20_supported
-cpp20_supported:INTERNAL=1
+cpp20_supported:INTERNAL=
 

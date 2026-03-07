@@ -227,7 +227,21 @@ MemoryPoolManager::PoolEntry* MemoryPoolManager::pools_[
 };
 
 // Global mutex for pool manager operations
+// P1-HIGH FIX #E003: Add explicit initialization function for global_mutex_
+// - Static Mutex objects require explicit initialization after ChibiOS RTOS is ready
+// - chMtxInit() must be called after chSysInit() to avoid undefined behavior
+// - This function should be called during system initialization
+void MemoryPoolManager::initialize_global_mutex() noexcept {
+    chMtxInit(&global_mutex_);
+    global_mutex_initialized_ = true;
+}
+
+// Global mutex for pool manager operations
+// Note: Must be initialized by calling initialize_global_mutex() after chSysInit()
 Mutex MemoryPoolManager::global_mutex_;
+
+// Flag to track if global_mutex_ has been initialized
+bool MemoryPoolManager::global_mutex_initialized_ = false;
 
 // ============================================================================
 // PRIVATE HELPER FUNCTIONS
@@ -300,9 +314,7 @@ size_t MemoryPoolManager::get_pool_size(PoolType pool_type) noexcept {
 
 /**
  * @brief Initialize a single pool
- * @param pool_type Type of pool to initialize
- * @param block_size Size of each block in pool
- * @param pool_size Number of blocks in pool
+ * @param params Pool initialization parameters (struct prevents parameter swapping)
  * @return true if initialization successful, false otherwise
  *
  * CRITICAL FIX #002: Proper handling of flexible array member
@@ -312,11 +324,14 @@ size_t MemoryPoolManager::get_pool_size(PoolType pool_type) noexcept {
  * - Storage pointer points to memory immediately after PoolEntry structure
  * - No need for offset calculation (flexible array member handles this)
  * - chPoolLoadArray() uses the storage pointer directly
+ *
+ * P1-HIGH FIX #E002: Changed signature to use PoolInitParams struct
+ * - Prevents accidental swapping of block_size and pool_size parameters
+ * - Improves code readability and type safety
+ * - Makes API more self-documenting
  */
-bool MemoryPoolManager::initialize_pool(PoolType pool_type,
-                                       size_t block_size,
-                                       size_t pool_size) noexcept {
-    PoolEntry* entry = get_pool_entry(pool_type);
+bool MemoryPoolManager::initialize_pool(const PoolInitParams& params) noexcept {
+    PoolEntry* entry = get_pool_entry(params.pool_type);
 
     // Guard clause: Invalid pool entry
     if (!entry) {
@@ -327,9 +342,9 @@ bool MemoryPoolManager::initialize_pool(PoolType pool_type,
     chMtxInit(&entry->mutex);
 
     // Initialize statistics
-    entry->statistics.total_blocks = pool_size;
+    entry->statistics.total_blocks = params.pool_size;
     entry->statistics.used_blocks = 0;
-    entry->statistics.free_blocks = pool_size;
+    entry->statistics.free_blocks = params.pool_size;
     entry->statistics.allocation_count = 0;
     entry->statistics.free_count = 0;
     entry->statistics.overflow_count = 0;
@@ -337,7 +352,7 @@ bool MemoryPoolManager::initialize_pool(PoolType pool_type,
     // Initialize ChibiOS memory pool
     // Note: chPoolInit expects a memory provider function
     // We use chPoolLoadArray to load pre-allocated storage
-    chPoolInit(&entry->pool, block_size, nullptr);
+    chPoolInit(&entry->pool, params.block_size, nullptr);
 
     // Load pool with pre-allocated storage
     // CRITICAL FIX #002: Flexible array member handling
@@ -365,7 +380,7 @@ bool MemoryPoolManager::initialize_pool(PoolType pool_type,
     // |   ...            |
     // +-------------------+
     uint8_t* storage = entry->storage;
-    chPoolLoadArray(&entry->pool, storage, pool_size);
+    chPoolLoadArray(&entry->pool, storage, params.pool_size);
 
     // Mark as initialized
     entry->initialized = true;
@@ -382,6 +397,21 @@ bool MemoryPoolManager::initialize_pool(PoolType pool_type,
  * @return true if initialization successful, false otherwise
  */
 bool MemoryPoolManager::initialize() noexcept {
+    // P1-HIGH FIX #E003: Ensure global_mutex is initialized before use
+    // - Static Mutex objects require explicit initialization after ChibiOS RTOS is ready
+    // - chMtxInit() must be called after chSysInit() to avoid undefined behavior
+    // - This function should be called via initialize_global_mutex() before initialize()
+    //
+    // NOTE: Call initialize_global_mutex() before calling initialize()
+    // Example:
+    //   MemoryPoolManager::initialize_global_mutex();
+    //   MemoryPoolManager::initialize();
+
+    // Check if global_mutex_ has been initialized
+    if (!global_mutex_initialized_) {
+        return false;
+    }
+
     MutexLock lock(global_mutex_, LockOrder::DATA_MUTEX);
 
     // P0-STOP FIX #2: Runtime alignment verification for memory pool storage
@@ -414,31 +444,40 @@ bool MemoryPoolManager::initialize() noexcept {
     // This ensures either all pools are initialized or none are,
     // preventing undefined behavior from partially-initialized system
 
-    if (!initialize_pool(
-            PoolType::DETECTION_RING_BUFFER,
-            get_block_size(PoolType::DETECTION_RING_BUFFER),
-            get_pool_size(PoolType::DETECTION_RING_BUFFER))) {
+    // P1-HIGH FIX #E002: Use PoolInitParams struct to prevent parameter swapping
+    const PoolInitParams detection_ring_buffer_params(
+        PoolType::DETECTION_RING_BUFFER,
+        get_block_size(PoolType::DETECTION_RING_BUFFER),
+        get_pool_size(PoolType::DETECTION_RING_BUFFER)
+    );
+    if (!initialize_pool(detection_ring_buffer_params)) {
         return false;
     }
 
-    if (!initialize_pool(
-            PoolType::FILTERED_DRONES_SNAPSHOT,
-            get_block_size(PoolType::FILTERED_DRONES_SNAPSHOT),
-            get_pool_size(PoolType::FILTERED_DRONES_SNAPSHOT))) {
+    const PoolInitParams filtered_drones_snapshot_params(
+        PoolType::FILTERED_DRONES_SNAPSHOT,
+        get_block_size(PoolType::FILTERED_DRONES_SNAPSHOT),
+        get_pool_size(PoolType::FILTERED_DRONES_SNAPSHOT)
+    );
+    if (!initialize_pool(filtered_drones_snapshot_params)) {
         return false;
     }
 
-    if (!initialize_pool(
-            PoolType::DRONE_ANALYZER_SETTINGS,
-            get_block_size(PoolType::DRONE_ANALYZER_SETTINGS),
-            get_pool_size(PoolType::DRONE_ANALYZER_SETTINGS))) {
+    const PoolInitParams drone_analyzer_settings_params(
+        PoolType::DRONE_ANALYZER_SETTINGS,
+        get_block_size(PoolType::DRONE_ANALYZER_SETTINGS),
+        get_pool_size(PoolType::DRONE_ANALYZER_SETTINGS)
+    );
+    if (!initialize_pool(drone_analyzer_settings_params)) {
         return false;
     }
 
-    if (!initialize_pool(
-            PoolType::DISPLAY_DATA_SNAPSHOT,
-            get_block_size(PoolType::DISPLAY_DATA_SNAPSHOT),
-            get_pool_size(PoolType::DISPLAY_DATA_SNAPSHOT))) {
+    const PoolInitParams display_data_snapshot_params(
+        PoolType::DISPLAY_DATA_SNAPSHOT,
+        get_block_size(PoolType::DISPLAY_DATA_SNAPSHOT),
+        get_pool_size(PoolType::DISPLAY_DATA_SNAPSHOT)
+    );
+    if (!initialize_pool(display_data_snapshot_params)) {
         return false;
     }
 

@@ -22,10 +22,8 @@
 // C++ standard library headers (alphabetical order)
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 
 // Project-specific headers (alphabetical order)
-#include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer::dsp {
@@ -132,30 +130,29 @@ DroneDisplayText format_drone_display_text(const DisplayDroneEntry& drone) noexc
  * It includes position, height, color index, and a flag indicating whether
  * the bar should be drawn.
  * 
- * @param power Power level (0-255)
- * @param x_position X position in spectrum
+ * @param params Bar render parameters (power and x_position)
  * @param spectrum_height Spectrum display height
  * @param config Bar spectrum configuration
  * @return Calculated render data
  * 
  * @note This is a pure DSP/calculation function with no UI dependencies
  * @note noexcept for embedded safety
+ * @note P1-HIGH FIX: Uses BarRenderParams struct to prevent parameter swapping
  */
 BarSpectrumRenderData calculate_bar_render_data(
-    uint8_t power,
-    size_t x_position,
+    const BarRenderParams& params,
     int spectrum_height,
     const BarSpectrumConfig& config
 ) noexcept {
     // Suppress unused parameter warning: x_position is intentionally unused
     // This function calculates only vertical rendering data (y_top, bar_height, color_idx)
     // while the caller manages horizontal positioning (separation of concerns)
-    (void)x_position;
+    (void)params.x_position;
     
     BarSpectrumRenderData result;
     
     // Noise threshold check (DSP/Logic)
-    result.should_draw = (power >= config.NOISE_THRESHOLD);
+    result.should_draw = (params.power >= config.NOISE_THRESHOLD);
     if (!result.should_draw) {
         result.y_top = 0;
         result.bar_height = 0;
@@ -164,19 +161,19 @@ BarSpectrumRenderData calculate_bar_render_data(
     }
     
     // Calculate bar height (DSP/Logic)
-    result.bar_height = (power * spectrum_height) / 255;
+    result.bar_height = (params.power * spectrum_height) / 255;
     if (result.bar_height < 1) result.bar_height = 1;
     if (result.bar_height > spectrum_height) result.bar_height = spectrum_height;
     
     // Calculate color index (DSP/Logic)
     // Color based on power level: 0-4
-    if (power < BarSpectrumConfig::COLOR_THRESHOLD_LOW) {
+    if (params.power < BarSpectrumConfig::COLOR_THRESHOLD_LOW) {
         result.color_idx = 0;
-    } else if (power < BarSpectrumConfig::COLOR_THRESHOLD_MED_LOW) {
+    } else if (params.power < BarSpectrumConfig::COLOR_THRESHOLD_MED_LOW) {
         result.color_idx = 1;
-    } else if (power < BarSpectrumConfig::COLOR_THRESHOLD_MED_HIGH) {
+    } else if (params.power < BarSpectrumConfig::COLOR_THRESHOLD_MED_HIGH) {
         result.color_idx = 2;
-    } else if (power < BarSpectrumConfig::COLOR_THRESHOLD_HIGH) {
+    } else if (params.power < BarSpectrumConfig::COLOR_THRESHOLD_HIGH) {
         result.color_idx = 3;
     } else {
         result.color_idx = 4;
@@ -196,25 +193,24 @@ BarSpectrumRenderData calculate_bar_render_data(
  * It includes position, dimensions, color index, and a flag indicating whether
  * the bin should be drawn.
  * 
- * @param bin_idx Bin index in histogram
- * @param bin_count Bin count (0-255)
+ * @param params Histogram bin render parameters (bin_idx and bin_count)
  * @param max_count Maximum bin count (for scaling)
  * @param config Histogram color configuration
  * @return Calculated render data
  * 
  * @note This is a pure DSP/calculation function with no UI dependencies
  * @note noexcept for embedded safety
+ * @note P1-HIGH FIX: Uses HistogramBinRenderParams struct to prevent parameter swapping
  */
 HistogramBinRenderData calculate_histogram_bin_render_data(
-    size_t bin_idx,
-    uint8_t bin_count,
+    const HistogramBinRenderParams& params,
     uint8_t max_count,
     const HistogramColorConfig& config
 ) noexcept {
     HistogramBinRenderData result;
     
     // Skip empty bins
-    result.should_draw = (bin_count > 0);
+    result.should_draw = (params.bin_count > 0);
     if (!result.should_draw) {
         result.bin_x = 0;
         result.y_top = 0;
@@ -232,24 +228,24 @@ HistogramBinRenderData calculate_histogram_bin_render_data(
     if (max_count == 0) {
         result.bin_height = 0;
     } else {
-        result.bin_height = (static_cast<int>(bin_count) * scale_factor) / static_cast<int>(max_count);
+        result.bin_height = (static_cast<int>(params.bin_count) * scale_factor) / static_cast<int>(max_count);
     }
     if (result.bin_height < 1) result.bin_height = 1;
     if (result.bin_height > config.HISTOGRAM_HEIGHT) result.bin_height = config.HISTOGRAM_HEIGHT;
     
-    result.bin_x = static_cast<int>(bin_idx * config.HISTOGRAM_BIN_WIDTH);
+    result.bin_x = static_cast<int>(params.bin_idx * config.HISTOGRAM_BIN_WIDTH);
     result.bin_width = config.HISTOGRAM_BIN_WIDTH;
     result.y_top = (config.HISTOGRAM_Y + config.HISTOGRAM_HEIGHT) - result.bin_height;
     
     // Calculate color level (DSP/Logic)
     uint8_t color_level;
-    if (bin_count <= HistogramColorConfig::COLOR_THRESHOLD_20PCT) {  // 20% threshold
+    if (params.bin_count <= HistogramColorConfig::COLOR_THRESHOLD_20PCT) {  // 20% threshold
         color_level = 0;
-    } else if (bin_count <= HistogramColorConfig::COLOR_THRESHOLD_40PCT) {  // 40% threshold
+    } else if (params.bin_count <= HistogramColorConfig::COLOR_THRESHOLD_40PCT) {  // 40% threshold
         color_level = 1;
-    } else if (bin_count <= HistogramColorConfig::COLOR_THRESHOLD_60PCT) {  // 60% threshold
+    } else if (params.bin_count <= HistogramColorConfig::COLOR_THRESHOLD_60PCT) {  // 60% threshold
         color_level = 2;
-    } else if (bin_count <= HistogramColorConfig::COLOR_THRESHOLD_80PCT) {  // 80% threshold
+    } else if (params.bin_count <= HistogramColorConfig::COLOR_THRESHOLD_80PCT) {  // 80% threshold
         color_level = 3;
     } else {
         color_level = 4;
@@ -271,25 +267,25 @@ HistogramBinRenderData calculate_histogram_bin_render_data(
  * It converts from uint16_t to uint8_t (0-255) for display.
  * 
  * @param analysis_histogram Analysis histogram buffer (uint16_t values)
- * @param noise_floor Noise floor from spectral analysis
+ * @param params Histogram scale parameters (histogram_size and noise_floor)
  * @return Scaled histogram display buffer
  * 
  * @note This is a pure DSP/scaling function with no UI dependencies
  * @note noexcept for embedded safety
+ * @note P1-HIGH FIX: Uses HistogramScaleParams struct to prevent parameter swapping
  */
 HistogramDisplayBuffer scale_histogram_for_display(
     const uint16_t* analysis_histogram,
-    size_t histogram_size,
-    uint8_t noise_floor
+    const HistogramScaleParams& params
 ) noexcept {
     HistogramDisplayBuffer result;
     result.max_count = 0;
-    result.noise_floor = noise_floor;
+    result.noise_floor = params.noise_floor;
     result.is_valid = true;
     
     // Scale from uint16_t to uint8_t (DSP/Logic)
     // Use minimum of histogram_size and 64 to prevent buffer overflow
-    size_t bin_count = (histogram_size < 64) ? histogram_size : 64;
+    size_t bin_count = (params.histogram_size < 64) ? params.histogram_size : 64;
     for (size_t i = 0; i < bin_count; ++i) {
         uint16_t raw_count = analysis_histogram[i];
         result.bin_counts[i] = static_cast<uint8_t>(
