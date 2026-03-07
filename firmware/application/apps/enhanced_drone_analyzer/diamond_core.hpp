@@ -291,11 +291,35 @@ inline constexpr bool frequency_equal(EDA::Frequency freq1, EDA::Frequency freq2
     return freq1 == freq2;
 }
 
-// Fix #4: Safe Deadline Calculation
-inline constexpr systime_t safe_deadline(systime_t current_time, uint32_t timeout_ms) noexcept {
-    uint32_t timeout_ticks = MS2ST(timeout_ms);
+// Fix #4: Strong Type for Timeout Milliseconds
+/**
+ * @brief Strong type for timeout in milliseconds
+ * @details Prevents accidental parameter swaps with systime_t in safe_deadline()
+ * @note Zero-overhead: compiler optimizes to single uint32_t
+ * @note constexpr enables compile-time evaluation
+ * @note Explicit constructor prevents implicit conversions
+ */
+struct TimeoutMs {
+    uint32_t value;
+    
+    explicit constexpr TimeoutMs(uint32_t ms) noexcept : value(ms) {}
+    
+    explicit constexpr operator uint32_t() const noexcept { return value; }
+};
 
-    // Check for overflow before addition
+// Fix #5: Safe Deadline Calculation (Fixed: bugprone-easily-swappable-parameters)
+/**
+ * @brief Calculate safe deadline with overflow protection
+ * @param current_time Current system time in ticks (systime_t)
+ * @param timeout Timeout duration in milliseconds (TimeoutMs strong type)
+ * @return Deadline in ticks, or MAX_SYSTIME_VALUE if overflow would occur
+ * @note Strong typing prevents accidental parameter swaps (clang-tidy fix)
+ * @note Uses MS2ST macro to convert milliseconds to system ticks
+ */
+inline constexpr systime_t safe_deadline(systime_t current_time, TimeoutMs timeout) noexcept {
+    uint32_t timeout_ticks = MS2ST(static_cast<uint32_t>(timeout));
+
+    // Guard clause: Check for overflow before addition
     if (current_time > ConfidenceConstants::MAX_SYSTIME_VALUE - timeout_ticks) {
         // Overflow would occur - return max value
         return ConfidenceConstants::MAX_SYSTIME_VALUE;

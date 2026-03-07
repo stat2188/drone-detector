@@ -309,42 +309,8 @@ HistogramDisplayBuffer scale_histogram_for_display(
 // DRONE FILTERING AND SORTING IMPLEMENTATIONS
 // ============================================================================
 
-/**
- * @brief Filter drones by stale timeout
- * 
- * This function filters out drones that have not been seen recently.
- * It returns a filtered snapshot containing only active drones.
- * 
- * @param snapshot Input snapshot of tracked drones
- * @param stale_timeout_ms Timeout in milliseconds for stale detection
- * @param now Current timestamp in milliseconds
- * @return Filtered snapshot with only active drones
- * 
- * @note This is a pure DSP filtering function with no UI dependencies
- * @note noexcept for embedded safety
- */
-FilteredDronesSnapshot filter_stale_drones(
-    const FilteredDronesSnapshot& snapshot,
-    systime_t stale_timeout_ms,
-    systime_t now
-) noexcept {
-    FilteredDronesSnapshot result;
-    result.count = 0;
-    
-    // Filter out stale drones
-    for (size_t i = 0; i < snapshot.count && result.count < 10; ++i) {
-        const auto& drone = snapshot.drones[i];
-        
-        // Check if drone is stale (not seen recently)
-        if ((now - drone.last_seen) <= stale_timeout_ms) {
-            // Drone is active, add to result
-            result.drones[result.count] = drone;
-            result.count++;
-        }
-    }
-    
-    return result;
-}
+// Note: filter_stale_drones() is implemented in dsp_display_types.cpp
+// with CRITICAL FIX #E004 strongly-typed wrapper support (StaleTimeout, CurrentTime)
 
 /**
  * @brief Sort drones by RSSI, threat level, and last seen

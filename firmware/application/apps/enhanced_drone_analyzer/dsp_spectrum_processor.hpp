@@ -59,6 +59,129 @@ namespace SpectrumProcessorConstants {
     static constexpr size_t MINI_SPECTRUM_WIDTH = 240;
 }
 
+// ============================================================================
+// CRITICAL FIX #E004: STRONGLY-TYPED WRAPPER CLASSES
+// ============================================================================
+/**
+ * @brief Strongly-typed wrapper for frequency bin size parameter
+ *
+ * DIAMOND FIX #E004: Prevents accidental parameter swapping
+ * - BinSize is distinct type that cannot be confused with other Frequency parameters
+ * - Cannot be implicitly converted to Frequency
+ * - Compile-time error if swapped in process_mini_spectrum() function
+ * - Zero runtime overhead (constexpr, inline)
+ *
+ * USAGE:
+ * @code
+ *   // CORRECT: Types prevent swapping
+ *   process_mini_spectrum(
+ *       spectrum,
+ *       power_levels,
+ *       bins_hz_size,
+ *       BinSize(100),     // Bin size
+ *       Frequency(1000000), // Frequency for each bin
+ *       Frequency(100),       // Marker pixel step
+ *       MinColorPower(5)     // Min color power
+ *   );
+ *
+ *   // WRONG: Compiler error - types don't match!
+ *   // process_mini_spectrum(
+ *   //     spectrum,
+ *   //     power_levels,
+ *   //     bins_hz_size,
+ *   //     Frequency(1000000), // Wrong type!
+ *   //     Frequency(100),       // Wrong type!
+ *   //     BinSize(100),       // Wrong type!
+ *   //     Frequency(100),       // Wrong type!
+ *   //     MinColorPower(5)     // Wrong type!
+ *   // );
+ * @endcode
+ *
+ * @note Follows Scott Meyers' principle: "Make interfaces hard to use incorrectly"
+ * @note Zero runtime overhead: constexpr and inline optimization
+ * @note Type-safe: Cannot be confused with other Frequency parameters
+ */
+class BinSize {
+public:
+    /**
+     * @brief Construct BinSize from size_t value
+     * @param value Size of each frequency bin
+     * @note constexpr enables compile-time evaluation
+     * @note explicit prevents implicit conversion from size_t
+     */
+    explicit constexpr BinSize(size_t value) noexcept : value_(value) {}
+
+    /**
+     * @brief Get the underlying size_t value
+     * @return Size of each frequency bin
+     * @note constexpr enables compile-time evaluation
+     */
+    [[nodiscard]] constexpr size_t get() const noexcept { return value_; }
+
+private:
+    size_t value_;  ///< Underlying size_t value
+};
+
+/**
+ * @brief Strongly-typed wrapper for minimum color power
+ *
+ * DIAMOND FIX #E004: Prevents accidental parameter swapping
+ * - MinColorPower is distinct type that cannot be confused with other parameters
+ * - Cannot be implicitly converted to uint8_t
+ * - Compile-time error if swapped in process_mini_spectrum() function
+ * - Zero runtime overhead (constexpr, inline)
+ *
+ * USAGE:
+ * @code
+ *   // CORRECT: Types prevent swapping
+ *   process_mini_spectrum(
+ *       spectrum,
+ *       power_levels,
+ *       bins_hz_size,
+ *       BinSize(100),     // Bin size
+ *       Frequency(1000000), // Frequency for each bin
+ *       Frequency(100),       // Marker pixel step
+ *       MinColorPower(5)     // Min color power
+ *   );
+ *
+ *   // WRONG: Compiler error - types don't match!
+ *   // process_mini_spectrum(
+ *   //     spectrum,
+ *   //     power_levels,
+ *   //     bins_hz_size,
+ *   //     Frequency(1000000), // Wrong type!
+ *   //     Frequency(100),       // Wrong type!
+ *   //     BinSize(100),       // Wrong type!
+ *   //     Frequency(100),       // Wrong type!
+ *   //     MinColorPower(5)     // Wrong type!
+ *   // );
+ * @endcode
+ *
+ * @note Follows Scott Meyers' principle: "Make interfaces hard to use incorrectly"
+ * @note Zero runtime overhead: constexpr and inline optimization
+ * @note Type-safe: Cannot be confused with other parameters
+ */
+class MinColorPower {
+public:
+    /**
+     * @brief Construct MinColorPower from uint8_t value
+     * @param value Minimum color power level
+     * @note constexpr enables compile-time evaluation
+     * @note explicit prevents implicit conversion from uint8_t
+     */
+    explicit constexpr MinColorPower(uint8_t value) noexcept : value_(value) {}
+
+    /**
+     * @brief Get the underlying uint8_t value
+     * @return Minimum color power level
+     * @note constexpr enables compile-time evaluation
+     */
+    [[nodiscard]] constexpr uint8_t get() const noexcept { return value_; }
+
+private:
+    uint8_t value_;  ///< Underlying uint8_t value
+};
+
 /**
  * @brief Spectrum data processor (DSP layer)
  * 
@@ -91,13 +214,14 @@ public:
      * @note Implementation merged from dsp_spectrum_processor.cpp
      * @note PHASE 3 FIX #8: Replaced magic number 240 with POWER_LEVELS_COUNT
      */
+    // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     static inline size_t process_mini_spectrum(
         const ChannelSpectrum& spectrum,
         uint8_t power_levels[SpectrumProcessorConstants::POWER_LEVELS_COUNT],
         size_t& bins_hz_size,
-        Frequency each_bin_size,
+        BinSize each_bin_size,
         Frequency marker_pixel_step,
-        uint8_t min_color_power
+        MinColorPower min_color_power
     ) noexcept {
         size_t pixel_index = 0;
 
@@ -109,12 +233,12 @@ public:
                 current_bin_power = 0;
             }
 
-            bins_hz_size += each_bin_size;
+            bins_hz_size += each_bin_size.get();
             if (bins_hz_size >= marker_pixel_step) {
                 // Bounds check BEFORE array access to prevent buffer overflow
                 // PHASE 3 FIX #8: Replaced magic number 240 with POWER_LEVELS_COUNT
                 if (pixel_index < SpectrumProcessorConstants::POWER_LEVELS_COUNT) {
-                    power_levels[pixel_index] = (current_bin_power > min_color_power) ?
+                    power_levels[pixel_index] = (current_bin_power > min_color_power.get()) ?
                                                 current_bin_power : 0;
                 }
                 current_bin_power = 0;

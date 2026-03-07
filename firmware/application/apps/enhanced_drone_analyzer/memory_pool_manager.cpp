@@ -342,9 +342,10 @@ bool MemoryPoolManager::initialize_pool(const PoolInitParams& params) noexcept {
     chMtxInit(&entry->mutex);
 
     // Initialize statistics
-    entry->statistics.total_blocks = params.pool_size;
+    // CRITICAL FIX #E004: Call .get() on strongly-typed wrappers
+    entry->statistics.total_blocks = params.pool_size.get();
     entry->statistics.used_blocks = 0;
-    entry->statistics.free_blocks = params.pool_size;
+    entry->statistics.free_blocks = params.pool_size.get();
     entry->statistics.allocation_count = 0;
     entry->statistics.free_count = 0;
     entry->statistics.overflow_count = 0;
@@ -352,7 +353,8 @@ bool MemoryPoolManager::initialize_pool(const PoolInitParams& params) noexcept {
     // Initialize ChibiOS memory pool
     // Note: chPoolInit expects a memory provider function
     // We use chPoolLoadArray to load pre-allocated storage
-    chPoolInit(&entry->pool, params.block_size, nullptr);
+    // CRITICAL FIX #E004: Call .get() on strongly-typed wrapper
+    chPoolInit(&entry->pool, params.block_size.get(), nullptr);
 
     // Load pool with pre-allocated storage
     // CRITICAL FIX #002: Flexible array member handling
@@ -380,7 +382,8 @@ bool MemoryPoolManager::initialize_pool(const PoolInitParams& params) noexcept {
     // |   ...            |
     // +-------------------+
     uint8_t* storage = entry->storage;
-    chPoolLoadArray(&entry->pool, storage, params.pool_size);
+    // CRITICAL FIX #E004: Call .get() on strongly-typed wrapper
+    chPoolLoadArray(&entry->pool, storage, params.pool_size.get());
 
     // Mark as initialized
     entry->initialized = true;
@@ -445,37 +448,41 @@ bool MemoryPoolManager::initialize() noexcept {
     // preventing undefined behavior from partially-initialized system
 
     // P1-HIGH FIX #E002: Use PoolInitParams struct to prevent parameter swapping
+    // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     const PoolInitParams detection_ring_buffer_params(
         PoolType::DETECTION_RING_BUFFER,
-        get_block_size(PoolType::DETECTION_RING_BUFFER),
-        get_pool_size(PoolType::DETECTION_RING_BUFFER)
+        BlockSize(get_block_size(PoolType::DETECTION_RING_BUFFER)),
+        PoolSize(get_pool_size(PoolType::DETECTION_RING_BUFFER))
     );
     if (!initialize_pool(detection_ring_buffer_params)) {
         return false;
     }
 
+    // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     const PoolInitParams filtered_drones_snapshot_params(
         PoolType::FILTERED_DRONES_SNAPSHOT,
-        get_block_size(PoolType::FILTERED_DRONES_SNAPSHOT),
-        get_pool_size(PoolType::FILTERED_DRONES_SNAPSHOT)
+        BlockSize(get_block_size(PoolType::FILTERED_DRONES_SNAPSHOT)),
+        PoolSize(get_pool_size(PoolType::FILTERED_DRONES_SNAPSHOT))
     );
     if (!initialize_pool(filtered_drones_snapshot_params)) {
         return false;
     }
 
+    // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     const PoolInitParams drone_analyzer_settings_params(
         PoolType::DRONE_ANALYZER_SETTINGS,
-        get_block_size(PoolType::DRONE_ANALYZER_SETTINGS),
-        get_pool_size(PoolType::DRONE_ANALYZER_SETTINGS)
+        BlockSize(get_block_size(PoolType::DRONE_ANALYZER_SETTINGS)),
+        PoolSize(get_pool_size(PoolType::DRONE_ANALYZER_SETTINGS))
     );
     if (!initialize_pool(drone_analyzer_settings_params)) {
         return false;
     }
 
+    // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     const PoolInitParams display_data_snapshot_params(
         PoolType::DISPLAY_DATA_SNAPSHOT,
-        get_block_size(PoolType::DISPLAY_DATA_SNAPSHOT),
-        get_pool_size(PoolType::DISPLAY_DATA_SNAPSHOT)
+        BlockSize(get_block_size(PoolType::DISPLAY_DATA_SNAPSHOT)),
+        PoolSize(get_pool_size(PoolType::DISPLAY_DATA_SNAPSHOT))
     );
     if (!initialize_pool(display_data_snapshot_params)) {
         return false;

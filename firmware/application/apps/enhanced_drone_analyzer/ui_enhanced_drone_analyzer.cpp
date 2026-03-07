@@ -3492,8 +3492,9 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
 
     // DIAMOND CODE PRINCIPLE: Use DSP layer for filtering logic
     // This separates filtering logic from UI rendering
+    // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     dsp::FilteredDronesSnapshot filtered_snapshot = dsp::filter_stale_drones(
-        converted_snapshot, STALE_TIMEOUT, now
+        converted_snapshot, StaleTimeout(STALE_TIMEOUT), CurrentTime(now)
     );
 
     // Step 3: Copy filtered drones to display buffer
@@ -3573,19 +3574,20 @@ void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& s
     // DIAMOND CODE PRINCIPLE: Use DSP layer for signal processing
     // This separates signal processing from UI rendering
     using namespace dsp;
-    
+
     // Thread-safe buffer access with mutex protection
     // Lock order: SPECTRUM_MUTEX (level 2)
     MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
-    
+
     // Call DSP layer function to process spectrum data
+    // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     pixel_index = SpectrumProcessor::process_mini_spectrum(
         spectrum,
         spectrum_power_levels_storage_,
         bins_hz_size,
-        each_bin_size,
+        BinSize(each_bin_size),
         marker_pixel_step,
-        min_color_power
+        MinColorPower(min_color_power)
     );
 }
 

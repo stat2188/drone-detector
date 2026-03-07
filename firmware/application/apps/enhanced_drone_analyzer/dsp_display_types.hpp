@@ -253,6 +253,111 @@ struct FilteredDronesSnapshot {
     static void deallocate_to_pool(FilteredDronesSnapshot* ptr) noexcept;
 };
 
+// ============================================================================
+// CRITICAL FIX #E004: STRONGLY-TYPED WRAPPER CLASSES
+// ============================================================================
+/**
+ * @brief Strongly-typed wrapper for stale timeout value
+ *
+ * DIAMOND FIX #E004: Prevents accidental parameter swapping
+ * - StaleTimeout and CurrentTime are distinct types
+ * - Cannot be implicitly converted to systime_t
+ * - Compile-time error if swapped in filter_stale_drones() function
+ * - Zero runtime overhead (constexpr, inline)
+ *
+ * USAGE:
+ * @code
+ *   // CORRECT: Types prevent swapping
+ *   filter_stale_drones(
+ *       snapshot,
+ *       StaleTimeout(5000),   // Timeout value
+ *       CurrentTime(chTimeNow())  // Current time
+ *   );
+ *
+ *   // WRONG: Compiler error - types don't match!
+ *   // filter_stale_drones(
+ *   //     snapshot,
+ *   //     CurrentTime(chTimeNow()),  // Wrong type!
+ *   //     StaleTimeout(5000)       // Wrong type!
+ *   // );
+ * @endcode
+ *
+ * @note Follows Scott Meyers' principle: "Make interfaces hard to use incorrectly"
+ * @note Zero runtime overhead: constexpr and inline optimization
+ * @note Type-safe: Cannot be confused with CurrentTime
+ */
+class StaleTimeout {
+public:
+    /**
+     * @brief Construct StaleTimeout from systime_t value
+     * @param value Timeout value in milliseconds
+     * @note constexpr enables compile-time evaluation
+     * @note explicit prevents implicit conversion from systime_t
+     */
+    explicit constexpr StaleTimeout(systime_t value) noexcept : value_(value) {}
+
+    /**
+     * @brief Get the underlying systime_t value
+     * @return Timeout value in milliseconds
+     * @note constexpr enables compile-time evaluation
+     */
+    [[nodiscard]] constexpr systime_t get() const noexcept { return value_; }
+
+private:
+    systime_t value_;  ///< Underlying systime_t value
+};
+
+/**
+ * @brief Strongly-typed wrapper for current time value
+ *
+ * DIAMOND FIX #E004: Prevents accidental parameter swapping
+ * - CurrentTime and StaleTimeout are distinct types
+ * - Cannot be implicitly converted to systime_t
+ * - Compile-time error if swapped in filter_stale_drones() function
+ * - Zero runtime overhead (constexpr, inline)
+ *
+ * USAGE:
+ * @code
+ *   // CORRECT: Types prevent swapping
+ *   filter_stale_drones(
+ *       snapshot,
+ *       StaleTimeout(5000),   // Timeout value
+ *       CurrentTime(chTimeNow())  // Current time
+ *   );
+ *
+ *   // WRONG: Compiler error - types don't match!
+ *   // filter_stale_drones(
+ *   //     snapshot,
+ *   //     StaleTimeout(5000),       // Wrong type!
+ *   //     CurrentTime(chTimeNow())  // Wrong type!
+ *   // );
+ * @endcode
+ *
+ * @note Follows Scott Meyers' principle: "Make interfaces hard to use incorrectly"
+ * @note Zero runtime overhead: constexpr and inline optimization
+ * @note Type-safe: Cannot be confused with StaleTimeout
+ */
+class CurrentTime {
+public:
+    /**
+     * @brief Construct CurrentTime from systime_t value
+     * @param value Current time value
+     * @note constexpr enables compile-time evaluation
+     * @note explicit prevents implicit conversion from systime_t
+     */
+    explicit constexpr CurrentTime(systime_t value) noexcept : value_(value) {}
+
+    /**
+     * @brief Get the underlying systime_t value
+     * @return Current time value
+     * @note constexpr enables compile-time evaluation
+     */
+    [[nodiscard]] constexpr systime_t get() const noexcept { return value_; }
+
+private:
+    systime_t value_;  ///< Underlying systime_t value
+};
+
 /**
  * @brief Drone display text for UI rendering
  *

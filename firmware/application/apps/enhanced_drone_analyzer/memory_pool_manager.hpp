@@ -181,6 +181,111 @@ static_assert(PoolConfig::MAX_STACK_ALLOCATION_SIZE >= sizeof(void*),
 // memory pool allocation via MemoryPoolManager::allocate().
 
 // ============================================================================
+// CRITICAL FIX #E004: STRONGLY-TYPED WRAPPER CLASSES
+// ============================================================================
+/**
+ * @brief Strongly-typed wrapper for memory pool block size
+ *
+ * DIAMOND FIX #E004: Prevents accidental parameter swapping
+ * - BlockSize and PoolSize are distinct types
+ * - Cannot be implicitly converted to size_t
+ * - Compile-time error if swapped in PoolInitParams constructor
+ * - Zero runtime overhead (constexpr, inline)
+ *
+ * USAGE:
+ * @code
+ *   // CORRECT: Types prevent swapping
+ *   PoolInitParams params(
+ *       PoolType::DETECTION_RING_BUFFER,
+ *       BlockSize(480),   // Block size
+ *       PoolSize(2)       // Pool size
+ *   );
+ *
+ *   // WRONG: Compiler error - types don't match!
+ *   // PoolInitParams params(
+ *   //     PoolType::DETECTION_RING_BUFFER,
+ *   //     PoolSize(2),       // Wrong type!
+ *   //     BlockSize(480)     // Wrong type!
+ *   // );
+ * @endcode
+ *
+ * @note Follows Scott Meyers' principle: "Make interfaces hard to use incorrectly"
+ * @note Zero runtime overhead: constexpr and inline optimization
+ * @note Type-safe: Cannot be confused with PoolSize
+ */
+class BlockSize {
+public:
+    /**
+     * @brief Construct BlockSize from size_t value
+     * @param value Size of each block in memory pool (in bytes)
+     * @note constexpr enables compile-time evaluation
+     * @note explicit prevents implicit conversion from size_t
+     */
+    explicit constexpr BlockSize(size_t value) noexcept : value_(value) {}
+
+    /**
+     * @brief Get the underlying size_t value
+     * @return Block size in bytes
+     * @note constexpr enables compile-time evaluation
+     */
+    [[nodiscard]] constexpr size_t get() const noexcept { return value_; }
+
+private:
+    size_t value_;  ///< Underlying size_t value
+};
+
+/**
+ * @brief Strongly-typed wrapper for memory pool capacity
+ *
+ * DIAMOND FIX #E004: Prevents accidental parameter swapping
+ * - PoolSize and BlockSize are distinct types
+ * - Cannot be implicitly converted to size_t
+ * - Compile-time error if swapped in PoolInitParams constructor
+ * - Zero runtime overhead (constexpr, inline)
+ *
+ * USAGE:
+ * @code
+ *   // CORRECT: Types prevent swapping
+ *   PoolInitParams params(
+ *       PoolType::DETECTION_RING_BUFFER,
+ *       BlockSize(480),   // Block size
+ *       PoolSize(2)       // Pool size
+ *   );
+ *
+ *   // WRONG: Compiler error - types don't match!
+ *   // PoolInitParams params(
+ *   //     PoolType::DETECTION_RING_BUFFER,
+ *   //     PoolSize(2),       // Wrong type!
+ *   //     BlockSize(480)     // Wrong type!
+ *   // );
+ * @endcode
+ *
+ * @note Follows Scott Meyers' principle: "Make interfaces hard to use incorrectly"
+ * @note Zero runtime overhead: constexpr and inline optimization
+ * @note Type-safe: Cannot be confused with BlockSize
+ */
+class PoolSize {
+public:
+    /**
+     * @brief Construct PoolSize from size_t value
+     * @param value Number of blocks in memory pool
+     * @note constexpr enables compile-time evaluation
+     * @note explicit prevents implicit conversion from size_t
+     */
+    explicit constexpr PoolSize(size_t value) noexcept : value_(value) {}
+
+    /**
+     * @brief Get the underlying size_t value
+     * @return Number of blocks in pool
+     * @note constexpr enables compile-time evaluation
+     */
+    [[nodiscard]] constexpr size_t get() const noexcept { return value_; }
+
+private:
+    size_t value_;  ///< Underlying size_t value
+};
+
+// ============================================================================
 // MEMORY POOL TYPE IDS
 // ============================================================================
 
@@ -406,49 +511,62 @@ private:
     /**
      * @brief Pool initialization parameters
      *
-     * P1-HIGH FIX #E002: Use struct to prevent parameter swapping
-     * - Groups related parameters together
-     * - Makes it harder to accidentally swap block_size and pool_size
-     * - Improves code readability and type safety
+     * CRITICAL FIX #E004: Uses strongly-typed parameters to prevent swapping
+     * - BlockSize and PoolSize are distinct wrapper types
+     * - Compile-time error if parameters are swapped
+     * - Zero runtime overhead from wrapper classes
+     * - Makes API more self-documenting
      *
      * USAGE:
      * @code
+     *   // CORRECT: Types prevent swapping
      *   PoolInitParams params{
      *       .pool_type = PoolType::DETECTION_RING_BUFFER,
-     *       .block_size = 480,
-     *       .pool_size = 2
+     *       .block_size = BlockSize(480),
+     *       .pool_size = PoolSize(2)
      *   };
      *   initialize_pool(params);
+     *
+     *   // WRONG: Compiler error - types don't match!
+     *   // PoolInitParams params{
+     *   //     .pool_type = PoolType::DETECTION_RING_BUFFER,
+     *   //     .block_size = PoolSize(2),       // Wrong type!
+     *   //     .pool_size = BlockSize(480)     // Wrong type!
+     *   // };
      * @endcode
      *
      * Or using constructor:
      * @code
+     *   // CORRECT: Types prevent swapping
      *   PoolInitParams params(
      *       PoolType::DETECTION_RING_BUFFER,
-     *       480,
-     *       2
+     *       BlockSize(480),   // Block size
+     *       PoolSize(2)       // Pool size
      *   );
      *   initialize_pool(params);
      * @endcode
      */
     struct PoolInitParams {
         PoolType pool_type;  ///< Type of pool to initialize
-        size_t block_size;  ///< Size of each block in pool
-        size_t pool_size;   ///< Number of blocks in pool
+        BlockSize block_size;  ///< Size of each block in pool (strongly-typed)
+        PoolSize pool_size;   ///< Number of blocks in pool (strongly-typed)
 
         /**
          * @brief Constructor with [[nodiscard]] to ensure parameters are used
          * @param pool_type Type of pool to initialize
-         * @param block_size Size of each block in pool
-         * @param pool_size Number of blocks in pool
+         * @param block_size Size of each block in pool (strongly-typed)
+         * @param pool_size Number of blocks in pool (strongly-typed)
          * @note constexpr for compile-time evaluation
          * @note noexcept for embedded safety
+         * @note CRITICAL FIX #E004: Strongly-typed parameters prevent swapping
          */
         [[nodiscard]] constexpr PoolInitParams(
             PoolType pool_type,
-            size_t block_size,
-            size_t pool_size
-        ) noexcept : pool_type(pool_type), block_size(block_size), pool_size(pool_size) {}
+            BlockSize block_size,  ///< Distinct type - cannot be confused with pool_size
+            PoolSize pool_size     ///< Distinct type - cannot be confused with block_size
+        ) noexcept : pool_type(pool_type),
+                   block_size(block_size),
+                   pool_size(pool_size) {}
     };
 
     /**

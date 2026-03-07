@@ -279,10 +279,11 @@ void DisplayDataSnapshot::deallocate_to_pool(DisplayDataSnapshot* ptr) noexcept 
  *   }
  * @endcode
  */
+// CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
 FilteredDronesSnapshot filter_stale_drones(
     const FilteredDronesSnapshot& snapshot,
-    systime_t stale_timeout_ms,
-    systime_t now
+    StaleTimeout stale_timeout_ms,
+    CurrentTime now
 ) noexcept {
     FilteredDronesSnapshot filtered;
     filtered.count = 0;
@@ -292,8 +293,9 @@ FilteredDronesSnapshot filter_stale_drones(
         const TrackedDroneData& drone = snapshot.drones[i];
 
         // Check if drone is stale (not seen recently)
-        systime_t time_since_last_seen = now - drone.last_seen;
-        if (time_since_last_seen < stale_timeout_ms) {
+        // CRITICAL FIX #E004: Call .get() on strongly-typed wrappers
+        systime_t time_since_last_seen = now.get() - drone.last_seen;
+        if (time_since_last_seen < stale_timeout_ms.get()) {
             // Drone is still active, add to filtered snapshot
             if (filtered.count < DisplayTypeConstants::MAX_FILTERED_DRONES) {
                 filtered.drones[filtered.count] = drone;

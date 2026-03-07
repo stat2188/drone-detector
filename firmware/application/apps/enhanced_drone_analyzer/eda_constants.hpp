@@ -102,7 +102,9 @@ namespace FrequencyConstants {
  */
 constexpr Frequency from_uint64(uint64_t freq_hz) noexcept {
     // Check for overflow before conversion
-    if (freq_hz > static_cast<uint64_t>(INT64_MAX)) {
+    // DIAMOND FIX: Use std::numeric_limits instead of INT64_MAX macro for C++ portability
+    // The INT64_MAX macro may not be available in some embedded toolchains even with <cstdint>
+    if (freq_hz > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
         return 0;  // Invalid frequency
     }
     return static_cast<Frequency>(freq_hz);

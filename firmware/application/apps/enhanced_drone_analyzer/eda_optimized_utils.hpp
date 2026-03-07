@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 // Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
