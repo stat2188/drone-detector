@@ -27,7 +27,8 @@
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
-#include "eda_locking.hpp"
+#include "chmtx.h"
+#include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "memory_pool_manager.hpp"
 

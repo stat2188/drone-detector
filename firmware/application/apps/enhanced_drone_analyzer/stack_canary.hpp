@@ -54,6 +54,10 @@
 // C++ standard library headers (alphabetical order)
 #include <cstddef>
 #include <cstdint>
+#include "chconf.h"
+#include "chdebug.h"
+#include "chlists.h"
+#include "chthreads.h"
 
 // Third-party library headers
 #include <ch.h>  // For ChibiOS RTOS

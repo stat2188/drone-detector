@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include "ui.hpp"  // For Color class
-#include "eda_constants.hpp"  // For EDA::LUTs::spectrum_mode_short_name
 
 // Flash storage attributes for Cortex-M4
 #ifdef __GNUC__

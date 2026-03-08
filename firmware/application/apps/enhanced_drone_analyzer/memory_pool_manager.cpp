@@ -51,6 +51,9 @@
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
+#include "chdebug.h"
+#include "chmempools.h"
+#include "chmtx.h"
 #include "eda_locking.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

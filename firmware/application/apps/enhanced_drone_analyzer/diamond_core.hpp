@@ -4,12 +4,15 @@
 #define DIAMOND_CORE_HPP_
 
 // Minimal includes - rely on project's existing headers
+#include <cstddef>
 #include <cstdint>
 
 // Third-party library headers
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
+#include "chtypes.h"
+#include "chvt.h"
 #include "eda_constants.hpp"
 
 // Flash storage attributes for Cortex-M4

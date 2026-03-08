@@ -7,16 +7,18 @@
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <utility>  // For std::move (used in FileRAII move constructor)
 
 // Third-party library headers
+#include "chtypes.h"
+#include "eda_optimized_utils.hpp"
 #include "ff.h"
 
 // ChibiOS headers (must be included before any ChibiOS types are used)
-#include "ch.h"
 #include "chvt.h"
 
 // UI framework headers (must be included before UI types are used)
@@ -33,6 +35,7 @@
 #include "settings_persistence.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_enhanced_drone_analyzer.hpp"
+#include "ui_widget.hpp"
 // Note: portapack.hpp is not used in this file
 // Note: string_format.hpp is not used in this file
 

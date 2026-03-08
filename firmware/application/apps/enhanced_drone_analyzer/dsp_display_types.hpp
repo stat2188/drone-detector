@@ -23,6 +23,7 @@
 #include <cstdint>
 
 // Project-specific headers (alphabetical order)
+#include "chtypes.h"
 #include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "ui_drone_common_types.hpp"

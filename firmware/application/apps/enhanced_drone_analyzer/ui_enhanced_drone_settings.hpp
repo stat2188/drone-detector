@@ -18,6 +18,13 @@
 // - Other: Compilation error (unsupported compiler)
 // ============================================================================
 
+#include "chmtx.h"
+#include "chtypes.h"
+#include "eda_constants.hpp"
+#include "memory_pool_manager.hpp"
+#include "rf_path.hpp"
+#include "ui_menu.hpp"
+#include "ui_painter.hpp"
 #if defined(__GNUC__) || defined(__clang__)
     #define EDA_FLASH_CONST __attribute__((section(".rodata")))
 #elif defined(__ICCARM__)
@@ -39,7 +46,6 @@
 #include "settings_persistence.hpp"
 #include "ui.hpp"
 #include "ui_drone_common_types.hpp"
-#include "ui_freq_field.hpp"
 #include "ui_navigation.hpp"
 #include "ui_widget.hpp"
 

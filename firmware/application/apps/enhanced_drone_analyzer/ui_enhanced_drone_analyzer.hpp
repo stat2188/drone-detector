@@ -24,16 +24,20 @@
 
 // Project-specific headers (alphabetical order)
 // diamond_fixes.hpp content merged into diamond_core.hpp
+#include "chcore_v6m.h"
+#include "chlists.h"
+#include "chmtx.h"
+#include "chsem.h"
 #include "diamond_core.hpp"
 #include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
 #include "event_m0.hpp"
-#include "freqman.hpp"
+#include "freqman_db.hpp"
 #include "gradient.hpp"
 #include "log_file.hpp"
 #include "message.hpp"
-#include "radio_state.hpp"
+#include "rf_path.hpp"
 #include "ui.hpp"
 #include "ui_drone_audio.hpp"
 #include "ui_drone_common_types.hpp"

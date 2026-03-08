@@ -17,16 +17,18 @@
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
+#include "chmtx.h"
+#include "chthreads.h"
+#include "chtypes.h"
+#include "chvt.h"
 #include "eda_constants.hpp"
 // DIAMOND FIX: Include unified eda_locking.hpp for MutexLock
 // - Uses unified MutexLock RAII wrapper from eda_locking.hpp
 // - Includes LockOrder parameter for deadlock prevention
-#include "eda_locking.hpp"
 // DIAMOND FIX #3: Include eda_ui_constants.hpp for UI-specific constants
 // - Separates UI constants from settings persistence
 // - Eliminates circular dependencies
 // - Reduces settings persistence size by 25% (51 → 38 entries)
-#include "eda_ui_constants.hpp"
 #include "file.hpp"
 #include "lpc43xx_cpp.hpp"
 #include "sd_card.hpp"

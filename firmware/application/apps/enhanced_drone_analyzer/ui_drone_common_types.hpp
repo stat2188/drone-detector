@@ -7,9 +7,8 @@
 
 // Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
-#include "file.hpp"
 #include "memory_pool_manager.hpp"
-#include "radio.hpp"
+#include "rf_path.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

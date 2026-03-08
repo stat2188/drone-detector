@@ -12,8 +12,13 @@
 #include <ch.h>  // For stkalign_t and THD_WA_SIZE
 
 // Project-specific headers (alphabetical order)
+#include "chcore_v6m.h"
+#include "chlists.h"
+#include "chmtx.h"
+#include "chtypes.h"
 #include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
+#include "eda_locking.hpp"
 #include "memory_pool_manager.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_navigation.hpp"

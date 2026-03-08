@@ -20,10 +20,8 @@
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
-#include "eda_constants.hpp"
+#include "chmtx.h"
 #include "eda_locking.hpp"
-#include "eda_validation.hpp"
-#include "file.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

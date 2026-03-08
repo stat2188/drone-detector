@@ -5,7 +5,12 @@
 
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
+#include <cstddef>
 #include <new>
+#include "chmtx.h"
+#include "chvt.h"
+#include "eda_locking.hpp"
+#include "memory_pool_manager.hpp"
 
 // Third-party library headers
 #include <ch.h>

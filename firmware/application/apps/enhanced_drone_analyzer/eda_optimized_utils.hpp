@@ -9,6 +9,7 @@
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

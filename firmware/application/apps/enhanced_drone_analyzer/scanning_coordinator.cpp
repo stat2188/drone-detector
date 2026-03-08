@@ -11,20 +11,25 @@
 #include "scanning_coordinator.hpp"
 
 // C++ standard library headers (alphabetical order)
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <new>  // Required for placement new operator
 
 // Third-party library headers
 #include <ch.h>         // ChibiOS RTOS
+#include "chcore_v6m.h"
+#include "chschd.h"
 #include "chthreads.h"  // ChibiOS threading functions
 #include "chmtx.h"      // ChibiOS mutex functions
 
 // Project-specific headers (alphabetical order)
+#include "chtypes.h"
+#include "chvt.h"
 #include "dsp_display_types.hpp"         // DSP/UI communication types
+#include "eda_constants.hpp"
 #include "eda_locking.hpp"               // Unified MutexLock, StackMonitor
 #include "memory_pool_manager.hpp"         // Memory pool manager for large structures
-#include "radio.hpp"                     // For rf::Frequency type
 #include "ui_drone_common_types.hpp"     // For DroneAnalyzerSettings
 #include "ui_enhanced_drone_analyzer.hpp" // Scanner interface
 #include "ui_navigation.hpp"              // For NavigationView

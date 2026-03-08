@@ -10,8 +10,6 @@
 #include <limits>
 
 // Project-specific headers (alphabetical order)
-#include "rf_path.hpp"      // Provides rf::Frequency (int64_t)
-#include "utility.hpp"      // Provides int64_t, int32_t, uint32_t, uint8_t, size_t
 
 // Flash storage attribute for Cortex-M4
 #ifdef __GNUC__

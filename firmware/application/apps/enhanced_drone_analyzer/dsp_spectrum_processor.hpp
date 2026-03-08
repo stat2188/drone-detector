@@ -24,7 +24,6 @@
 #include <cstdint>
 
 // Project-specific headers (alphabetical order)
-#include "eda_constants.hpp"
 #include "message.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer::dsp {

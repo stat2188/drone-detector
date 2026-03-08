@@ -14,7 +14,9 @@
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
+#include "chmtx.h"
 #include "eda_constants.hpp"
+#include "rf_path.hpp"
 #include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

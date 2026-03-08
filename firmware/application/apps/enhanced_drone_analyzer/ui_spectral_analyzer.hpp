@@ -4,13 +4,14 @@
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 
 // Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
-#include "radio.hpp"
+#include "rf_path.hpp"
 #include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
