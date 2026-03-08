@@ -88,3 +88,7 @@ venv/
 
 # Clangd cache
 .cache/
+
+# Build system artifacts
+.ninja_log
+**/*-stamp/
