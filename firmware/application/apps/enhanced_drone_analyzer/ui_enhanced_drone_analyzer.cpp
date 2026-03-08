@@ -3507,7 +3507,9 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     // This separates filtering logic from UI rendering
     // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     dsp::FilteredDronesSnapshot filtered_snapshot = dsp::filter_stale_drones(
-        converted_snapshot, dsp::StaleTimeout(STALE_TIMEOUT), dsp::CurrentTime(now)
+        converted_snapshot,
+        dsp::StaleTimeout(STALE_TIMEOUT),
+        dsp::CurrentTime(now)
     );
 
     // Step 3: Copy filtered drones to display buffer

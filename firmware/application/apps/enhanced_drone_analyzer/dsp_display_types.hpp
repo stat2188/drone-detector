@@ -624,8 +624,8 @@ HistogramDisplayBuffer scale_histogram_for_display(
  */
 FilteredDronesSnapshot filter_stale_drones(
     const FilteredDronesSnapshot& snapshot,
-    systime_t stale_timeout_ms,
-    systime_t now
+    StaleTimeout stale_timeout_ms,
+    CurrentTime now
 ) noexcept;
 
 /**
