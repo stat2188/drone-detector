@@ -6,6 +6,7 @@
 
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -14,9 +15,18 @@
 // Third-party library headers
 #include "ff.h"
 
+// ChibiOS headers (must be included before any ChibiOS types are used)
+#include "ch.h"
+#include "chvt.h"
+
+// UI framework headers (must be included before UI types are used)
+#include "ui.hpp"
+#include "ui_navigation.hpp"
+
 // Project-specific headers (alphabetical order)
 #include "color_lookup_unified.hpp"
 #include "eda_constants.hpp"
+#include "eda_locking.hpp"
 #include "eda_unified_database.hpp"
 #include "file.hpp"
 // Note: eda_database_parser.hpp is not used (only referenced in comments)
@@ -132,7 +142,8 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     // Write header with timestamp
     const char* header = generate_file_header();
     size_t header_len = strlen(header);
-    auto header_result = file.write(header, header_len);
+    auto header_result = file.write(static_cast<const void*>(header),
+                                       static_cast<File::Size>(header_len));
     if (header_result.is_error() || header_result.value() != header_len) {
         file.close();
         // Log error - restore from backup on write failure
@@ -179,7 +190,8 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
                       "last_modified_timestamp=%u\n", (unsigned int)chTimeNow());
 
     // Write settings content
-    auto content_result = file.write(settings_buffer, offset);
+    auto content_result = file.write(static_cast<const void*>(settings_buffer),
+                                         static_cast<File::Size>(offset));
     if (content_result.is_error() || content_result.value() != offset) {
         file.close();
         // Log error - restore from backup on write failure
@@ -432,7 +444,8 @@ void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept 
         auto read_result = orig_file.get().read(buffer, to_read);
         if (read_result.is_error() || read_result.value() != to_read) break;
 
-        auto write_result = backup_file.get().write(buffer, to_read);
+        auto write_result = backup_file.get().write(static_cast<const void*>(buffer),
+                                                        static_cast<File::Size>(to_read));
         if (write_result.is_error() || write_result.value() != to_read) break;
 
         total_read += read_result.value();
@@ -470,7 +483,8 @@ void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept
     while (true) {
         auto read_res = backup_file.get().read(buffer, BUFFER_SIZE);
         if (read_res.is_error() || read_res.value() == 0) break;
-        original_file.get().write(buffer, read_res.value());
+        original_file.get().write(static_cast<const void*>(buffer),
+                                   static_cast<File::Size>(read_res.value()));
     }
 }
 
