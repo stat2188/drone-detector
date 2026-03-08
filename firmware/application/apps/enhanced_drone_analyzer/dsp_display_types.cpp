@@ -370,9 +370,12 @@ void sort_drones_by_priority(
             }
 
             // Compare last seen (descending - more recent first)
+            // CRITICAL FIX: Inverted logic - should break when previous is more recent (smaller timestamp)
+            // In ChibiOS, systime_t is a millisecond counter that wraps around
+            // Smaller timestamp = more recent, larger timestamp = older
             if (prev.rssi == key.rssi &&
                 prev.threat_level == key.threat_level &&
-                prev.last_seen > key.last_seen) {
+                prev.last_seen <= key.last_seen) {
                 break;
             }
 
