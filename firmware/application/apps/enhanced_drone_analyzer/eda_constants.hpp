@@ -6,6 +6,7 @@
 // C++ standard library headers (alphabetical order)
 #include <array>
 #include <cinttypes>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 
@@ -952,19 +953,19 @@ struct ErrorResult {
 // Safe Type Casting (Zero-Overhead)
 template<typename To, typename From>
 constexpr To safe_reinterpret_cast(From* ptr) noexcept {
-    static_assert(alignof(To) <= alignof(std::max_align_t), "Target alignment too large");
+    static_assert(alignof(To) <= alignof(max_align_t), "Target alignment too large");
     return reinterpret_cast<To>(ptr);
 }
 
 template<typename To, typename From>
 constexpr To safe_reinterpret_cast_volatile(From* ptr) noexcept {
-    static_assert(alignof(To) <= alignof(std::max_align_t), "Target alignment too large");
+    static_assert(alignof(To) <= alignof(max_align_t), "Target alignment too large");
     return reinterpret_cast<To>(ptr);
 }
 
 template<typename To>
 constexpr To safe_reinterpret_cast_addr(uintptr_t addr) noexcept {
-    static_assert(alignof(To) <= alignof(std::max_align_t), "Target alignment too large");
+    static_assert(alignof(To) <= alignof(max_align_t), "Target alignment too large");
     return reinterpret_cast<To>(addr);
 }
 

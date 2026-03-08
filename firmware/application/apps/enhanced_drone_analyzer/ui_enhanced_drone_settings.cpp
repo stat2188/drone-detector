@@ -652,7 +652,7 @@ bool DroneFrequencyPresets::apply_preset(DroneAnalyzerSettings& config, const ui
         config.user_max_freq_hz = USER_MAX_FREQ;
     }
 
-    snprintf(config.freqman_path, ui::apps::enhanced_drone_analyzer::MAX_NAME_LEN, "%s", "DRONES");
+    snprintf(config.freqman_path, EDA::Constants::MAX_NAME_LENGTH, "%s", "DRONES");
     disp_set_show_detailed_info(config, true);
 
     return true;

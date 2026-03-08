@@ -18,6 +18,7 @@
 // - Other: Compilation error (unsupported compiler)
 // ============================================================================
 
+#include <ch.h>
 #include "chmtx.h"
 #include "chtypes.h"
 #include "eda_constants.hpp"
