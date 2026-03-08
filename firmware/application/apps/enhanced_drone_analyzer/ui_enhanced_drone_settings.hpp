@@ -41,12 +41,14 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 
 // Project-specific headers (alphabetical order)
 #include "settings_persistence.hpp"
 #include "ui.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_navigation.hpp"
+#include "ui_receiver.hpp"
 #include "ui_widget.hpp"
 
 // Note: radio.hpp is not needed here - rf::Frequency is already defined in ui_widget.hpp

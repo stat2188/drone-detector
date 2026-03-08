@@ -661,11 +661,11 @@ private:
 
     // Static storage for all pools (allocated in .cpp file)
     // P1-HIGH FIX: Static variables are defined in .cpp file to prevent dynamic initialization issues
-    // NOLINTNEXTLINE(readability-redundant-member-init): pools_ is defined in .cpp with initializer list
+    // NOLINTNEXTLINE(cert-err58-cpp): pools_ is defined in .cpp
     static PoolEntry* pools_[static_cast<size_t>(PoolType::COUNT)];
     // NOLINTNEXTLINE(cert-err58-cpp): global_mutex_ requires runtime initialization via initialize_global_mutex()
     static Mutex global_mutex_;  ///< Global mutex for pool manager operations
-    // NOLINTNEXTLINE(cert-err58-cpp): global_mutex_initialized_ is defined in .cpp with false initializer
+    // NOLINTNEXTLINE(cert-err58-cpp): global_mutex_initialized_ is defined in .cpp
     static bool global_mutex_initialized_;  ///< Tracks if global_mutex_ has been initialized
 };
 

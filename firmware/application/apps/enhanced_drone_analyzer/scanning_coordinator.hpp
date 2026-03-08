@@ -439,13 +439,13 @@ public:
     // volatile alone doesn't guarantee proper synchronization on ARM Cortex-M4
     // AtomicFlag provides acquire/release memory ordering and lock-free operations
     // P1-HIGH FIX: Static variables are defined in .cpp file to prevent dynamic initialization issues
-    // NOLINTNEXTLINE(cert-err58-cpp): instance_ptr_ is defined in .cpp with nullptr initializer
+    // NOLINTNEXTLINE(cert-err58-cpp): instance_ptr_ is defined in .cpp
     static volatile ScanningCoordinator* instance_ptr_;  ///< Singleton instance pointer (volatile for thread safety)
     // NOLINTNEXTLINE(cert-err58-cpp): init_mutex_ requires runtime initialization via initialize_eda_mutexes()
     static Mutex init_mutex_;                   ///< Protects singleton initialization
-    // NOLINTNEXTLINE(cert-err58-cpp): initialized_ uses default constructor which is safe for AtomicFlag
+    // NOLINTNEXTLINE(cert-err58-cpp): initialized_ is defined in .cpp
     static AtomicFlag initialized_;           ///< Tracks if singleton has been initialized (AtomicFlag for thread safety)
-    // NOLINTNEXTLINE(cert-err58-cpp): instance_constructed_ uses default constructor which is safe for AtomicFlag
+    // NOLINTNEXTLINE(cert-err58-cpp): instance_constructed_ is defined in .cpp
     static AtomicFlag instance_constructed_;  ///< Tracks if placement new was called (AtomicFlag for thread safety)
 
 private:

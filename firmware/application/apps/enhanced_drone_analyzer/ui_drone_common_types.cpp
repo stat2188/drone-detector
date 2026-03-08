@@ -11,7 +11,6 @@
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
-#include "eda_locking.hpp"
 #include "memory_pool_manager.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

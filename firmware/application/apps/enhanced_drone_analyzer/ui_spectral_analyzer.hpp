@@ -9,6 +9,9 @@
 #include <cstring>
 
 // Project-specific headers (alphabetical order)
+// Explicit include: This file directly uses EDA::Constants::BAND_SPLIT_FREQ_5GHZ at line 221
+// Note: Also transitively included via eda_optimized_utils.hpp and ui_drone_common_types.hpp
+// Keeping direct include for explicit dependency documentation (clang IWYU sees this as redundant)
 #include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
 #include "rf_path.hpp"
@@ -25,6 +28,30 @@ using SpectralBin = size_t;
 using SNRValue = uint8_t;
 using SignalWidthHz = uint32_t;
 using WidthBins = uint8_t;
+
+// Strong Type: SignalWidthArg (prevents accidental swapping with Frequency)
+// Used as parameter type for classify_signal() to prevent swappable parameter warning
+class SignalWidthArg final {
+public:
+    using ValueType = uint32_t;
+
+    constexpr explicit SignalWidthArg(ValueType hz) noexcept : value_(hz) {}
+
+    // Explicit conversion to underlying type (prevents implicit conversions)
+    constexpr explicit operator ValueType() const noexcept { return value_; }
+
+    // Comparison operators (needed for classify_signal logic)
+    constexpr bool operator>=(const SignalWidthArg& other) const noexcept {
+        return value_ >= other.value_;
+    }
+
+    constexpr bool operator<=(const SignalWidthArg& other) const noexcept {
+        return value_ <= other.value_;
+    }
+
+private:
+    ValueType value_;
+};
 
 // Signal Signature Enum
 enum class SignalSignature : uint8_t {
@@ -99,7 +126,7 @@ public:
     static DroneType get_drone_type(Frequency frequency_hz, SignalSignature signature) noexcept;
 
 private:
-    static inline SignalSignature classify_signal(uint32_t width_hz, Frequency freq_hz) noexcept;
+    static inline SignalSignature classify_signal(SignalWidthArg width_hz, Frequency freq_hz) noexcept;
 
     static inline uint32_t fixed_point_divide(uint32_t numerator,
                                             uint32_t inv_denominator_q16) noexcept {
@@ -180,7 +207,7 @@ inline SpectralAnalysisResult SpectralAnalyzer::analyze(
     const uint32_t bin_width_hz = static_cast<uint32_t>(bin_width_calc >> 16);
     result.signal_width_hz = static_cast<uint32_t>(static_cast<uint64_t>(result.width_bins) * bin_width_hz);
 
-    result.signature = classify_signal(result.signal_width_hz, params.center_freq_hz);
+    result.signature = classify_signal(SignalWidthArg(result.signal_width_hz), params.center_freq_hz);
     result.is_valid = true;
 
     return result;
@@ -216,13 +243,13 @@ inline DroneType SpectralAnalyzer::get_drone_type(Frequency frequency_hz, Signal
 }
 
 // Implementation: classify_signal()
-inline SignalSignature SpectralAnalyzer::classify_signal(uint32_t width_hz, Frequency freq_hz) noexcept {
-    if (width_hz >= SpectralAnalysisConstants::WIFI_MIN_WIDTH_HZ) {
+inline SignalSignature SpectralAnalyzer::classify_signal(SignalWidthArg width_hz, Frequency freq_hz) noexcept {
+    if (width_hz >= SignalWidthArg(SpectralAnalysisConstants::WIFI_MIN_WIDTH_HZ)) {
         return (freq_hz >= EDA::Constants::BAND_SPLIT_FREQ_5GHZ)
                ? SignalSignature::DIGITAL_FPV
                : SignalSignature::WIDEBAND_WIFI;
     }
-    if (width_hz <= SpectralAnalysisConstants::DRONE_MAX_WIDTH_HZ) {
+    if (width_hz <= SignalWidthArg(SpectralAnalysisConstants::DRONE_MAX_WIDTH_HZ)) {
         return SignalSignature::NARROWBAND_DRONE;
     }
     return SignalSignature::NOISE;

@@ -273,7 +273,7 @@ public:
     MutexLock& operator=(MutexLock&&) = delete;
 
 private:
-    Mutex& mtx_;      ///< Reference to mutex being locked
+    Mutex& mtx_;      ///< Reference to mutex being locked (used for address-taking in chMtxLock/chMtxUnlock)
     bool locked_;     ///< Track lock state for safety
     LockOrder order_; ///< Lock order level for documentation
 };
@@ -404,7 +404,7 @@ public:
     MutexTryLock& operator=(MutexTryLock&&) = delete;
 
 private:
-    Mutex& mtx_;      ///< Reference to mutex being locked
+    Mutex& mtx_;      ///< Reference to mutex being locked (used for address-taking in chMtxTryLock/chMtxUnlock)
     bool locked_;     ///< Track lock state
     LockOrder order_; ///< Lock order level for documentation
 };

@@ -171,6 +171,19 @@ enum class ValidationErrorCode : uint8_t {
     DUPLICATE_FREQUENCY = 6
 };
 
+// Strong types to prevent parameter swapping
+struct EntryCount {
+    size_t value;
+    explicit constexpr EntryCount(size_t v) noexcept : value(v) {}
+    constexpr operator size_t() const noexcept { return value; }
+};
+
+struct ExcludeIndex {
+    size_t value;
+    explicit constexpr ExcludeIndex(size_t v) noexcept : value(v) {}
+    constexpr operator size_t() const noexcept { return value; }
+};
+
 // Validate complete entry
 // [[nodiscard]] - Validation result must be used by caller
 [[nodiscard]] inline ValidationResult validate_entry(const UnifiedDroneEntry& entry) noexcept {
@@ -213,12 +226,13 @@ enum class ValidationErrorCode : uint8_t {
 
 // Check for duplicate frequency in entry array
 // [[nodiscard]] - Duplicate check result must be used by caller
-[[nodiscard]] inline bool is_duplicate_frequency(Frequency freq, 
+// Note: Uses strong types EntryCount and ExcludeIndex to prevent parameter swapping
+[[nodiscard]] inline bool is_duplicate_frequency(Frequency freq,
                                     const UnifiedDroneEntry* entries,
-                                    size_t count,
-                                    size_t exclude_index = SIZE_MAX) noexcept {
+                                    EntryCount count,
+                                    ExcludeIndex exclude_index = ExcludeIndex(SIZE_MAX)) noexcept {
     if (entries == nullptr) return false;
-    
+
     for (size_t i = 0; i < count; ++i) {
         if (i == exclude_index) continue;
         if (entries[i].frequency_hz == freq) return true;
@@ -235,6 +249,7 @@ enum class ValidationErrorCode : uint8_t {
 class UnifiedDroneDatabase {
 public:
     // Singleton access (static storage, no heap)
+    // Thread-safe: C++11 guarantees atomic initialization of static local variables
     static UnifiedDroneDatabase& instance() noexcept {
         static UnifiedDroneDatabase instance;
         return instance;
