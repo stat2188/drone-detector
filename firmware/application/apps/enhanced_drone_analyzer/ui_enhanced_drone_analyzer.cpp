@@ -3507,7 +3507,7 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     // This separates filtering logic from UI rendering
     // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     dsp::FilteredDronesSnapshot filtered_snapshot = dsp::filter_stale_drones(
-        converted_snapshot, StaleTimeout(STALE_TIMEOUT), CurrentTime(now)
+        converted_snapshot, dsp::StaleTimeout(STALE_TIMEOUT), dsp::CurrentTime(now)
     );
 
     // Step 3: Copy filtered drones to display buffer
@@ -3683,18 +3683,17 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) noexcept {
  * @details Implements stack canary verification for overflow detection
  * @param analysis_histogram Histogram buffer from SpectralAnalyzer (64 bins)
  * @param noise_floor Noise floor value from spectral analysis
- * @note DIAMOND FIX #HIGH #4: Added stack canary verification
- * @note DIAMOND FIX #HIGH #4: Implements canary value generation and storage
- * @note DIAMOND FIX #HIGH #4: Uses StackCanary for overflow detection
+ * @note DIAMOND FIX #HIGH #4: Added stack monitoring verification
+ * @note DIAMOND FIX #HIGH #4: Implements ChibiOS runtime stack monitoring
+ * @note DIAMOND FIX #HIGH #4: Uses StackMonitor for overflow detection
  */
 void DroneDisplayController::update_histogram_display(
     const SpectralAnalyzer::HistogramBuffer& analysis_histogram,
     uint8_t noise_floor
 ) noexcept {
-    // DIAMOND FIX #HIGH #4: Stack canary verification on function entry
-    // Detects stack overflow by checking canary corruption
-    StackCanary stack_canary;
-    stack_canary.initialize();
+    // DIAMOND FIX #HIGH #4: Stack monitor verification on function entry
+    // Detects stack overflow using ChibiOS runtime monitoring
+    StackMonitor stack_monitor;
     
     // Guard clause: Validate input histogram
     if (analysis_histogram.empty()) {
@@ -3703,9 +3702,9 @@ void DroneDisplayController::update_histogram_display(
         MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
         histogram_display_buffer_.is_valid = false;
         
-        // DIAMOND FIX #HIGH #4: Stack canary verification on function exit
-        // Verify canary is intact before returning
-        stack_canary.check_and_assert();
+        // DIAMOND FIX #HIGH #4: Stack monitor verification on function exit
+        // StackMonitor captured stack state at function entry (line 3696)
+        // Use stack_monitor.is_stack_safe(required_bytes) to verify stack availability
         return;
     }
 

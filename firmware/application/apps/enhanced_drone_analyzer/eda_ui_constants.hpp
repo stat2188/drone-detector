@@ -26,6 +26,76 @@ namespace ui::apps::enhanced_drone_analyzer {
 namespace UIConstants {
 
 // ============================================================================
+// COLOR SCHEME
+// ============================================================================
+
+/**
+ * @brief Color scheme options for UI display
+ *
+ * DIAMOND CODE PRINCIPLE: Type-safe enum class for color scheme
+ * - Prevents invalid color scheme values
+ * - Zero runtime overhead (uint8_t)
+ * - Clear semantic meaning
+ */
+enum class ColorScheme : uint8_t {
+    DARK = 0,           ///< Dark color scheme (default)
+    LIGHT = 1,          ///< Light color scheme
+    HIGH_CONTRAST = 2,  ///< High contrast color scheme
+    CUSTOM = 3          ///< Custom color scheme (user-defined)
+};
+
+/**
+ * @brief Default color scheme
+ */
+constexpr ColorScheme DEFAULT_COLOR_SCHEME = ColorScheme::DARK;
+
+// ============================================================================
+// FONT SIZE
+// ============================================================================
+
+/**
+ * @brief Font size options for UI display
+ *
+ * DIAMOND CODE PRINCIPLE: Type-safe enum class for font size
+ * - Prevents invalid font size values
+ * - Zero runtime overhead (uint8_t)
+ * - Clear semantic meaning
+ */
+enum class FontSize : uint8_t {
+    SMALL = 0,   ///< Small font size
+    MEDIUM = 1,  ///< Medium font size (default)
+    LARGE = 2    ///< Large font size
+};
+
+/**
+ * @brief Default font size
+ */
+constexpr FontSize DEFAULT_FONT_SIZE = FontSize::MEDIUM;
+
+// ============================================================================
+// SPECTRUM DENSITY
+// ============================================================================
+
+/**
+ * @brief Spectrum density options for display
+ *
+ * DIAMOND CODE PRINCIPLE: Type-safe enum class for spectrum density
+ * - Prevents invalid density values
+ * - Zero runtime overhead (uint8_t)
+ * - Clear semantic meaning
+ */
+enum class SpectrumDensity : uint8_t {
+    LOW = 0,     ///< Low spectrum density (fewer bins)
+    MEDIUM = 1,  ///< Medium spectrum density (default)
+    HIGH = 2     ///< High spectrum density (more bins)
+};
+
+/**
+ * @brief Default spectrum density
+ */
+constexpr SpectrumDensity DEFAULT_SPECTRUM_DENSITY = SpectrumDensity::MEDIUM;
+
+// ============================================================================
 // WATERFALL SPEED
 // ============================================================================
 

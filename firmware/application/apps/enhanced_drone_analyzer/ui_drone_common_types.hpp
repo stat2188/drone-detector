@@ -14,6 +14,23 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 using rf::Frequency;
 
+/**
+ * @brief Radio reception state for hardware controller
+ *
+ * DIAMOND CODE PRINCIPLE: Type-safe enum class for radio state tracking
+ * - Prevents invalid state transitions
+ * - Zero runtime overhead (uint8_t)
+ * - Clear semantic meaning
+ *
+ * @note Used by DroneHardwareController to track radio reception state
+ */
+enum class RxRadioState : uint8_t {
+    IDLE = 0,           ///< Radio is idle, not receiving
+    TUNING = 1,         ///< Radio is tuning to frequency
+    RECEIVING = 2,      ///< Radio is actively receiving
+    ERROR = 3           ///< Radio is in error state
+};
+
 enum class SpectrumMode : uint8_t { NARROW = 0, MEDIUM = 1, WIDE = 2, ULTRA_WIDE = 3, ULTRA_NARROW = 4 };
 
 #pragma pack(push, 1)
