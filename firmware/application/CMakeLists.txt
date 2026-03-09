@@ -318,7 +318,6 @@ set(CPPSRC
 	# DSP/UI Separation: New DSP layer files
 	apps/enhanced_drone_analyzer/dsp_display_utils.cpp
 	apps/enhanced_drone_analyzer/dsp_display_types.cpp
-	apps/enhanced_drone_analyzer/memory_pool_manager.cpp
 
 	protocols/aprs.cpp
 	protocols/ax25.cpp
