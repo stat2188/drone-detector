@@ -24,6 +24,7 @@
 #include <cstdint>
 
 // Project-specific headers (alphabetical order)
+#include "eda_constants.hpp"
 #include "message.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer::dsp {
@@ -224,7 +225,7 @@ public:
     ) noexcept {
         size_t pixel_index = 0;
 
-        for (size_t bin = 0; bin < SpectrumProcessorConstants::MINI_SPECTRUM_WIDTH; bin++) {
+        for (size_t bin = 0; bin < EDA::MINI_SPECTRUM_WIDTH; bin++) {
             uint8_t current_bin_power;
             if (bin < spectrum.db.size()) {
                 current_bin_power = spectrum.db[bin];
@@ -249,9 +250,6 @@ public:
 
         return pixel_index;
     }
-    
-private:
-    static constexpr size_t MINI_SPECTRUM_WIDTH = 240;
 };
 
 } // namespace ui::apps::enhanced_drone_analyzer::dsp

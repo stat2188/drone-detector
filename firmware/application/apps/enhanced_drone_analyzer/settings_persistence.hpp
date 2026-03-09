@@ -81,7 +81,14 @@ inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
 }
 
 // Settings Buffer Mutex Declaration (merged from settings_persistence.cpp)
-// Definition is in ui_enhanced_drone_settings.cpp
+// 
+// IMPORTANT LINKER DEPENDENCY:
+// This mutex is declared here (extern) but defined in ui_enhanced_drone_settings.cpp.
+// The linker will resolve this symbol at link time, so both files must be compiled
+// and linked together for the firmware to build successfully.
+//
+// Purpose: Protects settings buffer during load/save operations
+// Usage: Use SettingsBufferLock RAII wrapper for automatic locking
 extern Mutex settings_buffer_mutex;
 
 #ifdef __GNUC__
@@ -118,7 +125,7 @@ struct SettingMetadata {
 
 // DIAMOND FIX #3: Reduced from 51 to 38 entries (25% reduction)
 // Removed 13 UI-specific entries that are now in eda_ui_constants.hpp:
-// - color_scheme, font_size, spectrum_density, waterfall_speed
+// - color_scheme, font_size, spectrum_density
 // - frequency_ruler_style, compact_ruler_tick_count, display_flags (5 bits)
 constexpr size_t SETTINGS_COUNT = 38;
 
@@ -170,7 +177,7 @@ inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
 
     // DIAMOND FIX #3: Display settings removed from settings persistence
     // UI-specific constants moved to eda_ui_constants.hpp for clean architecture
-    // Removed entries: color_scheme, font_size, spectrum_density, waterfall_speed,
+    // Removed entries: color_scheme, font_size, spectrum_density,
     //                 frequency_ruler_style, compact_ruler_tick_count, display_flags (5 bits)
     // These are now managed by UIConstants namespace in eda_ui_constants.hpp
 
@@ -471,6 +478,26 @@ public:
     SettingsBufferLock& operator=(const SettingsBufferLock&) = delete;
 };
 
+// LOAD BUFFER LOCK (RAII)
+// FIX R08: RAII wrapper for load buffer mutex
+// Ensures mutex is always unlocked when scope exits, preventing deadlocks
+// on early returns from load() function.
+// @note Diamond Code: noexcept, deleted copy/move for safety
+// @note Uses ChibiOS chMtxUnlock() without parameter (newer API)
+class LoadBufferLock {
+public:
+    LoadBufferLock() noexcept {
+        chMtxLock(&load_buffer_mutex);
+    }
+
+    ~LoadBufferLock() noexcept {
+        chMtxUnlock();  // ChibiOS newer API: unlocks last locked mutex
+    }
+
+    LoadBufferLock(const LoadBufferLock&) = delete;
+    LoadBufferLock& operator=(const LoadBufferLock&) = delete;
+};
+
 // SETTINGS SERIALIZATION HELPER
 // * * @brief Serialize setting to buffer * @param buf Output buffer * @param offset Offset in buffer * @param max_size Maximum buffer size * @param s Settings struct * @param meta Setting metadata * @return Number of bytes written * * @note Handles SpectrumMode enum class (stored as uint8_t underlying type)
 inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
@@ -717,14 +744,59 @@ struct SettingsLoadBuffer {
     char read_buffer[READ_BUFFER_SIZE];
 };
 
+// SETTINGS LOAD BUFFER MUTEX
+// Protects the static load buffer from concurrent access
+// Definition is in ui_enhanced_drone_settings.cpp
+extern Mutex load_buffer_mutex;
+
 // SETTINGS LOAD BUFFER (Getter)
+// Thread-safe getter for the static load buffer
+// Returns a reference to a mutex-protected buffer
+// NOTE: The caller must hold load_buffer_mutex while using the buffer
 inline SettingsLoadBuffer& get_load_buffer() noexcept {
     static SettingsLoadBuffer buffer{};
     return buffer;
 }
 
 // M4 INTERRUPT MASKING
-// * * @brief RAII wrapper for M4 interrupt masking * * Disables M4 interrupts during critical sections to prevent * race conditions with M4Core_IRQHandler. This prevents SV#8 * hard faults when M4 interrupts fire while M0 kernel is locked. * * Usage: * { * M4InterruptMask m4_mask; // Disables M4 interrupts * // Perform SD card operations here * } // Automatically re-enables M4 interrupts * * @note Diamond Code: noexcept, deleted copy/move for safety * @note Uses creg::m4txevent for M4->M0 interrupt control
+//
+// @brief RAII wrapper for M4 interrupt masking with PLL1 control
+//
+// CRITICAL SIDE EFFECT: This class disables PLL1 (Phase Locked Loop 1) which
+// provides the main CPU clock. This has significant performance implications:
+//
+// 1. PERFORMANCE IMPACT:
+//    - PLL1 provides the high-speed system clock (typically 204 MHz)
+//    - When disabled, the system falls back to a much slower clock source
+//    - All operations while this RAII object is active will run significantly slower
+//    - Timing-sensitive operations (delays, timeouts, etc.) will be affected
+//
+// 2. INTERRUPT MASKING:
+//    - Disables M4 interrupts during critical sections to prevent race conditions
+//    - Prevents SV#8 hard faults when M4 interrupts fire while M0 kernel is locked
+//    - Uses creg::m4txevent for M4->M0 interrupt control
+//
+// 3. CRITICAL SECTIONS:
+//    - Should ONLY be used during SD card file I/O operations
+//    - Keep critical sections as short as possible to minimize performance impact
+//    - Avoid any timing-sensitive operations while this is active
+//    - Do NOT use for general-purpose locking or synchronization
+//
+// 4. USAGE PATTERN:
+//    {
+//        M4InterruptMask m4_mask;  // Disables M4 interrupts AND PLL1
+//        // Perform SD card operations here
+//        // Keep this section short!
+//    }  // Automatically re-enables M4 interrupts AND PLL1
+//
+// 5. WARNING:
+//    - Do NOT use this for operations that depend on accurate timing
+//    - Do NOT use this for long-running operations
+//    - Do NOT nest M4InterruptMask objects (undefined behavior)
+//    - The system clock will be significantly slower while this is active
+//
+// @note Diamond Code: noexcept, deleted copy/move for safety
+// @note Automatically restores PLL1 and M4 interrupts on destruction
 class M4InterruptMask {
 public:
     M4InterruptMask() noexcept {
@@ -795,6 +867,11 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
     if (error) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
     }
+
+    // FIX R08: Use RAII lock to protect static buffer from concurrent access
+    // LoadBufferLock automatically unlocks mutex when function returns (even on early exit)
+    // This prevents race conditions when multiple threads call load() simultaneously
+    LoadBufferLock buffer_lock;
 
     // Use thread-local buffer to prevent stack overflow
     auto& load_buf = get_load_buffer();
@@ -871,6 +948,8 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
     }
 
     file.close();
+
+    // LoadBufferLock destructor automatically unlocks mutex here
     return EDA::ErrorResult<bool>::ok(true);
 }
 

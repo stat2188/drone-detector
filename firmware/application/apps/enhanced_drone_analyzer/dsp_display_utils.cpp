@@ -180,7 +180,7 @@ BarSpectrumRenderData calculate_bar_render_data(
     }
     
     // Calculate Y position (DSP/Logic)
-    const int bar_spectrum_y_start = config.WATERFALL_Y_START;
+    const int bar_spectrum_y_start = config.SPECTRUM_Y_START;
     result.y_top = (bar_spectrum_y_start + spectrum_height) - result.bar_height;
     
     return result;

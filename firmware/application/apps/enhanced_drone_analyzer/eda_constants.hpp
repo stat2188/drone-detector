@@ -56,7 +56,8 @@ using Timestamp = uint32_t;
  * @code
  *   // Compute hash for a frequency
  *   Frequency freq_hz = 2400500000LL;  // 2.4005 GHz
- *   FrequencyHash hash = DiamondCore::safe_frequency_hash(freq_hz);
+ *   // FrequencyHash hash = computed using modulo operation
+ *   FrequencyHash hash = static_cast<FrequencyHash>(freq_hz / 100000ULL) & 0xFFULL;
  *
  *   // Use hash to index into hash table
  *   auto& entry = hash_table[hash];
@@ -241,15 +242,6 @@ constexpr Frequency ELRS_915MHZ = 915'000'000LL;
 constexpr Frequency LRS_433_CH1 = 433'050'000LL;
 
 // ============================================================================
-// WIFI FREQUENCIES
-// ============================================================================
-
-/**
- * @brief WiFi Channel 1 frequency
- */
-constexpr Frequency WIFI_CH1 = 2'412'000'000LL;
-
-// ============================================================================
 // SPECIAL FREQUENCY VALUES
 // ============================================================================
 
@@ -364,12 +356,6 @@ constexpr uint32_t PROGRESSIVE_SLOWDOWN_DIVISOR = 10;
 
 constexpr uint32_t PRIORITY_SLICE_SKIP_THRESHOLD = 10;
 constexpr uint32_t PREDICTION_FRESHNESS_MS = 5000;
-constexpr uint32_t FHSS_TRACKING_CONFIDENCE_MAX = 10;
-constexpr uint32_t PRIORITY_SCAN_INTERVAL = 10;
-constexpr uint32_t MAX_FREQUENCY_PREDICTIONS = 10;
-constexpr uint32_t PREDICTION_STALE_MS = 5000;
-constexpr uint32_t CONFIDENCE_BOOST_INCREMENT = 1;
-constexpr uint32_t CONFIDENCE_MAX = 10;
 
 constexpr uint32_t RSSI_TIMEOUT_MS = 60;
 constexpr uint32_t RSSI_POLL_DELAY_MS = 2;
@@ -416,7 +402,6 @@ constexpr uint32_t MINI_SPECTRUM_WIDTH = 200;
 constexpr uint32_t MINI_SPECTRUM_HEIGHT = 24;
 constexpr uint32_t SPECTRUM_ROW_SIZE = 240;
 constexpr uint32_t RENDER_LINE_SIZE = 240;
-constexpr uint32_t WATERFALL_SIZE = 40 * 240;
 constexpr uint8_t SPECTRUM_NOISE_FLOOR_DEFAULT = 20;
 constexpr uint8_t SPECTRUM_PEAK_THRESHOLD_DEFAULT = 10;
 constexpr uint32_t SPECTRUM_UPDATE_RATE_HZ = 60;
@@ -466,9 +451,6 @@ constexpr uint32_t MAX_DB_ENTRIES = 75;
 constexpr uint32_t DB_SYNC_INTERVAL_MS = 5000;
 constexpr uint32_t DB_LOAD_RETRY_COUNT = 3;
 constexpr uint32_t DB_LOAD_RETRY_DELAY_MS = 500;
-constexpr uint32_t SD_CARD_MOUNT_TIMEOUT_MS = 15000;  // 15 seconds - increased for slow/outdated flash drives
-constexpr uint32_t SD_CARD_POLL_INTERVAL_MS = 100;
-constexpr uint32_t SD_CARD_POLL_INTERVAL_SHORT_MS = 50;
 constexpr uint32_t SETTINGS_LOAD_TIMEOUT_MS = 2000;
 constexpr uint32_t BASEBOARD_STOP_DELAY_MS = 10;
 
@@ -476,14 +458,6 @@ constexpr uint32_t BASEBOARD_STOP_DELAY_MS = 10;
 constexpr uint32_t WIDEBAND_SLICE_COUNT_DEFAULT = 10;
 constexpr uint32_t WIDEBAND_SLICE_COUNT_MIN = 1;
 constexpr uint32_t WIDEBAND_SLICE_COUNT_MAX = 20;
-
-// Detection Logging
-constexpr uint32_t MAX_LOG_ENTRIES = 500;
-constexpr uint32_t LOG_FLUSH_INTERVAL_MS = 10000;
-constexpr uint32_t LOG_FILE_MAX_SIZE_KB = 1024;
-constexpr uint32_t LOG_LINE_BUFFER_SIZE = 128;
-constexpr uint32_t LOG_WRITE_INTERVAL_MS = 200;
-constexpr uint32_t DETECTION_RING_BUFFER_SIZE = 32;
 
 // Frequency Hashing
 // DIAMOND FIX #2: Changed from uint32_t to uint64_t to match hash function usage
@@ -587,6 +561,39 @@ namespace FrequencyBandThresholds {
  * @note Used when PLL fails to lock, ensures system continues with degraded functionality
  */
 constexpr Frequency DEFAULT_FALLBACK_FREQUENCY_HZ = 100'000'000LL;
+
+/**
+ * @brief Progressive slowdown multiplier LUT (eliminates runtime division)
+ * @note Maps scan cycle count to slowdown multiplier (0-3)
+ * @note 0-9 cycles: no slowdown (multiplier 0)
+ * @note 10-19 cycles: 1x slowdown (multiplier 1)
+ * @note 20-29 cycles: 2x slowdown (multiplier 2)
+ * @note 30+ cycles: 3x slowdown (multiplier 3)
+ */
+namespace ScanSlowdown {
+    constexpr uint8_t PROGRESSIVE_SLOWDOWN_MAX_CYCLES = 39;
+    
+    // Progressive slowdown multiplier LUT (stored in Flash)
+    // Index: scan cycle count (0-39), Value: slowdown multiplier (0-3)
+    constexpr uint8_t MULTIPLIER_LUT[] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0-9 cycles
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 10-19 cycles
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  // 20-29 cycles
+        3, 3, 3, 3, 3, 3, 3, 3, 3, 3   // 30+ cycles (capped at 3)
+    };
+    
+    /**
+     * @brief Get slowdown multiplier for a given cycle count
+     * @param cycles Scan cycle count
+     * @return Slowdown multiplier (0-3)
+     */
+    constexpr inline uint8_t get_slowdown_multiplier(uint32_t cycles) noexcept {
+        if (cycles >= PROGRESSIVE_SLOWDOWN_MAX_CYCLES) {
+            return MULTIPLIER_LUT[PROGRESSIVE_SLOWDOWN_MAX_CYCLES];
+        }
+        return MULTIPLIER_LUT[cycles];
+    }
+}
 
 } // namespace Constants
 

@@ -96,17 +96,6 @@ enum class SpectrumDensity : uint8_t {
 constexpr SpectrumDensity DEFAULT_SPECTRUM_DENSITY = SpectrumDensity::MEDIUM;
 
 // ============================================================================
-// WATERFALL SPEED
-// ============================================================================
-
-/**
- * @brief Waterfall display speed options
- * @note Controls how fast the waterfall scrolls (1 = slow, 10 = fast)
- */
-constexpr uint32_t MIN_WATERFALL_SPEED = 1;
-constexpr uint32_t MAX_WATERFALL_SPEED = 10;
-
-// ============================================================================
 // DISPLAY LAYOUT CONSTANTS
 // ============================================================================
 
@@ -225,21 +214,18 @@ constexpr uint32_t DEFAULT_COMPACT_RULER_TICK_COUNT = 4;
  *
  * Bit positions:
  * - Bit 0: Show spectrum analyzer
- * - Bit 1: Show waterfall display
  * - Bit 2: Show frequency ruler
  * - Bit 3: Show drone list
  * - Bit 4: Show compact ruler
  */
 namespace DisplayFlags {
     constexpr uint8_t SHOW_SPECTRUM = 0;      ///< Show spectrum analyzer display
-    constexpr uint8_t SHOW_WATERFALL = 1;      ///< Show waterfall display
     constexpr uint8_t SHOW_RULER = 2;          ///< Show frequency ruler
     constexpr uint8_t SHOW_DRONE_LIST = 3;      ///< Show detected drone list
     constexpr uint8_t SHOW_COMPACT_RULER = 4;   ///< Show compact frequency ruler
 
     // Default flag values
     constexpr bool DEFAULT_SHOW_SPECTRUM = true;
-    constexpr bool DEFAULT_SHOW_WATERFALL = true;
     constexpr bool DEFAULT_SHOW_RULER = true;
     constexpr bool DEFAULT_SHOW_DRONE_LIST = true;
     constexpr bool DEFAULT_SHOW_COMPACT_RULER = true;
@@ -303,15 +289,6 @@ constexpr bool is_valid_spectrum_density(SpectrumDensity density) noexcept {
     return density == SpectrumDensity::LOW ||
            density == SpectrumDensity::MEDIUM ||
            density == SpectrumDensity::HIGH;
-}
-
-/**
- * @brief Validate waterfall speed value
- * @param speed Waterfall speed to validate
- * @return true if valid, false otherwise
- */
-constexpr bool is_valid_waterfall_speed(uint32_t speed) noexcept {
-    return speed >= MIN_WATERFALL_SPEED && speed <= MAX_WATERFALL_SPEED;
 }
 
 /**

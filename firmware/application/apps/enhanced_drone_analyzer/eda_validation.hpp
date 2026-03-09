@@ -29,6 +29,7 @@
 #include <cstdint>
 
 // Project-specific headers (alphabetical order)
+#include "eda_constants.hpp"
 
 namespace EDA {
 

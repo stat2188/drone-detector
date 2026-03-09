@@ -1,4 +1,11 @@
 // * @file ui_signal_processing.cpp * @brief Implementation of signal processing utilities for Enhanced Drone Analyzer
+// * DIAMOND CODE PRINCIPLES:
+// * - Zero heap allocation: All memory is stack-allocated or in Flash
+// * - No exceptions: All functions are noexcept
+// * - Type-safe: Uses semantic type aliases
+// * - Memory-safe: Uses ChibiOS RTOS for thread management
+// * @author Diamond Code Pipeline
+// * @date 2026-02-27
 
 // Corresponding header (must be first)
 #include "ui_signal_processing.hpp"
@@ -7,10 +14,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <new>
+
+// Third-party library headers
 #include "chmtx.h"
 #include "chvt.h"
 #include "eda_locking.hpp"
-#include "memory_pool_manager.hpp"
 
 // Third-party library headers
 #include <ch.h>
@@ -29,7 +37,6 @@ namespace ui::apps::enhanced_drone_analyzer {
 // / @note RED TEAM FIX: Recursion detection prevents deadlock when called recursively.
 // / @note DIAMOND FIX: Uses DetectionUpdate struct to prevent parameter swapping
 // / @param update Detection update parameters (frequency_hash, detection_count, rssi_value)
-
 void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexcept {
     const FrequencyHash frequency_hash = update.frequency_hash;
     const DetectionCount detection_count = update.detection_count;
@@ -86,6 +93,7 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
             entries_[idx].rssi_value = rssi_value;
             entries_[idx].timestamp = current_time;
 
+            // Decrement thread-local recursion depth
             tls_recursion_depth--;
             return;
         }
@@ -100,57 +108,22 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
     entries_[evict_idx].timestamp = current_time;
     head_ = (head_ + 1) & DetectionBufferConstants::HASH_MASK;
 
+    // Decrement thread-local recursion depth
     tls_recursion_depth--;
 }
 
-// IMPLEMENTATION: get_detection_count()
-// * * @brief Get detection count (mutex-protected reader)
-// * * FIX #RC-2: Full mutex protection (was lock-free)
-// * * SYNCHRONIZATION:
-// * * - Acquires buffer_mutex_ for exclusive access
-// * * - Ensures consistent read of entry state
-// * * - Eliminates torn reads and inconsistent state
-// * * @param frequency_hash Hash of frequency to query
-// * @return Detection count (0 if not found)
-DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_hash) const noexcept {
-    // FIX #RC-2: Full mutex protection (was lock-free)
-    MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
-
-    // Hash table lookup
-    const size_t hash_idx = hash_index(frequency_hash);
-
-    // Linear probe (bounded by HASH_TABLE_SIZE)
-    for (size_t probe = 0; probe < DetectionBufferConstants::HASH_TABLE_SIZE; ++probe) {
-        const EntryIndex idx = (hash_idx + probe) & DetectionBufferConstants::HASH_MASK;
-
-        // Check for matching entry
-        if (entries_[idx].frequency_hash == frequency_hash) {
-            return entries_[idx].detection_count;
-        }
-
-        // Check for empty slot (not found)
-        if (entries_[idx].frequency_hash == DetectionBufferConstants::EMPTY_HASH_MARKER) {
-            return 0;
-        }
-    }
-
-    return 0;
-}
-
-// IMPLEMENTATION: get_rssi_value()
-// * * @brief Get RSSI value (mutex-protected reader)
-// * * FIX #RC-2: Full mutex protection (was lock-free)
-// * * SYNCHRONIZATION:
-// * * - Acquires buffer_mutex_ for exclusive access
-// * * - Ensures consistent read of entry state
-// * * - Eliminates torn reads and inconsistent state
-// * * @param frequency_hash Hash of frequency to query
-// * @return RSSI value (DEFAULT_RSSI_DBM if not found)
+// Implementation: get_rssi_value()
+// / @brief Get RSSI value for given frequency hash (mutex-protected reader)
+// / @param frequency_hash Frequency hash to look up
+// / @return RSSI value in dBm, or default value if not found
+// / @note Thread-safe: Acquires buffer_mutex_ for exclusive access
+// / @note ISR-safe: Marked noexcept
 RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) const noexcept {
-    // FIX #RC-2: Full mutex protection (was lock-free)
+    // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
+    // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
     MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
 
-    // Hash table lookup
+    // Hash table lookup (using simple modulo-based hash)
     const size_t hash_idx = hash_index(frequency_hash);
 
     // Linear probe (bounded by HASH_TABLE_SIZE)
@@ -168,16 +141,83 @@ RSSIValue DetectionRingBuffer::get_rssi_value(FrequencyHash frequency_hash) cons
         }
     }
 
+    // Not found - return default value
     return DetectionBufferConstants::DEFAULT_RSSI_DBM;
 }
 
-// IMPLEMENTATION: clear()
-// * * @brief Clear all entries (mutex-protected)
-// * * Resets all entries to empty state and resets head index.
-// * * SYNCHRONIZATION:
-// * * - Acquires buffer_mutex_ for exclusive access
-// * * - Increments global_version_ for concurrent update detection
-// * * - Resets head_ with release semantics
+// Implementation: get_detection_count()
+// / @brief Get detection count for given frequency hash (mutex-protected reader)
+// / @param frequency_hash Frequency hash to look up
+// / @return Detection count, or 0 if not found
+// / @note Thread-safe: Acquires buffer_mutex_ for exclusive access
+// / @note ISR-safe: Marked noexcept
+DetectionCount DetectionRingBuffer::get_detection_count(FrequencyHash frequency_hash) const noexcept {
+    // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
+    // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
+    MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
+
+    // Hash table lookup (using simple modulo-based hash)
+    const size_t hash_idx = hash_index(frequency_hash);
+
+    // Linear probe (bounded by HASH_TABLE_SIZE)
+    for (size_t probe = 0; probe < DetectionBufferConstants::HASH_TABLE_SIZE; ++probe) {
+        const EntryIndex idx = (hash_idx + probe) & DetectionBufferConstants::HASH_MASK;
+
+        // Check for matching entry
+        if (entries_[idx].frequency_hash == frequency_hash) {
+            return entries_[idx].detection_count;
+        }
+
+        // Check for empty slot (not found)
+        if (entries_[idx].frequency_hash == DetectionBufferConstants::EMPTY_HASH_MARKER) {
+            return 0;
+        }
+    }
+
+    // Not found - return 0
+    return 0;
+}
+
+// Implementation: get_timestamp()
+// / @brief Get timestamp for given frequency hash (mutex-protected reader)
+// / @param frequency_hash Frequency hash to look up
+// / @return Timestamp of last detection, or 0 if not found
+// / @note Thread-safe: Acquires buffer_mutex_ for exclusive access
+// / @note ISR-safe: Marked noexcept
+Timestamp DetectionRingBuffer::get_timestamp(FrequencyHash frequency_hash) const noexcept {
+    // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
+    // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
+    MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
+
+    // Hash table lookup (using simple modulo-based hash)
+    const size_t hash_idx = hash_index(frequency_hash);
+
+    // Linear probe (bounded by HASH_TABLE_SIZE)
+    for (size_t probe = 0; probe < DetectionBufferConstants::HASH_TABLE_SIZE; ++probe) {
+        const EntryIndex idx = (hash_idx + probe) & DetectionBufferConstants::HASH_MASK;
+
+        // Check for matching entry
+        if (entries_[idx].frequency_hash == frequency_hash) {
+            return entries_[idx].timestamp;
+        }
+
+        // Check for empty slot (not found)
+        if (entries_[idx].frequency_hash == DetectionBufferConstants::EMPTY_HASH_MARKER) {
+            return 0;
+        }
+    }
+
+    // Not found - return 0
+    return 0;
+}
+
+// Implementation: clear()
+// * @brief Clear all entries (mutex-protected)
+// * @note Resets all entries to empty state and resets head index.
+// * @note SYNCHRONIZATION:
+// *   - Acquires buffer_mutex_ for exclusive access
+// *   - Increments global_version_ for concurrent update detection
+// *   - Resets head_ with release semantics
 void DetectionRingBuffer::clear() noexcept {
     // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
     // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
@@ -195,81 +235,42 @@ void DetectionRingBuffer::clear() noexcept {
     head_ = 0;
 }
 
-// ============================================================================
-// MEMORY POOL FACTORY METHOD IMPLEMENTATIONS
-// ============================================================================
-
-/**
- * @brief Factory method to create DetectionRingBuffer from memory pool
- * @return Pointer to allocated DetectionRingBuffer, or nullptr if pool exhausted
- * @note Thread-safe (mutex-protected)
- * @note Returns nullptr if pool is exhausted (overflow protection)
- * @note Caller is responsible for deallocating using MemoryPoolManager::deallocate()
- *
- * MEMORY POOL INTEGRATION:
- * - This method allocates DetectionRingBuffer from memory pool instead of stack
- * - Prevents stack overflow when creating DetectionRingBuffer instances
- * - Uses RAII wrapper for automatic deallocation (recommended)
- * - Thread-safe allocation and deallocation
- */
-DetectionRingBuffer* DetectionRingBuffer::allocate_from_pool() noexcept {
-    // Allocate from memory pool
-    void* ptr = ui::apps::enhanced_drone_analyzer::MemoryPoolManager::allocate(PoolType::DETECTION_RING_BUFFER);
-    
-    // Guard clause: Allocation failed
-    if (!ptr) {
-        return nullptr;
-    }
-    
-    // Manually construct DetectionRingBuffer in allocated memory
-    // This avoids placement new which can cause compiler issues
-    DetectionRingBuffer* buffer = static_cast<DetectionRingBuffer*>(ptr);
-    
-    // Initialize canaries
-    buffer->canary_before_ = DetectionRingBuffer::CANARY_VALUE;
-    buffer->canary_after_ = DetectionRingBuffer::CANARY_VALUE;
-    
-    // Initialize other members
-    buffer->head_ = 0;
-    buffer->global_version_ = 0;
-    
-    // Initialize mutex using ChibiOS API
-    chMtxInit(&buffer->buffer_mutex_);
-    
-    // Initialize all entries
-    for (size_t i = 0; i < DetectionBufferConstants::MAX_ENTRIES; ++i) {
-        buffer->init_entry(buffer->entries_[i], 0);
-    }
-    
-    return buffer;
+// Implementation: get_version()
+// / @brief Get current global version (for concurrent update detection)
+// / @return Global version number
+// / @note Thread-safe: Acquires buffer_mutex_ for exclusive access
+// / @note ISR-safe: Marked noexcept
+uint32_t DetectionRingBuffer::get_version() const noexcept {
+    // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
+    // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
+    MutexLock lock(buffer_mutex_, LockOrder::DATA_MUTEX);
+    return global_version_;
 }
 
-/**
- * @brief Deallocate DetectionRingBuffer back to memory pool
- * @param ptr Pointer to DetectionRingBuffer to deallocate
- * @note Thread-safe (mutex-protected)
- * @note Safe to call with nullptr (no-op)
- *
- * MEMORY POOL INTEGRATION:
- * - This method deallocates DetectionRingBuffer back to memory pool
- * - Calls destructor before deallocating
- * - Thread-safe deallocation
- *
- * NOTE: ChibiOS mutexes do not require explicit deinitialization.
- * The Mutex structure is automatically cleaned up when the object is destroyed.
- */
-void DetectionRingBuffer::deallocate_to_pool(DetectionRingBuffer* ptr) noexcept {
-    // Guard clause: Null pointer (no-op)
-    if (!ptr) {
-        return;
-    }
-
-    // Call destructor to properly clean up DetectionRingBuffer
-    // ChibiOS mutexes do not require explicit deinitialization
-    ptr->~DetectionRingBuffer();
-
-    // Deallocate to memory pool
-    MemoryPoolManager::deallocate(PoolType::DETECTION_RING_BUFFER, ptr);
+// Implementation: init_entry()
+// / @brief Initialize a single entry with default values
+// / @param entry Entry to initialize
+// / @param version Version number to assign
+void DetectionRingBuffer::init_entry(Entry& entry, uint32_t version) noexcept {
+    entry.frequency_hash = DetectionBufferConstants::EMPTY_HASH_MARKER;
+    entry.rssi_value = DetectionBufferConstants::DEFAULT_RSSI_DBM;
+    entry.detection_count = 0;
+    entry.timestamp = 0;
+    entry.version = version;
 }
+
+// Implementation: hash_index()
+// / @brief Compute hash index for frequency hash
+// / @param frequency_hash Frequency hash value
+// / @return Hash index (modulo HASH_TABLE_SIZE)
+constexpr size_t DetectionRingBuffer::hash_index(FrequencyHash frequency_hash) noexcept {
+    return static_cast<size_t>(frequency_hash) & DetectionBufferConstants::HASH_MASK;
+}
+
+// ============================================================================
+// NOTE: Memory pool allocation methods have been removed
+// ============================================================================
+// DetectionRingBuffer should be stack-allocated or use StaticStorage pattern
+// Example: DetectionRingBuffer buffer{};  // Stack allocation
 
 } // namespace ui::apps::enhanced_drone_analyzer

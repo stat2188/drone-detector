@@ -93,30 +93,25 @@ struct DisplayDroneEntry {
 
 /**
  * @brief Display data snapshot for UI rendering
- * 
+ *
  * This structure provides a snapshot of all display data from the DSP layer
  * to the UI layer. It includes scanning state, threat levels, drone counts,
  * and pre-calculated color indices.
- * 
+ *
  * Thread-safety: Snapshot should be captured under mutex and then
  * used without further synchronization.
- * 
- * MEMORY POOL INTEGRATION:
- * - Uses memory pool allocation to prevent stack overflow
- * - Factory methods provide safe allocation/deallocation
- * - Thread-safe allocation using ChibiOS mutexes
- * 
+ *
+ * MEMORY ALLOCATION:
+ * - Stack-allocated only (no heap allocation)
+ * - Fixed-size structure (no dynamic memory)
+ * - Safe for embedded use
+ *
  * USAGE EXAMPLE:
  * @code
- *   // Allocate from memory pool
- *   DisplayDataSnapshot* snapshot = DisplayDataSnapshot::allocate_from_pool();
- *   if (snapshot) {
- *       // Use snapshot...
- *       snapshot->is_scanning = true;
- *       
- *       // Deallocate when done
- *       DisplayDataSnapshot::deallocate_to_pool(snapshot);
- *   }
+ *   // Create snapshot on stack
+ *   DisplayDataSnapshot snapshot{};
+ *   // Use snapshot...
+ *   snapshot.is_scanning = true;
  * @endcode
  */
 struct DisplayDataSnapshot {
@@ -134,37 +129,6 @@ struct DisplayDataSnapshot {
     uint8_t color_idx;             ///< Pre-calculated color index
     size_t current_freq_idx;         ///< Current frequency index in database (for progress calculation)
 
-    /**
-     * @brief Allocate DisplayDataSnapshot from memory pool
-     * @return Pointer to allocated snapshot, or nullptr if pool exhausted
-     * @note Thread-safe (mutex-protected)
-     * @note Does not throw (noexcept)
-     * @note Returns nullptr if pool is exhausted (overflow protection)
-     * 
-     * USAGE:
-     * @code
-     *   DisplayDataSnapshot* snapshot = DisplayDataSnapshot::allocate_from_pool();
-     *   if (snapshot) {
-     *       // Use snapshot...
-     *       DisplayDataSnapshot::deallocate_to_pool(snapshot);
-     *   }
-     * @endcode
-     */
-    [[nodiscard]] static DisplayDataSnapshot* allocate_from_pool() noexcept;
-
-    /**
-     * @brief Deallocate DisplayDataSnapshot back to memory pool
-     * @param ptr Pointer to snapshot to deallocate
-     * @note Thread-safe (mutex-protected)
-     * @note Safe to call with nullptr (no-op)
-     * @note Does not throw (noexcept)
-     * 
-     * USAGE:
-     * @code
-     *   DisplayDataSnapshot::deallocate_to_pool(snapshot);
-     * @endcode
-     */
-    static void deallocate_to_pool(DisplayDataSnapshot* ptr) noexcept;
 };
 
 /**
@@ -195,61 +159,25 @@ struct TrackedDroneData {
  * Thread-safety: Snapshot should be captured under mutex and then
  * used without further synchronization.
  *
- * MEMORY POOL INTEGRATION:
- * - Uses memory pool allocation to prevent stack overflow
- * - Factory methods provide safe allocation/deallocation
- * - Thread-safe allocation using ChibiOS mutexes
+ * MEMORY ALLOCATION:
+ * - Stack-allocated only (no heap allocation)
+ * - Fixed-size structure with fixed-size array
+ * - Safe for embedded use
  *
  * PHASE 3 FIX #9: Replaced magic number 10 with MAX_FILTERED_DRONES
  *
  * USAGE EXAMPLE:
  * @code
- *   // Allocate from memory pool
- *   FilteredDronesSnapshot* snapshot = FilteredDronesSnapshot::allocate_from_pool();
- *   if (snapshot) {
- *       // Use snapshot...
- *       snapshot->count = 5;
- *
- *       // Deallocate when done
- *       FilteredDronesSnapshot::deallocate_to_pool(snapshot);
- *   }
+ *   // Create snapshot on stack
+ *   FilteredDronesSnapshot snapshot{};
+ *   // Use snapshot...
+ *   snapshot.count = 5;
  * @endcode
  */
 struct FilteredDronesSnapshot {
     size_t count;                                          ///< Number of drones in snapshot
     TrackedDroneData drones[DisplayTypeConstants::MAX_FILTERED_DRONES];  ///< Filtered drone data (max MAX_FILTERED_DRONES)
 
-    /**
-     * @brief Allocate FilteredDronesSnapshot from memory pool
-     * @return Pointer to allocated snapshot, or nullptr if pool exhausted
-     * @note Thread-safe (mutex-protected)
-     * @note Does not throw (noexcept)
-     * @note Returns nullptr if pool is exhausted (overflow protection)
-     *
-     * USAGE:
-     * @code
-     *   FilteredDronesSnapshot* snapshot = FilteredDronesSnapshot::allocate_from_pool();
-     *   if (snapshot) {
-     *       // Use snapshot...
-     *       FilteredDronesSnapshot::deallocate_to_pool(snapshot);
-     *   }
-     * @endcode
-     */
-    [[nodiscard]] static FilteredDronesSnapshot* allocate_from_pool() noexcept;
-
-    /**
-     * @brief Deallocate FilteredDronesSnapshot back to memory pool
-     * @param ptr Pointer to snapshot to deallocate
-     * @note Thread-safe (mutex-protected)
-     * @note Safe to call with nullptr (no-op)
-     * @note Does not throw (noexcept)
-     *
-     * USAGE:
-     * @code
-     *   FilteredDronesSnapshot::deallocate_to_pool(snapshot);
-     * @endcode
-     */
-    static void deallocate_to_pool(FilteredDronesSnapshot* ptr) noexcept;
 };
 
 // ============================================================================
@@ -462,7 +390,7 @@ EDA_FLASH_CONST inline static constexpr FreqFormatEntry FREQ_FORMAT_TABLE[] = {
  * This structure contains configuration constants for bar spectrum rendering.
  */
 struct BarSpectrumConfig {
-    static constexpr int WATERFALL_Y_START = 120;  ///< Y position of spectrum display
+    static constexpr int SPECTRUM_Y_START = 120;  ///< Y position of spectrum display
     static constexpr int BAR_HEIGHT_MAX = 40;        ///< Maximum bar height
     static constexpr uint8_t NOISE_THRESHOLD = 10;   ///< Minimum power to display
 

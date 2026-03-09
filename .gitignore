@@ -91,4 +91,13 @@ venv/
 
 # Build system artifacts
 .ninja_log
+.ninja_deps
+build.ninja
+cmake_install.cmake
+CTestTestfile.cmake
+build_output.txt
 **/*-stamp/
+firmware/build/
+
+# Planning documents (temporary, should be committed if needed)
+plans/

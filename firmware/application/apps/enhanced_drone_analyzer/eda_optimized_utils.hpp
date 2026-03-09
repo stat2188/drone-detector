@@ -47,6 +47,11 @@ namespace BufferSizes {
     constexpr size_t FREQ_BUFFER_SIZE = 32;
 }
 template<typename T, WindowSize N = 11>
+// DIAMOND FIX: P1-HIGH #1 - Stack overflow prevention
+// Stack usage: 2 * sizeof(T) * N (window_ array + temp array in get_median())
+// For N=256 with int32_t: 2 * 4 * 256 = 2,048 bytes (50% of 4KB stack)
+// For N=512 with int32_t: 2 * 4 * 512 = 4,096 bytes (exceeds 4KB stack)
+static_assert(N <= 256, "MedianFilter window size too large for stack (max 256)");
 class MedianFilter {
 public:
     // / @brief Constructor - initializes empty filter

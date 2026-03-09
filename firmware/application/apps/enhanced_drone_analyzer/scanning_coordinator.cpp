@@ -29,7 +29,6 @@
 #include "dsp_display_types.hpp"         // DSP/UI communication types
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"               // Unified MutexLock, StackMonitor
-#include "memory_pool_manager.hpp"         // Memory pool manager for large structures
 #include "ui_drone_common_types.hpp"     // For DroneAnalyzerSettings
 #include "ui_enhanced_drone_analyzer.hpp" // Scanner interface
 #include "ui_navigation.hpp"              // For NavigationView
@@ -50,7 +49,6 @@ static StaticStorage<ScanningCoordinator> coordinator_storage;
 volatile ScanningCoordinator* ScanningCoordinator::instance_ptr_ = nullptr;
 Mutex ScanningCoordinator::init_mutex_;
 AtomicFlag ScanningCoordinator::initialized_;  // AtomicFlag for thread-safe singleton pattern
-AtomicFlag ScanningCoordinator::instance_constructed_;  // tracks if instance was constructed
 
 // ============================================================================
 // RED TEAM FIX #CRITICAL FLAW #5: Explicit initialization function
@@ -69,11 +67,8 @@ void initialize_eda_mutexes() noexcept {
     // Initialize ScanningCoordinator mutex
     chMtxInit(&ScanningCoordinator::init_mutex_);
 
-    // Initialize MemoryPoolManager global mutex
-    // P1-HIGH FIX #E003: Added explicit initialization for global_mutex_
-    // - Must be initialized before calling MemoryPoolManager::initialize()
-    // - Prevents undefined behavior from using uninitialized mutex
-    ui::apps::enhanced_drone_analyzer::MemoryPoolManager::initialize_global_mutex();
+    // Memory pool functionality has been removed from codebase
+    // No need to initialize MemoryPoolManager global mutex
 
     // Initialize other EDA mutexes here
     // (Add additional mutex initializations as needed)
@@ -188,30 +183,16 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
         return false;
     }
 
-    // Initialize memory pools for Enhanced Drone Analyzer
-    // This must be done after ChibiOS RTOS is initialized
-    // CRITICAL FIX: Memory pool initialization is required for safe operation
-    // System cannot operate without properly initialized memory pools
-    // P1-HIGH FIX #E007: Check return value of initialize_memory_pools()
-    if (!initialize_memory_pools()) {
-        // Memory pool initialization failed - critical error
-        // CRITICAL FIX: Do NOT continue in degraded mode - this is unsafe
-        // TODO: Implement proper error logging system
-        // Return false to indicate initialization failure
-        // System cannot operate without memory pools - caller must handle this error
-        return false;
-    }
-
     // Set instance pointer to constructed object ONLY after all initialization succeeds
     // This prevents race condition where instance_ptr_ is set before memory pools are ready
-    instance_ptr_ = &coordinator_storage.get();
-    instance_constructed_.store(true);
+    // Using __atomic_store_n ensures proper memory ordering across all CPU cores
+    __atomic_store_n(&instance_ptr_, &coordinator_storage.get(), __ATOMIC_RELEASE);
 
     // RED TEAM FIX #CRITICAL FLAW #1: Use hardware memory barrier for thread-safe singleton access
     // CRITICAL FIX: Use AtomicFlag store() instead of direct assignment
     // AtomicFlag provides acquire/release memory ordering and lock-free operations
     // This ensures proper memory ordering across all CPU cores and prevents
-    // race conditions in the double-checked locking pattern.
+    // race conditions in double-checked locking pattern.
     initialized_.store(true);
 
     return true;
@@ -470,88 +451,6 @@ dsp::FilteredDronesSnapshot ScanningCoordinator::get_filtered_drones_snapshot() 
     }
 
     return snapshot;
-}
-
-// ============================================================================
-// MEMORY POOL MANAGEMENT IMPLEMENTATIONS
-// ============================================================================
-
-/**
- * @brief Initialize all memory pools for Enhanced Drone Analyzer
- *
- * This function initializes all memory pools used by Enhanced Drone Analyzer:
- * - DetectionRingBuffer pool (1 block of 480 bytes)
- * - FilteredDronesSnapshot pool (2 blocks of 640 bytes)
- * - DroneAnalyzerSettings pool (1 block of 512 bytes)
- * - DisplayDataSnapshot pool (3 blocks of 64 bytes)
- *
- * Total memory: 2864 bytes (~2.8 KB)
- *
- * Thread-safety: Thread-safe initialization via MemoryPoolManager::initialize()
- * No exceptions: All operations are noexcept
- * Idempotent: Safe to call multiple times
- *
- * P1-HIGH FIX #E007: Check return value of MemoryPoolManager::initialize()
- * - Returns false if initialization fails (e.g., memory pool storage misaligned)
- * - System cannot operate without properly initialized memory pools
- * - Caller must handle initialization failure
- *
- * @return true if initialization successful, false otherwise
- */
-[[nodiscard]] bool ScanningCoordinator::initialize_memory_pools() noexcept {
-    // Initialize all memory pools using MemoryPoolManager
-    // This function is idempotent (safe to call multiple times)
-    // P1-HIGH FIX #E007: Check return value for initialization failure
-    return MemoryPoolManager::initialize();
-}
-
-/**
- * @brief Shutdown all memory pools for Enhanced Drone Analyzer
- *
- * This function is a no-op for current implementation.
- * Memory pools use static storage, so they don't require explicit shutdown.
- * All allocated memory will be returned to pools when deallocated.
- *
- * Thread-safety: Thread-safe (no-op)
- * No exceptions: All operations are noexcept
- * Idempotent: Safe to call multiple times
- *
- * NOTE: This function is provided for API completeness and future extensibility.
- * If memory pools are changed to use dynamic allocation in future,
- * this function can be updated to perform proper cleanup.
- */
-void ScanningCoordinator::shutdown_memory_pools() noexcept {
-    // No-op: Memory pools use static storage
-    // All allocated memory is returned to pools when deallocated
-    // This function is provided for API completeness
-}
-
-/**
- * @brief Get statistics for specified memory pool
- * @param pool_type Type of pool to get statistics for
- * @return PoolStatistics containing pool usage information
- *
- * This function retrieves statistics for a specific memory pool,
- * including total blocks, used blocks, free blocks, allocation count,
- * free count, and overflow count.
- *
- * Thread-safety: Thread-safe statistics read via MemoryPoolManager::get_statistics()
- * No exceptions: All operations are noexcept
- *
- * USAGE:
- * @code
- *   PoolStatistics stats = ScanningCoordinator::get_pool_statistics(
- *       PoolType::FILTERED_DRONES_SNAPSHOT
- *   );
- *   // stats.used_blocks = number of blocks in use
- *   // stats.free_blocks = number of blocks free
- *   // stats.overflow_count = number of allocation failures
- * @endcode
- */
-PoolStatistics ScanningCoordinator::get_pool_statistics(PoolType pool_type) noexcept {
-    // Get statistics from MemoryPoolManager
-    // Returns empty statistics if pool is invalid
-    return MemoryPoolManager::get_statistics(pool_type);
 }
 
 msg_t ScanningCoordinator::scanning_thread_function(void* arg) noexcept {

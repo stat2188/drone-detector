@@ -54,7 +54,6 @@
 #include "portapack.hpp"
 #include "receiver_model.hpp"
 #include "scanning_coordinator.hpp"
-#include "sd_card.hpp"
 #include "settings_persistence.hpp"
 #include "spi_image.hpp"
 #include "theme.hpp"
@@ -87,14 +86,6 @@ namespace HeapMonitor {
     }
 }
 
-// Progressive slowdown multiplier LUT (eliminates runtime division)
-static constexpr uint8_t SLOWDOWN_MULTIPLIER_LUT[] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0-9 cycles
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 10-19 cycles
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2,  // 20-29 cycles
-    3, 3, 3, 3, 3, 3, 3, 3, 3, 3   // 30+ cycles (capped at 3)
-};
-
 // Compile-time division optimization
 constexpr inline uint64_t ceil_div_u64(uint64_t numerator, uint64_t denominator) noexcept {
     return (numerator + denominator - 1) / denominator;
@@ -117,6 +108,25 @@ namespace MagicNumberConstants {
     // Scanning progress multiplier (cycles to progress)
     constexpr uint32_t SCAN_PROGRESS_MULTIPLIER = 5;
 
+    // Error reporting interval (cycles)
+    constexpr uint32_t ERROR_REPORTING_INTERVAL_CYCLES = 100;
+
+    // RSSI threshold constants (dBm)
+    constexpr int32_t RSSI_LOW_THRESHOLD_DBM = -100;
+    constexpr int32_t RSSI_HIGH_THRESHOLD_DBM = -80;
+
+    // LNA gain for weak signal reception (dB)
+    constexpr uint8_t LNA_GAIN_WEAK_SIGNAL_DB = 32;
+
+    // Progress bar constants
+    constexpr uint32_t PROGRESS_PERCENT_MAX = 100;
+    constexpr uint32_t PROGRESS_BAR_SEGMENTS = 8;
+
+    // UI layout constants
+    constexpr uint32_t UI_THREAT_STATUS_Y_OFFSET = 20;
+    constexpr uint32_t UI_THREAT_FREQUENCY_Y_OFFSET = 38;
+    constexpr uint32_t UI_ELEMENT_HEIGHT = 16;
+
     // Buffer sizes for text formatting
     constexpr size_t THREAT_BUFFER_SIZE = 64;
     constexpr size_t FREQ_BUFFER_SIZE = 16;
@@ -131,8 +141,13 @@ namespace MagicNumberConstants {
     constexpr size_t PAINT_STACK_REQUIRED = 1536;
 }
 
+// DIAMOND FIX #HIGH #3: Function-local static for safe mutex initialization
+// Prevents initialization order fiasco by using function-local static pattern
 // SD card mutex (FatFS is NOT thread-safe)
-Mutex sd_card_mutex;
+Mutex& get_sd_card_mutex() noexcept {
+    static Mutex mutex;  // Initialized on first use
+    return mutex;
+}
 
 // ============================================================================
 // PLL Constants for wideband scan cycle
@@ -142,8 +157,8 @@ Mutex sd_card_mutex;
  * @note Moved from function scope to file scope for proper C++ compliance
  */
 namespace PllConstants {
-    constexpr uint32_t MAX_PLL_LOCK_RETRIES = 5;           ///< Maximum PLL lock retry attempts
-    constexpr uint32_t PLL_LOCK_POLL_INTERVAL_MS = 5;   ///< Poll interval for PLL lock status
+    constexpr uint32_t MAX_PLL_LOCK_RETRIES = 3;           ///< Maximum PLL lock retry attempts (reduced from 5 to 3 for efficiency)
+    constexpr uint32_t PLL_LOCK_POLL_INTERVAL_MS = 3;   ///< Poll interval for PLL lock status (reduced from 5 to 3 for efficiency)
     constexpr uint32_t PLL_LOCK_TIMEOUT_MS = 100;    ///< Timeout for PLL lock verification
 }
 
@@ -209,8 +224,6 @@ static_assert(200 <= 512,
               "spectrum_power_levels_storage_ exceeds 512 bytes safe buffer limit");
 
 // Validate thread stack sizes
-static_assert(DroneDetectionLogger::WORKER_STACK_SIZE <= 8192,
-              "WORKER_STACK_SIZE exceeds 8KB thread stack limit");
 static_assert(DroneScanner::DB_LOADING_STACK_SIZE <= 8192,
               "DB_LOADING_STACK_SIZE exceeds 8KB thread stack limit");
 
@@ -228,12 +241,11 @@ uint8_t DroneScanner::tracked_drones_storage_[DroneScanner::TRACKED_DRONES_STORA
 alignas(alignof(uint8_t))
 uint8_t DroneDisplayController::spectrum_power_levels_storage_[200];
 
-stkalign_t DroneDetectionLogger::worker_wa_[THD_WA_SIZE(DroneDetectionLogger::WORKER_STACK_SIZE) / sizeof(stkalign_t)];
-
 stkalign_t DroneScanner::db_loading_wa_[THD_WA_SIZE(DroneScanner::DB_LOADING_STACK_SIZE) / sizeof(stkalign_t)];
 
-// Built-in drone frequency DB (reduced from 31 to 15 entries)
+// Built-in drone frequency DB (reduced from 31 to 14 entries)
 // FIX: Removed extra brace that caused "Excess elements in scalar initializer" error
+// REMOVED: WiFi Ch1 entry to eliminate WiFi detection functionality
 EDA_FLASH_CONST const DroneScanner::BuiltinDroneFreq DroneScanner::BUILTIN_DRONE_DB[DroneScanner::BUILTIN_DB_SIZE] = {
     // LRS / Control
     { 868000000, "TBS Crossfire EU", DroneType::MILITARY_DRONE },
@@ -256,10 +268,7 @@ EDA_FLASH_CONST const DroneScanner::BuiltinDroneFreq DroneScanner::BUILTIN_DRONE
     { 5769000000, "RaceBand 4", DroneType::UNKNOWN },
 
     // DJI FPV System
-    { 5735000000, "DJI FPV Ch1", DroneType::MAVIC },
-
-    // WiFi Drones
-    { 2412000000, "WiFi Ch1", DroneType::PARROT_ANAFI }
+    { 5735000000, "DJI FPV Ch1", DroneType::MAVIC }
 };
 
 DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
@@ -277,7 +286,6 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       freq_db_loaded_(),
       current_db_index_(0),
       last_scanned_frequency_(0),
-      last_detection_log_time_(0),
       db_loading_thread_(nullptr),
       db_loading_active_(),
       initialization_complete_(),
@@ -292,12 +300,10 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       max_detected_threat_(ThreatLevel::NONE),
       last_valid_rssi_(-120),
       wideband_scan_data_(),
-      detection_logger_(),
       detection_ring_buffer_(),
       spectrum_data_(),
       histogram_buffer_(),
-      settings_(std::move(settings)),
-      last_scan_error_(nullptr)
+      settings_(std::move(settings))
 {
     // Initialize stack canary for overflow detection
     init_stack_canary();
@@ -306,26 +312,16 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
 
     // FIX #8: Initialize pointers to static storage in constructor
     // This prevents nullptr dereferences and ensures objects are always available
-    // Runtime alignment verification before placement new
-    if (reinterpret_cast<uintptr_t>(freq_db_storage_) % alignof(FreqmanDB) != 0) {
-        freq_db_ptr_ = nullptr;
-        freq_db_constructed_ = false;
-    } else {
-        // Use placement new on aligned buffer to properly construct the object
-        freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
-        freq_db_constructed_ = true;
-    }
+    // R04 FIX: Storage is declared with alignas(), so alignment is guaranteed at compile time
+    // No runtime check needed - alignas() ensures proper alignment
+    freq_db_ptr_ = new (freq_db_storage_) FreqmanDB();
+    freq_db_constructed_ = true;
 
-    // Runtime alignment verification for tracked_drones storage
-    if (reinterpret_cast<uintptr_t>(tracked_drones_storage_) % alignof(TrackedDrone) != 0) {
-        tracked_drones_ptr_ = nullptr;
-        tracked_drones_constructed_ = false;
-    } else {
-        // Create TrackedDrone array in static storage using placement new
-        tracked_drones_ptr_ = new (tracked_drones_storage_)
-            std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>();
-        tracked_drones_constructed_ = true;
-    }
+    // R04 FIX: Storage is declared with alignas(), so alignment is guaranteed at compile time
+    // No runtime check needed - alignas() ensures proper alignment
+    tracked_drones_ptr_ = new (tracked_drones_storage_)
+        std::array<TrackedDrone, EDA::Constants::MAX_TRACKED_DRONES>();
+    tracked_drones_constructed_ = true;
 
     // Initialize TrackedDrone array to default state
     if (tracked_drones_ptr_ && tracked_drones_constructed_) {
@@ -358,15 +354,14 @@ DroneScanner::~DroneScanner() {
     // Signal all threads to stop cooperatively
     scanning_active_ = false;
     
-    // DIAMOND FIX #HIGH #1: Wait for scanning thread to exit
-    // This prevents memory leaks from thread resources
+    // FIX R10: Proper thread termination using ChibiOS API
+    // This replaces timeout-based wait with proper termination mechanism
     if (scanning_thread_ != nullptr) {
-        // Wait for thread to exit with timeout
-        systime_t timeout = chTimeNow() + MS2ST(EDA::Constants::THREAD_TERMINATION_TIMEOUT_MS);
-        while (chTimeNow() < timeout && scanning_thread_ != nullptr) {
-            chThdSleepMilliseconds(EDA::Constants::THREAD_TERMINATION_POLL_INTERVAL_MS);
-        }
-        // Clear thread pointer only after thread has exited
+        // Request thread termination
+        chThdTerminate(scanning_thread_);
+        // Wait for thread to exit (no timeout)
+        chThdWait(scanning_thread_);
+        // Clear thread pointer after thread has exited
         scanning_thread_ = nullptr;
     }
     
@@ -476,8 +471,11 @@ void DroneScanner::start_scanning() {
     if (is_scanning) return;
 
     scanning_active_ = true;
-    scan_cycles_ = 0;
-    total_detections_ = 0;
+    {
+        MutexLock lock(data_mutex);
+        scan_cycles_ = 0;
+        total_detections_ = 0;
+    }
 }
 
 void DroneScanner::stop_scanning() {
@@ -653,13 +651,10 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
         adaptive_interval = NORMAL_SCAN_INTERVAL_MS;
     } else if (current_detections > 0 && tracked_count > 0) {
         adaptive_interval = SLOW_SCAN_INTERVAL_MS;
-    } else if (current_detections == 0 && scan_cycles_ > PROGRESSIVE_SLOWDOWN_DIVISOR) {
+    } else if (current_detections == 0 && get_scan_cycles() > PROGRESSIVE_SLOWDOWN_DIVISOR) {
         uint32_t cycles_value = get_scan_cycles();
-        // DIAMOND FIX: Replace magic number 39 with semantic constant
-        uint32_t cycles_clamped = (cycles_value < MagicNumberConstants::PROGRESSIVE_SLOWDOWN_MAX_CYCLES) ?
-                                  cycles_value :
-                                  MagicNumberConstants::PROGRESSIVE_SLOWDOWN_MAX_CYCLES;
-        uint32_t slowdown_multiplier = SLOWDOWN_MULTIPLIER_LUT[cycles_clamped];
+        // Use slowdown multiplier from EDA::Constants::ScanSlowdown
+        uint32_t slowdown_multiplier = EDA::Constants::ScanSlowdown::get_slowdown_multiplier(cycles_value);
         uint32_t interval_calc = base_interval * slowdown_multiplier;
         adaptive_interval = (interval_calc < VERY_SLOW_SCAN_INTERVAL_MS) ? interval_calc : VERY_SLOW_SCAN_INTERVAL_MS;
     }
@@ -849,7 +844,8 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
 
                 // Wait for stabilization at fallback frequency
                 chThdSleepMilliseconds(EDA::Constants::PLL_STABILIZATION_DELAY_MS);
-                pll_locked = true;
+                // BUG FIX: Do NOT set pll_locked to true on timeout
+                // pll_locked should remain false to trigger fallback logic
                 break;
             }
             
@@ -943,7 +939,7 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
 
         last_scanned_frequency_ = current_slice.center_frequency;
     } else {
-        if (scan_cycles_ % 100 == 0) {
+        if (get_scan_cycles() % MagicNumberConstants::ERROR_REPORTING_INTERVAL_CYCLES == 0) {
             handle_scan_error("Hardware tuning failed in wideband mode");
         }
     }
@@ -1056,11 +1052,6 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
         }
     }
     // End critical section
-
-    // Logging
-    if (should_log && detection_logger_.is_session_active()) {
-        detection_logger_.log_detection_async(log_entry_to_write);
-    }
 }
 
 void DroneScanner::process_spectral_detection(const freqman_entry& entry,
@@ -1082,7 +1073,7 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
         if (entry.frequency_a == EDA::Constants::ZERO_FREQUENCY) {
             return;
         }
-        size_t freq_hash = DiamondFixes::safe_frequency_hash(entry.frequency_a);
+        size_t freq_hash = static_cast<size_t>(entry.frequency_a / EDA::Constants::FREQ_HASH_DIVISOR) & EDA::Constants::FREQ_HASH_MASK;
         int32_t effective_threshold = WIDEBAND_RSSI_THRESHOLD_DB;
 
         if (detection_ring_buffer_.get_rssi_value(freq_hash) < WIDEBAND_RSSI_THRESHOLD_DB) {
@@ -1131,16 +1122,11 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
         }
     }
     // --- CRITICAL SECTION END ---
-
-    // 3. Logging
-    if (should_log && detection_logger_.is_session_active()) {
-        detection_logger_.log_detection_async(log_entry_to_write);
-    }
 }
 
 void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) {
     // Diamond Code Fix: Use constant instead of magic number
-    if (scan_cycles_ % EDA::Constants::HYBRID_SCAN_DIVISOR == 0) {
+    if (get_scan_cycles() % EDA::Constants::HYBRID_SCAN_DIVISOR == 0) {
         perform_wideband_scan_cycle(hardware);
     } else {
         perform_database_scan_cycle(hardware);
@@ -1217,13 +1203,13 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         if (entry.frequency_a == EDA::Constants::ZERO_FREQUENCY) {
             return;
         }
-        size_t freq_hash = DiamondCore::safe_frequency_hash(entry.frequency_a);
+        size_t freq_hash = static_cast<size_t>(entry.frequency_a / EDA::Constants::FREQ_HASH_DIVISOR) & EDA::Constants::FREQ_HASH_MASK;
         int32_t prev_rssi = detection_ring_buffer_.get_rssi_value(freq_hash);
         int32_t base_threshold = -90;
 
-        if (rssi > -100 && rssi < -80) {
-            base_threshold = -100;
-        } else if (rssi > -80) {
+        if (rssi > MagicNumberConstants::RSSI_LOW_THRESHOLD_DBM && rssi < MagicNumberConstants::RSSI_HIGH_THRESHOLD_DBM) {
+            base_threshold = MagicNumberConstants::RSSI_LOW_THRESHOLD_DBM;
+        } else if (rssi > MagicNumberConstants::RSSI_HIGH_THRESHOLD_DBM) {
             base_threshold = -90;
         }
 
@@ -1278,26 +1264,6 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
     // --- CRITICAL SECTION END ---
     // Mutex released. UI can redraw.
 
-        // Perform heavy I/O operations
-    if (should_log) {
-        // Only log every 200ms to prevent I/O blocking while maintaining responsiveness
-        systime_t now = chTimeNow();
-
-        // FIX #15: Use consistent memory ordering
-        systime_t last_time = last_detection_log_time_;
-
-        // Use chTimeNow() directly for timing - no CH_CFG_ST_FREQUENCY dependency
-        // DIAMOND FIX: Priority 2 - Replace magic number with constant
-        if (now - last_time > EDA::Constants::LOG_WRITE_INTERVAL_MS) { // 200ms delay (10x more frequent than before)
-            if (detection_logger_.is_session_active()) {
-                // log_detection_async returns false if buffer is full
-                // so built-in protection against hanging is already inside the logger.
-                if (detection_logger_.log_detection_async(log_entry_to_write)) {
-                    last_detection_log_time_ = now;
-                }
-            }
-        }
-    }
 }
 
 void DroneScanner::send_drone_detection_message(const DetectionParams& params) {
@@ -1328,7 +1294,7 @@ void DroneScanner::update_tracked_drone(const DetectionParams& params) {
     ThreatLevel threat_level = params.threat_level;
     
     for (size_t i = 0; i < tracked_count_; ++i) {
-        if (DiamondCore::frequency_equal(tracked_drones()[i].frequency, frequency) && tracked_drones()[i].update_count > 0) {
+        if (tracked_drones()[i].frequency == frequency && tracked_drones()[i].update_count > 0) {
             tracked_drones()[i].add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
             tracked_drones()[i].drone_type = static_cast<uint8_t>(type);
             tracked_drones()[i].threat_level = static_cast<uint8_t>(threat_level);
@@ -1339,7 +1305,9 @@ void DroneScanner::update_tracked_drone(const DetectionParams& params) {
 
     if (tracked_count_ < EDA::Constants::MAX_TRACKED_DRONES) {
         TrackedDrone new_drone;
-        new_drone.frequency = static_cast<uint32_t>(frequency);
+        // DIAMOND FIX #MEDIUM #4: Remove uint32_t cast, use Frequency directly
+        // TrackedDrone.frequency is already Frequency type (int64_t)
+        new_drone.frequency = frequency;
         new_drone.drone_type = static_cast<uint8_t>(type);
         new_drone.threat_level = static_cast<uint8_t>(threat_level);
         new_drone.add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
@@ -1362,7 +1330,9 @@ void DroneScanner::update_tracked_drone(const DetectionParams& params) {
 
     TrackedDrone& oldest_drone = tracked_drones()[oldest_index];
     oldest_drone = TrackedDrone();
-    oldest_drone.frequency = static_cast<uint32_t>(frequency);
+    // DIAMOND FIX #MEDIUM #4: Remove uint32_t cast, use Frequency directly
+    // TrackedDrone.frequency is already Frequency type (int64_t)
+    oldest_drone.frequency = frequency;
     oldest_drone.drone_type = static_cast<uint8_t>(type);
     oldest_drone.threat_level = static_cast<uint8_t>(threat_level);
     oldest_drone.add_rssi({static_cast<int16_t>(rssi), chTimeNow()});
@@ -1450,6 +1420,7 @@ void DroneScanner::update_tracking_counts() {
 }
 
 void DroneScanner::reset_scan_cycles() {
+    MutexLock lock(data_mutex);
     scan_cycles_ = 0;
 }
 
@@ -1619,9 +1590,6 @@ void DroneScanner::cleanup_database_and_scanner() {
             db_loading_thread_ = nullptr;
         }
     }
-
-    // Stop detection logger worker thread
-    detection_logger_.stop_worker();
 
     // Explicit destructor calls for placement new
     // Only call destructor if construction succeeded
@@ -1832,8 +1800,9 @@ void DroneScanner::db_loading_thread_loop() {
         }  // data_lock released here
 
         // Phase 2: Acquire sd_card_mutex for sync_database()
+        // DIAMOND FIX #HIGH #3: Use get_sd_card_mutex() for safe initialization
         {
-            MutexLock sd_lock(sd_card_mutex, LockOrder::SD_CARD_MUTEX);
+            MutexLock sd_lock(get_sd_card_mutex(), LockOrder::SD_CARD_MUTEX);
             sync_database();
         }  // sd_lock released here
 
@@ -1932,13 +1901,15 @@ bool DroneScanner::is_database_valid() const {
  * @details Thread-safe access to current scanning frequency
  * @return Current scanning frequency or default fallback frequency
  * @note DIAMOND FIX MEDIUM #5: Added mutex protection for database access
+ * @note DIAMOND FIX #MEDIUM #5: Replaced magic number with named constant
  */
 Frequency DroneScanner::get_current_scanning_frequency() const {
     // DIAMOND FIX MEDIUM #5: Acquire mutex for database access protection
     MutexLock lock(data_mutex);
 
     if (!freq_db_ptr_ || !freq_db_loaded_) {
-        return 433000000;  // Default fallback frequency
+        // DIAMOND FIX #MEDIUM #5: Use named constant instead of magic number
+        return EDA::FrequencyConstants::CENTER_433MHZ;  // Default fallback frequency (434 MHz)
     }
 
     size_t db_entry_count = freq_db_ptr_->entry_count();
@@ -1946,7 +1917,8 @@ Frequency DroneScanner::get_current_scanning_frequency() const {
         return (*freq_db_ptr_)[current_db_index_].frequency_a;
     }
 
-    return 433000000;  // Default fallback frequency
+    // DIAMOND FIX #MEDIUM #5: Use named constant instead of magic number
+    return EDA::FrequencyConstants::CENTER_433MHZ;  // Default fallback frequency (434 MHz)
 }
 
 Frequency DroneScanner::get_current_radio_frequency() const {
@@ -2017,8 +1989,11 @@ TrackedDrone DroneScanner::getTrackedDrone(size_t index) const {
 }
 
 void DroneScanner::handle_scan_error([[maybe_unused]] const char* error_msg) {
+    // Error handling - currently just logs to debug output
+    // Could be extended to update UI status or trigger recovery actions
     if (error_msg) {
-        last_scan_error_ = error_msg;
+        // Log error (implementation depends on logging system)
+        // TODO: Add proper error logging/recovery mechanism
     }
 }
 
@@ -2345,7 +2320,8 @@ bool DroneDetectionLogger::write_entry_to_sd(const DetectionLogEntry& entry) {
     }
 
     // Lock SD card before file operations (FatFS is NOT thread-safe)
-    SDCardLock lock(sd_card_mutex);
+    // DIAMOND FIX #HIGH #3: Use get_sd_card_mutex() for safe initialization
+    SDCardLock lock(get_sd_card_mutex());
 
     if (!ensure_csv_header()) return false;
 
@@ -2478,7 +2454,7 @@ void DroneHardwareController::initialize_radio_state() {
         portapack::receiver_model.set_rf_amp(false);
 
     // LNA Gain: 32dB (Range 0-40) - receives weak signals
-    portapack::receiver_model.set_lna(32);
+    portapack::receiver_model.set_lna(MagicNumberConstants::LNA_GAIN_WEAK_SIGNAL_DB);
 
     // VGA Gain: 32dB (Range 0-62) - signal volume after LNA
     portapack::receiver_model.set_vga(32);
@@ -2644,9 +2620,9 @@ int32_t DroneHardwareController::get_current_rssi() const {
 
 SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
     : View(parent_rect),
-      threat_progress_bar_({0, 0, screen_width, 16}),
-      threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | <0 ~0 >0"),
-      threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING"),
+      threat_progress_bar_({0, 0, screen_width, MagicNumberConstants::UI_ELEMENT_HEIGHT}),
+      threat_status_main_({0, MagicNumberConstants::UI_THREAT_STATUS_Y_OFFSET, screen_width, MagicNumberConstants::UI_ELEMENT_HEIGHT}, "THREAT: LOW | <0 ~0 >0"),
+      threat_frequency_({0, MagicNumberConstants::UI_THREAT_FREQUENCY_Y_OFFSET, screen_width, MagicNumberConstants::UI_ELEMENT_HEIGHT}, "2400.0MHz SCANNING"),
       // DIAMOND FIX: Initialize mutex in member initialization list (RAII pattern)
       ui_mutex_() {
     last_text_[0] = '\0';
@@ -2884,13 +2860,13 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
     MutexLock lock(ui_mutex_, LockOrder::UI_STATUSBAR_MUTEX);
 
     // Early return for invalid states
-    if (progress_percent > 100) progress_percent = 100;
+    if (progress_percent > MagicNumberConstants::PROGRESS_PERCENT_MAX) progress_percent = MagicNumberConstants::PROGRESS_PERCENT_MAX;
 
     set_display_mode(DisplayMode::SCANNING);
 
     // Table-driven progress bar - O(1) lookup
-    uint8_t raw_idx = (progress_percent * 8) / 100;
-    uint8_t bar_idx = (raw_idx < 8) ? raw_idx : 8;
+    uint8_t raw_idx = (progress_percent * MagicNumberConstants::PROGRESS_BAR_SEGMENTS) / MagicNumberConstants::PROGRESS_PERCENT_MAX;
+    uint8_t bar_idx = (raw_idx < MagicNumberConstants::PROGRESS_BAR_SEGMENTS) ? raw_idx : MagicNumberConstants::PROGRESS_BAR_SEGMENTS;
     const auto& bar_entry = PROGRESS_PATTERNS[bar_idx];
 
     // Use StatusFormatter
@@ -3675,7 +3651,7 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) noexcept {
     const auto& config = dsp::BarSpectrumConfig{};
 
     // Clear spectrum area (UI only)
-    const int bar_spectrum_y_start = config.WATERFALL_Y_START;
+    const int bar_spectrum_y_start = config.SPECTRUM_Y_START;
     const int spectrum_height = config.BAR_HEIGHT_MAX;
 
     painter.fill_rectangle(

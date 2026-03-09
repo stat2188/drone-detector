@@ -18,23 +18,6 @@
 // - Other: Compilation error (unsupported compiler)
 // ============================================================================
 
-#include <ch.h>
-#include "chmtx.h"
-#include "chtypes.h"
-#include "eda_constants.hpp"
-#include "memory_pool_manager.hpp"
-#include "rf_path.hpp"
-#include "ui_menu.hpp"
-#include "ui_painter.hpp"
-#if defined(__GNUC__) || defined(__clang__)
-    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
-#elif defined(__ICCARM__)
-    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
-#else
-    #define EDA_FLASH_CONST
-    #error "Unsupported compiler - cannot guarantee Flash placement for EDA_FLASH_CONST"
-#endif
-
 // C++ standard library headers (alphabetical order)
 #include <array>
 #include <cstddef>
@@ -44,11 +27,30 @@
 #include <string_view>
 #include <utility>
 
+// Third-party library headers (ChibiOS)
+#include <ch.h>
+#include "chmtx.h"
+#include "chtypes.h"
+
+// Flash storage attribute definition (after includes, before project headers)
+#if defined(__GNUC__) || defined(__clang__)
+    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
+#elif defined(__ICCARM__)
+    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
+#else
+    #define EDA_FLASH_CONST
+    #error "Unsupported compiler - cannot guarantee Flash placement for EDA_FLASH_CONST"
+#endif
+
 // Project-specific headers (alphabetical order)
+#include "eda_constants.hpp"
+#include "rf_path.hpp"
 #include "settings_persistence.hpp"
 #include "ui.hpp"
 #include "ui_drone_common_types.hpp"
+#include "ui_menu.hpp"
 #include "ui_navigation.hpp"
+#include "ui_painter.hpp"
 #include "ui_receiver.hpp"
 #include "ui_widget.hpp"
 
@@ -286,76 +288,43 @@ public:
 // @endcode
 // ================================================================================
 struct ConfigUpdaterCallback {
-    // HIGH-005 FIX: Pointer to pool-allocated config instead of value on stack
-    // Reduces stack usage from 512 bytes to pointer size (4-8 bytes)
-    DroneAnalyzerSettings* config_ptr;
+    // Stack-allocated config (reverted from memory pool allocation)
+    // Uses stack allocation consistent with rest of codebase
+    DroneAnalyzerSettings config;
 
-    // Constructor - allocate config from memory pool
-    // HIGH-005 FIX: Uses DRONE_ANALYZER_SETTINGS pool for allocation
-    // This prevents stack overflow from large structure on stack
+    // Constructor - copy config to stack-allocated storage
     explicit ConfigUpdaterCallback(const DroneAnalyzerSettings& config) noexcept
-        : config_ptr(nullptr) {
-        // Allocate from memory pool
-        void* ptr = MemoryPoolManager::allocate(PoolType::DRONE_ANALYZER_SETTINGS);
-        if (ptr) {
-            config_ptr = static_cast<DroneAnalyzerSettings*>(ptr);
-            // Copy config to pool-allocated memory
-            *config_ptr = config;
-        }
-        // If allocation fails, config_ptr remains nullptr
-        // Caller should check get_settings() before using
+        : config(config) {
+        // Copy config to stack-allocated storage
+        // No heap or memory pool allocation
     }
 
-    // Destructor - deallocate config from memory pool
-    // HIGH-005 FIX: Returns memory to pool when callback is destroyed
-    ~ConfigUpdaterCallback() noexcept {
-        if (config_ptr) {
-            MemoryPoolManager::deallocate(PoolType::DRONE_ANALYZER_SETTINGS, config_ptr);
-            config_ptr = nullptr;
-        }
-    }
+    // Default destructor (no manual deallocation needed)
+    ~ConfigUpdaterCallback() noexcept = default;
 
-    // Non-copyable, non-movable (prevents double deallocation)
-    ConfigUpdaterCallback(const ConfigUpdaterCallback&) = delete;
-    ConfigUpdaterCallback& operator=(const ConfigUpdaterCallback&) = delete;
-    ConfigUpdaterCallback(ConfigUpdaterCallback&&) = delete;
-    ConfigUpdaterCallback& operator=(ConfigUpdaterCallback&&) = delete;
+    // Copyable and movable (stack allocation allows this)
+    ConfigUpdaterCallback(const ConfigUpdaterCallback&) = default;
+    ConfigUpdaterCallback& operator=(const ConfigUpdaterCallback&) = default;
+    ConfigUpdaterCallback(ConfigUpdaterCallback&&) = default;
+    ConfigUpdaterCallback& operator=(ConfigUpdaterCallback&&) = default;
 
     // Apply preset to settings copy
     // noexcept for operator()
     void operator()(const DronePreset& preset) noexcept {
-        if (config_ptr) {
-            (void)DroneFrequencyPresets::apply_preset(*config_ptr, preset);
-        }
+        (void)DroneFrequencyPresets::apply_preset(config, preset);
     }
 
     // Get modified settings copy
     // Returns const reference to avoid unnecessary copy
-    // P1-HIGH FIX #5: Reference is only valid while this object exists
+    // Reference is only valid while this object exists
     // Do NOT store this reference after the callback is destroyed
-    // HIGH-005 FIX: Returns reference to pool-allocated config
-    // CRITICAL FIX: Asserts on null config_ptr in both debug and release builds
-    // Note: If config_ptr is null, this will return reference to static empty_config.
-    // Caller must check is_valid() before using this reference.
     [[nodiscard]] const DroneAnalyzerSettings& get_settings() const noexcept {
-        // CRITICAL FIX: Assert on null pointer in both debug and release builds
-        // This prevents inconsistent behavior between debug and release
-        if (!config_ptr) {
-            // In release builds, we still return empty_config but this is documented
-            // The caller should check is_valid() before using the reference
-        }
-        
-        // Return reference to pool-allocated config or empty config if null
-        // Caller must ensure callback is still alive when using this reference
-        // Note: If config_ptr is null, this returns reference to static empty_config
-        static const DroneAnalyzerSettings empty_config{};
-        return config_ptr ? *config_ptr : empty_config;
+        return config;
     }
 
-    // Check if config was successfully allocated
-    // HIGH-005 FIX: Allows caller to check allocation success
+    // Check if config is valid (always true for stack allocation)
     [[nodiscard]] bool is_valid() const noexcept {
-        return config_ptr != nullptr;
+        return true;
     }
 };
 
@@ -512,9 +481,11 @@ public:
         return "Audio Settings";
     }
     
-    // Framework-compatible version (causes heap allocation, kept for compatibility)
+    // R05 FIX: Static string to reduce heap allocations
+    // Constructs string once instead of on every call
     std::string title() const noexcept override {
-        return title_string_view();
+        static const std::string title_str = "Audio Settings";
+        return title_str;
     }
 
 private:
@@ -548,9 +519,11 @@ public:
         return "Hardware Settings";
     }
     
-    // Framework-compatible version (causes heap allocation, kept for compatibility)
+    // R05 FIX: Static string to reduce heap allocations
+    // Constructs string once instead of on every call
     std::string title() const noexcept override {
-        return title_string_view();
+        static const std::string title_str = "Hardware Settings";
+        return title_str;
     }
 
 private:
@@ -583,9 +556,11 @@ public:
         return "Scanning Settings";
     }
     
-    // Framework-compatible version (causes heap allocation, kept for compatibility)
+    // R05 FIX: Static string to reduce heap allocations
+    // Constructs string once instead of on every call
     std::string title() const noexcept override {
-        return title_string_view();
+        static const std::string title_str = "Scanning Settings";
+        return title_str;
     }
 
 private:
@@ -618,9 +593,11 @@ public:
         return "EDA Settings";
     }
     
-    // Framework-compatible version (causes heap allocation, kept for compatibility)
+    // R05 FIX: Static string to reduce heap allocations
+    // Constructs string once instead of on every call
     std::string title() const noexcept override {
-        return title_string_view();
+        static const std::string title_str = "EDA Settings";
+        return title_str;
     }
 
  private:
@@ -654,9 +631,11 @@ public:
         return "Loading";
     }
     
-    // Framework-compatible version (causes heap allocation, kept for compatibility)
+    // R05 FIX: Static string to reduce heap allocations
+    // Constructs string once instead of on every call
     std::string title() const noexcept override {
-        return title_string_view();
+        static const std::string title_str = "Loading";
+        return title_str;
     }
     void paint(Painter& painter) override;
     void on_show() override;
@@ -724,9 +703,11 @@ public:
         return "Edit Frequency";
     }
     
-    // Framework-compatible version (causes heap allocation, kept for compatibility)
+    // R05 FIX: Static string to reduce heap allocations
+    // Constructs string once instead of on every call
     std::string title() const noexcept override {
-        return title_string_view();
+        static const std::string title_str = "Edit Frequency";
+        return title_str;
     }
 
 private:
@@ -766,16 +747,14 @@ private:
     // ============================================================================
 
     // Custom wrapper for fixed-size char buffer (provides std::string interface)
-    // FIX: Eliminates heap allocation for TextEdit widget using placement new with union storage
-    // DIAMOND FIX: Replaced std::aligned_storage_t (deprecated in C++23) with union-based storage
+    // R03 FIX: Replaced union-based placement new with simple std::string member
+    // This eliminates complex union storage while maintaining TextEdit compatibility
     class FixedStringBuffer {
     public:
         explicit FixedStringBuffer(char* buffer, size_t capacity) noexcept
             : buffer_(buffer),
               capacity_(capacity),
-              size_(0),
-              temp_string_storage_{},  // Initialize union storage (declared at line 674)
-              temp_string_constructed_(false)  // Initialize flag (declared at line 675)
+              length_(0)
         {
             buffer_[0] = '\0';
         }
@@ -784,22 +763,15 @@ private:
         FixedStringBuffer(const FixedStringBuffer&) = delete;
         FixedStringBuffer& operator=(const FixedStringBuffer&) = delete;
 
-        // Destructor - destroy temp_string if it was constructed
-        ~FixedStringBuffer() noexcept {
-            if (temp_string_constructed_) {
-                destroy_temp_string();
-            }
-        }
-
         // Provide std::string-like interface for TextEdit compatibility
         [[nodiscard]] const char* c_str() const noexcept { return buffer_; }
-        [[nodiscard]] size_t size() const noexcept { return size_; }
+        [[nodiscard]] size_t size() const noexcept { return length_; }
         [[nodiscard]] size_t capacity() const noexcept { return capacity_; }
-        [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
+        [[nodiscard]] bool empty() const noexcept { return length_ == 0; }
 
         // Clear buffer
         void clear() noexcept {
-            size_ = 0;
+            length_ = 0;
             buffer_[0] = '\0';
         }
 
@@ -815,113 +787,30 @@ private:
                 len++;
             }
             buffer_[len] = '\0';
-            size_ = len;
+            length_ = len;
         }
 
         // Implicit conversion to std::string& for TextEdit widget
-        // WORKAROUND: Uses placement new to construct std::string only when needed
-        // This eliminates heap allocation during FixedStringBuffer construction
+        // R03 FIX: Uses simple std::string member instead of union-based placement new
         // Heap allocation only occurs when TextEdit widget actually calls this operator
-        // LIMITATION: The reference is only valid until the next call to sync_from_temp()
-        // or destruction of FixedStringBuffer. TextEdit widget must not store the reference.
         operator std::string&() noexcept {
-            // Construct temp_string on first use (lazy initialization)
-            if (!temp_string_constructed_) {
-                construct_temp_string();
-            }
-            
-            // Sync from fixed buffer to temp_string
-            get_temp_string().assign(buffer_, size_);
-            return get_temp_string();
+            temp_string_.assign(buffer_, length_);
+            return temp_string_;
         }
 
         // Sync buffer back from temp_string (after TextEdit modifies it)
         void sync_from_temp() noexcept {
-            if (!temp_string_constructed_) {
-                return;  // Nothing to sync if temp_string was never constructed
-            }
-            
-            size_t len = 0;
-            const char* temp_data = get_temp_string().c_str();
-            while (len < capacity_ - 1 && temp_data[len] != '\0') {
-                buffer_[len] = temp_data[len];
-                len++;
-            }
+            size_t len = std::min(temp_string_.size(), capacity_ - 1);
+            memcpy(buffer_, temp_string_.c_str(), len);
             buffer_[len] = '\0';
-            size_ = len;
-            
-            // Destroy temp_string after syncing to free heap memory
-            destroy_temp_string();
+            length_ = len;
         }
 
     private:
-        // ============================================================================
-        // WORKAROUND: Union-based storage for lazy std::string construction
-        // ============================================================================
-        // PROBLEM: std::string member causes heap allocation during construction
-        // SOLUTION: Use union to reserve space, construct only when needed
-        // BENEFIT: Zero heap allocation unless TextEdit widget actually uses operator std::string&()
-        // DIAMOND FIX: Replaced std::aligned_storage_t (deprecated in C++23) with union
-        // ============================================================================
-        
-        // Union-based storage for std::string (replaces deprecated std::aligned_storage_t)
-        union StringStorage {
-            alignas(std::string) unsigned char buffer[sizeof(std::string)];
-            
-            // Default constructor initializes buffer to zero
-            constexpr StringStorage() noexcept : buffer{} {}
-            
-            // Destructor is trivial for union
-            ~StringStorage() {}
-        };
-        
-        // Validate that union storage is sufficient for std::string
-        static_assert(sizeof(StringStorage) >= sizeof(std::string),
-                     "StringStorage must be large enough to hold std::string");
-        static_assert(alignof(StringStorage) >= alignof(std::string),
-                     "StringStorage must have sufficient alignment for std::string");
-        
-        // Construct std::string in-place using placement new
-        void construct_temp_string() noexcept {
-            new (&temp_string_storage_) std::string();
-            // Reserve capacity upfront to prevent reallocation during TextEdit operations
-            get_temp_string().reserve(capacity_);
-            temp_string_constructed_ = true;
-        }
-        
-        // Destroy std::string using std::destroy_at (C++17 standard)
-        // DIAMOND FIX: Added explicit null checks to prevent undefined behavior
-        // This is the modern, safe C++17 way to destroy objects constructed with placement new
-        void destroy_temp_string() noexcept {
-            if (temp_string_constructed_) {
-                // Get pointer to std::string object in union storage
-                std::string* str_ptr = reinterpret_cast<std::string*>(&temp_string_storage_);
-                
-                // DIAMOND FIX: Add explicit null check to prevent undefined behavior
-                // Although str_ptr should never be null here, we check for safety
-                if (str_ptr != nullptr) {
-                    // Call std::destroy_at on the std::string object in union storage
-                    std::destroy_at(str_ptr);
-                }
-                temp_string_constructed_ = false;
-            }
-        }
-        
-        // Get reference to std::string from storage
-        std::string& get_temp_string() noexcept {
-            return *reinterpret_cast<std::string*>(&temp_string_storage_);
-        }
-        
-        // Get const reference to std::string from storage
-        const std::string& get_temp_string() const noexcept {
-            return *reinterpret_cast<const std::string*>(&temp_string_storage_);
-        }
-
         char* buffer_;                    // Fixed-size buffer (non-owning)
         size_t capacity_;                // Buffer capacity
-        size_t size_;                   // Current string length
-        StringStorage temp_string_storage_;  // Union storage for std::string (no heap allocation)
-        bool temp_string_constructed_;   // Track if std::string is constructed in storage
+        size_t length_;                  // Current string length
+        std::string temp_string_;        // Temporary string for TextEdit compatibility
     };
 
     NavigationView& nav_;
@@ -990,9 +879,11 @@ public:
         return "Manage Database";
     }
     
-    // Framework-compatible version (causes heap allocation, kept for compatibility)
+    // R05 FIX: Static string to reduce heap allocations
+    // Constructs string once instead of on every call
     std::string title() const noexcept override {
-        return title_string_view();
+        static const std::string title_str = "Manage Database";
+        return title_str;
     }
 
 private:

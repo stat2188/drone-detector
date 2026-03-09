@@ -7,7 +7,6 @@
 
 // Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"
-#include "memory_pool_manager.hpp"
 #include "rf_path.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
@@ -41,22 +40,17 @@ enum class SpectrumMode : uint8_t { NARROW = 0, MEDIUM = 1, WIDE = 2, ULTRA_WIDE
  * This structure contains all configurable settings for the drone analyzer application.
  * It includes audio, hardware, scanning, detection, logging, display, and profile settings.
  *
- * MEMORY POOL INTEGRATION:
- * - Uses memory pool allocation to prevent stack overflow
- * - Factory methods provide safe allocation/deallocation
- * - Thread-safe allocation using ChibiOS mutexes
+ * MEMORY ALLOCATION:
+ * - Stack-allocated (512 bytes total)
+ * - No heap allocation
+ * - Use RAII and automatic storage duration
  *
  * USAGE EXAMPLE:
  * @code
- *   // Allocate from memory pool
- *   DroneAnalyzerSettings* settings = DroneAnalyzerSettings::allocate_from_pool();
- *   if (settings) {
- *       // Use settings...
- *       settings->audio_flags = 0x01;
- *
- *       // Deallocate when done
- *       DroneAnalyzerSettings::deallocate_to_pool(settings);
- *   }
+ *   // Stack allocation (recommended)
+ *   DroneAnalyzerSettings settings{};
+ *   settings.audio_flags = 0x01;
+ *   // Use settings directly - no deallocation needed
  * @endcode
  */
 struct DroneAnalyzerSettings {
@@ -88,7 +82,7 @@ struct DroneAnalyzerSettings {
     uint32_t wideband_slice_width_hz = 24000000;
 
     // Detection settings
-    uint8_t detection_flags = 0x03;  // bit0: enable_fhss_detection, bit1: enable_intelligent_tracking
+    uint8_t detection_flags = 0x02;  // bit0: reserved, bit1: enable_intelligent_tracking
 
     uint8_t movement_sensitivity = 3;
     uint32_t threat_level_threshold = 2;
@@ -96,11 +90,10 @@ struct DroneAnalyzerSettings {
     uint32_t alert_persistence_threshold = 3;
 
     // Logging settings
-    uint8_t logging_flags = 0x0F;  // bit0: auto_save_logs, bit1: enable_session_logging, bit2: include_timestamp, bit3: include_rssi_values
-
-    char log_file_path[EDA::Constants::MAX_PATH_LENGTH] = "/eda_logs";
-    char log_format[EDA::Constants::MAX_FORMAT_LENGTH] = "CSV";
-    uint32_t max_log_file_size_kb = 1024;
+    // DIAMOND FIX #CRITICAL #1: Added logging_flags field to fix compilation error
+    // Helper functions at lines 226-249 reference this field
+    uint8_t logging_flags = 0x00;  // bit0: auto_save_logs, bit1: enable_session_logging,
+                                     // bit2: include_timestamp, bit3: include_rssi_values
 
     // Display settings
     uint8_t display_flags = 0x1F;  // bit0: show_detailed_info, bit1: show_mini_spectrum, bit2: show_rssi_history, bit3: show_frequency_ruler, bit4: auto_ruler_style
@@ -108,7 +101,6 @@ struct DroneAnalyzerSettings {
     char color_scheme[EDA::Constants::MAX_NAME_LENGTH] = "DARK";
     uint8_t font_size = 0;
     uint8_t spectrum_density = 1;
-    uint8_t waterfall_speed = 5;
     uint8_t frequency_ruler_style = 5;
     uint8_t compact_ruler_tick_count = 4;
 
@@ -122,58 +114,9 @@ struct DroneAnalyzerSettings {
     char settings_file_path[EDA::Constants::MAX_PATH_LENGTH] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     uint32_t settings_version = 2;
 
-    /**
-     * @brief Allocate DroneAnalyzerSettings from memory pool
-     * @return Pointer to allocated settings, or nullptr if pool exhausted
-     * @note Thread-safe (mutex-protected)
-     * @note Does not throw (noexcept)
-     * @note Returns nullptr if pool is exhausted (overflow protection)
-     *
-     * USAGE:
-     * @code
-     *   DroneAnalyzerSettings* settings = DroneAnalyzerSettings::allocate_from_pool();
-     *   if (settings) {
-     *       // Use settings...
-     *       DroneAnalyzerSettings::deallocate_to_pool(settings);
-     *   }
-     * @endcode
-     *
-     * MEMORY USAGE:
-     * - Pool size: 1 block (PoolConfig::DRONE_ANALYZER_SETTINGS_POOL_SIZE)
-     * - Block size: 512 bytes (PoolBlockSizes::DRONE_ANALYZER_SETTINGS_SIZE)
-     * - Total pool memory: 612 bytes (100 overhead + 1 * 512)
-     * - Typical usage: 1 instance (global settings)
-     *
-     * THREAD SAFETY:
-     * - Thread-safe allocation via MemoryPoolManager::allocate()
-     * - Multiple threads can allocate/deallocate concurrently
-     * - Statistics are updated atomically under mutex
-     */
-    [[nodiscard]] static DroneAnalyzerSettings* allocate_from_pool() noexcept;
-
-    /**
-     * @brief Deallocate DroneAnalyzerSettings back to memory pool
-     * @param ptr Pointer to settings to deallocate
-     * @note Thread-safe (mutex-protected)
-     * @note Safe to call with nullptr (no-op)
-     * @note Does not throw (noexcept)
-     *
-     * USAGE:
-     * @code
-     *   DroneAnalyzerSettings::deallocate_to_pool(settings);
-     * @endcode
-     *
-     * MEMORY SAFETY:
-     * - Returns memory to pool for reuse
-     * - No memory leaks (deallocate must be called for each allocation)
-     * - Safe to call multiple times with same pointer (idempotent)
-     *
-     * THREAD SAFETY:
-     * - Thread-safe deallocation via MemoryPoolManager::deallocate()
-     * - Multiple threads can deallocate concurrently
-     * - Statistics are updated atomically under mutex
-     */
-    static void deallocate_to_pool(DroneAnalyzerSettings* ptr) noexcept;
+    // Memory pool allocation methods have been removed
+    // DroneAnalyzerSettings is now stack-allocated (512 bytes)
+    // Use RAII: DroneAnalyzerSettings settings{};
 };
 
 #pragma pack(pop)
@@ -284,7 +227,7 @@ inline void detect_set_enable_intelligent_tracking(DroneAnalyzerSettings& s, boo
     BitfieldAccess::set_bit<1>(s.detection_flags, v);
 }
 
-// Logging flags helpers (bit0: auto_save_logs, bit1: enable_session_logging, bit2: include_timestamp, bit3: include_rssi_values)
+// Display flags helpers (bit0: show_detailed_info, bit1: show_mini_spectrum, bit2: show_rssi_history, bit3: show_frequency_ruler, bit4: auto_ruler_style)
 inline bool log_get_auto_save_logs(const DroneAnalyzerSettings& s) noexcept {
     return BitfieldAccess::get_bit<0>(s.logging_flags);
 }

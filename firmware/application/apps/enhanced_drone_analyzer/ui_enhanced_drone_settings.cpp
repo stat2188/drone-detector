@@ -44,9 +44,20 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // Settings Buffer Mutex Definition
-// Protects settings buffer during load/save operations
-// Corresponding declaration in settings_persistence.hpp
+//
+// IMPORTANT LINKER DEPENDENCY:
+// This mutex is defined here and declared as extern in settings_persistence.hpp.
+// The linker will resolve this symbol at link time, so both files must be compiled
+// and linked together for the firmware to build successfully.
+//
+// Purpose: Protects settings buffer during load/save operations
+// Usage: Use SettingsBufferLock RAII wrapper for automatic locking
 Mutex settings_buffer_mutex;
+
+// Load Buffer Mutex Definition
+// Protects the static load buffer from concurrent access
+// Corresponding declaration in settings_persistence.hpp
+Mutex load_buffer_mutex;
 
 // ============================================================================
 // STACK USAGE VALIDATION
@@ -1060,8 +1071,9 @@ bool DroneDatabaseManager::save_database(const DatabaseView& view, const char* f
 // Static member definitions (required for ODR compliance)
 DroneDatabaseManager::DatabaseView DroneDatabaseListView::g_database_view{};
 Mutex DroneDatabaseListView::g_database_mutex{};
-// DIAMOND FIX: volatile bool for thread safety (std::atomic not available in embedded environment)
+// DIAMOND FIX: volatile bool for thread safety (std::atomic IS available in C++11+)
 // Access is protected by g_database_mutex for consistency with g_database_view
+// Note: std::atomic could be used, but volatile + mutex provides equivalent safety
 volatile bool DroneDatabaseListView::g_database_loaded{false};
 
 DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav)

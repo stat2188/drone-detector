@@ -265,18 +265,6 @@ static_assert(sizeof(TrendUtils::TREND_NAMES) == sizeof(const char*) * TrendCons
 // DIAMOND FIXES (merged from diamond_fixes.hpp)
 // ============================================================================
 
-// Fix #1: Division by Zero Protection
-inline constexpr size_t safe_frequency_hash(EDA::Frequency frequency_hz) noexcept {
-    // Guard clause: Prevent division by zero
-    if (frequency_hz == 0) {
-        return 0;
-    }
-
-    // Use named constant instead of magic number 100000
-    return static_cast<size_t>(frequency_hz / EDA::Constants::FREQ_HASH_DIVISOR)
-           & EDA::Constants::FREQ_HASH_MASK;
-}
-
 // Fix #2: Magic Number Constants
 namespace ConfidenceConstants {
     constexpr uint8_t RSSI_CONFIDENCE = 85;
@@ -287,11 +275,6 @@ namespace ConfidenceConstants {
 namespace SpectrumConstants {
     constexpr int SPEC_WIDTH = 240;
     constexpr int SPEC_HEIGHT = 40;
-}
-
-// Fix #3: Type-Safe Frequency Comparison
-inline constexpr bool frequency_equal(EDA::Frequency freq1, EDA::Frequency freq2) noexcept {
-    return freq1 == freq2;
 }
 
 // Fix #4: Strong Type for Timeout Milliseconds
@@ -339,7 +322,6 @@ inline constexpr systime_t safe_deadline(systime_t current_time, TimeoutMs timeo
 // Provides backward compatibility for code that references DiamondFixes namespace
 namespace ui::apps::enhanced_drone_analyzer::DiamondFixes {
     // Alias all DiamondCore functions to DiamondFixes namespace
-    using DiamondCore::safe_frequency_hash;
 }
 
 #endif // DIAMOND_CORE_HPP_

@@ -10,9 +10,6 @@
 // Third-party library headers
 #include <ch.h>
 
-// Project-specific headers (alphabetical order)
-#include "memory_pool_manager.hpp"
-
 namespace ui::apps::enhanced_drone_analyzer {
 
 // constexpr LUTs for translations (Flash storage, no RAM used)
@@ -52,7 +49,11 @@ namespace TranslationConstants {
 // Compile-time validation
 namespace TranslationValidation {
 
-// * * @brief Validate translation table at compile time * @tparam N Table size * @param table Translation table * @return true if all entries are valid * @note Compile-time only, no runtime overhead
+// * @brief Validate translation table at compile time
+// @tparam N Table size
+// @param table Translation table
+// @return true if all entries are valid
+// @note Compile-time only, no runtime overhead
 template<size_t N>
 static constexpr bool validate_table(
     const TranslationEntry (&table)[N]
@@ -70,7 +71,13 @@ static constexpr bool validate_table(
     return true;
 }
 
-// * * @brief Compile-time string comparison for constexpr contexts * @param str1 First string * @param str2 Second string * @return true if strings are equal * @note Works in constexpr contexts (C++14 compatible) * Pure character-by-character comparison, no pointer comparison * All operations are constant expressions for static_assert compatibility
+// * @brief Compile-time string comparison for constexpr contexts
+// @param str1 First string
+// @param str2 Second string
+// @return true if strings are equal
+// @note Works in constexpr contexts (C++14 compatible)
+// Pure character-by-character comparison, no pointer comparison
+// All operations are constant expressions for static_assert compatibility
 static constexpr bool strings_equal(const char* str1, const char* str2) noexcept {
     // Character-by-character comparison (all operations are constexpr)
     while (*str1 && *str2 && *str1 == *str2) {
@@ -81,7 +88,12 @@ static constexpr bool strings_equal(const char* str1, const char* str2) noexcept
     return *str1 == '\0' && *str2 == '\0';
 }
 
-// * * @brief Check for duplicate keys at compile time * @tparam N Table size * @param table Translation table * @return true if duplicate keys found * @note Compile-time only, no runtime overhead * Uses constexpr string comparison for static_assert compatibility
+// * @brief Check for duplicate keys at compile time
+// @tparam N Table size
+// @param table Translation table
+// @return true if duplicate keys found
+// @note Compile-time only, no runtime overhead
+// Uses constexpr string comparison for static_assert compatibility
 template<size_t N>
 static constexpr bool has_duplicate_keys(
     const TranslationEntry (&table)[N]
@@ -112,7 +124,15 @@ static_assert(
 } // namespace TranslationValidation
 
 // HELPER FUNCTIONS
-// * * @brief Fast key-based lookup (O(n) where n=15, faster than std::string) * @tparam N Table size (compile-time constant) * @param key Translation key to look up * @param table Translation table * @return Translation value or NOT_FOUND_KEY if not found * @note Returns EMPTY_STRING for null key * @note Thread-safe: no shared state modified * @note ISR-safe: marked noexcept * @note Compile-time bounds checking via template parameter
+// * @brief Fast key-based lookup (O(n) where n=15, faster than std::string)
+// @tparam N Table size (compile-time constant)
+// @param key Translation key to look up
+// @param table Translation table
+// @return Translation value or NOT_FOUND_KEY if not found
+// @note Returns EMPTY_STRING for null key
+// @note Thread-safe: no shared state modified
+// @note ISR-safe: marked noexcept
+// @note Compile-time bounds checking via template parameter
 template<size_t N>
 static constexpr const char* lookup_translation(
     const char* const key,
@@ -128,7 +148,14 @@ static constexpr const char* lookup_translation(
     // CRITICAL FIX: Table entries validated at compile time
     // No need to check table[i].key for null at runtime
     for (size_t i = 0; i < N; ++i) {
-        if (strcmp(key, table[i].key) == 0) {
+        // Manual string comparison (strcmp not available in all toolchains)
+        const char* table_key = table[i].key;
+        const char* key_ptr = key;
+        while (*key_ptr && *table_key && *key_ptr == *table_key) {
+            ++key_ptr;
+            ++table_key;
+        }
+        if (*key_ptr == '\0' && *table_key == '\0') {
             return table[i].value;
         }
     }
@@ -141,7 +168,12 @@ static constexpr const char* lookup_translation(
 
 // TRANSLATOR IMPLEMENTATIONS
 
-// * * @brief Get English translation * @param key Translation key * @return Translation value or NOT_FOUND_KEY * @note Thread-safe: only reads static data * @note ISR-safe: marked noexcept * @note CRITICAL FIX: Added input validation
+// * @brief Get English translation
+// @param key Translation key
+// @return Translation value or NOT_FOUND_KEY
+// @note Thread-safe: only reads static data
+// @note ISR-safe: marked noexcept
+// @note CRITICAL FIX: Added input validation
 const char* Translator::get_english(const char* const key) noexcept {
     // CRITICAL FIX: Guard clause - validate input
     if (!key) {
@@ -151,7 +183,12 @@ const char* Translator::get_english(const char* const key) noexcept {
     return lookup_translation(key, ENGLISH_TRANSLATIONS);
 }
 
-// * * @brief Translate key to current language * @param key Translation key * @return Translation value or NOT_FOUND_KEY * @note Currently only English supported * @note Thread-safe: only reads static data * @note ISR-safe: marked noexcept
+// * @brief Translate key to current language
+// @param key Translation key
+// @return Translation value or NOT_FOUND_KEY
+// @note Currently only English supported
+// @note Thread-safe: only reads static data
+// @note ISR-safe: marked noexcept
 const char* Translator::translate(const char* const key) noexcept {
     return get_translation(key);
 }
@@ -167,99 +204,12 @@ const char* Translator::get_translation(const char* const key) noexcept {
 }
 
 // ============================================================================
-// MEMORY POOL FACTORY METHODS - DroneAnalyzerSettings
+// NOTE: Memory pool allocation methods have been removed
 // ============================================================================
-
-/**
- * @brief Allocate DroneAnalyzerSettings from memory pool
- * @return Pointer to allocated settings, or nullptr if pool exhausted
- *
- * This function allocates a DroneAnalyzerSettings from the memory pool
- * to prevent stack overflow when allocating large structures on the stack.
- *
- * Thread-safety: Uses MemoryPoolManager which is mutex-protected
- * No exceptions: All operations are noexcept
- * Overflow protection: Returns nullptr if pool is exhausted
- *
- * USAGE:
- * @code
- *   DroneAnalyzerSettings* settings = DroneAnalyzerSettings::allocate_from_pool();
- *   if (settings) {
- *       // Use settings...
- *       settings->audio_flags = 0x01;
- *
- *       // Deallocate when done
- *       DroneAnalyzerSettings::deallocate_to_pool(settings);
- *   }
- * @endcode
- *
- * MEMORY USAGE:
- * - Pool size: 2 blocks (PoolConfig::DRONE_ANALYZER_SETTINGS_POOL_SIZE)
- * - Block size: 512 bytes (PoolBlockSizes::DRONE_ANALYZER_SETTINGS_SIZE)
- * - Total pool memory: 1124 bytes (100 overhead + 2 * 512)
- * - Typical usage: 1-2 instances (one global, one for temporary copies)
- *
- * THREAD SAFETY:
- * - Thread-safe allocation via MemoryPoolManager::allocate()
- * - Multiple threads can allocate/deallocate concurrently
- * - Statistics are updated atomically under mutex
- */
-DroneAnalyzerSettings* DroneAnalyzerSettings::allocate_from_pool() noexcept {
-    // Allocate from memory pool using MemoryPoolManager
-    // Returns nullptr if pool is exhausted (overflow protection)
-    void* ptr = MemoryPoolManager::allocate(PoolType::DRONE_ANALYZER_SETTINGS);
-
-    // Guard clause: Allocation failed (pool exhausted)
-    if (!ptr) {
-        return nullptr;
-    }
-
-    // Zero-initialize the allocated memory
-    // This ensures all fields are in a known state
-    // Use manual initialization for embedded compatibility (no memset dependency)
-    uint8_t* byte_ptr = static_cast<uint8_t*>(ptr);
-    for (size_t i = 0; i < sizeof(DroneAnalyzerSettings); ++i) {
-        byte_ptr[i] = 0;
-    }
-
-    // Return typed pointer
-    return static_cast<DroneAnalyzerSettings*>(ptr);
-}
-
-/**
- * @brief Deallocate DroneAnalyzerSettings back to memory pool
- * @param ptr Pointer to settings to deallocate
- *
- * This function returns a DroneAnalyzerSettings to the memory pool
- * for reuse by future allocations.
- *
- * Thread-safety: Uses MemoryPoolManager which is mutex-protected
- * No exceptions: All operations are noexcept
- * Null pointer handling: Safe to call with nullptr (no-op)
- *
- * USAGE:
- * @code
- *   DroneAnalyzerSettings::deallocate_to_pool(settings);
- * @endcode
- *
- * MEMORY SAFETY:
- * - Returns memory to pool for reuse
- * - No memory leaks (deallocate must be called for each allocation)
- * - Safe to call multiple times with same pointer (idempotent)
- *
- * THREAD SAFETY:
- * - Thread-safe deallocation via MemoryPoolManager::deallocate()
- * - Multiple threads can deallocate concurrently
- * - Statistics are updated atomically under mutex
- */
-void DroneAnalyzerSettings::deallocate_to_pool(DroneAnalyzerSettings* ptr) noexcept {
-    // Guard clause: Null pointer (no-op)
-    if (!ptr) {
-        return;
-    }
-
-    // Return memory to pool using MemoryPoolManager
-    MemoryPoolManager::deallocate(PoolType::DRONE_ANALYZER_SETTINGS, ptr);
-}
+// DroneAnalyzerSettings (512 bytes) is now stack-allocated
+// Use RAII and stack allocation instead of memory pools
+// Example:
+//   DroneAnalyzerSettings settings{};  // Stack allocation
+//   settings.audio_flags = 0x01;  // Use directly
 
 } // namespace ui::apps::enhanced_drone_analyzer

@@ -19,7 +19,6 @@
 #include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
-#include "memory_pool_manager.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_navigation.hpp"
 
@@ -61,7 +60,6 @@ public:
     // @param display_controller Display controller reference
     // @param audio_controller Audio controller reference
     // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
-    // @note volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
     void construct(NavigationView& nav,
                   DroneHardwareController& hardware,
                   DroneScanner& scanner,
@@ -77,7 +75,7 @@ public:
         // Note: placement new is defined inline, no <new> header needed
         new (static_cast<void*>(&instance_storage_)) T(nav, hardware, scanner, display_controller, audio_controller);
 
-        // Set constructed flag (volatile ensures visibility to other threads)
+        // Set constructed flag
         constructed_ = true;
     }
 
@@ -85,7 +83,6 @@ public:
     // @return Reference to stored object
     // @pre construct() must have been called
     // @pre is_corrupted() must return false
-    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
     [[nodiscard]] T& get() noexcept {
         return *reinterpret_cast<T*>(&instance_storage_);
     }
@@ -94,7 +91,6 @@ public:
     // @return Const reference to stored object
     // @pre construct() must have been called
     // @pre is_corrupted() must return false
-    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
     [[nodiscard]] const T& get() const noexcept {
         return *reinterpret_cast<const T*>(&instance_storage_);
     }
@@ -102,7 +98,6 @@ public:
     // Check if memory corruption has occurred
     // @return true if canary values are intact, false if corruption detected
     // @note Validates canary values before and after instance storage
-    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
     [[nodiscard]] bool is_corrupted() const noexcept {
         bool canary_valid = (canary_before_ == CANARY_VALUE) &&
                             (canary_after_ == CANARY_VALUE);
@@ -112,7 +107,6 @@ public:
 
     // Check if object has been constructed
     // @return true if construct() was called successfully
-    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
     [[nodiscard]] bool is_constructed() const noexcept {
         return constructed_;
     }
@@ -131,6 +125,7 @@ private:
     uint32_t canary_after_{CANARY_VALUE};
 
     // Flag to track if object has been constructed
+    // Note: volatile ensures visibility to other threads
     volatile bool constructed_{false};
 };
 
@@ -232,115 +227,6 @@ public:
     // @param summary Summary text to display (may be nullptr)
     void show_session_summary([[maybe_unused]] const char* summary) noexcept;
 
-    // ============================================================================
-    // MEMORY POOL MANAGEMENT
-    // ============================================================================
-    // These functions provide memory pool initialization, shutdown, and statistics
-    // for the Enhanced Drone Analyzer application.
-    //
-    // Thread-safety: All functions are thread-safe (mutex-protected)
-    // No exceptions: All functions are noexcept
-    // ============================================================================
-
-    /**
-     * @brief Initialize all memory pools for Enhanced Drone Analyzer
-     * @note Thread-safe (mutex-protected)
-     * @note Does not throw (noexcept)
-     * @note Safe to call multiple times (idempotent)
-     *
-     * This function initializes all memory pools used by the Enhanced Drone Analyzer:
-     * - DetectionRingBuffer pool (1 block of 480 bytes)
-     * - FilteredDronesSnapshot pool (2 blocks of 640 bytes)
-     * - DroneAnalyzerSettings pool (1 block of 512 bytes)
-     * - DisplayDataSnapshot pool (3 blocks of 64 bytes)
-     *
-     * Total memory: 2864 bytes (~2.8 KB)
-     *
-     * USAGE:
-     * @code
-     *   // In system initialization code (after chSysInit())
-     *   if (!ScanningCoordinator::initialize_memory_pools()) {
-     *       // Handle initialization failure
-     *   }
-     * @endcode
-     *
-     * THREAD SAFETY:
-     * - Thread-safe initialization via MemoryPoolManager::initialize()
-     * - Multiple threads can call this concurrently
-     * - Idempotent (safe to call multiple times)
-     *
-     * MEMORY SAFETY:
-     * - Static allocation (no heap allocation for pool storage)
-     * - Automatic bounds checking (returns false on failure)
-     * - No memory leaks (shutdown_memory_pools() must be called)
-     *
-     * P1-HIGH FIX #E007: Returns bool to indicate initialization success/failure
-     * - Caller must check return value to ensure memory pools are properly initialized
-     * - System cannot operate without properly initialized memory pools
-     */
-    [[nodiscard]] static bool initialize_memory_pools() noexcept;
-
-    /**
-     * @brief Shutdown all memory pools for Enhanced Drone Analyzer
-     * @note Thread-safe (mutex-protected)
-     * @note Does not throw (noexcept)
-     * @note Safe to call multiple times (idempotent)
-     *
-     * This function shuts down all memory pools used by the Enhanced Drone Analyzer.
-     * It should be called during system shutdown to ensure proper cleanup.
-     *
-     * USAGE:
-     * @code
-     *   // In system shutdown code
-     *   ScanningCoordinator::shutdown_memory_pools();
-     * @endcode
-     *
-     * THREAD SAFETY:
-     * - Thread-safe shutdown via MemoryPoolManager
-     * - Multiple threads can call this concurrently
-     * - Idempotent (safe to call multiple times)
-     *
-     * MEMORY SAFETY:
-     * - Returns all pool memory to static storage
-     * - No memory leaks (all allocations must be deallocated before shutdown)
-     * - Safe to call multiple times
-     */
-    static void shutdown_memory_pools() noexcept;
-
-    /**
-     * @brief Get statistics for specified memory pool
-     * @param pool_type Type of pool to get statistics for
-     * @return PoolStatistics containing pool usage information
-     * @note Thread-safe (mutex-protected)
-     * @note Does not throw (noexcept)
-     *
-     * This function retrieves statistics for a specific memory pool,
-     * including total blocks, used blocks, free blocks, allocation count,
-     * free count, and overflow count.
-     *
-     * USAGE:
-     * @code
-     *   PoolStatistics stats = ScanningCoordinator::get_pool_statistics(
-     *       PoolType::FILTERED_DRONES_SNAPSHOT
-     *   );
-     *   // stats.used_blocks = number of blocks in use
-     *   // stats.free_blocks = number of blocks free
-     *   // stats.overflow_count = number of allocation failures
-     * @endcode
-     *
-     * THREAD SAFETY:
-     * - Thread-safe statistics read via MemoryPoolManager::get_statistics()
-     * - Multiple threads can call this concurrently
-     * - Statistics are read atomically under mutex
-     *
-     * MEMORY SAFETY:
-     * - Returns empty statistics if pool is invalid
-     * - No memory allocation (returns by value)
-     * - Safe to call at any time
-     */
-    [[nodiscard]] static PoolStatistics get_pool_statistics(PoolType pool_type) noexcept;
-
-    // ============================================================================
     // DSP LAYER FUNCTIONS (UI/DSP Separation)
     // ============================================================================
     // These functions provide thread-safe access to DSP layer data for UI rendering.
@@ -431,13 +317,12 @@ private:
     static stkalign_t coordinator_wa_[THD_WA_SIZE(COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 
 public:
-    // FIX #7: Singleton state with AtomicFlag for thread safety
     // DIAMOND FIX: Static storage pattern (no heap allocation)
-    // RED TEAM FIX #P0-3: Make instance_ptr_ volatile for double-checked locking pattern
     // RED TEAM FIX #CRITICAL FLAW #5: Remove static initializer, use explicit init function
     // CRITICAL FIX: Use AtomicFlag instead of volatile bool for proper memory barriers
-    // volatile alone doesn't guarantee proper synchronization on ARM Cortex-M4
     // AtomicFlag provides acquire/release memory ordering and lock-free operations
+    // This ensures proper memory ordering across all CPU cores and prevents
+    // race conditions in double-checked locking pattern.
     // P1-HIGH FIX: Static variables are defined in .cpp file to prevent dynamic initialization issues
     // NOLINTNEXTLINE(cert-err58-cpp): instance_ptr_ is defined in .cpp
     static volatile ScanningCoordinator* instance_ptr_;  ///< Singleton instance pointer (volatile for thread safety)
@@ -445,8 +330,6 @@ public:
     static Mutex init_mutex_;                   ///< Protects singleton initialization
     // NOLINTNEXTLINE(cert-err58-cpp): initialized_ is defined in .cpp
     static AtomicFlag initialized_;           ///< Tracks if singleton has been initialized (AtomicFlag for thread safety)
-    // NOLINTNEXTLINE(cert-err58-cpp): instance_constructed_ is defined in .cpp
-    static AtomicFlag instance_constructed_;  ///< Tracks if placement new was called (AtomicFlag for thread safety)
 
 private:
 

@@ -35,7 +35,6 @@
 #include "event_m0.hpp"
 #include "freqman_db.hpp"
 #include "gradient.hpp"
-#include "log_file.hpp"
 #include "message.hpp"
 #include "rf_path.hpp"
 #include "ui.hpp"
@@ -121,11 +120,7 @@ static_assert(MIN_STACK_FREE_THRESHOLD <= 1024,
 static_assert(MIN_STACK_FREE_THRESHOLD >= 128,
               "MIN_STACK_FREE_THRESHOLD below 128 bytes, unsafe");
 
-// Global SD Card Mutex Protection (FatFS is NOT thread-safe)
-
-extern Mutex sd_card_mutex;
-
-// Lock Order: Always acquire locks in ascending order (ATOMIC_FLAGS < DATA_MUTEX < SPECTRUM_MUTEX < LOGGER_MUTEX < SD_CARD_MUTEX)
+// Lock Order: Always acquire locks in ascending order (ATOMIC_FLAGS < DATA_MUTEX < SPECTRUM_MUTEX)
 // Use MutexLock from eda_locking.hpp with LockOrder parameter to prevent deadlock violations
 
 struct RssiMeasurement {
@@ -315,86 +310,6 @@ struct DroneDetectionMessage {
     systime_t timestamp;
 };
 
-class DroneDetectionLogger {
-public:
-    // FIX #3: Public access to WORKER_STACK_SIZE for static_assert validation
-    static constexpr size_t WORKER_STACK_SIZE = 4096;
-    
-    DroneDetectionLogger();
-    ~DroneDetectionLogger();
-
-    // Producer method - called by scanner thread
-    bool log_detection_async(const DetectionLogEntry& entry);
-    
-    // Consumer lifecycle methods
-    void start_worker();
-    void stop_worker();
-
-    // Session management
-    // FIX #1: Changed return type to bool to indicate success/failure
-    // start_session() now checks if SD card is mounted before activating session
-    [[nodiscard]] bool start_session();
-    [[nodiscard]] bool stop_session();  // Renamed from end_session() for clarity
-    void end_session();  // Keep for backward compatibility
-    bool is_session_active() const { return session_active_; }
-    
-    // Initialization state management
-    void set_initialization_complete(bool complete) {
-        initialization_complete_.store(complete);
-    }
-    bool is_initialization_complete() const {
-        return initialization_complete_.load();
-    }
-
-    // Statistics for monitoring
-    uint32_t get_dropped_logs_count() const { return dropped_logs_; }
-    uint32_t get_logged_count() const { return logged_count_; }
-    uint32_t get_overflow_count() const { return overflow_count_; }
-
-private:
-    // Threading primitives
-    Thread* worker_thread_ = nullptr;
-    mutable Mutex mutex_;
-    Semaphore data_ready_;
-    // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-    volatile bool worker_should_run_{false};
-    AtomicFlag initialization_complete_;  // DIAMOND FIX #P1-HIGH #2: AtomicFlag for thread-safe flag
-
-    // FIX #SO-1: Increased from 3072 to 4096 bytes (33% increase) to prevent stack overflow
-    static WORKING_AREA(worker_wa_, WORKER_STACK_SIZE);
-
-    // File I/O
-    LogFile csv_log_;
-    bool session_active_ = false;
-    systime_t session_start_ = 0;
-    uint32_t logged_count_ = 0;
-    uint32_t dropped_logs_ = 0;
-    uint32_t overflow_count_ = 0;               // Counter for ring buffer overflows
-    bool header_written_ = false;
-
-    // Async buffering
-    static constexpr size_t BUFFER_SIZE = 32;
-    std::array<DetectionLogEntry, BUFFER_SIZE> ring_buffer_;
-    // volatile prevents compiler optimization; mutex_ provides thread synchronization
-    volatile size_t head_{0};
-    volatile size_t tail_{0};
-    volatile bool is_full_{false};
-
-    // Helper buffer for string formatting (avoid heap allocation)
-    char line_buffer_[EDA::Constants::ERROR_MESSAGE_BUFFER_SIZE];
-
-    // Internal methods
-    static msg_t worker_thread_entry(void* arg);
-    void worker_loop();
-    bool write_entry_to_sd(const DetectionLogEntry& entry);
-    bool ensure_csv_header();
-
-    // generate_log_filename() - returns constexpr string (Flash storage)
-    const char* generate_log_filename() const;
-
-    DroneDetectionLogger(const DroneDetectionLogger&) = delete;
-    DroneDetectionLogger& operator=(const DroneDetectionLogger&) = delete;
-};
 
 class DroneScanner {
 public:
@@ -414,8 +329,8 @@ public:
     };
 
     // constexpr array instead of vector to avoid heap allocation
-    // FIX: Changed from 17 to 15 to match actual array entries (comment says "reduced from 31 to 15 entries")
-    static constexpr size_t BUILTIN_DB_SIZE = 15;
+    // FIX: Changed from 17 to 14 to match actual array entries (WiFi Ch1 removed)
+    static constexpr size_t BUILTIN_DB_SIZE = 14;
     static const BuiltinDroneFreq BUILTIN_DRONE_DB[BUILTIN_DB_SIZE];
 
     // Database timeout constants (Flash storage)
@@ -437,7 +352,8 @@ public:
     void stop_scanning();
     // [[nodiscard]] - Scanning state must be used by caller
     // inline + noexcept for zero-overhead abstraction
-    [[nodiscard]] inline bool is_scanning_active() const noexcept { return scanning_active_; }
+    // DIAMOND FIX #CRITICAL #2: Use .load() for atomic read
+    [[nodiscard]] inline bool is_scanning_active() const noexcept { return scanning_active_.load(); }
     
     // LEGACY: load_frequency_database() - Now uses UnifiedDroneDatabase
     // This method is kept for backward compatibility but internally uses
@@ -449,6 +365,11 @@ public:
     // [[nodiscard]] - Mode value must be used by caller
     // inline + noexcept for zero-overhead abstraction
     [[nodiscard]] inline ScanningMode get_scanning_mode() const noexcept { return scanning_mode_; }
+
+    // [[nodiscard]] - Real mode status must be used by caller
+    // inline + noexcept for zero-overhead abstraction
+    // DIAMOND FIX #CRITICAL #2: Use .load() for atomic read
+    [[nodiscard]] inline bool is_real_mode() const noexcept { return is_real_mode_.load(); }
     
     [[nodiscard]] const char* scanning_mode_name() const;
     void set_scanning_mode(ScanningMode mode);
@@ -528,7 +449,6 @@ struct DetectionParams {
     [[nodiscard]] size_t get_static_count() const;
     [[nodiscard]] uint32_t get_total_detections() const;
     [[nodiscard]] uint32_t get_scan_cycles() const;
-    [[nodiscard]] bool is_real_mode() const noexcept { return is_real_mode_; }
 
     DroneScanner(const DroneScanner&) = delete;
     DroneScanner(DroneScanner&&) = delete;
@@ -724,9 +644,10 @@ struct DetectionParams {
 
      Thread* scanning_thread_ = nullptr;
      mutable Mutex data_mutex;
-     // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-     volatile bool scanning_active_{false};
-    
+     // DIAMOND FIX #CRITICAL #2: AtomicFlag for thread-safe flag access
+     // Replaces volatile bool with proper atomic operations for thread synchronization
+     AtomicFlag scanning_active_;
+
     // Histogram Callback (function pointer for histogram data flow)
     HistogramCallback histogram_callback_ = nullptr;
     void* histogram_callback_user_data_ = nullptr;
@@ -773,24 +694,27 @@ struct DetectionParams {
          // DIAMOND FIX #P1-HIGH #2: AtomicFlag for thread-safe flag (constexpr constructor initializes to false)
          AtomicFlag db_loading_active_;
 
-         // Initialization complete flag for async initialization coordination
-         // DIAMOND FIX #P1-HIGH #2: AtomicFlag for thread-safe flag (constexpr constructor initializes to false)
-         AtomicFlag initialization_complete_;
-         
-         // Stage 4: Database reload flag for observer pattern
-         volatile bool database_needs_reload_{false};
+       // Initialization complete flag for async initialization coordination
+          // DIAMOND FIX #P1-HIGH #2: AtomicFlag for thread-safe flag (constexpr constructor initializes to false)
+          AtomicFlag initialization_complete_;
+
+          // Stage 4: Database reload flag for observer pattern
+          // DIAMOND FIX #CRITICAL #2: AtomicFlag for thread-safe flag access
+          AtomicFlag database_needs_reload_;
  
         // FIX #3: DB_LOADING_STACK_SIZE already declared in public section
         // Static thread stack (4KB optimized for memory)
            static WORKING_AREA(db_loading_wa_, DB_LOADING_STACK_SIZE);
 
-      // volatile uint32_t with mutex protection for thread-safe counter access
-      volatile uint32_t scan_cycles_{0};
-      volatile uint32_t total_detections_{0};
+      // uint32_t protected by data_mutex for thread-safe counter access
+      // Note: volatile is not needed since mutex provides proper synchronization
+      uint32_t scan_cycles_{0};
+       uint32_t total_detections_{0};
 
       ScanningMode scanning_mode_ = ScanningMode::DATABASE;  // Uses DroneScanner::ScanningMode
-      // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
-      volatile bool is_real_mode_{true};
+      // DIAMOND FIX #CRITICAL #2: AtomicFlag for thread-safe flag access
+      // Replaces volatile bool with proper atomic operations for thread synchronization
+      AtomicFlag is_real_mode_;
 
      size_t tracked_count_ = 0;
 
@@ -803,7 +727,6 @@ struct DetectionParams {
 
     static constexpr uint8_t DETECTION_DELAY = 2;
     WidebandScanData wideband_scan_data_;
-    DroneDetectionLogger detection_logger_;
     DetectionRingBuffer detection_ring_buffer_;
     
     // Thread-safe spectrum buffer (replaces static buffer)
@@ -814,9 +737,6 @@ struct DetectionParams {
 
     // Settings stored by VALUE (not reference)
     DroneAnalyzerSettings settings_;
-    
-    // Last scan error for diagnostics
-    const char* last_scan_error_ = nullptr;
 
     // LUTs at end of class (after all declarations)
     
@@ -926,10 +846,10 @@ private:
     std::array<uint8_t, 256> last_spectrum_db_;
     mutable Mutex spectrum_mutex_;
 
-    // Diamond Code: Use volatile bool for thread-safe flag access
-    // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+    // DIAMOND FIX #CRITICAL #2: AtomicFlag for thread-safe flag access
+    // Replaces volatile bool with proper atomic operations for thread synchronization
     // Protected by CriticalSection (chSysLock/chSysUnlock) for write operations
-    volatile bool spectrum_updated_{false};
+    AtomicFlag spectrum_updated_;
 
     SpectrumMode spectrum_mode_;
     Frequency center_frequency_;
@@ -938,10 +858,10 @@ private:
     ChannelSpectrumFIFO* spectrum_fifo_ = nullptr;
     bool spectrum_streaming_active_ = false;
 
-    // Diamond Code: Use volatile bool for thread-safe flag access
-    // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
+    // DIAMOND FIX #CRITICAL #2: AtomicFlag for thread-safe flag access
+    // Replaces volatile bool with proper atomic operations for thread synchronization
     // Protected by CriticalSection (chSysLock/chSysUnlock) for write operations
-    volatile bool rssi_updated_{false};
+    AtomicFlag rssi_updated_;
     volatile int32_t last_valid_rssi_{-120};
     
     // FIX: Moved message handlers to parent View to prevent MsgDblReg
@@ -1480,7 +1400,7 @@ public:
 
     // Bar spectrum configuration (replaces waterfall)
     struct BarSpectrumConfig {
-        static constexpr int WATERFALL_Y_START = 81;
+        static constexpr int SPECTRUM_Y_START = 81;
         static constexpr int BAR_HEIGHT_MAX = EDA::Constants::MINI_SPECTRUM_HEIGHT;
         static constexpr uint8_t NOISE_THRESHOLD = 10;
         static constexpr uint8_t PEAK_SHARPNESS_THRESHOLD = 15;
@@ -1645,7 +1565,7 @@ private:
     uint8_t max_power = 0;
     uint8_t range_max_power = 0;
 
-    DisplayRenderMode mode_ = DisplayRenderMode::SPECTRUM;
+    DisplayRenderMode mode_ = DisplayRenderMode::HISTOGRAM;
 
     SpectrumConfig spectrum_config_;
 
