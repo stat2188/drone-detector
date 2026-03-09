@@ -995,6 +995,11 @@ private:
     char last_text_[128];  // Fixed-size buffer instead of std::string
     size_t last_text_len_ = 0;  // Cached text length to avoid strlen() in paint()
 
+    // DIAMOND FIX #HIGH #4: Class member buffers instead of thread_local
+    // Prevents initialization order issues and saves stack memory
+    char ui_threat_buffer_[64]{};  // Buffer for threat formatting (replaces thread_local)
+    char ui_freq_buffer_[16]{};      // Buffer for frequency formatting (replaces thread_local)
+
     // Mutex for protecting UI update methods that use shared buffers
     // Prevents race conditions when multiple threads call update methods concurrently
     mutable Mutex ui_mutex_;

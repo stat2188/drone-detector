@@ -2646,8 +2646,9 @@ SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
     : View(parent_rect),
       threat_progress_bar_({0, 0, screen_width, 16}),
       threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | <0 ~0 >0"),
-      threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING") {
-    chMtxInit(&ui_mutex_);
+      threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING"),
+      // DIAMOND FIX: Initialize mutex in member initialization list (RAII pattern)
+      ui_mutex_() {
     last_text_[0] = '\0';
     add_children({&threat_progress_bar_, &threat_status_main_, &threat_frequency_});
     update(ThreatLevel::NONE, 0, 0, 0, 2400000000ULL, false);
@@ -2795,8 +2796,9 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
     : View(parent_rect), card_index_(card_index),
       parent_rect_(parent_rect), is_active_(false),
       last_frequency_(0), last_threat_(ThreatLevel::NONE),
-      last_trend_(MovementTrend::UNKNOWN), last_rssi_(-120) {
-    chMtxInit(&ui_mutex_);
+      last_trend_(MovementTrend::UNKNOWN), last_rssi_(-120),
+      // DIAMOND FIX: Initialize mutex in member initialization list (RAII pattern)
+      ui_mutex_() {
     last_threat_name_[0] = '\0';
     add_children({&card_text_});
 }
@@ -2869,8 +2871,9 @@ void ThreatCard::paint(Painter& painter) {
 }
 
 ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
-    : View(parent_rect), bar_index_(bar_index), parent_rect_(parent_rect) {
-    chMtxInit(&ui_mutex_);
+    : View(parent_rect), bar_index_(bar_index), parent_rect_(parent_rect),
+      // DIAMOND FIX: Initialize mutex in member initialization list (RAII pattern)
+      ui_mutex_() {
     add_children({&progress_text_, &alert_text_, &normal_text_});
     set_display_mode(DisplayMode::NORMAL);
 }
@@ -3079,16 +3082,16 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
             histogram_display_buffer_(),
             histogram_dirty_(false),
       // Initialize mutexes in member initialization list
-      // Lock order: SPECTRUM_MUTEX (level 1), HISTOGRAM_MUTEX (level 2)
+      // Lock order: SPECTRUM_MUTEX (level 1), HISTOGRAM_MUTEX (level 2), UI_MUTEX (level 3)
       spectrum_mutex_(),
       histogram_mutex_(),
+            ui_mutex_(),
             threat_bins_(), threat_bins_count_(0),
              spectrum_gradient_(), spectrum_fifo_(nullptr),
              pixel_index(0), bins_hz_size(0), each_bin_size(DEFAULT_EACH_BIN_SIZE_HZ), min_color_power(DEFAULT_MIN_COLOR_POWER),
              marker_pixel_step(DEFAULT_MARKER_PIXEL_STEP_HZ), max_power(0), range_max_power(0), mode_(DroneDisplayController::DisplayRenderMode::SPECTRUM),
              spectrum_config_()
 {
-    chMtxInit(&ui_mutex_);
     // Add ALL widgets to View hierarchy
     add_children({
         &big_display_,
@@ -3282,12 +3285,12 @@ void DroneDisplayController::update_detection_display(const DroneScanner& scanne
                                   static_cast<unsigned long>(data.total_freqs),
                                   static_cast<unsigned long>(data.scan_cycles));
     } else if (data.total_freqs > 0) {
-        StatusFormatter::format_to(stats_buffer, "Loaded: %lu frequencies",
+        StatusFormatter::format_to(ui_stats_buffer_, "Loaded: %lu frequencies",
                                   static_cast<unsigned long>(data.total_freqs));
     } else {
-        StatusFormatter::format_to(stats_buffer, "No database loaded");
+        StatusFormatter::format_to(ui_stats_buffer_, "No database loaded");
     }
-    text_scanner_stats_.set(stats_buffer);
+    text_scanner_stats_.set(ui_stats_buffer_);
 
     // Use constexpr LUT (stored in Flash)
     big_display_.set_style(&BIG_DISPLAY_STYLES[data.color_idx]);
@@ -3915,9 +3918,9 @@ DroneUIController::DroneUIController(NavigationView& nav,
       audio_mgr_(audio_mgr),
       scanning_active_{false},
       display_controller_(nullptr),
-      settings_()  // Initialize settings_ with defaults
-{
-    chMtxInit(&ui_mutex_);
+      settings_(),  // Initialize settings_ with defaults
+      // DIAMOND FIX: Initialize mutex in member initialization list (RAII pattern)
+      ui_mutex_() {
     settings_.spectrum_mode = SpectrumMode::MEDIUM;
     settings_.scan_interval_ms = 1000;
     settings_.rssi_threshold_db = -90;
