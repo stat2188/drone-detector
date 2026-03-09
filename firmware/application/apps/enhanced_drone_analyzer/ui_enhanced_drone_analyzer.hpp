@@ -1023,6 +1023,10 @@ private:
     char last_threat_name_[16];
     size_t last_card_text_len_ = 0;  // Cached text length to avoid strlen() in paint()
 
+    // DIAMOND FIX #HIGH #4: Class member buffers instead of thread_local
+    // Prevents initialization order issues and saves stack memory
+    char card_buffer_[48]{};  // Buffer for card text formatting
+
     void paint(Painter& painter) override;
 
     // Uses UnifiedColorLookup instead of duplicate LUT
@@ -1126,6 +1130,11 @@ private:
     // DIAMOND FIX MEDIUM #3: Mutex for UI update protection
     // Prevents race conditions when multiple threads call update methods concurrently
     mutable Mutex ui_mutex_;
+
+    // DIAMOND FIX #HIGH #4: Class member buffers instead of thread_local
+    // Prevents initialization order issues and saves stack memory
+    char alert_buffer_[64]{};   // Buffer for alert status formatting
+    char status_buffer_[64]{};  // Buffer for status formatting
 
     void paint(Painter& painter) override;
 };
@@ -1568,6 +1577,14 @@ private:
     // 200 * sizeof(uint8_t) = 200 bytes
     // Total: ~200 bytes in .bss instead of heap allocation
 
+    // DIAMOND FIX #HIGH #4: Class member buffers instead of thread_local
+    // Prevents initialization order issues and saves stack memory
+    char ui_freq_buffer_[16]{};      // Buffer for frequency formatting (replaces thread_local)
+    char ui_summary_buffer_[48]{};   // Buffer for summary formatting (replaces thread_local)
+    char ui_status_buffer_[48]{};     // Buffer for status formatting (replaces thread_local)
+    char ui_stats_buffer_[48]{};      // Buffer for stats formatting (replaces thread_local)
+    char ui_threat_buffer_[64]{};     // Buffer for threat formatting (replaces thread_local)
+
     alignas(alignof(std::array<uint8_t, 200>))
     static uint8_t spectrum_power_levels_storage_[200];
 
@@ -1706,6 +1723,11 @@ private:
     volatile bool scanning_active_{false};
     DroneDisplayController* display_controller_ = nullptr;
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
+
+    // DIAMOND FIX #HIGH #4: Class member buffers instead of thread_local
+    // Prevents initialization order issues and saves stack memory
+    char hardware_buffer_[64]{};   // Buffer for hardware status formatting
+    char freq_buffer_[32]{};       // Buffer for frequency formatting
 
     void on_manage_frequencies();
     void on_create_new_database();
