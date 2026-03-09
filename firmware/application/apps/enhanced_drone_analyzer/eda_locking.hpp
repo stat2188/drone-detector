@@ -158,9 +158,14 @@ private:
  * 1. THREAD_MUTEX (0) - Coordinator thread state
  * 2. STATE_MUTEX (1) - Scanning state
  * 3. DATA_MUTEX (2) - Detection data and frequency database
- * 4. SPECTRUM_MUTEX (3) - Spectrum data and histogram
- * 5. LOGGER_MUTEX (4) - Detection logger state
- * 6. SD_CARD_MUTEX (5) - SD card I/O (must be LAST)
+ * 4. UI_THREAT_MUTEX (3) - SmartThreatHeader UI update protection
+ * 5. UI_CARD_MUTEX (4) - ThreatCard UI update protection
+ * 6. UI_STATUSBAR_MUTEX (5) - ConsoleStatusBar UI update protection
+ * 7. UI_DISPLAY_MUTEX (6) - DroneDisplayController UI update protection
+ * 8. UI_CONTROLLER_MUTEX (7) - DroneUIController UI update protection
+ * 9. SPECTRUM_MUTEX (8) - Spectrum data and histogram
+ * 10. LOGGER_MUTEX (9) - Detection logger state
+ * 11. SD_CARD_MUTEX (10) - SD card I/O (must be LAST)
  *
  * CRITICAL: Always acquire locks in ascending order of LockOrder values
  * This prevents circular wait conditions that cause deadlocks.
@@ -181,12 +186,17 @@ private:
  * @note SD_CARD_MUTEX must be LAST (FatFS is NOT thread-safe)
  */
 enum class LockOrder : uint8_t {
-    THREAD_MUTEX = 0,   ///< Coordinator thread state (lowest level)
-    STATE_MUTEX = 1,    ///< Scanning state
-    DATA_MUTEX = 2,     ///< Detection data and frequency database
-    SPECTRUM_MUTEX = 3, ///< Spectrum data and histogram
-    LOGGER_MUTEX = 4,   ///< Detection logger state
-    SD_CARD_MUTEX = 5   ///< SD card I/O (must be LAST)
+    THREAD_MUTEX = 0,        ///< Coordinator thread state (lowest level)
+    STATE_MUTEX = 1,         ///< Scanning state
+    DATA_MUTEX = 2,          ///< Detection data and frequency database
+    UI_THREAT_MUTEX = 3,     ///< SmartThreatHeader UI update protection
+    UI_CARD_MUTEX = 4,       ///< ThreatCard UI update protection
+    UI_STATUSBAR_MUTEX = 5,  ///< ConsoleStatusBar UI update protection
+    UI_DISPLAY_MUTEX = 6,    ///< DroneDisplayController UI update protection
+    UI_CONTROLLER_MUTEX = 7, ///< DroneUIController UI update protection
+    SPECTRUM_MUTEX = 8,      ///< Spectrum data and histogram
+    LOGGER_MUTEX = 9,        ///< Detection logger state
+    SD_CARD_MUTEX = 10       ///< SD card I/O (must be LAST)
 };
 
 /**

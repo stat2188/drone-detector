@@ -994,6 +994,10 @@ private:
     size_t last_receding_ = 0;
     char last_text_[128];  // Fixed-size buffer instead of std::string
     size_t last_text_len_ = 0;  // Cached text length to avoid strlen() in paint()
+
+    // Mutex for protecting UI update methods that use shared buffers
+    // Prevents race conditions when multiple threads call update methods concurrently
+    mutable Mutex ui_mutex_;
 };
 
 class ThreatCard : public View {
@@ -1026,6 +1030,10 @@ private:
     // DIAMOND FIX #HIGH #4: Class member buffers instead of thread_local
     // Prevents initialization order issues and saves stack memory
     char card_buffer_[48]{};  // Buffer for card text formatting
+
+    // Mutex for protecting UI update methods that use shared buffers
+    // Prevents race conditions when multiple threads call update methods concurrently
+    mutable Mutex ui_mutex_;
 
     void paint(Painter& painter) override;
 
@@ -1601,17 +1609,21 @@ private:
     // Mutexes for protecting shared buffers accessed by multiple threads
     // - spectrum_mutex_: Protects spectrum_power_levels_ buffer
     // - histogram_mutex_: Protects histogram_display_buffer_ buffer
+    // - ui_mutex_: Protects UI formatting buffers (ui_freq_buffer_, ui_summary_buffer_, etc.)
     // LOCK ORDER RULE:
     // Always acquire locks in ascending order:
     // 1. SPECTRUM_MUTEX (spectrum_mutex_)
     // 2. HISTOGRAM_MUTEX (histogram_mutex_)
+    // 3. UI_DISPLAY_MUTEX (ui_mutex_)
     // These mutexes prevent TOCTOU race conditions between:
     // - Scanner thread: Writes to spectrum_power_levels_ via process_bins()
     // - UI thread: Reads from spectrum_power_levels_ via render_bar_spectrum()
     // - Scanner thread: Writes to histogram_display_buffer_ via update_histogram_display()
     // - UI thread: Reads from histogram_display_buffer_ via render_histogram()
+    // - Multiple threads: Access UI formatting buffers via update methods
     mutable Mutex spectrum_mutex_;  ///< Protects spectrum_power_levels_ buffer
     mutable Mutex histogram_mutex_; ///< Protects histogram_display_buffer_ buffer
+    mutable Mutex ui_mutex_;       ///< Protects UI formatting buffers (ui_freq_buffer_, ui_summary_buffer_, etc.)
 
     struct ThreatBin { size_t bin; ThreatLevel threat; };
     std::array<ThreatBin, EDA::Constants::MAX_DISPLAYED_DRONES> threat_bins_;
@@ -1728,6 +1740,10 @@ private:
     // Prevents initialization order issues and saves stack memory
     char hardware_buffer_[64]{};   // Buffer for hardware status formatting
     char freq_buffer_[32]{};       // Buffer for frequency formatting
+
+    // Mutex for protecting UI update methods that use shared buffers
+    // Prevents race conditions when multiple threads call update methods concurrently
+    mutable Mutex ui_mutex_;
 
     void on_manage_frequencies();
     void on_create_new_database();

@@ -2647,6 +2647,7 @@ SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
       threat_progress_bar_({0, 0, screen_width, 16}),
       threat_status_main_({0, 20, screen_width, 16}, "THREAT: LOW | <0 ~0 >0"),
       threat_frequency_({0, 38, screen_width, 16}, "2400.0MHz SCANNING") {
+    chMtxInit(&ui_mutex_);
     last_text_[0] = '\0';
     add_children({&threat_progress_bar_, &threat_status_main_, &threat_frequency_});
     update(ThreatLevel::NONE, 0, 0, 0, 2400000000ULL, false);
@@ -2654,6 +2655,10 @@ SmartThreatHeader::SmartThreatHeader(Rect parent_rect)
 
 void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_t static_count,
                                 size_t receding, Frequency current_freq, bool is_scanning) {
+    // DIAMOND FIX #HIGH #4: Acquire mutex for UI update protection
+    // Prevents race conditions when multiple threads call update methods concurrently
+    MutexLock lock(ui_mutex_, LockOrder::UI_THREAT_MUTEX);
+
     // Check-Before-Update Pattern
     bool data_changed = (max_threat != last_threat_) ||
                         (is_scanning != last_is_scanning_) ||
@@ -2695,7 +2700,7 @@ void SmartThreatHeader::update(ThreatLevel max_threat, size_t approaching, size_
     threat_status_main_.set(ui_threat_buffer_);
     threat_status_main_.set_style(&UIStyles::RED_STYLE);
     snprintf(last_text_, sizeof(last_text_), "%s", ui_threat_buffer_);
-    
+
     // Cache text length to avoid strlen() in paint()
     last_text_len_ = strlen(last_text_);
 
@@ -2791,12 +2796,17 @@ ThreatCard::ThreatCard(size_t card_index, Rect parent_rect)
       parent_rect_(parent_rect), is_active_(false),
       last_frequency_(0), last_threat_(ThreatLevel::NONE),
       last_trend_(MovementTrend::UNKNOWN), last_rssi_(-120) {
+    chMtxInit(&ui_mutex_);
     last_threat_name_[0] = '\0';
     add_children({&card_text_});
 }
 
 // Use UnifiedStringLookup
 void ThreatCard::update_card(const DisplayDroneEntry& drone) {
+    // DIAMOND FIX #HIGH #4: Acquire mutex for UI update protection
+    // Prevents race conditions when multiple threads call update methods concurrently
+    MutexLock lock(ui_mutex_, LockOrder::UI_CARD_MUTEX);
+
     // Check-Before-Update Pattern
     bool data_changed = (drone.frequency != last_frequency_) ||
                         (drone.threat != last_threat_) ||
@@ -2824,11 +2834,11 @@ void ThreatCard::update_card(const DisplayDroneEntry& drone) {
                              drone.type_name, trend_char,
                              (unsigned long)mhz, (long)drone.rssi);
     card_text_.set(card_buffer_);
-    
+
     // Static style (not created on stack each call)
     static const Style CARD_STYLE = {font::fixed_8x16, Color::black(), Color::white()};
     card_text_.set_style(&CARD_STYLE);
-    
+
     set_dirty();
 }
 
@@ -2859,12 +2869,17 @@ void ThreatCard::paint(Painter& painter) {
 }
 
 ConsoleStatusBar::ConsoleStatusBar(size_t bar_index, Rect parent_rect)
-    : View(parent_rect), bar_index_(bar_index), parent_rect_(parent_rect), ui_mutex_() {
+    : View(parent_rect), bar_index_(bar_index), parent_rect_(parent_rect) {
+    chMtxInit(&ui_mutex_);
     add_children({&progress_text_, &alert_text_, &normal_text_});
     set_display_mode(DisplayMode::NORMAL);
 }
 
 void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint32_t total_cycles, uint32_t detections) {
+    // DIAMOND FIX #HIGH #4: Acquire mutex for UI update protection
+    // Prevents race conditions when multiple threads call update methods concurrently
+    MutexLock lock(ui_mutex_, LockOrder::UI_STATUSBAR_MUTEX);
+
     // Early return for invalid states
     if (progress_percent > 100) progress_percent = 100;
 
@@ -2922,7 +2937,7 @@ void ConsoleStatusBar::update_scanning_progress(uint32_t progress_percent, uint3
  */
 void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_drones, const char* alert_msg) {
     // DIAMOND FIX MEDIUM #3: Acquire mutex for UI update protection
-    MutexLock lock(ui_mutex_, LockOrder::DATA_MUTEX);
+    MutexLock lock(ui_mutex_, LockOrder::UI_STATUSBAR_MUTEX);
     
     // DIAMOND FIX LOW #3: Input validation - check for null pointer
     if (!alert_msg) return;
@@ -2965,7 +2980,7 @@ void ConsoleStatusBar::update_alert_status(ThreatLevel threat, size_t total_dron
  */
 void ConsoleStatusBar::update_normal_status(const char* primary, const char* secondary) {
     // DIAMOND FIX MEDIUM #3: Acquire mutex for UI update protection
-    MutexLock lock(ui_mutex_, LockOrder::DATA_MUTEX);
+    MutexLock lock(ui_mutex_, LockOrder::UI_STATUSBAR_MUTEX);
     
     // Early return for invalid states
     if (!primary) return;
@@ -2997,7 +3012,7 @@ void ConsoleStatusBar::update_normal_status(const char* primary, const char* sec
  */
 void ConsoleStatusBar::set_display_mode(DisplayMode mode) {
     // DIAMOND FIX MEDIUM #3: Acquire mutex for UI update protection
-    MutexLock lock(ui_mutex_, LockOrder::DATA_MUTEX);
+    MutexLock lock(ui_mutex_, LockOrder::UI_STATUSBAR_MUTEX);
     
     // Early return
     if (mode_ == mode) return;
@@ -3073,6 +3088,7 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
              marker_pixel_step(DEFAULT_MARKER_PIXEL_STEP_HZ), max_power(0), range_max_power(0), mode_(DroneDisplayController::DisplayRenderMode::SPECTRUM),
              spectrum_config_()
 {
+    chMtxInit(&ui_mutex_);
     // Add ALL widgets to View hierarchy
     add_children({
         &big_display_,
@@ -3173,11 +3189,15 @@ void DroneDisplayController::deallocate_buffers() {
 // Thread Safety: Uses snapshot pattern to avoid holding mutex during render
 // Memory: Uses static thread_local buffers to avoid stack allocation
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
+    // DIAMOND FIX #HIGH #4: Acquire mutex for UI update protection
+    // Prevents race conditions when multiple threads call update methods concurrently
+    MutexLock lock(ui_mutex_, LockOrder::UI_DISPLAY_MUTEX);
+
     // Guard clause: Early return if buffers not allocated
     if (!buffers_allocated_) {
         return;
     }
-    
+
     // Phase 1: DATA FETCHING (DSP/Logic Layer)
     // Fetch all data from scanner into local variables
     // This ensures no UI calls are made during data fetching
@@ -3897,6 +3917,7 @@ DroneUIController::DroneUIController(NavigationView& nav,
       display_controller_(nullptr),
       settings_()  // Initialize settings_ with defaults
 {
+    chMtxInit(&ui_mutex_);
     settings_.spectrum_mode = SpectrumMode::MEDIUM;
     settings_.scan_interval_ms = 1000;
     settings_.rssi_threshold_db = -90;
@@ -3947,6 +3968,10 @@ void DroneUIController::on_set_center_freq() {
 }
 
 void DroneUIController::show_hardware_status() {
+    // DIAMOND FIX #HIGH #4: Acquire mutex for UI update protection
+    // Prevents race conditions when multiple threads call update methods concurrently
+    MutexLock lock(ui_mutex_, LockOrder::UI_CONTROLLER_MUTEX);
+
     // DIAMOND FIX #HIGH #4: Use class member buffers instead of thread_local
     // Prevents initialization order issues and saves stack memory
     uint32_t band_mhz = hardware_.get_spectrum_bandwidth() / 1000000ULL;
