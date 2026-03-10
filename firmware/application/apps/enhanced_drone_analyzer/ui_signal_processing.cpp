@@ -13,10 +13,10 @@
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <new>
 
 // Third-party library headers
-#include "chmtx.h"
 #include "chvt.h"
 #include "eda_locking.hpp"
 

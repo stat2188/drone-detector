@@ -515,6 +515,24 @@ static_assert(sizeof(BarRenderParams) <= 16, "BarRenderParams exceeds 16 bytes")
 static_assert(sizeof(HistogramBinRenderParams) <= 16, "HistogramBinRenderParams exceeds 16 bytes");
 static_assert(sizeof(HistogramScaleParams) <= 16, "HistogramScaleParams exceeds 16 bytes");
 
+// ============================================================================
+// DIAMOND FIX: LOCK-FREE RENDER CACHE (DOUBLE BUFFERING)
+// ============================================================================
+namespace RenderCache {
+    struct BarSpectrumCache {
+        BarSpectrumRenderData render_data[240];
+        bool valid;
+    };
+
+    struct HistogramCache {
+        HistogramBinRenderData render_data[64];
+        bool valid;
+    };
+
+    constexpr uint8_t FRONT = 0;
+    constexpr uint8_t BACK = 1;
+}
+
 // Forward declarations for utility functions (implemented in dsp_display_utils.cpp)
 DroneDisplayText format_drone_display_text(const DisplayDroneEntry& drone) noexcept;
 BarSpectrumRenderData calculate_bar_render_data(

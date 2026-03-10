@@ -13,7 +13,6 @@
 // Project-specific headers (alphabetical order)
 #include "chtypes.h"
 #include "chvt.h"
-#include "eda_constants.hpp"
 
 // Flash storage attributes for Cortex-M4
 #ifdef __GNUC__

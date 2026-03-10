@@ -27,7 +27,6 @@
 #include "chcore_v6m.h"
 #include "chlists.h"
 #include "chmtx.h"
-#include "chsem.h"
 #include "diamond_core.hpp"
 #include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
@@ -1523,10 +1522,18 @@ private:
 
     bool buffers_allocated_ = false;
 
+    // DIAMOND OPTIMIZATION: Lock-free Double Buffered Render Caches
+    // Allocated in BSS to prevent stack overflow. Zero heap.
+    alignas(4) static dsp::RenderCache::BarSpectrumCache bar_caches_[2];
+    alignas(4) static dsp::RenderCache::HistogramCache hist_caches_[2];
+
+    volatile uint8_t active_bar_buffer_ = dsp::RenderCache::FRONT;
+    volatile uint8_t active_hist_buffer_ = dsp::RenderCache::FRONT;
+
     // DIAMOND OPTIMIZATION: Histogram Display Buffer
     // Zero-heap histogram display buffer (static storage in .bss)
     HistogramDisplayBuffer histogram_display_buffer_{};
-    
+
     // Dirty flag for histogram rendering optimization
     bool histogram_dirty_ = false;
 

@@ -14,6 +14,7 @@
 #include <utility>  // For std::move (used in FileRAII move constructor)
 
 // Third-party library headers
+#include "chmtx.h"
 #include "chtypes.h"
 #include "eda_optimized_utils.hpp"
 #include "ff.h"

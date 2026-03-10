@@ -34,7 +34,6 @@
 #include "chlists.h"
 #include "chmtx.h"
 #include "chschd.h"
-#include "chsem.h"
 #include "chthreads.h"
 #include "chtypes.h"
 #include "chvt.h"
@@ -48,12 +47,12 @@
 #include "eda_optimized_utils.hpp"
 #include "eda_ui_constants.hpp"
 #include "eda_unified_database.hpp"
-#include "file.hpp"
 #include "freqman_db.hpp"
 #include "message.hpp"
 #include "portapack.hpp"
 #include "receiver_model.hpp"
 #include "scanning_coordinator.hpp"
+#include "sd_card.hpp"
 #include "settings_persistence.hpp"
 #include "spi_image.hpp"
 #include "theme.hpp"
@@ -240,6 +239,10 @@ uint8_t DroneScanner::tracked_drones_storage_[DroneScanner::TRACKED_DRONES_STORA
 
 alignas(alignof(uint8_t))
 uint8_t DroneDisplayController::spectrum_power_levels_storage_[200];
+
+// DIAMOND FIX: Allocate double buffers in BSS segment
+alignas(4) dsp::RenderCache::BarSpectrumCache DroneDisplayController::bar_caches_[2];
+alignas(4) dsp::RenderCache::HistogramCache DroneDisplayController::hist_caches_[2];
 
 stkalign_t DroneScanner::db_loading_wa_[THD_WA_SIZE(DroneScanner::DB_LOADING_STACK_SIZE) / sizeof(stkalign_t)];
 
@@ -3029,13 +3032,60 @@ DroneDisplayController::~DroneDisplayController() {
 }
 
 // Implementation: process_frame_sync
+// DIAMOND FIX: Moving DSP math from UI thread to Sync thread.
 void DroneDisplayController::process_frame_sync() {
+    bool has_new_data = false;
     if (spectrum_fifo_) {
         ChannelSpectrum spectrum;
         while (spectrum_fifo_->out(spectrum)) {
             this->process_mini_spectrum_data(spectrum);
+            has_new_data = true;
         }
     }
+
+    if (!has_new_data) return;
+
+    // 1. Pre-calculate Bar Spectrum into BACK buffer
+    uint8_t back_idx = active_bar_buffer_ ^ 1;
+    auto& bar_cache = bar_caches_[back_idx];
+    const auto& config = dsp::BarSpectrumConfig{};
+
+    {
+        MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
+        const auto& levels = spectrum_power_levels();
+        const size_t spectrum_width = std::min(levels.size(), static_cast<size_t>(EDA::Constants::MINI_SPECTRUM_WIDTH));
+
+        for (size_t x = 0; x < spectrum_width; ++x) {
+            const dsp::BarRenderParams params{levels[x], x};
+            bar_cache.render_data[x] = dsp::calculate_bar_render_data(params, config.BAR_HEIGHT_MAX, config);
+        }
+        bar_cache.valid = true;
+    }
+
+    __sync_synchronize();
+    active_bar_buffer_ = back_idx;
+
+    // 2. Pre-calculate Histogram into BACK buffer
+    uint8_t hist_back_idx = active_hist_buffer_ ^ 1;
+    auto& hist_cache = hist_caches_[hist_back_idx];
+    const auto& h_config = dsp::HistogramColorConfig{};
+
+    {
+        MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
+        if (histogram_display_buffer_.is_valid && histogram_display_buffer_.max_count > 0) {
+            for (size_t bin_idx = 0; bin_idx < 64; ++bin_idx) {
+                const dsp::HistogramBinRenderParams params{bin_idx, histogram_display_buffer_.bin_counts[bin_idx]};
+                hist_cache.render_data[bin_idx] = dsp::calculate_histogram_bin_render_data(params, histogram_display_buffer_.max_count, h_config);
+            }
+            hist_cache.valid = true;
+            histogram_dirty_ = false;
+        } else {
+            hist_cache.valid = false;
+        }
+    }
+
+    __sync_synchronize();
+    active_hist_buffer_ = hist_back_idx;
 }
 
 DroneDisplayController::DroneDisplayController(Rect parent_rect)
@@ -3065,8 +3115,8 @@ DroneDisplayController::DroneDisplayController(Rect parent_rect)
             threat_bins_(), threat_bins_count_(0),
              spectrum_gradient_(), spectrum_fifo_(nullptr),
              pixel_index(0), bins_hz_size(0), each_bin_size(DEFAULT_EACH_BIN_SIZE_HZ), min_color_power(DEFAULT_MIN_COLOR_POWER),
-             marker_pixel_step(DEFAULT_MARKER_PIXEL_STEP_HZ), max_power(0), range_max_power(0), mode_(DroneDisplayController::DisplayRenderMode::SPECTRUM),
-             spectrum_config_()
+             marker_pixel_step(DEFAULT_MARKER_PIXEL_STEP_HZ), max_power(0), range_max_power(0), mode_(DroneDisplayController::DisplayRenderMode::HISTOGRAM),
+               spectrum_config_()
 {
     // Add ALL widgets to View hierarchy
     add_children({
@@ -3650,43 +3700,23 @@ bool DroneDisplayController::process_bins(uint8_t* powerlevel) {
 void DroneDisplayController::render_bar_spectrum(Painter& painter) noexcept {
     const auto& config = dsp::BarSpectrumConfig{};
 
-    // Clear spectrum area (UI only)
-    const int bar_spectrum_y_start = config.SPECTRUM_Y_START;
-    const int spectrum_height = config.BAR_HEIGHT_MAX;
-
     painter.fill_rectangle(
-        {0, bar_spectrum_y_start, EDA::Constants::MINI_SPECTRUM_WIDTH, spectrum_height},
+        {0, config.SPECTRUM_Y_START, EDA::Constants::MINI_SPECTRUM_WIDTH, config.BAR_HEIGHT_MAX},
         Color::black()
     );
 
-    // Validate buffer (static buffer)
-    if (!buffers_allocated_) {
-        return;
-    }
+    if (!buffers_allocated_) return;
 
-    // Thread-safe buffer access with mutex protection
-    // Lock order: SPECTRUM_MUTEX (level 2)
-    MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
+    uint8_t front_idx = active_bar_buffer_;
+    __sync_synchronize();
 
-    // Iterate through all spectrum bins
-    const auto& levels = spectrum_power_levels();
-    const size_t spectrum_width = std::min(levels.size(),
-                                        static_cast<size_t>(EDA::Constants::MINI_SPECTRUM_WIDTH));
+    const auto& cache = bar_caches_[front_idx];
+    if (!cache.valid) return;
 
-    for (size_t x = 0; x < spectrum_width; ++x) {
-        uint8_t power = levels[x];
-        
-        // DIAMOND CODE PRINCIPLE: Use utility function for signal analysis (DSP layer)
-        // This separates signal analysis from UI rendering
-        // P1-HIGH FIX: Use BarRenderParams struct to prevent parameter swapping
-        const dsp::BarRenderParams params{power, x};
-        dsp::BarSpectrumRenderData render_data = dsp::calculate_bar_render_data(
-            params, spectrum_height, config
-        );
-        
+    for (size_t x = 0; x < 240; ++x) {
+        const auto& render_data = cache.render_data[x];
         if (!render_data.should_draw) continue;
-        
-        // Pure UI rendering - use pre-calculated render data
+
         painter.fill_rectangle(
             {static_cast<int>(x), render_data.y_top, 1, render_data.bar_height},
             config.BAR_COLORS[render_data.color_idx]
@@ -3762,73 +3792,42 @@ void DroneDisplayController::update_histogram_display(
 }
 
 void DroneDisplayController::render_histogram(Painter& painter) noexcept {
-    // DIAMOND CODE PRINCIPLE: Protect histogram_dirty_ with histogram_mutex_
-    // Thread-safe buffer access with mutex protection
-    // Lock order: SPECTRUM_MUTEX (level 2) for histogram data
-    MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
-
-    // Guard clause: Skip rendering if data hasn't changed
-    // Check is now protected by histogram_mutex_ to prevent race condition
-    if (!histogram_dirty_) {
-        return;
-    }
-
-    // Guard clause: Skip if histogram data is invalid
-    if (!histogram_display_buffer_.is_valid) {
-        return;
-    }
-
     const auto& config = dsp::HistogramColorConfig{};
 
-    // Clear histogram area (UI only)
     painter.fill_rectangle(
         {0, config.HISTOGRAM_Y, config.HISTOGRAM_WIDTH, config.HISTOGRAM_HEIGHT},
         Color::black()
     );
 
-    // Render 64 bins with color gradient
-    const uint8_t max_count = histogram_display_buffer_.max_count;
+    if (!buffers_allocated_) return;
 
-    // Guard clause: Skip rendering if max_count is zero
-    if (max_count == 0) {
-        histogram_dirty_ = false;
-        return;
-    }
+    uint8_t front_idx = active_hist_buffer_;
+    __sync_synchronize();
 
-    // Pure UI rendering - all calculations done by utility function
+    const auto& cache = hist_caches_[front_idx];
+    if (!cache.valid) return;
+
     for (size_t bin_idx = 0; bin_idx < config.HISTOGRAM_NUM_BINS; ++bin_idx) {
-        uint8_t bin_count = histogram_display_buffer_.bin_counts[bin_idx];
-        
-        // DIAMOND CODE PRINCIPLE: Use utility function for histogram calculations (DSP layer)
-        // This separates histogram calculations from UI rendering
-        // P1-HIGH FIX: Use HistogramBinRenderParams struct to prevent parameter swapping
-        const dsp::HistogramBinRenderParams params{bin_idx, bin_count};
-        dsp::HistogramBinRenderData render_data = dsp::calculate_histogram_bin_render_data(
-            params, max_count, config
-        );
-        
+        const auto& render_data = cache.render_data[bin_idx];
         if (!render_data.should_draw) continue;
-        
-        // Pure UI rendering - use pre-calculated render data
+
         painter.fill_rectangle(
             {render_data.bin_x, render_data.y_top,
              render_data.bin_width, render_data.bin_height},
             config.HISTOGRAM_COLORS[render_data.color_idx]
         );
     }
-    
-    // Mark histogram as clean (rendered)
-    histogram_dirty_ = false;
 }
 
 void DroneDisplayController::clear_histogram_area(Painter& painter) noexcept {
     // DIAMOND FIX #4: Use class constants instead of hardcoded values
     // Using class constants ensures consistency and maintainability
+    const auto& config = dsp::HistogramColorConfig{};
     const Rect histogram_rect{
         8,  // HISTOGRAM_X (not defined as class constant)
-        HISTOGRAM_Y,
-        HISTOGRAM_WIDTH,
-        HISTOGRAM_HEIGHT
+        config.HISTOGRAM_Y,
+        config.HISTOGRAM_WIDTH,
+        config.HISTOGRAM_HEIGHT
     };
 
     painter.fill_rectangle(histogram_rect, Color::black());
