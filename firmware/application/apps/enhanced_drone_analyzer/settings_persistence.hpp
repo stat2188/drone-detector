@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <inttypes.h>
+#include <cinttypes>
 
 // Third-party library headers
 #include <ch.h>
@@ -123,11 +124,13 @@ struct SettingMetadata {
 #define SET_META_BIT(name, bit_idx, def) \
     { #name, static_cast<uint16_t>(offsetof(DroneAnalyzerSettings, name)), TYPE_BITFIELD, bit_idx, 0, 1, def }
 
-// DIAMOND FIX #3: Reduced from 51 to 38 entries (25% reduction)
+// DIAMOND FIX #3: Reduced from 51 to 35 entries (31% reduction)
 // Removed 13 UI-specific entries that are now in eda_ui_constants.hpp:
 // - color_scheme, font_size, spectrum_density
 // - frequency_ruler_style, compact_ruler_tick_count, display_flags (5 bits)
-constexpr size_t SETTINGS_COUNT = 38;
+// Removed 3 legacy logging fields (SD card write removed as heavy operation):
+// - log_file_path, log_format, max_log_file_size_kb
+constexpr size_t SETTINGS_COUNT = 35;
 
 inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
     SET_META_BIT(audio_flags, 0, "true"),
@@ -168,9 +171,6 @@ inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
 
     // Logging settings
     SET_META_BIT(logging_flags, 0, "true"),
-    SET_META(log_file_path, TYPE_STR, 64, 0, "/eda_logs"),
-    SET_META(log_format, TYPE_STR, 8, 0, "CSV"),
-    SET_META(max_log_file_size_kb, TYPE_UINT32, 1, 10240, "1024"),
     SET_META_BIT(logging_flags, 1, "true"),
     SET_META_BIT(logging_flags, 2, "true"),
     SET_META_BIT(logging_flags, 3, "true"),
@@ -487,7 +487,7 @@ public:
 class LoadBufferLock {
 public:
     LoadBufferLock() noexcept {
-        chMtxLock(&load_buffer_mutex);
+        chMtxLock(&ui::apps::enhanced_drone_analyzer::load_buffer_mutex);
     }
 
     ~LoadBufferLock() noexcept {
@@ -746,8 +746,9 @@ struct SettingsLoadBuffer {
 
 // SETTINGS LOAD BUFFER MUTEX
 // Protects the static load buffer from concurrent access
-// Definition is in ui_enhanced_drone_settings.cpp
+namespace ui::apps::enhanced_drone_analyzer {
 extern Mutex load_buffer_mutex;
+}
 
 // SETTINGS LOAD BUFFER (Getter)
 // Thread-safe getter for the static load buffer

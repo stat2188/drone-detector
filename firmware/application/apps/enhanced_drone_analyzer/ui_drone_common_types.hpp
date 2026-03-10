@@ -6,10 +6,11 @@
 #include <cstring>
 
 // Project-specific headers (alphabetical order)
+#include "rf_path.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-using rf::Frequency;
+// Frequency is defined in rf_path.hpp which is included above
 
 /**
  * @brief Radio reception state for hardware controller

@@ -6,6 +6,7 @@
 
 // C++ standard library headers (alphabetical order)
 #include <algorithm>
+#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -47,6 +48,7 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // Settings Buffer Mutex Definition
+// Mutex load_buffer_mutex is defined below (line 64)
 //
 // IMPORTANT LINKER DEPENDENCY:
 // This mutex is defined here and declared as extern in settings_persistence.hpp.

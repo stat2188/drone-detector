@@ -444,6 +444,11 @@ constexpr uint32_t THREAD_TERMINATION_TIMEOUT_MS = 3000;
 constexpr uint32_t THREAD_TERMINATION_POLL_INTERVAL_MS = 10;
 constexpr uint32_t INIT_TIMEOUT_MS = 10000;  // 10 seconds for full initialization (6 phases including DB loading)
 
+// SD Card Timeouts
+constexpr uint32_t SD_CARD_MOUNT_TIMEOUT_MS = 5000;
+constexpr uint32_t SD_CARD_POLL_INTERVAL_SHORT_MS = 100;
+constexpr uint32_t SD_CARD_POLL_INTERVAL_MS = 50;
+
 // Database Parameters
 // Stage 4: Unified Database Constants
 // Memory Budget: 120 entries × 48 bytes = 5,760 bytes (fits within 8KB limit)

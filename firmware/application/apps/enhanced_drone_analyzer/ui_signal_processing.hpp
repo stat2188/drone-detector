@@ -30,7 +30,7 @@
 #include "chmtx.h"
 #include "eda_constants.hpp"
 #include "eda_optimized_utils.hpp"
-#include "memory_pool_manager.hpp"
+//#include "memory_pool_manager.hpp"  // TODO: Create or remove - file missing
 
 namespace ui::apps::enhanced_drone_analyzer {
 

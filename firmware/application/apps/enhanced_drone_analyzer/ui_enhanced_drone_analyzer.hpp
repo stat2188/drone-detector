@@ -9,6 +9,7 @@
 #include <cstring>
 #include <cstdio>
 #include <utility>
+#include <utility>
 
 // Third-party library headers (alphabetical order)
 #include <ch.h>
@@ -35,7 +36,11 @@
 #include "chlists.h"
 #include "chmtx.h"
 #include "diamond_core.hpp"
+#include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
+#include "eda_locking.hpp"
+#include "eda_unified_database.hpp"
+#include "eda_optimized_utils.hpp"
 #include "event_m0.hpp"
 #include "freqman_db.hpp"
 #include "gradient.hpp"
@@ -49,6 +54,8 @@
 #include "ui_menu.hpp"
 #include "ui_navigation.hpp"
 #include "ui_painter.hpp"
+#include "ui_signal_processing.hpp"
+#include "ui_spectral_analyzer.hpp"
 #include "ui_widget.hpp"
 
 // Forward declarations for database classes (included in .cpp file)
@@ -66,63 +73,28 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 using rf::Frequency;
 
+// ============================================================================
+// DIAMOND FIX: SEPARATION OF CONCERNS - FORWARD DECLARATIONS
+// ============================================================================
+// Removed direct includes of DSP and database headers to prevent circular dependencies.
+// Using forward declarations where possible, only including headers that are required
+// for inline functions or template instantiations.
+//
+// FIX: Added eda_unified_database.hpp include for DatabaseChangeEvent definition
+// FIX: Removed incomplete forward declaration of DatabaseChangeEvent
+// ============================================================================
+// Removed direct includes of DSP and database headers to prevent circular dependencies.
+// Using forward declarations where possible, only including headers that are required
+// for inline functions or template instantiations.
+// ============================================================================
+
+namespace ui::apps::enhanced_drone_analyzer {
+
 // Lock Order: Always acquire locks in ascending order (1  2  3  4  5  6  7)
-// Never acquire a lower-numbered lock while holding a higher-numbered lock
-
-// Explicit thread stack sizes
-// DIAMOND FIX #1: Reduced from 5120 to 3840 bytes (3.75KB, 6.25% safety margin)
-// Fits within 4KB per-thread stack limit on STM32F405
-constexpr size_t SCANNING_THREAD_STACK_SIZE = 3840;
-// HIGH-003 FIX: Increased from 2048 to 4096 bytes (4KB, 100% increase) to prevent stack overflow
-// Red Team analysis showed 2048 bytes is insufficient for deep call stacks
-// New size provides adequate margin for:
-// - Function call overhead: ~256 bytes
-// - Local variables: ~512 bytes
-// - Mutex locks: ~128 bytes
-// - Memory pool allocations: ~512 bytes
-// - ISR nesting: ~512 bytes
-// - Safety margin: ~2176 bytes (53%)
-// Total: ~4096 bytes (fits within 4KB limit)
-constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 4096;
-
-// Stack monitoring constants
-constexpr uint32_t STACK_CANARY_VALUE = 0xDEADBEEF;  // Canary value for stack overflow detection
-constexpr size_t MIN_STACK_FREE_THRESHOLD = 512;     // Minimum safe stack free bytes
-
-// ============================================================================
-// STACK USAGE VALIDATION
-// ============================================================================
-// Embedded systems have limited stack space (4KB per thread on STM32F405).
-// These static_assert statements validate stack usage at compile time to prevent
-// stack overflow at runtime, which is difficult to debug.
-// ============================================================================
-
-// Validate thread stack sizes are within reasonable limits
-// STM32F405 has 4KB stack per thread by default, but some threads can use more
-// DIAMOND FIX #1: Corrected static_assert from 8192 to 4096 (actual hardware limit)
-static_assert(SCANNING_THREAD_STACK_SIZE <= 4096,
-              "SCANNING_THREAD_STACK_SIZE exceeds 4KB thread stack limit on STM32F405");
-static_assert(SCANNING_THREAD_STACK_SIZE >= 3072,
-              "SCANNING_THREAD_STACK_SIZE below 3KB minimum for safe operation");
-// HIGH-003 FIX: Updated COORDINATOR_THREAD_STACK_SIZE validation for new size (4096 bytes)
-static_assert(COORDINATOR_THREAD_STACK_SIZE <= 4096,
-              "COORDINATOR_THREAD_STACK_SIZE exceeds 4KB thread stack limit");
-static_assert(COORDINATOR_THREAD_STACK_SIZE >= 4096,
-              "COORDINATOR_THREAD_STACK_SIZE below 4KB minimum for safe operation");
-
-// Validate stack monitoring constants
-static_assert(MIN_STACK_FREE_THRESHOLD <= 1024,
-              "MIN_STACK_FREE_THRESHOLD exceeds 1KB, too conservative");
-static_assert(MIN_STACK_FREE_THRESHOLD >= 128,
-              "MIN_STACK_FREE_THRESHOLD below 128 bytes, unsafe");
-
-// Lock Order: Always acquire locks in ascending order (ATOMIC_FLAGS < DATA_MUTEX < SPECTRUM_MUTEX)
-// Use MutexLock from eda_locking.hpp with LockOrder parameter to prevent deadlock violations
-
-struct RssiMeasurement {
-    int16_t rssi_db;
-    systime_t timestamp_ms;
-};
+// Note: CriticalSection, MutexLock, AtomicFlag are defined in eda_locking.hpp
+// Note: MovementTrend, DroneType, ThreatLevel are defined in ui_drone_common_types.hpp
+// Note: dsp::DisplayDataSnapshot, dsp::FilteredDronesSnapshot are defined in dsp_display_types.hpp
+// Note: AudioManager is defined in ui_drone_audio.hpp
 
 namespace UIStyles {
     EDA_FLASH_CONST inline static constexpr Style RED_STYLE{font::fixed_8x16, Color::black(), Color::red()};
@@ -196,6 +168,11 @@ struct FrequencyHopDetector {
         }
         return (now - last_hop_time) <= EDA::Constants::FHSS_TRACKING_WINDOW_MS;
     }
+};
+
+struct RssiMeasurement {
+    int16_t rssi_db;
+    systime_t timestamp_ms;
 };
 
 class TrackedDrone {
