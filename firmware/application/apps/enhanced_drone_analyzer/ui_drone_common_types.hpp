@@ -6,6 +6,7 @@
 #include <cstring>
 
 // Project-specific headers (alphabetical order)
+#include "eda_constants.hpp"
 #include "rf_path.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
