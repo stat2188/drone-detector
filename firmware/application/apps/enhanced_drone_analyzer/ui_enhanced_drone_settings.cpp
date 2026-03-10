@@ -64,6 +64,13 @@ Mutex settings_buffer_mutex;
 // Corresponding declaration in settings_persistence.hpp
 Mutex load_buffer_mutex;
 
+// DIAMOND FIX #HIGH #4: Static member buffer definitions for EnhancedSettingsManager
+// Replaces thread_local buffers to prevent initialization order issues
+char EnhancedSettingsManager::settings_buffer_[EnhancedSettingsManager::SETTINGS_BUFFER_SIZE];
+char EnhancedSettingsManager::file_buffer_[EnhancedSettingsManager::FILE_BUFFER_SIZE];
+char EnhancedSettingsManager::timestamp_buffer_[EnhancedSettingsManager::TIMESTAMP_BUFFER_SIZE];
+uint8_t EnhancedSettingsManager::backup_buffer_[EnhancedSettingsManager::BACKUP_BUFFER_SIZE];
+
 // ============================================================================
 // STACK USAGE VALIDATION
 // ============================================================================
@@ -136,26 +143,9 @@ private:
 
     // const reference to prevent unnecessary copies
 bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& settings) noexcept {
-    // Fix SD Card Race Condition - acquire lock BEFORE checking status
-    SettingsBufferLock lock;
-    
-    // Use constexpr const char* instead of std::string
-    static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
-
-    // Create backup for atomic write operation
-    create_backup_file(filepath);
-
-    File settings_file;
-    if (!settings_file.open(filepath, false)) {
-        return false;
-    }
-
-    auto& file = settings_file;
-
-    // Thread-local buffer for settings serialization (replaces ~20 std::string allocations)
-    // Optimized: Reduced from 1024 to 512 bytes (512 bytes savings)
-    static constexpr size_t SETTINGS_BUFFER_SIZE = 512;
-    thread_local char settings_buffer[SETTINGS_BUFFER_SIZE];
+    // DIAMOND FIX #HIGH #4: Use static member buffer instead of thread_local
+    // Acquire mutex for thread safety (shared static buffer)
+    MutexLock lock(settings_buffer_mutex);
     size_t offset = 0;
 
     // Write header with timestamp
@@ -171,46 +161,46 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     }
 
     // Generate settings content using snprintf (no heap allocations)
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "spectrum_mode=%s\n", spectrum_mode_to_string(settings.spectrum_mode));
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "scan_interval_ms=%u\n", (unsigned int)settings.scan_interval_ms);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "rssi_threshold_db=%d\n", (int)settings.rssi_threshold_db);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "enable_audio_alerts=%s\n", audio_get_enable_alerts(settings) ? "true" : "false");
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "audio_alert_frequency_hz=%u\n", (unsigned int)settings.audio_alert_frequency_hz);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "audio_alert_duration_ms=%u\n", (unsigned int)settings.audio_alert_duration_ms);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "hardware_bandwidth_hz=%u\n", (unsigned int)settings.hardware_bandwidth_hz);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "enable_real_hardware=%s\n", hw_get_enable_real_hardware(settings) ? "true" : "false");
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "demo_mode=%s\n", hw_get_demo_mode(settings) ? "true" : "false");
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "freqman_path=%s\n", settings.freqman_path);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "user_min_freq_hz=%llu\n", (unsigned long long)settings.user_min_freq_hz);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "user_max_freq_hz=%llu\n", (unsigned long long)settings.user_max_freq_hz);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "wideband_slice_width_hz=%u\n", (unsigned int)settings.wideband_slice_width_hz);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "panoramic_mode_enabled=%s\n", scan_get_panoramic_mode_enabled(settings) ? "true" : "false");
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "wideband_min_freq_hz=%llu\n", (unsigned long long)settings.wideband_min_freq_hz);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "wideband_max_freq_hz=%llu\n", (unsigned long long)settings.wideband_max_freq_hz);
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "settings_version=0.4\n");
-    offset += snprintf(settings_buffer + offset, SETTINGS_BUFFER_SIZE - offset,
+    offset += snprintf(settings_buffer_ + offset, SETTINGS_BUFFER_SIZE - offset,
                       "last_modified_timestamp=%u\n", (unsigned int)chTimeNow());
 
     // Write settings content
-    auto content_result = file.write(static_cast<const void*>(settings_buffer),
-                                         static_cast<File::Size>(offset));
+    auto content_result = file.write(static_cast<const void*>(settings_buffer_),
+                                          static_cast<File::Size>(offset));
     if (content_result.is_error() || content_result.value() != offset) {
         file.close();
         // Log error - restore from backup on write failure
@@ -237,21 +227,11 @@ bool EnhancedSettingsManager::verify_comm_file_exists() noexcept {
 
     // const reference to prevent unnecessary copies
 bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& settings) noexcept {
-    // Use constexpr const char* instead of std::string
-    static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    // DIAMOND FIX #HIGH #4: Use static member buffer instead of thread_local
+    // Acquire mutex for thread safety (shared static buffer)
+    MutexLock lock(settings_buffer_mutex);
 
-    File settings_file;
-    if (!settings_file.open(filepath, true)) {  // read_only
-        return false;
-    }
-
-    auto& file = settings_file;
-
-    // Thread-local buffer for settings loading (512 bytes per thread)
-    // Optimized: Reduced from 1024 to 512 bytes (512 bytes savings)
-    static constexpr size_t FILE_BUFFER_SIZE = 512;
-    thread_local char file_buffer[FILE_BUFFER_SIZE];
-    auto read_result = file.read(file_buffer, FILE_BUFFER_SIZE);
+    auto read_result = file.read(file_buffer_, FILE_BUFFER_SIZE);
     
     if (read_result.is_error() || read_result.value() == 0) {
         file.close();
@@ -261,10 +241,10 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
     // File Truncation Warning - if file is larger than buffer, data is truncated
     const size_t bytes_read = read_result.value();
     if (bytes_read < FILE_BUFFER_SIZE) {
-        file_buffer[bytes_read] = '\0';
+        file_buffer_[bytes_read] = '\0';
     } else {
         // Buffer was completely filled, ensure null-termination
-        file_buffer[FILE_BUFFER_SIZE - 1] = '\0';
+        file_buffer_[FILE_BUFFER_SIZE - 1] = '\0';
         // DIAMOND FIX: File truncated - error logging
         // In production, this should log to a persistent error log
         // For now, we note the truncation but continue processing
@@ -273,7 +253,7 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
 
     // FIX #18: Use non-destructive parsing (replaces strtok)
     // strtok modifies buffer, use manual parsing instead
-    char* line_start = file_buffer;
+    char* line_start = file_buffer_;
     while (*line_start != '\0') {
         // Find line end
         char* line_end = strchr(line_start, '\n');
@@ -453,17 +433,16 @@ void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept 
     FileRAII backup_file(backup_path, false);
     if (!backup_file.is_open()) return;
 
-    // Thread-local buffer for backup/restore operations (512 bytes per thread)
-    static constexpr size_t BUFFER_SIZE = 512;
-    thread_local uint8_t buffer[BUFFER_SIZE];
+    // DIAMOND FIX #HIGH #4: Use static member buffer instead of thread_local
+    // Note: Caller (save_settings_to_txt/load_settings_from_txt) already holds settings_buffer_mutex
     size_t total_read = 0;
 
     while (total_read < orig_file.get().size()) {
-        size_t to_read = std::min(BUFFER_SIZE, static_cast<size_t>(orig_file.get().size() - total_read));
-        auto read_result = orig_file.get().read(buffer, to_read);
+        size_t to_read = std::min(BACKUP_BUFFER_SIZE, static_cast<size_t>(orig_file.get().size() - total_read));
+        auto read_result = orig_file.get().read(backup_buffer_, to_read);
         if (read_result.is_error() || read_result.value() != to_read) break;
 
-        auto write_result = backup_file.get().write(static_cast<const void*>(buffer),
+        auto write_result = backup_file.get().write(static_cast<const void*>(backup_buffer_),
                                                         static_cast<File::Size>(to_read));
         if (write_result.is_error() || write_result.value() != to_read) break;
 
@@ -495,14 +474,13 @@ void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept
     FileRAII original_file(filepath, false);
     if (!original_file.is_open()) return;
 
-    // Thread-local buffer for backup/restore operations (512 bytes per thread)
-    static constexpr size_t BUFFER_SIZE = 512;
-    thread_local uint8_t buffer[BUFFER_SIZE];
+    // DIAMOND FIX #HIGH #4: Use static member buffer instead of thread_local
+    // Note: Caller (save_settings_to_txt/load_settings_from_txt) already holds settings_buffer_mutex
 
     while (true) {
-        auto read_res = backup_file.get().read(buffer, BUFFER_SIZE);
+        auto read_res = backup_file.get().read(backup_buffer_, BACKUP_BUFFER_SIZE);
         if (read_res.is_error() || read_res.value() == 0) break;
-        original_file.get().write(static_cast<const void*>(buffer),
+        original_file.get().write(static_cast<const void*>(backup_buffer_),
                                    static_cast<File::Size>(read_res.value()));
     }
 }
@@ -549,13 +527,12 @@ const char* EnhancedSettingsManager::spectrum_mode_to_string(SpectrumMode mode) 
     return EDA::LUTs::spectrum_mode_display_name(static_cast<uint8_t>(mode));
 }
 
-// noexcept for timestamp generation (thread_local buffer for thread safety)
+// DIAMOND FIX #HIGH #4: Use static member buffer instead of thread_local
+// Note: Caller (generate_file_header/save_settings_to_txt) already holds settings_buffer_mutex
 const char* EnhancedSettingsManager::get_current_timestamp() noexcept {
-    // Return const char* to thread_local buffer (no std::string allocation)
-    thread_local char buffer[32];
     systime_t now = chTimeNow();
-    snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)now);
-    return buffer;
+    snprintf(timestamp_buffer_, TIMESTAMP_BUFFER_SIZE, "%lu", (unsigned long)now);
+    return timestamp_buffer_;
 }
 
 // Translation Functions Implementation

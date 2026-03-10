@@ -474,8 +474,8 @@ struct DetectionParams {
     rf::Frequency get_current_scanning_frequency() const;
 
     // MODIFICATION: Added FHSS detection methods
-    void process_fhss_detection(const freqman_entry& entry, int32_t rssi, systime_t now);
-    bool is_fhss_enabled() const;
+    void process_fhss_detection(const freqman_entry& entry, int32_t rssi, systime_t now) noexcept;
+    bool is_fhss_enabled() const noexcept;
     // THREAD SAFETY FIX: Non-inline to enable mutex protection for concurrent access
     // [[nodiscard]] - Threat level must be used by caller
     [[nodiscard]] ThreatLevel get_max_detected_threat() const;

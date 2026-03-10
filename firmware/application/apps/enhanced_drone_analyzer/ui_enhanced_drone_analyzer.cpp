@@ -56,6 +56,9 @@
 #include "ui_signal_processing.hpp"
 #include "ui_spectral_analyzer.hpp"
 #include "ui_widget.hpp"
+#include "eda_ui_constants.hpp"
+#include "scanning_coordinator.hpp"
+#include "dsp_spectrum_processor.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -126,6 +129,9 @@ namespace MagicNumberConstants {
 
     // Paint stack requirement (reduced from 1792 to 1536 bytes)
     constexpr size_t PAINT_STACK_REQUIRED = 1536;
+
+    // Stack monitoring constants
+    constexpr size_t MIN_STACK_FREE_THRESHOLD = 512;  // 512 bytes minimum free stack
 }
 
 // DIAMOND FIX #HIGH #3: Function-local static for safe mutex initialization
@@ -267,7 +273,7 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       stale_indices_(),
       scanning_thread_(nullptr),
       data_mutex(),
-      scanning_active_(false),
+      scanning_active_(),
       histogram_callback_(nullptr),
       histogram_callback_user_data_(nullptr),
       freq_db_ptr_(nullptr),
@@ -283,7 +289,7 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       scan_cycles_(0),
       total_detections_(0),
       scanning_mode_(DroneScanner::ScanningMode::DATABASE),
-      is_real_mode_(true),
+      is_real_mode_(),
       tracked_count_(0),
       approaching_count_(0),
       receding_count_(0),
@@ -294,8 +300,16 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       detection_ring_buffer_(),
       spectrum_data_(),
       histogram_buffer_(),
+      database_needs_reload_(),
+      fhss_detector_(),
       settings_(std::move(settings))
 {
+    scanning_active_.store(false);
+    freq_db_loaded_.store(false);
+    db_loading_active_.store(false);
+    initialization_complete_.store(false);
+    is_real_mode_.store(true);
+    database_needs_reload_.store(false);
     // Initialize stack canary for overflow detection
     init_stack_canary();
 
@@ -458,10 +472,10 @@ void DroneScanner::setup_wideband_range(Frequency min_freq, Frequency max_freq) 
 }
 
 void DroneScanner::start_scanning() {
-    bool is_scanning = scanning_active_;
+    bool is_scanning = scanning_active_.load();
     if (is_scanning) return;
 
-    scanning_active_ = true;
+    scanning_active_.store(true);
     {
         MutexLock lock(data_mutex);
         scan_cycles_ = 0;
@@ -470,10 +484,10 @@ void DroneScanner::start_scanning() {
 }
 
 void DroneScanner::stop_scanning() {
-    bool is_scanning = scanning_active_;
+    bool is_scanning = scanning_active_.load();
     if (!is_scanning) return;
 
-    scanning_active_ = false;
+    scanning_active_.store(false);
 
     if (scanning_thread_ != nullptr) {
         chThdWait(scanning_thread_);
@@ -617,12 +631,12 @@ const char* DroneScanner::scanning_mode_name() const {
 // LUT-based dispatch: SCAN_FUNCTIONS array provides O(1) dispatch to scan method
 void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     // Guard clause: Early return if not scanning
-    bool is_scanning = scanning_active_;
+    bool is_scanning = scanning_active_.load();
     if (!is_scanning) return;
 
     // Stage 4: Check if database needs reload due to observer notification
-    if (database_needs_reload_) {
-        database_needs_reload_ = false;
+    if (database_needs_reload_.load()) {
+        database_needs_reload_.store(false);
         load_frequency_database();
     }
 
@@ -669,7 +683,7 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
         scan_cycles_++;
     }
 
-    is_scanning = scanning_active_;
+    is_scanning = scanning_active_.load();
     if (is_scanning) {
         chThdSleepMilliseconds(adaptive_interval);
     }
@@ -743,7 +757,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         const auto& entry = entries_to_scan[i];
 
         // Guard clause: check scanning flag
-        bool is_scanning = scanning_active_;
+        bool is_scanning = scanning_active_.load();
         if (!is_scanning) return;
 
         Frequency target_freq_hz = entry.frequency_a;
@@ -756,7 +770,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
         // Wait for PLL stabilization
         for (int w = 0; w < PLL_STABILIZATION_ITERATIONS; w++) {
-            is_scanning = scanning_active_;
+            is_scanning = scanning_active_.load();
             if (!is_scanning) return;
             chThdSleepMilliseconds(PLL_STABILIZATION_DELAY_MS);
         }
@@ -1199,7 +1213,8 @@ void DroneScanner::process_fhss_detection(const freqman_entry& entry, int32_t rs
 
             // Log detection asynchronously if needed
             if (should_log) {
-                detection_logger_.log_detection_async(log_entry_to_write);
+                // TODO: detection_logger_.log_detection_async(log_entry_to_write);
+                // DroneDetectionLogger class not implemented
             }
         }
     }
@@ -2146,7 +2161,7 @@ DroneScanner::ScannerStateSnapshot DroneScanner::get_state_snapshot() const {
     snapshot.approaching_count = approaching_count_;
     snapshot.static_count = static_count_;
     snapshot.receding_count = receding_count_;
-    snapshot.scanning_active = scanning_active_;
+    snapshot.scanning_active = scanning_active_.load();
     return snapshot;
 }
 
@@ -2212,7 +2227,8 @@ uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
     return detection_ring_buffer_.get_detection_count(freq_hash);
 }
 
-// DroneDetectionLogger implementations
+// DroneDetectionLogger implementations - DISABLED (class not defined)
+#if 0
 DroneDetectionLogger::DroneDetectionLogger()
     : worker_thread_(nullptr),
       mutex_(),
@@ -2563,23 +2579,26 @@ bool DroneDetectionLogger::ensure_csv_header() {
 const char* DroneDetectionLogger::generate_log_filename() const {
     return "EDA_LOG.CSV";
 }
+#endif
 
 // Hardware Controller Implementation
 
 DroneHardwareController::DroneHardwareController(SpectrumMode mode)
     : last_spectrum_db_(),
       spectrum_mutex_(),
+      spectrum_updated_(),
       spectrum_mode_(mode),
       center_frequency_(2400000000ULL),
       bandwidth_hz_(24000000),
       radio_state_(),
       spectrum_fifo_(nullptr),
       spectrum_streaming_active_(false),
-      rssi_updated_(false),
+      rssi_updated_(),
       last_valid_rssi_(-120)
 {
     chMtxInit(&spectrum_mutex_);
-    spectrum_updated_ = false;
+    spectrum_updated_.store(false);
+    rssi_updated_.store(false);
 }
 
 DroneHardwareController::~DroneHardwareController() {
@@ -2753,15 +2772,15 @@ void DroneHardwareController::handle_channel_spectrum_config(const ChannelSpectr
 
 void DroneHardwareController::handle_channel_statistics(const ChannelStatistics& statistics) {
     last_valid_rssi_ = statistics.max_db;
-    rssi_updated_ = true;
+    rssi_updated_.store(true);
 }
 
 void DroneHardwareController::clear_rssi_flag() {
-    rssi_updated_ = false;
+    rssi_updated_.store(false);
 }
 
 bool DroneHardwareController::is_rssi_fresh() const {
-    return rssi_updated_;
+    return rssi_updated_.load();
 }
 
 void DroneHardwareController::process_channel_spectrum_data(const ChannelSpectrum& spectrum) {
@@ -3387,7 +3406,7 @@ void DroneDisplayController::deallocate_buffers() {
 //   - No scanner calls during rendering
 //
 // Thread Safety: Uses snapshot pattern to avoid holding mutex during render
-// Memory: Uses static thread_local buffers to avoid stack allocation
+// Memory: Uses class member buffers to avoid stack allocation (FIX #2)
 void DroneDisplayController::update_detection_display(const DroneScanner& scanner) {
     // DIAMOND FIX #HIGH #4: Acquire mutex for UI update protection
     // Prevents race conditions when multiple threads call update methods concurrently
@@ -3539,10 +3558,10 @@ void DroneDisplayController::update_display_data_snapshot(const dsp::DisplayData
     // Update scanning status
     if (snapshot.is_scanning) {
         if (snapshot.current_freq > 0) {
-            // Use static thread-local buffer instead of stack allocation (heap-free)
-            static thread_local char freq_buf[16]{};
-            FrequencyFormatter::to_string_short_freq_buffer(freq_buf, sizeof(freq_buf), snapshot.current_freq);
-            big_display_.set(freq_buf);
+            // DIAMOND FIX #HIGH #4: Use class member buffer instead of thread_local
+            // Prevents initialization order issues and saves stack memory
+            FrequencyFormatter::to_string_short_freq_buffer(ui_freq_buffer_, sizeof(ui_freq_buffer_), snapshot.current_freq);
+            big_display_.set(ui_freq_buffer_);
         } else {
             big_display_.set("2400.0MHz");
         }
@@ -3560,16 +3579,15 @@ void DroneDisplayController::update_display_data_snapshot(const dsp::DisplayData
 
     // Update threat summary
     if (snapshot.has_detections) {
-        // Use static thread-local buffer instead of stack allocation (heap-free)
-        static thread_local char summary_buffer[48]{};
+        // DIAMOND FIX #HIGH #4: Use class member buffer instead of thread_local
         const char* threat_name = UnifiedStringLookup::threat_name(static_cast<uint8_t>(snapshot.max_threat));
         // Use StatusFormatter
-        StatusFormatter::format_to(summary_buffer, "THREAT: %s | <%lu ~%lu >%lu",
+        StatusFormatter::format_to(ui_summary_buffer_, "THREAT: %s | <%lu ~%lu >%lu",
                                   threat_name,
                                   static_cast<unsigned long>(snapshot.approaching_count),
                                   static_cast<unsigned long>(snapshot.static_count),
                                   static_cast<unsigned long>(snapshot.receding_count));
-        text_threat_summary_.set(summary_buffer);
+        text_threat_summary_.set(ui_summary_buffer_);
         text_threat_summary_.set_style(&UIStyles::RED_STYLE);
     } else {
         text_threat_summary_.set("THREAT: NONE | All clear");
@@ -3577,35 +3595,33 @@ void DroneDisplayController::update_display_data_snapshot(const dsp::DisplayData
     }
 
     // Update status info
-    // Use static thread-local buffer instead of stack allocation (heap-free)
-    static thread_local char status_buffer[48]{};
+    // DIAMOND FIX #HIGH #4: Use class member buffer instead of thread_local
     if (snapshot.is_scanning) {
         // Use const char* instead of std::string (saves RAM)
         const char* mode_str = snapshot.is_real_mode ? "REAL" : "DEMO";
-        StatusFormatter::format_to(status_buffer, "%s - Detections: %lu",
+        StatusFormatter::format_to(ui_status_buffer_, "%s - Detections: %lu",
                                   mode_str, static_cast<unsigned long>(snapshot.total_detections));
     } else {
-        StatusFormatter::format_to(status_buffer, "Ready - Enhanced Drone Analyzer");
+        StatusFormatter::format_to(ui_status_buffer_, "Ready - Enhanced Drone Analyzer");
     }
-    text_status_info_.set(status_buffer);
+    text_status_info_.set(ui_status_buffer_);
 
     // Update scanner stats
-    // Use static thread-local buffer instead of stack allocation (heap-free)
-    static thread_local char stats_buffer[48]{};
+    // DIAMOND FIX #HIGH #4: Use class member buffer instead of thread_local
     if (snapshot.is_scanning && snapshot.total_freqs > 0) {
         size_t current_idx = 0;
         // Use StatusFormatter
-        StatusFormatter::format_to(stats_buffer, "Freq: %lu/%lu | Cycle: %lu",
+        StatusFormatter::format_to(ui_stats_buffer_, "Freq: %lu/%lu | Cycle: %lu",
                                   static_cast<unsigned long>(current_idx + 1),
                                   static_cast<unsigned long>(snapshot.total_freqs),
                                   static_cast<unsigned long>(snapshot.scan_cycles));
     } else if (snapshot.total_freqs > 0) {
-        StatusFormatter::format_to(stats_buffer, "Loaded: %lu frequencies",
+        StatusFormatter::format_to(ui_stats_buffer_, "Loaded: %lu frequencies",
                                   static_cast<unsigned long>(snapshot.total_freqs));
     } else {
-        StatusFormatter::format_to(stats_buffer, "No database loaded");
+        StatusFormatter::format_to(ui_stats_buffer_, "No database loaded");
     }
-    text_scanner_stats_.set(stats_buffer);
+    text_scanner_stats_.set(ui_stats_buffer_);
 
     // Update big display style
     big_display_.set_style(&BIG_DISPLAY_STYLES[snapshot.color_idx]);
@@ -3837,13 +3853,13 @@ void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& s
 
     // Call DSP layer function to process spectrum data
     // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
-    pixel_index = SpectrumProcessor::process_mini_spectrum(
+    pixel_index = dsp::SpectrumProcessor::process_mini_spectrum(
         spectrum,
         spectrum_power_levels_storage_,
         bins_hz_size,
-        BinSize(each_bin_size),
+        dsp::BinSize(each_bin_size),
         marker_pixel_step,
-        MinColorPower(min_color_power)
+        dsp::MinColorPower(min_color_power)
     );
 }
 
@@ -4444,21 +4460,21 @@ void EnhancedDroneSpectrumAnalyzerView::render_initialization_error(Painter& pai
     
     // Error header
     painter.draw_string(
-        {UIConstants::ERROR_MSG_X_POS, UIConstants::ERROR_MSG_Y_POS_1},
+        {ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_Y_POS_1},
         Style{font::fixed_8x16, Color::red(), Color::black()},
         "INIT ERROR"
     );
-    
+
     // Error message
     painter.draw_string(
-        {UIConstants::ERROR_MSG_X_POS, UIConstants::ERROR_MSG_Y_POS_2},
+        {ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_Y_POS_2},
         Style{font::fixed_8x16, Color::white(), Color::black()},
         ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]
     );
-    
+
     // Instructions
     painter.draw_string(
-        {UIConstants::ERROR_MSG_X_POS, UIConstants::ERROR_MSG_Y_POS_3},
+        {ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_Y_POS_3},
         Style{font::fixed_8x16, Color::yellow(), Color::black()},
         "Press BACK to exit"
     );
@@ -4480,14 +4496,14 @@ void EnhancedDroneSpectrumAnalyzerView::render_loading_progress(Painter& painter
     
     // Loading text
     painter.draw_string(
-        {UIConstants::LOADING_MSG_X_POS, UIConstants::LOADING_MSG_Y_POS_1},
+        {ui::apps::enhanced_drone_analyzer::UIConstants::LOADING_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::LOADING_MSG_Y_POS_1},
         Style{font::fixed_8x16, Color::white(), Color::black()},
         "Loading..."
     );
     
     // Status message
     painter.draw_string(
-        {UIConstants::LOADING_MSG_X_POS, UIConstants::LOADING_MSG_Y_POS_2},
+        {ui::apps::enhanced_drone_analyzer::UIConstants::LOADING_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::LOADING_MSG_Y_POS_2},
         Style{font::fixed_8x16, Color::green(), Color::black()},
         INIT_STATUS_MESSAGES[phase_idx]
     );
@@ -4500,14 +4516,14 @@ void EnhancedDroneSpectrumAnalyzerView::render_loading_progress(Painter& painter
     
     // Progress bar background
     painter.fill_rectangle(
-        {UIConstants::PROGRESS_BAR_X_POS, UIConstants::PROGRESS_BAR_Y_POS,
-         UIConstants::PROGRESS_BAR_WIDTH, UIConstants::PROGRESS_BAR_HEIGHT},
-        Color(UIConstants::PROGRESS_BAR_BG_COLOR));
+        {ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_Y_POS,
+         ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_WIDTH, ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_HEIGHT},
+         Color(ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_BG_COLOR));
     // Filled portion
     painter.fill_rectangle(
-        {UIConstants::PROGRESS_BAR_X_POS, UIConstants::PROGRESS_BAR_Y_POS,
-         progress, UIConstants::PROGRESS_BAR_HEIGHT},
-        Color(UIConstants::PROGRESS_BAR_FILL_COLOR));
+        {ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_Y_POS,
+         progress, ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_HEIGHT},
+         Color(ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_FILL_COLOR));
 }
 
 void EnhancedDroneSpectrumAnalyzerView::render_normal_display(Painter& painter) noexcept {

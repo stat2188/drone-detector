@@ -64,7 +64,7 @@ public:
     // Return const char* from Flash instead of std::string
     [[nodiscard]] static const char* get_communication_status() noexcept;
 
-private:
+ private:
     static void create_backup_file(const char* filepath) noexcept;
     static void restore_from_backup(const char* filepath) noexcept;
     static void remove_backup_file(const char* filepath) noexcept;
@@ -73,6 +73,19 @@ private:
     // Return const char* from Flash instead of std::string
     static const char* spectrum_mode_to_string(SpectrumMode mode) noexcept;
     static const char* get_current_timestamp() noexcept;
+
+    // DIAMOND FIX #HIGH #4: Static member buffers instead of thread_local
+    // Eliminates thread_local initialization order issues on embedded systems
+    // Protected by mutex for thread safety (settings_buffer_mutex in ui_enhanced_drone_settings.cpp)
+    static constexpr size_t SETTINGS_BUFFER_SIZE = 512;
+    static constexpr size_t FILE_BUFFER_SIZE = 512;
+    static constexpr size_t TIMESTAMP_BUFFER_SIZE = 32;
+    static constexpr size_t BACKUP_BUFFER_SIZE = 512;
+
+    static char settings_buffer_[SETTINGS_BUFFER_SIZE];
+    static char file_buffer_[FILE_BUFFER_SIZE];
+    static char timestamp_buffer_[TIMESTAMP_BUFFER_SIZE];
+    static uint8_t backup_buffer_[BACKUP_BUFFER_SIZE];
 };
 
 // Translation Functions (Kept for UI)
