@@ -26,6 +26,9 @@
 #include "ui.hpp"
 #include "ui_navigation.hpp"
 
+// File manager for database selection (FileLoadView)
+#include "ui_fileman.hpp"
+
 // Project-specific headers (alphabetical order)
 #include "color_lookup_unified.hpp"
 #include "eda_constants.hpp"
@@ -872,11 +875,17 @@ void LoadingView::focus() noexcept {}
 
 // ScanningSettingsView
 ScanningSettingsView::ScanningSettingsView(NavigationView& nav) : View(), nav_(nav) {
+    // MODIFICATION: Added button_load_database_ to children list
     add_children({&field_scanning_mode_, &number_scan_interval_, &number_rssi_threshold_,
-                  &checkbox_wideband_, &text_wideband_, &button_presets_, &button_save_});
+                  &checkbox_wideband_, &text_wideband_, &button_load_database_,
+                  &button_presets_, &button_save_});
     button_save_.on_select = [this](Button&) { on_save_settings(); };
     checkbox_wideband_.on_select = [this](Checkbox&, bool) { on_wideband_enabled_changed(); };
     button_presets_.on_select = [this](Button&) { on_show_presets(); };
+
+    // MODIFICATION: Added database selection handler
+    button_load_database_.on_select = [this](Button&) { on_select_database(); };
+
     load_current_settings();
 }
 // DIAMOND FIX: Add noexcept to match header declaration
@@ -939,6 +948,48 @@ void ScanningSettingsView::on_show_presets() noexcept {
 }
 // DIAMOND OPTIMIZATION: noexcept for empty handler
 void ScanningSettingsView::on_wideband_enabled_changed() noexcept {}
+
+// MODIFICATION: New method for database file selection
+void ScanningSettingsView::on_select_database() noexcept {
+    // Launch FileLoadView with .TXT filter for frequency database files
+    auto open_view = nav_.push<FileLoadView>(".TXT");
+
+    // Set callback to handle file selection when user picks a file
+    open_view->on_changed = [this](std::filesystem::path new_file_path) {
+        // Extract filename without extension (e.g., "SCANNER.TXT" -> "SCANNER")
+        std::string filename = new_file_path.stem().string();
+
+        // Validate filename length to prevent buffer overflow in DroneAnalyzerSettings
+        if (filename.length() >= EDA::Constants::MAX_NAME_LENGTH) {
+            filename = filename.substr(0, EDA::Constants::MAX_NAME_LENGTH - 1);
+        }
+
+        // Load current settings from persistence
+        static DroneAnalyzerSettings settings;
+        if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
+            nav_.display_modal("Error", "Failed to load settings");
+            return;
+        }
+
+        // Update freqman_path with selected filename
+        snprintf(settings.freqman_path, sizeof(settings.freqman_path), "%s", filename.c_str());
+
+        // Save updated settings to persistent storage
+        if (!SettingsPersistence<DroneAnalyzerSettings>::save(settings)) {
+            nav_.display_modal("Error", "Failed to save settings");
+            return;
+        }
+
+        // Display success message with selected filename
+        char msg_buf[64];
+        snprintf(msg_buf, sizeof(msg_buf), "Database: %s", filename.c_str());
+        nav_.display_modal("Success", msg_buf);
+    };
+
+    // Start file browser in FREQMAN directory (standard Mayhem database location)
+    open_view->push_dir("/FREQMAN");
+}
+
 // DroneAnalyzerSettingsView
 DroneAnalyzerSettingsView::DroneAnalyzerSettingsView(NavigationView& nav) : View(), nav_(nav), current_settings_{} {
     add_children({&text_title_, &button_audio_settings_, &button_hardware_settings_, &button_scanning_settings_,

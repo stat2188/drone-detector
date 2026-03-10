@@ -549,15 +549,20 @@ public:
         return title_str;
     }
 
-private:
+ private:
     NavigationView& nav_;
     OptionsField field_scanning_mode_{{8, 8}, 15, { {"Database Scan", 0}, {"Wideband Monitor", 1}, {"Hybrid Discovery", 2} }};
     NumberField number_scan_interval_{{8, 32}, 5, {100, 10000}, 100, ' ', false};
     NumberField number_rssi_threshold_{{8, 64}, 4, {-120, 0}, 5, ' ', false};
     Checkbox checkbox_wideband_{{8, 96}, 20, "Enable Wideband Scanning", false};
     Text text_wideband_{{28, 96, 200, 16}, "Enable Wideband Scanning"};
-    Button button_presets_{{8, 128, 120, 32}, "Frequency Presets", false};
-    Button button_save_{{screen_width - 120, screen_height - 32, 120, 32}, "Save Settings", false};
+
+    // MODIFICATION: Added database selection button for runtime file changing
+    Button button_load_database_{{8, 128, 224, 32}, "Select Database", false};
+
+    // Adjusted Y positions to accommodate new button
+    Button button_presets_{{8, 168, 120, 32}, "Frequency Presets", false};
+    Button button_save_{{8, 208, 120, 32}, "Save Settings", false};
 
     // DIAMOND OPTIMIZATION: noexcept for all methods
     void load_current_settings() noexcept;
@@ -565,6 +570,9 @@ private:
     void on_save_settings() noexcept;
     void on_show_presets() noexcept;
     void on_wideband_enabled_changed() noexcept;
+
+    // MODIFICATION: Added database selection handler
+    void on_select_database() noexcept;
 };
 
 // DIAMOND OPTIMIZATION: Main settings view with zero heap allocation

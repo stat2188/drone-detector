@@ -108,7 +108,9 @@ struct DroneAnalyzerSettings {
     char current_profile_name[EDA::Constants::MAX_NAME_LENGTH] = "Default";
 
     // System settings
-    char freqman_path[EDA::Constants::MAX_NAME_LENGTH] = "DRONES";
+    // MODIFICATION: Changed default from "DRONES" to "SCANNER"
+    // User should run "Load Defaults" then "Save Settings" to apply change
+    char freqman_path[EDA::Constants::MAX_NAME_LENGTH] = "SCANNER";
     char settings_file_path[EDA::Constants::MAX_PATH_LENGTH] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     uint32_t settings_version = 2;
 

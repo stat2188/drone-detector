@@ -11,7 +11,6 @@
 // (none needed)
 
 // Project-specific headers (alphabetical order)
-#include "ui_enhanced_drone_analyzer.hpp"
 #include "ui_navigation.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

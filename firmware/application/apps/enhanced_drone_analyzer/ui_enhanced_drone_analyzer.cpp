@@ -1152,6 +1152,10 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         return;
     }
 
+    // MODIFICATION: Removed drone band filtering to allow detection of all frequencies
+    // Previously blocked non-drone signals like PMR radios (446 MHz), bleepers, etc.
+    // Now allows any frequency from database to trigger detection if RSSI threshold is met
+    /*
     // Guard clause: Drone band filtering (433MHz - 5.8GHz)
     if (!EDA::Validation::is_433mhz_band(entry.frequency_a) &&
         !EDA::Validation::is_2_4ghz_band(entry.frequency_a) &&
@@ -1159,6 +1163,7 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         !EDA::Validation::is_military_band(entry.frequency_a)) {
         return;
     }
+    */
 
     // Determine parameters (locally)
     DroneType detected_type = DroneType::UNKNOWN;
@@ -1174,6 +1179,94 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
                 detected_type = DroneType::MAVIC;
                 threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
                 break;
+            }
+        }
+    }
+
+    // MODIFICATION: Simple frequency legend for known drone bands
+    // Applied only if type is still UNKNOWN after database search
+    // This provides basic classification for common drone frequency ranges
+    if (detected_type == DroneType::UNKNOWN) {
+        Frequency freq = entry.frequency_a;
+
+        // 433 MHz ISM band: Long Range Systems (LRS/ELRS)
+        // Used by DIY and military drones for control link
+        if (freq >= 433000000 && freq <= 435000000) {
+            detected_type = DroneType::MILITARY_DRONE;
+            threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
+        }
+        // 868 MHz ISM band: Crossfire/ELRS EU
+        // Used by professional drones and FPV racing
+        else if (freq >= 860000000 && freq <= 870000000) {
+            detected_type = DroneType::MILITARY_DRONE;
+            threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
+        }
+        // 915 MHz ISM band: Crossfire/ELRS US
+        // Used by long-range control systems
+        else if (freq >= 900000000 && freq <= 930000000) {
+            detected_type = DroneType::MILITARY_DRONE;
+            threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
+        }
+        // 2.4 GHz ISM band: DJI drones, WiFi, other consumer drones
+        // Most common drone frequency range for video and control
+        else if (freq >= 2400000000 && freq <= 2500000000) {
+            detected_type = DroneType::MAVIC;
+            threat_level = std::max(threat_level, ThreatLevel::MEDIUM);
+        }
+        // 5.8 GHz ISM band: FPV video transmission
+        // Used by racing drones and FPV systems
+        else if (freq >= 5700000000 && freq <= 5900000000) {
+            detected_type = DroneType::FPV_RACING;
+            threat_level = std::max(threat_level, ThreatLevel::LOW);
+        }
+    }
+
+    // MODIFICATION: Adjust threat level based on movement trend
+    // If drone is approaching, increase threat level. If receding, decrease it.
+    // This provides dynamic threat assessment based on proximity changes.
+    {
+        MutexLock lock(data_mutex);
+
+        // Check if this frequency is already being tracked
+        bool drone_found = false;
+        size_t drone_index = 0;
+        for (size_t i = 0; i < tracked_count_; ++i) {
+            if (tracked_drones()[i].frequency == entry.frequency_a && tracked_drones()[i].update_count >= 3) {
+                drone_found = true;
+                drone_index = i;
+                break;
+            }
+        }
+
+        if (drone_found) {
+            // Get movement trend from tracked drone history
+            MovementTrend trend = tracked_drones()[drone_index].get_trend();
+
+            // Adjust threat level based on trend
+            switch (trend) {
+                case MovementTrend::APPROACHING:
+                    // Drone is getting closer - raise threat level
+                    if (threat_level == ThreatLevel::NONE) {
+                        threat_level = ThreatLevel::LOW;
+                    } else if (threat_level < ThreatLevel::CRITICAL) {
+                        // Increase by one level (e.g., MEDIUM -> HIGH)
+                        threat_level = static_cast<ThreatLevel>(static_cast<uint8_t>(threat_level) + 1);
+                    }
+                    break;
+
+                case MovementTrend::RECEDING:
+                    // Drone is moving away - lower threat level
+                    if (threat_level > ThreatLevel::NONE) {
+                        // Decrease by one level (e.g., HIGH -> MEDIUM)
+                        threat_level = static_cast<ThreatLevel>(static_cast<uint8_t>(threat_level) - 1);
+                    }
+                    break;
+
+                case MovementTrend::STATIC:
+                case MovementTrend::UNKNOWN:
+                default:
+                    // No change to threat level
+                    break;
             }
         }
     }
