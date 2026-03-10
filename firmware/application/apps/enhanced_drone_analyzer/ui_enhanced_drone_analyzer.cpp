@@ -142,6 +142,65 @@ Mutex& get_sd_card_mutex() noexcept {
     return mutex;
 }
 
+// Stack safety guard for embedded systems
+// DIAMOND FIX #C4 (REVISED): Stack canary on stack frame (not thread_local)
+namespace StackSafety {
+    // Stack canary magic value (stored in Flash)
+    constexpr uint32_t STACK_CANARY_MAGIC = 0xDEADBEEF;
+
+    // Stack canary placed on stack (NOT thread_local)
+    class StackCanary {
+        uint32_t canary_value_;
+
+    public:
+        // Initialize canary on construction (placed on stack)
+        StackCanary() noexcept : canary_value_(STACK_CANARY_MAGIC) {}
+
+        // Check if canary was corrupted
+        bool is_valid() const noexcept {
+            return canary_value_ == STACK_CANARY_MAGIC;
+        }
+
+        // Get canary value (for debugging)
+        uint32_t get_value() const noexcept {
+            return canary_value_;
+        }
+    };
+
+    // Stack guard with RAII
+    class StackGuard {
+        StackCanary canary_;
+        const char* function_name_;
+
+    public:
+        explicit StackGuard(const char* name) noexcept
+            : canary_(), function_name_(name) {
+            // Canary initialized on stack
+        }
+
+        ~StackGuard() noexcept {
+            if (!canary_.is_valid()) {
+                // Stack overflow detected
+                // Use lightweight handler (no logging to avoid recursion)
+                handle_stack_overflow();
+            }
+        }
+
+        bool is_stack_safe() const noexcept {
+            return canary_.is_valid();
+        }
+
+        StackGuard(const StackGuard&) = delete;
+        StackGuard& operator=(const StackGuard&) = delete;
+
+    private:
+        static void handle_stack_overflow() noexcept {
+            // Lightweight handler - no heap allocation, no logging
+            // Stack overflow detected - canary corrupted
+        }
+    };
+}
+
 // ============================================================================
 // PLL Constants for wideband scan cycle
 // ============================================================================
@@ -297,12 +356,12 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       max_detected_threat_(ThreatLevel::NONE),
       last_valid_rssi_(-120),
       wideband_scan_data_(),
-      detection_ring_buffer_(),
-      spectrum_data_(),
-      histogram_buffer_(),
-      database_needs_reload_(),
-      fhss_detector_(),
-      settings_(std::move(settings))
+    detection_ring_buffer_(),
+    spectrum_data_(),
+    database_needs_reload_(),
+    histogram_buffer_(),
+    fhss_detector_(),
+    settings_(std::move(settings))
 {
     scanning_active_.store(false);
     freq_db_loaded_.store(false);
@@ -644,9 +703,17 @@ void DroneScanner::perform_scan_cycle(DroneHardwareController& hardware) {
     uint32_t base_interval = DEFAULT_SCAN_INTERVAL_MS;
     uint32_t adaptive_interval = base_interval;
 
-    size_t current_detections = get_total_detections();
-    ThreatLevel max_threat = get_max_detected_threat();
-    size_t tracked_count = tracked_count_;
+    // FIX: Data race protection - read all scanner state variables under single mutex lock
+    // This prevents race conditions where tracked_count_ changes between reads
+    size_t current_detections;
+    ThreatLevel max_threat;
+    size_t tracked_count;
+    {
+        MutexLock lock(data_mutex);
+        current_detections = total_detections_;
+        max_threat = max_detected_threat_;
+        tracked_count = tracked_count_;
+    }
 
     if (max_threat >= ThreatLevel::CRITICAL) {
         adaptive_interval = FAST_SCAN_INTERVAL_MS;
@@ -727,8 +794,8 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     const size_t batch_size = std::min(static_cast<size_t>(EDA::Constants::MAX_SCAN_BATCH_SIZE), total_entries);
 
-    // Use class member variable instead of stack allocation (heap-free)
-    auto& entries_to_scan = entries_to_scan_;
+    // Use class member variable directly (heap-free)
+    // All accesses to entries_to_scan_ must be under data_mutex protection
     size_t entries_count = 0;
 
     {
@@ -738,8 +805,8 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
             if (db_entry_count > 0) {
                 for (size_t i = 0; i < batch_size; ++i) {
                     size_t idx = (current_db_index_ + i) % db_entry_count;
-                    if (idx < db_entry_count && entries_count < entries_to_scan.size()) {
-                        entries_to_scan[entries_count++] = (*freq_db_ptr_)[idx];
+                    if (idx < db_entry_count && entries_count < entries_to_scan_.size()) {
+                        entries_to_scan_[entries_count++] = (*freq_db_ptr_)[idx];
                     }
                 }
                 current_db_index_ = (current_db_index_ + batch_size) % db_entry_count;
@@ -754,7 +821,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
     const Frequency MAX_VALID_FREQ = EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
 
     for (size_t i = 0; i < entries_count; ++i) {
-        const auto& entry = entries_to_scan[i];
+        const auto& entry = entries_to_scan_[i];
 
         // Guard clause: check scanning flag
         bool is_scanning = scanning_active_.load();
@@ -2375,65 +2442,6 @@ void DroneDetectionLogger::start_worker() {
     }
 }
 
-// Stack safety guard for embedded systems
-// DIAMOND FIX #C4 (REVISED): Stack canary on stack frame (not thread_local)
-namespace StackSafety {
-    // Stack canary magic value (stored in Flash)
-    constexpr uint32_t STACK_CANARY_MAGIC = 0xDEADBEEF;
-
-    // Stack canary placed on stack (NOT thread_local)
-    class StackCanary {
-        uint32_t canary_value_;
-        
-    public:
-        // Initialize canary on construction (placed on stack)
-        StackCanary() noexcept : canary_value_(STACK_CANARY_MAGIC) {}
-        
-        // Check if canary was corrupted
-        bool is_valid() const noexcept {
-            return canary_value_ == STACK_CANARY_MAGIC;
-        }
-        
-        // Get canary value (for debugging)
-        uint32_t get_value() const noexcept {
-            return canary_value_;
-        }
-    };
-
-    // Stack guard with RAII
-    class StackGuard {
-        StackCanary canary_;
-        const char* function_name_;
-        
-    public:
-        explicit StackGuard(const char* name) noexcept 
-            : canary_(), function_name_(name) {
-            // Canary initialized on stack
-        }
-        
-        ~StackGuard() noexcept {
-            if (!canary_.is_valid()) {
-                // Stack overflow detected
-                // Use lightweight handler (no logging to avoid recursion)
-                handle_stack_overflow();
-            }
-        }
-        
-        bool is_stack_safe() const noexcept {
-            return canary_.is_valid();
-        }
-        
-        StackGuard(const StackGuard&) = delete;
-        StackGuard& operator=(const StackGuard&) = delete;
-
-    private:
-        static void handle_stack_overflow() noexcept {
-            // Lightweight handler - no heap allocation, no logging
-            // Stack overflow detected - canary corrupted
-        }
-    };
-}
-
 void DroneDetectionLogger::stop_worker() {
     if (!worker_thread_) return;
 
@@ -4025,7 +4033,7 @@ void DroneDisplayController::highlight_threat_zones_in_spectrum(const std::array
     for (const auto& drone : drones) {
         if (drone.frequency > 0) {
             size_t bin_x = frequency_to_spectrum_bin(drone.frequency);
-            if (bin_x < MINI_SPECTRUM_WIDTH && threat_bins_count_ < EDA::Constants::MAX_DISPLAYED_DRONES) {
+            if (bin_x < EDA::Constants::MINI_SPECTRUM_WIDTH && threat_bins_count_ < EDA::Constants::MAX_DISPLAYED_DRONES) {
                 threat_bins_[threat_bins_count_].bin = bin_x;
                 threat_bins_[threat_bins_count_].threat = drone.threat;
                 threat_bins_count_++;
@@ -4062,11 +4070,11 @@ size_t DroneDisplayController::frequency_to_spectrum_bin(Frequency freq_hz) cons
     const Frequency MAX_FREQ = spectrum_config_.max_freq;
     const Frequency FREQ_RANGE = MAX_FREQ - MIN_FREQ;
     if (freq_hz < MIN_FREQ || freq_hz > MAX_FREQ || FREQ_RANGE == 0) {
-        return MINI_SPECTRUM_WIDTH;
+        return EDA::Constants::MINI_SPECTRUM_WIDTH;
     }
     int64_t relative_freq = freq_hz - MIN_FREQ;
-    size_t bin = static_cast<size_t>((relative_freq * MINI_SPECTRUM_WIDTH) / FREQ_RANGE);
-    return std::min(bin, static_cast<size_t>(MINI_SPECTRUM_WIDTH - 1));
+    size_t bin = static_cast<size_t>((relative_freq * EDA::Constants::MINI_SPECTRUM_WIDTH) / FREQ_RANGE);
+    return std::min(bin, static_cast<size_t>(EDA::Constants::MINI_SPECTRUM_WIDTH - 1));
 }
 
 // Pass settings by value to scanner constructor (eliminates lifetime dependency)
@@ -5727,7 +5735,7 @@ void EnhancedDroneSpectrumAnalyzerView::check_stack_usage([[maybe_unused]] const
     
     // Conservatively report max_scan_bytes if all fill pattern (avoids large scans)
     
-    if (free_stack < MIN_STACK_FREE_THRESHOLD) {
+    if (free_stack < MagicNumberConstants::MIN_STACK_FREE_THRESHOLD) {
         // Track low stack condition for monitoring
     }
 }
