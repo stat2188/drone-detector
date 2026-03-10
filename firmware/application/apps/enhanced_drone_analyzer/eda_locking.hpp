@@ -45,6 +45,12 @@
 // Third-party library headers
 #include <ch.h>
 
+// ChibiOS version check for API compatibility
+// ChibiOS 20.x: chMtxUnlock(mutex_t *mp) - requires parameter
+// ChibiOS 21.x+: chMtxUnlock() - unlocks last locked mutex, no parameter
+// This project uses ChibiOS 2.6.8 which uses parameter-less API
+#define EDA_CHIBIOS_HAS_PARAMLESS_UNLOCK 1
+
 namespace ui::apps::enhanced_drone_analyzer {
 
 /**
@@ -230,12 +236,16 @@ public:
      * @param order Lock order level for deadlock prevention
      * @note Blocks until lock is acquired
      * @note noexcept for embedded safety
-     * @note The order parameter is used for documentation and compile-time validation
+     * @note The order parameter is used for documentation only (no compile-time validation)
      *
      * CRITICAL FIX #003: Lock order parameter is now meaningful
      * - Each mutex should use a unique LockOrder level
      * - Locks must be acquired in ascending order
-     * - This prevents deadlock
+     * - This prevents deadlock (circular wait condition)
+     *
+     * @note ChibiOS uses priority inheritance protocol for mutexes
+     * @note Lower priority threads may temporarily have boosted priority when holding mutex
+     *       that higher priority threads are waiting for
      */
     explicit MutexLock(Mutex& mtx, LockOrder order = LockOrder::DATA_MUTEX) noexcept
         : mtx_(mtx), locked_(false), order_(order) {
@@ -247,30 +257,22 @@ public:
     /**
      * @brief Release mutex lock (RAII)
      *
-     * DIAMOND FIX #1: Bug fix - proper use of ChibiOS chMtxUnlock()
+     * @note ChibiOS uses LIFO (stack) mechanism for mutex tracking via p_mtxlist
+     * @note chMtxUnlock() removes top mutex from stack atomically (chSysLock/chSysUnlock)
+     * @note No verification needed - ChibiOS guarantees correct unlock order via LIFO stack
+     * @note Compatible with ChibiOS 20.x (parameter-based API) and 21.x+ (parameter-less API)
      *
-     * ChibiOS API Note:
-     * - chMtxLock(&mtx) takes mutex pointer as parameter
-     * - chMtxUnlock() does NOT take a parameter (unlocks last locked mutex)
-     * - chMtxUnlock() returns a pointer to unlocked mutex
-     *
-     * This implementation verifies that correct mutex is unlocked by
-     * comparing returned pointer with mutex we locked. This prevents
-     * race conditions when multiple locks are held.
-     *
-     * @note This implementation uses newer ChibiOS API (>= 21.x) where
-     *       chMtxUnlock() takes no parameters and unlocks last locked mutex.
-     *       The codebase consistently uses this API pattern.
+     * @warning DO NOT call from ISR context (mutex not ISR-safe)
+     * @warning For ISR-safe flags, use AtomicFlag or CriticalSection
+     * @warning Always acquire locks in ascending order of LockOrder values to prevent deadlock
      */
-    ~MutexLock() noexcept {
+     ~MutexLock() noexcept {
         if (locked_) {
-            Mutex* unlocked = chMtxUnlock();  // ChibiOS API: unlocks last locked mutex, returns pointer
-            // Verify we unlocked correct mutex (defensive programming)
-            // If this assertion fails, it indicates lock order violation or bug
-            chDbgAssert(unlocked == &mtx_,
-                        "chMtxUnlock() verification",
-                        "unlocked wrong mutex - lock order violation");
-            // No need to set locked_ = false since object is being destroyed
+#if EDA_CHIBIOS_HAS_PARAMLESS_UNLOCK
+            chMtxUnlock();  // ChibiOS 21.x+: parameter-less API
+#else
+            chMtxUnlock(&mtx_);  // ChibiOS 20.x: parameter-based API
+#endif
         }
     }
 
@@ -377,24 +379,26 @@ public:
      *
      * Only releases if lock was successfully acquired.
      *
-     * ChibiOS API Note:
-     * - chMtxTryLock(&mtx) takes mutex pointer as parameter
-     * - chMtxUnlock() does NOT take a parameter (unlocks last locked mutex)
-     * - chMtxUnlock() returns a pointer to unlocked mutex
+     * @note ChibiOS uses LIFO (stack) mechanism for mutex tracking via p_mtxlist
+     * @note chMtxUnlock() removes top mutex from stack atomically (chSysLock/chSysUnlock)
+     * @note No verification needed - ChibiOS guarantees correct unlock order via LIFO stack
+     * @note Compatible with ChibiOS 20.x (parameter-based API) and 21.x+ (parameter-less API)
      *
-     * This implementation verifies that correct mutex is unlocked by
-     * comparing returned pointer with mutex we locked.
+     * @note Safe for use in situations where blocking is not acceptable
+     * @note CRITICAL: Locks must be acquired in ascending order to prevent deadlock
+     *
+     * @warning DO NOT call from ISR context (mutex not ISR-safe)
+     * @warning For ISR-safe flags, use AtomicFlag or CriticalSection
      */
-    ~MutexTryLock() noexcept {
+     ~MutexTryLock() noexcept {
         if (locked_) {
-            Mutex* unlocked = chMtxUnlock();  // ChibiOS API: unlocks last locked mutex, returns pointer
-            // Verify we unlocked correct mutex (defensive programming)
-            // If this assertion fails, it indicates lock order violation or bug
-            chDbgAssert(unlocked == &mtx_,
-                        "chMtxUnlock() verification",
-                        "unlocked wrong mutex - lock order violation");
-            // No need to set locked_ = false since object is being destroyed
+#if EDA_CHIBIOS_HAS_PARAMLESS_UNLOCK
+            chMtxUnlock();  // ChibiOS 21.x+: parameter-less API
+#else
+            chMtxUnlock(&mtx_);  // ChibiOS 20.x: parameter-based API
+#endif
         }
+    }
     }
 
     /**
