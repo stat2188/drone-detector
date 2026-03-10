@@ -379,6 +379,12 @@ constexpr size_t MAX_TRACKED_DRONES = 4;
 constexpr size_t MAX_DISPLAYED_DRONES = 3;
 constexpr size_t DETECTION_TABLE_SIZE = 256;
 
+// MODIFICATION: Added FHSS (Frequency Hopping) detection constants
+constexpr uint32_t FHSS_HOP_THRESHOLD_HZ = 1'000'000;        // 1 MHz minimum hop distance
+constexpr uint32_t FHSS_HOP_TIME_WINDOW_MS = 100;            // 100ms time window for hop detection
+constexpr uint8_t FHSS_MIN_HOP_COUNT = 3;                   // Minimum 3 hops for FHSS detection
+constexpr uint32_t FHSS_TRACKING_WINDOW_MS = 1000;           // 1 second tracking window
+
 constexpr uint32_t MIN_AUDIO_FREQ = 200;
 constexpr uint32_t MAX_AUDIO_FREQ = 20000;
 constexpr uint32_t MIN_AUDIO_DURATION = 50;

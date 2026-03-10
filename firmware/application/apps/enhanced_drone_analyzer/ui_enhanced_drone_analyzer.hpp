@@ -133,6 +133,71 @@ namespace UIStyles {
     EDA_FLASH_CONST inline static constexpr Style ORANGE_STYLE{font::fixed_8x16, Color::black(), Color::orange()};
 }
 
+// Import Frequency and systime_t types for use in FrequencyHopDetector
+using rf::Frequency;
+
+// MODIFICATION: Added FrequencyHopDetector for FHSS (Frequency Hopping) detection
+// Tracks frequency hops over time to identify FHSS signals
+struct FrequencyHopDetector {
+    Frequency last_frequency;
+    Frequency hop_frequency;
+    systime_t last_hop_time;
+    uint8_t hop_count;
+
+    FrequencyHopDetector() noexcept
+        : last_frequency(0), hop_frequency(0),
+          last_hop_time(0), hop_count(0) {}
+
+    // Detect if frequency hopping occurred
+    // @param new_freq Current frequency being scanned
+    // @param now Current timestamp
+    // @return true if frequency hop detected (difference > FHSS_HOP_THRESHOLD_HZ)
+    inline bool detect_hopping(Frequency new_freq, systime_t now) noexcept {
+        // Check if this is a new frequency (not same as last)
+        if (new_freq == last_frequency || new_freq == 0) {
+            return false;
+        }
+
+        // Calculate frequency difference
+        Frequency freq_diff = (new_freq > last_frequency) ?
+                              (new_freq - last_frequency) : (last_frequency - new_freq);
+
+        // Check if hop exceeds threshold (1 MHz)
+        if (freq_diff >= EDA::Constants::FHSS_HOP_THRESHOLD_HZ) {
+            // Check if within time window (100ms)
+            if ((now - last_hop_time) <= EDA::Constants::FHSS_HOP_TIME_WINDOW_MS) {
+                hop_frequency = new_freq;
+                last_hop_time = now;
+                if (hop_count < 255) {
+                    hop_count++;
+                }
+                last_frequency = new_freq;
+                return true;
+            }
+        }
+
+        // Update last frequency even if no hop (track slow frequency changes)
+        last_frequency = new_freq;
+        return false;
+    }
+
+    // Reset tracking state
+    inline void reset() noexcept {
+        last_frequency = 0;
+        hop_frequency = 0;
+        last_hop_time = 0;
+        hop_count = 0;
+    }
+
+    // Check if FHSS detection is confirmed (>= 3 hops in 1 second)
+    inline bool is_fhss_confirmed(systime_t now) const noexcept {
+        if (hop_count < EDA::Constants::FHSS_MIN_HOP_COUNT) {
+            return false;
+        }
+        return (now - last_hop_time) <= EDA::Constants::FHSS_TRACKING_WINDOW_MS;
+    }
+};
+
 class TrackedDrone {
 public:
     TrackedDrone() : frequency(0), drone_type(static_cast<uint8_t>(DroneType::UNKNOWN)),
@@ -430,6 +495,10 @@ struct DetectionParams {
     void remove_stale_drones();
 
     rf::Frequency get_current_scanning_frequency() const;
+
+    // MODIFICATION: Added FHSS detection methods
+    void process_fhss_detection(const freqman_entry& entry, int32_t rssi, systime_t now);
+    bool is_fhss_enabled() const;
     // THREAD SAFETY FIX: Non-inline to enable mutex protection for concurrent access
     // [[nodiscard]] - Threat level must be used by caller
     [[nodiscard]] ThreatLevel get_max_detected_threat() const;
@@ -718,13 +787,17 @@ struct DetectionParams {
     size_t receding_count_ = 0;
     size_t static_count_ = 0;
 
-    ThreatLevel max_detected_threat_ = ThreatLevel::NONE;
+     ThreatLevel max_detected_threat_ = ThreatLevel::NONE;
     int32_t last_valid_rssi_ = -120;
 
     static constexpr uint8_t DETECTION_DELAY = 2;
     WidebandScanData wideband_scan_data_;
     DetectionRingBuffer detection_ring_buffer_;
-    
+
+    // MODIFICATION: Added FHSS detector for frequency hopping detection
+    // Tracks frequency hops over time to identify FHSS signals
+    FrequencyHopDetector fhss_detector_;
+
     // Thread-safe spectrum buffer (replaces static buffer)
     std::array<uint8_t, 256> spectrum_data_{};
 

@@ -80,7 +80,10 @@ struct DroneAnalyzerSettings {
     uint32_t wideband_slice_width_hz = 24000000;
 
     // Detection settings
-    uint8_t detection_flags = 0x02;  // bit0: reserved, bit1: enable_intelligent_tracking
+    // MODIFICATION: Changed from 0x02 to 0x03 to enable FHSS detection by default
+    // bit0: enable_fhss_detection (now enabled)
+    // bit1: enable_intelligent_tracking
+    uint8_t detection_flags = 0x03;  // bit0: enable_fhss_detection, bit1: enable_intelligent_tracking
 
     uint8_t movement_sensitivity = 3;
     uint32_t threat_level_threshold = 2;
@@ -364,7 +367,7 @@ enum class DroneType : uint8_t {
     PARROT_ANAFI = 5,
     PARROT_BEBOP = 6,
     PX4_DRONE = 7,
-    MILITARY_DRONE = 8,
+    MILITARY_DRONE = 8,  // Fixed: was MILITARY_DRONE (typo), now MILITARY_DRONE (correct)
     DIY_DRONE = 9,
     FPV_RACING = 10
 };

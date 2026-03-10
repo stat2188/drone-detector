@@ -900,7 +900,7 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
                 histogram_callback_(histogram_buffer_, analysis_result.noise_floor, histogram_callback_user_data_);
             }
             
-            // 5. Process detection
+                // 5. Process detection
             if (analysis_result.is_valid && analysis_result.signature != SignalSignature::NOISE) {
                 freqman_entry detection_entry{
                     .frequency_a = static_cast<int64_t>(current_slice.center_frequency),
@@ -913,6 +913,9 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
                 DroneType drone_type = SpectralAnalyzer::get_drone_type(current_slice.center_frequency, analysis_result.signature);
 
                 process_spectral_detection(detection_entry, analysis_result, threat_level, drone_type);
+
+                // MODIFICATION: Check for FHSS (frequency hopping) on every spectral detection
+                process_fhss_detection(detection_entry, static_cast<int32_t>(analysis_result.max_val), chTimeNow());
             }
         } else {
             // Fallback to RSSI-based detection
@@ -1030,6 +1033,9 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
                 };
 
                 update_tracked_drone({detected_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(rssi), threat_level});
+
+                // MODIFICATION: Check for FHSS (frequency hopping) on wideband detection
+                process_fhss_detection(entry, rssi, chTimeNow());
             }
         } else {
             uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
@@ -1113,6 +1119,90 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
         }
     }
     // --- CRITICAL SECTION END ---
+}
+
+// MODIFICATION: Implementation of FHSS detection methods
+// Detects frequency hopping signals characteristic of military and FPV drones
+
+bool DroneScanner::is_fhss_enabled() const noexcept {
+    // Check FHSS detection flag from settings (bit0)
+    return BitfieldAccess::get_bit<0>(settings_.detection_flags);
+}
+
+void DroneScanner::process_fhss_detection(const freqman_entry& entry, int32_t rssi, systime_t now) noexcept {
+    // Guard clause: Skip if FHSS detection is disabled
+    if (!is_fhss_enabled()) {
+        return;
+    }
+
+    // Guard clause: Validate RSSI and frequency
+    if (!EDA::Validation::validate_rssi(rssi) ||
+        !EDA::Validation::validate_frequency(entry.frequency_a)) {
+        return;
+    }
+
+    // Detect frequency hopping
+    if (fhss_detector_.detect_hopping(static_cast<Frequency>(entry.frequency_a), now)) {
+        // Frequency hop detected within time window
+        if (fhss_detector_.is_fhss_confirmed(now)) {
+            // FHSS signal confirmed (>= 3 hops in 1 second)
+            // Generate FHSS detection with high threat level
+            bool should_log = false;
+            DetectionLogEntry log_entry_to_write;
+
+            {
+                MutexLock lock(data_mutex);
+
+                // Increment total detections
+                total_detections_++;
+
+                // Calculate frequency hash
+                size_t freq_hash = static_cast<size_t>(entry.frequency_a / EDA::Constants::FREQ_HASH_DIVISOR) &
+                                     EDA::Constants::FREQ_HASH_MASK;
+
+                // Use maximum of current rssi and threshold for detection
+                int32_t effective_threshold = WIDEBAND_RSSI_THRESHOLD_DB;
+                int32_t effective_rssi = std::max(rssi, effective_threshold);
+
+                // Increment detection count
+                uint8_t current_count = detection_ring_buffer_.get_detection_count(freq_hash);
+                if (current_count < 255) {
+                    current_count++;
+                }
+
+                detection_ring_buffer_.update_detection({freq_hash, current_count, effective_rssi});
+
+                if (current_count >= MIN_DETECTION_COUNT) {
+                    should_log = true;
+
+                    // FHSS signals are high threat (military drones)
+                    log_entry_to_write = {
+                        chTimeNow(),
+                        static_cast<uint64_t>(entry.frequency_a),
+                        effective_rssi,
+                        ThreatLevel::HIGH,  // FHSS = HIGH threat by default
+                        DroneType::MILITARY_DRONE,  // FHSS typically military
+                        current_count,
+                        95,  // High confidence for FHSS (95%)
+                        0,  // width_bins (not applicable)
+                        0,  // signal_width_hz (not applicable)
+                        0   // snr (not applicable)
+                    };
+
+                    // Update tracked drone with FHSS detection
+                    update_tracked_drone({DroneType::MILITARY_DRONE,
+                                          static_cast<Frequency>(entry.frequency_a),
+                                          effective_rssi,
+                                          ThreatLevel::HIGH});
+                }
+            }
+
+            // Log detection asynchronously if needed
+            if (should_log) {
+                detection_logger_.log_detection_async(log_entry_to_write);
+            }
+        }
+    }
 }
 
 void DroneScanner::perform_hybrid_scan_cycle(DroneHardwareController& hardware) {

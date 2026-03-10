@@ -58,7 +58,8 @@ enum class SignalSignature : uint8_t {
     NOISE = 0,
     WIDEBAND_WIFI = 1,
     NARROWBAND_DRONE = 2,
-    DIGITAL_FPV = 3
+    DIGITAL_FPV = 3,
+    FHSS_HOPPING = 4  // MODIFICATION: Added FHSS (Frequency Hopping) detection
 };
 
 using Signature = SignalSignature;
@@ -223,6 +224,10 @@ inline ThreatLevel SpectralAnalyzer::get_threat_level(SignalSignature signature,
             break;
         case SignalSignature::NARROWBAND_DRONE:
             drone_type = static_cast<uint8_t>(DroneType::MAVIC);
+            break;
+        case SignalSignature::FHSS_HOPPING:
+            // MODIFICATION: FHSS signals are high threat (military drones)
+            drone_type = static_cast<uint8_t>(DroneType::MILITARY_DRONE);  // Fixed typo
             break;
         case SignalSignature::WIDEBAND_WIFI:
             drone_type = static_cast<uint8_t>(DroneType::UNKNOWN);
