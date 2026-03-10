@@ -28,7 +28,6 @@
 #include <chmsg.h>
 
 // Project-specific headers (alphabetical order)
-#include "baseband_api.hpp"
 #include "chcore_v6m.h"
 #include "chheap.h"
 #include "chlists.h"
@@ -41,29 +40,18 @@
 #include "diamond_core.hpp"
 // diamond_fixes.hpp content merged into diamond_core.hpp
 #include "dsp_display_types.hpp"
-#include "dsp_spectrum_processor.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
 #include "eda_optimized_utils.hpp"
-#include "eda_ui_constants.hpp"
 #include "eda_unified_database.hpp"
 #include "freqman_db.hpp"
 #include "message.hpp"
-#include "portapack.hpp"
-#include "receiver_model.hpp"
-#include "scanning_coordinator.hpp"
-#include "sd_card.hpp"
 #include "settings_persistence.hpp"
-#include "spi_image.hpp"
-#include "theme.hpp"
 #include "ui.hpp"
-#include "ui_drone_audio.hpp"
 #include "ui_drone_common_types.hpp"
-#include "ui_enhanced_drone_settings.hpp"
 #include "ui_fileman.hpp"
 #include "ui_font_fixed_5x8.hpp"
 #include "ui_font_fixed_8x16.hpp"
-#include "ui_navigation.hpp"
 #include "ui_painter.hpp"
 #include "ui_signal_processing.hpp"
 #include "ui_spectral_analyzer.hpp"
@@ -4187,7 +4175,10 @@ EnhancedDroneSpectrumAnalyzerView::~EnhancedDroneSpectrumAnalyzerView() {
     request_global_shutdown();
 
     // 1. Stop activity (in dependency order)
-    scanning_coordinator_->stop_coordinated_scanning();
+    // DIAMOND FIX: Guard against nullptr if init failed
+    if (scanning_coordinator_ != nullptr) {
+        scanning_coordinator_->stop_coordinated_scanning();
+    }
     scanner_.stop_scanning();
     hardware_.shutdown_hardware();
 

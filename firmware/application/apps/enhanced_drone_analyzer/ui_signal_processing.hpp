@@ -320,7 +320,7 @@ public:
      * @brief Update detection entry (mutex-protected writer)
      * @param update Detection update parameters (frequency_hash, detection_count, rssi_value)
      * @note Acquires buffer_mutex_ for thread safety
-     * @note Includes recursion detection to prevent deadlock
+     * @note DIAMOND FIX: Recursion detection removed - update_detection has no recursive call paths
      * @warning DO NOT call from ISR context (mutex not ISR-safe)
      * @note DIAMOND FIX: Uses DetectionUpdate struct to prevent parameter swapping
      */
@@ -356,6 +356,23 @@ public:
      * @warning DO NOT call from ISR context (mutex not ISR-safe)
      */
     void clear() noexcept;
+
+    /**
+     * @brief Get timestamp for given frequency hash (mutex-protected reader)
+     * @param frequency_hash Frequency hash to look up
+     * @return Timestamp of last detection, or 0 if not found
+     * @note Thread-safe: Acquires buffer_mutex_ for exclusive access
+     * @note ISR-safe: Marked noexcept
+     */
+    [[nodiscard]] Timestamp get_timestamp(FrequencyHash frequency_hash) const noexcept;
+
+    /**
+     * @brief Get current global version (for concurrent update detection)
+     * @return Global version number
+     * @note Thread-safe: Acquires buffer_mutex_ for exclusive access
+     * @note ISR-safe: Marked noexcept
+     */
+    [[nodiscard]] uint32_t get_version() const noexcept;
 
     /**
      * @brief Check buffer for corruption (DIAMOND FIX #4)
@@ -435,9 +452,7 @@ private:
     size_t head_;                         ///< Head index for ring buffer eviction
     uint32_t global_version_;             ///< Global version counter for concurrent update detection
     mutable Mutex buffer_mutex_;           ///< Mutex for ALL access (writer and reader)
-    // NOTE: Recursion detection now uses thread-local storage (TLS) in cpp file
-    // to avoid race conditions with shared recursion_depth_ member variable.
-    
+
     // Canary after entries array (DIAMOND FIX #4)
     uint32_t canary_after_{CANARY_VALUE};
 

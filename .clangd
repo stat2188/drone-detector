@@ -173,7 +173,7 @@ Diagnostics:
 # Index Settings
 # =============================================================================
 Index:
-  StandardLibrary: No
+  StandardLibrary: Yes
   Background: Build
 
 # =============================================================================

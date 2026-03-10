@@ -15,7 +15,14 @@
 #include <chtypes.h>
 
 // ============================================================================
-// DIAMOND FIX #5: SEPARATION OF CONCERNS - FORWARD DECLARATIONS
+// DIAMOND FIX: SEPARATION OF CONCERNS - FORWARD DECLARATIONS
+// ============================================================================
+// Removed direct includes of DSP and database headers to prevent circular dependencies.
+// Using forward declarations where possible, only including headers that are required
+// for inline functions or template instantiations.
+//
+// FIX: Added eda_unified_database.hpp include for DatabaseChangeEvent definition
+// FIX: Removed incomplete forward declaration of DatabaseChangeEvent
 // ============================================================================
 // Removed direct includes of DSP and database headers to prevent circular dependencies.
 // Using forward declarations where possible, only including headers that are required
@@ -28,9 +35,7 @@
 #include "chlists.h"
 #include "chmtx.h"
 #include "diamond_core.hpp"
-#include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
-#include "eda_locking.hpp"
 #include "event_m0.hpp"
 #include "freqman_db.hpp"
 #include "gradient.hpp"
@@ -44,8 +49,6 @@
 #include "ui_menu.hpp"
 #include "ui_navigation.hpp"
 #include "ui_painter.hpp"
-#include "ui_signal_processing.hpp"
-#include "ui_spectral_analyzer.hpp"
 #include "ui_widget.hpp"
 
 // Forward declarations for database classes (included in .cpp file)
@@ -60,12 +63,6 @@ namespace ui::apps::enhanced_drone_analyzer {
     class DroneHardwareController;
     class ScanningCoordinator;
 }
-
-// Forward declaration for DatabaseChangeEvent (defined in eda_unified_database.hpp)
-// Note: DatabaseChangeEvent is in ui::apps::enhanced_drone_analyzer namespace
-// Full definition is available after including eda_unified_database.hpp
-namespace ui::apps::enhanced_drone_analyzer {
-    struct DatabaseChangeEvent;
 
 using rf::Frequency;
 

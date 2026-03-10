@@ -24,7 +24,7 @@ using rf::Frequency;
 // Type Aliases (Semantic Types)
 using BinValue = uint8_t;
 using HistogramIndex = uint16_t;
-using SpectralBin = size_t;
+using SpectralBin = std::size_t;
 using SNRValue = uint8_t;
 using SignalWidthHz = uint32_t;
 using WidthBins = uint8_t;
@@ -107,6 +107,7 @@ struct SpectralAnalysisParams {
 // Spectral Analyzer (Stack-Optimized)
 class SpectralAnalyzer {
 public:
+    // Nested typedef alias for backward compatibility with existing code
     using HistogramBuffer = std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>;
 
     SpectralAnalyzer() = default;
@@ -138,7 +139,7 @@ private:
 inline SpectralAnalysisResult SpectralAnalyzer::analyze(
     const std::array<uint8_t, 256>& db_buffer,
     const SpectralAnalysisParams& params,
-    HistogramBuffer& histogram_buffer) noexcept {
+    SpectralAnalyzer::HistogramBuffer& histogram_buffer) noexcept {
 
     SpectralAnalysisResult result{};
 

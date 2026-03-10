@@ -43,20 +43,8 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
     const RSSIValue rssi_value = update.rssi_value;
     const Timestamp current_time = static_cast<Timestamp>(chTimeNow());
 
-    // FIX: Use thread-local storage for recursion detection to avoid race condition
-    // Previous implementation checked recursion_depth_ after acquiring mutex, which
-    // could allow two threads to both check and increment before either sees the change.
-    // Thread-local storage ensures each thread has its own recursion counter.
-    static thread_local int tls_recursion_depth = 0;
-
-    // Check recursion depth before acquiring mutex (no race condition with TLS)
-    if (tls_recursion_depth > 0) {
-        // Recursive call detected - return early to prevent deadlock
-        return;
-    }
-
-    // Increment recursion depth (TLS is thread-safe)
-    tls_recursion_depth++;
+    // DIAMOND FIX: Removed illegal 'thread_local' which causes hidden malloc via __emutls.
+    // Recursion detection removed as update_detection has no recursive call paths.
 
     // DIAMOND FIX #2-3: Replace OrderedScopedLock with MutexLock from eda_locking.hpp
     // Lock order: DATA_MUTEX (level 1) for detection data and frequency database
@@ -80,8 +68,6 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
             entries_[idx].detection_count = detection_count;
             entries_[idx].timestamp = current_time;
 
-            // Decrement thread-local recursion depth
-            tls_recursion_depth--;
             return;
         }
 
@@ -93,8 +79,6 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
             entries_[idx].rssi_value = rssi_value;
             entries_[idx].timestamp = current_time;
 
-            // Decrement thread-local recursion depth
-            tls_recursion_depth--;
             return;
         }
     }
@@ -107,9 +91,6 @@ void DetectionRingBuffer::update_detection(const DetectionUpdate& update) noexce
     entries_[evict_idx].rssi_value = rssi_value;
     entries_[evict_idx].timestamp = current_time;
     head_ = (head_ + 1) & DetectionBufferConstants::HASH_MASK;
-
-    // Decrement thread-local recursion depth
-    tls_recursion_depth--;
 }
 
 // Implementation: get_rssi_value()
@@ -247,26 +228,10 @@ uint32_t DetectionRingBuffer::get_version() const noexcept {
     return global_version_;
 }
 
-// Implementation: init_entry()
-// / @brief Initialize a single entry with default values
-// / @param entry Entry to initialize
-// / @param version Version number to assign
-void DetectionRingBuffer::init_entry(Entry& entry, uint32_t version) noexcept {
-    entry.frequency_hash = DetectionBufferConstants::EMPTY_HASH_MARKER;
-    entry.rssi_value = DetectionBufferConstants::DEFAULT_RSSI_DBM;
-    entry.detection_count = 0;
-    entry.timestamp = 0;
-    entry.version = version;
-}
-
-// Implementation: hash_index()
-// / @brief Compute hash index for frequency hash
-// / @param frequency_hash Frequency hash value
-// / @return Hash index (modulo HASH_TABLE_SIZE)
-constexpr size_t DetectionRingBuffer::hash_index(FrequencyHash frequency_hash) noexcept {
-    return static_cast<size_t>(frequency_hash) & DetectionBufferConstants::HASH_MASK;
-}
-
+// ============================================================================
+// NOTE: init_entry() is defined inline in ui_signal_processing.hpp
+// NOTE: hash_index() is defined inline in ui_signal_processing.hpp
+// No duplicate definitions needed here
 // ============================================================================
 // NOTE: Memory pool allocation methods have been removed
 // ============================================================================

@@ -15,6 +15,8 @@
 // Flash storage attribute for Cortex-M4
 #ifdef __GNUC__
     #define EDA_FLASH_CONST __attribute__((section(".rodata")))
+#elif defined(__ICCARM__)
+    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
 #else
     #define EDA_FLASH_CONST const
 #endif

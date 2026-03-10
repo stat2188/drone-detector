@@ -250,10 +250,8 @@ class UnifiedDroneDatabase {
 public:
     // Singleton access (static storage, no heap)
     // Thread-safe: C++11 guarantees atomic initialization of static local variables
-    static UnifiedDroneDatabase& instance() noexcept {
-        static UnifiedDroneDatabase instance;
-        return instance;
-    }
+    // Defined in eda_unified_database.cpp to avoid header-only dynamic initialization
+    static UnifiedDroneDatabase& instance() noexcept;
     
     // Disable copy/move
     UnifiedDroneDatabase(const UnifiedDroneDatabase&) = delete;

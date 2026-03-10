@@ -35,7 +35,6 @@
 // Note: eda_database_parser.hpp is not used (only referenced in comments)
 #include "settings_persistence.hpp"
 #include "ui_drone_common_types.hpp"
-#include "ui_enhanced_drone_analyzer.hpp"
 #include "ui_widget.hpp"
 // Note: portapack.hpp is not used in this file
 // Note: string_format.hpp is not used in this file
@@ -761,7 +760,7 @@ void HardwareSettingsView::focus() noexcept { button_save_.focus(); }
 
 // DIAMOND OPTIMIZATION: noexcept for settings load
 void HardwareSettingsView::load_current_settings() noexcept {
-    DroneAnalyzerSettings settings;
+    static DroneAnalyzerSettings settings; // DIAMOND FIX: moved from stack to .bss
     // FIX #M3: Check return value of load() and handle errors appropriately
     auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(settings);
     if (!load_result.is_ok() || !load_result.value) {
@@ -776,7 +775,7 @@ void HardwareSettingsView::load_current_settings() noexcept {
 
 // DIAMOND OPTIMIZATION: noexcept for settings save
 void HardwareSettingsView::save_current_settings() noexcept {
-    DroneAnalyzerSettings settings;
+    static DroneAnalyzerSettings settings; // DIAMOND FIX: moved from stack to .bss
     // FIX #M3: Check return value of load() and handle errors appropriately
     auto load_result = SettingsPersistence<DroneAnalyzerSettings>::load(settings);
     if (!load_result.is_ok() || !load_result.value) {
@@ -823,7 +822,7 @@ void AudioSettingsView::focus() noexcept {
 
 // DIAMOND OPTIMIZATION: noexcept for settings load
 void AudioSettingsView::load_current_settings() noexcept {
-    DroneAnalyzerSettings settings;
+    static DroneAnalyzerSettings settings; // DIAMOND FIX: moved from stack to .bss
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     }
@@ -837,7 +836,7 @@ void AudioSettingsView::load_current_settings() noexcept {
 
 // DIAMOND OPTIMIZATION: noexcept for settings save
 void AudioSettingsView::save_current_settings() noexcept {
-    DroneAnalyzerSettings settings;
+    static DroneAnalyzerSettings settings; // DIAMOND FIX: moved from stack to .bss
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     }
@@ -884,7 +883,7 @@ ScanningSettingsView::ScanningSettingsView(NavigationView& nav) : View(), nav_(n
 void ScanningSettingsView::focus() noexcept { button_save_.focus(); }
 // DIAMOND OPTIMIZATION: noexcept for settings load
 void ScanningSettingsView::load_current_settings() noexcept {
-    DroneAnalyzerSettings settings;
+    static DroneAnalyzerSettings settings; // DIAMOND FIX: moved from stack to .bss
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     }
@@ -896,7 +895,7 @@ void ScanningSettingsView::load_current_settings() noexcept {
 
 // DIAMOND OPTIMIZATION: noexcept for settings save
 void ScanningSettingsView::save_current_settings() noexcept {
-    DroneAnalyzerSettings settings;
+    static DroneAnalyzerSettings settings; // DIAMOND FIX: moved from stack to .bss
     if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
         SettingsPersistence<DroneAnalyzerSettings>::reset_to_defaults(settings);
     }
@@ -922,7 +921,7 @@ void ScanningSettingsView::on_show_presets() noexcept {
     // Show presets menu using DronePresetSelector
     // Create callback that updates settings when preset is selected
     auto on_preset_selected = [this](const ui::apps::enhanced_drone_analyzer::DronePreset& preset) {
-        DroneAnalyzerSettings settings;
+        static DroneAnalyzerSettings settings; // DIAMOND FIX: moved from stack to .bss
         SettingsPersistence<DroneAnalyzerSettings>::load(settings);
         if (DroneFrequencyPresets::apply_preset(settings, preset)) {
             SettingsPersistence<DroneAnalyzerSettings>::save(settings);

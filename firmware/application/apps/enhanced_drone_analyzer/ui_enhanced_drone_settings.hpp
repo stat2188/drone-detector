@@ -9,13 +9,8 @@
 // Flash storage attributes for Cortex-M4
 // Ensures UI style constants are placed in Flash instead of RAM
 //
-// PROBLEM: EDA_FLASH_CONST was used but never defined
-// SOLUTION: Define macro with compiler-specific attributes
+// EDA_FLASH_CONST is now defined in eda_constants.hpp and included below
 //
-// COMPATIBILITY:
-// - GCC/Clang: Uses __attribute__((section(".rodata")))
-// - IAR: Uses __attribute__((section(".rodata")))
-// - Other: Compilation error (unsupported compiler)
 // ============================================================================
 
 // C++ standard library headers (alphabetical order)
@@ -32,18 +27,9 @@
 #include "chmtx.h"
 #include "chtypes.h"
 
-// Flash storage attribute definition (after includes, before project headers)
-#if defined(__GNUC__) || defined(__clang__)
-    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
-#elif defined(__ICCARM__)
-    #define EDA_FLASH_CONST __attribute__((section(".rodata")))
-#else
-    #define EDA_FLASH_CONST
-    #error "Unsupported compiler - cannot guarantee Flash placement for EDA_FLASH_CONST"
-#endif
+// Flash storage attribute is now included from eda_constants.hpp
 
 // Project-specific headers (alphabetical order)
-#include "eda_constants.hpp"
 #include "rf_path.hpp"
 #include "settings_persistence.hpp"
 #include "ui.hpp"
