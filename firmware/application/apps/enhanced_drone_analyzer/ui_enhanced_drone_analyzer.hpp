@@ -1679,7 +1679,7 @@ public:
     DroneUIController(NavigationView& nav,
                      DroneHardwareController& hardware,
                      DroneScanner& scanner,
-                     ui::apps::enhanced_drone_analyzer::AudioManager& audio_mgr);
+                     AudioManager& audio_mgr);
     ~DroneUIController();
 
     // Set display_controller after construction
@@ -1709,7 +1709,7 @@ private:
     NavigationView& nav_;
     DroneHardwareController& hardware_;
     DroneScanner& scanner_;
-    ui::apps::enhanced_drone_analyzer::AudioManager& audio_mgr_;
+    AudioManager& audio_mgr_;
     // volatile bool reads/writes are atomic on ARM Cortex-M4 (32-bit aligned)
     volatile bool scanning_active_{false};
     DroneDisplayController* display_controller_ = nullptr;
@@ -1927,7 +1927,7 @@ public:
     // CRITICAL: ui_controller_ stores display_controller_ as POINTER (not reference)
     DroneHardwareController hardware_;
     DroneScanner scanner_;
-    ui::apps::enhanced_drone_analyzer::AudioManager audio_;
+    AudioManager audio_;
 
     // INITIALIZATION ORDER FIX: ui_controller_ declared before display_controller_
     // The display_controller dependency is now set via set_display_controller() after construction,

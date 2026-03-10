@@ -478,6 +478,10 @@ public:
     SettingsBufferLock& operator=(const SettingsBufferLock&) = delete;
 };
 
+// Forward declaration for load_buffer_mutex (needed by LoadBufferLock below)
+// Defined in ui_enhanced_drone_settings.cpp at global scope
+extern Mutex load_buffer_mutex;
+
 // LOAD BUFFER LOCK (RAII)
 // FIX R08: RAII wrapper for load buffer mutex
 // Ensures mutex is always unlocked when scope exits, preventing deadlocks
@@ -487,7 +491,7 @@ public:
 class LoadBufferLock {
 public:
     LoadBufferLock() noexcept {
-        chMtxLock(&ui::apps::enhanced_drone_analyzer::load_buffer_mutex);
+        chMtxLock(&load_buffer_mutex);
     }
 
     ~LoadBufferLock() noexcept {
@@ -745,11 +749,6 @@ struct SettingsLoadBuffer {
 };
 
 // SETTINGS LOAD BUFFER MUTEX
-// Protects the static load buffer from concurrent access
-namespace ui::apps::enhanced_drone_analyzer {
-extern Mutex load_buffer_mutex;
-}
-
 // SETTINGS LOAD BUFFER (Getter)
 // Thread-safe getter for the static load buffer
 // Returns a reference to a mutex-protected buffer
