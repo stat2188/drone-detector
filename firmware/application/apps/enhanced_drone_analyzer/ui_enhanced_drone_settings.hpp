@@ -761,7 +761,8 @@ private:
         explicit FixedStringBuffer(char* buffer, size_t capacity) noexcept
             : buffer_(buffer),
               capacity_(capacity),
-              length_(0)
+              length_(0),
+              temp_string_()
         {
             buffer_[0] = '\0';
         }

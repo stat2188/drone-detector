@@ -345,6 +345,7 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       db_loading_thread_(nullptr),
       db_loading_active_(),
       initialization_complete_(),
+      database_needs_reload_(),
       scan_cycles_(0),
       total_detections_(0),
       scanning_mode_(DroneScanner::ScanningMode::DATABASE),
@@ -356,12 +357,11 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       max_detected_threat_(ThreatLevel::NONE),
       last_valid_rssi_(-120),
       wideband_scan_data_(),
-    detection_ring_buffer_(),
-    spectrum_data_(),
-    database_needs_reload_(),
-    histogram_buffer_(),
-    fhss_detector_(),
-    settings_(std::move(settings))
+      detection_ring_buffer_(),
+      fhss_detector_(),
+      spectrum_data_(),
+      histogram_buffer_(),
+      settings_(std::move(settings))
 {
     scanning_active_.store(false);
     freq_db_loaded_.store(false);
@@ -1046,8 +1046,6 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
         return;
     }
 
-    bool should_log = false;
-    DetectionLogEntry log_entry_to_write;
     DroneType detected_type = DroneType::UNKNOWN;
     ThreatLevel threat_level = ThreatLevel::UNKNOWN;
 
@@ -1098,21 +1096,6 @@ void DroneScanner::process_wideband_detection_with_override(const freqman_entry&
             detection_ring_buffer_.update_detection({freq_hash, current_count, rssi});
 
             if (current_count >= MIN_DETECTION_COUNT) {
-                should_log = true;
-
-                log_entry_to_write = {
-                    chTimeNow(),
-                    static_cast<uint64_t>(entry.frequency_a),
-                    rssi,
-                    threat_level,
-                    detected_type,
-                    current_count,
-                    DiamondCore::ConfidenceConstants::RSSI_CONFIDENCE,  // 85% confidence as integer
-                    0,   // width_bins - default value
-                    0,   // signal_width_hz - default value
-                    0    // snr - default value
-                };
-
                 update_tracked_drone({detected_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(rssi), threat_level});
 
                 // MODIFICATION: Check for FHSS (frequency hopping) on wideband detection
@@ -1138,9 +1121,6 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
     if (!EDA::Validation::validate_frequency(entry.frequency_a)) {
         return;
     }
-
-    bool should_log = false;
-    DetectionLogEntry log_entry_to_write;
 
     {
         MutexLock lock(data_mutex);
@@ -1170,21 +1150,6 @@ void DroneScanner::process_spectral_detection(const freqman_entry& entry,
             detection_ring_buffer_.update_detection({freq_hash, current_count, effective_rssi});
 
             if (current_count >= MIN_DETECTION_COUNT) {
-                should_log = true;
-
-                log_entry_to_write = {
-                    chTimeNow(),
-                    static_cast<uint64_t>(entry.frequency_a),
-                    effective_rssi,
-                    threat_level,
-                    drone_type,
-                    current_count,
-                    DiamondCore::ConfidenceConstants::SPECTRAL_CONFIDENCE,  // 90% confidence for spectral analysis
-                    analysis_result.width_bins,        // Calibration: signal width in bins
-                    analysis_result.signal_width_hz,   // Calibration: signal width in Hz
-                    analysis_result.snr               // Calibration: Signal-to-Noise Ratio
-                };
-
                 update_tracked_drone({drone_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(effective_rssi), threat_level});
             }
         } else {
@@ -1443,10 +1408,6 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
         }
     }
 
-    // Flag and data for deferred logging
-    bool should_log = false;
-    DetectionLogEntry log_entry_to_write;
-
     // --- CRITICAL SECTION START ---
     {
         MutexLock lock(data_mutex);
@@ -1484,23 +1445,6 @@ void DroneScanner::process_rssi_detection(const freqman_entry& entry, int32_t rs
             detection_ring_buffer_.update_detection({freq_hash, current_count, rssi});
 
             if (current_count >= MIN_DETECTION_COUNT) {
-                // We DON'T write log here. We only prepare data.
-                should_log = true;
-
-                // Prepare log data
-                log_entry_to_write.timestamp = chTimeNow();
-                // DIAMOND FIX: Type Consistency - Use uint64_t for frequency
-                log_entry_to_write.frequency_hz = static_cast<uint64_t>(entry.frequency_a);
-                log_entry_to_write.rssi_db = rssi;
-                log_entry_to_write.threat_level = threat_level;
-                log_entry_to_write.drone_type = detected_type;
-                log_entry_to_write.detection_count = current_count;
-                log_entry_to_write.confidence_percent = 85;
-                // (  RSSI )
-                log_entry_to_write.width_bins = 0;
-                log_entry_to_write.signal_width_hz = 0;
-                log_entry_to_write.snr = 0;
-
                 // Update drone tracking for UI
                 update_tracked_drone({detected_type, static_cast<Frequency>(entry.frequency_a), static_cast<int32_t>(rssi), threat_level});
             }

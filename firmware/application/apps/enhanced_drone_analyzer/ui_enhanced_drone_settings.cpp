@@ -146,13 +146,21 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     // DIAMOND FIX #HIGH #4: Use static member buffer instead of thread_local
     // Acquire mutex for thread safety (shared static buffer)
     MutexLock lock(settings_buffer_mutex);
+    static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    File file;
+    
+    // Open file for writing
+    if (!file.open(filepath, false)) {
+        return false;
+    }
+    
     size_t offset = 0;
 
     // Write header with timestamp
     const char* header = generate_file_header();
     size_t header_len = strlen(header);
     auto header_result = file.write(static_cast<const void*>(header),
-                                       static_cast<File::Size>(header_len));
+                                        static_cast<File::Size>(header_len));
     if (header_result.is_error() || header_result.value() != header_len) {
         file.close();
         // Log error - restore from backup on write failure
@@ -230,6 +238,13 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
     // DIAMOND FIX #HIGH #4: Use static member buffer instead of thread_local
     // Acquire mutex for thread safety (shared static buffer)
     MutexLock lock(settings_buffer_mutex);
+    static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
+    File file;
+    
+    // Open file for reading
+    if (!file.open(filepath, true)) {
+        return false;
+    }
 
     auto read_result = file.read(file_buffer_, FILE_BUFFER_SIZE);
     
