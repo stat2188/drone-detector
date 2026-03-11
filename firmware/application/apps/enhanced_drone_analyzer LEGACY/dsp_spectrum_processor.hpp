@@ -2,8 +2,8 @@
  * @file dsp_spectrum_processor.hpp
  * @brief DSP layer for spectrum processing in Enhanced Drone Analyzer
  * 
- * This file defines SpectrumProcessor class which handles spectrum data
- * processing in DSP layer. It provides pure signal processing
+ * This file defines the SpectrumProcessor class which handles spectrum data
+ * processing in the DSP layer. It provides pure signal processing
  * functions without any UI dependencies.
  * 
  * DIAMOND CODE PRINCIPLES:
@@ -180,7 +180,7 @@ private:
  * @brief Spectrum data processor (DSP layer)
  * 
  * This class provides static methods for processing spectrum data
- * in DSP layer. It has no UI dependencies and performs
+ * in the DSP layer. It has no UI dependencies and performs
  * pure signal processing operations.
  * 
  * Thread-safety: All methods are static and stateless, making them

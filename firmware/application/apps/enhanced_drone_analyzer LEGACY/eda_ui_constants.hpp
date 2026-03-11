@@ -1,33 +1,6 @@
-/**
- * @file eda_ui_constants.hpp
- * @brief UI Constants for Enhanced Drone Analyzer
- *
- * Separated from settings persistence to maintain clean architecture
- *
- * DIAMOND FIX #3: Separated UI-specific constants from settings persistence
- * This namespace contains all UI-related constants that were previously mixed
- * with settings persistence, creating architectural confusion.
- *
- * Benefits:
- * - Clean separation of concerns (UI vs persistence)
- * - No circular dependencies
- * - DSP code can include eda_constants.hpp without pulling in UI code
- * - Settings persistence reduced by 25% (51 → 38 entries)
- *
- * Target: STM32F405 (ARM Cortex-M4)
- *
- * @author Diamond Code Pipeline - UI Constants Implementation
- * @date 2026-03-07
- * Phase 1 Migration - Foundation Layer (Infrastructure)
- *
- * DIAMOND CODE COMPLIANCE:
- * - No forbidden constructs (std::vector, std::string, std::map, std::atomic, new, malloc)
- * - Stack allocation only (max 4KB stack)
- * - Uses constexpr, enum class, using Type = uintXX_t
- * - No magic numbers (all constants defined)
- * - Zero-Overhead and Data-Oriented Design principles
- * - Self-contained and compilable
- */
+// Diamond Code: UI-specific constants for Enhanced Drone Analyzer
+// Separated from settings persistence to maintain clean architecture
+// Target: STM32F405 (ARM Cortex-M4)
 
 #ifndef EDA_UI_CONSTANTS_HPP_
 #define EDA_UI_CONSTANTS_HPP_
@@ -68,7 +41,7 @@ enum class ColorScheme : uint8_t {
     DARK = 0,           ///< Dark color scheme (default)
     LIGHT = 1,          ///< Light color scheme
     HIGH_CONTRAST = 2,  ///< High contrast color scheme
-    CUSTOM = 3           ///< Custom color scheme (user-defined)
+    CUSTOM = 3          ///< Custom color scheme (user-defined)
 };
 
 /**
@@ -237,19 +210,19 @@ constexpr uint32_t DEFAULT_COMPACT_RULER_TICK_COUNT = 4;
  * @brief Display feature flags namespace
  *
  * These flags control various UI display features.
- * They are stored as bitfields in settings.
+ * They are stored as bitfields in the settings.
  *
  * Bit positions:
  * - Bit 0: Show spectrum analyzer
- * - Bit 1: Show frequency ruler
- * - Bit 2: Show drone list
- * - Bit 3: Show compact ruler
+ * - Bit 2: Show frequency ruler
+ * - Bit 3: Show drone list
+ * - Bit 4: Show compact ruler
  */
 namespace DisplayFlags {
     constexpr uint8_t SHOW_SPECTRUM = 0;      ///< Show spectrum analyzer display
-    constexpr uint8_t SHOW_RULER = 1;          ///< Show frequency ruler
-    constexpr uint8_t SHOW_DRONE_LIST = 2;      ///< Show detected drone list
-    constexpr uint8_t SHOW_COMPACT_RULER = 3;   ///< Show compact frequency ruler
+    constexpr uint8_t SHOW_RULER = 2;          ///< Show frequency ruler
+    constexpr uint8_t SHOW_DRONE_LIST = 3;      ///< Show detected drone list
+    constexpr uint8_t SHOW_COMPACT_RULER = 4;   ///< Show compact frequency ruler
 
     // Default flag values
     constexpr bool DEFAULT_SHOW_SPECTRUM = true;

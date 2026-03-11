@@ -1,19 +1,6 @@
 #ifndef UI_DRONE_COMMON_TYPES_HPP_
 #define UI_DRONE_COMMON_TYPES_HPP_
 
-// ============================================================================
-// DIAMOND CODE COMPLIANCE NOTES:
-// ============================================================================
-// This file follows Diamond Code principles for embedded C++ on STM32F405:
-// - NO std::vector, std::string, std::map, std::atomic, new, malloc
-// - NO exceptions, NO RTTI
-// - PERMITTED: std::array, std::string_view, fixed-size buffers, stack allocation
-// - Stack allocation only (max 4KB stack)
-// - Uses constexpr, enum class, using Type = uintXX_t;
-// - No magic numbers - uses constants from eda_constants.hpp
-// - Zero-Overhead and Data-Oriented Design principles
-// ============================================================================
-
 // C++ standard library headers (alphabetical order)
 #include <cstdint>
 #include <cstring>
@@ -53,12 +40,10 @@ enum class SpectrumMode : uint8_t { NARROW = 0, MEDIUM = 1, WIDE = 2, ULTRA_WIDE
  * This structure contains all configurable settings for the drone analyzer application.
  * It includes audio, hardware, scanning, detection, logging, display, and profile settings.
  *
- * DIAMOND CODE COMPLIANCE:
- * - Stack-allocated (512 bytes total) - verified by static_assert
+ * MEMORY ALLOCATION:
+ * - Stack-allocated (512 bytes total)
  * - No heap allocation
- * - Uses fixed-size char arrays for strings (no std::string)
- * - All types are POD-compatible for efficient memory layout
- * - Bitfield access via templates for zero-overhead abstraction
+ * - Use RAII and automatic storage duration
  *
  * USAGE EXAMPLE:
  * @code
@@ -134,25 +119,15 @@ struct DroneAnalyzerSettings {
     char settings_file_path[EDA::Constants::MAX_PATH_LENGTH] = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     uint32_t settings_version = 2;
 
-    // DIAMOND CODE COMPLIANCE: Memory pool allocation methods removed
+    // Memory pool allocation methods have been removed
     // DroneAnalyzerSettings is now stack-allocated (512 bytes)
     // Use RAII: DroneAnalyzerSettings settings{};
 };
 
 #pragma pack(pop)
 
-// DIAMOND CODE COMPLIANCE: Compile-time size assertion ensures stack budget compliance
 static_assert(sizeof(DroneAnalyzerSettings) <= 512, "DroneAnalyzerSettings exceeds 512 bytes");
 
-/**
- * @brief Zero-overhead bitfield access namespace
- *
- * DIAMOND CODE PRINCIPLE: Template-based bitfield access
- * - Compile-time bit position validation via static_assert
- * - Zero runtime overhead (inlined constexpr functions)
- * - Type-safe bit manipulation
- * - No runtime bounds checking needed
- */
 namespace BitfieldAccess {
 
 template<uint8_t BitPos>
@@ -329,15 +304,6 @@ inline void profile_set_auto_save_on_change(DroneAnalyzerSettings& s, bool v) no
     BitfieldAccess::set_bit<1>(s.profile_flags, v);
 }
 
-/**
- * @brief Frequency validation namespace
- *
- * DIAMOND CODE PRINCIPLE: Compile-time and runtime frequency validation
- * - Uses constexpr for compile-time validation where possible
- * - Inline functions for zero-overhead abstraction
- * - No exceptions - uses boolean return values
- * - Thread-safe (no shared state)
- */
 namespace FrequencyValidation {
 
 inline constexpr bool is_valid(uint64_t freq_hz) noexcept {
@@ -385,10 +351,9 @@ inline bool is_frequency_range_valid(uint64_t min_freq_hz, uint64_t max_freq_hz)
 }
 
 // Enhanced enums for EDA
-// DIAMOND CODE PRINCIPLE: Type-safe enum classes with explicit underlying type
 enum class ThreatLevel : uint8_t {
     NONE = 0,
-    LOW = 1,
+    LOW =1,
     MEDIUM = 2,
     HIGH = 3,
     CRITICAL = 4,
@@ -416,28 +381,11 @@ enum class MovementTrend : uint8_t {
     UNKNOWN = 3
 };
 
-/**
- * @brief Translation entry structure
- *
- * DIAMOND CODE COMPLIANCE:
- * - Uses const char* (string literals stored in flash)
- * - No std::string - no heap allocation
- * - POD-compatible for flash storage
- */
 struct TranslationEntry {
     const char* key;
     const char* value;
 };
 
-/**
- * @brief Translator class for UI strings
- *
- * DIAMOND CODE COMPLIANCE:
- * - Static methods only (no instances, no heap allocation)
- * - Returns const char* from flash (no string copying)
- * - Thread-safe (no shared mutable state)
- * - ISR-safe (marked noexcept)
- */
 class Translator {
 public:
     static const char* translate(const char* key) noexcept;
@@ -447,14 +395,6 @@ private:
     static const char* get_english(const char* key) noexcept;
 };
 
-/**
- * @brief Drone preset structure
- *
- * DIAMOND CODE COMPLIANCE:
- * - Fixed-size char arrays for strings (no std::string)
- * - POD-compatible for efficient storage
- * - Stack-allocated
- */
 struct DronePreset {
     char display_name[EDA::Constants::MAX_NAME_LENGTH];
     char name_template[EDA::Constants::MAX_NAME_LENGTH];
@@ -469,14 +409,6 @@ struct DronePreset {
 
 // Implementations moved to ui_drone_common_types.cpp
 
-/**
- * @brief Detection log entry structure
- *
- * DIAMOND CODE COMPLIANCE:
- * - Packed structure for efficient storage
- * - POD-compatible for serialization
- * - Stack-allocated
- */
 #pragma pack(push, 1)
 struct DetectionLogEntry {
     uint32_t timestamp;

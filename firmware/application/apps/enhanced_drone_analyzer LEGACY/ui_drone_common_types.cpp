@@ -1,19 +1,6 @@
 // Corresponding header (must be first)
 #include "ui_drone_common_types.hpp"
 
-// ============================================================================
-// DIAMOND CODE COMPLIANCE NOTES:
-// ============================================================================
-// This file follows Diamond Code principles for embedded C++ on STM32F405:
-// - NO std::vector, std::string, std::map, std::atomic, new, malloc
-// - NO exceptions, NO RTTI
-// - PERMITTED: std::array, std::string_view, fixed-size buffers, stack allocation
-// - Stack allocation only (max 4KB stack)
-// - Uses constexpr for compile-time evaluation
-// - Flash-resident data (translation tables stored in flash)
-// - Zero-Overhead and Data-Oriented Design principles
-// ============================================================================
-
 // C++ standard library headers (alphabetical order)
 #include <cstddef>
 #include <cstdint>
@@ -25,25 +12,8 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// ============================================================================
-// TRANSLATION TABLES (Flash Storage)
-// ============================================================================
-// DIAMOND CODE PRINCIPLE: Flash-resident data structures
-// - Translation tables stored in flash (no RAM usage)
-// - constexpr ensures compile-time initialization
-// - No heap allocation
-// - Thread-safe read-only access
-// ============================================================================
+// constexpr LUTs for translations (Flash storage, no RAM used)
 
-/**
- * @brief English translation lookup table
- *
- * DIAMOND CODE COMPLIANCE:
- * - constexpr array stored in flash
- * - No RAM allocation at runtime
- * - Compile-time size known
- * - POD-compatible entries
- */
 static constexpr TranslationEntry ENGLISH_TRANSLATIONS[] = {
     {"load_database", "Load Database"},
     {"save_frequency", "Save Frequency"},
@@ -66,10 +36,7 @@ static constexpr TranslationEntry ENGLISH_TRANSLATIONS[] = {
 static constexpr size_t ENGLISH_TRANSLATION_COUNT =
     sizeof(ENGLISH_TRANSLATIONS) / sizeof(TranslationEntry);
 
-// ============================================================================
-// TRANSLATION CONSTANTS
-// ============================================================================
-
+// Constants
 namespace TranslationConstants {
     constexpr size_t NULL_KEY_RESULT = 0;
     constexpr char NULL_TERMINATOR = '\0';
@@ -79,24 +46,14 @@ namespace TranslationConstants {
     constexpr const char* NOT_FOUND_KEY = "";
 }
 
-// ============================================================================
-// COMPILE-TIME VALIDATION
-// ============================================================================
-// DIAMOND CODE PRINCIPLE: Compile-time validation
-// - Validates translation tables at compile time
-// - Catches errors during build, not runtime
-// - Zero runtime overhead
-// ============================================================================
-
+// Compile-time validation
 namespace TranslationValidation {
 
-/**
- * @brief Validate translation table at compile time
- * @tparam N Table size
- * @param table Translation table
- * @return true if all entries are valid
- * @note Compile-time only, no runtime overhead
- */
+// * @brief Validate translation table at compile time
+// @tparam N Table size
+// @param table Translation table
+// @return true if all entries are valid
+// @note Compile-time only, no runtime overhead
 template<size_t N>
 static constexpr bool validate_table(
     const TranslationEntry (&table)[N]
@@ -114,15 +71,13 @@ static constexpr bool validate_table(
     return true;
 }
 
-/**
- * @brief Compile-time string comparison for constexpr contexts
- * @param str1 First string
- * @param str2 Second string
- * @return true if strings are equal
- * @note Works in constexpr contexts (C++14 compatible)
- * Pure character-by-character comparison, no pointer comparison
- * All operations are constant expressions for static_assert compatibility
- */
+// * @brief Compile-time string comparison for constexpr contexts
+// @param str1 First string
+// @param str2 Second string
+// @return true if strings are equal
+// @note Works in constexpr contexts (C++14 compatible)
+// Pure character-by-character comparison, no pointer comparison
+// All operations are constant expressions for static_assert compatibility
 static constexpr bool strings_equal(const char* str1, const char* str2) noexcept {
     // Character-by-character comparison (all operations are constexpr)
     while (*str1 && *str2 && *str1 == *str2) {
@@ -133,14 +88,12 @@ static constexpr bool strings_equal(const char* str1, const char* str2) noexcept
     return *str1 == '\0' && *str2 == '\0';
 }
 
-/**
- * @brief Check for duplicate keys at compile time
- * @tparam N Table size
- * @param table Translation table
- * @return true if duplicate keys found
- * @note Compile-time only, no runtime overhead
- * Uses constexpr string comparison for static_assert compatibility
- */
+// * @brief Check for duplicate keys at compile time
+// @tparam N Table size
+// @param table Translation table
+// @return true if duplicate keys found
+// @note Compile-time only, no runtime overhead
+// Uses constexpr string comparison for static_assert compatibility
 template<size_t N>
 static constexpr bool has_duplicate_keys(
     const TranslationEntry (&table)[N]
@@ -157,7 +110,7 @@ static constexpr bool has_duplicate_keys(
     return false;
 }
 
-// DIAMOND CODE COMPLIANCE: Compile-time assertions catch table errors at build time
+// CRITICAL FIX: Compile-time assertions catch table errors at build time
 static_assert(
     validate_table(ENGLISH_TRANSLATIONS),
     "Translation table contains null or empty entries"
@@ -170,21 +123,16 @@ static_assert(
 
 } // namespace TranslationValidation
 
-// ============================================================================
 // HELPER FUNCTIONS
-// ============================================================================
-
-/**
- * @brief Fast key-based lookup (O(n) where n=15, faster than std::string)
- * @tparam N Table size (compile-time constant)
- * @param key Translation key to look up
- * @param table Translation table
- * @return Translation value or NOT_FOUND_KEY if not found
- * @note Returns EMPTY_STRING for null key
- * @note Thread-safe: no shared state modified
- * @note ISR-safe: marked noexcept
- * @note Compile-time bounds checking via template parameter
- */
+// * @brief Fast key-based lookup (O(n) where n=15, faster than std::string)
+// @tparam N Table size (compile-time constant)
+// @param key Translation key to look up
+// @param table Translation table
+// @return Translation value or NOT_FOUND_KEY if not found
+// @note Returns EMPTY_STRING for null key
+// @note Thread-safe: no shared state modified
+// @note ISR-safe: marked noexcept
+// @note Compile-time bounds checking via template parameter
 template<size_t N>
 static constexpr const char* lookup_translation(
     const char* const key,
@@ -218,18 +166,14 @@ static constexpr const char* lookup_translation(
     return TranslationConstants::NOT_FOUND_KEY;
 }
 
-// ============================================================================
 // TRANSLATOR IMPLEMENTATIONS
-// ============================================================================
 
-/**
- * @brief Get English translation
- * @param key Translation key
- * @return Translation value or NOT_FOUND_KEY
- * @note Thread-safe: only reads static data
- * @note ISR-safe: marked noexcept
- * @note CRITICAL FIX: Added input validation
- */
+// * @brief Get English translation
+// @param key Translation key
+// @return Translation value or NOT_FOUND_KEY
+// @note Thread-safe: only reads static data
+// @note ISR-safe: marked noexcept
+// @note CRITICAL FIX: Added input validation
 const char* Translator::get_english(const char* const key) noexcept {
     // CRITICAL FIX: Guard clause - validate input
     if (!key) {
@@ -239,26 +183,16 @@ const char* Translator::get_english(const char* const key) noexcept {
     return lookup_translation(key, ENGLISH_TRANSLATIONS);
 }
 
-/**
- * @brief Translate key to current language
- * @param key Translation key
- * @return Translation value or NOT_FOUND_KEY
- * @note Currently only English supported
- * @note Thread-safe: only reads static data
- * @note ISR-safe: marked noexcept
- */
+// * @brief Translate key to current language
+// @param key Translation key
+// @return Translation value or NOT_FOUND_KEY
+// @note Currently only English supported
+// @note Thread-safe: only reads static data
+// @note ISR-safe: marked noexcept
 const char* Translator::translate(const char* const key) noexcept {
     return get_translation(key);
 }
 
-/**
- * @brief Get translation for current language
- * @param key Translation key
- * @return Translation value or NOT_FOUND_KEY
- * @note Currently only English supported
- * @note Thread-safe: only reads static data
- * @note ISR-safe: marked noexcept
- */
 const char* Translator::get_translation(const char* const key) noexcept {
     // CRITICAL FIX: Guard clause - validate input
     if (!key) {
@@ -270,15 +204,12 @@ const char* Translator::get_translation(const char* const key) noexcept {
 }
 
 // ============================================================================
-// MEMORY ALLOCATION NOTES
-// ============================================================================
-// DIAMOND CODE COMPLIANCE: Memory pool allocation methods removed
+// NOTE: Memory pool allocation methods have been removed
 // ============================================================================
 // DroneAnalyzerSettings (512 bytes) is now stack-allocated
 // Use RAII and stack allocation instead of memory pools
 // Example:
 //   DroneAnalyzerSettings settings{};  // Stack allocation
 //   settings.audio_flags = 0x01;  // Use directly
-// ============================================================================
 
 } // namespace ui::apps::enhanced_drone_analyzer

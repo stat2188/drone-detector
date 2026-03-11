@@ -3,20 +3,6 @@
 #ifndef UI_DRONE_AUDIO_HPP_
 #define UI_DRONE_AUDIO_HPP_
 
-// ============================================================================
-// DIAMOND CODE COMPLIANCE NOTES:
-// ============================================================================
-// This file follows Diamond Code principles for embedded C++ on STM32F405:
-// - NO std::vector, std::string, std::map, std::atomic, new, malloc
-// - NO exceptions, NO RTTI
-// - PERMITTED: std::array, std::string_view, fixed-size buffers, stack allocation
-// - Stack allocation only (max 4KB stack)
-// - Uses MutexLock from eda_locking.hpp for thread-safe operations
-// - Uses constexpr, enum class, using Type = uintXX_t;
-// - No magic numbers - uses constants from eda_constants.hpp
-// - Zero-Overhead and Data-Oriented Design principles
-// ============================================================================
-
 // C standard library headers (alphabetical order)
 #include <stdint.h>
 
@@ -37,28 +23,13 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-// Type Aliases (Semantic Types)
-/**
- * @brief Type aliases for audio parameters
- *
- * DIAMOND CODE COMPLIANCE:
- * - Strong typing via using declarations
- * - Prevents parameter swapping
- * - Zero runtime overhead
- */
+// T1pe Aliases (Semantic Types)
 using AudioFrequency = uint32_t;
 using AudioDuration = uint32_t;
 using AudioVolume = uint8_t;
 using CooldownMs = uint32_t;
 
-/**
- * @brief Audio constants (Flash-Resident for RAM Savings)
- *
- * DIAMOND CODE COMPLIANCE:
- * - constexpr values stored in flash
- * - No RAM allocation at runtime
- * - Compile-time evaluation
- */
+// Constants (Flash-Resident for RAM Savings)
 namespace AudioConstants {
     EDA_FLASH_CONST constexpr AudioFrequency DEFAULT_LOW_FREQ = 800;
     EDA_FLASH_CONST constexpr AudioFrequency DEFAULT_MEDIUM_FREQ = 1000;
@@ -68,39 +39,15 @@ namespace AudioConstants {
     EDA_FLASH_CONST constexpr uint32_t BEEP_SAMPLE_RATE = 24000;
 }
 
-/**
- * @brief Audio Alert Manager
- *
- * DIAMOND CODE COMPLIANCE:
- * - Static methods only (no instances, no heap allocation)
- * - Thread-safe using MutexLock from eda_locking.hpp
- * - Stack-allocated operations
- * - noexcept for ISR safety
- * - Uses static storage for state
- */
+// Audio Alert Manager
 struct AudioAlertManager {
-    /**
-     * @brief Get mutex reference
-     * @note ChibiOS static initialization - no double-checked locking needed
-     *
-     * DIAMOND CODE COMPLIANCE:
-     * - Static storage (no heap allocation)
-     * - Thread-safe initialization
-     */
+    // * * @brief Get mutex reference * @note ChibiOS static initialization - no double-checked locking needed
     static Mutex& get_mutex() noexcept {
         static Mutex audio_mutex{};
         return audio_mutex;
     }
 
-    /**
-     * @brief Play audio alert for specified threat level
-     * @note FIX #3: Eliminated TOCTOU race condition, FIX #5: systime_t overflow handled by ChibiOS
-     *
-     * DIAMOND CODE COMPLIANCE:
-     * - Thread-safe using MutexLock from eda_locking.hpp
-     * - Stack-allocated operations
-     * - noexcept for ISR safety
-     */
+    // * * @brief Play audio alert for specified threat level * @note FIX #3: Eliminated TOCTOU race condition, FIX #5: systime_t overflow handled by ChibiOS
     static void play_alert(ThreatLevel level) noexcept {
         // Guard clause: Early return for NONE threat level
         if (level == ThreatLevel::NONE) {
@@ -132,41 +79,19 @@ struct AudioAlertManager {
         baseband::request_audio_beep(freq_hz, AudioConstants::BEEP_SAMPLE_RATE, AudioConstants::BEEP_DURATION);
     }
 
-    /**
-     * @brief Enable or disable audio alerts
-     *
-     * DIAMOND CODE COMPLIANCE:
-     * - Thread-safe using MutexLock from eda_locking.hpp
-     * - Stack-allocated operations
-     * - noexcept for ISR safety
-     */
+    // / @brief Enable or disable audio alerts
     static void set_enabled(bool enable) noexcept {
         MutexLock lock(get_mutex());
         audio_enabled_ = enable;
     }
 
-    /**
-     * @brief Check if audio alerts are enabled
-     *
-     * DIAMOND CODE COMPLIANCE:
-     * - Thread-safe using MutexLock from eda_locking.hpp
-     * - Stack-allocated operations
-     * - noexcept for ISR safety
-     */
+    // / @brief Check if audio alerts are enabled
     static bool is_enabled() noexcept {
         MutexLock lock(get_mutex());
         return audio_enabled_;
     }
 
-    /**
-     * @brief Set cooldown period between alerts
-     *
-     * DIAMOND CODE COMPLIANCE:
-     * - Thread-safe using MutexLock from eda_locking.hpp
-     * - Stack-allocated operations
-     * - noexcept for ISR safety
-     * - Input validation with clamping
-     */
+    // * * @brief Set cooldown period between alerts
     static void set_cooldown_ms(CooldownMs cooldown_ms) noexcept {
         // Input validation: clamp to reasonable range
         if (cooldown_ms < 10) {
@@ -180,29 +105,14 @@ struct AudioAlertManager {
     }
 
 private:
-    /**
-     * @brief Check if cooldown period has expired
-     * @note FIX #5: systime_t overflow handled by ChibiOS
-     *
-     * DIAMOND CODE COMPLIANCE:
-     * - Stack-allocated operations
-     * - noexcept for ISR safety
-     */
+    // * * @brief Check if cooldown period has expired * @note FIX #5: systime_t overflow handled by ChibiOS
     static bool is_cooldown_expired() noexcept {
         const systime_t now = chTimeNow();
         const systime_t elapsed_ticks = now - last_alert_timestamp_;
         return elapsed_ticks >= MS2ST(cooldown_ms_);
     }
 
-    /**
-     * @brief Get audio frequency for threat level
-     * @note FIX #7: Removed redundant default case, FIX #4: Returns uint32_t to match baseband API
-     *
-     * DIAMOND CODE COMPLIANCE:
-     * - Stack-allocated operations
-     * - noexcept for ISR safety
-     * - Compile-time switch optimization
-     */
+    // * * @brief Get audio frequency for threat level * @note FIX #7: Removed redundant default case, FIX #4: Returns uint32_t to match baseband API
     static AudioFrequency get_frequency_for_threat_level(ThreatLevel level) noexcept {
         switch (level) {
             case ThreatLevel::LOW:
@@ -227,13 +137,6 @@ private:
 };
 
 // Compile-time Type Safety Assertions
-/**
- * @brief Compile-time type safety assertions
- *
- * DIAMOND CODE COMPLIANCE:
- * - Compile-time validation ensures type compatibility
- * - Zero runtime overhead
- */
 static_assert(std::is_same<AudioFrequency, uint32_t>::value,
               "AudioFrequency must be uint32_t to match baseband API");
 
@@ -242,14 +145,7 @@ static_assert(std::is_same<AudioFrequency, uint32_t>::value,
     #error "EDA_FLASH_CONST must be defined for Flash storage optimization"
 #endif
 
-/**
- * @brief Class-Compatible Interface (maintains API compatibility)
- *
- * DIAMOND CODE COMPLIANCE:
- * - Stack-allocated (no heap allocation)
- * - Delegates to static AudioAlertManager
- * - noexcept for ISR safety
- */
+// Class-Compatible Interface (maintains API compatibility)
 class AudioManager {
 public:
     AudioManager() = default;
@@ -277,14 +173,7 @@ public:
     }
 };
 
-/**
- * @brief Drone Audio Settings
- *
- * DIAMOND CODE COMPLIANCE:
- * - POD-compatible for efficient storage
- * - Stack-allocated
- * - Fixed-size fields (no dynamic allocation)
- */
+// Drone Audio Settings
 struct DroneAudioSettings {
     bool audio_enabled = true;
     ThreatLevel test_threat_level = ThreatLevel::HIGH;

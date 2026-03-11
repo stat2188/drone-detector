@@ -5,20 +5,6 @@
 #ifndef SETTINGS_PERSISTENCE_HPP_
 #define SETTINGS_PERSISTENCE_HPP_
 
-// ============================================================================
-// DIAMOND CODE COMPLIANCE NOTES:
-// ============================================================================
-// This file follows Diamond Code principles for embedded C++ on STM32F405:
-// - NO std::vector, std::string, std::map, std::atomic, new, malloc
-// - NO exceptions, NO RTTI
-// - PERMITTED: std::array, std::string_view, fixed-size buffers, stack allocation
-// - Stack allocation only (max 4KB stack)
-// - Uses MutexLock from eda_locking.hpp for thread-safe operations
-// - Uses constexpr, enum class, using Type = uintXX_t;
-// - No magic numbers - uses constants from eda_constants.hpp
-// - Zero-Overhead and Data-Oriented Design principles
-// ============================================================================
-
 // C++ standard library headers (alphabetical order)
 #include <array>
 #include <cstddef>
@@ -51,14 +37,7 @@
 
 namespace ui::apps::enhanced_drone_analyzer {
 
-/**
- * @brief Inline wrapper for strnlen (not available in all environments)
- *
- * DIAMOND CODE COMPLIANCE:
- * - No heap allocation
- * - Stack-allocated operations
- * - noexcept for ISR safety
- */
+// Inline wrapper for strnlen (not available in all environments)
 inline size_t strnlen_wrapper(const char* str, size_t max_len) noexcept {
     if (!str) return 0;
     size_t len = 0;
@@ -76,12 +55,6 @@ inline size_t strnlen_wrapper(const char* str, size_t max_len) noexcept {
  * @note Handles overlapping buffers using memmove semantics
  * @note Returns void for compatibility with existing call sites
  * @note If max_len is 0 or pointers are null, returns without modification
- *
- * DIAMOND CODE COMPLIANCE:
- * - No heap allocation
- * - Stack-allocated operations
- * - Handles overlapping buffers correctly
- * - noexcept for ISR safety
  */
 inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
     // Guard clauses for null pointers and zero length
@@ -90,7 +63,7 @@ inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
     }
 
     // Check for overlapping buffers (src < dest && src + max_len > dest)
-    // This is forward overlap case that would corrupt data with memcpy
+    // This is the forward overlap case that would corrupt data with memcpy
     if (src < dest && src + max_len > dest) {
         // Overlap detected - use memmove for safety
         // memmove handles overlapping buffers correctly
@@ -109,11 +82,11 @@ inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
 }
 
 // Settings Buffer Mutex Declaration (merged from settings_persistence.cpp)
-//
+// 
 // IMPORTANT LINKER DEPENDENCY:
 // This mutex is declared here (extern) but defined in ui_enhanced_drone_settings.cpp.
 // The linker will resolve this symbol at link time, so both files must be compiled
-// and linked together for firmware to build successfully.
+// and linked together for the firmware to build successfully.
 //
 // Purpose: Protects settings buffer during load/save operations
 // Usage: Use SettingsBufferLock RAII wrapper for automatic locking
@@ -121,13 +94,6 @@ extern Mutex settings_buffer_mutex;
 
 // NOTE: Using EDA_FLASH_CONST from eda_constants.hpp for flash storage
 
-/**
- * @brief Setting type enumeration
- *
- * DIAMOND CODE COMPLIANCE:
- * - Type-safe enum class with explicit underlying type
- * - Zero runtime overhead
- */
 enum SettingType : uint8_t {
     TYPE_BOOL = 0,
     TYPE_UINT32 = 1,
@@ -138,14 +104,6 @@ enum SettingType : uint8_t {
     TYPE_BITFIELD = 6  // Renumbered after adding TYPE_INT64
 };
 
-/**
- * @brief Setting metadata structure
- *
- * DIAMOND CODE COMPLIANCE:
- * - POD-compatible for flash storage
- * - Fixed-size fields (no dynamic allocation)
- * - Stack-allocated
- */
 struct SettingMetadata {
     const char* key;
     uint16_t offset;
@@ -170,15 +128,6 @@ struct SettingMetadata {
 // - log_file_path, log_format, max_log_file_size_kb
 constexpr size_t SETTINGS_COUNT = 35;
 
-/**
- * @brief Settings lookup table (flash storage)
- *
- * DIAMOND CODE COMPLIANCE:
- * - constexpr array stored in flash
- * - No RAM allocation at runtime
- * - Compile-time size known
- * - POD-compatible entries
- */
 inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
     SET_META_BIT(audio_flags, 0, "true"),
     SET_META(audio_alert_frequency_hz, TYPE_UINT32, 200, 20000, "800"),
@@ -199,7 +148,7 @@ inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
     SET_META(rssi_threshold_db, TYPE_INT32, -120, 10, "-90"),
     SET_META_BIT(scanning_flags, 0, "false"),
     // DIAMOND FIX #5: Changed from TYPE_UINT64 to TYPE_INT64 for frequency settings
-    // This matches Frequency type definition (int64_t) and prevents type ambiguity
+    // This matches the Frequency type definition (int64_t) and prevents type ambiguity
     // BREAKING CHANGE: Settings file format unchanged (values are positive integers)
     // Migration: No action required for existing settings files
     SET_META(wideband_min_freq_hz, TYPE_INT64, 2400000000LL, 7200000000LL, "2400000000"),
@@ -237,24 +186,10 @@ inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
     SET_META(settings_version, TYPE_UINT32, 1, 999, "2")
 };
 
-/**
- * @brief Check if value is in range
- *
- * DIAMOND CODE COMPLIANCE:
- * - Inline constexpr for zero-overhead
- * - No heap allocation
- */
 inline bool is_value_in_range(int64_t val, int64_t min_val, int64_t max_val) {
     return val >= min_val && val <= max_val;
 }
 
-/**
- * @brief Get string length (null-safe)
- *
- * DIAMOND CODE COMPLIANCE:
- * - noexcept for ISR safety
- * - No heap allocation
- */
 inline size_t const_strlen(const char* str) noexcept {
     return str ? strlen(str) : 0;
 }
@@ -278,12 +213,6 @@ constexpr uint64_t INT64_MIN_ABS = 0x8000000000000000ULL;  // Absolute value of 
  * @note Rejects trailing non-whitespace characters
  * @note Detects overflow during parsing
  * @note No heap allocation, no exceptions
- *
- * DIAMOND CODE COMPLIANCE:
- * - No heap allocation
- * - No exceptions - uses EDA::ErrorResult
- * - Stack-allocated operations
- * - noexcept for ISR safety
  */
 inline EDA::ErrorResult<uint64_t> parse_uint64(const char* str, int base = 10) noexcept {
     // Guard clause: null or empty string
@@ -309,10 +238,10 @@ inline EDA::ErrorResult<uint64_t> parse_uint64(const char* str, int base = 10) n
     // Parse digits until non-digit character
     uint64_t result = 0;
     bool has_digits = false;
-
+    
     while (*str != '\0') {
         uint8_t digit_val = INVALID_DIGIT;
-
+        
         if (*str >= '0' && *str <= '9') {
             digit_val = static_cast<uint8_t>(*str - '0');
         } else if (*str >= 'A' && *str <= 'Z') {
@@ -320,43 +249,43 @@ inline EDA::ErrorResult<uint64_t> parse_uint64(const char* str, int base = 10) n
         } else if (*str >= 'a' && *str <= 'z') {
             digit_val = static_cast<uint8_t>(*str - 'a' + 10);
         }
-
+        
         // Stop parsing at first non-digit character
         if (digit_val == INVALID_DIGIT || digit_val >= static_cast<uint8_t>(base)) {
             break;
         }
-
+        
         // Check for overflow before multiplying
         if (result > UINT64_MAX / static_cast<uint64_t>(base)) {
             return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
         }
-
+        
         result *= static_cast<uint64_t>(base);
-
+        
         // Check for overflow before adding
         if (result > UINT64_MAX - static_cast<uint64_t>(digit_val)) {
             return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
         }
-
+        
         result += static_cast<uint64_t>(digit_val);
         has_digits = true;
         str++;
     }
-
+    
     if (!has_digits) {
         return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
-
+    
     // Skip trailing whitespace
     while (*str == ' ' || *str == '\t' || *str == '\r' || *str == '\n') {
         str++;
     }
-
+    
     // Reject any trailing non-whitespace characters
     if (*str != '\0') {
         return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
-
+    
     return EDA::ErrorResult<uint64_t>::ok(result);
 }
 
@@ -368,10 +297,6 @@ inline EDA::ErrorResult<uint64_t> parse_uint64(const char* str, int base = 10) n
  * @param str String to parse
  * @param base Number base (default 10)
  * @return EDA::ErrorResult<uint64_t> with parsed value or error
- *
- * DIAMOND CODE COMPLIANCE:
- * - No heap allocation
- * - No exceptions - uses EDA::ErrorResult
  */
 inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base = 10) noexcept {
     return parse_uint64(str, base);
@@ -393,12 +318,6 @@ inline EDA::ErrorResult<uint64_t> safe_str_to_uint64(const char* str, int base =
  * @note Rejects trailing non-whitespace characters
  * @note Detects overflow during parsing
  * @note No heap allocation, no exceptions
- *
- * DIAMOND CODE COMPLIANCE:
- * - No heap allocation
- * - No exceptions - uses EDA::ErrorResult
- * - Stack-allocated operations
- * - noexcept for ISR safety
  */
 inline EDA::ErrorResult<int64_t> parse_int64(const char* str, int base = 10) noexcept {
     // Guard clause: null or empty string
@@ -433,10 +352,10 @@ inline EDA::ErrorResult<int64_t> parse_int64(const char* str, int base = 10) noe
     // Parse magnitude as unsigned
     uint64_t magnitude = 0;
     bool has_digits = false;
-
+    
     while (*str != '\0') {
         uint8_t digit_val = INVALID_DIGIT;
-
+        
         if (*str >= '0' && *str <= '9') {
             digit_val = static_cast<uint8_t>(*str - '0');
         } else if (*str >= 'A' && *str <= 'Z') {
@@ -444,43 +363,43 @@ inline EDA::ErrorResult<int64_t> parse_int64(const char* str, int base = 10) noe
         } else if (*str >= 'a' && *str <= 'z') {
             digit_val = static_cast<uint8_t>(*str - 'a' + 10);
         }
-
+        
         // Stop parsing at first non-digit character
         if (digit_val == INVALID_DIGIT || digit_val >= static_cast<uint8_t>(base)) {
             break;
         }
-
+        
         // Check for overflow before multiplying
         if (magnitude > UINT64_MAX / static_cast<uint64_t>(base)) {
             return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
         }
-
+        
         magnitude *= static_cast<uint64_t>(base);
-
+        
         // Check for overflow before adding
         if (magnitude > UINT64_MAX - static_cast<uint64_t>(digit_val)) {
             return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
         }
-
+        
         magnitude += static_cast<uint64_t>(digit_val);
         has_digits = true;
         str++;
     }
-
+    
     if (!has_digits) {
         return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
-
+    
     // Skip trailing whitespace
     while (*str == ' ' || *str == '\t' || *str == '\r' || *str == '\n') {
         str++;
     }
-
+    
     // Reject any trailing non-whitespace characters
     if (*str != '\0') {
         return EDA::ErrorResult<int64_t>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
     }
-
+    
     // Apply sign and check for signed overflow
     if (is_negative) {
         // Check if magnitude exceeds INT64_MIN absolute value
@@ -505,27 +424,12 @@ inline EDA::ErrorResult<int64_t> parse_int64(const char* str, int base = 10) noe
  * @param str String to parse
  * @param base Number base (default 10)
  * @return EDA::ErrorResult<int64_t> with parsed value or error
- *
- * DIAMOND CODE COMPLIANCE:
- * - No heap allocation
- * - No exceptions - uses EDA::ErrorResult
  */
 inline EDA::ErrorResult<int64_t> safe_str_to_int64(const char* str, int base = 10) noexcept {
     return parse_int64(str, base);
 }
 
-/**
- * @brief Safely parse boolean from string
- * @param str String to parse
- * @return EDA::ErrorResult<bool> with parsed value or error
- * @note Accepts "true" or "false" (case-sensitive)
- * @note Rejects partial matches like "trueX"
- *
- * DIAMOND CODE COMPLIANCE:
- * - No heap allocation
- * - No exceptions - uses EDA::ErrorResult
- * - noexcept for ISR safety
- */
+// * * @brief Safely parse boolean from string * @param str String to parse * @return EDA::ErrorResult<bool> with parsed value or error * * @note Accepts "true" or "false" (case-sensitive) * @note Rejects partial matches like "trueX"
 inline EDA::ErrorResult<bool> safe_str_to_bool(const char* str) noexcept {
     // Guard clause: null or empty string
     if (!str || *str == '\0') {
@@ -554,15 +458,8 @@ inline EDA::ErrorResult<bool> safe_str_to_bool(const char* str) noexcept {
     return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::INVALID_ARGUMENT);
 }
 
-/**
- * @brief SETTINGS BUFFER LOCK (RAII)
- *
- * DIAMOND CODE COMPLIANCE:
- * - RAII wrapper for automatic mutex unlock
- * - noexcept for ISR safety
- * - Deleted copy/move for safety
- * - Uses ChibiOS chMtxUnlock() without parameter (newer API)
- */
+// SETTINGS BUFFER LOCK (RAII)
+// * * @brief RAII wrapper for settings buffer mutex * * Ensures mutex is always unlocked when scope exits. * * @note Diamond Code: noexcept, deleted copy/move for safety * @note Uses ChibiOS chMtxUnlock() without parameter (newer API)
 class SettingsBufferLock {
 public:
     SettingsBufferLock() noexcept {
@@ -586,19 +483,12 @@ extern Mutex load_buffer_mutex;
 // Defined in ui_enhanced_drone_settings.cpp at global scope
 extern Mutex header_buffer_mutex;
 
-/**
- * @brief LOAD BUFFER LOCK (RAII)
- *
- * FIX R08: RAII wrapper for load buffer mutex
- * Ensures mutex is always unlocked when scope exits, preventing deadlocks
- * on early returns from load() function.
- *
- * DIAMOND CODE COMPLIANCE:
- * - RAII wrapper for automatic mutex unlock
- * - noexcept for ISR safety
- * - Deleted copy/move for safety
- * - Uses ChibiOS chMtxUnlock() without parameter (newer API)
- */
+// LOAD BUFFER LOCK (RAII)
+// FIX R08: RAII wrapper for load buffer mutex
+// Ensures mutex is always unlocked when scope exits, preventing deadlocks
+// on early returns from load() function.
+// @note Diamond Code: noexcept, deleted copy/move for safety
+// @note Uses ChibiOS chMtxUnlock() without parameter (newer API)
 class LoadBufferLock {
 public:
     LoadBufferLock() noexcept {
@@ -613,15 +503,8 @@ public:
     LoadBufferLock& operator=(const LoadBufferLock&) = delete;
 };
 
-/**
- * @brief SETTINGS SERIALIZATION HELPER
- *
- * DIAMOND CODE COMPLIANCE:
- * - No heap allocation
- * - Stack-allocated operations
- * - Handles SpectrumMode enum class (stored as uint8_t underlying type)
- * - noexcept for ISR safety
- */
+// SETTINGS SERIALIZATION HELPER
+// * * @brief Serialize setting to buffer * @param buf Output buffer * @param offset Offset in buffer * @param max_size Maximum buffer size * @param s Settings struct * @param meta Setting metadata * @return Number of bytes written * * @note Handles SpectrumMode enum class (stored as uint8_t underlying type)
 inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
                                 const DroneAnalyzerSettings& s, const SettingMetadata& meta) {
     // Guard clause: null check for buffer pointer
@@ -666,31 +549,15 @@ inline size_t serialize_setting(char* buf, size_t offset, size_t max_size,
     return 0;
 }
 
-/**
- * @brief DISPATCH OPERATION ENUM
- *
- * DIAMOND CODE COMPLIANCE:
- * - Type-safe enum class with explicit underlying type
- * - Zero runtime overhead
- */
+// DISPATCH OPERATION ENUM
 enum class DispatchOp : uint8_t {
     PARSE,      ///< Parse string value
     RESET,       ///< Reset to default value
     VALIDATE    ///< Validate current value
 };
 
-/**
- * @brief DISPATCH BY TYPE HELPER
- *
- * DIAMOND CODE COMPLIANCE:
- * - No heap allocation
- * - Stack-allocated operations
- * - noexcept for ISR safety
- * - DIAMOND FIX: Uses safe parsing functions with error detection
- * - CRITICAL BUG FIX: Replaced unsafe strtoul/strtol with safe_str_to_uint64/safe_str_to_int64
- * - CRITICAL BUG FIX: Replaced insecure strncmp("true", 4) with safe_str_to_bool
- * - Handles SpectrumMode enum class (stored as uint8_t underlying type)
- */
+// DISPATCH BY TYPE HELPER
+// * * @brief Dispatch setting value based on type and operation * * @param op Operation to perform (PARSE, RESET, VALIDATE) * @param data_ptr Pointer to setting data in DroneAnalyzerSettings struct * @param meta Metadata for setting * @param value_str String value to parse (for PARSE operation) * @return true if operation succeeded, false otherwise * * @note DIAMOND FIX: Uses safe parsing functions with error detection * @note CRITICAL BUG FIX: Replaced unsafe strtoul/strtol with safe_str_to_uint64/safe_str_to_int64 * @note CRITICAL BUG FIX: Replaced insecure strncmp("true", 4) with safe_str_to_bool * @note Handles SpectrumMode enum class (stored as uint8_t underlying type)
 inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
                           const SettingMetadata& meta, char* value_str = nullptr) noexcept {
     switch (meta.type) {
@@ -868,88 +735,69 @@ inline bool dispatch_by_type(DispatchOp op, uint8_t* data_ptr,
 static constexpr size_t MAX_READ_ITERATIONS = 10000;
 static constexpr systime_t READ_TIMEOUT_MS = 5000;
 
-/**
- * @brief SETTINGS LOAD BUFFER STRUCTURE
- *
- * Stack usage: 256 bytes total (FIX #3: Reduced from 400 bytes)
- * - LINE_BUFFER_SIZE: 128 bytes (reduced from 144)
- * - READ_BUFFER_SIZE: 128 bytes (reduced from 256)
- *
- * DIAMOND CODE COMPLIANCE:
- * - Fixed-size arrays (no heap allocation)
- * - Stack-allocated
- * - Compile-time size known
- */
+// * * @brief Settings load buffer structure * * Stack usage: 256 bytes total (FIX #3: Reduced from 400 bytes) * - LINE_BUFFER_SIZE: 128 bytes (reduced from 144) * - READ_BUFFER_SIZE: 128 bytes (reduced from 256)
 struct SettingsLoadBuffer {
-    // @brief Line buffer for individual settings lines
-    // @note 128 bytes: 112 bytes max line + 16 byte safety margin (FIX #3)
+    // / @brief Line buffer for individual settings lines
+    // / @note 128 bytes: 112 bytes max line + 16 byte safety margin (FIX #3)
     static constexpr size_t LINE_BUFFER_SIZE = 128;
 
-    // @brief Read buffer for raw SD card data
-    // @note 128 bytes: Reduced to save stack space (FIX #3)
+    // / @brief Read buffer for raw SD card data
+    // / @note 128 bytes: Reduced to save stack space (FIX #3)
     static constexpr size_t READ_BUFFER_SIZE = 128;
 
     char line_buffer[LINE_BUFFER_SIZE];
     char read_buffer[READ_BUFFER_SIZE];
 };
 
-/**
- * @brief SETTINGS LOAD BUFFER MUTEX
- * SETTINGS LOAD BUFFER (Getter)
- * Thread-safe getter for static load buffer
- * Returns a reference to a mutex-protected buffer
- * NOTE: The caller must hold load_buffer_mutex while using buffer
- *
- * DIAMOND CODE COMPLIANCE:
- * - Static storage (no heap allocation)
- * - Returns reference (no copying)
- */
+// SETTINGS LOAD BUFFER MUTEX
+// SETTINGS LOAD BUFFER (Getter)
+// Thread-safe getter for the static load buffer
+// Returns a reference to a mutex-protected buffer
+// NOTE: The caller must hold load_buffer_mutex while using the buffer
 inline SettingsLoadBuffer& get_load_buffer() noexcept {
     static SettingsLoadBuffer buffer{};
     return buffer;
 }
 
-/**
- * @brief M4 INTERRUPT MASKING
- *
- * @brief RAII wrapper for M4 interrupt masking with PLL1 control
- *
- * CRITICAL SIDE EFFECT: This class disables PLL1 (Phase Locked Loop 1) which
- * provides the main CPU clock. This has significant performance implications:
- *
- * 1. PERFORMANCE IMPACT:
- *    - PLL1 provides high-speed system clock (typically 204 MHz)
- *    - When disabled, system falls back to a much slower clock source
- *    - All operations while this RAII object is active will run significantly slower
- *    - Timing-sensitive operations (delays, timeouts, etc.) will be affected
- *
- * 2. INTERRUPT MASKING:
- *    - Disables M4 interrupts during critical sections to prevent race conditions
- *    - Prevents SV#8 hard faults when M4 interrupts fire while M0 kernel is locked
- *    - Uses creg::m4txevent for M4->M0 interrupt control
- *
- * 3. CRITICAL SECTIONS:
- *    - Should ONLY be used during SD card file I/O operations
- *    - Keep critical sections as short as possible to minimize performance impact
- *    - Avoid any timing-sensitive operations while this is active
- *    - Do NOT use for general-purpose locking or synchronization
- *
- * 4. USAGE PATTERN:
- *    {
- *        M4InterruptMask m4_mask;  // Disables M4 interrupts AND PLL1
- *        // Perform SD card operations here
- *        // Keep this section short!
- *    }  // Automatically re-enables M4 interrupts AND PLL1
- *
- * 5. WARNING:
- *    - Do NOT use this for operations that depend on accurate timing
- *    - Do NOT use this for long-running operations
- *    - Do NOT nest M4InterruptMask objects (undefined behavior)
- *    - The system clock will be significantly slower while this is active
- *
- * @note Diamond Code: noexcept, deleted copy/move for safety
- * @note Automatically restores PLL1 and M4 interrupts on destruction
- */
+// M4 INTERRUPT MASKING
+//
+// @brief RAII wrapper for M4 interrupt masking with PLL1 control
+//
+// CRITICAL SIDE EFFECT: This class disables PLL1 (Phase Locked Loop 1) which
+// provides the main CPU clock. This has significant performance implications:
+//
+// 1. PERFORMANCE IMPACT:
+//    - PLL1 provides the high-speed system clock (typically 204 MHz)
+//    - When disabled, the system falls back to a much slower clock source
+//    - All operations while this RAII object is active will run significantly slower
+//    - Timing-sensitive operations (delays, timeouts, etc.) will be affected
+//
+// 2. INTERRUPT MASKING:
+//    - Disables M4 interrupts during critical sections to prevent race conditions
+//    - Prevents SV#8 hard faults when M4 interrupts fire while M0 kernel is locked
+//    - Uses creg::m4txevent for M4->M0 interrupt control
+//
+// 3. CRITICAL SECTIONS:
+//    - Should ONLY be used during SD card file I/O operations
+//    - Keep critical sections as short as possible to minimize performance impact
+//    - Avoid any timing-sensitive operations while this is active
+//    - Do NOT use for general-purpose locking or synchronization
+//
+// 4. USAGE PATTERN:
+//    {
+//        M4InterruptMask m4_mask;  // Disables M4 interrupts AND PLL1
+//        // Perform SD card operations here
+//        // Keep this section short!
+//    }  // Automatically re-enables M4 interrupts AND PLL1
+//
+// 5. WARNING:
+//    - Do NOT use this for operations that depend on accurate timing
+//    - Do NOT use this for long-running operations
+//    - Do NOT nest M4InterruptMask objects (undefined behavior)
+//    - The system clock will be significantly slower while this is active
+//
+// @note Diamond Code: noexcept, deleted copy/move for safety
+// @note Automatically restores PLL1 and M4 interrupts on destruction
 class M4InterruptMask {
 public:
     M4InterruptMask() noexcept {
@@ -964,50 +812,38 @@ public:
     M4InterruptMask& operator=(const M4InterruptMask&) = delete;
 };
 
-/**
- * @brief SETTINGS PERSISTENCE TEMPLATE
- *
- * @brief Settings persistence template
- * Provides load/save/reset/validate operations for any settings type.
- * Uses look-up table for efficient parsing and validation.
- *
- * @tparam T Settings type (must be compatible with SETTINGS_LUT)
- *
- * DIAMOND CODE COMPLIANCE:
- * - Template-based (no heap allocation)
- * - Stack-allocated operations
- * - No exceptions - uses EDA::ErrorResult
- */
+// SETTINGS PERSISTENCE TEMPLATE
+// * * @brief Settings persistence template * * Provides load/save/reset/validate operations for any settings type. * Uses look-up table for efficient parsing and validation. * * @tparam T Settings type (must be compatible with SETTINGS_LUT)
 template<typename T>
 class SettingsPersistence {
 public:
-    // @brief Load settings from file
-    // @param settings Settings struct to populate
-    // @return EDA::ErrorResult<bool> with success/failure
+    // / @brief Load settings from file
+    // / @param settings Settings struct to populate
+    // / @return EDA::ErrorResult<bool> with success/failure
     static EDA::ErrorResult<bool> load(T& settings);
 
-    // @brief Save settings to file
-    // @param settings Settings struct to save
-    // @return EDA::ErrorResult<bool> with success/failure
+    // / @brief Save settings to file
+    // / @param settings Settings struct to save
+    // / @return EDA::ErrorResult<bool> with success/failure
     static EDA::ErrorResult<bool> save(const T& settings);
 
-    // @brief Reset settings to defaults
-    // @param settings Settings struct to reset
+    // / @brief Reset settings to defaults
+    // / @param settings Settings struct to reset
     static void reset(T& settings);
 
-    // @brief Validate settings values
-    // @param settings Settings struct to validate
-    // @return EDA::ErrorResult<bool> with success/failure
+    // / @brief Validate settings values
+    // / @param settings Settings struct to validate
+    // / @return EDA::ErrorResult<bool> with success/failure
     static EDA::ErrorResult<bool> validate(const T& settings);
 
-    // @brief Compatibility alias for reset_to_defaults
+    // / @brief Compatibility alias for reset_to_defaults
     static void reset_to_defaults(T& settings) { reset(settings); }
 
 private:
-    // @brief Parse single settings line
-    // @param line Line to parse
-    // @param settings Settings struct to update
-    // @return true if parsing succeeded
+    // / @brief Parse single settings line
+    // / @param line Line to parse
+    // / @param settings Settings struct to update
+    // / @return true if parsing succeeded
     static bool parse_line(char* line, T& settings);
 };
 
@@ -1309,7 +1145,7 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::validate(const T& settings) {
 }
 
 // Explicit template instantiation for DroneAnalyzerSettings (merged from settings_persistence.cpp)
-// This ensures template is instantiated for specific settings type
+// This ensures the template is instantiated for the specific settings type
 template class SettingsPersistence<DroneAnalyzerSettings>;
 
 } // namespace ui::apps::enhanced_drone_analyzer

@@ -4982,11 +4982,6 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_load_settings() {
                             settings_.wideband_max_freq_hz);
     
     // FIX: Update coordinator parameters after settings load
-    // CRITICAL FIX: Add null check to prevent wild call before coordinator is initialized
-    if (scanning_coordinator_ == nullptr) {
-        status_bar_.update_normal_status("ERROR", "Coordinator not ready");
-        return;
-    }
     scanning_coordinator_->update_runtime_parameters(settings_);
 
     // DIAMOND FIX: Update scanner's settings from view's settings
@@ -5283,12 +5278,6 @@ namespace {
 }
 
 void EnhancedDroneSpectrumAnalyzerView::handle_scanner_update() {
-    // CRITICAL FIX: Guard against wild calls - check initialization state
-    // Prevents access to scanner before initialization is complete
-    if (init_state_ != InitState::FULLY_INITIALIZED) {
-        return;
-    }
-    
     // SAFETY: Early exit if buffers are not valid
     if (!display_controller_.are_buffers_valid()) {
         return;

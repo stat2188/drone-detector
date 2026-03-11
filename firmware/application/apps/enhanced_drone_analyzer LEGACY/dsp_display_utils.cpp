@@ -146,7 +146,7 @@ BarSpectrumRenderData calculate_bar_render_data(
 ) noexcept {
     // Suppress unused parameter warning: x_position is intentionally unused
     // This function calculates only vertical rendering data (y_top, bar_height, color_idx)
-    // while caller manages horizontal positioning (separation of concerns)
+    // while the caller manages horizontal positioning (separation of concerns)
     (void)params.x_position;
     
     BarSpectrumRenderData result;

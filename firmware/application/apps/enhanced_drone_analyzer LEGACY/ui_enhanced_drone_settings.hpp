@@ -1,20 +1,4 @@
 // ui_enhanced_drone_settings.hpp
-//
-// DIAMOND CODE COMPLIANCE:
-// - NO std::vector, std::map, std::atomic, new, malloc, exceptions, RTTI
-// - PERMITTED: std::array, std::string_view, fixed-size buffers, stack allocation
-// - Stack allocation only (max 4KB stack)
-// - Uses constexpr, enum class, using Type = uintXX_t;
-// - No magic numbers
-// - Zero-Overhead and Data-Oriented Design principles
-//
-// NOTE: std::string is used in title() method and FixedStringBuffer class
-//       These are framework workarounds - PortaPack UI framework requires std::string
-//       return type for View::title() and TextEdit widget requires std::string&
-//       Full fix requires framework changes to support std::string_view or const char*
-//
-// Phase 5: UI Layer - Settings UI Component
-// Depends on: settings_persistence (Phase 2), scanning_coordinator (Phase 4)
 
 #ifndef UI_ENHANCED_DRONE_SETTINGS_HPP_
 #define UI_ENHANCED_DRONE_SETTINGS_HPP_
@@ -618,7 +602,7 @@ public:
         return title_str;
     }
 
-  private:
+ private:
     NavigationView& nav_;
     Button button_audio_settings_{{8, 32, 224, 32}, "Audio Settings", false};
     Button button_hardware_settings_{{8, 72, 224, 32}, "Hardware Settings", false};

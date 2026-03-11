@@ -1,48 +1,3 @@
-/**
- * @file ui_enhanced_drone_analyzer.hpp
- * @brief Main Enhanced Drone Analyzer View - UI Layer
- *
- * PHASE 5 MIGRATION - UI LAYER
- * Migrated from LEGACY/ to main enhanced_drone_analyzer/ directory
- *
- * DIAMOND CODE COMPLIANCE:
- * - Stack allocation only (max 4KB stack per thread on STM32F405)
- * - Uses fixed-size buffers for all data storage
- * - No heap allocation (no new, malloc, std::vector, std::map)
- * - Uses constexpr, enum class, using Type = uintXX_t
- * - No magic numbers (all constants defined)
- * - Zero-Overhead and Data-Oriented Design principles
- *
- * INITIALIZATION SEQUENCE:
- * This file implements the initialization sequence from the EDA diagrams:
- * - System Initialization (in main.cpp): halInit() → chSysInit() → initialize_eda_mutexes() → initialize_app()
- * - Application Initialization (in constructor): DroneHardwareController → DroneScanner → DroneDisplayController → AudioManager → ScanningCoordinator::initialize()
- * - Phase Machine (step_deferred_initialization): 6 phases executed in order
- *
- * PHASE MACHINE IMPLEMENTATION:
- * - Tracks phase completion with PhaseCompletion struct to prevent race conditions
- * - Phase 1: Buffers allocated (display buffers)
- * - Phase 2: Database loaded (async database loading)
- * - Phase 3: Hardware ready (hardware initialization)
- * - Phase 4: UI layout ready (UI setup)
- * - Phase 5: Settings loaded (settings persistence)
- * - Phase 6: Finalized (all initialization complete)
- *
- * FRAMEWORK EXCEPTIONS:
- * - std::string: Used only in title() method (framework requirement)
- * - std::function: Used only for event callbacks (framework requirement)
- * - These are framework types that must be used when interacting with the PortaPack UI
- *
- * INTERNAL DATA STRUCTURES:
- * - All internal data uses fixed-size buffers (char arrays, std::array)
- * - TrackedDrone uses fixed-size history arrays (MAX_HISTORY = 3)
- * - FrequencyHopDetector uses stack-allocated state
- * - No dynamic memory allocation for application data
- *
- * Target: STM32F405 (ARM Cortex-M4, 128KB RAM)
- * Environment: ChibiOS RTOS / PortaPack UI Framework
- */
-
 #ifndef UI_ENHANCED_DRONE_ANALYZER_HPP_
 #define UI_ENHANCED_DRONE_ANALYZER_HPP_
 
@@ -2145,31 +2100,6 @@ public:
             ui_layout_ready = false;
             settings_loaded = false;
             finalized = false;
-        }
-
-        /**
-         * @brief Check if a specific phase is complete
-         * @param phase The InitState to check
-         * @return true if the phase is complete
-         * @note This prevents wild calls by verifying phase completion before access
-         */
-        [[nodiscard]] bool is_phase_complete(InitState phase) const noexcept {
-            switch (phase) {
-                case InitState::BUFFERS_ALLOCATED:
-                    return buffers_allocated;
-                case InitState::DATABASE_LOADED:
-                    return database_loaded;
-                case InitState::HARDWARE_READY:
-                    return hardware_ready;
-                case InitState::UI_LAYOUT_READY:
-                    return ui_layout_ready;
-                case InitState::SETTINGS_LOADED:
-                    return settings_loaded;
-                case InitState::FULLY_INITIALIZED:
-                    return finalized;
-                default:
-                    return false;
-            }
         }
     };
 

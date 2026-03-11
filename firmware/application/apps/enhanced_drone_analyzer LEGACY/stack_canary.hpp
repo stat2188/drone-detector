@@ -39,22 +39,13 @@
  *   // Safe to use up to REQUIRED_STACK bytes
  *   // ... function code ...
  *
- * @note CRITICAL: This replaces broken StackCanary implementation
+ * @note CRITICAL: This replaces the broken StackCanary implementation
  * @note CRITICAL: Uses ChibiOS stack monitoring (not canary values)
  * @note Safe to use in function context (not global)
  * @note Safe to use in ISR context (returns 0 if no thread context)
  *
  * @author Diamond Code Pipeline - Stack Monitor Implementation
  * @date 2026-03-07
- * Phase 1 Migration - Foundation Layer (Infrastructure)
- *
- * DIAMOND CODE COMPLIANCE:
- * - No forbidden constructs (std::vector, std::string, std::map, std::atomic, new, malloc)
- * - Stack allocation only (max 4KB stack)
- * - Uses constexpr, enum class, using Type = uintXX_t
- * - No magic numbers (all constants defined)
- * - Zero-Overhead and Data-Oriented Design principles
- * - Self-contained and compilable
  */
 
 #ifndef STACK_CANARY_HPP_
@@ -63,8 +54,6 @@
 // C++ standard library headers (alphabetical order)
 #include <cstddef>
 #include <cstdint>
-
-// Project-specific headers (alphabetical order)
 #include "chconf.h"
 #include "chdebug.h"
 #include "chlists.h"
@@ -149,10 +138,10 @@ namespace StackMonitorConfig {
  *   // Safe to use up to REQUIRED_STACK bytes
  *   // ... function code ...
  *
- * @note CRITICAL: This replaces broken StackCanary implementation
+ * @note CRITICAL: This replaces the broken StackCanary implementation
  * @note CRITICAL: Uses ChibiOS stack monitoring (not canary values)
  * @note Safe to use in function context (not global)
- * @note Safe to use in ISR context (returns 0 free bytes)
+ * @note Safe to use in ISR context (returns 0 if no thread context)
  * @note Conservative: Adds 256-byte safety margin to stack checks
  */
 class StackMonitor {
@@ -226,7 +215,7 @@ public:
     /**
      * @brief Get estimated free stack bytes
      * @return Estimated free stack space in bytes
-     * @note This is actual free stack space (without safety margin)
+     * @note This is the actual free stack space (without safety margin)
      *
      * USAGE:
      * @code

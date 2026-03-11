@@ -1,23 +1,5 @@
 // @file scanning_coordinator.hpp
 // @brief Coordinate scanning operations for Enhanced Drone Analyzer
-//
-// DIAMOND CODE - Phase 4: Coordination Layer
-// ============================================
-// Migrated from LEGACY/ with Diamond Code compliance:
-// - No forbidden constructs (std::vector, std::string, std::map, std::atomic, new, malloc)
-// - Stack allocation only (max 4KB stack per thread)
-// - Uses constexpr, enum class, using Type = uintXX_t
-// - No magic numbers (all constants defined)
-// - Zero-Overhead and Data-Oriented Design principles
-// - Singleton pattern with proper initialization order handling
-// - Thread-safe using MutexLock from eda_locking.hpp
-// - Custom AtomicFlag class (NOT std::atomic) using GCC built-ins
-//
-// Target: STM32F405 (ARM Cortex-M4, 128KB RAM)
-// Environment: Bare-metal / ChibiOS RTOS
-//
-// @author Diamond Code Pipeline - Phase 4 Migration
-// @date 2026-03-11
 
 #ifndef SCANNING_COORDINATOR_HPP_
 #define SCANNING_COORDINATOR_HPP_
@@ -51,9 +33,9 @@ class DroneScanner;
 class DroneDisplayController;
 
 // ============================================================================
-// STATIC STORAGE PROTECTION WITH CANARY PATTERN
+// FIX #1 & #2: STATIC STORAGE PROTECTION WITH CANARY PATTERN
 // ============================================================================
-// DIAMOND OPTIMIZATION: Static storage with canary pattern for corruption detection
+// DIAMOND FIX #2: Add memory barriers and canary patterns for corruption detection
 //
 // FEATURES:
 // - Placement new construction in static storage (no heap allocation)
@@ -150,7 +132,7 @@ private:
 /**
  * @brief Result codes for start_coordinated_scanning() operation
  *
- * DIAMOND OPTIMIZATION: Changed from int to uint8_t for memory efficiency
+ * P2-MED FIX #E004: Changed from int to uint8_t for memory efficiency
  * - Reduces enum size from 4 bytes to 1 byte
  * - Saves 3 bytes per StartResult variable/return value
  * - No impact on functionality (enum has < 256 values)
@@ -171,8 +153,6 @@ enum class StartResult : uint8_t {
 // - Stack-only allocation (8KB working area)
 // - Full mutex protection for thread-safe state management
 // - No heap allocation
-// - Singleton pattern with proper initialization order handling
-// - Custom AtomicFlag class (NOT std::atomic) using GCC built-ins
 class ScanningCoordinator {
     // Allow StaticStorage to access private constructor
     template <typename T>
@@ -235,7 +215,7 @@ public:
 
     // Check if scanning is currently active
     // @return true if scanning is active, false otherwise
-    // Mutex-protected access (not inline)
+    // FIX #RC-1: Mutex-protected access (not inline)
     [[nodiscard]] bool is_scanning_active() const noexcept;
 
     // Update runtime parameters from settings
@@ -299,20 +279,21 @@ private:
     DroneDisplayController& display_controller_;
     AudioManager& audio_controller_;
 
-    // Thread synchronization
+    // FIX #RC-1: Thread synchronization
     mutable Mutex state_mutex_;     ///< Protects scanning_active_, thread_terminated_, thread_generation_
     Mutex thread_mutex_;            ///< Protects thread creation/destruction
 
-    // State flags (access under state_mutex_)
+    // FIX #RC-1: State flags (access under state_mutex_)
     bool scanning_active_{false};
     bool thread_terminated_{false};  ///< Thread termination flag (set by thread when exiting)
     uint32_t thread_generation_{0}; ///< Thread generation counter (prevents missed signals during restart)
     ::Thread* scanning_thread_{nullptr};
     uint32_t scan_interval_ms_{EDA::Constants::DEFAULT_SCAN_INTERVAL_MS};
 
-    // Stack size for coordinator thread (4KB to prevent stack overflow)
+    // P0-STOP FIX #1: Increased from 3072 to 4096 bytes (33% increase) to prevent stack overflow
     // Stack usage analysis shows coordinator thread requires ~2.5KB with nested function calls
     // This provides 1536 bytes of safety margin (4096 - 2500 - 256 overhead)
+    // Increased to provide additional safety margin for nested function calls and future enhancements
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 4096;
 
     // ============================================================================
@@ -331,12 +312,13 @@ private:
                   "COORDINATOR_THREAD_STACK_SIZE below 1KB minimum for safe operation");
 
     // Thread working area (defined in .cpp file to avoid ODR issues)
-    // Static variable is defined in .cpp file to prevent dynamic initialization issues
+    // P1-HIGH FIX: Static variable is defined in .cpp file to prevent dynamic initialization issues
     // NOLINTNEXTLINE(cert-err58-cpp): coordinator_wa_ is defined in .cpp with compile-time constant size
     static stkalign_t coordinator_wa_[THD_WA_SIZE(COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 
 public:
     // DIAMOND FIX: Static storage pattern (no heap allocation)
+    // RED TEAM FIX #CRITICAL FLAW #5: Remove static initializer, use explicit init function
     // CRITICAL FIX: Use AtomicFlag instead of volatile bool for proper memory barriers
     // AtomicFlag provides acquire/release memory ordering and lock-free operations
     // This ensures proper memory ordering across all CPU cores and prevents
@@ -354,7 +336,7 @@ private:
 };  // class ScanningCoordinator
 
 // ============================================================================
-// EXPLICIT INITIALIZATION FUNCTION
+// RED TEAM FIX #CRITICAL FLAW #5: Explicit initialization function
 // ============================================================================
 // Function to initialize EDA mutexes after ChibiOS RTOS is ready.
 // Must be called AFTER chSysInit() in main() to prevent undefined behavior.

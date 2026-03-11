@@ -1,32 +1,23 @@
 /**
  * @file eda_stl_compat.hpp
  * @brief Safe STL compatibility utilities for Enhanced Drone Analyzer
- *
+ * 
  * DIAMOND FIX #5: Create eda_stl_compat.hpp (missing header)
  * - Provides safe string utilities without std::string
  * - Provides safe array utilities without std::vector
  * - Zero-heap, RAII, noexcept implementations
- *
+ * 
  * Target: STM32F405 (ARM Cortex-M4, 128KB RAM)
  * Environment: ChibiOS RTOS
- *
+ * 
  * Constraints:
  * - NO std::string (heap allocation forbidden)
  * - NO std::vector (heap allocation forbidden)
  * - NO std::atomic (use ChibiOS atomic operations)
  * - NO new/malloc (heap allocation forbidden)
  * - PERMITTED: std::array, std::string_view, fixed-size buffers
- *
+ * 
  * @note All functions are noexcept for embedded safety
- * Phase 1 Migration - Foundation Layer (Infrastructure)
- *
- * DIAMOND CODE COMPLIANCE:
- * - No forbidden constructs (std::vector, std::string, std::map, std::atomic, new, malloc)
- * - Stack allocation only (max 4KB stack)
- * - Uses constexpr, enum class, using Type = uintXX_t
- * - No magic numbers (all constants defined)
- * - Zero-Overhead and Data-Oriented Design principles
- * - Self-contained and compilable
  */
 
 #ifndef EDA_STL_COMPAT_HPP_
@@ -39,7 +30,7 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 /**
  * @brief Safe string utilities (no heap allocation)
- *
+ * 
  * All string operations use fixed-size buffers and are noexcept.
  * No std::string is used to prevent heap allocation.
  */
@@ -47,7 +38,7 @@ namespace SafeString {
 
 /**
  * @brief Safe string copy with bounds checking
- *
+ * 
  * @param dest Destination buffer
  * @param dest_size Size of destination buffer in bytes
  * @param src Source string (null-terminated)
@@ -77,7 +68,7 @@ inline size_t safe_copy(char* dest, size_t dest_size, const char* src) noexcept 
 
 /**
  * @brief Safe string concatenation with bounds checking
- *
+ * 
  * @param dest Destination buffer
  * @param dest_size Size of destination buffer in bytes
  * @param src Source string to append (null-terminated)
@@ -117,7 +108,7 @@ inline size_t safe_cat(char* dest, size_t dest_size, const char* src) noexcept {
 
 /**
  * @brief Safe string length with null pointer check
- *
+ * 
  * @param str String to measure (null-terminated)
  * @return Length of string (0 if str is nullptr)
  * @note noexcept for embedded safety
@@ -135,7 +126,7 @@ inline size_t safe_len(const char* str) noexcept {
 
 /**
  * @brief Safe string comparison with null pointer handling
- *
+ * 
  * @param str1 First string (null-terminated)
  * @param str2 Second string (null-terminated)
  * @return true if strings are equal (including both nullptr)
@@ -160,7 +151,7 @@ inline bool safe_eq(const char* str1, const char* str2) noexcept {
 
 /**
  * @brief Check if string starts with prefix
- *
+ * 
  * @param str String to check (null-terminated)
  * @param prefix Prefix to match (null-terminated)
  * @return true if str starts with prefix
@@ -191,7 +182,7 @@ inline bool starts_with(const char* str, const char* prefix) noexcept {
 
 /**
  * @brief Find character in string
- *
+ * 
  * @param str String to search (null-terminated)
  * @param ch Character to find
  * @return Pointer to first occurrence, or nullptr if not found
@@ -215,7 +206,7 @@ inline const char* find_char(const char* str, char ch) noexcept {
 
 /**
  * @brief Safe array utilities (no std::vector)
- *
+ * 
  * All array operations use fixed-size std::array or raw arrays.
  * No std::vector is used to prevent heap allocation.
  */
@@ -223,7 +214,7 @@ namespace SafeArray {
 
 /**
  * @brief Safe array fill with bounds checking
- *
+ * 
  * @tparam T Element type
  * @tparam N Array size
  * @param arr Array to fill
@@ -239,7 +230,7 @@ inline void fill(T (&arr)[N], const T& value) noexcept {
 
 /**
  * @brief Safe array copy with bounds checking
- *
+ * 
  * @tparam T Element type
  * @tparam N Source array size
  * @tparam M Destination array size
@@ -260,7 +251,7 @@ inline size_t copy(T (&dest)[M], const T (&src)[N]) noexcept {
 
 /**
  * @brief Safe array find with bounds checking
- *
+ * 
  * @tparam T Element type
  * @tparam N Array size
  * @param arr Array to search
@@ -280,7 +271,7 @@ inline size_t find(const T (&arr)[N], const T& value) noexcept {
 
 /**
  * @brief Safe array count with bounds checking
- *
+ * 
  * @tparam T Element type
  * @tparam N Array size
  * @param arr Array to search
@@ -301,7 +292,7 @@ inline size_t count(const T (&arr)[N], const T& value) noexcept {
 
 /**
  * @brief Safe array max with bounds checking
- *
+ * 
  * @tparam T Element type
  * @tparam N Array size
  * @param arr Array to search
@@ -324,7 +315,7 @@ inline T max(const T (&arr)[N]) noexcept {
 
 /**
  * @brief Safe array min with bounds checking
- *
+ * 
  * @tparam T Element type
  * @tparam N Array size
  * @param arr Array to search
@@ -347,7 +338,7 @@ inline T min(const T (&arr)[N]) noexcept {
 
 /**
  * @brief Safe array sum with bounds checking
- *
+ * 
  * @tparam T Element type
  * @tparam N Array size
  * @param arr Array to sum
@@ -365,7 +356,7 @@ inline T sum(const T (&arr)[N]) noexcept {
 
 /**
  * @brief Safe array average with bounds checking
- *
+ * 
  * @tparam T Element type (integer type)
  * @tparam N Array size
  * @param arr Array to average
@@ -382,7 +373,7 @@ inline T average(const T (&arr)[N]) noexcept {
 
 /**
  * @brief Safe array clamp with bounds checking
- *
+ * 
  * @tparam T Element type
  * @tparam N Array size
  * @param arr Array to clamp
@@ -406,7 +397,7 @@ inline void clamp(T (&arr)[N], T min_val, T max_val) noexcept {
 
 /**
  * @brief Safe buffer utilities for fixed-size buffers
- *
+ * 
  * Provides utilities for working with fixed-size buffers
  * without dynamic allocation.
  */
@@ -414,7 +405,7 @@ namespace SafeBuffer {
 
 /**
  * @brief Circular buffer index increment
- *
+ * 
  * @param index Current index
  * @param size Buffer size (must be power of 2)
  * @return Next index (wrapping around)
@@ -426,7 +417,7 @@ inline size_t next_index(size_t index, size_t size) noexcept {
 
 /**
  * @brief Circular buffer index decrement
- *
+ * 
  * @param index Current index
  * @param size Buffer size (must be power of 2)
  * @return Previous index (wrapping around)
@@ -438,7 +429,7 @@ inline size_t prev_index(size_t index, size_t size) noexcept {
 
 /**
  * @brief Check if size is power of 2
- *
+ * 
  * @param size Size to check
  * @return true if size is power of 2
  * @note noexcept for embedded safety
@@ -449,7 +440,7 @@ inline constexpr bool is_power_of_two(size_t size) noexcept {
 
 /**
  * @brief Safe modulo operation for circular buffers
- *
+ * 
  * @param index Index to wrap
  * @param size Buffer size (must be power of 2)
  * @return Wrapped index

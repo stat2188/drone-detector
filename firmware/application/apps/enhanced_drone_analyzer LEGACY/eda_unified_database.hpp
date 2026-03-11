@@ -4,20 +4,6 @@
 #ifndef EDA_UNIFIED_DATABASE_HPP_
 #define EDA_UNIFIED_DATABASE_HPP_
 
-// ============================================================================
-// DIAMOND CODE COMPLIANCE NOTES:
-// ============================================================================
-// This file follows Diamond Code principles for embedded C++ on STM32F405:
-// - NO std::vector, std::string, std::map, std::atomic, new, malloc
-// - NO exceptions, NO RTTI
-// - PERMITTED: std::array, std::string_view, fixed-size buffers, stack allocation
-// - Stack allocation only (max 4KB stack)
-// - Uses constexpr, enum class, using Type = uintXX_t;
-// - No magic numbers - uses constants from eda_constants.hpp
-// - Thread-safe with MutexLock from eda_locking.hpp
-// - Zero-Overhead and Data-Oriented Design principles
-// ============================================================================
-
 // C++ standard library headers (alphabetical order)
 #include <array>
 #include <cstddef>
@@ -30,7 +16,6 @@
 // Project-specific headers (alphabetical order)
 #include "chmtx.h"
 #include "eda_constants.hpp"
-#include "eda_locking.hpp"
 #include "rf_path.hpp"
 #include "ui_drone_common_types.hpp"
 
@@ -42,35 +27,26 @@ using rf::Frequency;
 // Unified Drone Entry Structure (48 bytes)
 // ============================================================================
 
-/**
- * @brief Unified drone database entry
- *
- * DIAMOND CODE COMPLIANCE:
- * - Fixed-size char array for description (no std::string)
- * - POD-compatible for efficient storage
- * - Stack-allocated
- * - Compile-time size verification
- */
 struct UnifiedDroneEntry {
     Frequency frequency_hz = 0;       // 8 bytes
-    char description[32] = "";        // 32 bytes
+    char description[32] = "";        // 32 bytes  
     uint8_t threat_level = 0;         // 1 byte (ThreatLevel enum)
     uint8_t frequency_band = 0;       // 1 byte (frequency band identifier)
     uint16_t flags = 0;               // 2 bytes (reserved for future use)
     uint8_t reserved[4] = {};         // 4 bytes (padding/reserved)
-
+    
     // Total: 48 bytes
-
+    
     // [[nodiscard]] - Validation result must be used by caller
     [[nodiscard]] constexpr bool is_valid() const noexcept {
         return frequency_hz > 0;
     }
-
+    
     // [[nodiscard]] - Description check result must be used by caller
     [[nodiscard]] constexpr bool has_description() const noexcept {
         return description[0] != '\0';
     }
-
+    
     constexpr void clear() noexcept {
         frequency_hz = 0;
         description[0] = '\0';
@@ -81,7 +57,7 @@ struct UnifiedDroneEntry {
     }
 };
 
-// DIAMOND CODE COMPLIANCE: Compile-time size verification
+// Compile-time size verification
 static_assert(sizeof(UnifiedDroneEntry) == 48, "UnifiedDroneEntry must be exactly 48 bytes");
 
 // ============================================================================
@@ -91,17 +67,17 @@ static_assert(sizeof(UnifiedDroneEntry) == 48, "UnifiedDroneEntry must be exactl
 namespace DatabaseConfig {
     // Unified limit based on memory analysis (5,760 bytes total)
     constexpr size_t MAX_ENTRIES = 120;
-
+    
     // Entry and database sizes
     constexpr size_t ENTRY_SIZE = sizeof(UnifiedDroneEntry);
     constexpr size_t DATABASE_SIZE = MAX_ENTRIES * ENTRY_SIZE;
-
+    
     // Maximum number of observers (fixed-size array, no heap)
     constexpr size_t MAX_OBSERVERS = 4;
-
+    
     // Maximum description length (matches freqman format)
     constexpr size_t MAX_DESCRIPTION_LENGTH = 32;
-
+    
     // Validation thresholds
     constexpr Frequency MIN_FREQ = EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
     constexpr Frequency MAX_FREQ = EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
@@ -119,13 +95,7 @@ enum class DatabaseEventType : uint8_t {
     DATABASE_RELOADED = 4
 };
 
-/**
- * @brief Database change event for observer notifications
- *
- * DIAMOND CODE COMPLIANCE:
- * - POD-compatible for efficient storage
- * - Non-owning pointer to entry (zero-copy)
- */
+// Database change event for observer notifications
 struct DatabaseChangeEvent {
     DatabaseEventType type;
     size_t index;                       // Affected entry index
@@ -153,34 +123,25 @@ struct DatabaseStats {
 // Non-Owning Database View (Zero-Copy Iteration)
 // ============================================================================
 
-/**
- * @brief Non-owning view of database entries
- *
- * DIAMOND CODE COMPLIANCE:
- * - Non-owning reference (zero-copy)
- * - No heap allocation
- * - Stack-allocated
- * - Provides read-only access to database entries
- */
 class DatabaseView {
 public:
     constexpr DatabaseView(const UnifiedDroneEntry* entries, size_t count) noexcept
         : entries_(entries), count_(count) {}
-
+    
     // [[nodiscard]] - Entry access must be used
     [[nodiscard]] constexpr const UnifiedDroneEntry& operator[](size_t index) const noexcept {
         return entries_[index];
     }
-
+    
     // [[nodiscard]] - Size must be used
     [[nodiscard]] constexpr size_t size() const noexcept { return count_; }
     // [[nodiscard]] - Empty check must be used
     [[nodiscard]] constexpr bool empty() const noexcept { return count_ == 0; }
-
+    
     // Iterator support for range-based for
     const UnifiedDroneEntry* begin() const noexcept { return entries_; }
     const UnifiedDroneEntry* end() const noexcept { return entries_ + count_; }
-
+    
 private:
     const UnifiedDroneEntry* entries_;
     size_t count_;
@@ -221,23 +182,23 @@ struct ExcludeIndex {
     size_t value;
     explicit constexpr ExcludeIndex(size_t v) noexcept : value(v) {}
     constexpr operator size_t() const noexcept { return value; }
-}
+};
 
 // Validate complete entry
 // [[nodiscard]] - Validation result must be used by caller
 [[nodiscard]] inline ValidationResult validate_entry(const UnifiedDroneEntry& entry) noexcept {
     // Check frequency range
     if (!is_valid(entry.frequency_hz)) {
-        return {false, "Frequency out of hardware range",
+        return {false, "Frequency out of hardware range", 
                 static_cast<uint8_t>(ValidationErrorCode::FREQUENCY_OUT_OF_RANGE)};
     }
-
+    
     // Check frequency safety
     if (!is_safe(entry.frequency_hz)) {
         return {false, "Frequency outside safe operating range",
                 static_cast<uint8_t>(ValidationErrorCode::FREQUENCY_UNSAFE)};
     }
-
+    
     // Check description length (must be null-terminated within buffer)
     if (entry.description[31] != '\0') {
         // Check if description fills entire buffer without null terminator
@@ -253,13 +214,13 @@ struct ExcludeIndex {
                     static_cast<uint8_t>(ValidationErrorCode::DESCRIPTION_TOO_LONG)};
         }
     }
-
+    
     // Check threat level (max valid is UNKNOWN = 5)
     if (entry.threat_level > static_cast<uint8_t>(ThreatLevel::UNKNOWN)) {
         return {false, "Invalid threat level",
                 static_cast<uint8_t>(ValidationErrorCode::INVALID_THREAT_LEVEL)};
     }
-
+    
     return {true, nullptr, static_cast<uint8_t>(ValidationErrorCode::OK)};
 }
 
@@ -285,34 +246,23 @@ struct ExcludeIndex {
 // Main Unified Database Class (Singleton)
 // ============================================================================
 
-/**
- * @brief Thread-safe unified drone frequency database
- *
- * DIAMOND CODE COMPLIANCE:
- * - Singleton pattern with static storage (no heap allocation)
- * - Thread-safe using MutexLock from eda_locking.hpp
- * - Fixed-size std::array for storage (no std::vector)
- * - Observer pattern with fixed-size array (no heap)
- * - No exceptions - uses boolean return values
- * - Stack-allocated operations
- */
 class UnifiedDroneDatabase {
 public:
     // Singleton access (static storage, no heap)
     // Thread-safe: C++11 guarantees atomic initialization of static local variables
     // Defined in eda_unified_database.cpp to avoid header-only dynamic initialization
     static UnifiedDroneDatabase& instance() noexcept;
-
+    
     // Disable copy/move
     UnifiedDroneDatabase(const UnifiedDroneDatabase&) = delete;
     UnifiedDroneDatabase& operator=(const UnifiedDroneDatabase&) = delete;
-
+    
     // === Lifecycle ===
-
+    
     // Initialize database (call once at app startup)
     // [[nodiscard]] - Initialization success must be checked
     [[nodiscard]] bool initialize() noexcept;
-
+    
     // Load from file (replaces current content)
     // [[nodiscard]] - Load success must be checked
     //
@@ -320,7 +270,7 @@ public:
     // File API compatibility needs review before implementation.
     // See eda_unified_database.cpp for detailed implementation requirements.
     [[nodiscard]] bool load(const char* path = "/FREQMAN/DRONES.TXT") noexcept;
-
+    
     // Save to file
     // [[nodiscard]] - Save success must be checked
     //
@@ -328,98 +278,97 @@ public:
     // File API compatibility needs review before implementation.
     // See eda_unified_database.cpp for detailed implementation requirements.
     [[nodiscard]] bool save(const char* path = "/FREQMAN/DRONES.TXT") noexcept;
-
+    
     // Clear all entries
     void clear() noexcept;
-
+    
     // === Entry Access ===
-
+    
     // Get read-only view (thread-safe snapshot)
     // [[nodiscard]] - View must be used
     [[nodiscard]] DatabaseView get_view() const noexcept;
-
+    
     // Get entry count
     // [[nodiscard]] - Size must be used
     [[nodiscard]] size_t size() const noexcept;
     [[nodiscard]] size_t capacity() const noexcept { return DatabaseConfig::MAX_ENTRIES; }
     // [[nodiscard]] - Empty check must be used
     [[nodiscard]] bool empty() const noexcept;
-
+    
     // Get single entry (bounds-checked)
     // [[nodiscard]] - Entry pointer must be used
     [[nodiscard]] const UnifiedDroneEntry* get_entry(size_t index) const noexcept;
-
+    
     // === Modification (triggers observer notifications) ===
-
+    
     // Add entry (returns index or -1 if full)
     // [[nodiscard]] - Index must be used
     [[nodiscard]] int add_entry(const UnifiedDroneEntry& entry) noexcept;
-
+    
     // Update entry at index
     // [[nodiscard]] - Success must be checked
     [[nodiscard]] bool update_entry(size_t index, const UnifiedDroneEntry& entry) noexcept;
-
+    
     // Delete entry at index
     // [[nodiscard]] - Success must be checked
     [[nodiscard]] bool delete_entry(size_t index) noexcept;
-
+    
     // === Observer Pattern ===
-
+    
     // Register observer (returns false if max observers reached)
     // [[nodiscard]] - Registration success must be checked
     [[nodiscard]] bool add_observer(DatabaseObserverCallback callback, void* user_data) noexcept;
-
+    
     // Remove observer
     void remove_observer(DatabaseObserverCallback callback) noexcept;
-
+    
     // === Validation ===
-
+    
     // Validate entry before adding
     // [[nodiscard]] - Validation result must be used
     [[nodiscard]] bool validate_entry(const UnifiedDroneEntry& entry) const noexcept;
-
+    
     // Validate entry data for corruption protection (internal use)
     // [[nodiscard]] - Validation result must be used
     [[nodiscard]] bool validate_entry_data(const UnifiedDroneEntry& entry) noexcept;
-
+    
     // Get statistics
     // [[nodiscard]] - Stats must be used
     [[nodiscard]] DatabaseStats get_stats() const noexcept;
-
+    
     // === Thread Safety ===
-
+    
     // Acquire mutex for bulk operations
     void lock() noexcept;
     void unlock() noexcept;
-
+    
 private:
     UnifiedDroneDatabase() noexcept;
     ~UnifiedDroneDatabase() noexcept = default;
-
+    
     // Notify all observers
     void notify_observers(const DatabaseChangeEvent& event) noexcept;
-
+    
     // Observer entry structure
     struct ObserverEntry {
         DatabaseObserverCallback callback = nullptr;
         void* user_data = nullptr;
         bool active = false;
     };
-
-    // DIAMOND CODE COMPLIANCE: Storage (static allocation)
+    
+    // Storage (static allocation)
     std::array<UnifiedDroneEntry, DatabaseConfig::MAX_ENTRIES> entries_{};
-
+    
     // State
     size_t entry_count_ = 0;
     bool initialized_ = false;
-
-    // DIAMOND CODE COMPLIANCE: Thread synchronization using ChibiOS Mutex
-    // Uses MutexLock from eda_locking.hpp for RAII-style locking
+    
+    // Thread synchronization
     mutable Mutex mutex_{};
-
-    // DIAMOND CODE COMPLIANCE: Observers (fixed-size array, no heap)
+    
+    // Observers (fixed-size array, no heap)
     std::array<ObserverEntry, DatabaseConfig::MAX_OBSERVERS> observers_{};
-
+    
     // Statistics
     mutable DatabaseStats stats_{};
 };
@@ -428,7 +377,6 @@ private:
 // Compile-Time Size Checks
 // ============================================================================
 
-// DIAMOND CODE COMPLIANCE: Compile-time size assertion ensures memory budget compliance
 static_assert(DatabaseConfig::DATABASE_SIZE <= 8192, "Database storage exceeds 8KB limit");
 
 } // namespace ui::apps::enhanced_drone_analyzer

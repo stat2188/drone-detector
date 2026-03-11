@@ -1,23 +1,11 @@
-// @file scanning_coordinator.cpp
-// @brief Coordinate scanning operations for Enhanced Drone Analyzer
-//
-// DIAMOND CODE - Phase 4: Coordination Layer
-// ============================================
-// Migrated from LEGACY/ with Diamond Code compliance:
-// - No forbidden constructs (std::vector, std::string, std::map, std::atomic, new, malloc)
-// - Stack allocation only (max 4KB stack per thread)
-// - Uses constexpr, enum class, using Type = uintXX_t
-// - No magic numbers (all constants defined)
-// - Zero-Overhead and Data-Oriented Design principles
-// - Singleton pattern with proper initialization order handling
-// - Thread-safe using MutexLock from eda_locking.hpp
-// - Custom AtomicFlag class (NOT std::atomic) using GCC built-ins
-//
-// Target: STM32F405 (ARM Cortex-M4, 128KB RAM)
-// Environment: Bare-metal / ChibiOS RTOS
-//
-// @author Diamond Code Pipeline - Phase 4 Migration
-// @date 2026-03-11
+// * @file scanning_coordinator.cpp * @brief Coordinate scanning operations for Enhanced Drone Analyzer
+// * DIAMOND CODE PRINCIPLES:
+// * - Zero heap allocation: All memory is stack-allocated or in Flash
+// * - No exceptions: All functions are noexcept
+// * - Type-safe: Uses semantic type aliases
+// * - Memory-safe: Uses ChibiOS RTOS for thread management
+// * @author Diamond Code Pipeline
+// * @date 2026-02-27
 
 // Corresponding header (must be first)
 #include "scanning_coordinator.hpp"
@@ -52,7 +40,8 @@ namespace ui::apps::enhanced_drone_analyzer {
 // SINGLETON STORAGE DEFINITION
 // ============================================================================
 
-// DIAMOND FIX: Use StaticStorage class with canary pattern for corruption detection
+// FIX #1 & #2: Static storage with canary pattern for corruption detection
+// DIAMOND FIX: Use StaticStorage class with canary values and memory barriers
 // No heap allocation - all memory is in static storage
 static StaticStorage<ScanningCoordinator> coordinator_storage;
 
@@ -63,7 +52,7 @@ Mutex ScanningCoordinator::init_mutex_;
 AtomicFlag ScanningCoordinator::initialized_;  // AtomicFlag for thread-safe singleton pattern
 
 // ============================================================================
-// EXPLICIT INITIALIZATION FUNCTION
+// RED TEAM FIX #CRITICAL FLAW #5: Explicit initialization function
 // ============================================================================
 // Initialize EDA mutexes after ChibiOS RTOS is ready.
 // Must be called AFTER chSysInit() in main() to prevent undefined behavior.
@@ -71,22 +60,13 @@ AtomicFlag ScanningCoordinator::initialized_;  // AtomicFlag for thread-safe sin
 // @note This replaces the static initializer pattern which runs before main()
 //       and before chSysInit(), causing undefined behavior with ChibiOS mutexes.
 //
-// P1-HIGH FIX: Initialize all static Mutex objects
+// P1-HIGH FIX #E003: Initialize all static Mutex objects
 // - Static Mutex objects require explicit initialization after ChibiOS RTOS is ready
 // - chMtxInit() must be called after chSysInit() to avoid undefined behavior
 // - This function initializes all EDA mutexes in one place
 void initialize_eda_mutexes() noexcept {
-    // CRITICAL FIX: Add guard to prevent wild calls
-    // Ensure mutexes are only initialized once to prevent double initialization
-    // Double initialization can cause undefined behavior with ChibiOS mutexes
-    static bool mutexes_initialized = false;
-    if (mutexes_initialized) {
-        return;  // Already initialized
-    }
-    
     // Initialize ScanningCoordinator mutex
     chMtxInit(&ScanningCoordinator::init_mutex_);
-    mutexes_initialized = true;
 
     // BUG #1 FIX: Initialize g_database_mutex via public static function
     // g_database_mutex is defined in ui_enhanced_drone_settings.cpp:1118
@@ -102,7 +82,7 @@ void initialize_eda_mutexes() noexcept {
 }
 
 // Coordinator Thread Working Area Definition
-// Stack Budget Revised with Hidden Stack Usage Sources
+// CRITICAL FIX #4: Stack Budget Revised with Hidden Stack Usage Sources
 // Original: 2048 bytes (underestimated by 50-130%)
 // Revised: 3072 bytes (50% increase, realistic worst-case)
 //
@@ -162,12 +142,12 @@ namespace ReturnCodes {
  * @note Uses double-checked locking with memory barriers for thread safety
  * @note This is the recommended method for optional singleton access
  *
- * DIAMOND FIX: Fixed malformed comment block
+ * P3-LOW FIX #E005: Fixed malformed comment block
  * - Removed incomplete comment block that was never closed
  * - Properly formatted documentation comment
  */
 ScanningCoordinator* ScanningCoordinator::instance_safe() noexcept {
-    // DIAMOND FIX: Atomic load with acquire semantics
+    // HIGH-004 FIX: Atomic load with acquire semantics
     // Use __atomic_load_n for atomic pointer access to prevent TOCTOU race
     // Load pointer atomically first, then check if it's null
     ScanningCoordinator* ptr = const_cast<ScanningCoordinator*>(
@@ -196,7 +176,7 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
                                    DroneScanner& scanner,
                                    DroneDisplayController& display_controller,
                                    AudioManager& audio_controller) noexcept {
-    // DIAMOND FIX: Use hardware memory barrier for thread-safe singleton access
+    // RED TEAM FIX #CRITICAL FLAW #1: Use hardware memory barrier for thread-safe singleton access
     // NOTE: Using __atomic_thread_fence(__ATOMIC_SEQ_CST) for full memory barrier
     //       This ensures proper memory ordering across all CPU cores and prevents
     //       race conditions in the double-checked locking pattern.
@@ -209,7 +189,7 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
         return false;
     }
 
-    // DIAMOND FIX: Use StaticStorage class with canary pattern (no heap allocation)
+    // FIX #1 & #2: Use StaticStorage class with canary pattern (no heap allocation)
     // StaticStorage provides memory corruption detection via canary values
     // and uses compiler intrinsic memory barriers for thread safety
     coordinator_storage.construct(nav, hardware, scanner, display_controller, audio_controller);
@@ -226,7 +206,7 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
     // Using __atomic_store_n ensures proper memory ordering across all CPU cores
     __atomic_store_n(&instance_ptr_, &coordinator_storage.get(), __ATOMIC_RELEASE);
 
-    // DIAMOND FIX: Use hardware memory barrier for thread-safe singleton access
+    // RED TEAM FIX #CRITICAL FLAW #1: Use hardware memory barrier for thread-safe singleton access
     // CRITICAL FIX: Use AtomicFlag store() instead of direct assignment
     // AtomicFlag provides acquire/release memory ordering and lock-free operations
     // This ensures proper memory ordering across all CPU cores and prevents
@@ -269,9 +249,10 @@ ScanningCoordinator::~ScanningCoordinator() noexcept {
 }
 
 StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
-    // DIAMOND FIX: Lock order validation to prevent deadlock
+    // PHASE 2 FIX #4: Lock order validation to prevent deadlock
     // Lock ordering: thread_mutex_ (DATA_MUTEX) -> state_mutex_ (DATA_MUTEX)
     // Both locks are at DATA_MUTEX level, so order is determined by acquisition sequence
+    // P2-MED FIX #E006: Removed unused LockOrderValidator variable
     // Lock order is enforced by consistent acquisition sequence
 
     MutexLock thread_lock(thread_mutex_, LockOrder::DATA_MUTEX);
@@ -313,7 +294,7 @@ StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
 }
 
 void ScanningCoordinator::stop_coordinated_scanning() noexcept {
-    // DIAMOND FIX: Lock ordering documentation
+    // PHASE 2 FIX #7: Lock ordering documentation
     // Lock ordering: thread_mutex_ (DATA_MUTEX) -> state_mutex_ (DATA_MUTEX)
     // Both locks are at DATA_MUTEX level, so order is determined by acquisition sequence
     // This prevents deadlock by ensuring consistent lock acquisition order
@@ -350,7 +331,7 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
 }
 
 bool ScanningCoordinator::is_scanning_active() const noexcept {
-    // DIAMOND FIX: Full mutex protection for state access
+    // FIX #RC-1: Full mutex protection for state access
     MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
     return scanning_active_;
 }
@@ -465,7 +446,7 @@ dsp::DisplayDataSnapshot ScanningCoordinator::get_display_data_snapshot() const 
  *
  * @return FilteredDronesSnapshot containing active drones for display
  *
- * DIAMOND FIX: Replaced magic number 10 with dsp::DisplayTypeConstants::MAX_FILTERED_DRONES
+ * PHASE 3 FIX #9: Replaced magic number 10 with dsp::DisplayTypeConstants::MAX_FILTERED_DRONES
  */
 dsp::FilteredDronesSnapshot ScanningCoordinator::get_filtered_drones_snapshot() const noexcept {
     dsp::FilteredDronesSnapshot snapshot;
@@ -474,7 +455,7 @@ dsp::FilteredDronesSnapshot ScanningCoordinator::get_filtered_drones_snapshot() 
     DroneScanner::DroneSnapshot drone_snapshot = scanner_.get_tracked_drones_snapshot();
 
     // Copy tracked drones to filtered snapshot (max MAX_FILTERED_DRONES)
-    // DIAMOND FIX: Replaced magic number 10 with dsp::DisplayTypeConstants::MAX_FILTERED_DRONES
+    // PHASE 3 FIX #9: Replaced magic number 10 with dsp::DisplayTypeConstants::MAX_FILTERED_DRONES
     snapshot.count = (drone_snapshot.count < dsp::DisplayTypeConstants::MAX_FILTERED_DRONES) ?
                    drone_snapshot.count : dsp::DisplayTypeConstants::MAX_FILTERED_DRONES;
     for (size_t i = 0; i < snapshot.count; ++i) {
@@ -499,7 +480,7 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // No exceptions - perform scan cycle directly
     // Error handling is managed via return codes
 
-    // DIAMOND FIX: Stack monitoring using StackMonitor
+    // PHASE 1 FIX #2 & #3: Stack monitoring using StackMonitor
     // Initialize stack monitor to track stack usage and detect overflow
     // StackMonitor uses ChibiOS stack fill pattern for accurate detection
     StackMonitor stack_monitor;
@@ -531,14 +512,14 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // calculated correctly across loop iterations
     systime_t init_wait_start_time = chTimeNow();
 
-    // DIAMOND FIX: Document synchronization pattern for scanning_active_ access
+    // FIX #RC-1: Document synchronization pattern for scanning_active_ access
     // - All reads/writes to scanning_active_ are protected by state_mutex_
     // - No lock-free reads - all state access is synchronized
     while (true) {
-        // DIAMOND FIX: Stack monitoring at loop start to detect overflow before it happens
+        // P0-STOP FIX #1: Stack monitoring at loop start to detect overflow before it happens
         // Check stack availability before performing any operations
         // This prevents stack overflow by detecting low stack conditions early
-        // CRITICAL FIX: Create StackMonitor instance for stack safety check
+        // CRITICAL FIX #3: Create StackMonitor instance for stack safety check
         StackMonitor stack_monitor;
         constexpr size_t MIN_FREE_STACK = 512;  // Minimum free stack required for safe operation
         if (!stack_monitor.is_stack_safe(MIN_FREE_STACK)) {
@@ -605,7 +586,7 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         // This ensures timeout is calculated correctly if initialization fails later
         init_wait_start_time = chTimeNow();
 
-        // DIAMOND FIX: Stack monitor check before scan cycle
+        // PHASE 1 FIX #3: Stack monitor check before scan cycle
         // Check for stack overflow before performing scan cycle
         // StackMonitor provides runtime detection of stack exhaustion
         constexpr size_t SCAN_CYCLE_STACK_REQUIRED = 256;

@@ -1,13 +1,4 @@
 // Diamond Code: Flash-resident constants and utilities for Enhanced Drone Analyzer
-// Phase 1 Migration - Foundation Layer (Infrastructure)
-//
-// DIAMOND CODE COMPLIANCE:
-// - No forbidden constructs (std::vector, std::string, std::map, std::atomic, new, malloc)
-// - Stack allocation only (max 4KB stack)
-// - Uses constexpr, enum class, using Type = uintXX_t
-// - No magic numbers (all constants defined)
-// - Zero-Overhead and Data-Oriented Design principles
-// - Self-contained and compilable
 
 #ifndef EDA_CONSTANTS_HPP_
 #define EDA_CONSTANTS_HPP_

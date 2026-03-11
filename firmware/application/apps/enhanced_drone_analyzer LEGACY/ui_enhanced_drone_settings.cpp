@@ -1,30 +1,5 @@
 // ui_enhanced_drone_settings.cpp - Unified implementation for Enhanced Drone Analyzer Settings
 // The app tries to load the interface but doesn't crash in hard failure mode for 5 minutes.
-//
-// PHASE 5 MIGRATION - UI LAYER
-// Migrated from LEGACY/ to main enhanced_drone_analyzer/ directory
-//
-// DIAMOND CODE COMPLIANCE:
-// - Stack allocation only (max 4KB stack per thread on STM32F405)
-// - Uses fixed-size buffers for all data storage
-// - No heap allocation (no new, malloc, std::vector, std::map)
-// - Uses constexpr, enum class, using Type = uintXX_t
-// - No magic numbers (all constants defined)
-// - Zero-Overhead and Data-Oriented Design principles
-//
-// FRAMEWORK EXCEPTIONS:
-// - std::filesystem::path: Used only when required by PortaPack UI framework (FileLoadView callback)
-// - std::string: Used only when required by PortaPack UI framework (FileLoadView callback)
-// - std::function: Used only when required by PortaPack UI framework (event callbacks)
-// - These are framework types that must be used when interacting with the PortaPack UI
-//
-// INTERNAL DATA STRUCTURES:
-// - All internal data uses fixed-size buffers (char arrays, std::array)
-// - Settings stored in DroneAnalyzerSettings struct (fixed-size)
-// - No dynamic memory allocation for application data
-//
-// Target: STM32F405 (ARM Cortex-M4, 128KB RAM)
-// Environment: ChibiOS RTOS / PortaPack UI Framework
 
 // Corresponding header (must be first)
 #include "ui_enhanced_drone_settings.hpp"

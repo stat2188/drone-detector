@@ -1,40 +1,25 @@
-/**
- * @file eda_validation.hpp
- * @brief Unified Validation Functions for Enhanced Drone Analyzer
- *
- * This header provides centralized validation functions for drone frequency and
- * signal analysis operations. All functions are constexpr and noexcept for
- * embedded safety, with no heap allocations or forbidden STL containers.
- *
- * DESIGN PRINCIPLES:
- * - All functions are constexpr (compile-time evaluation when possible)
- * - All functions are noexcept (no exceptions in embedded systems)
- * - No heap allocations (all stack-based or compile-time constants)
- * - No forbidden STL containers (std::vector, std::string, std::map, std::atomic)
- * - Type-safe with using declarations and enum class
- * - Named constants instead of magic numbers
- *
- * THREAD SAFETY:
- * - Thread-safe: All functions are pure computations with no mutable state
- * - ISR-safe: No blocking operations, no dynamic memory allocation
- *
- * PERFORMANCE:
- * - Time complexity: O(1) for all validation functions
- * - CPU cycles: ~2-5 cycles per validation (simple integer comparisons)
- * - Memory: 0 bytes runtime (all constexpr constants in Flash/ROM)
- *
- * @author Diamond Code Pipeline - Validation Implementation
- * @date 2026-03-07
- * Phase 1 Migration - Foundation Layer (Infrastructure)
- *
- * DIAMOND CODE COMPLIANCE:
- * - No forbidden constructs (std::vector, std::string, std::map, std::atomic, new, malloc)
- * - Stack allocation only (max 4KB stack)
- * - Uses constexpr, enum class, using Type = uintXX_t
- * - No magic numbers (all constants defined)
- * - Zero-Overhead and Data-Oriented Design principles
- * - Self-contained and compilable
- */
+// eda_validation.hpp - Unified Validation Functions for Enhanced Drone Analyzer
+//
+// This header provides centralized validation functions for drone frequency and
+// signal analysis operations. All functions are constexpr and noexcept for
+// embedded safety, with no heap allocations or forbidden STL containers.
+//
+// DESIGN PRINCIPLES:
+// - All functions are constexpr (compile-time evaluation when possible)
+// - All functions are noexcept (no exceptions in embedded systems)
+// - No heap allocations (all stack-based or compile-time constants)
+// - No forbidden STL containers (std::vector, std::string, std::map, std::atomic)
+// - Type-safe with using declarations and enum class
+// - Named constants instead of magic numbers
+//
+// THREAD SAFETY:
+// - Thread-safe: All functions are pure computations with no mutable state
+// - ISR-safe: No blocking operations, no dynamic memory allocation
+//
+// PERFORMANCE:
+// - Time complexity: O(1) for all validation functions
+// - CPU cycles: ~2-5 cycles per validation (simple integer comparisons)
+// - Memory: 0 bytes runtime (all constexpr constants in Flash/ROM)
 
 #ifndef EDA_VALIDATION_HPP_
 #define EDA_VALIDATION_HPP_
@@ -48,13 +33,13 @@
 namespace EDA {
 
 // ============================================================================
-// TYPE DEFINITIONS
+// Type Definitions
 // ============================================================================
 // NOTE: Frequency and RSSI types are defined in eda_constants.hpp
 // This header uses those types to avoid duplication
 
 // ============================================================================
-// VALIDATION CONSTANTS (constexpr for Flash/ROM placement)
+// Validation Constants (constexpr for Flash/ROM placement)
 // ============================================================================
 
 namespace ValidationConstants {
@@ -93,7 +78,7 @@ constexpr size_t MAX_DESCRIPTION_LENGTH = 32;
 } // namespace ValidationConstants
 
 // ============================================================================
-// VALIDATION ERROR CODES (enum class for type safety)
+// Validation Error Codes (enum class for type safety)
 // ============================================================================
 
 enum class ValidationErrorCode : uint8_t {
@@ -107,7 +92,7 @@ enum class ValidationErrorCode : uint8_t {
 };
 
 // ============================================================================
-// VALIDATION RESULT STRUCTURE (stack-allocated, 16 bytes)
+// Validation Result Structure (stack-allocated, 16 bytes)
 // ============================================================================
 
 struct ValidationResult {
@@ -117,7 +102,7 @@ struct ValidationResult {
 };
 
 // ============================================================================
-// CORE VALIDATION FUNCTIONS
+// Core Validation Functions
 // ============================================================================
 
 namespace Validation {
@@ -174,7 +159,7 @@ static constexpr bool is_safe_frequency(Frequency freq_hz) noexcept {
 }
 
 // ============================================================================
-// BAND VALIDATION FUNCTIONS
+// Band Validation Functions
 // ============================================================================
 
 /**
@@ -244,7 +229,7 @@ static constexpr bool is_drone_band(Frequency freq_hz) noexcept {
 }
 
 // ============================================================================
-// DESCRIPTION VALIDATION FUNCTIONS
+// Description Validation Functions
 // ============================================================================
 
 /**
@@ -255,13 +240,13 @@ static constexpr bool is_drone_band(Frequency freq_hz) noexcept {
  * @note constexpr for compile-time evaluation when string is known
  * @note noexcept for embedded safety
  */
-static constexpr bool validate_description(const char* description, size_t max_length) noexcept {
+static constexpr bool validate_description(const char* description, std::size_t max_length) noexcept {
     if (description == nullptr) {
         return false;
     }
     
     // Check for null terminator within max_length
-    for (size_t i = 0; i < max_length; ++i) {
+    for (std::size_t i = 0; i < max_length; ++i) {
         if (description[i] == '\0') {
             return true;  // Found null terminator within bounds
         }
@@ -282,7 +267,7 @@ static constexpr bool validate_description(const char* description) noexcept {
 }
 
 // ============================================================================
-// COMPREHENSIVE VALIDATION FUNCTIONS
+// Comprehensive Validation Functions
 // ============================================================================
 
 /**
