@@ -150,7 +150,11 @@ public:
         if (!path) {
             return;
         }
-        opened_ = file_.open(path, read_only);
+        // Explicitly construct std::filesystem::path using const TCHAR* constructor
+        // to avoid template constructor that tries to use std::begin()/std::end()
+        // on const char*, which doesn't work for C strings
+        const std::filesystem::path fs_path{reinterpret_cast<const TCHAR*>(path)};
+        opened_ = file_.open(fs_path, read_only);
     }
 
     // noexcept for move operations
@@ -1040,7 +1044,10 @@ void ScanningSettingsView::on_select_database() noexcept {
     };
 
     // Start file browser in FREQMAN directory (standard Mayhem database location)
-    open_view->push_dir("/FREQMAN");
+    // Explicitly construct std::filesystem::path using const TCHAR* constructor
+    // to avoid template constructor that tries to use std::begin()/std::end()
+    // on const char*, which doesn't work for C strings
+    open_view->push_dir(std::filesystem::path(reinterpret_cast<const TCHAR*>("/FREQMAN")));
 }
 
 // DroneAnalyzerSettingsView
