@@ -78,6 +78,41 @@ inline size_t strnlen_wrapper(const char* str, size_t max_len) noexcept {
  * - Handles overlapping buffers correctly
  * - noexcept for ISR safety
  */
+/**
+ * @brief Simple memory move function for overlapping buffers
+ * @param dest Destination buffer
+ * @param src Source buffer
+ * @param n Number of bytes to move
+ * @note Handles overlapping buffers correctly
+ * @note Zero-heap allocation, stack-only
+ *
+ * DIAMOND CODE COMPLIANCE:
+ * - No heap allocation
+ * - Stack-allocated operations
+ * - noexcept for ISR safety
+ */
+inline void simple_memmove(void* dest, const void* src, size_t n) noexcept {
+    if (!dest || !src || n == 0) {
+        return;
+    }
+
+    auto* d = static_cast<char*>(dest);
+    const auto* s = static_cast<const char*>(src);
+
+    // Check for overlapping buffers
+    if (s < d && s + n > d) {
+        // Copy backwards to handle overlap
+        for (size_t i = n; i > 0; --i) {
+            d[i - 1] = s[i - 1];
+        }
+    } else {
+        // Copy forwards (no overlap or safe overlap)
+        for (size_t i = 0; i < n; ++i) {
+            d[i] = s[i];
+        }
+    }
+}
+
 inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
     // Guard clauses for null pointers and zero length
     if (!dest || !src || max_len == 0) {
@@ -87,9 +122,9 @@ inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
     // Check for overlapping buffers (src < dest && src + max_len > dest)
     // This is forward overlap case that would corrupt data with memcpy
     if (src < dest && src + max_len > dest) {
-        // Overlap detected - use memmove for safety
-        // memmove handles overlapping buffers correctly
-        memmove(dest, src, max_len);
+        // Overlap detected - use simple_memmove for safety
+        // simple_memmove handles overlapping buffers correctly
+        simple_memmove(dest, src, max_len);
         dest[max_len - 1] = '\0';  // Ensure null termination
         return;
     }
@@ -98,9 +133,69 @@ inline void safe_strcpy(char* dest, const char* src, size_t max_len) noexcept {
     size_t i = 0;
     while (i < max_len - 1 && src[i] != '\0') {
         dest[i] = src[i];
-        i++;
+        ++i;
     }
-    dest[i] = '\0';  // Always null terminate
+    dest[i] = '\0';  // Ensure null termination
+}
+
+/**
+ * @brief Convert UTF-8 string to UTF-16 (TCHAR) using stack-allocated buffer
+ * @param utf8_str Source UTF-8 string
+ * @param buffer Destination UTF-16 buffer (stack-allocated)
+ * @param buffer_size Size of buffer in TCHAR units
+ * @return Pointer to buffer (for convenience)
+ * @note Properly handles multi-byte UTF-8 sequences (2-byte and 3-byte)
+ * @note Zero-heap allocation, stack-only
+ *
+ * DIAMOND CODE COMPLIANCE:
+ * - No heap allocation
+ * - Stack-allocated operations
+ * - noexcept for ISR safety
+ */
+inline const TCHAR* utf8_to_tchar(const char* utf8_str, TCHAR* buffer, size_t buffer_size) noexcept {
+    if (!utf8_str || !buffer || buffer_size == 0) {
+        return buffer;
+    }
+
+    size_t i = 0;  // UTF-8 index
+    size_t j = 0;  // UTF-16 index
+
+    while (j < buffer_size - 1 && utf8_str[i] != '\0') {
+        unsigned char c = static_cast<unsigned char>(utf8_str[i]);
+
+        if (c < 0x80) {
+            // ASCII (0-127): direct mapping
+            buffer[j++] = static_cast<TCHAR>(c);
+            ++i;
+        } else if ((c & 0xE0) == 0xC0) {
+            // 2-byte UTF-8 sequence (0xC2-0xDF)
+            if (utf8_str[i + 1] == '\0') {
+                // Incomplete sequence, skip
+                ++i;
+                continue;
+            }
+            uint16_t ch = ((c & 0x1F) << 6) | (utf8_str[i + 1] & 0x3F);
+            buffer[j++] = static_cast<TCHAR>(ch);
+            i += 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            // 3-byte UTF-8 sequence (0xE0-0xEF)
+            if (utf8_str[i + 1] == '\0' || utf8_str[i + 2] == '\0') {
+                // Incomplete sequence, skip
+                ++i;
+                continue;
+            }
+            uint16_t ch = ((c & 0x0F) << 12) | ((utf8_str[i + 1] & 0x3F) << 6) | (utf8_str[i + 2] & 0x3F);
+            buffer[j++] = static_cast<TCHAR>(ch);
+            i += 3;
+        } else {
+            // Invalid or unsupported UTF-8 (4-byte sequences not supported in UTF-16 BMP)
+            // Skip this byte
+            ++i;
+        }
+    }
+    buffer[j] = static_cast<TCHAR>('\0');  // Null terminate
+
+    return buffer;
 }
 
 // Settings Buffer Mutex Declaration (merged from settings_persistence.cpp)
@@ -1023,7 +1118,12 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::load(T& settings) {
 
     File file;
     const char* path = settings.settings_file_path;
-    auto error = file.open(path);
+    // Convert UTF-8 path to UTF-16 (TCHAR) for file system
+    // Stack-allocated buffer (no heap allocation)
+    constexpr size_t PATH_BUFFER_SIZE = 256;
+    TCHAR path_buffer[PATH_BUFFER_SIZE];
+    const TCHAR* tchar_path = utf8_to_tchar(path, path_buffer, PATH_BUFFER_SIZE);
+    auto error = file.open(tchar_path);
     if (error) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
     }
