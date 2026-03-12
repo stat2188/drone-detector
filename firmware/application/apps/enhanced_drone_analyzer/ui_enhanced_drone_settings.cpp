@@ -190,12 +190,16 @@ bool EnhancedSettingsManager::save_settings_to_txt(const DroneAnalyzerSettings& 
     MutexLock lock(settings_buffer_mutex);
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     File file;
-    
+
     // Open file for writing
     // CRITICAL FIX #10: Error Handling for SD Card I/O
     // Validates: SD card availability, file path validity, write permissions
     // Fallback: Returns false on failure, caller handles restore from backup
-    if (!file.open(filepath, false)) {
+    // Explicitly construct std::filesystem::path using const TCHAR* constructor
+    // to avoid template constructor that tries to use std::begin()/std::end()
+    // on const char*, which doesn't work for C strings
+    const std::filesystem::path fs_path{reinterpret_cast<const TCHAR*>(filepath)};
+    if (!file.open(fs_path, false)) {
         // Error: SD card not available, file path invalid, or write permission denied
         // Recovery: Caller will restore from backup (see line 180)
         return false;
@@ -273,7 +277,11 @@ bool EnhancedSettingsManager::verify_comm_file_exists() noexcept {
     // Use constexpr const char* instead of std::string
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     File txt_file;
-    if (txt_file.open(filepath, true)) {  // read_only
+    // Explicitly construct std::filesystem::path using const TCHAR* constructor
+    // to avoid template constructor that tries to use std::begin()/std::end()
+    // on const char*, which doesn't work for C strings
+    const std::filesystem::path fs_path{reinterpret_cast<const TCHAR*>(filepath)};
+    if (txt_file.open(fs_path, true)) {  // read_only
         txt_file.close();
         return true;
     }
@@ -287,12 +295,16 @@ bool EnhancedSettingsManager::load_settings_from_txt(DroneAnalyzerSettings& sett
     MutexLock lock(settings_buffer_mutex);
     static constexpr const char* filepath = "/sdcard/ENHANCED_DRONE_ANALYZER_SETTINGS.txt";
     File file;
-    
+
     // Open file for reading
     // CRITICAL FIX #10: Error Handling for SD Card I/O
     // Validates: SD card availability, file path validity, read permissions
     // Fallback: Returns false on failure, caller handles error gracefully
-    if (!file.open(filepath, true)) {
+    // Explicitly construct std::filesystem::path using const TCHAR* constructor
+    // to avoid template constructor that tries to use std::begin()/std::end()
+    // on const char*, which doesn't work for C strings
+    const std::filesystem::path fs_path{reinterpret_cast<const TCHAR*>(filepath)};
+    if (!file.open(fs_path, true)) {
         // Error: SD card not available, file path invalid, or read permission denied
         // Recovery: Caller handles false return gracefully
         return false;
