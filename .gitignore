@@ -1,7 +1,6 @@
 /firmware/baseband/*.img
 /firmware/application/application.bin
 /CMakeCache.txt
-/*/CMakeCache.txt
 /Makefile
 /firmware/Makefile
 /firmware/baseband/Makefile
@@ -80,15 +79,7 @@ venv/
 
 # Other
 *.bak
-*.rar
 
 # generated bitmap arr file
 # TODO: generate bitmap during build, since we use python during build anyway, lemme know if this is a bad idea @zxkmm
 /firmware/tools/bitmap.hpp
-
-# Clangd cache
-.cache/
-
-# Build system artifacts
-.ninja_log
-**/*-stamp/
