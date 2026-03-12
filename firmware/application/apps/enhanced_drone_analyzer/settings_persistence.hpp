@@ -179,7 +179,7 @@ constexpr size_t SETTINGS_COUNT = 35;
  * - Compile-time size known
  * - POD-compatible entries
  */
-inline constexpr SettingMetadata SETTINGS_LUT[] FLASH_STORAGE = {
+inline constexpr SettingMetadata SETTINGS_LUT[] EDA_FLASH_CONST = {
     SET_META_BIT(audio_flags, 0, "true"),
     SET_META(audio_alert_frequency_hz, TYPE_UINT32, 200, 20000, "800"),
     SET_META(audio_alert_duration_ms, TYPE_UINT32, 50, 5000, "500"),

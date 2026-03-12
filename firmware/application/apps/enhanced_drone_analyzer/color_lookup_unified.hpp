@@ -40,6 +40,17 @@ namespace ColorConstants {
     constexpr RGB565 GREEN_MASK_565 = 0xFC;
     constexpr RGB565 BLUE_MASK_565 = 0xF8;
     
+    // RGB888 bit shifts (0xRRGGBB format)
+    constexpr uint8_t RED_SHIFT = 16;
+    constexpr uint8_t GREEN_SHIFT = 8;
+    constexpr uint8_t BLUE_SHIFT = 0;
+    
+    // RGB565 bit shifts (rrrrrGGGGGGbbbbb format)
+    constexpr uint8_t RED_565_SHIFT = 3;
+    constexpr uint8_t GREEN_565_SHIFT = 2;
+    constexpr uint8_t BLUE_565_SHIFT = 3;
+    constexpr uint8_t BLUE_565_RIGHT_SHIFT = 3;
+    
     // Array bounds
     constexpr uint8_t THREAT_LEVEL_COUNT = 6;
     constexpr uint8_t DRONE_TYPE_COUNT = 11;
@@ -53,18 +64,26 @@ namespace ColorConstants {
 // R888 R565: truncate 3 LSB bits, G888 G565: truncate 2 LSB bits, B888 B565: truncate 3 LSB bits
 struct ColorConverter {
     /**
-     * @brief Convert RGB888 to RGB565 (O(1), constexpr
+     * @brief Convert RGB888 to RGB565 (O(1), constexpr)
+     * RGB888 format: 0xRRGGBB (24-bit)
+     * RGB565 format: rrrrrGGGGGGbbbbb (16-bit)
      */
     static constexpr RGB565 rgb888_to_rgb565(const RGB888 rgb888) noexcept {
-        const RGB888Component r = (rgb888 >> ColorConstants::RED_SHIFT) & ColorConstants::RED_MASK_888;
-        const RGB888Component g = (rgb888 >> ColorConstants::GREEN_SHIFT) & ColorConstants::GREEN_MASK_888;
-        const RGB888Component b = rgb888 & ColorConstants::BLUE_MASK_888;
+        // Extract RGB888 components
+        const RGB888Component r888 = (rgb888 >> ColorConstants::RED_SHIFT) & 0xFF;
+        const RGB888Component g888 = (rgb888 >> ColorConstants::GREEN_SHIFT) & 0xFF;
+        const RGB888Component b888 = rgb888 & 0xFF;
         
-        const RGB565 r565 = (r & ColorConstants::RED_565_SHIFT) << ColorConstants::RED_565_SHIFT;
-        const RGB565 g565 = (g & ColorConstants::GREEN_565_SHIFT) << ColorConstants::GREEN_565_SHIFT;
-        const RGB565 b565 = (b & ColorConstants::BLUE_565_SHIFT) >> ColorConstants::BLUE_565_RIGHT_SHIFT;
+        // Convert to RGB565 components (truncate LSB bits)
+        // R888 (8 bits) -> R565 (5 bits): shift right by 3
+        // G888 (8 bits) -> G565 (6 bits): shift right by 2
+        // B888 (8 bits) -> B565 (5 bits): shift right by 3
+        const RGB565 r565 = (r888 >> 3) & 0x1F;
+        const RGB565 g565 = (g888 >> 2) & 0x3F;
+        const RGB565 b565 = (b888 >> 3) & 0x1F;
         
-        return r565 | g565 | b565;
+        // Combine into RGB565 format: rrrrrGGGGGGbbbbb
+        return (r565 << 11) | (g565 << 5) | b565;
     }
     
     /**
@@ -188,7 +207,14 @@ struct UnifiedColorLookup {
      */
     static inline Color header_bar(uint8_t threat) noexcept {
         // For header use threat_color
-        return threat_color(threat);
+        return ThreatColorLUT::threat_color(threat);
+    }
+    
+    /**
+     * @brief Get drone type color (O(1)) lookup with bounds checking
+     */
+    static inline Color drone(uint8_t type) noexcept {
+        return DroneColorLUT::drone_color(type);
     }
 };
 

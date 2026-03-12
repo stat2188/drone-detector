@@ -506,11 +506,7 @@ public:
             LockOrderTracker::instance().pop_lock(order_);
 #endif
             
-#if EDA_CHIBIOS_HAS_PARAMLESS_UNLOCK
-            chMtxUnlock();  // ChibiOS 21.x+: parameter-less API
-#else
-            chMtxUnlock(&mtx_);  // ChibiOS 20.x: parameter-based API
-#endif
+            chMtxUnlock();  // ChibiOS parameter-less API (unlocks last locked mutex)
         }
     }
 
@@ -618,11 +614,7 @@ public:
             LockOrderTracker::instance().pop_lock(order_);
 #endif
             
-#if EDA_CHIBIOS_HAS_PARAMLESS_UNLOCK
-            chMtxUnlock();  // ChibiOS 21.x+: parameter-less API
-#else
-            chMtxUnlock(&mtx_);  // ChibiOS 20.x: parameter-based API
-#endif
+            chMtxUnlock();  // ChibiOS parameter-less API (unlocks last locked mutex)
         }
     }
 
@@ -786,9 +778,9 @@ public:
 #endif
         
         // Validate mutex initialization (check if mutex is initialized)
-        // ChibiOS mutexes have a 'next' pointer that is NULL when initialized
+        // ChibiOS mutexes have a 'm_next' pointer that is NULL when initialized
         // This is a heuristic check - not foolproof but better than nothing
-        if (mtx_.next != nullptr) {
+        if (mtx_.m_next != nullptr) {
             // Mutex appears to be uninitialized, fail lock acquisition
             locked_ = false;
             
@@ -799,11 +791,15 @@ public:
             return;
         }
         
-        // Try to acquire lock with timeout
-        if (chMtxLockTimeoutS(&mtx_, timeout_ms) == CH_SUCCESS) {
+        // Try to acquire lock (non-blocking)
+        // Note: ChibiOS 2.6.8 doesn't have timeout-based mutex locking
+        // The timeout_ms parameter is kept for API compatibility but not used
+        (void)timeout_ms;  // Suppress unused parameter warning
+        
+        if (chMtxTryLock(&mtx_) == CH_SUCCESS) {
             locked_ = true;
         } else {
-            // Timeout occurred, pop from tracker (debug mode only)
+            // Lock not available, pop from tracker (debug mode only)
 #if EDA_LOCK_DEBUG
             LockOrderTracker::instance().pop_lock(order_);
 #endif
@@ -822,11 +818,7 @@ public:
             LockOrderTracker::instance().pop_lock(order_);
 #endif
             
-#if EDA_CHIBIOS_HAS_PARAMLESS_UNLOCK
-            chMtxUnlock();  // ChibiOS 21.x+: parameter-less API
-#else
-            chMtxUnlock(&mtx_);  // ChibiOS 20.x: parameter-based API
-#endif
+            chMtxUnlock();  // ChibiOS parameter-less API (unlocks last locked mutex)
         }
     }
 

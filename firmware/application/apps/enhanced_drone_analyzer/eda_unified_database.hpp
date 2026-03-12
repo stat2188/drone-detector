@@ -221,7 +221,7 @@ struct ExcludeIndex {
     size_t value;
     explicit constexpr ExcludeIndex(size_t v) noexcept : value(v) {}
     constexpr operator size_t() const noexcept { return value; }
-}
+};
 
 // Validate complete entry
 // [[nodiscard]] - Validation result must be used by caller
