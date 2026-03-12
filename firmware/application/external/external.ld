@@ -492,4 +492,6 @@ SECTIONS
         *(*ui*external_app*subcarrx*);
     } > ram_external_app_subcarrx
 
+    
 }
+

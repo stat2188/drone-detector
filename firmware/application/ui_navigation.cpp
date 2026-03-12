@@ -86,11 +86,6 @@ using portapack::receiver_model;
 using portapack::transmitter_model;
 namespace pmem = portapack::persistent_memory;
 
-// Forward declaration for Enhanced Drone Analyzer
-namespace ui::apps::enhanced_drone_analyzer {
-    class EnhancedDroneSpectrumAnalyzerView;
-}
-
 namespace ui {
 
 bool CstrCmp::operator()(const char* a, const char* b) const {

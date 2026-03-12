@@ -417,7 +417,7 @@ inline EDA::ErrorResult<uint64_t> parse_uint64(const char* str, int base = 10) n
         }
 
         // Check for overflow before multiplying
-        if (result > UINT64_MAX / static_cast<uint64_t>(base)) {
+        if (result != 0 && result > UINT64_MAX / static_cast<uint64_t>(base)) {
             return EDA::ErrorResult<uint64_t>::fail(EDA::ErrorCode::OUT_OF_RANGE);
         }
 
