@@ -18,8 +18,8 @@
 /*
  * LPC43xx M0 memory setup.
  */
-__main_stack_size__     = 0x0200;   /* Exceptions/interrupts stack */
-__process_stack_size__  = 0x2000;   /* main() stack */
+__main_stack_size__     = 0x0400;   /* Exceptions/interrupts stack */
+__process_stack_size__  = 0x1C00;   /* main() stack */
 
 MEMORY
 {

@@ -986,7 +986,7 @@ private:
  * @note All mutexes must be initialized before they are used.
  * @note Failure to call this function will result in undefined behavior.
  */
-void initialize_eda_mutexes();
+void initialize_eda_mutexes() noexcept;
 
 } // namespace ui::apps::enhanced_drone_analyzer
 

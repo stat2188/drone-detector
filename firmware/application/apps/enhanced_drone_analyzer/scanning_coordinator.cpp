@@ -88,6 +88,17 @@ void initialize_eda_mutexes() noexcept {
     // Call public static initialization function from DroneDatabaseListView
     DroneDatabaseListView::initialize_mutex();
 
+    // CRITICAL FIX: Initialize settings mutexes from ui_enhanced_drone_settings.cpp
+    // These mutexes are defined as global variables and must be initialized AFTER chSysInit()
+    // to prevent stack overflow and undefined behavior during early initialization
+    // settings_buffer_mutex (line 85), load_buffer_mutex (line 90), header_buffer_mutex (line 103)
+    extern Mutex settings_buffer_mutex;
+    extern Mutex load_buffer_mutex;
+    extern Mutex header_buffer_mutex;
+    chMtxInit(&settings_buffer_mutex);
+    chMtxInit(&load_buffer_mutex);
+    chMtxInit(&header_buffer_mutex);
+
     // Memory pool functionality has been removed from codebase
     // No need to initialize MemoryPoolManager global mutex
 

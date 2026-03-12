@@ -108,6 +108,7 @@ char EnhancedSettingsManager::settings_buffer_[EnhancedSettingsManager::SETTINGS
 char EnhancedSettingsManager::file_buffer_[EnhancedSettingsManager::FILE_BUFFER_SIZE];
 char EnhancedSettingsManager::timestamp_buffer_[EnhancedSettingsManager::TIMESTAMP_BUFFER_SIZE];
 uint8_t EnhancedSettingsManager::backup_buffer_[EnhancedSettingsManager::BACKUP_BUFFER_SIZE];
+char EnhancedSettingsManager::backup_path_[EnhancedSettingsManager::BACKUP_PATH_SIZE];
 
 // ============================================================================
 // STACK USAGE VALIDATION
@@ -493,45 +494,21 @@ const char* EnhancedSettingsManager::get_communication_status() noexcept {
     return verify_comm_file_exists() ? STATUS_READY : STATUS_NOT_READY;
 }
 
-// const pointer, noexcept for file backup
-void EnhancedSettingsManager::create_backup_file(const char* filepath) noexcept {
-    // Guard clause: null pointer check for filepath parameter
+// Helper function to build backup path (appends ".bak" to filepath)
+// Returns true if successful, false if path too long
+// Thread-safe: Must be called with settings_buffer_mutex held
+bool EnhancedSettingsManager::build_backup_path(const char* filepath) noexcept {
     if (!filepath) {
-        return;
+        return false;
     }
-    // Use RAII wrapper for File to ensure proper cleanup
-    FileRAII orig_file(filepath, true);
-    if (!orig_file.is_open()) return;
-
-    // Use fixed-size char array instead of std::string for backup path
-    static constexpr size_t kMaxPathLen = 256;
-    char backup_path[kMaxPathLen] = {};
     size_t filepath_len = strlen(filepath);
-    if (filepath_len >= kMaxPathLen - 4) {
-        return;  // Path too long
+    if (filepath_len >= BACKUP_PATH_SIZE - 4) {
+        return false;  // Path too long
     }
-    snprintf(backup_path, kMaxPathLen, "%s", filepath);
-    size_t current_len = strlen(backup_path);
-    snprintf(backup_path + current_len, kMaxPathLen - current_len, "%s", ".bak");
-
-    FileRAII backup_file(backup_path, false);
-    if (!backup_file.is_open()) return;
-
-    // DIAMOND FIX #HIGH #4: Use static member buffer instead of thread_local
-    // Note: Caller (save_settings_to_txt/load_settings_from_txt) already holds settings_buffer_mutex
-    size_t total_read = 0;
-
-    while (total_read < orig_file.get().size()) {
-        size_t to_read = std::min(BACKUP_BUFFER_SIZE, static_cast<size_t>(orig_file.get().size() - total_read));
-        auto read_result = orig_file.get().read(backup_buffer_, to_read);
-        if (read_result.is_error() || read_result.value() != to_read) break;
-
-        auto write_result = backup_file.get().write(static_cast<const void*>(backup_buffer_),
-                                                        static_cast<File::Size>(to_read));
-        if (write_result.is_error() || write_result.value() != to_read) break;
-
-        total_read += read_result.value();
-    }
+    snprintf(backup_path_, BACKUP_PATH_SIZE, "%s", filepath);
+    size_t current_len = strlen(backup_path_);
+    snprintf(backup_path_ + current_len, BACKUP_PATH_SIZE - current_len, "%s", ".bak");
+    return true;
 }
 
 // const pointer, noexcept for file restore
@@ -540,26 +517,21 @@ void EnhancedSettingsManager::restore_from_backup(const char* filepath) noexcept
     if (!filepath) {
         return;
     }
-    // Use fixed-size char array instead of std::string for backup path
-    static constexpr size_t kMaxPathLen = 256;
-    char backup_path[kMaxPathLen] = {};
-    size_t filepath_len = strlen(filepath);
-    if (filepath_len >= kMaxPathLen - 4) {
+
+    // Build backup path using helper function
+    if (!build_backup_path(filepath)) {
         return;  // Path too long
     }
-    snprintf(backup_path, kMaxPathLen, "%s", filepath);
-    size_t current_len = strlen(backup_path);
-    snprintf(backup_path + current_len, kMaxPathLen - current_len, "%s", ".bak");
 
     // Use RAII wrapper for File to ensure proper cleanup
-    FileRAII backup_file(backup_path, true);
+    FileRAII backup_file(backup_path_, true);
     if (!backup_file.is_open()) return;
 
     FileRAII original_file(filepath, false);
     if (!original_file.is_open()) return;
 
     // DIAMOND FIX #HIGH #4: Use static member buffer instead of thread_local
-    // Note: Caller (save_settings_to_txt/load_settings_from_txt) already holds settings_buffer_mutex
+    // Thread-safe: Caller must hold settings_buffer_mutex
 
     while (true) {
         auto read_res = backup_file.get().read(backup_buffer_, BACKUP_BUFFER_SIZE);
@@ -575,19 +547,14 @@ void EnhancedSettingsManager::remove_backup_file(const char* filepath) noexcept 
     if (!filepath) {
         return;
     }
-    // Use fixed-size char array instead of std::string for backup path
-    static constexpr size_t kMaxPathLen = 256;
-    char backup_path[kMaxPathLen] = {};
-    size_t filepath_len = strlen(filepath);
-    if (filepath_len >= kMaxPathLen - 4) {
+
+    // Build backup path using helper function
+    if (!build_backup_path(filepath)) {
         return;  // Path too long
     }
-    snprintf(backup_path, kMaxPathLen, "%s", filepath);
-    size_t current_len = strlen(backup_path);
-    snprintf(backup_path + current_len, kMaxPathLen - current_len, "%s", ".bak");
-    
+
     // Diamond Code Standard #3 - Replace std::filesystem with FatFS C API
-    f_unlink(reinterpret_cast<const TCHAR*>(backup_path));
+    f_unlink(reinterpret_cast<const TCHAR*>(backup_path_));
 }
 
 // noexcept for header generation

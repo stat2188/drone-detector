@@ -74,9 +74,15 @@ public:
     [[nodiscard]] static const char* get_communication_status() noexcept;
 
  private:
-    static void create_backup_file(const char* filepath) noexcept;
+    // Thread-safe: Must be called with settings_buffer_mutex held
     static void restore_from_backup(const char* filepath) noexcept;
+    // Thread-safe: Must be called with settings_buffer_mutex held
     static void remove_backup_file(const char* filepath) noexcept;
+
+    // Helper function to build backup path (appends ".bak" to filepath)
+    // Returns true if successful, false if path too long
+    // Thread-safe: Must be called with settings_buffer_mutex held
+    static bool build_backup_path(const char* filepath) noexcept;
     // Return const char* from Flash instead of std::string_view
     static const char* generate_file_header() noexcept;
     // Return const char* from Flash instead of std::string
@@ -90,11 +96,13 @@ public:
     static constexpr size_t FILE_BUFFER_SIZE = 512;
     static constexpr size_t TIMESTAMP_BUFFER_SIZE = 32;
     static constexpr size_t BACKUP_BUFFER_SIZE = 512;
+    static constexpr size_t BACKUP_PATH_SIZE = 256;
 
     static char settings_buffer_[SETTINGS_BUFFER_SIZE];
     static char file_buffer_[FILE_BUFFER_SIZE];
     static char timestamp_buffer_[TIMESTAMP_BUFFER_SIZE];
     static uint8_t backup_buffer_[BACKUP_BUFFER_SIZE];
+    static char backup_path_[BACKUP_PATH_SIZE];
 };
 
 // Translation Functions (Kept for UI)
