@@ -394,7 +394,7 @@ namespace EntriesToScanStorage {
     
     // Mutex for thread-safe access to entries_to_scan_
     // Lock order: 5 (after spectrum_data_ at 4)
-    mutex_t g_entries_to_scan_mutex;
+    Mutex g_entries_to_scan_mutex;
     
     // RAII wrapper for thread-safe access to entries_to_scan_
     // Locks mutex on construction, unlocks on destruction
@@ -405,7 +405,7 @@ namespace EntriesToScanStorage {
         }
         
         ~EntriesToScanGuard() noexcept {
-            chMtxUnlock(&EntriesToScanStorage::g_entries_to_scan_mutex);
+            chMtxUnlock();
         }
         
         // Deleted copy/move to prevent misuse
@@ -458,7 +458,7 @@ namespace HistogramBufferStorage {
     
     // Mutex for thread-safe access to histogram_buffer_
     // Lock order: 6 (after entries_to_scan_ at 5)
-    mutex_t g_histogram_buffer_mutex;
+    Mutex g_histogram_buffer_mutex;
     
     // RAII wrapper for thread-safe access to histogram_buffer_
     // Locks mutex on construction, unlocks on destruction
@@ -469,7 +469,7 @@ namespace HistogramBufferStorage {
         }
         
         ~HistogramBufferGuard() noexcept {
-            chMtxUnlock(&HistogramBufferStorage::g_histogram_buffer_mutex);
+            chMtxUnlock();
         }
         
         // Deleted copy/move to prevent misuse
@@ -964,7 +964,7 @@ struct DetectionParams {
         }
         
         ~SpectrumDataGuard() noexcept {
-            chMtxUnlock(&g_spectrum_data_mutex);
+            chMtxUnlock();
         }
         
         // Non-copyable, non-movable

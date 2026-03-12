@@ -553,7 +553,8 @@ namespace StaticStorage {
 // RAII wrapper for static storage access
 class FilteredDronesSnapshotGuard {
 public:
-    explicit FilteredDronesSnapshotGuard() noexcept {
+    explicit FilteredDronesSnapshotGuard() noexcept
+        : snapshot_ptr_(nullptr) {
         chMtxLock(&StaticStorage::g_filtered_drones_mutex);
         snapshot_ptr_ = reinterpret_cast<FilteredDronesSnapshot*>(
             StaticStorage::g_filtered_drones_storage
@@ -561,7 +562,7 @@ public:
     }
     
     ~FilteredDronesSnapshotGuard() noexcept {
-        chMtxUnlock(&StaticStorage::g_filtered_drones_mutex);
+        chMtxUnlock();
     }
     
     // Non-copyable, non-movable
