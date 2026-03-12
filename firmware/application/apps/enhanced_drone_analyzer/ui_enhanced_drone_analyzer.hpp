@@ -46,37 +46,28 @@
 #ifndef UI_ENHANCED_DRONE_ANALYZER_HPP_
 #define UI_ENHANCED_DRONE_ANALYZER_HPP_
 
-// C++ standard library headers (alphabetical order)
+// ============================================================================
+// STANDARD LIBRARY HEADERS
+// ============================================================================
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <cstdio>
-#include <utility>
+#include <cstring>
 #include <utility>
 
-// Third-party library headers (alphabetical order)
+// ============================================================================
+// THIRD-PARTY LIBRARY HEADERS
+// ============================================================================
 #include <ch.h>
 #include <chtypes.h>
 
 // ============================================================================
-// DIAMOND FIX: SEPARATION OF CONCERNS - FORWARD DECLARATIONS
+// PROJECT HEADERS
 // ============================================================================
-// Removed direct includes of DSP and database headers to prevent circular dependencies.
-// Using forward declarations where possible, only including headers that are required
-// for inline functions or template instantiations.
-//
-// FIX: Added eda_unified_database.hpp include for DatabaseChangeEvent definition
-// FIX: Removed incomplete forward declaration of DatabaseChangeEvent
-// ============================================================================
-// Removed direct includes of DSP and database headers to prevent circular dependencies.
-// Using forward declarations where possible, only including headers that are required
-// for inline functions or template instantiations.
-// ============================================================================
-
-// Project-specific headers (alphabetical order)
-// diamond_fixes.hpp content merged into diamond_core.hpp
+// Note: DatabaseChangeEvent is defined in eda_unified_database.hpp
+// Forward declarations used where possible to prevent circular dependencies
 #include "chcore_v6m.h"
 #include "chlists.h"
 #include "chmtx.h"

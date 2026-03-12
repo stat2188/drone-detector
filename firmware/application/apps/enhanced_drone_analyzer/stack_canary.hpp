@@ -64,14 +64,14 @@
 #include <cstddef>
 #include <cstdint>
 
+// Third-party library headers
+#include <ch.h>  // For ChibiOS RTOS
+
 // Project-specific headers (alphabetical order)
 #include "chconf.h"
 #include "chdebug.h"
 #include "chlists.h"
 #include "chthreads.h"
-
-// Third-party library headers
-#include <ch.h>  // For ChibiOS RTOS
 
 namespace ui::apps::enhanced_drone_analyzer {
 

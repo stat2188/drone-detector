@@ -38,9 +38,11 @@
 // Third-party library headers
 #include <ch.h>
 
-// Project-specific headers (alphabetical order)
+// ChibiOS Internal Headers
 #include "chtypes.h"
 #include "chvt.h"
+
+// Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"  // For EDA_FLASH_CONST macro
 
 // Flash storage attributes for Cortex-M4

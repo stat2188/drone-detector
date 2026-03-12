@@ -17,11 +17,13 @@
 #include <new>
 
 // Third-party library headers
-#include "chvt.h"
-#include "eda_locking.hpp"
-
-// Third-party library headers
 #include <ch.h>
+
+// ChibiOS Internal Headers
+#include "chvt.h"
+
+// Project-specific headers
+#include "eda_locking.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

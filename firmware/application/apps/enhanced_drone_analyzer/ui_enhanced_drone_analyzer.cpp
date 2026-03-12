@@ -7,58 +7,70 @@
 // FreqmanDB is in freqman namespace, not ui::apps::enhanced_drone_analyzer
 // freqman_db.hpp is already included in the header file, no forward declaration needed
 
+// ============================================================================
+// HEADER INCLUDES
+// ============================================================================
+// This file follows IWYU (Include What You Use) principle
+// Headers are organized by category in alphabetical order within each group
+// ============================================================================
+
 // Corresponding header (must be first)
 #include "ui_enhanced_drone_analyzer.hpp"
 
-// C++ standard library headers (alphabetical order)
-#include <algorithm>
-#include <array>
-#include <cctype>
-#include <cinttypes>
-#include <cstddef>
-#include <cstdarg>
-#include <cstdint>
-#include <cstdlib>
-#include <cstring>
-#include <new>  // For placement new
-#include <utility>
+// ============================================================================
+// C++ Standard Library Headers (alphabetical order)
+// ============================================================================
+#include <algorithm>      // std::min, std::max, std::copy, std::fill, std::generate_n
+#include <array>          // std::array for fixed-size containers
+#include <cinttypes>     // PRIu32, PRId64 format specifiers for printf
+#include <cstddef>        // size_t, nullptr_t
+#include <cstdint>        // uint8_t, uint16_t, uint32_t, uint64_t, int32_t, int64_t
+#include <cstring>        // std::memset, std::strlen, std::memcpy
+#include <new>            // Placement new operator for static storage allocation
+#include <utility>        // std::move, std::pair
 
-// Third-party library headers (alphabetical order)
-#include <ch.h>
-#include <chmsg.h>
+// ============================================================================
+// Third-Party Library Headers (ChibiOS RTOS)
+// ============================================================================
+#include <ch.h>           // ChibiOS kernel API
+#include <chmsg.h>        // ChibiOS messaging primitives
 
-// Project-specific headers (alphabetical order)
-#include "chcore_v6m.h"
-#include "chheap.h"
-#include "chlists.h"
-#include "chmtx.h"
-#include "chschd.h"
-#include "chthreads.h"
-#include "chtypes.h"
-#include "chvt.h"
-#include "color_lookup_unified.hpp"
-#include "diamond_core.hpp"
-// diamond_fixes.hpp content merged into diamond_core.hpp
-#include "dsp_display_types.hpp"
-#include "eda_constants.hpp"
-#include "eda_locking.hpp"
-#include "eda_optimized_utils.hpp"
-#include "eda_unified_database.hpp"
-#include "freqman_db.hpp"
-#include "message.hpp"
-#include "settings_persistence.hpp"
-#include "ui.hpp"
-#include "ui_drone_common_types.hpp"
-#include "ui_fileman.hpp"
-#include "ui_font_fixed_5x8.hpp"
-#include "ui_font_fixed_8x16.hpp"
-#include "ui_painter.hpp"
-#include "ui_signal_processing.hpp"
-#include "ui_spectral_analyzer.hpp"
-#include "ui_widget.hpp"
-#include "eda_ui_constants.hpp"
-#include "scanning_coordinator.hpp"
-#include "dsp_spectrum_processor.hpp"
+// ============================================================================
+// ChibiOS Internal Headers (alphabetical order)
+// ============================================================================
+#include "chcore_v6m.h"   // ARM Cortex-M4 core definitions (stkalign_t)
+#include "chheap.h"       // chHeapStatus() for heap monitoring
+#include "chmtx.h"        // chMtxInit(), chMtxLock(), chMtxUnlock() for mutex operations
+#include "chschd.h"       // chThdSleepMilliseconds() for thread sleep
+#include "chthreads.h"    // chThdCreateStatic(), chThdTerminate(), chThdWait(), chThdSelf()
+#include "chtypes.h"      // systime_t, Thread, and other ChibiOS types
+#include "chvt.h"         // chTimeNow() for system time
+
+// ============================================================================
+// Project-Specific Headers (alphabetical order)
+// ============================================================================
+#include "color_lookup_unified.hpp"    // UnifiedColorLookup for O(1) color mapping
+#include "diamond_core.hpp"             // DiamondCore validation and parsing utilities
+#include "dsp_display_types.hpp"       // DSP display data structures
+#include "dsp_spectrum_processor.hpp"   // SpectrumProcessor for signal processing
+#include "eda_constants.hpp"            // EDA::Constants namespace
+#include "eda_locking.hpp"             // MutexLock, CriticalSection RAII wrappers
+#include "eda_optimized_utils.hpp"     // Optimized utility functions
+#include "eda_ui_constants.hpp"        // UI layout constants
+#include "eda_unified_database.hpp"    // UnifiedDroneDatabase singleton
+#include "freqman_db.hpp"              // FreqmanDB for frequency database
+#include "message.hpp"                 // Message passing primitives
+#include "scanning_coordinator.hpp"    // ScanningCoordinator singleton
+#include "settings_persistence.hpp"    // SettingsPersistence for config I/O
+#include "ui.hpp"                      // Base UI framework (NavigationView, View)
+#include "ui_drone_common_types.hpp"   // DroneType, ThreatLevel, MovementTrend enums
+#include "ui_fileman.hpp"              // FileLoadView for file browser
+#include "ui_font_fixed_5x8.hpp"      // font::fixed_5x8 bitmap font
+#include "ui_font_fixed_8x16.hpp"     // font::fixed_8x16 bitmap font
+#include "ui_painter.hpp"              // Painter class for graphics rendering
+#include "ui_signal_processing.hpp"    // Signal processing utilities
+#include "ui_spectral_analyzer.hpp"   // SpectralAnalyzer for spectrum analysis
+#include "ui_widget.hpp"               // Widget base classes (Button, Text, etc.)
 
 namespace ui::apps::enhanced_drone_analyzer {
 
@@ -330,6 +342,12 @@ EDA_FLASH_CONST const DroneScanner::BuiltinDroneFreq DroneScanner::BUILTIN_DRONE
 DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
     : entries_to_scan_(),
       stale_indices_(),
+      is_stale_{},
+      ui_freq_buf_{},
+      ui_summary_buffer_{},
+      ui_status_buffer_{},
+      ui_stats_buffer_{},
+      stack_canary_{},
       scanning_thread_(nullptr),
       data_mutex(),
       scanning_active_(),
@@ -342,6 +360,7 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       freq_db_loaded_(),
       current_db_index_(0),
       last_scanned_frequency_(0),
+      last_detection_log_time_{0},
       db_loading_thread_(nullptr),
       db_loading_active_(),
       initialization_complete_(),

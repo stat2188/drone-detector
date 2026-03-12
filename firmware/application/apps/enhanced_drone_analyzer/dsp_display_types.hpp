@@ -22,6 +22,9 @@
 #include <cstddef>
 #include <cstdint>
 
+// Third-party library headers
+#include <ch.h>
+
 // Project-specific headers (alphabetical order)
 #include "chtypes.h"
 #include "eda_constants.hpp"

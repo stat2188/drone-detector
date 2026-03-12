@@ -31,8 +31,10 @@
 // Third-party library headers (alphabetical order)
 #include <ch.h>
 
-// Project-specific headers (alphabetical order)
+// ChibiOS Internal Headers
 #include "chmtx.h"
+
+// Project-specific headers (alphabetical order)
 #include "eda_locking.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer {

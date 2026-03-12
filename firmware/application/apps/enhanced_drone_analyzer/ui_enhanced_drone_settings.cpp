@@ -40,13 +40,16 @@
 #include <utility>  // For std::move (used in FileRAII move constructor)
 
 // Third-party library headers
-#include "chmtx.h"
-#include "chtypes.h"
-#include "eda_optimized_utils.hpp"
+#include <ch.h>
 #include "ff.h"
 
-// ChibiOS headers (must be included before any ChibiOS types are used)
+// ChibiOS Internal Headers
+#include "chmtx.h"
+#include "chtypes.h"
 #include "chvt.h"
+
+// Project-specific headers
+#include "eda_optimized_utils.hpp"
 
 // UI framework headers (must be included before UI types are used)
 #include "ui.hpp"
