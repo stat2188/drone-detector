@@ -121,7 +121,7 @@ UnifiedDroneDatabase::UnifiedDroneDatabase() noexcept {
  */
 bool UnifiedDroneDatabase::validate_entry_data(const UnifiedDroneEntry& entry) noexcept {
     // Validate frequency range (100 MHz to 6 GHz)
-    if (entry.frequency_hz < 100000000ULL || entry.frequency_hz > 6000000000ULL) {
+    if (entry.frequency_hz < 100000000LL || entry.frequency_hz > 6000000000LL) {
         return false;  // Frequency out of valid range
     }
 
@@ -136,10 +136,7 @@ bool UnifiedDroneDatabase::validate_entry_data(const UnifiedDroneEntry& entry) n
         return false;  // Description not null-terminated
     }
 
-    // Validate frequency_band enum value (0-255)
-    if (entry.frequency_band > 255) {
-        return false;  // Invalid frequency_band
-    }
+    // Note: frequency_band is uint8_t (0-255), so no upper bound check needed
 
     return true;  // Entry is valid
 }
