@@ -1286,9 +1286,14 @@ EDA::ErrorResult<bool> SettingsPersistence<T>::save(const T& settings) {
 
     File file;
     const char* path = settings.settings_file_path;
+    // DIAMOND FIX: Convert UTF-8 path to UTF-16 (TCHAR) for file system
+    // Stack-allocated buffer (no heap allocation)
+    constexpr size_t PATH_BUFFER_SIZE = 256;
+    TCHAR path_buffer[PATH_BUFFER_SIZE];
+    const TCHAR* tchar_path = utf8_to_tchar(path, path_buffer, PATH_BUFFER_SIZE);
     // DIAMOND FIX: Use create() instead of append() to overwrite file
     // CRITICAL BUG FIX: append() causes file to grow indefinitely with duplicate data
-    auto error = file.create(path);
+    auto error = file.create(tchar_path);
     if (error) {
         return EDA::ErrorResult<bool>::fail(EDA::ErrorCode::FILE_IO_ERROR);
     }
