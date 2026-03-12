@@ -309,7 +309,7 @@ HistogramDisplayBuffer scale_histogram_for_display(
 // DRONE FILTERING AND SORTING IMPLEMENTATIONS
 // ============================================================================
 
-// Note: filter_stale_drones() is implemented in dsp_display_types.cpp
+// Note: filter_stale_drones_in_place() is implemented in dsp_display_types.cpp
 // with CRITICAL FIX #E004 strongly-typed wrapper support (StaleTimeout, CurrentTime)
 // Note: sort_drones_by_priority() is implemented in dsp_display_types.cpp
 

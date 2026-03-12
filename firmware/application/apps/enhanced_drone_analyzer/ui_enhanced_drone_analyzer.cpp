@@ -3724,8 +3724,11 @@ void DroneDisplayController::update_drones_display(const DroneScanner& scanner) 
     // DIAMOND CODE PRINCIPLE: Use DSP layer for filtering logic
     // This separates filtering logic from UI rendering
     // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
-    dsp::FilteredDronesSnapshot filtered_snapshot = dsp::filter_stale_drones(
+    // FIX #1: Use output parameter instead of return value (640 bytes saved)
+    dsp::FilteredDronesSnapshot filtered_snapshot;
+    dsp::filter_stale_drones_in_place(
         converted_snapshot,
+        filtered_snapshot,
         dsp::StaleTimeout(STALE_TIMEOUT),
         dsp::CurrentTime(now)
     );

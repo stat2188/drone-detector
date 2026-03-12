@@ -188,6 +188,45 @@ private:
  */
 class SpectrumProcessor {
 public:
+    // ============================================================================
+    // FIX #3: STATIC STORAGE FOR power_levels (240 bytes)
+    // ============================================================================
+    // BSS segment for power levels buffer
+    // Eliminates stack allocation and provides thread-safe access
+    namespace StaticStorage {
+        alignas(alignof(uint8_t))
+        static uint8_t g_power_levels_buffer[SpectrumProcessorConstants::POWER_LEVELS_COUNT];
+        
+        // Mutex for protecting power levels access
+        static Mutex g_power_levels_mutex;
+    }
+    
+    // RAII wrapper for power levels access
+    class PowerLevelsGuard {
+    public:
+        PowerLevelsGuard() noexcept {
+            chMtxLock(&StaticStorage::g_power_levels_mutex);
+        }
+        
+        ~PowerLevelsGuard() noexcept {
+            chMtxUnlock(&StaticStorage::g_power_levels_mutex);
+        }
+        
+        // Non-copyable, non-movable
+        PowerLevelsGuard(const PowerLevelsGuard&) = delete;
+        PowerLevelsGuard& operator=(const PowerLevelsGuard&) = delete;
+        
+        [[nodiscard]] uint8_t* get() noexcept {
+            return StaticStorage::g_power_levels_buffer;
+        }
+        
+        [[nodiscard]] const uint8_t* get() const noexcept {
+            return StaticStorage::g_power_levels_buffer;
+        }
+        
+    private:
+    };
+
     /**
      * @brief Process mini spectrum data into display bins
      *
@@ -197,6 +236,7 @@ public:
      *
      * @param spectrum Input spectrum data
      * @param power_levels Output power levels array (POWER_LEVELS_COUNT bins)
+     * @param power_levels_size Size of power_levels array for bounds checking
      * @param bins_hz_size Running Hz accumulator (stateful, updated by reference)
      * @param each_bin_size Hz per bin
      * @param marker_pixel_step Hz per pixel
@@ -207,11 +247,13 @@ public:
      * @note noexcept for embedded safety
      * @note Implementation merged from dsp_spectrum_processor.cpp
      * @note PHASE 3 FIX #8: Replaced magic number 240 with POWER_LEVELS_COUNT
+     * @note FIX #3: Takes buffer pointer instead of allocating (240 bytes saved)
      */
     // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
     static inline size_t process_mini_spectrum(
         const ChannelSpectrum& spectrum,
-        uint8_t power_levels[SpectrumProcessorConstants::POWER_LEVELS_COUNT],
+        uint8_t* power_levels,  // Caller-provided buffer
+        size_t power_levels_size,  // Buffer size for bounds checking
         size_t& bins_hz_size,
         BinSize each_bin_size,
         Frequency marker_pixel_step,
@@ -244,8 +286,7 @@ public:
 
         return pixel_index;
     }
-};
-
-} // namespace ui::apps::enhanced_drone_analyzer::dsp
+    
+};  // namespace ui::apps::enhanced_drone_analyzer::dsp
 
 #endif // DSP_SPECTRUM_PROCESSOR_HPP_

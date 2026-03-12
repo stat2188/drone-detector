@@ -3,9 +3,30 @@
 # Stage 2 of 4-Stage Pipeline
 
 **Date:** 2026-03-12
+**Revision Date:** 2026-03-12
 **Target:** STM32F405 (ARM Cortex-M4, 128KB RAM, 4KB stack per thread)
 **Current Stack Usage:** ~4,366 bytes (106% of 4KB limit)
 **Target Stack Usage:** <3,200 bytes (80% of 4KB limit)
+
+---
+
+## REVISION SUMMARY
+
+**Revision Date:** 2026-03-12
+**Revision Reason:** Address critical issues found in Stage 3 (Red Team Attack)
+
+**Revisions Made:**
+1. **Fix #2 (spectrum_data_)**: Replaced `std::atomic<uint8_t>` with mutex-protected double-buffering. The original design used lock-free double-buffering with std::atomic, which is FORBIDDEN per embedded constraints. The revised implementation uses ChibiOS mutex_t for thread-safe access while maintaining the double-buffering pattern for performance.
+
+2. **Fix #8 (DroneAnalyzerSettings)**: Reverted to storing settings by value (Option 1). The original design stored settings by reference (`const DroneAnalyzerSettings& settings_`) which created a use-after-free vulnerability if the parent object was destroyed while the scanner was still using the reference. The revised implementation accepts the 200 bytes copy overhead as a trade-off for safety and simplicity.
+
+**Impact on Expected Results:**
+- Fix #2 stack savings: 256 bytes (unchanged - still moves data to static storage)
+- Fix #8 stack savings: 0 bytes (changed from ~200 bytes to 0 bytes - we now keep the value copy)
+- Total stack savings: ~2,738 bytes (reduced from ~2,938 bytes)
+- Final stack usage: ~1,628 bytes (40% of 4KB limit, increased from ~1,428 bytes)
+
+**Reference:** See `plans/stage3_red_team_attack.md` for detailed verification report.
 
 ---
 
@@ -143,41 +164,72 @@ void filter_stale_drones_in_place(
 
 ---
 
-### Fix #2: spectrum_data_ (256 bytes)
+### Fix #2: spectrum_data_ (256 bytes) - REVISED
 
 **Current Implementation:**
 - Location: `ui_enhanced_drone_analyzer.hpp:809`
 - Stack allocation: `std::array<uint8_t, 256> spectrum_data_{};`
 - Already a class member, but may be copied on stack
 
-**Proposed Solution:**
+**Proposed Solution (REVISED - Mutex-Protected Double-Buffering):**
 
 ```cpp
-// NEW: Move spectrum_data_ to static storage with lock-free access
+// REVISED: Move spectrum_data_ to static storage with mutex-protected double-buffering
 // File: ui_enhanced_drone_analyzer.hpp (DroneScanner class)
 
 class DroneScanner {
 private:
-    // Static storage for spectrum data (BSS segment)
-    alignas(alignof(std::array<uint8_t, 256>))
-    static uint8_t g_spectrum_data_storage[sizeof(std::array<uint8_t, 256>)];
+    // Static storage for spectrum data (BSS segment) - mutex-protected
+    struct SpectrumDataBuffer {
+        std::array<uint8_t, 256> buffers[2];  // Double-buffered
+        uint8_t active_index;  // Index of active buffer (0 or 1)
+    };
     
-    // Lock-free access using atomic flag for double-buffering
-    static std::atomic<uint8_t> g_spectrum_data_buffer_index;  // 0 or 1
+    alignas(alignof(SpectrumDataBuffer))
+    static uint8_t g_spectrum_data_storage[sizeof(SpectrumDataBuffer)];
     
-    // Double-buffered spectrum data for lock-free reads
-    static std::array<uint8_t, 256> g_spectrum_data_buffers[2];
+    // Mutex for protecting spectrum data access
+    static Mutex g_spectrum_data_mutex;
     
-    // Accessor methods (lock-free)
-    [[nodiscard]] const std::array<uint8_t, 256>& get_spectrum_data() const noexcept {
-        uint8_t idx = g_spectrum_data_buffer_index.load(std::memory_order_acquire);
-        return g_spectrum_data_buffers[idx];
+    // RAII wrapper for spectrum data access
+    class SpectrumDataGuard {
+    public:
+        SpectrumDataGuard() noexcept {
+            chMtxLock(&g_spectrum_data_mutex);
+        }
+        
+        ~SpectrumDataGuard() noexcept {
+            chMtxUnlock(&g_spectrum_data_mutex);
+        }
+        
+        // Non-copyable, non-movable
+        SpectrumDataGuard(const SpectrumDataGuard&) = delete;
+        SpectrumDataGuard& operator=(const SpectrumDataGuard&) = delete;
+        
+        [[nodiscard]] SpectrumDataBuffer* get() noexcept {
+            return reinterpret_cast<SpectrumDataBuffer*>(g_spectrum_data_storage);
+        }
+        
+        [[nodiscard]] const SpectrumDataBuffer* get() const noexcept {
+            return reinterpret_cast<const SpectrumDataBuffer*>(g_spectrum_data_storage);
+        }
+        
+    private:
+    };
+    
+    // Accessor methods (mutex-protected)
+    inline const std::array<uint8_t, 256>& get_spectrum_data() const noexcept {
+        SpectrumDataGuard guard;
+        const SpectrumDataBuffer* buffer = guard.get();
+        return buffer->buffers[buffer->active_index];
     }
     
-    void update_spectrum_data(const std::array<uint8_t, 256>& new_data) noexcept {
-        uint8_t write_idx = 1 - g_spectrum_data_buffer_index.load(std::memory_order_relaxed);
-        g_spectrum_data_buffers[write_idx] = new_data;
-        g_spectrum_data_buffer_index.store(write_idx, std::memory_order_release);
+    inline void update_spectrum_data(const std::array<uint8_t, 256>& new_data) noexcept {
+        SpectrumDataGuard guard;
+        SpectrumDataBuffer* buffer = guard.get();
+        uint8_t write_idx = 1 - buffer->active_index;
+        buffer->buffers[write_idx] = new_data;
+        buffer->active_index = write_idx;
     }
 };
 ```
@@ -185,14 +237,17 @@ private:
 **Memory Placement:**
 - **Segment:** BSS (zero-initialized at startup)
 - **Lifetime:** Application lifetime
-- **Thread Safety:** Lock-free double-buffering with atomic index
+- **Thread Safety:** Mutex-protected double-buffering with RAII wrapper
 
 **Expected Savings:** 256 bytes (eliminates stack copies)
 
 **Risk Assessment:** **LOW**
-- Lock-free double-buffering is well-established pattern
-- Atomic operations are supported on ARM Cortex-M4
-- No complex synchronization required
+- Mutex-protected double-buffering is a well-established pattern
+- ChibiOS mutex operations are supported on ARM Cortex-M4
+- RAII wrapper ensures proper locking/unlocking
+- No std::atomic usage (compliant with embedded constraints)
+
+**Revision Note:** This fix was revised from the original design which used `std::atomic<uint8_t>` for lock-free double-buffering. The revised implementation uses ChibiOS mutex_t for thread safety, which is compliant with embedded constraints that forbid std::atomic.
 
 ---
 
@@ -663,33 +718,25 @@ private:
 
 ---
 
-### Fix #8: DroneAnalyzerSettings passed by value (~200 bytes copy)
+### Fix #8: DroneAnalyzerSettings (REVISED - Keep by Value)
 
 **Current Implementation:**
 - Location: Multiple locations in `ui_enhanced_drone_analyzer.hpp`
 - Stack allocation: `void update_settings(const DroneAnalyzerSettings& settings)`
 - Settings struct is ~200 bytes, passed by reference but copied internally
 
-**Proposed Solution:**
+**Proposed Solution (REVISED - Option 1: Keep by Value):**
 
 ```cpp
-// NEW: Pass settings by const reference consistently
+// REVISED: Keep settings by value (accept 200 bytes copy overhead)
 // File: ui_enhanced_drone_analyzer.hpp (DroneScanner class)
 
 class DroneScanner {
 public:
-    // BEFORE: Settings stored by value (copy on construction)
+    // Constructor - accepts settings by value (copy)
     explicit DroneScanner(DroneAnalyzerSettings settings);
     
-    // AFTER: Settings stored by reference (no copy)
-    explicit DroneScanner(const DroneAnalyzerSettings& settings);
-    
     // Update scanner's settings from view's settings
-    // BEFORE: void update_settings(const DroneAnalyzerSettings& settings) {
-    //            settings_ = settings;  // Copy (~200 bytes)
-    //        }
-    
-    // AFTER: Update individual fields (no full copy)
     void update_settings(const DroneAnalyzerSettings& settings) {
         MutexLock lock(data_mutex, LockOrder::DATA_MUTEX);
         
@@ -707,23 +754,24 @@ public:
     }
     
 private:
-    // BEFORE: DroneAnalyzerSettings settings_;  // Stored by value (~200 bytes)
-    // AFTER: const DroneAnalyzerSettings& settings_;  // Reference (8 bytes)
-    const DroneAnalyzerSettings& settings_;
+    // Keep settings by value (200 bytes) - safe lifetime management
+    DroneAnalyzerSettings settings_;
 };
 ```
 
 **Memory Placement:**
-- **Segment:** Stack (reference only, 8 bytes)
+- **Segment:** Stack (value copy, ~200 bytes)
 - **Lifetime:** Parent object lifetime
 - **Thread Safety:** Mutex-protected access
 
-**Expected Savings:** ~200 bytes (eliminates copy overhead)
+**Expected Savings:** 0 bytes (no change - we keep the value copy)
 
-**Risk Assessment:** **MEDIUM**
-- Requires careful lifetime management (settings must outlive scanner)
-- Need to update all settings access to use mutex
-- May require changes to settings persistence logic
+**Risk Assessment:** **LOW**
+- Simple approach with no lifetime management risks
+- Settings are stored by value, eliminating use-after-free vulnerability
+- 200 bytes copy overhead is acceptable trade-off for safety
+
+**Revision Note:** This fix was revised from the original design which stored settings by reference (`const DroneAnalyzerSettings& settings_`). The original design created a use-after-free vulnerability if the parent object was destroyed while the scanner was still using the reference. The revised implementation stores settings by value, accepting the 200 bytes copy overhead as a trade-off for safety and simplicity.
 
 ---
 
@@ -1002,18 +1050,18 @@ private:
 };
 
 /**
- * @brief Lock-free double buffer for thread-safe data sharing
+ * @brief Mutex-protected double buffer for thread-safe data sharing
  * 
- * Provides lock-free access to shared data using double-buffering.
- * Writer updates the inactive buffer, then swaps atomically.
- * Reader always reads from the active buffer without locking.
+ * Provides mutex-protected access to shared data using double-buffering.
+ * Writer updates the inactive buffer, then swaps the active index.
+ * Reader always reads from the active buffer with mutex protection.
  * 
  * @tparam BufferType Type of buffer data
  * @tparam BufferSize Size of each buffer in bytes
  * 
  * USAGE:
  * @code
- *   LockFreeDoubleBuffer<uint8_t, 256> spectrum_buffer;
+ *   MutexProtectedDoubleBuffer<uint8_t, 256> spectrum_buffer;
  *   
  *   // Writer thread:
  *   uint8_t* write_buf = spectrum_buffer.get_write_buffer();
@@ -1026,33 +1074,36 @@ private:
  * @endcode
  */
 template <typename BufferType, size_t BufferSize>
-class LockFreeDoubleBuffer {
+class MutexProtectedDoubleBuffer {
 public:
-    LockFreeDoubleBuffer() noexcept : active_index_(0) {
+    MutexProtectedDoubleBuffer() noexcept : active_index_(0) {
+        chMtxObjectInit(&mutex_);
         // Buffers are zero-initialized (BSS segment)
     }
     
-    // Get write buffer (caller must ensure exclusive access)
+    // Get write buffer (caller must hold mutex)
     [[nodiscard]] BufferType* get_write_buffer() noexcept {
-        uint8_t write_idx = 1 - active_index_.load(std::memory_order_relaxed);
+        uint8_t write_idx = 1 - active_index_;
         return reinterpret_cast<BufferType*>(buffers_[write_idx]);
     }
     
-    // Get read buffer (lock-free)
+    // Get read buffer (caller must hold mutex)
     [[nodiscard]] const BufferType* get_read_buffer() const noexcept {
-        uint8_t read_idx = active_index_.load(std::memory_order_acquire);
-        return reinterpret_cast<const BufferType*>(buffers_[read_idx]);
+        return reinterpret_cast<const BufferType*>(buffers_[active_index_]);
     }
     
-    // Swap buffers (call after filling write buffer)
+    // Swap buffers (caller must hold mutex)
     void swap_buffers() noexcept {
-        uint8_t new_active = 1 - active_index_.load(std::memory_order_relaxed);
-        active_index_.store(new_active, std::memory_order_release);
+        active_index_ = 1 - active_index_;
     }
+    
+    // Get mutex for external locking
+    [[nodiscard]] mutex_t& get_mutex() noexcept { return mutex_; }
     
 private:
     uint8_t buffers_[2][BufferSize];  // Double-buffered storage
-    std::atomic<uint8_t> active_index_;  // Index of active buffer (0 or 1)
+    uint8_t active_index_;            // Index of active buffer (0 or 1)
+    mutex_t mutex_;                   // ChibiOS mutex for protection
 };
 ```
 
@@ -1063,8 +1114,8 @@ private:
 
 class DroneScanner {
 public:
-    // Constructor - accepts settings by reference (no copy)
-    explicit DroneScanner(const DroneAnalyzerSettings& settings);
+    // Constructor - accepts settings by value (copy)
+    explicit DroneScanner(DroneAnalyzerSettings settings);
     ~DroneScanner();
     
     // Update settings with minimal copy overhead
@@ -1080,8 +1131,8 @@ private:
     static uint8_t g_filtered_drones_storage[sizeof(FilteredDronesSnapshot)];
     static Mutex g_filtered_drones_mutex;
     
-    // Spectrum data (256 bytes) - lock-free double-buffered
-    static LockFreeDoubleBuffer<uint8_t, 256> g_spectrum_data_buffer;
+    // Spectrum data (256 bytes) - mutex-protected double-buffered
+    static MutexProtectedDoubleBuffer<uint8_t, 256> g_spectrum_data_buffer;
     
     // Power levels (240 bytes)
     alignas(alignof(uint8_t))
@@ -1119,9 +1170,9 @@ private:
     // REMOVED: char ui_stats_buffer_[48]{};
     
     // ============================================================================
-    // CHANGED: Settings stored by reference (not value)
+    // CHANGED: Settings stored by value (not reference)
     // ============================================================================
-    const DroneAnalyzerSettings& settings_;  // Reference (8 bytes), not copy (~200 bytes)
+    DroneAnalyzerSettings settings_;  // Stored by value (~200 bytes), safe lifetime
 };
 ```
 
@@ -1170,12 +1221,12 @@ static inline size_t process_mini_spectrum(
 
 // File: ui_enhanced_drone_analyzer.hpp (DroneScanner methods)
 
-// BEFORE (passes settings by value):
-explicit DroneScanner(DroneAnalyzerSettings settings);
+// BEFORE (passes settings by reference):
+explicit DroneScanner(const DroneAnalyzerSettings& settings);
 void update_settings(const DroneAnalyzerSettings& settings);
 
-// AFTER (passes settings by reference):
-explicit DroneScanner(const DroneAnalyzerSettings& settings);
+// AFTER (passes settings by value):
+explicit DroneScanner(DroneAnalyzerSettings settings);
 void update_settings(const DroneAnalyzerSettings& settings);
 ```
 
@@ -1223,10 +1274,11 @@ void update_settings(const DroneAnalyzerSettings& settings);
 │ • Small Arrays                    ~400 bytes                    │
 │ • Function Call Frames             ~500 bytes                    │
 │ • Register Spills                 ~200 bytes                    │
-│ • Safety Margin                   ~500 bytes                    │
+│ • DroneAnalyzerSettings            ~200 bytes                    │
+│ • Safety Margin                   ~528 bytes                    │
 ├────────────────────────────────────────────────────────────────────┤
-│ Total Stack Usage: ~2,400 bytes (59% of 4KB limit)          │
-│ Stack Headroom: ~1,696 bytes (41% of 4KB limit)            │
+│ Total Stack Usage: ~2,628 bytes (64% of 4KB limit)          │
+│ Stack Headroom: ~1,468 bytes (36% of 4KB limit)            │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1265,17 +1317,17 @@ void update_settings(const DroneAnalyzerSettings& settings);
 | Fix | File | Stack Savings | Risk | Estimated Effort |
 |-----|------|--------------|-------|------------------|
 | Fix #7: histogram_buffer_ | ui_enhanced_drone_analyzer.hpp | 67 bytes | Low | 1 hour |
-| Fix #8: Settings by reference | ui_enhanced_drone_analyzer.hpp | ~200 bytes | Medium | 4 hours |
+| Fix #8: Settings by value | ui_enhanced_drone_analyzer.hpp | 0 bytes | Low | 1 hour |
 | Fix #9: filesystem::path | ui_enhanced_drone_settings.cpp | ~150 bytes | Low | 2 hours |
 | Fix #10: UI buffers | ui_enhanced_drone_analyzer.hpp | 160 bytes | Low | 1 hour |
 
-**Phase 2 Total Stack Savings:** ~577 bytes (13% reduction)
-**Phase 2 Total Effort:** ~8 hours
+**Phase 2 Total Stack Savings:** ~377 bytes (9% reduction)
+**Phase 2 Total Effort:** ~5 hours
 
 **Phase 2 Deliverables:**
 - All Priority 2 fixes implemented
 - Path utility functions with unit tests
-- Settings reference passing validation
+- Settings value passing validation
 - Memory usage profiling
 
 ---
@@ -1286,7 +1338,7 @@ void update_settings(const DroneAnalyzerSettings& settings);
 
 | Task | Description | Estimated Effort |
 |------|-------------|------------------|
-| Unit Tests | Test RAII guards, static storage access, lock-free buffers | 4 hours |
+| Unit Tests | Test RAII guards, static storage access, mutex-protected buffers | 4 hours |
 | Integration Tests | Test full application flow with optimizations | 3 hours |
 | Stack Analysis | Verify stack usage with static_assert and runtime checks | 2 hours |
 | Performance Tests | Measure performance impact of mutex locking | 2 hours |
@@ -1308,9 +1360,9 @@ void update_settings(const DroneAnalyzerSettings& settings);
 
 | Metric | Before | After | Improvement |
 |--------|---------|--------|-------------|
-| Total Stack Usage | 4,366 bytes | ~2,400 bytes | -45% |
-| Stack Utilization | 106% | 59% | -47% |
-| Stack Headroom | -366 bytes (OVERFLOW) | 1,696 bytes | +2062 bytes |
+| Total Stack Usage | 4,366 bytes | ~2,628 bytes | -37% |
+| Stack Utilization | 106% | 64% | -42% |
+| Stack Headroom | -366 bytes (OVERFLOW) | 1,468 bytes | +1834 bytes |
 | Heap Allocations | ~200 bytes | 0 bytes | -100% |
 | Static Storage Usage | ~4,500 bytes | ~7,563 bytes | +3,063 bytes |
 
@@ -1325,12 +1377,12 @@ void update_settings(const DroneAnalyzerSettings& settings);
 | Fix #5: filename | ~75 bytes | 1,361 bytes |
 | Fix #6: entries_to_scan_ | 1000 bytes | 2,361 bytes |
 | Fix #7: histogram_buffer_ | 67 bytes | 2,428 bytes |
-| Fix #8: Settings by reference | ~200 bytes | 2,628 bytes |
-| Fix #9: filesystem::path | ~150 bytes | 2,778 bytes |
-| Fix #10: UI buffers | 160 bytes | 2,938 bytes |
+| Fix #8: Settings by value | 0 bytes | 2,428 bytes |
+| Fix #9: filesystem::path | ~150 bytes | 2,578 bytes |
+| Fix #10: UI buffers | 160 bytes | 2,738 bytes |
 
-**Total Stack Savings:** ~2,938 bytes (67% reduction)
-**Final Stack Usage:** ~1,428 bytes (35% of 4KB limit)
+**Total Stack Savings:** ~2,738 bytes (63% reduction)
+**Final Stack Usage:** ~1,628 bytes (40% of 4KB limit)
 
 ### 7.3 Compliance with Embedded Constraints
 
@@ -1340,6 +1392,7 @@ void update_settings(const DroneAnalyzerSettings& settings);
 | NO new, malloc | ✅ PASS | No dynamic memory allocation |
 | NO exceptions | ✅ PASS | All functions noexcept |
 | NO RTTI | ✅ PASS | No typeid or dynamic_cast |
+| NO std::atomic | ✅ PASS | Replaced with ChibiOS mutex (Fix #2 revised) |
 | Stack allocations < 1KB per function | ✅ PASS | Max stack per function ~800 bytes |
 | Use std::array, std::string_view, fixed-size buffers | ✅ PASS | All data structures use fixed-size buffers |
 | Use constexpr, enum class, using Type = uintXX_t | ✅ PASS | Type-safe code maintained |
@@ -1355,7 +1408,7 @@ void update_settings(const DroneAnalyzerSettings& settings);
 **Mitigation:**
 - Use RAII guard templates for all static storage access
 - Add mutex protection for all shared static storage
-- Use lock-free double-buffering for high-frequency data (spectrum)
+- Use mutex-protected double-buffering for high-frequency data (spectrum)
 - Add static_assert to verify mutex is held before accessing storage
 
 **Validation:**
@@ -1370,10 +1423,10 @@ void update_settings(const DroneAnalyzerSettings& settings);
 **Risk:** Settings reference outlives parent object (use-after-free)
 
 **Mitigation:**
+- ✅ **RESOLVED:** Settings now stored by value (not reference)
 - Document lifetime requirements clearly in code comments
 - Add runtime assertions to validate settings reference
 - Consider using shared_ptr if lifetime cannot be guaranteed
-- Add static_assert to verify settings object lifetime
 
 **Validation:**
 - Add unit tests for lifetime scenarios
@@ -1387,7 +1440,7 @@ void update_settings(const DroneAnalyzerSettings& settings);
 **Risk:** Mutex locking causes performance degradation
 
 **Mitigation:**
-- Use lock-free double-buffering for high-frequency data (spectrum)
+- Use mutex-protected double-buffering for high-frequency data (spectrum)
 - Minimize mutex hold time (copy data, then release)
 - Use try_lock() for non-critical operations
 - Profile performance before and after optimization
@@ -1420,9 +1473,9 @@ void update_settings(const DroneAnalyzerSettings& settings);
 
 **Unit Tests:**
 - Test RAII guard templates (lock/unlock, exception safety)
-- Test lock-free double-buffer (correctness, memory ordering)
+- Test mutex-protected double-buffer (correctness, thread safety)
 - Test path utility functions (bounds checking, edge cases)
-- Test settings reference passing (lifetime, thread safety)
+- Test settings value passing (lifetime, thread safety)
 
 **Integration Tests:**
 - Test full application flow with optimizations
@@ -1439,7 +1492,7 @@ void update_settings(const DroneAnalyzerSettings& settings);
 **Thread Safety Tests:**
 - Run with thread sanitizer (if available)
 - Test concurrent access to static storage
-- Test lock-free buffer correctness
+- Test mutex-protected buffer correctness
 - Test mutex contention scenarios
 
 ---
@@ -1448,23 +1501,23 @@ void update_settings(const DroneAnalyzerSettings& settings);
 
 This architectural blueprint provides a comprehensive plan to eliminate the critical stack overflow risk in the Enhanced Drone Analyzer application. The proposed changes:
 
-1. **Eliminate stack overflow risk** by moving 2,938 bytes from stack to static storage
+1. **Eliminate stack overflow risk** by moving 2,738 bytes from stack to static storage
 2. **Eliminate all heap allocations** by replacing std::string and std::filesystem::path with fixed-size buffers
-3. **Maintain thread safety** using RAII guard templates and lock-free double-buffering
-4. **Comply with embedded constraints** by using only permitted data structures and patterns
-5. **Minimize performance impact** by using lock-free patterns for high-frequency data
+3. **Maintain thread safety** using RAII guard templates and mutex-protected double-buffering
+4. **Comply with embedded constraints** by using only permitted data structures and patterns (NO std::atomic)
+5. **Minimize performance impact** by using mutex-protected patterns for high-frequency data
 
 The implementation is divided into three phases:
 - **Phase 1 (Critical Fixes):** 10 hours, 2,361 bytes saved
-- **Phase 2 (High Priority Fixes):** 8 hours, 577 bytes saved
+- **Phase 2 (High Priority Fixes):** 5 hours, 377 bytes saved
 - **Phase 3 (Testing and Validation):** 14 hours, comprehensive validation
 
-**Total Estimated Effort:** ~32 hours
+**Total Estimated Effort:** ~29 hours
 
-**Expected Result:** Stack usage reduced from 4,366 bytes (106% overflow) to ~1,428 bytes (35% utilization), with 100% elimination of heap allocations and full compliance with embedded constraints.
+**Expected Result:** Stack usage reduced from 4,366 bytes (106% overflow) to ~1,628 bytes (40% utilization), with 100% elimination of heap allocations and full compliance with embedded constraints (including NO std::atomic).
 
 ---
 
-**End of Stage 2: Architect's Blueprint**
+**End of Stage 2: Architect's Blueprint (Revised)**
 
-Next Stage: Stage 3 - Red Team Attack (Verification)
+Next Stage: Stage 4 - Diamond Code Synthesis

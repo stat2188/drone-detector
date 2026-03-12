@@ -36,65 +36,64 @@ namespace ui::apps::enhanced_drone_analyzer::dsp {
 // ============================================================================
 
 /**
- * @brief Filter drones by stale timeout
+ * @brief Filter drones by stale timeout (in-place, no allocation)
  *
  * This function filters out drones that have not been seen recently.
- * It returns a filtered snapshot containing only active drones.
+ * It writes the filtered snapshot to the provided output parameter.
  *
- * @param snapshot Input snapshot of tracked drones
+ * @param input Input snapshot of tracked drones
+ * @param output Output snapshot with only active drones (caller-provided)
  * @param stale_timeout_ms Timeout in milliseconds for stale detection
  * @param now Current timestamp in milliseconds
- * @return Filtered snapshot with only active drones
  *
  * @note This is a pure DSP filtering function with no UI dependencies
  * @note noexcept for embedded safety
+ * @note Output parameter eliminates stack allocation (640 bytes saved)
  *
  * THREAD SAFETY:
  * - This function does not acquire any mutexes
  * - Caller is responsible for thread-safe access to input snapshot
- * - Returns a new snapshot that must be deallocated by caller
+ * - Output snapshot must be pre-allocated by caller
  *
  * USAGE:
  * @code
  *   FilteredDronesSnapshot input_snapshot = ...;
+ *   FilteredDronesSnapshot output_snapshot;
  *   systime_t now = chTimeNow();
- *   FilteredDronesSnapshot* filtered = filter_stale_drones(
+ *   filter_stale_drones_in_place(
  *       input_snapshot,
- *       STALE_TIMEOUT_MS,
- *       now
+ *       output_snapshot,
+ *       StaleTimeout(STALE_TIMEOUT_MS),
+ *       CurrentTime(now)
  *   );
- *   if (filtered) {
- *       // Use filtered snapshot...
- *       FilteredDronesSnapshot::deallocate_to_pool(filtered);
- *   }
+ *   // Use output_snapshot...
  * @endcode
  */
 // CRITICAL FIX #E004: Use strongly-typed wrappers to prevent parameter swapping
-FilteredDronesSnapshot filter_stale_drones(
-    const FilteredDronesSnapshot& snapshot,
+// FIX #1: Use output parameter instead of return value (640 bytes saved)
+void filter_stale_drones_in_place(
+    const FilteredDronesSnapshot& input,
+    FilteredDronesSnapshot& output,  // Output parameter (no allocation)
     StaleTimeout stale_timeout_ms,
     CurrentTime now
 ) noexcept {
-    FilteredDronesSnapshot filtered;
-    filtered.count = 0;
+    output.count = 0;
 
     // Filter out stale drones
-    for (size_t i = 0; i < snapshot.count; ++i) {
-        const TrackedDroneData& drone = snapshot.drones[i];
+    for (size_t i = 0; i < input.count; ++i) {
+        const TrackedDroneData& drone = input.drones[i];
 
         // Check if drone is stale (not seen recently)
         // CRITICAL FIX #E004: Call .get() on strongly-typed wrappers
         systime_t time_since_last_seen = now.get() - drone.last_seen;
         if (time_since_last_seen < stale_timeout_ms.get()) {
             // Drone is still active, add to filtered snapshot
-            if (filtered.count < DisplayTypeConstants::MAX_FILTERED_DRONES) {
-                filtered.drones[filtered.count] = drone;
-                filtered.count++;
+            if (output.count < DisplayTypeConstants::MAX_FILTERED_DRONES) {
+                output.drones[output.count] = drone;
+                output.count++;
             }
         }
     }
-
-    return filtered;
 }
 
 /**

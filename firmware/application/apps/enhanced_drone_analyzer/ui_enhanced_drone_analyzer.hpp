@@ -378,6 +378,138 @@ struct DroneDetectionMessage {
     systime_t timestamp;
 };
 
+// ============================================================================
+// FIX #6: STATIC STORAGE FOR entries_to_scan_ (1000 bytes)
+// ============================================================================
+// Moved from class member to static storage to reduce stack usage.
+// Provides thread-safe access with RAII mutex wrapper.
+// Eliminates 1000 bytes of stack allocation.
+// ============================================================================
+
+namespace EntriesToScanStorage {
+    // BSS segment placement (zero-initialized at startup)
+    // Stores up to 10 freqman_entry objects (100 bytes each)
+    alignas(alignof(freqman_entry))
+    uint8_t g_entries_to_scan_storage[sizeof(freqman_entry) * 10];
+    
+    // Mutex for thread-safe access to entries_to_scan_
+    // Lock order: 5 (after spectrum_data_ at 4)
+    mutex_t g_entries_to_scan_mutex;
+    
+    // RAII wrapper for thread-safe access to entries_to_scan_
+    // Locks mutex on construction, unlocks on destruction
+    class EntriesToScanGuard {
+    public:
+        explicit EntriesToScanGuard() noexcept {
+            chMtxLock(&EntriesToScanStorage::g_entries_to_scan_mutex);
+        }
+        
+        ~EntriesToScanGuard() noexcept {
+            chMtxUnlock(&EntriesToScanStorage::g_entries_to_scan_mutex);
+        }
+        
+        // Deleted copy/move to prevent misuse
+        EntriesToScanGuard(const EntriesToScanGuard&) = delete;
+        EntriesToScanGuard& operator=(const EntriesToScanGuard&) = delete;
+        EntriesToScanGuard(EntriesToScanGuard&&) = delete;
+        EntriesToScanGuard& operator=(EntriesToScanGuard&&) = delete;
+        
+        // Get pointer to entries_to_scan_ array
+        [[nodiscard]] freqman_entry* get() noexcept {
+            return reinterpret_cast<freqman_entry*>(
+                EntriesToScanStorage::g_entries_to_scan_storage
+            );
+        }
+        
+        [[nodiscard]] const freqman_entry* get() const noexcept {
+            return reinterpret_cast<const freqman_entry*>(
+                EntriesToScanStorage::g_entries_to_scan_storage
+            );
+        }
+        
+        // Get reference to entry at index (with bounds checking)
+        [[nodiscard]] freqman_entry& operator[](size_t index) noexcept {
+            static freqman_entry dummy_entry{};
+            auto* entries = get();
+            return (index < 10) ? entries[index] : dummy_entry;
+        }
+        
+        [[nodiscard]] const freqman_entry& operator[](size_t index) const noexcept {
+            static const freqman_entry dummy_entry{};
+            const auto* entries = get();
+            return (index < 10) ? entries[index] : dummy_entry;
+        }
+    };
+}
+
+// ============================================================================
+// FIX #7: STATIC STORAGE FOR histogram_buffer_ (128 bytes)
+// ============================================================================
+// Moved from class member to static storage to reduce stack usage.
+// Provides thread-safe access with RAII mutex wrapper.
+// Eliminates 128 bytes of stack allocation.
+// ============================================================================
+
+namespace HistogramBufferStorage {
+    // BSS segment placement (zero-initialized at startup)
+    // Stores histogram buffer (64 bins of uint16_t)
+    alignas(alignof(uint16_t))
+    uint8_t g_histogram_buffer_storage[sizeof(std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>)];
+    
+    // Mutex for thread-safe access to histogram_buffer_
+    // Lock order: 6 (after entries_to_scan_ at 5)
+    mutex_t g_histogram_buffer_mutex;
+    
+    // RAII wrapper for thread-safe access to histogram_buffer_
+    // Locks mutex on construction, unlocks on destruction
+    class HistogramBufferGuard {
+    public:
+        explicit HistogramBufferGuard() noexcept {
+            chMtxLock(&HistogramBufferStorage::g_histogram_buffer_mutex);
+        }
+        
+        ~HistogramBufferGuard() noexcept {
+            chMtxUnlock(&HistogramBufferStorage::g_histogram_buffer_mutex);
+        }
+        
+        // Deleted copy/move to prevent misuse
+        HistogramBufferGuard(const HistogramBufferGuard&) = delete;
+        HistogramBufferGuard& operator=(const HistogramBufferGuard&) = delete;
+        HistogramBufferGuard(HistogramBufferGuard&&) = delete;
+        HistogramBufferGuard& operator=(HistogramBufferGuard&&) = delete;
+        
+        // Get pointer to histogram_buffer_
+        [[nodiscard]] std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>* get() noexcept {
+            return reinterpret_cast<std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>*>(
+                HistogramBufferStorage::g_histogram_buffer_storage
+            );
+        }
+        
+        [[nodiscard]] const std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>* get() const noexcept {
+            return reinterpret_cast<const std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>*>(
+                HistogramBufferStorage::g_histogram_buffer_storage
+            );
+        }
+        
+        // Get reference to histogram buffer
+        [[nodiscard]] std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>& operator*() noexcept {
+            return *get();
+        }
+        
+        [[nodiscard]] const std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>& operator*() const noexcept {
+            return *get();
+        }
+        
+        // Get pointer to histogram buffer (arrow operator)
+        [[nodiscard]] std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>* operator->() noexcept {
+            return get();
+        }
+        
+        [[nodiscard]] const std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>* operator->() const noexcept {
+            return get();
+        }
+    };
+}
 
 class DroneScanner {
 public:
@@ -634,8 +766,8 @@ struct DetectionParams {
         return *tracked_drones_ptr_;
     }
 
-    // Eliminate stack arrays in hot paths - moved to class member buffers
-    std::array<freqman_entry, 10> entries_to_scan_{};
+    // FIX #6: entries_to_scan_ moved to static storage (EntriesToScanStorage)
+    // No longer a class member - use EntriesToScanStorage::EntriesToScanGuard for access
 
     // stale_indices buffer (was stack array in remove_stale_drones)
     std::array<size_t, EDA::Constants::MAX_TRACKED_DRONES> stale_indices_{};
@@ -661,17 +793,20 @@ struct DetectionParams {
     // All access methods validate indices before dereferencing to prevent buffer overflows.
     // ============================================================================
 
-    // Helper functions for buffer access
-    inline std::array<freqman_entry, 10>& get_entries_to_scan() noexcept {
-        return entries_to_scan_;
+    // FIX #6: Helper functions for entries_to_scan_ access using static storage
+    // Thread-safe access through EntriesToScanGuard
+    inline EntriesToScanStorage::EntriesToScanGuard get_entries_to_scan_guard() noexcept {
+        return EntriesToScanStorage::EntriesToScanGuard();
     }
 
     // Safe access to entries_to_scan_ with bounds checking
     // @param index Index to access (0-9)
     // @return Reference to entry at index, or first entry if out of bounds
     // @note Returns first entry instead of throwing to avoid exceptions (Diamond Code constraint)
+    // @note Caller must hold EntriesToScanGuard for thread safety
     inline freqman_entry& get_entry_to_scan(size_t index) noexcept {
-        return (index < 10) ? entries_to_scan_[index] : entries_to_scan_[0];
+        EntriesToScanStorage::EntriesToScanGuard guard;
+        return guard[index];
     }
 
     // Safe access to stale_indices_ with bounds checking
@@ -805,8 +940,47 @@ struct DetectionParams {
     // Tracks frequency hops over time to identify FHSS signals
     FrequencyHopDetector fhss_detector_;
 
-    // Thread-safe spectrum buffer (replaces static buffer)
-    std::array<uint8_t, 256> spectrum_data_{};
+    // ============================================================================
+    // FIX #2: STATIC STORAGE FOR spectrum_data_ (256 bytes)
+    // ============================================================================
+    // Mutex-protected double-buffered spectrum data storage
+    // Eliminates stack copies and provides thread-safe access
+    struct SpectrumDataBuffer {
+        std::array<uint8_t, 256> buffers[2];  // Double-buffered
+        uint8_t active_index;  // Index of active buffer (0 or 1)
+    };
+    
+    alignas(alignof(SpectrumDataBuffer))
+    static uint8_t g_spectrum_data_storage[sizeof(SpectrumDataBuffer)];
+    
+    // Mutex for protecting spectrum data access
+    static Mutex g_spectrum_data_mutex;
+    
+    // RAII wrapper for spectrum data access
+    class SpectrumDataGuard {
+    public:
+        SpectrumDataGuard() noexcept {
+            chMtxLock(&g_spectrum_data_mutex);
+        }
+        
+        ~SpectrumDataGuard() noexcept {
+            chMtxUnlock(&g_spectrum_data_mutex);
+        }
+        
+        // Non-copyable, non-movable
+        SpectrumDataGuard(const SpectrumDataGuard&) = delete;
+        SpectrumDataGuard& operator=(const SpectrumDataGuard&) = delete;
+        
+        [[nodiscard]] SpectrumDataBuffer* get() noexcept {
+            return reinterpret_cast<SpectrumDataBuffer*>(g_spectrum_data_storage);
+        }
+        
+        [[nodiscard]] const SpectrumDataBuffer* get() const noexcept {
+            return reinterpret_cast<const SpectrumDataBuffer*>(g_spectrum_data_storage);
+        }
+        
+    private:
+    };
 
     // Histogram buffer moved to class member (replaces stack allocation)
     SpectralAnalyzer::HistogramBuffer histogram_buffer_{};

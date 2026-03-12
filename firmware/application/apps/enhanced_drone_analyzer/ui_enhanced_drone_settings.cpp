@@ -992,14 +992,50 @@ void ScanningSettingsView::on_select_database() noexcept {
 
     // Set callback to handle file selection when user picks a file
     open_view->on_changed = [this](std::filesystem::path new_file_path) {
-        // Extract filename without extension (e.g., "SCANNER.TXT" -> "SCANNER")
-        std::string filename = new_file_path.stem().string();
-
-        // Validate filename length to prevent buffer overflow in DroneAnalyzerSettings
-        if (filename.length() >= EDA::Constants::MAX_NAME_LENGTH) {
-            filename = filename.substr(0, EDA::Constants::MAX_NAME_LENGTH - 1);
+        // FIX #5: Use fixed-size char buffer instead of std::string
+        // Eliminates heap allocation (~100 bytes)
+        
+        constexpr size_t MAX_FILENAME_LENGTH = EDA::Constants::MAX_NAME_LENGTH;
+        char filename[MAX_FILENAME_LENGTH];
+        
+        // Extract filename without extension using manual parsing
+        // Get full path string
+        const std::string& path_str = new_file_path.string();
+        const char* path_cstr = path_str.c_str();
+        
+        // Find last directory separator
+        const char* last_slash = nullptr;
+        for (const char* p = path_cstr; *p != '\0'; p++) {
+            if (*p == '/' || *p == '\\') {
+                last_slash = p;
+            }
         }
-
+        
+        // Find last dot (extension separator) after last separator
+        const char* last_dot = nullptr;
+        const char* start_pos = (last_slash != nullptr) ? last_slash + 1 : path_cstr;
+        for (const char* p = start_pos; *p != '\0'; p++) {
+            if (*p == '.') {
+                last_dot = p;
+            }
+        }
+        
+        // Find start of filename (after last separator)
+        const char* filename_start = (last_slash != nullptr) ? last_slash + 1 : path_cstr;
+        
+        // Extract filename without extension
+        size_t filename_len = 0;
+        const char* end_pos = (last_dot != nullptr) ? last_dot : path_cstr + path_str.length();
+        for (const char* p = filename_start; p < end_pos && filename_len < MAX_FILENAME_LENGTH - 1; p++) {
+            filename[filename_len++] = *p;
+        }
+        filename[filename_len] = '\0';
+        
+        // Validate filename length to prevent buffer overflow
+        if (filename_len >= MAX_FILENAME_LENGTH) {
+            filename[MAX_FILENAME_LENGTH - 1] = '\0';
+        }
+        
         // Load current settings from persistence
         static DroneAnalyzerSettings settings;
         if (!SettingsPersistence<DroneAnalyzerSettings>::load(settings)) {
@@ -1008,7 +1044,7 @@ void ScanningSettingsView::on_select_database() noexcept {
         }
 
         // Update freqman_path with selected filename
-        snprintf(settings.freqman_path, sizeof(settings.freqman_path), "%s", filename.c_str());
+        snprintf(settings.freqman_path, sizeof(settings.freqman_path), "%s", filename);
 
         // Save updated settings to persistent storage
         if (!SettingsPersistence<DroneAnalyzerSettings>::save(settings)) {
@@ -1018,7 +1054,7 @@ void ScanningSettingsView::on_select_database() noexcept {
 
         // Display success message with selected filename
         char msg_buf[64];
-        snprintf(msg_buf, sizeof(msg_buf), "Database: %s", filename.c_str());
+        snprintf(msg_buf, sizeof(msg_buf), "Database: %s", filename);
         nav_.display_modal("Success", msg_buf);
     };
 

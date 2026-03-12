@@ -538,6 +538,49 @@ namespace RenderCache {
     constexpr uint8_t BACK = 1;
 }
 
+// ============================================================================
+// FIX #1: STATIC STORAGE FOR FilteredDronesSnapshot (640 bytes)
+// ============================================================================
+namespace StaticStorage {
+    // BSS segment placement (zero-initialized at startup)
+    alignas(alignof(FilteredDronesSnapshot))
+    static uint8_t g_filtered_drones_storage[sizeof(FilteredDronesSnapshot)];
+    
+    // Mutex for protecting static storage access
+    static Mutex g_filtered_drones_mutex;
+}
+
+// RAII wrapper for static storage access
+class FilteredDronesSnapshotGuard {
+public:
+    explicit FilteredDronesSnapshotGuard() noexcept {
+        chMtxLock(&StaticStorage::g_filtered_drones_mutex);
+        snapshot_ptr_ = reinterpret_cast<FilteredDronesSnapshot*>(
+            StaticStorage::g_filtered_drones_storage
+        );
+    }
+    
+    ~FilteredDronesSnapshotGuard() noexcept {
+        chMtxUnlock(&StaticStorage::g_filtered_drones_mutex);
+    }
+    
+    // Non-copyable, non-movable
+    FilteredDronesSnapshotGuard(const FilteredDronesSnapshotGuard&) = delete;
+    FilteredDronesSnapshotGuard& operator=(const FilteredDronesSnapshotGuard&) = delete;
+    
+    [[nodiscard]] FilteredDronesSnapshot* get() noexcept { return snapshot_ptr_; }
+    [[nodiscard]] const FilteredDronesSnapshot* get() const noexcept { return snapshot_ptr_; }
+    
+    FilteredDronesSnapshot* operator->() noexcept { return snapshot_ptr_; }
+    const FilteredDronesSnapshot* operator->() const noexcept { return snapshot_ptr_; }
+    
+    FilteredDronesSnapshot& operator*() noexcept { return *snapshot_ptr_; }
+    const FilteredDronesSnapshot& operator*() const noexcept { return *snapshot_ptr_; }
+    
+private:
+    FilteredDronesSnapshot* snapshot_ptr_;
+};
+
 // Forward declarations for utility functions (implemented in dsp_display_utils.cpp)
 DroneDisplayText format_drone_display_text(const DisplayDroneEntry& drone) noexcept;
 BarSpectrumRenderData calculate_bar_render_data(
@@ -560,21 +603,28 @@ HistogramDisplayBuffer scale_histogram_for_display(
 // ============================================================================
 
 /**
- * @brief Filter drones by stale timeout
- * 
+ * @brief Filter drones by stale timeout (in-place, no allocation)
+ *
  * This function filters out drones that have not been seen recently.
- * It returns a filtered snapshot containing only active drones.
- * 
- * @param snapshot Input snapshot of tracked drones
+ * It writes the filtered snapshot to the provided output parameter.
+ *
+ * @param input Input snapshot of tracked drones
+ * @param output Output snapshot with only active drones (caller-provided)
  * @param stale_timeout_ms Timeout in milliseconds for stale detection
  * @param now Current timestamp in milliseconds
- * @return Filtered snapshot with only active drones
- * 
+ *
  * @note This is a pure DSP filtering function with no UI dependencies
  * @note noexcept for embedded safety
+ * @note Output parameter eliminates stack allocation (640 bytes saved)
+ *
+ * THREAD SAFETY:
+ * - This function does not acquire any mutexes
+ * - Caller is responsible for thread-safe access to input snapshot
+ * - Output snapshot must be pre-allocated by caller
  */
-FilteredDronesSnapshot filter_stale_drones(
-    const FilteredDronesSnapshot& snapshot,
+void filter_stale_drones_in_place(
+    const FilteredDronesSnapshot& input,
+    FilteredDronesSnapshot& output,  // Output parameter (no allocation)
     StaleTimeout stale_timeout_ms,
     CurrentTime now
 ) noexcept;
