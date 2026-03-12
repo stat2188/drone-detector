@@ -33,18 +33,10 @@
 // Third-Party Library Headers (ChibiOS RTOS)
 // ============================================================================
 #include <ch.h>           // ChibiOS kernel API
-#include <chmsg.h>        // ChibiOS messaging primitives
 
 // ============================================================================
 // ChibiOS Internal Headers (alphabetical order)
 // ============================================================================
-#include "chcore_v6m.h"   // ARM Cortex-M4 core definitions (stkalign_t)
-#include "chheap.h"       // chHeapStatus() for heap monitoring
-#include "chmtx.h"        // chMtxInit(), chMtxLock(), chMtxUnlock() for mutex operations
-#include "chschd.h"       // chThdSleepMilliseconds() for thread sleep
-#include "chthreads.h"    // chThdCreateStatic(), chThdTerminate(), chThdWait(), chThdSelf()
-#include "chtypes.h"      // systime_t, Thread, and other ChibiOS types
-#include "chvt.h"         // chTimeNow() for system time
 
 // ============================================================================
 // Project-Specific Headers (alphabetical order)
@@ -65,8 +57,6 @@
 #include "ui.hpp"                      // Base UI framework (NavigationView, View)
 #include "ui_drone_common_types.hpp"   // DroneType, ThreatLevel, MovementTrend enums
 #include "ui_fileman.hpp"              // FileLoadView for file browser
-#include "ui_font_fixed_5x8.hpp"      // font::fixed_5x8 bitmap font
-#include "ui_font_fixed_8x16.hpp"     // font::fixed_8x16 bitmap font
 #include "ui_painter.hpp"              // Painter class for graphics rendering
 #include "ui_signal_processing.hpp"    // Signal processing utilities
 #include "ui_spectral_analyzer.hpp"   // SpectralAnalyzer for spectrum analysis

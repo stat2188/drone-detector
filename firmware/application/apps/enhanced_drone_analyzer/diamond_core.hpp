@@ -38,9 +38,8 @@
 // Third-party library headers
 #include <ch.h>
 
-// ChibiOS Internal Headers
-#include "chtypes.h"
-#include "chvt.h"
+// ChibiOS headers are included through <ch.h>
+// No need to include internal headers directly
 
 // Project-specific headers (alphabetical order)
 #include "eda_constants.hpp"  // For EDA_FLASH_CONST macro

@@ -18,7 +18,6 @@
 // ============================================================================
 
 // C standard library headers (alphabetical order)
-#include <stdint.h>
 
 // C++ standard library headers (alphabetical order)
 #include <type_traits>
@@ -28,9 +27,6 @@
 
 // Project-specific headers (alphabetical order)
 #include "baseband_api.hpp"
-#include "chmtx.h"
-#include "chtypes.h"
-#include "chvt.h"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
 #include "ui_drone_common_types.hpp"

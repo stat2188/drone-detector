@@ -29,11 +29,10 @@
 // Third-party library headers
 #include <ch.h>  // For stkalign_t and THD_WA_SIZE
 
+// ChibiOS headers are included through <ch.h>
+// No need to include internal headers directly
+
 // Project-specific headers (alphabetical order)
-#include "chcore_v6m.h"
-#include "chlists.h"
-#include "chmtx.h"
-#include "chtypes.h"
 #include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"

@@ -28,7 +28,6 @@
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
-#include "chmtx.h"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
 #include "rf_path.hpp"

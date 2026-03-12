@@ -25,9 +25,11 @@
 // Third-party library headers
 #include <ch.h>
 
+// ChibiOS headers are included through <ch.h>
+// No need to include internal headers directly
+
 // Project-specific headers (alphabetical order)
-#include "chtypes.h"
-#include "eda_constants.hpp"
+#include "eda_constants.hpp"  // For EDA_FLASH_CONST macro
 #include "ui_drone_common_types.hpp"
 
 namespace ui::apps::enhanced_drone_analyzer::dsp {

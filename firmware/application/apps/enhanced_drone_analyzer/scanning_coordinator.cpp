@@ -30,14 +30,8 @@
 
 // Third-party library headers
 #include <ch.h>         // ChibiOS RTOS
-#include "chcore_v6m.h"
-#include "chschd.h"
-#include "chthreads.h"  // ChibiOS threading functions
-#include "chmtx.h"      // ChibiOS mutex functions
 
 // Project-specific headers (alphabetical order)
-#include "chtypes.h"
-#include "chvt.h"
 #include "dsp_display_types.hpp"         // DSP/UI communication types
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"               // Unified MutexLock, StackMonitor

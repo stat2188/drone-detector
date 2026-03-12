@@ -61,23 +61,18 @@
 // THIRD-PARTY LIBRARY HEADERS
 // ============================================================================
 #include <ch.h>
-#include <chtypes.h>
 
 // ============================================================================
 // PROJECT HEADERS
 // ============================================================================
 // Note: DatabaseChangeEvent is defined in eda_unified_database.hpp
 // Forward declarations used where possible to prevent circular dependencies
-#include "chcore_v6m.h"
-#include "chlists.h"
-#include "chmtx.h"
 #include "diamond_core.hpp"
 #include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
 #include "eda_unified_database.hpp"
 #include "eda_optimized_utils.hpp"
-#include "event_m0.hpp"
 #include "freqman_db.hpp"
 #include "gradient.hpp"
 #include "message.hpp"
@@ -86,7 +81,6 @@
 #include "ui_drone_audio.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_enhanced_drone_settings.hpp"
-#include "ui_font_fixed_8x16.hpp"
 #include "ui_menu.hpp"
 #include "ui_navigation.hpp"
 #include "ui_painter.hpp"

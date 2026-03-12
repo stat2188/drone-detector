@@ -32,7 +32,6 @@
 #include <ch.h>
 
 // ChibiOS Internal Headers
-#include "chmtx.h"
 
 // Project-specific headers (alphabetical order)
 #include "eda_locking.hpp"

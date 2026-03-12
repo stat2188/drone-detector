@@ -20,7 +20,6 @@
 #include <ch.h>
 
 // ChibiOS Internal Headers
-#include "chvt.h"
 
 // Project-specific headers
 #include "eda_locking.hpp"

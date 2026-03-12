@@ -61,13 +61,6 @@
 // Third-party library headers
 #include <ch.h>
 
-// ChibiOS internal headers
-#include "chconf.h"
-#include "chdebug.h"
-#include "chlists.h"
-#include "chmtx.h"
-#include "chsys.h"
-#include "chthreads.h"
 
 // ChibiOS version check for API compatibility
 // ChibiOS 20.x: chMtxUnlock(mutex_t *mp) - requires parameter

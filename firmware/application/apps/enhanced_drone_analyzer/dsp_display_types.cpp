@@ -27,7 +27,6 @@
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
-#include "chtypes.h"
 
 namespace ui::apps::enhanced_drone_analyzer::dsp {
 

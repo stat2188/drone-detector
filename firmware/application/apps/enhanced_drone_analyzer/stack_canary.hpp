@@ -68,10 +68,6 @@
 #include <ch.h>  // For ChibiOS RTOS
 
 // Project-specific headers (alphabetical order)
-#include "chconf.h"
-#include "chdebug.h"
-#include "chlists.h"
-#include "chthreads.h"
 
 namespace ui::apps::enhanced_drone_analyzer {
 

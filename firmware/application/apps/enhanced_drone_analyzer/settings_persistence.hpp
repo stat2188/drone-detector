@@ -25,17 +25,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <inttypes.h>
 #include <cinttypes>
 
 // Third-party library headers
 #include <ch.h>
 
 // Project-specific headers (alphabetical order)
-#include "chmtx.h"
-#include "chthreads.h"
-#include "chtypes.h"
-#include "chvt.h"
 #include "eda_constants.hpp"
 // DIAMOND FIX: Include unified eda_locking.hpp for MutexLock
 // - Uses unified MutexLock RAII wrapper from eda_locking.hpp

@@ -40,8 +40,6 @@
 
 // Third-party library headers (ChibiOS)
 #include <ch.h>
-#include "chmtx.h"
-#include "chtypes.h"
 
 // Flash storage attribute is now included from eda_constants.hpp
 

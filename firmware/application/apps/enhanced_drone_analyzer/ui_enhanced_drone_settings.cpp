@@ -41,12 +41,9 @@
 
 // Third-party library headers
 #include <ch.h>
-#include "ff.h"
 
-// ChibiOS Internal Headers
-#include "chmtx.h"
-#include "chtypes.h"
-#include "chvt.h"
+// ChibiOS headers are included through <ch.h>
+// No need to include internal headers directly
 
 // Project-specific headers
 #include "eda_optimized_utils.hpp"

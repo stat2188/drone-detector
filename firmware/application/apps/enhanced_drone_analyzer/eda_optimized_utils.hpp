@@ -39,7 +39,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <inttypes.h>
 #include <utility>
 
 // Project-specific headers (alphabetical order)
