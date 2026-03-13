@@ -390,11 +390,11 @@ namespace EntriesToScanStorage {
     // BSS segment placement (zero-initialized at startup)
     // Stores up to 10 freqman_entry objects (100 bytes each)
     alignas(alignof(freqman_entry))
-    uint8_t g_entries_to_scan_storage[sizeof(freqman_entry) * 10];
+    inline uint8_t g_entries_to_scan_storage[sizeof(freqman_entry) * 10];
     
     // Mutex for thread-safe access to entries_to_scan_
     // Lock order: 5 (after spectrum_data_ at 4)
-    Mutex g_entries_to_scan_mutex;
+    inline Mutex g_entries_to_scan_mutex;
     
     // RAII wrapper for thread-safe access to entries_to_scan_
     // Locks mutex on construction, unlocks on destruction
@@ -947,7 +947,7 @@ struct DetectionParams {
     // Eliminates stack copies and provides thread-safe access
     struct SpectrumDataBuffer {
         std::array<uint8_t, 256> buffers[2];  // Double-buffered
-        uint8_t active_index;  // Index of active buffer (0 or 1)
+        uint8_t active_index{0};  // Index of active buffer (0 or 1)
     };
     
     alignas(alignof(SpectrumDataBuffer))

@@ -93,6 +93,16 @@ namespace {
     uint16_t g_temp_histogram[64];  // 128 bytes (64 * uint16_t)
 }
 
+// ============================================================================
+// STATIC MEMBER DEFINITIONS FOR DroneScanner::SpectrumDataBuffer
+// ============================================================================
+// These static members are declared in ui_enhanced_drone_analyzer.hpp
+// They must be defined exactly once in a .cpp file
+alignas(DroneScanner::SpectrumDataBuffer)
+uint8_t DroneScanner::g_spectrum_data_storage[sizeof(DroneScanner::SpectrumDataBuffer)];
+
+Mutex DroneScanner::g_spectrum_data_mutex;
+
 // Heap monitoring
 namespace HeapMonitor {
     inline size_t get_free_heap() noexcept {
@@ -354,8 +364,7 @@ EDA_FLASH_CONST const DroneScanner::BuiltinDroneFreq DroneScanner::BUILTIN_DRONE
 };
 
 DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
-    : entries_to_scan_(),
-      stale_indices_(),
+    : stale_indices_(),
       is_stale_{},
       ui_freq_buf_{},
       ui_summary_buffer_{},
@@ -392,7 +401,6 @@ DroneScanner::DroneScanner(DroneAnalyzerSettings settings)
       wideband_scan_data_(),
       detection_ring_buffer_(),
       fhss_detector_(),
-      spectrum_data_(),
       histogram_buffer_(),
       settings_(std::move(settings))
 {
@@ -827,7 +835,7 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
 
     const size_t batch_size = std::min(static_cast<size_t>(EDA::Constants::MAX_SCAN_BATCH_SIZE), total_entries);
 
-    // Use class member variable directly (heap-free)
+    // Use static storage for entries_to_scan_ (heap-free)
     // All accesses to entries_to_scan_ must be under data_mutex protection
     size_t entries_count = 0;
 
@@ -836,10 +844,11 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
         if (freq_db_ptr_) {
             size_t db_entry_count = freq_db_ptr_->entry_count();
             if (db_entry_count > 0) {
+                EntriesToScanStorage::EntriesToScanGuard guard;
                 for (size_t i = 0; i < batch_size; ++i) {
                     size_t idx = (current_db_index_ + i) % db_entry_count;
-                    if (idx < db_entry_count && entries_count < entries_to_scan_.size()) {
-                        entries_to_scan_[entries_count++] = (*freq_db_ptr_)[idx];
+                    if (idx < db_entry_count && entries_count < 10) {
+                        guard[entries_count++] = (*freq_db_ptr_)[idx];
                     }
                 }
                 current_db_index_ = (current_db_index_ + batch_size) % db_entry_count;
@@ -853,8 +862,9 @@ void DroneScanner::perform_database_scan_cycle(DroneHardwareController& hardware
     const Frequency MIN_VALID_FREQ = EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ;
     const Frequency MAX_VALID_FREQ = EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ;
 
+    EntriesToScanStorage::EntriesToScanGuard guard;
     for (size_t i = 0; i < entries_count; ++i) {
-        const auto& entry = entries_to_scan_[i];
+        const auto& entry = guard[i];
 
         // Guard clause: check scanning flag
         bool is_scanning = scanning_active_.load();
@@ -974,7 +984,8 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         }
         
         // 3. Get spectrum data from M0 coprocessor
-        auto& spectrum_data = spectrum_data_;
+        SpectrumDataGuard spectrum_guard;
+        auto* spectrum_data = spectrum_guard.get();
         
         // Optimized waiting: adaptive timeout with absolute deadline
         systime_t current_time = chTimeNow();
@@ -3844,6 +3855,7 @@ void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& s
     pixel_index = dsp::SpectrumProcessor::process_mini_spectrum(
         spectrum,
         spectrum_power_levels_storage_,
+        SpectrumProcessorConstants::POWER_LEVELS_COUNT,
         bins_hz_size,
         dsp::BinSize(each_bin_size),
         marker_pixel_step,
@@ -5589,7 +5601,7 @@ void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
             text_x = r.right() - text_size.width() - 2;
         }
 
-        painter.draw_string({text_x, text_y}, label_style, label_buf);
+        painter.draw_string(ui::Point(text_x, text_y), label_style, label_buf);
 
         // Sub-tick logic based on tick_interval only
         if (static_cast<uint64_t>(tick_interval) >= 100000000ULL) {
