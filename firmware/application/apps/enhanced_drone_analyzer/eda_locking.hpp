@@ -65,8 +65,8 @@
 // ChibiOS version check for API compatibility
 // ChibiOS 20.x: chMtxUnlock(mutex_t *mp) - requires parameter
 // ChibiOS 21.x+: chMtxUnlock() - unlocks last locked mutex, no parameter
-// This project uses ChibiOS 2.6.8 which requires parameter-based API
-#define EDA_CHIBIOS_HAS_PARAMLESS_UNLOCK 0
+// This project uses ChibiOS 2.6.8 with parameter-less unlock API (unlocks last locked mutex via LIFO stack)
+#define EDA_CHIBIOS_HAS_PARAMLESS_UNLOCK 1
 
 namespace ui::apps::enhanced_drone_analyzer {
 

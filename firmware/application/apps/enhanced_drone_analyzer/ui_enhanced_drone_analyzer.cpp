@@ -69,6 +69,30 @@ namespace ui::apps::enhanced_drone_analyzer {
 
 using namespace EDA::Constants;
 
+// ============================================================================
+// STATIC MEMBER DEFINITIONS FOR dsp::StaticStorage
+// ============================================================================
+// These static members are declared in dsp_spectrum_processor.hpp
+// They must be defined exactly once in a .cpp file in the correct namespace
+namespace ui::apps::enhanced_drone_analyzer::dsp::StaticStorage {
+    alignas(alignof(uint8_t))
+    uint8_t g_power_levels_buffer[::ui::apps::enhanced_drone_analyzer::dsp::SpectrumProcessorConstants::POWER_LEVELS_COUNT];
+    
+    Mutex g_power_levels_mutex;
+}
+
+// ============================================================================
+// PHASE 2: MEMORY OPTIMIZATION - Static Storage for temp_histogram
+// ============================================================================
+// Moved from stack allocation in update_histogram_display() to static storage
+// Eliminates 128 bytes of stack usage per function call
+// Thread-safe access via histogram_mutex_ (defined in DroneDisplayController)
+// ============================================================================
+namespace {
+    alignas(alignof(uint16_t))
+    uint16_t g_temp_histogram[64];  // 128 bytes (64 * uint16_t)
+}
+
 // Heap monitoring
 namespace HeapMonitor {
     inline size_t get_free_heap() noexcept {
@@ -3913,33 +3937,36 @@ void DroneDisplayController::update_histogram_display(
 
     // DIAMOND CODE PRINCIPLE: Use utility function for data scaling (DSP layer)
     // This separates data scaling from UI display update
-    uint16_t temp_histogram[64];
-    for (size_t i = 0; i < 64 && i < analysis_histogram.size(); ++i) {
-        temp_histogram[i] = analysis_histogram[i];
+    // PHASE 2 OPTIMIZATION: Use static storage instead of stack allocation
+    // Eliminates 128 bytes of stack usage per function call
+    // Thread-safe access via histogram_mutex_ (protects entire histogram processing)
+    {
+        MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
+        
+        // Copy to static buffer
+        for (size_t i = 0; i < 64 && i < analysis_histogram.size(); ++i) {
+            g_temp_histogram[i] = analysis_histogram[i];
+        }
+        for (size_t i = analysis_histogram.size(); i < 64; ++i) {
+            g_temp_histogram[i] = 0;
+        }
+        
+        // Pre-scale histogram data using utility function (DSP layer)
+        // P1-HIGH FIX: Use HistogramScaleParams struct to prevent parameter swapping
+        const dsp::HistogramScaleParams params{64, noise_floor};
+        dsp::HistogramDisplayBuffer scaled_histogram = dsp::scale_histogram_for_display(
+            g_temp_histogram, params
+        );
+        
+        // Copy to display buffer (UI only)
+        for (size_t i = 0; i < 64; ++i) {
+            histogram_display_buffer_.bin_counts[i] = scaled_histogram.bin_counts[i];
+        }
+        histogram_display_buffer_.max_count = scaled_histogram.max_count;
+        histogram_display_buffer_.noise_floor = scaled_histogram.noise_floor;
+        histogram_display_buffer_.is_valid = scaled_histogram.is_valid;
+        histogram_dirty_ = true;
     }
-    for (size_t i = analysis_histogram.size(); i < 64; ++i) {
-        temp_histogram[i] = 0;
-    }
-    
-    // Pre-scale histogram data using utility function (DSP layer)
-    // P1-HIGH FIX: Use HistogramScaleParams struct to prevent parameter swapping
-    const dsp::HistogramScaleParams params{64, noise_floor};
-    dsp::HistogramDisplayBuffer scaled_histogram = dsp::scale_histogram_for_display(
-        temp_histogram, params
-    );
-    
-    // Copy to display buffer (UI only)
-    // Thread-safe buffer access with mutex protection
-    // Lock order: SPECTRUM_MUTEX (level 2)
-    MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
-    
-    for (size_t i = 0; i < 64; ++i) {
-        histogram_display_buffer_.bin_counts[i] = scaled_histogram.bin_counts[i];
-    }
-    histogram_display_buffer_.max_count = scaled_histogram.max_count;
-    histogram_display_buffer_.noise_floor = scaled_histogram.noise_floor;
-    histogram_display_buffer_.is_valid = scaled_histogram.is_valid;
-    histogram_dirty_ = true;
 }
 
 void DroneDisplayController::render_histogram(Painter& painter) noexcept {

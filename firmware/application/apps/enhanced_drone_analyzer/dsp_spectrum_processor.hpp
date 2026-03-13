@@ -176,31 +176,32 @@ private:
     uint8_t value_;  ///< Underlying uint8_t value
 };
 
+// ============================================================================
+// FIX #3: STATIC STORAGE FOR power_levels (240 bytes)
+// ============================================================================
+// BSS segment for power levels buffer
+// Eliminates stack allocation and provides thread-safe access
+// Moved outside SpectrumProcessor class - namespaces cannot be defined inside classes
+namespace StaticStorage {
+    alignas(alignof(uint8_t))
+    static uint8_t g_power_levels_buffer[SpectrumProcessorConstants::POWER_LEVELS_COUNT];
+    
+    // Mutex for protecting power levels access
+    static Mutex g_power_levels_mutex;
+}
+
 /**
  * @brief Spectrum data processor (DSP layer)
- * 
+ *
  * This class provides static methods for processing spectrum data
  * in DSP layer. It has no UI dependencies and performs
  * pure signal processing operations.
- * 
+ *
  * Thread-safety: All methods are static and stateless, making them
  * inherently thread-safe.
  */
 class SpectrumProcessor {
 public:
-    // ============================================================================
-    // FIX #3: STATIC STORAGE FOR power_levels (240 bytes)
-    // ============================================================================
-    // BSS segment for power levels buffer
-    // Eliminates stack allocation and provides thread-safe access
-    namespace StaticStorage {
-        alignas(alignof(uint8_t))
-        static uint8_t g_power_levels_buffer[SpectrumProcessorConstants::POWER_LEVELS_COUNT];
-        
-        // Mutex for protecting power levels access
-        static Mutex g_power_levels_mutex;
-    }
-    
     // RAII wrapper for power levels access
     class PowerLevelsGuard {
     public:
@@ -209,7 +210,8 @@ public:
         }
         
         ~PowerLevelsGuard() noexcept {
-            chMtxUnlock(&StaticStorage::g_power_levels_mutex);
+            // ChibiOS parameter-less API: unlocks last locked mutex
+            chMtxUnlock();
         }
         
         // Non-copyable, non-movable
@@ -287,6 +289,8 @@ public:
         return pixel_index;
     }
     
-};  // namespace ui::apps::enhanced_drone_analyzer::dsp
-
-#endif // DSP_SPECTRUM_PROCESSOR_HPP_
+    };  // class SpectrumProcessor
+    
+    }  // namespace ui::apps::enhanced_drone_analyzer::dsp
+    
+    #endif // DSP_SPECTRUM_PROCESSOR_HPP_
