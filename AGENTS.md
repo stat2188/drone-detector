@@ -104,6 +104,10 @@ This is ARM Cortex-M4 firmware with only 128KB RAM.
 
 ## 8. Linting & CI
 
+Only run linting when:
+- User explicitly asks for it
+- After making changes and before committing (optional)
+
 ```bash
 ./run_cppcheck.sh
 clang-tidy file.cpp -checks=-*,thread-*,bugprone-* -- -std=c++17
@@ -113,31 +117,18 @@ Workflows in `.github/workflows/`: `code_quality.yml`, `check_formatting.yml`.
 
 ---
 
-## 9. Code Refinement Pipeline (For AI Agents)
+## 9. Workflow
 
-When modifying code, follow this 4-stage pipeline:
+When asked to make a change:
+1. Understand what needs to be done (ask if unclear)
+2. Make the change
+3. Done. Do NOT run build commands unless user explicitly asks.
 
-### Stage 1: Forensic Audit
-- Identify heap allocations (std::vector, std::string, new/malloc)
-- Find STL containers, race conditions, unsafe ISR interactions
-- Check for magic numbers, type ambiguity, UI/DSP mixing
-
-### Stage 2: Architect's Blueprint
-- Replace dynamic containers with `std::array<T, N>`
-- Define memory placement (Flash vs RAM)
-- Plan RAII wrappers and function signatures
-
-### Stage 3: Red Team Attack
-- Test: Will array blow stack in recursive calls?
-- Test: Is floating-point too slow for real-time DSP? Use fixed-point.
-- Test: Does code fit repository style?
-- Test: Handle empty buffers and SPI failures
-
-### Stage 4: Diamond Code Synthesis
-- Apply clean, flat hierarchy
-- Use guard clauses
-- Add Doxygen comments
-- Verify no mixed logic (separate UI from DSP)
+DO NOT:
+- Run build commands to "verify" changes unless asked
+- Run grep/cat/head/tail commands to inspect code - use Read/Grep tools instead
+- Run abstract filtering like `grep -E "(eda_locking|scanning_coordinator|...)"` - this is meaningless
+- Second-guess the requirements
 
 ---
 

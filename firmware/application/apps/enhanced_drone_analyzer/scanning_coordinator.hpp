@@ -323,7 +323,8 @@ private:
     // ============================================================================
 
     // Validate coordinator thread stack size is within reasonable limits
-    // Coordinator thread has minimal stack usage, so 2KB is sufficient
+    // Coordinator thread requires ~2.5KB with nested function calls
+    // Stack size increased to 4KB to prevent stack overflow
     static_assert(COORDINATOR_THREAD_STACK_SIZE <= 4096,
                   "COORDINATOR_THREAD_STACK_SIZE exceeds 4KB thread stack limit");
     static_assert(COORDINATOR_THREAD_STACK_SIZE >= 1024,

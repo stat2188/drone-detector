@@ -109,7 +109,7 @@ void initialize_eda_mutexes() noexcept {
 // Coordinator Thread Working Area Definition
 // Stack Budget Revised with Hidden Stack Usage Sources
 // Original: 2048 bytes (underestimated by 50-130%)
-// Revised: 3072 bytes (50% increase, realistic worst-case)
+// Revised: 4096 bytes (100% increase, realistic worst-case)
 //
 // Hidden Stack Usage Sources (not included in original estimate):
 // - Compiler-generated temporaries: 32-64 bytes
@@ -120,7 +120,7 @@ void initialize_eda_mutexes() noexcept {
 // - Function call overhead: 64-128 bytes per level
 //
 // Stack usage analysis shows coordinator thread requires ~2.5KB with nested function calls
-// This provides 574 bytes of safety margin (3072 - 2500 - 256 overhead)
+// This provides 1598 bytes of safety margin (4096 - 2500 - 256 overhead)
 stkalign_t ScanningCoordinator::coordinator_wa_[THD_WA_SIZE(ScanningCoordinator::COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 
 // TYPE ALIASES
