@@ -499,11 +499,11 @@ public:
          * @brief Release mutex lock (RAII)
          * @note Automatically releases when guard goes out of scope
          * @note Only releases if lock was successfully acquired
-         * @note CRITICAL: Pass mutex_ to chMtxUnlock() to unlock specific mutex
+         * @note CRITICAL: ChibiOS 2.6.8 uses parameter-less chMtxUnlock() that unlocks the last locked mutex via LIFO stack
          */
         ~Guard() noexcept {
             if (locked_) {
-                chMtxUnlock(&mutex_);
+                chMtxUnlock();
             }
         }
         

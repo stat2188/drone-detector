@@ -321,7 +321,7 @@ public:
      * @brief Constructor - does NOT initialize semaphore (deferred to initialize_eda_mutexes())
      * @note Semaphore must be initialized via initialize() method or chSemInit(&sem_, 1)
      */
-    BinarySemaphore() noexcept : initialized_(false) {}
+    BinarySemaphore() noexcept : sem_{}, initialized_(false) {}
 
     /**
      * @brief Initialize binary semaphore
@@ -432,7 +432,7 @@ public:
      * @brief Constructor - does NOT initialize semaphore (deferred to initialize_eda_mutexes())
      * @note Semaphore must be initialized via initialize() method or chSemInit(&sem_, count)
      */
-    CountingSemaphore() noexcept : initialized_(false) {}
+    CountingSemaphore() noexcept : sem_{}, initialized_(false) {}
 
     /**
      * @brief Initialize counting semaphore
