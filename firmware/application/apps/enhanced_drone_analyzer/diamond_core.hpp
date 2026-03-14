@@ -411,10 +411,13 @@ inline constexpr systime_t safe_deadline(systime_t current_time, TimeoutMs timeo
 // - Zero heap allocation
 // ============================================================================
 
-namespace ui::apps::enhanced_drone_analyzer::Storage {
-
 // Include eda_locking.hpp for LockOrder and Mutex types
+// Must be included BEFORE opening nested Storage namespace
+// to ensure LockOrder, MutexLock, CriticalSection, AtomicFlag
+// are visible in ui::apps::enhanced_drone_analyzer namespace
 #include "eda_locking.hpp"
+
+namespace ui::apps::enhanced_drone_analyzer::Storage {
 
 /**
  * @brief Unified static storage template for thread-safe, mutex-protected data
