@@ -2,16 +2,21 @@
  * @file ui_enhanced_drone_analyzer.hpp
  * @brief Main Enhanced Drone Analyzer View - UI Layer
  *
- * PHASE 5 MIGRATION - UI LAYER
- * Migrated from LEGACY/ to main enhanced_drone_analyzer/ directory
- *
- * DIAMOND CODE COMPLIANCE:
+ * DIAMOND CODE - Phase 5: UI Layer Refactoring
+ * ================================================
+ * Migrated from LEGACY/ with Diamond Code compliance:
  * - Stack allocation only (max 4KB stack per thread on STM32F405)
  * - Uses fixed-size buffers for all data storage
  * - No heap allocation (no new, malloc, std::vector, std::map)
  * - Uses constexpr, enum class, using Type = uintXX_t
  * - No magic numbers (all constants defined)
  * - Zero-Overhead and Data-Oriented Design principles
+ *
+ * DIAMOND OPTIMIZATIONS (2026-03-13):
+ * - Static storage for large buffers (eliminates stack usage)
+ * - Thread Flags for event signaling (reduces mutex contention)
+ * - Semaphores for resource counting (efficient synchronization)
+ * - Separated UI from DSP logic (clean architecture)
  *
  * INITIALIZATION SEQUENCE:
  * This file implements the initialization sequence from the EDA diagrams:
@@ -38,6 +43,11 @@
  * - TrackedDrone uses fixed-size history arrays (MAX_HISTORY = 3)
  * - FrequencyHopDetector uses stack-allocated state
  * - No dynamic memory allocation for application data
+ *
+ * THREAD SYNCHRONIZATION:
+ * - Thread Flags: DSP_DATA_READY, UI_REFRESH_REQUESTED, AUDIO_ALERT_TRIGGERED
+ * - Semaphores: BinarySemaphore for display buffer, CountingSemaphore for detection queue
+ * - Mutexes: Only for data protection (not event signaling)
  *
  * Target: STM32F405 (ARM Cortex-M4, 128KB RAM)
  * Environment: ChibiOS RTOS / PortaPack UI Framework
@@ -71,6 +81,7 @@
 #include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
+#include "eda_thread_sync.hpp"
 #include "eda_unified_database.hpp"
 #include "eda_optimized_utils.hpp"
 #include "freqman_db.hpp"
@@ -517,7 +528,7 @@ public:
     static constexpr size_t FREQ_DB_STORAGE_SIZE = EDA::Constants::FREQ_DB_STORAGE_SIZE_4KB;
     static constexpr size_t TRACKED_DRONES_STORAGE_SIZE =
         sizeof(TrackedDrone) * EDA::Constants::MAX_TRACKED_DRONES;
-    static constexpr size_t DB_LOADING_STACK_SIZE = 4096;  // 4KB (optimized for memory)
+    static constexpr size_t DB_LOADING_STACK_SIZE = 3584;  // 3.5KB (optimized for memory, reduced from 4KB)
 
     // DroneScanner stores settings by VALUE (not reference)
     // Benefits: No lifetime dependency, thread-safe access, simpler ownership
@@ -2127,6 +2138,11 @@ public:
 
     ::ui::apps::enhanced_drone_analyzer::DroneAnalyzerSettings settings_;
 
+    // DIAMOND FIX: Thread Flag Receiver for event-driven UI updates
+    // Eliminates polling and enables event-driven architecture
+    // UI thread receives flags from coordinator thread for efficient updates
+    sync::ThreadFlagReceiver flag_receiver_;
+
     // Initialization order ensures proper initialization
     // CRITICAL: ui_controller_ stores display_controller_ as POINTER (not reference)
     DroneHardwareController hardware_;
@@ -2236,6 +2252,21 @@ public:
     // Deferred initialization methods
     void step_deferred_initialization() noexcept;
     void update_init_progress_display();
+
+    // ============================================================================
+    // DIAMOND FIX: Thread Flag-Based Event Handling
+    // ============================================================================
+    // Handle thread flags for event-driven UI updates
+    // Eliminates polling and reduces mutex contention
+    // ============================================================================
+
+    /**
+     * @brief Handle thread flags for event-driven UI updates
+     * @details Checks for pending thread flags and dispatches to appropriate handlers
+     * @note Non-blocking check with TIMEOUT_IMMEDIATE to avoid blocking UI thread
+     * @note Called from paint() method on every frame
+     */
+    void handle_thread_flags() noexcept;
 
     // Stack Usage Monitoring
     // * * @brief Check stack usage and log warnings if low

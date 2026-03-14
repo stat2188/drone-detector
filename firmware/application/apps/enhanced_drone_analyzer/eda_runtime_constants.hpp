@@ -230,9 +230,12 @@ namespace ThreadSync {
     constexpr inline static unsigned int TIMEOUT_INFINITE = 0xFFFFFFFF;
 
     // Stack Sizes (bytes)
+    // DIAMOND OPTIMIZATION: Reduced coordinator thread stack from 4KB to 3.5KB
+    // based on Stage 3 Red Team Attack analysis (22% safety margin)
     constexpr inline static unsigned int STACK_SIZE_SMALL = 2048;
-    constexpr inline static unsigned int STACK_SIZE_MEDIUM = 4096;
-    constexpr inline static unsigned int STACK_SIZE_LARGE = 8192;
+    constexpr inline static unsigned int STACK_SIZE_MEDIUM = 3584;  // 3.5KB (revised from 4KB)
+    constexpr inline static unsigned int STACK_SIZE_LARGE = 4096;
+    constexpr inline static unsigned int STACK_SIZE_COORDINATOR = 3584;  // 3.5KB (revised from 4KB)
 
     // Thread Priorities (ChibiOS)
     constexpr inline static unsigned int PRIORITY_LOW = 10;

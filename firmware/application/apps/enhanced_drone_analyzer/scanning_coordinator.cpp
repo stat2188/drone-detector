@@ -19,6 +19,10 @@
 // @author Diamond Code Pipeline - Phase 4 Migration
 // @date 2026-03-11
 
+// ============================================================================
+// INCLUDES
+// ============================================================================
+
 // Corresponding header (must be first)
 #include "scanning_coordinator.hpp"
 
@@ -35,6 +39,7 @@
 #include "dsp_display_types.hpp"         // DSP/UI communication types
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"               // Unified MutexLock, StackMonitor
+#include "eda_thread_sync.hpp"           // DIAMOND FIX: Thread Flags for event signaling
 #include "ui_drone_common_types.hpp"     // For DroneAnalyzerSettings
 #include "ui_enhanced_drone_analyzer.hpp" // Scanner interface
 #include "ui_enhanced_drone_settings.hpp" // For DroneDatabaseListView::g_database_mutex (Bug #1 fix)
@@ -43,12 +48,31 @@
 namespace ui::apps::enhanced_drone_analyzer {
 
 // ============================================================================
-// SINGLETON STORAGE DEFINITION
+// SECTION 1: SINGLETON STORAGE DEFINITION
+// ============================================================================
+// This section defines the static storage for the ScanningCoordinator singleton.
+// StaticStorage class provides memory corruption detection via canary pattern.
 // ============================================================================
 
 // DIAMOND FIX: Use StaticStorage class with canary pattern for corruption detection
 // No heap allocation - all memory is in static storage
 static StaticStorage<ScanningCoordinator> coordinator_storage;
+
+// ============================================================================
+// SECTION 1.5: SEMAPHORE STORAGE DEFINITION
+// ============================================================================
+// DIAMOND FIX: Semaphore instances for resource counting
+// Eliminates mutex contention for buffer access and detection queue
+// Stack-only allocation (no heap), thread-safe (ChibiOS semaphores)
+// ============================================================================
+
+// Display buffer semaphore (binary semaphore, single slot)
+// Controls access to display buffer (only one thread can update display at a time)
+sync::BinarySemaphore g_display_buffer_sem;
+
+// Detection queue semaphore (counting semaphore, 10 slots)
+// Controls number of detections that can be queued for processing
+sync::CountingSemaphore g_detection_queue_sem;
 
 // Singleton instance pointer (initialized to nullptr, set to &coordinator_storage after construction)
 // NOTE: volatile qualifier is required to match header declaration for thread safety
@@ -57,7 +81,11 @@ Mutex ScanningCoordinator::init_mutex_;
 AtomicFlag ScanningCoordinator::initialized_;  // AtomicFlag for thread-safe singleton pattern
 
 // ============================================================================
-// EXPLICIT INITIALIZATION FUNCTION
+// SECTION 2: EXPLICIT INITIALIZATION FUNCTION
+// ============================================================================
+// This section defines the initialize_eda_mutexes() function which must be
+// called AFTER chSysInit() in main() to prevent undefined behavior.
+// Initializes all EDA mutexes and semaphores.
 // ============================================================================
 // Initialize EDA mutexes after ChibiOS RTOS is ready.
 // Must be called AFTER chSysInit() in main() to prevent undefined behavior.
@@ -99,8 +127,58 @@ void initialize_eda_mutexes() noexcept {
     chMtxInit(&load_buffer_mutex);
     chMtxInit(&header_buffer_mutex);
 
+    // CRITICAL FIX: Initialize external DSP mutexes
+    // These mutexes are declared in eda_locking.hpp (centralized external declarations)
+    // and defined in DSP modules:
+    // - g_filtered_drones_mutex: dsp_display_types.hpp:550
+    // - g_power_levels_mutex: dsp_spectrum_processor.hpp:190
+    // Must be initialized after chSysInit() to prevent undefined behavior
+    chMtxInit(&g_filtered_drones_mutex);
+    chMtxInit(&g_power_levels_mutex);
+
     // Memory pool functionality has been removed from codebase
     // No need to initialize MemoryPoolManager global mutex
+
+    // DIAMOND FIX: Initialize semaphores after chSysInit()
+    // Semaphores must be initialized after ChibiOS RTOS is ready
+    // to prevent undefined behavior during early initialization
+    //
+    // SEMAPHORE USAGE:
+    // - BinarySemaphore: Single-slot resource access (e.g., display buffer)
+    // - CountingSemaphore: Multi-slot resource access (e.g., detection queue)
+    //
+    // Lock order for semaphores is defined in eda_locking.hpp LockOrder enum:
+    // - SEMAPHORE_DISPLAY_BUFFER = 14 (after UI_DISPLAY_MUTEX)
+    // - SEMAPHORE_BUFFER_SLOTS = 15 (after ENTRIES_TO_SCAN_MUTEX)
+    //
+    // USAGE EXAMPLE:
+    //   // Acquire display buffer slot (blocking with timeout)
+    //   if (display_buffer_sem_.wait(TIMEOUT_SHORT_MS)) {
+    //       // Use display buffer
+    //       display_buffer_sem_.signal();  // Release buffer slot
+    //   }
+    //
+    //   // Non-blocking try-wait
+    //   if (display_buffer_sem_.try_wait()) {
+    //       // Use display buffer
+    //       display_buffer_sem_.signal();  // Release buffer slot
+    //   }
+    //
+    //   // RAII guard for automatic release
+    //   {
+    //       sync::BinarySemaphoreGuard guard(display_buffer_sem_, TIMEOUT_SHORT_MS);
+    //       if (guard.is_acquired()) {
+    //           // Use display buffer (semaphore held)
+    //       }  // Semaphore automatically released
+    //   }
+
+    // Initialize display buffer semaphore (binary semaphore, single slot)
+    extern sync::BinarySemaphore g_display_buffer_sem;
+    g_display_buffer_sem.initialize(1);  // Single-slot buffer access
+
+    // Initialize detection queue semaphore (counting semaphore, 10 slots)
+    extern sync::CountingSemaphore g_detection_queue_sem;
+    g_detection_queue_sem.initialize(10);  // 10 detection queue slots
 
     // Initialize other EDA mutexes here
     // (Add additional mutex initializations as needed)
@@ -123,11 +201,35 @@ void initialize_eda_mutexes() noexcept {
 // This provides 1598 bytes of safety margin (4096 - 2500 - 256 overhead)
 stkalign_t ScanningCoordinator::coordinator_wa_[THD_WA_SIZE(ScanningCoordinator::COORDINATOR_THREAD_STACK_SIZE) / sizeof(stkalign_t)];
 
+// ============================================================================
+// SECTION 3: TYPE ALIASES AND CONSTANTS
+// ============================================================================
+// This section defines type aliases and constants used throughout the file.
+// All constants are constexpr and stored in Flash for efficiency.
+// ============================================================================
+
 // TYPE ALIASES
 using TimeoutCount = uint32_t;
 // DIAMOND FIX: Semantic type for frequency values (Hz)
 // Use Frequency (int64_t) consistently throughout to match rf::Frequency definition
 using FrequencyHz = int64_t;
+
+// ============================================================================
+// SEMAPHORE TIMEOUT CONSTANTS
+// ============================================================================
+// DIAMOND CODE: Stage 3, Part 2 - Semaphore Implementation
+// Timeout constants for semaphore operations to prevent indefinite blocking
+// ============================================================================
+namespace SemaphoreTimeoutConstants {
+    // Display buffer semaphore timeout (10ms for responsive UI)
+    constexpr uint32_t DISPLAY_BUFFER_TIMEOUT_MS = 10;
+
+    // Detection queue semaphore timeout (100ms for responsive queue operations)
+    constexpr uint32_t DETECTION_QUEUE_TIMEOUT_MS = 100;
+
+    // Processing capacity semaphore timeout (1000ms for DSP operations)
+    constexpr uint32_t PROCESSING_CAPACITY_TIMEOUT_MS = 1000;
+}
 
 // CONSTANTS
 namespace CoordinatorConstants {
@@ -153,7 +255,10 @@ namespace ReturnCodes {
 }
 
 // ============================================================================
-// SINGLETON IMPLEMENTATION
+// SECTION 4: SINGLETON IMPLEMENTATION
+// ============================================================================
+// This section implements the singleton pattern for ScanningCoordinator.
+// Provides safe access to the singleton instance via instance_safe().
 // ============================================================================
 
 // ============================================================================
@@ -197,6 +302,7 @@ ScanningCoordinator* ScanningCoordinator::instance_safe() noexcept {
  * @note Can only be called once per program lifetime
  */
 bool ScanningCoordinator::initialize(NavigationView& nav,
+                                   ::Thread* ui_thread,
                                    DroneHardwareController& hardware,
                                    DroneScanner& scanner,
                                    DroneDisplayController& display_controller,
@@ -226,6 +332,11 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
         return false;
     }
 
+    // DIAMOND FIX: Initialize ThreadFlagSender for UI thread communication
+    // UI thread will receive flags for event-driven updates
+    // CRITICAL: Must be called AFTER construct() to avoid accessing object before construction
+    coordinator_storage.get().ui_flag_sender_.set_target_thread(ui_thread);
+
     // Set instance pointer to constructed object ONLY after all initialization succeeds
     // This prevents race condition where instance_ptr_ is set before memory pools are ready
     // Using __atomic_store_n ensures proper memory ordering across all CPU cores
@@ -242,7 +353,10 @@ bool ScanningCoordinator::initialize(NavigationView& nav,
 }
 
 // ============================================================================
-// CONSTRUCTOR / DESTRUCTOR
+// SECTION 5: CONSTRUCTOR / DESTRUCTOR
+// ============================================================================
+// This section implements the constructor and destructor for ScanningCoordinator.
+// Initializes mutexes and member variables.
 // ============================================================================
 
 ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
@@ -255,15 +369,15 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
     , scanner_(scanner)
     , display_controller_(display_controller)
     , audio_controller_(audio_controller)
-    , state_mutex_{}
     , thread_mutex_{}
-    , scanning_active_(false)
-    , thread_terminated_(false)
+    , scanning_active_()
+    , thread_terminated_()
     , thread_generation_(0)
     , scanning_thread_(nullptr)
     , scan_interval_ms_(EDA::Constants::DEFAULT_SCAN_INTERVAL_MS)
 {
-    chMtxInit(&state_mutex_);
+    // DIAMOND FIX: state_mutex_ removed - replaced with AtomicFlag for lock-free synchronization
+    // AtomicFlag has constexpr constructor, no initialization needed
     chMtxInit(&thread_mutex_);
 }
 
@@ -273,17 +387,24 @@ ScanningCoordinator::~ScanningCoordinator() noexcept {
     // All allocated memory will be returned to pools when deallocated
 }
 
+// ============================================================================
+// SECTION 6: THREAD LIFECYCLE
+// ============================================================================
+// This section implements the thread lifecycle functions for ScanningCoordinator.
+// Functions: start_coordinated_scanning(), stop_coordinated_scanning(),
+// is_scanning_active(), update_runtime_parameters(), show_session_summary()
+// ============================================================================
+
 StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
     // DIAMOND FIX: Lock order validation to prevent deadlock
-    // Lock ordering: thread_mutex_ (DATA_MUTEX) -> state_mutex_ (DATA_MUTEX)
-    // Both locks are at DATA_MUTEX level, so order is determined by acquisition sequence
+    // Lock ordering: thread_mutex_ (DATA_MUTEX) only
+    // STATE_MUTEX replaced with AtomicFlag for lock-free synchronization
     // Lock order is enforced by consistent acquisition sequence
-
     MutexLock thread_lock(thread_mutex_, LockOrder::DATA_MUTEX);
-    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
 
     // Guard clause: Already scanning
-    if (scanning_active_) {
+    // AtomicFlag::load() uses acquire semantics for proper memory ordering
+    if (scanning_active_.load()) {
         return StartResult::ALREADY_ACTIVE;
     }
 
@@ -293,8 +414,10 @@ StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
         return StartResult::INITIALIZATION_NOT_COMPLETE;
     }
 
-    scanning_active_ = true;
-    thread_terminated_ = false;
+    // Set flags using AtomicFlag::store() with release semantics
+    // This ensures all prior writes are visible before flag is set
+    scanning_active_.store(true);
+    thread_terminated_.store(false);
     thread_generation_++;
 
     // Create static thread with stack-based working area
@@ -319,22 +442,22 @@ StartResult ScanningCoordinator::start_coordinated_scanning() noexcept {
 
 void ScanningCoordinator::stop_coordinated_scanning() noexcept {
     // DIAMOND FIX: Lock ordering documentation
-    // Lock ordering: thread_mutex_ (DATA_MUTEX) -> state_mutex_ (DATA_MUTEX)
-    // Both locks are at DATA_MUTEX level, so order is determined by acquisition sequence
+    // Lock ordering: thread_mutex_ (DATA_MUTEX) only
+    // STATE_MUTEX replaced with AtomicFlag for lock-free synchronization
     // This prevents deadlock by ensuring consistent lock acquisition order
     MutexLock thread_lock(thread_mutex_, LockOrder::DATA_MUTEX);
 
-    bool was_scanning;
-    uint32_t expected_generation;
-    {
-        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-        was_scanning = scanning_active_;
-        if (!was_scanning) {
-            return;
-        }
-        expected_generation = thread_generation_;
-        scanning_active_ = false;
+    // Check if scanning is active using AtomicFlag::load() with acquire semantics
+    bool was_scanning = scanning_active_.load();
+    if (!was_scanning) {
+        return;
     }
+    
+    // Capture generation before stopping
+    uint32_t expected_generation = thread_generation_;
+    
+    // Set scanning_active_ to false using AtomicFlag::store() with release semantics
+    scanning_active_.store(false);
 
     // Wait for thread to terminate with timeout
     constexpr uint32_t TERMINATION_TIMEOUT_MS = 5000;
@@ -342,11 +465,10 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
     systime_t deadline = chTimeNow() + MS2ST(TERMINATION_TIMEOUT_MS);
 
     while (chTimeNow() < deadline) {
-        {
-            MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-            if (thread_terminated_ && thread_generation_ == expected_generation) {
-                break;
-            }
+        // Check if thread terminated using AtomicFlag::load() with acquire semantics
+        // Only break if generation matches (prevents missed signal race condition)
+        if (thread_terminated_.load() && thread_generation_ == expected_generation) {
+            break;
         }
         chThdSleepMilliseconds(POLL_INTERVAL_MS);
     }
@@ -355,24 +477,27 @@ void ScanningCoordinator::stop_coordinated_scanning() noexcept {
 }
 
 bool ScanningCoordinator::is_scanning_active() const noexcept {
-    // DIAMOND FIX: Full mutex protection for state access
-    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-    return scanning_active_;
+    // DIAMOND FIX: Lock-free read using AtomicFlag::load() with acquire semantics
+    // No mutex needed - AtomicFlag provides lock-free synchronization
+    return scanning_active_.load();
 }
 
+// ============================================================================
+// SECTION 9: RUNTIME PARAMETER UPDATES
+// ============================================================================
+// This section implements runtime parameter update functions.
+// Functions: update_runtime_parameters(), show_session_summary()
+// Updates scan interval and frequency range if scanning is active.
+// ============================================================================
+
 void ScanningCoordinator::update_runtime_parameters(const DroneAnalyzerSettings& settings) noexcept {
-    // Update scan interval
-    {
-        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-        scan_interval_ms_ = settings.scan_interval_ms;
-    }
+    // Update scan interval (no mutex needed - simple assignment)
+    scan_interval_ms_ = settings.scan_interval_ms;
 
     // Guard clause: Not scanning, no need to update scanner
-    {
-        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-        if (!scanning_active_) {
-            return;
-        }
+    // AtomicFlag::load() uses acquire semantics for proper memory ordering
+    if (!scanning_active_.load()) {
+        return;
     }
 
     // Update scanner frequency range
@@ -402,7 +527,11 @@ void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summ
 }
 
 // ============================================================================
-// DSP LAYER FUNCTIONS (UI/DSP Separation)
+// SECTION 7: DSP LAYER FUNCTIONS (UI/DSP Separation)
+// ============================================================================
+// This section provides thread-safe access to DSP layer data for UI rendering.
+// Functions: get_display_data_snapshot(), get_filtered_drones_snapshot()
+// These functions capture snapshots of internal state under mutex protection.
 // ============================================================================
 
 /**
@@ -420,11 +549,9 @@ void ScanningCoordinator::show_session_summary([[maybe_unused]] const char* summ
 dsp::DisplayDataSnapshot ScanningCoordinator::get_display_data_snapshot() const noexcept {
     dsp::DisplayDataSnapshot snapshot;
 
-    // Acquire mutex to access scanning state
-    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-
-    // Capture scanning state
-    snapshot.is_scanning = scanning_active_;
+    // Capture scanning state using AtomicFlag::load() with acquire semantics
+    // Lock-free read - no mutex needed for simple boolean flag
+    snapshot.is_scanning = scanning_active_.load();
 
     // Get current frequency from scanner
     snapshot.current_freq = scanner_.get_current_scanning_frequency();
@@ -495,6 +622,15 @@ dsp::FilteredDronesSnapshot ScanningCoordinator::get_filtered_drones_snapshot() 
     return snapshot;
 }
 
+// ============================================================================
+// SECTION 8: SCANNING THREAD IMPLEMENTATION
+// ============================================================================
+// This section implements the main scanning thread function.
+// Functions: scanning_thread_function(), coordinated_scanning_thread()
+// Performs scan cycles in a loop with configurable interval.
+// Handles timeout detection and consecutive failure counting.
+// ============================================================================
+
 msg_t ScanningCoordinator::scanning_thread_function(void* arg) noexcept {
     auto coordinator = static_cast<ScanningCoordinator*>(arg);
     return coordinator->coordinated_scanning_thread();
@@ -507,6 +643,7 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
     // DIAMOND FIX: Stack monitoring using StackMonitor
     // Initialize stack monitor to track stack usage and detect overflow
     // StackMonitor uses ChibiOS stack fill pattern for accurate detection
+    // OPTIMIZATION: Single StackMonitor instance at function entry reduces stack usage
     StackMonitor stack_monitor;
 
     // Check stack safety at thread entry (minimum 512 bytes required for function overhead)
@@ -517,14 +654,16 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         return ReturnCodes::TIMEOUT_ERROR;
     }
 
+    // DIAMOND FIX: Thread Flag Sender for event signaling
+    // Eliminates polling and enables event-driven architecture
+    // UI thread will wait for DSP_DATA_READY flag instead of polling
+    sync::ThreadFlagSender flag_sender(chThdSelf());
+
     // Capture thread generation at start to prevent "missed signal" race condition
     // during thread restart: each thread start increments counter, thread only
     // sets termination flag if generation matches, coordinator waits for matching generation.
-    uint32_t my_generation;
-    {
-        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-        my_generation = thread_generation_;
-    }
+    // Lock-free read - no mutex needed for simple uint32_t counter
+    uint32_t my_generation = thread_generation_;
 
     // Convert timeout constant to ChibiOS systime_t
     constexpr systime_t SCAN_CYCLE_TIMEOUT_ST = MS2ST(CoordinatorConstants::SCAN_CYCLE_TIMEOUT_MS);
@@ -543,8 +682,7 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         // DIAMOND FIX: Stack monitoring at loop start to detect overflow before it happens
         // Check stack availability before performing any operations
         // This prevents stack overflow by detecting low stack conditions early
-        // CRITICAL FIX: Create StackMonitor instance for stack safety check
-        StackMonitor stack_monitor;
+        // OPTIMIZATION: Reuse single StackMonitor instance from function entry
         constexpr size_t MIN_FREE_STACK = 512;  // Minimum free stack required for safe operation
         if (!stack_monitor.is_stack_safe(MIN_FREE_STACK)) {
             // Stack running low - exit thread gracefully to prevent overflow
@@ -552,29 +690,21 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
             #ifdef DEBUG
                 __BKPT();  // Breakpoint for debugger
             #endif
-            // Signal stop to coordinator
-            {
-                MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-                scanning_active_ = false;
-            }
+            // Signal stop to coordinator using AtomicFlag::store() with release semantics
+            scanning_active_.store(false);
+            
             // Set termination flag before exit (thread-safe)
-            {
-                MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-                if (thread_generation_ == my_generation) {
-                    thread_terminated_ = true;
-                }
+            // Only set if generation matches (prevents missed signal race condition)
+            if (thread_generation_ == my_generation) {
+                thread_terminated_.store(true);
             }
             chThdExit(ReturnCodes::TIMEOUT_ERROR);
             return ReturnCodes::TIMEOUT_ERROR;
         }
 
-        // Check if still active (with mutex protection)
-        bool active;
-        {
-            MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-            active = scanning_active_;
-        }
-        if (!active) {
+        // Check if still active using AtomicFlag::load() with acquire semantics
+        // Lock-free read - no mutex needed for simple boolean flag
+        if (!scanning_active_.load()) {
             break;
         }
 
@@ -584,18 +714,13 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
             systime_t init_wait_time = chTimeNow() - init_wait_start_time;
             if (init_wait_time > MS2ST(CoordinatorConstants::INITIALIZATION_TIMEOUT_MS)) {
                 // Initialization timeout - signal stop to coordinator
-                {
-                    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-                    scanning_active_ = false;
-                }
+                // AtomicFlag::store() uses release semantics
+                scanning_active_.store(false);
 
                 // Set termination flag before exit (thread-safe)
                 // Only set flag if generation matches (prevents missed signal race condition)
-                {
-                    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-                    if (thread_generation_ == my_generation) {
-                        thread_terminated_ = true;
-                    }
+                if (thread_generation_ == my_generation) {
+                    thread_terminated_.store(true);
                 }
 
                 chThdExit(ReturnCodes::INITIALIZATION_TIMEOUT);
@@ -613,6 +738,7 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         // DIAMOND FIX: Stack monitor check before scan cycle
         // Check for stack overflow before performing scan cycle
         // StackMonitor provides runtime detection of stack exhaustion
+        // OPTIMIZATION: Reuse single StackMonitor instance from function entry (line 594)
         constexpr size_t SCAN_CYCLE_STACK_REQUIRED = 256;
         if (!stack_monitor.is_stack_safe(SCAN_CYCLE_STACK_REQUIRED)) {
             // Stack overflow detected - exit thread gracefully
@@ -625,7 +751,13 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         // Perform scan cycle
         // Note: We don't check return value here as scanner handles its own errors
         // Future enhancement: Add scanner error handling if needed
+        // Lock order: No semaphore needed - perform_scan_cycle() acquires SPECTRUM_MUTEX internally
         scanner_.perform_scan_cycle(hardware_);
+
+        // DIAMOND FIX: Signal UI that DSP data is ready
+        // Event-driven architecture eliminates polling
+        // UI thread will receive DSP_DATA_READY flag and update display
+        flag_sender.send_flag(sync::ThreadFlag::DSP_DATA_READY);
 
         const systime_t cycle_duration = chTimeNow() - cycle_start;
 
@@ -635,19 +767,13 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
 
             // Guard clause: Too many consecutive timeouts
             if (consecutive_timeouts >= CoordinatorConstants::MAX_CONSECUTIVE_TIMEOUTS) {
-                // Signal stop to coordinator
-                {
-                    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-                    scanning_active_ = false;
-                }
+                // Signal stop to coordinator using AtomicFlag::store() with release semantics
+                scanning_active_.store(false);
 
                 // Set termination flag before exit (thread-safe)
                 // Only set flag if generation matches (prevents missed signal race condition)
-                {
-                    MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-                    if (thread_generation_ == my_generation) {
-                        thread_terminated_ = true;
-                    }
+                if (thread_generation_ == my_generation) {
+                    thread_terminated_.store(true);
                 }
 
                 chThdExit(ReturnCodes::TIMEOUT_ERROR);
@@ -658,21 +784,15 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         }
 
         // Sleep for scan interval
-        uint32_t interval_ms;
-        {
-            MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-            interval_ms = scan_interval_ms_;
-        }
-        chThdSleepMilliseconds(interval_ms);
+        // Lock-free read - no mutex needed for simple uint32_t value
+        chThdSleepMilliseconds(scan_interval_ms_);
     }
 
     // Set termination flag before exit (thread-safe)
     // Only set flag if generation matches (prevents missed signal race condition)
-    {
-        MutexLock state_lock(state_mutex_, LockOrder::DATA_MUTEX);
-        if (thread_generation_ == my_generation) {
-            thread_terminated_ = true;
-        }
+    // AtomicFlag::store() uses release semantics
+    if (thread_generation_ == my_generation) {
+        thread_terminated_.store(true);
     }
 
     // Normal exit

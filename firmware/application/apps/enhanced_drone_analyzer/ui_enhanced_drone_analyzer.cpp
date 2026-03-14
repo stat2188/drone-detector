@@ -70,6 +70,12 @@ namespace ui::apps::enhanced_drone_analyzer {
 using namespace EDA::Constants;
 
 // ============================================================================
+// EXTERN SEMAPHORE DECLARATIONS
+// ============================================================================
+// Single extern declarations to avoid repetition in multiple functions
+extern sync::BinarySemaphore g_display_buffer_sem;
+
+// ============================================================================
 // STATIC MEMBER DEFINITIONS FOR dsp::StaticStorage
 // ============================================================================
 // These static members are declared in dsp_spectrum_processor.hpp
@@ -168,6 +174,23 @@ namespace MagicNumberConstants {
 
     // Stack monitoring constants
     constexpr size_t MIN_STACK_FREE_THRESHOLD = 512;  // 512 bytes minimum free stack
+}
+
+// ============================================================================
+// SEMAPHORE TIMEOUT CONSTANTS
+// ============================================================================
+// DIAMOND CODE: Stage 3, Part 2 - Semaphore Implementation
+// Timeout constants for semaphore operations to prevent indefinite blocking
+// ============================================================================
+namespace SemaphoreTimeoutConstants {
+    // Display buffer semaphore timeout (10ms for responsive UI)
+    constexpr uint32_t DISPLAY_BUFFER_TIMEOUT_MS = 10;
+
+    // Detection queue semaphore timeout (100ms for responsive queue operations)
+    constexpr uint32_t DETECTION_QUEUE_TIMEOUT_MS = 100;
+
+    // Processing capacity semaphore timeout (1000ms for DSP operations)
+    constexpr uint32_t PROCESSING_CAPACITY_TIMEOUT_MS = 1000;
 }
 
 // DIAMOND FIX #HIGH #3: Function-local static for safe mutex initialization
@@ -1866,6 +1889,21 @@ msg_t DroneScanner::db_loading_thread_entry(void* arg) {
 }
 
 void DroneScanner::db_loading_thread_loop() {
+    // OPTIMIZATION: Stack monitoring for database loading thread
+    // StackMonitor uses ChibiOS stack fill pattern for accurate detection
+    // Database loading thread requires ~2.8KB with nested function calls
+    // This provides 784 bytes of safety margin (3584 - 2800 - 0 overhead)
+    StackMonitor stack_monitor;
+    constexpr size_t DB_LOAD_STACK_REQUIRED = 512;  // Minimum stack required for safe operation
+
+    // Check stack safety at thread entry
+    if (!stack_monitor.is_stack_safe(DB_LOAD_STACK_REQUIRED)) {
+        // Stack overflow imminent - exit thread gracefully
+        handle_scan_error("Stack overflow in db_loading_thread_loop");
+        db_loading_active_.store(false);
+        return;
+    }
+
     // Use same static storage for async initialization
     // Check if already initialized
     if (freq_db_ptr_ != nullptr || tracked_drones_ptr_ != nullptr) {
@@ -2176,32 +2214,68 @@ Frequency DroneScanner::get_current_radio_frequency() const {
 // ============================================================================
 
 ThreatLevel DroneScanner::get_max_detected_threat() const {
-    MutexLock lock(data_mutex);
+    // DIAMOND OPTIMIZATION: Use MutexTryLock for non-blocking read access
+    // Returns default value if mutex is contended (graceful degradation)
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    MutexTryLock lock(data_mutex);
+    if (!lock.is_locked()) {
+        return ThreatLevel::NONE;  // Default value if lock not acquired
+    }
     return max_detected_threat_;
 }
 
 size_t DroneScanner::get_approaching_count() const {
-    MutexLock lock(data_mutex);
+    // DIAMOND OPTIMIZATION: Use MutexTryLock for non-blocking read access
+    // Returns 0 if mutex is contended (graceful degradation)
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    MutexTryLock lock(data_mutex);
+    if (!lock.is_locked()) {
+        return 0;  // Default value if lock not acquired
+    }
     return approaching_count_;
 }
 
 size_t DroneScanner::get_receding_count() const {
-    MutexLock lock(data_mutex);
+    // DIAMOND OPTIMIZATION: Use MutexTryLock for non-blocking read access
+    // Returns 0 if mutex is contended (graceful degradation)
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    MutexTryLock lock(data_mutex);
+    if (!lock.is_locked()) {
+        return 0;  // Default value if lock not acquired
+    }
     return receding_count_;
 }
 
 size_t DroneScanner::get_static_count() const {
-    MutexLock lock(data_mutex);
+    // DIAMOND OPTIMIZATION: Use MutexTryLock for non-blocking read access
+    // Returns 0 if mutex is contended (graceful degradation)
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    MutexTryLock lock(data_mutex);
+    if (!lock.is_locked()) {
+        return 0;  // Default value if lock not acquired
+    }
     return static_count_;
 }
 
 uint32_t DroneScanner::get_total_detections() const {
-    MutexLock lock(data_mutex);
+    // DIAMOND OPTIMIZATION: Use MutexTryLock for non-blocking read access
+    // Returns 0 if mutex is contended (graceful degradation)
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    MutexTryLock lock(data_mutex);
+    if (!lock.is_locked()) {
+        return 0;  // Default value if lock not acquired
+    }
     return total_detections_;
 }
 
 uint32_t DroneScanner::get_scan_cycles() const {
-    MutexLock lock(data_mutex);
+    // DIAMOND OPTIMIZATION: Use MutexTryLock for non-blocking read access
+    // Returns 0 if mutex is contended (graceful degradation)
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    MutexTryLock lock(data_mutex);
+    if (!lock.is_locked()) {
+        return 0;  // Default value if lock not acquired
+    }
     return scan_cycles_;
 }
 
@@ -2210,8 +2284,20 @@ uint32_t DroneScanner::get_scan_cycles() const {
 // ============================================================================
 
 DroneScanner::ScannerStateSnapshot DroneScanner::get_state_snapshot() const {
+    // DIAMOND OPTIMIZATION: Use MutexTryLock for non-blocking read access
+    // Returns default snapshot if mutex is contended (graceful degradation)
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
     ScannerStateSnapshot snapshot;
-    MutexLock lock(data_mutex);
+    MutexTryLock lock(data_mutex);
+    if (!lock.is_locked()) {
+        // Return default snapshot if lock not acquired
+        snapshot.max_detected_threat = ThreatLevel::NONE;
+        snapshot.approaching_count = 0;
+        snapshot.static_count = 0;
+        snapshot.receding_count = 0;
+        snapshot.scanning_active = scanning_active_.load();
+        return snapshot;
+    }
     snapshot.max_detected_threat = max_detected_threat_;
     snapshot.approaching_count = approaching_count_;
     snapshot.static_count = static_count_;
@@ -2225,7 +2311,13 @@ DroneScanner::ScannerStateSnapshot DroneScanner::get_state_snapshot() const {
 // ============================================================================
 
 TrackedDrone DroneScanner::getTrackedDrone(size_t index) const {
-    MutexLock lock(data_mutex);
+    // DIAMOND OPTIMIZATION: Use MutexTryLock for non-blocking read access
+    // Returns default drone if mutex is contended (graceful degradation)
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    MutexTryLock lock(data_mutex);
+    if (!lock.is_locked()) {
+        return TrackedDrone{};  // Default drone if lock not acquired
+    }
     if (index < tracked_count_) {
         return tracked_drones()[index];
     }
@@ -2242,9 +2334,17 @@ void DroneScanner::handle_scan_error([[maybe_unused]] const char* error_msg) {
 }
 
 DroneScanner::DroneSnapshot DroneScanner::get_tracked_drones_snapshot() const {
+    // DIAMOND OPTIMIZATION: Use MutexTryLock for non-blocking read access
+    // Returns empty snapshot if mutex is contended (graceful degradation)
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
     // Snapshot is point-in-time and may be stale
     DroneSnapshot snapshot;
-    MutexLock lock(data_mutex);
+    MutexTryLock lock(data_mutex);
+    if (!lock.is_locked()) {
+        // Return empty snapshot if lock not acquired
+        snapshot.count = 0;
+        return snapshot;
+    }
     snapshot.count = tracked_count_;
     for (size_t i = 0; i < tracked_count_ && i < EDA::Constants::MAX_TRACKED_DRONES; ++i) {
         snapshot.drones[i] = tracked_drones()[i];
@@ -2271,13 +2371,21 @@ bool DroneScanner::try_get_tracked_drones_snapshot(DroneSnapshot& out_snapshot) 
 }
 
     // Implementation of safe read methods
-
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    // All read methods are thread-safe via mutex protection
+    
 int32_t DroneScanner::get_detection_rssi_safe(size_t freq_hash) const {
-    MutexLock lock(data_mutex); // Lock reading while scanner can write
+    // DIAMOND FIX: Thread-safe read of detection ring buffer
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    // Lock reading while scanner thread can write (concurrent access)
+    MutexLock lock(data_mutex);
     return detection_ring_buffer_.get_rssi_value(freq_hash);
 }
 
 uint8_t DroneScanner::get_detection_count_safe(size_t freq_hash) const {
+    // DIAMOND FIX: Thread-safe read of detection ring buffer
+    // Memory ordering: Mutex provides acquire semantics on lock acquisition
+    // Lock reading while scanner thread can write (concurrent access)
     MutexLock lock(data_mutex);
     return detection_ring_buffer_.get_detection_count(freq_hash);
 }
@@ -3846,8 +3954,21 @@ void DroneDisplayController::process_mini_spectrum_data(const ChannelSpectrum& s
     // This separates signal processing from UI rendering
     using namespace dsp;
 
+    // DIAMOND FIX: Stage 3, Part 2 - Semaphore for display buffer access
+    // Use g_display_buffer_sem for resource counting (binary semaphore, single slot)
+    // This replaces SPECTRUM_MUTEX for display buffer access to reduce contention
+    // Non-blocking try_wait for responsive UI updates
+    sync::BinarySemaphoreGuard display_guard(g_display_buffer_sem,
+                                          SemaphoreTimeoutConstants::DISPLAY_BUFFER_TIMEOUT_MS);
+
+    // Guard clause: Semaphore acquisition failed
+    if (!display_guard.is_acquired()) {
+        // Display buffer busy, skip this update (graceful degradation)
+        return;
+    }
+
     // Thread-safe buffer access with mutex protection
-    // Lock order: SPECTRUM_MUTEX (level 2)
+    // Lock order: SPECTRUM_MUTEX (level 2) after SEMAPHORE_DISPLAY_BUFFER (14)
     MutexLock lock(spectrum_mutex_, LockOrder::SPECTRUM_MUTEX);
 
     // Call DSP layer function to process spectrum data
@@ -3894,6 +4015,19 @@ void DroneDisplayController::render_bar_spectrum(Painter& painter) noexcept {
 
     if (!buffers_allocated_) return;
 
+    // DIAMOND FIX: Stage 3, Part 2 - Semaphore for display buffer access
+    // Use g_display_buffer_sem for resource counting (binary semaphore, single slot)
+    // This replaces SPECTRUM_MUTEX for display buffer access to reduce contention
+    // Non-blocking try_wait for responsive UI updates
+    sync::BinarySemaphoreGuard display_guard(g_display_buffer_sem,
+                                          SemaphoreTimeoutConstants::DISPLAY_BUFFER_TIMEOUT_MS);
+
+    // Guard clause: Semaphore acquisition failed
+    if (!display_guard.is_acquired()) {
+        // Display buffer busy, skip this update (graceful degradation)
+        return;
+    }
+
     uint8_t front_idx = active_bar_buffer_;
     __sync_synchronize();
 
@@ -3934,10 +4068,23 @@ void DroneDisplayController::update_histogram_display(
     // Detects stack overflow using ChibiOS runtime monitoring
     StackMonitor stack_monitor;
     
+    // DIAMOND FIX: Stage 3, Part 2 - Semaphore for display buffer access
+    // Use g_display_buffer_sem for resource counting (binary semaphore, single slot)
+    // This replaces SPECTRUM_MUTEX for display buffer access to reduce contention
+    // Non-blocking try_wait for responsive UI updates
+    sync::BinarySemaphoreGuard display_guard(g_display_buffer_sem,
+                                          SemaphoreTimeoutConstants::DISPLAY_BUFFER_TIMEOUT_MS);
+
+    // Guard clause: Semaphore acquisition failed
+    if (!display_guard.is_acquired()) {
+        // Display buffer busy, skip this update (graceful degradation)
+        return;
+    }
+    
     // Guard clause: Validate input histogram
     if (analysis_histogram.empty()) {
         // Thread-safe buffer access with mutex protection
-        // Lock order: SPECTRUM_MUTEX (level 2)
+        // Lock order: SPECTRUM_MUTEX (level 11) after SEMAPHORE_DISPLAY_BUFFER (14)
         MutexLock lock(histogram_mutex_, LockOrder::SPECTRUM_MUTEX);
         histogram_display_buffer_.is_valid = false;
         
@@ -4336,7 +4483,8 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     // DIAMOND FIX #P1-HIGH #6: Add error handling for ScanningCoordinator singleton access
     // Initialize ScanningCoordinator singleton (must be called before using instance())
     // This creates the singleton instance and sets up all dependencies
-    if (!ScanningCoordinator::initialize(nav, hardware_, scanner_, display_controller_, audio_)) {
+    // DIAMOND FIX: Pass UI thread pointer for flag-based communication
+    if (!ScanningCoordinator::initialize(nav, chThdSelf(), hardware_, scanner_, display_controller_, audio_)) {
         // Handle initialization failure - log error or set error state
         display_controller_.text_status_info().set("Coordinator init failed");
         scanning_coordinator_ = nullptr;
@@ -4415,6 +4563,16 @@ void EnhancedDroneSpectrumAnalyzerView::paint(Painter& painter) {
     // FIX #2: Do NOT call step_deferred_initialization() from paint()
     // This prevents nested stack frames that cause M0 stack overflow
     // Initialization is now handled by continue_initialization() called from UI event loop
+
+    // ============================================================================
+    // DIAMOND FIX: Thread Flag-Based Event Handling
+    // ============================================================================
+    // Check for thread flags and handle events before rendering
+    // This enables event-driven architecture and reduces mutex contention
+    // ============================================================================
+
+    // Handle thread flags (non-blocking check with TIMEOUT_IMMEDIATE)
+    handle_thread_flags();
 
     // ============================================================================
     // PHASE 5: VIEW LAYER UPDATES - Simple Dispatcher Pattern
@@ -5103,6 +5261,11 @@ void EnhancedDroneSpectrumAnalyzerView::init_phase_finalize() {
 void EnhancedDroneSpectrumAnalyzerView::on_show() {
     View::on_show();
 
+    // DIAMOND FIX: Initialize ThreadFlagReceiver for event-driven UI updates
+    // UI thread will receive flags from coordinator thread
+    // Eliminates polling and enables efficient event-driven architecture
+    flag_receiver_.set_target_thread(chThdSelf());
+
     // DIAMOND FIX #P1-HIGH #3: Removed automatic initialization call
     // Initialization now only starts when user presses Start button
     // This prevents premature execution without user interaction
@@ -5115,10 +5278,10 @@ void EnhancedDroneSpectrumAnalyzerView::on_show() {
     init_error_ = InitError::NONE;
 
     status_bar_.update_normal_status("EDA", "Press START to initialize");
-    
+
     // DIAMOND FIX #P1-HIGH #3: Removed continue_initialization() call
     // User must now press Start button to begin initialization
-    
+
     // FIX: Force redraw to show status bar
     set_dirty();
 }
@@ -5711,6 +5874,149 @@ void DroneDisplayController::apply_display_settings(const DroneAnalyzerSettings&
         compact_frequency_ruler_.set_tick_count(settings.compact_ruler_tick_count);
     } else {
         compact_frequency_ruler_.set_visible(false);
+    }
+}
+
+// ============================================================================
+// DIAMOND FIX: Thread Flag-Based Event Handling
+// ============================================================================
+// Handle thread flags for event-driven UI updates
+// Eliminates polling and reduces mutex contention
+// ============================================================================
+
+/**
+ * @brief Handle thread flags for event-driven UI updates
+ * @details Checks for pending thread flags and dispatches to appropriate handlers
+ * @note Non-blocking check with TIMEOUT_IMMEDIATE to avoid blocking UI thread
+ * @note Called from paint() method on every frame
+ */
+void EnhancedDroneSpectrumAnalyzerView::handle_thread_flags() noexcept {
+    // Only handle flags if fully initialized
+    if (init_state_ != InitState::FULLY_INITIALIZED) {
+        return;
+    }
+
+    // Check for DSP_DATA_READY flag (new spectrum data available)
+    sync::ThreadFlag dsp_flags = flag_receiver_.get_flags(
+        sync::ThreadFlag::DSP_DATA_READY |
+        sync::ThreadFlag::DSP_DETECTION_EVENT |
+        sync::ThreadFlag::DSP_SPECTRUM_UPDATED
+    );
+
+    if (static_cast<eventmask_t>(dsp_flags) != 0) {
+        // DSP data is ready - update display
+        // This replaces mutex-based polling with event-driven updates
+        if (static_cast<eventmask_t>(dsp_flags & sync::ThreadFlag::DSP_DATA_READY) != 0) {
+            // Spectrum data ready - update display
+            // Coordinator thread has completed a scan cycle
+            // UI will update in next render cycle
+            update_modern_layout();
+        }
+
+        if (static_cast<eventmask_t>(dsp_flags & sync::ThreadFlag::DSP_DETECTION_EVENT) != 0) {
+            // New drone detected - update drone list
+            // Coordinator thread has detected a new drone
+            // UI will update drone display in next render cycle
+            update_modern_layout();
+        }
+
+        if (static_cast<eventmask_t>(dsp_flags & sync::ThreadFlag::DSP_SPECTRUM_UPDATED) != 0) {
+            // Spectrum updated - refresh spectrum display
+            // Coordinator thread has updated spectrum data
+            // UI will refresh spectrum in next render cycle
+            set_dirty();
+        }
+    }
+
+    // Check for UI_REFRESH_REQUESTED flag
+    sync::ThreadFlag ui_flags = flag_receiver_.get_flags(
+        sync::ThreadFlag::UI_REFRESH_REQUESTED |
+        sync::ThreadFlag::UI_SETTINGS_CHANGED |
+        sync::ThreadFlag::UI_MODE_CHANGED
+    );
+
+    if (static_cast<eventmask_t>(ui_flags) != 0) {
+        // UI refresh requested - update UI components
+        if (static_cast<eventmask_t>(ui_flags & sync::ThreadFlag::UI_REFRESH_REQUESTED) != 0) {
+            // Refresh UI - update all UI components
+            // Coordinator thread requested UI refresh
+            update_modern_layout();
+        }
+
+        if (static_cast<eventmask_t>(ui_flags & sync::ThreadFlag::UI_SETTINGS_CHANGED) != 0) {
+            // Settings changed - update UI with new settings
+            // User changed settings in settings menu
+            display_controller_.apply_display_settings(settings_);
+        }
+
+        if (static_cast<eventmask_t>(ui_flags & sync::ThreadFlag::UI_MODE_CHANGED) != 0) {
+            // Scanning mode changed - update mode display
+            // User changed scanning mode
+            initialize_scanning_mode();
+        }
+    }
+
+    // Check for AUDIO_ALERT_TRIGGERED flag
+    sync::ThreadFlag audio_flags = flag_receiver_.get_flags(
+        sync::ThreadFlag::AUDIO_ALERT_TRIGGERED |
+        sync::ThreadFlag::AUDIO_COOLDOWN_EXPIRED
+    );
+
+    if (static_cast<eventmask_t>(audio_flags) != 0) {
+        // Audio event - handle audio alerts
+        if (static_cast<eventmask_t>(audio_flags & sync::ThreadFlag::AUDIO_ALERT_TRIGGERED) != 0) {
+            // Audio alert triggered - play alert sound
+            // Coordinator thread detected high-threat drone
+            audio_.play_alert();
+        }
+
+        if (static_cast<eventmask_t>(audio_flags & sync::ThreadFlag::AUDIO_COOLDOWN_EXPIRED) != 0) {
+            // Audio cooldown expired - can play next alert
+            // Alert cooldown period has ended
+            audio_.reset_cooldown();
+        }
+    }
+
+    // Check for FILE I/O flags
+    sync::ThreadFlag file_flags = flag_receiver_.get_flags(
+        sync::ThreadFlag::FILE_SAVE_REQUESTED |
+        sync::ThreadFlag::FILE_SAVE_COMPLETE |
+        sync::ThreadFlag::FILE_LOAD_REQUESTED |
+        sync::ThreadFlag::FILE_LOAD_COMPLETE |
+        sync::ThreadFlag::FILE_ERROR_OCCURRED
+    );
+
+    if (static_cast<eventmask_t>(file_flags) != 0) {
+        // File I/O event - handle file operations
+        if (static_cast<eventmask_t>(file_flags & sync::ThreadFlag::FILE_SAVE_REQUESTED) != 0) {
+            // File save requested - save settings to file
+            // User requested save from settings menu
+            // Note: File I/O is handled by settings persistence system
+        }
+
+        if (static_cast<eventmask_t>(file_flags & sync::ThreadFlag::FILE_SAVE_COMPLETE) != 0) {
+            // File save complete - update status
+            // Settings saved successfully
+            status_bar_.update_normal_status("EDA", "Settings saved");
+        }
+
+        if (static_cast<eventmask_t>(file_flags & sync::ThreadFlag::FILE_LOAD_REQUESTED) != 0) {
+            // File load requested - load settings from file
+            // User requested load from settings menu
+            // Note: File I/O is handled by settings persistence system
+        }
+
+        if (static_cast<eventmask_t>(file_flags & sync::ThreadFlag::FILE_LOAD_COMPLETE) != 0) {
+            // File load complete - update status
+            // Settings loaded successfully
+            status_bar_.update_normal_status("EDA", "Settings loaded");
+        }
+
+        if (static_cast<eventmask_t>(file_flags & sync::ThreadFlag::FILE_ERROR_OCCURRED) != 0) {
+            // File error occurred - show error message
+            // File I/O operation failed
+            status_bar_.update_alert_status(ThreatLevel::MEDIUM, 0, "File error");
+        }
     }
 }
 

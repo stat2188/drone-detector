@@ -314,7 +314,16 @@ enum class LockOrder : uint8_t {
     LOGGER_MUTEX = 12,        ///< Detection logger state
 
     // I/O Operations (13)
-    SD_CARD_MUTEX = 13        ///< SD card I/O (must be LAST)
+    SD_CARD_MUTEX = 13,       ///< SD card I/O (must be LAST)
+
+    // Semaphores (14-16) - Resource counting primitives
+    // Semaphores are treated as mutexes for lock ordering purposes
+    // Always acquire semaphores after acquiring all required mutexes
+    // Semaphore lock order levels are fractional (e.g., 6.5, 9.5, 10.5)
+    // to indicate they should be acquired between mutex levels
+    SEMAPHORE_DISPLAY_BUFFER = 14,  ///< Display buffer access (after UI_DISPLAY_MUTEX)
+    SEMAPHORE_BUFFER_SLOTS = 15,    ///< Buffer slots counting (after ENTRIES_TO_SCAN_MUTEX)
+    SEMAPHORE_PROCESSING_CAPACITY = 16 ///< DSP processing capacity (before SPECTRUM_DATA_MUTEX)
 };
 
 // ============================================================================
@@ -326,9 +335,10 @@ enum class LockOrder : uint8_t {
  * @param order Lock order level to validate
  * @return true if lock order is valid (within enum range), false otherwise
  * @note constexpr for compile-time evaluation
+ * @note Includes semaphore levels (14-16) for complete lock hierarchy validation
  */
 constexpr bool is_valid_lock_order(LockOrder order) noexcept {
-    return static_cast<uint8_t>(order) <= static_cast<uint8_t>(LockOrder::SD_CARD_MUTEX);
+    return static_cast<uint8_t>(order) <= static_cast<uint8_t>(LockOrder::SEMAPHORE_PROCESSING_CAPACITY);
 }
 
 // ============================================================================
@@ -510,6 +520,11 @@ public:
      * - Detects lock order violations at runtime
      * - Zero overhead in release builds
      *
+     * DIAMOND FIX: Stack monitoring before locking
+     * - Checks stack availability before acquiring lock
+     * - Prevents stack overflow in nested mutex acquisitions
+     * - Graceful degradation (returns without locking if stack is low)
+     *
      * @note ChibiOS uses priority inheritance protocol for mutexes
      * @note Lower priority threads may temporarily have boosted priority when holding mutex
      *       that higher priority threads are waiting for
@@ -567,6 +582,16 @@ public:
     // Non-movable (C++11)
     MutexLock(MutexLock&&) = delete;
     MutexLock& operator=(MutexLock&&) = delete;
+
+    /**
+     * @brief Check if lock was successfully acquired
+     * @return true if lock is held, false otherwise
+     * @note Always call this after construction to verify acquisition
+     * @note DIAMOND FIX: Allows graceful degradation if stack overflow prevented locking
+     */
+    [[nodiscard]] bool is_locked() const noexcept {
+        return locked_;
+    }
 
 private:
     Mutex& mtx_;      ///< Reference to mutex being locked (4 bytes)
@@ -1008,7 +1033,39 @@ private:
 };
 
 // ============================================================================
-// SECTION 5: INITIALIZATION AND UTILITIES
+// SECTION 5: EXTERNAL MUTEX DECLARATIONS
+// ============================================================================
+/**
+ * @brief External mutex declarations for DSP layer synchronization
+ *
+ * These mutexes are defined in DSP layer modules but must be initialized
+ * in the EDA module's initialize_eda_mutexes() function to ensure proper
+ * initialization order after chSysInit().
+ *
+ * CENTRALIZED DECLARATION:
+ * All external mutexes used by EDA are declared here to:
+ * - Make coupling explicit and documented
+ * - Provide a single source of truth for external dependencies
+ * - Enable compile-time checking if external modules are refactored
+ * - Simplify maintenance when external modules change
+ *
+ * LOCK ORDER:
+ * - g_filtered_drones_mutex: Treat as SPECTRUM_DATA_MUTEX level (10)
+ * - g_power_levels_mutex: Treat as SPECTRUM_DATA_MUTEX level (10)
+ *
+ * @note These are extern declarations - actual definitions are in DSP modules
+ * @note Must be initialized in initialize_eda_mutexes() after chSysInit()
+ * @note If external modules are refactored, update declarations here
+ */
+
+// DSP Display Types module (dsp_display_types.hpp:550)
+extern Mutex g_filtered_drones_mutex;
+
+// DSP Spectrum Processor module (dsp_spectrum_processor.hpp:190)
+extern Mutex g_power_levels_mutex;
+
+// ============================================================================
+// SECTION 6: INITIALIZATION AND UTILITIES
 // ============================================================================
 
 /**

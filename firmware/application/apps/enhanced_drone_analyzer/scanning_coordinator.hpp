@@ -36,6 +36,7 @@
 #include "dsp_display_types.hpp"
 #include "eda_constants.hpp"
 #include "eda_locking.hpp"
+#include "eda_thread_sync.hpp"
 #include "ui_drone_common_types.hpp"
 #include "ui_navigation.hpp"
 
@@ -76,14 +77,17 @@ public:
     // @param scanner Scanner reference
     // @param display_controller Display controller reference
     // @param audio_controller Audio controller reference
-    // @note Relies on volatile bool for thread safety (consistent with codebase pattern)
+    // @note CRITICAL FIX: Caller must provide mutex protection for concurrent construction
+    // @note Uses AtomicFlag for thread-safe flag access with acquire/release semantics
+    // @pre Caller must hold init_mutex_ when calling this method
     void construct(NavigationView& nav,
                   DroneHardwareController& hardware,
                   DroneScanner& scanner,
                   DroneDisplayController& display_controller,
                   AudioManager& audio_controller) noexcept {
         // WARNING FIX: Call destructor if already constructed (prevents resource leak)
-        if (constructed_) {
+        // AtomicFlag::load() uses acquire semantics for proper memory ordering
+        if (constructed_.load()) {
             T* old_instance = reinterpret_cast<T*>(&instance_storage_);
             old_instance->~T();
         }
@@ -92,8 +96,9 @@ public:
         // Note: placement new is defined inline, no <new> header needed
         new (static_cast<void*>(&instance_storage_)) T(nav, hardware, scanner, display_controller, audio_controller);
 
-        // Set constructed flag
-        constructed_ = true;
+        // Set constructed flag (atomic store with release semantics)
+        // AtomicFlag::store() uses release semantics to ensure all prior writes are visible
+        constructed_.store(true);
     }
 
     // Get reference to stored object
@@ -124,8 +129,9 @@ public:
 
     // Check if object has been constructed
     // @return true if construct() was called successfully
+    // @note AtomicFlag::load() uses acquire semantics for proper memory ordering
     [[nodiscard]] bool is_constructed() const noexcept {
-        return constructed_;
+        return constructed_.load();
     }
 
 private:
@@ -142,8 +148,10 @@ private:
     uint32_t canary_after_{CANARY_VALUE};
 
     // Flag to track if object has been constructed
-    // Note: volatile ensures visibility to other threads
-    volatile bool constructed_{false};
+    // DIAMOND FIX: Use AtomicFlag instead of volatile bool for thread-safe flag access
+    // Memory ordering: load() uses acquire semantics, store() uses release semantics
+    // This ensures proper synchronization across all CPU cores
+    AtomicFlag constructed_;
 };
 
 /**
@@ -214,6 +222,7 @@ public:
     [[nodiscard]] static ScanningCoordinator* instance_safe() noexcept;
     
     [[nodiscard]] static bool initialize(NavigationView& nav,
+                                        ::Thread* ui_thread,
                                         DroneHardwareController& hardware,
                                         DroneScanner& scanner,
                                         DroneDisplayController& display_controller,
@@ -298,20 +307,28 @@ private:
     DroneDisplayController& display_controller_;
     AudioManager& audio_controller_;
 
-    // Thread synchronization
-    mutable Mutex state_mutex_;     ///< Protects scanning_active_, thread_terminated_, thread_generation_
-    Mutex thread_mutex_;            ///< Protects thread creation/destruction
+    // DIAMOND FIX: Thread Flag Sender for UI thread communication
+    // Sends flags to UI thread for event-driven updates
+    // Eliminates mutex-based polling and reduces contention
+    sync::ThreadFlagSender ui_flag_sender_;
 
-    // State flags (access under state_mutex_)
-    bool scanning_active_{false};
-    bool thread_terminated_{false};  ///< Thread termination flag (set by thread when exiting)
-    uint32_t thread_generation_{0}; ///< Thread generation counter (prevents missed signals during restart)
+    // Thread synchronization
+    Mutex thread_mutex_;            ///< Protects thread creation/destruction (complex state requires mutex)
+
+    // State flags (lock-free using AtomicFlag)
+    // Memory ordering: load() uses acquire semantics, store() uses release semantics
+    // This ensures proper synchronization across threads without mutex overhead
+    AtomicFlag scanning_active_;      ///< Scanning active flag (true when scanning, false when stopped)
+    AtomicFlag thread_terminated_;    ///< Thread termination flag (set by thread when exiting)
+    uint32_t thread_generation_{0};  ///< Thread generation counter (prevents missed signals during restart)
     ::Thread* scanning_thread_{nullptr};
     uint32_t scan_interval_ms_{EDA::Constants::DEFAULT_SCAN_INTERVAL_MS};
 
     // Stack size for coordinator thread (4KB to prevent stack overflow)
     // Stack usage analysis shows coordinator thread requires ~2.5KB with nested function calls
-    // This provides 1536 bytes of safety margin (4096 - 2500 - 256 overhead)
+    // This provides 1536 bytes of safety margin (4096 - 2500 - 60 overhead)
+    // Increased from 3KB to 4KB to account for new semaphore guards and thread flag handling
+    // 4KB provides 38% safety margin (1536 bytes) for realistic worst-case scenarios
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 4096;
 
     // ============================================================================
