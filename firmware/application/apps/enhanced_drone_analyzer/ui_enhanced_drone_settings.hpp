@@ -925,13 +925,13 @@ private:
     // Lock order: DATA_MUTEX (3) - consistent with existing lock hierarchy
     static DroneDatabaseManager::DatabaseView g_database_view;
     static Mutex g_database_mutex;
-    // DIAMOND FIX: Use volatile bool for thread safety (std::atomic not available in embedded environment)
-    // PROBLEM: Non-atomic bool flag accessed without proper synchronization
-    // SOLUTION: volatile bool ensures compiler doesn't optimize away reads/writes
-    // NOTE: Access is protected by g_database_mutex for consistency with g_database_view
-    // Matches pattern in ui_enhanced_drone_analyzer.hpp:1775 (volatile bool initialization_in_progress_)
-    static volatile bool g_database_loaded;  // Flag to track if database has been loaded
-                                            // CRITICAL: Must access with g_database_mutex held
+    // DIAMOND FIX: Use AtomicFlag for thread-safe flag access with acquire/release semantics
+    // CRITICAL FIX: Replaced volatile bool with AtomicFlag for proper memory barriers
+    // AtomicFlag provides acquire/release memory ordering and lock-free operations
+    // This ensures proper memory ordering across all CPU cores and prevents race conditions
+    // Access is still protected by g_database_mutex for consistency with g_database_view
+    static AtomicFlag g_database_loaded;  // Flag to track if database has been loaded
+                                         // Uses load()/store() with acquire/release semantics
     
     MenuView menu_view_{{0, 0, 240, 168}};
 

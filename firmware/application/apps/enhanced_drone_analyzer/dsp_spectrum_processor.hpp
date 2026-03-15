@@ -255,12 +255,13 @@ public:
     static inline size_t process_mini_spectrum(
         const ChannelSpectrum& spectrum,
         uint8_t* power_levels,  // Caller-provided buffer
-        size_t power_levels_size,  // Buffer size for bounds checking
+        size_t power_levels_size,  // Buffer size for bounds checking (unused, kept for API compatibility)
         size_t& bins_hz_size,
         BinSize each_bin_size,
         Frequency marker_pixel_step,
         MinColorPower min_color_power
     ) noexcept {
+        (void)power_levels_size;  // Suppress unused parameter warning
         size_t pixel_index = 0;
 
         for (size_t bin = 0; bin < EDA::Constants::MINI_SPECTRUM_WIDTH; bin++) {

@@ -1200,10 +1200,10 @@ Mutex DroneDatabaseListView::g_database_mutex{};
 // BUG #1 FIX: Initialize g_database_mutex - must be called AFTER chSysInit()
 // The mutex is value-initialized above but needs explicit chMtxInit() call
 // This initialization is done in initialize_eda_mutexes() in scanning_coordinator.cpp
-// DIAMOND FIX: volatile bool for thread safety (std::atomic IS available in C++11+)
+// CRITICAL FIX: Use AtomicFlag for thread-safe flag access with acquire/release semantics
 // Access is protected by g_database_mutex for consistency with g_database_view
-// Note: std::atomic could be used, but volatile + mutex provides equivalent safety
-volatile bool DroneDatabaseListView::g_database_loaded{false};
+// AtomicFlag provides acquire/release memory ordering and lock-free operations
+AtomicFlag DroneDatabaseListView::g_database_loaded;
 
 DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav)
     : View(), nav_(nav) {
@@ -1211,9 +1211,11 @@ DroneDatabaseListView::DroneDatabaseListView(NavigationView& nav)
     // Lock mutex before accessing static member
     MutexLock lock(g_database_mutex, LockOrder::DATA_MUTEX);
     // Lazy initialization: only load database once
-    if (!g_database_loaded) {
+    // CRITICAL FIX: Use AtomicFlag::load() with acquire semantics for thread-safe check
+    if (!g_database_loaded.load()) {
         g_database_view = DroneDatabaseManager::load_database();
-        g_database_loaded = true;
+        // CRITICAL FIX: Use AtomicFlag::store() with release semantics for thread-safe set
+        g_database_loaded.store(true);
     }
     menu_view_.clear();
     menu_view_.add_item({"[+ ADD NEW FREQUENCY]", Color::white(), nullptr, nullptr});

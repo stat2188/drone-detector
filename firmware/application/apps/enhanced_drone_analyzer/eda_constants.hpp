@@ -305,24 +305,6 @@ enum class ScanningMode : uint8_t {
     FULL_SPECTRUM = 1
 };
 
-constexpr Frequency MIN_433MHZ = 433'000'000ULL;
-constexpr Frequency MAX_433MHZ = 435'000'000ULL;
-
-constexpr Frequency MIN_900MHZ = 860'000'000ULL;
-constexpr Frequency MAX_900MHZ = 930'000'000ULL;
-
-constexpr Frequency MIN_24GHZ = 2'400'000'000ULL;
-constexpr Frequency MAX_24GHZ = 2'483'500'000ULL;
-constexpr Frequency DEFAULT_24GHZ_CENTER = 2'450'000'000ULL;
-constexpr Frequency WIDEBAND_24GHZ_MIN = 2'400'000'000ULL;
-constexpr Frequency WIDEBAND_24GHZ_MAX = 2'500'000'000ULL;
-
-constexpr Frequency MIN_58GHZ = 5'725'000'000ULL;
-constexpr Frequency MAX_58GHZ = 5'875'000'000ULL;
-constexpr Frequency DEFAULT_58GHZ_CENTER = 5'800'000'000ULL;
-
-constexpr Frequency BAND_SPLIT_FREQ_5GHZ = 5'000'000'000ULL;
-
 constexpr uint32_t NARROWBAND_DRONE_MAX_WIDTH_HZ = 2'500'000ULL;
 constexpr uint32_t WIDEBAND_WIFI_MIN_WIDTH_HZ = 10'000'000ULL;
 constexpr uint32_t WIDEBAND_DEFAULT_SLICE_WIDTH = 22'000'000ULL;

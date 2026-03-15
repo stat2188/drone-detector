@@ -231,7 +231,7 @@ void UnifiedDroneDatabase::lock() noexcept {
  */
 void UnifiedDroneDatabase::unlock() noexcept {
     // P1-HIGH FIX #3: Use correct API without mutex parameter
-    // ChibiOS API (>=21.x) unlocks last locked mutex without parameter
+    // ChibiOS 2.6.8 API uses parameter-less unlock (unlocks last locked mutex via LIFO stack)
     // This ensures proper mutex unlock for version compatibility
     chMtxUnlock();
 }

@@ -1008,17 +1008,18 @@ void DroneScanner::perform_wideband_scan_cycle(DroneHardwareController& hardware
         
         // 3. Get spectrum data from M0 coprocessor
         SpectrumDataGuard spectrum_guard;
-        auto* spectrum_data = spectrum_guard.get();
-        
+        auto* spectrum_data_buffer = spectrum_guard.get();
+        auto& spectrum_data = spectrum_data_buffer->buffers[spectrum_data_buffer->active_index];
+
         // Optimized waiting: adaptive timeout with absolute deadline
         systime_t current_time = chTimeNow();
         systime_t deadline = current_time + MS2ST(EDA::Constants::SPECTRUM_TIMEOUT_MS);
-        
+
         // Check for overflow
         if (deadline < current_time) {
             deadline = DiamondCore::ConfidenceConstants::MAX_SYSTIME_VALUE;  // Max systime_t value
         }
-        
+
         bool spectrum_received = false;
 
         // Optimized polling: check condition first
@@ -4470,6 +4471,7 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       // FIX: ScanningCoordinator is a singleton - pointer member initialized to nullptr
       // The singleton is initialized in the constructor body via ScanningCoordinator::initialize()
       scanning_coordinator_(nullptr),
+      flag_receiver_(),
       smart_header_(Rect{0, 0, screen_width, 60}),
       status_bar_(0, Rect{0, screen_height - 80, screen_width, 16}),
       threat_cards_(),
@@ -4621,21 +4623,21 @@ void EnhancedDroneSpectrumAnalyzerView::render_initialization_error(Painter& pai
     
     // Error header
     painter.draw_string(
-        {ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_Y_POS_1},
+        {UIConstants::ERROR_MSG_X_POS, UIConstants::ERROR_MSG_Y_POS_1},
         Style{font::fixed_8x16, Color::red(), Color::black()},
         "INIT ERROR"
     );
 
     // Error message
     painter.draw_string(
-        {ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_Y_POS_2},
+        {UIConstants::ERROR_MSG_X_POS, UIConstants::ERROR_MSG_Y_POS_2},
         Style{font::fixed_8x16, Color::white(), Color::black()},
         ERROR_MESSAGES[static_cast<uint8_t>(init_error_)]
     );
 
     // Instructions
     painter.draw_string(
-        {ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::ERROR_MSG_Y_POS_3},
+        {UIConstants::ERROR_MSG_X_POS, UIConstants::ERROR_MSG_Y_POS_3},
         Style{font::fixed_8x16, Color::yellow(), Color::black()},
         "Press BACK to exit"
     );
@@ -4657,34 +4659,34 @@ void EnhancedDroneSpectrumAnalyzerView::render_loading_progress(Painter& painter
     
     // Loading text
     painter.draw_string(
-        {ui::apps::enhanced_drone_analyzer::UIConstants::LOADING_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::LOADING_MSG_Y_POS_1},
+        {UIConstants::LOADING_MSG_X_POS, UIConstants::LOADING_MSG_Y_POS_1},
         Style{font::fixed_8x16, Color::white(), Color::black()},
         "Loading..."
     );
-    
+
     // Status message
     painter.draw_string(
-        {ui::apps::enhanced_drone_analyzer::UIConstants::LOADING_MSG_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::LOADING_MSG_Y_POS_2},
+        {UIConstants::LOADING_MSG_X_POS, UIConstants::LOADING_MSG_Y_POS_2},
         Style{font::fixed_8x16, Color::green(), Color::black()},
         INIT_STATUS_MESSAGES[phase_idx]
     );
-    
+
     // Progress bar (6 phases = ~16.6% each)
     uint8_t progress = static_cast<uint8_t>(phase_idx * 16);
     if (progress > 100) {
         progress = 100;
     }
-    
+
     // Progress bar background
     painter.fill_rectangle(
-        {ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_Y_POS,
-         ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_WIDTH, ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_HEIGHT},
-         Color(ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_BG_COLOR));
+        {UIConstants::PROGRESS_BAR_X_POS, UIConstants::PROGRESS_BAR_Y_POS,
+         UIConstants::PROGRESS_BAR_WIDTH, UIConstants::PROGRESS_BAR_HEIGHT},
+         Color(UIConstants::PROGRESS_BAR_BG_COLOR));
     // Filled portion
     painter.fill_rectangle(
-        {ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_X_POS, ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_Y_POS,
-         progress, ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_HEIGHT},
-         Color(ui::apps::enhanced_drone_analyzer::UIConstants::PROGRESS_BAR_FILL_COLOR));
+        {UIConstants::PROGRESS_BAR_X_POS, UIConstants::PROGRESS_BAR_Y_POS,
+         progress, UIConstants::PROGRESS_BAR_HEIGHT},
+         Color(UIConstants::PROGRESS_BAR_FILL_COLOR));
 }
 
 void EnhancedDroneSpectrumAnalyzerView::render_normal_display(Painter& painter) noexcept {
@@ -4697,8 +4699,8 @@ void EnhancedDroneSpectrumAnalyzerView::render_normal_display(Painter& painter) 
     display_controller_.render_bar_spectrum(painter);
     
     // Handle histogram display based on mode
-    if (display_controller_.get_display_mode() == 
-        ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::HISTOGRAM) {
+    if (display_controller_.get_display_mode() ==
+        DroneDisplayController::DisplayRenderMode::HISTOGRAM) {
         // DIAMOND OPTIMIZATION: Render histogram after bar spectrum
         // Histogram is positioned at y=164-190 (below bar spectrum)
         display_controller_.render_histogram(painter);
@@ -4726,9 +4728,9 @@ bool EnhancedDroneSpectrumAnalyzerView::on_touch(const TouchEvent event) {
 
 void EnhancedDroneSpectrumAnalyzerView::on_toggle_display_mode() {
     const auto current_mode = display_controller_.get_display_mode();
-    const auto new_mode = (current_mode == ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::SPECTRUM)
-                          ? ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::HISTOGRAM
-                          : ui::apps::enhanced_drone_analyzer::DroneDisplayController::DisplayRenderMode::SPECTRUM;
+    const auto new_mode = (current_mode == DroneDisplayController::DisplayRenderMode::SPECTRUM)
+                          ? DroneDisplayController::DisplayRenderMode::HISTOGRAM
+                          : DroneDisplayController::DisplayRenderMode::SPECTRUM;
     display_controller_.set_display_mode(new_mode);
     set_dirty();  // Trigger repaint
 }
@@ -5764,7 +5766,7 @@ void CompactFrequencyRuler::draw_compact_ticks(Painter& painter, const Rect r) {
             text_x = r.right() - text_size.width() - 2;
         }
 
-        painter.draw_string(ui::Point(text_x, text_y), label_style, label_buf);
+        painter.draw_string(::ui::Point(text_x, text_y), label_style, label_buf);
 
         // Sub-tick logic based on tick_interval only
         if (static_cast<uint64_t>(tick_interval) >= 100000000ULL) {
@@ -5967,14 +5969,12 @@ void EnhancedDroneSpectrumAnalyzerView::handle_thread_flags() noexcept {
         if (static_cast<eventmask_t>(audio_flags & sync::ThreadFlag::AUDIO_ALERT_TRIGGERED) != 0) {
             // Audio alert triggered - play alert sound
             // Coordinator thread detected high-threat drone
-            audio_.play_alert();
+            audio_.play_detection_beep(ThreatLevel::HIGH);
         }
 
-        if (static_cast<eventmask_t>(audio_flags & sync::ThreadFlag::AUDIO_COOLDOWN_EXPIRED) != 0) {
-            // Audio cooldown expired - can play next alert
-            // Alert cooldown period has ended
-            audio_.reset_cooldown();
-        }
+        // Note: AUDIO_COOLDOWN_EXPIRED flag is informational only
+        // The AudioAlertManager automatically handles cooldown checking
+        // No explicit reset_cooldown() call needed
     }
 
     // Check for FILE I/O flags

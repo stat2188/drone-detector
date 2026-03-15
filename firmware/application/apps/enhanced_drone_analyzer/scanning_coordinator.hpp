@@ -327,8 +327,8 @@ private:
     // Stack size for coordinator thread (4KB to prevent stack overflow)
     // Stack usage analysis shows coordinator thread requires ~2.5KB with nested function calls
     // This provides 1536 bytes of safety margin (4096 - 2500 - 60 overhead)
-    // Increased from 3KB to 4KB to account for new semaphore guards and thread flag handling
     // 4KB provides 38% safety margin (1536 bytes) for realistic worst-case scenarios
+    // CRITICAL: AGENTS.md constraint - stack must not exceed 4KB
     static constexpr size_t COORDINATOR_THREAD_STACK_SIZE = 4096;
 
     // ============================================================================
@@ -337,13 +337,14 @@ private:
     // Embedded systems have limited stack space (4KB per thread on STM32F405).
     // These static_assert statements validate stack usage at compile time to prevent
     // stack overflow at runtime, which is difficult to debug.
+    // CRITICAL: AGENTS.md constraint - stack must not exceed 4KB
     // ============================================================================
 
     // Validate coordinator thread stack size is within reasonable limits
     // Coordinator thread requires ~2.5KB with nested function calls
-    // Stack size increased to 4KB to prevent stack overflow
+    // Stack size must not exceed 4KB per AGENTS.md constraint
     static_assert(COORDINATOR_THREAD_STACK_SIZE <= 4096,
-                  "COORDINATOR_THREAD_STACK_SIZE exceeds 4KB thread stack limit");
+                  "COORDINATOR_THREAD_STACK_SIZE exceeds 4KB thread stack limit (AGENTS.md constraint)");
     static_assert(COORDINATOR_THREAD_STACK_SIZE >= 1024,
                   "COORDINATOR_THREAD_STACK_SIZE below 1KB minimum for safe operation");
 
