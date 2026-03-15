@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
-#include "../types/drone_types.hpp"
+#include "drone_types.hpp"
 
 namespace drone_analyzer {
 

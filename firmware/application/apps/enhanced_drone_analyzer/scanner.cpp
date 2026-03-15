@@ -585,8 +585,12 @@ void DroneScanner::set_alert_callback(AlertCallback callback) noexcept {
 }
 
 void DroneScanner::trigger_alert(AlertType alert_type) noexcept {
-    // Call alert callback if set
-    if (alert_callback_ != nullptr) {
+    // Make local copy of callback pointer to prevent race condition
+    // This ensures we use the callback that was set at alert trigger time
+    AlertCallback local_callback = alert_callback_;
+    
+    // Call alert callback if set (invoked OUTSIDE any lock to prevent deadlocks)
+    if (local_callback != nullptr) {
         AlertPriority priority = AlertPriority::LOW;
         
         // Determine priority based on alert type
@@ -609,7 +613,7 @@ void DroneScanner::trigger_alert(AlertType alert_type) noexcept {
         }
         
         // Call callback with alert type and priority
-        alert_callback_(alert_type, static_cast<uint8_t>(priority));
+        local_callback(alert_type, static_cast<uint8_t>(priority));
     }
 }
 

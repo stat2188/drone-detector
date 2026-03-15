@@ -251,6 +251,9 @@ public:
      * @param callback Alert callback function
      * @note Callback will be called when alerts are triggered
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     * @warning The callback function MUST be thread-safe and reentrant-safe
+     * @warning The callback MUST NOT acquire any mutexes or perform blocking operations
+     * @warning The callback MUST execute quickly (preferably < 1ms) to avoid delaying scanner thread
      */
     void set_alert_callback(AlertCallback callback) noexcept;
     
@@ -258,6 +261,7 @@ public:
      * @brief Trigger alert
      * @param alert_type Alert type
      * @note Calls alert callback if set
+     * @note Callback is invoked OUTSIDE the mutex lock to prevent deadlocks
      * @pre Mutex must be held (LockOrder::DATA_MUTEX) when accessing alert_callback_
      */
     void trigger_alert(AlertType alert_type) noexcept;
