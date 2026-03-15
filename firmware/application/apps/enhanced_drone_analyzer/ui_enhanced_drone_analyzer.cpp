@@ -4468,10 +4468,12 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
       audio_(),
       ui_controller_(nav, hardware_, scanner_, audio_),  // No display_controller in constructor
       display_controller_({0, 60, screen_width, screen_height - 80}),
+      // FIX: Member initialization order must match declaration order
+      // flag_receiver_ is declared before scanning_coordinator_ in the class
+      flag_receiver_(),
       // FIX: ScanningCoordinator is a singleton - pointer member initialized to nullptr
       // The singleton is initialized in the constructor body via ScanningCoordinator::initialize()
       scanning_coordinator_(nullptr),
-      flag_receiver_(),
       smart_header_(Rect{0, 0, screen_width, 60}),
       status_bar_(0, Rect{0, screen_height - 80, screen_width, 16}),
       threat_cards_(),

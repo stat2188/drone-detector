@@ -44,6 +44,7 @@
 // Flash storage attribute is now included from eda_constants.hpp
 
 // Project-specific headers (alphabetical order)
+#include "eda_locking.hpp"
 #include "rf_path.hpp"
 #include "settings_persistence.hpp"
 #include "ui.hpp"
@@ -55,7 +56,6 @@
 #include "ui_widget.hpp"
 
 // Note: radio.hpp is not needed here - rf::Frequency is already defined in ui_widget.hpp
-// Note: eda_locking.hpp is included transitively through settings_persistence.hpp in the .cpp file
 
 using rf::Frequency;
 
