@@ -64,12 +64,14 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , scanning_active_()
     , alert_callback_(nullptr)
     , last_threat_levels_{}
-    , mutex_(nullptr) {
-    
-    // Initialize mutex (will be done with ChibiOS)
-    // mutex_ = new mutex_t;
-    // chMtxObjectInit(mutex_);
-    
+    , mutex_storage_()
+    , mutex_(&mutex_storage_)
+    , state_transition_allowed_()
+    , scan_cycle_in_progress_() {
+
+    // Initialize mutex
+    chMtxObjectInit(mutex_);
+
     // Initialize last threat levels to NONE
     for (size_t i = 0; i < MAX_TRACKED_DRONES; ++i) {
         last_threat_levels_[i] = ThreatLevel::NONE;
@@ -87,22 +89,27 @@ DroneScanner::~DroneScanner() noexcept {
 
 ErrorCode DroneScanner::initialize() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
-    
+
     if (state_ != ScannerState::IDLE) {
         return ErrorCode::INITIALIZATION_INCOMPLETE;
     }
-    
+
+    // Check if database is loaded
+    if (!database_.is_loaded()) {
+        return ErrorCode::DATABASE_NOT_LOADED;
+    }
+
     // Initialize dependencies
     ErrorCode db_result = database_.load_frequency_database();
     if (db_result != ErrorCode::SUCCESS && db_result != ErrorCode::DATABASE_EMPTY) {
         return db_result;
     }
-    
+
     ErrorCode hw_result = hardware_.initialize();
     if (hw_result != ErrorCode::SUCCESS) {
         return hw_result;
     }
-    
+
     // Get first frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(0);
     if (freq_result.has_value()) {
@@ -110,10 +117,10 @@ ErrorCode DroneScanner::initialize() noexcept {
     } else {
         current_frequency_ = DEFAULT_SCAN_FREQUENCY_HZ;
     }
-    
+
     state_ = ScannerState::IDLE;
     statistics_.reset();
-    
+
     return ErrorCode::SUCCESS;
 }
 
@@ -194,34 +201,45 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
 }
 
 ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
+    // Prevent concurrent scan cycles
+    if (scan_cycle_in_progress_.test()) {
+        return ErrorCode::UNKNOWN_ERROR;
+    }
+
+    // Set scan cycle in progress flag
+    scan_cycle_in_progress_.set();
+
     // Update statistics
     statistics_.total_scan_cycles++;
-    
+
     // Get next frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
     if (!freq_result.has_value()) {
         statistics_.failed_cycles++;
+        scan_cycle_in_progress_.clear();
         return freq_result.error();
     }
-    
+
     current_frequency_ = freq_result.value();
-    
+
     // Tune to frequency
     ErrorCode tune_result = hardware_.tune_to_frequency(current_frequency_);
     if (tune_result != ErrorCode::SUCCESS) {
         statistics_.failed_cycles++;
+        scan_cycle_in_progress_.clear();
         return tune_result;
     }
-    
+
     // Get RSSI sample
     ErrorResult<RssiSample> rssi_result = hardware_.get_rssi_sample();
     if (!rssi_result.has_value()) {
         statistics_.failed_cycles++;
+        scan_cycle_in_progress_.clear();
         return rssi_result.error();
     }
-    
+
     const RssiSample& sample = rssi_result.value();
-    
+
     // Check if signal detected
     if (sample.rssi >= config_.rssi_threshold_dbm) {
         // Update tracked drones
@@ -230,10 +248,10 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
             sample.rssi,
             sample.timestamp
         );
-        
+
         if (update_result == ErrorCode::SUCCESS) {
             statistics_.successful_cycles++;
-            
+
             // Update max RSSI
             if (sample.rssi > static_cast<int32_t>(statistics_.max_rssi_dbm)) {
                 statistics_.max_rssi_dbm = static_cast<uint32_t>(sample.rssi);
@@ -244,10 +262,13 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     } else {
         statistics_.successful_cycles++;
     }
-    
+
     // Update last scan time
     // last_scan_time_ = chTimeNow();
-    
+
+    // Clear scan cycle in progress flag
+    scan_cycle_in_progress_.clear();
+
     return ErrorCode::SUCCESS;
 }
 
@@ -360,20 +381,15 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
 }
 
 DroneType DroneScanner::determine_drone_type_internal(FreqHz frequency) const noexcept {
-    // Simple heuristic: classify based on frequency ranges
-    // This is a simplified implementation
-    
-    // DJI drones often use specific frequency bands
-    if (frequency >= 2'400'000'000ULL && frequency <= 2'405'000'000ULL) {
-        return DroneType::DJI;
+    // Look up drone type from freqman database
+    ErrorResult<FrequencyEntry> entry_result = database_.find_entry(frequency);
+
+    if (entry_result.has_value()) {
+        const FrequencyEntry& entry = entry_result.value();
+        return entry.drone_type;
     }
-    
-    // Parrot drones often use different bands
-    if (frequency >= 2'470'000'000ULL && frequency <= 2'483'500'000ULL) {
-        return DroneType::PARROT;
-    }
-    
-    // Default to unknown
+
+    // Entry not found in database
     return DroneType::UNKNOWN;
 }
 

@@ -105,30 +105,35 @@ public:
     /**
      * @brief Initialize scanner
      * @return ErrorCode::SUCCESS if initialized, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode initialize() noexcept;
     
     /**
      * @brief Start scanning
      * @return ErrorCode::SUCCESS if started, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode start_scanning() noexcept;
     
     /**
      * @brief Stop scanning
      * @return ErrorCode::SUCCESS if stopped, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode stop_scanning() noexcept;
     
     /**
      * @brief Pause scanning
      * @return ErrorCode::SUCCESS if paused, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode pause_scanning() noexcept;
     
     /**
      * @brief Resume scanning
      * @return ErrorCode::SUCCESS if resumed, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode resume_scanning() noexcept;
     
@@ -136,6 +141,7 @@ public:
      * @brief Perform single scan cycle
      * @note Called periodically by scanner thread
      * @return ErrorCode::SUCCESS if cycle completed, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode perform_scan_cycle() noexcept;
     
@@ -145,6 +151,7 @@ public:
      * @param rssi RSSI value
      * @param timestamp Timestamp of detection
      * @return ErrorCode::SUCCESS if updated, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode update_tracked_drones(
         FreqHz frequency,
@@ -157,6 +164,7 @@ public:
      * @param drones Output buffer for drones
      * @param max_count Maximum number of drones to copy
      * @return Number of drones copied
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] size_t get_tracked_drones(
         TrackedDrone* drones,
@@ -167,6 +175,7 @@ public:
      * @brief Get display data for UI
      * @param display_data Output display data
      * @return ErrorCode::SUCCESS if data retrieved, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode get_display_data(DisplayData& display_data) const noexcept;
     
@@ -185,6 +194,7 @@ public:
     /**
      * @brief Get scan configuration
      * @return Current scan configuration
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ScanConfig get_config() const noexcept;
     
@@ -192,40 +202,47 @@ public:
      * @brief Set scan configuration
      * @param config Configuration to apply
      * @return ErrorCode::SUCCESS if set, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode set_config(const ScanConfig& config) noexcept;
     
     /**
      * @brief Get scan statistics
      * @return Current scan statistics
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ScanStatistics get_statistics() const noexcept;
     
     /**
      * @brief Reset scan statistics
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     void reset_statistics() noexcept;
     
     /**
      * @brief Get current scan frequency
      * @return ErrorResult containing current frequency or error
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorResult<FreqHz> get_current_frequency() const noexcept;
     
     /**
      * @brief Get number of tracked drones
      * @return Number of tracked drones
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] size_t get_tracked_count() const noexcept;
     
     /**
      * @brief Clear all tracked drones
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     void clear_tracked_drones() noexcept;
     
     /**
      * @brief Remove stale drones
      * @param current_time Current system time
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     void remove_stale_drones(SystemTime current_time) noexcept;
     
@@ -233,6 +250,7 @@ public:
      * @brief Set alert callback
      * @param callback Alert callback function
      * @note Callback will be called when alerts are triggered
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     void set_alert_callback(AlertCallback callback) noexcept;
     
@@ -240,6 +258,7 @@ public:
      * @brief Trigger alert
      * @param alert_type Alert type
      * @note Calls alert callback if set
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX) when accessing alert_callback_
      */
     void trigger_alert(AlertType alert_type) noexcept;
     
@@ -248,6 +267,7 @@ private:
      * @brief Internal: Perform scan cycle
      * @note Called by perform_scan_cycle() with mutex held
      * @return ErrorCode::SUCCESS if cycle completed, error code otherwise
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode perform_scan_cycle_internal() noexcept;
     
@@ -258,6 +278,7 @@ private:
      * @param rssi RSSI value
      * @param timestamp Timestamp of detection
      * @return ErrorCode::SUCCESS if updated, error code otherwise
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode update_tracked_drone_internal(
         FreqHz frequency,
@@ -269,6 +290,7 @@ private:
      * @brief Internal: Find drone by frequency
      * @param frequency Frequency to find
      * @return ErrorResult containing index or error
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorResult<size_t> find_drone_by_frequency_internal(
         FreqHz frequency
@@ -280,6 +302,7 @@ private:
      * @param rssi RSSI value
      * @param timestamp Timestamp of detection
      * @return ErrorCode::SUCCESS if added, error code otherwise
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode add_tracked_drone_internal(
         FreqHz frequency,
@@ -291,6 +314,7 @@ private:
      * @brief Internal: Remove stale drones
      * @note Called by remove_stale_drones() with mutex held
      * @param current_time Current system time
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     void remove_stale_drones_internal(SystemTime current_time) noexcept;
     
@@ -299,6 +323,7 @@ private:
      * @note Called by get_display_data() with mutex held
      * @param display_data Output display data
      * @return ErrorCode::SUCCESS if updated, error code otherwise
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode update_display_data_internal(
         DisplayData& display_data
@@ -308,6 +333,8 @@ private:
      * @brief Internal: Determine drone type from frequency
      * @param frequency Frequency to analyze
      * @return Drone type
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
+     * @note Uses database_.find_entry() to look up drone type from freqman DB
      */
     [[nodiscard]] DroneType determine_drone_type_internal(FreqHz frequency) const noexcept;
     
@@ -361,6 +388,15 @@ private:
     
     // Mutex for thread safety (LockOrder::DATA_MUTEX)
     mutable mutex_t* mutex_;
+    
+    // Mutex storage (actual memory for mutex)
+    mutex_t mutex_storage_;
+    
+    // State transition control flag
+    AtomicFlag state_transition_allowed_;
+    
+    // Scan cycle in progress flag (prevents concurrent scan cycles)
+    AtomicFlag scan_cycle_in_progress_;
 };
 
 } // namespace drone_analyzer
