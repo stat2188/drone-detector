@@ -109,6 +109,27 @@ uint8_t DroneScanner::g_spectrum_data_storage[sizeof(DroneScanner::SpectrumDataB
 
 Mutex DroneScanner::g_spectrum_data_mutex;
 
+// ============================================================================
+// HISTOGRAM BUFFER STORAGE DEFINITIONS
+// ============================================================================
+// These are defined here (not in header) to avoid ODR violations.
+// Single definition across all translation units.
+// BSS segment placement (zero-initialized at startup).
+// Stores histogram buffer (64 bins of uint16_t = 128 bytes).
+// Thread-safe access via HistogramBufferGuard RAII wrapper.
+// ============================================================================
+namespace HistogramBufferStorage {
+    // BSS segment placement (zero-initialized at startup)
+    // Stores histogram buffer (64 bins of uint16_t = 128 bytes)
+    alignas(alignof(uint16_t))
+    uint8_t g_histogram_buffer_storage[sizeof(std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>)];
+    
+    // Mutex for thread-safe access to histogram_buffer_
+    // Lock order: 6 (after entries_to_scan_ at 5)
+    // ChibiOS mutex is initialized by chMtxObjectInit() in main()
+    Mutex g_histogram_buffer_mutex;
+}  // namespace HistogramBufferStorage
+
 // Heap monitoring
 namespace HeapMonitor {
     inline size_t get_free_heap() noexcept {
@@ -4462,14 +4483,11 @@ EnhancedDroneSpectrumAnalyzerView::EnhancedDroneSpectrumAnalyzerView(NavigationV
     : View({0, 0, screen_width, screen_height}),
       nav_(nav),
       settings_(),
+      flag_receiver_(),
       hardware_(SpectrumMode::MEDIUM),
       // Pass meaningful initial settings to scanner constructor
       scanner_(get_default_scanner_settings()),
       audio_(),
-      // FIX: Initialize flag_receiver_ before ui_controller_ and display_controller_
-      // to match declaration order in class (flag_receiver_ at line 2144,
-      // ui_controller_ at line 2156, display_controller_ at line 2157)
-      flag_receiver_(),
       ui_controller_(nav, hardware_, scanner_, audio_),
       display_controller_({0, 60, screen_width, screen_height - 80}),
       // FIX: ScanningCoordinator is a singleton - pointer member initialized to nullptr

@@ -462,14 +462,14 @@ namespace EntriesToScanStorage {
 // ============================================================================
 
 namespace HistogramBufferStorage {
+    // External declarations (defined in ui_enhanced_drone_analyzer.cpp)
     // BSS segment placement (zero-initialized at startup)
-    // Stores histogram buffer (64 bins of uint16_t)
-    alignas(alignof(uint16_t))
-    uint8_t g_histogram_buffer_storage[sizeof(std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>)];
+    // Stores histogram buffer (64 bins of uint16_t = 128 bytes)
+    extern uint8_t g_histogram_buffer_storage[sizeof(std::array<uint16_t, SpectralAnalysisConstants::HISTOGRAM_BINS>)];
     
     // Mutex for thread-safe access to histogram_buffer_
     // Lock order: 6 (after entries_to_scan_ at 5)
-    Mutex g_histogram_buffer_mutex;
+    extern Mutex g_histogram_buffer_mutex;
     
     // RAII wrapper for thread-safe access to histogram_buffer_
     // Locks mutex on construction, unlocks on destruction
