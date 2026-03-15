@@ -71,6 +71,15 @@ class DroneDisplayController;
 template <typename T>
 class StaticStorage {
 public:
+    // FIX: Default constructor - initializes constructed_ flag to false
+    // Ensures proper initialization before construct() is called
+    constexpr StaticStorage() noexcept
+        : canary_before_{CANARY_VALUE}
+        , instance_storage_{}
+        , canary_after_{CANARY_VALUE}
+        , constructed_{}  // AtomicFlag default constructor initializes to false
+    {}
+
     // Construct object in static storage using placement new
     // @param nav Navigation view reference
     // @param hardware Hardware controller reference
@@ -151,6 +160,7 @@ private:
     // DIAMOND FIX: Use AtomicFlag instead of volatile bool for thread-safe flag access
     // Memory ordering: load() uses acquire semantics, store() uses release semantics
     // This ensures proper synchronization across all CPU cores
+    // FIX: Initialized to false in constructor member initialization list
     AtomicFlag constructed_;
 };
 

@@ -369,6 +369,10 @@ ScanningCoordinator::ScanningCoordinator(NavigationView& nav,
     , scanner_(scanner)
     , display_controller_(display_controller)
     , audio_controller_(audio_controller)
+    // FIX: Initialize ui_flag_sender_ in member initialization list
+    // to match declaration order (ui_flag_sender_ at line 313 in header)
+    // The target thread is set later in constructor body via set_target_thread()
+    , ui_flag_sender_()
     , thread_mutex_{}
     , scanning_active_()
     , thread_terminated_()
@@ -757,7 +761,10 @@ msg_t ScanningCoordinator::coordinated_scanning_thread() noexcept {
         // DIAMOND FIX: Signal UI that DSP data is ready
         // Event-driven architecture eliminates polling
         // UI thread will receive DSP_DATA_READY flag and update display
-        flag_sender.send_flag(sync::ThreadFlag::DSP_DATA_READY);
+        // FIX: Capture return value to satisfy [[nodiscard]] attribute
+        // Target thread is guaranteed to be valid at this point (set during initialization)
+        const bool flag_sent = flag_sender.send_flag(sync::ThreadFlag::DSP_DATA_READY);
+        (void)flag_sent;  // Explicitly ignore - target thread is always valid in normal operation
 
         const systime_t cycle_duration = chTimeNow() - cycle_start;
 
