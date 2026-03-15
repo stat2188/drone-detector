@@ -251,7 +251,7 @@ inline DroneType SpectralAnalyzer::get_drone_type(Frequency frequency_hz, Signal
 // Implementation: classify_signal()
 inline SignalSignature SpectralAnalyzer::classify_signal(SignalWidthArg width_hz, Frequency freq_hz) noexcept {
     if (width_hz >= SignalWidthArg(SpectralAnalysisConstants::WIFI_MIN_WIDTH_HZ)) {
-        return (freq_hz >= EDA::Constants::BAND_SPLIT_FREQ_5GHZ)
+        return (freq_hz >= EDA::FrequencyConstants::BAND_SPLIT_FREQ_5GHZ)
                ? SignalSignature::DIGITAL_FPV
                : SignalSignature::WIDEBAND_WIFI;
     }
