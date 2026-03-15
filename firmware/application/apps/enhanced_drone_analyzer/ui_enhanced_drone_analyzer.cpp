@@ -4195,8 +4195,8 @@ void DroneDisplayController::clear_spectrum_buffers() {
 void DroneDisplayController::set_spectrum_range(Frequency min_freq, Frequency max_freq) {
     if (min_freq >= max_freq || min_freq < EDA::Constants::FrequencyLimits::MIN_HARDWARE_FREQ ||
         max_freq > EDA::Constants::FrequencyLimits::MAX_HARDWARE_FREQ) {
-        spectrum_config_.min_freq = EDA::Constants::WIDEBAND_24GHZ_MIN;
-        spectrum_config_.max_freq = EDA::Constants::WIDEBAND_24GHZ_MAX;
+        spectrum_config_.min_freq = EDA::Constants::WIDEBAND_DEFAULT_MIN;
+        spectrum_config_.max_freq = EDA::Constants::WIDEBAND_DEFAULT_MAX;
         update_frequency_ruler();
         return;
     }
