@@ -4,17 +4,12 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include "ui_widget.hpp"
 #include "drone_types.hpp"
+#include "audio_alerts.hpp"
 #include "constants.hpp"
 #include "error_handler.hpp"
 #include "locking.hpp"
-
-// Forward declaration for UI framework
-namespace ui {
-    class View;
-    class Painter;
-    class Rect;
-}
 
 namespace drone_analyzer {
 
@@ -115,7 +110,14 @@ public:
      * @brief Clear error
      */
     void clear_error() noexcept;
-
+    
+    /**
+     * @brief Handle audio alert
+     * @param alert_type Alert type
+     * @param priority Alert priority (0=LOW, 1=MEDIUM, 2=HIGH, 3=CRITICAL)
+     */
+    void on_alert(AlertType alert_type, uint8_t priority) noexcept;
+    
 private:
     /**
      * @brief Draw scanner header

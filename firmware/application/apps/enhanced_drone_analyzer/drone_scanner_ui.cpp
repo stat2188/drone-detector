@@ -188,6 +188,50 @@ void DroneScannerUI::clear_error() noexcept {
 }
 
 // ============================================================================
+// Audio Alert Handling
+// ============================================================================
+
+void DroneScannerUI::on_alert(AlertType alert_type, uint8_t priority) noexcept {
+    // Alert priority mapping
+    // 0=LOW (visual only), 1=MEDIUM, 2=HIGH, 3=CRITICAL
+    
+    // Play audio alert
+    AudioAlertManager::play_alert(alert_type);
+    
+    // Map alert type to alert message
+    const char* alert_message = nullptr;
+    uint32_t alert_duration_ms = 2000;
+    
+    switch (alert_type) {
+        case AlertType::NEW_DRONE:
+            alert_message = "NEW DRONE";
+            alert_duration_ms = 2000;
+            break;
+        case AlertType::THREAT_INCREASED:
+            alert_message = "THREAT UP";
+            alert_duration_ms = 2000;
+            break;
+        case AlertType::THREAT_CRITICAL:
+            alert_message = "CRITICAL";
+            alert_duration_ms = 3000;
+            break;
+        case AlertType::DRONE_APPROACHING:
+            alert_message = "APPROACHING";
+            alert_duration_ms = 2000;
+            break;
+        case AlertType::DRONE_RECEDING:
+            alert_message = "RECEDING";
+            alert_duration_ms = 2000;
+            break;
+    }
+    
+    // Show alert on display
+    if (alert_message != nullptr) {
+        show_alert(alert_message, alert_duration_ms);
+    }
+}
+
+// ============================================================================
 // Scanning Control
 // ============================================================================
 

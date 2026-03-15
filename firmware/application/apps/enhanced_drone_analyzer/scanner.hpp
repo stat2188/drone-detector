@@ -9,6 +9,7 @@
 #include "constants.hpp"
 #include "database.hpp"
 #include "hardware_controller.hpp"
+#include "audio_alerts.hpp"
 
 // Forward declarations for ChibiOS types
 struct mutex_t;
@@ -70,10 +71,10 @@ struct ScanStatistics {
 
 /**
  * @brief Alert callback function type
- * @param message Alert message
+ * @param alert_type Alert type
  * @param priority Alert priority (0=LOW, 1=MEDIUM, 2=HIGH, 3=CRITICAL)
  */
-using AlertCallback = void(*)(const char* message, uint8_t priority);
+using AlertCallback = void(*)(AlertType alert_type, uint8_t priority);
 
 /**
  * @brief Drone scanner
@@ -228,6 +229,20 @@ public:
      */
     void remove_stale_drones(SystemTime current_time) noexcept;
     
+    /**
+     * @brief Set alert callback
+     * @param callback Alert callback function
+     * @note Callback will be called when alerts are triggered
+     */
+    void set_alert_callback(AlertCallback callback) noexcept;
+    
+    /**
+     * @brief Trigger alert
+     * @param alert_type Alert type
+     * @note Calls alert callback if set
+     */
+    void trigger_alert(AlertType alert_type) noexcept;
+    
 private:
     /**
      * @brief Internal: Perform scan cycle
@@ -337,6 +352,12 @@ private:
     
     // Scanning active flag
     AtomicFlag scanning_active_;
+    
+    // Alert callback
+    AlertCallback alert_callback_;
+    
+    // Last threat level for each tracked drone (for detecting threat increases)
+    std::array<ThreatLevel, MAX_TRACKED_DRONES> last_threat_levels_;
     
     // Mutex for thread safety (LockOrder::DATA_MUTEX)
     mutable mutex_t* mutex_;

@@ -62,11 +62,18 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , current_frequency_(0)
     , last_scan_time_(0)
     , scanning_active_()
+    , alert_callback_(nullptr)
+    , last_threat_levels_{}
     , mutex_(nullptr) {
     
     // Initialize mutex (will be done with ChibiOS)
     // mutex_ = new mutex_t;
     // chMtxObjectInit(mutex_);
+    
+    // Initialize last threat levels to NONE
+    for (size_t i = 0; i < MAX_TRACKED_DRONES; ++i) {
+        last_threat_levels_[i] = ThreatLevel::NONE;
+    }
 }
 
 DroneScanner::~DroneScanner() noexcept {
@@ -265,7 +272,33 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
     if (index_result.has_value()) {
         // Update existing drone
         size_t index = index_result.value();
+        
+        // Get current threat level before update
+        ThreatLevel old_threat = tracked_drones_[index].get_threat();
+        
+        // Update drone RSSI
         tracked_drones_[index].update_rssi(rssi, timestamp);
+        
+        // Get new threat level after update
+        ThreatLevel new_threat = tracked_drones_[index].get_threat();
+        
+        // Store new threat level
+        last_threat_levels_[index] = new_threat;
+        
+        // Trigger alert for threat level changes
+        if (new_threat > old_threat) {
+            // Threat level increased
+            if (new_threat == ThreatLevel::CRITICAL) {
+                trigger_alert(AlertType::THREAT_CRITICAL);
+            } else {
+                trigger_alert(AlertType::THREAT_INCREASED);
+            }
+            // Drone is approaching
+            trigger_alert(AlertType::DRONE_APPROACHING);
+        } else if (new_threat < old_threat) {
+            // Drone is receding
+            trigger_alert(AlertType::DRONE_RECEDING);
+        }
     } else {
         // Add new drone
         ErrorCode add_result = add_tracked_drone_internal(frequency, rssi, timestamp);
@@ -306,10 +339,22 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     // Create new tracked drone
     tracked_drones_[tracked_count_] = TrackedDrone(frequency, type, threat);
     tracked_drones_[tracked_count_].update_rssi(rssi, timestamp);
+    
+    // Store initial threat level
+    last_threat_levels_[tracked_count_] = threat;
+    
     tracked_count_++;
     
     // Update statistics
     statistics_.drones_detected++;
+    
+    // Trigger alert for new drone detection
+    trigger_alert(AlertType::NEW_DRONE);
+    
+    // Trigger alert if threat level is critical
+    if (threat == ThreatLevel::CRITICAL) {
+        trigger_alert(AlertType::THREAT_CRITICAL);
+    }
     
     return ErrorCode::SUCCESS;
 }
@@ -503,6 +548,8 @@ void DroneScanner::remove_stale_drones_internal(SystemTime current_time) noexcep
             // Keep this drone
             if (write_index != read_index) {
                 tracked_drones_[write_index] = tracked_drones_[read_index];
+                // Update last threat level for moved drone
+                last_threat_levels_[write_index] = last_threat_levels_[read_index];
             }
             write_index++;
         }
@@ -510,6 +557,44 @@ void DroneScanner::remove_stale_drones_internal(SystemTime current_time) noexcep
     }
     
     tracked_count_ = write_index;
+}
+
+// ============================================================================
+// Alert Callback Implementation
+// ============================================================================
+
+void DroneScanner::set_alert_callback(AlertCallback callback) noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    alert_callback_ = callback;
+}
+
+void DroneScanner::trigger_alert(AlertType alert_type) noexcept {
+    // Call alert callback if set
+    if (alert_callback_ != nullptr) {
+        AlertPriority priority = AlertPriority::LOW;
+        
+        // Determine priority based on alert type
+        switch (alert_type) {
+            case AlertType::NEW_DRONE:
+                priority = AlertPriority::MEDIUM;
+                break;
+            case AlertType::THREAT_INCREASED:
+                priority = AlertPriority::HIGH;
+                break;
+            case AlertType::THREAT_CRITICAL:
+                priority = AlertPriority::CRITICAL;
+                break;
+            case AlertType::DRONE_APPROACHING:
+                priority = AlertPriority::HIGH;
+                break;
+            case AlertType::DRONE_RECEDING:
+                priority = AlertPriority::LOW;
+                break;
+        }
+        
+        // Call callback with alert type and priority
+        alert_callback_(alert_type, static_cast<uint8_t>(priority));
+    }
 }
 
 } // namespace drone_analyzer
