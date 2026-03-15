@@ -309,15 +309,16 @@ set(CPPSRC
 	apps/ui_touch_calibration.cpp
 	apps/ui_touchtunes.cpp
 	#apps/ui_weatherstation.cpp
-	apps/enhanced_drone_analyzer/eda_unified_database.cpp
-	apps/enhanced_drone_analyzer/ui_enhanced_drone_analyzer.cpp
-	apps/enhanced_drone_analyzer/ui_enhanced_drone_settings.cpp
-	apps/enhanced_drone_analyzer/ui_drone_common_types.cpp
-	apps/enhanced_drone_analyzer/ui_signal_processing.cpp
-	apps/enhanced_drone_analyzer/scanning_coordinator.cpp
-	# DSP/UI Separation: New DSP layer files
-	apps/enhanced_drone_analyzer/dsp_display_utils.cpp
-	apps/enhanced_drone_analyzer/dsp_display_types.cpp
+	# Enhanced Drone Analyzer - Flat structure
+	apps/enhanced_drone_analyzer/drone_display.cpp
+	apps/enhanced_drone_analyzer/drone_settings.cpp
+	apps/enhanced_drone_analyzer/drone_scanner_ui.cpp
+	apps/enhanced_drone_analyzer/spectrum_processor.cpp
+	apps/enhanced_drone_analyzer/rssi_detector.cpp
+	apps/enhanced_drone_analyzer/histogram_processor.cpp
+	apps/enhanced_drone_analyzer/database.cpp
+	apps/enhanced_drone_analyzer/hardware_controller.cpp
+	apps/enhanced_drone_analyzer/scanner.cpp
 
 	protocols/aprs.cpp
 	protocols/ax25.cpp
