@@ -7,7 +7,7 @@ namespace drone_analyzer {
 // Constructor / Destructor
 // ============================================================================
 
-DroneScannerUI::DroneScannerUI() noexcept
+DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : ui::View()
     , display_data_()
     , scanning_(false)

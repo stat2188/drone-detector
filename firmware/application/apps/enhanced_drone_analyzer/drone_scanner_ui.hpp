@@ -11,6 +11,10 @@
 #include "error_handler.hpp"
 #include "locking.hpp"
 
+namespace ui {
+class NavigationView;
+}
+
 namespace drone_analyzer {
 
 /**
@@ -21,9 +25,10 @@ namespace drone_analyzer {
 class DroneScannerUI : public ui::View {
 public:
     /**
-     * @brief Default constructor
+     * @brief Constructor
+     * @param nav Navigation view reference
      */
-    DroneScannerUI() noexcept;
+    explicit DroneScannerUI(NavigationView& nav) noexcept;
 
     /**
      * @brief Destructor

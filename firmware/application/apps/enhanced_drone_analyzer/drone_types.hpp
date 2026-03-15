@@ -29,7 +29,7 @@ enum class DroneType : uint8_t {
     DJI = 1,
     PARROT = 2,
     YUNEEC = 3,
-    3DR = 4,
+    DR_3DR = 4,
     AUTEL = 5,
     HOBBY = 6,
     FPV = 7,

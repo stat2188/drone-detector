@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <tuple>
+#include <utility>
 
 // Forward declarations for ChibiOS types
 // These will be available when ChibiOS headers are included
@@ -373,21 +375,22 @@ private:
 /**
  * @brief Scoped lock guard for multiple locks
  * @note Acquires all locks in constructor, releases all in destructor
+ * @note Simplified version for 2 locks (most common use case)
  */
-template<LockOrder... ORDERS>
-class ScopedMultiLock {
+template<LockOrder FIRST, LockOrder SECOND>
+class ScopedMultiLock<FIRST, SECOND> {
 public:
     /**
-     * @brief Constructor - acquires all locks
+     * @brief Constructor - acquires both locks
      */
-    explicit ScopedMultiLock(mutex_t*... mutexes) noexcept
-        : locks_(mutexes...) {}
+    explicit ScopedMultiLock(mutex_t& first_mutex, mutex_t& second_mutex) noexcept
+        : lock1_(first_mutex), lock2_(second_mutex) {}
     
     /**
      * @brief Check if all locks are held
      */
     [[nodiscard]] bool all_locked() const noexcept {
-        return all_locked_impl(locks_);
+        return lock1_.is_locked() && lock2_.is_locked();
     }
     
     // Delete copy and move operations
@@ -397,12 +400,8 @@ public:
     ScopedMultiLock& operator=(ScopedMultiLock&&) = delete;
     
 private:
-    template<typename... Locks>
-    [[nodiscard]] static bool all_locked_impl(const std::tuple<Locks...>& locks) noexcept {
-        return (std::get<Locks>(locks).is_locked() && ...);
-    }
-    
-    std::tuple<MutexLock<ORDERS>...> locks_;
+    MutexLock<FIRST> lock1_;
+    MutexLock<SECOND> lock2_;
 };
 
 /**
