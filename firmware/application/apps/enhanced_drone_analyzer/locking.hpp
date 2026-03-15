@@ -13,34 +13,35 @@ namespace drone_analyzer {
 
 /**
  * @brief Lock ordering levels for EDA
- * @note Always acquire locks in ascending order (0 → 1 → 2 → ... → 13)
+ * @note Always acquire locks in ascending order (0 → 1 → 2 → ... → 14)
  * @note Never acquire locks in descending order (causes deadlock)
- * @note Lock 13 (SD_CARD_MUTEX) must always be LAST
+ * @note Lock 14 (SD_CARD_MUTEX) must always be LAST
  */
 enum class LockOrder : uint8_t {
-    // Level 0-2: Core System
+    // Level 0-3: Core System
     ATOMIC_FLAGS = 0,      // AtomicFlag operations (no lock)
     DATA_MUTEX = 1,        // Scanner data protection
-    STATE_MUTEX = 2,       // System state protection
+    DATABASE_MUTEX = 2,    // Database protection (freqman DB)
+    STATE_MUTEX = 3,       // System state protection
     
-    // Level 3-7: UI Components
-    UI_THREAT_MUTEX = 3,    // Threat header protection
-    UI_CARD_MUTEX = 4,       // Threat card protection
-    UI_STATUSBAR_MUTEX = 5,  // Status bar protection
-    UI_DISPLAY_MUTEX = 6,    // Display controller protection
-    UI_CONTROLLER_MUTEX = 7,  // UI controller protection
+    // Level 4-8: UI Components
+    UI_THREAT_MUTEX = 4,    // Threat header protection
+    UI_CARD_MUTEX = 5,       // Threat card protection
+    UI_STATUSBAR_MUTEX = 6,  // Status bar protection
+    UI_DISPLAY_MUTEX = 7,    // Display controller protection
+    UI_CONTROLLER_MUTEX = 8,  // UI controller protection
     
-    // Level 8-10: DSP Processing
-    ENTRIES_TO_SCAN_MUTEX = 8,   // Entries to scan protection
-    HISTOGRAM_BUFFER_MUTEX = 9,  // Histogram buffer protection
-    SPECTRUM_DATA_MUTEX = 10,    // Spectrum data protection
+    // Level 9-11: DSP Processing
+    ENTRIES_TO_SCAN_MUTEX = 9,   // Entries to scan protection
+    HISTOGRAM_BUFFER_MUTEX = 10,  // Histogram buffer protection
+    SPECTRUM_DATA_MUTEX = 11,    // Spectrum data protection
     
-    // Level 11-12: System Services
-    SPECTRUM_MUTEX = 11,    // Spectrum streaming protection
-    LOGGER_MUTEX = 12,      // Logger protection
+    // Level 12-13: System Services
+    SPECTRUM_MUTEX = 12,    // Spectrum streaming protection
+    LOGGER_MUTEX = 13,      // Logger protection
     
-    // Level 13: I/O Operations (MUST BE LAST)
-    SD_CARD_MUTEX = 13       // SD card operations (FatFS not thread-safe)
+    // Level 14: I/O Operations (MUST BE LAST)
+    SD_CARD_MUTEX = 14       // SD card operations (FatFS not thread-safe)
 };
 
 /**

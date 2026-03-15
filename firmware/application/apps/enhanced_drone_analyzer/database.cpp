@@ -63,7 +63,7 @@ ErrorCode DatabaseManager::load_frequency_database() noexcept {
     }
     
     // Acquire mutex for thread safety
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     
     // Double-check after acquiring lock
     if (loaded_.test()) {
@@ -495,7 +495,7 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
     }
     
     // Acquire mutex for thread safety
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     
     // If current_freq is 0, return first entry
     if (current_freq == 0) {
@@ -525,12 +525,12 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
 }
 
 void DatabaseManager::reset_database() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     current_index_ = 0;
 }
 
 size_t DatabaseManager::get_database_size() const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     return entry_count_;
 }
 
@@ -539,7 +539,7 @@ bool DatabaseManager::is_loaded() const noexcept {
 }
 
 ErrorResult<FrequencyEntry> DatabaseManager::get_entry(size_t index) const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     
     if (index >= entry_count_) {
         return ErrorResult<FrequencyEntry>::failure(ErrorCode::INVALID_PARAMETER);
@@ -549,7 +549,7 @@ ErrorResult<FrequencyEntry> DatabaseManager::get_entry(size_t index) const noexc
 }
 
 ErrorResult<FrequencyEntry> DatabaseManager::find_entry(FreqHz frequency) const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     
     ErrorResult<size_t> index_result = find_entry_index_internal(frequency);
     if (!index_result.has_value()) {
@@ -578,7 +578,7 @@ ErrorCode DatabaseManager::add_entry(const FrequencyEntry& entry) noexcept {
         return validate_result;
     }
     
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     
     // Check if database is full
     if (entry_count_ >= MAX_DATABASE_ENTRIES) {
@@ -601,7 +601,7 @@ ErrorCode DatabaseManager::add_entry(const FrequencyEntry& entry) noexcept {
 }
 
 ErrorCode DatabaseManager::remove_entry(FreqHz frequency) noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     
     // Find entry index
     ErrorResult<size_t> index_result = find_entry_index_internal(frequency);
@@ -625,18 +625,18 @@ ErrorCode DatabaseManager::remove_entry(FreqHz frequency) noexcept {
 }
 
 void DatabaseManager::clear_entries() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     entry_count_ = 0;
     current_index_ = 0;
 }
 
 ErrorResult<size_t> DatabaseManager::get_current_index() const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     return ErrorResult<size_t>::success(current_index_);
 }
 
 ErrorCode DatabaseManager::set_current_index(size_t index) noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
     
     if (index >= entry_count_) {
         return ErrorCode::INVALID_PARAMETER;

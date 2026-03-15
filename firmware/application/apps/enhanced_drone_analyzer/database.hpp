@@ -202,7 +202,7 @@ private:
     // Database loaded flag (AtomicFlag for lock-free access)
     AtomicFlag loaded_;
     
-    // Mutex for thread safety (LockOrder::DATA_MUTEX)
+    // Mutex for thread safety (LockOrder::DATABASE_MUTEX)
     mutable mutex_t* mutex_;
     
     // Line buffer for parsing (mutable for use in const methods)
