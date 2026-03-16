@@ -3,7 +3,8 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <ch.h>
+#include <array>
+#include "ch.h"
 #include "drone_types.hpp"
 #include "error_handler.hpp"
 #include "locking.hpp"
@@ -11,6 +12,7 @@
 #include "database.hpp"
 #include "hardware_controller.hpp"
 #include "audio_alerts.hpp"
+#include "convert.hpp"
 
 namespace drone_analyzer {
 
@@ -431,12 +433,15 @@ private:
     // Mutex for thread safety (LockOrder::DATA_MUTEX)
     // Direct member storage - no heap allocation, no pointer indirection
     mutable Mutex mutex_;
-    
+
     // State transition control flag
     AtomicFlag state_transition_allowed_;
-    
+
     // Scan cycle in progress flag (prevents concurrent scan cycles)
     AtomicFlag scan_cycle_in_progress_;
+
+    // Alert callback in progress flag (prevents re-entrant calls)
+    AtomicFlag alert_callback_in_progress_;
 };
 
 } // namespace drone_analyzer

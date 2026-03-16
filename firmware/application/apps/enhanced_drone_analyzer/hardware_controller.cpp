@@ -55,8 +55,8 @@ HardwareController::HardwareController() noexcept
     , pll_locked_()
     , streaming_active_()
     , mutex_() {
-    
-    chMtxObjectInit(&mutex_);
+
+    chMtxInit(&mutex_);
 }
 
 HardwareController::~HardwareController() noexcept {

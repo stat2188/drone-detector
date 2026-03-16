@@ -72,14 +72,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , button_spacing_(10) {
     display_data_.clear();
 
-    // Load DRONES.TXT from freqman
-    ErrorCode err = database_.load_from_freqman_file("DRONES");
-    if (err != ErrorCode::SUCCESS) {
-        show_error(err, 3000);
-    }
-
-    // Initialize scanner
-    err = scanner_.initialize();
+    ErrorCode err = scanner_.initialize();
     if (err != ErrorCode::SUCCESS) {
         show_error(err, 3000);
         return;
@@ -104,25 +97,29 @@ DroneScannerUI::~DroneScannerUI() noexcept {
 
 void DroneScannerUI::paint(Painter& painter) {
     uint16_t y_offset = 5;
-    
+
     draw_scanner_header(painter);
     y_offset += header_height_;
-    
+
     draw_scanner_status(painter, y_offset);
     y_offset += status_height_;
-    
+
     draw_threat_summary(painter, y_offset);
     y_offset += threat_summary_height_;
-    
+
     draw_control_buttons(painter, y_offset);
-    
+
     if (is_alert_active()) {
         draw_alert_overlay(painter);
     }
-    
+
     if (is_error_active()) {
         draw_error_overlay(painter);
     }
+
+    SystemTime current_time = chTimeNow();
+    update_alert_timer(current_time);
+    update_error_timer(current_time);
 }
 
 // ============================================================================
@@ -236,42 +233,6 @@ void DroneScannerUI::clear_error() noexcept {
 }
 
 // ============================================================================
-// Scanning Control
-// ============================================================================
-
-ErrorCode DroneScannerUI::start_scanning() noexcept {
-    if (scanning_) {
-        return ErrorCode::SUCCESS;
-    }
-
-    // Start scanning (will be implemented when scanner coordinator is available)
-    scanning_ = true;
-    update_status_text();
-
-    return ErrorCode::SUCCESS;
-}
-
-ErrorCode DroneScannerUI::stop_scanning() noexcept {
-    if (!scanning_) {
-        return ErrorCode::SUCCESS;
-    }
-
-    // Stop scanning (will be implemented when scanner coordinator is available)
-    scanning_ = false;
-    update_status_text();
-
-    return ErrorCode::SUCCESS;
-}
-
-ScanningMode DroneScannerUI::get_scanning_mode() const noexcept {
-    return scanning_mode_;
-}
-
-const DisplayData& DroneScannerUI::get_display_data() const noexcept {
-    return display_data_;
-}
-
-// ============================================================================
 // Message Handlers
 // ============================================================================
 
@@ -371,7 +332,7 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
 
 void DroneScannerUI::update_ui_state() noexcept {
     // Get current scanner state
-    current_scanner_state_ = scanner_.get_scanner_state();
+    current_scanner_state_ = scanner_.get_state();
 
     // Determine BigFrequency color
     BigDisplayColor color = BigDisplayColor::GREY;
@@ -634,9 +595,9 @@ void DroneScannerUI::update_alert_timer(uint32_t elapsed_ms) noexcept {
     if (!alert_active_) {
         return;
     }
-    
-    // Check if alert duration has elapsed
-    if (elapsed_ms >= alert_start_time_ + alert_duration_ms_) {
+
+    const uint32_t elapsed = elapsed_ms - alert_start_time_;
+    if (elapsed >= alert_duration_ms_) {
         clear_alert();
     }
 }
@@ -645,9 +606,9 @@ void DroneScannerUI::update_error_timer(uint32_t elapsed_ms) noexcept {
     if (!error_active_) {
         return;
     }
-    
-    // Check if error duration has elapsed
-    if (elapsed_ms >= error_start_time_ + error_duration_ms_) {
+
+    const uint32_t elapsed = elapsed_ms - error_start_time_;
+    if (elapsed >= error_duration_ms_) {
         clear_error();
     }
 }

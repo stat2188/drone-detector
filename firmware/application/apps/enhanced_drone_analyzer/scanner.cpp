@@ -72,10 +72,11 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , drone_type_valid_(false)
     , mutex_()
     , state_transition_allowed_()
-    , scan_cycle_in_progress_() {
+    , scan_cycle_in_progress_()
+    , alert_callback_in_progress_() {
 
     // Initialize mutex
-    chMtxObjectInit(&mutex_);
+    chMtxInit(&mutex_);
 
     // Initialize last threat levels to NONE
     for (size_t i = 0; i < MAX_TRACKED_DRONES; ++i) {
@@ -538,9 +539,15 @@ void DroneScanner::set_alert_callback(ThreatAlertCallback callback) noexcept {
 
 void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
     ThreatAlertCallback local_callback = alert_callback_;
-    
+
     if (local_callback != nullptr) {
+        if (alert_callback_in_progress_.test()) {
+            return;
+        }
+
+        alert_callback_in_progress_.set();
         local_callback(threat_level);
+        alert_callback_in_progress_.clear();
     }
 }
 
