@@ -4,6 +4,13 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+
+namespace ui {
+
+class NavigationView;
+
+} // namespace ui
+
 #include "ui_widget.hpp"
 #include "drone_types.hpp"
 #include "audio_alerts.hpp"
@@ -22,8 +29,9 @@ class DroneScannerUI : public ui::View {
 public:
     /**
      * @brief Constructor
+     * @param nav Navigation view reference
      */
-    explicit DroneScannerUI() noexcept;
+    explicit DroneScannerUI(NavigationView& nav) noexcept;
 
     /**
      * @brief Destructor
@@ -283,6 +291,9 @@ private:
     void update_error_timer(uint32_t elapsed_ms) noexcept;
 
 private:
+    // Navigation reference (for future use: settings, details, etc.)
+    NavigationView& nav_;
+
     // Display data
     DisplayData display_data_;
 

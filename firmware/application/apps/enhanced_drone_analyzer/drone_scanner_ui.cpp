@@ -11,8 +11,9 @@ constexpr uint32_t KEY_SETTINGS = 0x03;
 // Constructor / Destructor
 // ============================================================================
 
-DroneScannerUI::DroneScannerUI() noexcept
+DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : ui::View()
+    , nav_(nav)
     , display_data_()
     , scanning_(false)
     , scanning_mode_(DEFAULT_SCANNING_MODE)
