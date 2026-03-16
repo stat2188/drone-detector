@@ -378,7 +378,7 @@ private:
  * @note Simplified version for 2 locks (most common use case)
  */
 template<LockOrder FIRST, LockOrder SECOND>
-class ScopedMultiLock<FIRST, SECOND> {
+class ScopedMultiLock {
 public:
     /**
      * @brief Constructor - acquires both locks

@@ -64,13 +64,12 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , scanning_active_()
     , alert_callback_(nullptr)
     , last_threat_levels_{}
-    , mutex_storage_()
-    , mutex_(&mutex_storage_)
+    , mutex_()
     , state_transition_allowed_()
     , scan_cycle_in_progress_() {
 
     // Initialize mutex
-    chMtxObjectInit(mutex_);
+    chMtxObjectInit(&mutex_);
 
     // Initialize last threat levels to NONE
     for (size_t i = 0; i < MAX_TRACKED_DRONES; ++i) {
@@ -88,7 +87,7 @@ DroneScanner::~DroneScanner() noexcept {
 }
 
 ErrorCode DroneScanner::initialize() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
 
     if (state_ != ScannerState::IDLE) {
         return ErrorCode::INITIALIZATION_INCOMPLETE;
@@ -125,7 +124,7 @@ ErrorCode DroneScanner::initialize() noexcept {
 }
 
 ErrorCode DroneScanner::start_scanning() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (state_ == ScannerState::SCANNING) {
         return ErrorCode::SUCCESS;  // Already scanning
@@ -145,7 +144,7 @@ ErrorCode DroneScanner::start_scanning() noexcept {
 }
 
 ErrorCode DroneScanner::stop_scanning() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (state_ == ScannerState::IDLE) {
         return ErrorCode::SUCCESS;  // Already stopped
@@ -165,7 +164,7 @@ ErrorCode DroneScanner::stop_scanning() noexcept {
 }
 
 ErrorCode DroneScanner::pause_scanning() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (state_ != ScannerState::SCANNING) {
         return ErrorCode::SUCCESS;  // Not scanning
@@ -176,7 +175,7 @@ ErrorCode DroneScanner::pause_scanning() noexcept {
 }
 
 ErrorCode DroneScanner::resume_scanning() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (state_ != ScannerState::PAUSED) {
         return ErrorCode::SUCCESS;  // Not paused
@@ -191,7 +190,7 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
         return ErrorCode::SUCCESS;  // Not scanning, skip
     }
     
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (state_ != ScannerState::SCANNING) {
         return ErrorCode::HARDWARE_NOT_INITIALIZED;
@@ -277,7 +276,7 @@ ErrorCode DroneScanner::update_tracked_drones(
     RssiValue rssi,
     SystemTime timestamp
 ) noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     return update_tracked_drone_internal(frequency, rssi, timestamp);
 }
@@ -410,7 +409,7 @@ size_t DroneScanner::get_tracked_drones(
     TrackedDrone* drones,
     size_t max_count
 ) const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (drones == nullptr || max_count == 0) {
         return 0;
@@ -426,7 +425,7 @@ size_t DroneScanner::get_tracked_drones(
 }
 
 ErrorCode DroneScanner::get_display_data(DisplayData& display_data) const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     return update_display_data_internal(display_data);
 }
@@ -490,7 +489,7 @@ bool DroneScanner::is_scanning() const noexcept {
 }
 
 ScanConfig DroneScanner::get_config() const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     return config_;
 }
 
@@ -500,7 +499,7 @@ ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
         return validate_result;
     }
     
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     config_ = config;
     
     return ErrorCode::SUCCESS;
@@ -522,17 +521,17 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
 }
 
 ScanStatistics DroneScanner::get_statistics() const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     return statistics_;
 }
 
 void DroneScanner::reset_statistics() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     statistics_.reset();
 }
 
 ErrorResult<FreqHz> DroneScanner::get_current_frequency() const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (current_frequency_ == 0) {
         return ErrorResult<FreqHz>::failure(ErrorCode::HARDWARE_NOT_INITIALIZED);
@@ -542,17 +541,17 @@ ErrorResult<FreqHz> DroneScanner::get_current_frequency() const noexcept {
 }
 
 size_t DroneScanner::get_tracked_count() const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     return tracked_count_;
 }
 
 void DroneScanner::clear_tracked_drones() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     tracked_count_ = 0;
 }
 
 void DroneScanner::remove_stale_drones(SystemTime current_time) noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     remove_stale_drones_internal(current_time);
 }
 
@@ -580,7 +579,7 @@ void DroneScanner::remove_stale_drones_internal(SystemTime current_time) noexcep
 // ============================================================================
 
 void DroneScanner::set_alert_callback(AlertCallback callback) noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     alert_callback_ = callback;
 }
 

@@ -165,6 +165,7 @@ public:
      * @param max_count Maximum number of drones to copy
      * @return Number of drones copied
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     * @note Actual copy count is min(max_count, MAX_TRACKED_DRONES, tracked_count_)
      */
     [[nodiscard]] size_t get_tracked_drones(
         TrackedDrone* drones,
@@ -372,8 +373,8 @@ private:
     // Tracked drones (fixed-size array, no heap allocation)
     std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
     
-    // Number of tracked drones
-    size_t tracked_count_;
+    // Number of tracked drones (uint8_t is sufficient for MAX_TRACKED_DRONES=20)
+    uint8_t tracked_count_;
     
     // Current scan frequency
     FreqHz current_frequency_;
@@ -391,10 +392,8 @@ private:
     std::array<ThreatLevel, MAX_TRACKED_DRONES> last_threat_levels_;
     
     // Mutex for thread safety (LockOrder::DATA_MUTEX)
-    mutable mutex_t* mutex_;
-    
-    // Mutex storage (actual memory for mutex)
-    mutex_t mutex_storage_;
+    // Direct member storage - no heap allocation, no pointer indirection
+    mutable mutex_t mutex_;
     
     // State transition control flag
     AtomicFlag state_transition_allowed_;
