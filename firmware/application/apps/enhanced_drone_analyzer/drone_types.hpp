@@ -340,6 +340,60 @@ struct DisplayData {
 void clear() noexcept;
 };
 
+// ============================================================================
+// FreqmanDB Embedded-Compatible Types
+// ============================================================================
+
+/**
+ * @brief Forward declaration of freqman_type from FreqmanDB
+ */
+enum class freqman_type : uint8_t;
+
+/**
+ * @brief Embedded-compatible freqman entry (no std::string, no heap)
+ * @note 80 bytes total, aligned for 8-byte access
+ * @note Replaces std::string-based freqman_entry from Mayhem core
+ */
+struct freqman_entry_fixed {
+    int64_t frequency_a{0};
+    int64_t frequency_b{0};
+    char description[32];  // Fixed-size array, no std::string
+    freqman_type type{static_cast<freqman_type>(0)};
+    uint8_t modulation{255};  // freqman_invalid_index
+    uint8_t bandwidth{255};
+    uint8_t step{255};
+    uint8_t tone{255};
+    
+    // Total: 8 + 8 + 32 + 1 + 1 + 1 + 1 + 1 = 53 bytes (padded to 56)
+    
+    /**
+     * @brief Default constructor
+     */
+    freqman_entry_fixed() noexcept;
+    
+    /**
+     * @brief Constructor with values
+     */
+    freqman_entry_fixed(
+        int64_t freq_a,
+        int64_t freq_b,
+        const char* desc,
+        freqman_type t
+    ) noexcept;
+    
+    /**
+     * @brief Copy description safely
+     * @param src Source string
+     * @return ErrorCode::SUCCESS if copied, error otherwise
+     */
+    [[nodiscard]] ErrorCode set_description(const char* src) noexcept;
+    
+    /**
+     * @brief Check if entry is valid
+     */
+    [[nodiscard]] bool is_valid() const noexcept;
+};
+
 } // namespace drone_analyzer
 
 #endif // DRONE_TYPES_HPP

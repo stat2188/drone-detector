@@ -4,6 +4,10 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include <string_view>
+
+#include "receiver_model.hpp"
+#include "radio_state.hpp"
 
 #include "ui.hpp"
 #include "string_format.hpp"
@@ -12,8 +16,27 @@
 #include "constants.hpp"
 #include "error_handler.hpp"
 #include "locking.hpp"
+#include "ui_receiver.hpp"
+#include "ui_widget.hpp"
+#include "ui_painter.hpp"
+#include "event_m0.hpp"
+#include "message.hpp"
+#include "theme.hpp"
+#include "scanner.hpp"
+#include "database.hpp"
+#include "hardware_controller.hpp"
 
 namespace drone_analyzer {
+
+/**
+ * @brief BigFrequency display colors
+ */
+enum class BigDisplayColor : int32_t {
+    GREY = -2,    // Scanning
+    YELLOW = -1,   // Locking
+    GREEN = 0,     // Tracking (normal signal)
+    RED = 1        // Tracking (high threat)
+};
 
 /**
  * @brief Scanner UI component for drone analyzer
@@ -189,14 +212,14 @@ private:
      * @param text Text to draw
      * @param x X coordinate
      * @param y Y coordinate
-     * @param color Text color
+     * @param style Style for text rendering
      */
     void draw_text(
         Painter& painter,
         const char* text,
         uint16_t x,
         uint16_t y,
-        uint32_t color
+        const ui::Style& style
     ) noexcept;
 
     /**
@@ -279,6 +302,34 @@ private:
      */
     void update_alert_timer(uint32_t elapsed_ms) noexcept;
 
+    // ========================================================================
+    // Message Handlers
+    // ========================================================================
+
+    /**
+     * @brief Handle RetuneMessage from scanner thread
+     * @param freq Current frequency
+     * @param range Frequency range (unused, matches RetuneMessage structure)
+     */
+    void handle_retune(int64_t freq, uint32_t range) noexcept;
+
+    /**
+     * @brief Handle ChannelStatisticsMessage from baseband
+     * @param statistics RSSI statistics
+     */
+    void handle_statistics(const ChannelStatistics& statistics) noexcept;
+
+    /**
+     * @brief Update BigFrequency display color
+     * @param color Color code for display
+     */
+    void bigdisplay_update(BigDisplayColor color) noexcept;
+
+    /**
+     * @brief Update UI state based on scanner state
+     */
+    void update_ui_state() noexcept;
+
     /**
      * @brief Update error timer
      * @param elapsed_ms Elapsed time in milliseconds
@@ -288,6 +339,45 @@ private:
 private:
     // Navigation reference (for future use: settings, details, etc.)
     NavigationView& nav_;
+
+    // ========================================================================
+    // Scanner and Core Components (fully integrated, no pointers)
+    // ========================================================================
+
+    HardwareController hardware_;
+    DatabaseManager database_;
+    DroneScanner scanner_;
+
+    // ========================================================================
+    // Radio state для receiver model
+    // ========================================================================
+
+    RxRadioState radio_state_;
+
+    // ========================================================================
+    // UI Components
+    // ========================================================================
+
+    // BigFrequency widget
+    ui::BigFrequency big_display_;
+
+    // Gain control fields (top row, like external scanner)
+    ui::LNAGainField field_lna_;
+    ui::VGAGainField field_vga_;
+    ui::RFAmpField field_rf_amp_;
+
+    // Message handlers
+    MessageHandlerRegistration message_handler_retune_;
+    MessageHandlerRegistration message_handler_stats_;
+
+    // Current frequency and RSSI
+    rf::Frequency current_frequency_;
+    int32_t current_rssi_;
+    ScannerState current_scanner_state_;
+
+    // Displayed drone type (max 4 chars + null)
+    char displayed_drone_type_[5] = {'\0'};
+    uint32_t drone_type_display_timer_;
 
     // Display data
     DisplayData display_data_;

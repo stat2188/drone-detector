@@ -1,4 +1,6 @@
 #include "scanner.hpp"
+#include "receiver_model.hpp"
+#include "portapack_persistent_memory.hpp"
 
 // ChibiOS headers (will be available when integrated)
 // #include "ch.h"
@@ -64,6 +66,11 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , scanning_active_()
     , alert_callback_(nullptr)
     , last_threat_levels_{}
+    , freq_lock_count_(0)
+    , locked_frequency_(0)
+    , track_start_time_(0)
+    , current_drone_type_{'\0'}
+    , drone_type_valid_(false)
     , mutex_()
     , state_transition_allowed_()
     , scan_cycle_in_progress_() {
@@ -123,18 +130,24 @@ ErrorCode DroneScanner::initialize() noexcept {
     return ErrorCode::SUCCESS;
 }
 
+// ============================================================================
+// Fast Scanner Integration Getters
+// ============================================================================
+
+const char* DroneScanner::get_current_drone_type() const noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    return current_drone_type_;
+}
+
+// ============================================================================
+// Scanner Control Methods (Restored for functionality)
+// ============================================================================
+
 ErrorCode DroneScanner::start_scanning() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (state_ == ScannerState::SCANNING) {
-        return ErrorCode::SUCCESS;  // Already scanning
-    }
-    
-    // Start spectrum streaming
-    ErrorCode stream_result = hardware_.start_spectrum_streaming();
-    if (stream_result != ErrorCode::SUCCESS) {
-        state_ = ScannerState::ERROR;
-        return stream_result;
+        return ErrorCode::SUCCESS;
     }
     
     state_ = ScannerState::SCANNING;
@@ -147,14 +160,7 @@ ErrorCode DroneScanner::stop_scanning() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (state_ == ScannerState::IDLE) {
-        return ErrorCode::SUCCESS;  // Already stopped
-    }
-    
-    // Stop spectrum streaming
-    ErrorCode stream_result = hardware_.stop_spectrum_streaming();
-    if (stream_result != ErrorCode::SUCCESS) {
-        state_ = ScannerState::ERROR;
-        return stream_result;
+        return ErrorCode::SUCCESS;
     }
     
     state_ = ScannerState::IDLE;
@@ -167,7 +173,7 @@ ErrorCode DroneScanner::pause_scanning() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (state_ != ScannerState::SCANNING) {
-        return ErrorCode::SUCCESS;  // Not scanning
+        return ErrorCode::SUCCESS;
     }
     
     state_ = ScannerState::PAUSED;
@@ -178,7 +184,7 @@ ErrorCode DroneScanner::resume_scanning() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (state_ != ScannerState::PAUSED) {
-        return ErrorCode::SUCCESS;  // Not paused
+        return ErrorCode::SUCCESS;
     }
     
     state_ = ScannerState::SCANNING;
@@ -187,7 +193,7 @@ ErrorCode DroneScanner::resume_scanning() noexcept {
 
 ErrorCode DroneScanner::perform_scan_cycle() noexcept {
     if (!scanning_active_.test()) {
-        return ErrorCode::SUCCESS;  // Not scanning, skip
+        return ErrorCode::SUCCESS;
     }
     
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
@@ -200,58 +206,48 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
 }
 
 ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
-    // Prevent concurrent scan cycles
     if (scan_cycle_in_progress_.test()) {
         return ErrorCode::UNKNOWN_ERROR;
     }
-
-    // Set scan cycle in progress flag
+    
     scan_cycle_in_progress_.set();
-
-    // Update statistics
     statistics_.total_scan_cycles++;
-
-    // Get next frequency from database
+    
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
     if (!freq_result.has_value()) {
         statistics_.failed_cycles++;
         scan_cycle_in_progress_.clear();
         return freq_result.error();
     }
-
+    
     current_frequency_ = freq_result.value();
-
-    // Tune to frequency
+    
     ErrorCode tune_result = hardware_.tune_to_frequency(current_frequency_);
     if (tune_result != ErrorCode::SUCCESS) {
         statistics_.failed_cycles++;
         scan_cycle_in_progress_.clear();
         return tune_result;
     }
-
-    // Get RSSI sample
+    
     ErrorResult<RssiSample> rssi_result = hardware_.get_rssi_sample();
     if (!rssi_result.has_value()) {
         statistics_.failed_cycles++;
         scan_cycle_in_progress_.clear();
         return rssi_result.error();
     }
-
+    
     const RssiSample& sample = rssi_result.value();
-
-    // Check if signal detected
+    
     if (sample.rssi >= config_.rssi_threshold_dbm) {
-        // Update tracked drones
         ErrorCode update_result = update_tracked_drone_internal(
             sample.frequency,
             sample.rssi,
             sample.timestamp
         );
-
+        
         if (update_result == ErrorCode::SUCCESS) {
             statistics_.successful_cycles++;
-
-            // Update max RSSI
+            
             if (sample.rssi > static_cast<int32_t>(statistics_.max_rssi_dbm)) {
                 statistics_.max_rssi_dbm = static_cast<uint32_t>(sample.rssi);
             }
@@ -261,13 +257,9 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     } else {
         statistics_.successful_cycles++;
     }
-
-    // Update last scan time
-    // last_scan_time_ = chTimeNow();
-
-    // Clear scan cycle in progress flag
+    
     scan_cycle_in_progress_.clear();
-
+    
     return ErrorCode::SUCCESS;
 }
 
@@ -294,34 +286,23 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
     RssiValue rssi,
     SystemTime timestamp
 ) noexcept {
-    // Check if drone already tracked
     ErrorResult<size_t> index_result = find_drone_by_frequency_internal(frequency);
     
     if (index_result.has_value()) {
-        // Update existing drone
         size_t index = index_result.value();
         
-        // Get current threat level before update
         ThreatLevel old_threat = tracked_drones_[index].get_threat();
         
-        // Update drone RSSI
         tracked_drones_[index].update_rssi(rssi, timestamp);
         
-        // Get new threat level after update
         ThreatLevel new_threat = tracked_drones_[index].get_threat();
         
-        // Store new threat level
         last_threat_levels_[index] = new_threat;
         
-        // Trigger alert for threat level changes only
-        // FIXED: Removed duplicate alerts - only alert on threat increase
         if (new_threat > old_threat) {
-            // Threat level increased - trigger alert
             trigger_alert(new_threat);
         }
-        // Note: Threat decrease does not trigger alert to reduce noise
     } else {
-        // Add new drone
         ErrorCode add_result = add_tracked_drone_internal(frequency, rssi, timestamp);
         if (add_result != ErrorCode::SUCCESS) {
             return add_result;
@@ -348,48 +329,38 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     RssiValue rssi,
     SystemTime timestamp
 ) noexcept {
-    // Check if tracked drones array is full
     if (tracked_count_ >= MAX_TRACKED_DRONES) {
         return ErrorCode::BUFFER_FULL;
     }
     
-    // Determine drone type and threat level
     DroneType type = determine_drone_type_internal(frequency);
     ThreatLevel threat = determine_threat_level_internal(rssi);
     
-    // Create new tracked drone
     tracked_drones_[tracked_count_] = TrackedDrone(frequency, type, threat);
     tracked_drones_[tracked_count_].update_rssi(rssi, timestamp);
     
-    // Store initial threat level
     last_threat_levels_[tracked_count_] = threat;
     
     tracked_count_++;
-
-    // Update statistics
     statistics_.drones_detected++;
-
-    // Trigger alert for new drone detection with its threat level
+    
     trigger_alert(threat);
-
+    
     return ErrorCode::SUCCESS;
 }
 
 DroneType DroneScanner::determine_drone_type_internal(FreqHz frequency) const noexcept {
-    // Look up drone type from freqman database
     ErrorResult<FrequencyEntry> entry_result = database_.find_entry(frequency);
-
+    
     if (entry_result.has_value()) {
         const FrequencyEntry& entry = entry_result.value();
         return entry.drone_type;
     }
-
-    // Entry not found in database
+    
     return DroneType::UNKNOWN;
 }
 
 ThreatLevel DroneScanner::determine_threat_level_internal(RssiValue rssi) const noexcept {
-    // Classify threat based on RSSI
     if (rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
         return ThreatLevel::CRITICAL;
     } else if (rssi >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
@@ -429,10 +400,8 @@ ErrorCode DroneScanner::get_display_data(DisplayData& display_data) const noexce
 ErrorCode DroneScanner::update_display_data_internal(
     DisplayData& display_data
 ) const noexcept {
-    // Clear display data
     display_data.clear();
     
-    // Copy tracked drones to display entries
     size_t copy_count = tracked_count_ < MAX_DISPLAYED_DRONES ? tracked_count_ : MAX_DISPLAYED_DRONES;
     
     for (size_t i = 0; i < copy_count; ++i) {
@@ -441,23 +410,19 @@ ErrorCode DroneScanner::update_display_data_internal(
     
     display_data.drone_count = copy_count;
     
-    // Update state snapshot
     display_data.state.scanning_active = scanning_active_.test();
     display_data.state.is_fresh = true;
     
-    // Calculate threat statistics
     display_data.state.max_detected_threat = ThreatLevel::NONE;
     display_data.state.approaching_count = 0;
     display_data.state.static_count = 0;
     display_data.state.receding_count = 0;
     
     for (size_t i = 0; i < copy_count; ++i) {
-        // Update max threat
         if (display_data.drones[i].threat > display_data.state.max_detected_threat) {
             display_data.state.max_detected_threat = display_data.drones[i].threat;
         }
         
-        // Count movement trends
         switch (display_data.drones[i].trend) {
             case MovementTrend::APPROACHING:
                 display_data.state.approaching_count++;
@@ -556,35 +521,25 @@ void DroneScanner::remove_stale_drones_internal(SystemTime current_time) noexcep
     
     for (size_t read_index = 0; read_index < tracked_count_; ++read_index) {
         if (!tracked_drones_[read_index].is_stale(current_time, config_.stale_timeout_ms)) {
-            // Keep this drone
             if (write_index != read_index) {
                 tracked_drones_[write_index] = tracked_drones_[read_index];
-                // Update last threat level for moved drone
                 last_threat_levels_[write_index] = last_threat_levels_[read_index];
             }
             write_index++;
         }
-        // Stale drones are skipped (removed)
     }
     
     tracked_count_ = write_index;
 }
 
-// ============================================================================
-// Alert Callback Implementation
-// ============================================================================
-
 void DroneScanner::set_alert_callback(ThreatAlertCallback callback) noexcept {
-    MutexGuard guard(mutex_);
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     alert_callback_ = callback;
 }
 
 void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
-    // Make local copy of callback pointer to prevent race condition
-    // This ensures we use the callback that was set at alert trigger time
     ThreatAlertCallback local_callback = alert_callback_;
-
-    // Call alert callback if set (invoked OUTSIDE any lock to prevent deadlocks)
+    
     if (local_callback != nullptr) {
         local_callback(threat_level);
     }

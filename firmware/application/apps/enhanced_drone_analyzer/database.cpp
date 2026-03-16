@@ -2,9 +2,7 @@
 
 #include <cstring>
 #include <cstdlib>
-
-// ChibiOS headers (will be available when integrated)
-// #include "ch.h"
+#include "ch.h"
 
 namespace drone_analyzer {
 
@@ -59,28 +57,34 @@ ErrorCode DatabaseManager::load_frequency_database() noexcept {
     if (loaded_.test()) {
         return ErrorCode::SUCCESS;
     }
-    
+
     // Acquire mutex for thread safety
     MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
-    
+
     // Double-check after acquiring lock
     if (loaded_.test()) {
         return ErrorCode::SUCCESS;
     }
-    
+
     // Load database from file
     ErrorCode result = load_from_file_internal();
-    
+
     if (result == ErrorCode::SUCCESS) {
-        loaded_.set();
+        if (entry_count_ > 0) {
+            loaded_.set();
+        } else {
+            result = ErrorCode::DATABASE_EMPTY;
+        }
     } else if (result == ErrorCode::DATABASE_LOAD_TIMEOUT ||
                result == ErrorCode::DATABASE_CORRUPTED) {
-        // Use built-in defaults as fallback
-        // add_default_frequencies_internal(); // Removed - method deleted
-        loaded_.set();
-        result = ErrorCode::SUCCESS;
+        if (entry_count_ > 0) {
+            loaded_.set();
+            result = ErrorCode::SUCCESS;
+        } else {
+            result = ErrorCode::DATABASE_EMPTY;
+        }
     }
-    
+
     return result;
 }
 
@@ -651,9 +655,148 @@ ErrorCode DatabaseManager::set_current_index(size_t index) noexcept {
     if (index >= entry_count_) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    
+
     current_index_ = index;
     return ErrorCode::SUCCESS;
+}
+
+ErrorCode DatabaseManager::load_from_freqman_file(const char* filename) noexcept {
+    if (filename == nullptr) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+
+    // Clear existing freqman data
+    freqman_entry_count_ = 0;
+
+    // For now, use the existing load_drone_legend_internal() which provides default frequencies
+    // TODO: Implement actual file I/O when FileWrapper API is available without std::vector
+    ErrorCode result = load_drone_legend_internal();
+
+    if (result == ErrorCode::SUCCESS) {
+        // Update freqman storage from entries_
+        // No reinterpret_cast needed - direct assignment to std::array
+        for (size_t i = 0; i < entry_count_ && freqman_entry_count_ < MAX_DATABASE_ENTRIES; ++i) {
+            freqman_storage_[freqman_entry_count_].frequency_a = entries_[i].frequency;
+            freqman_storage_[freqman_entry_count_].frequency_b = 0;
+            freqman_storage_[freqman_entry_count_].modulation = 255;  // invalid_index
+            freqman_storage_[freqman_entry_count_].bandwidth = 255;
+            freqman_storage_[freqman_entry_count_].step = 255;
+            freqman_storage_[freqman_entry_count_].tone = 255;
+            
+            // Map drone type to description
+            const char* type_name = nullptr;
+            switch (entries_[i].drone_type) {
+                case DroneType::DJI:
+                    type_name = "DJI";
+                    break;
+                case DroneType::FPV:
+                    type_name = "FPV";
+                    break;
+                case DroneType::PARROT:
+                    type_name = "PARROT";
+                    break;
+                case DroneType::YUNEEC:
+                    type_name = "YUNEEC";
+                    break;
+                default:
+                    type_name = "UNKNOWN";
+                    break;
+            }
+            
+            freqman_storage_[freqman_entry_count_].frequency_a = static_cast<int64_t>(entries_[i].frequency);
+            freqman_storage_[freqman_entry_count_].frequency_b = 0;
+            freqman_storage_[freqman_entry_count_].modulation = 255;
+            freqman_storage_[freqman_entry_count_].bandwidth = 255;
+            freqman_storage_[freqman_entry_count_].step = 255;
+            freqman_storage_[freqman_entry_count_].tone = 255;
+            
+            [[maybe_unused]] ErrorCode err = freqman_storage_[freqman_entry_count_].set_description(type_name);
+            (void)err;
+            
+            freqman_storage_[freqman_entry_count_].type = static_cast<freqman_type>(0);
+            
+            freqman_entry_count_++;
+        }
+
+        freqman_loaded_ = true;
+    }
+
+    return result;
+}
+
+const freqman_entry_fixed* DatabaseManager::get_freqman_entry(size_t index) const noexcept {
+    if (index >= freqman_entry_count_) {
+        return nullptr;
+    }
+
+    return &freqman_storage_[index];
+}
+
+size_t DatabaseManager::get_freqman_entry_count() const noexcept {
+    return freqman_entry_count_;
+}
+
+DroneType DatabaseManager::parse_drone_type_from_description(
+    const char* description
+) const noexcept {
+    if (description == nullptr || description[0] == '\0') {
+        return DroneType::UNKNOWN;
+    }
+
+    // Manual comparison to avoid strncmp dependency
+    const char* str = description;
+
+    // Check for "DJI"
+    if (str[0] == 'D' || str[0] == 'd') {
+        if (str[1] == 'J' || str[1] == 'j') {
+            if (str[2] == 'I' || str[2] == 'i') {
+                return DroneType::DJI;
+            }
+        }
+    }
+
+    // Check for "FPV"
+    if (str[0] == 'F' || str[0] == 'f') {
+        if (str[1] == 'P' || str[1] == 'p') {
+            if (str[2] == 'V' || str[2] == 'v') {
+                return DroneType::FPV;
+            }
+        }
+    }
+
+    // Check for "PARROT"
+    if (str[0] == 'P' || str[0] == 'p') {
+        if (str[1] == 'A' || str[1] == 'a') {
+            if (str[2] == 'R' || str[2] == 'r') {
+                if (str[3] == 'R' || str[3] == 'r') {
+                    if (str[4] == 'O' || str[4] == 'o') {
+                        if (str[5] == 'T' || str[5] == 't') {
+                            return DroneType::PARROT;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for "YUNEEC"
+    if (str[0] == 'Y' || str[0] == 'y') {
+        if (str[1] == 'U' || str[1] == 'u') {
+            if (str[2] == 'N' || str[2] == 'n') {
+                if (str[3] == 'E' || str[3] == 'e') {
+                    if (str[4] == 'E' || str[4] == 'e') {
+                        if (str[5] == 'C' || str[5] == 'c') {
+                            return DroneType::YUNEEC;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return DroneType::UNKNOWN;
 }
 
 } // namespace drone_analyzer

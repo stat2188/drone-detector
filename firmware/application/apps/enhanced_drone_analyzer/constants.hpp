@@ -12,14 +12,14 @@ namespace drone_analyzer {
 // ============================================================================
 
 /**
- * @brief Minimum frequency in Hz (2.4 GHz ISM band start)
+ * @brief Minimum frequency in Hz (1 MHz - HackRF One minimum)
  */
-constexpr FreqHz MIN_FREQUENCY_HZ = 2'400'000'000ULL;
+constexpr FreqHz MIN_FREQUENCY_HZ = 1'000'000ULL;
 
 /**
- * @brief Maximum frequency in Hz (2.4835 GHz ISM band end)
+ * @brief Maximum frequency in Hz (7.2 GHz - HackRF One maximum)
  */
-constexpr FreqHz MAX_FREQUENCY_HZ = 2'483'500'000ULL;
+constexpr FreqHz MAX_FREQUENCY_HZ = 7'200'000'000ULL;
 
 /**
  * @brief Frequency step size in Hz (1 MHz)
@@ -275,9 +275,10 @@ constexpr uint32_t FREQUENCY_HOP_INTERVAL_MS = 100;
 // ============================================================================
 
 /**
- * @brief Maximum database entries
+ * @brief Maximum database entries (reduced for memory constraints)
+ * @note 128 entries × 80 bytes = 10,240 bytes (manageable)
  */
-constexpr size_t MAX_DATABASE_ENTRIES = 500;
+constexpr size_t MAX_DATABASE_ENTRIES = 128;
 
 /**
  * @brief Database file path
@@ -623,6 +624,45 @@ constexpr uint32_t UI_REFRESH_INTERVAL_MS = 16;
  * @brief Target scan rate (frequencies per second)
  */
 constexpr uint32_t TARGET_SCAN_RATE_HZ = 10;
+
+// ============================================================================
+// Fast Scanner Constants
+// ============================================================================
+
+/**
+ * @brief Scanner sleep time per frequency (ms)
+ * @note 50ms = 20 frequencies/second
+ */
+constexpr uint32_t SCANNER_SLEEP_MS = 50;
+
+/**
+ * @brief Statistics updates per second
+ */
+constexpr uint32_t STATISTICS_UPDATES_PER_SEC = 10;
+
+/**
+ * @brief Maximum frequency lock cycles
+ * @note 10 cycles × 50ms = 500ms to verify signal
+ */
+constexpr uint32_t MAX_FREQ_LOCK = 10;
+
+/**
+ * @brief Signal lock time (ms)
+ * @note 10 × 50ms = 500ms
+ */
+constexpr uint32_t SIGNAL_LOCK_TIME_MS = 500;
+
+/**
+ * @brief Drone type display duration (ms)
+ * @note 500ms for showing "FPV", "DJI", etc.
+ */
+constexpr uint32_t DRONE_TYPE_DISPLAY_DURATION_MS = 500;
+
+/**
+ * @brief Maximum drone type display length
+ * @note 4 characters + null terminator
+ */
+constexpr size_t MAX_DRONE_TYPE_DISPLAY = 4;
 
 // ============================================================================
 // Debug Constants

@@ -4,7 +4,8 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
-#include "../../freqman_db.hpp"
+#include <cstring>
+#include <new>
 #include "drone_types.hpp"
 #include "error_handler.hpp"
 #include "locking.hpp"
@@ -121,13 +122,38 @@ public:
      * @return ErrorCode::SUCCESS if added, error code otherwise
      */
     [[nodiscard]] ErrorCode add_entry(const FrequencyEntry& entry) noexcept;
-    
+
     /**
      * @brief Remove entry from database
      * @param frequency Frequency to remove
      * @return ErrorCode::SUCCESS if removed, error code otherwise
      */
     [[nodiscard]] ErrorCode remove_entry(FreqHz frequency) noexcept;
+
+    // ========================================================================
+    // FreqmanDB Integration Methods (no std::vector, no std::string)
+    // ========================================================================
+
+    /**
+     * @brief Load frequencies from Freqman file
+     * @param filename Filename (without extension, e.g., "DRONES")
+     * @return ErrorCode::SUCCESS if loaded, error code otherwise
+     * @note Uses freqman_entry_fixed (embedded-compatible, no heap)
+     */
+    [[nodiscard]] ErrorCode load_from_freqman_file(const char* filename) noexcept;
+
+    /**
+     * @brief Get freqman entry by index
+     * @param index Entry index
+     * @return Pointer to entry or nullptr if out of range
+     */
+    [[nodiscard]] const freqman_entry_fixed* get_freqman_entry(size_t index) const noexcept;
+
+    /**
+     * @brief Get total number of freqman entries
+     * @return Number of entries
+     */
+    [[nodiscard]] size_t get_freqman_entry_count() const noexcept;
     
     /**
      * @brief Clear all entries
@@ -154,6 +180,28 @@ private:
      * @return ErrorCode::SUCCESS if loaded, error code otherwise
      */
     [[nodiscard]] ErrorCode load_from_file_internal() noexcept;
+
+    // ========================================================================
+    // FreqmanDB Storage (embedded-compatible, aligned, no heap)
+    // ========================================================================
+
+    /**
+     * @brief Freqman entries storage (aligned array, no heap allocation)
+     * @note Uses freqman_entry_fixed (no std::string)
+     * @note Properly aligned for ARM Cortex-M4 (8-byte alignment)
+     */
+    alignas(alignof(freqman_entry_fixed))
+    std::array<freqman_entry_fixed, MAX_DATABASE_ENTRIES> freqman_storage_;
+
+    /**
+     * @brief Number of loaded freqman entries
+     */
+    size_t freqman_entry_count_{0};
+
+    /**
+     * @brief Freqman database loaded flag
+     */
+    bool freqman_loaded_{false};
     
     /**
      * @brief Internal: Parse line from database file
@@ -183,12 +231,26 @@ private:
     [[nodiscard]] ErrorResult<size_t> find_entry_index_internal(
         FreqHz frequency
     ) const noexcept;
-    
+
     /**
       * @brief Internal: Load drone legend from DRONES.TXT
       * @note Populates entries_ with drone types and threat levels
       */
     ErrorCode load_drone_legend_internal() noexcept;
+
+    // ========================================================================
+    // FreqmanDB Internal Methods
+    // ========================================================================
+
+    /**
+     * @brief Parse drone type from freqman description
+     * @param description Description string from freqman entry
+     * @return Drone type (UNKNOWN if not recognized)
+     * @note Supports: DJI, FPV, PARROT, YUNEEC (max 4 chars)
+     */
+    [[nodiscard]] DroneType parse_drone_type_from_description(
+        const char* description
+    ) const noexcept;
     
     // Database storage (fixed-size array, no heap allocation)
     std::array<FrequencyEntry, MAX_DATABASE_ENTRIES> entries_;

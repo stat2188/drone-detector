@@ -1,9 +1,311 @@
 #include "constants.hpp"
 #include "drone_types.hpp"
+#include <cstring>
 #include <cstdint>
 #include <cstddef>
 
 namespace drone_analyzer {
+
+// ============================================================================
+// freqman_entry_fixed Implementation
+// ============================================================================
+
+freqman_entry_fixed::freqman_entry_fixed() noexcept
+    : frequency_a{0}
+    , frequency_b{0}
+    , description{'\0'}
+    , type{static_cast<freqman_type>(0)}
+    , modulation{255}
+    , bandwidth{255}
+    , step{255}
+    , tone{255} {
+}
+
+freqman_entry_fixed::freqman_entry_fixed(
+    int64_t freq_a,
+    int64_t freq_b,
+    const char* desc,
+    freqman_type t
+) noexcept
+    : frequency_a{freq_a}
+    , frequency_b{freq_b}
+    , description{'\0'}
+    , type{t}
+    , modulation{255}
+    , bandwidth{255}
+    , step{255}
+    , tone{255} {
+    
+    if (desc != nullptr) {
+        [[maybe_unused]] ErrorCode err = set_description(desc);
+        (void)err;
+    }
+}
+
+ErrorCode freqman_entry_fixed::set_description(const char* src) noexcept {
+    if (src == nullptr) {
+        description[0] = '\0';
+        return ErrorCode::SUCCESS;
+    }
+    
+    size_t i = 0;
+    while (i < 31 && src[i] != '\0') {
+        description[i] = src[i];
+        ++i;
+    }
+    description[i] = '\0';
+    
+    return ErrorCode::SUCCESS;
+}
+
+bool freqman_entry_fixed::is_valid() const noexcept {
+    return (frequency_a >= MIN_FREQUENCY_HZ) &&
+           (frequency_a <= MAX_FREQUENCY_HZ) &&
+           (frequency_b >= 0);
+}
+
+// ============================================================================
+// TrackedDrone Implementation
+// ============================================================================
+
+TrackedDrone::TrackedDrone() noexcept
+    : frequency{0}
+    , drone_type{DroneType::UNKNOWN}
+    , threat_level{ThreatLevel::NONE}
+    , update_count{0}
+    , last_seen{0}
+    , rssi{RSSI_NOISE_FLOOR_DBM}
+    , rssi_history_{0}
+    , timestamp_history_{0}
+    , history_index_{0} {
+}
+
+TrackedDrone::TrackedDrone(
+    FreqHz freq,
+    DroneType type,
+    ThreatLevel threat
+) noexcept
+    : frequency{freq}
+    , drone_type{type}
+    , threat_level{threat}
+    , update_count{0}
+    , last_seen{0}
+    , rssi{RSSI_NOISE_FLOOR_DBM}
+    , rssi_history_{0}
+    , timestamp_history_{0}
+    , history_index_{0} {
+}
+
+void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcept {
+    if (update_count < RSSI_HISTORY_SIZE) {
+        rssi_history_[update_count] = static_cast<int16_t>(new_rssi);
+        timestamp_history_[update_count] = timestamp;
+    } else {
+        rssi_history_[history_index_] = static_cast<int16_t>(new_rssi);
+        timestamp_history_[history_index_] = timestamp;
+        history_index_ = (history_index_ + 1) % RSSI_HISTORY_SIZE;
+    }
+    
+    rssi = new_rssi;
+    last_seen = timestamp;
+    update_count++;
+    
+    // Update threat level based on new RSSI
+    if (new_rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
+        threat_level = ThreatLevel::CRITICAL;
+    } else if (new_rssi >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
+        threat_level = ThreatLevel::HIGH;
+    } else if (new_rssi >= RSSI_DETECTION_THRESHOLD_DBM) {
+        threat_level = ThreatLevel::MEDIUM;
+    } else {
+        threat_level = ThreatLevel::LOW;
+    }
+}
+
+RssiValue TrackedDrone::get_average_rssi() const noexcept {
+    if (update_count == 0) {
+        return rssi;
+    }
+    
+    int32_t sum = 0;
+    uint8_t count = 0;
+    
+    for (size_t i = 0; i < RSSI_HISTORY_SIZE && i < static_cast<size_t>(update_count); ++i) {
+        sum += rssi_history_[i];
+        count++;
+    }
+    
+    if (count == 0) {
+        return rssi;
+    }
+    
+    return sum / count;
+}
+
+bool TrackedDrone::is_stale(SystemTime current_time, SystemTime timeout_ms) const noexcept {
+    if (update_count == 0) {
+        return true;
+    }
+    
+    const uint32_t elapsed = current_time - last_seen;
+    return elapsed >= timeout_ms;
+}
+
+// ============================================================================
+// Other Struct Implementations
+// ============================================================================
+
+PhaseCompletion::PhaseCompletion() noexcept
+    : buffers_allocated{0}
+    , database_loaded{0}
+    , hardware_ready{0}
+    , ui_layout_ready{0}
+    , settings_loaded{0}
+    , finalized{0}
+    , reserved{0} {
+}
+
+bool PhaseCompletion::is_complete() const noexcept {
+    return buffers_allocated && database_loaded && hardware_ready &&
+           ui_layout_ready && settings_loaded && finalized;
+}
+
+void PhaseCompletion::reset() noexcept {
+    buffers_allocated = 0;
+    database_loaded = 0;
+    hardware_ready = 0;
+    ui_layout_ready = 0;
+    settings_loaded = 0;
+    finalized = 0;
+}
+
+FrequencyHopDetector::FrequencyHopDetector() noexcept
+    : base_frequency{0}
+    , last_frequency{0}
+    , hop_count{0}
+    , hop_threshold{3}
+    , last_hop_time{0}
+    , hop_interval_ms{100}
+    , reserved{0} {
+}
+
+bool FrequencyHopDetector::detect_hop(FreqHz current_freq, SystemTime current_time) noexcept {
+    if (base_frequency == 0) {
+        base_frequency = current_freq;
+        return false;
+    }
+    
+    const FreqHz diff = (current_freq > last_frequency) ?
+                       (current_freq - last_frequency) :
+                       (last_frequency - current_freq);
+    
+    if (diff >= FREQUENCY_HOP_THRESHOLD_HZ) {
+        const uint32_t elapsed = current_time - last_hop_time;
+        if (elapsed >= hop_interval_ms) {
+            hop_count++;
+            last_hop_time = current_time;
+            
+            if (hop_count >= hop_threshold) {
+                return true;
+            }
+        }
+    } else {
+        hop_count = 0;
+    }
+    
+    last_frequency = current_freq;
+    return false;
+}
+
+void FrequencyHopDetector::reset() noexcept {
+    base_frequency = 0;
+    last_frequency = 0;
+    hop_count = 0;
+    last_hop_time = 0;
+}
+
+WidebandScanData::WidebandScanData() noexcept {
+    std::memset(spectrum_buffer, 0, sizeof(spectrum_buffer));
+    noise_floor = 10;
+    signal_threshold = 20;
+    peak_index = 0;
+    peak_frequency = 0;
+    peak_amplitude = 0;
+    scan_time = 0;
+    scan_complete = 0;
+    std::memset(reserved, 0, sizeof(reserved));
+}
+
+void WidebandScanData::clear() noexcept {
+    std::memset(spectrum_buffer, 0, sizeof(spectrum_buffer));
+    noise_floor = 10;
+    signal_threshold = 20;
+    peak_index = 0;
+    peak_frequency = 0;
+    peak_amplitude = 0;
+    scan_time = 0;
+    scan_complete = 0;
+}
+
+bool WidebandScanData::is_complete() const noexcept {
+    return scan_complete != 0;
+}
+
+ScannerStateSnapshot::ScannerStateSnapshot() noexcept
+    : max_detected_threat{ThreatLevel::NONE}
+    , approaching_count{0}
+    , static_count{0}
+    , receding_count{0}
+    , scanning_active{false}
+    , is_fresh{false} {
+}
+
+DisplayData::DisplayData() noexcept
+    : drone_count{0} {
+    clear();
+}
+
+void DisplayData::clear() noexcept {
+    drone_count = 0;
+    state.max_detected_threat = ThreatLevel::NONE;
+    state.approaching_count = 0;
+    state.static_count = 0;
+    state.receding_count = 0;
+    state.scanning_active = false;
+    state.is_fresh = false;
+}
+
+void DisplayDroneEntry::set_color_from_threat() noexcept {
+    switch (threat) {
+        case ThreatLevel::CRITICAL:
+            display_color = COLOR_CRITICAL_THREAT;
+            break;
+        case ThreatLevel::HIGH:
+            display_color = COLOR_HIGH_THREAT;
+            break;
+        case ThreatLevel::MEDIUM:
+            display_color = COLOR_MEDIUM_THREAT;
+            break;
+        case ThreatLevel::LOW:
+            display_color = COLOR_LOW_THREAT;
+            break;
+        case ThreatLevel::NONE:
+        default:
+            display_color = COLOR_UNKNOWN_THREAT;
+            break;
+    }
+}
+
+DisplayDroneEntry::DisplayDroneEntry() noexcept
+    : frequency{0}
+    , type{DroneType::UNKNOWN}
+    , threat{ThreatLevel::NONE}
+    , rssi{RSSI_NOISE_FLOOR_DBM}
+    , last_seen{0}
+    , type_name{'\0'}
+    , display_color{0xFFFFFFFF}
+    , trend{MovementTrend::UNKNOWN} {
+}
 
 const char* drone_type_to_string(DroneType type) noexcept {
     switch (type) {

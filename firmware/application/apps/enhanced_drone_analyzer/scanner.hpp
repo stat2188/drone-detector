@@ -21,9 +21,11 @@ namespace drone_analyzer {
  */
 enum class ScannerState : uint8_t {
     IDLE = 0,
-    SCANNING = 1,
-    PAUSED = 2,
-    ERROR = 3
+    SCANNING = 1,        // Scanning frequencies (grey color)
+    LOCKING = 2,         // Verifying signal (yellow color, 500ms)
+    TRACKING = 3,        // Tracking confirmed signal (green/red color)
+    PAUSED = 4,
+    ERROR = 5
 };
 
 /**
@@ -233,6 +235,36 @@ public:
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] size_t get_tracked_count() const noexcept;
+
+    // ========================================================================
+    // Fast Scanner Integration Methods
+    // ========================================================================
+
+    /**
+     * @brief Get current drone type string
+     * @return Drone type string (max 4 characters)
+     * @note Only valid during LOCKING state
+     * @note Thread-safe: acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    [[nodiscard]] const char* get_current_drone_type() const noexcept;
+
+    /**
+     * @brief Get freq lock count
+     * @return Current lock count (0-10)
+     */
+    [[nodiscard]] uint32_t get_freq_lock_count() const noexcept;
+
+    /**
+     * @brief Set freq lock count
+     * @param count Lock count
+     */
+    void set_freq_lock_count(uint32_t count) noexcept;
+
+    /**
+     * @brief Get locked frequency
+     * @return Locked frequency (0 if not tracking)
+     */
+    [[nodiscard]] FreqHz get_locked_frequency() const noexcept;
     
     /**
      * @brief Clear all tracked drones
@@ -366,6 +398,13 @@ private:
     
     // Scan configuration
     ScanConfig config_;
+
+    // Fast scanner state (protected by mutex_)
+    uint32_t freq_lock_count_{0};              // Frequency lock counter (0-10)
+    FreqHz locked_frequency_{0};                // Locked frequency for tracking
+    SystemTime track_start_time_{0};           // Tracking start time
+    char current_drone_type_[5]{'\0', '\0', '\0', '\0', '\0'};  // All bytes initialized
+    bool drone_type_valid_{false};              // Drone type valid flag
     
     // Scan statistics
     ScanStatistics statistics_;

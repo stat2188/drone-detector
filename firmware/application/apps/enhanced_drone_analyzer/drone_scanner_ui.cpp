@@ -1,11 +1,23 @@
 #include "drone_scanner_ui.hpp"
-#include "ui.hpp"  // Will provide ui::View, Painter, etc.
+#include "ui.hpp"
+#include "scanner.hpp"
+#include "database.hpp"
+#include <cstring>
+#include <cstdio>
+#include <cinttypes>
 
 namespace drone_analyzer {
 
 constexpr uint32_t KEY_START_STOP = 0x01;
 constexpr uint32_t KEY_MODE = 0x02;
 constexpr uint32_t KEY_SETTINGS = 0x03;
+
+constexpr uint16_t LNA_X = 4;
+constexpr uint16_t LNA_Y = 0;
+constexpr uint16_t VGA_X = 11;
+constexpr uint16_t VGA_Y = 0;
+constexpr uint16_t RFAMP_X = 18;
+constexpr uint16_t RFAMP_Y = 0;
 
 // ============================================================================
 // Constructor / Destructor
@@ -14,6 +26,31 @@ constexpr uint32_t KEY_SETTINGS = 0x03;
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : ui::View()
     , nav_(nav)
+    , hardware_()
+    , database_()
+    , scanner_(database_, hardware_)
+    , radio_state_{ReceiverModel::Mode::SpectrumAnalysis}
+    , big_display_{{4, 6 * 16, 28 * 8, 52}, 0}
+    , field_lna_{Point{LNA_X, LNA_Y}}
+    , field_vga_{Point{VGA_X, VGA_Y}}
+    , field_rf_amp_{Point{RFAMP_X, RFAMP_Y}}
+    , message_handler_retune_{
+          Message::ID::Retune,
+          [this](Message* const p) {
+              const auto msg = *reinterpret_cast<const RetuneMessage*>(p);
+              this->handle_retune(msg.freq, msg.range);
+          }}
+    , message_handler_stats_{
+          Message::ID::ChannelStatistics,
+          [this](Message* const p) {
+              const auto msg = *reinterpret_cast<const ChannelStatisticsMessage*>(p);
+              this->handle_statistics(msg.statistics);
+          }}
+    , current_frequency_(0)
+    , current_rssi_(-120)
+    , current_scanner_state_(ScannerState::IDLE)
+    , displayed_drone_type_{'\0'}
+    , drone_type_display_timer_(0)
     , display_data_()
     , scanning_(false)
     , scanning_mode_(DEFAULT_SCANNING_MODE)
@@ -35,6 +72,27 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , button_height_(30)
     , button_spacing_(10) {
     display_data_.clear();
+
+    // Load DRONES.TXT from freqman
+    ErrorCode err = database_.load_from_freqman_file("DRONES");
+    if (err != ErrorCode::SUCCESS) {
+        show_error(err, 3000);
+    }
+
+    // Initialize scanner
+    err = scanner_.initialize();
+    if (err != ErrorCode::SUCCESS) {
+        show_error(err, 3000);
+        return;
+    }
+
+    // Add children to UI tree
+    add_children({
+        &field_lna_,
+        &field_vga_,
+        &field_rf_amp_,
+        &big_display_,
+    });
 }
 
 DroneScannerUI::~DroneScannerUI() noexcept {
@@ -262,18 +320,177 @@ const DisplayData& DroneScannerUI::get_display_data() const noexcept {
 }
 
 // ============================================================================
+// Message Handlers
+// ============================================================================
+
+void DroneScannerUI::handle_retune(int64_t freq, uint32_t range) noexcept {
+    (void)range;  // Unused parameter (matches RetuneMessage structure)
+    current_frequency_ = freq;
+
+    // Update scanner thread state
+    scanner_.set_freq_lock_count(0);  // Reset lock for new frequency
+
+    // Update UI state
+    update_ui_state();
+}
+
+void DroneScannerUI::handle_statistics(const ChannelStatistics& statistics) noexcept {
+    current_rssi_ = statistics.max_db;
+
+    // Update UI state based on scanner state and RSSI
+    update_ui_state();
+}
+
+void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
+    // Set BigFrequency style based on color
+    switch (color) {
+        case BigDisplayColor::GREY:
+            big_display_.set_style(Theme::getInstance()->fg_medium);
+            break;
+        case BigDisplayColor::YELLOW:
+            big_display_.set_style(Theme::getInstance()->fg_yellow);
+            break;
+        case BigDisplayColor::GREEN:
+            big_display_.set_style(Theme::getInstance()->fg_green);
+            break;
+        case BigDisplayColor::RED:
+            big_display_.set_style(Theme::getInstance()->fg_red);
+            break;
+        default:
+            break;
+    }
+
+    // Update frequency display
+    big_display_.set(current_frequency_);
+}
+
+void DroneScannerUI::update_ui_state() noexcept {
+    // Get current scanner state
+    current_scanner_state_ = scanner_.get_state();
+
+    // Determine BigFrequency color
+    BigDisplayColor color = BigDisplayColor::GREY;
+
+    switch (current_scanner_state_) {
+        case ScannerState::SCANNING:
+            color = BigDisplayColor::GREY;
+            break;
+        case ScannerState::LOCKING:
+            color = BigDisplayColor::YELLOW;
+            break;
+        case ScannerState::TRACKING:
+            // Determine color by RSSI
+            if (current_rssi_ >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
+                color = BigDisplayColor::RED;
+            } else {
+                color = BigDisplayColor::GREEN;
+            }
+            break;
+        default:
+            color = BigDisplayColor::GREY;
+            break;
+    }
+
+    bigdisplay_update(color);
+
+    // Show drone type if in LOCKING state
+    if (current_scanner_state_ == ScannerState::LOCKING) {
+        // Get drone type from scanner
+        const char* drone_type = scanner_.get_current_drone_type();
+
+        if (drone_type[0] != '\0') {
+            // Safe copy with bounds check
+            size_t copy_len = 0;
+            while (copy_len < MAX_DRONE_TYPE_DISPLAY && drone_type[copy_len] != '\0') {
+                displayed_drone_type_[copy_len] = drone_type[copy_len];
+                copy_len++;
+            }
+            displayed_drone_type_[copy_len] = '\0';
+
+            // Start display timer (500ms)
+            drone_type_display_timer_ = chTimeNow();
+        }
+    } else {
+        // Clear drone type in other states
+        displayed_drone_type_[0] = '\0';
+        drone_type_display_timer_ = 0;
+    }
+}
+
+// ============================================================================
 // Drawing Methods
 // ============================================================================
 
 void DroneScannerUI::draw_scanner_header(Painter& painter) noexcept {
-    // Will use ui::Painter when available
-    (void)painter;
+    // BigFrequency already added as child widget, no need to draw
+    // Check drone type display timer (uint32_t overflow-safe)
+    if (drone_type_display_timer_ != 0) {
+        SystemTime now = chTimeNow();
+        
+        // Use uint32_t wrap-safe subtraction
+        const uint32_t elapsed = now - drone_type_display_timer_;
+        if (elapsed >= DRONE_TYPE_DISPLAY_DURATION_MS) {
+            // Timer expired, clear drone type
+            displayed_drone_type_[0] = '\0';
+            drone_type_display_timer_ = 0;
+        }
+    }
+
+    // Draw drone type next to BigFrequency if present
+    if (displayed_drone_type_[0] != '\0') {
+        // Position: right of BigFrequency
+        // BigFrequency position: {4, 6 * 16, 28 * 8, 52}
+        // Width = 28 * 8 = 224 pixels
+        // X position: 4 + 224 + 5 = 233
+
+        uint16_t drone_type_x = 4 + (28 * 8) + 5;
+        uint16_t drone_type_y = 6 * 16 + 20;  // Shift down 20px
+
+        // Red color for drone type
+        const auto& drone_type_style = *Theme::getInstance()->fg_red;
+
+        draw_text(painter, displayed_drone_type_, drone_type_x, drone_type_y, drone_type_style);
+    }
 }
 
 void DroneScannerUI::draw_scanner_status(Painter& painter, uint16_t start_y) noexcept {
-    // Will use ui::Painter when available
-    (void)painter;
-    (void)start_y;
+    // Get text style from theme
+    const auto& text_style = *Theme::getInstance()->bg_darkest_small;
+
+    // Draw RSSI
+    char rssi_text[32];
+    snprintf(rssi_text, sizeof(rssi_text), "RSSI: %d dBm", static_cast<int>(current_rssi_));
+    draw_text(painter, rssi_text, 5, start_y + 100, text_style);
+
+    // Draw scanner state
+    const char* state_text = "IDLE";
+    switch (current_scanner_state_) {
+        case ScannerState::SCANNING:
+            state_text = "SCANNING";
+            break;
+        case ScannerState::LOCKING:
+            state_text = "LOCKING";
+            break;
+        case ScannerState::TRACKING:
+            state_text = "TRACKING";
+            break;
+        case ScannerState::PAUSED:
+            state_text = "PAUSED";
+            break;
+        default:
+            state_text = "IDLE";
+    }
+
+    draw_text(painter, state_text, 5, start_y + 120, text_style);
+
+    // Draw progress (index/total)
+    if (scanner_.is_scanning()) {
+        char freq_info[64];
+        size_t total = database_.get_database_size();
+
+        snprintf(freq_info, sizeof(freq_info), "?/%zu", total);
+        draw_text(painter, freq_info, 5, start_y + 140, text_style);
+    }
 }
 
 void DroneScannerUI::draw_threat_summary(Painter& painter, uint16_t start_y) noexcept {
@@ -360,14 +577,13 @@ void DroneScannerUI::draw_text(
     const char* text,
     uint16_t x,
     uint16_t y,
-    uint32_t color
+    const ui::Style& style
 ) noexcept {
-    // Will use ui::Painter when available
-    (void)painter;
-    (void)text;
-    (void)x;
-    (void)y;
-    (void)color;
+    if (text == nullptr || text[0] == '\0') {
+        return;
+    }
+    // Draw string directly (no std::string_view needed for C-string)
+    painter.draw_string(Point{x, y}, style, text);
 }
 
 void DroneScannerUI::draw_rectangle(
