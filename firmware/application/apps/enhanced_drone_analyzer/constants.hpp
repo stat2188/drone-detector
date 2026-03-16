@@ -61,8 +61,9 @@ constexpr size_t HISTOGRAM_BUFFER_SIZE = 128;
 
 /**
  * @brief RSSI history size for each drone
+ * @note Must be >= MOVEMENT_TREND_MIN_HISTORY for trend calculation
  */
-constexpr size_t RSSI_HISTORY_SIZE = 3;
+constexpr size_t RSSI_HISTORY_SIZE = 6;
 
 /**
  * @brief Timestamp history size for each drone
@@ -242,6 +243,11 @@ constexpr size_t CRITICAL_THREAT_APPROACHING_COUNT = 5;
  * @brief Default scanning mode
  */
 constexpr ScanningMode DEFAULT_SCANNING_MODE = ScanningMode::SEQUENTIAL;
+
+/**
+ * @brief Number of scanning modes
+ */
+constexpr uint8_t SCANNING_MODE_COUNT = 4;
 
 /**
  * @brief Maximum scan cycles before timeout
@@ -512,6 +518,43 @@ constexpr const char* DRONE_TYPE_CUSTOM = "Custom";
  * @brief String for other drone type
  */
 constexpr const char* DRONE_TYPE_OTHER = "Other";
+
+// ============================================================================
+// Movement Trend Constants
+// ============================================================================
+
+/**
+ * @brief Threshold for drone approaching detection (dB)
+ * @note RSSI increase of 3 dB means drone is getting closer
+ */
+constexpr int32_t MOVEMENT_TREND_THRESHOLD_APPROACHING_DB = 3;
+
+/**
+ * @brief Threshold for drone receding detection (dB)
+ * @note RSSI decrease of 3 dB means drone is moving away
+ */
+constexpr int32_t MOVEMENT_TREND_THRESHOLD_RECEEDING_DB = -3;
+
+/**
+ * @brief Minimum history samples for trend calculation
+ * @note Need at least 3 samples for reliable trend
+ * @note Must be <= RSSI_HISTORY_SIZE
+ */
+constexpr uint8_t MOVEMENT_TREND_MIN_HISTORY = 3;
+
+/**
+ * @brief Silence threshold for RSSI filtering (dBm)
+ * @note RSSI values below -110 dBm are ignored as noise
+ */
+constexpr int32_t MOVEMENT_TREND_SILENCE_THRESHOLD_DBM = -110;
+
+/**
+ * @brief Movement trend symbols for UI display
+ */
+constexpr char MOVEMENT_TREND_SYMBOL_APPROACHING = '<';
+constexpr char MOVEMENT_TREND_SYMBOL_RECEEDING = '>';
+constexpr char MOVEMENT_TREND_SYMBOL_STATIC = '~';
+constexpr char MOVEMENT_TREND_SYMBOL_UNKNOWN = '-';
 
 // ============================================================================
 // Status Messages (Flash Storage)

@@ -11,10 +11,6 @@
 #include "error_handler.hpp"
 #include "locking.hpp"
 
-namespace ui {
-class NavigationView;
-}
-
 namespace drone_analyzer {
 
 /**
@@ -26,9 +22,8 @@ class DroneScannerUI : public ui::View {
 public:
     /**
      * @brief Constructor
-     * @param nav Navigation view reference
      */
-    explicit DroneScannerUI(NavigationView& nav) noexcept;
+    explicit DroneScannerUI() noexcept;
 
     /**
      * @brief Destructor
@@ -117,11 +112,11 @@ public:
     void clear_error() noexcept;
     
     /**
-     * @brief Handle audio alert
-     * @param alert_type Alert type
-     * @param priority Alert priority (0=LOW, 1=MEDIUM, 2=HIGH, 3=CRITICAL)
+     * @brief Handle audio alert based on threat level
+     * @param threat_level Threat level calculated from RSSI
+     * @note Audio tone: CRITICAL=1500Hz, HIGH=1200Hz, MEDIUM=1000Hz, LOW/none=silent
      */
-    void on_alert(AlertType alert_type, uint8_t priority) noexcept;
+    void on_alert(ThreatLevel threat_level) noexcept;
     
 private:
     /**

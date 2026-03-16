@@ -3,11 +3,15 @@
 
 namespace drone_analyzer {
 
+constexpr uint32_t KEY_START_STOP = 0x01;
+constexpr uint32_t KEY_MODE = 0x02;
+constexpr uint32_t KEY_SETTINGS = 0x03;
+
 // ============================================================================
 // Constructor / Destructor
 // ============================================================================
 
-DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
+DroneScannerUI::DroneScannerUI() noexcept
     : ui::View()
     , display_data_()
     , scanning_(false)
@@ -29,7 +33,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , button_width_(70)
     , button_height_(30)
     , button_spacing_(10) {
-    // Initialize display data
     display_data_.clear();
 }
 
@@ -42,32 +45,23 @@ DroneScannerUI::~DroneScannerUI() noexcept {
 // ============================================================================
 
 void DroneScannerUI::paint(Painter& painter) {
-    // Clear display
-    // draw_rectangle(painter, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, COLOR_BACKGROUND);
-    
     uint16_t y_offset = 5;
     
-    // Draw header
     draw_scanner_header(painter);
     y_offset += header_height_;
     
-    // Draw status
     draw_scanner_status(painter, y_offset);
     y_offset += status_height_;
     
-    // Draw threat summary
     draw_threat_summary(painter, y_offset);
     y_offset += threat_summary_height_;
     
-    // Draw control buttons
     draw_control_buttons(painter, y_offset);
     
-    // Draw alert overlay if active
     if (is_alert_active()) {
         draw_alert_overlay(painter);
     }
     
-    // Draw error overlay if active
     if (is_error_active()) {
         draw_error_overlay(painter);
     }
@@ -108,13 +102,13 @@ ErrorCode DroneScannerUI::handle_user_input(uint32_t key) noexcept {
 
 ErrorCode DroneScannerUI::process_key_input(uint32_t key) noexcept {
     switch (key) {
-        case 0x01:  // Start/Stop key
+        case KEY_START_STOP:
             return handle_start_stop_key();
         
-        case 0x02:  // Mode key
+        case KEY_MODE:
             return handle_mode_key();
         
-        case 0x03:  // Settings key
+        case KEY_SETTINGS:
             return handle_settings_key();
         
         default:
@@ -131,10 +125,9 @@ ErrorCode DroneScannerUI::handle_start_stop_key() noexcept {
 }
 
 ErrorCode DroneScannerUI::handle_mode_key() noexcept {
-    // Cycle through scanning modes
-    uint8_t current_mode = static_cast<uint8_t>(scanning_mode_);
-    current_mode = (current_mode + 1) % 4;
-    scanning_mode_ = static_cast<ScanningMode>(current_mode);
+    const uint8_t current_mode = static_cast<uint8_t>(scanning_mode_);
+    const uint8_t next_mode = (current_mode + 1) % SCANNING_MODE_COUNT;
+    scanning_mode_ = static_cast<ScanningMode>(next_mode);
     
     return ErrorCode::SUCCESS;
 }
@@ -155,25 +148,22 @@ void DroneScannerUI::show_alert(const char* message, uint32_t duration_ms) noexc
         return;
     }
     
-    // Copy alert message
     size_t i = 0;
-    while (i < alert_message_.size() - 1 && message[i] != '\0') {
+    while (i < MAX_TEXT_LENGTH - 1 && message[i] != '\0') {
         alert_message_[i] = message[i];
         ++i;
     }
     alert_message_[i] = '\0';
     
-    // Set alert state
     alert_active_ = true;
-    alert_start_time_ = 0;  // Will be set when ChibiOS is available
+    alert_start_time_ = chTimeNow();
     alert_duration_ms_ = duration_ms;
 }
 
 void DroneScannerUI::show_error(ErrorCode error, uint32_t duration_ms) noexcept {
-    // Set error state
     error_active_ = true;
     last_error_ = error;
-    error_start_time_ = 0;  // Will be set when ChibiOS is available
+    error_start_time_ = chTimeNow();
     error_duration_ms_ = duration_ms;
 }
 
@@ -191,41 +181,31 @@ void DroneScannerUI::clear_error() noexcept {
 // Audio Alert Handling
 // ============================================================================
 
-void DroneScannerUI::on_alert(AlertType alert_type, uint8_t priority) noexcept {
-    // Alert priority mapping
-    // 0=LOW (visual only), 1=MEDIUM, 2=HIGH, 3=CRITICAL
-    
-    // Play audio alert
-    AudioAlertManager::play_alert(alert_type);
-    
-    // Map alert type to alert message
+void DroneScannerUI::on_alert(ThreatLevel threat_level) noexcept {
     const char* alert_message = nullptr;
     uint32_t alert_duration_ms = 2000;
-    
-    switch (alert_type) {
-        case AlertType::NEW_DRONE:
-            alert_message = "NEW DRONE";
-            alert_duration_ms = 2000;
-            break;
-        case AlertType::THREAT_INCREASED:
-            alert_message = "THREAT UP";
-            alert_duration_ms = 2000;
-            break;
-        case AlertType::THREAT_CRITICAL:
+
+    switch (threat_level) {
+        case ThreatLevel::CRITICAL:
             alert_message = "CRITICAL";
             alert_duration_ms = 3000;
             break;
-        case AlertType::DRONE_APPROACHING:
-            alert_message = "APPROACHING";
+        case ThreatLevel::HIGH:
+            alert_message = "HIGH THREAT";
+            alert_duration_ms = 2500;
+            break;
+        case ThreatLevel::MEDIUM:
+            alert_message = "THREAT";
             alert_duration_ms = 2000;
             break;
-        case AlertType::DRONE_RECEDING:
-            alert_message = "RECEDING";
-            alert_duration_ms = 2000;
-            break;
+        case ThreatLevel::LOW:
+        case ThreatLevel::NONE:
+        default:
+            return;
     }
-    
-    // Show alert on display
+
+    AudioAlertManager::play_alert(threat_level);
+
     if (alert_message != nullptr) {
         show_alert(alert_message, alert_duration_ms);
     }

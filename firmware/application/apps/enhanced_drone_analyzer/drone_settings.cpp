@@ -598,6 +598,12 @@ void DroneSettingsView::apply_settings() noexcept {
     // This will be implemented when system integration is available
 }
 
+ErrorCode DroneSettingsView::open_legend_editor() noexcept {
+    // TODO: Navigate to DroneLegendEditorView
+    // nav_.push<DroneLegendEditorView>();
+    return ErrorCode::SUCCESS;
+}
+
 void DroneSettingsView::notify_settings_changed() noexcept {
     // Notify listeners of settings change
     // This will be implemented when observer pattern is available

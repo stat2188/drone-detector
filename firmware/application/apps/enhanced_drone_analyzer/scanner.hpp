@@ -71,10 +71,10 @@ struct ScanStatistics {
 
 /**
  * @brief Alert callback function type
- * @param alert_type Alert type
- * @param priority Alert priority (0=LOW, 1=MEDIUM, 2=HIGH, 3=CRITICAL)
+ * @param threat_level Threat level based on RSSI
+ * @note Audio tone varies by threat: CRITICAL=1500Hz, HIGH=1200Hz, MEDIUM=1000Hz
  */
-using AlertCallback = void(*)(AlertType alert_type, uint8_t priority);
+using ThreatAlertCallback = void(*)(ThreatLevel threat_level);
 
 /**
  * @brief Drone scanner
@@ -256,16 +256,16 @@ public:
      * @warning The callback MUST NOT acquire any mutexes or perform blocking operations
      * @warning The callback MUST execute quickly (preferably < 1ms) to avoid delaying scanner thread
      */
-    void set_alert_callback(AlertCallback callback) noexcept;
+    void set_alert_callback(ThreatAlertCallback callback) noexcept;
     
     /**
      * @brief Trigger alert
-     * @param alert_type Alert type
+     * @param threat_level Threat level to report
      * @note Calls alert callback if set
-     * @note Callback is invoked OUTSIDE the mutex lock to prevent deadlocks
+     * @note Callback is invoked OUTSIDE mutex lock to prevent deadlocks
      * @pre Mutex must be held (LockOrder::DATA_MUTEX) when accessing alert_callback_
      */
-    void trigger_alert(AlertType alert_type) noexcept;
+    void trigger_alert(ThreatLevel threat_level) noexcept;
     
 private:
     /**
@@ -386,7 +386,7 @@ private:
     AtomicFlag scanning_active_;
     
     // Alert callback
-    AlertCallback alert_callback_;
+    ThreatAlertCallback alert_callback_;
     
     // Last threat level for each tracked drone (for detecting threat increases)
     std::array<ThreatLevel, MAX_TRACKED_DRONES> last_threat_levels_;

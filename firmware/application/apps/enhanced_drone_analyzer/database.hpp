@@ -185,10 +185,10 @@ private:
     ) const noexcept;
     
     /**
-     * @brief Internal: Add built-in default frequencies
-     * @note Used when database file is not available
-     */
-    void add_default_frequencies_internal() noexcept;
+      * @brief Internal: Load drone legend from DRONES.TXT
+      * @note Populates entries_ with drone types and threat levels
+      */
+    ErrorCode load_drone_legend_internal() noexcept;
     
     // Database storage (fixed-size array, no heap allocation)
     std::array<FrequencyEntry, MAX_DATABASE_ENTRIES> entries_;
@@ -203,7 +203,7 @@ private:
     AtomicFlag loaded_;
     
     // Mutex for thread safety (LockOrder::DATABASE_MUTEX)
-    mutable mutex_t* mutex_;
+    mutable mutex_t mutex_;
     
     // Line buffer for parsing (mutable for use in const methods)
     mutable char line_buffer_[DATABASE_LINE_BUFFER_SIZE];

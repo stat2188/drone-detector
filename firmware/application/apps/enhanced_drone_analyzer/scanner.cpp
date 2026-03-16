@@ -276,6 +276,14 @@ ErrorCode DroneScanner::update_tracked_drones(
     RssiValue rssi,
     SystemTime timestamp
 ) noexcept {
+    if (frequency < MIN_FREQUENCY_HZ || frequency > MAX_FREQUENCY_HZ) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
+    if (rssi < RSSI_MIN_DBM || rssi > RSSI_MAX_DBM) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     return update_tracked_drone_internal(frequency, rssi, timestamp);
@@ -305,20 +313,13 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         // Store new threat level
         last_threat_levels_[index] = new_threat;
         
-        // Trigger alert for threat level changes
+        // Trigger alert for threat level changes only
+        // FIXED: Removed duplicate alerts - only alert on threat increase
         if (new_threat > old_threat) {
-            // Threat level increased
-            if (new_threat == ThreatLevel::CRITICAL) {
-                trigger_alert(AlertType::THREAT_CRITICAL);
-            } else {
-                trigger_alert(AlertType::THREAT_INCREASED);
-            }
-            // Drone is approaching
-            trigger_alert(AlertType::DRONE_APPROACHING);
-        } else if (new_threat < old_threat) {
-            // Drone is receding
-            trigger_alert(AlertType::DRONE_RECEDING);
+            // Threat level increased - trigger alert
+            trigger_alert(new_threat);
         }
+        // Note: Threat decrease does not trigger alert to reduce noise
     } else {
         // Add new drone
         ErrorCode add_result = add_tracked_drone_internal(frequency, rssi, timestamp);
@@ -364,18 +365,13 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     last_threat_levels_[tracked_count_] = threat;
     
     tracked_count_++;
-    
+
     // Update statistics
     statistics_.drones_detected++;
-    
-    // Trigger alert for new drone detection
-    trigger_alert(AlertType::NEW_DRONE);
-    
-    // Trigger alert if threat level is critical
-    if (threat == ThreatLevel::CRITICAL) {
-        trigger_alert(AlertType::THREAT_CRITICAL);
-    }
-    
+
+    // Trigger alert for new drone detection with its threat level
+    trigger_alert(threat);
+
     return ErrorCode::SUCCESS;
 }
 
@@ -578,41 +574,19 @@ void DroneScanner::remove_stale_drones_internal(SystemTime current_time) noexcep
 // Alert Callback Implementation
 // ============================================================================
 
-void DroneScanner::set_alert_callback(AlertCallback callback) noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+void DroneScanner::set_alert_callback(ThreatAlertCallback callback) noexcept {
+    MutexGuard guard(mutex_);
     alert_callback_ = callback;
 }
 
-void DroneScanner::trigger_alert(AlertType alert_type) noexcept {
+void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
     // Make local copy of callback pointer to prevent race condition
     // This ensures we use the callback that was set at alert trigger time
-    AlertCallback local_callback = alert_callback_;
-    
+    ThreatAlertCallback local_callback = alert_callback_;
+
     // Call alert callback if set (invoked OUTSIDE any lock to prevent deadlocks)
     if (local_callback != nullptr) {
-        AlertPriority priority = AlertPriority::LOW;
-        
-        // Determine priority based on alert type
-        switch (alert_type) {
-            case AlertType::NEW_DRONE:
-                priority = AlertPriority::MEDIUM;
-                break;
-            case AlertType::THREAT_INCREASED:
-                priority = AlertPriority::HIGH;
-                break;
-            case AlertType::THREAT_CRITICAL:
-                priority = AlertPriority::CRITICAL;
-                break;
-            case AlertType::DRONE_APPROACHING:
-                priority = AlertPriority::HIGH;
-                break;
-            case AlertType::DRONE_RECEDING:
-                priority = AlertPriority::LOW;
-                break;
-        }
-        
-        // Call callback with alert type and priority
-        local_callback(alert_type, static_cast<uint8_t>(priority));
+        local_callback(threat_level);
     }
 }
 

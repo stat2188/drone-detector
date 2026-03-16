@@ -53,11 +53,9 @@ HardwareController::HardwareController() noexcept
     , retry_count_(0)
     , pll_locked_()
     , streaming_active_()
-    , mutex_(nullptr) {
+    , mutex_() {
     
-    // Initialize mutex (will be done with ChibiOS)
-    // mutex_ = new mutex_t;
-    // chMtxObjectInit(mutex_);
+    chMtxObjectInit(&mutex_);
 }
 
 HardwareController::~HardwareController() noexcept {
@@ -70,7 +68,7 @@ HardwareController::~HardwareController() noexcept {
 }
 
 ErrorCode HardwareController::initialize() noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     if (state_ != HardwareState::UNINITIALIZED) {
         return ErrorCode::INITIALIZATION_INCOMPLETE;
@@ -105,7 +103,7 @@ ErrorCode HardwareController::initialize_internal() noexcept {
 }
 
 ErrorCode HardwareController::shutdown() noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     // Stop streaming if active
     if (streaming_active_.test()) {
@@ -135,7 +133,7 @@ ErrorCode HardwareController::tune_to_frequency(
         return validate_result;
     }
     
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     if (state_ != HardwareState::READY && state_ != HardwareState::STREAMING) {
         last_error_ = ErrorCode::HARDWARE_NOT_INITIALIZED;
@@ -207,7 +205,7 @@ bool HardwareController::check_pll_lock_internal() const noexcept {
 }
 
 ErrorCode HardwareController::start_spectrum_streaming() noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     if (state_ != HardwareState::READY && state_ != HardwareState::TUNING) {
         last_error_ = ErrorCode::HARDWARE_NOT_INITIALIZED;
@@ -242,7 +240,7 @@ ErrorCode HardwareController::start_streaming_internal() noexcept {
 }
 
 ErrorCode HardwareController::stop_spectrum_streaming() noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     if (!streaming_active_.test()) {
         return ErrorCode::SUCCESS;  // Not streaming
@@ -271,7 +269,7 @@ ErrorCode HardwareController::stop_streaming_internal() noexcept {
 }
 
 ErrorResult<RssiSample> HardwareController::get_rssi_sample() noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     if (state_ != HardwareState::STREAMING) {
         return ErrorResult<RssiSample>::failure(ErrorCode::HARDWARE_NOT_INITIALIZED);
@@ -297,7 +295,7 @@ ErrorResult<RssiSample> HardwareController::read_rssi_internal() noexcept {
 }
 
 ErrorResult<FreqHz> HardwareController::get_current_frequency() const noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     if (state_ == HardwareState::UNINITIALIZED) {
         return ErrorResult<FreqHz>::failure(ErrorCode::HARDWARE_NOT_INITIALIZED);
@@ -319,7 +317,7 @@ bool HardwareController::is_streaming() const noexcept {
 }
 
 ErrorCode HardwareController::set_config(const HardwareConfig& config) noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     if (state_ != HardwareState::READY && state_ != HardwareState::STREAMING) {
         last_error_ = ErrorCode::HARDWARE_NOT_INITIALIZED;
@@ -339,7 +337,7 @@ ErrorCode HardwareController::set_config(const HardwareConfig& config) noexcept 
 }
 
 HardwareConfig HardwareController::get_config() const noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     return config_;
 }
 
@@ -350,7 +348,7 @@ ErrorCode HardwareController::set_gain(uint16_t gain) noexcept {
         return validate_result;
     }
     
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     if (state_ != HardwareState::READY && state_ != HardwareState::STREAMING) {
         last_error_ = ErrorCode::HARDWARE_NOT_INITIALIZED;
@@ -369,7 +367,7 @@ ErrorCode HardwareController::set_gain(uint16_t gain) noexcept {
 }
 
 uint16_t HardwareController::get_gain() const noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     return config_.gain;
 }
 
@@ -378,7 +376,7 @@ bool HardwareController::is_pll_locked() const noexcept {
 }
 
 ErrorCode HardwareController::reset() noexcept {
-    MutexLock<LockOrder::STATE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
     
     // Stop streaming if active
     if (streaming_active_.test()) {

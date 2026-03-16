@@ -295,7 +295,7 @@ private:
     AtomicFlag streaming_active_;
     
     // Mutex for thread safety (LockOrder::STATE_MUTEX)
-    mutable mutex_t* mutex_;
+    mutable mutex_t mutex_;
 };
 
 } // namespace drone_analyzer

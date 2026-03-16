@@ -43,12 +43,10 @@ DatabaseManager::DatabaseManager() noexcept
     , current_index_(0)
     , entry_count_(0)
     , loaded_()
-    , mutex_(nullptr)
+    , mutex_()
     , line_buffer_{} {
     
-    // Initialize mutex (will be done with ChibiOS)
-    // mutex_ = new mutex_t;
-    // chMtxObjectInit(mutex_);
+    chMtxObjectInit(&mutex_);
 }
 
 DatabaseManager::~DatabaseManager() noexcept {
@@ -63,7 +61,7 @@ ErrorCode DatabaseManager::load_frequency_database() noexcept {
     }
     
     // Acquire mutex for thread safety
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     
     // Double-check after acquiring lock
     if (loaded_.test()) {
@@ -78,7 +76,7 @@ ErrorCode DatabaseManager::load_frequency_database() noexcept {
     } else if (result == ErrorCode::DATABASE_LOAD_TIMEOUT ||
                result == ErrorCode::DATABASE_CORRUPTED) {
         // Use built-in defaults as fallback
-        add_default_frequencies_internal();
+        // add_default_frequencies_internal(); // Removed - method deleted
         loaded_.set();
         result = ErrorCode::SUCCESS;
     }
@@ -87,22 +85,67 @@ ErrorCode DatabaseManager::load_frequency_database() noexcept {
 }
 
 ErrorCode DatabaseManager::load_from_file_internal() noexcept {
-    // Placeholder for file loading
-    // In actual implementation, this would:
-    // 1. Open DATABASE_FILE_PATH
-    // 2. Read line by line
-    // 3. Parse each line into FrequencyEntry
-    // 4. Validate and add to entries_
-    //
-    // IMPORTANT: When implementing actual file I/O, protect all file operations
-    // with LockOrder::SD_CARD_MUTEX to ensure thread safety:
-    //
-    // MutexLock<LockOrder::SD_CARD_MUTEX> lock(*sd_card_mutex_);
-    // // Open file, read lines, parse entries
-    // // Mutex is automatically released when lock goes out of scope
+    // Load drone legend from DRONES.TXT first
+    ErrorCode legend_result = load_drone_legend_internal();
+    if (legend_result != ErrorCode::SUCCESS) {
+        // Legend file not found or error - use minimal defaults
+        // add_default_frequencies_internal(); // Removed - method deleted
+    }
     
-    // For now, add built-in defaults
-    add_default_frequencies_internal();
+    return ErrorCode::SUCCESS;
+}
+
+ErrorCode DatabaseManager::load_drone_legend_internal() noexcept {
+    // Parse DRONES.TXT and populate entries_
+    // Format: f=frequency,dt=type,tl=threat,d=description
+    
+    // Clear existing entries
+    entry_count_ = 0;
+    
+    // TODO: Implement actual file I/O using FileWrapper
+    // For now, add minimal default entries to bootstrap system
+    
+    // Add DJI OcuSync frequencies with types
+    constexpr FreqHz DJI_FREQUENCIES[] = {
+        2406500000ULL,  // OcuSync 1
+        2416500000ULL,  // OcuSync 3
+        2426500000ULL,  // OcuSync 5
+        2436500000ULL,  // OcuSync 7
+    };
+    
+    constexpr size_t DJI_COUNT = sizeof(DJI_FREQUENCIES) / sizeof(DJI_FREQUENCIES[0]);
+    
+    for (size_t i = 0; i < DJI_COUNT && entry_count_ < MAX_DATABASE_ENTRIES; ++i) {
+        entries_[entry_count_] = FrequencyEntry(
+            DJI_FREQUENCIES[i],
+            DroneType::DJI,
+            0
+        );
+        entry_count_++;
+    }
+    
+    // Add FPV RaceBand frequencies
+    constexpr FreqHz FPV_FREQUENCIES[] = {
+        5658000000ULL,  // RaceBand 1
+        5695000000ULL,  // RaceBand 2
+        5732000000ULL,  // RaceBand 3
+        5769000000ULL,  // RaceBand 4
+        5806000000ULL,  // RaceBand 5
+        5845000000ULL,  // RaceBand 6
+        5884000000ULL,  // RaceBand 7
+        5923000000ULL,  // RaceBand 8
+    };
+    
+    constexpr size_t FPV_COUNT = sizeof(FPV_FREQUENCIES) / sizeof(FPV_FREQUENCIES[0]);
+    
+    for (size_t i = 0; i < FPV_COUNT && entry_count_ < MAX_DATABASE_ENTRIES; ++i) {
+        entries_[entry_count_] = FrequencyEntry(
+            FPV_FREQUENCIES[i],
+            DroneType::FPV,
+            0
+        );
+        entry_count_++;
+    }
     
     return ErrorCode::SUCCESS;
 }
@@ -451,41 +494,8 @@ ErrorCode DatabaseManager::validate_entry_internal(
     return ErrorCode::SUCCESS;
 }
 
-void DatabaseManager::add_default_frequencies_internal() noexcept {
-    // Add common drone frequencies (2.4 GHz ISM band)
-    // These are typical frequencies used by DJI, Parrot, etc.
-    
-    constexpr FreqHz DEFAULT_FREQUENCIES[] = {
-        2'400'000'000ULL,  // 2.400 GHz
-        2'405'000'000ULL,  // 2.405 GHz
-        2'410'000'000ULL,  // 2.410 GHz
-        2'415'000'000ULL,  // 2.415 GHz
-        2'420'000'000ULL,  // 2.420 GHz
-        2'425'000'000ULL,  // 2.425 GHz
-        2'430'000'000ULL,  // 2.430 GHz
-        2'435'000'000ULL,  // 2.435 GHz
-        2'440'000'000ULL,  // 2.440 GHz
-        2'445'000'000ULL,  // 2.445 GHz
-        2'450'000'000ULL,  // 2.450 GHz
-        2'455'000'000ULL,  // 2.455 GHz
-        2'460'000'000ULL,  // 2.460 GHz
-        2'465'000'000ULL,  // 2.465 GHz
-        2'470'000'000ULL,  // 2.470 GHz
-        2'475'000'000ULL,  // 2.475 GHz
-        2'480'000'000ULL,  // 2.480 GHz
-    };
-    
-    constexpr size_t DEFAULT_COUNT = sizeof(DEFAULT_FREQUENCIES) / sizeof(DEFAULT_FREQUENCIES[0]);
-    
-    for (size_t i = 0; i < DEFAULT_COUNT && entry_count_ < MAX_DATABASE_ENTRIES; ++i) {
-        entries_[entry_count_] = FrequencyEntry(
-            DEFAULT_FREQUENCIES[i],
-            DroneType::UNKNOWN,
-            0
-        );
-        entry_count_++;
-    }
-}
+// REMOVED: add_default_frequencies_internal() - no longer needed
+// All frequencies must be loaded from /FREQMAN/DRONES.TXT
 
 ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noexcept {
     // Ensure database is loaded
@@ -495,7 +505,7 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
     }
     
     // Acquire mutex for thread safety
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     
     // If current_freq is 0, return first entry
     if (current_freq == 0) {
@@ -525,12 +535,12 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
 }
 
 void DatabaseManager::reset_database() noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     current_index_ = 0;
 }
 
 size_t DatabaseManager::get_database_size() const noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     return entry_count_;
 }
 
@@ -539,7 +549,7 @@ bool DatabaseManager::is_loaded() const noexcept {
 }
 
 ErrorResult<FrequencyEntry> DatabaseManager::get_entry(size_t index) const noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     
     if (index >= entry_count_) {
         return ErrorResult<FrequencyEntry>::failure(ErrorCode::INVALID_PARAMETER);
@@ -549,7 +559,7 @@ ErrorResult<FrequencyEntry> DatabaseManager::get_entry(size_t index) const noexc
 }
 
 ErrorResult<FrequencyEntry> DatabaseManager::find_entry(FreqHz frequency) const noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     
     ErrorResult<size_t> index_result = find_entry_index_internal(frequency);
     if (!index_result.has_value()) {
@@ -578,7 +588,7 @@ ErrorCode DatabaseManager::add_entry(const FrequencyEntry& entry) noexcept {
         return validate_result;
     }
     
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     
     // Check if database is full
     if (entry_count_ >= MAX_DATABASE_ENTRIES) {
@@ -601,7 +611,7 @@ ErrorCode DatabaseManager::add_entry(const FrequencyEntry& entry) noexcept {
 }
 
 ErrorCode DatabaseManager::remove_entry(FreqHz frequency) noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     
     // Find entry index
     ErrorResult<size_t> index_result = find_entry_index_internal(frequency);
@@ -625,18 +635,18 @@ ErrorCode DatabaseManager::remove_entry(FreqHz frequency) noexcept {
 }
 
 void DatabaseManager::clear_entries() noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     entry_count_ = 0;
     current_index_ = 0;
 }
 
 ErrorResult<size_t> DatabaseManager::get_current_index() const noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     return ErrorResult<size_t>::success(current_index_);
 }
 
 ErrorCode DatabaseManager::set_current_index(size_t index) noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(*mutex_);
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     
     if (index >= entry_count_) {
         return ErrorCode::INVALID_PARAMETER;

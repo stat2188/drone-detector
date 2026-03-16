@@ -357,8 +357,54 @@ void DroneDisplay::draw_drone_entry(
     char rssi_buffer[16];
     format_rssi(drone.rssi, rssi_buffer, sizeof(rssi_buffer));
     
+    // Format threat level string
+    const char* threat_str = "";
+    switch (drone.threat) {
+        case ThreatLevel::CRITICAL:
+            threat_str = "CRITICAL";
+            break;
+        case ThreatLevel::HIGH:
+            threat_str = "HIGH";
+            break;
+        case ThreatLevel::MEDIUM:
+            threat_str = "MEDIUM";
+            break;
+        case ThreatLevel::LOW:
+            threat_str = "LOW";
+            break;
+        case ThreatLevel::NONE:
+        default:
+            threat_str = "NONE";
+            break;
+    }
+    
+    // Get movement trend symbol
+    char trend_symbol = MOVEMENT_TREND_SYMBOL_UNKNOWN;
+    switch (drone.trend) {
+        case MovementTrend::APPROACHING:
+            trend_symbol = MOVEMENT_TREND_SYMBOL_APPROACHING;
+            break;
+        case MovementTrend::RECEDING:
+            trend_symbol = MOVEMENT_TREND_SYMBOL_RECEEDING;
+            break;
+        case MovementTrend::STATIC:
+            trend_symbol = MOVEMENT_TREND_SYMBOL_STATIC;
+            break;
+        default:
+            trend_symbol = MOVEMENT_TREND_SYMBOL_UNKNOWN;
+            break;
+    }
+    
     // Draw drone info
+    // Line 1: Type | Threat | Trend
     draw_text(painter, drone.get_type_name(), x + 5, y + 2, drone.display_color);
+    draw_text(painter, threat_str, x + 65, y + 2, drone.display_color);
+    
+    // Draw trend symbol - FIXED: moved to avoid overlap
+    char trend_buffer[2] = {trend_symbol, '\0'};
+    draw_text(painter, trend_buffer, x + 130, y + 2, drone.display_color);
+    
+    // Line 2: Frequency | RSSI
     draw_text(painter, freq_buffer, x + 5, y + 12, COLOR_TEXT);
     draw_text(painter, rssi_buffer, x + 100, y + 12, COLOR_TEXT);
 }

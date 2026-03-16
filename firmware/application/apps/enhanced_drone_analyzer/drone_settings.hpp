@@ -42,9 +42,15 @@ struct DroneSettings {
     DroneSettings() noexcept;
     
     /**
-     * @brief Reset to defaults
-     */
+      * @brief Reset settings to defaults
+      */
     void reset_to_defaults() noexcept;
+    
+    /**
+      * @brief Open drone legend editor
+      * @return ErrorCode::SUCCESS if opened, error code otherwise
+      */
+    ErrorCode open_legend_editor() noexcept;
 };
 
 /**
@@ -63,6 +69,16 @@ public:
      * @brief Destructor
      */
     ~DroneSettingsView() noexcept override;
+
+    /**
+     * @brief Delete copy constructor (non-copyable)
+     */
+    DroneSettingsView(const DroneSettingsView&) = delete;
+
+    /**
+     * @brief Delete copy assignment (non-copyable)
+     */
+    DroneSettingsView& operator=(const DroneSettingsView&) = delete;
 
 /**
  * @brief Paint method - render settings UI
