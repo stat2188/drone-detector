@@ -1,5 +1,7 @@
 #include "drone_display.hpp"
-#include "ui.hpp"  // Will provide ui::View, Painter, etc.
+
+#include <array>
+#include <string_view>
 
 namespace drone_analyzer {
 
@@ -303,7 +305,7 @@ void DroneDisplay::set_status_text(const char* status_text) noexcept {
     
     // Copy status text
     size_t i = 0;
-    while (i < status_text_.size() - 1 && status_text[i] != '\0') {
+    while (i < MAX_TEXT_LENGTH - 1 && status_text[i] != '\0') {
         status_text_[i] = status_text[i];
         ++i;
     }
@@ -376,11 +378,17 @@ void DroneDisplay::draw_text(
     if (text == nullptr) {
         return;
     }
-    // Will use ui::Painter::draw_string when available
-    (void)painter;
-    (void)x;
-    (void)y;
-    (void)color;
+
+    const Color fg_color = Color::RGB(color);
+    const Color bg_color = Color::black();
+
+    painter.draw_string(
+        Point{x, y},
+        Theme::getInstance()->fg_light->font,
+        fg_color,
+        bg_color,
+        std::string_view(text)
+    );
 }
 
 void DroneDisplay::draw_rectangle(
@@ -392,14 +400,14 @@ void DroneDisplay::draw_rectangle(
     uint32_t color,
     bool fill
 ) noexcept {
-    // Will use ui::Painter::draw_rectangle when available
-    (void)painter;
-    (void)x;
-    (void)y;
-    (void)width;
-    (void)height;
-    (void)color;
-    (void)fill;
+    const Color rect_color = Color::RGB(color);
+    const Rect rect{x, y, width, height};
+
+    if (fill) {
+        painter.fill_rectangle(rect, rect_color);
+    } else {
+        painter.draw_rectangle(rect, rect_color);
+    }
 }
 
 // ============================================================================

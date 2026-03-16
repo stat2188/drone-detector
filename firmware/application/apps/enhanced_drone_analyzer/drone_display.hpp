@@ -4,16 +4,10 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include "ui_widget.hpp"
 #include "drone_types.hpp"
 #include "constants.hpp"
 #include "error_handler.hpp"
-
-// Forward declaration for UI framework
-namespace ui {
-    class View;
-    class Painter;
-    class Rect;
-}
 
 namespace drone_analyzer {
 
