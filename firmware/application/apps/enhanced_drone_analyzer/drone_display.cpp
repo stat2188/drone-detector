@@ -1,6 +1,5 @@
 #include "drone_display.hpp"
 
-#include <array>
 #include <string_view>
 
 namespace drone_analyzer {
@@ -38,10 +37,6 @@ DroneDisplay::~DroneDisplay() noexcept {
 // ============================================================================
 
 void DroneDisplay::paint(Painter& painter) {
-    // Use static storage for large buffers to reduce stack usage
-    static std::array<uint8_t, SPECTRUM_BUFFER_SIZE> local_spectrum;
-    static std::array<uint16_t, HISTOGRAM_BUFFER_SIZE> local_histogram;
-    
     // Clear display
     clear_display(painter);
     

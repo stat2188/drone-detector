@@ -1,5 +1,4 @@
 #include "drone_settings.hpp"
-#include "ui.hpp"  // Will provide ui::View, Painter, etc.
 
 namespace drone_analyzer {
 
@@ -7,8 +6,17 @@ namespace drone_analyzer {
 // DroneSettings Implementation
 // ============================================================================
 
-DroneSettings::DroneSettings() noexcept {
-    reset_to_defaults();
+DroneSettings::DroneSettings() noexcept
+    : scanning_mode(DEFAULT_SCANNING_MODE)
+    , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
+    , scan_sensitivity(50)
+    , spectrum_visible(true)
+    , histogram_visible(true)
+    , drone_list_visible(true)
+    , status_bar_visible(true)
+    , audio_alerts_enabled(false)
+    , alert_rssi_threshold_dbm(RSSI_HIGH_THREAT_THRESHOLD_DBM)
+    , min_threat_level(ThreatLevel::LOW) {
 }
 
 void DroneSettings::reset_to_defaults() noexcept {
@@ -42,8 +50,6 @@ DroneSettingsView::DroneSettingsView() noexcept
     , row_height_(25)
     , checkbox_size_(20)
     , button_height_(30) {
-    // Initialize settings
-    settings_.reset_to_defaults();
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
@@ -54,7 +60,7 @@ DroneSettingsView::~DroneSettingsView() noexcept {
 // Paint Method
 // ============================================================================
 
-void DroneSettingsView::paint(Painter& painter) {
+void DroneSettingsView::paint(ui::Painter& painter) {
     // Clear display
     // draw_rectangle(painter, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, COLOR_BACKGROUND);
     
@@ -248,12 +254,12 @@ ErrorCode DroneSettingsView::validate_settings() const noexcept {
 // Drawing Methods
 // ============================================================================
 
-void DroneSettingsView::draw_settings_header(Painter& painter) noexcept {
+void DroneSettingsView::draw_settings_header(ui::Painter& painter) noexcept {
     // Will use ui::Painter when available
     (void)painter;
 }
 
-void DroneSettingsView::draw_scanning_settings(Painter& painter, uint16_t start_y) noexcept {
+void DroneSettingsView::draw_scanning_settings(ui::Painter& painter, uint16_t start_y) noexcept {
     char value_buffer[16];
     
     // Scanning mode
@@ -293,7 +299,7 @@ void DroneSettingsView::draw_scanning_settings(Painter& painter, uint16_t start_
     );
 }
 
-void DroneSettingsView::draw_display_settings(Painter& painter, uint16_t start_y) noexcept {
+void DroneSettingsView::draw_display_settings(ui::Painter& painter, uint16_t start_y) noexcept {
     // Spectrum visible
     draw_checkbox(painter, settings_.spectrum_visible, 10, start_y + 5, checkbox_size_);
     draw_setting_row(
@@ -343,7 +349,7 @@ void DroneSettingsView::draw_display_settings(Painter& painter, uint16_t start_y
     );
 }
 
-void DroneSettingsView::draw_alert_settings(Painter& painter, uint16_t start_y) noexcept {
+void DroneSettingsView::draw_alert_settings(ui::Painter& painter, uint16_t start_y) noexcept {
     char value_buffer[16];
     
     // Audio alerts
@@ -371,7 +377,7 @@ void DroneSettingsView::draw_alert_settings(Painter& painter, uint16_t start_y) 
     );
 }
 
-void DroneSettingsView::draw_threat_settings(Painter& painter, uint16_t start_y) noexcept {
+void DroneSettingsView::draw_threat_settings(ui::Painter& painter, uint16_t start_y) noexcept {
     draw_setting_row(
         painter,
         "Min Threat Level",
@@ -384,7 +390,7 @@ void DroneSettingsView::draw_threat_settings(Painter& painter, uint16_t start_y)
 }
 
 void DroneSettingsView::draw_setting_row(
-    Painter& painter,
+    ui::Painter& painter,
     const char* label,
     const char* value,
     uint16_t x,
@@ -403,7 +409,7 @@ void DroneSettingsView::draw_setting_row(
 }
 
 void DroneSettingsView::draw_checkbox(
-    Painter& painter,
+    ui::Painter& painter,
     bool checked,
     uint16_t x,
     uint16_t y,
@@ -418,7 +424,7 @@ void DroneSettingsView::draw_checkbox(
 }
 
 void DroneSettingsView::draw_button(
-    Painter& painter,
+    ui::Painter& painter,
     const char* label,
     uint16_t x,
     uint16_t y,

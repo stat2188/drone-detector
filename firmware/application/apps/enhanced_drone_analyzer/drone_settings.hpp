@@ -8,12 +8,8 @@
 #include "constants.hpp"
 #include "error_handler.hpp"
 
-// Forward declaration for UI framework
-namespace ui {
-    class View;
-    class Painter;
-    class Rect;
-}
+#include "ui_painter.hpp"
+#include "ui_widget.hpp"
 
 namespace drone_analyzer {
 
@@ -68,11 +64,11 @@ public:
      */
     ~DroneSettingsView() noexcept override;
 
-    /**
-     * @brief Paint method - render settings UI
-     * @param painter Painter instance for drawing
-     */
-    void paint(Painter& painter) override;
+/**
+ * @brief Paint method - render settings UI
+ * @param painter Painter instance for drawing
+ */
+void paint(ui::Painter& painter) override;
 
     /**
      * @brief Setup settings UI components
@@ -128,35 +124,35 @@ private:
      * @brief Draw settings header
      * @param painter Painter instance for drawing
      */
-    void draw_settings_header(Painter& painter) noexcept;
+    void draw_settings_header(ui::Painter& painter) noexcept;
 
     /**
      * @brief Draw scanning settings
      * @param painter Painter instance for drawing
      * @param start_y Starting Y coordinate
      */
-    void draw_scanning_settings(Painter& painter, uint16_t start_y) noexcept;
+    void draw_scanning_settings(ui::Painter& painter, uint16_t start_y) noexcept;
 
     /**
      * @brief Draw display settings
      * @param painter Painter instance for drawing
      * @param start_y Starting Y coordinate
      */
-    void draw_display_settings(Painter& painter, uint16_t start_y) noexcept;
+    void draw_display_settings(ui::Painter& painter, uint16_t start_y) noexcept;
 
     /**
      * @brief Draw alert settings
      * @param painter Painter instance for drawing
      * @param start_y Starting Y coordinate
      */
-    void draw_alert_settings(Painter& painter, uint16_t start_y) noexcept;
+    void draw_alert_settings(ui::Painter& painter, uint16_t start_y) noexcept;
 
     /**
      * @brief Draw threat settings
      * @param painter Painter instance for drawing
      * @param start_y Starting Y coordinate
      */
-    void draw_threat_settings(Painter& painter, uint16_t start_y) noexcept;
+    void draw_threat_settings(ui::Painter& painter, uint16_t start_y) noexcept;
 
     /**
      * @brief Draw setting row
@@ -169,7 +165,7 @@ private:
      * @param height Row height
      */
     void draw_setting_row(
-        Painter& painter,
+        ui::Painter& painter,
         const char* label,
         const char* value,
         uint16_t x,
@@ -187,7 +183,7 @@ private:
      * @param size Checkbox size
      */
     void draw_checkbox(
-        Painter& painter,
+        ui::Painter& painter,
         bool checked,
         uint16_t x,
         uint16_t y,
@@ -205,7 +201,7 @@ private:
      * @param enabled Button enabled state
      */
     void draw_button(
-        Painter& painter,
+        ui::Painter& painter,
         const char* label,
         uint16_t x,
         uint16_t y,
