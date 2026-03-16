@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <ch.h>
 #include "drone_types.hpp"
 #include "error_handler.hpp"
 #include "locking.hpp"
@@ -10,9 +11,6 @@
 #include "database.hpp"
 #include "hardware_controller.hpp"
 #include "audio_alerts.hpp"
-
-// Forward declarations for ChibiOS types
-struct mutex_t;
 
 namespace drone_analyzer {
 
@@ -432,7 +430,7 @@ private:
     
     // Mutex for thread safety (LockOrder::DATA_MUTEX)
     // Direct member storage - no heap allocation, no pointer indirection
-    mutable mutex_t mutex_;
+    mutable Mutex mutex_;
     
     // State transition control flag
     AtomicFlag state_transition_allowed_;

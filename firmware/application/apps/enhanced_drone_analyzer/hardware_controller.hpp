@@ -3,13 +3,11 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <ch.h>
 #include "drone_types.hpp"
 #include "error_handler.hpp"
 #include "locking.hpp"
 #include "constants.hpp"
-
-// Forward declarations for ChibiOS types
-struct mutex_t;
 
 // Forward declaration for ReceiverModel to avoid circular dependency
 class ReceiverModel;
@@ -298,7 +296,7 @@ private:
     AtomicFlag streaming_active_;
     
     // Mutex for thread safety (LockOrder::STATE_MUTEX)
-    mutable mutex_t mutex_;
+    mutable Mutex mutex_;
 };
 
 } // namespace drone_analyzer

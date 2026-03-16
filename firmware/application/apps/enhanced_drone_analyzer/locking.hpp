@@ -8,8 +8,8 @@
 
 // Forward declarations for ChibiOS types
 // These will be available when ChibiOS headers are included
-struct mutex_t;
-struct thread_t;
+struct Mutex;
+struct Thread;
 
 namespace drone_analyzer {
 
@@ -127,7 +127,7 @@ public:
      * @brief Constructor - acquires mutex lock
      * @param mutex Reference to mutex to lock
      */
-    explicit MutexLock(mutex_t& mutex) noexcept
+    explicit MutexLock(Mutex& mutex) noexcept
         : mutex_(mutex), locked_(false) {
         // chMtxLock(&mutex_);  // ChibiOS call - will be available
         locked_ = true;
@@ -167,7 +167,7 @@ public:
     MutexLock& operator=(MutexLock&&) = delete;
     
 private:
-    mutex_t& mutex_;
+    Mutex& mutex_;
     bool locked_;
 };
 
@@ -184,7 +184,7 @@ public:
      * @param mutex Reference to mutex to lock
      * @param timeout_ms Timeout in milliseconds
      */
-    MutexLockTimeout(mutex_t& mutex, uint32_t timeout_ms) noexcept
+    MutexLockTimeout(Mutex& mutex, uint32_t timeout_ms) noexcept
         : mutex_(mutex), locked_(false) {
         // if (chMtxLockTimeout(&mutex_, MS2ST(timeout_ms)) == MSG_OK) {
         //     locked_ = true;
@@ -226,7 +226,7 @@ public:
     MutexLockTimeout& operator=(MutexLockTimeout&&) = delete;
     
 private:
-    mutex_t& mutex_;
+    Mutex& mutex_;
     bool locked_;
 };
 
@@ -242,7 +242,7 @@ public:
      * @brief Constructor - tries to acquire mutex lock
      * @param mutex Reference to mutex to lock
      */
-    explicit MutexTryLock(mutex_t& mutex) noexcept
+    explicit MutexTryLock(Mutex& mutex) noexcept
         : mutex_(mutex), locked_(false) {
         // if (chMtxTryLock(&mutex_) == MSG_OK) {
         //     locked_ = true;
@@ -284,7 +284,7 @@ public:
     MutexTryLock& operator=(MutexTryLock&&) = delete;
     
 private:
-    mutex_t& mutex_;
+    Mutex& mutex_;
     bool locked_;
 };
 
@@ -351,7 +351,7 @@ public:
     /**
      * @brief Constructor - acquires locks in order
      */
-    OrderedMutexLockPair(mutex_t& mutex1, mutex_t& mutex2) noexcept
+    OrderedMutexLockPair(Mutex& mutex1, Mutex& mutex2) noexcept
         : lock1_(mutex1), lock2_(mutex2) {}
     
     /**
@@ -383,7 +383,7 @@ public:
     /**
      * @brief Constructor - acquires both locks
      */
-    explicit ScopedMultiLock(mutex_t& first_mutex, mutex_t& second_mutex) noexcept
+    explicit ScopedMultiLock(Mutex& first_mutex, Mutex& second_mutex) noexcept
         : lock1_(first_mutex), lock2_(second_mutex) {}
     
     /**
@@ -414,7 +414,7 @@ public:
     /**
      * @brief Constructor - does not acquire lock
      */
-    explicit DeferredLock(mutex_t& mutex) noexcept
+    explicit DeferredLock(Mutex& mutex) noexcept
         : mutex_(mutex), locked_(false) {}
     
     /**
@@ -461,7 +461,7 @@ public:
     DeferredLock& operator=(DeferredLock&&) = delete;
     
 private:
-    mutex_t& mutex_;
+    Mutex& mutex_;
     bool locked_;
 };
 

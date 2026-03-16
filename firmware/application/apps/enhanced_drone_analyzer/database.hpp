@@ -6,13 +6,11 @@
 #include <array>
 #include <cstring>
 #include <new>
+#include <ch.h>
 #include "drone_types.hpp"
 #include "error_handler.hpp"
 #include "locking.hpp"
 #include "constants.hpp"
-
-// Forward declarations for ChibiOS types
-struct mutex_t;
 
 namespace drone_analyzer {
 
@@ -265,7 +263,7 @@ private:
     AtomicFlag loaded_;
     
     // Mutex for thread safety (LockOrder::DATABASE_MUTEX)
-    mutable mutex_t mutex_;
+    mutable Mutex mutex_;
     
     // Line buffer for parsing (mutable for use in const methods)
     mutable char line_buffer_[DATABASE_LINE_BUFFER_SIZE];

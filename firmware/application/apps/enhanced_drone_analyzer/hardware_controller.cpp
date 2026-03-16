@@ -2,8 +2,7 @@
 #include "receiver_model.hpp"
 #include "rf_path.hpp"
 
-// ChibiOS headers (will be available when integrated)
-// #include "ch.h"
+#include "ch.h"
 
 namespace drone_analyzer {
 
