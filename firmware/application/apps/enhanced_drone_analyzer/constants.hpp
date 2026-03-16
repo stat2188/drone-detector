@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include "drone_types.hpp"
 
 namespace drone_analyzer {
 

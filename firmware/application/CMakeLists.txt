@@ -310,6 +310,7 @@ set(CPPSRC
 	apps/ui_touchtunes.cpp
 	#apps/ui_weatherstation.cpp
 	# Enhanced Drone Analyzer - Flat structure
+	apps/enhanced_drone_analyzer/main.cpp
 	apps/enhanced_drone_analyzer/drone_display.cpp
 	apps/enhanced_drone_analyzer/drone_settings.cpp
 	apps/enhanced_drone_analyzer/drone_scanner_ui.cpp
@@ -319,6 +320,7 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/database.cpp
 	apps/enhanced_drone_analyzer/hardware_controller.cpp
 	apps/enhanced_drone_analyzer/scanner.cpp
+	apps/enhanced_drone_analyzer/drone_types.cpp
 
 	protocols/aprs.cpp
 	protocols/ax25.cpp

@@ -11,6 +11,9 @@
 // Forward declarations for ChibiOS types
 struct mutex_t;
 
+// Forward declaration for ReceiverModel to avoid circular dependency
+class ReceiverModel;
+
 namespace drone_analyzer {
 
 /**

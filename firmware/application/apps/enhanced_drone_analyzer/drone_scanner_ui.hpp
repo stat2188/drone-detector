@@ -5,13 +5,8 @@
 #include <cstddef>
 #include <array>
 
-namespace ui {
-
-class NavigationView;
-
-} // namespace ui
-
-#include "ui_widget.hpp"
+#include "ui.hpp"
+#include "string_format.hpp"
 #include "drone_types.hpp"
 #include "audio_alerts.hpp"
 #include "constants.hpp"

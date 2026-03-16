@@ -1,4 +1,6 @@
 #include "hardware_controller.hpp"
+#include "receiver_model.hpp"
+#include "rf_path.hpp"
 
 // ChibiOS headers (will be available when integrated)
 // #include "ch.h"
@@ -188,13 +190,23 @@ ErrorCode HardwareController::tune_to_frequency(
 }
 
 ErrorCode HardwareController::tune_internal(FreqHz frequency) noexcept {
-    // Placeholder for tuning
-    // In actual implementation, this would:
-    // 1. Calculate PLL parameters
-    // 2. Write to PLL registers via SPI
-    // 3. Wait for PLL to settle
-    
-    (void)frequency;  // Suppress unused parameter warning
+    // Set target frequency using receiver_model
+    rf::Frequency rf_freq = rf::Frequency(frequency);
+    receiver_model.set_target_frequency(rf_freq);
+
+    // Set gain values
+    receiver_model.set_lna(config_.lna_gain);
+    receiver_model.set_vga(config_.vga_gain);
+
+    // Set sampling rate for spectrum processing
+    receiver_model.set_sampling_rate(config_.sample_rate);
+
+    // Enable RF amplifier for better sensitivity
+    receiver_model.set_rf_amp(config_.gain > 20);
+
+    // Set baseband bandwidth for spectrum analysis
+    receiver_model.set_baseband_bandwidth(config_.sample_rate);
+
     return ErrorCode::SUCCESS;
 }
 
@@ -230,12 +242,12 @@ ErrorCode HardwareController::start_spectrum_streaming() noexcept {
 }
 
 ErrorCode HardwareController::start_streaming_internal() noexcept {
-    // Placeholder for starting streaming
-    // In actual implementation, this would:
-    // 1. Enable spectrum processor
-    // 2. Start RSSI DMA
-    // 3. Configure spectrum collector
-    
+    // Enable spectrum streaming mode in receiver_model
+    receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
+
+    // Enable RF path for spectrum processing
+    rf_path::rf::enable();
+
     return ErrorCode::SUCCESS;
 }
 
@@ -260,11 +272,9 @@ ErrorCode HardwareController::stop_spectrum_streaming() noexcept {
 }
 
 ErrorCode HardwareController::stop_streaming_internal() noexcept {
-    // Placeholder for stopping streaming
-    // In actual implementation, this would:
-    // 1. Stop RSSI DMA
-    // 2. Disable spectrum processor
-    
+    // Disable RF path
+    rf_path::rf::disable();
+
     return ErrorCode::SUCCESS;
 }
 
@@ -425,13 +435,26 @@ ErrorCode HardwareController::validate_gain_internal(uint16_t gain) const noexce
 }
 
 ErrorCode HardwareController::apply_config_internal(const HardwareConfig& config) noexcept {
-    // Placeholder for applying configuration
-    // In actual implementation, this would:
-    // 1. Set sample rate
-    // 2. Set center frequency
-    // 3. Configure gain stages
-    
-    (void)config;  // Suppress unused parameter warning
+    // Apply sample rate for spectrum processing
+    receiver_model.set_sampling_rate(config.sample_rate);
+
+    // Set baseband bandwidth
+    receiver_model.set_baseband_bandwidth(config.sample_rate);
+
+    // Configure gain stages
+    receiver_model.set_lna(config.lna_gain);
+    receiver_model.set_vga(config.vga_gain);
+
+    // Enable RF amplifier if gain is high
+    receiver_model.set_rf_amp(config.gain > 20);
+
+    // Set frequency
+    rf::Frequency rf_freq = rf::Frequency(config.center_frequency);
+    receiver_model.set_target_frequency(rf_freq);
+
+    // Enable receiver
+    receiver_model.enable();
+
     return ErrorCode::SUCCESS;
 }
 
