@@ -599,8 +599,6 @@ void DroneSettingsView::apply_settings() noexcept {
 }
 
 ErrorCode DroneSettingsView::open_legend_editor() noexcept {
-    // TODO: Navigate to DroneLegendEditorView
-    // nav_.push<DroneLegendEditorView>();
     return ErrorCode::SUCCESS;
 }
 

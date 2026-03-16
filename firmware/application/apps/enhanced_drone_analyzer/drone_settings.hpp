@@ -37,20 +37,14 @@ struct DroneSettings {
     ThreatLevel min_threat_level;
     
     /**
-     * @brief Default constructor
-     */
+      * @brief Default constructor
+      */
     DroneSettings() noexcept;
-    
+
     /**
       * @brief Reset settings to defaults
       */
     void reset_to_defaults() noexcept;
-    
-    /**
-      * @brief Open drone legend editor
-      * @return ErrorCode::SUCCESS if opened, error code otherwise
-      */
-    ErrorCode open_legend_editor() noexcept;
 };
 
 /**

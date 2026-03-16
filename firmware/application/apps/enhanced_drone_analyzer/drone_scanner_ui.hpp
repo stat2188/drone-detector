@@ -136,14 +136,7 @@ public:
      * @brief Clear error
      */
     void clear_error() noexcept;
-    
-    /**
-     * @brief Handle audio alert based on threat level
-     * @param threat_level Threat level calculated from RSSI
-     * @note Audio tone: CRITICAL=1500Hz, HIGH=1200Hz, MEDIUM=1000Hz, LOW/none=silent
-     */
-    void on_alert(ThreatLevel threat_level) noexcept;
-    
+
 private:
     /**
      * @brief Draw scanner header

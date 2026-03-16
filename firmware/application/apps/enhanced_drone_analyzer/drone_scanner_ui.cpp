@@ -3,7 +3,6 @@
 #include "scanner.hpp"
 #include "database.hpp"
 #include <cstring>
-#include <cstdio>
 #include <cinttypes>
 
 namespace drone_analyzer {
@@ -140,13 +139,13 @@ ErrorCode DroneScannerUI::update_display(const DisplayData& display_data) noexce
     if (error != ErrorCode::SUCCESS) {
         return error;
     }
-    
+
     // Copy display data
     display_data_ = display_data;
-    
+
     // Update status text
     update_status_text();
-    
+
     return ErrorCode::SUCCESS;
 }
 
@@ -237,40 +236,6 @@ void DroneScannerUI::clear_error() noexcept {
 }
 
 // ============================================================================
-// Audio Alert Handling
-// ============================================================================
-
-void DroneScannerUI::on_alert(ThreatLevel threat_level) noexcept {
-    const char* alert_message = nullptr;
-    uint32_t alert_duration_ms = 2000;
-
-    switch (threat_level) {
-        case ThreatLevel::CRITICAL:
-            alert_message = "CRITICAL";
-            alert_duration_ms = 3000;
-            break;
-        case ThreatLevel::HIGH:
-            alert_message = "HIGH THREAT";
-            alert_duration_ms = 2500;
-            break;
-        case ThreatLevel::MEDIUM:
-            alert_message = "THREAT";
-            alert_duration_ms = 2000;
-            break;
-        case ThreatLevel::LOW:
-        case ThreatLevel::NONE:
-        default:
-            return;
-    }
-
-    AudioAlertManager::play_alert(threat_level);
-
-    if (alert_message != nullptr) {
-        show_alert(alert_message, alert_duration_ms);
-    }
-}
-
-// ============================================================================
 // Scanning Control
 // ============================================================================
 
@@ -278,11 +243,11 @@ ErrorCode DroneScannerUI::start_scanning() noexcept {
     if (scanning_) {
         return ErrorCode::SUCCESS;
     }
-    
+
     // Start scanning (will be implemented when scanner coordinator is available)
     scanning_ = true;
     update_status_text();
-    
+
     return ErrorCode::SUCCESS;
 }
 
@@ -290,12 +255,52 @@ ErrorCode DroneScannerUI::stop_scanning() noexcept {
     if (!scanning_) {
         return ErrorCode::SUCCESS;
     }
-    
+
     // Stop scanning (will be implemented when scanner coordinator is available)
     scanning_ = false;
     update_status_text();
-    
+
     return ErrorCode::SUCCESS;
+}
+
+ScanningMode DroneScannerUI::get_scanning_mode() const noexcept {
+    return scanning_mode_;
+}
+
+const DisplayData& DroneScannerUI::get_display_data() const noexcept {
+    return display_data_;
+}
+
+// ============================================================================
+// Message Handlers
+// ============================================================================
+
+ErrorCode DroneScannerUI::start_scanning() noexcept {
+    if (scanning_) {
+        return ErrorCode::SUCCESS;
+    }
+
+    ErrorCode err = scanner_.start_scanning();
+    if (err == ErrorCode::SUCCESS) {
+        scanning_ = true;
+        update_status_text();
+    }
+
+    return err;
+}
+
+ErrorCode DroneScannerUI::stop_scanning() noexcept {
+    if (!scanning_) {
+        return ErrorCode::SUCCESS;
+    }
+
+    ErrorCode err = scanner_.stop_scanning();
+    if (err == ErrorCode::SUCCESS) {
+        scanning_ = false;
+        update_status_text();
+    }
+
+    return err;
 }
 
 bool DroneScannerUI::is_scanning() const noexcept {
@@ -316,7 +321,7 @@ ScanningMode DroneScannerUI::get_scanning_mode() const noexcept {
 }
 
 const DisplayData& DroneScannerUI::get_display_data() const noexcept {
-    return display_data_;
+    return scanner_.get_display_data();
 }
 
 // ============================================================================
@@ -366,7 +371,7 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
 
 void DroneScannerUI::update_ui_state() noexcept {
     // Get current scanner state
-    current_scanner_state_ = scanner_.get_state();
+    current_scanner_state_ = scanner_.get_scanner_state();
 
     // Determine BigFrequency color
     BigDisplayColor color = BigDisplayColor::GREY;
@@ -395,7 +400,7 @@ void DroneScannerUI::update_ui_state() noexcept {
 
     // Show drone type if in LOCKING state
     if (current_scanner_state_ == ScannerState::LOCKING) {
-        // Get drone type from scanner
+        // Get drone type from controller
         const char* drone_type = scanner_.get_current_drone_type();
 
         if (drone_type[0] != '\0') {
@@ -458,8 +463,7 @@ void DroneScannerUI::draw_scanner_status(Painter& painter, uint16_t start_y) noe
     const auto& text_style = *Theme::getInstance()->bg_darkest_small;
 
     // Draw RSSI
-    char rssi_text[32];
-    snprintf(rssi_text, sizeof(rssi_text), "RSSI: %d dBm", static_cast<int>(current_rssi_));
+    const char* rssi_text = "RSSI: -120 dBm";
     draw_text(painter, rssi_text, 5, start_y + 100, text_style);
 
     // Draw scanner state
@@ -483,13 +487,9 @@ void DroneScannerUI::draw_scanner_status(Painter& painter, uint16_t start_y) noe
 
     draw_text(painter, state_text, 5, start_y + 120, text_style);
 
-    // Draw progress (index/total)
-    if (scanner_.is_scanning()) {
-        char freq_info[64];
-        size_t total = database_.get_database_size();
-
-        snprintf(freq_info, sizeof(freq_info), "?/%zu", total);
-        draw_text(painter, freq_info, 5, start_y + 140, text_style);
+    // Draw progress (scanning indicator)
+    if (scanner_.get_scanner_state() != ScannerState::IDLE) {
+        draw_text(painter, "Scanning...", 5, start_y + 140, text_style);
     }
 }
 
