@@ -82,7 +82,7 @@ ErrorCode HistogramProcessor::update_histogram(
 size_t HistogramProcessor::calculate_bin_values(
     HistogramBin* bins,
     size_t max_bins
-) noexcept {
+) const noexcept {
     if (bins == nullptr || max_bins == 0) {
         return 0;
     }

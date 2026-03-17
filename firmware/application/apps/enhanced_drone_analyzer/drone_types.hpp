@@ -206,7 +206,7 @@ struct TrackedDrone {
     RssiValue rssi;                    // 4 bytes
     int16_t rssi_history_[6];          // 12 bytes (6 × int16_t)
     SystemTime timestamp_history_[6];   // 24 bytes (6 × uint32_t)
-    uint8_t history_index_;            // 1 byte (was size_t, optimized to uint8_t)
+    uint8_t history_index_;
     
     // Total: 56 bytes (no vtable, no virtual functions)
     

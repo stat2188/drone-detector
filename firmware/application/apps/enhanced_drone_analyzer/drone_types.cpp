@@ -97,18 +97,24 @@ TrackedDrone::TrackedDrone(
 }
 
 void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcept {
-    if (update_count < RSSI_HISTORY_SIZE) {
-        rssi_history_[update_count] = static_cast<int16_t>(new_rssi);
-        timestamp_history_[update_count] = timestamp;
-    } else {
-        rssi_history_[history_index_] = static_cast<int16_t>(new_rssi);
-        timestamp_history_[history_index_] = timestamp;
-        history_index_ = (history_index_ + 1) % RSSI_HISTORY_SIZE;
-    }
+    // Use circular buffer from the start
+    const size_t write_idx = history_index_ % RSSI_HISTORY_SIZE;
+    rssi_history_[write_idx] = static_cast<int16_t>(new_rssi);
+    
+    // Timestamp buffer is smaller (3 entries), use modulo for wrap
+    const size_t timestamp_idx = history_index_ % TIMESTAMP_HISTORY_SIZE;
+    timestamp_history_[timestamp_idx] = timestamp;
+    
+    // Increment index (uint8_t wrap-safe)
+    history_index_++;
     
     rssi = new_rssi;
     last_seen = timestamp;
-    update_count++;
+    
+    // Clamp update_count to RSSI_HISTORY_SIZE
+    if (update_count < RSSI_HISTORY_SIZE) {
+        update_count++;
+    }
     
     // Update threat level based on new RSSI
     if (new_rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
@@ -128,11 +134,10 @@ RssiValue TrackedDrone::get_average_rssi() const noexcept {
     }
     
     int32_t sum = 0;
-    uint8_t count = 0;
+    const uint8_t count = (update_count > RSSI_HISTORY_SIZE) ? RSSI_HISTORY_SIZE : update_count;
     
-    for (size_t i = 0; i < RSSI_HISTORY_SIZE && i < static_cast<size_t>(update_count); ++i) {
+    for (size_t i = 0; i < count; ++i) {
         sum += rssi_history_[i];
-        count++;
     }
     
     if (count == 0) {

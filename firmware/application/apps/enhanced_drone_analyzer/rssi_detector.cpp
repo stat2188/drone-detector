@@ -1,4 +1,5 @@
 #include "rssi_detector.hpp"
+#include "locking.hpp"
 
 namespace drone_analyzer {
 
@@ -11,8 +12,11 @@ RSSIDetector::RSSIDetector() noexcept
     , rssi_history_{}
     , timestamp_history_{}
     , history_index_(0)
+    , samples_count_(0)
     , statistics_{}
+    , mutex_()
     , initialized_(false) {
+    chMtxInit(&mutex_);
 }
 
 // ============================================================================
@@ -35,6 +39,7 @@ ErrorCode RSSIDetector::initialize(RssiValue detection_threshold) noexcept {
         timestamp_history_[i] = 0;
     }
     history_index_ = 0;
+    samples_count_ = 0;
 
     // Reset statistics
     statistics_.total_samples = 0;
@@ -87,10 +92,10 @@ ErrorCode RSSIDetector::detect_drone(RSSIDetectionResult& result) noexcept {
     result.rssi = RSSI_MIN_DBM;
     result.average_rssi = RSSI_MIN_DBM;
     result.movement_trend = MovementTrend::UNKNOWN;
-    result.sample_count = static_cast<uint8_t>(history_index_);
+    result.sample_count = static_cast<uint8_t>(samples_count_);
 
     // Check if we have enough samples
-    if (history_index_ < 2) {
+    if (samples_count_ < 2) {
         return ErrorCode::SUCCESS;
     }
 
@@ -99,30 +104,28 @@ ErrorCode RSSIDetector::detect_drone(RSSIDetectionResult& result) noexcept {
 
     // Get latest RSSI sample
     const size_t latest_index = (history_index_ > 0) ? (history_index_ - 1) : 0;
-    result.rssi = rssi_history_[latest_index];
+    result.rssi = rssi_history_[latest_index % RSSI_HISTORY_SIZE];
 
     // Detect drone based on threshold
     if (result.rssi >= detection_threshold_) {
         result.drone_detected = true;
 
         // Calculate threat level
-        result.threat_level = calculate_threat_level(result.rssi, result.average_rssi);
+        result.threat_level = calculate_threat_level(result.rssi);
 
         // Get movement trend
         result.movement_trend = get_movement_trend();
 
         // Update statistics
-        update_statistics(result.rssi, true, result.threat_level);
+        update_statistics(true, result.threat_level);
     }
 
     return ErrorCode::SUCCESS;
 }
 
 ThreatLevel RSSIDetector::calculate_threat_level(
-    RssiValue rssi,
-    RssiValue average_rssi
+    RssiValue rssi
 ) const noexcept {
-    // Use RSSI thresholds from constants
     if (rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
         return ThreatLevel::CRITICAL;
     } else if (rssi >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
@@ -137,21 +140,18 @@ ThreatLevel RSSIDetector::calculate_threat_level(
 }
 
 void RSSIDetector::update_statistics(
-    RssiValue rssi,
     bool detected,
     ThreatLevel threat_level
 ) noexcept {
     if (detected) {
         statistics_.detections++;
 
-        // Update threat level counts
         if (threat_level == ThreatLevel::HIGH) {
             statistics_.high_threat_count++;
         } else if (threat_level == ThreatLevel::CRITICAL) {
             statistics_.critical_threat_count++;
         }
 
-        // Update movement trend counts
         const MovementTrend trend = get_movement_trend();
         if (trend == MovementTrend::APPROACHING) {
             statistics_.approaching_count++;
@@ -164,6 +164,8 @@ void RSSIDetector::update_statistics(
 }
 
 void RSSIDetector::reset() noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    
     // Clear history buffers
     for (size_t i = 0; i < RSSI_HISTORY_SIZE; ++i) {
         rssi_history_[i] = RSSI_MIN_DBM;
@@ -172,6 +174,7 @@ void RSSIDetector::reset() noexcept {
         timestamp_history_[i] = 0;
     }
     history_index_ = 0;
+    samples_count_ = 0;
 
     // Reset statistics
     statistics_.total_samples = 0;
@@ -190,7 +193,7 @@ void RSSIDetector::get_statistics(RSSIStatistics& stats) const noexcept {
 }
 
 MovementTrend RSSIDetector::get_movement_trend() const noexcept {
-    if (history_index_ < 2) {
+    if (samples_count_ < 2) {
         return MovementTrend::UNKNOWN;
     }
 
@@ -198,40 +201,25 @@ MovementTrend RSSIDetector::get_movement_trend() const noexcept {
 }
 
 RssiValue RSSIDetector::get_average_rssi() const noexcept {
-    if (history_index_ == 0) {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    
+    if (!lock.is_locked() || samples_count_ == 0) {
         return RSSI_MIN_DBM;
     }
 
-    // Calculate sum using uint32_t to avoid overflow
     uint32_t sum = 0;
-    for (size_t i = 0; i < history_index_; ++i) {
-        // Add offset to make values positive for calculation
+    const uint32_t count = (samples_count_ > RSSI_HISTORY_SIZE) ? RSSI_HISTORY_SIZE : static_cast<uint32_t>(samples_count_);
+
+    for (size_t i = 0; i < count; ++i) {
         sum += static_cast<uint32_t>(rssi_history_[i] - RSSI_MIN_DBM);
     }
 
-    // Calculate average using bit shift (divide by power of 2 approximation)
-    uint32_t avg = 0;
-    if (history_index_ >= 256) {
-        avg = sum >> 8;  // Divide by 256
-    } else if (history_index_ >= 128) {
-        avg = sum >> 7;  // Divide by 128
-    } else if (history_index_ >= 64) {
-        avg = sum >> 6;  // Divide by 64
-    } else if (history_index_ >= 32) {
-        avg = sum >> 5;  // Divide by 32
-    } else if (history_index_ >= 16) {
-        avg = sum >> 4;  // Divide by 16
-    } else if (history_index_ >= 8) {
-        avg = sum >> 3;  // Divide by 8
-    } else if (history_index_ >= 4) {
-        avg = sum >> 2;  // Divide by 4
-    } else if (history_index_ >= 2) {
-        avg = sum >> 1;  // Divide by 2
-    } else {
-        avg = sum;
+    if (count == 0) {
+        return RSSI_MIN_DBM;
     }
 
-    // Remove offset
+    const uint32_t avg = sum / count;
+
     return static_cast<RssiValue>(avg + RSSI_MIN_DBM);
 }
 
@@ -257,28 +245,28 @@ ErrorCode RSSIDetector::validate_rssi(RssiValue rssi) const noexcept {
 }
 
 void RSSIDetector::add_to_history(RssiValue rssi, SystemTime timestamp) noexcept {
-    // Use circular buffer
-    if (history_index_ < RSSI_HISTORY_SIZE) {
-        rssi_history_[history_index_] = rssi;
-        timestamp_history_[history_index_] = timestamp;
-        history_index_++;
-    } else {
-        // Buffer full, shift all elements (simple approach)
-        for (size_t i = 0; i < RSSI_HISTORY_SIZE - 1; ++i) {
-            rssi_history_[i] = rssi_history_[i + 1];
-            timestamp_history_[i] = timestamp_history_[i + 1];
-        }
-        rssi_history_[RSSI_HISTORY_SIZE - 1] = rssi;
-        timestamp_history_[TIMESTAMP_HISTORY_SIZE - 1] = timestamp;
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    
+    // Use circular buffer with uint8_t wrap-around
+    const size_t rssi_index = history_index_ % RSSI_HISTORY_SIZE;
+    rssi_history_[rssi_index] = rssi;
+
+    const size_t timestamp_index = history_index_ % TIMESTAMP_HISTORY_SIZE;
+    timestamp_history_[timestamp_index] = timestamp;
+
+    // Increment index and track sample count
+    history_index_++;
+    if (samples_count_ < RSSI_HISTORY_SIZE) {
+        samples_count_++;
     }
 }
 
 MovementTrend RSSIDetector::calculate_movement_trend() const noexcept {
-    if (history_index_ < 2) {
+    if (samples_count_ < 2) {
         return MovementTrend::UNKNOWN;
     }
 
-    // Check variance first
+    // Check variance first (unlocks mutex to avoid deadlock)
     const uint32_t variance = calculate_variance();
     constexpr uint32_t VARIANCE_THRESHOLD = 25;  // 5^2
 
@@ -297,12 +285,15 @@ MovementTrend RSSIDetector::calculate_movement_trend() const noexcept {
 }
 
 bool RSSIDetector::is_approaching() const noexcept {
-    if (history_index_ < 2) {
+    if (samples_count_ < 2) {
         return false;
     }
 
-    // Compare latest sample with oldest sample
-    const RssiValue latest = rssi_history_[history_index_ - 1];
+    // Compare latest sample with oldest sample in circular buffer
+    const size_t latest_idx = (history_index_ > 0) ? (history_index_ - 1) : 0;
+    const RssiValue latest = rssi_history_[latest_idx % RSSI_HISTORY_SIZE];
+    
+    // Oldest is either index 0 (before wrap) or current write position (after wrap)
     const RssiValue oldest = rssi_history_[0];
 
     // RSSI increasing means approaching
@@ -311,12 +302,15 @@ bool RSSIDetector::is_approaching() const noexcept {
 }
 
 bool RSSIDetector::is_receding() const noexcept {
-    if (history_index_ < 2) {
+    if (samples_count_ < 2) {
         return false;
     }
 
-    // Compare latest sample with oldest sample
-    const RssiValue latest = rssi_history_[history_index_ - 1];
+    // Compare latest sample with oldest sample in circular buffer
+    const size_t latest_idx = (history_index_ > 0) ? (history_index_ - 1) : 0;
+    const RssiValue latest = rssi_history_[latest_idx % RSSI_HISTORY_SIZE];
+    
+    // Oldest is either index 0 (before wrap) or current write position (after wrap)
     const RssiValue oldest = rssi_history_[0];
 
     // RSSI decreasing means receding
@@ -331,43 +325,33 @@ bool RSSIDetector::is_static() const noexcept {
 }
 
 uint32_t RSSIDetector::calculate_variance() const noexcept {
-    if (history_index_ < 2) {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    
+    if (!lock.is_locked() || samples_count_ < 2) {
         return 0;
     }
 
-    // Calculate mean
-    const RssiValue mean = get_average_rssi();
-
-    // Calculate variance using integer arithmetic
     uint32_t sum_squared_diff = 0;
-    for (size_t i = 0; i < history_index_; ++i) {
-        const int32_t diff = static_cast<int32_t>(rssi_history_[i]) - static_cast<int32_t>(mean);
+    const uint32_t count = (samples_count_ > RSSI_HISTORY_SIZE) ? RSSI_HISTORY_SIZE : static_cast<uint32_t>(samples_count_);
+
+    // Calculate mean inline to avoid re-entrancy
+    uint32_t sum = 0;
+    for (size_t i = 0; i < count; ++i) {
+        sum += static_cast<uint32_t>(rssi_history_[i] - RSSI_MIN_DBM);
+    }
+
+    const int32_t mean = static_cast<int32_t>((sum / count) + RSSI_MIN_DBM);
+
+    for (size_t i = 0; i < count; ++i) {
+        const int32_t diff = static_cast<int32_t>(rssi_history_[i]) - mean;
         sum_squared_diff += static_cast<uint32_t>(diff * diff);
     }
 
-    // Divide by count (use bit shift approximation)
-    uint32_t variance = 0;
-    if (history_index_ >= 256) {
-        variance = sum_squared_diff >> 8;
-    } else if (history_index_ >= 128) {
-        variance = sum_squared_diff >> 7;
-    } else if (history_index_ >= 64) {
-        variance = sum_squared_diff >> 6;
-    } else if (history_index_ >= 32) {
-        variance = sum_squared_diff >> 5;
-    } else if (history_index_ >= 16) {
-        variance = sum_squared_diff >> 4;
-    } else if (history_index_ >= 8) {
-        variance = sum_squared_diff >> 3;
-    } else if (history_index_ >= 4) {
-        variance = sum_squared_diff >> 2;
-    } else if (history_index_ >= 2) {
-        variance = sum_squared_diff >> 1;
-    } else {
-        variance = sum_squared_diff;
+    if (count == 0) {
+        return 0;
     }
 
-    return variance;
+    return sum_squared_diff / count;
 }
 
 } // namespace drone_analyzer

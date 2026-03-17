@@ -88,8 +88,7 @@ public:
      * @note Uses fixed thresholds from constants
      */
     [[nodiscard]] ThreatLevel calculate_threat_level(
-        RssiValue rssi,
-        RssiValue average_rssi
+        RssiValue rssi
     ) const noexcept;
 
     /**
@@ -100,7 +99,6 @@ public:
      * @note Updates min/max RSSI, detection counts, etc.
      */
     void update_statistics(
-        RssiValue rssi,
         bool detected,
         ThreatLevel threat_level
     ) noexcept;
@@ -201,10 +199,16 @@ private:
     // History buffers (fixed-size, no heap allocation)
     std::array<RssiValue, RSSI_HISTORY_SIZE> rssi_history_;
     std::array<SystemTime, TIMESTAMP_HISTORY_SIZE> timestamp_history_;
-    size_t history_index_;
+    uint8_t history_index_;
+
+    // Sample count for proper average calculation
+    uint16_t samples_count_;
 
     // Statistics
     RSSIStatistics statistics_;
+
+    // Thread safety
+    mutable Mutex mutex_;
 
     // State
     bool initialized_;
