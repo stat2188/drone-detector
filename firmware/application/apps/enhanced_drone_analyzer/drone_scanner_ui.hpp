@@ -18,8 +18,6 @@
 #include "ui_receiver.hpp"
 #include "ui_widget.hpp"
 #include "ui_painter.hpp"
-#include "event_m0.hpp"
-#include "message.hpp"
 #include "theme.hpp"
 #include "scanner.hpp"
 #include "database.hpp"
@@ -54,6 +52,9 @@ public:
      * @brief Destructor
      */
     ~DroneScannerUI() noexcept override;
+
+    DroneScannerUI(const DroneScannerUI&) = delete;
+    DroneScannerUI& operator=(const DroneScannerUI&) = delete;
 
     /**
      * @brief Paint method - render scanner UI
@@ -184,19 +185,6 @@ private:
      * @note Called once in destructor
      */
     void destruct_objects() noexcept;
-
-    /**
-     * @brief Dispatch retune message to scanner (separates UI from logic)
-     * @param freq Current frequency
-     * @param range Frequency range (unused)
-     */
-    void dispatch_retune(int64_t freq, uint32_t range) noexcept;
-
-    /**
-     * @brief Dispatch statistics message to scanner (separates UI from logic)
-     * @param statistics RSSI statistics
-     */
-    void dispatch_statistics(const ChannelStatistics& statistics) noexcept;
 
 private:
     /**
@@ -356,23 +344,6 @@ private:
      */
     void update_alert_timer(uint32_t current_time_ms) noexcept;
 
-    // ========================================================================
-    // Message Handlers
-    // ========================================================================
-
-    /**
-     * @brief Handle RetuneMessage from scanner thread
-     * @param freq Current frequency
-     * @param range Frequency range (unused, matches RetuneMessage structure)
-     */
-    void handle_retune(int64_t freq, uint32_t range) noexcept;
-
-    /**
-     * @brief Handle ChannelStatisticsMessage from baseband
-     * @param statistics RSSI statistics
-     */
-    void handle_statistics(const ChannelStatistics& statistics) noexcept;
-
     /**
      * @brief Update BigFrequency display color
      * @param color Color code for display
@@ -421,10 +392,6 @@ private:
     ui::LNAGainField field_lna_;
     ui::VGAGainField field_vga_;
     ui::RFAmpField field_rf_amp_;
-
-    // Message handlers
-    MessageHandlerRegistration message_handler_retune_;
-    MessageHandlerRegistration message_handler_stats_;
 
     // Current frequency and RSSI
     rf::Frequency current_frequency_;

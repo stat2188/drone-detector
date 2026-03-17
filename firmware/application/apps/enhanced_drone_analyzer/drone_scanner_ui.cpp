@@ -43,19 +43,6 @@ void DroneScannerUI::destruct_objects() noexcept {
     }
 }
 
-void DroneScannerUI::dispatch_retune(int64_t freq, uint32_t range) noexcept {
-    (void)range;
-    current_frequency_ = freq;
-
-    if (scanner_ptr_ != nullptr) {
-        scanner_ptr_->set_freq_lock_count(0);
-    }
-}
-
-void DroneScannerUI::dispatch_statistics(const ChannelStatistics& statistics) noexcept {
-    current_rssi_ = statistics.max_db;
-}
-
 constexpr uint16_t LNA_X = 4;
 constexpr uint16_t LNA_Y = 0;
 constexpr uint16_t VGA_X = 11;
@@ -248,7 +235,10 @@ void DroneScannerUI::show_alert(const char* message, uint32_t duration_ms) noexc
         return;
     }
 
-    safe_str_copy(alert_message_, MAX_TEXT_LENGTH, message);
+    const ErrorCode copy_err = safe_str_copy(alert_message_, MAX_TEXT_LENGTH, message);
+    if (copy_err != ErrorCode::SUCCESS) {
+        alert_message_[0] = '\0';
+    }
 
     alert_active_ = true;
     alert_start_time_ = chTimeNow();
@@ -343,18 +333,8 @@ const DisplayData& DroneScannerUI::get_display_data() const noexcept {
 }
 
 // ============================================================================
-// Message Handlers
+// UI Updates
 // ============================================================================
-
-void DroneScannerUI::handle_retune(int64_t freq, uint32_t range) noexcept {
-    dispatch_retune(freq, range);
-    update_ui_state();
-}
-
-void DroneScannerUI::handle_statistics(const ChannelStatistics& statistics) noexcept {
-    dispatch_statistics(statistics);
-    update_ui_state();
-}
 
 void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
     // Set BigFrequency style based on color
@@ -380,10 +360,33 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
 }
 
 void DroneScannerUI::update_ui_state() noexcept {
-    current_scanner_state_ = (scanner_ptr_ != nullptr) ? scanner_ptr_->get_state() : ScannerState::IDLE;
+    if (scanner_ptr_ == nullptr) {
+        current_scanner_state_ = ScannerState::IDLE;
+        current_rssi_ = RSSI_NOISE_FLOOR_DBM;
+        current_frequency_ = 0;
+        bigdisplay_update(BigDisplayColor::GREY);
+        displayed_drone_type_[0] = '\0';
+        drone_type_display_timer_ = 0;
+        return;
+    }
+
+    current_scanner_state_ = scanner_ptr_->get_state();
+
+    current_rssi_ = RSSI_NOISE_FLOOR_DBM;
+    current_frequency_ = 0;
+
+    const ErrorCode err = scanner_ptr_->get_display_data(*display_data_ptr_);
+    if (err == ErrorCode::SUCCESS && display_data_ptr_->drone_count > 0) {
+        current_rssi_ = display_data_ptr_->drones[0].rssi;
+        current_frequency_ = display_data_ptr_->drones[0].frequency;
+    } else {
+        const ErrorResult<FreqHz> freq_result = scanner_ptr_->get_current_frequency();
+        if (freq_result.has_value()) {
+            current_frequency_ = freq_result.value();
+        }
+    }
 
     BigDisplayColor color = BigDisplayColor::GREY;
-
     switch (current_scanner_state_) {
         case ScannerState::SCANNING:
             color = BigDisplayColor::GREY;
@@ -392,11 +395,9 @@ void DroneScannerUI::update_ui_state() noexcept {
             color = BigDisplayColor::YELLOW;
             break;
         case ScannerState::TRACKING:
-            if (current_rssi_ >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
-                color = BigDisplayColor::RED;
-            } else {
-                color = BigDisplayColor::GREEN;
-            }
+            color = (current_rssi_ >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) 
+                  ? BigDisplayColor::RED 
+                  : BigDisplayColor::GREEN;
             break;
         default:
             color = BigDisplayColor::GREY;
@@ -405,17 +406,14 @@ void DroneScannerUI::update_ui_state() noexcept {
 
     bigdisplay_update(color);
 
-    if (current_scanner_state_ == ScannerState::LOCKING && scanner_ptr_ != nullptr) {
+    if (current_scanner_state_ == ScannerState::LOCKING) {
         const char* drone_type = scanner_ptr_->get_current_drone_type();
 
         if (drone_type != nullptr && drone_type[0] != '\0') {
-            size_t copy_len = 0;
-            while (copy_len < MAX_DRONE_TYPE_DISPLAY && drone_type[copy_len] != '\0') {
-                displayed_drone_type_[copy_len] = drone_type[copy_len];
-                copy_len++;
+            const ErrorCode copy_err = safe_str_copy(displayed_drone_type_, MAX_DRONE_TYPE_DISPLAY, drone_type);
+            if (copy_err == ErrorCode::SUCCESS) {
+                drone_type_display_timer_ = chTimeNow();
             }
-            displayed_drone_type_[copy_len] = '\0';
-            drone_type_display_timer_ = chTimeNow();
         }
     } else {
         displayed_drone_type_[0] = '\0';
