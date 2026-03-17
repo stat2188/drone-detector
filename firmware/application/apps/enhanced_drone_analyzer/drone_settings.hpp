@@ -128,6 +128,12 @@ void paint(ui::Painter& painter) override;
      */
     [[nodiscard]] ErrorCode validate_settings() const noexcept;
 
+    /**
+     * @brief Open legend editor
+     * @return ErrorCode::SUCCESS if opened, error code otherwise
+     */
+    [[nodiscard]] ErrorCode open_legend_editor() noexcept;
+
 private:
     /**
      * @brief Draw settings header
