@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include "ch.h"
 #include "drone_types.hpp"
 #include "constants.hpp"
 

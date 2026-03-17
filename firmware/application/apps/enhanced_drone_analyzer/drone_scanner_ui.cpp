@@ -321,15 +321,54 @@ ScanningMode DroneScannerUI::get_scanning_mode() const noexcept {
 }
 
 const DisplayData& DroneScannerUI::get_display_data() const noexcept {
-    static const DisplayData empty_data;
-
-    if (scanner_ptr_ != nullptr && display_data_ptr_ != nullptr) {
-        ErrorCode err = scanner_ptr_->get_display_data(*display_data_ptr_);
-        if (err == ErrorCode::SUCCESS) {
-            return *display_data_ptr_;
+    static DisplayData empty_data;
+    
+    if (scanner_ptr_ == nullptr || display_data_ptr_ == nullptr) {
+        return empty_data;
+    }
+    
+    display_data_ptr_->clear();
+    
+    TrackedDrone tracked_drones[MAX_TRACKED_DRONES];
+    const size_t drone_count = scanner_ptr_->get_tracked_drones(tracked_drones, MAX_TRACKED_DRONES);
+    
+    const size_t copy_count = drone_count < MAX_DISPLAYED_DRONES ? drone_count : MAX_DISPLAYED_DRONES;
+    
+    for (size_t i = 0; i < copy_count; ++i) {
+        display_data_ptr_->drones[i] = DisplayDroneEntry(tracked_drones[i]);
+    }
+    
+    display_data_ptr_->drone_count = copy_count;
+    
+    display_data_ptr_->state.scanning_active = scanner_ptr_->is_scanning();
+    display_data_ptr_->state.is_fresh = true;
+    
+    display_data_ptr_->state.max_detected_threat = ThreatLevel::NONE;
+    display_data_ptr_->state.approaching_count = 0;
+    display_data_ptr_->state.static_count = 0;
+    display_data_ptr_->state.receding_count = 0;
+    
+    for (size_t i = 0; i < copy_count; ++i) {
+        if (display_data_ptr_->drones[i].threat > display_data_ptr_->state.max_detected_threat) {
+            display_data_ptr_->state.max_detected_threat = display_data_ptr_->drones[i].threat;
+        }
+        
+        switch (display_data_ptr_->drones[i].trend) {
+            case MovementTrend::APPROACHING:
+                display_data_ptr_->state.approaching_count++;
+                break;
+            case MovementTrend::STATIC:
+                display_data_ptr_->state.static_count++;
+                break;
+            case MovementTrend::RECEDING:
+                display_data_ptr_->state.receding_count++;
+                break;
+            default:
+                break;
         }
     }
-    return empty_data;
+    
+    return *display_data_ptr_;
 }
 
 // ============================================================================
@@ -369,23 +408,25 @@ void DroneScannerUI::update_ui_state() noexcept {
         drone_type_display_timer_ = 0;
         return;
     }
-
+    
     current_scanner_state_ = scanner_ptr_->get_state();
-
+    
     current_rssi_ = RSSI_NOISE_FLOOR_DBM;
     current_frequency_ = 0;
-
-    const ErrorCode err = scanner_ptr_->get_display_data(*display_data_ptr_);
-    if (err == ErrorCode::SUCCESS && display_data_ptr_->drone_count > 0) {
-        current_rssi_ = display_data_ptr_->drones[0].rssi;
-        current_frequency_ = display_data_ptr_->drones[0].frequency;
+    
+    TrackedDrone tracked_drones[MAX_TRACKED_DRONES];
+    const size_t drone_count = scanner_ptr_->get_tracked_drones(tracked_drones, MAX_TRACKED_DRONES);
+    
+    if (drone_count > 0) {
+        current_rssi_ = tracked_drones[0].rssi;
+        current_frequency_ = tracked_drones[0].frequency;
     } else {
         const ErrorResult<FreqHz> freq_result = scanner_ptr_->get_current_frequency();
         if (freq_result.has_value()) {
             current_frequency_ = freq_result.value();
         }
     }
-
+    
     BigDisplayColor color = BigDisplayColor::GREY;
     switch (current_scanner_state_) {
         case ScannerState::SCANNING:
@@ -403,12 +444,12 @@ void DroneScannerUI::update_ui_state() noexcept {
             color = BigDisplayColor::GREY;
             break;
     }
-
+    
     bigdisplay_update(color);
-
+    
     if (current_scanner_state_ == ScannerState::LOCKING) {
         const char* drone_type = scanner_ptr_->get_current_drone_type();
-
+        
         if (drone_type != nullptr && drone_type[0] != '\0') {
             const ErrorCode copy_err = safe_str_copy(displayed_drone_type_, MAX_DRONE_TYPE_DISPLAY, drone_type);
             if (copy_err == ErrorCode::SUCCESS) {

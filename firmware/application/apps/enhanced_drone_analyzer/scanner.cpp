@@ -371,10 +371,10 @@ ThreatLevel DroneScanner::determine_threat_level_internal(RssiValue rssi) const 
     }
 }
 
-size_t DroneScanner::get_tracked_drones(
-    TrackedDrone* drones,
-    size_t max_count
-) const noexcept {
+    size_t DroneScanner::get_tracked_drones(
+        TrackedDrone* drones,
+        size_t max_count
+    ) const noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (drones == nullptr || max_count == 0) {
@@ -388,56 +388,6 @@ size_t DroneScanner::get_tracked_drones(
     }
     
     return copy_count;
-}
-
-ErrorCode DroneScanner::get_display_data(DisplayData& display_data) const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    
-    return update_display_data_internal(display_data);
-}
-
-ErrorCode DroneScanner::update_display_data_internal(
-    DisplayData& display_data
-) const noexcept {
-    display_data.clear();
-    
-    size_t copy_count = tracked_count_ < MAX_DISPLAYED_DRONES ? tracked_count_ : MAX_DISPLAYED_DRONES;
-    
-    for (size_t i = 0; i < copy_count; ++i) {
-        display_data.drones[i] = DisplayDroneEntry(tracked_drones_[i]);
-    }
-    
-    display_data.drone_count = copy_count;
-    
-    display_data.state.scanning_active = scanning_active_.test();
-    display_data.state.is_fresh = true;
-    
-    display_data.state.max_detected_threat = ThreatLevel::NONE;
-    display_data.state.approaching_count = 0;
-    display_data.state.static_count = 0;
-    display_data.state.receding_count = 0;
-    
-    for (size_t i = 0; i < copy_count; ++i) {
-        if (display_data.drones[i].threat > display_data.state.max_detected_threat) {
-            display_data.state.max_detected_threat = display_data.drones[i].threat;
-        }
-        
-        switch (display_data.drones[i].trend) {
-            case MovementTrend::APPROACHING:
-                display_data.state.approaching_count++;
-                break;
-            case MovementTrend::STATIC:
-                display_data.state.static_count++;
-                break;
-            case MovementTrend::RECEDING:
-                display_data.state.receding_count++;
-                break;
-            default:
-                break;
-        }
-    }
-    
-    return ErrorCode::SUCCESS;
 }
 
 ScannerState DroneScanner::get_state() const noexcept {

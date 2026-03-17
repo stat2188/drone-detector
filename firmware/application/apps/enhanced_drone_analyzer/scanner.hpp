@@ -174,14 +174,6 @@ public:
     ) const noexcept;
     
     /**
-     * @brief Get display data for UI
-     * @param display_data Output display data
-     * @return ErrorCode::SUCCESS if data retrieved, error code otherwise
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     */
-    [[nodiscard]] ErrorCode get_display_data(DisplayData& display_data) const noexcept;
-    
-    /**
      * @brief Get scanner state
      * @return Current scanner state
      */
@@ -346,24 +338,13 @@ private:
         SystemTime timestamp_ms
     ) noexcept;
     
-    /**
-     * @brief Internal: Remove stale drones
-     * @note Called by remove_stale_drones() with mutex held
-     * @param current_time Current system time
-     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
-     */
+     /**
+      * @brief Internal: Remove stale drones
+      * @note Called by remove_stale_drones() with mutex held
+      * @param current_time Current system time
+      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
+      */
     void remove_stale_drones_internal(SystemTime current_time) noexcept;
-    
-    /**
-     * @brief Internal: Update display data
-     * @note Called by get_display_data() with mutex held
-     * @param display_data Output display data
-     * @return ErrorCode::SUCCESS if updated, error code otherwise
-     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
-     */
-    [[nodiscard]] ErrorCode update_display_data_internal(
-        DisplayData& display_data
-    ) const noexcept;
     
     /**
      * @brief Internal: Determine drone type from frequency

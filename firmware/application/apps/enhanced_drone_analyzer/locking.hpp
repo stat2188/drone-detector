@@ -118,6 +118,7 @@ private:
  * @brief RAII wrapper for mutex lock
  * @note Acquires lock in constructor, releases in destructor
  * @note Enforces lock ordering via template parameter
+ * @note Runtime validation of lock order (debug builds only)
  */
 template<LockOrder ORDER>
 class MutexLock {
@@ -128,8 +129,17 @@ public:
      */
     explicit     MutexLock(Mutex& mutex) noexcept
         : mutex_(mutex), locked_(false) {
+        
+#ifdef DEBUG
+        validate_lock_order(ORDER);
+#endif
+        
         chMtxLock(&mutex_);
         locked_ = true;
+        
+#ifdef DEBUG
+        register_held_lock(ORDER);
+#endif
     }
 
     /**
@@ -139,6 +149,10 @@ public:
         if (locked_) {
             chMtxUnlock();
             locked_ = false;
+            
+#ifdef DEBUG
+            unregister_held_lock();
+#endif
         }
     }
 
@@ -156,6 +170,10 @@ public:
         if (locked_) {
             chMtxUnlock();
             locked_ = false;
+            
+#ifdef DEBUG
+            unregister_held_lock();
+#endif
         }
     }
     
@@ -166,6 +184,31 @@ public:
     MutexLock& operator=(MutexLock&&) = delete;
     
 private:
+#ifdef DEBUG
+    static thread_local LockOrder held_locks_[16];
+    static thread_local size_t held_lock_count_;
+    
+    void validate_lock_order(LockOrder new_lock) const noexcept {
+        for (size_t i = 0; i < held_lock_count_; ++i) {
+            if (held_locks_[i] >= new_lock) {
+                chSysHalt();
+            }
+        }
+    }
+    
+    void register_held_lock(LockOrder lock_order) noexcept {
+        if (held_lock_count_ < 16) {
+            held_locks_[held_lock_count_++] = lock_order;
+        }
+    }
+    
+    void unregister_held_lock() noexcept {
+        if (held_lock_count_ > 0) {
+            held_lock_count_--;
+        }
+    }
+#endif
+    
     Mutex& mutex_;
     bool locked_;
 };
@@ -174,6 +217,7 @@ private:
  * @brief RAII wrapper for mutex lock with timeout
  * @note Uses chMtxTryLock in a loop for timeout (ChibiOS doesn't have chMtxLockTimeout)
  * @note Provides graceful degradation on lock contention
+ * @note Runtime validation of lock order (debug builds only)
  */
 template<LockOrder ORDER>
 class MutexLockTimeout {
@@ -185,12 +229,21 @@ public:
      */
     MutexLockTimeout(Mutex& mutex, uint32_t timeout_ms) noexcept
         : mutex_(mutex), locked_(false) {
+        
+#ifdef DEBUG
+        validate_lock_order(ORDER);
+#endif
+        
         const systime_t timeout = MS2ST(timeout_ms);
         const systime_t start = chTimeNow();
         
         while (!locked_ && (chTimeNow() - start < timeout)) {
             if (chMtxTryLock(&mutex_)) {
                 locked_ = true;
+                
+#ifdef DEBUG
+                register_held_lock(ORDER);
+#endif
             }
         }
     }
@@ -202,6 +255,10 @@ public:
         if (locked_) {
             chMtxUnlock();
             locked_ = false;
+            
+#ifdef DEBUG
+            unregister_held_lock();
+#endif
         }
     }
     
@@ -219,6 +276,10 @@ public:
         if (locked_) {
             chMtxUnlock();
             locked_ = false;
+            
+#ifdef DEBUG
+            unregister_held_lock();
+#endif
         }
     }
     
@@ -229,6 +290,31 @@ public:
     MutexLockTimeout& operator=(MutexLockTimeout&&) = delete;
     
 private:
+#ifdef DEBUG
+    static thread_local LockOrder held_locks_[16];
+    static thread_local size_t held_lock_count_;
+    
+    void validate_lock_order(LockOrder new_lock) const noexcept {
+        for (size_t i = 0; i < held_lock_count_; ++i) {
+            if (held_locks_[i] >= new_lock) {
+                chSysHalt();
+            }
+        }
+    }
+    
+    void register_held_lock(LockOrder lock_order) noexcept {
+        if (held_lock_count_ < 16) {
+            held_locks_[held_lock_count_++] = lock_order;
+        }
+    }
+    
+    void unregister_held_lock() noexcept {
+        if (held_lock_count_ > 0) {
+            held_lock_count_--;
+        }
+    }
+#endif
+    
     Mutex& mutex_;
     bool locked_;
 };
@@ -237,6 +323,7 @@ private:
  * @brief RAII wrapper for mutex try-lock
  * @note Tries to acquire lock, does not block
  * @note Useful for non-blocking UI updates
+ * @note Runtime validation of lock order (debug builds only)
  */
 template<LockOrder ORDER>
 class MutexTryLock {
@@ -247,7 +334,18 @@ public:
      */
     explicit MutexTryLock(Mutex& mutex) noexcept
         : mutex_(mutex), locked_(false) {
+        
+#ifdef DEBUG
+        validate_lock_order(ORDER);
+#endif
+        
         locked_ = chMtxTryLock(&mutex_);
+        
+#ifdef DEBUG
+        if (locked_) {
+            register_held_lock(ORDER);
+        }
+#endif
     }
     
     /**
@@ -257,6 +355,10 @@ public:
         if (locked_) {
             chMtxUnlock();
             locked_ = false;
+            
+#ifdef DEBUG
+            unregister_held_lock();
+#endif
         }
     }
     
@@ -274,6 +376,10 @@ public:
         if (locked_) {
             chMtxUnlock();
             locked_ = false;
+            
+#ifdef DEBUG
+            unregister_held_lock();
+#endif
         }
     }
     
@@ -284,6 +390,31 @@ public:
     MutexTryLock& operator=(MutexTryLock&&) = delete;
     
 private:
+#ifdef DEBUG
+    static thread_local LockOrder held_locks_[16];
+    static thread_local size_t held_lock_count_;
+    
+    void validate_lock_order(LockOrder new_lock) const noexcept {
+        for (size_t i = 0; i < held_lock_count_; ++i) {
+            if (held_locks_[i] >= new_lock) {
+                chSysHalt();
+            }
+        }
+    }
+    
+    void register_held_lock(LockOrder lock_order) noexcept {
+        if (held_lock_count_ < 16) {
+            held_locks_[held_lock_count_++] = lock_order;
+        }
+    }
+    
+    void unregister_held_lock() noexcept {
+        if (held_lock_count_ > 0) {
+            held_lock_count_--;
+        }
+    }
+#endif
+    
     Mutex& mutex_;
     bool locked_;
 };
