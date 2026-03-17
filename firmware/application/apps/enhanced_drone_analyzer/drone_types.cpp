@@ -59,8 +59,8 @@ ErrorCode freqman_entry_fixed::set_description(const char* src) noexcept {
 }
 
 bool freqman_entry_fixed::is_valid() const noexcept {
-    return (frequency_a >= MIN_FREQUENCY_HZ) &&
-           (frequency_a <= MAX_FREQUENCY_HZ) &&
+    return (static_cast<FreqHz>(frequency_a) >= MIN_FREQUENCY_HZ) &&
+           (static_cast<FreqHz>(frequency_a) <= MAX_FREQUENCY_HZ) &&
            (frequency_b >= 0);
 }
 
@@ -229,16 +229,16 @@ void FrequencyHopDetector::reset() noexcept {
     last_hop_time = 0;
 }
 
-WidebandScanData::WidebandScanData() noexcept {
-    std::memset(spectrum_buffer, 0, sizeof(spectrum_buffer));
-    noise_floor = 10;
-    signal_threshold = 20;
-    peak_index = 0;
-    peak_frequency = 0;
-    peak_amplitude = 0;
-    scan_time = 0;
-    scan_complete = 0;
-    std::memset(reserved, 0, sizeof(reserved));
+WidebandScanData::WidebandScanData() noexcept
+    : spectrum_buffer{}
+    , noise_floor{10}
+    , signal_threshold{20}
+    , peak_index{0}
+    , peak_frequency{0}
+    , peak_amplitude{0}
+    , scan_time{0}
+    , scan_complete{0}
+    , reserved{} {
 }
 
 void WidebandScanData::clear() noexcept {
@@ -266,8 +266,9 @@ ScannerStateSnapshot::ScannerStateSnapshot() noexcept
 }
 
 DisplayData::DisplayData() noexcept
-    : drone_count{0} {
-    clear();
+    : drones{}
+    , drone_count{0}
+    , state{} {
 }
 
 void DisplayData::clear() noexcept {

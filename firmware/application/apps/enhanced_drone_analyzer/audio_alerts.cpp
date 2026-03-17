@@ -17,6 +17,7 @@
 #include "audio_alerts.hpp"
 #include "baseband_api.hpp"
 #include "audio.hpp"
+#include "constants.hpp"
 
 namespace drone_analyzer {
 
@@ -88,10 +89,6 @@ const AudioAlertConfig& AudioAlertManager::get_alert_config(AlertType alert_type
 
     static const AudioAlertConfig no_alert(0, 0, AUDIO_ALERT_SAMPLE_RATE_HZ, 0, 0, AlertPriority::LOW);
     return no_alert;
-}
-    
-    // Default to NEW_DRONE configuration
-    return configs[0];
 }
 
 const AudioAlertConfig& AudioAlertManager::get_threat_alert_config(ThreatLevel threat_level) noexcept {

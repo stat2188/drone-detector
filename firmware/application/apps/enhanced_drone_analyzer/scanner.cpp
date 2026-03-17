@@ -57,19 +57,19 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , hardware_(hardware)
     , state_(ScannerState::IDLE)
     , config_()
+    , freq_lock_count_{0}
+    , locked_frequency_{0}
+    , track_start_time_{0}
+    , current_drone_type_{'\0', '\0', '\0', '\0', '\0'}
+    , drone_type_valid_{false}
     , statistics_()
     , tracked_drones_()
-    , tracked_count_(0)
-    , current_frequency_(0)
-    , last_scan_time_(0)
+    , tracked_count_{0}
+    , current_frequency_{0}
+    , last_scan_time_{0}
     , scanning_active_()
-    , last_threat_levels_{}
     , alert_callback_(nullptr)
-    , freq_lock_count_(0)
-    , locked_frequency_(0)
-    , track_start_time_(0)
-    , current_drone_type_{'\0'}
-    , drone_type_valid_(false)
+    , last_threat_levels_{}
     , mutex_()
     , state_transition_allowed_()
     , scan_cycle_in_progress_()
