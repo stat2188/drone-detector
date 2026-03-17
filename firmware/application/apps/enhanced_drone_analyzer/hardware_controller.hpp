@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <ch.h>
+#include "message.hpp"
 #include "drone_types.hpp"
 #include "locking.hpp"
 #include "constants.hpp"
@@ -200,6 +201,14 @@ public:
      */
     [[nodiscard]] ErrorCode get_last_error() const noexcept;
     
+    [[nodiscard]] ChannelSpectrumFIFO* get_spectrum_fifo() const noexcept {
+        return spectrum_fifo_;
+    }
+    
+    void set_spectrum_fifo(ChannelSpectrumFIFO* fifo) noexcept {
+        spectrum_fifo_ = fifo;
+    }
+    
 private:
     /**
      * @brief Internal: Initialize hardware components
@@ -293,6 +302,9 @@ private:
     
     // Streaming active flag
     AtomicFlag streaming_active_;
+    
+    // ChannelSpectrum FIFO pointer (set by ChannelSpectrumConfigMessage)
+    ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
     
     // Mutex for thread safety (LockOrder::STATE_MUTEX)
     mutable Mutex mutex_;

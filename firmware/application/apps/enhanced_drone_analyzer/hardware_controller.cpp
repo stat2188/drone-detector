@@ -1,5 +1,7 @@
 #include "hardware_controller.hpp"
 #include "portapack.hpp"
+#include "baseband_api.hpp"
+#include "message.hpp"
 
 #include "ch.h"
 
@@ -89,12 +91,11 @@ ErrorCode HardwareController::initialize() noexcept {
 }
 
 ErrorCode HardwareController::initialize_internal() noexcept {
-    // Placeholder for hardware initialization
-    // In actual implementation, this would:
-    // 1. Initialize SPI communication with HackRF One
-    // 2. Configure RF frontend
-    // 3. Set default gain
-    // 4. Enable RF path
+    // Load baseband firmware for wideband spectrum analysis
+    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
+    
+    // Configure baseband for spectrum streaming
+    baseband::set_spectrum(config_.sample_rate, 31);
     
     // Apply default configuration
     return apply_config_internal(config_);
@@ -231,6 +232,8 @@ ErrorCode HardwareController::start_streaming_internal() noexcept {
 
     portapack::receiver_model.enable();
 
+    baseband::spectrum_streaming_start();
+
     return ErrorCode::SUCCESS;
 }
 
@@ -255,6 +258,8 @@ ErrorCode HardwareController::stop_spectrum_streaming() noexcept {
 }
 
 ErrorCode HardwareController::stop_streaming_internal() noexcept {
+    baseband::spectrum_streaming_stop();
+
     portapack::receiver_model.disable();
 
     return ErrorCode::SUCCESS;
@@ -271,16 +276,26 @@ ErrorResult<RssiSample> HardwareController::get_rssi_sample() noexcept {
 }
 
 ErrorResult<RssiSample> HardwareController::read_rssi_internal() noexcept {
-    // Placeholder for reading RSSI
-    // In actual implementation, this would:
-    // 1. Read RSSI from hardware
-    // 2. Get current timestamp
-    // 3. Return sample
-    
-    // Generate sample with current frequency
     RssiSample sample;
+    
+    if (spectrum_fifo_ != nullptr) {
+        ChannelSpectrum spectrum;
+        while (spectrum_fifo_->out(spectrum)) {
+            uint8_t max_power = 0;
+            for (size_t i = 0; i < 256; i++) {
+                if (spectrum.db[i] > max_power) {
+                    max_power = spectrum.db[i];
+                }
+            }
+            sample.rssi = static_cast<int32_t>(max_power);
+            sample.timestamp = chTimeNow();
+            sample.frequency = current_frequency_;
+        }
+        return ErrorResult<RssiSample>::success(sample);
+    }
+    
     sample.rssi = RSSI_NOISE_FLOOR_DBM;
-    sample.timestamp = 0;  // Will be chTimeNow()
+    sample.timestamp = chTimeNow();
     sample.frequency = current_frequency_;
     
     return ErrorResult<RssiSample>::success(sample);
