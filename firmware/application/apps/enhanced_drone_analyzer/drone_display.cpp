@@ -122,7 +122,7 @@ void DroneDisplay::render_spectrum(
     const uint16_t step_x = width / static_cast<uint16_t>(spectrum_size);
     for (size_t i = 0; i < spectrum_size; ++i) {
         const uint8_t value = spectrum_data[i];
-        const uint16_t bar_height = (value * height) / 255;
+        const uint16_t bar_height = (value * height) / HISTOGRAM_MAX_VALUE;
         const uint16_t x = start_x + static_cast<uint16_t>(i * step_x);
         const uint16_t y = start_y + height - bar_height;
         

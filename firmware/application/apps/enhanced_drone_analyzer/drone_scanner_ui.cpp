@@ -10,10 +10,6 @@
 
 namespace drone_analyzer {
 
-constexpr uint32_t KEY_START_STOP = 0x01;
-constexpr uint32_t KEY_MODE = 0x02;
-constexpr uint32_t KEY_SETTINGS = 0x03;
-
 // Static buffers for large objects (off-stack, file scope)
 // These are constructed once at startup and reused for the lifetime of the application
 alignas(HardwareController) static uint8_t s_hardware_buffer[sizeof(HardwareController)];
@@ -83,7 +79,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , field_vga_{Point{VGA_X, VGA_Y}}
     , field_rf_amp_{Point{RFAMP_X, RFAMP_Y}}
     , current_frequency_(0)
-    , current_rssi_(-120)
+    , current_rssi_(RSSI_NOISE_FLOOR_DBM)
     , current_scanner_state_(ScannerState::IDLE)
     , displayed_drone_type_{'\0'}
     , drone_type_display_timer_(0)
@@ -117,7 +113,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     if (scanner_ptr_ != nullptr) {
         ErrorCode err = scanner_ptr_->initialize();
         if (err != ErrorCode::SUCCESS) {
-            show_error(err, 3000);
+            show_error(err, ERROR_DURATION_MS);
             destruct_objects();
             return;
         }
@@ -206,15 +202,15 @@ ErrorCode DroneScannerUI::handle_user_input(uint32_t key) noexcept {
 
 ErrorCode DroneScannerUI::process_key_input(uint32_t key) noexcept {
     switch (key) {
-        case KEY_START_STOP:
+        case BUTTON_ID_START_STOP:
             return handle_start_stop_key();
-        
-        case KEY_MODE:
+
+        case BUTTON_ID_MODE:
             return handle_mode_key();
-        
-        case KEY_SETTINGS:
+
+        case BUTTON_ID_SETTINGS:
             return handle_settings_key();
-        
+
         default:
             return ErrorCode::INVALID_PARAMETER;
     }
@@ -335,8 +331,7 @@ ScanningMode DroneScannerUI::get_scanning_mode() const noexcept {
 }
 
 const DisplayData& DroneScannerUI::get_display_data() const noexcept {
-    static DisplayData empty_data;
-    empty_data.clear();
+    static const DisplayData empty_data;
 
     if (scanner_ptr_ != nullptr && display_data_ptr_ != nullptr) {
         ErrorCode err = scanner_ptr_->get_display_data(*display_data_ptr_);
@@ -462,11 +457,11 @@ void DroneScannerUI::draw_scanner_header(Painter& painter) noexcept {
 void DroneScannerUI::draw_scanner_status(Painter& painter, uint16_t start_y) noexcept {
     const auto& text_style = *Theme::getInstance()->bg_darkest_small;
 
-    draw_text(painter, "RSSI:", 5, start_y + 100, text_style);
+    draw_text(painter, "RSSI:", RSSI_TEXT_X, start_y + RSSI_TEXT_Y_OFFSET, text_style);
 
     const auto rssi_str = to_string_dec_int(current_rssi_, 5);
-    draw_text(painter, rssi_str.c_str(), 50, start_y + 100, text_style);
-    draw_text(painter, "dBm", 5 + 50 + rssi_str.length() * 5, start_y + 100, text_style);
+    draw_text(painter, rssi_str.c_str(), RSSI_VALUE_X, start_y + RSSI_TEXT_Y_OFFSET, text_style);
+    draw_text(painter, "dBm", RSSI_DBM_X_BASE + rssi_str.length() * FONT_WIDTH, start_y + RSSI_TEXT_Y_OFFSET, text_style);
 
     const char* state_text = "IDLE";
     switch (current_scanner_state_) {
@@ -486,10 +481,10 @@ void DroneScannerUI::draw_scanner_status(Painter& painter, uint16_t start_y) noe
             state_text = "IDLE";
     }
 
-    draw_text(painter, state_text, 5, start_y + 120, text_style);
+    draw_text(painter, state_text, STATE_TEXT_X, start_y + STATE_TEXT_Y_OFFSET, text_style);
 
     if (scanner_ptr_ != nullptr && scanner_ptr_->is_scanning()) {
-        draw_text(painter, "Scanning...", 5, start_y + 140, text_style);
+        draw_text(painter, "Scanning...", STATE_TEXT_X, start_y + SCANNING_TEXT_Y_OFFSET, text_style);
     }
 }
 
@@ -548,14 +543,10 @@ void DroneScannerUI::draw_alert_overlay(Painter& painter) noexcept {
 
     const auto& style = *Theme::getInstance()->fg_red;
 
-    const uint16_t alert_x = 10;
-    const uint16_t alert_y = 100;
-    const uint16_t alert_w = 220;
-    const uint16_t alert_h = 50;
-    draw_rectangle(painter, alert_x, alert_y, alert_w, alert_h, 0xFFFF0000, true);
+    draw_rectangle(painter, ALERT_X, ALERT_Y, ALERT_W, ALERT_H, COLOR_CRITICAL_THREAT, true);
 
-    draw_text(painter, "ALERT", alert_x + 20, alert_y + 10, style);
-    draw_text(painter, alert_message_, alert_x + 20, alert_y + 30, style);
+    draw_text(painter, "ALERT", ALERT_X + ALERT_TEXT_OFFSET_X, ALERT_Y + ALERT_TEXT_OFFSET_Y, style);
+    draw_text(painter, alert_message_, ALERT_X + ALERT_TEXT_OFFSET_X, ALERT_Y + ALERT_MESSAGE_TEXT_OFFSET_Y, style);
 }
 
 void DroneScannerUI::draw_error_overlay(Painter& painter) noexcept {
@@ -565,14 +556,10 @@ void DroneScannerUI::draw_error_overlay(Painter& painter) noexcept {
 
     const auto& style = *Theme::getInstance()->fg_yellow;
 
-    const uint16_t error_x = 10;
-    const uint16_t error_y = 200;
-    const uint16_t error_w = 220;
-    const uint16_t error_h = 50;
-    draw_rectangle(painter, error_x, error_y, error_w, error_h, 0xFFFFFF00, true);
+    draw_rectangle(painter, ERROR_X, ERROR_Y, ERROR_W, ERROR_H, COLOR_HIGH_THREAT, true);
 
-    draw_text(painter, "ERROR", error_x + 20, error_y + 10, style);
-    draw_text(painter, error_to_string(last_error_), error_x + 20, error_y + 30, style);
+    draw_text(painter, "ERROR", ERROR_X + ALERT_TEXT_OFFSET_X, ERROR_Y + ALERT_TEXT_OFFSET_Y, style);
+    draw_text(painter, error_to_string(last_error_), ERROR_X + ALERT_TEXT_OFFSET_X, ERROR_Y + ALERT_MESSAGE_TEXT_OFFSET_Y, style);
 }
 
 void DroneScannerUI::draw_button(
@@ -589,7 +576,7 @@ void DroneScannerUI::draw_button(
         return;
     }
 
-    const uint32_t bg_color = selected ? 0xFFFFFFFF : (enabled ? 0xFFAAAAAA : 0xFF666666);
+    const uint32_t bg_color = selected ? BUTTON_BG_SELECTED : (enabled ? BUTTON_BG_ENABLED : BUTTON_BG_DISABLED);
 
     draw_rectangle(painter, x, y, width, height, bg_color, true);
 
@@ -666,23 +653,23 @@ const char* DroneScannerUI::get_error_message() const noexcept {
     return error_to_string(last_error_);
 }
 
-void DroneScannerUI::update_alert_timer(uint32_t elapsed_ms) noexcept {
+void DroneScannerUI::update_alert_timer(uint32_t current_time_ms) noexcept {
     if (!alert_active_) {
         return;
     }
 
-    const uint32_t elapsed = elapsed_ms - alert_start_time_;
+    const uint32_t elapsed = current_time_ms - alert_start_time_;
     if (elapsed >= alert_duration_ms_) {
         clear_alert();
     }
 }
 
-void DroneScannerUI::update_error_timer(uint32_t elapsed_ms) noexcept {
+void DroneScannerUI::update_error_timer(uint32_t current_time_ms) noexcept {
     if (!error_active_) {
         return;
     }
 
-    const uint32_t elapsed = elapsed_ms - error_start_time_;
+    const uint32_t elapsed = current_time_ms - error_start_time_;
     if (elapsed >= error_duration_ms_) {
         clear_error();
     }

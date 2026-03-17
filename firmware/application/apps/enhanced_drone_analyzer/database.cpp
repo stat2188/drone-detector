@@ -198,23 +198,7 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
             line_start = line_end + 1;
         }
     }
-    
-    if (entry_count_ == 0) {
-        constexpr FreqHz DEFAULT_FREQUENCIES[] = {
-            2406500000ULL, 
-            5658000000ULL
-        };
-        
-        for (size_t i = 0; i < 2 && entry_count_ < MAX_DATABASE_ENTRIES; ++i) {
-            entries_[entry_count_] = FrequencyEntry(
-                DEFAULT_FREQUENCIES[i],
-                (i == 0) ? DroneType::DJI : DroneType::FPV,
-                0
-            );
-            entry_count_++;
-        }
-    }
-    
+
     return ErrorCode::SUCCESS;
 }
 

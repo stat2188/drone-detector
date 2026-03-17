@@ -143,6 +143,34 @@ private:
     constexpr static uint16_t DRONE_TYPE_SPACING = 5;
     constexpr static uint16_t DRONE_TYPE_Y_OFFSET = 20;
 
+    constexpr static uint16_t RSSI_TEXT_X = 5;
+    constexpr static uint16_t RSSI_TEXT_Y_OFFSET = 100;
+    constexpr static uint16_t RSSI_VALUE_X = 50;
+    constexpr static uint16_t RSSI_DBM_X_BASE = 55;
+
+    constexpr static uint16_t STATE_TEXT_X = 5;
+    constexpr static uint16_t STATE_TEXT_Y_OFFSET = 120;
+    constexpr static uint16_t SCANNING_TEXT_Y_OFFSET = 140;
+
+    constexpr static uint16_t ALERT_X = 10;
+    constexpr static uint16_t ALERT_Y = 100;
+    constexpr static uint16_t ALERT_W = 220;
+    constexpr static uint16_t ALERT_H = 50;
+    constexpr static uint16_t ALERT_TEXT_OFFSET_X = 20;
+    constexpr static uint16_t ALERT_TEXT_OFFSET_Y = 10;
+    constexpr static uint16_t ALERT_MESSAGE_TEXT_OFFSET_Y = 30;
+
+    constexpr static uint16_t ERROR_X = 10;
+    constexpr static uint16_t ERROR_Y = 200;
+    constexpr static uint16_t ERROR_W = 220;
+    constexpr static uint16_t ERROR_H = 50;
+
+    constexpr static uint32_t ERROR_DURATION_MS = 3000;
+
+    constexpr static uint32_t BUTTON_BG_SELECTED = 0xFFFFFFFF;
+    constexpr static uint32_t BUTTON_BG_ENABLED = 0xFFAAAAAA;
+    constexpr static uint32_t BUTTON_BG_DISABLED = 0xFF666666;
+
     /**
      * @brief Construct large objects in static buffers
      * @note Uses placement new to avoid stack overflow
@@ -324,9 +352,9 @@ private:
 
     /**
      * @brief Update alert timer
-     * @param elapsed_ms Elapsed time in milliseconds
+     * @param current_time_ms Current system time in milliseconds
      */
-    void update_alert_timer(uint32_t elapsed_ms) noexcept;
+    void update_alert_timer(uint32_t current_time_ms) noexcept;
 
     // ========================================================================
     // Message Handlers
@@ -358,9 +386,9 @@ private:
 
     /**
      * @brief Update error timer
-     * @param elapsed_ms Elapsed time in milliseconds
+     * @param current_time_ms Current system time in milliseconds
      */
-    void update_error_timer(uint32_t elapsed_ms) noexcept;
+    void update_error_timer(uint32_t current_time_ms) noexcept;
 
 private:
     // Navigation reference (for future use: settings, details, etc.)

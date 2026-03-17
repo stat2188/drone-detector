@@ -107,7 +107,7 @@ size_t HistogramProcessor::calculate_bin_values(
             // Use integer arithmetic: (count * 255) / max_count
             // To avoid overflow, use 16.16 fixed-point multiplication
             const uint32_t scaled = (static_cast<uint32_t>(histogram_[i]) << 16) / max_count;
-            bins[i].value = static_cast<uint8_t>((scaled * 255) >> 16);
+            bins[i].value = static_cast<uint8_t>((scaled * HISTOGRAM_MAX_VALUE) >> 16);
         } else {
             bins[i].value = 0;
         }
@@ -206,9 +206,9 @@ size_t HistogramProcessor::value_to_bin(uint8_t value) const noexcept {
     // Use integer arithmetic: bin = (value * bin_count) / 256
     // To avoid overflow, use bit shift approximation
 
-    if (bin_count_ == 256) {
+    if (bin_count_ == HISTOGRAM_EXTENDED_SIZE) {
         return static_cast<size_t>(value);
-    } else if (bin_count_ == 128) {
+    } else if (bin_count_ == HISTOGRAM_HALF_SIZE) {
         return static_cast<size_t>(value >> 1);
     } else if (bin_count_ == 64) {
         return static_cast<size_t>(value >> 2);
@@ -225,7 +225,7 @@ size_t HistogramProcessor::value_to_bin(uint8_t value) const noexcept {
     } else {
         // General case: (value * bin_count) / 256
         // Use 16.16 fixed-point to avoid overflow
-        const uint32_t scaled = (static_cast<uint32_t>(value) << 16) / 256;
+        const uint32_t scaled = (static_cast<uint32_t>(value) << 16) / HISTOGRAM_EXTENDED_SIZE;
         return static_cast<size_t>((scaled * bin_count_) >> 16);
     }
 }
@@ -316,7 +316,7 @@ size_t HistogramProcessor::normalize_histogram(
             // Use integer arithmetic: (count * 255) / max_count
             // To avoid overflow, use 16.16 fixed-point multiplication
             const uint32_t scaled = (static_cast<uint32_t>(histogram_[i]) << 16) / max_count;
-            normalized[i] = static_cast<uint8_t>((scaled * 255) >> 16);
+            normalized[i] = static_cast<uint8_t>((scaled * HISTOGRAM_MAX_VALUE) >> 16);
         }
     } else {
         // All zeros

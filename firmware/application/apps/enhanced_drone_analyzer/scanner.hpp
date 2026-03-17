@@ -334,16 +334,16 @@ private:
     
     /**
      * @brief Internal: Add new tracked drone
-     * @param frequency Frequency of detected signal
-     * @param rssi RSSI value
-     * @param timestamp Timestamp of detection
+     * @param frequency_hz Frequency of detected signal (Hz)
+     * @param rssi_dbm RSSI value (dBm)
+     * @param timestamp_ms Timestamp of detection (ms)
      * @return ErrorCode::SUCCESS if added, error code otherwise
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode add_tracked_drone_internal(
-        FreqHz frequency,
-        RssiValue rssi,
-        SystemTime timestamp
+        FreqHz frequency_hz,
+        RssiValue rssi_dbm,
+        SystemTime timestamp_ms
     ) noexcept;
     
     /**

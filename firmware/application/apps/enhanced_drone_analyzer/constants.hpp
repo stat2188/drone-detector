@@ -31,10 +31,7 @@ constexpr FreqHz FREQUENCY_STEP_HZ = 1'000'000ULL;
  */
 constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 20'000'000ULL;
 
-/**
- * @brief Default scan frequency in Hz (2.432 GHz)
- */
-constexpr FreqHz DEFAULT_SCAN_FREQUENCY_HZ = 2'432'000'000ULL;
+
 
 // ============================================================================
 // Buffer Size Constants
@@ -80,6 +77,30 @@ constexpr size_t MAX_ENTRIES_TO_SCAN = 100;
  * @brief Frequency hash table size
  */
 constexpr size_t FREQUENCY_HASH_TABLE_SIZE = 256;
+
+// ============================================================================
+// Hardware Constants
+// ============================================================================
+
+/**
+ * @brief Default sample rate in Hz (2 MHz)
+ */
+constexpr uint32_t DEFAULT_SAMPLE_RATE_HZ = 2000000;
+
+/**
+ * @brief Default gain value
+ */
+constexpr uint16_t DEFAULT_GAIN = 20;
+
+/**
+ * @brief Default LNA gain value
+ */
+constexpr uint8_t DEFAULT_LNA_GAIN = 8;
+
+/**
+ * @brief Default VGA gain value
+ */
+constexpr uint8_t DEFAULT_VGA_GAIN = 12;
 
 // ============================================================================
 // Time Constants
@@ -172,6 +193,21 @@ constexpr size_t HISTOGRAM_BIN_COUNT = 64;
  * @brief Histogram scale factor
  */
 constexpr uint8_t HISTOGRAM_SCALE_FACTOR = 4;
+
+/**
+ * @brief Histogram max value (uint8_t max)
+ */
+constexpr uint8_t HISTOGRAM_MAX_VALUE = 255;
+
+/**
+ * @brief Histogram extended size (for calculations)
+ */
+constexpr size_t HISTOGRAM_EXTENDED_SIZE = 256;
+
+/**
+ * @brief Histogram buffer half size
+ */
+constexpr size_t HISTOGRAM_HALF_SIZE = 128;
 
 /**
  * @brief Histogram noise floor threshold
@@ -314,14 +350,59 @@ constexpr uint32_t SETTINGS_FILE_VERSION = 1;
 // ============================================================================
 
 /**
- * @brief Audio alert duration in milliseconds
+ * @brief Audio alert sample rate in Hz
  */
-constexpr uint32_t AUDIO_ALERT_DURATION_MS = 500;
+constexpr uint32_t AUDIO_ALERT_SAMPLE_RATE_HZ = 24000;
 
 /**
- * @brief Audio alert frequency in Hz
+ * @brief Audio alert frequency in Hz (default)
  */
 constexpr uint32_t AUDIO_ALERT_FREQUENCY_HZ = 1000;
+
+/**
+ * @brief Audio alert high threat frequency in Hz
+ */
+constexpr uint32_t AUDIO_ALERT_HIGH_FREQUENCY_HZ = 1200;
+
+/**
+ * @brief Audio alert critical threat frequency in Hz
+ */
+constexpr uint32_t AUDIO_ALERT_CRITICAL_FREQUENCY_HZ = 1500;
+
+/**
+ * @brief Audio alert low frequency in Hz (receding)
+ */
+constexpr uint32_t AUDIO_ALERT_LOW_FREQUENCY_HZ = 800;
+
+/**
+ * @brief Audio alert duration in milliseconds (default)
+ */
+constexpr uint32_t AUDIO_ALERT_DURATION_MS = 150;
+
+/**
+ * @brief Audio alert short duration in milliseconds (critical)
+ */
+constexpr uint32_t AUDIO_ALERT_SHORT_DURATION_MS = 80;
+
+/**
+ * @brief Audio alert medium duration in milliseconds (threat increased)
+ */
+constexpr uint32_t AUDIO_ALERT_MEDIUM_DURATION_MS = 100;
+
+/**
+ * @brief Audio alert long duration in milliseconds (approaching)
+ */
+constexpr uint32_t AUDIO_ALERT_LONG_DURATION_MS = 200;
+
+/**
+ * @brief Audio alert gap in milliseconds (short)
+ */
+constexpr uint32_t AUDIO_ALERT_SHORT_GAP_MS = 40;
+
+/**
+ * @brief Audio alert gap in milliseconds (long)
+ */
+constexpr uint32_t AUDIO_ALERT_LONG_GAP_MS = 50;
 
 // ============================================================================
 // Memory Constants

@@ -11,19 +11,19 @@ namespace drone_analyzer {
 // ============================================================================
 
 HardwareConfig::HardwareConfig() noexcept
-    : center_frequency(DEFAULT_SCAN_FREQUENCY_HZ)
-    , sample_rate(2000000)  // 2 MHz sample rate
-    , gain(20)              // Default gain
-    , lna_gain(8)
-    , vga_gain(12) {
+    : center_frequency(0)
+    , sample_rate(DEFAULT_SAMPLE_RATE_HZ)
+    , gain(DEFAULT_GAIN)
+    , lna_gain(DEFAULT_LNA_GAIN)
+    , vga_gain(DEFAULT_VGA_GAIN) {
 }
 
 HardwareConfig::HardwareConfig(FreqHz freq, uint32_t rate, uint16_t g) noexcept
     : center_frequency(freq)
     , sample_rate(rate)
     , gain(g)
-    , lna_gain(8)
-    , vga_gain(12) {
+    , lna_gain(DEFAULT_LNA_GAIN)
+    , vga_gain(DEFAULT_VGA_GAIN) {
 }
 
 // ============================================================================

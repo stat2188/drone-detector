@@ -33,9 +33,9 @@ AlertPriority AudioAlertManager::current_priority_ = AlertPriority::LOW;
 // ============================================================================
 
 AudioAlertConfig::AudioAlertConfig() noexcept
-    : frequency_hz(1000)
-    , duration_ms(150)
-    , sample_rate_hz(24000)
+    : frequency_hz(AUDIO_ALERT_FREQUENCY_HZ)
+    , duration_ms(AUDIO_ALERT_DURATION_MS)
+    , sample_rate_hz(AUDIO_ALERT_SAMPLE_RATE_HZ)
     , beep_count(1)
     , beep_gap_ms(0)
     , priority(AlertPriority::MEDIUM) {
@@ -65,25 +65,30 @@ const AudioAlertConfig& AudioAlertManager::get_alert_config(AlertType alert_type
     // Static configurations for each alert type
     static const AudioAlertConfig configs[] = {
         // NEW_DRONE: Single beep at 1000 Hz
-        AudioAlertConfig(1000, 150, 24000, 1, 0, AlertPriority::MEDIUM),
-        
+        AudioAlertConfig(AUDIO_ALERT_FREQUENCY_HZ, AUDIO_ALERT_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::MEDIUM),
+
         // THREAT_INCREASED: Double beep at 1200 Hz
-        AudioAlertConfig(1200, 100, 24000, 2, 50, AlertPriority::HIGH),
-        
+        AudioAlertConfig(AUDIO_ALERT_HIGH_FREQUENCY_HZ, AUDIO_ALERT_MEDIUM_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 2, AUDIO_ALERT_LONG_GAP_MS, AlertPriority::HIGH),
+
         // THREAT_CRITICAL: Triple beep at 1500 Hz
-        AudioAlertConfig(1500, 80, 24000, 3, 40, AlertPriority::CRITICAL),
-        
+        AudioAlertConfig(AUDIO_ALERT_CRITICAL_FREQUENCY_HZ, AUDIO_ALERT_SHORT_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 3, AUDIO_ALERT_SHORT_GAP_MS, AlertPriority::CRITICAL),
+
         // DRONE_APPROACHING: Single beep at 1200 Hz (rising tone)
-        AudioAlertConfig(1200, 200, 24000, 1, 0, AlertPriority::HIGH),
-        
+        AudioAlertConfig(AUDIO_ALERT_HIGH_FREQUENCY_HZ, AUDIO_ALERT_LONG_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::HIGH),
+
         // DRONE_RECEDING: Single beep at 800 Hz (falling tone)
-        AudioAlertConfig(800, 200, 24000, 1, 0, AlertPriority::LOW)
+        AudioAlertConfig(AUDIO_ALERT_LOW_FREQUENCY_HZ, AUDIO_ALERT_LONG_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::LOW)
     };
-    
-    const uint8_t index = static_cast<uint8_t>(alert_type);
+
+    const size_t index = static_cast<size_t>(alert_type);
+
     if (index < sizeof(configs) / sizeof(configs[0])) {
         return configs[index];
     }
+
+    static const AudioAlertConfig no_alert(0, 0, AUDIO_ALERT_SAMPLE_RATE_HZ, 0, 0, AlertPriority::LOW);
+    return no_alert;
+}
     
     // Default to NEW_DRONE configuration
     return configs[0];

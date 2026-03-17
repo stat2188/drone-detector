@@ -63,8 +63,8 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , current_frequency_(0)
     , last_scan_time_(0)
     , scanning_active_()
-    , alert_callback_(nullptr)
     , last_threat_levels_{}
+    , alert_callback_(nullptr)
     , freq_lock_count_(0)
     , locked_frequency_(0)
     , track_start_time_(0)
@@ -87,9 +87,9 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
 DroneScanner::~DroneScanner() noexcept {
     // Stop scanning if active
     if (scanning_active_.test()) {
-        stop_scanning();
+        (void)stop_scanning();
     }
-    
+
     // Note: Do NOT call chMtxDeinit - it doesn't exist in ChibiOS
 }
 
@@ -118,11 +118,10 @@ ErrorCode DroneScanner::initialize() noexcept {
 
     // Get first frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(0);
-    if (freq_result.has_value()) {
-        current_frequency_ = freq_result.value();
-    } else {
-        current_frequency_ = DEFAULT_SCAN_FREQUENCY_HZ;
+    if (!freq_result.has_value()) {
+        return freq_result.error();
     }
+    current_frequency_ = freq_result.value();
 
     state_ = ScannerState::IDLE;
     statistics_.reset();
@@ -308,7 +307,7 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
             return add_result;
         }
     }
-    
+
     return ErrorCode::SUCCESS;
 }
 
@@ -325,27 +324,27 @@ ErrorResult<size_t> DroneScanner::find_drone_by_frequency_internal(
 }
 
 ErrorCode DroneScanner::add_tracked_drone_internal(
-    FreqHz frequency,
-    RssiValue rssi,
-    SystemTime timestamp
+    FreqHz frequency_hz,
+    RssiValue rssi_dbm,
+    SystemTime timestamp_ms
 ) noexcept {
     if (tracked_count_ >= MAX_TRACKED_DRONES) {
         return ErrorCode::BUFFER_FULL;
     }
-    
-    DroneType type = determine_drone_type_internal(frequency);
-    ThreatLevel threat = determine_threat_level_internal(rssi);
-    
-    tracked_drones_[tracked_count_] = TrackedDrone(frequency, type, threat);
-    tracked_drones_[tracked_count_].update_rssi(rssi, timestamp);
-    
+
+    DroneType type = determine_drone_type_internal(frequency_hz);
+    ThreatLevel threat = determine_threat_level_internal(rssi_dbm);
+
+    tracked_drones_[tracked_count_] = TrackedDrone(frequency_hz, type, threat);
+    tracked_drones_[tracked_count_].update_rssi(rssi_dbm, timestamp_ms);
+
     last_threat_levels_[tracked_count_] = threat;
-    
+
     tracked_count_++;
     statistics_.drones_detected++;
-    
+
     trigger_alert(threat);
-    
+
     return ErrorCode::SUCCESS;
 }
 
@@ -532,21 +531,35 @@ void DroneScanner::remove_stale_drones_internal(SystemTime current_time) noexcep
     tracked_count_ = write_index;
 }
 
+/**
+ * @brief Sets the alert callback function
+ * @param callback Function to call when alerts are triggered
+ * @note The callback function MUST be thread-safe and reentrant-safe
+ * @note The callback MUST NOT acquire any mutexes or perform blocking operations
+ * @note The callback MUST execute quickly (preferably < 1ms) to avoid delaying scanner thread
+ * @note Failure to meet timing requirements may result in missed alerts or buffer overflows
+ * @warning Violating these constraints can cause system instability
+ */
 void DroneScanner::set_alert_callback(ThreatAlertCallback callback) noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     alert_callback_ = callback;
 }
 
 void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
-    ThreatAlertCallback local_callback = alert_callback_;
+    ThreatAlertCallback local_callback = nullptr;
 
-    if (local_callback != nullptr) {
+    {
+        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+        local_callback = alert_callback_;
+
         if (alert_callback_in_progress_.test()) {
             return;
         }
 
         alert_callback_in_progress_.set();
+    }
 
+    if (local_callback != nullptr) {
         local_callback(threat_level);
 
         alert_callback_in_progress_.clear();
