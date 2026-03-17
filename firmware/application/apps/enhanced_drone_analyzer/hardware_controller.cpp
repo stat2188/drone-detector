@@ -1,6 +1,5 @@
 #include "hardware_controller.hpp"
-#include "receiver_model.hpp"
-#include "rf_path.hpp"
+#include "portapack.hpp"
 
 #include "ch.h"
 
@@ -60,12 +59,10 @@ HardwareController::HardwareController() noexcept
 }
 
 HardwareController::~HardwareController() noexcept {
-    // Shutdown if still initialized
     if (state_ != HardwareState::UNINITIALIZED) {
-        shutdown();
+        (void)shutdown();
     }
-    
-    // Note: Do NOT call chMtxDeinit - it doesn't exist in ChibiOS
+
 }
 
 ErrorCode HardwareController::initialize() noexcept {
@@ -105,21 +102,15 @@ ErrorCode HardwareController::initialize_internal() noexcept {
 
 ErrorCode HardwareController::shutdown() noexcept {
     MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
-    
-    // Stop streaming if active
+
     if (streaming_active_.test()) {
-        stop_streaming_internal();
+        (void)stop_streaming_internal();
     }
-    
-    // Placeholder for hardware shutdown
-    // In actual implementation, this would:
-    // 1. Disable RF path
-    // 2. Put hardware in low-power mode
-    
+
     state_ = HardwareState::UNINITIALIZED;
     pll_locked_.clear();
     streaming_active_.clear();
-    
+
     return ErrorCode::SUCCESS;
 }
 
@@ -189,22 +180,17 @@ ErrorCode HardwareController::tune_to_frequency(
 }
 
 ErrorCode HardwareController::tune_internal(FreqHz frequency) noexcept {
-    // Set target frequency using receiver_model
     rf::Frequency rf_freq = rf::Frequency(frequency);
-    receiver_model.set_target_frequency(rf_freq);
+    portapack::receiver_model.set_target_frequency(rf_freq);
 
-    // Set gain values
-    receiver_model.set_lna(config_.lna_gain);
-    receiver_model.set_vga(config_.vga_gain);
+    portapack::receiver_model.set_lna(config_.lna_gain);
+    portapack::receiver_model.set_vga(config_.vga_gain);
 
-    // Set sampling rate for spectrum processing
-    receiver_model.set_sampling_rate(config_.sample_rate);
+    portapack::receiver_model.set_sampling_rate(config_.sample_rate);
 
-    // Enable RF amplifier for better sensitivity
-    receiver_model.set_rf_amp(config_.gain > 20);
+    portapack::receiver_model.set_rf_amp(config_.gain > 20);
 
-    // Set baseband bandwidth for spectrum analysis
-    receiver_model.set_baseband_bandwidth(config_.sample_rate);
+    portapack::receiver_model.set_baseband_bandwidth(config_.sample_rate);
 
     return ErrorCode::SUCCESS;
 }
@@ -241,11 +227,9 @@ ErrorCode HardwareController::start_spectrum_streaming() noexcept {
 }
 
 ErrorCode HardwareController::start_streaming_internal() noexcept {
-    // Enable spectrum streaming mode in receiver_model
-    receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
+    portapack::receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
 
-    // Enable RF path for spectrum processing
-    rf_path::rf::enable();
+    portapack::receiver_model.enable();
 
     return ErrorCode::SUCCESS;
 }
@@ -271,8 +255,7 @@ ErrorCode HardwareController::stop_spectrum_streaming() noexcept {
 }
 
 ErrorCode HardwareController::stop_streaming_internal() noexcept {
-    // Disable RF path
-    rf_path::rf::disable();
+    portapack::receiver_model.disable();
 
     return ErrorCode::SUCCESS;
 }
@@ -386,19 +369,16 @@ bool HardwareController::is_pll_locked() const noexcept {
 
 ErrorCode HardwareController::reset() noexcept {
     MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
-    
-    // Stop streaming if active
+
     if (streaming_active_.test()) {
-        stop_streaming_internal();
+        (void)stop_streaming_internal();
     }
-    
-    // Reset state
+
     state_ = HardwareState::READY;
     pll_locked_.clear();
     streaming_active_.clear();
     retry_count_ = 0;
-    
-    // Reapply default configuration
+
     HardwareConfig default_config;
     ErrorCode result = apply_config_internal(default_config);
     if (result == ErrorCode::SUCCESS) {
@@ -408,7 +388,7 @@ ErrorCode HardwareController::reset() noexcept {
     } else {
         last_error_ = result;
     }
-    
+
     return result;
 }
 
@@ -434,25 +414,19 @@ ErrorCode HardwareController::validate_gain_internal(uint16_t gain) const noexce
 }
 
 ErrorCode HardwareController::apply_config_internal(const HardwareConfig& config) noexcept {
-    // Apply sample rate for spectrum processing
-    receiver_model.set_sampling_rate(config.sample_rate);
+    portapack::receiver_model.set_sampling_rate(config.sample_rate);
 
-    // Set baseband bandwidth
-    receiver_model.set_baseband_bandwidth(config.sample_rate);
+    portapack::receiver_model.set_baseband_bandwidth(config.sample_rate);
 
-    // Configure gain stages
-    receiver_model.set_lna(config.lna_gain);
-    receiver_model.set_vga(config.vga_gain);
+    portapack::receiver_model.set_lna(config.lna_gain);
+    portapack::receiver_model.set_vga(config.vga_gain);
 
-    // Enable RF amplifier if gain is high
-    receiver_model.set_rf_amp(config.gain > 20);
+    portapack::receiver_model.set_rf_amp(config.gain > 20);
 
-    // Set frequency
     rf::Frequency rf_freq = rf::Frequency(config.center_frequency);
-    receiver_model.set_target_frequency(rf_freq);
+    portapack::receiver_model.set_target_frequency(rf_freq);
 
-    // Enable receiver
-    receiver_model.enable();
+    portapack::receiver_model.enable();
 
     return ErrorCode::SUCCESS;
 }
