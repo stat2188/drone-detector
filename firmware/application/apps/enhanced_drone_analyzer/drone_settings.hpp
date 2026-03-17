@@ -6,9 +6,11 @@
 #include <array>
 #include "drone_types.hpp"
 #include "constants.hpp"
+#include "scanner.hpp"
 
 #include "ui_painter.hpp"
 #include "ui_widget.hpp"
+#include "ui_navigation.hpp"
 
 namespace drone_analyzer {
 
@@ -54,6 +56,11 @@ struct DroneSettings {
 class DroneSettingsView : public ui::View {
 public:
     /**
+     * @brief Constructor with navigation and scan config
+     */
+    DroneSettingsView(NavigationView& nav, const ScanConfig& config) noexcept;
+
+    /**
      * @brief Default constructor
      */
     DroneSettingsView() noexcept;
@@ -73,11 +80,11 @@ public:
      */
     DroneSettingsView& operator=(const DroneSettingsView&) = delete;
 
-/**
- * @brief Paint method - render settings UI
- * @param painter Painter instance for drawing
- */
-void paint(ui::Painter& painter) override;
+    /**
+     * @brief Paint method - render settings UI
+     * @param painter Painter instance for drawing
+     */
+    void paint(ui::Painter& painter) override;
 
     /**
      * @brief Setup settings UI components

@@ -1,4 +1,5 @@
 #include "drone_settings.hpp"
+#include "scanner.hpp"
 
 namespace drone_analyzer {
 
@@ -38,6 +39,23 @@ void DroneSettings::reset_to_defaults() noexcept {
 // ============================================================================
 // DroneSettingsView Constructor / Destructor
 // ============================================================================
+
+DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config) noexcept
+    : ui::View()
+    , settings_()
+    , settings_file_path_(SETTINGS_FILE_PATH)
+    , settings_loaded_(false)
+    , settings_dirty_(false)
+    , header_height_(30)
+    , section_spacing_(20)
+    , row_height_(25)
+    , checkbox_size_(20)
+    , button_height_(30) {
+    (void)nav;
+    settings_.scanning_mode = config.mode;
+    settings_.scan_interval_ms = config.scan_interval_ms;
+    settings_.alert_rssi_threshold_dbm = config.rssi_threshold_dbm;
+}
 
 DroneSettingsView::DroneSettingsView() noexcept
     : ui::View()

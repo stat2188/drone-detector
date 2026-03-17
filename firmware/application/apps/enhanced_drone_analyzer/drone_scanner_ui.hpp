@@ -23,6 +23,8 @@
 #include "scanner.hpp"
 #include "database.hpp"
 #include "hardware_controller.hpp"
+#include "message.hpp"
+#include "event_m0.hpp"
 
 namespace drone_analyzer {
 
@@ -140,9 +142,16 @@ private:
     uint16_t selected_button_{1};
     bool settings_visible_{false};
 
-    MessageHandlerRegistration* message_handler_timer_ptr_;
+    ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
 
-    void init_message_handler();
+    alignas(MessageHandlerRegistration) static uint8_t s_message_handler_spectrum_buffer[sizeof(MessageHandlerRegistration)];
+    MessageHandlerRegistration* message_handler_spectrum_ptr_{nullptr};
+
+    alignas(MessageHandlerRegistration) static uint8_t s_message_handler_frame_buffer[sizeof(MessageHandlerRegistration)];
+    MessageHandlerRegistration* message_handler_frame_ptr_{nullptr};
+
+    void init_message_handlers() noexcept;
+    void destruct_message_handlers() noexcept;
 
     void draw_scanner_header(Painter& painter) noexcept;
     void draw_scanner_status(Painter& painter, uint16_t start_y) noexcept;
@@ -181,6 +190,7 @@ private:
 
     void bigdisplay_update(BigDisplayColor color) noexcept;
     void update_ui_state() noexcept;
+    void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
 };
 
 } // namespace drone_analyzer

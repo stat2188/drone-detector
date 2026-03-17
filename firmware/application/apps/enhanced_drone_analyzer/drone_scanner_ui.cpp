@@ -10,6 +10,7 @@
 #include <new>
 #include <type_traits>
 #include "message.hpp"
+#include "drone_settings.hpp"
 
 namespace drone_analyzer {
 
@@ -25,8 +26,11 @@ static_assert(sizeof(DroneScanner) <= sizeof(s_scanner_buffer), "DroneScanner bu
 alignas(DisplayData) static uint8_t s_display_data_buffer[sizeof(DisplayData)];
 static_assert(sizeof(DisplayData) <= sizeof(s_display_data_buffer), "DisplayData buffer overflow risk");
 
-alignas(MessageHandlerRegistration) static uint8_t s_message_handler_buffer[sizeof(MessageHandlerRegistration)];
-static_assert(sizeof(MessageHandlerRegistration) <= sizeof(s_message_handler_buffer), "MessageHandlerRegistration buffer overflow risk");
+alignas(MessageHandlerRegistration) static uint8_t s_message_handler_spectrum_buffer[sizeof(MessageHandlerRegistration)];
+static_assert(sizeof(MessageHandlerRegistration) <= sizeof(s_message_handler_spectrum_buffer), "MessageHandlerRegistration buffer overflow risk");
+
+alignas(MessageHandlerRegistration) static uint8_t s_message_handler_frame_buffer[sizeof(MessageHandlerRegistration)];
+static_assert(sizeof(MessageHandlerRegistration) <= sizeof(s_message_handler_frame_buffer), "MessageHandlerRegistration buffer overflow risk");
 
 void DroneScannerUI::construct_objects() noexcept {
     hardware_ptr_ = new(&s_hardware_buffer[0]) HardwareController();
@@ -34,14 +38,11 @@ void DroneScannerUI::construct_objects() noexcept {
     scanner_ptr_ = new(&s_scanner_buffer[0]) DroneScanner(*database_ptr_, *hardware_ptr_);
     display_data_ptr_ = new(&s_display_data_buffer[0]) DisplayData();
     
-    init_message_handler();
+    init_message_handlers();
 }
 
 void DroneScannerUI::destruct_objects() noexcept {
-    if (message_handler_timer_ptr_ != nullptr) {
-        message_handler_timer_ptr_->~MessageHandlerRegistration();
-        message_handler_timer_ptr_ = nullptr;
-    }
+    destruct_message_handlers();
     
     if (display_data_ptr_ != nullptr) {
         display_data_ptr_->~DisplayData();
@@ -64,14 +65,39 @@ void DroneScannerUI::destruct_objects() noexcept {
     }
 }
 
-void DroneScannerUI::init_message_handler() noexcept {
-    message_handler_timer_ptr_ = new(&s_message_handler_buffer[0]) MessageHandlerRegistration(
-        Message::ID::DisplayFrameSync,
+void DroneScannerUI::init_message_handlers() noexcept {
+    message_handler_spectrum_ptr_ = new(&s_message_handler_spectrum_buffer[0]) MessageHandlerRegistration(
+        Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
-            (void)p;
-            update_ui_state();
+            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            this->spectrum_fifo_ = message.fifo;
         }
     );
+    
+    message_handler_frame_ptr_ = new(&s_message_handler_frame_buffer[0]) MessageHandlerRegistration(
+        Message::ID::DisplayFrameSync,
+        [this](Message* const) {
+            if (this->spectrum_fifo_) {
+                ChannelSpectrum spectrum;
+                while (this->spectrum_fifo_->out(spectrum)) {
+                    this->on_channel_spectrum(spectrum);
+                }
+            }
+            this->update_ui_state();
+        }
+    );
+}
+
+void DroneScannerUI::destruct_message_handlers() noexcept {
+    if (message_handler_frame_ptr_ != nullptr) {
+        message_handler_frame_ptr_->~MessageHandlerRegistration();
+        message_handler_frame_ptr_ = nullptr;
+    }
+    
+    if (message_handler_spectrum_ptr_ != nullptr) {
+        message_handler_spectrum_ptr_->~MessageHandlerRegistration();
+        message_handler_spectrum_ptr_ = nullptr;
+    }
 }
 
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
@@ -86,7 +112,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , alert_active_(false)
     , error_active_(false)
     , last_error_(ErrorCode::SUCCESS)
-    , message_handler_timer_ptr_(nullptr)
+    , message_handler_spectrum_ptr_(nullptr)
+    , message_handler_frame_ptr_(nullptr)
     , big_display_({BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0)
     , field_lna_({4 * 8, 0})
     , field_vga_({11 * 8, 0})
@@ -106,8 +133,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , selected_button_(1)
     , settings_visible_(false) {
 
-    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
-    
     construct_objects();
 
     if (display_data_ptr_ != nullptr) {
@@ -164,22 +189,28 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
 DroneScannerUI::~DroneScannerUI() noexcept {
     destruct_objects();
+    
+    portapack::receiver_model.set_sampling_rate(3072000);
+    portapack::receiver_model.disable();
+    baseband::shutdown();
 }
 
-void DroneScannerUI::focus() override {
+void DroneScannerUI::focus() {
     button_start_stop_.focus();
 }
 
-void DroneScannerUI::on_show() override {
+void DroneScannerUI::on_show() {
     if (scanner_ptr_ != nullptr) {
         update_ui_state();
     }
 }
 
-void DroneScannerUI::on_hide() override {
+void DroneScannerUI::on_hide() {
     if (scanner_ptr_ != nullptr) {
         stop_scanning();
     }
+    
+    baseband::spectrum_streaming_stop();
 }
 
 void DroneScannerUI::paint(Painter& painter) {
@@ -392,7 +423,7 @@ void DroneScannerUI::draw_scanner_status(Painter& painter, uint16_t start_y) noe
     draw_text(painter, "RSSI:", RSSI_TEXT_X, start_y + RSSI_TEXT_Y_OFFSET, text_style);
 
     char rssi_str[16];
-    snprintf(rssi_str, sizeof(rssi_str), "%d", current_rssi_);
+    snprintf(rssi_str, sizeof(rssi_str), "%ld", static_cast<int32_t>(current_rssi_));
     draw_text(painter, rssi_str, RSSI_VALUE_X, start_y + RSSI_TEXT_Y_OFFSET, text_style);
     draw_text(painter, "dBm", RSSI_DBM_X_BASE + strlen(rssi_str) * 5, start_y + RSSI_TEXT_Y_OFFSET, text_style);
 
@@ -530,16 +561,16 @@ void DroneScannerUI::update_error_timer(uint32_t current_time_ms) noexcept {
 void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
     switch (color) {
         case BigDisplayColor::GREY:
-            big_display_.set_style(*Theme::getInstance()->fg_medium);
+            big_display_.set_style(Theme::getInstance()->fg_medium);
             break;
         case BigDisplayColor::YELLOW:
-            big_display_.set_style(*Theme::getInstance()->fg_yellow);
+            big_display_.set_style(Theme::getInstance()->fg_yellow);
             break;
         case BigDisplayColor::GREEN:
-            big_display_.set_style(*Theme::getInstance()->fg_green);
+            big_display_.set_style(Theme::getInstance()->fg_green);
             break;
         case BigDisplayColor::RED:
-            big_display_.set_style(*Theme::getInstance()->fg_red);
+            big_display_.set_style(Theme::getInstance()->fg_red);
             break;
     }
 
@@ -605,6 +636,29 @@ void DroneScannerUI::update_ui_state() noexcept {
     }
     
     set_dirty();
+}
+
+void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
+    if (scanner_ptr_ == nullptr) {
+        return;
+    }
+    
+    uint8_t max_power = 0;
+    for (size_t i = 0; i < 256; i++) {
+        if (spectrum.db[i] > max_power) {
+            max_power = spectrum.db[i];
+        }
+    }
+    
+    const int32_t rssi = static_cast<int32_t>(max_power) - 120;
+    
+    if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
+        scanner_ptr_->update_tracked_drones(
+            current_frequency_,
+            rssi,
+            chTimeNow()
+        );
+    }
 }
 
 } // namespace drone_analyzer
