@@ -6,7 +6,6 @@
 #include <array>
 #include "drone_types.hpp"
 #include "constants.hpp"
-#include "error_handler.hpp"
 
 #include "ui_painter.hpp"
 #include "ui_widget.hpp"

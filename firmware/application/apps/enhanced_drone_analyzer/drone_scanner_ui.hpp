@@ -14,7 +14,6 @@
 #include "drone_types.hpp"
 #include "audio_alerts.hpp"
 #include "constants.hpp"
-#include "error_handler.hpp"
 #include "locking.hpp"
 #include "ui_receiver.hpp"
 #include "ui_widget.hpp"
@@ -31,7 +30,7 @@ namespace drone_analyzer {
 /**
  * @brief BigFrequency display colors
  */
-enum class BigDisplayColor : int32_t {
+enum class BigDisplayColor : int8_t {
     GREY = -2,    // Scanning
     YELLOW = -1,   // Locking
     GREEN = 0,     // Tracking (normal signal)
@@ -136,6 +135,40 @@ public:
      * @brief Clear error
      */
     void clear_error() noexcept;
+
+private:
+    constexpr static uint16_t BIG_FREQUENCY_X = 4;
+    constexpr static uint16_t BIG_FREQUENCY_Y = 6 * 16;
+    constexpr static uint16_t BIG_FREQUENCY_WIDTH = 28 * 8;
+    constexpr static uint16_t DRONE_TYPE_SPACING = 5;
+    constexpr static uint16_t DRONE_TYPE_Y_OFFSET = 20;
+
+    /**
+     * @brief Construct large objects in static buffers
+     * @note Uses placement new to avoid stack overflow
+     * @note Called once in constructor
+     */
+    void construct_objects() noexcept;
+
+    /**
+     * @brief Destruct large objects
+     * @note Explicitly calls destructors for placement-new objects
+     * @note Called once in destructor
+     */
+    void destruct_objects() noexcept;
+
+    /**
+     * @brief Dispatch retune message to scanner (separates UI from logic)
+     * @param freq Current frequency
+     * @param range Frequency range (unused)
+     */
+    void dispatch_retune(int64_t freq, uint32_t range) noexcept;
+
+    /**
+     * @brief Dispatch statistics message to scanner (separates UI from logic)
+     * @param statistics RSSI statistics
+     */
+    void dispatch_statistics(const ChannelStatistics& statistics) noexcept;
 
 private:
     /**
@@ -334,12 +367,14 @@ private:
     NavigationView& nav_;
 
     // ========================================================================
-    // Scanner and Core Components (fully integrated, no pointers)
+    // Scanner and Core Components (off-stack static buffers, no heap allocation)
     // ========================================================================
 
-    HardwareController hardware_;
-    DatabaseManager database_;
-    DroneScanner scanner_;
+    // Pointers to off-stack static buffers (managed in drone_scanner_ui.cpp)
+    // Lifetime = application lifetime (constructed once at startup)
+    HardwareController* hardware_ptr_;
+    DatabaseManager* database_ptr_;
+    DroneScanner* scanner_ptr_;
 
     // ========================================================================
     // Radio state для receiver model
@@ -372,8 +407,8 @@ private:
     char displayed_drone_type_[5] = {'\0'};
     uint32_t drone_type_display_timer_;
 
-    // Display data
-    DisplayData display_data_;
+    // Display data (off-stack static buffer)
+    DisplayData* display_data_ptr_;
 
     // Scanning state
     bool scanning_;

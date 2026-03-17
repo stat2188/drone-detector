@@ -546,7 +546,9 @@ void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
         }
 
         alert_callback_in_progress_.set();
+
         local_callback(threat_level);
+
         alert_callback_in_progress_.clear();
     }
 }

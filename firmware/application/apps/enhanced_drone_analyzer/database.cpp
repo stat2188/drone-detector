@@ -137,14 +137,14 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
                 
                 if (key_char == 'f' && value_len > 0 && value_len < 16) {
                     uint64_t freq_u64 = 0;
-                    
+
                     for (size_t i = 0; i < value_len; i++) {
                         char c = buffer[value_start + i];
                         if (c >= '0' && c <= '9') {
                             freq_u64 = freq_u64 * 10 + (c - '0');
                         }
                     }
-                    
+
                     freq = freq_u64;
                 } else if (key_char == 'd') {
                     if (value_len == 3) {
@@ -161,7 +161,6 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
                             (c2 == 'I' || c2 == 'i')) {
                             type = DroneType::DJI;
                         }
-                    }
                     } else if (value_len == 6) {
                         char c0 = buffer[value_start];
                         char c1 = buffer[value_start + 1];
@@ -169,7 +168,7 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
                         char c3 = buffer[value_start + 3];
                         char c4 = buffer[value_start + 4];
                         char c5 = buffer[value_start + 5];
-                        
+
                         if ((c0 == 'P' || c0 == 'p') &&
                             (c1 == 'A' || c1 == 'a') &&
                             (c2 == 'R' || c2 == 'r') &&
@@ -177,16 +176,7 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
                             (c4 == 'O' || c4 == 'o') &&
                             (c5 == 'T' || c5 == 't')) {
                             type = DroneType::PARROT;
-                        }
-                    } else if (value_len == 6) {
-                        char c0 = buffer[value_start];
-                        char c1 = buffer[value_start + 1];
-                        char c2 = buffer[value_start + 2];
-                        char c3 = buffer[value_start + 3];
-                        char c4 = buffer[value_start + 4];
-                        char c5 = buffer[value_start + 5];
-                        
-                        if ((c0 == 'Y' || c0 == 'y') &&
+                        } else if ((c0 == 'Y' || c0 == 'y') &&
                             (c1 == 'U' || c1 == 'u') &&
                             (c2 == 'N' || c2 == 'n') &&
                             (c3 == 'E' || c3 == 'e') &&

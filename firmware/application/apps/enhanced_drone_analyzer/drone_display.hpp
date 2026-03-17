@@ -7,7 +7,6 @@
 #include "ui_widget.hpp"
 #include "drone_types.hpp"
 #include "constants.hpp"
-#include "error_handler.hpp"
 
 namespace drone_analyzer {
 

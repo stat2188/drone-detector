@@ -7,7 +7,6 @@
 #include <string_view>
 #include "ch.h"
 #include "drone_types.hpp"
-#include "error_handler.hpp"
 #include "locking.hpp"
 #include "constants.hpp"
 #include "convert.hpp"

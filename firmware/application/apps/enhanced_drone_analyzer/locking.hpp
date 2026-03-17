@@ -6,10 +6,9 @@
 #include <tuple>
 #include <utility>
 
-// Forward declarations for ChibiOS types
-// These will be available when ChibiOS headers are included
-struct Mutex;
-struct Thread;
+// Include ChibiOS headers for mutex support
+// This provides Mutex, chMtxLock(), chMtxUnlock() and other synchronization primitives
+#include "ch.h"
 
 namespace drone_analyzer {
 
@@ -127,35 +126,35 @@ public:
      * @brief Constructor - acquires mutex lock
      * @param mutex Reference to mutex to lock
      */
-    explicit MutexLock(Mutex& mutex) noexcept
+    explicit     MutexLock(Mutex& mutex) noexcept
         : mutex_(mutex), locked_(false) {
-        // chMtxLock(&mutex_);  // ChibiOS call - will be available
+        chMtxLock(&mutex_);
         locked_ = true;
     }
-    
+
     /**
      * @brief Destructor - releases mutex lock
      */
     ~MutexLock() noexcept {
         if (locked_) {
-            // chMtxUnlock(&mutex_);  // ChibiOS call - will be available
+            chMtxUnlock();
             locked_ = false;
         }
     }
-    
+
     /**
      * @brief Check if lock is held
      */
     [[nodiscard]] bool is_locked() const noexcept {
         return locked_;
     }
-    
+
     /**
      * @brief Manual unlock (use with caution)
      */
     void unlock() noexcept {
         if (locked_) {
-            // chMtxUnlock(&mutex_);  // ChibiOS call - will be available
+            chMtxUnlock();
             locked_ = false;
         }
     }
@@ -173,7 +172,7 @@ private:
 
 /**
  * @brief RAII wrapper for mutex lock with timeout
- * @note Acquires lock with timeout, releases in destructor
+ * @note Uses chMtxTryLock in a loop for timeout (ChibiOS doesn't have chMtxLockTimeout)
  * @note Provides graceful degradation on lock contention
  */
 template<LockOrder ORDER>
@@ -186,10 +185,14 @@ public:
      */
     MutexLockTimeout(Mutex& mutex, uint32_t timeout_ms) noexcept
         : mutex_(mutex), locked_(false) {
-        // if (chMtxLockTimeout(&mutex_, MS2ST(timeout_ms)) == MSG_OK) {
-        //     locked_ = true;
-        // }
-        locked_ = true;  // Placeholder - will use ChibiOS call
+        const systime_t timeout = MS2ST(timeout_ms);
+        const systime_t start = chTimeNow();
+        
+        while (!locked_ && (chTimeNow() - start < timeout)) {
+            if (chMtxTryLock(&mutex_)) {
+                locked_ = true;
+            }
+        }
     }
     
     /**
@@ -197,7 +200,7 @@ public:
      */
     ~MutexLockTimeout() noexcept {
         if (locked_) {
-            // chMtxUnlock(&mutex_);  // ChibiOS call - will be available
+            chMtxUnlock();
             locked_ = false;
         }
     }
@@ -214,7 +217,7 @@ public:
      */
     void unlock() noexcept {
         if (locked_) {
-            // chMtxUnlock(&mutex_);  // ChibiOS call - will be available
+            chMtxUnlock();
             locked_ = false;
         }
     }
@@ -244,10 +247,7 @@ public:
      */
     explicit MutexTryLock(Mutex& mutex) noexcept
         : mutex_(mutex), locked_(false) {
-        // if (chMtxTryLock(&mutex_) == MSG_OK) {
-        //     locked_ = true;
-        // }
-        locked_ = true;  // Placeholder - will use ChibiOS call
+        locked_ = chMtxTryLock(&mutex_);
     }
     
     /**
@@ -255,7 +255,7 @@ public:
      */
     ~MutexTryLock() noexcept {
         if (locked_) {
-            // chMtxUnlock(&mutex_);  // ChibiOS call - will be available
+            chMtxUnlock();
             locked_ = false;
         }
     }
@@ -272,7 +272,7 @@ public:
      */
     void unlock() noexcept {
         if (locked_) {
-            // chMtxUnlock(&mutex_);  // ChibiOS call - will be available
+            chMtxUnlock();
             locked_ = false;
         }
     }
@@ -290,7 +290,7 @@ private:
 
 /**
  * @brief RAII wrapper for critical section
- * @note Disables interrupts in constructor, restores in destructor
+ * @note Disables scheduler in constructor, restores in destructor
  * @note Use for very short critical sections only
  */
 class CriticalSection {
@@ -298,35 +298,22 @@ public:
     /**
      * @brief Constructor - enters critical section
      */
-    CriticalSection() noexcept
-        : state_(0) {
-        // state_ = chSysGetStatusAndLockX();  // ChibiOS call - will be available
-        state_ = 1;  // Placeholder - will use ChibiOS call
+    CriticalSection() noexcept {
+        chSysLock();
     }
-    
+
     /**
      * @brief Destructor - exits critical section
      */
     ~CriticalSection() noexcept {
-        // chSysRestoreStatusX(state_);  // ChibiOS call - will be available
-        state_ = 0;
+        chSysUnlock();
     }
-    
-    /**
-     * @brief Check if in critical section
-     */
-    [[nodiscard]] bool in_critical_section() const noexcept {
-        return state_ != 0;
-    }
-    
+
     // Delete copy and move operations
     CriticalSection(const CriticalSection&) = delete;
     CriticalSection& operator=(const CriticalSection&) = delete;
     CriticalSection(CriticalSection&&) = delete;
     CriticalSection& operator=(CriticalSection&&) = delete;
-    
-private:
-    uint32_t state_;
 };
 
 /**
@@ -373,40 +360,9 @@ private:
 };
 
 /**
- * @brief Scoped lock guard for multiple locks
- * @note Acquires all locks in constructor, releases all in destructor
- * @note Simplified version for 2 locks (most common use case)
- */
-template<LockOrder FIRST, LockOrder SECOND>
-class ScopedMultiLock {
-public:
-    /**
-     * @brief Constructor - acquires both locks
-     */
-    explicit ScopedMultiLock(Mutex& first_mutex, Mutex& second_mutex) noexcept
-        : lock1_(first_mutex), lock2_(second_mutex) {}
-    
-    /**
-     * @brief Check if all locks are held
-     */
-    [[nodiscard]] bool all_locked() const noexcept {
-        return lock1_.is_locked() && lock2_.is_locked();
-    }
-    
-    // Delete copy and move operations
-    ScopedMultiLock(const ScopedMultiLock&) = delete;
-    ScopedMultiLock& operator=(const ScopedMultiLock&) = delete;
-    ScopedMultiLock(ScopedMultiLock&&) = delete;
-    ScopedMultiLock& operator=(ScopedMultiLock&&) = delete;
-    
-private:
-    MutexLock<FIRST> lock1_;
-    MutexLock<SECOND> lock2_;
-};
-
-/**
  * @brief Lock guard for deferred locking
  * @note Does not acquire lock in constructor, must call lock() manually
+ * @note Lock order is enforced at compile time
  */
 template<LockOrder ORDER>
 class DeferredLock {
@@ -416,50 +372,50 @@ public:
      */
     explicit DeferredLock(Mutex& mutex) noexcept
         : mutex_(mutex), locked_(false) {}
-    
+
     /**
      * @brief Destructor - releases lock if held
      */
     ~DeferredLock() noexcept {
         if (locked_) {
-            // chMtxUnlock(&mutex_);  // ChibiOS call - will be available
+            chMtxUnlock();
             locked_ = false;
         }
     }
-    
+
     /**
      * @brief Acquire lock
      */
     void lock() noexcept {
         if (!locked_) {
-            // chMtxLock(&mutex_);  // ChibiOS call - will be available
+            chMtxLock(&mutex_);
             locked_ = true;
         }
     }
-    
+
     /**
      * @brief Release lock
      */
     void unlock() noexcept {
         if (locked_) {
-            // chMtxUnlock(&mutex_);  // ChibiOS call - will be available
+            chMtxUnlock();
             locked_ = false;
         }
     }
-    
+
     /**
      * @brief Check if lock is held
      */
     [[nodiscard]] bool is_locked() const noexcept {
         return locked_;
     }
-    
+
     // Delete copy and move operations
     DeferredLock(const DeferredLock&) = delete;
     DeferredLock& operator=(const DeferredLock&) = delete;
     DeferredLock(DeferredLock&&) = delete;
     DeferredLock& operator=(DeferredLock&&) = delete;
-    
+
 private:
     Mutex& mutex_;
     bool locked_;
@@ -482,8 +438,7 @@ public:
      */
     void lock() noexcept {
         while (flag_.test_and_set()) {
-            // Busy-wait - yield to other threads if available
-            // chThdYield();  // ChibiOS call - will be available
+            chThdYield();
         }
     }
     

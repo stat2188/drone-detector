@@ -109,11 +109,232 @@ enum class ErrorCode : uint8_t {
 };
 
 /**
+ * @brief Result type similar to std::optional<T> with error code
+ * @note No heap allocation, uses static storage
+ * @tparam T Type of value to store
+ */
+template<typename T>
+class ErrorResult {
+public:
+    ErrorResult() noexcept
+        : has_value_(false), error_(ErrorCode::UNKNOWN_ERROR) {}
+
+    explicit ErrorResult(const T& value) noexcept
+        : has_value_(true), error_(ErrorCode::SUCCESS), value_(value) {}
+
+    explicit ErrorResult(ErrorCode error) noexcept
+        : has_value_(false), error_(error) {}
+
+    [[nodiscard]] bool has_value() const noexcept {
+        return has_value_;
+    }
+
+    [[nodiscard]] bool is_valid() const noexcept {
+        return has_value_ || error_ == ErrorCode::SUCCESS;
+    }
+
+    [[nodiscard]] ErrorCode error() const noexcept {
+        return error_;
+    }
+
+    [[nodiscard]] const T& value() const noexcept {
+        return value_;
+    }
+
+    [[nodiscard]] T value_or(const T& default_value) const noexcept {
+        return has_value_ ? value_ : default_value;
+    }
+
+    [[nodiscard]] static ErrorResult<T> success(const T& value) noexcept {
+        return ErrorResult<T>(value);
+    }
+
+    [[nodiscard]] static ErrorResult<T> failure(ErrorCode error) noexcept {
+        return ErrorResult<T>(error);
+    }
+
+private:
+    bool has_value_;
+    ErrorCode error_;
+    T value_;
+};
+
+template<>
+class ErrorResult<void> {
+public:
+    ErrorResult() noexcept
+        : error_(ErrorCode::SUCCESS) {}
+
+    explicit ErrorResult(ErrorCode error) noexcept
+        : error_(error) {}
+
+    [[nodiscard]] bool is_valid() const noexcept {
+        return error_ == ErrorCode::SUCCESS;
+    }
+
+    [[nodiscard]] ErrorCode error() const noexcept {
+        return error_;
+    }
+
+    [[nodiscard]] static ErrorResult<void> success() noexcept {
+        return ErrorResult<void>();
+    }
+
+    [[nodiscard]] static ErrorResult<void> failure(ErrorCode error) noexcept {
+        return ErrorResult<void>(error);
+    }
+
+private:
+    ErrorCode error_;
+};
+
+/**
+ * @brief Validate spectrum data buffer
+ * @param spectrum_data Spectrum data buffer
+ * @param length Buffer length
+ * @return ErrorCode::SUCCESS if valid, error code otherwise
+ */
+[[nodiscard]] inline ErrorCode validate_spectrum_buffer(
+    const uint8_t* spectrum_data,
+    size_t length
+) noexcept {
+    if (spectrum_data == nullptr) {
+        return ErrorCode::BUFFER_INVALID;
+    }
+    if (length == 0) {
+        return ErrorCode::BUFFER_EMPTY;
+    }
+    if (length > 256) {
+        return ErrorCode::BUFFER_INVALID;
+    }
+    return ErrorCode::SUCCESS;
+}
+
+/**
+ * @brief Validate drone list buffer
+ * @param drones Drone list buffer
+ * @param count Number of drones
+ * @param max_count Maximum allowed count
+ * @return ErrorCode::SUCCESS if valid, error code otherwise
+ */
+[[nodiscard]] inline ErrorCode validate_drone_buffer(
+    const DisplayDroneEntry* drones,
+    size_t count,
+    size_t max_count
+) noexcept {
+    if (drones == nullptr) {
+        return ErrorCode::BUFFER_INVALID;
+    }
+    if (count == 0) {
+        return ErrorCode::BUFFER_EMPTY;
+    }
+    if (count > max_count) {
+        return ErrorCode::BUFFER_FULL;
+    }
+    return ErrorCode::SUCCESS;
+}
+
+/**
+ * @brief Validate histogram buffer
+ * @param histogram Histogram buffer
+ * @param length Buffer length
+ * @return ErrorCode::SUCCESS if valid, error code otherwise
+ */
+[[nodiscard]] inline ErrorCode validate_histogram_buffer(
+    const uint16_t* histogram,
+    size_t length
+) noexcept {
+    if (histogram == nullptr) {
+        return ErrorCode::BUFFER_INVALID;
+    }
+    if (length == 0) {
+        return ErrorCode::BUFFER_EMPTY;
+    }
+    if (length > 128) {
+        return ErrorCode::BUFFER_INVALID;
+    }
+    return ErrorCode::SUCCESS;
+}
+
+/**
  * @brief Convert error code to human-readable string
  * @param error Error code to convert
  * @return Static string (Flash storage)
  */
-[[nodiscard]] const char* error_to_string(ErrorCode error) noexcept;
+[[nodiscard]] inline const char* error_to_string(ErrorCode error) noexcept {
+    switch (error) {
+        case ErrorCode::SUCCESS:
+            return "Success";
+        case ErrorCode::HARDWARE_NOT_INITIALIZED:
+            return "Hardware not initialized";
+        case ErrorCode::HARDWARE_TIMEOUT:
+            return "Hardware timeout";
+        case ErrorCode::HARDWARE_FAILURE:
+            return "Hardware failure";
+        case ErrorCode::SPI_FAILURE:
+            return "SPI failure";
+        case ErrorCode::PLL_LOCK_FAILURE:
+            return "PLL lock failure";
+        case ErrorCode::DATABASE_NOT_LOADED:
+            return "Database not loaded";
+        case ErrorCode::DATABASE_LOAD_TIMEOUT:
+            return "Database load timeout";
+        case ErrorCode::DATABASE_CORRUPTED:
+            return "Database corrupted";
+        case ErrorCode::DATABASE_EMPTY:
+            return "Database empty";
+        case ErrorCode::BUFFER_EMPTY:
+            return "Buffer empty";
+        case ErrorCode::BUFFER_FULL:
+            return "Buffer full";
+        case ErrorCode::BUFFER_INVALID:
+            return "Buffer invalid";
+        case ErrorCode::MUTEX_TIMEOUT:
+            return "Mutex timeout";
+        case ErrorCode::MUTEX_LOCK_FAILED:
+            return "Mutex lock failed";
+        case ErrorCode::SEMAPHORE_TIMEOUT:
+            return "Semaphore timeout";
+        case ErrorCode::INITIALIZATION_FAILED:
+            return "Initialization failed";
+        case ErrorCode::INITIALIZATION_INCOMPLETE:
+            return "Initialization incomplete";
+        case ErrorCode::INVALID_PARAMETER:
+            return "Invalid parameter";
+        case ErrorCode::NOT_IMPLEMENTED:
+            return "Not implemented";
+        case ErrorCode::UNKNOWN_ERROR:
+        default:
+            return "Unknown error";
+    }
+}
+
+/**
+ * @brief Safe string copy with bounds checking
+ * @param dest Destination buffer
+ * @param dest_size Destination buffer size (must be >= 2)
+ * @param src Source string
+ * @return ErrorCode::SUCCESS if copied, error otherwise
+ * @note Always null-terminates destination
+ * @note No heap allocation, uses inline implementation
+ */
+[[nodiscard]] inline ErrorCode safe_str_copy(
+    char* dest,
+    size_t dest_size,
+    const char* src
+) noexcept {
+    if (dest == nullptr || src == nullptr || dest_size < 2) {
+        return ErrorCode::BUFFER_INVALID;
+    }
+
+    size_t i = 0;
+    for (; i < dest_size - 1 && src[i] != '\0'; ++i) {
+        dest[i] = src[i];
+    }
+    dest[i] = '\0';
+
+    return ErrorCode::SUCCESS;
+}
 
 /**
  * @brief Tracked drone data structure (41 bytes)
