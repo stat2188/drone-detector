@@ -512,6 +512,7 @@ void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
     if (local_callback != nullptr) {
         local_callback(threat_level);
 
+        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
         alert_callback_in_progress_.clear();
     }
 }

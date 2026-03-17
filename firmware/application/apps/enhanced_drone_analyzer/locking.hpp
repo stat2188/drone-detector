@@ -74,11 +74,11 @@ public:
     }
     
     /**
-     * @brief Test flag value
+     * @brief Test flag value (pure read, no side effects)
      * @return Current flag value
      */
     [[nodiscard]] bool test() const noexcept {
-        return __atomic_test_and_set(&const_cast<uint8_t&>(flag_), __ATOMIC_SEQ_CST) != 0;
+        return __atomic_load_n(&const_cast<const uint8_t&>(flag_), __ATOMIC_SEQ_CST) != 0;
     }
     
     /**
@@ -127,7 +127,7 @@ public:
      * @brief Constructor - acquires mutex lock
      * @param mutex Reference to mutex to lock
      */
-    explicit     MutexLock(Mutex& mutex) noexcept
+    explicit MutexLock(Mutex& mutex) noexcept
         : mutex_(mutex), locked_(false) {
         
 #ifdef DEBUG

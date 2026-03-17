@@ -12,10 +12,18 @@ namespace drone_analyzer {
 
 // Static buffers for large objects (off-stack, file scope)
 // These are constructed once at startup and reused for the lifetime of the application
+// Size verification ensures buffer overflow protection at compile time
 alignas(HardwareController) static uint8_t s_hardware_buffer[sizeof(HardwareController)];
+static_assert(sizeof(HardwareController) <= sizeof(s_hardware_buffer), "HardwareController buffer overflow risk");
+
 alignas(DatabaseManager) static uint8_t s_database_buffer[sizeof(DatabaseManager)];
+static_assert(sizeof(DatabaseManager) <= sizeof(s_database_buffer), "DatabaseManager buffer overflow risk");
+
 alignas(DroneScanner) static uint8_t s_scanner_buffer[sizeof(DroneScanner)];
+static_assert(sizeof(DroneScanner) <= sizeof(s_scanner_buffer), "DroneScanner buffer overflow risk");
+
 alignas(DisplayData) static uint8_t s_display_data_buffer[sizeof(DisplayData)];
+static_assert(sizeof(DisplayData) <= sizeof(s_display_data_buffer), "DisplayData buffer overflow risk");
 
 void DroneScannerUI::construct_objects() noexcept {
     hardware_ptr_ = new(&s_hardware_buffer[0]) HardwareController();

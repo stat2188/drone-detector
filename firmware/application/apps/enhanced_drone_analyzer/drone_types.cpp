@@ -59,8 +59,8 @@ ErrorCode freqman_entry_fixed::set_description(const char* src) noexcept {
 }
 
 bool freqman_entry_fixed::is_valid() const noexcept {
-    return (static_cast<FreqHz>(frequency_a) >= MIN_FREQUENCY_HZ) &&
-           (static_cast<FreqHz>(frequency_a) <= MAX_FREQUENCY_HZ) &&
+    return (frequency_a >= static_cast<int64_t>(MIN_FREQUENCY_HZ)) &&
+           (frequency_a <= static_cast<int64_t>(MAX_FREQUENCY_HZ)) &&
            (frequency_b >= 0);
 }
 
