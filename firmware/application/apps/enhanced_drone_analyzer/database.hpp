@@ -20,8 +20,19 @@ struct FrequencyEntry {
     uint16_t reserved;
     uint32_t flags;
 
+    FrequencyEntry() noexcept
+        : frequency(0)
+        , drone_type(DroneType::UNKNOWN)
+        , priority(0)
+        , reserved(0)
+        , flags(0) {}
+
     FrequencyEntry(FreqHz freq, DroneType type, uint8_t prio) noexcept
-        : frequency(freq), drone_type(type), priority(prio), reserved(0), flags(0) {}
+        : frequency(freq)
+        , drone_type(type)
+        , priority(prio)
+        , reserved(0)
+        , flags(0) {}
 
     [[nodiscard]] bool is_valid() const noexcept {
         return (frequency >= MIN_FREQUENCY_HZ) &&

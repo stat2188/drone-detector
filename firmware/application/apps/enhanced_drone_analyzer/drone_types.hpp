@@ -117,13 +117,13 @@ template<typename T>
 class ErrorResult {
 public:
     ErrorResult() noexcept
-        : has_value_(false), error_(ErrorCode::UNKNOWN_ERROR) {}
+        : has_value_(false), error_(ErrorCode::UNKNOWN_ERROR), value_{} {}
 
     explicit ErrorResult(const T& value) noexcept
         : has_value_(true), error_(ErrorCode::SUCCESS), value_(value) {}
 
     explicit ErrorResult(ErrorCode error) noexcept
-        : has_value_(false), error_(error) {}
+        : has_value_(false), error_(error), value_{} {}
 
     [[nodiscard]] bool has_value() const noexcept {
         return has_value_;
