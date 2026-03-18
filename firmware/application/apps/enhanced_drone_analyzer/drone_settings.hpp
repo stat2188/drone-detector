@@ -95,8 +95,6 @@ public:
     [[nodiscard]] ErrorCode validate_settings() const noexcept;
 
 private:
-
-private:
     ui::OptionsField field_scan_mode_;
     ui::NumberField field_scan_interval_;
     ui::NumberField field_rssi_threshold_;
@@ -114,6 +112,8 @@ private:
     ScanConfig original_config_;
     DroneSettings settings_;
     bool settings_dirty_;
+
+    void apply_settings() noexcept;
 };
 
 } // namespace drone_analyzer
