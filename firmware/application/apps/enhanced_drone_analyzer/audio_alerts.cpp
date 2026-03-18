@@ -30,7 +30,7 @@ bool AudioAlertManager::audio_initialized_ = false;
 AlertPriority AudioAlertManager::current_priority_ = AlertPriority::LOW;
 
 // ============================================================================
-// AudioAlertConfig Implementation
+// AudioAlertConfig Implementatio
 // ============================================================================
 
 AudioAlertConfig::AudioAlertConfig() noexcept
