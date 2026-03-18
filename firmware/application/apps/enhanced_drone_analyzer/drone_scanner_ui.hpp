@@ -109,13 +109,22 @@ private:
     DatabaseManager* database_ptr_;
     DroneScanner* scanner_ptr_;
 
-    ui::LNAGainField field_lna_;
-    ui::VGAGainField field_vga_;
-    ui::RFAmpField field_rf_amp_;
+    ui::LNAGainField field_lna_{
+        {4 * 8, 0}};
+    ui::VGAGainField field_vga_{
+        {11 * 8, 0}};
+    ui::RFAmpField field_rf_amp_{
+        {18 * 8, 0}};
 
-    ui::Button button_start_stop_;
-    ui::Button button_mode_;
-    ui::Button button_settings_;
+    ui::Button button_start_stop_{
+        {0, 16 * 16, 8 * 8, 28},
+        "Start"};
+    ui::Button button_mode_{
+        {9 * 8, 16 * 16, 7 * 8, 28},
+        "Mode"};
+    ui::Button button_settings_{
+        {17 * 8, 16 * 16, 7 * 8, 28},
+        "Setup"};
 
     uint64_t current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
