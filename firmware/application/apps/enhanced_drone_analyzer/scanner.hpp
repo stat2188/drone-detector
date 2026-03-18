@@ -17,19 +17,8 @@
 namespace drone_analyzer {
 
 /**
- * @brief Scanner state
- */
-enum class ScannerState : uint8_t {
-    IDLE = 0,
-    SCANNING = 1,        // Scanning frequencies (grey color)
-    LOCKING = 2,         // Verifying signal (yellow color, 500ms)
-    TRACKING = 3,        // Tracking confirmed signal (green/red color)
-    PAUSED = 4,
-    ERROR = 5
-};
-
-/**
  * @brief Scan configuration
+ * @note ScannerState is defined in drone_types.hpp
  */
 struct ScanConfig {
     ScanningMode mode;

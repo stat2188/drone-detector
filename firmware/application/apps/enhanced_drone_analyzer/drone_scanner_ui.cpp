@@ -2,6 +2,7 @@
 #include "ui.hpp"
 #include "scanner.hpp"
 #include "database.hpp"
+#include "constants.hpp"
 #include "string_format.hpp"
 #include "baseband_api.hpp"
 #include <cstring>
@@ -14,6 +15,22 @@
 #include "convert.hpp"
 
 namespace drone_analyzer {
+
+void DroneScannerUI::on_spectrum_config(Message* const p) noexcept {
+    auto* message = reinterpret_cast<ChannelSpectrumConfigMessage*>(p);
+    spectrum_fifo_ = message->fifo;
+}
+
+void DroneScannerUI::on_frame_sync(Message* const p) noexcept {
+    (void)p;
+    if (spectrum_fifo_) {
+        ChannelSpectrum spectrum;
+        while (spectrum_fifo_->out(spectrum)) {
+            on_channel_spectrum(spectrum);
+        }
+    }
+    update_ui_state();
+}
 
 alignas(HardwareController) static uint8_t s_hardware_buffer[sizeof(HardwareController)];
 static_assert(sizeof(HardwareController) <= sizeof(s_hardware_buffer), "HardwareController buffer overflow risk");
@@ -28,10 +45,10 @@ alignas(DisplayData) static uint8_t s_display_data_buffer[sizeof(DisplayData)];
 static_assert(sizeof(DisplayData) <= sizeof(s_display_data_buffer), "DisplayData buffer overflow risk");
 
 alignas(MessageHandlerRegistration) static uint8_t s_message_handler_spectrum_buffer[sizeof(MessageHandlerRegistration)];
-static_assert(sizeof(MessageHandlerRegistration) <= sizeof(s_message_handler_spectrum_buffer), "MessageHandlerRegistration buffer overflow risk");
+static_assert(sizeof(MessageHandlerRegistration) <= sizeof(s_message_handler_spectrum_buffer), "MessageHandlerRegistration spectrum buffer overflow risk");
 
 alignas(MessageHandlerRegistration) static uint8_t s_message_handler_frame_buffer[sizeof(MessageHandlerRegistration)];
-static_assert(sizeof(MessageHandlerRegistration) <= sizeof(s_message_handler_frame_buffer), "MessageHandlerRegistration buffer overflow risk");
+static_assert(sizeof(MessageHandlerRegistration) <= sizeof(s_message_handler_frame_buffer), "MessageHandlerRegistration frame buffer overflow risk");
 
 void DroneScannerUI::construct_objects() noexcept {
     hardware_ptr_ = new(&s_hardware_buffer[0]) HardwareController();
@@ -41,7 +58,15 @@ void DroneScannerUI::construct_objects() noexcept {
 }
 
 void DroneScannerUI::destruct_objects() noexcept {
-    destruct_message_handlers();
+    if (message_handler_frame_ != nullptr) {
+        message_handler_frame_->~MessageHandlerRegistration();
+        message_handler_frame_ = nullptr;
+    }
+    
+    if (message_handler_spectrum_ != nullptr) {
+        message_handler_spectrum_->~MessageHandlerRegistration();
+        message_handler_spectrum_ = nullptr;
+    }
     
     if (display_data_ptr_ != nullptr) {
         display_data_ptr_->~DisplayData();
@@ -64,39 +89,36 @@ void DroneScannerUI::destruct_objects() noexcept {
     }
 }
 
-void DroneScannerUI::init_message_handlers() noexcept {
-    message_handler_spectrum_ptr_ = new(&s_message_handler_spectrum_buffer[0]) MessageHandlerRegistration(
+ErrorCode DroneScannerUI::initialize() noexcept {
+    if (scanner_ptr_ == nullptr) {
+        return ErrorCode::HARDWARE_NOT_INITIALIZED;
+    }
+    
+    ErrorCode err = scanner_ptr_->initialize();
+    if (err != ErrorCode::SUCCESS) {
+        destruct_objects();
+        return err;
+    }
+    
+    if (display_data_ptr_ != nullptr) {
+        display_data_ptr_->clear();
+    }
+    
+    message_handler_spectrum_ = new(&s_message_handler_spectrum_buffer[0]) MessageHandlerRegistration(
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
+            this->on_spectrum_config(p);
         }
     );
     
-    message_handler_frame_ptr_ = new(&s_message_handler_frame_buffer[0]) MessageHandlerRegistration(
+    message_handler_frame_ = new(&s_message_handler_frame_buffer[0]) MessageHandlerRegistration(
         Message::ID::DisplayFrameSync,
-        [this](Message* const) {
-            if (this->spectrum_fifo_) {
-                ChannelSpectrum spectrum;
-                while (this->spectrum_fifo_->out(spectrum)) {
-                    this->on_channel_spectrum(spectrum);
-                }
-            }
-            this->update_ui_state();
+        [this](Message* const p) {
+            this->on_frame_sync(p);
         }
     );
-}
-
-void DroneScannerUI::destruct_message_handlers() noexcept {
-    if (message_handler_frame_ptr_ != nullptr) {
-        message_handler_frame_ptr_->~MessageHandlerRegistration();
-        message_handler_frame_ptr_ = nullptr;
-    }
     
-    if (message_handler_spectrum_ptr_ != nullptr) {
-        message_handler_spectrum_ptr_->~MessageHandlerRegistration();
-        message_handler_spectrum_ptr_ = nullptr;
-    }
+    return ErrorCode::SUCCESS;
 }
 
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
@@ -131,24 +153,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , selected_button_(1)
     , settings_visible_(false)
     , spectrum_fifo_(nullptr)
-    , message_handler_spectrum_ptr_(nullptr)
-    , message_handler_frame_ptr_(nullptr) {
-
-    construct_objects();
-    init_message_handlers();
-
-    if (display_data_ptr_ != nullptr) {
-        display_data_ptr_->clear();
-    }
-
-    if (scanner_ptr_ != nullptr) {
-        ErrorCode err = scanner_ptr_->initialize();
-        if (err != ErrorCode::SUCCESS) {
-            show_error(err, ERROR_DURATION_MS);
-            destruct_objects();
-            return;
-        }
-    }
+    , message_handler_spectrum_(nullptr)
+    , message_handler_frame_(nullptr) {
 
     add_children({
         &field_lna_,
@@ -159,6 +165,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_mode_,
         &button_settings_
     });
+
+    construct_objects();
+
+    const ErrorCode err = initialize();
+    if (err != ErrorCode::SUCCESS) {
+        show_error(err, ERROR_DURATION_MS);
+        destruct_objects();
+        return;
+    }
 
     button_start_stop_.on_select = [this](ui::Button&) {
         if (scanner_ptr_ == nullptr) {
@@ -238,8 +253,6 @@ void DroneScannerUI::paint(Painter& painter) {
 
     draw_scanner_status(painter, y_offset);
     y_offset += 40;
-
-    draw_threat_summary(painter, y_offset);
 
     if (is_alert_active()) {
         draw_alert_overlay(painter);
@@ -467,11 +480,6 @@ void DroneScannerUI::draw_scanner_status(Painter& painter, uint16_t start_y) noe
     }
 }
 
-void DroneScannerUI::draw_threat_summary(Painter& painter, uint16_t start_y) noexcept {
-    (void)painter;
-    (void)start_y;
-}
-
 void DroneScannerUI::draw_alert_overlay(Painter& painter) noexcept {
     if (!alert_active_) {
         return;
@@ -512,24 +520,6 @@ void DroneScannerUI::draw_text(
     }
     
     painter.draw_string(Point{x, y}, style, text);
-}
-
-void DroneScannerUI::draw_rectangle(
-    Painter& painter,
-    uint16_t x,
-    uint16_t y,
-    uint16_t width,
-    uint16_t height,
-    uint32_t color,
-    bool fill
-) noexcept {
-    (void)painter;
-    (void)x;
-    (void)y;
-    (void)width;
-    (void)height;
-    (void)color;
-    (void)fill;
 }
 
 void DroneScannerUI::update_status_text() noexcept {

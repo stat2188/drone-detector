@@ -59,6 +59,18 @@ enum class ScanningMode : uint8_t {
 };
 
 /**
+ * @brief Scanner state
+ */
+enum class ScannerState : uint8_t {
+    IDLE = 0,
+    SCANNING = 1,
+    LOCKING = 2,
+    TRACKING = 3,
+    PAUSED = 4,
+    ERROR = 5
+};
+
+/**
  * @brief Movement trend for tracked drones
  */
 enum class MovementTrend : uint8_t {
