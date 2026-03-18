@@ -103,11 +103,11 @@ private:
 private:
     NavigationView& nav_;
 
+    ui::BigFrequency big_display_;
+
     HardwareController* hardware_ptr_;
     DatabaseManager* database_ptr_;
     DroneScanner* scanner_ptr_;
-
-    ui::BigFrequency big_display_;
 
     ui::LNAGainField field_lna_;
     ui::VGAGainField field_vga_;

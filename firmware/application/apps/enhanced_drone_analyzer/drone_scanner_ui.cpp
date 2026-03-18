@@ -11,6 +11,7 @@
 #include <type_traits>
 #include "message.hpp"
 #include "drone_settings.hpp"
+#include "convert.hpp"
 
 namespace drone_analyzer {
 
@@ -37,8 +38,6 @@ void DroneScannerUI::construct_objects() noexcept {
     database_ptr_ = new(&s_database_buffer[0]) DatabaseManager();
     scanner_ptr_ = new(&s_scanner_buffer[0]) DroneScanner(*database_ptr_, *hardware_ptr_);
     display_data_ptr_ = new(&s_display_data_buffer[0]) DisplayData();
-    
-    init_message_handlers();
 }
 
 void DroneScannerUI::destruct_objects() noexcept {
@@ -103,6 +102,7 @@ void DroneScannerUI::destruct_message_handlers() noexcept {
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : ui::View()
     , nav_(nav)
+    , big_display_({BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0)
     , hardware_ptr_(nullptr)
     , database_ptr_(nullptr)
     , scanner_ptr_(nullptr)
@@ -114,7 +114,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , last_error_(ErrorCode::SUCCESS)
     , message_handler_spectrum_ptr_(nullptr)
     , message_handler_frame_ptr_(nullptr)
-    , big_display_({BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0)
     , field_lna_({4 * 8, 0})
     , field_vga_({11 * 8, 0})
     , field_rf_amp_({18 * 8, 0})
@@ -134,6 +133,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , settings_visible_(false) {
 
     construct_objects();
+    init_message_handlers();
 
     if (display_data_ptr_ != nullptr) {
         display_data_ptr_->clear();
@@ -174,9 +174,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
 
     button_mode_.on_select = [this](ui::Button&) {
-        const uint8_t current_mode = static_cast<uint8_t>(scanning_mode_);
-        const uint8_t next_mode = (current_mode + 1) % SCANNING_MODE_COUNT;
-        scanning_mode_ = static_cast<ScanningMode>(next_mode);
+        ScanningMode modes[] = {
+            ScanningMode::SINGLE,
+            ScanningMode::HOPPING,
+            ScanningMode::SEQUENTIAL,
+            ScanningMode::TARGETED
+        };
+        uint8_t current_idx = static_cast<uint8_t>(scanning_mode_);
+        scanning_mode_ = modes[(current_idx + 1) % SCANNING_MODE_COUNT];
+        update_status_text();
     };
 
     button_settings_.on_select = [this, &nav](ui::Button&) {
@@ -422,10 +428,9 @@ void DroneScannerUI::draw_scanner_status(Painter& painter, uint16_t start_y) noe
 
     draw_text(painter, "RSSI:", RSSI_TEXT_X, start_y + RSSI_TEXT_Y_OFFSET, text_style);
 
-    char rssi_str[16];
-    snprintf(rssi_str, sizeof(rssi_str), "%ld", static_cast<int32_t>(current_rssi_));
-    draw_text(painter, rssi_str, RSSI_VALUE_X, start_y + RSSI_TEXT_Y_OFFSET, text_style);
-    draw_text(painter, "dBm", RSSI_DBM_X_BASE + strlen(rssi_str) * 5, start_y + RSSI_TEXT_Y_OFFSET, text_style);
+    const auto rssi_str = to_string_dec_int(current_rssi_);
+    draw_text(painter, rssi_str.c_str(), RSSI_VALUE_X, start_y + RSSI_TEXT_Y_OFFSET, text_style);
+    draw_text(painter, "dBm", RSSI_DBM_X_BASE + rssi_str.length() * 5, start_y + RSSI_TEXT_Y_OFFSET, text_style);
 
     const char* state_text = "IDLE";
     switch (current_scanner_state_) {
@@ -463,8 +468,9 @@ void DroneScannerUI::draw_alert_overlay(Painter& painter) noexcept {
     }
 
     const auto& style = *Theme::getInstance()->fg_red;
+    const ui::Color bg_color = ui::Color::RGB(COLOR_CRITICAL_THREAT);
 
-    draw_rectangle(painter, ALERT_X, ALERT_Y, ALERT_W, ALERT_H, COLOR_CRITICAL_THREAT, true);
+    painter.fill_rectangle({ALERT_X, ALERT_Y, ALERT_W, ALERT_H}, bg_color);
 
     draw_text(painter, "ALERT", ALERT_X + ALERT_TEXT_OFFSET_X, ALERT_Y + ALERT_TEXT_OFFSET_Y, style);
     draw_text(painter, alert_message_, ALERT_X + ALERT_TEXT_OFFSET_X, ALERT_Y + ALERT_MESSAGE_TEXT_OFFSET_Y, style);
@@ -476,8 +482,9 @@ void DroneScannerUI::draw_error_overlay(Painter& painter) noexcept {
     }
 
     const auto& style = *Theme::getInstance()->fg_yellow;
+    const ui::Color bg_color = ui::Color::RGB(COLOR_HIGH_THREAT);
 
-    draw_rectangle(painter, ERROR_X, ERROR_Y, ERROR_W, ERROR_H, COLOR_HIGH_THREAT, true);
+    painter.fill_rectangle({ERROR_X, ERROR_Y, ERROR_W, ERROR_H}, bg_color);
 
     draw_text(painter, "ERROR", ERROR_X + ALERT_TEXT_OFFSET_X, ERROR_Y + ALERT_TEXT_OFFSET_Y, style);
     draw_text(painter, error_to_string(last_error_), ERROR_X + ALERT_TEXT_OFFSET_X, ERROR_Y + ALERT_MESSAGE_TEXT_OFFSET_Y, style);
@@ -506,15 +513,13 @@ void DroneScannerUI::draw_rectangle(
     uint32_t color,
     bool fill
 ) noexcept {
-    if (width == 0 || height == 0) {
-        return;
-    }
-
-    if (fill) {
-        painter.fill_rectangle({x, y, width, height}, color);
-    } else {
-        painter.draw_rectangle({x, y, width, height}, color);
-    }
+    (void)painter;
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+    (void)color;
+    (void)fill;
 }
 
 void DroneScannerUI::update_status_text() noexcept {
@@ -642,22 +647,16 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
     if (scanner_ptr_ == nullptr) {
         return;
     }
-    
-    uint8_t max_power = 0;
-    for (size_t i = 0; i < 256; i++) {
-        if (spectrum.db[i] > max_power) {
-            max_power = spectrum.db[i];
-        }
-    }
-    
-    const int32_t rssi = static_cast<int32_t>(max_power) - 120;
-    
-    if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
-        scanner_ptr_->update_tracked_drones(
-            current_frequency_,
-            rssi,
-            chTimeNow()
-        );
+
+    const ErrorResult<RssiValue> result = scanner_ptr_->process_spectrum_data(
+        spectrum,
+        current_frequency_
+    );
+
+    if (!result.is_valid()) {
+        show_error(result.error(), ERROR_DURATION_MS);
+    } else {
+        current_rssi_ = result.value();
     }
 }
 

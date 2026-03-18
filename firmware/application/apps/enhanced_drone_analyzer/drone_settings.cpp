@@ -1,5 +1,7 @@
 #include "drone_settings.hpp"
 #include "scanner.hpp"
+#include <cstring>
+#include "ui_receiver.hpp"
 
 namespace drone_analyzer {
 
@@ -42,6 +44,21 @@ void DroneSettings::reset_to_defaults() noexcept {
 
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config) noexcept
     : ui::View()
+    , nav_(nav)
+    , field_scan_mode_({10, 80}, 14, {
+        {"Single", 0},
+        {"Hopping", 1},
+        {"Sequential", 2},
+        {"Targeted", 3}
+    })
+    , field_scan_interval_({10, 120}, 4, {10, 1000, 10, ' '})
+    , field_rssi_threshold_({10, 160}, 4, {-90, -20, 1, ' '})
+    , check_audio_alerts_({10, 200}, 15, "Audio Alerts", false)
+    , check_spectrum_visible_({10, 240}, 15, "Show Spectrum", false)
+    , check_histogram_visible_({10, 270}, 15, "Show Histogram", false)
+    , button_save_({UI_POS_X_CENTER(14), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "SAVE")
+    , button_cancel_({UI_POS_X_CENTER(10), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(10), 28}, "CANCEL")
+    , button_defaults_({UI_POS_X(2), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(12), 28}, "DEFAULTS")
     , settings_()
     , settings_file_path_(SETTINGS_FILE_PATH)
     , settings_loaded_(false)
@@ -50,11 +67,86 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , section_spacing_(20)
     , row_height_(25)
     , checkbox_size_(20)
-    , button_height_(30) {
-    (void)nav;
+    , button_height_(30)
+    , field_scan_mode_({10, 80}, 14, {
+        {"Single", 0},
+        {"Hopping", 1},
+        {"Sequential", 2},
+        {"Targeted", 3}
+    })
+    , field_scan_interval_({10, 120}, 4, {10, 1000, 10, ' '})
+    , field_rssi_threshold_({10, 160}, 4, {-90, -20, 1, ' '})
+    , check_audio_alerts_({10, 200}, 15, "Audio Alerts", false)
+    , check_spectrum_visible_({10, 240}, 15, "Show Spectrum", false)
+    , check_histogram_visible_({10, 270}, 15, "Show Histogram", false)
+    , button_save_({UI_POS_X_CENTER(14), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "SAVE")
+    , button_cancel_({UI_POS_X_CENTER(10), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(10), 28}, "CANCEL")
+    , button_defaults_({UI_POS_X(2), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(12), 28}, "DEFAULTS") {
     settings_.scanning_mode = config.mode;
     settings_.scan_interval_ms = config.scan_interval_ms;
     settings_.alert_rssi_threshold_dbm = config.rssi_threshold_dbm;
+
+    add_children({
+        &field_scan_mode_,
+        &field_scan_interval_,
+        &field_rssi_threshold_,
+        &check_audio_alerts_,
+        &check_spectrum_visible_,
+        &check_histogram_visible_,
+        &button_save_,
+        &button_cancel_,
+        &button_defaults_
+    });
+
+    field_scan_mode_.set_by_value(static_cast<int32_t>(settings_.scanning_mode));
+    field_scan_interval_.set_value(settings_.scan_interval_ms);
+    field_rssi_threshold_.set_value(settings_.alert_rssi_threshold_dbm);
+    check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
+    check_spectrum_visible_.set_value(settings_.spectrum_visible);
+    check_histogram_visible_.set_value(settings_.histogram_visible);
+
+    button_save_.on_select = [this](ui::Button&) {
+        save_settings();
+        nav_.pop();
+    };
+
+    button_cancel_.on_select = [this](ui::Button&) {
+        nav_.pop();
+    };
+
+    button_defaults_.on_select = [this](ui::Button&) {
+        reset_settings();
+    };
+
+    field_scan_mode_.on_change = [this](size_t, int32_t v) {
+        settings_.scanning_mode = static_cast<ScanningMode>(v);
+        settings_dirty_ = true;
+    };
+
+    field_scan_interval_.on_change = [this](int32_t v) {
+        settings_.scan_interval_ms = static_cast<uint32_t>(v);
+        settings_dirty_ = true;
+    };
+
+    field_rssi_threshold_.on_change = [this](int32_t v) {
+        settings_.alert_rssi_threshold_dbm = v;
+        settings_dirty_ = true;
+    };
+
+    check_audio_alerts_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.audio_alerts_enabled = v;
+        settings_dirty_ = true;
+    };
+
+    check_spectrum_visible_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.spectrum_visible = v;
+        settings_dirty_ = true;
+    };
+
+    check_histogram_visible_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.histogram_visible = v;
+        settings_dirty_ = true;
+    };
 }
 
 DroneSettingsView::DroneSettingsView() noexcept
@@ -79,29 +171,7 @@ DroneSettingsView::~DroneSettingsView() noexcept {
 // ============================================================================
 
 void DroneSettingsView::paint(ui::Painter& painter) {
-    // Clear display
-    // draw_rectangle(painter, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, COLOR_BACKGROUND);
-    
-    uint16_t y_offset = 10;
-    
-    // Draw header
-    draw_settings_header(painter);
-    y_offset += header_height_ + section_spacing_;
-    
-    // Draw scanning settings
-    draw_scanning_settings(painter, y_offset);
-    y_offset += (3 * row_height_) + section_spacing_;
-    
-    // Draw display settings
-    draw_display_settings(painter, y_offset);
-    y_offset += (4 * row_height_) + section_spacing_;
-    
-    // Draw alert settings
-    draw_alert_settings(painter, y_offset);
-    y_offset += (2 * row_height_) + section_spacing_;
-    
-    // Draw threat settings
-    draw_threat_settings(painter, y_offset);
+    (void)painter;
 }
 
 // ============================================================================
@@ -273,8 +343,9 @@ ErrorCode DroneSettingsView::validate_settings() const noexcept {
 // ============================================================================
 
 void DroneSettingsView::draw_settings_header(ui::Painter& painter) noexcept {
-    // Will use ui::Painter when available
-    (void)painter;
+    const auto& style = *Theme::getInstance()->fg_light;
+    painter.draw_string(Point{10, 10}, style, "DRONE SCANNER SETTINGS");
+    painter.fill_rectangle({0, 30, DISPLAY_WIDTH, 2}, Theme::getInstance()->fg_blue->foreground);
 }
 
 void DroneSettingsView::draw_scanning_settings(ui::Painter& painter, uint16_t start_y) noexcept {
@@ -416,14 +487,16 @@ void DroneSettingsView::draw_setting_row(
     uint16_t width,
     uint16_t height
 ) noexcept {
-    // Will use ui::Painter when available
-    (void)painter;
-    (void)label;
-    (void)value;
-    (void)x;
-    (void)y;
-    (void)width;
-    (void)height;
+    if (width == 0 || height == 0) {
+        return;
+    }
+
+    const auto& style = *Theme::getInstance()->fg_light;
+    painter.draw_string(Point{x, y}, style, label);
+
+    if (value != nullptr && value[0] != '\0') {
+        painter.draw_string(Point{x + 100, y}, style, value);
+    }
 }
 
 void DroneSettingsView::draw_checkbox(
@@ -433,12 +506,17 @@ void DroneSettingsView::draw_checkbox(
     uint16_t y,
     uint16_t size
 ) noexcept {
-    // Will use ui::Painter when available
-    (void)painter;
-    (void)checked;
-    (void)x;
-    (void)y;
-    (void)size;
+    if (size == 0) {
+        return;
+    }
+
+    const ui::Color border_color = checked ? Theme::getInstance()->fg_green->foreground : Theme::getInstance()->fg_light->foreground;
+    const ui::Color fill_color = checked ? Theme::getInstance()->fg_green->foreground : Theme::getInstance()->bg_darkest->background;
+
+    painter.draw_rectangle({x, y, size, size}, border_color);
+    if (checked) {
+        painter.fill_rectangle({x + 4, y + 4, size - 8, size - 8}, fill_color);
+    }
 }
 
 void DroneSettingsView::draw_button(
@@ -450,14 +528,26 @@ void DroneSettingsView::draw_button(
     uint16_t height,
     bool enabled
 ) noexcept {
-    // Will use ui::Painter when available
-    (void)painter;
-    (void)label;
-    (void)x;
-    (void)y;
-    (void)width;
-    (void)height;
-    (void)enabled;
+    if (width == 0 || height == 0) {
+        return;
+    }
+
+    const ui::Color border_color = enabled ? Theme::getInstance()->fg_blue->foreground : Theme::getInstance()->fg_light->foreground;
+    const ui::Color bg_color = enabled ? Theme::getInstance()->bg_darkest->background : Theme::getInstance()->fg_medium->foreground;
+
+    painter.fill_rectangle({x, y, width, height}, bg_color);
+    painter.draw_rectangle({x, y, width, height}, border_color);
+
+    if (label != nullptr && label[0] != '\0') {
+        const auto& text_style = enabled ? *Theme::getInstance()->fg_light : *Theme::getInstance()->fg_medium;
+        size_t label_len = 0;
+        while (label[label_len] != '\0') {
+            label_len++;
+        }
+        const uint16_t text_x = x + (width / 2) - ((label_len * 8) / 2);
+        const uint16_t text_y = y + (height / 2) - 8;
+        painter.draw_string(Point{text_x, text_y}, text_style, label);
+    }
 }
 
 // ============================================================================

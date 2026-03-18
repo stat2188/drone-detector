@@ -270,14 +270,46 @@ ErrorCode DroneScanner::update_tracked_drones(
     if (frequency < MIN_FREQUENCY_HZ || frequency > MAX_FREQUENCY_HZ) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    
+
     if (rssi < RSSI_MIN_DBM || rssi > RSSI_MAX_DBM) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    
+
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    
+
     return update_tracked_drone_internal(frequency, rssi, timestamp);
+}
+
+ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
+    const ChannelSpectrum& spectrum,
+    FreqHz current_frequency
+) noexcept {
+    if (current_frequency == 0) {
+        return ErrorResult<RssiValue>::failure(ErrorCode::INVALID_PARAMETER);
+    }
+
+    uint8_t max_power = 0;
+    for (size_t i = 0; i < 256; i++) {
+        if (spectrum.db[i] > max_power) {
+            max_power = spectrum.db[i];
+        }
+    }
+
+    const int32_t rssi = static_cast<int32_t>(max_power) - 120;
+
+    if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
+        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+        const ErrorCode err = update_tracked_drone_internal(
+            current_frequency,
+            rssi,
+            chTimeNow()
+        );
+        if (err != ErrorCode::SUCCESS) {
+            return ErrorResult<RssiValue>::failure(err);
+        }
+    }
+
+    return ErrorResult<RssiValue>::success(rssi);
 }
 
 ErrorCode DroneScanner::update_tracked_drone_internal(

@@ -11,6 +11,7 @@
 #include "ui_painter.hpp"
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
+#include "ui_receiver.hpp"
 
 namespace drone_analyzer {
 
@@ -58,7 +59,7 @@ public:
     /**
      * @brief Constructor with navigation and scan config
      */
-    DroneSettingsView(NavigationView& nav, const ScanConfig& config) noexcept;
+    explicit DroneSettingsView(NavigationView& nav, const ScanConfig& config) noexcept;
 
     /**
      * @brief Default constructor
@@ -298,6 +299,20 @@ private:
     void notify_settings_changed() noexcept;
 
 private:
+    // UI Widgets (must be initialized first)
+    ui::OptionsField field_scan_mode_;
+    ui::NumberField field_scan_interval_;
+    ui::NumberField field_rssi_threshold_;
+    ui::Checkbox check_audio_alerts_;
+    ui::Checkbox check_spectrum_visible_;
+    ui::Checkbox check_histogram_visible_;
+
+    ui::Button button_save_;
+    ui::Button button_cancel_;
+    ui::Button button_defaults_;
+
+    NavigationView& nav_;
+
     // Current settings
     DroneSettings settings_;
 

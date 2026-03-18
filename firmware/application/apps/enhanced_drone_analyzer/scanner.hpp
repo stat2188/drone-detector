@@ -159,6 +159,20 @@ public:
         RssiValue rssi,
         SystemTime timestamp
     ) noexcept;
+
+    /**
+     * @brief Process spectrum data and extract RSSI
+     * @param spectrum Channel spectrum data
+     * @param current_frequency Current tuned frequency (for tracking)
+     * @return ErrorResult containing RSSI value or error
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     * @note Extracts maximum power from spectrum and converts to dBm
+     * @note Updates tracked drones if RSSI above threshold
+     */
+    [[nodiscard]] ErrorResult<RssiValue> process_spectrum_data(
+        const ChannelSpectrum& spectrum,
+        FreqHz current_frequency
+    ) noexcept;
     
     /**
      * @brief Get tracked drones
