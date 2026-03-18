@@ -44,21 +44,22 @@ void DroneSettings::reset_to_defaults() noexcept {
 
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config) noexcept
     : ui::View()
-    , nav_(nav)
     , field_scan_mode_({10, 80}, 14, {
         {"Single", 0},
         {"Hopping", 1},
         {"Sequential", 2},
         {"Targeted", 3}
     })
-    , field_scan_interval_({10, 120}, 4, {10, 1000, 10, ' '})
-    , field_rssi_threshold_({10, 160}, 4, {-90, -20, 1, ' '})
+    , field_scan_interval_({10, 120}, 4, {10, 1000}, 10, ' ')
+    , field_rssi_threshold_({10, 160}, 4, {-90, -20}, 1, ' ')
     , check_audio_alerts_({10, 200}, 15, "Audio Alerts", false)
     , check_spectrum_visible_({10, 240}, 15, "Show Spectrum", false)
     , check_histogram_visible_({10, 270}, 15, "Show Histogram", false)
     , button_save_({UI_POS_X_CENTER(14), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "SAVE")
     , button_cancel_({UI_POS_X_CENTER(10), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(10), 28}, "CANCEL")
     , button_defaults_({UI_POS_X(2), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(12), 28}, "DEFAULTS")
+    , nav_(nav)
+    , original_config_(config)
     , settings_()
     , settings_file_path_(SETTINGS_FILE_PATH)
     , settings_loaded_(false)
@@ -67,21 +68,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , section_spacing_(20)
     , row_height_(25)
     , checkbox_size_(20)
-    , button_height_(30)
-    , field_scan_mode_({10, 80}, 14, {
-        {"Single", 0},
-        {"Hopping", 1},
-        {"Sequential", 2},
-        {"Targeted", 3}
-    })
-    , field_scan_interval_({10, 120}, 4, {10, 1000, 10, ' '})
-    , field_rssi_threshold_({10, 160}, 4, {-90, -20, 1, ' '})
-    , check_audio_alerts_({10, 200}, 15, "Audio Alerts", false)
-    , check_spectrum_visible_({10, 240}, 15, "Show Spectrum", false)
-    , check_histogram_visible_({10, 270}, 15, "Show Histogram", false)
-    , button_save_({UI_POS_X_CENTER(14), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "SAVE")
-    , button_cancel_({UI_POS_X_CENTER(10), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(10), 28}, "CANCEL")
-    , button_defaults_({UI_POS_X(2), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(12), 28}, "DEFAULTS") {
+    , button_height_(30) {
     settings_.scanning_mode = config.mode;
     settings_.scan_interval_ms = config.scan_interval_ms;
     settings_.alert_rssi_threshold_dbm = config.rssi_threshold_dbm;
@@ -107,6 +94,15 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     button_save_.on_select = [this](ui::Button&) {
         save_settings();
+        
+        if (on_changed) {
+            ScanConfig updated_config = original_config_;
+            updated_config.mode = settings_.scanning_mode;
+            updated_config.scan_interval_ms = settings_.scan_interval_ms;
+            updated_config.rssi_threshold_dbm = settings_.alert_rssi_threshold_dbm;
+            on_changed(updated_config);
+        }
+        
         nav_.pop();
     };
 
@@ -147,19 +143,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_.histogram_visible = v;
         settings_dirty_ = true;
     };
-}
-
-DroneSettingsView::DroneSettingsView() noexcept
-    : ui::View()
-    , settings_()
-    , settings_file_path_(SETTINGS_FILE_PATH)
-    , settings_loaded_(false)
-    , settings_dirty_(false)
-    , header_height_(30)
-    , section_spacing_(20)
-    , row_height_(25)
-    , checkbox_size_(20)
-    , button_height_(30) {
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {

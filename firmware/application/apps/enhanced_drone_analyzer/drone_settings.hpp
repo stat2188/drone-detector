@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include <functional>
 #include "drone_types.hpp"
 #include "constants.hpp"
 #include "scanner.hpp"
@@ -62,9 +63,10 @@ public:
     explicit DroneSettingsView(NavigationView& nav, const ScanConfig& config) noexcept;
 
     /**
-     * @brief Default constructor
+     * @brief Callback for notifying parent when settings are saved
+     * @param config Updated scan configuration
      */
-    DroneSettingsView() noexcept;
+    std::function<void(const ScanConfig& config)> on_changed{};
 
     /**
      * @brief Destructor
@@ -312,6 +314,9 @@ private:
     ui::Button button_defaults_;
 
     NavigationView& nav_;
+
+    // Original config from scanner
+    ScanConfig original_config_;
 
     // Current settings
     DroneSettings settings_;

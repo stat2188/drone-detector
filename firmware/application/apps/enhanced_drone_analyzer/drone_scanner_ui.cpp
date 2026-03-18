@@ -188,7 +188,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     button_settings_.on_select = [this, &nav](ui::Button&) {
         if (scanner_ptr_ != nullptr) {
             auto config = scanner_ptr_->get_config();
-            nav.push<DroneSettingsView>(config);
+            auto settings_view = nav.push<DroneSettingsView>(config);
+            
+            settings_view->on_changed = [this](const ScanConfig& updated_config) {
+                if (scanner_ptr_ != nullptr) {
+                    scanner_ptr_->set_config(updated_config);
+                }
+            };
         }
     };
 }
@@ -393,9 +399,8 @@ ScanningMode DroneScannerUI::get_scanning_mode() const noexcept {
 }
 
 const DisplayData& DroneScannerUI::get_display_data() const noexcept {
-    static DisplayData empty_data;
-    
     if (scanner_ptr_ == nullptr || display_data_ptr_ == nullptr) {
+        static DisplayData empty_data;
         return empty_data;
     }
     
@@ -648,16 +653,26 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
         return;
     }
 
-    const ErrorResult<RssiValue> result = scanner_ptr_->process_spectrum_data(
-        spectrum,
-        current_frequency_
-    );
+    uint8_t max_power = 0;
 
-    if (!result.is_valid()) {
-        show_error(result.error(), ERROR_DURATION_MS);
-    } else {
-        current_rssi_ = result.value();
+    for (size_t i = 0; i < 256; ++i) {
+        if (spectrum.db[i] > max_power) {
+            max_power = spectrum.db[i];
+        }
     }
+
+    const int32_t rssi = static_cast<int32_t>(max_power) - 120;
+
+    if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
+        const SystemTime timestamp = chTimeNow();
+        scanner_ptr_->update_tracked_drones(
+            current_frequency_,
+            rssi,
+            timestamp
+        );
+    }
+
+    current_rssi_ = rssi;
 }
 
 } // namespace drone_analyzer
