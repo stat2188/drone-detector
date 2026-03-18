@@ -330,18 +330,20 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PAFT afsktx)
 
-### APRS RX - DISABLED (UI already commented, no usage)
-#set(MODE_CPPSRC
-#	proc_aprsrx.cpp
-#)
-#DeclareTargets(PAPR aprsrx)
+### APRS RX
+
+set(MODE_CPPSRC
+	proc_aprsrx.cpp
+)
+DeclareTargets(PAPR aprsrx)
 
 
-### BTLE RX - DISABLED (UI already commented, no usage)
-#set(MODE_CPPSRC
-#	proc_btlerx.cpp
-#)
-#DeclareTargets(PBTR btlerx)
+### BTLE RX
+
+set(MODE_CPPSRC
+	proc_btlerx.cpp
+)
+DeclareTargets(PBTR btlerx)
 
 ### BTLE TX
 
@@ -378,17 +380,19 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PERT ert)
 
-### Radiosonde - DISABLED (UI already commented, no usage)
-#set(MODE_CPPSRC
-#	proc_sonde.cpp
-#)
-#DeclareTargets(PSON sonde)
+### Radiosonde
 
-### FSK RX - DISABLED (No external apps use this)
-#set(MODE_CPPSRC
-#	proc_fsk_rx.cpp
-#)
-#DeclareTargets(PFSR fskrx)
+set(MODE_CPPSRC
+	proc_sonde.cpp
+)
+DeclareTargets(PSON sonde)
+
+### FSK RX
+
+set(MODE_CPPSRC
+	proc_fsk_rx.cpp
+)
+DeclareTargets(PFSR fskrx)
 
 ### FSK TX
 
@@ -426,11 +430,12 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PPO2 pocsag2)
 
-### RDS - DISABLED (UI already commented, no usage)
-#set(MODE_CPPSRC
-#	proc_rds.cpp
-#)
-#DeclareTargets(PRDS rds)
+### RDS
+
+set(MODE_CPPSRC
+	proc_rds.cpp
+)
+DeclareTargets(PRDS rds)
 
 ### Replay
 
