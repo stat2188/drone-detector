@@ -95,12 +95,9 @@ private:
     void construct_objects() noexcept;
     void destruct_objects() noexcept;
 
-    void on_spectrum_config(Message* const p) noexcept;
-    void on_frame_sync(Message* const p) noexcept;
+    void on_spectrum_config(const Message* const p) noexcept;
+    void on_frame_sync(const Message* const p) noexcept;
 
-    private:
-    alignas(MessageHandlerRegistration) static uint8_t s_message_handler_spectrum_buffer[sizeof(MessageHandlerRegistration)];
-    alignas(MessageHandlerRegistration) static uint8_t s_message_handler_frame_buffer[sizeof(MessageHandlerRegistration)];
     NavigationView& nav_;
 
     ui::BigFrequency big_display_;
@@ -109,22 +106,13 @@ private:
     DatabaseManager* database_ptr_;
     DroneScanner* scanner_ptr_;
 
-    ui::LNAGainField field_lna_{
-        {4 * 8, 0}};
-    ui::VGAGainField field_vga_{
-        {11 * 8, 0}};
-    ui::RFAmpField field_rf_amp_{
-        {18 * 8, 0}};
+    ui::LNAGainField field_lna_;
+    ui::VGAGainField field_vga_;
+    ui::RFAmpField field_rf_amp_;
 
-    ui::Button button_start_stop_{
-        {0, 16 * 16, 8 * 8, 28},
-        "Start"};
-    ui::Button button_mode_{
-        {9 * 8, 16 * 16, 7 * 8, 28},
-        "Mode"};
-    ui::Button button_settings_{
-        {17 * 8, 16 * 16, 7 * 8, 28},
-        "Setup"};
+    ui::Button button_start_stop_;
+    ui::Button button_mode_;
+    ui::Button button_settings_;
 
     uint64_t current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
@@ -150,11 +138,17 @@ private:
 
     uint16_t selected_button_{1};
     bool settings_visible_{false};
+    bool initialization_failed_{false};
 
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
 
-    MessageHandlerRegistration* message_handler_spectrum_{nullptr};
-    MessageHandlerRegistration* message_handler_frame_{nullptr};
+    MessageHandlerRegistration message_handler_spectrum_config_{
+        Message::ID::ChannelSpectrumConfig,
+        [this](const Message* const p) { this->on_spectrum_config(p); }};
+
+    MessageHandlerRegistration message_handler_frame_sync_{
+        Message::ID::DisplayFrameSync,
+        [this](const Message* const p) { this->on_frame_sync(p); }};
 
     void draw_scanner_header(Painter& painter) noexcept;
     void draw_scanner_status(Painter& painter, uint16_t start_y) noexcept;

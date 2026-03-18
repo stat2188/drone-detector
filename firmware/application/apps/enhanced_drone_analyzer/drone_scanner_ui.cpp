@@ -16,12 +16,12 @@
 
 namespace drone_analyzer {
 
-void DroneScannerUI::on_spectrum_config(Message* const p) noexcept {
-    auto* message = reinterpret_cast<ChannelSpectrumConfigMessage*>(p);
+void DroneScannerUI::on_spectrum_config(const Message* const p) noexcept {
+    auto* message = reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
     spectrum_fifo_ = message->fifo;
 }
 
-void DroneScannerUI::on_frame_sync(Message* const p) noexcept {
+void DroneScannerUI::on_frame_sync(const Message* const p) noexcept {
     (void)p;
     if (spectrum_fifo_) {
         ChannelSpectrum spectrum;
@@ -44,12 +44,6 @@ static_assert(sizeof(DroneScanner) <= sizeof(s_scanner_buffer), "DroneScanner bu
 alignas(DisplayData) static uint8_t s_display_data_buffer[sizeof(DisplayData)];
 static_assert(sizeof(DisplayData) <= sizeof(s_display_data_buffer), "DisplayData buffer overflow risk");
 
-alignas(MessageHandlerRegistration) static uint8_t s_message_handler_spectrum_buffer[sizeof(MessageHandlerRegistration)];
-static_assert(sizeof(MessageHandlerRegistration) <= sizeof(s_message_handler_spectrum_buffer), "MessageHandlerRegistration spectrum buffer overflow risk");
-
-alignas(MessageHandlerRegistration) static uint8_t s_message_handler_frame_buffer[sizeof(MessageHandlerRegistration)];
-static_assert(sizeof(MessageHandlerRegistration) <= sizeof(s_message_handler_frame_buffer), "MessageHandlerRegistration frame buffer overflow risk");
-
 void DroneScannerUI::construct_objects() noexcept {
     hardware_ptr_ = new(&s_hardware_buffer[0]) HardwareController();
     database_ptr_ = new(&s_database_buffer[0]) DatabaseManager();
@@ -58,31 +52,21 @@ void DroneScannerUI::construct_objects() noexcept {
 }
 
 void DroneScannerUI::destruct_objects() noexcept {
-    if (message_handler_frame_ != nullptr) {
-        message_handler_frame_->~MessageHandlerRegistration();
-        message_handler_frame_ = nullptr;
-    }
-    
-    if (message_handler_spectrum_ != nullptr) {
-        message_handler_spectrum_->~MessageHandlerRegistration();
-        message_handler_spectrum_ = nullptr;
-    }
-    
     if (display_data_ptr_ != nullptr) {
         display_data_ptr_->~DisplayData();
         display_data_ptr_ = nullptr;
     }
-    
+
     if (scanner_ptr_ != nullptr) {
         scanner_ptr_->~DroneScanner();
         scanner_ptr_ = nullptr;
     }
-    
+
     if (database_ptr_ != nullptr) {
         database_ptr_->~DatabaseManager();
         database_ptr_ = nullptr;
     }
-    
+
     if (hardware_ptr_ != nullptr) {
         hardware_ptr_->~HardwareController();
         hardware_ptr_ = nullptr;
@@ -103,21 +87,7 @@ ErrorCode DroneScannerUI::initialize() noexcept {
     if (display_data_ptr_ != nullptr) {
         display_data_ptr_->clear();
     }
-    
-    message_handler_spectrum_ = new(&s_message_handler_spectrum_buffer[0]) MessageHandlerRegistration(
-        Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
-            this->on_spectrum_config(p);
-        }
-    );
-    
-    message_handler_frame_ = new(&s_message_handler_frame_buffer[0]) MessageHandlerRegistration(
-        Message::ID::DisplayFrameSync,
-        [this](Message* const p) {
-            this->on_frame_sync(p);
-        }
-    );
-    
+
     return ErrorCode::SUCCESS;
 }
 
@@ -137,7 +107,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , current_frequency_(0)
     , current_rssi_(RSSI_NOISE_FLOOR_DBM)
     , current_scanner_state_(ScannerState::IDLE)
-    , displayed_drone_type_{'\0', '\0', '\0', '\0', '\0'}
+    , displayed_drone_type_{'\0', '\0', '\0', '\0'}
     , drone_type_display_timer_(0)
     , display_data_ptr_(nullptr)
     , scanning_(false)
@@ -153,8 +123,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , selected_button_(1)
     , settings_visible_(false)
     , spectrum_fifo_(nullptr)
-    , message_handler_spectrum_(nullptr)
-    , message_handler_frame_(nullptr) {
+    , initialization_failed_(false) {
 
     add_children({
         &field_lna_,
@@ -171,12 +140,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     const ErrorCode err = initialize();
     if (err != ErrorCode::SUCCESS) {
         show_error(err, ERROR_DURATION_MS);
-        destruct_objects();
-        return;
+        initialization_failed_ = true;
+        scanning_ = false;
     }
 
     button_start_stop_.on_select = [this](ui::Button&) {
-        if (scanner_ptr_ == nullptr) {
+        if (initialization_failed_ || scanner_ptr_ == nullptr) {
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
@@ -191,6 +160,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
 
     button_mode_.on_select = [this](ui::Button&) {
+        if (initialization_failed_) {
+            return;
+        }
         ScanningMode modes[] = {
             ScanningMode::SINGLE,
             ScanningMode::HOPPING,
@@ -203,19 +175,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
 
     button_settings_.on_select = [this, &nav](ui::Button&) {
-        if (scanner_ptr_ != nullptr) {
-            auto config = scanner_ptr_->get_config();
-            auto settings_view = nav.push<DroneSettingsView>(config);
-            
-            settings_view->on_changed = [this](const ScanConfig& updated_config) {
-                if (scanner_ptr_ != nullptr) {
-                    const ErrorCode err = scanner_ptr_->set_config(updated_config);
-                    if (err != ErrorCode::SUCCESS) {
-                        show_error(err, ERROR_DURATION_MS);
-                    }
-                }
-            };
+        if (initialization_failed_ || scanner_ptr_ == nullptr) {
+            show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
+            return;
         }
+        
+        const auto config = scanner_ptr_->get_config();
+        nav.push<DroneSettingsView>(nav, config, scanner_ptr_);
     };
 }
 
@@ -235,6 +201,9 @@ void DroneScannerUI::on_show() {
     if (scanner_ptr_ != nullptr) {
         update_ui_state();
     }
+    
+    baseband::set_spectrum(2500000, 1);
+    baseband::spectrum_streaming_start();
 }
 
 void DroneScannerUI::on_hide() {
