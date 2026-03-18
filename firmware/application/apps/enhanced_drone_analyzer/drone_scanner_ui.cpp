@@ -182,9 +182,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        
+
         const auto config = scanner_ptr_->get_config();
-        nav.push<DroneSettingsView>(nav, config, scanner_ptr_);
+        nav.push<DroneSettingsView>(config, scanner_ptr_);
     };
 }
 

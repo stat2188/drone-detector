@@ -138,9 +138,9 @@ private:
 
     uint16_t selected_button_{1};
     bool settings_visible_{false};
-    bool initialization_failed_{false};
 
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
+    bool initialization_failed_{false};
 
     MessageHandlerRegistration message_handler_spectrum_config_{
         Message::ID::ChannelSpectrumConfig,
