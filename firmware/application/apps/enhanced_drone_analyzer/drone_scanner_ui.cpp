@@ -106,6 +106,17 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , hardware_ptr_(nullptr)
     , database_ptr_(nullptr)
     , scanner_ptr_(nullptr)
+    , field_lna_{{4 * 8, 0}}
+    , field_vga_{{11 * 8, 0}}
+    , field_rf_amp_{{18 * 8, 0}}
+    , button_start_stop_{{0, 16 * 16, 8 * 8, 28}, "Start"}
+    , button_mode_{{9 * 8, 16 * 16, 7 * 8, 28}, "Mode"}
+    , button_settings_{{17 * 8, 16 * 16, 7 * 8, 28}, "Setup"}
+    , current_frequency_(0)
+    , current_rssi_(RSSI_NOISE_FLOOR_DBM)
+    , current_scanner_state_(ScannerState::IDLE)
+    , displayed_drone_type_{'\0', '\0', '\0', '\0', '\0'}
+    , drone_type_display_timer_(0)
     , display_data_ptr_(nullptr)
     , scanning_(false)
     , scanning_mode_(DEFAULT_SCANNING_MODE)
@@ -120,11 +131,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , selected_button_(1)
     , settings_visible_(false)
     , spectrum_fifo_(nullptr)
-    , current_frequency_(0)
-    , current_rssi_(RSSI_NOISE_FLOOR_DBM)
-    , current_scanner_state_(ScannerState::IDLE)
-    , displayed_drone_type_{'\0', '\0', '\0', '\0', '\0'}
-    , drone_type_display_timer_(0)
     , message_handler_spectrum_ptr_(nullptr)
     , message_handler_frame_ptr_(nullptr) {
 
