@@ -17,6 +17,7 @@
 namespace drone_analyzer {
 
 void DroneScannerUI::on_spectrum_config(const Message* const p) noexcept {
+    if (!p) return;
     auto* message = reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
     spectrum_fifo_ = message->fifo;
 }
@@ -124,6 +125,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , settings_visible_(false)
     , spectrum_fifo_(nullptr)
     , initialization_failed_(false) {
+
+    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
 
     add_children({
         &field_lna_,
