@@ -144,10 +144,7 @@ private:
 
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
 
-    alignas(MessageHandlerRegistration) static uint8_t s_message_handler_spectrum_buffer[sizeof(MessageHandlerRegistration)];
     MessageHandlerRegistration* message_handler_spectrum_ptr_{nullptr};
-
-    alignas(MessageHandlerRegistration) static uint8_t s_message_handler_frame_buffer[sizeof(MessageHandlerRegistration)];
     MessageHandlerRegistration* message_handler_frame_ptr_{nullptr};
 
     void init_message_handlers() noexcept;

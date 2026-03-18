@@ -12,6 +12,7 @@
 #include "hardware_controller.hpp"
 #include "audio_alerts.hpp"
 #include "convert.hpp"
+#include "message.hpp"
 
 namespace drone_analyzer {
 
@@ -173,6 +174,16 @@ public:
         const ChannelSpectrum& spectrum,
         FreqHz current_frequency
     ) noexcept;
+    
+    /**
+     * @brief Process ChannelSpectrum message directly
+     * @param spectrum Channel spectrum data
+     * @return ErrorCode::SUCCESS if processed, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     * @note Uses scanner's internal current_frequency
+     * @note Updates tracked drones if RSSI above threshold
+     */
+    [[nodiscard]] ErrorCode process_spectrum_message(const ChannelSpectrum& spectrum) noexcept;
     
     /**
      * @brief Get tracked drones

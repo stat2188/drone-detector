@@ -312,6 +312,37 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
     return ErrorResult<RssiValue>::success(rssi);
 }
 
+ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum) noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    
+    if (current_frequency_ == 0) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
+    uint8_t max_power = 0;
+    for (size_t i = 0; i < 256; i++) {
+        if (spectrum.db[i] > max_power) {
+            max_power = spectrum.db[i];
+        }
+    }
+    
+    const int32_t rssi = static_cast<int32_t>(max_power) - 120;
+    
+    if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
+        const ErrorCode err = update_tracked_drone_internal(
+            current_frequency_,
+            rssi,
+            chTimeNow()
+        );
+        
+        if (err != ErrorCode::SUCCESS) {
+            return err;
+        }
+    }
+    
+    return ErrorCode::SUCCESS;
+}
+
 ErrorCode DroneScanner::update_tracked_drone_internal(
     FreqHz frequency,
     RssiValue rssi,

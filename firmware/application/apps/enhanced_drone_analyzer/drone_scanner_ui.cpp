@@ -110,27 +110,23 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , scanning_(false)
     , scanning_mode_(DEFAULT_SCANNING_MODE)
     , alert_active_(false)
+    , alert_message_{}
+    , alert_start_time_(0)
+    , alert_duration_ms_(0)
     , error_active_(false)
     , last_error_(ErrorCode::SUCCESS)
-    , message_handler_spectrum_ptr_(nullptr)
-    , message_handler_frame_ptr_(nullptr)
-    , field_lna_({4 * 8, 0})
-    , field_vga_({11 * 8, 0})
-    , field_rf_amp_({18 * 8, 0})
-    , button_start_stop_({0, 16 * 16, 8 * 8, 28}, "Start")
-    , button_mode_({9 * 8, 16 * 16, 7 * 8, 28}, "Mode")
-    , button_settings_({17 * 8, 16 * 16, 7 * 8, 28}, "Setup")
+    , error_start_time_(0)
+    , error_duration_ms_(0)
+    , selected_button_(1)
+    , settings_visible_(false)
+    , spectrum_fifo_(nullptr)
     , current_frequency_(0)
     , current_rssi_(RSSI_NOISE_FLOOR_DBM)
     , current_scanner_state_(ScannerState::IDLE)
     , displayed_drone_type_{'\0', '\0', '\0', '\0', '\0'}
     , drone_type_display_timer_(0)
-    , alert_start_time_(0)
-    , alert_duration_ms_(0)
-    , error_start_time_(0)
-    , error_duration_ms_(0)
-    , selected_button_(1)
-    , settings_visible_(false) {
+    , message_handler_spectrum_ptr_(nullptr)
+    , message_handler_frame_ptr_(nullptr) {
 
     construct_objects();
     init_message_handlers();
@@ -192,7 +188,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             
             settings_view->on_changed = [this](const ScanConfig& updated_config) {
                 if (scanner_ptr_ != nullptr) {
-                    scanner_ptr_->set_config(updated_config);
+                    const ErrorCode err = scanner_ptr_->set_config(updated_config);
+                    if (err != ErrorCode::SUCCESS) {
+                        show_error(err, ERROR_DURATION_MS);
+                    }
                 }
             };
         }
@@ -605,9 +604,14 @@ void DroneScannerUI::update_ui_state() noexcept {
     
     if (drone_count > 0) {
         current_rssi_ = tracked_drones[0].rssi;
-        current_frequency_ = tracked_drones[0].frequency;
     } else {
         current_rssi_ = RSSI_NOISE_FLOOR_DBM;
+    }
+    
+    ErrorResult<FreqHz> freq_result = scanner_ptr_->get_current_frequency();
+    if (freq_result.has_value()) {
+        current_frequency_ = freq_result.value();
+    } else {
         current_frequency_ = 0;
     }
     
@@ -652,27 +656,26 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
     if (scanner_ptr_ == nullptr) {
         return;
     }
-
+    
     uint8_t max_power = 0;
-
+    
     for (size_t i = 0; i < 256; ++i) {
         if (spectrum.db[i] > max_power) {
             max_power = spectrum.db[i];
         }
     }
-
+    
     const int32_t rssi = static_cast<int32_t>(max_power) - 120;
-
-    if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
-        const SystemTime timestamp = chTimeNow();
-        scanner_ptr_->update_tracked_drones(
-            current_frequency_,
-            rssi,
-            timestamp
-        );
-    }
-
+    
     current_rssi_ = rssi;
+    
+    if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
+        const ErrorCode err = scanner_ptr_->process_spectrum_message(spectrum);
+        
+        if (err != ErrorCode::SUCCESS) {
+            show_error(err, ERROR_DURATION_MS);
+        }
+    }
 }
 
 } // namespace drone_analyzer
