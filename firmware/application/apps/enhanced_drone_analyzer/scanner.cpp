@@ -144,27 +144,34 @@ FreqHz DroneScanner::get_locked_frequency() const noexcept {
 
 ErrorCode DroneScanner::start_scanning() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    
+
     if (state_ == ScannerState::SCANNING) {
         return ErrorCode::SUCCESS;
     }
-    
+
+    ErrorCode hw_result = hardware_.start_spectrum_streaming();
+    if (hw_result != ErrorCode::SUCCESS) {
+        return hw_result;
+    }
+
     state_ = ScannerState::SCANNING;
     scanning_active_.set();
-    
+
     return ErrorCode::SUCCESS;
 }
 
 ErrorCode DroneScanner::stop_scanning() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    
+
     if (state_ == ScannerState::IDLE) {
         return ErrorCode::SUCCESS;
     }
-    
+
     state_ = ScannerState::IDLE;
     scanning_active_.clear();
-    
+
+    (void)hardware_.stop_spectrum_streaming();
+
     return ErrorCode::SUCCESS;
 }
 

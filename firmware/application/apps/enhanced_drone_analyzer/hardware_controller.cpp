@@ -223,6 +223,8 @@ ErrorCode HardwareController::start_spectrum_streaming() noexcept {
 ErrorCode HardwareController::start_streaming_internal() noexcept {
     portapack::receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
 
+    baseband::set_spectrum(config_.sample_rate, 31);
+
     portapack::receiver_model.enable();
 
     baseband::spectrum_streaming_start();
@@ -433,8 +435,6 @@ ErrorCode HardwareController::apply_config_internal(const HardwareConfig& config
 
     rf::Frequency rf_freq = rf::Frequency(config.center_frequency);
     portapack::receiver_model.set_target_frequency(rf_freq);
-
-    portapack::receiver_model.enable();
 
     return ErrorCode::SUCCESS;
 }

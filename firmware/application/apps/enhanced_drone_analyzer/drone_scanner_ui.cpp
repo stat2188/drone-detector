@@ -49,8 +49,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , nav_(nav)
     , big_display_({BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0) {
 
-    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
-
     add_children({
         &field_lna_,
         &field_vga_,
@@ -84,9 +82,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         }
         if (scanning_) {
             (void)scanner_ptr_->stop_scanning();
+            baseband::spectrum_streaming_stop();
+            portapack::receiver_model.disable();
             scanning_ = false;
             button_start_stop_.set_text("Start");
         } else {
+            baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
             (void)scanner_ptr_->start_scanning();
             scanning_ = true;
             button_start_stop_.set_text("Stop");
@@ -115,6 +116,7 @@ DroneScannerUI::~DroneScannerUI() noexcept {
     }
     destruct_objects();
 
+    baseband::spectrum_streaming_stop();
     portapack::receiver_model.set_sampling_rate(3072000);
     portapack::receiver_model.disable();
     baseband::shutdown();
@@ -125,8 +127,6 @@ void DroneScannerUI::focus() {
 }
 
 void DroneScannerUI::on_show() {
-    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
-    baseband::spectrum_streaming_start();
 }
 
 void DroneScannerUI::on_hide() {
