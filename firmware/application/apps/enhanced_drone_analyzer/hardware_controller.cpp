@@ -196,10 +196,6 @@ ErrorCode HardwareController::start_spectrum_streaming() noexcept {
 ErrorCode HardwareController::start_streaming_internal() noexcept {
     portapack::receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
 
-    baseband::set_spectrum(config_.sample_rate, 31);
-
-    portapack::receiver_model.enable();
-
     baseband::spectrum_streaming_start();
 
     return ErrorCode::SUCCESS;
@@ -227,8 +223,6 @@ ErrorCode HardwareController::stop_spectrum_streaming() noexcept {
 
 ErrorCode HardwareController::stop_streaming_internal() noexcept {
     baseband::spectrum_streaming_stop();
-
-    portapack::receiver_model.disable();
 
     return ErrorCode::SUCCESS;
 }
