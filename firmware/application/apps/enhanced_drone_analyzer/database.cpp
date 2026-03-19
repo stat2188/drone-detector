@@ -77,11 +77,11 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     
     freqman_load_options options{
+        .max_entries = MAX_DATABASE_ENTRIES,
         .load_freqs = true,
         .load_ranges = false,
         .load_hamradios = false,
-        .load_repeaters = false,
-        .max_entries = MAX_DATABASE_ENTRIES
+        .load_repeaters = false
     };
     
     if (!load_freqman_file("DRONES", temp_db, options)) {
@@ -99,6 +99,15 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
             continue;
         }
         
+        if (entry.frequency_a < 0) {
+            continue;
+        }
+        
+        const FreqHz freq = static_cast<FreqHz>(entry.frequency_a);
+        if (freq < MIN_FREQUENCY_HZ || freq > MAX_FREQUENCY_HZ) {
+            continue;
+        }
+        
         DroneType type = parse_drone_type_from_description(
             entry.description.c_str(),
             0,
@@ -109,16 +118,11 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
             continue;
         }
         
-        if (entry.frequency_a < MIN_FREQUENCY_HZ ||
-            entry.frequency_a > MAX_FREQUENCY_HZ) {
-            continue;
-        }
-        
         if (entry_count_ >= MAX_DATABASE_ENTRIES) {
             break;
         }
         
-        entries_[entry_count_] = FrequencyEntry(entry.frequency_a, type, 0);
+        entries_[entry_count_] = FrequencyEntry(freq, type, 0);
         entry_count_++;
     }
     
@@ -188,6 +192,7 @@ ErrorResult<size_t> DatabaseManager::find_entry_index_internal(FreqHz frequency)
 
 DatabaseManager::DatabaseManager() noexcept
     : entries_()
+    , temp_db()
     , current_index_(0)
     , entry_count_(0)
     , loaded_()

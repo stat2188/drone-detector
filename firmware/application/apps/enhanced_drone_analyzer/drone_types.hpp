@@ -434,9 +434,10 @@ struct DisplayData {
 // ============================================================================
 
 /**
- * @brief Forward declaration of freqman_type from FreqmanDB
+ * @brief Import freqman_type from FreqmanDB (global namespace)
+ * @note This allows using freqman_type::Single etc. within drone_analyzer namespace
  */
-enum class freqman_type : uint8_t;
+using ::freqman_type;
 
 /**
  * @brief Embedded-compatible freqman entry (no std::string, no heap)
