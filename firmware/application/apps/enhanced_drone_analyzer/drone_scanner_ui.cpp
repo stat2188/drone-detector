@@ -1,6 +1,7 @@
 #include "drone_scanner_ui.hpp"
 #include "ui.hpp"
 #include "scanner.hpp"
+#include "drone_settings.hpp"
 #include "database.hpp"
 #include "hardware_controller.hpp"
 #include "constants.hpp"
@@ -81,11 +82,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             return;
         }
         if (scanning_) {
-            scanner_ptr_->stop_scanning();
+            (void)scanner_ptr_->stop_scanning();
             scanning_ = false;
             button_start_stop_.set_text("Start");
         } else {
-            scanner_ptr_->start_scanning();
+            (void)scanner_ptr_->start_scanning();
             scanning_ = true;
             button_start_stop_.set_text("Stop");
         }
@@ -109,7 +110,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
 DroneScannerUI::~DroneScannerUI() noexcept {
     if (scanner_ptr_ != nullptr && scanning_) {
-        scanner_ptr_->stop_scanning();
+        (void)scanner_ptr_->stop_scanning();
     }
     destruct_objects();
 
@@ -129,7 +130,7 @@ void DroneScannerUI::on_show() {
 
 void DroneScannerUI::on_hide() {
     if (scanner_ptr_ != nullptr && scanning_) {
-        scanner_ptr_->stop_scanning();
+        (void)scanner_ptr_->stop_scanning();
         scanning_ = false;
     }
     baseband::spectrum_streaming_stop();
@@ -155,7 +156,7 @@ void DroneScannerUI::paint(Painter& painter) {
 
 void DroneScannerUI::show_alert(const char* message, uint32_t duration_ms) noexcept {
     if (message == nullptr) return;
-    safe_str_copy(alert_message_, MAX_TEXT_LENGTH, message);
+    (void)safe_str_copy(alert_message_, MAX_TEXT_LENGTH, message);
     alert_active_ = true;
     alert_start_time_ = chTimeNow();
     alert_duration_ms_ = duration_ms;
@@ -181,7 +182,7 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
     current_rssi_ = static_cast<int32_t>(max_power) - 120;
 
     if (current_rssi_ > RSSI_DETECTION_THRESHOLD_DBM) {
-        scanner_ptr_->process_spectrum_message(spectrum);
+        (void)scanner_ptr_->process_spectrum_message(spectrum);
     }
 }
 
@@ -252,7 +253,7 @@ void DroneScannerUI::update_ui_state() noexcept {
         char drone_type[5]{'\0'};
         ErrorCode err = scanner_ptr_->get_current_drone_type(drone_type, 5);
         if (err == ErrorCode::SUCCESS && drone_type[0] != '\0') {
-            safe_str_copy(displayed_drone_type_, MAX_DRONE_TYPE_DISPLAY, drone_type);
+            (void)safe_str_copy(displayed_drone_type_, MAX_DRONE_TYPE_DISPLAY, drone_type);
             drone_type_display_timer_ = chTimeNow();
         }
     } else {

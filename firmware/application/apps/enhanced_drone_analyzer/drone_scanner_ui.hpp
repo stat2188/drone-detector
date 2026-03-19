@@ -75,7 +75,7 @@ public:
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
     ScannerState current_scanner_state_{ScannerState::IDLE};
 
-    char displayed_drone_type_[5]{'\0', '\0', '\0', '\0', '\0'};
+    char displayed_drone_type_[MAX_DRONE_TYPE_DISPLAY + 1]{};
     uint32_t drone_type_display_timer_{0};
 
     bool scanning_{false};
