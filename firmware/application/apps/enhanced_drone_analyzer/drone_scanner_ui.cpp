@@ -10,6 +10,7 @@
 #include "portapack_persistent_memory.hpp"
 #include "ch.h"
 #include <new>
+#include <array>
 
 namespace drone_analyzer {
 
@@ -172,19 +173,17 @@ void DroneScannerUI::show_error(ErrorCode error, uint32_t duration_ms) noexcept 
 void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
     if (scanner_ptr_ == nullptr) return;
 
-    uint8_t max_power = 0;
-    for (size_t i = 0; i < 256; ++i) {
-        if (spectrum.db[i] > max_power) {
-            max_power = spectrum.db[i];
-        }
-    }
+    // Use scanner's fast spectrum processing (non-blocking)
+    ErrorResult<RssiValue> rssi_result = scanner_ptr_->process_spectrum_fast(spectrum);
 
-    current_rssi_ = static_cast<int32_t>(max_power) - 120;
+    if (rssi_result.has_value()) {
+        current_rssi_ = rssi_result.value();
 
-    if (current_rssi_ > RSSI_DETECTION_THRESHOLD_DBM) {
-        const ErrorCode err = scanner_ptr_->process_spectrum_message(spectrum);
-        if (err != ErrorCode::SUCCESS && err != ErrorCode::MUTEX_LOCK_FAILED) {
-            show_error(err, 1000);
+        if (current_rssi_ > RSSI_DETECTION_THRESHOLD_DBM) {
+            const ErrorCode err = scanner_ptr_->process_spectrum_message(spectrum);
+            if (err != ErrorCode::SUCCESS && err != ErrorCode::MUTEX_LOCK_FAILED) {
+                show_error(err, 1000);
+            }
         }
     }
 }
@@ -220,15 +219,12 @@ void DroneScannerUI::update_ui_state() noexcept {
 
     current_scanner_state_ = scanner_ptr_->get_state();
 
-    TrackedDrone* tracked_drones_ptr = nullptr;
-    size_t drone_count = 0;
     RssiValue drone_rssi = RSSI_NOISE_FLOOR_DBM;
 
     if (scanner_ptr_->get_tracked_count() > 0) {
-        static TrackedDrone temp_drone;
-        const size_t count = scanner_ptr_->get_tracked_drones(&temp_drone, 1);
+        const size_t count = scanner_ptr_->get_tracked_drones(&temp_drone_, 1);
         if (count > 0) {
-            drone_rssi = temp_drone.rssi;
+            drone_rssi = temp_drone_.rssi;
         }
     }
 

@@ -360,6 +360,19 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     return ErrorCode::SUCCESS;
 }
 
+ErrorResult<RssiValue> DroneScanner::process_spectrum_fast(const ChannelSpectrum& spectrum) noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+
+    if (!lock.is_locked()) {
+        return ErrorResult<RssiValue>::failure(ErrorCode::MUTEX_LOCK_FAILED);
+    }
+
+    uint8_t max_power = find_max_power(spectrum);
+    const int32_t rssi = static_cast<int32_t>(max_power) - 120;
+
+    return ErrorResult<RssiValue>::success(rssi);
+}
+
 uint8_t DroneScanner::find_max_power(const ChannelSpectrum& spectrum) noexcept {
     uint8_t max_power = 0;
     for (size_t i = 0; i < 256; ++i) {

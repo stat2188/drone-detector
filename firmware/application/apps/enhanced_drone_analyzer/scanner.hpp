@@ -173,6 +173,15 @@ public:
      * @note Updates tracked drones if RSSI above threshold
      */
     [[nodiscard]] ErrorCode process_spectrum_message(const ChannelSpectrum& spectrum) noexcept;
+
+    /**
+     * @brief Fast spectrum processing for UI updates
+     * @param spectrum Channel spectrum data
+     * @return ErrorResult containing RSSI value or error
+     * @note Uses try-lock to avoid blocking UI thread
+     * @note Does not update tracked drones - only extracts RSSI
+     */
+    [[nodiscard]] ErrorResult<RssiValue> process_spectrum_fast(const ChannelSpectrum& spectrum) noexcept;
     
     /**
      * @brief Get tracked drones

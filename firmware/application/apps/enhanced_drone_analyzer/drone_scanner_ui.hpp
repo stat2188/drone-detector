@@ -78,6 +78,8 @@ public:
     char displayed_drone_type_[MAX_DRONE_TYPE_DISPLAY + 1]{};
     uint32_t drone_type_display_timer_{0};
 
+    TrackedDrone temp_drone_{};
+
     bool scanning_{false};
     ScanningMode scanning_mode_{DEFAULT_SCANNING_MODE};
 
