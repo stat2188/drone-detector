@@ -126,9 +126,16 @@ ErrorCode DroneScanner::initialize() noexcept {
 // Fast Scanner Integration Getters
 // ============================================================================
 
-const char* DroneScanner::get_current_drone_type() const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    return current_drone_type_;
+uint32_t DroneScanner::get_freq_lock_count() const noexcept {
+    return freq_lock_count_;
+}
+
+void DroneScanner::set_freq_lock_count(uint32_t count) noexcept {
+    freq_lock_count_ = count;
+}
+
+FreqHz DroneScanner::get_locked_frequency() const noexcept {
+    return locked_frequency_;
 }
 
 // ============================================================================
@@ -209,6 +216,14 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     if (!freq_result.has_value()) {
         statistics_.failed_cycles++;
         scan_cycle_in_progress_.clear();
+        
+        // Handle empty database gracefully
+        if (freq_result.error() == ErrorCode::DATABASE_EMPTY) {
+            // No more frequencies to scan, but stay in SCANNING state
+            // The UI will show this and user can reload database
+            return ErrorCode::DATABASE_EMPTY;
+        }
+        
         return freq_result.error();
     }
     
@@ -321,6 +336,21 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         if (err != ErrorCode::SUCCESS) {
             return err;
         }
+        
+        // Increment freq lock count when signal detected on same frequency
+        if (current_frequency_ == locked_frequency_) {
+            if (freq_lock_count_ < MAX_FREQ_LOCK) {
+                freq_lock_count_++;
+            }
+        } else {
+            // New frequency detected, reset lock count
+            locked_frequency_ = current_frequency_;
+            freq_lock_count_ = 1;
+        }
+    } else {
+        // No signal above threshold, reset lock count
+        freq_lock_count_ = 0;
+        locked_frequency_ = 0;
     }
     
     return ErrorCode::SUCCESS;
@@ -378,6 +408,27 @@ ErrorResult<size_t> DroneScanner::find_drone_by_frequency_internal(
     }
     
     return ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);
+}
+
+ErrorCode DroneScanner::get_current_drone_type(char* buffer, size_t buffer_size) const noexcept {
+    if (buffer == nullptr || buffer_size < 2) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    
+    size_t copy_len = 0;
+    for (size_t i = 0; i < 4 && i < (buffer_size - 1); ++i) {
+        if (current_drone_type_[i] != '\0') {
+            buffer[i] = current_drone_type_[i];
+            copy_len++;
+        } else {
+            break;
+        }
+    }
+    
+    buffer[copy_len] = '\0';
+    return ErrorCode::SUCCESS;
 }
 
 ErrorCode DroneScanner::add_tracked_drone_internal(
@@ -568,10 +619,10 @@ void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
 
     if (local_callback != nullptr) {
         local_callback(threat_level);
-
-        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-        alert_callback_in_progress_.clear();
     }
+
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    alert_callback_in_progress_.clear();
 }
 
 } // namespace drone_analyzer

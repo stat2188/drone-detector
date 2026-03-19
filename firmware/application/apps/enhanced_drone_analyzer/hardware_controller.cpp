@@ -137,7 +137,7 @@ ErrorCode HardwareController::tune_to_frequency(
         if (tune_result != ErrorCode::SUCCESS) {
             if (retry < max_retries - 1) {
                 // Wait before retry
-                // chThdSleepMilliseconds(HARDWARE_RETRY_DELAY_MS);
+                chThdSleepMilliseconds(HARDWARE_RETRY_DELAY_MS);
                 continue;
             }
             state_ = HardwareState::ERROR;

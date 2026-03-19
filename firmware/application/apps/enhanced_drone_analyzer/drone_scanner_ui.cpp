@@ -604,9 +604,10 @@ void DroneScannerUI::update_ui_state() noexcept {
     bigdisplay_update(color);
     
     if (current_scanner_state_ == ScannerState::LOCKING) {
-        const char* drone_type = scanner_ptr_->get_current_drone_type();
+        char drone_type[5] = {'\0'};
+        const ErrorCode err = scanner_ptr_->get_current_drone_type(drone_type, 5);
         
-        if (drone_type != nullptr && drone_type[0] != '\0') {
+        if (err == ErrorCode::SUCCESS && drone_type[0] != '\0') {
             const ErrorCode copy_err = safe_str_copy(displayed_drone_type_, MAX_DRONE_TYPE_DISPLAY, drone_type);
             if (copy_err == ErrorCode::SUCCESS) {
                 drone_type_display_timer_ = chTimeNow();

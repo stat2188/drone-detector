@@ -247,11 +247,14 @@ public:
 
     /**
      * @brief Get current drone type string
-     * @return Drone type string (max 4 characters)
+     * @param buffer Destination buffer for drone type string
+     * @param buffer_size Size of destination buffer (must be >= 2)
+     * @return ErrorCode::SUCCESS if copied, error otherwise
      * @note Only valid during LOCKING state
      * @note Thread-safe: acquires mutex (LockOrder::DATA_MUTEX)
+     * @note Copies to caller's buffer while holding mutex to prevent race conditions
      */
-    [[nodiscard]] const char* get_current_drone_type() const noexcept;
+    [[nodiscard]] ErrorCode get_current_drone_type(char* buffer, size_t buffer_size) const noexcept;
 
     /**
      * @brief Get freq lock count
