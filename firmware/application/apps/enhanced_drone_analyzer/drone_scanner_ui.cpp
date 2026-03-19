@@ -182,7 +182,10 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
     current_rssi_ = static_cast<int32_t>(max_power) - 120;
 
     if (current_rssi_ > RSSI_DETECTION_THRESHOLD_DBM) {
-        (void)scanner_ptr_->process_spectrum_message(spectrum);
+        const ErrorCode err = scanner_ptr_->process_spectrum_message(spectrum);
+        if (err != ErrorCode::SUCCESS && err != ErrorCode::MUTEX_LOCK_FAILED) {
+            show_error(err, 1000);
+        }
     }
 }
 
@@ -217,14 +220,19 @@ void DroneScannerUI::update_ui_state() noexcept {
 
     current_scanner_state_ = scanner_ptr_->get_state();
 
-    TrackedDrone tracked_drones[MAX_TRACKED_DRONES];
-    const size_t drone_count = scanner_ptr_->get_tracked_drones(tracked_drones, MAX_TRACKED_DRONES);
+    TrackedDrone* tracked_drones_ptr = nullptr;
+    size_t drone_count = 0;
+    RssiValue drone_rssi = RSSI_NOISE_FLOOR_DBM;
 
-    if (drone_count > 0) {
-        current_rssi_ = tracked_drones[0].rssi;
-    } else {
-        current_rssi_ = RSSI_NOISE_FLOOR_DBM;
+    if (scanner_ptr_->get_tracked_count() > 0) {
+        static TrackedDrone temp_drone;
+        const size_t count = scanner_ptr_->get_tracked_drones(&temp_drone, 1);
+        if (count > 0) {
+            drone_rssi = temp_drone.rssi;
+        }
     }
+
+    current_rssi_ = drone_rssi;
 
     ErrorResult<FreqHz> freq_result = scanner_ptr_->get_current_frequency();
     current_frequency_ = freq_result.has_value() ? freq_result.value() : 0;

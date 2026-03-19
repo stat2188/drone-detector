@@ -270,10 +270,10 @@ ErrorResult<RssiSample> HardwareController::get_rssi_sample() noexcept {
 
 ErrorResult<RssiSample> HardwareController::read_rssi_internal() noexcept {
     RssiSample sample;
-    
+
     if (spectrum_fifo_ != nullptr) {
         ChannelSpectrum spectrum;
-        while (spectrum_fifo_->out(spectrum)) {
+        if (spectrum_fifo_->out(spectrum)) {
             uint8_t max_power = 0;
             for (size_t i = 0; i < 256; i++) {
                 if (spectrum.db[i] > max_power) {
@@ -286,11 +286,11 @@ ErrorResult<RssiSample> HardwareController::read_rssi_internal() noexcept {
         }
         return ErrorResult<RssiSample>::success(sample);
     }
-    
+
     sample.rssi = RSSI_NOISE_FLOOR_DBM;
     sample.timestamp = chTimeNow();
     sample.frequency = current_frequency_;
-    
+
     return ErrorResult<RssiSample>::success(sample);
 }
 

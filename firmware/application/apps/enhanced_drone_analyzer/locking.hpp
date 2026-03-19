@@ -236,14 +236,16 @@ public:
         
         const systime_t timeout = MS2ST(timeout_ms);
         const systime_t start = chTimeNow();
-        
+
         while (!locked_ && (chTimeNow() - start < timeout)) {
             if (chMtxTryLock(&mutex_)) {
                 locked_ = true;
-                
+
 #ifdef DEBUG
                 register_held_lock(ORDER);
 #endif
+            } else {
+                chThdYield();
             }
         }
     }

@@ -110,7 +110,7 @@ public:
         [this](Message* const) {
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
-                while (this->spectrum_fifo_->out(spectrum)) {
+                if (this->spectrum_fifo_->out(spectrum)) {
                     this->on_channel_spectrum(spectrum);
                 }
             }

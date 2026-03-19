@@ -317,26 +317,30 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
 }
 
 ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum) noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+
+    if (!lock.is_locked()) {
+        return ErrorCode::MUTEX_LOCK_FAILED;
+    }
+
     if (current_frequency_ == 0) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    
+
     uint8_t max_power = find_max_power(spectrum);
     const int32_t rssi = static_cast<int32_t>(max_power) - 120;
-    
+
     if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
         const ErrorCode err = update_tracked_drone_internal(
             current_frequency_,
             rssi,
             chTimeNow()
         );
-        
+
         if (err != ErrorCode::SUCCESS) {
             return err;
         }
-        
+
         // Increment freq lock count when signal detected on same frequency
         if (current_frequency_ == locked_frequency_) {
             if (freq_lock_count_ < MAX_FREQ_LOCK) {
@@ -352,7 +356,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         freq_lock_count_ = 0;
         locked_frequency_ = 0;
     }
-    
+
     return ErrorCode::SUCCESS;
 }
 
@@ -414,19 +418,18 @@ ErrorCode DroneScanner::get_current_drone_type(char* buffer, size_t buffer_size)
     if (buffer == nullptr || buffer_size < 2) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    
+
     size_t copy_len = 0;
     for (size_t i = 0; i < 4 && i < (buffer_size - 1); ++i) {
-        if (current_drone_type_[i] != '\0') {
-            buffer[i] = current_drone_type_[i];
+        const char c = current_drone_type_[i];
+        if (c != '\0') {
+            buffer[i] = c;
             copy_len++;
         } else {
             break;
         }
     }
-    
+
     buffer[copy_len] = '\0';
     return ErrorCode::SUCCESS;
 }
@@ -549,17 +552,15 @@ void DroneScanner::reset_statistics() noexcept {
 }
 
 ErrorResult<FreqHz> DroneScanner::get_current_frequency() const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    
-    if (current_frequency_ == 0) {
+    const FreqHz freq = current_frequency_;
+    if (freq == 0) {
         return ErrorResult<FreqHz>::failure(ErrorCode::HARDWARE_NOT_INITIALIZED);
     }
-    
-    return ErrorResult<FreqHz>::success(current_frequency_);
+
+    return ErrorResult<FreqHz>::success(freq);
 }
 
 size_t DroneScanner::get_tracked_count() const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     return tracked_count_;
 }
 
