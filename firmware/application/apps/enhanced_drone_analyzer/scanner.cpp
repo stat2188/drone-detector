@@ -100,12 +100,6 @@ ErrorCode DroneScanner::initialize() noexcept {
         return ErrorCode::INITIALIZATION_INCOMPLETE;
     }
 
-    // Check if database is loaded
-    if (!database_.is_loaded()) {
-        return ErrorCode::DATABASE_NOT_LOADED;
-    }
-
-    // Initialize dependencies
     ErrorCode db_result = database_.load_frequency_database();
     if (db_result != ErrorCode::SUCCESS && db_result != ErrorCode::DATABASE_EMPTY) {
         return db_result;
@@ -116,7 +110,6 @@ ErrorCode DroneScanner::initialize() noexcept {
         return hw_result;
     }
 
-    // Get first frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(0);
     if (!freq_result.has_value()) {
         return freq_result.error();

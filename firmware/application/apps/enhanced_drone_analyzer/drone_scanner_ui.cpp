@@ -205,7 +205,7 @@ void DroneScannerUI::on_show() {
         update_ui_state();
     }
     
-    baseband::set_spectrum(2500000, 1);
+    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
     baseband::spectrum_streaming_start();
 }
 

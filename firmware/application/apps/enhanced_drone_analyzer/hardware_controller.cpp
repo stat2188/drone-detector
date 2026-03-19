@@ -91,13 +91,6 @@ ErrorCode HardwareController::initialize() noexcept {
 }
 
 ErrorCode HardwareController::initialize_internal() noexcept {
-    // Load baseband firmware for wideband spectrum analysis
-    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
-    
-    // Configure baseband for spectrum streaming
-    baseband::set_spectrum(config_.sample_rate, 31);
-    
-    // Apply default configuration
     return apply_config_internal(config_);
 }
 

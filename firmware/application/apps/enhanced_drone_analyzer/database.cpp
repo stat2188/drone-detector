@@ -1,9 +1,78 @@
 #include "database.hpp"
 #include "file.hpp"
+#include <cctype>
 
-using namespace std::literals;
+using namespace std;
 
 namespace drone_analyzer {
+
+static DroneType parse_drone_type_from_description(
+    const char* buffer,
+    size_t value_start,
+    size_t value_len
+) noexcept {
+    if (value_len == 0 || buffer == nullptr) {
+        return DroneType::UNKNOWN;
+    }
+
+    size_t first_word_len = 0;
+    for (size_t i = 0; i < value_len && i < 16; i++) {
+        char c = buffer[value_start + i];
+        if (c == ' ' || c == '\t' || c == ',' || c == '\r' || c == '\n') {
+            break;
+        }
+        first_word_len++;
+    }
+
+    if (first_word_len == 0) {
+        return DroneType::UNKNOWN;
+    }
+
+    auto compare_word = [&](const char* word, size_t word_len) -> bool {
+        if (first_word_len != word_len) {
+            return false;
+        }
+        for (size_t i = 0; i < word_len; i++) {
+            char c1 = buffer[value_start + i];
+            char c2 = word[i];
+            if (::tolower(static_cast<unsigned char>(c1)) != 
+                ::tolower(static_cast<unsigned char>(c2))) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (compare_word("FPV", 3)) {
+        return DroneType::FPV;
+    }
+    if (compare_word("DJI", 3)) {
+        return DroneType::DJI;
+    }
+    if (compare_word("PARROT", 6)) {
+        return DroneType::PARROT;
+    }
+    if (compare_word("YUNEEC", 6)) {
+        return DroneType::YUNEEC;
+    }
+    if (compare_word("HOBBY", 5)) {
+        return DroneType::HOBBY;
+    }
+    if (compare_word("AUTEL", 5)) {
+        return DroneType::AUTEL;
+    }
+    if (compare_word("3DR", 3)) {
+        return DroneType::DR_3DR;
+    }
+    if (compare_word("OTHER", 5)) {
+        return DroneType::OTHER;
+    }
+    if (compare_word("CUSTOM", 6)) {
+        return DroneType::CUSTOM;
+    }
+
+    return DroneType::UNKNOWN;
+}
 
 DatabaseManager::DatabaseManager() noexcept
     : entries_()
@@ -96,7 +165,7 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
             }
             
             FreqHz freq = 0;
-            DroneType type = DroneType::DJI;
+            DroneType type = DroneType::UNKNOWN;
             
             size_t pos = line_start;
             
@@ -147,44 +216,8 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
 
                     freq = freq_u64;
                 } else if (key_char == 'd') {
-                    if (value_len == 3) {
-                        char c0 = buffer[value_start];
-                        char c1 = buffer[value_start + 1];
-                        char c2 = buffer[value_start + 2];
-
-                        if ((c0 == 'F' || c0 == 'f') &&
-                            (c1 == 'P' || c1 == 'p') &&
-                            (c2 == 'V' || c2 == 'v')) {
-                            type = DroneType::FPV;
-                        } else if ((c0 == 'D' || c0 == 'd') &&
-                            (c1 == 'J' || c1 == 'j') &&
-                            (c2 == 'I' || c2 == 'i')) {
-                            type = DroneType::DJI;
-                        }
-                    } else if (value_len == 6) {
-                        char c0 = buffer[value_start];
-                        char c1 = buffer[value_start + 1];
-                        char c2 = buffer[value_start + 2];
-                        char c3 = buffer[value_start + 3];
-                        char c4 = buffer[value_start + 4];
-                        char c5 = buffer[value_start + 5];
-
-                        if ((c0 == 'P' || c0 == 'p') &&
-                            (c1 == 'A' || c1 == 'a') &&
-                            (c2 == 'R' || c2 == 'r') &&
-                            (c3 == 'R' || c3 == 'r') &&
-                            (c4 == 'O' || c4 == 'o') &&
-                            (c5 == 'T' || c5 == 't')) {
-                            type = DroneType::PARROT;
-                        } else if ((c0 == 'Y' || c0 == 'y') &&
-                            (c1 == 'U' || c1 == 'u') &&
-                            (c2 == 'N' || c2 == 'n') &&
-                            (c3 == 'E' || c3 == 'e') &&
-                            (c4 == 'E' || c4 == 'e') &&
-                            (c5 == 'C' || c5 == 'c')) {
-                            type = DroneType::YUNEEC;
-                        }
-                    }
+                    type = parse_drone_type_from_description(
+                        buffer, value_start, value_len);
                 }
                 
                 pos++;
