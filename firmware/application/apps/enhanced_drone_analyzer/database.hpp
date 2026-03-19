@@ -4,13 +4,11 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
-#include <string>
-#include <string_view>
 #include "ch.h"
 #include "drone_types.hpp"
+#include "freqman_db.hpp"
 #include "locking.hpp"
 #include "constants.hpp"
-#include "freqman_db.hpp"
 
 namespace drone_analyzer {
 
@@ -64,14 +62,15 @@ public:
     void clear_entries() noexcept;
     [[nodiscard]] ErrorResult<size_t> get_current_index() const noexcept;
     [[nodiscard]] ErrorCode set_current_index(size_t index) noexcept;
-
+    
 private:
-    [[nodiscard]] ErrorCode load_from_file_internal() noexcept;
-    [[nodiscard]] ErrorCode validate_entry_internal(const FrequencyEntry& entry) const noexcept;
+    
+    [[nodiscard]] ErrorResult<FrequencyEntry> find_entry_internal(FreqHz frequency) const noexcept;
     [[nodiscard]] ErrorResult<size_t> find_entry_index_internal(FreqHz frequency) const noexcept;
+    [[nodiscard]] ErrorCode load_from_file_internal() noexcept;
 
     std::array<FrequencyEntry, MAX_DATABASE_ENTRIES> entries_;
-    freqman_db temp_db;
+    
     size_t current_index_{0};
     size_t entry_count_{0};
     AtomicFlag loaded_;

@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <array>
+#include "freqman_types.hpp"
 
 namespace drone_analyzer {
 
@@ -434,10 +436,9 @@ struct DisplayData {
 // ============================================================================
 
 /**
- * @brief Import freqman_type from FreqmanDB (global namespace)
- * @note This allows using freqman_type::Single etc. within drone_analyzer namespace
+ * @brief freqman_type is defined in freqman_types.hpp
+ * @note No heap allocation, embedded-safe enum definition
  */
-using ::freqman_type;
 
 /**
  * @brief Embedded-compatible freqman entry (no std::string, no heap)

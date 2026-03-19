@@ -1,7 +1,9 @@
 #include "database.hpp"
 #include "freqman_db.hpp"
-#include "file_path.hpp"
 #include <cctype>
+#include <cstring>
+#include <cstdlib>
+#include <ctype.h>
 
 namespace drone_analyzer {
 
@@ -77,12 +79,14 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     
     freqman_load_options options{
-        .max_entries = MAX_DATABASE_ENTRIES,
+        .max_entries = static_cast<size_t>(MAX_DATABASE_ENTRIES),
         .load_freqs = true,
         .load_ranges = false,
         .load_hamradios = false,
         .load_repeaters = false
     };
+    
+    freqman_db temp_db;
     
     if (!load_freqman_file("DRONES", temp_db, options)) {
         return ErrorCode::DATABASE_NOT_LOADED;
@@ -95,7 +99,7 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     for (const auto& entry_ptr : temp_db) {
         const auto& entry = *entry_ptr;
         
-        if (entry.type != freqman_type::Single) {
+        if (entry.type != ::freqman_type::Single) {
             continue;
         }
         
@@ -180,6 +184,14 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
     return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
 }
 
+ErrorResult<FrequencyEntry> DatabaseManager::find_entry(FreqHz frequency) const noexcept {
+    ErrorResult<size_t> index_result = find_entry_index_internal(frequency);
+    if (!index_result.has_value()) {
+        return ErrorResult<FrequencyEntry>::failure(ErrorCode::INVALID_PARAMETER);
+    }
+    return ErrorResult<FrequencyEntry>::success(entries_[index_result.value()]);
+}
+
 ErrorResult<size_t> DatabaseManager::find_entry_index_internal(FreqHz frequency) const noexcept {
     for (size_t i = 0; i < entry_count_; ++i) {
         if (entries_[i].frequency == frequency) {
@@ -192,7 +204,6 @@ ErrorResult<size_t> DatabaseManager::find_entry_index_internal(FreqHz frequency)
 
 DatabaseManager::DatabaseManager() noexcept
     : entries_()
-    , temp_db()
     , current_index_(0)
     , entry_count_(0)
     , loaded_()
@@ -203,4 +214,4 @@ DatabaseManager::DatabaseManager() noexcept
 DatabaseManager::~DatabaseManager() noexcept {
 }
 
-} // namespace drone_analyzer
+} 
