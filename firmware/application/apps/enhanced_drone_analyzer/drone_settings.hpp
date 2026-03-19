@@ -94,6 +94,11 @@ public:
      */
     [[nodiscard]] ErrorCode validate_settings() const noexcept;
 
+    /**
+     * @brief Focus handler - sets focus to first field
+     */
+    void focus() override;
+
 private:
     ui::OptionsField field_scan_mode_;
     ui::NumberField field_scan_interval_;

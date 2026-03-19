@@ -75,6 +75,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         return;
     }
 
+    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
+    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
+
     button_start_stop_.on_select = [this](ui::Button&) {
         if (initialization_failed_ || scanner_ptr_ == nullptr) {
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
@@ -82,12 +85,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         }
         if (scanning_) {
             (void)scanner_ptr_->stop_scanning();
-            baseband::spectrum_streaming_stop();
-            portapack::receiver_model.disable();
             scanning_ = false;
             button_start_stop_.set_text("Start");
         } else {
-            baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
             (void)scanner_ptr_->start_scanning();
             scanning_ = true;
             button_start_stop_.set_text("Stop");
@@ -95,9 +95,19 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
 
     button_mode_.on_select = [this](ui::Button&) {
-        if (initialization_failed_) return;
-        const uint8_t current = static_cast<uint8_t>(scanning_mode_);
-        scanning_mode_ = static_cast<ScanningMode>((current + 1) % SCANNING_MODE_COUNT);
+        if (initialization_failed_ || scanner_ptr_ == nullptr) {
+            show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
+            return;
+        }
+        ScanConfig config = scanner_ptr_->get_config();
+        const uint8_t current = static_cast<uint8_t>(config.mode);
+        config.mode = static_cast<ScanningMode>((current + 1) % SCANNING_MODE_COUNT);
+        const ErrorCode err = scanner_ptr_->set_config(config);
+        if (err != ErrorCode::SUCCESS) {
+            show_error(err, ERROR_DURATION_MS);
+            return;
+        }
+        scanning_mode_ = config.mode;
     };
 
     button_settings_.on_select = [this, &nav](ui::Button&) {
@@ -116,7 +126,6 @@ DroneScannerUI::~DroneScannerUI() noexcept {
     }
     destruct_objects();
 
-    baseband::spectrum_streaming_stop();
     portapack::receiver_model.set_sampling_rate(3072000);
     portapack::receiver_model.disable();
     baseband::shutdown();
@@ -127,6 +136,8 @@ void DroneScannerUI::focus() {
 }
 
 void DroneScannerUI::on_show() {
+    portapack::receiver_model.enable();
+    baseband::spectrum_streaming_start();
 }
 
 void DroneScannerUI::on_hide() {
@@ -135,6 +146,7 @@ void DroneScannerUI::on_hide() {
         scanning_ = false;
     }
     baseband::spectrum_streaming_stop();
+    portapack::receiver_model.disable();
 }
 
 void DroneScannerUI::paint(Painter& painter) {
@@ -204,6 +216,7 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
             break;
     }
     big_display_.set(current_frequency_);
+    set_dirty();
 }
 
 void DroneScannerUI::update_ui_state() noexcept {

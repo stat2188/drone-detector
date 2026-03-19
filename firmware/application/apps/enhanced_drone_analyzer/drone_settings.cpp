@@ -149,6 +149,10 @@ void DroneSettingsView::paint(ui::Painter& painter) {
     (void)painter;
 }
 
+void DroneSettingsView::focus() {
+    field_scan_mode_.focus();
+}
+
 void DroneSettingsView::reset_settings() noexcept {
     settings_.reset_to_defaults();
     settings_dirty_ = true;

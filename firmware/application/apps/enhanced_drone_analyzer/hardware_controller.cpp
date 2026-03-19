@@ -118,59 +118,32 @@ ErrorCode HardwareController::tune_to_frequency(
         last_error_ = validate_result;
         return validate_result;
     }
-    
+
     MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
-    
+
     if (state_ != HardwareState::READY && state_ != HardwareState::STREAMING) {
         last_error_ = ErrorCode::HARDWARE_NOT_INITIALIZED;
         return ErrorCode::HARDWARE_NOT_INITIALIZED;
     }
-    
+
     state_ = HardwareState::TUNING;
-    
-    // Retry logic with PLL lock verification
-    for (uint32_t retry = 0; retry < max_retries; ++retry) {
-        retry_count_ = retry;
-        
-        // Tune to frequency
-        ErrorCode tune_result = tune_internal(frequency);
-        if (tune_result != ErrorCode::SUCCESS) {
-            if (retry < max_retries - 1) {
-                // Wait before retry
-                chThdSleepMilliseconds(HARDWARE_RETRY_DELAY_MS);
-                continue;
-            }
-            state_ = HardwareState::ERROR;
-            last_error_ = tune_result;
-            return tune_result;
-        }
-        
-        // Wait for PLL lock
-        SystemTime start_time = chTimeNow();
-        while (!check_pll_lock_internal()) {
-            if (chTimeNow() - start_time > MS2ST(PLL_LOCK_TIMEOUT_MS)) {
-                if (retry < max_retries - 1) {
-                    chThdSleepMilliseconds(HARDWARE_RETRY_DELAY_MS);
-                    break;
-                }
-                state_ = HardwareState::ERROR;
-                last_error_ = ErrorCode::PLL_LOCK_FAILURE;
-                return ErrorCode::PLL_LOCK_FAILURE;
-            }
-            chThdSleepMilliseconds(PLL_LOCK_POLL_INTERVAL_MS);
-        }
-        
-        // PLL locked successfully
-        current_frequency_ = frequency;
-        pll_locked_.set();
-        state_ = streaming_active_.test() ? HardwareState::STREAMING : HardwareState::READY;
-        last_error_ = ErrorCode::SUCCESS;
-        return ErrorCode::SUCCESS;
+
+    // Tune to frequency
+    ErrorCode tune_result = tune_internal(frequency);
+    if (tune_result != ErrorCode::SUCCESS) {
+        state_ = HardwareState::ERROR;
+        last_error_ = tune_result;
+        return tune_result;
     }
-    
-    state_ = HardwareState::ERROR;
-    last_error_ = ErrorCode::PLL_LOCK_FAILURE;
-    return ErrorCode::PLL_LOCK_FAILURE;
+
+    // Wait for PLL stabilization
+    chThdSleepMilliseconds(5);
+
+    current_frequency_ = frequency;
+    pll_locked_.set();
+    state_ = streaming_active_.test() ? HardwareState::STREAMING : HardwareState::READY;
+    last_error_ = ErrorCode::SUCCESS;
+    return ErrorCode::SUCCESS;
 }
 
 ErrorCode HardwareController::tune_internal(FreqHz frequency) noexcept {
