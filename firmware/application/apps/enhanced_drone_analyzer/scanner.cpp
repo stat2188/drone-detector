@@ -277,26 +277,22 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
     const ChannelSpectrum& spectrum,
     FreqHz current_frequency
 ) noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+
     if (current_frequency == 0) {
         return ErrorResult<RssiValue>::failure(ErrorCode::INVALID_PARAMETER);
     }
 
-    uint8_t max_power = 0;
-    for (size_t i = 0; i < 256; i++) {
-        if (spectrum.db[i] > max_power) {
-            max_power = spectrum.db[i];
-        }
-    }
-
+    uint8_t max_power = find_max_power(spectrum);
     const int32_t rssi = static_cast<int32_t>(max_power) - 120;
 
     if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
-        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
         const ErrorCode err = update_tracked_drone_internal(
             current_frequency,
             rssi,
             chTimeNow()
         );
+
         if (err != ErrorCode::SUCCESS) {
             return ErrorResult<RssiValue>::failure(err);
         }
@@ -312,13 +308,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         return ErrorCode::INVALID_PARAMETER;
     }
     
-    uint8_t max_power = 0;
-    for (size_t i = 0; i < 256; i++) {
-        if (spectrum.db[i] > max_power) {
-            max_power = spectrum.db[i];
-        }
-    }
-    
+    uint8_t max_power = find_max_power(spectrum);
     const int32_t rssi = static_cast<int32_t>(max_power) - 120;
     
     if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
@@ -334,6 +324,17 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     }
     
     return ErrorCode::SUCCESS;
+}
+
+uint8_t DroneScanner::find_max_power(const ChannelSpectrum& spectrum) noexcept {
+    uint8_t max_power = 0;
+    for (size_t i = 0; i < 256; ++i) {
+        if (spectrum.db[i] > max_power) {
+            max_power = spectrum.db[i];
+        }
+    }
+    
+    return max_power;
 }
 
 ErrorCode DroneScanner::update_tracked_drone_internal(
@@ -427,10 +428,10 @@ ThreatLevel DroneScanner::determine_threat_level_internal(RssiValue rssi) const 
     }
 }
 
-    size_t DroneScanner::get_tracked_drones(
-        TrackedDrone* drones,
-        size_t max_count
-    ) const noexcept {
+size_t DroneScanner::get_tracked_drones(
+    TrackedDrone* drones,
+    size_t max_count
+) const noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
     if (drones == nullptr || max_count == 0) {

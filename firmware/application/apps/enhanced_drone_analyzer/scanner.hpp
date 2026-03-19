@@ -359,6 +359,13 @@ private:
       * @pre Mutex must be held (LockOrder::DATA_MUTEX)
       */
     void remove_stale_drones_internal(SystemTime current_time) noexcept;
+
+    /**
+     * @brief Internal: Find maximum power value in spectrum
+     * @param spectrum Channel spectrum data
+     * @return Maximum power value (0-255)
+     */
+    [[nodiscard]] uint8_t find_max_power(const ChannelSpectrum& spectrum) noexcept;
     
     /**
      * @brief Internal: Determine drone type from frequency
