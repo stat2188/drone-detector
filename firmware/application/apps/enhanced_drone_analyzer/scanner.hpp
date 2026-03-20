@@ -392,14 +392,7 @@ private:
      * @note Uses database_.find_entry() to look up drone type from freqman DB
      */
     [[nodiscard]] DroneType determine_drone_type_internal(FreqHz frequency) const noexcept;
-    
-    /**
-     * @brief Internal: Determine threat level from RSSI
-     * @param rssi RSSI value
-     * @return Threat level
-     */
-    [[nodiscard]] ThreatLevel determine_threat_level_internal(RssiValue rssi) const noexcept;
-    
+
     /**
      * @brief Internal: Validate scan configuration
      * @param config Configuration to validate

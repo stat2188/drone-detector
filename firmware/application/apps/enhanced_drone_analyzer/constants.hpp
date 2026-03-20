@@ -287,21 +287,6 @@ constexpr uint8_t SCANNING_MODE_COUNT = 4;
  */
 constexpr uint32_t MAX_SCAN_CYCLES = 1000;
 
-/**
- * @brief Frequency hop detection threshold (Hz)
- */
-constexpr FreqHz FREQUENCY_HOP_THRESHOLD_HZ = 5'000'000ULL;
-
-/**
- * @brief Frequency hop count threshold
- */
-constexpr uint8_t FREQUENCY_HOP_COUNT_THRESHOLD = 3;
-
-/**
- * @brief Frequency hop interval in milliseconds
- */
-constexpr uint32_t FREQUENCY_HOP_INTERVAL_MS = 100;
-
 // ============================================================================
 // Database Constants
 // ============================================================================
@@ -406,7 +391,7 @@ constexpr uint32_t AUDIO_ALERT_LONG_GAP_MS = 50;
 
 /**
  * @brief Memory breakdown (simplified):
- * - Database entries: 96 × 16 = 1,536 bytes
+ * - Database entries: 96 × 12 = 1,152 bytes
  * - Tracked drones: 16 × 56 = 896 bytes
  * - Display drones: 16 × 39 = 624 bytes
  * - Spectrum buffer: 256 bytes
@@ -414,10 +399,10 @@ constexpr uint32_t AUDIO_ALERT_LONG_GAP_MS = 50;
  * - Histogram processor: 256 bytes
  * - RSSI detector: ~60 bytes
  * - Scanner thread stack: 2,048 bytes (BSS)
- * - Other structures: ~400 bytes
- * - Total static RAM: ~6,572 bytes
+ * - Other structures: ~200 bytes
+ * - Total static RAM: ~6,004 bytes
  */
-constexpr size_t STATIC_RAM_BUDGET_BYTES = 6572;
+constexpr size_t STATIC_RAM_BUDGET_BYTES = 6004;
 
 /**
  * @brief Total stack budget (bytes)
@@ -429,7 +414,7 @@ constexpr size_t STACK_BUDGET_BYTES = 4096;
  * @brief Total memory budget (bytes)
  * @note Sum of static RAM and stack budgets
  */
-constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 10668;
+constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 10100;
 
 /**
  * @brief Maximum stack usage per function (bytes)
@@ -439,31 +424,6 @@ constexpr size_t MAX_STACK_PER_FUNCTION = 512;
 // ============================================================================
 // Struct Size Validation Constants
 // ============================================================================
-
-/**
- * @brief TrackedDrone struct size (bytes)
- */
-constexpr size_t TRACKED_DRONE_SIZE = 56;
-
-/**
- * @brief DisplayDroneEntry struct size (bytes)
- */
-constexpr size_t DISPLAY_DRONE_ENTRY_SIZE = 39;
-
-/**
- * @brief FrequencyHopDetector struct size (bytes)
- */
-constexpr size_t FREQUENCY_HOP_DETECTOR_SIZE = 32;
-
-/**
- * @brief WidebandScanData struct size (bytes)
- */
-constexpr size_t WIDEBAND_SCAN_DATA_SIZE = 200;
-
-/**
- * @brief PhaseCompletion struct size (bytes)
- */
-constexpr size_t PHASE_COMPLETION_SIZE = 1;
 
 // ============================================================================
 // Error Handling Constants

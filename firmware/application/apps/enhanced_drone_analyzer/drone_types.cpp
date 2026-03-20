@@ -1,6 +1,5 @@
 #include "constants.hpp"
 #include "drone_types.hpp"
-#include <cstring>
 #include <cstdint>
 #include <cstddef>
 
@@ -159,102 +158,6 @@ bool TrackedDrone::is_stale(SystemTime current_time, SystemTime timeout_ms) cons
 // ============================================================================
 // Other Struct Implementations
 // ============================================================================
-
-PhaseCompletion::PhaseCompletion() noexcept
-    : buffers_allocated{0}
-    , database_loaded{0}
-    , hardware_ready{0}
-    , ui_layout_ready{0}
-    , settings_loaded{0}
-    , finalized{0}
-    , reserved{0} {
-}
-
-bool PhaseCompletion::is_complete() const noexcept {
-    return buffers_allocated && database_loaded && hardware_ready &&
-           ui_layout_ready && settings_loaded && finalized;
-}
-
-void PhaseCompletion::reset() noexcept {
-    buffers_allocated = 0;
-    database_loaded = 0;
-    hardware_ready = 0;
-    ui_layout_ready = 0;
-    settings_loaded = 0;
-    finalized = 0;
-}
-
-FrequencyHopDetector::FrequencyHopDetector() noexcept
-    : base_frequency{0}
-    , last_frequency{0}
-    , hop_count{0}
-    , hop_threshold{3}
-    , last_hop_time{0}
-    , hop_interval_ms{100}
-    , reserved{0} {
-}
-
-bool FrequencyHopDetector::detect_hop(FreqHz current_freq, SystemTime current_time) noexcept {
-    if (base_frequency == 0) {
-        base_frequency = current_freq;
-        return false;
-    }
-    
-    const FreqHz diff = (current_freq > last_frequency) ?
-                       (current_freq - last_frequency) :
-                       (last_frequency - current_freq);
-    
-    if (diff >= FREQUENCY_HOP_THRESHOLD_HZ) {
-        const uint32_t elapsed = current_time - last_hop_time;
-        if (elapsed >= hop_interval_ms) {
-            hop_count++;
-            last_hop_time = current_time;
-            
-            if (hop_count >= hop_threshold) {
-                return true;
-            }
-        }
-    } else {
-        hop_count = 0;
-    }
-    
-    last_frequency = current_freq;
-    return false;
-}
-
-void FrequencyHopDetector::reset() noexcept {
-    base_frequency = 0;
-    last_frequency = 0;
-    hop_count = 0;
-    last_hop_time = 0;
-}
-
-WidebandScanData::WidebandScanData() noexcept
-    : spectrum_buffer{}
-    , noise_floor{10}
-    , signal_threshold{20}
-    , peak_index{0}
-    , peak_frequency{0}
-    , peak_amplitude{0}
-    , scan_time{0}
-    , scan_complete{0}
-    , reserved{} {
-}
-
-void WidebandScanData::clear() noexcept {
-    std::memset(spectrum_buffer, 0, sizeof(spectrum_buffer));
-    noise_floor = 10;
-    signal_threshold = 20;
-    peak_index = 0;
-    peak_frequency = 0;
-    peak_amplitude = 0;
-    scan_time = 0;
-    scan_complete = 0;
-}
-
-bool WidebandScanData::is_complete() const noexcept {
-    return scan_complete != 0;
-}
 
 ScannerStateSnapshot::ScannerStateSnapshot() noexcept
     : max_detected_threat{ThreatLevel::NONE}

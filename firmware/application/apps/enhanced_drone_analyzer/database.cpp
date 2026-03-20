@@ -154,7 +154,7 @@ static bool parse_freqman_line(
         return false;
     }
 
-    entries[entry_count++] = FrequencyEntry(freq, type, 0);
+    entries[entry_count++] = FrequencyEntry(freq, type);
     return true;
 }
 

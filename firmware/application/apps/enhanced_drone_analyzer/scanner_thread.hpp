@@ -38,7 +38,7 @@ private:
     Thread* thread_{nullptr};
     stkalign_t wa_[STACK_WORDS];
 
-    volatile bool scanning_{true};
+    volatile bool scanning_{false};
 };
 
 } // namespace drone_analyzer

@@ -339,13 +339,25 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             if (freq_lock_count_ < MAX_FREQ_LOCK) {
                 freq_lock_count_++;
             }
+            // Transition: LOCKING → TRACKING after sustained lock
+            if (freq_lock_count_ >= MAX_FREQ_LOCK && state_ == ScannerState::SCANNING) {
+                state_ = ScannerState::TRACKING;
+            }
         } else {
             locked_frequency_ = current_frequency_;
             freq_lock_count_ = 1;
+            // Transition: SCANNING → LOCKING on first detection
+            if (state_ == ScannerState::SCANNING) {
+                state_ = ScannerState::LOCKING;
+            }
         }
     } else {
         freq_lock_count_ = 0;
         locked_frequency_ = 0;
+        // Transition: LOCKING/TRACKING → SCANNING when signal lost
+        if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
+            state_ = ScannerState::SCANNING;
+        }
     }
 
     return ErrorCode::SUCCESS;
@@ -424,15 +436,14 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     }
 
     DroneType type = determine_drone_type_internal(frequency_hz);
-    ThreatLevel threat = determine_threat_level_internal(rssi_dbm);
 
-    tracked_drones_[tracked_count_] = TrackedDrone(frequency_hz, type, threat);
+    tracked_drones_[tracked_count_] = TrackedDrone(frequency_hz, type, ThreatLevel::NONE);
     tracked_drones_[tracked_count_].update_rssi(rssi_dbm, timestamp_ms);
 
     tracked_count_++;
     statistics_.drones_detected++;
 
-    trigger_alert(threat);
+    trigger_alert(tracked_drones_[tracked_count_ - 1].get_threat());
 
     return ErrorCode::SUCCESS;
 }
@@ -446,18 +457,6 @@ DroneType DroneScanner::determine_drone_type_internal(FreqHz frequency) const no
     }
     
     return DroneType::UNKNOWN;
-}
-
-ThreatLevel DroneScanner::determine_threat_level_internal(RssiValue rssi) const noexcept {
-    if (rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
-        return ThreatLevel::CRITICAL;
-    } else if (rssi >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
-        return ThreatLevel::HIGH;
-    } else if (rssi >= RSSI_DETECTION_THRESHOLD_DBM) {
-        return ThreatLevel::MEDIUM;
-    } else {
-        return ThreatLevel::LOW;
-    }
 }
 
 size_t DroneScanner::get_tracked_drones(
