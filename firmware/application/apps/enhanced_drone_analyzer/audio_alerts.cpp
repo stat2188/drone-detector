@@ -191,4 +191,4 @@ void AudioAlertManager::set_enabled(bool enabled) noexcept {
     }
 }
 
-} // namespace drone_analyzer
+} // namespace drone_analyz
