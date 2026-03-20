@@ -287,7 +287,7 @@ void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
 }
 
 void DroneScannerUI::refresh_ui() noexcept {
-    if (scanner_ptr_ == nullptr) {
+    if (scanner_ptr_ == nullptr || initialization_failed_) {
         current_scanner_state_ = ScannerState::IDLE;
         current_rssi_ = RSSI_NOISE_FLOOR_DBM;
         current_frequency_ = 0;
