@@ -25,7 +25,11 @@ ScanConfig::ScanConfig() noexcept
     , end_frequency(MAX_FREQUENCY_HZ)
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
     , rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
-    , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS) {
+    , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS)
+    , spectrum_start_freq(DEFAULT_SPECTRUM_START_HZ)
+    , spectrum_end_freq(DEFAULT_SPECTRUM_END_HZ)
+    , histogram_start_freq(DEFAULT_HISTOGRAM_START_HZ)
+    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ) {
 }
 
 ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
@@ -34,7 +38,11 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , end_frequency(end)
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
     , rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
-    , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS) {
+    , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS)
+    , spectrum_start_freq(DEFAULT_SPECTRUM_START_HZ)
+    , spectrum_end_freq(DEFAULT_SPECTRUM_END_HZ)
+    , histogram_start_freq(DEFAULT_HISTOGRAM_START_HZ)
+    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ) {
 }
 
 // ============================================================================
@@ -520,6 +528,20 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
     
     if (config.rssi_threshold_dbm < RSSI_MIN_DBM ||
         config.rssi_threshold_dbm > RSSI_MAX_DBM) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
+    // Validate spectrum frequency range
+    if (config.spectrum_start_freq < MIN_FREQUENCY_HZ ||
+        config.spectrum_end_freq > MAX_FREQUENCY_HZ ||
+        config.spectrum_start_freq >= config.spectrum_end_freq) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
+    // Validate histogram frequency range
+    if (config.histogram_start_freq < MIN_FREQUENCY_HZ ||
+        config.histogram_end_freq > MAX_FREQUENCY_HZ ||
+        config.histogram_start_freq >= config.histogram_end_freq) {
         return ErrorCode::INVALID_PARAMETER;
     }
     

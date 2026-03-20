@@ -183,11 +183,12 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     current_index_ = 0;
 
     // Build path: freqman_dir / database_file_ + ".TXT"
+    // Use absolute path with leading slash for PortaPack file system
     char filepath[64];
     size_t pos = 0;
     
-    // Copy freqman_dir path
-    const char* dir = "FREQMAN/";
+    // Copy freqman_dir path (absolute path with leading slash)
+    const char* dir = "/FREQMAN/";
     for (size_t i = 0; dir[i] != '\0' && pos < sizeof(filepath) - 1; ++i) {
         filepath[pos++] = dir[i];
     }

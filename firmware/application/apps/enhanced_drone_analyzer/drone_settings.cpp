@@ -5,6 +5,7 @@
 #include "ui_receiver.hpp"
 #include "file.hpp"
 #include "file_path.hpp"
+#include <cstring>
 
 namespace drone_analyzer {
 
@@ -22,7 +23,11 @@ DroneSettings::DroneSettings() noexcept
     , status_bar_visible(true)
     , audio_alerts_enabled(false)
     , alert_rssi_threshold_dbm(RSSI_HIGH_THREAT_THRESHOLD_DBM)
-    , min_threat_level(ThreatLevel::LOW) {
+    , min_threat_level(ThreatLevel::LOW)
+    , spectrum_start_freq(DEFAULT_SPECTRUM_START_HZ)
+    , spectrum_end_freq(DEFAULT_SPECTRUM_END_HZ)
+    , histogram_start_freq(DEFAULT_HISTOGRAM_START_HZ)
+    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ) {
 }
 
 void DroneSettings::reset_to_defaults() noexcept {
@@ -39,6 +44,11 @@ void DroneSettings::reset_to_defaults() noexcept {
     alert_rssi_threshold_dbm = RSSI_HIGH_THREAT_THRESHOLD_DBM;
     
     min_threat_level = ThreatLevel::LOW;
+    
+    spectrum_start_freq = DEFAULT_SPECTRUM_START_HZ;
+    spectrum_end_freq = DEFAULT_SPECTRUM_END_HZ;
+    histogram_start_freq = DEFAULT_HISTOGRAM_START_HZ;
+    histogram_end_freq = DEFAULT_HISTOGRAM_END_HZ;
 }
 
 // ============================================================================
@@ -50,7 +60,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , labels_({
         {{UI_POS_X(1), UI_POS_Y(1)}, "Scan Mode:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(4)}, "Interval (ms):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(7)}, "RSSI Threshold (dBm):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(7)}, "RSSI Thresh (dBm):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(15)}, "Spec(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(7), UI_POS_Y(15)}, "-", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(17)}, "Hist(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(7), UI_POS_Y(17)}, "-", Theme::getInstance()->fg_light->foreground},
     })
     , field_scan_mode_({UI_POS_X(1), UI_POS_Y(2)}, 14, {
         {"Single", 0},
@@ -63,9 +77,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(10)}, 15, "Audio Alerts", false)
     , check_spectrum_visible_({UI_POS_X(1), UI_POS_Y(12)}, 15, "Show Spectrum", false)
     , check_histogram_visible_({UI_POS_X(1), UI_POS_Y(14)}, 15, "Show Histogram", false)
-    , button_defaults_({UI_POS_X(0), UI_POS_Y(16), UI_POS_WIDTH(10), 28}, "DEFAULTS")  // Moved higher
-    , button_save_({UI_POS_X_CENTER(7), UI_POS_Y(16), UI_POS_WIDTH(7), 28}, "SAVE")  // Moved higher
-    , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y(16), UI_POS_WIDTH(7), 28}, "CANCEL")  // Moved higher
+    , field_spectrum_start_({UI_POS_X(1), UI_POS_Y(16)}, 5, {1, 7200}, 1, ' ')
+    , field_spectrum_end_({UI_POS_X(8), UI_POS_Y(16)}, 5, {1, 7200}, 1, ' ')
+    , field_histogram_start_({UI_POS_X(1), UI_POS_Y(18)}, 5, {1, 7200}, 1, ' ')
+    , field_histogram_end_({UI_POS_X(8), UI_POS_Y(18)}, 5, {1, 7200}, 1, ' ')
+    , button_defaults_({UI_POS_X(0), UI_POS_Y(20), UI_POS_WIDTH(10), 28}, "DEFAULTS")
+    , button_save_({UI_POS_X_CENTER(7), UI_POS_Y(20), UI_POS_WIDTH(7), 28}, "SAVE")
+    , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y(20), UI_POS_WIDTH(7), 28}, "CANCEL")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -84,6 +102,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_audio_alerts_,
         &check_spectrum_visible_,
         &check_histogram_visible_,
+        &field_spectrum_start_,
+        &field_spectrum_end_,
+        &field_histogram_start_,
+        &field_histogram_end_,
         &button_defaults_,
         &button_save_,
         &button_cancel_
@@ -95,6 +117,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);
     check_histogram_visible_.set_value(settings_.histogram_visible);
+    
+    // Set frequency range fields (convert Hz to MHz)
+    field_spectrum_start_.set_value(static_cast<int32_t>(settings_.spectrum_start_freq / 1000000));
+    field_spectrum_end_.set_value(static_cast<int32_t>(settings_.spectrum_end_freq / 1000000));
+    field_histogram_start_.set_value(static_cast<int32_t>(settings_.histogram_start_freq / 1000000));
+    field_histogram_end_.set_value(static_cast<int32_t>(settings_.histogram_end_freq / 1000000));
 
     button_save_.on_select = [this](ui::Button&) {
         if (scanner_ptr_ != nullptr) {
@@ -102,6 +130,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.mode = settings_.scanning_mode;
             updated_config.scan_interval_ms = settings_.scan_interval_ms;
             updated_config.rssi_threshold_dbm = settings_.alert_rssi_threshold_dbm;
+            updated_config.spectrum_start_freq = settings_.spectrum_start_freq;
+            updated_config.spectrum_end_freq = settings_.spectrum_end_freq;
+            updated_config.histogram_start_freq = settings_.histogram_start_freq;
+            updated_config.histogram_end_freq = settings_.histogram_end_freq;
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
             if (err != ErrorCode::SUCCESS) {
@@ -113,7 +145,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         File file;
         const auto open_result = file.open(u"/ENHANCED_DRONE_ANALYZER_SETTINGS.TXT", false, true);
         if (!open_result) {
-            char buffer[256];
+            char buffer[512];
             size_t offset = 0;
 
             // Write header
@@ -138,6 +170,14 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 "show_spectrum=%s\n", settings_.spectrum_visible ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "show_histogram=%s\n", settings_.histogram_visible ? "true" : "false");
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "spectrum_start_mhz=%lu\n", (unsigned long)(settings_.spectrum_start_freq / 1000000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "spectrum_end_mhz=%lu\n", (unsigned long)(settings_.spectrum_end_freq / 1000000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "histogram_start_mhz=%lu\n", (unsigned long)(settings_.histogram_start_freq / 1000000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "histogram_end_mhz=%lu\n", (unsigned long)(settings_.histogram_end_freq / 1000000));
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "freqman_path=DRONES\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -196,6 +236,26 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         }
         settings_dirty_ = true;
     };
+    
+    field_spectrum_start_.on_change = [this](int32_t v) {
+        settings_.spectrum_start_freq = static_cast<FreqHz>(v) * 1000000;
+        settings_dirty_ = true;
+    };
+    
+    field_spectrum_end_.on_change = [this](int32_t v) {
+        settings_.spectrum_end_freq = static_cast<FreqHz>(v) * 1000000;
+        settings_dirty_ = true;
+    };
+    
+    field_histogram_start_.on_change = [this](int32_t v) {
+        settings_.histogram_start_freq = static_cast<FreqHz>(v) * 1000000;
+        settings_dirty_ = true;
+    };
+    
+    field_histogram_end_.on_change = [this](int32_t v) {
+        settings_.histogram_end_freq = static_cast<FreqHz>(v) * 1000000;
+        settings_dirty_ = true;
+    };
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
@@ -213,6 +273,192 @@ void DroneSettingsView::reset_settings() noexcept {
     settings_.reset_to_defaults();
     settings_dirty_ = true;
     apply_settings();
+}
+
+ErrorCode DroneSettingsView::load_settings() noexcept {
+    File file;
+    const auto open_result = file.open(u"/ENHANCED_DRONE_ANALYZER_SETTINGS.TXT", true, false);
+    if (!open_result) {
+        return ErrorCode::DATABASE_NOT_LOADED;
+    }
+
+    constexpr size_t READ_CHUNK_SIZE = 256;
+    uint8_t chunk[READ_CHUNK_SIZE];
+    uint8_t line_buf[128];
+    size_t line_len = 0;
+
+    auto parse_line = [&](const uint8_t* buf, size_t len) {
+        if (len == 0 || buf[0] == '#') {
+            return;  // Skip empty lines and comments
+        }
+
+        // Find '=' separator
+        size_t eq_pos = 0;
+        for (size_t i = 0; i < len; ++i) {
+            if (buf[i] == '=') {
+                eq_pos = i;
+                break;
+            }
+        }
+
+        if (eq_pos == 0 || eq_pos >= len - 1) {
+            return;  // Invalid line
+        }
+
+        // Parse key
+        char key[32];
+        size_t key_len = eq_pos;
+        if (key_len > 31) key_len = 31;
+        for (size_t i = 0; i < key_len; ++i) {
+            key[i] = static_cast<char>(buf[i]);
+        }
+        key[key_len] = '\0';
+
+        // Parse value
+        const uint8_t* val_start = buf + eq_pos + 1;
+        size_t val_len = len - eq_pos - 1;
+
+        // Helper to check string equality
+        auto str_eq = [](const char* a, const char* b, size_t len) -> bool {
+            for (size_t i = 0; i < len; ++i) {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
+        };
+
+        // Parse specific keys
+        if (str_eq(key, "spectrum_start_mhz", 18)) {
+            int32_t val = 0;
+            for (size_t i = 0; i < val_len; ++i) {
+                if (val_start[i] >= '0' && val_start[i] <= '9') {
+                    val = val * 10 + (val_start[i] - '0');
+                }
+            }
+            settings_.spectrum_start_freq = static_cast<uint64_t>(val) * 1000000ULL;
+        } else if (str_eq(key, "spectrum_end_mhz", 16)) {
+            int32_t val = 0;
+            for (size_t i = 0; i < val_len; ++i) {
+                if (val_start[i] >= '0' && val_start[i] <= '9') {
+                    val = val * 10 + (val_start[i] - '0');
+                }
+            }
+            settings_.spectrum_end_freq = static_cast<uint64_t>(val) * 1000000ULL;
+        } else if (str_eq(key, "histogram_start_mhz", 19)) {
+            int32_t val = 0;
+            for (size_t i = 0; i < val_len; ++i) {
+                if (val_start[i] >= '0' && val_start[i] <= '9') {
+                    val = val * 10 + (val_start[i] - '0');
+                }
+            }
+            settings_.histogram_start_freq = static_cast<uint64_t>(val) * 1000000ULL;
+        } else if (str_eq(key, "histogram_end_mhz", 17)) {
+            int32_t val = 0;
+            for (size_t i = 0; i < val_len; ++i) {
+                if (val_start[i] >= '0' && val_start[i] <= '9') {
+                    val = val * 10 + (val_start[i] - '0');
+                }
+            }
+            settings_.histogram_end_freq = static_cast<uint64_t>(val) * 1000000ULL;
+        } else if (str_eq(key, "scan_interval_ms", 16)) {
+            int32_t val = 0;
+            for (size_t i = 0; i < val_len; ++i) {
+                if (val_start[i] >= '0' && val_start[i] <= '9') {
+                    val = val * 10 + (val_start[i] - '0');
+                }
+            }
+            settings_.scan_interval_ms = static_cast<uint32_t>(val);
+        } else if (str_eq(key, "rssi_threshold_db", 17)) {
+            int32_t val = 0;
+            bool negative = false;
+            size_t start = 0;
+            if (val_len > 0 && val_start[0] == '-') {
+                negative = true;
+                start = 1;
+            }
+            for (size_t i = start; i < val_len; ++i) {
+                if (val_start[i] >= '0' && val_start[i] <= '9') {
+                    val = val * 10 + (val_start[i] - '0');
+                }
+            }
+            settings_.alert_rssi_threshold_dbm = negative ? -val : val;
+        } else if (str_eq(key, "enable_audio_alerts", 19)) {
+            settings_.audio_alerts_enabled = (val_len == 4 && 
+                val_start[0] == 't' && val_start[1] == 'r' && val_start[2] == 'u' && val_start[3] == 'e');
+        } else if (str_eq(key, "show_spectrum", 13)) {
+            settings_.spectrum_visible = (val_len == 4 && 
+                val_start[0] == 't' && val_start[1] == 'r' && val_start[2] == 'u' && val_start[3] == 'e');
+        } else if (str_eq(key, "show_histogram", 14)) {
+            settings_.histogram_visible = (val_len == 4 && 
+                val_start[0] == 't' && val_start[1] == 'r' && val_start[2] == 'u' && val_start[3] == 'e');
+        } else if (str_eq(key, "spectrum_mode", 13)) {
+            if (val_len == 6 && 
+                val_start[0] == 'S' && val_start[1] == 'I' && val_start[2] == 'N' && 
+                val_start[3] == 'G' && val_start[4] == 'L' && val_start[5] == 'E') {
+                settings_.scanning_mode = ScanningMode::SINGLE;
+            } else if (val_len == 7 && 
+                val_start[0] == 'H' && val_start[1] == 'O' && val_start[2] == 'P' && 
+                val_start[3] == 'P' && val_start[4] == 'I' && val_start[5] == 'N' && val_start[6] == 'G') {
+                settings_.scanning_mode = ScanningMode::HOPPING;
+            } else if (val_len == 10 && 
+                val_start[0] == 'S' && val_start[1] == 'E' && val_start[2] == 'Q' && 
+                val_start[3] == 'U' && val_start[4] == 'E' && val_start[5] == 'N' && 
+                val_start[6] == 'T' && val_start[7] == 'I' && val_start[8] == 'A' && val_start[9] == 'L') {
+                settings_.scanning_mode = ScanningMode::SEQUENTIAL;
+            } else if (val_len == 8 && 
+                val_start[0] == 'T' && val_start[1] == 'A' && val_start[2] == 'R' && 
+                val_start[3] == 'G' && val_start[4] == 'E' && val_start[5] == 'T' && 
+                val_start[6] == 'E' && val_start[7] == 'D') {
+                settings_.scanning_mode = ScanningMode::TARGETED;
+            }
+        }
+    };
+
+    while (true) {
+        const auto read_result = file.read(chunk, READ_CHUNK_SIZE);
+        if (!read_result.is_ok() || read_result.value() == 0) {
+            break;
+        }
+
+        const size_t bytes_read = read_result.value();
+
+        for (size_t i = 0; i < bytes_read; ++i) {
+            const char c = static_cast<char>(chunk[i]);
+
+            if (c == '\r' || c == '\n') {
+                parse_line(line_buf, line_len);
+                line_len = 0;
+            } else if (line_len < sizeof(line_buf) - 1) {
+                line_buf[line_len++] = chunk[i];
+            }
+        }
+    }
+
+    // Process final line if file doesn't end with newline
+    parse_line(line_buf, line_len);
+
+    file.close();
+
+    // Apply loaded settings to UI
+    apply_settings();
+
+    // Update scanner config if scanner is available
+    if (scanner_ptr_ != nullptr) {
+        ScanConfig updated_config = original_config_;
+        updated_config.mode = settings_.scanning_mode;
+        updated_config.scan_interval_ms = settings_.scan_interval_ms;
+        updated_config.rssi_threshold_dbm = settings_.alert_rssi_threshold_dbm;
+        updated_config.spectrum_start_freq = settings_.spectrum_start_freq;
+        updated_config.spectrum_end_freq = settings_.spectrum_end_freq;
+        updated_config.histogram_start_freq = settings_.histogram_start_freq;
+        updated_config.histogram_end_freq = settings_.histogram_end_freq;
+
+        const ErrorCode err = scanner_ptr_->set_config(updated_config);
+        if (err != ErrorCode::SUCCESS) {
+            return err;
+        }
+    }
+
+    return ErrorCode::SUCCESS;
 }
 
 ErrorCode DroneSettingsView::validate_settings() const noexcept {
@@ -237,6 +483,28 @@ ErrorCode DroneSettingsView::validate_settings() const noexcept {
         return ErrorCode::INVALID_PARAMETER;
     }
     
+    if (settings_.spectrum_start_freq < MIN_FREQUENCY_HZ ||
+        settings_.spectrum_start_freq > MAX_FREQUENCY_HZ) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
+    if (settings_.spectrum_end_freq < MIN_FREQUENCY_HZ ||
+        settings_.spectrum_end_freq > MAX_FREQUENCY_HZ ||
+        settings_.spectrum_end_freq <= settings_.spectrum_start_freq) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
+    if (settings_.histogram_start_freq < MIN_FREQUENCY_HZ ||
+        settings_.histogram_start_freq > MAX_FREQUENCY_HZ) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
+    if (settings_.histogram_end_freq < MIN_FREQUENCY_HZ ||
+        settings_.histogram_end_freq > MAX_FREQUENCY_HZ ||
+        settings_.histogram_end_freq <= settings_.histogram_start_freq) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
     return ErrorCode::SUCCESS;
 }
 
@@ -247,6 +515,10 @@ void DroneSettingsView::apply_settings() noexcept {
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);
     check_histogram_visible_.set_value(settings_.histogram_visible);
+    field_spectrum_start_.set_value(static_cast<int32_t>(settings_.spectrum_start_freq / 1000000));
+    field_spectrum_end_.set_value(static_cast<int32_t>(settings_.spectrum_end_freq / 1000000));
+    field_histogram_start_.set_value(static_cast<int32_t>(settings_.histogram_start_freq / 1000000));
+    field_histogram_end_.set_value(static_cast<int32_t>(settings_.histogram_end_freq / 1000000));
 }
 
 } // namespace drone_analyzer

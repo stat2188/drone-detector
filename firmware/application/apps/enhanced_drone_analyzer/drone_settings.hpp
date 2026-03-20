@@ -38,6 +38,14 @@ struct DroneSettings {
     // Threat settings
     ThreatLevel min_threat_level;
     
+    // Spectrum frequency range (Hz)
+    FreqHz spectrum_start_freq;
+    FreqHz spectrum_end_freq;
+    
+    // Histogram frequency range (Hz)
+    FreqHz histogram_start_freq;
+    FreqHz histogram_end_freq;
+    
     /**
       * @brief Default constructor
       */
@@ -88,6 +96,12 @@ public:
     void reset_settings() noexcept;
 
     /**
+     * @brief Load settings from SD card file
+     * @return ErrorCode::SUCCESS if loaded, error code otherwise
+     */
+    [[nodiscard]] ErrorCode load_settings() noexcept;
+
+    /**
      * @brief Validate settings
      * @return ErrorCode::SUCCESS if valid, error code otherwise
      */
@@ -108,6 +122,14 @@ private:
     ui::Checkbox check_audio_alerts_;
     ui::Checkbox check_spectrum_visible_;
     ui::Checkbox check_histogram_visible_;
+
+    // Spectrum frequency range fields (MHz)
+    ui::NumberField field_spectrum_start_;
+    ui::NumberField field_spectrum_end_;
+    
+    // Histogram frequency range fields (MHz)
+    ui::NumberField field_histogram_start_;
+    ui::NumberField field_histogram_end_;
 
     ui::Button button_defaults_;
     ui::Button button_save_;
