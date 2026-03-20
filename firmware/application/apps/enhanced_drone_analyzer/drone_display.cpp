@@ -103,20 +103,36 @@ void DroneDisplay::render_spectrum(
     uint16_t height
 ) noexcept {
     // Validate input
-    if (spectrum_data == nullptr || spectrum_size == 0) {
+    if (spectrum_data == nullptr || spectrum_size == 0 || height < 4) {
         return;
     }
     
-    // Draw background
+    // Draw background with border
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
+    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);  // Top border
     
-    // Draw spectrum
-    const uint16_t step_x = width / static_cast<uint16_t>(spectrum_size);
+    // Draw label
+    draw_text(painter, "SPECTRUM", start_x + 2, start_y + 2, COLOR_TEXT);
+    
+    // Calculate bar width (minimum 2 pixels for visibility)
+    constexpr uint16_t MIN_BAR_WIDTH = 2;
+    const uint16_t usable_width = width - 4;  // 2px padding each side
+    const uint16_t bar_count = static_cast<uint16_t>(spectrum_size);
+    uint16_t bar_width = usable_width / bar_count;
+    if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
+    
+    const uint16_t chart_start_x = start_x + 2;
+    const uint16_t chart_start_y = start_y + 12;  // Below label
+    const uint16_t chart_height = height - 14;    // Account for label + padding
+    
+    if (chart_height < 4) return;
+    
+    // Draw spectrum bars
     for (size_t i = 0; i < spectrum_size; ++i) {
         const uint8_t value = spectrum_data[i];
-        const uint16_t bar_height = (value * height) / HISTOGRAM_MAX_VALUE;
-        const uint16_t x = start_x + static_cast<uint16_t>(i * step_x);
-        const uint16_t y = start_y + height - bar_height;
+        const uint16_t bar_height = (static_cast<uint16_t>(value) * chart_height) / 255;
+        const uint16_t x = chart_start_x + static_cast<uint16_t>(i) * bar_width;
+        const uint16_t y = chart_start_y + chart_height - bar_height;
         
         // Color based on signal strength
         uint32_t color = COLOR_LOW_THREAT;
@@ -128,7 +144,10 @@ void DroneDisplay::render_spectrum(
             color = COLOR_MEDIUM_THREAT;
         }
         
-        draw_spectrum_line(painter, x, y, color);
+        // Draw filled bar (not single pixel)
+        if (bar_height > 0) {
+            draw_rectangle(painter, x, y, bar_width - 1, bar_height, color);
+        }
     }
 }
 
@@ -142,37 +161,54 @@ void DroneDisplay::render_histogram(
     uint16_t height
 ) noexcept {
     // Validate input
-    if (histogram_data == nullptr || histogram_size == 0 || width == 0) {
+    if (histogram_data == nullptr || histogram_size == 0 || width < 10 || height < 4) {
         return;
     }
     
-    // Draw background
+    // Draw background with border
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
+    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);  // Top border
     
-    // Find max value for scaling
+    // Draw label
+    draw_text(painter, "HISTOGRAM", start_x + 2, start_y + 2, COLOR_TEXT);
+    
+    // Find max value for scaling (ignore first bin which is often noise)
     uint16_t max_value = 0;
-    for (size_t i = 0; i < histogram_size; ++i) {
+    for (size_t i = 1; i < histogram_size; ++i) {
         if (histogram_data[i] > max_value) {
             max_value = histogram_data[i];
         }
     }
     
     if (max_value == 0) {
-        return;  // All zeros, nothing to draw
+        draw_text(painter, "No data", start_x + 2, start_y + 12, COLOR_UNKNOWN_THREAT);
+        return;
     }
     
+    // Calculate bar dimensions (minimum 2px width, 1px gap)
+    constexpr uint16_t MIN_BAR_WIDTH = 2;
+    constexpr uint16_t BAR_GAP = 1;
+    const uint16_t usable_width = width - 4;  // 2px padding each side
+    uint16_t bar_width = (usable_width / static_cast<uint16_t>(histogram_size));
+    if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
+    
+    const uint16_t chart_start_x = start_x + 2;
+    const uint16_t chart_start_y = start_y + 12;  // Below label
+    const uint16_t chart_height = height - 14;    // Account for label + padding
+    
+    if (chart_height < 4) return;
+    
     // Draw histogram bars
-    const uint16_t bar_width = width / static_cast<uint16_t>(histogram_size);
-    if (bar_width == 0) {
-        return;  // Width too small for any bars
-    }
     for (size_t i = 0; i < histogram_size; ++i) {
         const uint16_t value = histogram_data[i];
-        const uint16_t bar_height = (value * height) / max_value;
-        const uint16_t x = start_x + static_cast<uint16_t>(i * bar_width);
-        const uint16_t y = start_y + height - bar_height;
+        const uint16_t bar_height = (value * chart_height) / max_value;
+        const uint16_t x = chart_start_x + static_cast<uint16_t>(i) * (bar_width + BAR_GAP);
+        const uint16_t y = chart_start_y + chart_height - bar_height;
         
-        draw_histogram_bar(painter, x, y, bar_width, bar_height, COLOR_MEDIUM_THREAT);
+        // Draw filled bar
+        if (bar_height > 0) {
+            draw_rectangle(painter, x, y, bar_width, bar_height, COLOR_MEDIUM_THREAT);
+        }
     }
 }
 
@@ -187,17 +223,35 @@ void DroneDisplay::render_drone_list(
 ) noexcept {
     // Validate input
     if (drones == nullptr || drone_count == 0) {
-        draw_text(painter, STATUS_NO_DRONES, start_x + 5, start_y + 10, COLOR_TEXT);
+        draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
+        draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
+        draw_text(painter, "DETECTED DRONES", start_x + 2, start_y + 2, COLOR_TEXT);
+        draw_text(painter, STATUS_NO_DRONES, start_x + 2, start_y + 14, COLOR_UNKNOWN_THREAT);
         return;
     }
     
-    // Draw background
+    // Draw background with border
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
+    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);  // Top border
+    
+    // Draw header
+    draw_text(painter, "DETECTED DRONES", start_x + 2, start_y + 2, COLOR_TEXT);
+    
+    // Draw column headers
+    constexpr uint16_t HEADER_H = 12;
+    constexpr uint16_t ENTRY_MIN_H = 22;  // Minimum height per entry
+    const uint16_t list_start_y = start_y + HEADER_H;
+    const uint16_t available_h = height - HEADER_H;
+    
+    // Calculate entry height (max 4 entries visible)
+    uint16_t entry_height = available_h / static_cast<uint16_t>(drone_count);
+    if (entry_height > 40) entry_height = 40;
+    if (entry_height < ENTRY_MIN_H) entry_height = ENTRY_MIN_H;
     
     // Draw drone entries
-    const uint16_t entry_height = height / static_cast<uint16_t>(drone_count);
     for (size_t i = 0; i < drone_count; ++i) {
-        const uint16_t y = start_y + static_cast<uint16_t>(i * entry_height);
+        const uint16_t y = list_start_y + static_cast<uint16_t>(i) * entry_height;
+        if (y + entry_height > start_y + height) break;  // Don't overflow
         draw_drone_entry(painter, drones[i], start_x, y, width, entry_height);
     }
 }
@@ -211,15 +265,17 @@ void DroneDisplay::render_status_bar(
     uint16_t height
 ) noexcept {
     // Validate input
-    if (status_text == nullptr) {
+    if (status_text == nullptr || height < 4) {
         return;
     }
     
-    // Draw background
+    // Draw background with top border
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
+    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
     
-    // Draw status text
-    draw_text(painter, status_text, start_x + 5, start_y + 5, COLOR_TEXT);
+    // Draw status text centered vertically
+    const uint16_t text_y = start_y + (height > 10 ? 4 : 1);
+    draw_text(painter, status_text, start_x + 4, text_y, COLOR_TEXT);
 }
 
 // ============================================================================
@@ -342,8 +398,8 @@ void DroneDisplay::draw_drone_entry(
     uint16_t width,
     uint16_t height
 ) noexcept {
-    // Draw entry background
-    draw_rectangle(painter, x, y, width, height, COLOR_BACKGROUND, false);
+    // Draw entry separator line
+    draw_rectangle(painter, x, y + height - 1, width, 1, COLOR_UNKNOWN_THREAT);
     
     // Format frequency
     char freq_buffer[16];
@@ -356,53 +412,46 @@ void DroneDisplay::draw_drone_entry(
     // Format threat level string
     const char* threat_str = "";
     switch (drone.threat) {
-        case ThreatLevel::CRITICAL:
-            threat_str = "CRITICAL";
-            break;
-        case ThreatLevel::HIGH:
-            threat_str = "HIGH";
-            break;
-        case ThreatLevel::MEDIUM:
-            threat_str = "MEDIUM";
-            break;
-        case ThreatLevel::LOW:
-            threat_str = "LOW";
-            break;
-        case ThreatLevel::NONE:
-        default:
-            threat_str = "NONE";
-            break;
+        case ThreatLevel::CRITICAL: threat_str = "CRIT"; break;
+        case ThreatLevel::HIGH:     threat_str = "HIGH"; break;
+        case ThreatLevel::MEDIUM:   threat_str = "MED";  break;
+        case ThreatLevel::LOW:      threat_str = "LOW";  break;
+        default:                    threat_str = "---";  break;
     }
     
     // Get movement trend symbol
     char trend_symbol = MOVEMENT_TREND_SYMBOL_UNKNOWN;
     switch (drone.trend) {
-        case MovementTrend::APPROACHING:
-            trend_symbol = MOVEMENT_TREND_SYMBOL_APPROACHING;
-            break;
-        case MovementTrend::RECEDING:
-            trend_symbol = MOVEMENT_TREND_SYMBOL_RECEEDING;
-            break;
-        case MovementTrend::STATIC:
-            trend_symbol = MOVEMENT_TREND_SYMBOL_STATIC;
-            break;
-        default:
-            trend_symbol = MOVEMENT_TREND_SYMBOL_UNKNOWN;
-            break;
+        case MovementTrend::APPROACHING: trend_symbol = '<'; break;  // Approaching
+        case MovementTrend::RECEDING:    trend_symbol = '>'; break;  // Receding
+        case MovementTrend::STATIC:      trend_symbol = '~'; break;  // Static
+        default:                         trend_symbol = '-'; break;
     }
     
-    // Draw drone info
-    // Line 1: Type | Threat | Trend
-    draw_text(painter, drone.get_type_name(), x + 5, y + 2, drone.display_color);
-    draw_text(painter, threat_str, x + 65, y + 2, drone.display_color);
+    // Layout: Use proportional columns
+    // Col 1 (0-40%): Type name (colored)
+    // Col 2 (40-60%): Threat level
+    // Col 3 (60-75%): Frequency
+    // Col 4 (75-90%): RSSI
+    // Col 5 (90-100%): Trend
     
-    // Draw trend symbol - FIXED: moved to avoid overlap
+    constexpr uint16_t PAD = 3;
+    const uint16_t col1_end = (width * 40) / 100;
+    const uint16_t col2_end = (width * 60) / 100;
+    const uint16_t col3_end = (width * 75) / 100;
+    const uint16_t col4_end = (width * 90) / 100;
+    
+    // Line 1: Type | Threat
+    draw_text(painter, drone.get_type_name(), x + PAD, y + 2, drone.display_color);
+    draw_text(painter, threat_str, x + col1_end + PAD, y + 2, drone.display_color);
+    
+    // Line 2: Frequency | RSSI | Trend
+    draw_text(painter, freq_buffer, x + PAD, y + 12, COLOR_TEXT);
+    draw_text(painter, rssi_buffer, x + col3_end + PAD, y + 12, COLOR_TEXT);
+    
+    // Trend symbol at far right
     char trend_buffer[2] = {trend_symbol, '\0'};
-    draw_text(painter, trend_buffer, x + 130, y + 2, drone.display_color);
-    
-    // Line 2: Frequency | RSSI
-    draw_text(painter, freq_buffer, x + 5, y + 12, COLOR_TEXT);
-    draw_text(painter, rssi_buffer, x + 100, y + 12, COLOR_TEXT);
+    draw_text(painter, trend_buffer, x + col4_end + PAD, y + 12, COLOR_TEXT);
 }
 
 void DroneDisplay::draw_text(
