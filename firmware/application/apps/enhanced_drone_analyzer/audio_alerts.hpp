@@ -74,7 +74,7 @@ struct AudioAlertConfig {
 };
 
 /**
- * @brief Audio alert manager
+ * @brief Audio aler manager
  * @note Handles audio alerts for drone detection
  * @note Non-blocking implementation using baseband API
  */
