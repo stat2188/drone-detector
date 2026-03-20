@@ -138,18 +138,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         return;
     }
 
-    const auto result = database_ptr_->load_frequency_database();
-    if (result != ErrorCode::SUCCESS) {
-        show_error(result, ERROR_DURATION_MS);
-        initialization_failed_ = true;
-        return;
+    // Database load is non-fatal — scanner works on default frequency if DB missing
+    const auto db_result = database_ptr_->load_frequency_database();
+    if (db_result != ErrorCode::SUCCESS) {
+        show_error(db_result, ERROR_DURATION_MS);
     }
 
     const ErrorCode init_err = scanner_ptr_->initialize();
     if (init_err != ErrorCode::SUCCESS) {
         show_error(init_err, ERROR_DURATION_MS);
-        initialization_failed_ = true;
-        return;
     }
 
     baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);

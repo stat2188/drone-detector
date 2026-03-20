@@ -112,11 +112,14 @@ ErrorCode DroneScanner::initialize() noexcept {
         return hw_result;
     }
 
+    // Try to get first frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(0);
-    if (!freq_result.has_value()) {
-        return freq_result.error();
+    if (freq_result.has_value()) {
+        current_frequency_ = freq_result.value();
+    } else {
+        // Database empty or not loaded — scanner still works on default freq
+        current_frequency_ = MIN_FREQUENCY_HZ;
     }
-    current_frequency_ = freq_result.value();
 
     state_ = ScannerState::IDLE;
     statistics_.reset();
@@ -231,14 +234,14 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
     if (!freq_result.has_value()) {
-        statistics_.failed_cycles++;
-        
-        // Handle empty database gracefully
-        if (freq_result.error() == ErrorCode::DATABASE_EMPTY) {
-            return ErrorCode::DATABASE_EMPTY;
+        // Database empty — stay on current frequency, still tune hardware
+        ErrorCode tune_result = hardware_.tune_to_frequency(current_frequency_);
+        if (tune_result != ErrorCode::SUCCESS) {
+            statistics_.failed_cycles++;
+            return tune_result;
         }
-        
-        return freq_result.error();
+        statistics_.successful_cycles++;
+        return ErrorCode::SUCCESS;
     }
     
     current_frequency_ = freq_result.value();
