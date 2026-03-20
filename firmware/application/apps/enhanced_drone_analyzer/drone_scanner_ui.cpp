@@ -71,40 +71,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_settings_
     });
 
-    construct_objects();
-
-    if (scanner_ptr_ == nullptr) {
-        show_error(ErrorCode::INITIALIZATION_FAILED, ERROR_DURATION_MS);
-        initialization_failed_ = true;
-        return;
-    }
-
-    const auto result = database_ptr_->load_frequency_database();
-    if (result != ErrorCode::SUCCESS) {
-        show_error(result, ERROR_DURATION_MS);
-        initialization_failed_ = true;
-        return;
-    }
-
-    const ErrorCode init_err = scanner_ptr_->initialize();
-    if (init_err != ErrorCode::SUCCESS) {
-        show_error(init_err, ERROR_DURATION_MS);
-        initialization_failed_ = true;
-        return;
-    }
-
-    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
-    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
-    portapack::receiver_model.enable();
-
-    scanner_thread_->start();
-
-    scanning_ = false;
-
-    scanner_ptr_->set_alert_callback([](ThreatLevel level) {
-        AudioAlertManager::play_alert(level);
-    });
-
+    // Register button callbacks BEFORE any early returns
+    // Buttons must always respond, even if init fails
     button_start_stop_.on_select = [this](ui::Button&) {
         if (initialization_failed_ || scanner_ptr_ == nullptr) {
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
@@ -160,6 +128,41 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         ScanConfig config = scanner_ptr_->get_config();
         nav.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
+
+    // Hardware initialization (callbacks are already set, safe to early-return)
+    construct_objects();
+
+    if (scanner_ptr_ == nullptr) {
+        show_error(ErrorCode::INITIALIZATION_FAILED, ERROR_DURATION_MS);
+        initialization_failed_ = true;
+        return;
+    }
+
+    const auto result = database_ptr_->load_frequency_database();
+    if (result != ErrorCode::SUCCESS) {
+        show_error(result, ERROR_DURATION_MS);
+        initialization_failed_ = true;
+        return;
+    }
+
+    const ErrorCode init_err = scanner_ptr_->initialize();
+    if (init_err != ErrorCode::SUCCESS) {
+        show_error(init_err, ERROR_DURATION_MS);
+        initialization_failed_ = true;
+        return;
+    }
+
+    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
+    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
+    portapack::receiver_model.enable();
+
+    scanner_thread_->start();
+
+    scanning_ = false;
+
+    scanner_ptr_->set_alert_callback([](ThreatLevel level) {
+        AudioAlertManager::play_alert(level);
+    });
 
     ScanConfig config;
     config.mode = scanning_mode_;
