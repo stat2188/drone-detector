@@ -98,12 +98,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        const bool was_scanning = scanning_;
-        if (was_scanning) {
-            scanner_thread_->set_scanning(false);
-            (void)scanner_ptr_->stop_scanning();
-            baseband::spectrum_streaming_stop();
-        }
         ScanConfig config = scanner_ptr_->get_config();
         const uint8_t current = static_cast<uint8_t>(config.mode);
         config.mode = static_cast<ScanningMode>((current + 1) % SCANNING_MODE_COUNT);
@@ -117,12 +111,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         // Update button text to show current mode
         static const char* mode_names[] = {"Single", "Hopping", "Sequential", "Targeted"};
         button_mode_.set_text(mode_names[static_cast<uint8_t>(scanning_mode_)]);
-
-        if (was_scanning) {
-            baseband::spectrum_streaming_start();
-            (void)scanner_ptr_->start_scanning();
-            scanner_thread_->set_scanning(true);
-        }
     };
 
     button_settings_.on_select = [this, &nav](ui::Button&) {
@@ -392,11 +380,11 @@ void DroneScannerUI::refresh_ui() noexcept {
 void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
     if (scanner_ptr_ != nullptr && scanning_) {
         (void)scanner_ptr_->process_spectrum_message(spectrum);
-    }
 
-    // Feed spectrum to DroneDisplay for visualization
-    drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
-    drone_display_.set_dirty();
+        // Feed spectrum to DroneDisplay for visualization only when scanning
+        drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
+        drone_display_.set_dirty();
+    }
 }
 
 } // namespace drone_analyzer

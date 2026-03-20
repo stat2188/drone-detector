@@ -48,21 +48,21 @@ void DroneSettings::reset_to_defaults() noexcept {
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display) noexcept
     : ui::View()
     , labels_({
-        {{UI_POS_X(1), UI_POS_Y(3)}, "Scan Mode:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(6)}, "Interval (ms):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(9)}, "RSSI Threshold (dBm):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(1)}, "Scan Mode:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(4)}, "Interval (ms):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(7)}, "RSSI Threshold (dBm):", Theme::getInstance()->fg_light->foreground},
     })
-    , field_scan_mode_({UI_POS_X(1), UI_POS_Y(4)}, 14, {
+    , field_scan_mode_({UI_POS_X(1), UI_POS_Y(2)}, 14, {
         {"Single", 0},
         {"Hopping", 1},
         {"Sequential", 2},
         {"Targeted", 3}
     })
-    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(7)}, 4, {10, 1000}, 10, ' ')
-    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(10)}, 4, {-90, -20}, 1, ' ')
-    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(12)}, 15, "Audio Alerts", false)
-    , check_spectrum_visible_({UI_POS_X(1), UI_POS_Y(14)}, 15, "Show Spectrum", false)
-    , check_histogram_visible_({UI_POS_X(1), UI_POS_Y(16)}, 15, "Show Histogram", false)
+    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(5)}, 4, {10, 1000}, 10, ' ')
+    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(8)}, 4, {-90, -20}, 1, ' ')
+    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(10)}, 15, "Audio Alerts", false)
+    , check_spectrum_visible_({UI_POS_X(1), UI_POS_Y(12)}, 15, "Show Spectrum", false)
+    , check_histogram_visible_({UI_POS_X(1), UI_POS_Y(14)}, 15, "Show Histogram", false)
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(10), 28}, "DEFAULTS")
     , button_save_({UI_POS_X_CENTER(7), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(7), 28}, "SAVE")
     , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(7), 28}, "CANCEL")
@@ -112,7 +112,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         // Save settings to SD card file
         File file;
         const auto open_result = file.open(u"/ENHANCED_DRONE_ANALYZER_SETTINGS.TXT", false, true);
-        if (open_result) {
+        if (!open_result) {
             char buffer[256];
             size_t offset = 0;
 
@@ -129,9 +129,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 (settings_.scanning_mode == ScanningMode::HOPPING) ? "HOPPING" :
                 (settings_.scanning_mode == ScanningMode::SEQUENTIAL) ? "SEQUENTIAL" : "TARGETED");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "scan_interval_ms=%u\n", settings_.scan_interval_ms);
+                "scan_interval_ms=%lu\n", (unsigned long)settings_.scan_interval_ms);
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "rssi_threshold_db=%d\n", settings_.alert_rssi_threshold_dbm);
+                "rssi_threshold_db=%ld\n", (long)settings_.alert_rssi_threshold_dbm);
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "enable_audio_alerts=%s\n", settings_.audio_alerts_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
