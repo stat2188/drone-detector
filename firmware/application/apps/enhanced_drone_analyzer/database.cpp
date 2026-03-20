@@ -90,6 +90,11 @@ static bool parse_freqman_line(
         return false;
     }
 
+    // Skip comment lines
+    if (line_buf[0] == '#') {
+        return false;
+    }
+
     size_t pos = 0;
 
     // Skip leading whitespace
@@ -97,59 +102,68 @@ static bool parse_freqman_line(
         pos++;
     }
 
-    // Expect 'F' or 'f' prefix
-    if (pos >= line_len || ::tolower(static_cast<unsigned char>(line_buf[pos])) != 'f') {
+    // Parse key=value pairs
+    FreqHz freq = 0;
+    bool has_freq = false;
+    const char* desc_start = nullptr;
+    size_t desc_len = 0;
+
+    while (pos < line_len) {
+        // Get key
+        if (pos >= line_len) break;
+        char key = static_cast<char>(::tolower(line_buf[pos]));
+        pos++;
+
+        // Skip '='
+        if (pos < line_len && line_buf[pos] == '=') {
+            pos++;
+        }
+
+        // Parse value based on key
+        if (key == 'f' || key == 'a' || key == 'r') {
+            // Frequency value
+            int64_t freq_val = 0;
+            while (pos < line_len && line_buf[pos] >= '0' && line_buf[pos] <= '9') {
+                freq_val = freq_val * 10 + (line_buf[pos] - '0');
+                pos++;
+            }
+            if (!has_freq) {
+                freq = static_cast<FreqHz>(freq_val);
+                has_freq = true;
+            }
+        } else if (key == 'd') {
+            // Description value
+            desc_start = reinterpret_cast<const char*>(&line_buf[pos]);
+            while (pos < line_len && line_buf[pos] != ',') {
+                desc_len++;
+                pos++;
+            }
+        } else {
+            // Skip unknown key's value
+            while (pos < line_len && line_buf[pos] != ',') {
+                pos++;
+            }
+        }
+
+        // Skip comma separator
+        if (pos < line_len && line_buf[pos] == ',') {
+            pos++;
+        }
+    }
+
+    if (!has_freq) {
         return false;
     }
-    pos++;
 
-    // Skip whitespace after 'F'
-    while (pos < line_len && (line_buf[pos] == ' ' || line_buf[pos] == '\t')) {
-        pos++;
-    }
-
-    // Parse frequency
-    int64_t freq_a = 0;
-    while (pos < line_len && line_buf[pos] >= '0' && line_buf[pos] <= '9') {
-        freq_a = freq_a * 10 + (line_buf[pos] - '0');
-        pos++;
-    }
-
-    // Skip whitespace after frequency
-    while (pos < line_len && (line_buf[pos] == ' ' || line_buf[pos] == '\t')) {
-        pos++;
-    }
-
-    // Expect 'D' or 'd' prefix (distance/range field)
-    if (pos >= line_len || ::tolower(static_cast<unsigned char>(line_buf[pos])) != 'd') {
-        return false;
-    }
-    pos++;
-
-    // Skip whitespace after 'D'
-    while (pos < line_len && (line_buf[pos] == ' ' || line_buf[pos] == '\t')) {
-        pos++;
-    }
-
-    if (pos >= line_len) {
-        return false;
-    }
-
-    const FreqHz freq = static_cast<FreqHz>(freq_a);
     if (freq < MIN_FREQUENCY_HZ || freq > MAX_FREQUENCY_HZ) {
         return false;
     }
 
-    const size_t desc_len = line_len - pos;
-    if (desc_len == 0) {
+    if (desc_start == nullptr || desc_len == 0) {
         return false;
     }
 
-    const DroneType type = parse_drone_type_from_description(
-        reinterpret_cast<const char*>(&line_buf[pos]),
-        desc_len
-    );
-
+    const DroneType type = parse_drone_type_from_description(desc_start, desc_len);
     if (type == DroneType::UNKNOWN) {
         return false;
     }
@@ -168,8 +182,30 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     current_index_ = 0;
 
+    // Build path: freqman_dir / database_file_ + ".TXT"
+    char filepath[64];
+    size_t pos = 0;
+    
+    // Copy freqman_dir path
+    const char* dir = "FREQMAN/";
+    for (size_t i = 0; dir[i] != '\0' && pos < sizeof(filepath) - 1; ++i) {
+        filepath[pos++] = dir[i];
+    }
+    
+    // Copy database filename
+    for (size_t i = 0; database_file_[i] != '\0' && pos < sizeof(filepath) - 1; ++i) {
+        filepath[pos++] = database_file_[i];
+    }
+    
+    // Add .TXT extension
+    const char* ext = ".TXT";
+    for (size_t i = 0; ext[i] != '\0' && pos < sizeof(filepath) - 1; ++i) {
+        filepath[pos++] = ext[i];
+    }
+    filepath[pos] = '\0';
+
     File file;
-    const auto open_result = file.open(freqman_dir / u"DRONES.TXT", true, false);
+    const auto open_result = file.open(std::filesystem::path(reinterpret_cast<const TCHAR*>(filepath)), true, false);
     if (!open_result) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
@@ -312,6 +348,23 @@ DatabaseManager::DatabaseManager() noexcept
 }
 
 DatabaseManager::~DatabaseManager() noexcept {
+}
+
+void DatabaseManager::set_database_file(const char* filename) noexcept {
+    if (filename == nullptr) {
+        return;
+    }
+    
+    // Copy filename (max 31 chars + null terminator)
+    size_t i = 0;
+    while (i < 31 && filename[i] != '\0') {
+        database_file_[i] = filename[i];
+        ++i;
+    }
+    database_file_[i] = '\0';
+    
+    // Reset loaded flag so database will be reloaded
+    loaded_.clear();
 }
 
 } 

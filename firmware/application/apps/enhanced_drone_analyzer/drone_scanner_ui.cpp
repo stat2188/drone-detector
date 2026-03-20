@@ -1,5 +1,6 @@
 #include "drone_scanner_ui.hpp"
 #include "ui.hpp"
+#include "ui_fileman.hpp"
 #include "scanner.hpp"
 #include "scanner_thread.hpp"
 #include "drone_settings.hpp"
@@ -10,6 +11,7 @@
 #include "string_format.hpp"
 #include "baseband_api.hpp"
 #include "portapack_persistent_memory.hpp"
+#include "file_path.hpp"
 #include "ch.h"
 #include <new>
 #include <array>
@@ -68,6 +70,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &drone_display_,
         &button_start_stop_,
         &button_mode_,
+        &button_load_,
         &button_settings_
     });
 
@@ -111,6 +114,48 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         // Update button text to show current mode
         static const char* mode_names[] = {"Single", "Hopping", "Sequential", "Targeted"};
         button_mode_.set_text(mode_names[static_cast<uint8_t>(scanning_mode_)]);
+    };
+
+    button_load_.on_select = [this, &nav](ui::Button&) {
+        auto open_view = nav.push<FileLoadView>(".TXT");
+        open_view->push_dir(freqman_dir);
+        open_view->on_changed = [this, &nav](std::filesystem::path new_file_path) {
+            // Stop scanning if active
+            if (scanning_) {
+                scanner_thread_->set_scanning(false);
+                (void)scanner_ptr_->stop_scanning();
+                baseband::spectrum_streaming_stop();
+                scanning_ = false;
+                button_start_stop_.set_text("Start");
+            }
+
+            // Extract filename without extension (e.g., "DRONES" from "/FREQMAN/DRONES.TXT")
+            const auto stem = new_file_path.stem().string();
+            char filename[32];
+            size_t i = 0;
+            while (i < 31 && i < stem.length() && stem[i] != '\0') {
+                filename[i] = stem[i];
+                ++i;
+            }
+            filename[i] = '\0';
+
+            // Set new database file and reload
+            database_ptr_->set_database_file(filename);
+
+            // Clear existing tracked drones
+            scanner_ptr_->clear_tracked_drones();
+
+            // Load new database
+            const ErrorCode err = database_ptr_->load_frequency_database();
+            if (err == ErrorCode::SUCCESS) {
+                const size_t db_size = database_ptr_->get_database_size();
+                char msg[32];
+                snprintf(msg, sizeof(msg), "Loaded %lu entries", (unsigned long)db_size);
+                show_alert(msg, 2000);
+            } else {
+                show_error(err, ERROR_DURATION_MS);
+            }
+        };
     };
 
     button_settings_.on_select = [this, &nav](ui::Button&) {

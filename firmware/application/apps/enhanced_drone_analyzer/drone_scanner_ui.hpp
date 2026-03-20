@@ -88,9 +88,10 @@ private:
     ui::RFAmpField field_rf_amp_{{UI_POS_X(18), 0}};
     ui::AudioVolumeField field_volume_{{UI_POS_X_RIGHT(2), UI_POS_Y(0)}};
 
-    ui::Button button_start_stop_{{UI_POS_X(0), UI_POS_Y(16), UI_POS_WIDTH(8), 28}, "Start"};
-    ui::Button button_mode_{{UI_POS_X(9), UI_POS_Y(16), UI_POS_WIDTH(7), 28}, "Mode"};
-    ui::Button button_settings_{{UI_POS_X(17), UI_POS_Y(16), UI_POS_WIDTH(7), 28}, "Setup"};
+    ui::Button button_start_stop_{{UI_POS_X(0), UI_POS_Y(16), UI_POS_WIDTH(6), 28}, "Start"};
+    ui::Button button_mode_{{UI_POS_X(7), UI_POS_Y(16), UI_POS_WIDTH(5), 28}, "Mode"};
+    ui::Button button_load_{{UI_POS_X(13), UI_POS_Y(16), UI_POS_WIDTH(5), 28}, "Load"};
+    ui::Button button_settings_{{UI_POS_X(19), UI_POS_Y(16), UI_POS_WIDTH(5), 28}, "Setup"};
 
     FreqHz current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};

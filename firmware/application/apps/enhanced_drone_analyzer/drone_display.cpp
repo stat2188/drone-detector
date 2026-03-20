@@ -437,7 +437,6 @@ void DroneDisplay::draw_drone_entry(
     
     constexpr uint16_t PAD = 3;
     const uint16_t col1_end = (width * 40) / 100;
-    const uint16_t col2_end = (width * 60) / 100;
     const uint16_t col3_end = (width * 75) / 100;
     const uint16_t col4_end = (width * 90) / 100;
     

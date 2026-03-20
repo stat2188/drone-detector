@@ -45,6 +45,7 @@ public:
     [[nodiscard]] ErrorResult<FrequencyEntry> find_entry(FreqHz frequency) const noexcept;
     [[nodiscard]] size_t get_database_size() const noexcept;
     [[nodiscard]] bool is_loaded() const noexcept;
+    void set_database_file(const char* filename) noexcept;
     
 private:
     
@@ -58,6 +59,7 @@ private:
     size_t entry_count_{0};
     AtomicFlag loaded_;
     mutable Mutex mutex_;
+    char database_file_[32]{'D', 'R', 'O', 'N', 'E', 'S', '\0'};
 };
 
 } // namespace drone_analyzer
