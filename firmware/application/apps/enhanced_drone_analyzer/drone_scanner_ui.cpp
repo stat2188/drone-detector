@@ -57,8 +57,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             this->on_retune(message.freq, message.range);
         }
     } {
-    construct_objects();
-
     add_children({
         &labels_,
         &field_lna_,
@@ -71,6 +69,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_mode_,
         &button_settings_
     });
+
+    construct_objects();
 
     if (scanner_ptr_ == nullptr) {
         show_error(ErrorCode::INITIALIZATION_FAILED, ERROR_DURATION_MS);
@@ -95,6 +95,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
     baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
     portapack::receiver_model.enable();
+
+    scanner_thread_->start();
 
     button_start_stop_.on_select = [this](ui::Button&) {
         if (initialization_failed_ || scanner_ptr_ == nullptr) {
@@ -201,20 +203,11 @@ void DroneScannerUI::destruct_objects() noexcept {
 }
 
 void DroneScannerUI::on_show() {
-    if (scanner_thread_ != nullptr) {
-        scanner_thread_->start();
-    }
+    baseband::spectrum_streaming_start();
 }
 
 void DroneScannerUI::on_hide() {
-    if (scanning_) {
-        scanner_thread_->set_scanning(false);
-        baseband::spectrum_streaming_stop();
-        scanning_ = false;
-    }
-    if (scanner_thread_ != nullptr) {
-        scanner_thread_->stop();
-    }
+    baseband::spectrum_streaming_stop();
 }
 
 void DroneScannerUI::paint(Painter& painter) {

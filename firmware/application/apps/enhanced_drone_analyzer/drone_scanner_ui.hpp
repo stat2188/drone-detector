@@ -112,7 +112,7 @@ private:
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
     bool initialization_failed_{false};
 
-    DroneDisplay drone_display_{{0, UI_POS_Y(9), DISPLAY_WIDTH, 160}};
+    DroneDisplay drone_display_{{0, UI_POS_Y(9), DISPLAY_WIDTH, 112}};
 
     void bigdisplay_update(BigDisplayColor color) noexcept;
     void refresh_ui() noexcept;

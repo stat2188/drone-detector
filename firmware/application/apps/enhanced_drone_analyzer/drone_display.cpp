@@ -19,11 +19,7 @@ DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     , spectrum_visible_(true)
     , histogram_visible_(true)
     , drone_list_visible_(true)
-    , status_bar_visible_(true)
-    , spectrum_height_(80)
-    , histogram_height_(60)
-    , drone_list_height_(150)
-    , status_bar_height_(20) {
+    , status_bar_visible_(true) {
     set_parent_rect(parent_rect);
     set_status_text(STATUS_READY);
 }
@@ -41,64 +37,55 @@ void DroneDisplay::paint(Painter& painter) {
     const uint16_t ox = sr.location().x();
     const uint16_t oy = sr.location().y();
     const uint16_t w = sr.size().width();
+    const uint16_t total_h = sr.size().height();
 
     // Clear widget area
-    draw_rectangle(painter, ox, oy, w, sr.size().height(), COLOR_BACKGROUND);
+    draw_rectangle(painter, ox, oy, w, total_h, COLOR_BACKGROUND);
+
+    // Calculate section heights dynamically
+    constexpr uint16_t STATUS_H = 16;
+    constexpr uint16_t SPECTRUM_H = 50;
+    constexpr uint16_t HISTOGRAM_H = 30;
+
+    uint16_t remaining = total_h;
+
+    const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0);
+    const bool show_hist = (histogram_visible_ && histogram_data_size_ > 0);
+    const bool show_list = (drone_list_visible_ && display_data_.drone_count > 0);
+
+    const uint16_t spec_h = show_spec ? SPECTRUM_H : 0;
+    if (spec_h <= remaining) remaining -= spec_h; else remaining = 0;
+
+    const uint16_t hist_h = show_hist ? HISTOGRAM_H : 0;
+    if (hist_h <= remaining) remaining -= hist_h; else remaining = 0;
+
+    const uint16_t status_h = (remaining >= STATUS_H) ? STATUS_H : 0;
+    if (status_h <= remaining) remaining -= status_h; else remaining = 0;
+
+    const uint16_t drone_h = remaining;
 
     uint16_t y_offset = oy;
 
-    // Render spectrum if visible
-    if (spectrum_visible_ && spectrum_data_size_ > 0) {
-        render_spectrum(
-            painter,
-            spectrum_buffer_.data(),
-            spectrum_data_size_,
-            ox,
-            y_offset,
-            w,
-            spectrum_height_
-        );
-        y_offset += spectrum_height_;
+    if (show_spec) {
+        render_spectrum(painter, spectrum_buffer_.data(), spectrum_data_size_,
+                        ox, y_offset, w, spec_h);
+        y_offset += spec_h;
     }
 
-    // Render histogram if visible
-    if (histogram_visible_ && histogram_data_size_ > 0) {
-        render_histogram(
-            painter,
-            histogram_buffer_.data(),
-            histogram_data_size_,
-            ox,
-            y_offset,
-            w,
-            histogram_height_
-        );
-        y_offset += histogram_height_;
+    if (show_hist) {
+        render_histogram(painter, histogram_buffer_.data(), histogram_data_size_,
+                         ox, y_offset, w, hist_h);
+        y_offset += hist_h;
     }
 
-    // Render drone list if visible
-    if (drone_list_visible_ && display_data_.drone_count > 0) {
-        render_drone_list(
-            painter,
-            display_data_.drones,
-            display_data_.drone_count,
-            ox,
-            y_offset,
-            w,
-            drone_list_height_
-        );
-        y_offset += drone_list_height_;
+    if (show_list && drone_h > 0) {
+        render_drone_list(painter, display_data_.drones, display_data_.drone_count,
+                          ox, y_offset, w, drone_h);
+        y_offset += drone_h;
     }
 
-    // Render status bar if visible
-    if (status_bar_visible_) {
-        render_status_bar(
-            painter,
-            status_text_,
-            ox,
-            y_offset,
-            w,
-            status_bar_height_
-        );
+    if (status_h > 0) {
+        render_status_bar(painter, status_text_, ox, y_offset, w, status_h);
     }
 }
 

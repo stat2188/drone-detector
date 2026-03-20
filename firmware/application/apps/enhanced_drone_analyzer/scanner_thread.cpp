@@ -39,7 +39,6 @@ void ScannerThread::run() noexcept {
 
 void ScannerThread::start() noexcept {
     if (thread_ == nullptr) {
-        scanning_ = true;
         thread_ = chThdCreateStatic(
             wa_, sizeof(wa_),
             NORMALPRIO + 10,

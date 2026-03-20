@@ -356,12 +356,6 @@ private:
     bool histogram_visible_;
     bool drone_list_visible_;
     bool status_bar_visible_;
-
-    // Display dimensions
-    uint16_t spectrum_height_;
-    uint16_t histogram_height_;
-    uint16_t drone_list_height_;
-    uint16_t status_bar_height_;
 };
 
 } // namespace drone_analyzer
