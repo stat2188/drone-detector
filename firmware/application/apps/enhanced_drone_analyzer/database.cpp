@@ -170,7 +170,7 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
 
     File file;
     const auto open_result = file.open(freqman_dir / u"DRONES.TXT", true, false);
-    if (open_result) {
+    if (!open_result) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
 

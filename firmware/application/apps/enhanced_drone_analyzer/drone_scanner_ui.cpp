@@ -113,6 +113,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             return;
         }
         scanning_mode_ = config.mode;
+
+        // Update button text to show current mode
+        static const char* mode_names[] = {"Single", "Hopping", "Sequential", "Targeted"};
+        button_mode_.set_text(mode_names[static_cast<uint8_t>(scanning_mode_)]);
+
         if (was_scanning) {
             baseband::spectrum_streaming_start();
             (void)scanner_ptr_->start_scanning();

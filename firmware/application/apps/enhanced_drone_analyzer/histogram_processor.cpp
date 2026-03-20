@@ -58,6 +58,14 @@ ErrorCode HistogramProcessor::update_histogram(
         return error;
     }
 
+    // Reset histogram periodically to prevent monotonic overflow
+    // After 256 samples, reset to maintain relative differences
+    if (statistics_.total_samples > 0 && (statistics_.total_samples % 256) == 0) {
+        for (size_t i = 0; i < HISTOGRAM_BUFFER_SIZE; ++i) {
+            histogram_[i] = 0;
+        }
+    }
+
     // Bin data into histogram
     for (size_t i = 0; i < length; ++i) {
         const size_t bin = value_to_bin(data[i]);
