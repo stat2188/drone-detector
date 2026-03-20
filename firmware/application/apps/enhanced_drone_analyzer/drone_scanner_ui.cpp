@@ -33,7 +33,7 @@ static_assert(sizeof(ScannerThread) <= sizeof(s_scanner_thread_buffer), "Scanner
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : View()
     , nav_(nav)
-    , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
+    , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}  // Y moved to 1*16=16
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {

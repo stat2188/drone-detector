@@ -63,9 +63,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(10)}, 15, "Audio Alerts", false)
     , check_spectrum_visible_({UI_POS_X(1), UI_POS_Y(12)}, 15, "Show Spectrum", false)
     , check_histogram_visible_({UI_POS_X(1), UI_POS_Y(14)}, 15, "Show Histogram", false)
-    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(10), 28}, "DEFAULTS")
-    , button_save_({UI_POS_X_CENTER(7), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(7), 28}, "SAVE")
-    , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(7), 28}, "CANCEL")
+    , button_defaults_({UI_POS_X(0), UI_POS_Y(16), UI_POS_WIDTH(10), 28}, "DEFAULTS")  // Moved higher
+    , button_save_({UI_POS_X_CENTER(7), UI_POS_Y(16), UI_POS_WIDTH(7), 28}, "SAVE")  // Moved higher
+    , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y(16), UI_POS_WIDTH(7), 28}, "CANCEL")  // Moved higher
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)

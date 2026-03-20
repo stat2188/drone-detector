@@ -56,7 +56,7 @@ public:
 
 private:
     static constexpr uint16_t BIG_FREQUENCY_X = 4;
-    static constexpr uint16_t BIG_FREQUENCY_Y = 6 * 16;
+    static constexpr uint16_t BIG_FREQUENCY_Y = 1 * 16;  // Moved higher (1 row from top)
     static constexpr uint16_t BIG_FREQUENCY_WIDTH = 28 * 8;
     static constexpr uint16_t DRONE_TYPE_SPACING = 5;
     static constexpr uint16_t DRONE_TYPE_Y_OFFSET = 20;
@@ -88,10 +88,10 @@ private:
     ui::RFAmpField field_rf_amp_{{UI_POS_X(18), 0}};
     ui::AudioVolumeField field_volume_{{UI_POS_X_RIGHT(2), UI_POS_Y(0)}};
 
-    ui::Button button_start_stop_{{UI_POS_X(0), UI_POS_Y(16), UI_POS_WIDTH(6), 28}, "Start"};
-    ui::Button button_mode_{{UI_POS_X(7), UI_POS_Y(16), UI_POS_WIDTH(5), 28}, "Mode"};
-    ui::Button button_load_{{UI_POS_X(13), UI_POS_Y(16), UI_POS_WIDTH(5), 28}, "Load"};
-    ui::Button button_settings_{{UI_POS_X(19), UI_POS_Y(16), UI_POS_WIDTH(5), 28}, "Setup"};
+    ui::Button button_start_stop_{{UI_POS_X(0), 290, UI_POS_WIDTH(6), 28}, "Start"};  // Moved to bottom
+    ui::Button button_mode_{{UI_POS_X(7), 290, UI_POS_WIDTH(5), 28}, "Mode"};  // Moved to bottom
+    ui::Button button_load_{{UI_POS_X(13), 290, UI_POS_WIDTH(5), 28}, "Load"};  // Moved to bottom
+    ui::Button button_settings_{{UI_POS_X(19), 290, UI_POS_WIDTH(5), 28}, "Setup"};  // Moved to bottom
 
     FreqHz current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
@@ -116,7 +116,7 @@ private:
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
     bool initialization_failed_{false};
 
-    DroneDisplay drone_display_{{0, UI_POS_Y(9), DISPLAY_WIDTH, 112}};
+    DroneDisplay drone_display_{{0, 68, DISPLAY_WIDTH, 220}};  // Moved under BigFrequency (Y=68), increased height to 220
 
     void bigdisplay_update(BigDisplayColor color) noexcept;
     void refresh_ui() noexcept;

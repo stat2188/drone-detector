@@ -278,11 +278,13 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
         return ErrorResult<FreqHz>::failure(ErrorCode::DATABASE_EMPTY);
     }
     
+    // If current_freq is 0 or not found, start from beginning
     if (current_freq == 0) {
         current_index_ = 0;
         return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
     }
     
+    // Find current frequency in database
     bool found = false;
     for (size_t i = 0; i < entry_count_; ++i) {
         if (entries_[i].frequency == current_freq) {
@@ -292,10 +294,13 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
         }
     }
     
+    // If not found, wrap to beginning (current_index_ stays at 0 from initialization)
     if (!found) {
         current_index_ = 0;
+        return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
     }
     
+    // Move to next frequency (wrap around if at end)
     current_index_++;
     if (current_index_ >= entry_count_) {
         current_index_ = 0;
