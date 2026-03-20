@@ -109,7 +109,7 @@ ErrorCode HardwareController::shutdown() noexcept {
 
 ErrorCode HardwareController::tune_to_frequency(
     FreqHz frequency,
-    uint32_t max_retries
+    uint32_t /* max_retries */
 ) noexcept {
     // Validate frequency
     ErrorCode validate_result = validate_frequency_internal(frequency);

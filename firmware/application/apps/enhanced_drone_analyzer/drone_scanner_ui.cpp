@@ -369,7 +369,7 @@ void DroneScannerUI::refresh_ui() noexcept {
 
 void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
     if (scanner_ptr_ != nullptr && scanning_) {
-        scanner_ptr_->process_spectrum_message(spectrum);
+        (void)scanner_ptr_->process_spectrum_message(spectrum);
     }
 
     // Feed spectrum to DroneDisplay for visualization

@@ -87,8 +87,8 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     // Initialize mutex
     chMtxInit(&mutex_);
 
-    rssi_detector_.initialize(RSSI_DETECTION_THRESHOLD_DBM);
-    histogram_processor_.initialize(HISTOGRAM_BIN_COUNT);
+    (void)rssi_detector_.initialize(RSSI_DETECTION_THRESHOLD_DBM);
+    (void)histogram_processor_.initialize(HISTOGRAM_BIN_COUNT);
 }
 
 DroneScanner::~DroneScanner() noexcept {
