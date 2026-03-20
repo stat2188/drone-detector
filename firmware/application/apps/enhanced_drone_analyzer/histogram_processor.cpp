@@ -3,15 +3,17 @@
 namespace drone_analyzer {
 
 // ============================================================================
-// Constructor / Destructor
+// Constructor
 // ============================================================================
 
 HistogramProcessor::HistogramProcessor() noexcept
     : bin_count_(HISTOGRAM_BIN_COUNT)
-    , noise_floor_threshold_(HISTOGRAM_NOISE_FLOOR)
-    , signal_floor_threshold_(HISTOGRAM_SIGNAL_THRESHOLD)
-    , histogram_{}
+    , start_frequency_(DEFAULT_HISTOGRAM_START_HZ)
+    , end_frequency_(DEFAULT_HISTOGRAM_END_HZ)
+    , bin_width_(0)
+    , bins_{}
     , statistics_{}
+    , scan_cycle_active_(false)
     , initialized_(false) {
 }
 
@@ -27,19 +29,24 @@ ErrorCode HistogramProcessor::initialize(size_t bin_count) noexcept {
 
     bin_count_ = bin_count;
 
-    // Clear histogram
-    for (size_t i = 0; i < HISTOGRAM_BUFFER_SIZE; ++i) {
-        histogram_[i] = 0;
+    // Calculate bin width
+    if (end_frequency_ > start_frequency_) {
+        bin_width_ = (end_frequency_ - start_frequency_) / bin_count_;
+    }
+
+    // Initialize all bins with frequencies
+    for (size_t i = 0; i < bin_count_; ++i) {
+        bins_[i].frequency = start_frequency_ + (i * bin_width_) + (bin_width_ / 2);
+        bins_[i].clear();
     }
 
     // Reset statistics
     statistics_.total_samples = 0;
     statistics_.peak_bin = 0;
-    statistics_.peak_count = 0;
-    statistics_.noise_floor = 0;
-    statistics_.signal_floor = 0;
+    statistics_.peak_rssi = RSSI_NOISE_FLOOR_DBM;
     statistics_.active_bins = 0;
 
+    scan_cycle_active_ = false;
     initialized_ = true;
     return ErrorCode::SUCCESS;
 }
@@ -49,76 +56,81 @@ ErrorCode HistogramProcessor::initialize(size_t bin_count) noexcept {
 // ============================================================================
 
 ErrorCode HistogramProcessor::update_histogram(
-    const uint8_t* data,
-    size_t length
+    const uint8_t* spectrum_data,
+    size_t spectrum_size,
+    FreqHz center_freq,
+    FreqHz bandwidth
 ) noexcept {
-    // Validate parameters
-    ErrorCode error = validate_data_params(data, length);
-    if (error != ErrorCode::SUCCESS) {
-        return error;
+    if (!initialized_) {
+        return ErrorCode::INITIALIZATION_INCOMPLETE;
     }
 
-    // Reset histogram periodically to prevent monotonic overflow
-    // After 256 samples, reset to maintain relative differences
-    if (statistics_.total_samples > 0 && (statistics_.total_samples % 256) == 0) {
-        for (size_t i = 0; i < HISTOGRAM_BUFFER_SIZE; ++i) {
-            histogram_[i] = 0;
-        }
+    if (spectrum_data == nullptr || spectrum_size == 0) {
+        return ErrorCode::BUFFER_INVALID;
     }
 
-    // Bin data into histogram
-    for (size_t i = 0; i < length; ++i) {
-        const size_t bin = value_to_bin(data[i]);
-        if (bin < bin_count_) {
-            histogram_[bin]++;
+    if (bandwidth == 0) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+
+    // Calculate frequency range of this spectrum slice
+    const FreqHz slice_start = center_freq - (bandwidth / 2);
+    const FreqHz slice_end = center_freq + (bandwidth / 2);
+    const FreqHz slice_bin_width = bandwidth / spectrum_size;
+
+    // Map spectrum bins to frequency bins
+    for (size_t i = 0; i < spectrum_size; ++i) {
+        // Calculate frequency for this spectrum bin
+        const FreqHz bin_freq = slice_start + (i * slice_bin_width) + (slice_bin_width / 2);
+
+        // Find corresponding frequency bin
+        const int bin_index = find_bin_for_frequency(bin_freq);
+        if (bin_index >= 0 && bin_index < static_cast<int>(bin_count_)) {
+            // Convert raw RSSI to dBm and update bin
+            const RssiValue rssi_dbm = raw_to_dbm(spectrum_data[i]);
+
+            // Only update if RSSI is above noise floor
+            if (rssi_dbm > RSSI_NOISE_FLOOR_DBM) {
+                bins_[bin_index].update(rssi_dbm);
+                statistics_.total_samples++;
+            }
         }
     }
 
     // Update statistics
-    statistics_.total_samples += static_cast<uint32_t>(length);
+    RssiValue max_rssi = RSSI_NOISE_FLOOR_DBM;
+    uint16_t peak_bin = 0;
+    uint16_t active_bins = 0;
 
-    // Recalculate derived statistics
-    statistics_.noise_floor = calculate_noise_floor();
-    statistics_.signal_floor = calculate_signal_floor();
-    statistics_.peak_bin = static_cast<uint16_t>(find_peak_bin());
-    statistics_.peak_count = histogram_[statistics_.peak_bin];
-    statistics_.active_bins = count_active_bins();
+    for (size_t i = 0; i < bin_count_; ++i) {
+        if (bins_[i].has_data) {
+            active_bins++;
+            if (bins_[i].current_rssi > max_rssi) {
+                max_rssi = bins_[i].current_rssi;
+                peak_bin = static_cast<uint16_t>(i);
+            }
+        }
+    }
+
+    statistics_.peak_bin = peak_bin;
+    statistics_.peak_rssi = max_rssi;
+    statistics_.active_bins = active_bins;
 
     return ErrorCode::SUCCESS;
 }
 
-size_t HistogramProcessor::calculate_bin_values(
-    HistogramBin* bins,
+size_t HistogramProcessor::get_frequency_bins(
+    FrequencyBin* bins,
     size_t max_bins
 ) const noexcept {
-    if (bins == nullptr || max_bins == 0) {
+    if (bins == nullptr || max_bins == 0 || !initialized_) {
         return 0;
     }
 
-    // Calculate number of bins to return
     const size_t num_bins = (bin_count_ < max_bins) ? bin_count_ : max_bins;
 
-    // Find maximum count for normalization
-    uint16_t max_count = 0;
-    for (size_t i = 0; i < bin_count_; ++i) {
-        if (histogram_[i] > max_count) {
-            max_count = histogram_[i];
-        }
-    }
-
-    // Calculate bin values
     for (size_t i = 0; i < num_bins; ++i) {
-        bins[i].count = histogram_[i];
-
-        // Normalize to 0-255 range
-        if (max_count > 0) {
-            // Use integer arithmetic: (count * 255) / max_count
-            // To avoid overflow, use 16.16 fixed-point multiplication
-            const uint32_t scaled = (static_cast<uint32_t>(histogram_[i]) << 16) / max_count;
-            bins[i].value = static_cast<uint8_t>((scaled * HISTOGRAM_MAX_VALUE) >> 16);
-        } else {
-            bins[i].value = 0;
-        }
+        bins[i] = bins_[i];
     }
 
     return num_bins;
@@ -128,212 +140,85 @@ size_t HistogramProcessor::get_histogram_data(
     uint16_t* histogram,
     size_t max_length
 ) const noexcept {
-    if (histogram == nullptr || max_length == 0) {
+    if (histogram == nullptr || max_length == 0 || !initialized_) {
         return 0;
     }
 
-    // Calculate number of entries to return
     const size_t num_entries = (bin_count_ < max_length) ? bin_count_ : max_length;
 
-    // Copy histogram data
     for (size_t i = 0; i < num_entries; ++i) {
-        histogram[i] = histogram_[i];
+        // Convert RSSI to display height (0-65535 for uint16_t)
+        if (bins_[i].has_data) {
+            // Scale display_height (0-255) to uint16_t range
+            histogram[i] = static_cast<uint16_t>(bins_[i].display_height) * 256;
+        } else {
+            histogram[i] = 0;
+        }
     }
 
     return num_entries;
 }
 
-void HistogramProcessor::reset() noexcept {
-    // Clear histogram
-    for (size_t i = 0; i < HISTOGRAM_BUFFER_SIZE; ++i) {
-        histogram_[i] = 0;
-    }
+void HistogramProcessor::begin_scan_cycle() noexcept {
+    scan_cycle_active_ = true;
+    // Note: We do NOT clear bin data here - values are held until next scan
+    // This implements the "hold until next scan update" requirement
+}
 
-    // Reset statistics
-    statistics_.total_samples = 0;
-    statistics_.peak_bin = 0;
-    statistics_.peak_count = 0;
-    statistics_.noise_floor = 0;
-    statistics_.signal_floor = 0;
-    statistics_.active_bins = 0;
+void HistogramProcessor::end_scan_cycle() noexcept {
+    scan_cycle_active_ = false;
 }
 
 void HistogramProcessor::get_statistics(HistogramStatistics& stats) const noexcept {
     stats = statistics_;
 }
 
-size_t HistogramProcessor::get_peak_bin() const noexcept {
-    return static_cast<size_t>(statistics_.peak_bin);
-}
-
-uint16_t HistogramProcessor::get_peak_count() const noexcept {
-    return statistics_.peak_count;
-}
-
-uint16_t HistogramProcessor::get_noise_floor() const noexcept {
-    return statistics_.noise_floor;
-}
-
-uint16_t HistogramProcessor::get_signal_floor() const noexcept {
-    return statistics_.signal_floor;
-}
-
-void HistogramProcessor::set_noise_floor_threshold(uint16_t threshold) noexcept {
-    noise_floor_threshold_ = threshold;
-}
-
-void HistogramProcessor::set_signal_floor_threshold(uint16_t threshold) noexcept {
-    signal_floor_threshold_ = threshold;
-}
-
-uint8_t HistogramProcessor::get_active_bin_count() const noexcept {
+uint16_t HistogramProcessor::get_active_bin_count() const noexcept {
     return statistics_.active_bins;
+}
+
+void HistogramProcessor::set_frequency_range(FreqHz start_freq, FreqHz end_freq) noexcept {
+    if (end_freq <= start_freq || !initialized_) {
+        return;
+    }
+
+    start_frequency_ = start_freq;
+    end_frequency_ = end_freq;
+    bin_width_ = (end_frequency_ - start_frequency_) / bin_count_;
+
+    // Update bin frequencies
+    for (size_t i = 0; i < bin_count_; ++i) {
+        bins_[i].frequency = start_frequency_ + (i * bin_width_) + (bin_width_ / 2);
+    }
 }
 
 // ============================================================================
 // Private Methods
 // ============================================================================
 
-ErrorCode HistogramProcessor::validate_data_params(
-    const uint8_t* data,
-    size_t length
-) const noexcept {
-    if (data == nullptr) {
-        return ErrorCode::BUFFER_INVALID;
+int HistogramProcessor::find_bin_for_frequency(FreqHz frequency) const noexcept {
+    if (frequency < start_frequency_ || frequency >= end_frequency_) {
+        return -1;
     }
 
-    if (length == 0) {
-        return ErrorCode::BUFFER_EMPTY;
+    const FreqHz offset = frequency - start_frequency_;
+    const size_t bin_index = static_cast<size_t>(offset / bin_width_);
+
+    if (bin_index >= bin_count_) {
+        return -1;
     }
 
-    return ErrorCode::SUCCESS;
+    return static_cast<int>(bin_index);
 }
 
-size_t HistogramProcessor::value_to_bin(uint8_t value) const noexcept {
-    // Map value (0-255) to bin (0-bin_count-1)
-    // Use integer arithmetic: bin = (value * bin_count) / 256
-    // To avoid overflow, use bit shift approximation
-
-    if (bin_count_ == HISTOGRAM_EXTENDED_SIZE) {
-        return static_cast<size_t>(value);
-    } else if (bin_count_ == HISTOGRAM_HALF_SIZE) {
-        return static_cast<size_t>(value >> 1);
-    } else if (bin_count_ == 64) {
-        return static_cast<size_t>(value >> 2);
-    } else if (bin_count_ == 32) {
-        return static_cast<size_t>(value >> 3);
-    } else if (bin_count_ == 16) {
-        return static_cast<size_t>(value >> 4);
-    } else if (bin_count_ == 8) {
-        return static_cast<size_t>(value >> 5);
-    } else if (bin_count_ == 4) {
-        return static_cast<size_t>(value >> 6);
-    } else if (bin_count_ == 2) {
-        return static_cast<size_t>(value >> 7);
-    } else {
-        // General case: (value * bin_count) / 256
-        // Use 16.16 fixed-point to avoid overflow
-        const uint32_t scaled = (static_cast<uint32_t>(value) << 16) / HISTOGRAM_EXTENDED_SIZE;
-        return static_cast<size_t>((scaled * bin_count_) >> 16);
-    }
-}
-
-uint16_t HistogramProcessor::calculate_noise_floor() const noexcept {
-    // Use percentile-based estimation (25th percentile)
-    // Find the bin at the 25th percentile
-
-    if (statistics_.total_samples == 0) {
-        return 0;
-    }
-
-    // Calculate cumulative count
-    const uint32_t target_count = statistics_.total_samples / 4;  // 25th percentile
-    uint32_t cumulative = 0;
-
-    for (size_t i = 0; i < bin_count_; ++i) {
-        cumulative += histogram_[i];
-        if (cumulative >= target_count) {
-            return static_cast<uint16_t>(i);
-        }
-    }
-
-    return 0;
-}
-
-uint16_t HistogramProcessor::calculate_signal_floor() const noexcept {
-    // Use threshold-based detection
-    // Signal floor is the first bin with count above threshold
-
-    for (size_t i = 0; i < bin_count_; ++i) {
-        if (histogram_[i] >= signal_floor_threshold_) {
-            return static_cast<uint16_t>(i);
-        }
-    }
-
-    return static_cast<uint16_t>(bin_count_);
-}
-
-size_t HistogramProcessor::find_peak_bin() const noexcept {
-    uint16_t max_count = 0;
-    size_t peak_bin = 0;
-
-    for (size_t i = 0; i < bin_count_; ++i) {
-        if (histogram_[i] > max_count) {
-            max_count = histogram_[i];
-            peak_bin = i;
-        }
-    }
-
-    return peak_bin;
-}
-
-uint8_t HistogramProcessor::count_active_bins() const noexcept {
-    uint8_t count = 0;
-
-    for (size_t i = 0; i < bin_count_; ++i) {
-        if (histogram_[i] > noise_floor_threshold_) {
-            count++;
-        }
-    }
-
-    return count;
-}
-
-size_t HistogramProcessor::normalize_histogram(
-    uint8_t* normalized,
-    size_t max_length
-) const noexcept {
-    if (normalized == nullptr || max_length == 0) {
-        return 0;
-    }
-
-    // Find maximum count for normalization
-    uint16_t max_count = 0;
-    for (size_t i = 0; i < bin_count_; ++i) {
-        if (histogram_[i] > max_count) {
-            max_count = histogram_[i];
-        }
-    }
-
-    // Calculate number of entries to return
-    const size_t num_entries = (bin_count_ < max_length) ? bin_count_ : max_length;
-
-    // Normalize histogram to 0-255 range
-    if (max_count > 0) {
-        for (size_t i = 0; i < num_entries; ++i) {
-            // Use integer arithmetic: (count * 255) / max_count
-            // To avoid overflow, use 16.16 fixed-point multiplication
-            const uint32_t scaled = (static_cast<uint32_t>(histogram_[i]) << 16) / max_count;
-            normalized[i] = static_cast<uint8_t>((scaled * HISTOGRAM_MAX_VALUE) >> 16);
-        }
-    } else {
-        // All zeros
-        for (size_t i = 0; i < num_entries; ++i) {
-            normalized[i] = 0;
-        }
-    }
-
-    return num_entries;
+RssiValue HistogramProcessor::raw_to_dbm(uint8_t rssi_raw) const noexcept {
+    // Convert raw RSSI (0-255) to dBm
+    // RSSI range: -120dBm (0) to -20dBm (255)
+    // Formula: dBm = -120 + (raw * 100 / 255)
+    // Simplified integer math: dBm = -120 + ((raw * 100) >> 8)
+    // More accurate: dBm = -120 + ((raw * 100) / 255)
+    const int32_t scaled = (static_cast<int32_t>(rssi_raw) * 100) / 255;
+    return RSSI_MIN_DBM + scaled;
 }
 
 } // namespace drone_analyzer

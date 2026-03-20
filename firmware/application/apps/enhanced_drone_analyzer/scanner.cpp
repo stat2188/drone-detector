@@ -328,8 +328,14 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         return ErrorCode::INVALID_PARAMETER;
     }
 
-    // Feed spectrum to histogram processor for noise floor analysis
-    (void)histogram_processor_.update_histogram(spectrum.db.data(), spectrum.db.size());
+    // Feed spectrum to histogram processor with frequency mapping
+    // Use current_frequency_ as center, FREQUENCY_BANDWIDTH_HZ as slice width
+    (void)histogram_processor_.update_histogram(
+        spectrum.db.data(),
+        spectrum.db.size(),
+        current_frequency_,
+        FREQUENCY_BANDWIDTH_HZ
+    );
 
     const int32_t rssi = extract_rssi(spectrum);
     const SystemTime now = chTimeNow();
@@ -536,6 +542,12 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
     
     if (config.rssi_threshold_dbm < RSSI_MIN_DBM ||
         config.rssi_threshold_dbm > RSSI_MAX_DBM) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    
+    // Validate scanning mode (now includes SPECTROMETER)
+    const uint8_t mode_value = static_cast<uint8_t>(config.mode);
+    if (mode_value >= SCANNING_MODE_COUNT) {
         return ErrorCode::INVALID_PARAMETER;
     }
     

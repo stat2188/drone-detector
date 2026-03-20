@@ -17,7 +17,8 @@ msg_t ScannerThread::static_fn(void* arg) {
 }
 
 void ScannerThread::run() noexcept {
-    RetuneMessage message{};
+    // Use static message to save stack (allocated once, reused)
+    static RetuneMessage message{};
 
     while (!chThdShouldTerminate()) {
         if (scanning_) {
