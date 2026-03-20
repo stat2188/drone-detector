@@ -154,10 +154,11 @@ public:
      */
     void set_status_text(const char* status_text) noexcept;
 
-    /**
-     * @brief Get current status text
-     * @return Current status text
-     */
+    void set_spectrum_visible(bool visible) noexcept { spectrum_visible_ = visible; }
+    void set_histogram_visible(bool visible) noexcept { histogram_visible_ = visible; }
+    void set_drone_list_visible(bool visible) noexcept { drone_list_visible_ = visible; }
+    void set_status_bar_visible(bool visible) noexcept { status_bar_visible_ = visible; }
+
     [[nodiscard]] const char* get_status_text() const noexcept;
 
 private:

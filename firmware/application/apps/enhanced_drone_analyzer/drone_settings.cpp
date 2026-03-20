@@ -1,5 +1,7 @@
 #include "drone_settings.hpp"
 #include "scanner.hpp"
+#include "audio_alerts.hpp"
+#include "drone_display.hpp"
 #include "ui_receiver.hpp"
 
 namespace drone_analyzer {
@@ -41,7 +43,7 @@ void DroneSettings::reset_to_defaults() noexcept {
 // DroneSettingsView Constructor / Destructor
 // ============================================================================
 
-DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept
+DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display) noexcept
     : ui::View()
     , labels_({
         {{UI_POS_X(1), UI_POS_Y(3)}, "Scan Mode:", Theme::getInstance()->fg_light->foreground},
@@ -64,6 +66,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(7), 28}, "CANCEL")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
+    , display_ptr_(display)
     , original_config_(config)
     , settings_()
     , settings_dirty_(false) {
@@ -133,16 +136,23 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     check_audio_alerts_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.audio_alerts_enabled = v;
+        AudioAlertManager::set_enabled(v);
         settings_dirty_ = true;
     };
 
     check_spectrum_visible_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.spectrum_visible = v;
+        if (display_ptr_ != nullptr) {
+            display_ptr_->set_spectrum_visible(v);
+        }
         settings_dirty_ = true;
     };
 
     check_histogram_visible_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.histogram_visible = v;
+        if (display_ptr_ != nullptr) {
+            display_ptr_->set_histogram_visible(v);
+        }
         settings_dirty_ = true;
     };
 }

@@ -5,6 +5,7 @@
 #include "drone_settings.hpp"
 #include "database.hpp"
 #include "hardware_controller.hpp"
+#include "audio_alerts.hpp"
 #include "constants.hpp"
 #include "string_format.hpp"
 #include "baseband_api.hpp"
@@ -98,6 +99,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
     scanner_thread_->start();
 
+    scanning_ = false;
+
+    scanner_ptr_->set_alert_callback([](ThreatLevel level) {
+        AudioAlertManager::play_alert(level);
+    });
+
     button_start_stop_.on_select = [this](ui::Button&) {
         if (initialization_failed_ || scanner_ptr_ == nullptr) {
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
@@ -151,7 +158,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             return;
         }
         ScanConfig config = scanner_ptr_->get_config();
-        nav.push<DroneSettingsView>(config, scanner_ptr_);
+        nav.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
 
     ScanConfig config;
@@ -203,11 +210,21 @@ void DroneScannerUI::destruct_objects() noexcept {
 }
 
 void DroneScannerUI::on_show() {
-    baseband::spectrum_streaming_start();
+    if (scanner_thread_ != nullptr && !scanner_thread_->is_active()) {
+        scanner_thread_->start();
+    }
 }
 
 void DroneScannerUI::on_hide() {
-    baseband::spectrum_streaming_stop();
+    if (scanning_) {
+        scanner_thread_->set_scanning(false);
+        baseband::spectrum_streaming_stop();
+        scanning_ = false;
+        button_start_stop_.set_text("Start");
+    }
+    if (scanner_thread_ != nullptr) {
+        scanner_thread_->stop();
+    }
 }
 
 void DroneScannerUI::paint(Painter& painter) {
@@ -318,10 +335,10 @@ void DroneScannerUI::refresh_ui() noexcept {
 
     drone_display_.update_display_data(display_data);
 
-    // Feed histogram data from scanner's histogram processor
+    // Feed histogram data from scanner (thread-safe snapshot)
     {
         static uint16_t hist_data[HISTOGRAM_BUFFER_SIZE];
-        const size_t hist_count = scanner_ptr_->get_histogram_processor().get_histogram_data(
+        const size_t hist_count = scanner_ptr_->get_histogram_snapshot(
             hist_data, HISTOGRAM_BUFFER_SIZE
         );
         if (hist_count > 0) {

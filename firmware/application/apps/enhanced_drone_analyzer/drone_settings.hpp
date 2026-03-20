@@ -55,12 +55,12 @@ struct DroneSettings {
  * @note Inherits from ui::View
  * @note Simplified - removed translation system, preset system, about dialog
  */
+class DroneScanner;
+class DroneDisplay;
+
 class DroneSettingsView : public ui::View {
 public:
-    /**
-     * @brief Constructor with navigation, scan config, and scanner pointer
-     */
-    explicit DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept;
+    explicit DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display = nullptr) noexcept;
 
     /**
      * @brief Destructor
@@ -116,6 +116,7 @@ private:
 
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
+    DroneDisplay* display_ptr_;
 
     ScanConfig original_config_;
     DroneSettings settings_;

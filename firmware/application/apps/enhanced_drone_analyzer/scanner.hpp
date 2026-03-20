@@ -309,6 +309,25 @@ public:
         return histogram_processor_;
     }
 
+    /**
+     * @brief Get histogram data snapshot (thread-safe)
+     * @param buffer Output buffer for histogram data
+     * @param max_length Maximum buffer length
+     * @return Number of histogram entries copied
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     * @note Use this from UI thread instead of get_histogram_processor().get_histogram_data()
+     */
+    [[nodiscard]] size_t get_histogram_snapshot(
+        uint16_t* buffer,
+        size_t max_length
+    ) noexcept {
+        MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+        if (!lock.is_locked()) {
+            return 0;
+        }
+        return histogram_processor_.get_histogram_data(buffer, max_length);
+    }
+
 private:
     /**
      * @brief Internal: Perform scan cycle
