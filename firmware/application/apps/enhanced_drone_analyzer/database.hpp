@@ -6,7 +6,6 @@
 #include <array>
 #include "ch.h"
 #include "drone_types.hpp"
-#include "freqman_db.hpp"
 #include "locking.hpp"
 #include "constants.hpp"
 
@@ -52,16 +51,9 @@ public:
 
     [[nodiscard]] ErrorCode load_frequency_database() noexcept;
     [[nodiscard]] ErrorResult<FreqHz> get_next_frequency(FreqHz current_freq) noexcept;
-    void reset_database() noexcept;
+    [[nodiscard]] ErrorResult<FrequencyEntry> find_entry(FreqHz frequency) const noexcept;
     [[nodiscard]] size_t get_database_size() const noexcept;
     [[nodiscard]] bool is_loaded() const noexcept;
-    [[nodiscard]] ErrorResult<FrequencyEntry> get_entry(size_t index) const noexcept;
-    [[nodiscard]] ErrorResult<FrequencyEntry> find_entry(FreqHz frequency) const noexcept;
-    [[nodiscard]] ErrorCode add_entry(const FrequencyEntry& entry) noexcept;
-    [[nodiscard]] ErrorCode remove_entry(FreqHz frequency) noexcept;
-    void clear_entries() noexcept;
-    [[nodiscard]] ErrorResult<size_t> get_current_index() const noexcept;
-    [[nodiscard]] ErrorCode set_current_index(size_t index) noexcept;
     
 private:
     

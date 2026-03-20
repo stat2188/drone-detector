@@ -11,7 +11,8 @@
 #include "database.hpp"
 #include "hardware_controller.hpp"
 #include "audio_alerts.hpp"
-#include "convert.hpp"
+#include "rssi_detector.hpp"
+#include "histogram_processor.hpp"
 #include "message.hpp"
 
 namespace drone_analyzer {
@@ -129,10 +130,15 @@ public:
     [[nodiscard]] ErrorCode resume_scanning() noexcept;
     
     /**
-     * @brief Perform single scan cycle
+     * @brief Perform single scan cycle (frequency hop)
      * @note Called periodically by scanner thread
      * @return ErrorCode::SUCCESS if cycle completed, error code otherwise
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     * @note ChibiOS mutexes are recursive per-thread: nested calls from the
+     *       same thread (perform_scan_cycle → perform_scan_cycle_internal)
+     *       succeed without deadlock.
+     * @note This method only advances the frequency; RSSI detection is done
+     *       by the UI thread via process_spectrum_message().
      */
     [[nodiscard]] ErrorCode perform_scan_cycle() noexcept;
     
@@ -174,23 +180,6 @@ public:
      */
     [[nodiscard]] ErrorCode process_spectrum_message(const ChannelSpectrum& spectrum) noexcept;
 
-    /**
-     * @brief Fast spectrum processing for UI updates
-     * @param spectrum Channel spectrum data
-     * @return ErrorResult containing RSSI value or error
-     * @note Uses try-lock to avoid blocking UI thread
-     * @note Does not update tracked drones - only extracts RSSI
-     */
-    [[nodiscard]] ErrorResult<RssiValue> process_spectrum_fast(const ChannelSpectrum& spectrum) noexcept;
-    
-    /**
-     * @brief Get tracked drones
-     * @param drones Output buffer for drones
-     * @param max_count Maximum number of drones to copy
-     * @return Number of drones copied
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     * @note Actual copy count is min(max_count, MAX_TRACKED_DRONES, tracked_count_)
-     */
     [[nodiscard]] size_t get_tracked_drones(
         TrackedDrone* drones,
         size_t max_count
@@ -315,7 +304,11 @@ public:
      * @pre Mutex must be held (LockOrder::DATA_MUTEX) when accessing alert_callback_
      */
     void trigger_alert(ThreatLevel threat_level) noexcept;
-    
+
+    [[nodiscard]] HistogramProcessor& get_histogram_processor() noexcept {
+        return histogram_processor_;
+    }
+
 private:
     /**
      * @brief Internal: Perform scan cycle
@@ -364,20 +357,13 @@ private:
         SystemTime timestamp_ms
     ) noexcept;
     
-     /**
-      * @brief Internal: Remove stale drones
-      * @note Called by remove_stale_drones() with mutex held
-      * @param current_time Current system time
-      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
-      */
-    void remove_stale_drones_internal(SystemTime current_time) noexcept;
-
     /**
-     * @brief Internal: Find maximum power value in spectrum
-     * @param spectrum Channel spectrum data
-     * @return Maximum power value (0-255)
+     * @brief Internal: Remove stale drones
+     * @note Called by remove_stale_drones() with mutex held
+     * @param current_time Current system time
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
-    [[nodiscard]] uint8_t find_max_power(const ChannelSpectrum& spectrum) noexcept;
+    void remove_stale_drones_internal(SystemTime current_time) noexcept;
     
     /**
      * @brief Internal: Determine drone type from frequency
@@ -425,7 +411,7 @@ private:
     // Tracked drones (fixed-size array, no heap allocation)
     std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
     
-    // Number of tracked drones (uint8_t is sufficient for MAX_TRACKED_DRONES=20)
+    // Number of tracked drones (uint8_t sufficient for MAX_TRACKED_DRONES=16)
     uint8_t tracked_count_;
     
     // Current scan frequency
@@ -440,21 +426,20 @@ private:
     // Alert callback
     ThreatAlertCallback alert_callback_;
     
-    // Last threat level for each tracked drone (for detecting threat increases)
-    std::array<ThreatLevel, MAX_TRACKED_DRONES> last_threat_levels_;
-    
     // Mutex for thread safety (LockOrder::DATA_MUTEX)
-    // Direct member storage - no heap allocation, no pointer indirection
     mutable Mutex mutex_;
 
     // State transition control flag
     AtomicFlag state_transition_allowed_;
 
-    // Scan cycle in progress flag (prevents concurrent scan cycles)
-    AtomicFlag scan_cycle_in_progress_;
-
     // Alert callback in progress flag (prevents re-entrant calls)
     AtomicFlag alert_callback_in_progress_;
+
+    // RSSI detector for signal analysis and threat classification
+    RSSIDetector rssi_detector_;
+
+    // Histogram processor for spectrum analysis
+    HistogramProcessor histogram_processor_;
 };
 
 } // namespace drone_analyzer

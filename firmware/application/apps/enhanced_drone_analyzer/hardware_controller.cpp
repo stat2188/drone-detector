@@ -1,6 +1,5 @@
 #include "hardware_controller.hpp"
 #include "portapack.hpp"
-#include "baseband_api.hpp"
 #include "message.hpp"
 
 #include "ch.h"
@@ -195,17 +194,14 @@ ErrorCode HardwareController::start_spectrum_streaming() noexcept {
 
 ErrorCode HardwareController::start_streaming_internal() noexcept {
     portapack::receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
-
-    baseband::spectrum_streaming_start();
-
     return ErrorCode::SUCCESS;
 }
 
 ErrorCode HardwareController::stop_spectrum_streaming() noexcept {
     MutexLock<LockOrder::STATE_MUTEX> lock(mutex_);
-    
-    if (!streaming_active_.test()) {
-        return ErrorCode::SUCCESS;  // Not streaming
+
+    if (!streaming_active_.test() && state_ != HardwareState::ERROR) {
+        return ErrorCode::SUCCESS;  // Not streaming and not in error state
     }
     
     ErrorCode result = stop_streaming_internal();
@@ -222,8 +218,6 @@ ErrorCode HardwareController::stop_spectrum_streaming() noexcept {
 }
 
 ErrorCode HardwareController::stop_streaming_internal() noexcept {
-    baseband::spectrum_streaming_stop();
-
     return ErrorCode::SUCCESS;
 }
 
@@ -239,27 +233,9 @@ ErrorResult<RssiSample> HardwareController::get_rssi_sample() noexcept {
 
 ErrorResult<RssiSample> HardwareController::read_rssi_internal() noexcept {
     RssiSample sample;
-
-    if (spectrum_fifo_ != nullptr) {
-        ChannelSpectrum spectrum;
-        if (spectrum_fifo_->out(spectrum)) {
-            uint8_t max_power = 0;
-            for (size_t i = 0; i < 256; i++) {
-                if (spectrum.db[i] > max_power) {
-                    max_power = spectrum.db[i];
-                }
-            }
-            sample.rssi = static_cast<int32_t>(max_power);
-            sample.timestamp = chTimeNow();
-            sample.frequency = current_frequency_;
-        }
-        return ErrorResult<RssiSample>::success(sample);
-    }
-
-    sample.rssi = RSSI_NOISE_FLOOR_DBM;
     sample.timestamp = chTimeNow();
     sample.frequency = current_frequency_;
-
+    sample.rssi = RSSI_NOISE_FLOOR_DBM;
     return ErrorResult<RssiSample>::success(sample);
 }
 

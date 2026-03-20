@@ -6,6 +6,15 @@
 
 namespace drone_analyzer {
 
+static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
+    uint8_t max_power = 0;
+    for (size_t i = 0; i < spectrum.db.size(); ++i) {
+        const uint8_t p = static_cast<uint8_t>(spectrum.db[i]);
+        if (p > max_power) max_power = p;
+    }
+    return static_cast<int32_t>(max_power) - 120;
+}
+
 // ============================================================================
 // ScanConfig Implementation
 // ============================================================================
@@ -69,19 +78,17 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , last_scan_time_{0}
     , scanning_active_()
     , alert_callback_(nullptr)
-    , last_threat_levels_{}
     , mutex_()
     , state_transition_allowed_()
-    , scan_cycle_in_progress_()
-    , alert_callback_in_progress_() {
+    , alert_callback_in_progress_()
+    , rssi_detector_()
+    , histogram_processor_() {
 
     // Initialize mutex
     chMtxInit(&mutex_);
 
-    // Initialize last threat levels to NONE
-    for (size_t i = 0; i < MAX_TRACKED_DRONES; ++i) {
-        last_threat_levels_[i] = ThreatLevel::NONE;
-    }
+    rssi_detector_.initialize(RSSI_DETECTION_THRESHOLD_DBM);
+    histogram_processor_.initialize(HISTOGRAM_BIN_COUNT);
 }
 
 DroneScanner::~DroneScanner() noexcept {
@@ -98,11 +105,6 @@ ErrorCode DroneScanner::initialize() noexcept {
 
     if (state_ != ScannerState::IDLE) {
         return ErrorCode::INITIALIZATION_INCOMPLETE;
-    }
-
-    ErrorCode db_result = database_.load_frequency_database();
-    if (db_result != ErrorCode::SUCCESS && db_result != ErrorCode::DATABASE_EMPTY) {
-        return db_result;
     }
 
     ErrorCode hw_result = hardware_.initialize();
@@ -127,14 +129,23 @@ ErrorCode DroneScanner::initialize() noexcept {
 // ============================================================================
 
 uint32_t DroneScanner::get_freq_lock_count() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return __atomic_load_n(&freq_lock_count_, __ATOMIC_RELAXED);
+    }
     return freq_lock_count_;
 }
 
 void DroneScanner::set_freq_lock_count(uint32_t count) noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     freq_lock_count_ = count;
 }
 
 FreqHz DroneScanner::get_locked_frequency() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return __atomic_load_n(&locked_frequency_, __ATOMIC_RELAXED);
+    }
     return locked_frequency_;
 }
 
@@ -204,6 +215,10 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
     
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
+    if (state_ == ScannerState::PAUSED) {
+        return ErrorCode::SUCCESS;
+    }
+    
     if (state_ != ScannerState::SCANNING) {
         return ErrorCode::HARDWARE_NOT_INITIALIZED;
     }
@@ -212,22 +227,14 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
 }
 
 ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
-    if (scan_cycle_in_progress_.test()) {
-        return ErrorCode::UNKNOWN_ERROR;
-    }
-    
-    scan_cycle_in_progress_.set();
     statistics_.total_scan_cycles++;
     
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
     if (!freq_result.has_value()) {
         statistics_.failed_cycles++;
-        scan_cycle_in_progress_.clear();
         
         // Handle empty database gracefully
         if (freq_result.error() == ErrorCode::DATABASE_EMPTY) {
-            // No more frequencies to scan, but stay in SCANNING state
-            // The UI will show this and user can reload database
             return ErrorCode::DATABASE_EMPTY;
         }
         
@@ -239,41 +246,10 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     ErrorCode tune_result = hardware_.tune_to_frequency(current_frequency_);
     if (tune_result != ErrorCode::SUCCESS) {
         statistics_.failed_cycles++;
-        scan_cycle_in_progress_.clear();
         return tune_result;
     }
     
-    ErrorResult<RssiSample> rssi_result = hardware_.get_rssi_sample();
-    if (!rssi_result.has_value()) {
-        statistics_.failed_cycles++;
-        scan_cycle_in_progress_.clear();
-        return rssi_result.error();
-    }
-    
-    const RssiSample& sample = rssi_result.value();
-    
-    if (sample.rssi >= config_.rssi_threshold_dbm) {
-        ErrorCode update_result = update_tracked_drone_internal(
-            sample.frequency,
-            sample.rssi,
-            sample.timestamp
-        );
-        
-        if (update_result == ErrorCode::SUCCESS) {
-            statistics_.successful_cycles++;
-            
-            if (sample.rssi > static_cast<int32_t>(statistics_.max_rssi_dbm)) {
-                statistics_.max_rssi_dbm = static_cast<uint32_t>(sample.rssi);
-            }
-        } else {
-            statistics_.failed_cycles++;
-        }
-    } else {
-        statistics_.successful_cycles++;
-    }
-    
-    scan_cycle_in_progress_.clear();
-    
+    statistics_.successful_cycles++;
     return ErrorCode::SUCCESS;
 }
 
@@ -305,8 +281,7 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
         return ErrorResult<RssiValue>::failure(ErrorCode::INVALID_PARAMETER);
     }
 
-    uint8_t max_power = find_max_power(spectrum);
-    const int32_t rssi = static_cast<int32_t>(max_power) - 120;
+    const int32_t rssi = extract_rssi(spectrum);
 
     if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
         const ErrorCode err = update_tracked_drone_internal(
@@ -334,32 +309,41 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         return ErrorCode::INVALID_PARAMETER;
     }
 
-    uint8_t max_power = find_max_power(spectrum);
-    const int32_t rssi = static_cast<int32_t>(max_power) - 120;
+    // Feed spectrum to histogram processor for noise floor analysis
+    (void)histogram_processor_.update_histogram(spectrum.db.data(), spectrum.db.size());
+
+    const int32_t rssi = extract_rssi(spectrum);
+    const SystemTime now = chTimeNow();
+
+    // Feed RSSI detector for threat classification
+    (void)rssi_detector_.process_rssi_sample(rssi, now);
 
     if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
         const ErrorCode err = update_tracked_drone_internal(
             current_frequency_,
             rssi,
-            chTimeNow()
+            now
         );
 
         if (err != ErrorCode::SUCCESS) {
             return err;
         }
 
-        // Increment freq lock count when signal detected on same frequency
+        // Update statistics
+        statistics_.drones_detected++;
+        if (rssi > static_cast<int32_t>(statistics_.max_rssi_dbm)) {
+            statistics_.max_rssi_dbm = static_cast<uint32_t>(rssi);
+        }
+
         if (current_frequency_ == locked_frequency_) {
             if (freq_lock_count_ < MAX_FREQ_LOCK) {
                 freq_lock_count_++;
             }
         } else {
-            // New frequency detected, reset lock count
             locked_frequency_ = current_frequency_;
             freq_lock_count_ = 1;
         }
     } else {
-        // No signal above threshold, reset lock count
         freq_lock_count_ = 0;
         locked_frequency_ = 0;
     }
@@ -367,29 +351,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     return ErrorCode::SUCCESS;
 }
 
-ErrorResult<RssiValue> DroneScanner::process_spectrum_fast(const ChannelSpectrum& spectrum) noexcept {
-    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
 
-    if (!lock.is_locked()) {
-        return ErrorResult<RssiValue>::failure(ErrorCode::MUTEX_LOCK_FAILED);
-    }
-
-    uint8_t max_power = find_max_power(spectrum);
-    const int32_t rssi = static_cast<int32_t>(max_power) - 120;
-
-    return ErrorResult<RssiValue>::success(rssi);
-}
-
-uint8_t DroneScanner::find_max_power(const ChannelSpectrum& spectrum) noexcept {
-    uint8_t max_power = 0;
-    for (size_t i = 0; i < 256; ++i) {
-        if (spectrum.db[i] > max_power) {
-            max_power = spectrum.db[i];
-        }
-    }
-    
-    return max_power;
-}
 
 ErrorCode DroneScanner::update_tracked_drone_internal(
     FreqHz frequency,
@@ -406,8 +368,6 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         tracked_drones_[index].update_rssi(rssi, timestamp);
         
         ThreatLevel new_threat = tracked_drones_[index].get_threat();
-        
-        last_threat_levels_[index] = new_threat;
         
         if (new_threat > old_threat) {
             trigger_alert(new_threat);
@@ -469,8 +429,6 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     tracked_drones_[tracked_count_] = TrackedDrone(frequency_hz, type, threat);
     tracked_drones_[tracked_count_].update_rssi(rssi_dbm, timestamp_ms);
 
-    last_threat_levels_[tracked_count_] = threat;
-
     tracked_count_++;
     statistics_.drones_detected++;
 
@@ -522,6 +480,11 @@ size_t DroneScanner::get_tracked_drones(
 }
 
 ScannerState DroneScanner::get_state() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (lock.is_locked()) {
+        return state_;
+    }
+    // Fallback: return last known state (atomic word-sized read is safe on Cortex-M4)
     return state_;
 }
 
@@ -572,15 +535,18 @@ void DroneScanner::reset_statistics() noexcept {
 }
 
 ErrorResult<FreqHz> DroneScanner::get_current_frequency() const noexcept {
-    const FreqHz freq = current_frequency_;
-    if (freq == 0) {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (current_frequency_ == 0) {
         return ErrorResult<FreqHz>::failure(ErrorCode::HARDWARE_NOT_INITIALIZED);
     }
-
-    return ErrorResult<FreqHz>::success(freq);
+    return ErrorResult<FreqHz>::success(current_frequency_);
 }
 
 size_t DroneScanner::get_tracked_count() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return tracked_count_;  // Atomic word-read fallback on Cortex-M4
+    }
     return tracked_count_;
 }
 
@@ -601,7 +567,6 @@ void DroneScanner::remove_stale_drones_internal(SystemTime current_time) noexcep
         if (!tracked_drones_[read_index].is_stale(current_time, config_.stale_timeout_ms)) {
             if (write_index != read_index) {
                 tracked_drones_[write_index] = tracked_drones_[read_index];
-                last_threat_levels_[write_index] = last_threat_levels_[read_index];
             }
             write_index++;
         }
@@ -625,24 +590,24 @@ void DroneScanner::set_alert_callback(ThreatAlertCallback callback) noexcept {
 }
 
 void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
-    ThreatAlertCallback local_callback = nullptr;
+    // Copy callback pointer while potentially under lock
+    // If called from process_spectrum_message(), mutex is already held via TryLock.
+    // If called from scanner thread, mutex is already held via MutexLock.
+    // Either way, we can safely read the pointer (atomic word-sized read on Cortex-M4).
+    ThreatAlertCallback local_callback = alert_callback_;
 
-    {
-        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-        local_callback = alert_callback_;
-
-        if (alert_callback_in_progress_.test()) {
-            return;
-        }
-
-        alert_callback_in_progress_.set();
+    if (local_callback == nullptr) {
+        return;
     }
 
-    if (local_callback != nullptr) {
-        local_callback(threat_level);
+    // Re-entrancy guard (AtomicFlag is lock-free)
+    if (alert_callback_in_progress_.test_and_set()) {
+        return;  // Already in progress
     }
 
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    // Invoke callback outside any lock
+    local_callback(threat_level);
+
     alert_callback_in_progress_.clear();
 }
 

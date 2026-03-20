@@ -40,17 +40,18 @@ constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 20'000'000ULL;
 /**
  * @brief Maximum number of tracked drones
  */
-constexpr size_t MAX_TRACKED_DRONES = 20;
+constexpr size_t MAX_TRACKED_DRONES = 16;
 
 /**
  * @brief Maximum number of displayed drones
  */
-constexpr size_t MAX_DISPLAYED_DRONES = 20;
+constexpr size_t MAX_DISPLAYED_DRONES = 16;
 
 /**
  * @brief Spectrum buffer size (bytes)
+ * @note Must match ChannelSpectrum::db.size() (256 bins)
  */
-constexpr size_t SPECTRUM_BUFFER_SIZE = 240;
+constexpr size_t SPECTRUM_BUFFER_SIZE = 256;
 
 /**
  * @brief Histogram buffer size (bins)
@@ -135,11 +136,6 @@ constexpr uint32_t PLL_LOCK_POLL_INTERVAL_MS = 3;
  * @brief Hardware retry delay in milliseconds
  */
 constexpr uint32_t HARDWARE_RETRY_DELAY_MS = 10;
-
-/**
- * @brief Mutex lock timeout in milliseconds
- */
-constexpr uint32_t MUTEX_LOCK_TIMEOUT_MS = 10;
 
 /**
  * @brief SD card operation timeout in milliseconds
@@ -312,14 +308,14 @@ constexpr uint32_t FREQUENCY_HOP_INTERVAL_MS = 100;
 
 /**
  * @brief Maximum database entries (reduced for memory constraints)
- * @note 128 entries × 80 bytes = 10,240 bytes (manageable)
+ * @note 96 entries × 80 bytes = 7,680 bytes (within budget)
  */
-constexpr size_t MAX_DATABASE_ENTRIES = 128;
+constexpr size_t MAX_DATABASE_ENTRIES = 96;
 
 /**
  * @brief Database file path
  */
-constexpr const char* DATABASE_FILE_PATH = "/FREQMAN/DRONES.TXT";
+constexpr const char DATABASE_FILE_PATH[] = "/FREQMAN/DRONES.TXT";
 
 /**
  * @brief Database load timeout in milliseconds
@@ -338,7 +334,7 @@ constexpr size_t DATABASE_LINE_BUFFER_SIZE = 128;
 /**
  * @brief Settings file path
  */
-constexpr const char* SETTINGS_FILE_PATH = "/EDA/SETTINGS.TXT";
+constexpr const char SETTINGS_FILE_PATH[] = "/EDA/SETTINGS.TXT";
 
 /**
  * @brief Settings file version
@@ -409,16 +405,19 @@ constexpr uint32_t AUDIO_ALERT_LONG_GAP_MS = 50;
 // ============================================================================
 
 /**
- * @brief Memory breakdown:
- * - Database entries: 500 × 16 = 8,000 bytes
- * - Tracked drones: 20 × 41 = 820 bytes
- * - Display drones: 20 × 39 = 780 bytes
- * - Spectrum buffer: 240 bytes
- * - Histogram buffer: 256 bytes
- * - Other structures: ~500 bytes
- * - Total: ~10,596 bytes
+ * @brief Memory breakdown (simplified):
+ * - Database entries: 96 × 16 = 1,536 bytes
+ * - Tracked drones: 16 × 56 = 896 bytes
+ * - Display drones: 16 × 39 = 624 bytes
+ * - Spectrum buffer: 256 bytes
+ * - Histogram buffer: 512 bytes
+ * - Histogram processor: 256 bytes
+ * - RSSI detector: ~60 bytes
+ * - Scanner thread stack: 2,048 bytes (BSS)
+ * - Other structures: ~400 bytes
+ * - Total static RAM: ~6,572 bytes
  */
-constexpr size_t STATIC_RAM_BUDGET_BYTES = 10596;
+constexpr size_t STATIC_RAM_BUDGET_BYTES = 6572;
 
 /**
  * @brief Total stack budget (bytes)
@@ -430,7 +429,7 @@ constexpr size_t STACK_BUDGET_BYTES = 4096;
  * @brief Total memory budget (bytes)
  * @note Sum of static RAM and stack budgets
  */
-constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 14692;
+constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 10668;
 
 /**
  * @brief Maximum stack usage per function (bytes)
@@ -444,7 +443,7 @@ constexpr size_t MAX_STACK_PER_FUNCTION = 512;
 /**
  * @brief TrackedDrone struct size (bytes)
  */
-constexpr size_t TRACKED_DRONE_SIZE = 41;
+constexpr size_t TRACKED_DRONE_SIZE = 56;
 
 /**
  * @brief DisplayDroneEntry struct size (bytes)
@@ -555,52 +554,16 @@ constexpr uint32_t COLOR_TEXT = 0xFFFFFFFF;
 /**
  * @brief String for unknown drone type
  */
-constexpr const char* DRONE_TYPE_UNKNOWN = "Unknown";
-
-/**
- * @brief String for DJI drone type
- */
-constexpr const char* DRONE_TYPE_DJI = "DJI";
-
-/**
- * @brief String for Parrot drone type
- */
-constexpr const char* DRONE_TYPE_PARROT = "Parrot";
-
-/**
- * @brief String for Yuneec drone type
- */
-constexpr const char* DRONE_TYPE_YUNEEC = "Yuneec";
-
-/**
- * @brief String for 3DR drone type
- */
-constexpr const char* DRONE_TYPE_3DR = "3DR";
-
-/**
- * @brief String for Autel drone type
- */
-constexpr const char* DRONE_TYPE_AUTEL = "Autel";
-
-/**
- * @brief String for hobby drone type
- */
-constexpr const char* DRONE_TYPE_HOBBY = "Hobby";
-
-/**
- * @brief String for FPV drone type
- */
-constexpr const char* DRONE_TYPE_FPV = "FPV";
-
-/**
- * @brief String for custom drone type
- */
-constexpr const char* DRONE_TYPE_CUSTOM = "Custom";
-
-/**
- * @brief String for other drone type
- */
-constexpr const char* DRONE_TYPE_OTHER = "Other";
+constexpr const char DRONE_TYPE_UNKNOWN[] = "Unknown";
+constexpr const char DRONE_TYPE_DJI[] = "DJI";
+constexpr const char DRONE_TYPE_PARROT[] = "Parrot";
+constexpr const char DRONE_TYPE_YUNEEC[] = "Yuneec";
+constexpr const char DRONE_TYPE_3DR[] = "3DR";
+constexpr const char DRONE_TYPE_AUTEL[] = "Autel";
+constexpr const char DRONE_TYPE_HOBBY[] = "Hobby";
+constexpr const char DRONE_TYPE_FPV[] = "FPV";
+constexpr const char DRONE_TYPE_CUSTOM[] = "Custom";
+constexpr const char DRONE_TYPE_OTHER[] = "Other";
 
 // ============================================================================
 // Movement Trend Constants
@@ -646,27 +609,11 @@ constexpr char MOVEMENT_TREND_SYMBOL_UNKNOWN = '-';
 /**
  * @brief Status message for no drones detected
  */
-constexpr const char* STATUS_NO_DRONES = "No drones detected";
-
-/**
- * @brief Status message for scanning
- */
-constexpr const char* STATUS_SCANNING = "Scanning...";
-
-/**
- * @brief Status message for error
- */
-constexpr const char* STATUS_ERROR = "Error";
-
-/**
- * @brief Status message for loading
- */
-constexpr const char* STATUS_LOADING = "Loading...";
-
-/**
- * @brief Status message for ready
- */
-constexpr const char* STATUS_READY = "Ready";
+constexpr const char STATUS_NO_DRONES[] = "No drones detected";
+constexpr const char STATUS_SCANNING[] = "Scanning...";
+constexpr const char STATUS_ERROR[] = "Error";
+constexpr const char STATUS_LOADING[] = "Loading...";
+constexpr const char STATUS_READY[] = "Ready";
 
 // ============================================================================
 // Validation Constants

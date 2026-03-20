@@ -1,6 +1,5 @@
 #include "drone_settings.hpp"
 #include "scanner.hpp"
-#include <cstring>
 #include "ui_receiver.hpp"
 
 namespace drone_analyzer {
@@ -44,20 +43,25 @@ void DroneSettings::reset_to_defaults() noexcept {
 
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept
     : ui::View()
-    , field_scan_mode_({10, 80}, 14, {
+    , labels_({
+        {{UI_POS_X(1), UI_POS_Y(3)}, "Scan Mode:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(6)}, "Interval (ms):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(9)}, "RSSI Threshold (dBm):", Theme::getInstance()->fg_light->foreground},
+    })
+    , field_scan_mode_({UI_POS_X(1), UI_POS_Y(4)}, 14, {
         {"Single", 0},
         {"Hopping", 1},
         {"Sequential", 2},
         {"Targeted", 3}
     })
-    , field_scan_interval_({10, 120}, 4, {10, 1000}, 10, ' ')
-    , field_rssi_threshold_({10, 160}, 4, {-90, -20}, 1, ' ')
-    , check_audio_alerts_({10, 200}, 15, "Audio Alerts", false)
-    , check_spectrum_visible_({10, 240}, 15, "Show Spectrum", false)
-    , check_histogram_visible_({10, 270}, 15, "Show Histogram", false)
-    , button_save_({UI_POS_X_CENTER(14), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "SAVE")
-    , button_cancel_({UI_POS_X_CENTER(10), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(10), 28}, "CANCEL")
-    , button_defaults_({UI_POS_X(2), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(12), 28}, "DEFAULTS")
+    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(7)}, 4, {10, 1000}, 10, ' ')
+    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(10)}, 4, {-90, -20}, 1, ' ')
+    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(12)}, 15, "Audio Alerts", false)
+    , check_spectrum_visible_({UI_POS_X(1), UI_POS_Y(14)}, 15, "Show Spectrum", false)
+    , check_histogram_visible_({UI_POS_X(1), UI_POS_Y(16)}, 15, "Show Histogram", false)
+    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(10), 28}, "DEFAULTS")
+    , button_save_({UI_POS_X_CENTER(7), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(7), 28}, "SAVE")
+    , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(7), 28}, "CANCEL")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , original_config_(config)
@@ -68,15 +72,16 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     settings_.alert_rssi_threshold_dbm = config.rssi_threshold_dbm;
 
     add_children({
+        &labels_,
         &field_scan_mode_,
         &field_scan_interval_,
         &field_rssi_threshold_,
         &check_audio_alerts_,
         &check_spectrum_visible_,
         &check_histogram_visible_,
+        &button_defaults_,
         &button_save_,
-        &button_cancel_,
-        &button_defaults_
+        &button_cancel_
     });
 
     field_scan_mode_.set_by_value(static_cast<int32_t>(settings_.scanning_mode));

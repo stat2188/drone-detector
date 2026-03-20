@@ -3,8 +3,8 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <string>
 #include <array>
-#include <functional>
 #include "drone_types.hpp"
 #include "constants.hpp"
 #include "scanner.hpp"
@@ -99,7 +99,10 @@ public:
      */
     void focus() override;
 
+    std::string title() const override { return "EDA Settings"; }
+
 private:
+    ui::Labels labels_;
     ui::OptionsField field_scan_mode_;
     ui::NumberField field_scan_interval_;
     ui::NumberField field_rssi_threshold_;
@@ -107,9 +110,9 @@ private:
     ui::Checkbox check_spectrum_visible_;
     ui::Checkbox check_histogram_visible_;
 
+    ui::Button button_defaults_;
     ui::Button button_save_;
     ui::Button button_cancel_;
-    ui::Button button_defaults_;
 
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;

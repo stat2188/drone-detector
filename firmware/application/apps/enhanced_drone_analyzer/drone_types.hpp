@@ -207,7 +207,7 @@ private:
 // ============================================================================
 
 /**
- * @brief Tracked drone data structure (41 bytes)
+ * @brief Tracked drone data structure (56 bytes)
  * @note No virtual functions, no vtable
  * @note Memory layout optimized for cache efficiency
  */
@@ -416,7 +416,7 @@ struct ScannerStateSnapshot {
  * @brief Display data for UI updates
  */
 struct DisplayData {
-    DisplayDroneEntry drones[20];     // 20 × 39 = 780 bytes
+    DisplayDroneEntry drones[16];     // 16 × 39 = 624 bytes
     size_t drone_count;
     ScannerStateSnapshot state;
     

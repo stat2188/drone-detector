@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include <string_view>
 #include "ui_widget.hpp"
 #include "drone_types.hpp"
 #include "constants.hpp"
@@ -18,14 +19,7 @@ namespace drone_analyzer {
  */
 class DroneDisplay : public ui::View {
 public:
-    /**
-     * @brief Default constructor
-     */
-    DroneDisplay() noexcept;
-
-    /**
-     * @brief Destructor
-     */
+    DroneDisplay(const Rect parent_rect) noexcept;
     ~DroneDisplay() noexcept override;
 
     /**
@@ -228,6 +222,14 @@ private:
     void draw_text(
         Painter& painter,
         const char* text,
+        uint16_t x,
+        uint16_t y,
+        uint32_t color
+    ) noexcept;
+
+    void draw_text(
+        Painter& painter,
+        std::string_view text,
         uint16_t x,
         uint16_t y,
         uint32_t color

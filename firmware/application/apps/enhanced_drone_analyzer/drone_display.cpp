@@ -8,7 +8,7 @@ namespace drone_analyzer {
 // Constructor / Destructor
 // ============================================================================
 
-DroneDisplay::DroneDisplay() noexcept
+DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     : ui::View()
     , display_data_()
     , spectrum_buffer_{}
@@ -24,7 +24,7 @@ DroneDisplay::DroneDisplay() noexcept
     , histogram_height_(60)
     , drone_list_height_(150)
     , status_bar_height_(20) {
-    // Initialize status text
+    set_parent_rect(parent_rect);
     set_status_text(STATUS_READY);
 }
 
@@ -37,61 +37,66 @@ DroneDisplay::~DroneDisplay() noexcept {
 // ============================================================================
 
 void DroneDisplay::paint(Painter& painter) {
-    // Clear display
-    clear_display(painter);
-    
-    uint16_t y_offset = 0;
-    
+    const auto sr = screen_rect();
+    const uint16_t ox = sr.location().x();
+    const uint16_t oy = sr.location().y();
+    const uint16_t w = sr.size().width();
+
+    // Clear widget area
+    draw_rectangle(painter, ox, oy, w, sr.size().height(), COLOR_BACKGROUND);
+
+    uint16_t y_offset = oy;
+
     // Render spectrum if visible
     if (spectrum_visible_ && spectrum_data_size_ > 0) {
         render_spectrum(
             painter,
             spectrum_buffer_.data(),
             spectrum_data_size_,
-            0,
+            ox,
             y_offset,
-            DISPLAY_WIDTH,
+            w,
             spectrum_height_
         );
         y_offset += spectrum_height_;
     }
-    
+
     // Render histogram if visible
     if (histogram_visible_ && histogram_data_size_ > 0) {
         render_histogram(
             painter,
             histogram_buffer_.data(),
             histogram_data_size_,
-            0,
+            ox,
             y_offset,
-            DISPLAY_WIDTH,
+            w,
             histogram_height_
         );
         y_offset += histogram_height_;
     }
-    
+
     // Render drone list if visible
     if (drone_list_visible_ && display_data_.drone_count > 0) {
         render_drone_list(
             painter,
             display_data_.drones,
             display_data_.drone_count,
-            0,
+            ox,
             y_offset,
-            DISPLAY_WIDTH,
+            w,
             drone_list_height_
         );
         y_offset += drone_list_height_;
     }
-    
+
     // Render status bar if visible
     if (status_bar_visible_) {
         render_status_bar(
             painter,
             status_text_,
-            0,
+            ox,
             y_offset,
-            DISPLAY_WIDTH,
+            w,
             status_bar_height_
         );
     }
@@ -150,7 +155,7 @@ void DroneDisplay::render_histogram(
     uint16_t height
 ) noexcept {
     // Validate input
-    if (histogram_data == nullptr || histogram_size == 0) {
+    if (histogram_data == nullptr || histogram_size == 0 || width == 0) {
         return;
     }
     
@@ -165,14 +170,18 @@ void DroneDisplay::render_histogram(
         }
     }
     
+    if (max_value == 0) {
+        return;  // All zeros, nothing to draw
+    }
+    
     // Draw histogram bars
     const uint16_t bar_width = width / static_cast<uint16_t>(histogram_size);
+    if (bar_width == 0) {
+        return;  // Width too small for any bars
+    }
     for (size_t i = 0; i < histogram_size; ++i) {
         const uint16_t value = histogram_data[i];
-        uint16_t bar_height = 0;
-        if (max_value > 0) {
-            bar_height = (value * height) / max_value;
-        }
+        const uint16_t bar_height = (value * height) / max_value;
         const uint16_t x = start_x + static_cast<uint16_t>(i * bar_width);
         const uint16_t y = start_y + height - bar_height;
         
@@ -265,9 +274,9 @@ ErrorCode DroneDisplay::set_spectrum_data(
         return error;
     }
     
-    // Copy spectrum data
-    spectrum_data_size_ = spectrum_size;
-    for (size_t i = 0; i < spectrum_size && i < spectrum_buffer_.size(); ++i) {
+    // Copy spectrum data (clamp to buffer capacity)
+    spectrum_data_size_ = (spectrum_size < spectrum_buffer_.size()) ? spectrum_size : spectrum_buffer_.size();
+    for (size_t i = 0; i < spectrum_data_size_; ++i) {
         spectrum_buffer_[i] = spectrum_data[i];
     }
     
@@ -432,6 +441,29 @@ void DroneDisplay::draw_text(
     );
 }
 
+void DroneDisplay::draw_text(
+    Painter& painter,
+    std::string_view text,
+    uint16_t x,
+    uint16_t y,
+    uint32_t color
+) noexcept {
+    if (text.empty()) {
+        return;
+    }
+
+    const Color fg_color = Color::RGB(color);
+    const Color bg_color = Color::black();
+
+    painter.draw_string(
+        Point{x, y},
+        Theme::getInstance()->fg_light->font,
+        fg_color,
+        bg_color,
+        text
+    );
+}
+
 void DroneDisplay::draw_rectangle(
     Painter& painter,
     uint16_t x,
@@ -480,6 +512,43 @@ uint32_t DroneDisplay::get_threat_color(ThreatLevel threat) const noexcept {
     }
 }
 
+static void write_uint(char*& buf, size_t& remaining, uint32_t value) noexcept {
+    char tmp[10];
+    int len = 0;
+    if (value == 0) {
+        tmp[len++] = '0';
+    } else {
+        while (value > 0 && len < 10) {
+            tmp[len++] = '0' + static_cast<char>(value % 10);
+            value /= 10;
+        }
+    }
+    for (int i = len - 1; i >= 0 && remaining > 1; --i) {
+        *buf++ = tmp[i];
+        --remaining;
+    }
+}
+
+static void write_uint_pad(char*& buf, size_t& remaining, uint32_t value, int pad) noexcept {
+    char tmp[10];
+    int len = 0;
+    while (len < pad) {
+        tmp[len++] = '0' + static_cast<char>(value % 10);
+        value /= 10;
+    }
+    for (int i = len - 1; i >= 0 && remaining > 1; --i) {
+        *buf++ = tmp[i];
+        --remaining;
+    }
+}
+
+static void write_str(char*& buf, size_t& remaining, const char* s) noexcept {
+    while (*s != '\0' && remaining > 1) {
+        *buf++ = *s++;
+        --remaining;
+    }
+}
+
 void DroneDisplay::format_frequency(
     FreqHz frequency,
     char* buffer,
@@ -488,25 +557,17 @@ void DroneDisplay::format_frequency(
     if (buffer == nullptr || buffer_size < 16) {
         return;
     }
-    
-    // Format as MHz with 3 decimal places
-    const uint32_t freq_mhz = static_cast<uint32_t>(frequency / 1'000'000);
-    const uint32_t freq_khz = static_cast<uint32_t>((frequency % 1'000'000) / 1'000);
-    
-    // Simple formatting (will use proper function when available)
-    buffer[0] = '0' + static_cast<char>((freq_mhz / 1000) % 10);
-    buffer[1] = '0' + static_cast<char>((freq_mhz / 100) % 10);
-    buffer[2] = '0' + static_cast<char>((freq_mhz / 10) % 10);
-    buffer[3] = '0' + static_cast<char>(freq_mhz % 10);
-    buffer[4] = '.';
-    buffer[5] = '0' + static_cast<char>((freq_khz / 100) % 10);
-    buffer[6] = '0' + static_cast<char>((freq_khz / 10) % 10);
-    buffer[7] = '0' + static_cast<char>(freq_khz % 10);
-    buffer[8] = ' ';
-    buffer[9] = 'M';
-    buffer[10] = 'H';
-    buffer[11] = 'z';
-    buffer[12] = '\0';
+
+    const uint32_t mhz = static_cast<uint32_t>(frequency / 1'000'000ULL);
+    const uint32_t khz = static_cast<uint32_t>((frequency % 1'000'000ULL) / 1'000ULL);
+
+    char* buf = buffer;
+    size_t remaining = buffer_size;
+    write_uint(buf, remaining, mhz);
+    if (remaining > 1) { *buf++ = '.'; --remaining; }
+    write_uint_pad(buf, remaining, khz, 3);
+    write_str(buf, remaining, " MHz");
+    *buf = '\0';
 }
 
 void DroneDisplay::format_rssi(
@@ -517,26 +578,18 @@ void DroneDisplay::format_rssi(
     if (buffer == nullptr || buffer_size < 8) {
         return;
     }
-    
-    // Simple formatting (will use proper function when available)
-    buffer[0] = '-';
-    if (rssi < -100) {
-        buffer[1] = '1';
-        buffer[2] = '0';
-        buffer[3] = '0';
-        buffer[4] = '+';
-    } else if (rssi < -10) {
-        buffer[1] = '0' + static_cast<char>((-rssi / 10) % 10);
-        buffer[2] = '0' + static_cast<char>(-rssi % 10);
-        buffer[3] = ' ';
-    } else {
-        buffer[1] = '0' + static_cast<char>(-rssi % 10);
-        buffer[2] = ' ';
+
+    char* buf = buffer;
+    size_t remaining = buffer_size;
+
+    if (rssi < 0) {
+        if (remaining > 1) { *buf++ = '-'; --remaining; }
+        rssi = -rssi;
     }
-    buffer[5] = 'd';
-    buffer[6] = 'B';
-    buffer[7] = 'm';
-    buffer[8] = '\0';
+
+    write_uint(buf, remaining, static_cast<uint32_t>(rssi));
+    write_str(buf, remaining, " db");
+    *buf = '\0';
 }
 
 ErrorCode DroneDisplay::validate_spectrum_data(
