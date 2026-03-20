@@ -314,12 +314,9 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
             break;
     }
     
-    // Handle uninitialized frequency (0 Hz) — show "---" instead of "1.000"
-    if (current_frequency_ == 0) {
-        big_display_.set("---");
-    } else {
-        big_display_.set(current_frequency_);
-    }
+    // BigFrequency::set() only accepts rf::Frequency (numeric), not strings
+    // When frequency is 0 (uninitialized), display 0 Hz which formats as "0.000"
+    big_display_.set(current_frequency_);
 }
 
 void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
