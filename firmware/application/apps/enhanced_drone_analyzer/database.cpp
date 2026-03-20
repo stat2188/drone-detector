@@ -279,7 +279,7 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
         return ErrorResult<FreqHz>::failure(ErrorCode::DATABASE_EMPTY);
     }
     
-    // If current_freq is 0 or not found, start from beginning
+    // If current_freq is 0, return first frequency (initial case)
     if (current_freq == 0) {
         current_index_ = 0;
         return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
@@ -287,24 +287,31 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
     
     // Find current frequency in database
     bool found = false;
+    size_t found_index = 0;
     for (size_t i = 0; i < entry_count_; ++i) {
         if (entries_[i].frequency == current_freq) {
-            current_index_ = i;
+            found_index = i;
             found = true;
             break;
         }
     }
     
-    // If not found, wrap to beginning (current_index_ stays at 0 from initialization)
-    if (!found) {
+    if (found) {
+        // Advance to next frequency (wrap around if at end)
+        current_index_ = found_index + 1;
+        if (current_index_ >= entry_count_) {
+            current_index_ = 0;
+        }
+    } else {
+        // Current frequency not in database — return first entry
+        // This ensures we always move forward, never stay stuck
         current_index_ = 0;
-        return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
     }
     
-    // Move to next frequency (wrap around if at end)
-    current_index_++;
-    if (current_index_ >= entry_count_) {
-        current_index_ = 0;
+    // Safety check: if we only have one entry, return failure to avoid infinite loop
+    // The scanner will then use range-based sweeping instead
+    if (entry_count_ == 1 && entries_[0].frequency == current_freq) {
+        return ErrorResult<FreqHz>::failure(ErrorCode::DATABASE_EMPTY);
     }
     
     return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);

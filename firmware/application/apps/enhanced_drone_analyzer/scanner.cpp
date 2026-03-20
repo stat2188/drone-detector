@@ -240,20 +240,28 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
 ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     statistics_.total_scan_cycles++;
     
+    // Try to get next frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
-    if (!freq_result.has_value()) {
-        // Database empty — stay on current frequency, still tune hardware
-        ErrorCode tune_result = hardware_.tune_to_frequency(current_frequency_);
-        if (tune_result != ErrorCode::SUCCESS) {
-            statistics_.failed_cycles++;
-            return tune_result;
+    
+    if (freq_result.has_value()) {
+        // Got valid frequency from database
+        current_frequency_ = freq_result.value();
+    } else {
+        // Database empty or not loaded — sweep through frequency range
+        // Use frequency step to scan the full range
+        if (current_frequency_ < MIN_FREQUENCY_HZ || current_frequency_ >= MAX_FREQUENCY_HZ) {
+            // Wrap around to start of range
+            current_frequency_ = MIN_FREQUENCY_HZ;
+        } else {
+            // Advance by step size
+            current_frequency_ += FREQUENCY_STEP_HZ;
+            if (current_frequency_ > MAX_FREQUENCY_HZ) {
+                current_frequency_ = MIN_FREQUENCY_HZ;  // Wrap around
+            }
         }
-        statistics_.successful_cycles++;
-        return ErrorCode::SUCCESS;
     }
     
-    current_frequency_ = freq_result.value();
-    
+    // Tune hardware to new frequency
     ErrorCode tune_result = hardware_.tune_to_frequency(current_frequency_);
     if (tune_result != ErrorCode::SUCCESS) {
         statistics_.failed_cycles++;
