@@ -44,18 +44,16 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
-            // Process spectrum every frame (Looking Glass pattern: drain → smooth → draw)
+            // Drain FIFO every frame, apply smoothing, redraw bars
+            // (lightweight — no mutex, no histogram, like Looking Glass add_spectrum_pixel)
             if (this->spectrum_fifo_ != nullptr && this->scanning_) {
                 ChannelSpectrum spectrum;
                 while (this->spectrum_fifo_->out(spectrum)) {
-                    // Keep draining — last value wins
-                }
-                // Attributed to current_frequency_ (correct — hasn't retuned yet)
-                if (this->scanner_ptr_ != nullptr) {
-                    (void)this->scanner_ptr_->process_spectrum_message(spectrum);
+                    // last wins
                 }
                 this->drone_display_.set_spectrum_data(
                     spectrum.db.data(), spectrum.db.size());
+                this->drone_display_.set_dirty();
             }
 
             if (this->needs_full_refresh_) {
@@ -72,6 +70,16 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             this->scan_cycle_count_++;
             if (this->scan_cycle_count_ >= SCAN_CYCLE_DISPLAY_INTERVAL) {
                 this->scan_cycle_count_ = 0;
+
+                // Heavy processing every 3 cycles (mutex + histogram + RSSI)
+                if (this->spectrum_fifo_ != nullptr && this->scanner_ptr_ != nullptr) {
+                    ChannelSpectrum spectrum;
+                    while (this->spectrum_fifo_->out(spectrum)) {
+                        // last wins
+                    }
+                    (void)this->scanner_ptr_->process_spectrum_message(spectrum);
+                }
+
                 this->needs_full_refresh_ = true;
             }
         }
