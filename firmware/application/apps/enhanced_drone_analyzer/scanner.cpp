@@ -132,6 +132,12 @@ ErrorCode DroneScanner::initialize() noexcept {
     state_ = ScannerState::IDLE;
     statistics_.reset();
 
+    // Apply histogram frequency range from config
+    histogram_processor_.set_frequency_range(
+        config_.histogram_start_freq,
+        config_.histogram_end_freq
+    );
+
     return ErrorCode::SUCCESS;
 }
 
@@ -328,14 +334,8 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         return ErrorCode::INVALID_PARAMETER;
     }
 
-    // Feed spectrum to histogram processor with frequency mapping
-    // Use current_frequency_ as center, FREQUENCY_BANDWIDTH_HZ as slice width
-    (void)histogram_processor_.update_histogram(
-        spectrum.db.data(),
-        spectrum.db.size(),
-        current_frequency_,
-        FREQUENCY_BANDWIDTH_HZ
-    );
+    // Feed spectrum to histogram processor for noise floor analysis
+    (void)histogram_processor_.update_histogram(spectrum.db.data(), spectrum.db.size());
 
     const int32_t rssi = extract_rssi(spectrum);
     const SystemTime now = chTimeNow();
@@ -529,7 +529,13 @@ ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     config_ = config;
-    
+
+    // Apply frequency range to histogram processor
+    histogram_processor_.set_frequency_range(
+        config.histogram_start_freq,
+        config.histogram_end_freq
+    );
+
     return ErrorCode::SUCCESS;
 }
 

@@ -112,7 +112,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         scanning_mode_ = config.mode;
 
         // Update button text to show current mode
-        static const char* mode_names[] = {"Single", "Hopping", "Sequential", "Targeted"};
+        static const char* mode_names[] = {"Single", "Hopping", "Sequential", "Targeted", "Spectrometer"};
         button_mode_.set_text(mode_names[static_cast<uint8_t>(scanning_mode_)]);
     };
 

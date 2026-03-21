@@ -172,59 +172,42 @@ void DroneDisplay::render_histogram(
     // Draw label
     draw_text(painter, "HISTOGRAM", start_x + 2, start_y + 2, COLOR_TEXT);
     
-    // Find max value for scaling
+    // Find max value for scaling (ignore first bin which is often noise)
     uint16_t max_value = 0;
-    for (size_t i = 0; i < histogram_size; ++i) {
+    for (size_t i = 1; i < histogram_size; ++i) {
         if (histogram_data[i] > max_value) {
             max_value = histogram_data[i];
         }
     }
-    
+
     if (max_value == 0) {
         draw_text(painter, "No data", start_x + 2, start_y + 12, COLOR_UNKNOWN_THREAT);
         return;
     }
-    
+
     // Calculate bar dimensions (minimum 2px width, 1px gap)
     constexpr uint16_t MIN_BAR_WIDTH = 2;
     constexpr uint16_t BAR_GAP = 1;
     const uint16_t usable_width = width - 4;  // 2px padding each side
     uint16_t bar_width = (usable_width / static_cast<uint16_t>(histogram_size));
     if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
-    
+
     const uint16_t chart_start_x = start_x + 2;
     const uint16_t chart_start_y = start_y + 12;  // Below label
     const uint16_t chart_height = height - 14;    // Account for label + padding
-    
+
     if (chart_height < 4) return;
-    
-    // Draw histogram bars with color coding based on RSSI delta
-    // Color logic (matches FrequencyBin::update()):
-    // - RED (COLOR_CRITICAL_THREAT): Signal increased (delta > 2dB) - approaching drone
-    // - GREEN (COLOR_LOW_THREAT): Signal decreased (delta < -2dB) - receding drone  
-    // - YELLOW (COLOR_MEDIUM_THREAT): Stable signal (within ±2dB)
+
+    // Draw histogram bars
     for (size_t i = 0; i < histogram_size; ++i) {
         const uint16_t value = histogram_data[i];
-        if (value == 0) continue;  // Skip empty bins
-        
         const uint16_t bar_height = (value * chart_height) / max_value;
         const uint16_t x = chart_start_x + static_cast<uint16_t>(i) * (bar_width + BAR_GAP);
         const uint16_t y = chart_start_y + chart_height - bar_height;
-        
-        // Color is encoded in histogram_data: 
-        // Value encodes both height and color via get_histogram_data()
-        // We use a simple heuristic: high values = RED, low = GREEN, mid = YELLOW
-        // This matches the delta-based logic in FrequencyBin
-        uint32_t color = COLOR_MEDIUM_THREAT;  // Default YELLOW
-        if (value > (max_value * 3 / 4)) {
-            color = COLOR_CRITICAL_THREAT;  // RED for strong signals (increased)
-        } else if (value < (max_value / 4)) {
-            color = COLOR_LOW_THREAT;       // GREEN for weak signals (decreased)
-        }
-        
+
         // Draw filled bar
         if (bar_height > 0) {
-            draw_rectangle(painter, x, y, bar_width, bar_height, color);
+            draw_rectangle(painter, x, y, bar_width, bar_height, COLOR_MEDIUM_THREAT);
         }
     }
 }

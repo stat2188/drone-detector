@@ -27,29 +27,29 @@ constexpr FreqHz MAX_FREQUENCY_HZ = 7'200'000'000ULL;
 constexpr FreqHz FREQUENCY_STEP_HZ = 1'000'000ULL;
 
 /**
- * @brief Frequency bandwidth in Hz (20 MHz)
+ * @brief Frequency bandwidth in Hz (2 MHz - matches DEFAULT_SAMPLE_RATE_HZ)
  */
-constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 20'000'000ULL;
+constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 2'000'000ULL;
 
 /**
- * @brief Default spectrum start frequency in Hz (2400 MHz)
+ * @brief Default spectrum start frequency in Hz (1 MHz)
  */
-constexpr FreqHz DEFAULT_SPECTRUM_START_HZ = 2'400'000'000ULL;
+constexpr FreqHz DEFAULT_SPECTRUM_START_HZ = 1'000'000ULL;
 
 /**
- * @brief Default spectrum end frequency in Hz (6000 MHz)
+ * @brief Default spectrum end frequency in Hz (100 MHz)
  */
-constexpr FreqHz DEFAULT_SPECTRUM_END_HZ = 6'000'000'000ULL;
+constexpr FreqHz DEFAULT_SPECTRUM_END_HZ = 100'000'000ULL;
 
 /**
- * @brief Default histogram start frequency in Hz (2400 MHz)
+ * @brief Default histogram start frequency in Hz (1 MHz)
  */
-constexpr FreqHz DEFAULT_HISTOGRAM_START_HZ = 2'400'000'000ULL;
+constexpr FreqHz DEFAULT_HISTOGRAM_START_HZ = 1'000'000ULL;
 
 /**
- * @brief Default histogram end frequency in Hz (6000 MHz)
+ * @brief Default histogram end frequency in Hz (100 MHz)
  */
-constexpr FreqHz DEFAULT_HISTOGRAM_END_HZ = 6'000'000'000ULL;
+constexpr FreqHz DEFAULT_HISTOGRAM_END_HZ = 100'000'000ULL;
 
 
 

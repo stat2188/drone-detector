@@ -70,7 +70,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {"Single", 0},
         {"Hopping", 1},
         {"Sequential", 2},
-        {"Targeted", 3}
+        {"Targeted", 3},
+        {"Spectrometer", 4}
     })
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(5)}, 4, {10, 1000}, 10, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(8)}, 4, {-90, -20}, 1, ' ')
@@ -462,7 +463,7 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
 }
 
 ErrorCode DroneSettingsView::validate_settings() const noexcept {
-    if (settings_.scanning_mode > ScanningMode::TARGETED) {
+    if (static_cast<uint8_t>(settings_.scanning_mode) >= SCANNING_MODE_COUNT) {
         return ErrorCode::INVALID_PARAMETER;
     }
     
