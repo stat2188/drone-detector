@@ -159,6 +159,9 @@ public:
     void set_drone_list_visible(bool visible) noexcept { drone_list_visible_ = visible; }
     void set_status_bar_visible(bool visible) noexcept { status_bar_visible_ = visible; }
 
+    void set_spectrum_filter(uint8_t min_power) noexcept { min_color_power_ = min_power; }
+    void set_spectrum_integration(uint8_t factor) noexcept { spectrum_integration_ = factor; }
+
     [[nodiscard]] const char* get_status_text() const noexcept;
 
 private:
@@ -357,6 +360,16 @@ private:
     bool histogram_visible_;
     bool drone_list_visible_;
     bool status_bar_visible_;
+
+    // Spectrum filter threshold (0=OFF, 118=MID, 202=HIGH)
+    uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
+
+    // Exponential smoothing buffer for LEVEL-V display
+    std::array<int32_t, SPECTRUM_BUFFER_SIZE> spectrum_smoothed_{};
+    bool spectrum_smoothed_initialized_{false};
+
+    // Spectrum integration factor for smoothing
+    uint8_t spectrum_integration_{DEFAULT_SPECTRUM_INTEGRATION};
 };
 
 } // namespace drone_analyzer

@@ -44,13 +44,24 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
+            // Always feed spectrum to histogram/RSSI detector (every frame)
+            // This keeps noise floor and signal detection accurate
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
                     this->on_channel_spectrum(spectrum);
                 }
             }
-            this->refresh_ui();
+
+            // Update visual display every 3 scan cycles to reduce CPU load
+            // and avoid race conditions with scanner thread
+            if (this->spectrum_cycle_counter_ >= SPECTRUM_UPDATE_INTERVAL) {
+                this->spectrum_cycle_counter_ = 0;
+                this->refresh_ui();
+            } else {
+                // Still update BigFrequency every frame for smooth display
+                this->update_big_frequency_only();
+            }
         }
     }
     , message_handler_retune{
@@ -58,6 +69,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         [this](Message* const p) {
             const auto message = *reinterpret_cast<const RetuneMessage*>(p);
             this->on_retune(message.freq, message.range);
+            this->spectrum_cycle_counter_++;
         }
     } {
     add_children({
@@ -68,11 +80,20 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &field_volume_,
         &big_display_,
         &drone_display_,
+        &filter_labels_,
+        &field_filter_,
         &button_start_stop_,
         &button_mode_,
         &button_load_,
         &button_settings_
     });
+
+    // Filter callback (Looking Glass style: OFF/MID/HIGH)
+    field_filter_.on_change = [this](size_t, int32_t v) {
+        min_color_power_ = static_cast<uint8_t>(v);
+        drone_display_.set_spectrum_filter(min_color_power_);
+    };
+    field_filter_.set_by_value(DEFAULT_SPECTRUM_FILTER);
 
     // Register button callbacks BEFORE any early returns
     // Buttons must always respond, even if init fails
@@ -456,13 +477,44 @@ void DroneScannerUI::refresh_ui() noexcept {
     set_dirty();
 }
 
+void DroneScannerUI::update_big_frequency_only() noexcept {
+    if (scanner_ptr_ == nullptr || initialization_failed_) {
+        return;
+    }
+
+    current_scanner_state_ = scanner_ptr_->get_state();
+
+    BigDisplayColor color = BigDisplayColor::GREY;
+    switch (current_scanner_state_) {
+        case ScannerState::LOCKING:
+            color = BigDisplayColor::YELLOW;
+            break;
+        case ScannerState::TRACKING:
+            color = (current_rssi_ >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM)
+                  ? BigDisplayColor::RED
+                  : BigDisplayColor::GREEN;
+            break;
+        default:
+            break;
+    }
+    bigdisplay_update(color);
+}
+
 void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
     if (scanner_ptr_ != nullptr && scanning_) {
+        // Stop streaming to prevent stale data accumulation
+        // (Looking Glass pattern: process one frame at a time)
+        baseband::spectrum_streaming_stop();
+
+        // Always feed histogram/RSSI for accurate noise floor
         (void)scanner_ptr_->process_spectrum_message(spectrum);
 
-        // Feed spectrum to DroneDisplay for visualization only when scanning
+        // Update visual spectrum buffer (smoothing + filter applied in DroneDisplay)
         drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
         drone_display_.set_dirty();
+
+        // Resume streaming
+        baseband::spectrum_streaming_start();
     }
 }
 

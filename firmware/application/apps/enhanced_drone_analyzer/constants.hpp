@@ -183,7 +183,7 @@ constexpr int32_t RSSI_MAX_DBM = -20;
  * @note dBm = (value - 255) / 5 - gain_offset; approximated as value - 120
  * @note Center bins 120-135 contain DC spike (blanked like Looking Glass/Search)
  */
-constexpr int32_t RSSI_DETECTION_THRESHOLD_DBM = -70;
+constexpr int32_t RSSI_DETECTION_THRESHOLD_DBM = -90;
 
 /**
  * @brief RSSI threshold for high threat (dBm)
@@ -530,6 +530,16 @@ constexpr uint32_t COLOR_BACKGROUND = 0xFF000000;
  * @brief Color for text (white)
  */
 constexpr uint32_t COLOR_TEXT = 0xFFFFFFFF;
+
+// ============================================================================
+// Spectrum Filter Constants (matching Looking Glass)
+// ============================================================================
+
+constexpr uint8_t SPECTRUM_FILTER_OFF = 0;
+constexpr uint8_t SPECTRUM_FILTER_MID = 118;
+constexpr uint8_t SPECTRUM_FILTER_HIGH = 202;
+constexpr uint8_t DEFAULT_SPECTRUM_FILTER = SPECTRUM_FILTER_OFF;
+constexpr uint8_t DEFAULT_SPECTRUM_INTEGRATION = 3;
 
 // ============================================================================
 // String Constants (Flash Storage)

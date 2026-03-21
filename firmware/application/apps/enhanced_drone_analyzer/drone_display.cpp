@@ -102,52 +102,59 @@ void DroneDisplay::render_spectrum(
     uint16_t width,
     uint16_t height
 ) noexcept {
-    // Validate input
-    if (spectrum_data == nullptr || spectrum_size == 0 || height < 4) {
+    if (spectrum_data == nullptr || spectrum_size == 0 || height < 20) {
         return;
     }
-    
-    // Draw background with border
+
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
-    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);  // Top border
-    
-    // Draw label
+    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
     draw_text(painter, "SPECTRUM", start_x + 2, start_y + 2, COLOR_TEXT);
-    
-    // Calculate bar width (minimum 2 pixels for visibility)
-    constexpr uint16_t MIN_BAR_WIDTH = 2;
-    const uint16_t usable_width = width - 4;  // 2px padding each side
-    const uint16_t bar_count = static_cast<uint16_t>(spectrum_size);
-    uint16_t bar_width = usable_width / bar_count;
-    if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
-    
-    const uint16_t chart_start_x = start_x + 2;
-    const uint16_t chart_start_y = start_y + 12;  // Below label
-    const uint16_t chart_height = height - 14;    // Account for label + padding
-    
+
+    constexpr uint16_t LABEL_H = 12;
+    const uint16_t chart_start_y = start_y + LABEL_H;
+    const uint16_t chart_height = height - LABEL_H;
     if (chart_height < 4) return;
-    
-    // Draw spectrum bars
+
+    // Clear chart area every frame (like Looking Glass LEVEL-V clear + draw pattern)
+    painter.fill_rectangle({start_x, chart_start_y, width, chart_height}, Color::black());
+
+    const uint16_t bar_count = static_cast<uint16_t>(spectrum_size);
+    const uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
+
+    // DC spike bins (120-135) — same as Looking Glass ignore_dc
+    constexpr size_t DC_SPIKE_START = 120;
+    constexpr size_t DC_SPIKE_END = 136;
+
     for (size_t i = 0; i < spectrum_size; ++i) {
+        // Blank DC spike bins (already cleared to black above)
+        if (i >= DC_SPIKE_START && i < DC_SPIKE_END) {
+            continue;
+        }
+
         const uint8_t value = spectrum_data[i];
+
+        // Looking Glass filter: if below threshold, skip (area already cleared to black)
+        // Equivalent to LG's add_spectrum_pixel(0) when value < min_color_power
+        if (value < min_color_power_) {
+            continue;
+        }
+
         const uint16_t bar_height = (static_cast<uint16_t>(value) * chart_height) / 255;
-        const uint16_t x = chart_start_x + static_cast<uint16_t>(i) * bar_width;
+        if (bar_height == 0) continue;
+
+        const uint16_t x = start_x + 1 + static_cast<uint16_t>(i) * bar_width;
         const uint16_t y = chart_start_y + chart_height - bar_height;
-        
-        // Color based on signal strength
-        uint32_t color = COLOR_LOW_THREAT;
-        if (value > 200) {
-            color = COLOR_CRITICAL_THREAT;
-        } else if (value > 150) {
-            color = COLOR_HIGH_THREAT;
-        } else if (value > 100) {
-            color = COLOR_MEDIUM_THREAT;
-        }
-        
-        // Draw filled bar (not single pixel)
-        if (bar_height > 0) {
-            draw_rectangle(painter, x, y, bar_width - 1, bar_height, color);
-        }
+
+        // Looking Glass LEVEL-V gradient: blue(low) -> red(high)
+        // color_gradient = (point * 255) / chart_height
+        const uint8_t color_gradient = (bar_height * 255) / chart_height;
+        const Color bar_color(
+            color_gradient,
+            static_cast<uint8_t>(0),
+            static_cast<uint8_t>(255 - color_gradient)
+        );
+
+        painter.fill_rectangle({x, y, bar_width, bar_height}, bar_color);
     }
 }
 
@@ -311,18 +318,34 @@ ErrorCode DroneDisplay::set_spectrum_data(
     const uint8_t* spectrum_data,
     size_t spectrum_size
 ) noexcept {
-    // Validate input
     const ErrorCode error = validate_spectrum_data(spectrum_data, spectrum_size);
     if (error != ErrorCode::SUCCESS) {
         return error;
     }
-    
-    // Copy spectrum data (clamp to buffer capacity)
-    spectrum_data_size_ = (spectrum_size < spectrum_buffer_.size()) ? spectrum_size : spectrum_buffer_.size();
-    for (size_t i = 0; i < spectrum_data_size_; ++i) {
-        spectrum_buffer_[i] = spectrum_data[i];
+
+    const size_t count = (spectrum_size < spectrum_buffer_.size()) ? spectrum_size : spectrum_buffer_.size();
+
+    // Exponential smoothing (integer only, no float)
+    // smoothed = (factor * old + new) / (factor + 1)
+    if (!spectrum_smoothed_initialized_) {
+        for (size_t i = 0; i < count; ++i) {
+            spectrum_smoothed_[i] = static_cast<int32_t>(spectrum_data[i]);
+        }
+        spectrum_smoothed_initialized_ = true;
+    } else {
+        const int32_t factor = static_cast<int32_t>(spectrum_integration_);
+        for (size_t i = 0; i < count; ++i) {
+            spectrum_smoothed_[i] = (factor * spectrum_smoothed_[i] + static_cast<int32_t>(spectrum_data[i]))
+                                    / (factor + 1);
+        }
     }
-    
+
+    // Copy smoothed data to display buffer
+    spectrum_data_size_ = count;
+    for (size_t i = 0; i < count; ++i) {
+        spectrum_buffer_[i] = static_cast<uint8_t>(spectrum_smoothed_[i]);
+    }
+
     return ErrorCode::SUCCESS;
 }
 

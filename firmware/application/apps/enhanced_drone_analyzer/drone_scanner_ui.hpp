@@ -88,10 +88,23 @@ private:
     ui::RFAmpField field_rf_amp_{{UI_POS_X(18), 0}};
     ui::AudioVolumeField field_volume_{{UI_POS_X_RIGHT(2), UI_POS_Y(0)}};
 
-    ui::Button button_start_stop_{{UI_POS_X(0), 290, UI_POS_WIDTH(6), 28}, "Start"};  // Moved to bottom
-    ui::Button button_mode_{{UI_POS_X(7), 290, UI_POS_WIDTH(5), 28}, "Mode"};  // Moved to bottom
-    ui::Button button_load_{{UI_POS_X(13), 290, UI_POS_WIDTH(5), 28}, "Load"};  // Moved to bottom
-    ui::Button button_settings_{{UI_POS_X(19), 290, UI_POS_WIDTH(5), 28}, "Setup"};  // Moved to bottom
+    ui::Labels filter_labels_{
+        {{UI_POS_X(0), 274}, "FILT:", Theme::getInstance()->fg_light->foreground},
+    };
+
+    ui::OptionsField field_filter_{
+        {UI_POS_X(5), 274},
+        4,
+        {
+            {"OFF ", SPECTRUM_FILTER_OFF},
+            {"MID ", SPECTRUM_FILTER_MID},
+            {"HIGH", SPECTRUM_FILTER_HIGH},
+        }};
+
+    ui::Button button_start_stop_{{UI_POS_X(0), 290, UI_POS_WIDTH(6), 28}, "Start"};
+    ui::Button button_mode_{{UI_POS_X(7), 290, UI_POS_WIDTH(5), 28}, "Mode"};
+    ui::Button button_load_{{UI_POS_X(13), 290, UI_POS_WIDTH(5), 28}, "Load"};
+    ui::Button button_settings_{{UI_POS_X(19), 290, UI_POS_WIDTH(5), 28}, "Setup"};
 
     FreqHz current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
@@ -118,12 +131,20 @@ private:
     bool db_loaded_{false};
     size_t db_entry_count_{0};
 
-    DroneDisplay drone_display_{{0, 68, DISPLAY_WIDTH, 220}};  // Moved under BigFrequency (Y=68), increased height to 220
+    DroneDisplay drone_display_{{0, 68, DISPLAY_WIDTH, 206}};
 
     void bigdisplay_update(BigDisplayColor color) noexcept;
+    void update_big_frequency_only() noexcept;
     void refresh_ui() noexcept;
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void on_retune(FreqHz freq, uint32_t range) noexcept;
+
+    // Spectrum display cycle counter (update visual every N scan cycles)
+    uint8_t spectrum_cycle_counter_{0};
+    static constexpr uint8_t SPECTRUM_UPDATE_INTERVAL = 3;
+
+    // Spectrum filter threshold (OFF/MID/HIGH)
+    uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
     MessageHandlerRegistration message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
@@ -136,13 +157,21 @@ private:
     MessageHandlerRegistration message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
+            // Always feed spectrum to histogram/RSSI detector (every frame)
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
                     this->on_channel_spectrum(spectrum);
                 }
             }
-            this->refresh_ui();
+
+            // Update visual display every 3 scan cycles
+            if (this->spectrum_cycle_counter_ >= SPECTRUM_UPDATE_INTERVAL) {
+                this->spectrum_cycle_counter_ = 0;
+                this->refresh_ui();
+            } else {
+                this->update_big_frequency_only();
+            }
         }
     };
 
@@ -151,6 +180,7 @@ private:
         [this](Message* const p) {
             const auto message = *reinterpret_cast<const RetuneMessage*>(p);
             this->on_retune(message.freq, message.range);
+            this->spectrum_cycle_counter_++;
         }
     };
 };
