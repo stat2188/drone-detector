@@ -1,6 +1,7 @@
 #include "database.hpp"
 #include "file.hpp"
 #include "file_path.hpp"
+#include "freqman_db.hpp"
 #include <cstring>
 #include <ctype.h>
 
@@ -74,152 +75,37 @@ static DroneType parse_drone_type_from_description(
 }
 
 /**
- * @brief Parse a single FREQMAN format line and add to entries
- * @param line_buf Line buffer
- * @param line_len Line length
- * @return true if an entry was added
- */
-static bool parse_freqman_line(
-    uint8_t* line_buf,
-    size_t line_len,
-    FrequencyEntry* entries,
-    size_t& entry_count,
-    size_t max_entries
-) noexcept {
-    if (entry_count >= max_entries || line_len == 0) {
-        return false;
-    }
-
-    // Skip comment lines
-    if (line_buf[0] == '#') {
-        return false;
-    }
-
-    size_t pos = 0;
-
-    // Skip leading whitespace
-    while (pos < line_len && (line_buf[pos] == ' ' || line_buf[pos] == '\t')) {
-        pos++;
-    }
-
-    // Parse key=value pairs
-    FreqHz freq = 0;
-    bool has_freq = false;
-    const char* desc_start = nullptr;
-    size_t desc_len = 0;
-
-    while (pos < line_len) {
-        // Get key
-        if (pos >= line_len) break;
-        char key = static_cast<char>(::tolower(line_buf[pos]));
-        pos++;
-
-        // Skip '='
-        if (pos < line_len && line_buf[pos] == '=') {
-            pos++;
-        }
-
-        // Parse value based on key
-        if (key == 'f' || key == 'a' || key == 'r') {
-            // Frequency value
-            int64_t freq_val = 0;
-            while (pos < line_len && line_buf[pos] >= '0' && line_buf[pos] <= '9') {
-                freq_val = freq_val * 10 + (line_buf[pos] - '0');
-                pos++;
-            }
-            if (!has_freq) {
-                freq = static_cast<FreqHz>(freq_val);
-                has_freq = true;
-            }
-        } else if (key == 'd') {
-            // Description value
-            desc_start = reinterpret_cast<const char*>(&line_buf[pos]);
-            while (pos < line_len && line_buf[pos] != ',') {
-                desc_len++;
-                pos++;
-            }
-        } else {
-            // Skip unknown key's value
-            while (pos < line_len && line_buf[pos] != ',') {
-                pos++;
-            }
-        }
-
-        // Skip comma separator
-        if (pos < line_len && line_buf[pos] == ',') {
-            pos++;
-        }
-    }
-
-    if (!has_freq) {
-        return false;
-    }
-
-    if (freq < MIN_FREQUENCY_HZ || freq > MAX_FREQUENCY_HZ) {
-        return false;
-    }
-
-    if (desc_start == nullptr || desc_len == 0) {
-        return false;
-    }
-
-    const DroneType type = parse_drone_type_from_description(desc_start, desc_len);
-    if (type == DroneType::UNKNOWN) {
-        return false;
-    }
-
-    entries[entry_count++] = FrequencyEntry(freq, type);
-    return true;
-}
-
-/**
- * @brief Load database from FREQMAN file
- * @note Path: freqman_dir / database_file_ + ".TXT"
- *       Template path constructor widens char -> char16_t automatically
+ * @brief Load database using standard Mayhem freqman mechanism
+ * @note Uses load_freqman_file() — same as Recon, Scanner, Looking Glass
+ *       freqman_db allocates ~100 entries on heap during load, then frees.
  */
 ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     current_index_ = 0;
 
-    // Build path: FREQMAN / <filename> .TXT
-    // path template constructor handles char -> char16_t widening
-    const auto filepath = freqman_dir / std::filesystem::path(database_file_) + std::filesystem::path(u".TXT");
-
-    File file;
-    auto open_result = file.open(filepath);
-    if (!open_result) {
+    freqman_db db;
+    if (!load_freqman_file(database_file_, db, {})) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
-
-    constexpr size_t READ_CHUNK_SIZE = 256;
-    uint8_t chunk[READ_CHUNK_SIZE];
-    uint8_t line_buf[128];
-    size_t line_len = 0;
-
-    while (entry_count_ < MAX_DATABASE_ENTRIES) {
-        const auto read_result = file.read(chunk, READ_CHUNK_SIZE);
-        if (!read_result.is_ok() || read_result.value() == 0) {
-            break;
-        }
-
-        const size_t bytes_read = read_result.value();
-
-        for (size_t i = 0; i < bytes_read && entry_count_ < MAX_DATABASE_ENTRIES; ++i) {
-            const char c = static_cast<char>(chunk[i]);
-
-            if (c == '\r' || c == '\n') {
-                parse_freqman_line(line_buf, line_len, entries_.data(), entry_count_, MAX_DATABASE_ENTRIES);
-                line_len = 0;
-            } else if (line_len < sizeof(line_buf) - 1) {
-                line_buf[line_len++] = static_cast<uint8_t>(c);
-            }
-        }
+    if (db.empty()) {
+        return ErrorCode::DATABASE_EMPTY;
     }
 
-    file.close();
+    for (const auto& e : db) {
+        if (e == nullptr || entry_count_ >= MAX_DATABASE_ENTRIES)
+            break;
 
-    // Process final line if file doesn't end with newline
-    parse_freqman_line(line_buf, line_len, entries_.data(), entry_count_, MAX_DATABASE_ENTRIES);
+        const auto freq = static_cast<FreqHz>(e->frequency_a);
+        if (freq < MIN_FREQUENCY_HZ || freq > MAX_FREQUENCY_HZ)
+            continue;
+
+        const DroneType type = parse_drone_type_from_description(
+            e->description.c_str(), e->description.size());
+        if (type == DroneType::UNKNOWN)
+            continue;
+
+        entries_[entry_count_++] = FrequencyEntry(freq, type);
+    }
 
     if (entry_count_ == 0) {
         return ErrorCode::DATABASE_EMPTY;
