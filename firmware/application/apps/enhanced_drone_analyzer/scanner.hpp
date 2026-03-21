@@ -285,6 +285,13 @@ public:
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     void clear_tracked_drones() noexcept;
+
+    /**
+     * @brief Reset scanner frequency to first entry in database
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     * @note Call after reloading database to start scanning from beginning
+     */
+    void reset_frequency() noexcept;
     
     /**
      * @brief Remove stale drones

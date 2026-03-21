@@ -104,6 +104,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         auto open_view = nav_.push<FileLoadView>(".TXT");
         open_view->push_dir(freqman_dir);
         open_view->on_changed = [this](std::filesystem::path new_file_path) {
+            const bool was_scanning = scanning_;
+
             // Stop scanning if active
             if (scanning_) {
                 scanner_thread_->set_scanning(false);
@@ -129,12 +131,45 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             const ErrorCode err = database_ptr_->load_frequency_database();
             db_loaded_ = (err == ErrorCode::SUCCESS);
             db_entry_count_ = database_ptr_->get_database_size();
-            if (err == ErrorCode::SUCCESS) {
-                char msg[32];
-                snprintf(msg, sizeof(msg), "Loaded %lu", (unsigned long)db_entry_count_);
+
+            if (err == ErrorCode::SUCCESS && db_entry_count_ > 0) {
+                // Build status message with filename and entry count
+                static char status_buf[MAX_TEXT_LENGTH];
+                snprintf(status_buf, sizeof(status_buf), "%s (%lu)",
+                         filename, (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(status_buf);
+
+                // Show alert with confirmation
+                static char msg[MAX_TEXT_LENGTH];
+                snprintf(msg, sizeof(msg), "DB: %s loaded", filename);
                 show_alert(msg, 2000);
+
+                // Reset scanner frequency to first entry in new database
+                scanner_ptr_->reset_frequency();
+
+                // Resume scanning if it was active before
+                if (was_scanning) {
+                    baseband::spectrum_streaming_start();
+                    (void)scanner_ptr_->start_scanning();
+                    scanner_thread_->set_scanning(true);
+                    scanning_ = true;
+                    button_start_stop_.set_text("Stop");
+                }
+
+                // Force UI refresh
+                drone_display_.set_dirty();
+                set_dirty();
             } else {
-                show_error(err, ERROR_DURATION_MS);
+                // Show error with filename for debugging
+                static char err_msg[MAX_TEXT_LENGTH];
+                snprintf(err_msg, sizeof(err_msg), "Failed: %s (err %d)",
+                         filename, static_cast<int>(err));
+                show_alert(err_msg, 3000);
+
+                // Show error in status
+                drone_display_.set_status_text("DB load error");
+                drone_display_.set_dirty();
+                set_dirty();
             }
         };
     };
@@ -337,34 +372,37 @@ void DroneScannerUI::refresh_ui() noexcept {
     }
 
     // Update status text based on state and database status
-    switch (current_scanner_state_) {
-        case ScannerState::SCANNING:
-            drone_display_.set_status_text(STATUS_SCANNING);
-            break;
-        case ScannerState::LOCKING:
-        case ScannerState::TRACKING:
-            if (display_data.drone_count > 0) {
-                drone_display_.set_status_text(STATUS_READY);
-            } else {
-                drone_display_.set_status_text(STATUS_NO_DRONES);
-            }
-            break;
-        case ScannerState::PAUSED:
-            drone_display_.set_status_text(STATUS_READY);
-            break;
-        default:
-            // IDLE or unknown: show database-aware status
-            if (!db_loaded_) {
-                drone_display_.set_status_text("No DB");
-            } else if (db_entry_count_ == 0) {
-                drone_display_.set_status_text("DB empty");
-            } else {
-                // Show "Ready (N)" so user knows DB is loaded with N entries
-                static char ready_buf[MAX_TEXT_LENGTH];
-                snprintf(ready_buf, sizeof(ready_buf), "Ready (%lu)", (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(ready_buf);
-            }
-            break;
+    // Always show database entry count so user can verify DB changed after Load
+    static char status_buf[MAX_TEXT_LENGTH];
+
+    if (!db_loaded_) {
+        drone_display_.set_status_text("No DB");
+    } else if (db_entry_count_ == 0) {
+        drone_display_.set_status_text("DB empty");
+    } else {
+        switch (current_scanner_state_) {
+            case ScannerState::SCANNING:
+                snprintf(status_buf, sizeof(status_buf), "Scan (%lu)", (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(status_buf);
+                break;
+            case ScannerState::LOCKING:
+                snprintf(status_buf, sizeof(status_buf), "Lock (%lu)", (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(status_buf);
+                break;
+            case ScannerState::TRACKING:
+                snprintf(status_buf, sizeof(status_buf), "Track %lu (%lu)",
+                         (unsigned long)display_data.drone_count, (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(status_buf);
+                break;
+            case ScannerState::PAUSED:
+                snprintf(status_buf, sizeof(status_buf), "Pause (%lu)", (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(status_buf);
+                break;
+            default:
+                snprintf(status_buf, sizeof(status_buf), "Ready (%lu)", (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(status_buf);
+                break;
+        }
     }
 
     drone_display_.update_display_data(display_data);

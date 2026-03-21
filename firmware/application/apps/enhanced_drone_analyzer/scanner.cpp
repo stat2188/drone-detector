@@ -601,6 +601,22 @@ void DroneScanner::clear_tracked_drones() noexcept {
     tracked_count_ = 0;
 }
 
+void DroneScanner::reset_frequency() noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+
+    // Get first frequency from new database
+    ErrorResult<FreqHz> freq_result = database_.get_next_frequency(0);
+    if (freq_result.has_value()) {
+        current_frequency_ = freq_result.value();
+    } else {
+        current_frequency_ = MIN_FREQUENCY_HZ;
+    }
+
+    // Reset tracking state
+    freq_lock_count_ = 0;
+    locked_frequency_ = 0;
+}
+
 void DroneScanner::remove_stale_drones(SystemTime current_time) noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     remove_stale_drones_internal(current_time);

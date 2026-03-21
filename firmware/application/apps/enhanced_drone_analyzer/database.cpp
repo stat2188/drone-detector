@@ -236,8 +236,10 @@ void DatabaseManager::set_database_file(const char* filename) noexcept {
     }
     database_file_[i] = '\0';
     
-    // Reset loaded flag so database will be reloaded
+    // Reset state so database will be fully reloaded
     loaded_.clear();
+    current_index_ = 0;
+    entry_count_ = 0;
 }
 
 } 
