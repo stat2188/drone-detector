@@ -162,6 +162,9 @@ public:
     void set_spectrum_filter(uint8_t min_power) noexcept { min_color_power_ = min_power; }
     void set_spectrum_integration(uint8_t factor) noexcept { spectrum_integration_ = factor; }
 
+    void set_composite_mode(bool enabled) noexcept { composite_mode_ = enabled; }
+    void set_composite_data(const uint8_t* data, size_t size) noexcept;
+
     [[nodiscard]] const char* get_status_text() const noexcept;
 
 private:
@@ -374,6 +377,21 @@ private:
     // Previous frame bar heights for dirty-check optimization
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_cached_{};
     bool spectrum_cache_valid_{false};
+
+    // Band sweep composite mode
+    bool composite_mode_{false};
+    const uint8_t* composite_data_{nullptr};
+    size_t composite_data_size_{0};
+
+    void render_composite(
+        Painter& painter,
+        const uint8_t* composite_data,
+        size_t composite_size,
+        uint16_t start_x,
+        uint16_t start_y,
+        uint16_t width,
+        uint16_t height
+    ) noexcept;
 };
 
 } // namespace drone_analyzer

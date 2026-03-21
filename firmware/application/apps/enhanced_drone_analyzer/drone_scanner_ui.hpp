@@ -138,6 +138,17 @@ private:
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void on_retune(FreqHz freq, uint32_t range) noexcept;
 
+    // Band sweep composite buffer
+    static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;  // 240 pixels
+    uint8_t composite_buffer_[COMPOSITE_SIZE]{};
+    bool composite_active_{false};
+    FreqHz sweep_display_start_{5700000000};
+    FreqHz sweep_display_end_{5900000000};
+    FreqHz sweep_display_range_{200000000};
+
+    void update_composite(FreqHz center_freq, const ChannelSpectrum& spectrum) noexcept;
+    void clear_composite() noexcept;
+
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
@@ -155,6 +166,12 @@ private:
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
+                    if (this->composite_active_ && this->scanning_) {
+                        // Sweep mode: accumulate into composite buffer
+                        this->update_composite(
+                            static_cast<FreqHz>(this->current_frequency_), spectrum);
+                    }
+                    // Always update smoothed single-slice view
                     this->on_channel_spectrum(spectrum);
                 }
             }

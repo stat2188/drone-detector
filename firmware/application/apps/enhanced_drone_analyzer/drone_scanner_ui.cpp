@@ -80,7 +80,40 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
 
     button_mode_.on_select = [this](ui::Button&) {
-        show_alert("Sequential mode", 1000);
+        composite_active_ = !composite_active_;
+        if (composite_active_) {
+            // Initialize sweep range from settings
+            sweep_display_start_ = settings_.spectrum_start_freq;
+            sweep_display_end_ = settings_.spectrum_end_freq;
+            sweep_display_range_ = sweep_display_end_ - sweep_display_start_;
+
+            if (sweep_display_range_ == 0) {
+                composite_active_ = false;
+                show_alert("Set Spec range first", 2000);
+                return;
+            }
+
+            // Calculate sweep step: spread range across DISPLAY_WIDTH pixels
+            FreqHz step = sweep_display_range_ / COMPOSITE_SIZE;
+            if (step < 1) step = 1;
+
+            clear_composite();
+            if (scanner_thread_ != nullptr) {
+                scanner_thread_->set_sweep_range(
+                    sweep_display_start_, sweep_display_end_, step);
+                scanner_thread_->set_sweep_enabled(true);
+            }
+            drone_display_.set_composite_mode(true);
+            button_mode_.set_text("Spec");
+            show_alert("Spectrum sweep ON", 1000);
+        } else {
+            if (scanner_thread_ != nullptr) {
+                scanner_thread_->set_sweep_enabled(false);
+            }
+            drone_display_.set_composite_mode(false);
+            button_mode_.set_text("Mode");
+            show_alert("Scanner mode", 1000);
+        }
     };
 
     button_load_.on_select = [this](ui::Button&) {
@@ -459,6 +492,46 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
         drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
         drone_display_.set_dirty();
     }
+}
+
+void DroneScannerUI::update_composite(FreqHz center_freq, const ChannelSpectrum& spectrum) noexcept {
+    if (sweep_display_range_ == 0) return;
+
+    constexpr FreqHz half_bw = 1000000;      // 1 MHz from center to edge
+    constexpr FreqHz bin_bw = 2000000 / 256;  // ~7812 Hz per bin (2MHz baseband)
+    FreqHz frame_start = center_freq - half_bw;
+
+    for (size_t bin = 0; bin < 256; ++bin) {
+        // Skip DC spike bins
+        if (bin >= 120 && bin < 136) continue;
+
+        uint8_t power = spectrum.db[bin];
+        if (power < min_color_power_) continue;
+
+        FreqHz bin_freq = frame_start + bin * bin_bw;
+        if (bin_freq < sweep_display_start_ || bin_freq >= sweep_display_end_) continue;
+
+        // Map frequency to pixel
+        uint32_t pixel = static_cast<uint32_t>(
+            ((bin_freq - sweep_display_start_) * COMPOSITE_SIZE) / sweep_display_range_);
+        if (pixel >= COMPOSITE_SIZE) continue;
+
+        // Max accumulation
+        if (power > composite_buffer_[pixel]) {
+            composite_buffer_[pixel] = power;
+        }
+    }
+
+    // Pass to display for rendering
+    drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
+    drone_display_.set_dirty();
+}
+
+void DroneScannerUI::clear_composite() noexcept {
+    for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+        composite_buffer_[i] = 0;
+    }
+    drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
 }
 
 } // namespace drone_analyzer

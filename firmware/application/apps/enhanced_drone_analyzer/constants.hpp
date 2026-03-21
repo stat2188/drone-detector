@@ -29,7 +29,7 @@ constexpr FreqHz FREQUENCY_STEP_HZ = 1'000'000ULL;
 /**
  * @brief Frequency bandwidth in Hz (2 MHz - matches DEFAULT_SAMPLE_RATE_HZ)
  */
-constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 2'000'000ULL;
+constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 20'000'000ULL;
 
 /**
  * @brief Default spectrum start frequency in Hz (1 MHz)

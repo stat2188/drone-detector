@@ -50,10 +50,11 @@ void DroneDisplay::paint(Painter& painter) {
     uint16_t remaining = total_h;
 
     const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0);
+    const bool show_composite = (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0);
     const bool show_hist = (histogram_visible_ && histogram_data_size_ > 0);
     const bool show_list = (drone_list_visible_ && display_data_.drone_count > 0);
 
-    const uint16_t spec_h = show_spec ? SPECTRUM_H : 0;
+    const uint16_t spec_h = (show_spec || show_composite) ? SPECTRUM_H : 0;
     if (spec_h <= remaining) remaining -= spec_h; else remaining = 0;
 
     const uint16_t hist_h = show_hist ? HISTOGRAM_H : 0;
@@ -66,9 +67,14 @@ void DroneDisplay::paint(Painter& painter) {
 
     uint16_t y_offset = oy;
 
-    if (show_spec) {
-        render_spectrum(painter, spectrum_buffer_.data(), spectrum_data_size_,
-                        ox, y_offset, w, spec_h);
+    if (show_spec || show_composite) {
+        if (show_composite) {
+            render_composite(painter, composite_data_, composite_data_size_,
+                            ox, y_offset, w, spec_h);
+        } else {
+            render_spectrum(painter, spectrum_buffer_.data(), spectrum_data_size_,
+                            ox, y_offset, w, spec_h);
+        }
         y_offset += spec_h;
     }
 
@@ -699,6 +705,58 @@ uint16_t DroneDisplay::clamp(
         return static_cast<uint16_t>(max);
     }
     return static_cast<uint16_t>(value);
+}
+
+void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept {
+    composite_data_ = data;
+    composite_data_size_ = size;
+}
+
+void DroneDisplay::render_composite(
+    Painter& painter,
+    const uint8_t* composite_data,
+    size_t composite_size,
+    uint16_t start_x,
+    uint16_t start_y,
+    uint16_t width,
+    uint16_t height
+) noexcept {
+    if (composite_data == nullptr || composite_size == 0 || height < 20) {
+        return;
+    }
+
+    // Clear area and draw label
+    draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
+    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
+    draw_text(painter, "BAND SWEEP", start_x + 2, start_y + 2, COLOR_TEXT);
+
+    constexpr uint16_t LABEL_H = 12;
+    const uint16_t chart_start_y = start_y + LABEL_H;
+    const uint16_t chart_height = height - LABEL_H;
+    if (chart_height < 4) return;
+
+    const uint16_t bar_count = static_cast<uint16_t>(composite_size);
+    const uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
+
+    for (uint16_t i = 0; i < bar_count; ++i) {
+        const uint8_t power = composite_data[i];
+        if (power == 0) continue;
+
+        if (power < min_color_power_) continue;
+
+        const uint16_t bar_height = (static_cast<uint16_t>(power) * chart_height) / 255;
+        if (bar_height == 0) continue;
+
+        const uint16_t x = start_x + 1 + i * bar_width;
+        const uint16_t y = chart_start_y + chart_height - bar_height;
+        const uint8_t color_gradient = (bar_height * 255) / chart_height;
+        const Color bar_color(
+            color_gradient,
+            static_cast<uint8_t>(0),
+            static_cast<uint8_t>(255 - color_gradient)
+        );
+        painter.fill_rectangle({x, y, bar_width, bar_height}, bar_color);
+    }
 }
 
 } // namespace drone_analyzer
