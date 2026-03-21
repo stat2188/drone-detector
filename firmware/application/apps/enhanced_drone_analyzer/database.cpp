@@ -182,9 +182,8 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     current_index_ = 0;
 
-    // Build path: FREQMAN / <filename> .TXT
-    // Matches pattern used by freqman_db.cpp: get_freqman_path()
-    // Convert char database_file_ to char16_t for path constructor
+    // Build path: /FREQMAN/<filename>.TXT
+    // Use char16_t buffer to match std::filesystem::path constructor
     char16_t wide_name[32];
     size_t wi = 0;
     for (; wi < 31 && database_file_[wi] != '\0'; ++wi) {
@@ -192,13 +191,13 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     }
     wide_name[wi] = u'\0';
 
-    const auto filepath = freqman_dir /
-        std::filesystem::path(wide_name) +
-        std::filesystem::path(u".TXT");
+    auto filepath = std::filesystem::path(u"/FREQMAN");
+    filepath /= std::filesystem::path(wide_name);
+    filepath += std::filesystem::path(u".TXT");
 
     File file;
     const auto open_result = file.open(filepath);
-    if (!open_result) {
+    if (open_result) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
 
