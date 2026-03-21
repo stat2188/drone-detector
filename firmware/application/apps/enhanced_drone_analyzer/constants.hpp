@@ -542,6 +542,13 @@ constexpr uint8_t DEFAULT_SPECTRUM_FILTER = SPECTRUM_FILTER_OFF;
 constexpr uint8_t DEFAULT_SPECTRUM_INTEGRATION = 3;
 
 // ============================================================================
+// Band Sweep Constants
+// ============================================================================
+
+constexpr FreqHz SWEEP_DEFAULT_START_HZ = 5700000000;   // 5.7 GHz
+constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5900000000;     // 5.9 GHz
+
+// ============================================================================
 // String Constants (Flash Storage)
 // ============================================================================
 

@@ -82,14 +82,14 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     button_mode_.on_select = [this](ui::Button&) {
         composite_active_ = !composite_active_;
         if (composite_active_) {
-            // Initialize sweep range from settings
-            sweep_display_start_ = settings_.spectrum_start_freq;
-            sweep_display_end_ = settings_.spectrum_end_freq;
+            // Initialize sweep range from constants (TODO: load from settings file)
+            sweep_display_start_ = SWEEP_DEFAULT_START_HZ;
+            sweep_display_end_ = SWEEP_DEFAULT_END_HZ;
             sweep_display_range_ = sweep_display_end_ - sweep_display_start_;
 
             if (sweep_display_range_ == 0) {
                 composite_active_ = false;
-                show_alert("Set Spec range first", 2000);
+                show_alert("Invalid sweep range", 2000);
                 return;
             }
 
