@@ -115,6 +115,8 @@ private:
 
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
     bool initialization_failed_{false};
+    bool db_loaded_{false};
+    size_t db_entry_count_{0};
 
     DroneDisplay drone_display_{{0, 68, DISPLAY_WIDTH, 220}};  // Moved under BigFrequency (Y=68), increased height to 220
 

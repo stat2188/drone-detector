@@ -147,10 +147,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
             // Load new database
             const ErrorCode err = database_ptr_->load_frequency_database();
+            db_loaded_ = (err == ErrorCode::SUCCESS);
+            db_entry_count_ = database_ptr_->get_database_size();
             if (err == ErrorCode::SUCCESS) {
-                const size_t db_size = database_ptr_->get_database_size();
                 char msg[32];
-                snprintf(msg, sizeof(msg), "Loaded %lu entries", (unsigned long)db_size);
+                snprintf(msg, sizeof(msg), "Loaded %lu entries", (unsigned long)db_entry_count_);
                 show_alert(msg, 2000);
             } else {
                 show_error(err, ERROR_DURATION_MS);
@@ -178,6 +179,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
     // Database load is non-fatal — scanner works on default frequency if DB missing
     const auto db_result = database_ptr_->load_frequency_database();
+    db_loaded_ = (db_result == ErrorCode::SUCCESS);
+    db_entry_count_ = database_ptr_->get_database_size();
     if (db_result != ErrorCode::SUCCESS) {
         show_error(db_result, ERROR_DURATION_MS);
     }
@@ -353,7 +356,7 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }
 
-    // Update status text based on state
+    // Update status text based on state and database status
     switch (current_scanner_state_) {
         case ScannerState::SCANNING:
             drone_display_.set_status_text(STATUS_SCANNING);
@@ -370,7 +373,17 @@ void DroneScannerUI::refresh_ui() noexcept {
             drone_display_.set_status_text(STATUS_READY);
             break;
         default:
-            drone_display_.set_status_text(STATUS_READY);
+            // IDLE or unknown: show database-aware status
+            if (!db_loaded_) {
+                drone_display_.set_status_text("No DB");
+            } else if (db_entry_count_ == 0) {
+                drone_display_.set_status_text("DB empty");
+            } else {
+                // Show "Ready (N)" so user knows DB is loaded with N entries
+                static char ready_buf[MAX_TEXT_LENGTH];
+                snprintf(ready_buf, sizeof(ready_buf), "Ready (%lu)", (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(ready_buf);
+            }
             break;
     }
 

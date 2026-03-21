@@ -1,6 +1,7 @@
 #include "database.hpp"
 #include "file.hpp"
 #include "file_path.hpp"
+#include "sd_card.hpp"
 #include <cstring>
 #include <ctype.h>
 
@@ -182,31 +183,27 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     current_index_ = 0;
 
-    // Build path: freqman_dir / database_file_ + ".TXT"
-    // Use absolute path with leading slash for PortaPack file system
-    char filepath[64];
-    size_t pos = 0;
-    
-    // Copy freqman_dir path (absolute path with leading slash)
-    const char* dir = "/FREQMAN/";
-    for (size_t i = 0; dir[i] != '\0' && pos < sizeof(filepath) - 1; ++i) {
-        filepath[pos++] = dir[i];
+    // Check SD card is mounted before file access
+    if (sd_card::status() != sd_card::Status::Mounted) {
+        return ErrorCode::DATABASE_NOT_LOADED;
     }
-    
-    // Copy database filename
-    for (size_t i = 0; database_file_[i] != '\0' && pos < sizeof(filepath) - 1; ++i) {
-        filepath[pos++] = database_file_[i];
+
+    // Build path: FREQMAN / <filename> .TXT
+    // Matches pattern used by freqman_db.cpp: get_freqman_path()
+    // Convert char database_file_ to char16_t for path constructor
+    char16_t wide_name[32];
+    size_t wi = 0;
+    for (; wi < 31 && database_file_[wi] != '\0'; ++wi) {
+        wide_name[wi] = static_cast<char16_t>(database_file_[wi]);
     }
-    
-    // Add .TXT extension
-    const char* ext = ".TXT";
-    for (size_t i = 0; ext[i] != '\0' && pos < sizeof(filepath) - 1; ++i) {
-        filepath[pos++] = ext[i];
-    }
-    filepath[pos] = '\0';
+    wide_name[wi] = u'\0';
+
+    const auto filepath = freqman_dir /
+        std::filesystem::path(wide_name) +
+        std::filesystem::path(u".TXT");
 
     File file;
-    const auto open_result = file.open(std::filesystem::path(reinterpret_cast<const TCHAR*>(filepath)), true, false);
+    const auto open_result = file.open(filepath, true, false);
     if (!open_result) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
@@ -306,12 +303,6 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
         // Current frequency not in database — return first entry
         // This ensures we always move forward, never stay stuck
         current_index_ = 0;
-    }
-    
-    // Safety check: if we only have one entry, return failure to avoid infinite loop
-    // The scanner will then use range-based sweeping instead
-    if (entry_count_ == 1 && entries_[0].frequency == current_freq) {
-        return ErrorResult<FreqHz>::failure(ErrorCode::DATABASE_EMPTY);
     }
     
     return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);

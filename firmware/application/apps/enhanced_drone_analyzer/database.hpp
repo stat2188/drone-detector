@@ -49,7 +49,6 @@ public:
     
 private:
     
-    [[nodiscard]] ErrorResult<FrequencyEntry> find_entry_internal(FreqHz frequency) const noexcept;
     [[nodiscard]] ErrorResult<size_t> find_entry_index_internal(FreqHz frequency) const noexcept;
     [[nodiscard]] ErrorCode load_from_file_internal() noexcept;
 
