@@ -136,7 +136,6 @@ private:
     void bigdisplay_update(BigDisplayColor color) noexcept;
     void update_big_frequency_only() noexcept;
     void refresh_ui() noexcept;
-    void process_scan_cycle_spectrum() noexcept;
 
     // Scan cycle counter — update spectrum display every N cycles
     // (avoids race with scanner thread tuning between cycles)

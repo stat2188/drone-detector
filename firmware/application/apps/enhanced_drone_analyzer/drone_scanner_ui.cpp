@@ -44,12 +44,18 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
-            // Drain FIFO every frame (lightweight, prevents overflow)
-            if (this->spectrum_fifo_ != nullptr) {
-                ChannelSpectrum dummy;
-                while (this->spectrum_fifo_->out(dummy)) {
-                    // Drain only — spectrum processing happens in Retune handler
+            // Process spectrum every frame (Looking Glass pattern: drain → smooth → draw)
+            if (this->spectrum_fifo_ != nullptr && this->scanning_) {
+                ChannelSpectrum spectrum;
+                while (this->spectrum_fifo_->out(spectrum)) {
+                    // Keep draining — last value wins
                 }
+                // Attributed to current_frequency_ (correct — hasn't retuned yet)
+                if (this->scanner_ptr_ != nullptr) {
+                    (void)this->scanner_ptr_->process_spectrum_message(spectrum);
+                }
+                this->drone_display_.set_spectrum_data(
+                    spectrum.db.data(), spectrum.db.size());
             }
 
             if (this->needs_full_refresh_) {
@@ -62,14 +68,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     }
     , message_handler_retune{
         Message::ID::Retune,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const RetuneMessage*>(p);
-            (void)message;
-
+        [this](Message* const) {
             this->scan_cycle_count_++;
             if (this->scan_cycle_count_ >= SCAN_CYCLE_DISPLAY_INTERVAL) {
                 this->scan_cycle_count_ = 0;
-                this->process_scan_cycle_spectrum();
                 this->needs_full_refresh_ = true;
             }
         }
@@ -358,30 +360,6 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
     // BigFrequency::set() only accepts rf::Frequency (numeric), not strings
     // When frequency is 0 (uninitialized), display 0 Hz which formats as "0.000"
     big_display_.set(current_frequency_);
-}
-
-void DroneScannerUI::process_scan_cycle_spectrum() noexcept {
-    if (scanner_ptr_ == nullptr || !scanning_) {
-        return;
-    }
-
-    // Drain the latest spectrum frame from FIFO
-    // At this point, frequency is stable (scanner just finished tuning)
-    // so RSSI will be attributed to the correct frequency
-    if (spectrum_fifo_ != nullptr) {
-        ChannelSpectrum spectrum;
-        // Take only the most recent frame (skip stale ones)
-        while (spectrum_fifo_->out(spectrum)) {
-            // Keep draining — last value wins
-        }
-
-        // Feed spectrum to histogram/RSSI detector (thread-safe, TryLock)
-        (void)scanner_ptr_->process_spectrum_message(spectrum);
-
-        // Update visual spectrum buffer
-        // Smoothing happens inside DroneDisplay::set_spectrum_data()
-        drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
-    }
 }
 
 void DroneScannerUI::refresh_ui() noexcept {
