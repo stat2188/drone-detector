@@ -97,23 +97,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
 
     button_mode_.on_select = [this](ui::Button&) {
-        if (initialization_failed_ || scanner_ptr_ == nullptr) {
-            show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
-            return;
-        }
-        ScanConfig config = scanner_ptr_->get_config();
-        const uint8_t current = static_cast<uint8_t>(config.mode);
-        config.mode = static_cast<ScanningMode>((current + 1) % SCANNING_MODE_COUNT);
-        const ErrorCode err = scanner_ptr_->set_config(config);
-        if (err != ErrorCode::SUCCESS) {
-            show_error(err, ERROR_DURATION_MS);
-            return;
-        }
-        scanning_mode_ = config.mode;
-
-        // Update button text to show current mode
-        static const char* mode_names[] = {"Single", "Hopping", "Sequential", "Targeted", "Spectrometer"};
-        button_mode_.set_text(mode_names[static_cast<uint8_t>(scanning_mode_)]);
+        show_alert("Sequential mode", 1000);
     };
 
     button_load_.on_select = [this](ui::Button&) {

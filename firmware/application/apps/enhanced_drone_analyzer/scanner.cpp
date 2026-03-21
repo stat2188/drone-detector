@@ -232,12 +232,8 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
     
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     
-    if (state_ == ScannerState::PAUSED) {
+    if (state_ == ScannerState::PAUSED || state_ == ScannerState::IDLE) {
         return ErrorCode::SUCCESS;
-    }
-    
-    if (state_ != ScannerState::SCANNING) {
-        return ErrorCode::HARDWARE_NOT_INITIALIZED;
     }
     
     return perform_scan_cycle_internal();

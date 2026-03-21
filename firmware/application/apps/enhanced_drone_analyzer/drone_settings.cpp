@@ -67,11 +67,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(7), UI_POS_Y(17)}, "-", Theme::getInstance()->fg_light->foreground},
     })
     , field_scan_mode_({UI_POS_X(1), UI_POS_Y(2)}, 14, {
-        {"Single", 0},
-        {"Hopping", 1},
-        {"Sequential", 2},
-        {"Targeted", 3},
-        {"Spectrometer", 4}
+        {"Sequential", 0}
     })
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(5)}, 4, {10, 1000}, 10, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(8)}, 4, {-90, -20}, 1, ' ')
@@ -157,10 +153,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
             // Write scanning settings
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "spectrum_mode=%s\n",
-                (settings_.scanning_mode == ScanningMode::SINGLE) ? "SINGLE" :
-                (settings_.scanning_mode == ScanningMode::HOPPING) ? "HOPPING" :
-                (settings_.scanning_mode == ScanningMode::SEQUENTIAL) ? "SEQUENTIAL" : "TARGETED");
+                "spectrum_mode=SEQUENTIAL\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "scan_interval_ms=%lu\n", (unsigned long)settings_.scan_interval_ms);
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -392,25 +385,8 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
             settings_.histogram_visible = (val_len == 4 && 
                 val_start[0] == 't' && val_start[1] == 'r' && val_start[2] == 'u' && val_start[3] == 'e');
         } else if (str_eq(key, "spectrum_mode", 13)) {
-            if (val_len == 6 && 
-                val_start[0] == 'S' && val_start[1] == 'I' && val_start[2] == 'N' && 
-                val_start[3] == 'G' && val_start[4] == 'L' && val_start[5] == 'E') {
-                settings_.scanning_mode = ScanningMode::SINGLE;
-            } else if (val_len == 7 && 
-                val_start[0] == 'H' && val_start[1] == 'O' && val_start[2] == 'P' && 
-                val_start[3] == 'P' && val_start[4] == 'I' && val_start[5] == 'N' && val_start[6] == 'G') {
-                settings_.scanning_mode = ScanningMode::HOPPING;
-            } else if (val_len == 10 && 
-                val_start[0] == 'S' && val_start[1] == 'E' && val_start[2] == 'Q' && 
-                val_start[3] == 'U' && val_start[4] == 'E' && val_start[5] == 'N' && 
-                val_start[6] == 'T' && val_start[7] == 'I' && val_start[8] == 'A' && val_start[9] == 'L') {
-                settings_.scanning_mode = ScanningMode::SEQUENTIAL;
-            } else if (val_len == 8 && 
-                val_start[0] == 'T' && val_start[1] == 'A' && val_start[2] == 'R' && 
-                val_start[3] == 'G' && val_start[4] == 'E' && val_start[5] == 'T' && 
-                val_start[6] == 'E' && val_start[7] == 'D') {
-                settings_.scanning_mode = ScanningMode::TARGETED;
-            }
+            // Only SEQUENTIAL mode supported
+            settings_.scanning_mode = ScanningMode::SEQUENTIAL;
         }
     };
 

@@ -299,9 +299,8 @@ constexpr ScanningMode DEFAULT_SCANNING_MODE = ScanningMode::SEQUENTIAL;
 
 /**
  * @brief Number of scanning modes
- * @note SINGLE, HOPPING, SEQUENTIAL, TARGETED, SPECTROMETER
  */
-constexpr uint8_t SCANNING_MODE_COUNT = 5;
+constexpr uint8_t SCANNING_MODE_COUNT = 1;
 
 /**
  * @brief Maximum scan cycles before timeout

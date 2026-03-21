@@ -55,11 +55,7 @@ enum class ThreatLevel : uint8_t {
  * @note SPECTROMETER: Wideband spectrum analysis using 20MHz slices (like Looking Glass)
  */
 enum class ScanningMode : uint8_t {
-    SINGLE = 0,
-    HOPPING = 1,
-    SEQUENTIAL = 2,
-    TARGETED = 3,
-    SPECTROMETER = 4  // Wideband spectrum mode - independent of main scanner
+    SEQUENTIAL = 0,
 };
 
 /**
