@@ -44,24 +44,16 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
-            bool has_new_spectrum = false;
-
-            // Drain spectrum FIFO (every frame — light work, keeps noise floor accurate)
+            // Drain FIFO every frame (lightweight, prevents overflow)
             if (this->spectrum_fifo_ != nullptr) {
-                ChannelSpectrum spectrum;
-                if (this->spectrum_fifo_->out(spectrum)) {
-                    this->on_channel_spectrum(spectrum);
-                    has_new_spectrum = true;
+                ChannelSpectrum dummy;
+                while (this->spectrum_fifo_->out(dummy)) {
+                    // Drain only — spectrum processing happens in Retune handler
                 }
             }
 
-            // Heavy refresh (mutex lock, snprintf, histogram) when:
-            // 1) New spectrum data arrived, OR
-            // 2) Every N frames (to update threat levels even without new spectrum)
-            this->display_frame_count_++;
-
-            if (has_new_spectrum || this->display_frame_count_ >= DISPLAY_REFRESH_INTERVAL) {
-                this->display_frame_count_ = 0;
+            if (this->needs_full_refresh_) {
+                this->needs_full_refresh_ = false;
                 this->refresh_ui();
             } else {
                 this->update_big_frequency_only();
@@ -72,8 +64,14 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         Message::ID::Retune,
         [this](Message* const p) {
             const auto message = *reinterpret_cast<const RetuneMessage*>(p);
-            this->on_retune(message.freq, message.range);
-            this->spectrum_cycle_counter_++;
+            (void)message;
+
+            this->scan_cycle_count_++;
+            if (this->scan_cycle_count_ >= SCAN_CYCLE_DISPLAY_INTERVAL) {
+                this->scan_cycle_count_ = 0;
+                this->process_scan_cycle_spectrum();
+                this->needs_full_refresh_ = true;
+            }
         }
     } {
     add_children({
@@ -362,9 +360,28 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
     big_display_.set(current_frequency_);
 }
 
-void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
-    (void)range;
-    current_frequency_ = freq;
+void DroneScannerUI::process_scan_cycle_spectrum() noexcept {
+    if (scanner_ptr_ == nullptr || !scanning_) {
+        return;
+    }
+
+    // Drain the latest spectrum frame from FIFO
+    // At this point, frequency is stable (scanner just finished tuning)
+    // so RSSI will be attributed to the correct frequency
+    if (spectrum_fifo_ != nullptr) {
+        ChannelSpectrum spectrum;
+        // Take only the most recent frame (skip stale ones)
+        while (spectrum_fifo_->out(spectrum)) {
+            // Keep draining — last value wins
+        }
+
+        // Feed spectrum to histogram/RSSI detector (thread-safe, TryLock)
+        (void)scanner_ptr_->process_spectrum_message(spectrum);
+
+        // Update visual spectrum buffer
+        // Smoothing happens inside DroneDisplay::set_spectrum_data()
+        drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
+    }
 }
 
 void DroneScannerUI::refresh_ui() noexcept {
@@ -514,24 +531,6 @@ void DroneScannerUI::update_big_frequency_only() noexcept {
             break;
     }
     bigdisplay_update(color);
-}
-
-void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
-    if (scanner_ptr_ != nullptr && scanning_) {
-        // Stop streaming to prevent stale data accumulation
-        // (Looking Glass pattern: process one frame at a time)
-        baseband::spectrum_streaming_stop();
-
-        // Always feed histogram/RSSI for accurate noise floor
-        (void)scanner_ptr_->process_spectrum_message(spectrum);
-
-        // Update visual spectrum buffer (smoothing + filter applied in DroneDisplay)
-        drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
-        drone_display_.set_dirty();
-
-        // Resume streaming
-        baseband::spectrum_streaming_start();
-    }
 }
 
 } // namespace drone_analyzer

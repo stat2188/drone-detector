@@ -136,57 +136,23 @@ private:
     void bigdisplay_update(BigDisplayColor color) noexcept;
     void update_big_frequency_only() noexcept;
     void refresh_ui() noexcept;
-    void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
-    void on_retune(FreqHz freq, uint32_t range) noexcept;
+    void process_scan_cycle_spectrum() noexcept;
 
-    // Spectrum display cycle counter (update visual every N scan cycles)
-    uint8_t spectrum_cycle_counter_{0};
-    static constexpr uint8_t SPECTRUM_UPDATE_INTERVAL = 3;
+    // Scan cycle counter — update spectrum display every N cycles
+    // (avoids race with scanner thread tuning between cycles)
+    uint8_t scan_cycle_count_{0};
+    static constexpr uint8_t SCAN_CYCLE_DISPLAY_INTERVAL = 3;
 
-    // Frame counter for periodic full refresh (update threat levels without new spectrum)
-    uint8_t display_frame_count_{0};
-    static constexpr uint8_t DISPLAY_REFRESH_INTERVAL = 60;  // ~1 second at 60 FPS
+    // Flag: set by Retune handler, cleared by DisplayFrameSync after full refresh
+    bool needs_full_refresh_{false};
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
-    MessageHandlerRegistration message_handler_spectrum_config{
-        Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
-        }
-    };
-
-    MessageHandlerRegistration message_handler_frame_sync{
-        Message::ID::DisplayFrameSync,
-        [this](Message* const) {
-            bool has_new_spectrum = false;
-            if (this->spectrum_fifo_ != nullptr) {
-                ChannelSpectrum spectrum;
-                if (this->spectrum_fifo_->out(spectrum)) {
-                    this->on_channel_spectrum(spectrum);
-                    has_new_spectrum = true;
-                }
-            }
-            this->display_frame_count_++;
-            if (has_new_spectrum || this->display_frame_count_ >= DISPLAY_REFRESH_INTERVAL) {
-                this->display_frame_count_ = 0;
-                this->refresh_ui();
-            } else {
-                this->update_big_frequency_only();
-            }
-        }
-    };
-
-    MessageHandlerRegistration message_handler_retune{
-        Message::ID::Retune,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const RetuneMessage*>(p);
-            this->on_retune(message.freq, message.range);
-            this->spectrum_cycle_counter_++;
-        }
-    };
+    // Message handlers (definitions in constructor initializer list)
+    MessageHandlerRegistration message_handler_spectrum_config;
+    MessageHandlerRegistration message_handler_frame_sync;
+    MessageHandlerRegistration message_handler_retune;
 };
 
 } // namespace drone_analyzer
