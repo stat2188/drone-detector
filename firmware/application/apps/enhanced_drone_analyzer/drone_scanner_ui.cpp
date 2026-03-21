@@ -116,10 +116,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         button_mode_.set_text(mode_names[static_cast<uint8_t>(scanning_mode_)]);
     };
 
-    button_load_.on_select = [this, &nav](ui::Button&) {
-        auto open_view = nav.push<FileLoadView>(".TXT");
+    button_load_.on_select = [this](ui::Button&) {
+        auto open_view = nav_.push<FileLoadView>(".TXT");
         open_view->push_dir(freqman_dir);
-        open_view->on_changed = [this, &nav](std::filesystem::path new_file_path) {
+        open_view->on_changed = [this](std::filesystem::path new_file_path) {
             // Stop scanning if active
             if (scanning_) {
                 scanner_thread_->set_scanning(false);
@@ -129,29 +129,25 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Start");
             }
 
-            // Extract filename without extension (e.g., "DRONES" from "/FREQMAN/DRONES.TXT")
-            const auto stem = new_file_path.stem().string();
+            // Extract filename stem (e.g., "DRONES" from "FREQMAN/DRONES.TXT")
             char filename[32];
+            const auto stem_str = new_file_path.stem().string();
             size_t i = 0;
-            while (i < 31 && i < stem.length() && stem[i] != '\0') {
-                filename[i] = stem[i];
-                ++i;
+            for (; i < 31 && i < stem_str.size(); ++i) {
+                filename[i] = stem_str[i];
             }
             filename[i] = '\0';
 
             // Set new database file and reload
             database_ptr_->set_database_file(filename);
-
-            // Clear existing tracked drones
             scanner_ptr_->clear_tracked_drones();
 
-            // Load new database
             const ErrorCode err = database_ptr_->load_frequency_database();
             db_loaded_ = (err == ErrorCode::SUCCESS);
             db_entry_count_ = database_ptr_->get_database_size();
             if (err == ErrorCode::SUCCESS) {
                 char msg[32];
-                snprintf(msg, sizeof(msg), "Loaded %lu entries", (unsigned long)db_entry_count_);
+                snprintf(msg, sizeof(msg), "Loaded %lu", (unsigned long)db_entry_count_);
                 show_alert(msg, 2000);
             } else {
                 show_error(err, ERROR_DURATION_MS);
@@ -159,13 +155,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         };
     };
 
-    button_settings_.on_select = [this, &nav](ui::Button&) {
+    button_settings_.on_select = [this](ui::Button&) {
         if (initialization_failed_ || scanner_ptr_ == nullptr) {
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
         ScanConfig config = scanner_ptr_->get_config();
-        nav.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
+        nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
 
     // Hardware initialization (callbacks are already set, safe to early-return)
@@ -177,7 +173,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         return;
     }
 
-    // Database load is non-fatal — scanner works on default frequency if DB missing
+    // Database load — SD card is already mounted at boot (portapack.cpp:569)
     const auto db_result = database_ptr_->load_frequency_database();
     db_loaded_ = (db_result == ErrorCode::SUCCESS);
     db_entry_count_ = database_ptr_->get_database_size();

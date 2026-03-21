@@ -1,7 +1,6 @@
 #include "database.hpp"
 #include "file.hpp"
 #include "file_path.hpp"
-#include "sd_card.hpp"
 #include <cstring>
 #include <ctype.h>
 
@@ -183,11 +182,6 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     current_index_ = 0;
 
-    // Check SD card is mounted before file access
-    if (sd_card::status() != sd_card::Status::Mounted) {
-        return ErrorCode::DATABASE_NOT_LOADED;
-    }
-
     // Build path: FREQMAN / <filename> .TXT
     // Matches pattern used by freqman_db.cpp: get_freqman_path()
     // Convert char database_file_ to char16_t for path constructor
@@ -203,7 +197,7 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
         std::filesystem::path(u".TXT");
 
     File file;
-    const auto open_result = file.open(filepath, true, false);
+    const auto open_result = file.open(filepath);
     if (!open_result) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
