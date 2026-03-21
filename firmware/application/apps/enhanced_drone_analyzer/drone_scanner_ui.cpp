@@ -33,57 +33,7 @@ static_assert(sizeof(ScannerThread) <= sizeof(s_scanner_thread_buffer), "Scanner
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : View()
     , nav_(nav)
-    , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}  // Y moved to 1*16=16
-    , message_handler_spectrum_config{
-        Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
-        }
-    }
-    , message_handler_frame_sync{
-        Message::ID::DisplayFrameSync,
-        [this](Message* const) {
-            // Drain FIFO every frame, apply smoothing, redraw bars
-            // (lightweight — no mutex, no histogram, like Looking Glass add_spectrum_pixel)
-            if (this->spectrum_fifo_ != nullptr && this->scanning_) {
-                ChannelSpectrum spectrum;
-                while (this->spectrum_fifo_->out(spectrum)) {
-                    // last wins
-                }
-                this->drone_display_.set_spectrum_data(
-                    spectrum.db.data(), spectrum.db.size());
-                this->drone_display_.set_dirty();
-            }
-
-            if (this->needs_full_refresh_) {
-                this->needs_full_refresh_ = false;
-                this->refresh_ui();
-            } else {
-                this->update_big_frequency_only();
-            }
-        }
-    }
-    , message_handler_retune{
-        Message::ID::Retune,
-        [this](Message* const) {
-            this->scan_cycle_count_++;
-            if (this->scan_cycle_count_ >= SCAN_CYCLE_DISPLAY_INTERVAL) {
-                this->scan_cycle_count_ = 0;
-
-                // Heavy processing every 3 cycles (mutex + histogram + RSSI)
-                if (this->spectrum_fifo_ != nullptr && this->scanner_ptr_ != nullptr) {
-                    ChannelSpectrum spectrum;
-                    while (this->spectrum_fifo_->out(spectrum)) {
-                        // last wins
-                    }
-                    (void)this->scanner_ptr_->process_spectrum_message(spectrum);
-                }
-
-                this->needs_full_refresh_ = true;
-            }
-        }
-    } {
+    , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0} {
     add_children({
         &labels_,
         &field_lna_,
@@ -496,27 +446,19 @@ void DroneScannerUI::refresh_ui() noexcept {
     set_dirty();
 }
 
-void DroneScannerUI::update_big_frequency_only() noexcept {
-    if (scanner_ptr_ == nullptr || initialization_failed_) {
-        return;
-    }
+void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
+    (void)range;
+    current_frequency_ = freq;
+}
 
-    current_scanner_state_ = scanner_ptr_->get_state();
+void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
+    if (scanner_ptr_ != nullptr && scanning_) {
+        (void)scanner_ptr_->process_spectrum_message(spectrum);
 
-    BigDisplayColor color = BigDisplayColor::GREY;
-    switch (current_scanner_state_) {
-        case ScannerState::LOCKING:
-            color = BigDisplayColor::YELLOW;
-            break;
-        case ScannerState::TRACKING:
-            color = (current_rssi_ >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM)
-                  ? BigDisplayColor::RED
-                  : BigDisplayColor::GREEN;
-            break;
-        default:
-            break;
+        // Feed spectrum to DroneDisplay for visualization only when scanning
+        drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
+        drone_display_.set_dirty();
     }
-    bigdisplay_update(color);
 }
 
 } // namespace drone_analyzer

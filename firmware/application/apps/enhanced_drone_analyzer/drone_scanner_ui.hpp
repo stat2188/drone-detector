@@ -56,7 +56,7 @@ public:
 
 private:
     static constexpr uint16_t BIG_FREQUENCY_X = 4;
-    static constexpr uint16_t BIG_FREQUENCY_Y = 1 * 16;  // Moved higher (1 row from top)
+    static constexpr uint16_t BIG_FREQUENCY_Y = 1 * 16;
     static constexpr uint16_t BIG_FREQUENCY_WIDTH = 28 * 8;
     static constexpr uint16_t DRONE_TYPE_SPACING = 5;
     static constexpr uint16_t DRONE_TYPE_Y_OFFSET = 20;
@@ -134,24 +134,41 @@ private:
     DroneDisplay drone_display_{{0, 68, DISPLAY_WIDTH, 206}};
 
     void bigdisplay_update(BigDisplayColor color) noexcept;
-    void update_big_frequency_only() noexcept;
     void refresh_ui() noexcept;
-
-    // Scan cycle counter — update spectrum display every N cycles
-    // (avoids race with scanner thread tuning between cycles)
-    uint8_t scan_cycle_count_{0};
-    static constexpr uint8_t SCAN_CYCLE_DISPLAY_INTERVAL = 3;
-
-    // Flag: set by Retune handler, cleared by DisplayFrameSync after full refresh
-    bool needs_full_refresh_{false};
+    void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
+    void on_retune(FreqHz freq, uint32_t range) noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
-    // Message handlers (definitions in constructor initializer list)
-    MessageHandlerRegistration message_handler_spectrum_config;
-    MessageHandlerRegistration message_handler_frame_sync;
-    MessageHandlerRegistration message_handler_retune;
+    MessageHandlerRegistration message_handler_spectrum_config{
+        Message::ID::ChannelSpectrumConfig,
+        [this](Message* const p) {
+            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            this->spectrum_fifo_ = message.fifo;
+        }
+    };
+
+    MessageHandlerRegistration message_handler_frame_sync{
+        Message::ID::DisplayFrameSync,
+        [this](Message* const) {
+            if (this->spectrum_fifo_ != nullptr) {
+                ChannelSpectrum spectrum;
+                if (this->spectrum_fifo_->out(spectrum)) {
+                    this->on_channel_spectrum(spectrum);
+                }
+            }
+            this->refresh_ui();
+        }
+    };
+
+    MessageHandlerRegistration message_handler_retune{
+        Message::ID::Retune,
+        [this](Message* const p) {
+            const auto message = *reinterpret_cast<const RetuneMessage*>(p);
+            this->on_retune(message.freq, message.range);
+        }
+    };
 };
 
 } // namespace drone_analyzer
