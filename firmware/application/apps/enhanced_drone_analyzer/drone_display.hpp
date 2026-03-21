@@ -370,6 +370,10 @@ private:
 
     // Spectrum integration factor for smoothing
     uint8_t spectrum_integration_{DEFAULT_SPECTRUM_INTEGRATION};
+
+    // Previous frame bar heights for dirty-check optimization
+    std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_cached_{};
+    bool spectrum_cache_valid_{false};
 };
 
 } // namespace drone_analyzer

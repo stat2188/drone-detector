@@ -115,47 +115,70 @@ void DroneDisplay::render_spectrum(
     const uint16_t chart_height = height - LABEL_H;
     if (chart_height < 4) return;
 
-    // Clear chart area every frame (like Looking Glass LEVEL-V clear + draw pattern)
-    painter.fill_rectangle({start_x, chart_start_y, width, chart_height}, Color::black());
-
-    const uint16_t bar_count = static_cast<uint16_t>(spectrum_size);
-    const uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
-
     // DC spike bins (120-135) — same as Looking Glass ignore_dc
     constexpr size_t DC_SPIKE_START = 120;
     constexpr size_t DC_SPIKE_END = 136;
 
+    const uint16_t bar_count = static_cast<uint16_t>(spectrum_size);
+    const uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
+
+    // Full clear only on first frame or when cache is invalid
+    if (!spectrum_cache_valid_) {
+        painter.fill_rectangle({start_x, chart_start_y, width, chart_height}, Color::black());
+    }
+
     for (size_t i = 0; i < spectrum_size; ++i) {
-        // Blank DC spike bins (already cleared to black above)
+        // Blank DC spike bins
         if (i >= DC_SPIKE_START && i < DC_SPIKE_END) {
+            if (spectrum_cache_valid_ && spectrum_cached_[i] != 0) {
+                const uint16_t old_h = (static_cast<uint16_t>(spectrum_cached_[i]) * chart_height) / 255;
+                const uint16_t x = start_x + 1 + static_cast<uint16_t>(i) * bar_width;
+                painter.fill_rectangle({x, chart_start_y + chart_height - old_h, bar_width, old_h}, Color::black());
+                spectrum_cached_[i] = 0;
+            }
             continue;
         }
 
         const uint8_t value = spectrum_data[i];
+        uint8_t draw_value = value;
 
-        // Looking Glass filter: if below threshold, skip (area already cleared to black)
-        // Equivalent to LG's add_spectrum_pixel(0) when value < min_color_power
+        // Apply filter
         if (value < min_color_power_) {
+            draw_value = 0;
+        }
+
+        // Skip if bar didn't change since last frame
+        if (spectrum_cache_valid_ && spectrum_cached_[i] == draw_value) {
             continue;
         }
 
-        const uint16_t bar_height = (static_cast<uint16_t>(value) * chart_height) / 255;
-        if (bar_height == 0) continue;
-
         const uint16_t x = start_x + 1 + static_cast<uint16_t>(i) * bar_width;
-        const uint16_t y = chart_start_y + chart_height - bar_height;
 
-        // Looking Glass LEVEL-V gradient: blue(low) -> red(high)
-        // color_gradient = (point * 255) / chart_height
-        const uint8_t color_gradient = (bar_height * 255) / chart_height;
-        const Color bar_color(
-            color_gradient,
-            static_cast<uint8_t>(0),
-            static_cast<uint8_t>(255 - color_gradient)
-        );
+        // Erase old bar (draw black over previous height)
+        if (spectrum_cache_valid_ && spectrum_cached_[i] != 0) {
+            const uint16_t old_h = (static_cast<uint16_t>(spectrum_cached_[i]) * chart_height) / 255;
+            painter.fill_rectangle({x, chart_start_y + chart_height - old_h, bar_width, old_h}, Color::black());
+        }
 
-        painter.fill_rectangle({x, y, bar_width, bar_height}, bar_color);
+        // Draw new bar
+        if (draw_value != 0) {
+            const uint16_t bar_height = (static_cast<uint16_t>(draw_value) * chart_height) / 255;
+            if (bar_height > 0) {
+                const uint16_t y = chart_start_y + chart_height - bar_height;
+                const uint8_t color_gradient = (bar_height * 255) / chart_height;
+                const Color bar_color(
+                    color_gradient,
+                    static_cast<uint8_t>(0),
+                    static_cast<uint8_t>(255 - color_gradient)
+                );
+                painter.fill_rectangle({x, y, bar_width, bar_height}, bar_color);
+            }
+        }
+
+        spectrum_cached_[i] = draw_value;
     }
+
+    spectrum_cache_valid_ = true;
 }
 
 void DroneDisplay::render_histogram(

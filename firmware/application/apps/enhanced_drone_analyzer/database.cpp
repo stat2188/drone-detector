@@ -99,10 +99,17 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
         if (freq < MIN_FREQUENCY_HZ || freq > MAX_FREQUENCY_HZ)
             continue;
 
-        const DroneType type = parse_drone_type_from_description(
-            e->description.c_str(), e->description.size());
-        if (type == DroneType::UNKNOWN)
-            continue;
+        // Parse drone type from description.
+        // Entries without recognized drone keywords are loaded as OTHER
+        // so general freqman files (SCANNER.TXT, OTHERS.TXT) work too.
+        DroneType type = DroneType::OTHER;
+        if (e->description.size() > 0) {
+            const DroneType parsed = parse_drone_type_from_description(
+                e->description.c_str(), e->description.size());
+            if (parsed != DroneType::UNKNOWN) {
+                type = parsed;
+            }
+        }
 
         entries_[entry_count_++] = FrequencyEntry(freq, type);
     }

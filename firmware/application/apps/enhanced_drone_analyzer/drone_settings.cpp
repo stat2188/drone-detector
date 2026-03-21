@@ -250,6 +250,35 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_.histogram_end_freq = static_cast<FreqHz>(v) * 1000000;
         settings_dirty_ = true;
     };
+
+    // Frequency keypad callbacks (like Looking Glass)
+    field_spectrum_start_.on_select = [this, &nav](ui::NumberField& field) {
+        auto new_view = nav_.push<ui::FrequencyKeypadView>(field.value() * 1000000ULL);
+        new_view->on_changed = [this, &field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
+
+    field_spectrum_end_.on_select = [this, &nav](ui::NumberField& field) {
+        auto new_view = nav_.push<ui::FrequencyKeypadView>(field.value() * 1000000ULL);
+        new_view->on_changed = [this, &field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
+
+    field_histogram_start_.on_select = [this, &nav](ui::NumberField& field) {
+        auto new_view = nav_.push<ui::FrequencyKeypadView>(field.value() * 1000000ULL);
+        new_view->on_changed = [this, &field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
+
+    field_histogram_end_.on_select = [this, &nav](ui::NumberField& field) {
+        auto new_view = nav_.push<ui::FrequencyKeypadView>(field.value() * 1000000ULL);
+        new_view->on_changed = [this, &field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {

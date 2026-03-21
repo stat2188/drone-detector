@@ -44,22 +44,22 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
-            // Always feed spectrum to histogram/RSSI detector (every frame)
-            // This keeps noise floor and signal detection accurate
+            bool has_new_spectrum = false;
+
+            // Drain spectrum FIFO (every frame — light work, keeps noise floor accurate)
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
                     this->on_channel_spectrum(spectrum);
+                    has_new_spectrum = true;
                 }
             }
 
-            // Update visual display every 3 scan cycles to reduce CPU load
-            // and avoid race conditions with scanner thread
-            if (this->spectrum_cycle_counter_ >= SPECTRUM_UPDATE_INTERVAL) {
-                this->spectrum_cycle_counter_ = 0;
+            // Heavy refresh (mutex lock, snprintf, histogram) only when new data
+            // Between data: only BigFrequency update (no mutex, no allocation)
+            if (has_new_spectrum) {
                 this->refresh_ui();
             } else {
-                // Still update BigFrequency every frame for smooth display
                 this->update_big_frequency_only();
             }
         }

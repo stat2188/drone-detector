@@ -157,17 +157,15 @@ private:
     MessageHandlerRegistration message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
-            // Always feed spectrum to histogram/RSSI detector (every frame)
+            bool has_new_spectrum = false;
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
                     this->on_channel_spectrum(spectrum);
+                    has_new_spectrum = true;
                 }
             }
-
-            // Update visual display every 3 scan cycles
-            if (this->spectrum_cycle_counter_ >= SPECTRUM_UPDATE_INTERVAL) {
-                this->spectrum_cycle_counter_ = 0;
+            if (has_new_spectrum) {
                 this->refresh_ui();
             } else {
                 this->update_big_frequency_only();
