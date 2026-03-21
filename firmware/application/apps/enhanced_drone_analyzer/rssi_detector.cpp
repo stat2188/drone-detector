@@ -51,6 +51,12 @@ ErrorCode RSSIDetector::process_rssi_sample(
         return error;
     }
 
+    // Only process samples above detection threshold
+    // to prevent noise from polluting trend analysis and statistics
+    if (rssi < detection_threshold_) {
+        return ErrorCode::SUCCESS;
+    }
+
     add_to_history(rssi, timestamp);
 
     statistics_.total_samples++;

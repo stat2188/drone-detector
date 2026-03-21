@@ -7,12 +7,39 @@
 namespace drone_analyzer {
 
 static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
-    uint8_t max_power = 0;
-    for (size_t i = 0; i < spectrum.db.size(); ++i) {
-        const uint8_t p = static_cast<uint8_t>(spectrum.db[i]);
-        if (p > max_power) max_power = p;
+    // The HackRF baseband produces spectrum.db[i] = clamp(dBV*5 + 255, 0, 255)
+    // where dBV = mag2_to_dbv_norm(mag_squared).
+    //
+    // The center bins (120-135) contain the DC spike from FFT zero-frequency
+    // component. Looking Glass ignores 16 center bins, Search blanks 12.
+    // We must skip them too — averaging or max across the spike inflates RSSI
+    // and causes every frequency to appear as a "detected signal."
+    //
+    // Usable signal bins: 0-119 and 136-255 (240 bins around the spike).
+    // We scan a window near center where tuned frequency energy actually lives:
+    // bins 100-119 (lower sideband) and 136-155 (upper sideband).
+
+    constexpr size_t DC_SPIKE_START = 120;
+    constexpr size_t DC_SPIKE_END = 136;
+    constexpr size_t LOWER_START = 100;
+    constexpr size_t UPPER_END = 156;
+
+    uint8_t peak = 0;
+
+    // Lower sideband: bins 100-119
+    for (size_t i = LOWER_START; i < DC_SPIKE_START; ++i) {
+        if (spectrum.db[i] > peak) peak = spectrum.db[i];
     }
-    return static_cast<int32_t>(max_power) - 120;
+    // Upper sideband: bins 136-155
+    for (size_t i = DC_SPIKE_END; i < UPPER_END; ++i) {
+        if (spectrum.db[i] > peak) peak = spectrum.db[i];
+    }
+
+    // Clamp to valid dBm range
+    int32_t rssi = static_cast<int32_t>(peak) - 120;
+    if (rssi < RSSI_MIN_DBM) rssi = RSSI_MIN_DBM;
+    if (rssi > RSSI_MAX_DBM) rssi = RSSI_MAX_DBM;
+    return rssi;
 }
 
 // ============================================================================
@@ -336,10 +363,11 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     const int32_t rssi = extract_rssi(spectrum);
     const SystemTime now = chTimeNow();
 
-    // Feed RSSI detector for threat classification
-    (void)rssi_detector_.process_rssi_sample(rssi, now);
-
     if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
+        // Feed RSSI detector only with above-threshold samples
+        // to prevent noise from polluting trend analysis
+        (void)rssi_detector_.process_rssi_sample(rssi, now);
+
         const ErrorCode err = update_tracked_drone_internal(
             current_frequency_,
             rssi,
@@ -350,35 +378,45 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             return err;
         }
 
-        // Update statistics
-        statistics_.drones_detected++;
+        // Update max RSSI statistic
         if (rssi > static_cast<int32_t>(statistics_.max_rssi_dbm)) {
             statistics_.max_rssi_dbm = static_cast<uint32_t>(rssi);
         }
 
+        // Frequency lock state machine
         if (current_frequency_ == locked_frequency_) {
+            // Same frequency as locked — accumulate persistence count
             if (freq_lock_count_ < MAX_FREQ_LOCK) {
                 freq_lock_count_++;
             }
             // Transition: LOCKING → TRACKING after sustained lock
-            if (freq_lock_count_ >= MAX_FREQ_LOCK && state_ == ScannerState::SCANNING) {
+            if (freq_lock_count_ >= MAX_FREQ_LOCK && state_ == ScannerState::LOCKING) {
                 state_ = ScannerState::TRACKING;
             }
         } else {
-            locked_frequency_ = current_frequency_;
-            freq_lock_count_ = 1;
-            // Transition: SCANNING → LOCKING on first detection
+            // Different frequency detected
+            // Only jump lock if currently in SCANNING (no active lock)
+            // If already LOCKING/TRACKING, the current lock is more valuable
+            // than a transient signal on another frequency
             if (state_ == ScannerState::SCANNING) {
+                locked_frequency_ = current_frequency_;
+                freq_lock_count_ = 1;
                 state_ = ScannerState::LOCKING;
             }
+            // If LOCKING/TRACKING and different freq detected:
+            // Don't jump. Continue accumulating on locked freq.
         }
     } else {
-        freq_lock_count_ = 0;
-        locked_frequency_ = 0;
-        // Transition: LOCKING/TRACKING → SCANNING when signal lost
-        if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
-            state_ = ScannerState::SCANNING;
+        // No signal on this frequency
+        // Only break lock if we're tuned to the locked freq and it's gone
+        if (locked_frequency_ != 0 && current_frequency_ == locked_frequency_) {
+            freq_lock_count_ = 0;
+            locked_frequency_ = 0;
+            if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
+                state_ = ScannerState::SCANNING;
+            }
         }
+        // If tuned to a non-locked freq and no signal: normal scanning, ignore
     }
 
     return ErrorCode::SUCCESS;
@@ -394,21 +432,27 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
     ErrorResult<size_t> index_result = find_drone_by_frequency_internal(frequency);
     
     if (index_result.has_value()) {
+        // Existing drone — update and alert on threat increase
         size_t index = index_result.value();
         
         ThreatLevel old_threat = tracked_drones_[index].get_threat();
-        
         tracked_drones_[index].update_rssi(rssi, timestamp);
-        
         ThreatLevel new_threat = tracked_drones_[index].get_threat();
         
         if (new_threat > old_threat) {
             trigger_alert(new_threat);
         }
     } else {
+        // New drone — add and alert for its initial threat
+        const size_t new_index = tracked_count_;
         ErrorCode add_result = add_tracked_drone_internal(frequency, rssi, timestamp);
         if (add_result != ErrorCode::SUCCESS) {
             return add_result;
+        }
+        // Alert for newly added drone's actual threat level
+        ThreatLevel new_threat = tracked_drones_[new_index].get_threat();
+        if (new_threat > ThreatLevel::NONE) {
+            trigger_alert(new_threat);
         }
     }
 
@@ -464,7 +508,9 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     tracked_count_++;
     statistics_.drones_detected++;
 
-    trigger_alert(tracked_drones_[tracked_count_ - 1].get_threat());
+    // NOTE: Do NOT call trigger_alert() here.
+    // update_rssi() set the initial threat level inside the drone.
+    // update_tracked_drone_internal() will compare and trigger the alert.
 
     return ErrorCode::SUCCESS;
 }
@@ -652,10 +698,11 @@ void DroneScanner::set_alert_callback(ThreatAlertCallback callback) noexcept {
 }
 
 void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
-    // Copy callback pointer while potentially under lock
-    // If called from process_spectrum_message(), mutex is already held via TryLock.
-    // If called from scanner thread, mutex is already held via MutexLock.
-    // Either way, we can safely read the pointer (atomic word-sized read on Cortex-M4).
+    // Never alert for NONE level — this fires on threat decrease or initial NONE state
+    if (threat_level == ThreatLevel::NONE) {
+        return;
+    }
+
     ThreatAlertCallback local_callback = alert_callback_;
 
     if (local_callback == nullptr) {

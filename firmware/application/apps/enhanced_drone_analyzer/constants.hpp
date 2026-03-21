@@ -178,8 +178,12 @@ constexpr int32_t RSSI_MAX_DBM = -20;
 
 /**
  * @brief RSSI threshold for signal detection (dBm)
+ * @note -70dBm catches real drone signals within ~100m, ignores ambient RF noise
+ * @note HackRF baseband: spectrum.db = clamp(dBV*5 + 255, 0, 255)
+ * @note dBm = (value - 255) / 5 - gain_offset; approximated as value - 120
+ * @note Center bins 120-135 contain DC spike (blanked like Looking Glass/Search)
  */
-constexpr int32_t RSSI_DETECTION_THRESHOLD_DBM = -90;
+constexpr int32_t RSSI_DETECTION_THRESHOLD_DBM = -70;
 
 /**
  * @brief RSSI threshold for high threat (dBm)

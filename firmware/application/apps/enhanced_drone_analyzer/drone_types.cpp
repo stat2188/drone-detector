@@ -115,12 +115,22 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcep
         update_count++;
     }
     
-    // Update threat level based on new RSSI
-    if (new_rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
+    // Require minimum samples before HIGH/CRITICAL classification
+    // to prevent false positives from single noisy readings
+    if (update_count < 2) {
+        threat_level = ThreatLevel::LOW;
+        return;
+    }
+
+    // Use average RSSI for threat classification (smoother than single sample)
+    // This prevents a single noise spike from triggering CRITICAL
+    const RssiValue avg = get_average_rssi();
+    
+    if (avg >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
         threat_level = ThreatLevel::CRITICAL;
-    } else if (new_rssi >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
+    } else if (avg >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
         threat_level = ThreatLevel::HIGH;
-    } else if (new_rssi >= RSSI_DETECTION_THRESHOLD_DBM) {
+    } else if (avg >= RSSI_DETECTION_THRESHOLD_DBM) {
         threat_level = ThreatLevel::MEDIUM;
     } else {
         threat_level = ThreatLevel::LOW;
