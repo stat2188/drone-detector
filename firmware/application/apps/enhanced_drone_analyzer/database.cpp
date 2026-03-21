@@ -173,31 +173,21 @@ static bool parse_freqman_line(
 }
 
 /**
- * @brief Custom FREQMAN parser
- * @note Cannot use freqman_db.hpp (load_freqman_file) because it relies on
- *       std::string and heap-allocated freqman_entry objects. This implementation
- *       uses fixed-size line buffers for embedded safety.
+ * @brief Load database from FREQMAN file
+ * @note Path: freqman_dir / database_file_ + ".TXT"
+ *       Template path constructor widens char -> char16_t automatically
  */
 ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     current_index_ = 0;
 
-    // Build path: /FREQMAN/<filename>.TXT
-    // Use char16_t buffer to match std::filesystem::path constructor
-    char16_t wide_name[32];
-    size_t wi = 0;
-    for (; wi < 31 && database_file_[wi] != '\0'; ++wi) {
-        wide_name[wi] = static_cast<char16_t>(database_file_[wi]);
-    }
-    wide_name[wi] = u'\0';
-
-    auto filepath = std::filesystem::path(u"/FREQMAN");
-    filepath /= std::filesystem::path(wide_name);
-    filepath += std::filesystem::path(u".TXT");
+    // Build path: FREQMAN / <filename> .TXT
+    // path template constructor handles char -> char16_t widening
+    const auto filepath = freqman_dir / std::filesystem::path(database_file_) + std::filesystem::path(u".TXT");
 
     File file;
-    const auto open_result = file.open(filepath);
-    if (open_result) {
+    auto open_result = file.open(filepath);
+    if (!open_result) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
 
