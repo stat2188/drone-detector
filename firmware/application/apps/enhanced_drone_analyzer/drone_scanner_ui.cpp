@@ -55,9 +55,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 }
             }
 
-            // Heavy refresh (mutex lock, snprintf, histogram) only when new data
-            // Between data: only BigFrequency update (no mutex, no allocation)
-            if (has_new_spectrum) {
+            // Heavy refresh (mutex lock, snprintf, histogram) when:
+            // 1) New spectrum data arrived, OR
+            // 2) Every N frames (to update threat levels even without new spectrum)
+            this->display_frame_count_++;
+
+            if (has_new_spectrum || this->display_frame_count_ >= DISPLAY_REFRESH_INTERVAL) {
+                this->display_frame_count_ = 0;
                 this->refresh_ui();
             } else {
                 this->update_big_frequency_only();
@@ -389,6 +393,18 @@ void DroneScannerUI::refresh_ui() noexcept {
         display_data.drone_count = count;
         for (size_t i = 0; i < count; ++i) {
             display_data.drones[i] = DisplayDroneEntry(drones[i]);
+        }
+
+        // Sort by threat level descending (CRITICAL first, NONE last)
+        // Simple insertion sort — O(n²) but n ≤ MAX_DISPLAYED_DRONES (small)
+        for (size_t i = 1; i < count; ++i) {
+            const DisplayDroneEntry key = display_data.drones[i];
+            size_t j = i;
+            while (j > 0 && display_data.drones[j - 1].threat < key.threat) {
+                display_data.drones[j] = display_data.drones[j - 1];
+                --j;
+            }
+            display_data.drones[j] = key;
         }
     }
 

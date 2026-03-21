@@ -143,6 +143,10 @@ private:
     uint8_t spectrum_cycle_counter_{0};
     static constexpr uint8_t SPECTRUM_UPDATE_INTERVAL = 3;
 
+    // Frame counter for periodic full refresh (update threat levels without new spectrum)
+    uint8_t display_frame_count_{0};
+    static constexpr uint8_t DISPLAY_REFRESH_INTERVAL = 60;  // ~1 second at 60 FPS
+
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
@@ -165,7 +169,9 @@ private:
                     has_new_spectrum = true;
                 }
             }
-            if (has_new_spectrum) {
+            this->display_frame_count_++;
+            if (has_new_spectrum || this->display_frame_count_ >= DISPLAY_REFRESH_INTERVAL) {
+                this->display_frame_count_ = 0;
                 this->refresh_ui();
             } else {
                 this->update_big_frequency_only();
