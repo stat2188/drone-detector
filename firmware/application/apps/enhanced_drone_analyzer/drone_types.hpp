@@ -454,9 +454,6 @@ struct freqman_entry_fixed {
     if (drones == nullptr) {
         return ErrorCode::BUFFER_INVALID;
     }
-    if (count == 0) {
-        return ErrorCode::BUFFER_EMPTY;
-    }
     if (count > max_count) {
         return ErrorCode::BUFFER_FULL;
     }
