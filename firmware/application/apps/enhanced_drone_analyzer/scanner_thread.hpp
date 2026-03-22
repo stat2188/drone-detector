@@ -29,19 +29,32 @@ public:
     [[nodiscard]] bool is_scanning() const noexcept;
     [[nodiscard]] bool is_active() const noexcept;
 
+    void set_sweep_enabled(bool enabled) noexcept;
+    void set_sweep_range(FreqHz start, FreqHz end, FreqHz step) noexcept;
+    void trigger_sweep_pass() noexcept;
+
 private:
     static constexpr size_t STACK_WORDS = THD_WA_SIZE(SCANNER_THREAD_STACK_SIZE) / sizeof(stkalign_t);
 
     static msg_t static_fn(void* arg);
     void run() noexcept;
-    void do_sweep_step() noexcept;
 
     DroneScanner& scanner_;
     Thread* thread_{nullptr};
     stkalign_t wa_[STACK_WORDS];
 
-    // GCC builtins for cross-thread visibility (volatile doesn't guarantee this on ARM)
     bool scanning_{false};
+
+    // Batch sweep: 240 steps in a row, auto-triggers every N frequencies
+    bool sweep_enabled_{false};
+    bool sweep_active_{false};
+    static constexpr uint16_t SWEEP_AUTO_INTERVAL = 20;  // sweep every 20 frequencies
+    uint16_t db_scan_counter_{0};  // counts individual frequencies scanned
+    FreqHz sweep_start_{0};
+    FreqHz sweep_end_{0};
+    FreqHz sweep_step_hz_{0};
+    FreqHz sweep_current_freq_{0};
+    uint16_t sweep_current_step_{0};
 };
 
 } // namespace drone_analyzer

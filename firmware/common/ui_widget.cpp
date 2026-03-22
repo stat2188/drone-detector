@@ -2351,6 +2351,10 @@ bool NumberField::on_keyboard(const KeyboardEvent key) {
 bool NumberField::on_touch(const TouchEvent event) {
     if (event.type == TouchEvent::Type::Start) {
         focus();
+    } else if (event.type == TouchEvent::Type::End) {
+        if (on_select) {
+            on_select(*this);
+        }
     }
     return true;
 }

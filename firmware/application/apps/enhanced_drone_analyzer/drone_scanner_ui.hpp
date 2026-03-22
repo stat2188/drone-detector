@@ -137,23 +137,15 @@ private:
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void on_retune(FreqHz freq, uint32_t range) noexcept;
 
-    // Band sweep state (Looking Glass pattern: UI-thread driven, independent of scanner)
+    // Band sweep state (interleaved with scanner — ScannerThread handles tuning)
     static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;  // 240 pixels
     uint8_t composite_buffer_[COMPOSITE_SIZE]{};
     bool composite_active_{false};
-    bool sweep_was_scanning_{false};       // restore scanner state on exit
-
     FreqHz sweep_start_{5700000000};
     FreqHz sweep_end_{5900000000};
-    FreqHz sweep_step_hz_{2000000};
-    FreqHz sweep_f_center_{0};             // current tuned frequency in sweep
-    FreqHz sweep_f_center_ini_{0};         // first slice center
-    uint16_t sweep_pixel_index_{0};        // current pixel position (0..239)
-    static constexpr FreqHz SWEEP_SLICE_BW = 2000000;  // 2 MHz baseband per slice
+    static constexpr FreqHz SWEEP_SLICE_BW = 2000000;  // 2 MHz baseband
 
-    void enter_sweep_mode() noexcept;
-    void exit_sweep_mode() noexcept;
-    void sweep_process_frame(const ChannelSpectrum& spectrum) noexcept;
+    void update_composite(FreqHz center_freq, const ChannelSpectrum& spectrum) noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};

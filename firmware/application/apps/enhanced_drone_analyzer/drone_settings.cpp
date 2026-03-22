@@ -334,7 +334,12 @@ void DroneSettingsView::focus() {
 
 bool DroneSettingsView::on_touch(TouchEvent event) {
     if (event.type == TouchEvent::Type::End) {
-        // Check if touch landed on any frequency field — open keypad
+        // Let child widgets (buttons, checkboxes, options) handle touch first
+        if (View::on_touch(event)) {
+            return true;
+        }
+
+        // No child handled it — check if touch is on a frequency field
         struct FreqField { ui::NumberField* field; };
         FreqField fields[] = {
             {&field_spectrum_start_}, {&field_spectrum_end_},
