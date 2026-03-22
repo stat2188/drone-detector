@@ -118,9 +118,6 @@ void DroneDisplay::render_spectrum(
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
     draw_text(painter, "SPECTRUM", start_x + 2, start_y + 2, COLOR_TEXT);
 
-    // TEST: bright red square — if visible, painter works
-    painter.fill_rectangle({start_x + 20, start_y + 20, 50, 50}, Color::red());
-
     constexpr uint16_t LABEL_H = 12;
     const uint16_t chart_start_y = start_y + LABEL_H;
     const uint16_t chart_height = height - LABEL_H;
@@ -131,7 +128,8 @@ void DroneDisplay::render_spectrum(
     constexpr size_t DC_SPIKE_END = 136;
 
     const uint16_t bar_count = static_cast<uint16_t>(spectrum_size);
-    const uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
+    uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
+    if (bar_width < 1) bar_width = 1;
 
     for (size_t i = 0; i < spectrum_size; ++i) {
         // Blank DC spike bins
