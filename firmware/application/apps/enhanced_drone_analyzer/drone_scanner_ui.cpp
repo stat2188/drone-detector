@@ -174,12 +174,21 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Start");
             }
 
-            // Extract filename stem (e.g., "DRONES" from "FREQMAN/DRONES.TXT")
+            // Extract filename stem from path (avoid std::string heap)
+            // Path format: "FREQMAN/DRONES.TXT" → stem = "DRONES"
             char filename[32];
-            const auto stem_str = new_file_path.stem().string();
+            const auto path_str = new_file_path.string();
+            size_t last_slash = 0;
+            size_t last_dot = 0;
+            for (size_t j = 0; path_str[j] != '\0'; ++j) {
+                if (path_str[j] == '/' || path_str[j] == '\\') last_slash = j + 1;
+                if (path_str[j] == '.') last_dot = j;
+            }
             size_t i = 0;
-            for (; i < 31 && i < stem_str.size(); ++i) {
-                filename[i] = stem_str[i];
+            const size_t stem_start = last_slash;
+            const size_t stem_end = (last_dot > last_slash) ? last_dot : last_slash + 31;
+            for (; i < 31 && (stem_start + i) < stem_end && path_str[stem_start + i] != '\0'; ++i) {
+                filename[i] = path_str[stem_start + i];
             }
             filename[i] = '\0';
 

@@ -43,8 +43,7 @@ public:
     DroneScannerUI& operator=(const DroneScannerUI&) = delete;
 
     std::string title() const override {
-        static const std::string title_str = "EDA";
-        return title_str;
+        return std::string("EDA");
     }
     void paint(Painter& painter) override;
     void focus() override;
