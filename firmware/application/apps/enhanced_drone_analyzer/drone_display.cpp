@@ -108,65 +108,45 @@ void DroneDisplay::render_spectrum(
     uint16_t width,
     uint16_t height
 ) noexcept {
-    if (spectrum_data == nullptr || spectrum_size == 0 || height < 20) {
+    if (spectrum_data == nullptr || spectrum_size == 0 || height < 4) {
         return;
     }
 
-    // Clear entire area first
-    painter.fill_rectangle({start_x, start_y, width, height}, Color::black());
-
+    draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
     draw_text(painter, "SPECTRUM", start_x + 2, start_y + 2, COLOR_TEXT);
 
-    constexpr uint16_t LABEL_H = 12;
-    const uint16_t chart_start_y = start_y + LABEL_H;
-    const uint16_t chart_height = height - LABEL_H;
+    constexpr uint16_t MIN_BAR_WIDTH = 2;
+    const uint16_t usable_width = width - 4;
+    const uint16_t bar_count = static_cast<uint16_t>(spectrum_size);
+    uint16_t bar_width = usable_width / bar_count;
+    if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
+
+    const uint16_t chart_start_x = start_x + 2;
+    const uint16_t chart_start_y = start_y + 12;
+    const uint16_t chart_height = height - 14;
     if (chart_height < 4) return;
 
-    // DC spike bins (120-135) — same as Looking Glass ignore_dc
-    constexpr size_t DC_SPIKE_START = 120;
-    constexpr size_t DC_SPIKE_END = 136;
-
-    const uint16_t bar_count = static_cast<uint16_t>(spectrum_size);
-    uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
-    if (bar_width < 1) bar_width = 1;
-
     for (size_t i = 0; i < spectrum_size; ++i) {
-        // Blank DC spike bins
-        if (i >= DC_SPIKE_START && i < DC_SPIKE_END) {
-            spectrum_cached_[i] = 0;
-            continue;
-        }
+        // Skip DC spike bins
+        if (i >= 120 && i < 136) continue;
 
         const uint8_t value = spectrum_data[i];
-        uint8_t draw_value = value;
+        if (value < min_color_power_) continue;
 
-        // Apply filter
-        if (value < min_color_power_) {
-            draw_value = 0;
+        const uint16_t bar_height = (static_cast<uint16_t>(value) * chart_height) / 255;
+        const uint16_t x = chart_start_x + static_cast<uint16_t>(i) * bar_width;
+        const uint16_t y = chart_start_y + chart_height - bar_height;
+
+        uint32_t color = COLOR_LOW_THREAT;
+        if (value > 200) color = COLOR_CRITICAL_THREAT;
+        else if (value > 150) color = COLOR_HIGH_THREAT;
+        else if (value > 100) color = COLOR_MEDIUM_THREAT;
+
+        if (bar_height > 0) {
+            draw_rectangle(painter, x, y, bar_width - 1, bar_height, color);
         }
-
-        const uint16_t x = start_x + 1 + static_cast<uint16_t>(i) * bar_width;
-
-        // Draw bar
-        if (draw_value != 0) {
-            const uint16_t bar_height = (static_cast<uint16_t>(draw_value) * chart_height) / 255;
-            if (bar_height > 0) {
-                const uint16_t y = chart_start_y + chart_height - bar_height;
-                const uint8_t color_gradient = (bar_height * 255) / chart_height;
-                const Color bar_color(
-                    color_gradient,
-                    static_cast<uint8_t>(0),
-                    static_cast<uint8_t>(255 - color_gradient)
-                );
-                painter.fill_rectangle({x, y, bar_width, bar_height}, bar_color);
-            }
-        }
-
-        spectrum_cached_[i] = draw_value;
     }
-
-    spectrum_cache_valid_ = true;
 }
 
 void DroneDisplay::render_histogram(
@@ -686,42 +666,42 @@ void DroneDisplay::render_composite(
     uint16_t width,
     uint16_t height
 ) noexcept {
-    if (composite_data == nullptr || composite_size == 0 || height < 20) {
+    if (composite_data == nullptr || composite_size == 0 || height < 4) {
         return;
     }
 
-    // Clear area and draw label
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
     draw_text(painter, "BAND SWEEP", start_x + 2, start_y + 2, COLOR_TEXT);
 
-    constexpr uint16_t LABEL_H = 12;
-    const uint16_t chart_start_y = start_y + LABEL_H;
-    const uint16_t chart_height = height - LABEL_H;
-    if (chart_height < 4) return;
-
+    constexpr uint16_t MIN_BAR_WIDTH = 2;
+    const uint16_t usable_width = width - 4;
     const uint16_t bar_count = static_cast<uint16_t>(composite_size);
-    uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
-    if (bar_width < 1) bar_width = 1;
+    uint16_t bar_width = usable_width / bar_count;
+    if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
+
+    const uint16_t chart_start_x = start_x + 2;
+    const uint16_t chart_start_y = start_y + 12;
+    const uint16_t chart_height = height - 14;
+    if (chart_height < 4) return;
 
     for (uint16_t i = 0; i < bar_count; ++i) {
         const uint8_t power = composite_data[i];
         if (power == 0) continue;
-
         if (power < min_color_power_) continue;
 
         const uint16_t bar_height = (static_cast<uint16_t>(power) * chart_height) / 255;
         if (bar_height == 0) continue;
 
-        const uint16_t x = start_x + 1 + i * bar_width;
+        const uint16_t x = chart_start_x + i * bar_width;
         const uint16_t y = chart_start_y + chart_height - bar_height;
-        const uint8_t color_gradient = (bar_height * 255) / chart_height;
-        const Color bar_color(
-            color_gradient,
-            static_cast<uint8_t>(0),
-            static_cast<uint8_t>(255 - color_gradient)
-        );
-        painter.fill_rectangle({x, y, bar_width, bar_height}, bar_color);
+
+        uint32_t color = COLOR_LOW_THREAT;
+        if (power > 200) color = COLOR_CRITICAL_THREAT;
+        else if (power > 150) color = COLOR_HIGH_THREAT;
+        else if (power > 100) color = COLOR_MEDIUM_THREAT;
+
+        draw_rectangle(painter, x, y, bar_width - 1, bar_height, color);
     }
 }
 
