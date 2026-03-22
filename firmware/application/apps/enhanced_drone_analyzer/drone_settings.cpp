@@ -168,7 +168,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
         // Save settings to SD card file
         File file;
-        const auto open_result = file.open(u"/ENHANCED_DRONE_ANALYZER_SETTINGS.TXT", false, true);
+        ensure_directory(settings_dir);
+        const auto open_result = file.create(settings_dir / u"eda_settings.txt");
         if (!open_result) {
             char buffer[512];
             size_t offset = 0;
@@ -314,6 +315,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     field_histogram_end_.on_select = open_keypad;
     field_sweep_start_.on_select = open_keypad;
     field_sweep_end_.on_select = open_keypad;
+
+    // Load persisted settings from SD card (overrides config-derived defaults)
+    // Must be last: apply_settings() writes to UI fields, triggers on_change callbacks
+    (void)load_settings();
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
@@ -359,7 +364,7 @@ void DroneSettingsView::reset_settings() noexcept {
 
 ErrorCode DroneSettingsView::load_settings() noexcept {
     File file;
-    const auto open_result = file.open(u"/ENHANCED_DRONE_ANALYZER_SETTINGS.TXT", true, false);
+    const auto open_result = file.open(settings_dir / u"eda_settings.txt", true, false);
     if (!open_result) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
@@ -493,9 +498,6 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         } else if (str_eq(key, "show_histogram", 14)) {
             settings_.histogram_visible = (val_len == 4 && 
                 val_start[0] == 't' && val_start[1] == 'r' && val_start[2] == 'u' && val_start[3] == 'e');
-        } else if (str_eq(key, "spectrum_mode", 13)) {
-            // Only SEQUENTIAL mode supported
-            settings_.scanning_mode = ScanningMode::SEQUENTIAL;
         }
     };
 
