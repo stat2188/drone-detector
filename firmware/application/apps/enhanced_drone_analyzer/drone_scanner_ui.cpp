@@ -425,6 +425,10 @@ void DroneScannerUI::refresh_ui() noexcept {
         for (size_t i = 0; i < count; ++i) {
             display_data.drones[i] = DisplayDroneEntry(drones[i]);
         }
+        // Clear stale entries beyond current count
+        for (size_t i = count; i < MAX_DISPLAYED_DRONES; ++i) {
+            display_data.drones[i] = DisplayDroneEntry();
+        }
 
         // Sort by threat level descending (CRITICAL first, NONE last)
         // Simple insertion sort — O(n²) but n ≤ MAX_DISPLAYED_DRONES (small)
