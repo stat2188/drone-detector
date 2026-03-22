@@ -116,6 +116,8 @@ public:
      */
     void focus() override;
 
+    bool on_touch(TouchEvent event) override;
+
     std::string title() const override { return "EDA Settings"; }
 
 private:

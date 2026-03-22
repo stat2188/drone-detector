@@ -282,43 +282,19 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
-    // Frequency keypad callbacks (like Looking Glass)
-    field_spectrum_start_.on_select = [this](ui::NumberField& field) {
+    // Frequency keypad callbacks — open on touch
+    auto open_keypad = [this](ui::NumberField& field) {
         auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
         keypad->on_changed = [&field](rf::Frequency f) {
             field.set_value(static_cast<int32_t>(f / 1000000));
         };
     };
-    field_spectrum_end_.on_select = [this](ui::NumberField& field) {
-        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
-        keypad->on_changed = [&field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
-    };
-    field_histogram_start_.on_select = [this](ui::NumberField& field) {
-        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
-        keypad->on_changed = [&field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
-    };
-    field_histogram_end_.on_select = [this](ui::NumberField& field) {
-        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
-        keypad->on_changed = [&field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
-    };
-    field_sweep_start_.on_select = [this](ui::NumberField& field) {
-        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
-        keypad->on_changed = [&field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
-    };
-    field_sweep_end_.on_select = [this](ui::NumberField& field) {
-        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
-        keypad->on_changed = [&field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
-    };
+    field_spectrum_start_.on_select = open_keypad;
+    field_spectrum_end_.on_select = open_keypad;
+    field_histogram_start_.on_select = open_keypad;
+    field_histogram_end_.on_select = open_keypad;
+    field_sweep_start_.on_select = open_keypad;
+    field_sweep_end_.on_select = open_keypad;
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
@@ -330,6 +306,29 @@ void DroneSettingsView::paint(ui::Painter& painter) {
 
 void DroneSettingsView::focus() {
     field_scan_mode_.focus();
+}
+
+bool DroneSettingsView::on_touch(TouchEvent event) {
+    if (event.type == TouchEvent::Type::End) {
+        // Check if touch landed on any frequency field — open keypad
+        struct FreqField { ui::NumberField* field; };
+        FreqField fields[] = {
+            {&field_spectrum_start_}, {&field_spectrum_end_},
+            {&field_histogram_start_}, {&field_histogram_end_},
+            {&field_sweep_start_}, {&field_sweep_end_},
+        };
+        for (auto& ff : fields) {
+            if (ff.field->screen_rect().contains(event.point)) {
+                auto keypad = nav_.push<ui::FrequencyKeypadView>(
+                    static_cast<rf::Frequency>(ff.field->value()) * 1000000ULL);
+                keypad->on_changed = [field = ff.field](rf::Frequency f) {
+                    field->set_value(static_cast<int32_t>(f / 1000000));
+                };
+                return true;
+            }
+        }
+    }
+    return View::on_touch(event);
 }
 
 void DroneSettingsView::reset_settings() noexcept {
