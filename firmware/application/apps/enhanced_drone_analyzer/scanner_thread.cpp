@@ -23,8 +23,8 @@ void ScannerThread::run() noexcept {
     while (!chThdShouldTerminate()) {
         if (__atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
             if (sweep_enabled_ && sweep_active_) {
-                // Sweep pass: all 240 steps in a row (fast)
-                for (uint16_t i = 0; i < 240; ++i) {
+                // Sweep pass: all steps in a row (fast)
+                for (uint16_t i = 0; i < sweep_total_steps_; ++i) {
                     if (chThdShouldTerminate()) break;
 
                     radio::set_tuning_frequency(sweep_current_freq_);
@@ -34,10 +34,13 @@ void ScannerThread::run() noexcept {
 
                     sweep_current_freq_ += sweep_step_hz_;
                     sweep_current_step_++;
-                    if (sweep_current_freq_ >= sweep_end_ || sweep_current_step_ >= 240) {
+                    if (sweep_current_freq_ >= sweep_end_ || sweep_current_step_ >= sweep_total_steps_) {
                         sweep_current_freq_ = sweep_start_;
                         sweep_current_step_ = 0;
                     }
+
+                    chThdSleepMilliseconds(3);
+                }
 
                     chThdSleepMilliseconds(3);  // PLL stabilization only
                 }
@@ -117,6 +120,10 @@ void ScannerThread::set_sweep_range(FreqHz start, FreqHz end, FreqHz step) noexc
     sweep_step_hz_ = step;
     sweep_current_freq_ = start;
     sweep_current_step_ = 0;
+    if (step > 0) {
+        sweep_total_steps_ = static_cast<uint16_t>((end - start) / step);
+        if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
+    }
 }
 
 } // namespace drone_analyzer

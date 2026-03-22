@@ -49,11 +49,12 @@ private:
     bool sweep_enabled_{false};
     bool sweep_active_{false};
     static constexpr uint16_t SWEEP_AUTO_INTERVAL = 20;  // sweep every 20 frequencies
-    uint16_t db_scan_counter_{0};  // counts individual frequencies scanned
+    uint16_t db_scan_counter_{0};
     FreqHz sweep_start_{0};
     FreqHz sweep_end_{0};
     FreqHz sweep_step_hz_{0};
     FreqHz sweep_current_freq_{0};
+    uint16_t sweep_total_steps_{240};  // dynamic: range / SWEEP_SLICE_BW
     uint16_t sweep_current_step_{0};
 };
 

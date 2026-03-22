@@ -143,7 +143,7 @@ private:
     bool composite_active_{false};
     FreqHz sweep_start_{5700000000};
     FreqHz sweep_end_{5900000000};
-    static constexpr FreqHz SWEEP_SLICE_BW = 2000000;  // 2 MHz baseband
+    static constexpr FreqHz SWEEP_BANDWIDTH = 20000000;  // 20 MHz (like Looking Glass)
 
     void update_composite(FreqHz center_freq, const ChannelSpectrum& spectrum) noexcept;
 

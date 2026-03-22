@@ -11,6 +11,7 @@
 #include "string_format.hpp"
 #include "baseband_api.hpp"
 #include "portapack_persistent_memory.hpp"
+#include "portapack.hpp"
 #include "file_path.hpp"
 #include "ch.h"
 #include <array>
@@ -121,8 +122,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             sweep_start_ = cfg.sweep_start_freq;
             sweep_end_ = cfg.sweep_end_freq;
             const FreqHz range = sweep_end_ - sweep_start_;
+            // Step = full slice coverage (like Looking Glass at 20 MHz)
+            // 256 bins * 78125 Hz = 20 MHz per step — fast sweep
             if (range > 0 && range <= 10000000000ULL && scanner_thread_ != nullptr) {
-                scanner_thread_->set_sweep_range(sweep_start_, sweep_end_, range / COMPOSITE_SIZE);
+                // Reconfigure baseband for wideband sweep (like Looking Glass)
+                portapack::receiver_model.set_sampling_rate(SWEEP_BANDWIDTH);
+                portapack::receiver_model.set_baseband_bandwidth(SWEEP_BANDWIDTH);
+                baseband::set_spectrum(SWEEP_BANDWIDTH, 31);
+
+                scanner_thread_->set_sweep_range(sweep_start_, sweep_end_, SWEEP_BANDWIDTH);
                 scanner_thread_->set_sweep_enabled(true);
             }
         } else {
@@ -132,6 +140,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             if (scanner_thread_ != nullptr) {
                 scanner_thread_->set_sweep_enabled(false);
             }
+
+            // Restore normal bandwidth for scanner
+            portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
+            portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
+            baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
         }
     };
 
@@ -529,7 +542,7 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
 }
 
 void DroneScannerUI::update_composite(FreqHz center_freq, const ChannelSpectrum& spectrum) noexcept {
-    constexpr FreqHz bin_bw = SWEEP_SLICE_BW / 256;
+    constexpr FreqHz bin_bw = SWEEP_BANDWIDTH / 256;  // 78125 Hz per bin at 20 MHz
 
     for (size_t bin = 0; bin < 256; ++bin) {
         // Skip DC spike bins
