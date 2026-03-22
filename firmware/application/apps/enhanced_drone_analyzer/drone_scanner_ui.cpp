@@ -575,8 +575,10 @@ void DroneScannerUI::sweep_process_frame(const ChannelSpectrum& spectrum) noexce
         const uint8_t power = spectrum.db[bin];
         if (power < min_color_power_) continue;
 
-        // Bin frequency: DC is at bin 128
-        const FreqHz bin_freq = sweep_f_center_ + (static_cast<int32_t>(bin) - 128) * bin_bw;
+        // Compute signed offset first to avoid uint64 underflow
+        const int32_t offset_hz = (static_cast<int32_t>(bin) - 128) * static_cast<int32_t>(bin_bw);
+        if (offset_hz < 0 && static_cast<FreqHz>(-offset_hz) > sweep_f_center_) continue;
+        const FreqHz bin_freq = sweep_f_center_ + static_cast<FreqHz>(offset_hz);
         if (bin_freq < sweep_start_ || bin_freq >= sweep_end_) continue;
 
         // Map frequency to pixel (0..239)
