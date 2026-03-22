@@ -265,6 +265,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     }
 
     baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
+    portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
+    portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
     baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
     portapack::receiver_model.enable();
 
