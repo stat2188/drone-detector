@@ -56,7 +56,10 @@ ScanConfig::ScanConfig() noexcept
     , spectrum_start_freq(DEFAULT_SPECTRUM_START_HZ)
     , spectrum_end_freq(DEFAULT_SPECTRUM_END_HZ)
     , histogram_start_freq(DEFAULT_HISTOGRAM_START_HZ)
-    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ) {
+    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ)
+    , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
+    , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
+    , sweep_step_freq(1000000) {
 }
 
 ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
@@ -69,7 +72,10 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , spectrum_start_freq(DEFAULT_SPECTRUM_START_HZ)
     , spectrum_end_freq(DEFAULT_SPECTRUM_END_HZ)
     , histogram_start_freq(DEFAULT_HISTOGRAM_START_HZ)
-    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ) {
+    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ)
+    , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
+    , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
+    , sweep_step_freq(1000000) {
 }
 
 // ============================================================================

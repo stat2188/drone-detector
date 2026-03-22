@@ -36,6 +36,11 @@ struct ScanConfig {
     // Histogram frequency range (Hz)
     FreqHz histogram_start_freq;
     FreqHz histogram_end_freq;
+
+    // Sweep range (Hz)
+    FreqHz sweep_start_freq;
+    FreqHz sweep_end_freq;
+    FreqHz sweep_step_freq;
     
     /**
      * @brief Default constructor

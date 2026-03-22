@@ -156,6 +156,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.spectrum_end_freq = settings_.spectrum_end_freq;
             updated_config.histogram_start_freq = settings_.histogram_start_freq;
             updated_config.histogram_end_freq = settings_.histogram_end_freq;
+            updated_config.sweep_start_freq = settings_.sweep_start_freq;
+            updated_config.sweep_end_freq = settings_.sweep_end_freq;
+            updated_config.sweep_step_freq = settings_.sweep_step_freq;
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
             if (err != ErrorCode::SUCCESS) {
@@ -332,6 +335,7 @@ bool DroneSettingsView::on_touch(TouchEvent event) {
             {&field_spectrum_start_}, {&field_spectrum_end_},
             {&field_histogram_start_}, {&field_histogram_end_},
             {&field_sweep_start_}, {&field_sweep_end_},
+            {&field_sweep_step_},
         };
         for (auto& ff : fields) {
             if (ff.field->screen_rect().contains(event.point)) {
@@ -533,6 +537,9 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         updated_config.spectrum_end_freq = settings_.spectrum_end_freq;
         updated_config.histogram_start_freq = settings_.histogram_start_freq;
         updated_config.histogram_end_freq = settings_.histogram_end_freq;
+        updated_config.sweep_start_freq = settings_.sweep_start_freq;
+        updated_config.sweep_end_freq = settings_.sweep_end_freq;
+        updated_config.sweep_step_freq = settings_.sweep_step_freq;
 
         const ErrorCode err = scanner_ptr_->set_config(updated_config);
         if (err != ErrorCode::SUCCESS) {
