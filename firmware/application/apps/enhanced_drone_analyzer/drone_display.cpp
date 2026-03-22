@@ -165,14 +165,17 @@ void DroneDisplay::render_histogram(
     
     // Draw background with border
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
-    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);  // Top border
-    
-    // Draw label
+    draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
     draw_text(painter, "HISTOGRAM", start_x + 2, start_y + 2, COLOR_TEXT);
-    
-    // Find max value for scaling (ignore first bin which is often noise)
+
+    // Subsample to fit screen (128 bins → max 60 bars)
+    constexpr size_t MAX_BARS = 60;
+    const size_t step = (histogram_size > MAX_BARS) ? (histogram_size / MAX_BARS) : 1;
+    const size_t visible_count = histogram_size / step;
+
+    // Find max value for scaling (skip bin 0)
     uint16_t max_value = 0;
-    for (size_t i = 1; i < histogram_size; ++i) {
+    for (size_t i = step; i < histogram_size; i += step) {
         if (histogram_data[i] > max_value) {
             max_value = histogram_data[i];
         }
@@ -183,29 +186,25 @@ void DroneDisplay::render_histogram(
         return;
     }
 
-    // Calculate bar dimensions (minimum 2px width, 1px gap)
     constexpr uint16_t MIN_BAR_WIDTH = 2;
-    constexpr uint16_t BAR_GAP = 1;
-    const uint16_t usable_width = width - 4;  // 2px padding each side
-    uint16_t bar_width = (usable_width / static_cast<uint16_t>(histogram_size));
+    const uint16_t usable_width = width - 4;
+    uint16_t bar_width = usable_width / static_cast<uint16_t>(visible_count);
     if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
 
     const uint16_t chart_start_x = start_x + 2;
-    const uint16_t chart_start_y = start_y + 12;  // Below label
-    const uint16_t chart_height = height - 14;    // Account for label + padding
-
+    const uint16_t chart_start_y = start_y + 12;
+    const uint16_t chart_height = height - 14;
     if (chart_height < 4) return;
 
-    // Draw histogram bars
-    for (size_t i = 0; i < histogram_size; ++i) {
-        const uint16_t value = histogram_data[i];
+    for (size_t bar = 0; bar < visible_count; ++bar) {
+        const size_t idx = bar * step;
+        const uint16_t value = histogram_data[idx];
         const uint16_t bar_height = (value * chart_height) / max_value;
-        const uint16_t x = chart_start_x + static_cast<uint16_t>(i) * (bar_width + BAR_GAP);
+        const uint16_t x = chart_start_x + static_cast<uint16_t>(bar) * bar_width;
         const uint16_t y = chart_start_y + chart_height - bar_height;
 
-        // Draw filled bar
         if (bar_height > 0) {
-            draw_rectangle(painter, x, y, bar_width, bar_height, COLOR_MEDIUM_THREAT);
+            draw_rectangle(painter, x, y, bar_width - 1, bar_height, COLOR_MEDIUM_THREAT);
         }
     }
 }

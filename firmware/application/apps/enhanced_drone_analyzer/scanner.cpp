@@ -413,24 +413,21 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             // Don't jump. Continue accumulating on locked freq.
         }
     } else {
-        // No signal on this frequency
-        // Decay tracked drones — only once per frequency change
-        if (current_frequency_ != last_decay_freq_) {
-            last_decay_freq_ = current_frequency_;
-            constexpr uint8_t DECAY_AFTER_MISSED = 3;
-            ErrorResult<size_t> decay_idx = find_drone_by_frequency_internal(current_frequency_);
-            if (decay_idx.has_value()) {
-                size_t di = decay_idx.value();
+        // No signal on this frequency — decay tracked drones
+        constexpr uint8_t DECAY_AFTER_MISSED = 3;
+        ErrorResult<size_t> decay_idx = find_drone_by_frequency_internal(current_frequency_);
+        if (decay_idx.has_value()) {
+            size_t di = decay_idx.value();
+            if (di < tracked_count_) {
                 tracked_drones_[di].increment_missed();
                 if (tracked_drones_[di].get_missed_cycles() >= DECAY_AFTER_MISSED) {
                     tracked_drones_[di].reset_missed();
                     bool should_remove = tracked_drones_[di].decay_threat();
                     if (should_remove && tracked_count_ > 0) {
-                        // Remove drone from tracking (swap with last)
-                        if (di + 1 < tracked_count_) {
-                            tracked_drones_[di] = tracked_drones_[tracked_count_ - 1];
-                        }
                         tracked_count_--;
+                        if (di < tracked_count_) {
+                            tracked_drones_[di] = tracked_drones_[tracked_count_];
+                        }
                     }
                 }
             }

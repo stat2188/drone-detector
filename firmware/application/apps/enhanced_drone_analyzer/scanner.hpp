@@ -444,9 +444,6 @@ private:
     // Current scan frequency
     FreqHz current_frequency_;
 
-    // Last frequency where decay was checked (prevents multiple decays per frequency)
-    FreqHz last_decay_freq_{0};
-
     // Last scan time
     SystemTime last_scan_time_;
     
