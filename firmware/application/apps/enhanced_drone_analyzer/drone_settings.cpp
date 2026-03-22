@@ -96,6 +96,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(10), 28}, "DEFAULTS")
     , button_save_({UI_POS_X_CENTER(7), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(7), 28}, "SAVE")
     , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(7), 28}, "CANCEL")
+    , button_about_({UI_POS_X(0), 136, 240, 28}, "ABOUT")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -123,7 +124,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_sweep_step_,
         &button_defaults_,
         &button_save_,
-        &button_cancel_
+        &button_cancel_,
+        &button_about_
     });
 
     field_scan_mode_.set_by_value(static_cast<int32_t>(settings_.scanning_mode));
@@ -227,6 +229,35 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_.reset_to_defaults();
         settings_dirty_ = true;
         apply_settings();
+    };
+
+    button_about_.on_select = [this](ui::Button&) {
+        static constexpr const char* kAboutMessage =
+            "Enhanced Drone Analyzer v2.0\n"
+            "===========================\n"
+            "\n"
+            "Application developed for\n"
+            "civilian population safety.\n"
+            "\n"
+            "Author: Kuznetsov Maxim\n"
+            "Gazprom Gazoraspredeleniye\n"
+            "Orenburg branch\n"
+            "\n"
+            "Development: October 2025\n"
+            "Voluntary & altruistic\n"
+            "\n"
+            "Support the author:\n"
+            "Card: 2202 20202 5787 1695\n"
+            "YooMoney: 41001810704697\n"
+            "\n"
+            "Contact:\n"
+            "Telegram: @max_ai_master\n"
+            "\n"
+            "TM SyberPowerHamster2188\n"
+            "PerviI v mire haker\n"
+            "rabotaushiq shesarem\n"
+            "v govnokompanii";
+        nav_.display_modal("About Author", kAboutMessage);
     };
 
     field_scan_mode_.on_change = [this](size_t, int32_t v) {
