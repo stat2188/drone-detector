@@ -112,22 +112,14 @@ void DroneDisplay::render_spectrum(
         return;
     }
 
-    // Clear entire area first (prevents ghost bars)
+    // Clear entire area first
     painter.fill_rectangle({start_x, start_y, width, height}, Color::black());
 
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
     draw_text(painter, "SPECTRUM", start_x + 2, start_y + 2, COLOR_TEXT);
 
-    // Debug indicator: green dot if data is non-zero
-    uint8_t peak = 0;
-    for (size_t i = 0; i < spectrum_size; ++i) {
-        if (spectrum_data[i] > peak) peak = spectrum_data[i];
-    }
-    if (peak > 0) {
-        painter.fill_rectangle({start_x + width - 6, start_y + 2, 4, 4}, Color::green());
-    } else {
-        painter.fill_rectangle({start_x + width - 6, start_y + 2, 4, 4}, Color::red());
-    }
+    // TEST: bright red square — if visible, painter works
+    painter.fill_rectangle({start_x + 20, start_y + 20, 50, 50}, Color::red());
 
     constexpr uint16_t LABEL_H = 12;
     const uint16_t chart_start_y = start_y + LABEL_H;
