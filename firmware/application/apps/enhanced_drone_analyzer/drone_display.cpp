@@ -701,7 +701,8 @@ void DroneDisplay::render_composite(
     if (chart_height < 4) return;
 
     const uint16_t bar_count = static_cast<uint16_t>(composite_size);
-    const uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
+    uint16_t bar_width = (width > 4) ? ((width - 2) / bar_count) : 1;
+    if (bar_width < 1) bar_width = 1;
 
     for (uint16_t i = 0; i < bar_count; ++i) {
         const uint8_t power = composite_data[i];

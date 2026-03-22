@@ -47,6 +47,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
+                    if (this->composite_active_ && this->scanning_) {
+                        this->update_composite(
+                            static_cast<FreqHz>(this->current_frequency_), spectrum);
+                    }
                     this->on_channel_spectrum(spectrum);
                 }
             }
