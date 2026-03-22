@@ -13,22 +13,14 @@
 #include "portapack_persistent_memory.hpp"
 #include "file_path.hpp"
 #include "ch.h"
-#include <new>
 #include <array>
 
 namespace drone_analyzer {
 
-alignas(HardwareController) static uint8_t s_hardware_buffer[sizeof(HardwareController)];
-static_assert(sizeof(HardwareController) <= sizeof(s_hardware_buffer), "HardwareController buffer overflow");
-
-alignas(DatabaseManager) static uint8_t s_database_buffer[sizeof(DatabaseManager)];
-static_assert(sizeof(DatabaseManager) <= sizeof(s_database_buffer), "DatabaseManager buffer overflow");
-
-alignas(DroneScanner) static uint8_t s_scanner_buffer[sizeof(DroneScanner)];
-static_assert(sizeof(DroneScanner) <= sizeof(s_scanner_buffer), "DroneScanner buffer overflow");
-
-alignas(ScannerThread) static uint8_t s_scanner_thread_buffer[sizeof(ScannerThread)];
-static_assert(sizeof(ScannerThread) <= sizeof(s_scanner_thread_buffer), "ScannerThread buffer overflow");
+static HardwareController s_hardware;
+static DatabaseManager s_database;
+static DroneScanner s_scanner(s_database, s_hardware);
+static ScannerThread s_scanner_thread(s_scanner);
 
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : View()
@@ -309,10 +301,10 @@ void DroneScannerUI::focus() {
 }
 
 void DroneScannerUI::construct_objects() noexcept {
-    hardware_ptr_ = new (&s_hardware_buffer[0]) HardwareController();
-    database_ptr_ = new (&s_database_buffer[0]) DatabaseManager();
-    scanner_ptr_ = new (&s_scanner_buffer[0]) DroneScanner(*database_ptr_, *hardware_ptr_);
-    scanner_thread_ = new (&s_scanner_thread_buffer[0]) ScannerThread(*scanner_ptr_);
+    hardware_ptr_ = &s_hardware;
+    database_ptr_ = &s_database;
+    scanner_ptr_ = &s_scanner;
+    scanner_thread_ = &s_scanner_thread;
 }
 
 void DroneScannerUI::destruct_objects() noexcept {
