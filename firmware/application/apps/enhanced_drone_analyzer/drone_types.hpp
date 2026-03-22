@@ -219,8 +219,9 @@ struct TrackedDrone {
     int16_t rssi_history_[6];          // 12 bytes (6 × int16_t)
     SystemTime timestamp_history_[6];   // 24 bytes (6 × uint32_t)
     uint8_t history_index_;
+    uint8_t missed_cycles_;             // 1 byte — consecutive scans without detection
     
-    // Total: 56 bytes (no vtable, no virtual functions)
+    // Total: 57 bytes (no vtable, no virtual functions)
     
     /**
      * @brief Default constructor
@@ -262,6 +263,27 @@ struct TrackedDrone {
      * @brief Check if drone is stale (not seen recently)
      */
     [[nodiscard]] bool is_stale(SystemTime current_time, SystemTime timeout_ms) const noexcept;
+
+    /**
+     * @brief Decay threat level by one step (CRITICAL→HIGH→MEDIUM→LOW→NONE)
+     * @return true if threat is now NONE (should be removed)
+     */
+    bool decay_threat() noexcept;
+
+    /**
+     * @brief Reset missed cycles counter (drone was detected)
+     */
+    void reset_missed() noexcept { missed_cycles_ = 0; }
+
+    /**
+     * @brief Increment missed cycles counter
+     */
+    void increment_missed() noexcept { missed_cycles_++; }
+
+    /**
+     * @brief Get missed cycles count
+     */
+    [[nodiscard]] uint8_t get_missed_cycles() const noexcept { return missed_cycles_; }
 };
 
 /**

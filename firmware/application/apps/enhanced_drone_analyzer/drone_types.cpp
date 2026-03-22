@@ -76,7 +76,8 @@ TrackedDrone::TrackedDrone() noexcept
     , rssi{RSSI_NOISE_FLOOR_DBM}
     , rssi_history_{0}
     , timestamp_history_{0}
-    , history_index_{0} {
+    , history_index_{0}
+    , missed_cycles_{0} {
 }
 
 TrackedDrone::TrackedDrone(
@@ -92,7 +93,8 @@ TrackedDrone::TrackedDrone(
     , rssi{RSSI_NOISE_FLOOR_DBM}
     , rssi_history_{0}
     , timestamp_history_{0}
-    , history_index_{0} {
+    , history_index_{0}
+    , missed_cycles_{0} {
 }
 
 void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcept {
@@ -163,6 +165,26 @@ bool TrackedDrone::is_stale(SystemTime current_time, SystemTime timeout_ms) cons
     
     const uint32_t elapsed = current_time - last_seen;
     return elapsed >= timeout_ms;
+}
+
+bool TrackedDrone::decay_threat() noexcept {
+    switch (threat_level) {
+        case ThreatLevel::CRITICAL:
+            threat_level = ThreatLevel::HIGH;
+            return false;
+        case ThreatLevel::HIGH:
+            threat_level = ThreatLevel::MEDIUM;
+            return false;
+        case ThreatLevel::MEDIUM:
+            threat_level = ThreatLevel::LOW;
+            return false;
+        case ThreatLevel::LOW:
+            threat_level = ThreatLevel::NONE;
+            return true;  // Signal: should be removed
+        case ThreatLevel::NONE:
+        default:
+            return true;  // Already NONE, remove
+    }
 }
 
 // ============================================================================
