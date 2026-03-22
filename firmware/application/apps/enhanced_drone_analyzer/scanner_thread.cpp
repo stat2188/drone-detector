@@ -1,11 +1,10 @@
 #include "scanner_thread.hpp"
+#include "portapack.hpp"
 
 namespace drone_analyzer {
 
 ScannerThread::ScannerThread(DroneScanner& scanner) noexcept
-    : scanner_(scanner)
-    , thread_(nullptr)
-    , sweep_current_freq_(0) {
+    : scanner_(scanner), thread_(nullptr), sweep_current_freq_(0) {
 }
 
 ScannerThread::~ScannerThread() noexcept {
@@ -23,32 +22,27 @@ void ScannerThread::run() noexcept {
     while (!chThdShouldTerminate()) {
         if (__atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
             if (sweep_enabled_ && sweep_active_) {
-                // Sweep pass: all steps in a row (fast)
                 for (uint16_t i = 0; i < sweep_total_steps_; ++i) {
                     if (chThdShouldTerminate()) break;
-
                     radio::set_tuning_frequency(sweep_current_freq_);
                     message.freq = static_cast<int64_t>(sweep_current_freq_);
                     message.range = 0;
                     EventDispatcher::send_message(message);
-
                     sweep_current_freq_ += sweep_step_hz_;
                     sweep_current_step_++;
                     if (sweep_current_freq_ >= sweep_end_ || sweep_current_step_ >= sweep_total_steps_) {
                         sweep_current_freq_ = sweep_start_;
                         sweep_current_step_ = 0;
                     }
-
                     chThdSleepMilliseconds(3);
                 }
-
-                    chThdSleepMilliseconds(3);  // PLL stabilization only
-                }
-
                 sweep_active_ = false;
                 db_scan_counter_ = 0;
+                ErrorResult<FreqHz> freq_result = scanner_.get_current_frequency();
+                if (freq_result.has_value()) {
+                    portapack::receiver_model.set_target_frequency(rf::Frequency(freq_result.value()));
+                }
             } else {
-                // DB scan step
                 ErrorCode err = scanner_.perform_scan_cycle();
                 if (err == ErrorCode::SUCCESS) {
                     ErrorResult<FreqHz> freq_result = scanner_.get_current_frequency();
@@ -58,8 +52,6 @@ void ScannerThread::run() noexcept {
                         EventDispatcher::send_message(message);
                     }
                 }
-
-                // Auto-trigger sweep every N DB cycles
                 if (sweep_enabled_) {
                     db_scan_counter_++;
                     if (db_scan_counter_ >= SWEEP_AUTO_INTERVAL) {
@@ -68,7 +60,6 @@ void ScannerThread::run() noexcept {
                 }
             }
         }
-
         chThdSleepMilliseconds(SCANNER_SLEEP_MS);
     }
 }
@@ -80,10 +71,8 @@ void ScannerThread::trigger_sweep_pass() noexcept {
 void ScannerThread::start() noexcept {
     if (thread_ == nullptr) {
         thread_ = chThdCreateStatic(
-            wa_, sizeof(wa_),
-            NORMALPRIO + 10,
-            ScannerThread::static_fn, this
-        );
+            wa_, sizeof(wa_), NORMALPRIO + 10,
+            ScannerThread::static_fn, this);
     }
 }
 
@@ -126,4 +115,4 @@ void ScannerThread::set_sweep_range(FreqHz start, FreqHz end, FreqHz step) noexc
     }
 }
 
-} // namespace drone_analyzer
+}  // namespace drone_analyzer
