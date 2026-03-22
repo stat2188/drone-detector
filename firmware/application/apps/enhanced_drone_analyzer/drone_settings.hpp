@@ -49,6 +49,9 @@ struct DroneSettings {
     // Sweep frequency range (Hz)
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;
+
+    // Sweep step (Hz)
+    FreqHz sweep_step_freq;
     
     /**
       * @brief Default constructor
@@ -140,6 +143,9 @@ private:
     // Sweep frequency range fields (MHz)
     ui::NumberField field_sweep_start_;
     ui::NumberField field_sweep_end_;
+
+    // Sweep step field (kHz)
+    ui::NumberField field_sweep_step_;
 
     ui::Button button_defaults_;
     ui::Button button_save_;

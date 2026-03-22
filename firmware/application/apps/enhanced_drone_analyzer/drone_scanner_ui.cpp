@@ -112,22 +112,38 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     button_mode_.on_select = [this](ui::Button&) {
         composite_active_ = !composite_active_;
         if (composite_active_) {
-            // Initialize sweep range from constants (TODO: load from settings file)
-            sweep_display_start_ = SWEEP_DEFAULT_START_HZ;
-            sweep_display_end_ = SWEEP_DEFAULT_END_HZ;
+            // Use sweep range from settings (stored in ScanConfig)
+            if (scanner_ptr_ != nullptr) {
+                const ScanConfig cfg = scanner_ptr_->get_config();
+                sweep_display_start_ = cfg.spectrum_start_freq > 0 ?
+                    cfg.spectrum_start_freq : SWEEP_DEFAULT_START_HZ;
+                sweep_display_end_ = cfg.spectrum_end_freq > 0 ?
+                    cfg.spectrum_end_freq : SWEEP_DEFAULT_END_HZ;
+            } else {
+                sweep_display_start_ = SWEEP_DEFAULT_START_HZ;
+                sweep_display_end_ = SWEEP_DEFAULT_END_HZ;
+            }
             sweep_display_range_ = sweep_display_end_ - sweep_display_start_;
 
-            if (sweep_display_range_ == 0) {
+            if (sweep_display_range_ == 0 || sweep_display_range_ > 10000000000ULL) {
                 composite_active_ = false;
-                show_alert("Invalid sweep range", 2000);
+                show_alert("Bad sweep range", 2000);
                 return;
             }
 
-            // Calculate sweep step: spread range across DISPLAY_WIDTH pixels
             FreqHz step = sweep_display_range_ / COMPOSITE_SIZE;
-            if (step < 1) step = 1;
+            if (step < 100000) step = 100000;  // Min 100 kHz step
+
+            // Use configured step if available
+            if (scanner_ptr_ != nullptr) {
+                const ScanConfig cfg = scanner_ptr_->get_config();
+                // Step can be overridden from settings (stored temporarily in histogram fields)
+                // For now, use auto-calculated step
+                (void)cfg;
+            }
 
             clear_composite();
+            sweep_frame_count_ = 0;
             if (scanner_thread_ != nullptr) {
                 scanner_thread_->set_sweep_range(
                     sweep_display_start_, sweep_display_end_, step);
@@ -135,7 +151,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             }
             drone_display_.set_composite_mode(true);
             button_mode_.set_text("Spec");
-            show_alert("Spectrum sweep ON", 1000);
         } else {
             if (scanner_thread_ != nullptr) {
                 scanner_thread_->set_sweep_enabled(false);
@@ -536,7 +551,7 @@ void DroneScannerUI::update_composite(FreqHz center_freq, const ChannelSpectrum&
         if (bin >= 120 && bin < 136) continue;
 
         uint8_t power = spectrum.db[bin];
-        if (power < min_color_power_) continue;
+        if (power == 0) continue;
 
         FreqHz bin_freq = frame_start + bin * bin_bw;
         if (bin_freq < sweep_display_start_ || bin_freq >= sweep_display_end_) continue;

@@ -145,6 +145,8 @@ private:
     FreqHz sweep_display_start_{5700000000};
     FreqHz sweep_display_end_{5900000000};
     FreqHz sweep_display_range_{200000000};
+    uint16_t sweep_frame_count_{0};  // Frames since sweep start (for periodic clear)
+    static constexpr uint16_t SWEEP_CLEAR_PERIOD = 120;  // Clear every 120 frames (~2 sec)
 
     void update_composite(FreqHz center_freq, const ChannelSpectrum& spectrum) noexcept;
     void clear_composite() noexcept;

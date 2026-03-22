@@ -269,6 +269,20 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
 ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     statistics_.total_scan_cycles++;
     
+    // Clean up NONE-threat drones (should have been removed by decay, but safety net)
+    if (tracked_count_ > 0) {
+        size_t write_idx = 0;
+        for (size_t read_idx = 0; read_idx < tracked_count_; ++read_idx) {
+            if (tracked_drones_[read_idx].get_threat() != ThreatLevel::NONE) {
+                if (write_idx != read_idx) {
+                    tracked_drones_[write_idx] = tracked_drones_[read_idx];
+                }
+                write_idx++;
+            }
+        }
+        tracked_count_ = write_idx;
+    }
+
     // Try to get next frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
     
