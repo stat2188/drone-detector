@@ -110,18 +110,21 @@ constexpr uint32_t DEFAULT_SAMPLE_RATE_HZ = 2000000;
 
 /**
  * @brief Default gain value
+ * @note >= 20 enables RF amp (RFFC5072) for ~10-14 dB additional gain
  */
-constexpr uint16_t DEFAULT_GAIN = 20;
+constexpr uint16_t DEFAULT_GAIN = 30;
 
 /**
- * @brief Default LNA gain value
+ * @brief Default LNA gain value (MAX2837: 0-40 dB)
+ * @note 32 dB for strong sensitivity — HackRF typical for spectrum scanning
  */
-constexpr uint8_t DEFAULT_LNA_GAIN = 8;
+constexpr uint8_t DEFAULT_LNA_GAIN = 32;
 
 /**
- * @brief Default VGA gain value
+ * @brief Default VGA gain value (MAX2837: 0-62 dB)
+ * @note 30 dB for good dynamic range without excessive noise
  */
-constexpr uint8_t DEFAULT_VGA_GAIN = 12;
+constexpr uint8_t DEFAULT_VGA_GAIN = 30;
 
 // ============================================================================
 // Time Constants
@@ -674,6 +677,14 @@ constexpr uint32_t STATISTICS_UPDATES_PER_SEC = 10;
  * @note 10 cycles × 50ms = 500ms to verify signal
  */
 constexpr uint32_t MAX_FREQ_LOCK = 10;
+
+/**
+ * @brief Maximum dwell cycles on a detected frequency
+ * @note 7 cycles × 50ms = 350ms ≈ 1/3 second
+ * @note After this many dwell cycles, force resume scanning
+ *       even if signal persists (avoids permanent lock)
+ */
+constexpr uint8_t MAX_DWELL_CYCLES = 7;
 
 /**
  * @brief Signal lock time (ms)

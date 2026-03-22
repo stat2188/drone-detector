@@ -258,6 +258,14 @@ ErrorCode DroneScanner::resume_scanning() noexcept {
     return ErrorCode::SUCCESS;
 }
 
+void DroneScanner::force_resume_scanning() noexcept {
+    if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
+        scanning_active_.clear();
+        state_ = ScannerState::SCANNING;
+        scanning_active_.set();
+    }
+}
+
 ErrorCode DroneScanner::perform_scan_cycle() noexcept {
     if (!scanning_active_.test()) {
         return ErrorCode::SUCCESS;

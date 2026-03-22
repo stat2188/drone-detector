@@ -136,11 +136,19 @@ public:
     [[nodiscard]] ErrorCode pause_scanning() noexcept;
     
     /**
-     * @brief Resume scanning
+     * @brief Resume scanning from paused state
      * @return ErrorCode::SUCCESS if resumed, error code otherwise
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode resume_scanning() noexcept;
+
+    /**
+     * @brief Force resume scanning from LOCKING/TRACKING state
+     * @note Called by scanner thread when max dwell time expires
+     * @note Uses AtomicFlag trick to avoid mutex deadlock
+     *       (scanner thread already can't hold the mutex)
+     */
+    void force_resume_scanning() noexcept;
     
     /**
      * @brief Perform single scan cycle (frequency hop)

@@ -56,6 +56,9 @@ private:
     FreqHz sweep_current_freq_{0};
     uint16_t sweep_total_steps_{240};  // dynamic: range / SWEEP_SLICE_BW
     uint16_t sweep_current_step_{0};
+
+    // Dwell: stay on frequency when signal detected
+    uint8_t dwell_cycles_{0};
 };
 
 } // namespace drone_analyzer

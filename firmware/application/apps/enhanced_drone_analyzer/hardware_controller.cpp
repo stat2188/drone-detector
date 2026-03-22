@@ -149,12 +149,10 @@ ErrorCode HardwareController::tune_internal(FreqHz frequency) noexcept {
     rf::Frequency rf_freq = rf::Frequency(frequency);
     portapack::receiver_model.set_target_frequency(rf_freq);
 
-    portapack::receiver_model.set_lna(config_.lna_gain);
-    portapack::receiver_model.set_vga(config_.vga_gain);
-
-    portapack::receiver_model.set_sampling_rate(config_.sample_rate);
-
-    portapack::receiver_model.set_rf_amp(config_.gain > 20);
+    // LNA, VGA, RF amp are controlled by UI widgets (field_lna_/field_vga_/field_rf_amp_)
+    // which write directly to portapack::receiver_model on user change.
+    // Do NOT re-apply config gains here — it would override user settings on every
+    // frequency hop during scanning.
 
     portapack::receiver_model.set_baseband_bandwidth(config_.sample_rate);
 
