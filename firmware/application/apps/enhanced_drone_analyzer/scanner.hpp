@@ -449,6 +449,11 @@ private:
     // Current scan frequency
     FreqHz current_frequency_;
 
+    // Pending detection hysteresis (prevent noise from adding phantom drones)
+    FreqHz pending_frequency_{0};
+    uint8_t pending_count_{0};
+    static constexpr uint8_t DETECT_CONFIRM_COUNT = 2;
+
     // Last scan time
     SystemTime last_scan_time_;
     
