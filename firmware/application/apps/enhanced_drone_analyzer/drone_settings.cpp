@@ -405,99 +405,60 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         const uint8_t* val_start = buf + eq_pos + 1;
         size_t val_len = len - eq_pos - 1;
 
-        // Helper to check string equality
-        auto str_eq = [](const char* a, const char* b, size_t len) -> bool {
-            for (size_t i = 0; i < len; ++i) {
-                if (a[i] != b[i]) return false;
-            }
-            return true;
+        // Key matching with length guard: memcmp only called when lengths match.
+        // This eliminates prefix collisions and buffer overread from str_eq.
+        auto key_matches = [key, key_len](const char* expected) -> bool {
+            const size_t elen = __builtin_strlen(expected);
+            return (key_len == elen) && __builtin_memcmp(key, expected, elen) == 0;
         };
 
-        // Parse specific keys
-        if (str_eq(key, "spectrum_start_mhz", 18)) {
-            int32_t val = 0;
-            for (size_t i = 0; i < val_len; ++i) {
-                if (val_start[i] >= '0' && val_start[i] <= '9') {
-                    val = val * 10 + (val_start[i] - '0');
-                }
-            }
-            settings_.spectrum_start_freq = static_cast<uint64_t>(val) * 1000000ULL;
-        } else if (str_eq(key, "spectrum_end_mhz", 16)) {
-            int32_t val = 0;
-            for (size_t i = 0; i < val_len; ++i) {
-                if (val_start[i] >= '0' && val_start[i] <= '9') {
-                    val = val * 10 + (val_start[i] - '0');
-                }
-            }
-            settings_.spectrum_end_freq = static_cast<uint64_t>(val) * 1000000ULL;
-        } else if (str_eq(key, "histogram_start_mhz", 19)) {
-            int32_t val = 0;
-            for (size_t i = 0; i < val_len; ++i) {
-                if (val_start[i] >= '0' && val_start[i] <= '9') {
-                    val = val * 10 + (val_start[i] - '0');
-                }
-            }
-            settings_.histogram_start_freq = static_cast<uint64_t>(val) * 1000000ULL;
-        } else if (str_eq(key, "histogram_end_mhz", 17)) {
-            int32_t val = 0;
-            for (size_t i = 0; i < val_len; ++i) {
-                if (val_start[i] >= '0' && val_start[i] <= '9') {
-                    val = val * 10 + (val_start[i] - '0');
-                }
-            }
-            settings_.histogram_end_freq = static_cast<uint64_t>(val) * 1000000ULL;
-        } else if (str_eq(key, "sweep_start_mhz", 15)) {
+        auto parse_int = [val_start, val_len]() -> int32_t {
             int32_t val = 0;
             for (size_t i = 0; i < val_len; ++i) {
                 if (val_start[i] >= '0' && val_start[i] <= '9')
                     val = val * 10 + (val_start[i] - '0');
             }
-            settings_.sweep_start_freq = static_cast<uint64_t>(val) * 1000000ULL;
-        } else if (str_eq(key, "sweep_end_mhz", 13)) {
+            return val;
+        };
+
+        auto parse_bool = [val_start, val_len]() -> bool {
+            return (val_len == 4 &&
+                    val_start[0] == 't' && val_start[1] == 'r' &&
+                    val_start[2] == 'u' && val_start[3] == 'e');
+        };
+
+        if (key_matches("spectrum_start_mhz")) {
+            settings_.spectrum_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("spectrum_end_mhz")) {
+            settings_.spectrum_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("histogram_start_mhz")) {
+            settings_.histogram_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("histogram_end_mhz")) {
+            settings_.histogram_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep_start_mhz")) {
+            settings_.sweep_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep_end_mhz")) {
+            settings_.sweep_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep_step_khz")) {
+            settings_.sweep_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("scan_interval_ms")) {
+            settings_.scan_interval_ms = static_cast<uint32_t>(parse_int());
+        } else if (key_matches("rssi_threshold_db")) {
+            bool negative = (val_len > 0 && val_start[0] == '-');
+            const uint8_t* num_start = negative ? val_start + 1 : val_start;
+            size_t num_len = negative ? val_len - 1 : val_len;
             int32_t val = 0;
-            for (size_t i = 0; i < val_len; ++i) {
-                if (val_start[i] >= '0' && val_start[i] <= '9')
-                    val = val * 10 + (val_start[i] - '0');
-            }
-            settings_.sweep_end_freq = static_cast<uint64_t>(val) * 1000000ULL;
-        } else if (str_eq(key, "sweep_step_khz", 14)) {
-            int32_t val = 0;
-            for (size_t i = 0; i < val_len; ++i) {
-                if (val_start[i] >= '0' && val_start[i] <= '9')
-                    val = val * 10 + (val_start[i] - '0');
-            }
-            settings_.sweep_step_freq = static_cast<uint64_t>(val) * 1000ULL;
-        } else if (str_eq(key, "scan_interval_ms", 16)) {
-            int32_t val = 0;
-            for (size_t i = 0; i < val_len; ++i) {
-                if (val_start[i] >= '0' && val_start[i] <= '9') {
-                    val = val * 10 + (val_start[i] - '0');
-                }
-            }
-            settings_.scan_interval_ms = static_cast<uint32_t>(val);
-        } else if (str_eq(key, "rssi_threshold_db", 17)) {
-            int32_t val = 0;
-            bool negative = false;
-            size_t start = 0;
-            if (val_len > 0 && val_start[0] == '-') {
-                negative = true;
-                start = 1;
-            }
-            for (size_t i = start; i < val_len; ++i) {
-                if (val_start[i] >= '0' && val_start[i] <= '9') {
-                    val = val * 10 + (val_start[i] - '0');
-                }
+            for (size_t i = 0; i < num_len; ++i) {
+                if (num_start[i] >= '0' && num_start[i] <= '9')
+                    val = val * 10 + (num_start[i] - '0');
             }
             settings_.alert_rssi_threshold_dbm = negative ? -val : val;
-        } else if (str_eq(key, "enable_audio_alerts", 19)) {
-            settings_.audio_alerts_enabled = (val_len == 4 && 
-                val_start[0] == 't' && val_start[1] == 'r' && val_start[2] == 'u' && val_start[3] == 'e');
-        } else if (str_eq(key, "show_spectrum", 13)) {
-            settings_.spectrum_visible = (val_len == 4 && 
-                val_start[0] == 't' && val_start[1] == 'r' && val_start[2] == 'u' && val_start[3] == 'e');
-        } else if (str_eq(key, "show_histogram", 14)) {
-            settings_.histogram_visible = (val_len == 4 && 
-                val_start[0] == 't' && val_start[1] == 'r' && val_start[2] == 'u' && val_start[3] == 'e');
+        } else if (key_matches("enable_audio_alerts")) {
+            settings_.audio_alerts_enabled = parse_bool();
+        } else if (key_matches("show_spectrum")) {
+            settings_.spectrum_visible = parse_bool();
+        } else if (key_matches("show_histogram")) {
+            settings_.histogram_visible = parse_bool();
         }
     };
 
