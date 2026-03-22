@@ -59,7 +59,7 @@ AudioAlertConfig::AudioAlertConfig(
 }
 
 // ============================================================================
-// AudioAlertManager Implementation
+// AudioAlertManager Implementationn
 // ============================================================================
 
 const AudioAlertConfig& AudioAlertManager::get_alert_config(AlertType alert_type) noexcept {
