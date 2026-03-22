@@ -27,7 +27,9 @@ DroneSettings::DroneSettings() noexcept
     , spectrum_start_freq(DEFAULT_SPECTRUM_START_HZ)
     , spectrum_end_freq(DEFAULT_SPECTRUM_END_HZ)
     , histogram_start_freq(DEFAULT_HISTOGRAM_START_HZ)
-    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ) {
+    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ)
+    , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
+    , sweep_end_freq(SWEEP_DEFAULT_END_HZ) {
 }
 
 void DroneSettings::reset_to_defaults() noexcept {
@@ -49,6 +51,8 @@ void DroneSettings::reset_to_defaults() noexcept {
     spectrum_end_freq = DEFAULT_SPECTRUM_END_HZ;
     histogram_start_freq = DEFAULT_HISTOGRAM_START_HZ;
     histogram_end_freq = DEFAULT_HISTOGRAM_END_HZ;
+    sweep_start_freq = SWEEP_DEFAULT_START_HZ;
+    sweep_end_freq = SWEEP_DEFAULT_END_HZ;
 }
 
 // ============================================================================
@@ -59,28 +63,35 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     : ui::View()
     , labels_({
         {{UI_POS_X(1), UI_POS_Y(1)}, "Scan Mode:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(4)}, "Interval (ms):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(7)}, "RSSI Thresh (dBm):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(15)}, "Spec(MHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(7), UI_POS_Y(15)}, "-", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(17)}, "Hist(MHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(7), UI_POS_Y(17)}, "-", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(3)}, "Interval (ms):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(5)}, "RSSI (dBm):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(9)}, "Spec(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(7), UI_POS_Y(9)}, "-", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(11)}, "Hist(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(7), UI_POS_Y(11)}, "-", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(13)}, "Sweep(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(8), UI_POS_Y(13)}, "-", Theme::getInstance()->fg_light->foreground},
     })
     , field_scan_mode_({UI_POS_X(1), UI_POS_Y(2)}, 14, {
-        {"Sequential", 0}
+        {"Single", 0},
+        {"Hopping", 1},
+        {"Sequential", 2},
+        {"Targeted", 3}
     })
-    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(5)}, 4, {10, 1000}, 10, ' ')
-    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(8)}, 4, {-90, -20}, 1, ' ')
-    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(10)}, 15, "Audio Alerts", false)
-    , check_spectrum_visible_({UI_POS_X(1), UI_POS_Y(12)}, 15, "Show Spectrum", false)
-    , check_histogram_visible_({UI_POS_X(1), UI_POS_Y(14)}, 15, "Show Histogram", false)
-    , field_spectrum_start_({UI_POS_X(1), UI_POS_Y(16)}, 5, {1, 7200}, 1, ' ')
-    , field_spectrum_end_({UI_POS_X(8), UI_POS_Y(16)}, 5, {1, 7200}, 1, ' ')
-    , field_histogram_start_({UI_POS_X(1), UI_POS_Y(18)}, 5, {1, 7200}, 1, ' ')
-    , field_histogram_end_({UI_POS_X(8), UI_POS_Y(18)}, 5, {1, 7200}, 1, ' ')
-    , button_defaults_({UI_POS_X(0), UI_POS_Y(20), UI_POS_WIDTH(10), 28}, "DEFAULTS")
-    , button_save_({UI_POS_X_CENTER(7), UI_POS_Y(20), UI_POS_WIDTH(7), 28}, "SAVE")
-    , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y(20), UI_POS_WIDTH(7), 28}, "CANCEL")
+    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(4)}, 4, {10, 1000}, 10, ' ')
+    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(6)}, 4, {-90, -20}, 1, ' ')
+    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(7)}, 15, "Audio Alerts", false)
+    , check_spectrum_visible_({UI_POS_X(13), UI_POS_Y(7)}, 10, "Spectrum", false)
+    , check_histogram_visible_({UI_POS_X(1), UI_POS_Y(8)}, 15, "Histogram", false)
+    , field_spectrum_start_({UI_POS_X(1), UI_POS_Y(10)}, 5, {1, 7200}, 1, ' ')
+    , field_spectrum_end_({UI_POS_X(8), UI_POS_Y(10)}, 5, {1, 7200}, 1, ' ')
+    , field_histogram_start_({UI_POS_X(1), UI_POS_Y(12)}, 5, {1, 7200}, 1, ' ')
+    , field_histogram_end_({UI_POS_X(8), UI_POS_Y(12)}, 5, {1, 7200}, 1, ' ')
+    , field_sweep_start_({UI_POS_X(1), UI_POS_Y(14)}, 5, {100, 7200}, 1, ' ')
+    , field_sweep_end_({UI_POS_X(9), UI_POS_Y(14)}, 5, {100, 7200}, 1, ' ')
+    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(10), 28}, "DEFAULTS")
+    , button_save_({UI_POS_X_CENTER(7), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(7), 28}, "SAVE")
+    , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(7), 28}, "CANCEL")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -103,6 +114,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_spectrum_end_,
         &field_histogram_start_,
         &field_histogram_end_,
+        &field_sweep_start_,
+        &field_sweep_end_,
         &button_defaults_,
         &button_save_,
         &button_cancel_
@@ -120,6 +133,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     field_spectrum_end_.set_value(static_cast<int32_t>(settings_.spectrum_end_freq / 1000000));
     field_histogram_start_.set_value(static_cast<int32_t>(settings_.histogram_start_freq / 1000000));
     field_histogram_end_.set_value(static_cast<int32_t>(settings_.histogram_end_freq / 1000000));
+
+    // Sweep frequency range fields (GHz → MHz for display)
+    field_sweep_start_.set_value(static_cast<int32_t>(settings_.sweep_start_freq / 1000000));
+    field_sweep_end_.set_value(static_cast<int32_t>(settings_.sweep_end_freq / 1000000));
 
     button_save_.on_select = [this](ui::Button&) {
         if (scanner_ptr_ != nullptr) {
@@ -172,6 +189,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 "histogram_start_mhz=%lu\n", (unsigned long)(settings_.histogram_start_freq / 1000000));
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "histogram_end_mhz=%lu\n", (unsigned long)(settings_.histogram_end_freq / 1000000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sweep_start_mhz=%lu\n", (unsigned long)(settings_.sweep_start_freq / 1000000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sweep_end_mhz=%lu\n", (unsigned long)(settings_.sweep_end_freq / 1000000));
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "freqman_path=DRONES\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -247,37 +268,18 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
     
     field_histogram_end_.on_change = [this](int32_t v) {
-        settings_.histogram_end_freq = static_cast<FreqHz>(v) * 1000000;
+        settings_.histogram_end_freq = static_cast<FreqHz>(v) * 1000000ULL;
         settings_dirty_ = true;
     };
 
-    // Frequency keypad callbacks (like Looking Glass)
-    field_spectrum_start_.on_select = [this, &nav](ui::NumberField& field) {
-        auto new_view = nav_.push<ui::FrequencyKeypadView>(field.value() * 1000000ULL);
-        new_view->on_changed = [this, &field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
+    // Sweep frequency range callbacks
+    field_sweep_start_.on_change = [this](int32_t v) {
+        settings_.sweep_start_freq = static_cast<FreqHz>(v) * 1000000ULL;
+        settings_dirty_ = true;
     };
-
-    field_spectrum_end_.on_select = [this, &nav](ui::NumberField& field) {
-        auto new_view = nav_.push<ui::FrequencyKeypadView>(field.value() * 1000000ULL);
-        new_view->on_changed = [this, &field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
-    };
-
-    field_histogram_start_.on_select = [this, &nav](ui::NumberField& field) {
-        auto new_view = nav_.push<ui::FrequencyKeypadView>(field.value() * 1000000ULL);
-        new_view->on_changed = [this, &field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
-    };
-
-    field_histogram_end_.on_select = [this, &nav](ui::NumberField& field) {
-        auto new_view = nav_.push<ui::FrequencyKeypadView>(field.value() * 1000000ULL);
-        new_view->on_changed = [this, &field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
+    field_sweep_end_.on_change = [this](int32_t v) {
+        settings_.sweep_end_freq = static_cast<FreqHz>(v) * 1000000ULL;
+        settings_dirty_ = true;
     };
 }
 
@@ -382,6 +384,20 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
                 }
             }
             settings_.histogram_end_freq = static_cast<uint64_t>(val) * 1000000ULL;
+        } else if (str_eq(key, "sweep_start_mhz", 15)) {
+            int32_t val = 0;
+            for (size_t i = 0; i < val_len; ++i) {
+                if (val_start[i] >= '0' && val_start[i] <= '9')
+                    val = val * 10 + (val_start[i] - '0');
+            }
+            settings_.sweep_start_freq = static_cast<uint64_t>(val) * 1000000ULL;
+        } else if (str_eq(key, "sweep_end_mhz", 13)) {
+            int32_t val = 0;
+            for (size_t i = 0; i < val_len; ++i) {
+                if (val_start[i] >= '0' && val_start[i] <= '9')
+                    val = val * 10 + (val_start[i] - '0');
+            }
+            settings_.sweep_end_freq = static_cast<uint64_t>(val) * 1000000ULL;
         } else if (str_eq(key, "scan_interval_ms", 16)) {
             int32_t val = 0;
             for (size_t i = 0; i < val_len; ++i) {
@@ -510,7 +526,13 @@ ErrorCode DroneSettingsView::validate_settings() const noexcept {
         settings_.histogram_end_freq <= settings_.histogram_start_freq) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    
+
+    if (settings_.sweep_start_freq < MIN_FREQUENCY_HZ ||
+        settings_.sweep_end_freq > MAX_FREQUENCY_HZ ||
+        settings_.sweep_start_freq >= settings_.sweep_end_freq) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+
     return ErrorCode::SUCCESS;
 }
 
@@ -525,6 +547,8 @@ void DroneSettingsView::apply_settings() noexcept {
     field_spectrum_end_.set_value(static_cast<int32_t>(settings_.spectrum_end_freq / 1000000));
     field_histogram_start_.set_value(static_cast<int32_t>(settings_.histogram_start_freq / 1000000));
     field_histogram_end_.set_value(static_cast<int32_t>(settings_.histogram_end_freq / 1000000));
+    field_sweep_start_.set_value(static_cast<int32_t>(settings_.sweep_start_freq / 1000000));
+    field_sweep_end_.set_value(static_cast<int32_t>(settings_.sweep_end_freq / 1000000));
 }
 
 } // namespace drone_analyzer

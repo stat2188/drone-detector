@@ -45,6 +45,10 @@ struct DroneSettings {
     // Histogram frequency range (Hz)
     FreqHz histogram_start_freq;
     FreqHz histogram_end_freq;
+
+    // Sweep frequency range (Hz)
+    FreqHz sweep_start_freq;
+    FreqHz sweep_end_freq;
     
     /**
       * @brief Default constructor
@@ -130,6 +134,10 @@ private:
     // Histogram frequency range fields (MHz)
     ui::NumberField field_histogram_start_;
     ui::NumberField field_histogram_end_;
+
+    // Sweep frequency range fields (MHz)
+    ui::NumberField field_sweep_start_;
+    ui::NumberField field_sweep_end_;
 
     ui::Button button_defaults_;
     ui::Button button_save_;
