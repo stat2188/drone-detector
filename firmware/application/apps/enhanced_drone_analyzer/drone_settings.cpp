@@ -281,6 +281,44 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_.sweep_end_freq = static_cast<FreqHz>(v) * 1000000ULL;
         settings_dirty_ = true;
     };
+
+    // Frequency keypad callbacks (like Looking Glass)
+    field_spectrum_start_.on_select = [this](ui::NumberField& field) {
+        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
+        keypad->on_changed = [&field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
+    field_spectrum_end_.on_select = [this](ui::NumberField& field) {
+        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
+        keypad->on_changed = [&field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
+    field_histogram_start_.on_select = [this](ui::NumberField& field) {
+        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
+        keypad->on_changed = [&field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
+    field_histogram_end_.on_select = [this](ui::NumberField& field) {
+        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
+        keypad->on_changed = [&field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
+    field_sweep_start_.on_select = [this](ui::NumberField& field) {
+        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
+        keypad->on_changed = [&field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
+    field_sweep_end_.on_select = [this](ui::NumberField& field) {
+        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
+        keypad->on_changed = [&field](rf::Frequency f) {
+            field.set_value(static_cast<int32_t>(f / 1000000));
+        };
+    };
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
