@@ -11,6 +11,7 @@
 #include "string_format.hpp"
 #include "baseband_api.hpp"
 #include "portapack_persistent_memory.hpp"
+#include "radio.hpp"
 #include "file_path.hpp"
 #include "ch.h"
 #include <array>
@@ -39,11 +40,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
-                    if (this->composite_active_ && this->scanning_) {
-                        this->update_composite(
-                            static_cast<FreqHz>(this->current_frequency_), spectrum);
+                    if (this->composite_active_) {
+                        // Sweep mode: UI thread drives tuning (Looking Glass pattern)
+                        this->sweep_process_frame(spectrum);
+                    } else {
+                        // Normal mode: feed to scanner for drone detection
+                        this->on_channel_spectrum(spectrum);
                     }
-                    this->on_channel_spectrum(spectrum);
                 }
             }
             this->refresh_ui();
@@ -102,52 +105,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
 
     button_mode_.on_select = [this](ui::Button&) {
-        composite_active_ = !composite_active_;
-        if (composite_active_) {
-            // Use sweep range from ScanConfig
-            if (scanner_ptr_ != nullptr) {
-                const ScanConfig cfg = scanner_ptr_->get_config();
-                sweep_display_start_ = cfg.sweep_start_freq;
-                sweep_display_end_ = cfg.sweep_end_freq;
-            } else {
-                sweep_display_start_ = SWEEP_DEFAULT_START_HZ;
-                sweep_display_end_ = SWEEP_DEFAULT_END_HZ;
-            }
-            sweep_display_range_ = sweep_display_end_ - sweep_display_start_;
-
-            if (sweep_display_range_ == 0 || sweep_display_range_ > 10000000000ULL) {
-                composite_active_ = false;
-                show_alert("Bad sweep range", 2000);
-                return;
-            }
-
-            FreqHz step = sweep_display_range_ / COMPOSITE_SIZE;
-            if (step < 100000) step = 100000;  // Min 100 kHz step
-
-            // Use configured step if available
-            if (scanner_ptr_ != nullptr) {
-                const ScanConfig cfg = scanner_ptr_->get_config();
-                // Step can be overridden from settings (stored temporarily in histogram fields)
-                // For now, use auto-calculated step
-                (void)cfg;
-            }
-
-            clear_composite();
-            sweep_frame_count_ = 0;
-            if (scanner_thread_ != nullptr) {
-                scanner_thread_->set_sweep_range(
-                    sweep_display_start_, sweep_display_end_, step);
-                scanner_thread_->set_sweep_enabled(true);
-            }
-            drone_display_.set_composite_mode(true);
-            button_mode_.set_text("Spec");
+        if (!composite_active_) {
+            enter_sweep_mode();
         } else {
-            if (scanner_thread_ != nullptr) {
-                scanner_thread_->set_sweep_enabled(false);
-            }
-            drone_display_.set_composite_mode(false);
-            button_mode_.set_text("Mode");
-            show_alert("Scanner mode", 1000);
+            exit_sweep_mode();
         }
     };
 
@@ -544,26 +505,83 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
     }
 }
 
-void DroneScannerUI::update_composite(FreqHz center_freq, const ChannelSpectrum& spectrum) noexcept {
-    if (sweep_display_range_ == 0) return;
+void DroneScannerUI::enter_sweep_mode() noexcept {
+    ScanConfig cfg;
+    if (scanner_ptr_ != nullptr) {
+        cfg = scanner_ptr_->get_config();
+    }
+    sweep_start_ = cfg.sweep_start_freq;
+    sweep_end_ = cfg.sweep_end_freq;
 
-    constexpr FreqHz half_bw = 1000000;      // 1 MHz from center to edge
-    constexpr FreqHz bin_bw = 2000000 / 256;  // ~7812 Hz per bin (2MHz baseband)
-    FreqHz frame_start = center_freq - half_bw;
+    const FreqHz range = sweep_end_ - sweep_start_;
+    if (range == 0 || range > 10000000000ULL) {
+        show_alert("Bad sweep range", 2000);
+        return;
+    }
+
+    sweep_step_hz_ = range / COMPOSITE_SIZE;
+    sweep_f_center_ini_ = sweep_start_ + SWEEP_SLICE_BW / 2;
+    sweep_f_center_ = sweep_f_center_ini_;
+    sweep_pixel_index_ = 0;
+
+    // Clear composite buffer
+    for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+        composite_buffer_[i] = 0;
+    }
+    drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
+
+    // Pause scanner thread so it doesn't fight for tuning
+    sweep_was_scanning_ = scanning_;
+    if (scanning_ && scanner_thread_ != nullptr) {
+        scanner_thread_->set_scanning(false);
+    }
+
+    composite_active_ = true;
+    drone_display_.set_composite_mode(true);
+    button_mode_.set_text("Spec");
+
+    // Initial tune to first slice center
+    radio::set_tuning_frequency(sweep_f_center_);
+    chThdSleepMilliseconds(5);
+    baseband::spectrum_streaming_start();
+}
+
+void DroneScannerUI::exit_sweep_mode() noexcept {
+    composite_active_ = false;
+    drone_display_.set_composite_mode(false);
+    button_mode_.set_text("Mode");
+    baseband::spectrum_streaming_stop();
+
+    // Resume scanner thread if it was running before sweep
+    if (sweep_was_scanning_ && scanner_thread_ != nullptr) {
+        scanner_thread_->set_scanning(true);
+    }
+
+    show_alert("Scanner mode", 1000);
+}
+
+void DroneScannerUI::sweep_process_frame(const ChannelSpectrum& spectrum) noexcept {
+    if (sweep_step_hz_ == 0) return;
+
+    // Stop streaming (one-shot capture, Looking Glass pattern)
+    baseband::spectrum_streaming_stop();
+
+    constexpr FreqHz bin_bw = SWEEP_SLICE_BW / 256;  // ~7812 Hz per bin
 
     for (size_t bin = 0; bin < 256; ++bin) {
-        // Skip DC spike bins
+        // Skip DC spike bins (center 16 bins)
         if (bin >= 120 && bin < 136) continue;
 
-        uint8_t power = spectrum.db[bin];
-        if (power == 0) continue;
+        const uint8_t power = spectrum.db[bin];
+        if (power < min_color_power_) continue;
 
-        FreqHz bin_freq = frame_start + bin * bin_bw;
-        if (bin_freq < sweep_display_start_ || bin_freq >= sweep_display_end_) continue;
+        // Bin frequency: DC is at bin 128
+        const FreqHz bin_freq = sweep_f_center_ + (static_cast<int32_t>(bin) - 128) * bin_bw;
+        if (bin_freq < sweep_start_ || bin_freq >= sweep_end_) continue;
 
-        // Map frequency to pixel
-        uint32_t pixel = static_cast<uint32_t>(
-            ((bin_freq - sweep_display_start_) * COMPOSITE_SIZE) / sweep_display_range_);
+        // Map frequency to pixel (0..239)
+        const uint32_t pixel = static_cast<uint32_t>(
+            ((bin_freq - sweep_start_) * COMPOSITE_SIZE) / (sweep_end_ - sweep_start_));
         if (pixel >= COMPOSITE_SIZE) continue;
 
         // Max accumulation
@@ -575,13 +593,21 @@ void DroneScannerUI::update_composite(FreqHz center_freq, const ChannelSpectrum&
     // Pass to display for rendering
     drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
     drone_display_.set_dirty();
-}
 
-void DroneScannerUI::clear_composite() noexcept {
-    for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
-        composite_buffer_[i] = 0;
+    // Advance to next slice
+    sweep_f_center_ += sweep_step_hz_;
+    sweep_pixel_index_++;
+
+    // Wrap around when sweep complete
+    if (sweep_f_center_ >= sweep_end_ || sweep_pixel_index_ >= COMPOSITE_SIZE) {
+        sweep_f_center_ = sweep_f_center_ini_;
+        sweep_pixel_index_ = 0;
     }
-    drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
+
+    // Retune and restart streaming for next slice (Looking Glass pattern)
+    radio::set_tuning_frequency(sweep_f_center_);
+    chThdSleepMilliseconds(5);
+    baseband::spectrum_streaming_start();
 }
 
 } // namespace drone_analyzer
