@@ -29,9 +29,6 @@ public:
     [[nodiscard]] bool is_scanning() const noexcept;
     [[nodiscard]] bool is_active() const noexcept;
 
-    void set_sweep_enabled(bool enabled) noexcept;
-    void set_sweep_range(FreqHz start, FreqHz end, FreqHz step) noexcept;
-
 private:
     static constexpr size_t STACK_WORDS = THD_WA_SIZE(SCANNER_THREAD_STACK_SIZE) / sizeof(stkalign_t);
 
@@ -43,16 +40,8 @@ private:
     Thread* thread_{nullptr};
     stkalign_t wa_[STACK_WORDS];
 
-    volatile bool scanning_{false};
-
-    // Band sweep state
-    bool sweep_enabled_{false};
-    bool step_is_sweep_{false};  // alternates: false=DB, true=sweep
-    FreqHz sweep_start_{5700000000};
-    FreqHz sweep_end_{5900000000};
-    FreqHz sweep_step_hz_{2000000};
-    FreqHz sweep_current_freq_{0};
-    uint16_t sweep_current_step_{0};
+    // GCC builtins for cross-thread visibility (volatile doesn't guarantee this on ARM)
+    bool scanning_{false};
 };
 
 } // namespace drone_analyzer
