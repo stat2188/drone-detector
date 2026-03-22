@@ -33,7 +33,33 @@ static_assert(sizeof(ScannerThread) <= sizeof(s_scanner_thread_buffer), "Scanner
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : View()
     , nav_(nav)
-    , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0} {
+    , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
+    , message_handler_spectrum_config{
+        Message::ID::ChannelSpectrumConfig,
+        [this](Message* const p) {
+            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            this->spectrum_fifo_ = message.fifo;
+        }
+    }
+    , message_handler_frame_sync{
+        Message::ID::DisplayFrameSync,
+        [this](Message* const) {
+            if (this->spectrum_fifo_ != nullptr) {
+                ChannelSpectrum spectrum;
+                if (this->spectrum_fifo_->out(spectrum)) {
+                    this->on_channel_spectrum(spectrum);
+                }
+            }
+            this->refresh_ui();
+        }
+    }
+    , message_handler_retune{
+        Message::ID::Retune,
+        [this](Message* const p) {
+            const auto message = *reinterpret_cast<const RetuneMessage*>(p);
+            this->on_retune(message.freq, message.range);
+        }
+    } {
     add_children({
         &labels_,
         &field_lna_,

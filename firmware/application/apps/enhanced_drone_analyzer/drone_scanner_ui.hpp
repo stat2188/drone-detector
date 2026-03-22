@@ -152,40 +152,9 @@ private:
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
-    MessageHandlerRegistration message_handler_spectrum_config{
-        Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
-        }
-    };
-
-    MessageHandlerRegistration message_handler_frame_sync{
-        Message::ID::DisplayFrameSync,
-        [this](Message* const) {
-            if (this->spectrum_fifo_ != nullptr) {
-                ChannelSpectrum spectrum;
-                if (this->spectrum_fifo_->out(spectrum)) {
-                    if (this->composite_active_ && this->scanning_) {
-                        // Sweep mode: accumulate into composite buffer
-                        this->update_composite(
-                            static_cast<FreqHz>(this->current_frequency_), spectrum);
-                    }
-                    // Always update smoothed single-slice view
-                    this->on_channel_spectrum(spectrum);
-                }
-            }
-            this->refresh_ui();
-        }
-    };
-
-    MessageHandlerRegistration message_handler_retune{
-        Message::ID::Retune,
-        [this](Message* const p) {
-            const auto message = *reinterpret_cast<const RetuneMessage*>(p);
-            this->on_retune(message.freq, message.range);
-        }
-    };
+    MessageHandlerRegistration message_handler_spectrum_config;
+    MessageHandlerRegistration message_handler_frame_sync;
+    MessageHandlerRegistration message_handler_retune;
 };
 
 } // namespace drone_analyzer
