@@ -13,6 +13,7 @@
 #include "audio_alerts.hpp"
 #include "rssi_detector.hpp"
 #include "histogram_processor.hpp"
+#include "median_filter.hpp"
 #include "message.hpp"
 
 namespace drone_analyzer {
@@ -352,6 +353,21 @@ public:
      */
     void trigger_alert(ThreatLevel threat_level) noexcept;
 
+    /**
+     * @brief Enable or disable median filter on RSSI samples
+     * @param enabled true to enable, false to disable
+     * @note When enabled, median of last 7 RSSI samples is used instead of raw value
+     * @note Resets filter history when toggled
+     */
+    void set_median_filter_enabled(bool enabled) noexcept;
+
+    /**
+     * @brief Check if median filter is enabled
+     */
+    [[nodiscard]] bool is_median_filter_enabled() const noexcept {
+        return median_filter_enabled_;
+    }
+
     [[nodiscard]] HistogramProcessor& get_histogram_processor() noexcept {
         return histogram_processor_;
     }
@@ -513,6 +529,10 @@ private:
 
     // Histogram processor for spectrum analysis
     HistogramProcessor histogram_processor_;
+
+    // Median filter for RSSI spike rejection (window=7 samples)
+    MedianFilter<int32_t, 7> rssi_median_filter_;
+    bool median_filter_enabled_{false};
 };
 
 } // namespace drone_analyzer

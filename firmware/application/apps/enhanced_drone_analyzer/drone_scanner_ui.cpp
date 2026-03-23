@@ -67,6 +67,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &drone_display_,
         &filter_labels_,
         &field_filter_,
+        &button_median_,
         &button_start_stop_,
         &button_mode_,
         &button_load_,
@@ -79,6 +80,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         drone_display_.set_spectrum_filter(min_color_power_);
     };
     field_filter_.set_by_value(DEFAULT_SPECTRUM_FILTER);
+
+    // Median filter toggle (spike rejection on RSSI samples)
+    button_median_.on_select = [this](ui::Button&) {
+        median_enabled_ = !median_enabled_;
+        if (scanner_ptr_ != nullptr) {
+            scanner_ptr_->set_median_filter_enabled(median_enabled_);
+        }
+        button_median_.set_text(median_enabled_ ? "Md+" : "MED");
+    };
 
     // Register button callbacks BEFORE any early returns
     // Buttons must always respond, even if init fails

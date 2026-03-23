@@ -422,7 +422,15 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     // Feed spectrum to histogram processor for noise floor analysis
     (void)histogram_processor_.update_histogram(spectrum.db.data(), spectrum.db.size());
 
-    const int32_t rssi = extract_rssi(spectrum);
+    const int32_t raw_rssi = extract_rssi(spectrum);
+
+    // Median filter: reject single-sample noise spikes
+    // Feed every sample; use median only when enabled and filter is warm
+    rssi_median_filter_.add(raw_rssi);
+    const int32_t rssi = (median_filter_enabled_ && rssi_median_filter_.is_warm())
+        ? rssi_median_filter_.get_median()
+        : raw_rssi;
+
     const SystemTime now = chTimeNow();
 
     if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
@@ -810,6 +818,12 @@ void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
     local_callback(threat_level);
 
     alert_callback_in_progress_.clear();
+}
+
+void DroneScanner::set_median_filter_enabled(bool enabled) noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    median_filter_enabled_ = enabled;
+    rssi_median_filter_.reset();
 }
 
 } // namespace drone_analyzer

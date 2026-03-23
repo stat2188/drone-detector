@@ -100,6 +100,8 @@ private:
             {"HIGH", SPECTRUM_FILTER_HIGH},
         }};
 
+    ui::Button button_median_{{UI_POS_X(10), 274, UI_POS_WIDTH(3), 16}, "MED"};
+
     ui::Button button_start_stop_{{UI_POS_X(0), 290, UI_POS_WIDTH(6), 28}, "Start"};
     ui::Button button_mode_{{UI_POS_X(7), 290, UI_POS_WIDTH(5), 28}, "Mode"};
     ui::Button button_load_{{UI_POS_X(13), 290, UI_POS_WIDTH(5), 28}, "Load"};
@@ -150,6 +152,9 @@ private:
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
+
+    // Median filter toggle state
+    bool median_enabled_{false};
 
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;
