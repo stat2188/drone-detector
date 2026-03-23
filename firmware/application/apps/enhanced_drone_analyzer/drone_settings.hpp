@@ -37,6 +37,11 @@ struct DroneSettings {
     
     // Threat settings
     ThreatLevel min_threat_level;
+
+    // Advanced detection features (OFF by default)
+    bool dwell_enabled;
+    bool confirm_count_enabled;
+    bool noise_blacklist_enabled;
     
     // Spectrum frequency range (Hz)
     FreqHz spectrum_start_freq;
@@ -131,6 +136,11 @@ private:
     ui::Checkbox check_audio_alerts_;
     ui::Checkbox check_spectrum_visible_;
     ui::Checkbox check_histogram_visible_;
+
+    // Advanced detection features
+    ui::Checkbox check_dwell_enabled_;
+    ui::Checkbox check_confirm_count_;
+    ui::Checkbox check_noise_blacklist_;
 
     // Spectrum frequency range fields (MHz)
     ui::NumberField field_spectrum_start_;

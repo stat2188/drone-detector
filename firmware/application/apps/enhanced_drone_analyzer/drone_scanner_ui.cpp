@@ -410,6 +410,9 @@ void DroneScannerUI::refresh_ui() noexcept {
 
     current_scanner_state_ = scanner_ptr_->get_state();
 
+    // Remove stale drones (not seen for DRONE_STALE_TIMEOUT_MS)
+    scanner_ptr_->remove_stale_drones(chTimeNow());
+
     // Build display data from tracked drones
     // Use single get_tracked_drones call for consistency (one lock, one snapshot)
     // Static to save ~1500 bytes stack per frame (called at 60 FPS from DisplayFrameSync)

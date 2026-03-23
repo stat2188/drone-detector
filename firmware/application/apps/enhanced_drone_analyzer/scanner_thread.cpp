@@ -21,25 +21,27 @@ void ScannerThread::run() noexcept {
 
     while (!chThdShouldTerminate()) {
         if (__atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
-            // Dwell on frequency when signal detected (LOCKING/TRACKING)
-            // The UI thread's process_spectrum_message drives the state machine:
-            //   SCANNING -> LOCKING -> TRACKING (signal found)
-            //   TRACKING -> LOCKING -> SCANNING (signal lost)
-            // We pause frequency hopping while state != SCANNING,
-            // giving the detector ~350ms (7 cycles × 50ms) per frequency.
-            const ScannerState scan_state = scanner_.get_state();
-            if (scan_state == ScannerState::LOCKING || scan_state == ScannerState::TRACKING) {
-                dwell_cycles_++;
-                if (dwell_cycles_ >= MAX_DWELL_CYCLES) {
-                    // Max dwell reached — force resume scanning
-                    // (prevents permanent lock on one frequency)
-                    scanner_.force_resume_scanning();
-                    dwell_cycles_ = 0;
+            // Dwell: stay on frequency when signal detected (if enabled)
+            const ScanConfig cfg = scanner_.get_config();
+            if (cfg.dwell_enabled) {
+                const ScannerState scan_state = scanner_.get_state();
+                if (scan_state == ScannerState::LOCKING || scan_state == ScannerState::TRACKING) {
+                    dwell_cycles_++;
+                    if (dwell_cycles_ >= MAX_DWELL_CYCLES) {
+                        // Max dwell reached — force resume scanning
+                        if (cfg.noise_blacklist_enabled) {
+                            const FreqHz locked_freq = scanner_.get_locked_frequency();
+                            scanner_.increment_noise_count(locked_freq);
+                            scanner_.remove_drone_on_frequency(locked_freq);
+                        }
+                        scanner_.force_resume_scanning();
+                        dwell_cycles_ = 0;
+                    }
+                    chThdSleepMilliseconds(SCANNER_SLEEP_MS);
+                    continue;
                 }
-                chThdSleepMilliseconds(SCANNER_SLEEP_MS);
-                continue;
+                dwell_cycles_ = 0;
             }
-            dwell_cycles_ = 0;
 
             if (sweep_enabled_ && sweep_active_) {
                 for (uint16_t i = 0; i < sweep_total_steps_; ++i) {

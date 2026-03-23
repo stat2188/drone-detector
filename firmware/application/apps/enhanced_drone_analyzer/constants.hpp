@@ -116,15 +116,15 @@ constexpr uint16_t DEFAULT_GAIN = 30;
 
 /**
  * @brief Default LNA gain value (MAX2837: 0-40 dB)
- * @note 32 dB for strong sensitivity — HackRF typical for spectrum scanning
+ * @note 16 dB — conservative default, no false triggers on startup
  */
-constexpr uint8_t DEFAULT_LNA_GAIN = 32;
+constexpr uint8_t DEFAULT_LNA_GAIN = 16;
 
 /**
  * @brief Default VGA gain value (MAX2837: 0-62 dB)
- * @note 30 dB for good dynamic range without excessive noise
+ * @note 16 dB — conservative default, no false triggers on startup
  */
-constexpr uint8_t DEFAULT_VGA_GAIN = 30;
+constexpr uint8_t DEFAULT_VGA_GAIN = 16;
 
 // ============================================================================
 // Time Constants

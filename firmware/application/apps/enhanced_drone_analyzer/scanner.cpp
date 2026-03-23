@@ -266,6 +266,59 @@ void DroneScanner::force_resume_scanning() noexcept {
     }
 }
 
+void DroneScanner::remove_drone_on_frequency(FreqHz frequency) noexcept {
+    for (size_t i = 0; i < tracked_count_; ++i) {
+        if (tracked_drones_[i].frequency == frequency) {
+            tracked_count_--;
+            if (i < tracked_count_) {
+                tracked_drones_[i] = tracked_drones_[tracked_count_];
+            }
+            return;
+        }
+    }
+}
+
+void DroneScanner::increment_noise_count(FreqHz frequency) noexcept {
+    // Find existing entry or first empty slot
+    size_t empty_slot = MAX_NOISE_ENTRIES;
+    for (size_t i = 0; i < MAX_NOISE_ENTRIES; ++i) {
+        if (noise_blacklist_[i].freq == frequency) {
+            if (noise_blacklist_[i].count < 255) {
+                noise_blacklist_[i].count++;
+            }
+            return;
+        }
+        if (noise_blacklist_[i].freq == 0 && empty_slot == MAX_NOISE_ENTRIES) {
+            empty_slot = i;
+        }
+    }
+    // New entry
+    if (empty_slot < MAX_NOISE_ENTRIES) {
+        noise_blacklist_[empty_slot].freq = frequency;
+        noise_blacklist_[empty_slot].count = 1;
+    }
+}
+
+void DroneScanner::reset_noise_count(FreqHz frequency) noexcept {
+    for (size_t i = 0; i < MAX_NOISE_ENTRIES; ++i) {
+        if (noise_blacklist_[i].freq == frequency) {
+            noise_blacklist_[i].freq = 0;
+            noise_blacklist_[i].count = 0;
+            return;
+        }
+    }
+}
+
+bool DroneScanner::is_blacklisted(FreqHz frequency) const noexcept {
+    static constexpr uint8_t NOISE_BLACKLIST_THRESHOLD = 3;
+    for (size_t i = 0; i < MAX_NOISE_ENTRIES; ++i) {
+        if (noise_blacklist_[i].freq == frequency) {
+            return noise_blacklist_[i].count >= NOISE_BLACKLIST_THRESHOLD;
+        }
+    }
+    return false;
+}
+
 ErrorCode DroneScanner::perform_scan_cycle() noexcept {
     if (!scanning_active_.test()) {
         return ErrorCode::SUCCESS;
@@ -289,6 +342,18 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     if (freq_result.has_value()) {
         // Got valid frequency from database
         current_frequency_ = freq_result.value();
+
+        // Skip blacklisted frequencies (persistent noise, force-resumed 3+ times)
+        if (config_.noise_blacklist_enabled) {
+            for (size_t skip = 0; skip < MAX_NOISE_ENTRIES && is_blacklisted(current_frequency_); ++skip) {
+                freq_result = database_.get_next_frequency(current_frequency_);
+                if (freq_result.has_value()) {
+                    current_frequency_ = freq_result.value();
+                } else {
+                    break;
+                }
+            }
+        }
     } else {
         // Database empty or not loaded — sweep through frequency range
         // Use frequency step to scan the full range
@@ -382,14 +447,33 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // to prevent noise from polluting trend analysis
         (void)rssi_detector_.process_rssi_sample(rssi, now);
 
-        const ErrorCode err = update_tracked_drone_internal(
-            current_frequency_,
-            rssi,
-            now
-        );
+        bool should_update = true;
 
-        if (err != ErrorCode::SUCCESS) {
-            return err;
+        if (config_.confirm_count_enabled) {
+            // Confirm count: require DETECT_CONFIRM_COUNT detections on same frequency
+            // before creating a drone. Prevents noise spikes from adding phantom drones.
+            if (current_frequency_ != pending_frequency_) {
+                pending_frequency_ = current_frequency_;
+                pending_count_ = 1;
+            } else if (pending_count_ < DETECT_CONFIRM_COUNT) {
+                pending_count_++;
+            }
+
+            ErrorResult<size_t> existing = find_drone_by_frequency_internal(current_frequency_);
+            if (!existing.has_value() && pending_count_ < DETECT_CONFIRM_COUNT) {
+                should_update = false;  // waiting for more confirmations
+            }
+        }
+
+        if (should_update) {
+            const ErrorCode err = update_tracked_drone_internal(
+                current_frequency_,
+                rssi,
+                now
+            );
+            if (err != ErrorCode::SUCCESS) {
+                return err;
+            }
         }
 
         // Reset missed counter for detected drone
@@ -428,19 +512,23 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         }
     } else {
         // No signal on this frequency — decay tracked drones
-        constexpr uint8_t DECAY_AFTER_MISSED = 3;
-        ErrorResult<size_t> decay_idx = find_drone_by_frequency_internal(current_frequency_);
-        if (decay_idx.has_value()) {
-            size_t di = decay_idx.value();
-            if (di < tracked_count_) {
-                tracked_drones_[di].increment_missed();
-                if (tracked_drones_[di].get_missed_cycles() >= DECAY_AFTER_MISSED) {
-                    tracked_drones_[di].reset_missed();
-                    bool should_remove = tracked_drones_[di].decay_threat();
-                    if (should_remove && tracked_count_ > 0) {
-                        tracked_count_--;
-                        if (di < tracked_count_) {
-                            tracked_drones_[di] = tracked_drones_[tracked_count_];
+        // Only decay once per frequency change (not every frame)
+        if (current_frequency_ != last_decay_freq_) {
+            last_decay_freq_ = current_frequency_;
+            constexpr uint8_t DECAY_AFTER_MISSED = 3;
+            ErrorResult<size_t> decay_idx = find_drone_by_frequency_internal(current_frequency_);
+            if (decay_idx.has_value()) {
+                size_t di = decay_idx.value();
+                if (di < tracked_count_) {
+                    tracked_drones_[di].increment_missed();
+                    if (tracked_drones_[di].get_missed_cycles() >= DECAY_AFTER_MISSED) {
+                        tracked_drones_[di].reset_missed();
+                        bool should_remove = tracked_drones_[di].decay_threat();
+                        if (should_remove && tracked_count_ > 0) {
+                            tracked_count_--;
+                            if (di < tracked_count_) {
+                                tracked_drones_[di] = tracked_drones_[tracked_count_];
+                            }
                         }
                     }
                 }
@@ -480,6 +568,8 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         
         if (new_threat > old_threat) {
             trigger_alert(new_threat);
+            // Real signal confirmed — clear noise blacklist for this frequency
+            reset_noise_count(frequency);
         }
     } else {
         // New drone — add and alert for its initial threat

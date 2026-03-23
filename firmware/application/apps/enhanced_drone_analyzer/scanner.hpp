@@ -41,6 +41,11 @@ struct ScanConfig {
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;
     FreqHz sweep_step_freq;
+
+    // Advanced detection features (OFF by default)
+    bool dwell_enabled{false};           // Stay on frequency when signal detected
+    bool confirm_count_enabled{false};   // Require multiple confirmations before creating drone
+    bool noise_blacklist_enabled{false}; // Skip frequencies with persistent noise
     
     /**
      * @brief Default constructor
@@ -149,6 +154,28 @@ public:
      *       (scanner thread already can't hold the mutex)
      */
     void force_resume_scanning() noexcept;
+    
+    /**
+     * @brief Remove tracked drone on a specific frequency (no mutex)
+     * @note Called by scanner thread after force-resume
+     */
+    void remove_drone_on_frequency(FreqHz frequency) noexcept;
+
+    /**
+     * @brief Increment noise count for a frequency (blacklist tracking)
+     * @note Called by scanner thread when force-resuming from noise
+     */
+    void increment_noise_count(FreqHz frequency) noexcept;
+
+    /**
+     * @brief Reset noise count for a frequency (real signal confirmed)
+     */
+    void reset_noise_count(FreqHz frequency) noexcept;
+
+    /**
+     * @brief Check if frequency is blacklisted (persistent noise)
+     */
+    bool is_blacklisted(FreqHz frequency) const noexcept;
     
     /**
      * @brief Perform single scan cycle (frequency hop)
@@ -461,6 +488,15 @@ private:
     FreqHz pending_frequency_{0};
     uint8_t pending_count_{0};
     static constexpr uint8_t DETECT_CONFIRM_COUNT = 2;
+
+    // Decay: run once per frequency change (not every frame)
+    FreqHz last_decay_freq_{0};
+
+    // Noise blacklist: track force-resume count per frequency
+    // If we force-resume from a freq 3+ times without threat upgrade → skip it
+    static constexpr size_t MAX_NOISE_ENTRIES = 8;
+    struct NoiseEntry { FreqHz freq; uint8_t count; };
+    NoiseEntry noise_blacklist_[MAX_NOISE_ENTRIES]{};
 
     // Last scan time
     SystemTime last_scan_time_;

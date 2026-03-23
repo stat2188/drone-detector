@@ -24,6 +24,9 @@ DroneSettings::DroneSettings() noexcept
     , audio_alerts_enabled(false)
     , alert_rssi_threshold_dbm(RSSI_HIGH_THREAT_THRESHOLD_DBM)
     , min_threat_level(ThreatLevel::LOW)
+    , dwell_enabled(false)
+    , confirm_count_enabled(false)
+    , noise_blacklist_enabled(false)
     , spectrum_start_freq(DEFAULT_SPECTRUM_START_HZ)
     , spectrum_end_freq(DEFAULT_SPECTRUM_END_HZ)
     , histogram_start_freq(DEFAULT_HISTOGRAM_START_HZ)
@@ -47,6 +50,10 @@ void DroneSettings::reset_to_defaults() noexcept {
     alert_rssi_threshold_dbm = RSSI_HIGH_THREAT_THRESHOLD_DBM;
     
     min_threat_level = ThreatLevel::LOW;
+    
+    dwell_enabled = false;
+    confirm_count_enabled = false;
+    noise_blacklist_enabled = false;
     
     spectrum_start_freq = DEFAULT_SPECTRUM_START_HZ;
     spectrum_end_freq = DEFAULT_SPECTRUM_END_HZ;
@@ -86,6 +93,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(7)}, 15, "Audio Alerts", false)
     , check_spectrum_visible_({UI_POS_X(13), UI_POS_Y(7)}, 10, "Spectrum", false)
     , check_histogram_visible_({UI_POS_X(1), UI_POS_Y(8)}, 15, "Histogram", false)
+    , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(9)}, 15, "Dwell", false)
+    , check_confirm_count_({UI_POS_X(8), UI_POS_Y(9)}, 12, "Confirm", false)
+    , check_noise_blacklist_({UI_POS_X(15), UI_POS_Y(9)}, 10, "Blklist", false)
     , field_spectrum_start_({UI_POS_X(1), UI_POS_Y(10)}, 5, {1, 7200}, 1, ' ')
     , field_spectrum_end_({UI_POS_X(8), UI_POS_Y(10)}, 5, {1, 7200}, 1, ' ')
     , field_histogram_start_({UI_POS_X(1), UI_POS_Y(12)}, 5, {1, 7200}, 1, ' ')
@@ -93,10 +103,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_sweep_start_({UI_POS_X(1), UI_POS_Y(14)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_end_({UI_POS_X(9), UI_POS_Y(14)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_step_({UI_POS_X(1), UI_POS_Y(16)}, 5, {10, 9999}, 10, ' ')
-    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(10), 28}, "DEFAULTS")
-    , button_save_({UI_POS_X_CENTER(7), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(7), 28}, "SAVE")
-    , button_cancel_({UI_POS_X_RIGHT(7), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(7), 28}, "CANCEL")
-    , button_about_({UI_POS_X(0), 136, 240, 28}, "ABOUT")
+    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(4), UI_POS_WIDTH(14), 28}, "DEFAULTS")
+    , button_save_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "SAVE")
+    , button_cancel_({UI_POS_X(16), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "CANCEL")
+    , button_about_({UI_POS_X(16), UI_POS_Y_BOTTOM(4), UI_POS_WIDTH(14), 28}, "ABOUT")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -106,6 +116,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     settings_.scanning_mode = config.mode;
     settings_.scan_interval_ms = config.scan_interval_ms;
     settings_.alert_rssi_threshold_dbm = config.rssi_threshold_dbm;
+    settings_.dwell_enabled = config.dwell_enabled;
+    settings_.confirm_count_enabled = config.confirm_count_enabled;
+    settings_.noise_blacklist_enabled = config.noise_blacklist_enabled;
 
     add_children({
         &labels_,
@@ -115,6 +128,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_audio_alerts_,
         &check_spectrum_visible_,
         &check_histogram_visible_,
+        &check_dwell_enabled_,
+        &check_confirm_count_,
+        &check_noise_blacklist_,
         &field_spectrum_start_,
         &field_spectrum_end_,
         &field_histogram_start_,
@@ -134,6 +150,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);
     check_histogram_visible_.set_value(settings_.histogram_visible);
+    check_dwell_enabled_.set_value(settings_.dwell_enabled);
+    check_confirm_count_.set_value(settings_.confirm_count_enabled);
+    check_noise_blacklist_.set_value(settings_.noise_blacklist_enabled);
     
     // Set frequency range fields (convert Hz to MHz)
     field_spectrum_start_.set_value(static_cast<int32_t>(settings_.spectrum_start_freq / 1000000));
@@ -161,6 +180,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.sweep_start_freq = settings_.sweep_start_freq;
             updated_config.sweep_end_freq = settings_.sweep_end_freq;
             updated_config.sweep_step_freq = settings_.sweep_step_freq;
+            updated_config.dwell_enabled = settings_.dwell_enabled;
+            updated_config.confirm_count_enabled = settings_.confirm_count_enabled;
+            updated_config.noise_blacklist_enabled = settings_.noise_blacklist_enabled;
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
             if (err != ErrorCode::SUCCESS) {
@@ -236,25 +258,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "Enhanced Drone Analyzer v2.0\n"
             "===========================\n"
             "\n"
-            "Application developed for\n"
-            "civilian population safety.\n"
-            "\n"
             "Author: Kuznetsov Maxim\n"
             "Gazprom Gazoraspredeleniye\n"
             "Orenburg branch\n"
-            "\n"
-            "Development: October 2025\n"
             "Voluntary & altruistic\n"
-            "\n"
             "Greetings to everyone who risks\n"
             "their lives for the safety\n"
             "of others.\n"
-            "\n"
-            "Best wishes to Orenburg\n"
-            "Mezhraygaz! May the company\n"
-            "reach the TOP in Russia for\n"
-            "discipline and recordkeeping.\n"
-            "Strong team, strong future!\n"
             "\n"
             "Support the author:\n"
             "Card: 2202 20202 5787 1695\n"
@@ -265,10 +275,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "Contact:\n"
             "Telegram: @max_ai_master\n"
             "\n"
-            "TM SyberPowerHamster2188\n"
-            "PerviI v mire haker\n"
-            "rabotaushiq shesarem\n"
-            "v govnokompanii";
+            "TM PowerHamster2188\n"
         nav_.display_modal("About Author", kAboutMessage);
     };
 
@@ -308,7 +315,20 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         }
         settings_dirty_ = true;
     };
-    
+
+    check_dwell_enabled_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.dwell_enabled = v;
+        settings_dirty_ = true;
+    };
+    check_confirm_count_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.confirm_count_enabled = v;
+        settings_dirty_ = true;
+    };
+    check_noise_blacklist_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.noise_blacklist_enabled = v;
+        settings_dirty_ = true;
+    };
+
     field_spectrum_start_.on_change = [this](int32_t v) {
         settings_.spectrum_start_freq = static_cast<FreqHz>(v) * 1000000;
         settings_dirty_ = true;
@@ -547,6 +567,9 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         updated_config.sweep_start_freq = settings_.sweep_start_freq;
         updated_config.sweep_end_freq = settings_.sweep_end_freq;
         updated_config.sweep_step_freq = settings_.sweep_step_freq;
+        updated_config.dwell_enabled = settings_.dwell_enabled;
+        updated_config.confirm_count_enabled = settings_.confirm_count_enabled;
+        updated_config.noise_blacklist_enabled = settings_.noise_blacklist_enabled;
 
         const ErrorCode err = scanner_ptr_->set_config(updated_config);
         if (err != ErrorCode::SUCCESS) {
@@ -617,6 +640,9 @@ void DroneSettingsView::apply_settings() noexcept {
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);
     check_histogram_visible_.set_value(settings_.histogram_visible);
+    check_dwell_enabled_.set_value(settings_.dwell_enabled);
+    check_confirm_count_.set_value(settings_.confirm_count_enabled);
+    check_noise_blacklist_.set_value(settings_.noise_blacklist_enabled);
     field_spectrum_start_.set_value(static_cast<int32_t>(settings_.spectrum_start_freq / 1000000));
     field_spectrum_end_.set_value(static_cast<int32_t>(settings_.spectrum_end_freq / 1000000));
     field_histogram_start_.set_value(static_cast<int32_t>(settings_.histogram_start_freq / 1000000));
