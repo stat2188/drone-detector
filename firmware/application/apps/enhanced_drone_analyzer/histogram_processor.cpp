@@ -10,8 +10,6 @@ HistogramProcessor::HistogramProcessor() noexcept
     : bin_count_(HISTOGRAM_BIN_COUNT)
     , noise_floor_threshold_(HISTOGRAM_NOISE_FLOOR)
     , signal_floor_threshold_(HISTOGRAM_SIGNAL_THRESHOLD)
-    , start_frequency_(DEFAULT_HISTOGRAM_START_HZ)
-    , end_frequency_(DEFAULT_HISTOGRAM_END_HZ)
     , histogram_{}
     , statistics_{}
     , initialized_(false) {
@@ -186,13 +184,6 @@ void HistogramProcessor::set_noise_floor_threshold(uint16_t threshold) noexcept 
 
 void HistogramProcessor::set_signal_floor_threshold(uint16_t threshold) noexcept {
     signal_floor_threshold_ = threshold;
-}
-
-void HistogramProcessor::set_frequency_range(FreqHz start_freq, FreqHz end_freq) noexcept {
-    if (end_freq > start_freq) {
-        start_frequency_ = start_freq;
-        end_frequency_ = end_freq;
-    }
 }
 
 uint8_t HistogramProcessor::get_active_bin_count() const noexcept {

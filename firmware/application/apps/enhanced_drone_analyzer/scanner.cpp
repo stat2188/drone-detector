@@ -53,10 +53,6 @@ ScanConfig::ScanConfig() noexcept
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
     , rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
     , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS)
-    , spectrum_start_freq(DEFAULT_SPECTRUM_START_HZ)
-    , spectrum_end_freq(DEFAULT_SPECTRUM_END_HZ)
-    , histogram_start_freq(DEFAULT_HISTOGRAM_START_HZ)
-    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(1000000) {
@@ -69,10 +65,6 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
     , rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
     , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS)
-    , spectrum_start_freq(DEFAULT_SPECTRUM_START_HZ)
-    , spectrum_end_freq(DEFAULT_SPECTRUM_END_HZ)
-    , histogram_start_freq(DEFAULT_HISTOGRAM_START_HZ)
-    , histogram_end_freq(DEFAULT_HISTOGRAM_END_HZ)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(1000000) {
@@ -164,12 +156,6 @@ ErrorCode DroneScanner::initialize() noexcept {
 
     state_ = ScannerState::IDLE;
     statistics_.reset();
-
-    // Apply histogram frequency range from config
-    histogram_processor_.set_frequency_range(
-        config_.histogram_start_freq,
-        config_.histogram_end_freq
-    );
 
     return ErrorCode::SUCCESS;
 }
@@ -701,12 +687,6 @@ ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     config_ = config;
 
-    // Apply frequency range to histogram processor
-    histogram_processor_.set_frequency_range(
-        config.histogram_start_freq,
-        config.histogram_end_freq
-    );
-
     return ErrorCode::SUCCESS;
 }
 
@@ -722,23 +702,9 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
         return ErrorCode::INVALID_PARAMETER;
     }
     
-    // Validate scanning mode (now includes SPECTROMETER)
+    // Validate scanning mode
     const uint8_t mode_value = static_cast<uint8_t>(config.mode);
     if (mode_value >= SCANNING_MODE_COUNT) {
-        return ErrorCode::INVALID_PARAMETER;
-    }
-    
-    // Validate spectrum frequency range
-    if (config.spectrum_start_freq < MIN_FREQUENCY_HZ ||
-        config.spectrum_end_freq > MAX_FREQUENCY_HZ ||
-        config.spectrum_start_freq >= config.spectrum_end_freq) {
-        return ErrorCode::INVALID_PARAMETER;
-    }
-    
-    // Validate histogram frequency range
-    if (config.histogram_start_freq < MIN_FREQUENCY_HZ ||
-        config.histogram_end_freq > MAX_FREQUENCY_HZ ||
-        config.histogram_start_freq >= config.histogram_end_freq) {
         return ErrorCode::INVALID_PARAMETER;
     }
     

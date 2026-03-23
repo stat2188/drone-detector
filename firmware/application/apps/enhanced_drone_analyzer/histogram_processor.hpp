@@ -146,23 +146,6 @@ public:
      */
     [[nodiscard]] uint8_t get_active_bin_count() const noexcept;
 
-    /**
-     * @brief Set frequency range (stored for reference, value-based bins unaffected)
-     * @param start_freq Start frequency (Hz)
-     * @param end_freq End frequency (Hz)
-     */
-    void set_frequency_range(FreqHz start_freq, FreqHz end_freq) noexcept;
-
-    /**
-     * @brief Get stored start frequency
-     */
-    [[nodiscard]] FreqHz get_start_frequency() const noexcept { return start_frequency_; }
-
-    /**
-     * @brief Get stored end frequency
-     */
-    [[nodiscard]] FreqHz get_end_frequency() const noexcept { return end_frequency_; }
-
 private:
     /**
      * @brief Validate data parameters
@@ -225,8 +208,6 @@ private:
     size_t bin_count_;
     uint16_t noise_floor_threshold_;
     uint16_t signal_floor_threshold_;
-    FreqHz start_frequency_;
-    FreqHz end_frequency_;
 
     // Histogram data (fixed-size, no heap allocation)
     std::array<uint16_t, HISTOGRAM_BUFFER_SIZE> histogram_;

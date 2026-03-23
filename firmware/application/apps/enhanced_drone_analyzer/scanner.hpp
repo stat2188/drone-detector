@@ -29,14 +29,6 @@ struct ScanConfig {
     int32_t rssi_threshold_dbm;
     uint32_t stale_timeout_ms;
     
-    // Spectrum frequency range (Hz)
-    FreqHz spectrum_start_freq;
-    FreqHz spectrum_end_freq;
-    
-    // Histogram frequency range (Hz)
-    FreqHz histogram_start_freq;
-    FreqHz histogram_end_freq;
-
     // Sweep range (Hz)
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;

@@ -173,9 +173,9 @@ void DroneDisplay::render_histogram(
     const size_t step = (histogram_size > MAX_BARS) ? (histogram_size / MAX_BARS) : 1;
     const size_t visible_count = histogram_size / step;
 
-    // Find max value for scaling (skip bin 0)
+    // Find max value for scaling (include all visible bins)
     uint16_t max_value = 0;
-    for (size_t i = step; i < histogram_size; i += step) {
+    for (size_t i = 0; i < histogram_size; i += step) {
         if (histogram_data[i] > max_value) {
             max_value = histogram_data[i];
         }
