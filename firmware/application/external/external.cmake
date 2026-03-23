@@ -15,9 +15,8 @@ set(EXTCPPSRC
 	external/blespam/main.cpp
 	external/blespam/ui_blespam.cpp
 
-	#analogtv 552 bytes 
+	#analogtv - fullscreen with auto-scan
 	external/analogtv/main.cpp
-	external/analogtv/analogtv_receiver.cpp
 	external/analogtv/video_processor.cpp
 	external/analogtv/fullscreen_tv_view.cpp
 

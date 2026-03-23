@@ -229,34 +229,6 @@ enum class ErrorCode : uint8_t {
     UNKNOWN_ERROR
 };
 
-// ============================================================================
-// Common Analog TV Frequencies (MHz)
-// ============================================================================
-
-/**
- * @brief Common VHF TV channels (North America)
- */
-constexpr uint64_t VHF_CHANNEL_2_HZ = 55'250'000ULL;    // 55.25 MHz
-constexpr uint64_t VHF_CHANNEL_3_HZ = 61'250'000ULL;    // 61.25 MHz
-constexpr uint64_t VHF_CHANNEL_4_HZ = 67'250'000ULL;    // 67.25 MHz
-constexpr uint64_t VHF_CHANNEL_5_HZ = 77'250'000ULL;    // 77.25 MHz
-constexpr uint64_t VHF_CHANNEL_6_HZ = 83'250'000ULL;    // 83.25 MHz
-
-/**
- * @brief Common UHF TV channels (North America)
- */
-constexpr uint64_t UHF_CHANNEL_14_HZ = 471'250'000ULL;  // 471.25 MHz
-constexpr uint64_t UHF_CHANNEL_15_HZ = 477'250'000ULL;  // 477.25 MHz
-constexpr uint64_t UHF_CHANNEL_16_HZ = 483'250'000ULL;  // 483.25 MHz
-constexpr uint64_t UHF_CHANNEL_83_HZ = 885'250'000ULL;  // 885.25 MHz
-
-/**
- * @brief Common PAL TV frequencies (Europe)
- */
-constexpr uint64_t PAL_CHANNEL_S1_HZ = 110'000'000ULL;  // 110 MHz
-constexpr uint64_t PAL_CHANNEL_S2_HZ = 118'000'000ULL;  // 118 MHz
-constexpr uint64_t PAL_CHANNEL_S3_HZ = 126'000'000ULL;  // 126 MHz
-
 }  // namespace ui::external_app::analogtv
 
 #endif /* ANALOGTV_CONSTANTS_HPP */

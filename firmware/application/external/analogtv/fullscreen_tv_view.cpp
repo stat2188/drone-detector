@@ -337,41 +337,31 @@ void FullscreenTvView::draw_frequency_info(Painter& painter) {
 }
 
 bool FullscreenTvView::on_key(const KeyEvent event) {
-    if (event == KeyEvent::Select) {
-        // Toggle controls visibility
-        controls_visible_ = !controls_visible_;
-        set_dirty();
-        return true;
-    }
     if (event == KeyEvent::Left) {
-        // Frequency down
         frequency_down();
         return true;
     }
     if (event == KeyEvent::Right) {
-        // Frequency up
         frequency_up();
         return true;
     }
     if (event == KeyEvent::Up) {
-        // Toggle mode
         toggle_scan_mode();
         return true;
     }
     return false;
 }
 
-void FullscreenTvView::on_encoder(const EncoderEvent delta) {
-    // Encoder changes frequency
-    if (delta > 0) {
-        for (int i = 0; i < delta; i++) {
-            frequency_up();
-        }
-    } else {
-        for (int i = 0; i < -delta; i++) {
-            frequency_down();
-        }
+bool FullscreenTvView::on_encoder(const EncoderEvent delta) {
+    if (scan_mode_ == ScanMode::AUTO_SCAN) {
+        return false;
     }
+    if (delta > 0) {
+        frequency_up();
+    } else {
+        frequency_down();
+    }
+    return true;
 }
 
 void FullscreenTvView::toggle_scan_mode() {

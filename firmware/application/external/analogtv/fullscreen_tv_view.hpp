@@ -164,8 +164,9 @@ private:
     /**
      * @brief Handle encoder events
      * @param delta Encoder delta
+     * @return true if event was handled
      */
-    void on_encoder(const EncoderEvent delta);
+    bool on_encoder(const EncoderEvent delta);
 
     /**
      * @brief Toggle scan mode (auto/manual)
@@ -200,18 +201,8 @@ private:
     bool carrier_detected_{false};
 
     // UI state
-    bool show_controls_{false};
-    bool show_scan_status_{false};
-    uint32_t status_display_timer_{0};
-
-    // Frequency display
     uint64_t displayed_frequency_{0};
-    uint32_t freq_update_timer_{0};
-
-    // Video rendering state
-    uint16_t current_line_{0};
     bool video_active_{false};
-    bool controls_visible_{true};
 
     // UI Buttons
     Button button_scan{

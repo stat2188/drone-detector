@@ -121,20 +121,7 @@ public:
      */
     void reset_frame_ready() { frame_ready_ = false; }
 
-    /**
-     * @brief Get current spectrum count
-     * @return uint32_t Spectrum count
-     */
-    uint32_t get_spectrum_count() const { return count_; }
-
 private:
-    /**
-     * @brief Calculate RSSI from spectrum value
-     * @param value Spectrum value (0-255)
-     * @return int32_t RSSI in dBm
-     */
-    int32_t calculate_rssi(uint8_t value) const;
-
     /**
      * @brief Check if value is within carrier threshold
      * @param value Spectrum value
@@ -142,28 +129,13 @@ private:
      */
     bool is_carrier_value(uint8_t value) const;
 
-    /**
-     * @brief Find carrier width in bins
-     * @param spectrum_data Spectrum data
-     * @param start_bin Starting bin for search
-     * @return uint8_t Carrier width in bins
-     */
-    uint8_t find_carrier_width(const uint8_t* spectrum_data, size_t start_bin) const;
-
     // Static video buffer (13KB) - in .bss section, not stack
     uint8_t video_buffer_[VIDEO_BUFFER_SIZE]{};
-
-    // Line buffer for rendering (stack-friendly)
-    ui::Color line_buffer_[LINE_BUFFER_SIZE]{};
 
     // Processing state
     uint32_t count_{0};
     uint8_t x_correction_{DEFAULT_X_CORRECTION};
     bool frame_ready_{false};
-
-    // Carrier detection state
-    uint32_t carrier_detected_count_{0};
-    uint64_t last_carrier_frequency_{0};
 };
 
 }  // namespace ui::external_app::analogtv

@@ -118,47 +118,13 @@ void VideoProcessor::clear_buffer() {
     // Reset state
     count_ = 0;
     frame_ready_ = false;
-    carrier_detected_count_ = 0;
-    last_carrier_frequency_ = 0;
-}
-
-int32_t VideoProcessor::calculate_rssi(uint8_t value) const {
-    // Convert spectrum value to RSSI in dBm
-    // HackRF baseband: spectrum.db = clamp(dBV*5 + 255, 0, 255)
-    // Approximate conversion: dBm = (value - 255) / 5 - gain_offset
-    // Simplified: dBm = value - 120 (rough approximation)
-    return static_cast<int32_t>(value) - 120;
 }
 
 bool VideoProcessor::is_carrier_value(uint8_t value) const {
-    // Check if value represents a strong enough signal to be a carrier
-    // Convert to RSSI and compare with threshold
-    const int32_t rssi = calculate_rssi(value);
+    // Convert spectrum value to approximate RSSI and compare with threshold
+    // Simplified: dBm ≈ value - 120
+    const int32_t rssi = static_cast<int32_t>(value) - 120;
     return rssi >= CARRIER_THRESHOLD_DBM;
-}
-
-uint8_t VideoProcessor::find_carrier_width(const uint8_t* spectrum_data, size_t start_bin) const {
-    // Guard clause: validate input
-    if (!spectrum_data || start_bin >= SPECTRUM_BINS) {
-        return 0;
-    }
-
-    // Find width of carrier starting at start_bin
-    uint8_t width = 0;
-    for (size_t i = start_bin; i < SPECTRUM_BINS; i++) {
-        if (is_carrier_value(spectrum_data[i])) {
-            width++;
-            if (width > MAX_CARRIER_WIDTH_BINS) {
-                // Too wide - probably not a carrier
-                return 0;
-            }
-        } else {
-            // End of carrier
-            break;
-        }
-    }
-
-    return width;
 }
 
 }  // namespace ui::external_app::analogtv
