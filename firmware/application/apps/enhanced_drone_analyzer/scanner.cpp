@@ -178,10 +178,7 @@ void DroneScanner::set_freq_lock_count(uint32_t count) noexcept {
 }
 
 FreqHz DroneScanner::get_locked_frequency() const noexcept {
-    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    if (!lock.is_locked()) {
-        return __atomic_load_n(&locked_frequency_, __ATOMIC_RELAXED);
-    }
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     return locked_frequency_;
 }
 
