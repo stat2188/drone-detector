@@ -275,7 +275,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "Contact:\n"
             "Telegram: @max_ai_master\n"
             "\n"
-            "TM PowerHamster2188\n"
+            "TM PowerHamster2188";
         nav_.display_modal("About Author", kAboutMessage);
     };
 
