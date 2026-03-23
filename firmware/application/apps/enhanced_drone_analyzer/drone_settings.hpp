@@ -43,14 +43,6 @@ struct DroneSettings {
     bool confirm_count_enabled;
     bool noise_blacklist_enabled;
     
-    // Spectrum frequency range (Hz)
-    FreqHz spectrum_start_freq;
-    FreqHz spectrum_end_freq;
-    
-    // Histogram frequency range (Hz)
-    FreqHz histogram_start_freq;
-    FreqHz histogram_end_freq;
-
     // Sweep frequency range (Hz)
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;
@@ -141,14 +133,6 @@ private:
     ui::Checkbox check_dwell_enabled_;
     ui::Checkbox check_confirm_count_;
     ui::Checkbox check_noise_blacklist_;
-
-    // Spectrum frequency range fields (MHz)
-    ui::NumberField field_spectrum_start_;
-    ui::NumberField field_spectrum_end_;
-    
-    // Histogram frequency range fields (MHz)
-    ui::NumberField field_histogram_start_;
-    ui::NumberField field_histogram_end_;
 
     // Sweep frequency range fields (MHz)
     ui::NumberField field_sweep_start_;
