@@ -22,6 +22,9 @@ public:
     DroneDisplay(const Rect parent_rect) noexcept;
     ~DroneDisplay() noexcept override;
 
+    DroneDisplay(const DroneDisplay&) = delete;
+    DroneDisplay& operator=(const DroneDisplay&) = delete;
+
     /**
      * @brief Paint method - main rendering entry point
      * @note Uses static storage for large buffers to reduce stack usage

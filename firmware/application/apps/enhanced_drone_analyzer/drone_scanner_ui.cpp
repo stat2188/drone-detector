@@ -307,21 +307,11 @@ void DroneScannerUI::construct_objects() noexcept {
 void DroneScannerUI::destruct_objects() noexcept {
     if (scanner_thread_ != nullptr) {
         scanner_thread_->stop();
-        scanner_thread_->~ScannerThread();
         scanner_thread_ = nullptr;
     }
-    if (scanner_ptr_ != nullptr) {
-        scanner_ptr_->~DroneScanner();
-        scanner_ptr_ = nullptr;
-    }
-    if (database_ptr_ != nullptr) {
-        database_ptr_->~DatabaseManager();
-        database_ptr_ = nullptr;
-    }
-    if (hardware_ptr_ != nullptr) {
-        hardware_ptr_->~HardwareController();
-        hardware_ptr_ = nullptr;
-    }
+    scanner_ptr_ = nullptr;
+    database_ptr_ = nullptr;
+    hardware_ptr_ = nullptr;
 }
 
 void DroneScannerUI::on_show() {
