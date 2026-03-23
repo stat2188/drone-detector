@@ -44,6 +44,7 @@ void ScannerThread::run() noexcept {
             }
 
             if (sweep_enabled_ && sweep_active_) {
+                if (sweep_cb_) sweep_cb_(sweep_cb_ctx_);
                 for (uint16_t i = 0; i < sweep_total_steps_; ++i) {
                     if (chThdShouldTerminate()) break;
                     radio::set_tuning_frequency(sweep_current_freq_);
@@ -56,8 +57,9 @@ void ScannerThread::run() noexcept {
                         sweep_current_freq_ = sweep_start_;
                         sweep_current_step_ = 0;
                     }
-                    chThdSleepMilliseconds(3);
+                    chThdSleepMilliseconds(20);
                 }
+                chThdSleepMilliseconds(20);
                 sweep_active_ = false;
                 db_scan_counter_ = 0;
                 ErrorResult<FreqHz> freq_result = scanner_.get_current_frequency();
@@ -132,7 +134,9 @@ void ScannerThread::set_sweep_range(FreqHz start, FreqHz end, FreqHz step) noexc
     sweep_current_freq_ = start;
     sweep_current_step_ = 0;
     if (step > 0) {
-        sweep_total_steps_ = static_cast<uint16_t>((end - start) / step);
+        uint32_t total = static_cast<uint32_t>((end - start) / step);
+        if (total > 240) total = 240;
+        sweep_total_steps_ = static_cast<uint16_t>(total);
         if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
     }
 }

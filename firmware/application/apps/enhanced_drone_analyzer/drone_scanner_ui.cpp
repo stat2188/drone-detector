@@ -122,15 +122,16 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             sweep_start_ = cfg.sweep_start_freq;
             sweep_end_ = cfg.sweep_end_freq;
             const FreqHz range = sweep_end_ - sweep_start_;
-            // Step = full slice coverage (like Looking Glass at 20 MHz)
-            // 256 bins * 78125 Hz = 20 MHz per step — fast sweep
+            // Use user-configured sweep step (default 20 MHz)
+            FreqHz sweep_step = cfg.sweep_step_freq;
+            if (sweep_step == 0) sweep_step = SWEEP_BANDWIDTH;
             if (range > 0 && range <= 10000000000ULL && scanner_thread_ != nullptr) {
                 // Reconfigure baseband for wideband sweep (like Looking Glass)
                 portapack::receiver_model.set_sampling_rate(SWEEP_BANDWIDTH);
                 portapack::receiver_model.set_baseband_bandwidth(SWEEP_BANDWIDTH);
                 baseband::set_spectrum(SWEEP_BANDWIDTH, 31);
 
-                scanner_thread_->set_sweep_range(sweep_start_, sweep_end_, SWEEP_BANDWIDTH);
+                scanner_thread_->set_sweep_range(sweep_start_, sweep_end_, sweep_step);
                 scanner_thread_->set_sweep_enabled(true);
             }
         } else {
@@ -302,6 +303,13 @@ void DroneScannerUI::construct_objects() noexcept {
     database_ptr_ = &s_database;
     scanner_ptr_ = &s_scanner;
     scanner_thread_ = &s_scanner_thread;
+    if (scanner_thread_ != nullptr) {
+        scanner_thread_->set_sweep_callback(
+            [](void* ctx) {
+                static_cast<DroneScannerUI*>(ctx)->on_sweep_start();
+            },
+            this);
+    }
 }
 
 void DroneScannerUI::destruct_objects() noexcept {
@@ -564,6 +572,12 @@ void DroneScannerUI::update_composite(FreqHz center_freq, const ChannelSpectrum&
     // Pass to display for rendering
     drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
     drone_display_.set_dirty();
+}
+
+void DroneScannerUI::on_sweep_start() noexcept {
+    for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+        composite_buffer_[i] = 0;
+    }
 }
 
 } // namespace drone_analyzer

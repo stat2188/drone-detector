@@ -29,7 +29,7 @@ DroneSettings::DroneSettings() noexcept
     , noise_blacklist_enabled(false)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
-    , sweep_step_freq(1000000) {  // Default 1 MHz step
+    , sweep_step_freq(20000000) {  // Default 20 MHz (matches SWEEP_BANDWIDTH)
 }
 
 void DroneSettings::reset_to_defaults() noexcept {
@@ -53,7 +53,7 @@ void DroneSettings::reset_to_defaults() noexcept {
     
     sweep_start_freq = SWEEP_DEFAULT_START_HZ;
     sweep_end_freq = SWEEP_DEFAULT_END_HZ;
-    sweep_step_freq = 1000000;  // 1 MHz
+    sweep_step_freq = 20000000;  // 20 MHz
 }
 
 // ============================================================================
@@ -86,7 +86,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_noise_blacklist_({UI_POS_X(15), UI_POS_Y(9)}, 10, "Blklist", false)
     , field_sweep_start_({UI_POS_X(1), UI_POS_Y(12)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_end_({UI_POS_X(9), UI_POS_Y(12)}, 5, {100, 7200}, 1, ' ')
-    , field_sweep_step_({UI_POS_X(1), UI_POS_Y(14)}, 5, {10, 9999}, 10, ' ')
+    , field_sweep_step_({UI_POS_X(1), UI_POS_Y(14)}, 5, {1000, 99999}, 1000, ' ')
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(4), UI_POS_WIDTH(14), 28}, "DEFAULT")
     , button_save_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "SAVE")
     , button_cancel_({UI_POS_X(16), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "CANCEL")

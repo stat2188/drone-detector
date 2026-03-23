@@ -146,6 +146,7 @@ private:
     static constexpr FreqHz SWEEP_BANDWIDTH = 20000000;  // 20 MHz (like Looking Glass)
 
     void update_composite(FreqHz center_freq, const ChannelSpectrum& spectrum) noexcept;
+    void on_sweep_start() noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};

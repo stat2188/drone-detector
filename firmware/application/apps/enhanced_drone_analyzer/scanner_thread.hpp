@@ -33,6 +33,9 @@ public:
     void set_sweep_range(FreqHz start, FreqHz end, FreqHz step) noexcept;
     void trigger_sweep_pass() noexcept;
 
+    using SweepCallback = void(*)(void* ctx);
+    void set_sweep_callback(SweepCallback cb, void* ctx) noexcept { sweep_cb_ = cb; sweep_cb_ctx_ = ctx; }
+
 private:
     static constexpr size_t STACK_WORDS = THD_WA_SIZE(SCANNER_THREAD_STACK_SIZE) / sizeof(stkalign_t);
 
@@ -59,6 +62,10 @@ private:
 
     // Dwell: stay on frequency when signal detected
     uint8_t dwell_cycles_{0};
+
+    // Sweep callback (called before each sweep pass)
+    SweepCallback sweep_cb_{nullptr};
+    void* sweep_cb_ctx_{nullptr};
 };
 
 } // namespace drone_analyzer
