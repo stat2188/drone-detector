@@ -114,7 +114,7 @@ void DroneDisplay::render_spectrum(
 
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-    draw_text(painter, "SPECTRUM", start_x + 2, start_y + 2, COLOR_TEXT);
+    draw_text(painter, "SPECTRUM +/-1MHz", start_x + 2, start_y + 2, COLOR_TEXT);
 
     constexpr uint16_t MIN_BAR_WIDTH = 2;
     const uint16_t usable_width = width - 4;
@@ -166,7 +166,7 @@ void DroneDisplay::render_histogram(
     // Draw background with border
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-    draw_text(painter, "HISTOGRAM", start_x + 2, start_y + 2, COLOR_TEXT);
+    draw_text(painter, "Power", start_x + 2, start_y + 2, COLOR_TEXT);
 
     // Subsample to fit screen (128 bins → max 60 bars)
     constexpr size_t MAX_BARS = 60;
