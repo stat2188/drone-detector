@@ -63,7 +63,8 @@ FullscreenTvView::FullscreenTvView(NavigationView& nav)
 
 FullscreenTvView::~FullscreenTvView() {
     stop_auto_scan();
-    receiver_.shutdown();
+    baseband::shutdown();
+    receiver_model.disable();
 }
 
 void FullscreenTvView::paint(Painter& painter) {
@@ -75,8 +76,8 @@ void FullscreenTvView::paint(Painter& painter) {
         render_video_frame();
     }
 
-    // Draw scan status overlay if visible
-    if (show_scan_status_) {
+    // Draw scan status overlay if scanning
+    if (scan_state_ == ScanState::SCANNING) {
         draw_scan_status(painter);
     }
 
@@ -90,8 +91,8 @@ void FullscreenTvView::focus() {
 
 void FullscreenTvView::on_show() {
     initialize();
-    receiver_.start_streaming();
-    receiver_.enable();
+    baseband::spectrum_streaming_start();
+    receiver_model.enable();
     
     // Start auto-scan by default
     start_auto_scan();
@@ -99,8 +100,8 @@ void FullscreenTvView::on_show() {
 
 void FullscreenTvView::on_hide() {
     stop_auto_scan();
-    receiver_.stop_streaming();
-    receiver_.disable();
+    baseband::spectrum_streaming_stop();
+    receiver_model.disable();
 }
 
 void FullscreenTvView::set_parent_rect(const Rect new_parent_rect) {
@@ -387,7 +388,7 @@ void FullscreenTvView::frequency_up() {
         current_scan_frequency_ = SCAN_START_HZ;
     }
     
-    receiver_.tune(current_scan_frequency_);
+    receiver_model.set_target_frequency(current_scan_frequency_);
     displayed_frequency_ = current_scan_frequency_;
     set_dirty();
 }
@@ -403,7 +404,7 @@ void FullscreenTvView::frequency_down() {
         current_scan_frequency_ -= SCAN_STEP_HZ;
     }
     
-    receiver_.tune(current_scan_frequency_);
+    receiver_model.set_target_frequency(current_scan_frequency_);
     displayed_frequency_ = current_scan_frequency_;
     set_dirty();
 }

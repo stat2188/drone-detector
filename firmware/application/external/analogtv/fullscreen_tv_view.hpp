@@ -27,8 +27,9 @@
 #include "ui_receiver.hpp"
 #include "ui_navigation.hpp"
 #include "analogtv_constants.hpp"
-#include "analogtv_receiver.hpp"
 #include "video_processor.hpp"
+#include "receiver_model.hpp"
+#include "baseband_api.hpp"
 
 #include <string>
 
@@ -186,9 +187,6 @@ private:
     // Navigation reference
     NavigationView& nav_;
 
-    // Hardware abstraction
-    AnalogTvReceiver receiver_;
-
     // Video processing
     VideoProcessor video_processor_;
 
@@ -248,7 +246,7 @@ private:
         Message::ID::FreqChangeCommand,
         [this](Message* const p) {
             const auto message = static_cast<const FreqChangeCommandMessage*>(p);
-            this->receiver_.tune(message->freq);
+            portapack::receiver_model.set_target_frequency(message->freq);
         }};
 };
 
