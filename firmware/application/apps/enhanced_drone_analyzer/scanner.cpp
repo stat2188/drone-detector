@@ -55,7 +55,7 @@ ScanConfig::ScanConfig() noexcept
     , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
-    , sweep_step_freq(1000000) {
+    , sweep_step_freq(20000000) {
 }
 
 ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
@@ -67,7 +67,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
-    , sweep_step_freq(1000000) {
+    , sweep_step_freq(20000000) {
 }
 
 // ============================================================================
