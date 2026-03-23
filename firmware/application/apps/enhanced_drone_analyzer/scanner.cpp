@@ -358,7 +358,10 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
         statistics_.failed_cycles++;
         return tune_result;
     }
-    
+
+    // Reset median filter — old samples from previous frequency are stale
+    rssi_median_filter_.reset();
+
     statistics_.successful_cycles++;
     return ErrorCode::SUCCESS;
 }

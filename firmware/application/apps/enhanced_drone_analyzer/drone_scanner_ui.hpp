@@ -139,16 +139,18 @@ private:
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void on_retune(FreqHz freq, uint32_t range) noexcept;
 
-    // Band sweep state (interleaved with scanner — ScannerThread handles tuning)
+    // Band sweep state (UI-driven, processed per spectrum callback)
     static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;  // 240 pixels
     uint8_t composite_buffer_[COMPOSITE_SIZE]{};
     bool composite_active_{false};
-    FreqHz sweep_start_{5700000000};
-    FreqHz sweep_end_{5900000000};
-    static constexpr FreqHz SWEEP_BANDWIDTH = 20000000;  // 20 MHz (like Looking Glass)
+    FreqHz sweep_start_{0};
+    FreqHz sweep_end_{0};
+    static constexpr FreqHz SWEEP_SLICE_BW = 20000000;  // 20 MHz per slice
+    uint16_t sweep_step_index_{0};       // current step in sweep pass
+    uint16_t sweep_total_steps_{0};      // total steps for full sweep
+    FreqHz sweep_step_hz_{0};           // frequency step per slice
 
-    void update_composite(FreqHz center_freq, const ChannelSpectrum& spectrum) noexcept;
-    void on_sweep_start() noexcept;
+    void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};

@@ -4,7 +4,6 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
-#include <algorithm>
 
 namespace drone_analyzer {
 
@@ -47,7 +46,8 @@ public:
      */
     void add(T value) noexcept {
         window_[head_] = value;
-        head_ = (head_ + 1) % N;
+        head_++;
+        if (head_ >= N) head_ = 0;
         if (count_ < N) count_++;
     }
 
@@ -73,17 +73,26 @@ public:
             const uint8_t pivot_idx = left + (right - left) / 2;
             T pivot = temp[pivot_idx];
 
-            std::swap(temp[pivot_idx], temp[right]);
+            // Direct swap (faster than std::swap for primitive types on Cortex-M4)
+            temp[pivot_idx] = temp[right];
+            temp[right] = pivot;
             uint8_t store = left;
 
             for (uint8_t i = left; i < right; ++i) {
                 if (temp[i] < pivot) {
-                    std::swap(temp[store], temp[i]);
+                    T t = temp[store];
+                    temp[store] = temp[i];
+                    temp[i] = t;
                     store++;
                 }
             }
 
-            std::swap(temp[store], temp[right]);
+            // Swap store and right
+            {
+                T t = temp[store];
+                temp[store] = temp[right];
+                temp[right] = t;
+            }
 
             if (store == k) break;
             if (store < k) left = store + 1;

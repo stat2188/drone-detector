@@ -671,7 +671,29 @@ void DroneDisplay::render_composite(
 
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-    draw_text(painter, "BAND SWEEP", start_x + 2, start_y + 2, COLOR_TEXT);
+
+    // Title + frequency range labels on header line
+    // Format: "SWEEP 5.70G-5.90G"
+    char title_buf[32];
+    char freq_lo[10];
+    char freq_hi[10];
+    format_frequency(sweep_freq_start_, freq_lo, sizeof(freq_lo));
+    format_frequency(sweep_freq_end_, freq_hi, sizeof(freq_hi));
+    // Compact: take just "5.70G" part (before " MHz")
+    // Build title manually
+    {
+        char* dst = title_buf;
+        size_t rem = sizeof(title_buf);
+        write_str(dst, rem, "SWP ");
+        // Left freq: copy until space or end
+        const char* p = freq_lo;
+        while (*p && *p != ' ' && rem > 1) { *dst++ = *p++; rem--; }
+        write_str(dst, rem, "-");
+        p = freq_hi;
+        while (*p && *p != ' ' && rem > 1) { *dst++ = *p++; rem--; }
+        *dst = '\0';
+    }
+    draw_text(painter, title_buf, start_x + 2, start_y + 2, COLOR_TEXT);
 
     constexpr uint16_t MIN_BAR_WIDTH = 2;
     const uint16_t usable_width = width - 4;

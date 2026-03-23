@@ -167,6 +167,10 @@ public:
 
     void set_composite_mode(bool enabled) noexcept { composite_mode_ = enabled; }
     void set_composite_data(const uint8_t* data, size_t size) noexcept;
+    void set_sweep_range(FreqHz start, FreqHz end) noexcept {
+        sweep_freq_start_ = start;
+        sweep_freq_end_ = end;
+    }
 
     [[nodiscard]] const char* get_status_text() const noexcept;
 
@@ -385,6 +389,8 @@ private:
     bool composite_mode_{false};
     const uint8_t* composite_data_{nullptr};
     size_t composite_data_size_{0};
+    FreqHz sweep_freq_start_{0};
+    FreqHz sweep_freq_end_{0};
 
     void render_composite(
         Painter& painter,

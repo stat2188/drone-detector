@@ -8,7 +8,6 @@
 #include "message.hpp"
 #include "event_m0.hpp"
 #include "constants.hpp"
-#include "radio.hpp"
 
 namespace drone_analyzer {
 
@@ -29,13 +28,6 @@ public:
     [[nodiscard]] bool is_scanning() const noexcept;
     [[nodiscard]] bool is_active() const noexcept;
 
-    void set_sweep_enabled(bool enabled) noexcept;
-    void set_sweep_range(FreqHz start, FreqHz end, FreqHz step) noexcept;
-    void trigger_sweep_pass() noexcept;
-
-    using SweepCallback = void(*)(void* ctx);
-    void set_sweep_callback(SweepCallback cb, void* ctx) noexcept { sweep_cb_ = cb; sweep_cb_ctx_ = ctx; }
-
 private:
     static constexpr size_t STACK_WORDS = THD_WA_SIZE(SCANNER_THREAD_STACK_SIZE) / sizeof(stkalign_t);
 
@@ -48,24 +40,8 @@ private:
 
     bool scanning_{false};
 
-    // Batch sweep: 240 steps in a row, auto-triggers every N frequencies
-    bool sweep_enabled_{false};
-    bool sweep_active_{false};
-    static constexpr uint16_t SWEEP_AUTO_INTERVAL = 20;  // sweep every 20 frequencies
-    uint16_t db_scan_counter_{0};
-    FreqHz sweep_start_{0};
-    FreqHz sweep_end_{0};
-    FreqHz sweep_step_hz_{0};
-    FreqHz sweep_current_freq_{0};
-    uint16_t sweep_total_steps_{240};  // dynamic: range / SWEEP_SLICE_BW
-    uint16_t sweep_current_step_{0};
-
     // Dwell: stay on frequency when signal detected
     uint8_t dwell_cycles_{0};
-
-    // Sweep callback (called before each sweep pass)
-    SweepCallback sweep_cb_{nullptr};
-    void* sweep_cb_ctx_{nullptr};
 };
 
 } // namespace drone_analyzer
