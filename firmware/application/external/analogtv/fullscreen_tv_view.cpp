@@ -207,7 +207,7 @@ void FullscreenTvView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
 
     // Check for video carrier if scanning
     if (scan_state_ == ScanState::SCANNING) {
-        if (video_processor_.detect_video_carrier(spectrum.db, SPECTRUM_BINS)) {
+        if (video_processor_.detect_video_carrier(spectrum.db)) {
             on_carrier_found(current_scan_frequency_);
         }
     }
