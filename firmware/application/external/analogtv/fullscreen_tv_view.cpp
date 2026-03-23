@@ -109,14 +109,14 @@ void FullscreenTvView::set_parent_rect(const Rect new_parent_rect) {
 }
 
 void FullscreenTvView::initialize() {
-    // Initialize hardware
-    ErrorCode error = receiver_.initialize();
-    if (error != ErrorCode::SUCCESS) {
-        // Handle initialization error
-        scan_state_ = ScanState::ERROR;
-        return;
-    }
-
+    // Initialize hardware - run baseband image
+    baseband::run_prepared_image(portapack::memory::map::m4_code.base());
+    
+    // Set default modulation and bandwidth
+    receiver_model.set_modulation(ReceiverModel::Mode::WidebandFMAudio);
+    receiver_model.set_sampling_rate(2000000);
+    receiver_model.set_baseband_bandwidth(2000000);
+    
     // Clear video buffer
     video_processor_.clear_buffer();
 
@@ -153,17 +153,9 @@ void FullscreenTvView::scan_next_frequency() {
         return;
     }
 
-    // Tune to next frequency
-    ErrorCode error = receiver_.tune(current_scan_frequency_);
-    if (error != ErrorCode::SUCCESS) {
-        // Skip this frequency and continue
-        current_scan_frequency_ += SCAN_STEP_HZ;
-        if (current_scan_frequency_ > SCAN_END_HZ) {
-            current_scan_frequency_ = SCAN_START_HZ;
-        }
-        return;
-    }
-
+    // Tune to next frequency using receiver_model
+    receiver_model.set_target_frequency(current_scan_frequency_);
+    
     // Update displayed frequency
     displayed_frequency_ = current_scan_frequency_;
     
@@ -180,35 +172,14 @@ void FullscreenTvView::on_carrier_found(uint64_t freq_hz) {
     carrier_detected_ = true;
     
     // Tune to found frequency
-    receiver_.tune(freq_hz);
+    receiver_model.set_target_frequency(freq_hz);
     displayed_frequency_ = freq_hz;
     
     // Enable video display
     video_active_ = true;
-    
-    // Show status briefly
-    show_scan_status_ = true;
-    status_display_timer_ = SCAN_STATUS_DURATION_MS;
 }
 
 void FullscreenTvView::update_scan_status() {
-    // Update scan status display timer
-    if (show_scan_status_) {
-        if (status_display_timer_ > UI_REFRESH_INTERVAL_MS) {
-            status_display_timer_ -= UI_REFRESH_INTERVAL_MS;
-        } else {
-            show_scan_status_ = false;
-            status_display_timer_ = 0;
-        }
-    }
-
-    // Update frequency display timer
-    if (freq_update_timer_ > UI_REFRESH_INTERVAL_MS) {
-        freq_update_timer_ -= UI_REFRESH_INTERVAL_MS;
-    } else {
-        freq_update_timer_ = FREQ_DISPLAY_UPDATE_MS;
-    }
-
     // Handle scanning state
     if (scan_state_ == ScanState::SCANNING) {
         dwell_timer_ += UI_REFRESH_INTERVAL_MS;

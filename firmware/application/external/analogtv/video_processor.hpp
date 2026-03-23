@@ -26,6 +26,8 @@
 #include "ui.hpp"
 #include "message.hpp"
 
+#include <array>
+
 namespace ui::external_app::analogtv {
 
 /**
@@ -66,11 +68,10 @@ public:
 
     /**
      * @brief Detect video carrier in spectrum data
-     * @param spectrum_data Pointer to spectrum data (256 bins)
-     * @param size Size of spectrum data
+     * @param spectrum_data Spectrum data array (256 bins)
      * @return true if carrier detected
      */
-    bool detect_video_carrier(const uint8_t* spectrum_data, size_t size) const;
+    bool detect_video_carrier(const std::array<uint8_t, 256>& spectrum_data) const;
 
     /**
      * @brief Render video line to display

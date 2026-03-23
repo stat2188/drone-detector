@@ -41,9 +41,9 @@ void VideoProcessor::process_spectrum(const ChannelSpectrum& spectrum) {
     }
 }
 
-bool VideoProcessor::detect_video_carrier(const uint8_t* spectrum_data, size_t size) const {
+bool VideoProcessor::detect_video_carrier(const std::array<uint8_t, 256>& spectrum_data) const {
     // Guard clause: validate input
-    if (!spectrum_data || size < SPECTRUM_BINS) {
+    if (spectrum_data.size() < SPECTRUM_BINS) {
         return false;
     }
 
