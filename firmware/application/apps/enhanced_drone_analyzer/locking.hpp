@@ -1,3 +1,6 @@
+/**
+ * @note nuclear crutch
+ */
 #ifndef LOCKING_HPP
 #define LOCKING_HPP
 

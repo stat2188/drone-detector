@@ -217,26 +217,15 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     button_about_.on_select = [this](ui::Button&) {
         static constexpr const char* kAboutMessage =
-            "Enhanced Drone Analyzer v2.0\n"
-            "===========================\n"
-            "\n"
             "Author: Kuznetsov Maxim\n"
-            "Gazprom Gazoraspredeleniye\n"
             "Orenburg branch\n"
-            "Voluntary & altruistic\n"
             "Greetings to everyone who risks\n"
-            "their lives for the safety\n"
-            "of others.\n"
-            "\n"
             "Support the author:\n"
             "Card: 2202 20202 5787 1695\n"
             "YooMoney: 41001810704697\n"
             "TON: UQCdtMxQB5zbQBOICkY90l\n"
             "TQQqcs8V-V28Bf2AGvl8xOc5HR\n"
-            "\n"
-            "Contact:\n"
             "Telegram: @max_ai_master\n"
-            "\n"
             "TM PowerHamster2188";
         nav_.display_modal("About Author", kAboutMessage);
     };

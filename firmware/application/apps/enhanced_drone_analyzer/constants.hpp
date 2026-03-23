@@ -98,13 +98,13 @@ constexpr uint16_t DEFAULT_GAIN = 30;
  * @brief Default LNA gain value (MAX2837: 0-40 dB)
  * @note 16 dB — conservative default, no false triggers on startup
  */
-constexpr uint8_t DEFAULT_LNA_GAIN = 16;
+constexpr uint8_t DEFAULT_LNA_GAIN = 24;
 
 /**
  * @brief Default VGA gain value (MAX2837: 0-62 dB)
  * @note 16 dB — conservative default, no false triggers on startup
  */
-constexpr uint8_t DEFAULT_VGA_GAIN = 16;
+constexpr uint8_t DEFAULT_VGA_GAIN = 28;
 
 // ============================================================================
 // Time Constants
