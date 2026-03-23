@@ -117,25 +117,26 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcep
         update_count++;
     }
     
-    // Require minimum samples before HIGH/CRITICAL classification
-    // to prevent false positives from single noisy readings
-    if (update_count < 2) {
-        threat_level = ThreatLevel::LOW;
-        return;
+    // Classify threat from average RSSI (smoother than single sample)
+    // Use average when we have enough samples, otherwise use raw value
+    const RssiValue classify_rssi = (update_count >= 2)
+        ? get_average_rssi()
+        : new_rssi;
+    
+    ThreatLevel classified = ThreatLevel::LOW;
+    if (classify_rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
+        classified = ThreatLevel::CRITICAL;
+    } else if (classify_rssi >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
+        classified = ThreatLevel::HIGH;
+    } else if (classify_rssi >= RSSI_DETECTION_THRESHOLD_DBM) {
+        classified = ThreatLevel::MEDIUM;
     }
 
-    // Use average RSSI for threat classification (smoother than single sample)
-    // This prevents a single noise spike from triggering CRITICAL
-    const RssiValue avg = get_average_rssi();
-    
-    if (avg >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
-        threat_level = ThreatLevel::CRITICAL;
-    } else if (avg >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
-        threat_level = ThreatLevel::HIGH;
-    } else if (avg >= RSSI_DETECTION_THRESHOLD_DBM) {
-        threat_level = ThreatLevel::MEDIUM;
-    } else {
-        threat_level = ThreatLevel::LOW;
+    // Only upgrade threat level — never downgrade during re-detection
+    // This prevents drones from bouncing between LOW/MEDIUM when signal
+    // fluctuates around the threshold
+    if (classified > threat_level) {
+        threat_level = classified;
     }
 }
 
