@@ -20,13 +20,13 @@
  */
 
 #include "ui.hpp"
-#include "analog_tv_app.hpp"
+#include "fullscreen_tv_view.hpp"
 #include "ui_navigation.hpp"
 #include "external_app.hpp"
 
 namespace ui::external_app::analogtv {
 void initialize_app(ui::NavigationView& nav) {
-    nav.push<AnalogTvView>();
+    nav.push<FullscreenTvView>();
 }
 }  // namespace ui::external_app::analogtv
 

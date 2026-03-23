@@ -32,38 +32,9 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <array>
-#include "tv_signal_detector.hpp"
 
 namespace ui::external_app::analogtv {
-
-class TVSignalDetector;
-
 namespace tv {
-
-// Named constants for TV rendering
-namespace RenderConstants {
-    // Audio spectrum constants
-    static constexpr int AUDIO_SPECTRUM_SIZE = 128;
-    static constexpr int CURSOR_BAND_HEIGHT = 4;
-    static constexpr int WAVEFORM_HEIGHT = 2 * 16;
-    
-    // TV display constants
-    static constexpr int TV_LINE_WIDTH = 128;
-    static constexpr int SAMPLES_PER_PACKET = 256;
-    static constexpr int X_CORRECTION_RANGE = 128;
-    
-    // Buffer optimization: reduced from 16 to 8 lines (50% RAM reduction)
-    static constexpr int LINE_BUFFER_SIZE = 8;
-    static constexpr int RENDER_THRESHOLD = 8;
-    
-    // Audio spectrum view dimensions
-    static constexpr Dim AUDIO_SPECTRUM_HEIGHT = 16 * 2 + 20;
-    static constexpr Dim SCALE_HEIGHT = 20;
-    
-    // Signal detection constants
-    static constexpr int DETECTION_SKIP_FRAMES = 8;
-}
 
 class TimeScopeView : public View {
    public:
@@ -74,12 +45,26 @@ class TimeScopeView : public View {
     void on_audio_spectrum(const AudioSpectrum* spectrum);
 
    private:
-    std::array<int16_t, RenderConstants::AUDIO_SPECTRUM_SIZE> audio_spectrum{};
+    static constexpr int cursor_band_height = 4;
+
+    int16_t audio_spectrum[128]{0};
+
+    /*Labels labels {
+                { { 6 * 8,UI_POS_Y(0) }, "Hz", Theme::getInstance()->fg_light->foreground }
+        };*/
+    /*
+        NumberField field_frequency {
+                { 0 * 8,UI_POS_Y(0) },
+                5,
+                { 0, 48000 },
+                48000 / 240,
+                ' '
+        };*/
 
     Waveform waveform{
-        {0, 1 * 16 + RenderConstants::CURSOR_BAND_HEIGHT, screen_width, RenderConstants::WAVEFORM_HEIGHT},
-        audio_spectrum.data(),
-        RenderConstants::AUDIO_SPECTRUM_SIZE,
+        {0, 1 * 16 + cursor_band_height, screen_width, 2 * 16},
+        audio_spectrum,
+        128,
         0,
         false,
         Theme::getInstance()->bg_darkest->foreground,
@@ -88,30 +73,16 @@ class TimeScopeView : public View {
 
 class TVView : public Widget {
    public:
-    TVView() : scan_line(0), x_correction_(0), line_buffer_{}, buffer_line_count(0) {
-        for (auto& line : line_buffer_) {
-            line.fill(Color::black());
-        }
-    }
-
     void on_show() override;
     void on_hide() override;
 
     void paint(Painter& painter) override;
     void on_channel_spectrum(const ChannelSpectrum& spectrum);
-    void set_x_correction(int32_t value);
-
-   private:
-    int scan_line;
-    int32_t x_correction_;
-
-    // Optimized line buffer: reduced from 16 to 8 lines (50% RAM reduction)
-    std::array<std::array<ui::Color, RenderConstants::TV_LINE_WIDTH>, RenderConstants::LINE_BUFFER_SIZE> line_buffer_;
-    int buffer_line_count;
-
-    void add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx);
-    void render_buffer_batch();
-    void process_buffer_overflow();
+    void on_adjust_xcorr(uint8_t xcorr);
+    // ui::Color video_buffer[13312];
+    uint8_t video_buffer_int[13312 + 128]{0};  // 128 is for the over length caused by x_correction
+    uint32_t count = 0;
+    uint8_t x_correction = 0;
 
    private:
     void clear();
@@ -120,7 +91,6 @@ class TVView : public Widget {
 class TVWidget : public View {
    public:
     std::function<void(int32_t offset)> on_select{};
-    std::function<void(const TVSignalDetector::DetectionResult&)> on_tv_signal_detected{};
 
     TVWidget();
 
@@ -140,7 +110,7 @@ class TVWidget : public View {
     NumberField field_xcorr{
         {UI_POS_X(0), UI_POS_Y(0)},
         5,
-        {0, RenderConstants::X_CORRECTION_RANGE},
+        {0, 128},
         1,
         ' '};
 
@@ -148,13 +118,10 @@ class TVWidget : public View {
     void update_widgets_rect();
 
     const Rect audio_spectrum_view_rect{UI_POS_X(0), UI_POS_Y(0), screen_width, 2 * 16 + 20};
+    static constexpr Dim audio_spectrum_height = 16 * 2 + 20;
+    static constexpr Dim scale_height = 20;
 
     TVView tv_view{};
-    TVSignalDetector signal_detector{};
-
-    int frame_counter{0};
-    TVSignalDetector::DetectionResult cached_detection{};
-    bool has_cached_detection{false};
 
     ChannelSpectrumFIFO* channel_fifo{nullptr};
     AudioSpectrum* audio_spectrum_data{nullptr};

@@ -20,10 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-// "Well, so what if it looks like shit. Does it work? Yeah, it works!.Are you seriously planning to watch Netflix on this piece of junk?"
-// 
-// Signed-off-by: syber
-
 #include "ui_tv.hpp"
 
 #include "spectrum_color_lut.hpp"
@@ -37,29 +33,9 @@ using namespace portapack;
 
 #include <cmath>
 #include <array>
-#include <algorithm>
 
 namespace ui::external_app::analogtv {
 namespace tv {
-
-// Compile-time X-offset table generation - saves 16.5KB of RAM by placing in ROM
-constexpr std::array<std::array<int8_t, 128>, 129> generate_x_offset_table() {
-    std::array<std::array<int8_t, 128>, 129> table{};
-    
-    for (int corr = 0; corr < 129; corr++) {
-        for (int i = 0; i < 128; i++) {
-            int idx = i + corr;
-            // Clamp to valid range [0, 255]
-            idx = std::clamp(idx, 0, 255);
-            table[corr][i] = static_cast<int8_t>(idx);
-        }
-    }
-    
-    return table;
-}
-
-// Constexpr table - placed in ROM by compiler
-constexpr auto X_OFFSET_TABLE = generate_x_offset_table();
 
 /* TimeScopeView******************************************************/
 
@@ -68,18 +44,36 @@ TimeScopeView::TimeScopeView(
     : View{parent_rect} {
     set_focusable(true);
 
-    add_children({&waveform});
+    add_children({//&labels,
+                  //&field_frequency,
+                  &waveform});
+
+    /*field_frequency.on_change = [this](int32_t) {
+                set_dirty();
+        };
+        field_frequency.set_value(10);*/
 }
 
 void TimeScopeView::paint(Painter& painter) {
     const auto r = screen_rect();
+
     painter.fill_rectangle(r, Color::black());
+
+    // Cursor
+    /*
+        const Rect r_cursor {
+                field_frequency.value() / (48000 / 240), r.bottom() - 32 - cursor_band_height,
+                1, cursor_band_height
+        };
+        painter.fill_rectangle(
+                r_cursor,
+                Color::red()
+        );*/
 }
 
 void TimeScopeView::on_audio_spectrum(const AudioSpectrum* spectrum) {
-    for (size_t i = 0; i < spectrum->db.size(); i++) {
+    for (size_t i = 0; i < spectrum->db.size(); i++)
         audio_spectrum[i] = ((int16_t)spectrum->db[i] - 127) * 256;
-    }
     waveform.set_dirty();
 }
 
@@ -93,69 +87,81 @@ void TVView::on_show() {
 }
 
 void TVView::on_hide() {
+    /* TODO: Clear region to eliminate brief flash of content at un-shifted
+     * position?
+     */
     display.scroll_disable();
 }
 
 void TVView::paint(Painter& painter) {
+    // Do nothing.
     (void)painter;
 }
 
-void TVView::set_x_correction(int32_t value) {
-    x_correction_ = value;
+void TVView::on_adjust_xcorr(uint8_t xcorr) {
+    x_correction = xcorr;
 }
 
-void TVView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
-    add_line_to_buffer(spectrum, 0);    // First line (samples 0..127)
-    add_line_to_buffer(spectrum, 128);  // Second line (samples 128..255)
-    
-    // Check if we need to render
-    if (buffer_line_count >= RenderConstants::RENDER_THRESHOLD) {
-        render_buffer_batch();
+void TVView::on_channel_spectrum(
+    const ChannelSpectrum& spectrum) {
+    // portapack has limitations
+    //  1.screen resolution (less than 240x320) 2.samples each call back (128 or 256)
+    //  3.memory size (for ui::Color, the buffer size
+    // spectrum.db[i] is 256 long
+    // 768x625 ->128x625 ->128x312 -> 128x104
+    // originally @6MHz sample rate, the PAL should be 768x625
+    // I reduced sample rate to 2MHz(3 times less samples), then calculate mag (effectively decimate by 2)
+    // the resolution is now changed to 128x625. The total decimation factor is 6, which changes how many samples in a line
+    // However 625 is too large for the screen, also interlaced scanning is harder to realize in portapack than normal computer.
+    // So I decided to simply drop half of the lines, once y is larger than 625/2=312.5 or 312, I recognize it as a new frame.
+    // then the resolution is changed to 128x312
+    // 128x312 is now able to put into a 240x320 screen, but the buffer for a whole frame is 128x312=39936, which is too large
+    // according to my test, I can only make a buffer with a length of 13312 of type ui::Color. which is 1/3 of what I wanted.
+    // So now the resolution is changed to 128x104, the height is shrinked to 1/3 of the original height.
+    // I was expecting to see 1/3 height of original video.
+
+    // Look how nice is that! I am now able to meet the requirements of 1 and 3 for portapack. Also the length of a line is 128
+    // Each call back gives me 256 samples which is exactly 2 lines. What a coincidence!
+
+    // After some experiment, I did some improvements.
+    // 1.I found that instead of 1/3 of the frame is shown, I got 3 whole frames shrinked into one window.
+    // So I made the height twice simply by painting 2 identical lines in the place of original lines
+    // 2.I found sometimes there is an horizontal offset, so I added x_correction to move the frame back to center manually
+    // 3.I changed video_buffer's type, from ui::Color to uint_8, since I don't need 3 digit to represent a grey scale value.
+    // I was hoping that by doing this, I can have a longer buffer like 39936, then the frame will looks better vertically
+    // however this is useless until now.
+
+    for (size_t i = 0; i < 256; i++) {
+        // video_buffer[i+count*256] = spectrum_rgb4_lut[spectrum.db[i]];
+        video_buffer_int[i + count * 256] = 255 - spectrum.db[i];
     }
-}
+    count = count + 1;
+    if (count == 52 - 1) {
+        ui::Color line_buffer[128];
+        Coord line;
+        uint32_t bmp_px;
 
-void TVView::add_line_to_buffer(const ChannelSpectrum& spectrum, int offset_idx) {
-    (void)offset_idx;
-    if (buffer_line_count >= RenderConstants::LINE_BUFFER_SIZE) {
-        process_buffer_overflow();
-        return;
+        /*for (line = 0; line < 104; line++)
+                {
+                        for (bmp_px = 0; bmp_px < 128; bmp_px++)
+                        {
+                                //line_buffer[bmp_px] = video_buffer[bmp_px+line*128];
+                                line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px+line*128 + x_correction]];
+                        }
+
+                        display.render_line({ 0, line + 100 }, 128, line_buffer);
+                }*/
+        for (line = 0; line < 208; line = line + 2) {
+            for (bmp_px = 0; bmp_px < 128; bmp_px++) {
+                // line_buffer[bmp_px] = video_buffer[bmp_px+line*128];
+                line_buffer[bmp_px] = spectrum_rgb4_lut[video_buffer_int[bmp_px + line / 2 * 128 + x_correction]];
+            }
+
+            display.render_line({0, line + 100}, 128, line_buffer);
+            display.render_line({0, line + 101}, 128, line_buffer);
+        }
+        count = 0;
     }
-
-    const auto* db = spectrum.db.data();
-    // Access ROM table with clamped correction value
-    const int corr_idx = std::clamp(x_correction_ + 64, 0, 128);
-    const int8_t* offset_row = X_OFFSET_TABLE[corr_idx].data();
-    const auto* lut = spectrum_rgb4_lut.data();
-
-    // Hot path: minimal logic, direct memory access
-    for (int i = 0; i < RenderConstants::TV_LINE_WIDTH; i++) {
-        const uint8_t db_val = 255 - db[offset_row[i]];
-        line_buffer_[buffer_line_count][i] = lut[db_val];
-    }
-
-    buffer_line_count++;
-}
-
-void TVView::render_buffer_batch() {
-    const auto rect = screen_rect();
-
-    if (scan_line + buffer_line_count >= rect.height()) {
-        scan_line = 0;
-    }
-
-    for (int i = 0; i < buffer_line_count; i++) {
-        display.render_line({rect.left(), rect.top() + scan_line + i},
-                           RenderConstants::TV_LINE_WIDTH, line_buffer_[i].data());
-    }
-
-    scan_line += buffer_line_count;
-
-    buffer_line_count = 0;
-}
-
-void TVView::process_buffer_overflow() {
-    render_buffer_batch();
-    scan_line = 0;
 }
 
 void TVView::clear() {
@@ -169,11 +175,7 @@ void TVView::clear() {
 TVWidget::TVWidget() {
     add_children({&tv_view,
                   &field_xcorr});
-    
-    field_xcorr.on_change = [this](int32_t value) {
-        tv_view.set_x_correction(value);
-    };
-    field_xcorr.set_value(0);
+    field_xcorr.set_value(10);
 }
 
 void TVWidget::on_show() {
@@ -211,39 +213,25 @@ void TVWidget::update_widgets_rect() {
 void TVWidget::set_parent_rect(const Rect new_parent_rect) {
     View::set_parent_rect(new_parent_rect);
 
-    tv_normal_rect = {0, RenderConstants::SCALE_HEIGHT, new_parent_rect.width(), new_parent_rect.height() - RenderConstants::SCALE_HEIGHT};
-    tv_reduced_rect = {0, RenderConstants::AUDIO_SPECTRUM_HEIGHT + RenderConstants::SCALE_HEIGHT, new_parent_rect.width(), new_parent_rect.height() - RenderConstants::SCALE_HEIGHT - RenderConstants::AUDIO_SPECTRUM_HEIGHT};
+    tv_normal_rect = {0, scale_height, new_parent_rect.width(), new_parent_rect.height() - scale_height};
+    tv_reduced_rect = {0, audio_spectrum_height + scale_height, new_parent_rect.width(), new_parent_rect.height() - scale_height - audio_spectrum_height};
 
     update_widgets_rect();
 }
 
 void TVWidget::paint(Painter& painter) {
+    // TODO:
     (void)painter;
 }
 
 void TVWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
     tv_view.on_channel_spectrum(spectrum);
+    tv_view.on_adjust_xcorr(field_xcorr.value());
     sampling_rate = spectrum.sampling_rate;
-
-    frame_counter++;
-    if (frame_counter >= RenderConstants::DETECTION_SKIP_FRAMES) {
-        frame_counter = 0;
-        auto detection_result = signal_detector.detect_tv_signal(spectrum, receiver_model.target_frequency());
-
-        cached_detection = detection_result;
-        has_cached_detection = true;
-
-        if (detection_result.is_tv_signal && on_tv_signal_detected) {
-            on_tv_signal_detected(detection_result);
-        }
-    }
 }
 
 void TVWidget::on_audio_spectrum() {
-    // Process audio spectrum only if active
-    if (audio_spectrum_view && audio_spectrum_data) {
-        audio_spectrum_view->on_audio_spectrum(audio_spectrum_data);
-    }
+    audio_spectrum_view->on_audio_spectrum(audio_spectrum_data);
 }
 
 } /* namespace tv */
