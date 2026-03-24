@@ -660,11 +660,11 @@ constexpr uint32_t MAX_FREQ_LOCK = 10;
 
 /**
  * @brief Maximum dwell cycles on a detected frequency
- * @note 7 cycles × 50ms = 350ms ≈ 1/3 second
+ * @note 10 cycles × 50ms = 500ms — half second for confident signal confirmation
  * @note After this many dwell cycles, force resume scanning
  *       even if signal persists (avoids permanent lock)
  */
-constexpr uint8_t MAX_DWELL_CYCLES = 7;
+constexpr uint8_t MAX_DWELL_CYCLES = 10;
 
 /**
  * @brief Signal lock time (ms)

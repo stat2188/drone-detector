@@ -25,7 +25,7 @@ DroneSettings::DroneSettings() noexcept
     , audio_alerts_enabled(true)
     , alert_rssi_threshold_dbm(RSSI_HIGH_THREAT_THRESHOLD_DBM)
     , min_threat_level(ThreatLevel::LOW)
-    , dwell_enabled(false)
+    , dwell_enabled(true)
     , confirm_count_enabled(false)
     , noise_blacklist_enabled(false)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
@@ -48,7 +48,7 @@ void DroneSettings::reset_to_defaults() noexcept {
     
     min_threat_level = ThreatLevel::LOW;
     
-    dwell_enabled = false;
+    dwell_enabled = true;
     confirm_count_enabled = false;
     noise_blacklist_enabled = false;
     
@@ -64,36 +64,32 @@ void DroneSettings::reset_to_defaults() noexcept {
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display) noexcept
     : ui::View()
     , labels_({
-        {{UI_POS_X(1), UI_POS_Y(1)}, "Scan Mode:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(3)}, "Interval (ms):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(5)}, "RSSI (dBm):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(7)}, "Volume:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(11)}, "Sweep(MHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(8), UI_POS_Y(11)}, "-", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(13)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(3)}, "RSSI(dBm):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(13), UI_POS_Y(3)}, "Vol:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(5)}, "Sweep(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(9), UI_POS_Y(5)}, "-", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(7)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
     })
-    , field_scan_mode_({UI_POS_X(1), UI_POS_Y(2)}, 14, {
-        {"Single", 0},
-        {"Hopping", 1},
-        {"Sequential", 2},
-        {"Targeted", 3}
+    , field_scan_mode_({UI_POS_X(0), UI_POS_Y(0)}, 1, {
+        {"-", 0},
     })
-    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(4)}, 4, {10, 1000}, 10, ' ')
-    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(6)}, 4, {-90, -20}, 1, ' ')
-    , field_volume_({UI_POS_X(8), UI_POS_Y(7)}, 2, {0, 99}, 1, ' ')
-    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(8)}, 15, "Audio", false)
-    , check_spectrum_visible_({UI_POS_X(13), UI_POS_Y(8)}, 10, "Spec", false)
-    , check_histogram_visible_({UI_POS_X(1), UI_POS_Y(9)}, 15, "Hist", false)
-    , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(10)}, 15, "Dwell", false)
-    , check_confirm_count_({UI_POS_X(8), UI_POS_Y(10)}, 12, "Confirm", false)
-    , check_noise_blacklist_({UI_POS_X(15), UI_POS_Y(10)}, 10, "Blklist", false)
-    , field_sweep_start_({UI_POS_X(1), UI_POS_Y(12)}, 5, {100, 7200}, 1, ' ')
-    , field_sweep_end_({UI_POS_X(9), UI_POS_Y(12)}, 5, {100, 7200}, 1, ' ')
-    , field_sweep_step_({UI_POS_X(1), UI_POS_Y(14)}, 5, {1000, 99999}, 1000, ' ')
-    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(4), UI_POS_WIDTH(14), 28}, "DEFAULT")
-    , button_save_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "SAVE")
-    , button_cancel_({UI_POS_X(16), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 28}, "CANCEL")
-    , button_about_({UI_POS_X(16), UI_POS_Y_BOTTOM(4), UI_POS_WIDTH(14), 28}, "ABOUT")
+    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
+    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 4, {-90, -20}, 1, ' ')
+    , field_volume_({UI_POS_X(17), UI_POS_Y(3)}, 2, {0, 99}, 1, ' ')
+    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(10)}, 6, "Audio", false)
+    , check_spectrum_visible_({UI_POS_X(15), UI_POS_Y(10)}, 5, "Spec", false)
+    , check_histogram_visible_({UI_POS_X(15), UI_POS_Y(11)}, 5, "Hist", false)
+    , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
+    , check_confirm_count_({UI_POS_X(1), UI_POS_Y(12)}, 8, "Confirm", false)
+    , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Blklist", false)
+    , field_sweep_start_({UI_POS_X(1), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
+    , field_sweep_end_({UI_POS_X(10), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
+    , field_sweep_step_({UI_POS_X(1), UI_POS_Y(8)}, 5, {1000, 99999}, 1000, ' ')
+    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(5), UI_POS_WIDTH(14), 28}, "DEFAULT")
+    , button_save_({UI_POS_X(16), UI_POS_Y_BOTTOM(5), UI_POS_WIDTH(14), 28}, "SAVE")
+    , button_cancel_({UI_POS_X(16), UI_POS_Y_BOTTOM(3), UI_POS_WIDTH(14), 28}, "CANCEL")
+    , button_about_({UI_POS_X(0), UI_POS_Y_BOTTOM(3), UI_POS_WIDTH(14), 28}, "ABOUT")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -109,7 +105,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     add_children({
         &labels_,
-        &field_scan_mode_,
         &field_scan_interval_,
         &field_rssi_threshold_,
         &field_volume_,
@@ -128,7 +123,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &button_about_
     });
 
-    field_scan_mode_.set_by_value(static_cast<int32_t>(settings_.scanning_mode));
     field_scan_interval_.set_value(settings_.scan_interval_ms);
     field_rssi_threshold_.set_value(settings_.alert_rssi_threshold_dbm);
     field_volume_.set_value(portapack::receiver_model.normalized_headphone_volume());
@@ -238,11 +232,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         nav_.display_modal("About Author", kAboutMessage);
     };
 
-    field_scan_mode_.on_change = [this](size_t, int32_t v) {
-        settings_.scanning_mode = static_cast<ScanningMode>(v);
-        settings_dirty_ = true;
-    };
-
     field_scan_interval_.on_change = [this](int32_t v) {
         settings_.scan_interval_ms = static_cast<uint32_t>(v);
         settings_dirty_ = true;
@@ -327,7 +316,7 @@ void DroneSettingsView::paint(ui::Painter& painter) {
 }
 
 void DroneSettingsView::focus() {
-    field_scan_mode_.focus();
+    field_scan_interval_.focus();
 }
 
 bool DroneSettingsView::on_touch(TouchEvent event) {
@@ -542,7 +531,6 @@ ErrorCode DroneSettingsView::validate_settings() const noexcept {
 }
 
 void DroneSettingsView::apply_settings() noexcept {
-    field_scan_mode_.set_by_value(static_cast<int32_t>(settings_.scanning_mode));
     field_scan_interval_.set_value(settings_.scan_interval_ms);
     field_rssi_threshold_.set_value(settings_.alert_rssi_threshold_dbm);
     field_volume_.set_value(portapack::receiver_model.normalized_headphone_volume());

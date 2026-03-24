@@ -530,6 +530,20 @@ void DroneScannerUI::refresh_ui() noexcept {
 
     drone_display_.update_display_data(display_data);
 
+    // Stop SOS alert if no HIGH/CRITICAL threats remain
+    {
+        bool has_high_threat = false;
+        for (size_t i = 0; i < display_data.drone_count; ++i) {
+            if (display_data.drones[i].threat >= ThreatLevel::HIGH) {
+                has_high_threat = true;
+                break;
+            }
+        }
+        if (!has_high_threat) {
+            AudioAlertManager::stop_alert();
+        }
+    }
+
     // Feed histogram data from scanner (thread-safe snapshot)
     {
         static uint16_t hist_data[HISTOGRAM_BUFFER_SIZE];
