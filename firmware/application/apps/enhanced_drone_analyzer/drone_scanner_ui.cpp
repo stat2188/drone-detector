@@ -591,12 +591,21 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // Looking Glass pattern: stop → process → retune → start
     baseband::spectrum_streaming_stop();
 
+    // Feed spectrum to scanner for threat detection on current frequency
+    if (scanner_ptr_ != nullptr && composite_active_) {
+        (void)scanner_ptr_->process_spectrum_message(spectrum);
+    }
+
     const FreqHz center_freq = sweep_start_ + static_cast<FreqHz>(sweep_step_index_) * sweep_step_hz_;
     constexpr FreqHz bin_bw = SWEEP_SLICE_BW / 256;  // ~78125 Hz per bin at 20 MHz
+    constexpr size_t EDGE_SKIP = 8;  // Skip first/last bins — baseband filter roll-off
 
     // Map each valid FFT bin to a global frequency, then to a pixel position
     for (size_t bin = 0; bin < 256; ++bin) {
-        if (bin >= 120 && bin < 136) continue;  // DC spike
+        // DC spike
+        if (bin >= 120 && bin < 136) continue;
+        // Edge bins: baseband filter roll-off creates fake high power
+        if (bin < EDGE_SKIP || bin >= 256 - EDGE_SKIP) continue;
 
         const uint8_t power = spectrum.db[bin];
         if (power < min_color_power_) continue;
@@ -613,7 +622,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
             ((bin_freq - sweep_start_) * COMPOSITE_SIZE) / sweep_range);
         if (pixel >= COMPOSITE_SIZE) continue;
 
-        // Keep max power per pixel across all slices
+        // Keep max power per pixel across all slices in current pass
         if (power > composite_buffer_[pixel]) {
             composite_buffer_[pixel] = power;
         }
@@ -623,7 +632,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     sweep_step_index_++;
     if (sweep_step_index_ >= sweep_total_steps_) {
         sweep_step_index_ = 0;
-        // Clear buffer for next sweep pass
+        // Full pass complete — clear for next pass (fresh sweep)
         for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
             composite_buffer_[i] = 0;
         }
