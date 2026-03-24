@@ -7,6 +7,7 @@
 #include "database.hpp"
 #include "hardware_controller.hpp"
 #include "audio_alerts.hpp"
+#include "audio.hpp"
 #include "constants.hpp"
 #include "string_format.hpp"
 #include "baseband_api.hpp"
@@ -315,6 +316,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         portapack::receiver_model.set_normalized_headphone_volume(70);
     }
 
+    // Initialize audio codec for beep playback (WM8731/AK4951)
+    audio::set_rate(audio::Rate::Hz_24000);
+    audio::output::start();
+
     scanner_thread_->start();
 
     scanning_ = false;
@@ -336,6 +341,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 DroneScannerUI::~DroneScannerUI() noexcept {
     destruct_objects();
 
+    audio::output::stop();
     portapack::receiver_model.disable();
     baseband::shutdown();
 }
