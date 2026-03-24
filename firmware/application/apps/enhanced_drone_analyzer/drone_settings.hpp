@@ -125,6 +125,7 @@ private:
     ui::OptionsField field_scan_mode_;
     ui::NumberField field_scan_interval_;
     ui::NumberField field_rssi_threshold_;
+    ui::NumberField field_volume_;
     ui::Checkbox check_audio_alerts_;
     ui::Checkbox check_spectrum_visible_;
     ui::Checkbox check_histogram_visible_;

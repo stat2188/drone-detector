@@ -16,7 +16,6 @@
 
 #include "audio_alerts.hpp"
 #include "baseband_api.hpp"
-#include "audio.hpp"
 #include "constants.hpp"
 
 namespace drone_analyzer {
@@ -26,7 +25,6 @@ namespace drone_analyzer {
 // ============================================================================
 
 bool AudioAlertManager::enabled_ = true;
-bool AudioAlertManager::audio_initialized_ = false;
 AlertPriority AudioAlertManager::current_priority_ = AlertPriority::LOW;
 
 // ============================================================================
@@ -63,22 +61,23 @@ AudioAlertConfig::AudioAlertConfig(
 // ============================================================================
 
 const AudioAlertConfig& AudioAlertManager::get_alert_config(AlertType alert_type) noexcept {
-    // Static configurations for each alert type
+    // All configs use beep_count=1 — baseband cannot queue multiple beeps.
+    // Differentiate by frequency + duration instead.
     static const AudioAlertConfig configs[] = {
-        // NEW_DRONE: Single beep at 1000 Hz
-        AudioAlertConfig(AUDIO_ALERT_FREQUENCY_HZ, AUDIO_ALERT_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::MEDIUM),
+        // NEW_DRONE (MEDIUM): 1000 Hz, 100ms
+        AudioAlertConfig(AUDIO_ALERT_FREQUENCY_HZ, AUDIO_ALERT_MEDIUM_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::MEDIUM),
 
-        // THREAT_INCREASED: Double beep at 1200 Hz
-        AudioAlertConfig(AUDIO_ALERT_HIGH_FREQUENCY_HZ, AUDIO_ALERT_MEDIUM_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 2, AUDIO_ALERT_LONG_GAP_MS, AlertPriority::HIGH),
+        // THREAT_INCREASED (HIGH): 1200 Hz, 120ms
+        AudioAlertConfig(AUDIO_ALERT_HIGH_FREQUENCY_HZ, AUDIO_ALERT_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::HIGH),
 
-        // THREAT_CRITICAL: Triple beep at 1500 Hz
-        AudioAlertConfig(AUDIO_ALERT_CRITICAL_FREQUENCY_HZ, AUDIO_ALERT_SHORT_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 3, AUDIO_ALERT_SHORT_GAP_MS, AlertPriority::CRITICAL),
+        // THREAT_CRITICAL: 1500 Hz, 200ms (longest, highest pitch)
+        AudioAlertConfig(AUDIO_ALERT_CRITICAL_FREQUENCY_HZ, AUDIO_ALERT_LONG_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::CRITICAL),
 
-        // DRONE_APPROACHING: Single beep at 1200 Hz (rising tone)
-        AudioAlertConfig(AUDIO_ALERT_HIGH_FREQUENCY_HZ, AUDIO_ALERT_LONG_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::HIGH),
+        // DRONE_APPROACHING (HIGH): 1200 Hz, 150ms
+        AudioAlertConfig(AUDIO_ALERT_HIGH_FREQUENCY_HZ, AUDIO_ALERT_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::HIGH),
 
-        // DRONE_RECEDING: Single beep at 800 Hz (falling tone)
-        AudioAlertConfig(AUDIO_ALERT_LOW_FREQUENCY_HZ, AUDIO_ALERT_LONG_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::LOW)
+        // DRONE_RECEDING (LOW): 800 Hz, 80ms (shortest, lowest pitch)
+        AudioAlertConfig(AUDIO_ALERT_LOW_FREQUENCY_HZ, AUDIO_ALERT_SHORT_DURATION_MS, AUDIO_ALERT_SAMPLE_RATE_HZ, 1, 0, AlertPriority::LOW)
     };
 
     const size_t index = static_cast<size_t>(alert_type);
@@ -92,21 +91,21 @@ const AudioAlertConfig& AudioAlertManager::get_alert_config(AlertType alert_type
 }
 
 const AudioAlertConfig& AudioAlertManager::get_threat_alert_config(ThreatLevel threat_level) noexcept {
-    // Map threat levels to alert configurations
     switch (threat_level) {
         case ThreatLevel::CRITICAL:
             return get_alert_config(AlertType::THREAT_CRITICAL);
-            
+
         case ThreatLevel::HIGH:
             return get_alert_config(AlertType::THREAT_INCREASED);
-            
+
         case ThreatLevel::MEDIUM:
             return get_alert_config(AlertType::NEW_DRONE);
-            
+
         case ThreatLevel::LOW:
+            return get_alert_config(AlertType::DRONE_RECEDING);
+
         case ThreatLevel::NONE:
         default:
-            // No audio alert for low/none threat
             static const AudioAlertConfig no_alert(0, 0, 24000, 0, 0, AlertPriority::LOW);
             return no_alert;
     }
@@ -131,32 +130,17 @@ void AudioAlertManager::play_alert(const AudioAlertConfig& config) noexcept {
     
     // Update current priority
     current_priority_ = config.priority;
-    
-    // Initialize audio only once
-    if (!audio_initialized_) {
-        audio::set_rate(audio::Rate::Hz_24000);
-        audio::output::start();
-        audio_initialized_ = true;
-    }
-    
-    // Play beep sequence
-    for (uint8_t i = 0; i < config.beep_count; ++i) {
-        // Play beep
+
+    // Play beep via baseband message — no audio pipeline init needed.
+    // Other apps (AIS, POCSAG, Search, WeatherStation) all call
+    // request_audio_beep() directly without audio::set_rate() or audio::output::start().
+    // Those functions are for analog audio reception (FM demod), not for beep.
+    if (config.beep_count > 0) {
         baseband::request_audio_beep(
             config.frequency_hz,
             config.sample_rate_hz,
             config.duration_ms
         );
-        
-        // Wait for gap between beeps (if not last beep)
-        if (i < config.beep_count - 1 && config.beep_gap_ms > 0) {
-            // Note: Beep gaps are not yet implemented due to timer constraints.
-            // All beeps in a sequence will play immediately without spacing.
-            // Future implementation should use a timer to properly space beeps
-            // according to beep_gap_ms.
-            // For now, we rely on the baseband's non-blocking nature
-            // and let the next beep be queued.
-        }
     }
 }
 

@@ -310,6 +310,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
     portapack::receiver_model.enable();
 
+    // Set default headphone volume to 70/99 if not already set higher
+    if (portapack::receiver_model.normalized_headphone_volume() < 70) {
+        portapack::receiver_model.set_normalized_headphone_volume(70);
+    }
+
     scanner_thread_->start();
 
     scanning_ = false;

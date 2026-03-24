@@ -137,9 +137,6 @@ private:
     // Audio alerts enabled flag
     static bool enabled_;
     
-    // Audio initialization flag (to avoid repeated initialization)
-    static bool audio_initialized_;
-    
     // Current alert priority (for priority override logic)
     static AlertPriority current_priority_;
 };
