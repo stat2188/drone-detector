@@ -17,6 +17,7 @@
 #include "audio_alerts.hpp"
 #include "baseband_api.hpp"
 #include "constants.hpp"
+#include "ch.h"
 
 namespace drone_analyzer {
 
@@ -26,6 +27,7 @@ namespace drone_analyzer {
 
 bool AudioAlertManager::enabled_ = true;
 AlertPriority AudioAlertManager::current_priority_ = AlertPriority::LOW;
+uint32_t AudioAlertManager::last_beep_tick_ = 0;
 
 // ============================================================================
 // AudioAlertConfig Implementatio
@@ -112,36 +114,44 @@ const AudioAlertConfig& AudioAlertManager::get_threat_alert_config(ThreatLevel t
 }
 
 void AudioAlertManager::play_alert(const AudioAlertConfig& config) noexcept {
-    // Check if audio alerts are enabled
     if (!enabled_) {
         return;
     }
-    
-    // Check if priority is LOW (no audio alert)
+
     if (config.priority == AlertPriority::LOW) {
         return;
     }
-    
-    // Priority override logic: only play if priority is higher or equal to current
-    if (config.priority < current_priority_) {
-        // Lower priority alert, don't play
+
+    // Priority decay: reset gate after beep duration + 200ms margin
+    // This ensures next alert at any level can play
+    const uint32_t now = chTimeNow();
+    constexpr uint32_t PRIORITY_DECAY_MS = 500;
+    if (current_priority_ != AlertPriority::LOW) {
+        if ((now - last_beep_tick_) > PRIORITY_DECAY_MS) {
+            current_priority_ = AlertPriority::LOW;
+        }
+    }
+
+    // CRITICAL always interrupts: stop current beep, play immediately
+    if (config.priority == AlertPriority::CRITICAL) {
+        if (current_priority_ != AlertPriority::LOW) {
+            baseband::request_beep_stop();
+        }
+        current_priority_ = AlertPriority::CRITICAL;
+        last_beep_tick_ = now;
+        baseband::request_audio_beep(config.frequency_hz, config.sample_rate_hz, config.duration_ms);
         return;
     }
-    
-    // Update current priority
-    current_priority_ = config.priority;
 
-    // Play beep via baseband message — no audio pipeline init needed.
-    // Other apps (AIS, POCSAG, Search, WeatherStation) all call
-    // request_audio_beep() directly without audio::set_rate() or audio::output::start().
-    // Those functions are for analog audio reception (FM demod), not for beep.
-    if (config.beep_count > 0) {
-        baseband::request_audio_beep(
-            config.frequency_hz,
-            config.sample_rate_hz,
-            config.duration_ms
-        );
+    // Lower or equal priority: skip if higher priority is active
+    if (config.priority < current_priority_) {
+        return;
     }
+
+    // Play alert
+    current_priority_ = config.priority;
+    last_beep_tick_ = now;
+    baseband::request_audio_beep(config.frequency_hz, config.sample_rate_hz, config.duration_ms);
 }
 
 void AudioAlertManager::play_alert(AlertType alert_type) noexcept {

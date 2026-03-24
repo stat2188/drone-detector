@@ -139,6 +139,9 @@ private:
     
     // Current alert priority (for priority override logic)
     static AlertPriority current_priority_;
+    
+    // Timestamp of last beep (for priority decay)
+    static uint32_t last_beep_tick_;
 };
 
 } // namespace drone_analyzer
