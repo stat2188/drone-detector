@@ -152,9 +152,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);
             baseband::set_spectrum(SWEEP_SLICE_BW, 31);
 
-            // Stop scanner thread during sweep (UI drives tuning)
+            // Stop scanner thread and scanner during sweep (UI drives tuning)
             if (scanner_thread_ != nullptr) {
                 scanner_thread_->set_scanning(false);
+            }
+            if (scanner_ptr_ != nullptr) {
+                (void)scanner_ptr_->stop_scanning();
             }
             if (scanning_) {
                 scanning_ = false;
@@ -172,6 +175,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             composite_active_ = false;
             drone_display_.set_composite_mode(false);
             button_mode_.set_text("Mode");
+            spectrum_fifo_ = nullptr;
 
             // Restore normal bandwidth
             portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
@@ -376,6 +380,9 @@ void DroneScannerUI::on_show() {
 void DroneScannerUI::on_hide() {
     if (scanning_) {
         scanner_thread_->set_scanning(false);
+        if (scanner_ptr_ != nullptr) {
+            (void)scanner_ptr_->stop_scanning();
+        }
         baseband::spectrum_streaming_stop();
         scanning_ = false;
         button_start_stop_.set_text("Start");
