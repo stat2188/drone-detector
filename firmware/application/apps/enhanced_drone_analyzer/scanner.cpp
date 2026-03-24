@@ -115,7 +115,8 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , state_transition_allowed_()
     , alert_callback_in_progress_()
     , rssi_detector_()
-    , histogram_processor_() {
+    , histogram_processor_()
+    , rssi_median_filter_() {
 
     // Initialize mutex
     chMtxInit(&mutex_);
