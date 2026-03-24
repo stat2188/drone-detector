@@ -28,6 +28,7 @@ DroneSettings::DroneSettings() noexcept
     , dwell_enabled(false)
     , confirm_count_enabled(false)
     , noise_blacklist_enabled(false)
+    , spectrum_detection_enabled(false)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000) {  // Default 20 MHz (matches SWEEP_BANDWIDTH)
@@ -48,9 +49,10 @@ void DroneSettings::reset_to_defaults() noexcept {
     
     min_threat_level = ThreatLevel::LOW;
     
-    dwell_enabled = true;
+    dwell_enabled = false;
     confirm_count_enabled = false;
     noise_blacklist_enabled = false;
+    spectrum_detection_enabled = false;
     
     sweep_start_freq = SWEEP_DEFAULT_START_HZ;
     sweep_end_freq = SWEEP_DEFAULT_END_HZ;
@@ -83,6 +85,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(12)}, 8, "Confirm", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Blklist", false)
+    , check_spectrum_detection_({UI_POS_X(15), UI_POS_Y(12)}, 4, "Spec", false)
     , field_sweep_start_({UI_POS_X(1), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_end_({UI_POS_X(10), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_step_({UI_POS_X(1), UI_POS_Y(8)}, 5, {1000, 99999}, 1000, ' ')
@@ -102,6 +105,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     settings_.dwell_enabled = config.dwell_enabled;
     settings_.confirm_count_enabled = config.confirm_count_enabled;
     settings_.noise_blacklist_enabled = config.noise_blacklist_enabled;
+    settings_.spectrum_detection_enabled = config.spectrum_detection_enabled;
 
     add_children({
         &labels_,
@@ -114,6 +118,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_dwell_enabled_,
         &check_confirm_count_,
         &check_noise_blacklist_,
+        &check_spectrum_detection_,
         &field_sweep_start_,
         &field_sweep_end_,
         &field_sweep_step_,
@@ -136,6 +141,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     check_dwell_enabled_.set_value(settings_.dwell_enabled);
     check_confirm_count_.set_value(settings_.confirm_count_enabled);
     check_noise_blacklist_.set_value(settings_.noise_blacklist_enabled);
+    check_spectrum_detection_.set_value(settings_.spectrum_detection_enabled);
 
     // Sweep frequency range fields (GHz → MHz for display)
     field_sweep_start_.set_value(static_cast<int32_t>(settings_.sweep_start_freq / 1000000));
@@ -156,6 +162,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.dwell_enabled = settings_.dwell_enabled;
             updated_config.confirm_count_enabled = settings_.confirm_count_enabled;
             updated_config.noise_blacklist_enabled = settings_.noise_blacklist_enabled;
+            updated_config.spectrum_detection_enabled = settings_.spectrum_detection_enabled;
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
             if (err != ErrorCode::SUCCESS) {
@@ -200,6 +207,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 "sweep_end_mhz=%lu\n", (unsigned long)(settings_.sweep_end_freq / 1000000));
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "sweep_step_khz=%lu\n", (unsigned long)(settings_.sweep_step_freq / 1000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "spectrum_detection=%s\n", settings_.spectrum_detection_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "freqman_path=DRONES\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -286,6 +295,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
     check_noise_blacklist_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.noise_blacklist_enabled = v;
+        settings_dirty_ = true;
+    };
+    check_spectrum_detection_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.spectrum_detection_enabled = v;
         settings_dirty_ = true;
     };
 
@@ -459,6 +472,8 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
             settings_.spectrum_visible = parse_bool();
         } else if (key_matches("show_histogram")) {
             settings_.histogram_visible = parse_bool();
+        } else if (key_matches("spectrum_detection")) {
+            settings_.spectrum_detection_enabled = parse_bool();
         }
     };
 
@@ -502,6 +517,7 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         updated_config.dwell_enabled = settings_.dwell_enabled;
         updated_config.confirm_count_enabled = settings_.confirm_count_enabled;
         updated_config.noise_blacklist_enabled = settings_.noise_blacklist_enabled;
+        updated_config.spectrum_detection_enabled = settings_.spectrum_detection_enabled;
 
         const ErrorCode err = scanner_ptr_->set_config(updated_config);
         if (err != ErrorCode::SUCCESS) {
@@ -557,6 +573,7 @@ void DroneSettingsView::apply_settings() noexcept {
     check_dwell_enabled_.set_value(settings_.dwell_enabled);
     check_confirm_count_.set_value(settings_.confirm_count_enabled);
     check_noise_blacklist_.set_value(settings_.noise_blacklist_enabled);
+    check_spectrum_detection_.set_value(settings_.spectrum_detection_enabled);
     field_sweep_start_.set_value(static_cast<int32_t>(settings_.sweep_start_freq / 1000000));
     field_sweep_end_.set_value(static_cast<int32_t>(settings_.sweep_end_freq / 1000000));
     field_sweep_step_.set_value(static_cast<int32_t>(settings_.sweep_step_freq / 1000));

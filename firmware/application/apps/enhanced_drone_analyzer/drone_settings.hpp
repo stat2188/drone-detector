@@ -42,6 +42,7 @@ struct DroneSettings {
     bool dwell_enabled;
     bool confirm_count_enabled;
     bool noise_blacklist_enabled;
+    bool spectrum_detection_enabled;
     
     // Sweep frequency range (Hz)
     FreqHz sweep_start_freq;
@@ -134,6 +135,7 @@ private:
     ui::Checkbox check_dwell_enabled_;
     ui::Checkbox check_confirm_count_;
     ui::Checkbox check_noise_blacklist_;
+    ui::Checkbox check_spectrum_detection_;
 
     // Sweep frequency range fields (MHz)
     ui::NumberField field_sweep_start_;

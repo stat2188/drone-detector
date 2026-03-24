@@ -39,6 +39,7 @@ struct ScanConfig {
     bool dwell_enabled{false};           // Stay on frequency when signal detected
     bool confirm_count_enabled{false};   // Require multiple confirmations before creating drone
     bool noise_blacklist_enabled{false}; // Skip frequencies with persistent noise
+    bool spectrum_detection_enabled{false}; // Detect drone signals by spectrum shape (U/V peaks)
     
     /**
      * @brief Default constructor
@@ -462,6 +463,16 @@ private:
      * @return ErrorCode::SUCCESS if valid, error code otherwise
      */
     [[nodiscard]] ErrorCode validate_config_internal(const ScanConfig& config) const noexcept;
+
+    /**
+     * @brief Internal: Analyze spectrum shape for U/V signal peaks
+     * @param spectrum Channel spectrum data (256 bins, 0-255 each)
+     * @param out_rssi Estimated RSSI in dBm if signal detected
+     * @return true if drone-like signal detected (elevated peak with width)
+     * @note Noise floor = flat line. Signal = elevated U/V peak above noise.
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
+     */
+    [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) const noexcept;
     
     // References to dependencies
     DatabaseManager& database_;
