@@ -569,6 +569,9 @@ void DroneScannerUI::refresh_ui() noexcept {
         drone_type_display_timer_ = 0;
     }
 
+    // Drive SOS/multi-beep pattern at ~60Hz
+    AudioAlertManager::update();
+
     set_dirty();
 }
 

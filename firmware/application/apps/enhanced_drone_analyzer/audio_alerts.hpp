@@ -80,68 +80,49 @@ struct AudioAlertConfig {
  */
 class AudioAlertManager {
 public:
-    /**
-     * @brief Get alert configuration for alert type
-     * @param alert_type Alert type
-     * @return Audio alert configuration
-     */
     static const AudioAlertConfig& get_alert_config(AlertType alert_type) noexcept;
-    
-    /**
-     * @brief Get alert configuration for threat level
-     * @param threat_level Threat level
-     * @return Audio alert configuration
-     */
     static const AudioAlertConfig& get_threat_alert_config(ThreatLevel threat_level) noexcept;
-    
-    /**
-     * @brief Play audio alert
-     * @param config Audio alert configuration
-     * @note Non-blocking - sends message to baseband processor
-     */
     static void play_alert(const AudioAlertConfig& config) noexcept;
-    
-    /**
-     * @brief Play audio alert for alert type
-     * @param alert_type Alert type
-     * @note Non-blocking - sends message to baseband processor
-     */
     static void play_alert(AlertType alert_type) noexcept;
-    
-    /**
-     * @brief Play audio alert for threat level
-     * @param threat_level Threat level
-     * @note Non-blocking - sends message to baseband processor
-     */
     static void play_alert(ThreatLevel threat_level) noexcept;
-    
-    /**
-     * @brief Stop audio alerts
-     * @note Stops any ongoing audio playback
-     */
     static void stop_alert() noexcept;
-    
-    /**
-     * @brief Check if audio alerts are enabled
-     * @return true if enabled, false otherwise
-     */
     static bool is_enabled() noexcept;
-    
-    /**
-     * @brief Enable or disable audio alerts
-     * @param enabled Enable state
-     */
     static void set_enabled(bool enabled) noexcept;
-    
+
+    /**
+     * @brief Tick-based alert driver — call from UI refresh (~60Hz)
+     * Handles multi-beep patterns (3 beeps for MEDIUM, SOS for HIGH/CRITICAL)
+     */
+    static void update() noexcept;
+
 private:
-    // Audio alerts enabled flag
     static bool enabled_;
-    
-    // Current alert priority (for priority override logic)
     static AlertPriority current_priority_;
-    
-    // Timestamp of last beep (for priority decay)
     static uint32_t last_beep_tick_;
+
+    // SOS / multi-beep pattern state
+    static constexpr uint8_t SOS_PATTERN_LEN = 15;
+    static constexpr uint8_t TRIPLE_PATTERN_LEN = 5;
+
+    // Pattern timing constants (ms)
+    static constexpr uint32_t SHORT_BEEP_MS = 80;
+    static constexpr uint32_t LONG_BEEP_MS = 200;
+    static constexpr uint32_t BEEP_GAP_MS = 80;
+    static constexpr uint32_t LETTER_GAP_MS = 400;
+    static constexpr uint32_t CYCLE_GAP_MS = 1000;
+
+    struct SOSState {
+        bool active;
+        uint32_t freq;
+        uint32_t sample_rate;
+        uint8_t step;
+        uint32_t step_start_tick;
+        bool continuous;   // true = loop (HIGH/CRITICAL), false = one-shot (MEDIUM)
+    };
+
+    static SOSState sos_state_;
+
+    static void start_sos(uint32_t freq, uint32_t sample_rate, bool continuous) noexcept;
 };
 
 } // namespace drone_analyzer
