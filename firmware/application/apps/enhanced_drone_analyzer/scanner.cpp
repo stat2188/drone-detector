@@ -397,7 +397,7 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
 
     const int32_t rssi = extract_rssi(spectrum);
 
-    if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
+    if (rssi > config_.rssi_threshold_dbm) {
         const ErrorCode err = update_tracked_drone_internal(
             current_frequency,
             rssi,
@@ -437,7 +437,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
     const SystemTime now = chTimeNow();
 
-    if (rssi > RSSI_DETECTION_THRESHOLD_DBM) {
+    if (rssi > config_.rssi_threshold_dbm) {
         // Feed RSSI detector only with above-threshold samples
         // to prevent noise from polluting trend analysis
         (void)rssi_detector_.process_rssi_sample(rssi, now);

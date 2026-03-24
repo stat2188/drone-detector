@@ -17,7 +17,7 @@ namespace drone_analyzer {
 DroneSettings::DroneSettings() noexcept
     : scanning_mode(DEFAULT_SCANNING_MODE)
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
-    , scan_sensitivity(50)
+    , scan_sensitivity(38)
     , spectrum_visible(true)
     , histogram_visible(true)
     , drone_list_visible(true)
@@ -25,7 +25,7 @@ DroneSettings::DroneSettings() noexcept
     , audio_alerts_enabled(true)
     , alert_rssi_threshold_dbm(RSSI_HIGH_THREAT_THRESHOLD_DBM)
     , min_threat_level(ThreatLevel::LOW)
-    , dwell_enabled(true)
+    , dwell_enabled(false)
     , confirm_count_enabled(false)
     , noise_blacklist_enabled(false)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
@@ -36,7 +36,7 @@ DroneSettings::DroneSettings() noexcept
 void DroneSettings::reset_to_defaults() noexcept {
     scanning_mode = DEFAULT_SCANNING_MODE;
     scan_interval_ms = SCAN_CYCLE_INTERVAL_MS;
-    scan_sensitivity = 50;
+    scan_sensitivity = 38;
     
     spectrum_visible = true;
     histogram_visible = true;
@@ -65,7 +65,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     : ui::View()
     , labels_({
         {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(3)}, "RSSI(dBm):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(3)}, "Vol:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(5)}, "Sweep(MHz):", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(9), UI_POS_Y(5)}, "-", Theme::getInstance()->fg_light->foreground},
@@ -75,7 +75,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {"-", 0},
     })
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
-    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 4, {-90, -20}, 1, ' ')
+    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(3)}, 2, {0, 99}, 1, ' ')
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(10)}, 6, "Audio", false)
     , check_spectrum_visible_({UI_POS_X(15), UI_POS_Y(10)}, 5, "Spec", false)
@@ -124,7 +124,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     });
 
     field_scan_interval_.set_value(settings_.scan_interval_ms);
-    field_rssi_threshold_.set_value(settings_.alert_rssi_threshold_dbm);
+    // Convert dBm threshold to sensitivity: sens = (dbm + 120) * 5 / 4
+    {
+        const int32_t sens = (settings_.alert_rssi_threshold_dbm + 120) * 5 / 4;
+        field_rssi_threshold_.set_value(sens < 0 ? 0 : (sens > 100 ? 100 : sens));
+    }
     field_volume_.set_value(portapack::receiver_model.normalized_headphone_volume());
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);
@@ -178,6 +182,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 "spectrum_mode=SEQUENTIAL\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "scan_interval_ms=%lu\n", (unsigned long)settings_.scan_interval_ms);
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sensitivity=%u\n", (unsigned)settings_.scan_sensitivity);
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "rssi_threshold_db=%ld\n", (long)settings_.alert_rssi_threshold_dbm);
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -238,7 +244,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     field_rssi_threshold_.on_change = [this](int32_t v) {
-        settings_.alert_rssi_threshold_dbm = v;
+        // Convert sensitivity (0-100) to dBm threshold (-120 to -40)
+        settings_.alert_rssi_threshold_dbm = -120 + (v * 4 / 5);
+        settings_.scan_sensitivity = static_cast<uint8_t>(v);
         settings_dirty_ = true;
     };
 
@@ -425,6 +433,11 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
             settings_.sweep_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
         } else if (key_matches("scan_interval_ms")) {
             settings_.scan_interval_ms = static_cast<uint32_t>(parse_int());
+        } else if (key_matches("sensitivity")) {
+            const int32_t sens = parse_int();
+            settings_.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
+            // Convert sensitivity to dBm: dbm = -120 + sens * 4 / 5
+            settings_.alert_rssi_threshold_dbm = -120 + (settings_.scan_sensitivity * 4 / 5);
         } else if (key_matches("rssi_threshold_db")) {
             bool negative = (val_len > 0 && val_start[0] == '-');
             const uint8_t* num_start = negative ? val_start + 1 : val_start;
@@ -532,7 +545,11 @@ ErrorCode DroneSettingsView::validate_settings() const noexcept {
 
 void DroneSettingsView::apply_settings() noexcept {
     field_scan_interval_.set_value(settings_.scan_interval_ms);
-    field_rssi_threshold_.set_value(settings_.alert_rssi_threshold_dbm);
+    // Convert dBm threshold to sensitivity: sens = (dbm + 120) * 5 / 4
+    {
+        const int32_t sens = (settings_.alert_rssi_threshold_dbm + 120) * 5 / 4;
+        field_rssi_threshold_.set_value(sens < 0 ? 0 : (sens > 100 ? 100 : sens));
+    }
     field_volume_.set_value(portapack::receiver_model.normalized_headphone_volume());
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);
