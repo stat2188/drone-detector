@@ -277,4 +277,8 @@ void AudioAlertManager::set_enabled(bool enabled) noexcept {
     }
 }
 
+bool AudioAlertManager::is_sos_looping() noexcept {
+    return sos_state_.active && sos_state_.continuous;
+}
+
 } // namespace drone_analyzer

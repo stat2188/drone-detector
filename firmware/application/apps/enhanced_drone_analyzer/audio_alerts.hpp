@@ -88,6 +88,7 @@ public:
     static void stop_alert() noexcept;
     static bool is_enabled() noexcept;
     static void set_enabled(bool enabled) noexcept;
+    static bool is_sos_looping() noexcept;
 
     /**
      * @brief Tick-based alert driver — call from UI refresh (~60Hz)

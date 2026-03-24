@@ -530,8 +530,9 @@ void DroneScannerUI::refresh_ui() noexcept {
 
     drone_display_.update_display_data(display_data);
 
-    // Stop SOS alert if no HIGH/CRITICAL threats remain
-    {
+    // Stop looping SOS alert if no HIGH/CRITICAL threats remain
+    // (MEDIUM uses one-shot alerts — don't kill those)
+    if (AudioAlertManager::is_sos_looping()) {
         bool has_high_threat = false;
         for (size_t i = 0; i < display_data.drone_count; ++i) {
             if (display_data.drones[i].threat >= ThreatLevel::HIGH) {
