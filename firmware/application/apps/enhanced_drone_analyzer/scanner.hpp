@@ -288,6 +288,27 @@ public:
     // ========================================================================
 
     /**
+     * @brief Get frequency lock count
+     * @return Current lock count
+     * @note Thread-safe: acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    [[nodiscard]] uint32_t get_freq_lock_count() const noexcept;
+
+    /**
+     * @brief Set frequency lock count
+     * @param count New lock count
+     * @note Thread-safe: acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    void set_freq_lock_count(uint32_t count) noexcept;
+
+    /**
+     * @brief Get locked frequency
+     * @return Currently locked frequency (0 if not locked)
+     * @note Thread-safe: acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    [[nodiscard]] FreqHz get_locked_frequency() const noexcept;
+
+    /**
      * @brief Get current drone type string
      * @param buffer Destination buffer for drone type string
      * @param buffer_size Size of destination buffer (must be >= 2)
@@ -297,6 +318,39 @@ public:
      * @note Copies to caller's buffer while holding mutex to prevent race conditions
      */
     [[nodiscard]] ErrorCode get_current_drone_type(char* buffer, size_t buffer_size) const noexcept;
+
+    /**
+     * @brief Clear all tracked drones
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    void clear_tracked_drones() noexcept;
+
+    /**
+     * @brief Reset scanner frequency to first database entry
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    void reset_frequency() noexcept;
+
+    /**
+     * @brief Remove drones not seen since stale timeout
+     * @param current_time Current system time
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    void remove_stale_drones(SystemTime current_time) noexcept;
+
+    /**
+     * @brief Set the alert callback function
+     * @param callback Function to call when alerts are triggered
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    void set_alert_callback(ThreatAlertCallback callback) noexcept;
+
+    /**
+     * @brief Enable or disable median filter for RSSI spike rejection
+     * @param enabled true to enable, false to disable
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    void set_median_filter_enabled(bool enabled) noexcept;
 
     /**
      * @brief Get filtered RSSI through median filter
@@ -418,7 +472,15 @@ private:
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) const noexcept;
-    
+
+    /**
+     * @brief Internal: Trigger alert callback if set
+     * @param threat_level Threat level to report
+     * @note Re-entrant safe via AtomicFlag guard
+     * @pre Mutex must NOT be held (callback must be lock-free)
+     */
+    void trigger_alert(ThreatLevel threat_level) noexcept;
+
     // References to dependencies
     DatabaseManager& database_;
     HardwareController& hardware_;

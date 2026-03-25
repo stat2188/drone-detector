@@ -151,8 +151,8 @@ private:
     ui::NumberField field_sweep_step_;
 
     ui::Button button_defaults_;
-    ui::Button button_save_;
     ui::Button button_about_;
+    ui::Button button_save_;
 
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;

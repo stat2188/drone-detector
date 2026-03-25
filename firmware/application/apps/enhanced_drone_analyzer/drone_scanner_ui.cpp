@@ -138,12 +138,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             drone_display_.set_composite_mode(true);
             button_mode_.set_text("Sweep");
 
-            // Clear composite buffer
-            for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
-                composite_buffer_[i] = 0;
-            }
-            drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
-
             // Read sweep range from scan config
             ScanConfig cfg;
             if (scanner_ptr_ != nullptr) {
@@ -154,14 +148,21 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             sweep_step_hz_ = cfg.sweep_step_freq;
             if (sweep_step_hz_ == 0) sweep_step_hz_ = SWEEP_SLICE_BW;
 
+            // Validate: start must be < end, step must be > 0
+            if (sweep_start_ >= sweep_end_) {
+                sweep_end_ = sweep_start_ + SWEEP_SLICE_BW;
+            }
+
             // Calculate total steps (each step = one 20 MHz slice, up to 240 pixels)
-            if (sweep_start_ < sweep_end_ && sweep_step_hz_ > 0) {
-                uint32_t total = static_cast<uint32_t>((sweep_end_ - sweep_start_) / sweep_step_hz_);
-                if (total > COMPOSITE_SIZE) total = COMPOSITE_SIZE;
-                sweep_total_steps_ = static_cast<uint16_t>(total);
-                if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
-            } else {
-                sweep_total_steps_ = 1;
+            const FreqHz total_range = sweep_end_ - sweep_start_;
+            uint32_t total = static_cast<uint32_t>(total_range / sweep_step_hz_);
+            if (total > COMPOSITE_SIZE) total = COMPOSITE_SIZE;
+            sweep_total_steps_ = static_cast<uint16_t>(total);
+            if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
+
+            // Clear composite buffer
+            for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+                composite_buffer_[i] = 0;
             }
             sweep_step_index_ = 0;
 
@@ -401,15 +402,17 @@ void DroneScannerUI::on_show() {
         sweep_step_hz_ = cfg.sweep_step_freq;
         if (sweep_step_hz_ == 0) sweep_step_hz_ = SWEEP_SLICE_BW;
 
-        // Recalculate steps
-        if (sweep_start_ < sweep_end_ && sweep_step_hz_ > 0) {
-            uint32_t total = static_cast<uint32_t>((sweep_end_ - sweep_start_) / sweep_step_hz_);
-            if (total > COMPOSITE_SIZE) total = COMPOSITE_SIZE;
-            sweep_total_steps_ = static_cast<uint16_t>(total);
-            if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
-        } else {
-            sweep_total_steps_ = 1;
+        // Validate: start must be < end
+        if (sweep_start_ >= sweep_end_) {
+            sweep_end_ = sweep_start_ + SWEEP_SLICE_BW;
         }
+
+        // Recalculate steps
+        const FreqHz total_range = sweep_end_ - sweep_start_;
+        uint32_t total = static_cast<uint32_t>(total_range / sweep_step_hz_);
+        if (total > COMPOSITE_SIZE) total = COMPOSITE_SIZE;
+        sweep_total_steps_ = static_cast<uint16_t>(total);
+        if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
         sweep_step_index_ = 0;
 
         // Clear composite and update display
@@ -677,42 +680,44 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     constexpr FreqHz bin_bw = SWEEP_SLICE_BW / 256;  // ~78125 Hz per bin at 20 MHz
     constexpr size_t EDGE_SKIP = 8;  // Skip first/last bins — baseband filter roll-off
 
-    // Map each valid FFT bin to a global frequency, then to a pixel position
-    for (size_t bin = 0; bin < 256; ++bin) {
-        // DC spike
-        if (bin >= 120 && bin < 136) continue;
-        // Edge bins: baseband filter roll-off creates fake high power
-        if (bin < EDGE_SKIP || bin >= 256 - EDGE_SKIP) continue;
+    // Precompute sweep range for pixel mapping (invariant in loop)
+    const FreqHz sweep_range = sweep_end_ - sweep_start_;
+    if (sweep_range == 0) {
+        // Degenerate sweep range — skip pixel mapping, just advance
+    } else {
+        // Map each valid FFT bin to a global frequency, then to a pixel position
+        for (size_t bin = 0; bin < 256; ++bin) {
+            // DC spike
+            if (bin >= 120 && bin < 136) continue;
+            // Edge bins: baseband filter roll-off creates fake high power
+            if (bin < EDGE_SKIP || bin >= 256 - EDGE_SKIP) continue;
 
-        const uint8_t power = spectrum.db[bin];
-        if (power < min_color_power_) continue;
+            const uint8_t power = spectrum.db[bin];
+            if (power < min_color_power_) continue;
 
-        // Bin frequency relative to center (bin 128 = DC)
-        const int32_t offset_hz = (static_cast<int32_t>(bin) - 128) * static_cast<int32_t>(bin_bw);
-        if (offset_hz < 0 && static_cast<FreqHz>(-offset_hz) > center_freq) continue;
-        const FreqHz bin_freq = center_freq + static_cast<FreqHz>(offset_hz);
-        if (bin_freq < sweep_start_ || bin_freq >= sweep_end_) continue;
+            // Bin frequency relative to center (bin 128 = DC)
+            const int32_t offset_hz = (static_cast<int32_t>(bin) - 128) * static_cast<int32_t>(bin_bw);
+            if (offset_hz < 0 && static_cast<FreqHz>(-offset_hz) > center_freq) continue;
+            const FreqHz bin_freq = center_freq + static_cast<FreqHz>(offset_hz);
+            if (bin_freq < sweep_start_ || bin_freq >= sweep_end_) continue;
 
-        // Map to pixel (0..239)
-        const FreqHz sweep_range = sweep_end_ - sweep_start_;
-        const uint32_t pixel = static_cast<uint32_t>(
-            ((bin_freq - sweep_start_) * COMPOSITE_SIZE) / sweep_range);
-        if (pixel >= COMPOSITE_SIZE) continue;
+            // Map to pixel (0..239) — safe: bin_freq < sweep_end_ ensures numerator < sweep_range
+            const uint32_t pixel = static_cast<uint32_t>(
+                ((bin_freq - sweep_start_) * COMPOSITE_SIZE) / sweep_range);
+            if (pixel >= COMPOSITE_SIZE) continue;
 
-        // Keep max power per pixel across all slices in current pass
-        if (power > composite_buffer_[pixel]) {
-            composite_buffer_[pixel] = power;
+            // Keep max power per pixel across all slices in current pass
+            if (power > composite_buffer_[pixel]) {
+                composite_buffer_[pixel] = power;
+            }
         }
     }
 
     // Advance to next sweep step
     sweep_step_index_++;
-    if (sweep_step_index_ >= sweep_total_steps_) {
+    const bool pass_complete = (sweep_step_index_ >= sweep_total_steps_);
+    if (pass_complete) {
         sweep_step_index_ = 0;
-        // Full pass complete — clear for next pass (fresh sweep)
-        for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
-            composite_buffer_[i] = 0;
-        }
     }
 
     // Retune to next frequency
@@ -720,9 +725,16 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     portapack::receiver_model.set_target_frequency(rf::Frequency(next_freq));
     current_frequency_ = next_freq;
 
-    // Update display
+    // Update display (show current pass data BEFORE clearing for next pass)
     drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
     drone_display_.set_dirty();
+
+    // Clear buffer AFTER display update for next pass (avoids blank frame flicker)
+    if (pass_complete) {
+        for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+            composite_buffer_[i] = 0;
+        }
+    }
 
     // Restart streaming for next slice
     baseband::spectrum_streaming_start();
