@@ -197,7 +197,6 @@ void AudioAlertManager::update() noexcept {
 
 void AudioAlertManager::play_alert(const AudioAlertConfig& config) noexcept {
     if (!enabled_) return;
-    if (config.priority == AlertPriority::LOW) return;
 
     // HARD BLOCK: if SOS is active, drop everything except CRITICAL.
     // Prevents beep queue buildup → hard fault.
@@ -222,6 +221,15 @@ void AudioAlertManager::play_alert(const AudioAlertConfig& config) noexcept {
         if ((now - last_beep_tick_) > PRIORITY_DECAY_MS) {
             current_priority_ = AlertPriority::LOW;
         }
+    }
+
+    // LOW: single beep (only if no higher priority active)
+    if (config.priority == AlertPriority::LOW) {
+        if (current_priority_ >= AlertPriority::MEDIUM) return;
+        current_priority_ = AlertPriority::LOW;
+        last_beep_tick_ = now;
+        baseband::request_audio_beep(config.frequency_hz, config.sample_rate_hz, config.duration_ms);
+        return;
     }
 
     // CRITICAL: start SOS continuous
