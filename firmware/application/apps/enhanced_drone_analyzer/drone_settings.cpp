@@ -68,7 +68,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , labels_({
         {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(13), UI_POS_Y(3)}, "Vol:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(5)}, "Sweep(MHz):", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(9), UI_POS_Y(5)}, "-", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(7)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
@@ -78,21 +78,21 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     })
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
-    , field_volume_({UI_POS_X(17), UI_POS_Y(3)}, 2, {0, 99}, 1, ' ')
-    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(10)}, 6, "Audio", false)
-    , check_spectrum_visible_({UI_POS_X(15), UI_POS_Y(10)}, 5, "Spec", false)
-    , check_histogram_visible_({UI_POS_X(15), UI_POS_Y(11)}, 5, "Hist", false)
+    , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
+    , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
+    , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "Spec", false)
+    , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(11)}, 5, "Hist", false)
     , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
-    , check_confirm_count_({UI_POS_X(1), UI_POS_Y(12)}, 8, "Confirm", false)
-    , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Blklist", false)
-    , check_spectrum_detection_({UI_POS_X(15), UI_POS_Y(12)}, 4, "Spec", false)
+    , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
+    , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
+    , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(13)}, 4, "Spec", false)
     , field_sweep_start_({UI_POS_X(1), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_end_({UI_POS_X(10), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_step_({UI_POS_X(1), UI_POS_Y(8)}, 5, {1000, 99999}, 1000, ' ')
-    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(5), UI_POS_WIDTH(14), 28}, "DEFAULT")
-    , button_save_({UI_POS_X(16), UI_POS_Y_BOTTOM(5), UI_POS_WIDTH(14), 28}, "SAVE")
-    , button_cancel_({UI_POS_X(16), UI_POS_Y_BOTTOM(3), UI_POS_WIDTH(14), 28}, "CANCEL")
-    , button_about_({UI_POS_X(0), UI_POS_Y_BOTTOM(3), UI_POS_WIDTH(14), 28}, "ABOUT")
+    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(3), UI_POS_WIDTH(14), 28}, "DEFAULT")
+    , button_save_({UI_POS_X(16), UI_POS_Y_BOTTOM(3), UI_POS_WIDTH(14), 28}, "SAVE")
+    , button_cancel_({UI_POS_X(16), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(14), 28}, "CANCEL")
+    , button_about_({UI_POS_X(0), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(14), 28}, "ABOUT")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)

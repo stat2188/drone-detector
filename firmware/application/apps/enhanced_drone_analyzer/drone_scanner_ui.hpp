@@ -88,11 +88,11 @@ private:
     ui::AudioVolumeField field_volume_{{UI_POS_X_RIGHT(2), UI_POS_Y(0)}};
 
     ui::Labels filter_labels_{
-        {{UI_POS_X(0), 274}, "FILT:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), 268}, "FILT:", Theme::getInstance()->fg_light->foreground},
     };
 
     ui::OptionsField field_filter_{
-        {UI_POS_X(5), 274},
+        {UI_POS_X(5), 268},
         4,
         {
             {"OFF ", SPECTRUM_FILTER_OFF},
@@ -100,12 +100,12 @@ private:
             {"HIGH", SPECTRUM_FILTER_HIGH},
         }};
 
-    ui::Button button_median_{{UI_POS_X(10), 274, UI_POS_WIDTH(3), 16}, "MED"};
+    ui::Button button_median_{{UI_POS_X(10), 268, UI_POS_WIDTH(3), 16}, "MED"};
 
-    ui::Button button_start_stop_{{UI_POS_X(0), 290, UI_POS_WIDTH(6), 28}, "Start"};
-    ui::Button button_mode_{{UI_POS_X(7), 290, UI_POS_WIDTH(5), 28}, "Mode"};
-    ui::Button button_load_{{UI_POS_X(13), 290, UI_POS_WIDTH(5), 28}, "Load"};
-    ui::Button button_settings_{{UI_POS_X(19), 290, UI_POS_WIDTH(5), 28}, "Setup"};
+    ui::Button button_start_stop_{{UI_POS_X(0), 284, UI_POS_WIDTH(6), 28}, "Start"};
+    ui::Button button_mode_{{UI_POS_X(7), 284, UI_POS_WIDTH(5), 28}, "Mode"};
+    ui::Button button_load_{{UI_POS_X(13), 284, UI_POS_WIDTH(5), 28}, "Load"};
+    ui::Button button_settings_{{UI_POS_X(19), 284, UI_POS_WIDTH(5), 28}, "Setup"};
 
     FreqHz current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
