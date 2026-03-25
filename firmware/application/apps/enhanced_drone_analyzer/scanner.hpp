@@ -303,7 +303,7 @@ public:
      * @return Filtered or raw RSSI
      */
     [[nodiscard]] int32_t get_filtered_rssi() const noexcept {
-        return median_filter_enabled_ ? rssi_median_filter_.get_filtered() : current_rssi_dbm_;
+        return median_filter_enabled_ ? rssi_median_filter_.get_median() : 0;
     }
 
     /**
