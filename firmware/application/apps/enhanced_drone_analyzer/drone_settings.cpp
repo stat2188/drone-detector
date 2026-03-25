@@ -76,8 +76,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(1), UI_POS_Y(5)}, "Sweep(MHz):", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(9), UI_POS_Y(5)}, "-", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(7)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(15), UI_POS_Y(15)}, "Mar:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(15), UI_POS_Y(17)}, "Wid:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(15), UI_POS_Y(10)}, "Mar:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(15), UI_POS_Y(12)}, "Wid:", Theme::getInstance()->fg_light->foreground},
     })
     , field_scan_mode_({UI_POS_X(0), UI_POS_Y(0)}, 1, {
         {"-", 0},
@@ -92,15 +92,14 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
     , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(13)}, 4, "Spec", false)
-    , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(15)}, 3, {20, 200}, 10, ' ')
-    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(17)}, 2, {2, 20}, 1, ' ')
+    , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(10)}, 3, {20, 200}, 10, ' ')
+    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(12)}, 2, {2, 20}, 1, ' ')
     , field_sweep_start_({UI_POS_X(1), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_end_({UI_POS_X(10), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_step_({UI_POS_X(1), UI_POS_Y(8)}, 5, {1000, 99999}, 1000, ' ')
-    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(3), UI_POS_WIDTH(14), 28}, "DEFAULT")
-    , button_save_({UI_POS_X(16), UI_POS_Y_BOTTOM(3), UI_POS_WIDTH(14), 28}, "SAVE")
-    , button_cancel_({UI_POS_X(16), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(14), 28}, "CANCEL")
-    , button_about_({UI_POS_X(0), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(14), 28}, "ABOUT")
+    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(13), 20}, "DEFAULT")
+    , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(2), 20}, "!")
+    , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(14), 20}, "SAVE")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -135,9 +134,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_sweep_end_,
         &field_sweep_step_,
         &button_defaults_,
-        &button_save_,
-        &button_cancel_,
-        &button_about_
+        &button_about_,
+        &button_save_
     });
 
     field_scan_interval_.set_value(settings_.scan_interval_ms);
@@ -241,10 +239,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         nav_.pop();
     };
 
-    button_cancel_.on_select = [this](ui::Button&) {
-        nav_.pop();
-    };
-
     button_defaults_.on_select = [this](ui::Button&) {
         settings_.reset_to_defaults();
         portapack::receiver_model.set_normalized_headphone_volume(70);
@@ -253,18 +247,15 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     button_about_.on_select = [this](ui::Button&) {
-        static constexpr const char* kAboutMessage =
+        nav_.display_modal("About",
             "Author: Kuznetsov Maxim\n"
-            "Orenburg branch\n"
-            "Greetings to everyone who risks\n"
-            "Support the author:\n"
+            "Orenburg\n"
             "Card: 2202 20202 5787 1695\n"
             "YooMoney: 41001810704697\n"
             "TON: UQCdtMxQB5zbQBOICkY90l\n"
             "TQQqcs8V-V28Bf2AGvl8xOc5HR\n"
             "Telegram: @max_ai_master\n"
-            "TM PowerHamster2188";
-        nav_.display_modal("About Author", kAboutMessage);
+            "TM PowerHamster2188");
     };
 
     field_scan_interval_.on_change = [this](int32_t v) {

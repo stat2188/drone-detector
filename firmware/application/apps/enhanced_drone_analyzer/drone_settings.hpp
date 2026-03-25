@@ -152,7 +152,6 @@ private:
 
     ui::Button button_defaults_;
     ui::Button button_save_;
-    ui::Button button_cancel_;
     ui::Button button_about_;
 
     NavigationView& nav_;

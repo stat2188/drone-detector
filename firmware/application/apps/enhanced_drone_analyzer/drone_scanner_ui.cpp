@@ -105,6 +105,16 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             scanning_ = false;
             button_start_stop_.set_text("Start");
         } else {
+            // If in sweep mode, exit it first
+            if (composite_active_) {
+                composite_active_ = false;
+                drone_display_.set_composite_mode(false);
+                button_mode_.set_text("Mode");
+                spectrum_fifo_ = nullptr;
+                portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
+                portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
+                baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
+            }
             baseband::spectrum_streaming_start();
             (void)scanner_ptr_->start_scanning();
             scanner_thread_->set_scanning(true);
@@ -151,6 +161,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
             portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);
             baseband::set_spectrum(SWEEP_SLICE_BW, 31);
+            spectrum_fifo_ = nullptr;  // Invalidate FIFO — will be updated by ChannelSpectrumConfigMessage
 
             // Stop scanner thread and scanner during sweep (UI drives tuning)
             if (scanner_thread_ != nullptr) {
@@ -374,6 +385,37 @@ void DroneScannerUI::destruct_objects() noexcept {
 void DroneScannerUI::on_show() {
     if (scanner_thread_ != nullptr && !scanner_thread_->is_active()) {
         scanner_thread_->start();
+    }
+
+    // If in sweep mode, reload sweep range from config (Settings may have changed it)
+    if (composite_active_ && scanner_ptr_ != nullptr) {
+        ScanConfig cfg = scanner_ptr_->get_config();
+        sweep_start_ = cfg.sweep_start_freq;
+        sweep_end_ = cfg.sweep_end_freq;
+        sweep_step_hz_ = cfg.sweep_step_freq;
+        if (sweep_step_hz_ == 0) sweep_step_hz_ = SWEEP_SLICE_BW;
+
+        // Recalculate steps
+        if (sweep_start_ < sweep_end_ && sweep_step_hz_ > 0) {
+            uint32_t total = static_cast<uint32_t>((sweep_end_ - sweep_start_) / sweep_step_hz_);
+            if (total > COMPOSITE_SIZE) total = COMPOSITE_SIZE;
+            sweep_total_steps_ = static_cast<uint16_t>(total);
+            if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
+        } else {
+            sweep_total_steps_ = 1;
+        }
+        sweep_step_index_ = 0;
+
+        // Clear composite and update display
+        for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+            composite_buffer_[i] = 0;
+        }
+        drone_display_.set_sweep_range(sweep_start_, sweep_end_);
+        drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
+
+        // Retune to new start frequency
+        portapack::receiver_model.set_target_frequency(rf::Frequency(sweep_start_));
+        current_frequency_ = sweep_start_;
     }
 }
 
@@ -616,8 +658,8 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // Looking Glass pattern: stop → process → retune → start
     baseband::spectrum_streaming_stop();
 
-    // Feed spectrum to scanner for threat detection on current frequency
-    if (scanner_ptr_ != nullptr && composite_active_) {
+    // Feed spectrum to scanner for threat detection ONLY if scanning is active
+    if (scanner_ptr_ != nullptr && scanning_) {
         (void)scanner_ptr_->process_spectrum_message(spectrum);
     }
 
