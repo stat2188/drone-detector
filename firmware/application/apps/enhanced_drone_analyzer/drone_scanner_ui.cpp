@@ -99,14 +99,24 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             return;
         }
         if (scanning_) {
-            scanner_thread_->set_scanning(false);
-            (void)scanner_ptr_->stop_scanning();
-            baseband::spectrum_streaming_stop();
-            scanning_ = false;
-            button_start_stop_.set_text("Start");
-        } else {
+            // Stop
             if (composite_active_) {
-                // Start sweep streaming (sweep is already configured)
+                // Stop sweep streaming
+                baseband::spectrum_streaming_stop();
+                scanning_ = false;
+                button_start_stop_.set_text("Start");
+            } else {
+                // Stop normal scanning
+                scanner_thread_->set_scanning(false);
+                (void)scanner_ptr_->stop_scanning();
+                baseband::spectrum_streaming_stop();
+                scanning_ = false;
+                button_start_stop_.set_text("Start");
+            }
+        } else {
+            // Start
+            if (composite_active_) {
+                // Start sweep streaming
                 baseband::spectrum_streaming_start();
                 scanning_ = true;
                 button_start_stop_.set_text("Stop");
@@ -173,10 +183,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Start");
             }
 
-            // Retune to first sweep frequency (don't start streaming yet — press Start)
+            // Retune to first sweep frequency and start streaming
             drone_display_.set_sweep_range(sweep_start_, sweep_end_);
             portapack::receiver_model.set_target_frequency(rf::Frequency(sweep_start_));
             current_frequency_ = sweep_start_;
+            baseband::spectrum_streaming_start();
+            scanning_ = true;
+            button_start_stop_.set_text("Stop");
 
         } else {
             // Exit sweep mode
@@ -651,12 +664,16 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // Looking Glass pattern: stop → process → retune → start
     baseband::spectrum_streaming_stop();
 
+    // Current sweep step center frequency
+    const FreqHz center_freq = sweep_start_ + static_cast<FreqHz>(sweep_step_index_) * sweep_step_hz_;
+
     // Feed spectrum to scanner for threat detection ONLY if scanning is active
+    // Set scanner frequency to sweep center (not current_frequency_ which is from prev step)
     if (scanner_ptr_ != nullptr && scanning_) {
+        scanner_ptr_->set_sweep_frequency(center_freq);
         (void)scanner_ptr_->process_spectrum_message(spectrum);
     }
 
-    const FreqHz center_freq = sweep_start_ + static_cast<FreqHz>(sweep_step_index_) * sweep_step_hz_;
     constexpr FreqHz bin_bw = SWEEP_SLICE_BW / 256;  // ~78125 Hz per bin at 20 MHz
     constexpr size_t EDGE_SKIP = 8;  // Skip first/last bins — baseband filter roll-off
 

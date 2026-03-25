@@ -299,76 +299,19 @@ public:
     [[nodiscard]] ErrorCode get_current_drone_type(char* buffer, size_t buffer_size) const noexcept;
 
     /**
-     * @brief Get freq lock count
-     * @return Current lock count (0-10)
+     * @brief Get filtered RSSI through median filter
+     * @return Filtered or raw RSSI
      */
-    [[nodiscard]] uint32_t get_freq_lock_count() const noexcept;
+    [[nodiscard]] int32_t get_filtered_rssi() const noexcept {
+        return median_filter_enabled_ ? rssi_median_filter_.get_filtered() : current_rssi_dbm_;
+    }
 
     /**
-     * @brief Set freq lock count
-     * @param count Lock count
+     * @brief Set current frequency for sweep mode
+     * @note Used by UI sweep loop to keep scanner frequency in sync
      */
-    void set_freq_lock_count(uint32_t count) noexcept;
-
-    /**
-     * @brief Get locked frequency
-     * @return Locked frequency (0 if not tracking)
-     */
-    [[nodiscard]] FreqHz get_locked_frequency() const noexcept;
-    
-    /**
-     * @brief Clear all tracked drones
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     */
-    void clear_tracked_drones() noexcept;
-
-    /**
-     * @brief Reset scanner frequency to first entry in database
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     * @note Call after reloading database to start scanning from beginning
-     */
-    void reset_frequency() noexcept;
-    
-    /**
-     * @brief Remove stale drones
-     * @param current_time Current system time
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     */
-    void remove_stale_drones(SystemTime current_time) noexcept;
-    
-    /**
-     * @brief Set alert callback
-     * @param callback Alert callback function
-     * @note Callback will be called when alerts are triggered
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     * @warning The callback function MUST be thread-safe and reentrant-safe
-     * @warning The callback MUST NOT acquire any mutexes or perform blocking operations
-     * @warning The callback MUST execute quickly (preferably < 1ms) to avoid delaying scanner thread
-     */
-    void set_alert_callback(ThreatAlertCallback callback) noexcept;
-    
-    /**
-     * @brief Trigger alert
-     * @param threat_level Threat level to report
-     * @note Calls alert callback if set
-     * @note Callback is invoked OUTSIDE mutex lock to prevent deadlocks
-     * @pre Mutex must be held (LockOrder::DATA_MUTEX) when accessing alert_callback_
-     */
-    void trigger_alert(ThreatLevel threat_level) noexcept;
-
-    /**
-     * @brief Enable or disable median filter on RSSI samples
-     * @param enabled true to enable, false to disable
-     * @note When enabled, median of last 7 RSSI samples is used instead of raw value
-     * @note Resets filter history when toggled
-     */
-    void set_median_filter_enabled(bool enabled) noexcept;
-
-    /**
-     * @brief Check if median filter is enabled
-     */
-    [[nodiscard]] bool is_median_filter_enabled() const noexcept {
-        return median_filter_enabled_;
+    void set_sweep_frequency(FreqHz freq) noexcept {
+        current_frequency_ = freq;
     }
 
     [[nodiscard]] HistogramProcessor& get_histogram_processor() noexcept {
