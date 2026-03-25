@@ -105,21 +105,19 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             scanning_ = false;
             button_start_stop_.set_text("Start");
         } else {
-            // If in sweep mode, exit it first
             if (composite_active_) {
-                composite_active_ = false;
-                drone_display_.set_composite_mode(false);
-                button_mode_.set_text("Mode");
-                spectrum_fifo_ = nullptr;
-                portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
-                portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
-                baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
+                // Start sweep streaming (sweep is already configured)
+                baseband::spectrum_streaming_start();
+                scanning_ = true;
+                button_start_stop_.set_text("Stop");
+            } else {
+                // Start normal scanning
+                baseband::spectrum_streaming_start();
+                (void)scanner_ptr_->start_scanning();
+                scanner_thread_->set_scanning(true);
+                scanning_ = true;
+                button_start_stop_.set_text("Stop");
             }
-            baseband::spectrum_streaming_start();
-            (void)scanner_ptr_->start_scanning();
-            scanner_thread_->set_scanning(true);
-            scanning_ = true;
-            button_start_stop_.set_text("Stop");
         }
     };
 
@@ -175,11 +173,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Start");
             }
 
-            // Retune to first sweep frequency
+            // Retune to first sweep frequency (don't start streaming yet — press Start)
             drone_display_.set_sweep_range(sweep_start_, sweep_end_);
             portapack::receiver_model.set_target_frequency(rf::Frequency(sweep_start_));
             current_frequency_ = sweep_start_;
-            baseband::spectrum_streaming_start();
 
         } else {
             // Exit sweep mode
@@ -188,21 +185,17 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             button_mode_.set_text("Mode");
             spectrum_fifo_ = nullptr;
 
+            // Stop sweep streaming if running
+            if (scanning_) {
+                baseband::spectrum_streaming_stop();
+                scanning_ = false;
+                button_start_stop_.set_text("Start");
+            }
+
             // Restore normal bandwidth
             portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
             portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
             baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
-
-            // Restart normal scanning
-            baseband::spectrum_streaming_start();
-            if (scanner_ptr_ != nullptr) {
-                (void)scanner_ptr_->start_scanning();
-            }
-            if (scanner_thread_ != nullptr) {
-                scanner_thread_->set_scanning(true);
-            }
-            scanning_ = true;
-            button_start_stop_.set_text("Stop");
         }
     };
 

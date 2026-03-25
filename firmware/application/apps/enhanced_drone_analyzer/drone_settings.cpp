@@ -76,8 +76,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(1), UI_POS_Y(5)}, "Sweep(MHz):", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(9), UI_POS_Y(5)}, "-", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(7)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(15), UI_POS_Y(10)}, "Mar:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(15), UI_POS_Y(12)}, "Wid:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(15), UI_POS_Y(7)}, "Mar:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(15), UI_POS_Y(8)}, "Wid:", Theme::getInstance()->fg_light->foreground},
     })
     , field_scan_mode_({UI_POS_X(0), UI_POS_Y(0)}, 1, {
         {"-", 0},
@@ -92,14 +92,14 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
     , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(13)}, 4, "Spec", false)
-    , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(10)}, 3, {20, 200}, 10, ' ')
-    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(12)}, 2, {2, 20}, 1, ' ')
+    , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(7)}, 3, {20, 200}, 10, ' ')
+    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(8)}, 2, {2, 20}, 1, ' ')
     , field_sweep_start_({UI_POS_X(1), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_end_({UI_POS_X(10), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_step_({UI_POS_X(1), UI_POS_Y(8)}, 5, {1000, 99999}, 1000, ' ')
-    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(13), 20}, "DEFAULT")
-    , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(2), 20}, "!")
-    , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(1), UI_POS_WIDTH(14), 20}, "SAVE")
+    , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
+    , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")
+    , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
