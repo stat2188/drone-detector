@@ -860,15 +860,16 @@ void DroneScanner::set_median_filter_enabled(bool enabled) noexcept {
 
 bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) const noexcept {
     constexpr size_t BIN_COUNT = 256;
+    constexpr size_t EDGE_SKIP = 6;  // Skip first/last 6 bins (filter rolloff artifacts)
 
-    // Step 1: Find noise floor = median of all 256 bins
-    // Copy to local buffer, sort (insertion sort for small fixed array)
+    // Step 1: Find noise floor = median of center bins (skip edges)
     uint8_t sorted[BIN_COUNT];
-    for (size_t i = 0; i < BIN_COUNT; ++i) {
-        sorted[i] = spectrum.db[i];
+    size_t sort_count = 0;
+    for (size_t i = EDGE_SKIP; i < BIN_COUNT - EDGE_SKIP; ++i) {
+        sorted[sort_count++] = spectrum.db[i];
     }
-    // Insertion sort (256 elements, embedded-friendly)
-    for (size_t i = 1; i < BIN_COUNT; ++i) {
+    // Insertion sort on center bins
+    for (size_t i = 1; i < sort_count; ++i) {
         const uint8_t key = sorted[i];
         size_t j = i;
         while (j > 0 && sorted[j - 1] > key) {
@@ -877,47 +878,45 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         }
         sorted[j] = key;
     }
-    const uint8_t noise_floor = sorted[BIN_COUNT / 2];  // median
+    const uint8_t noise_floor = sorted[sort_count / 2];  // median
 
-    // Step 2: Find peak bin and peak value
+    // Step 2: Find peak bin and peak value (skip edges)
     uint8_t peak_value = noise_floor;
-    size_t peak_index = 0;
-    for (size_t i = 0; i < BIN_COUNT; ++i) {
+    size_t peak_index = EDGE_SKIP;
+    for (size_t i = EDGE_SKIP; i < BIN_COUNT - EDGE_SKIP; ++i) {
         if (spectrum.db[i] > peak_value) {
             peak_value = spectrum.db[i];
             peak_index = i;
         }
     }
 
-    // Step 3: Peak must be significantly above noise floor
-    // Minimum 12 dB above noise (12 dB ≈ 30 in 0-255 scale)
-    constexpr uint8_t MIN_PEAK_MARGIN = 30;
+    // Step 3: Peak must be significantly above noise floor (configurable)
+    const uint8_t min_margin = config_.spectrum_margin;
     const uint8_t peak_margin = peak_value - noise_floor;
-    if (peak_margin < MIN_PEAK_MARGIN) {
+    if (peak_margin < min_margin) {
         return false;  // No significant signal
     }
 
     // Step 4: Count elevated bins around peak (signal width)
-    // Drone signals span multiple bins; noise spikes are single-bin
-    constexpr uint8_t ELEVATED_THRESHOLD_DIVISOR = 3;  // peak_margin / 3 above noise
-    const uint8_t elevated_threshold = noise_floor + (peak_margin / ELEVATED_THRESHOLD_DIVISOR);
+    // Higher divisor = tighter band, fewer false positives
+    const uint8_t elevated_threshold = noise_floor + (peak_margin / 4);
 
-    // Search left from peak
+    // Search left from peak (stop at edge)
     size_t left = peak_index;
-    while (left > 0 && spectrum.db[left - 1] >= elevated_threshold) {
+    while (left > EDGE_SKIP && spectrum.db[left - 1] >= elevated_threshold) {
         --left;
     }
-    // Search right from peak
+    // Search right from peak (stop at edge)
     size_t right = peak_index;
-    while (right < BIN_COUNT - 1 && spectrum.db[right + 1] >= elevated_threshold) {
+    while (right < BIN_COUNT - EDGE_SKIP - 1 && spectrum.db[right + 1] >= elevated_threshold) {
         ++right;
     }
 
     const size_t signal_width = right - left + 1;
 
-    // Step 5: Signal width must be at least 2 bins (filters single-bin noise spikes)
-    constexpr size_t MIN_SIGNAL_WIDTH = 2;
-    if (signal_width < MIN_SIGNAL_WIDTH) {
+    // Step 5: Signal width must meet minimum (configurable)
+    const size_t min_width = config_.spectrum_min_width;
+    if (signal_width < min_width) {
         return false;  // Too narrow — likely noise spike
     }
 

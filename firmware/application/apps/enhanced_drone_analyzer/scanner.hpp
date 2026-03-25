@@ -40,6 +40,8 @@ struct ScanConfig {
     bool confirm_count_enabled{false};   // Require multiple confirmations before creating drone
     bool noise_blacklist_enabled{false}; // Skip frequencies with persistent noise
     bool spectrum_detection_enabled{false}; // Detect drone signals by spectrum shape (U/V peaks)
+    uint8_t spectrum_margin{50};            // Peak margin above noise (0-200, default 50 ≈ 16 dB)
+    uint8_t spectrum_min_width{4};          // Min signal width in bins (2-20, default 4)
     
     /**
      * @brief Default constructor

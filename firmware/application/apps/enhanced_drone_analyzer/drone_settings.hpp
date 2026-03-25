@@ -43,6 +43,8 @@ struct DroneSettings {
     bool confirm_count_enabled;
     bool noise_blacklist_enabled;
     bool spectrum_detection_enabled;
+    uint8_t spectrum_margin;            // Peak margin above noise (50-200)
+    uint8_t spectrum_min_width;         // Min signal width in bins (2-20)
     
     // Sweep frequency range (Hz)
     FreqHz sweep_start_freq;
@@ -136,6 +138,10 @@ private:
     ui::Checkbox check_confirm_count_;
     ui::Checkbox check_noise_blacklist_;
     ui::Checkbox check_spectrum_detection_;
+
+    // Spectrum detection params
+    ui::NumberField field_spectrum_margin_;
+    ui::NumberField field_spectrum_min_width_;
 
     // Sweep frequency range fields (MHz)
     ui::NumberField field_sweep_start_;
