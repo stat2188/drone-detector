@@ -360,6 +360,9 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
         return tune_result;
     }
 
+    // Reset median filter — old samples from previous frequency are stale
+    rssi_median_filter_.reset();
+
     statistics_.successful_cycles++;
     return ErrorCode::SUCCESS;
 }
@@ -395,14 +398,21 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
     const int32_t rssi = extract_rssi(spectrum);
 
     int32_t effective_rssi = rssi;
-    bool signal_detected = (rssi > config_.rssi_threshold_dbm);
+    bool signal_detected = false;
 
-    // Spectrum shape analysis: optional enhancement, does NOT replace basic threshold
-    if (signal_detected && config_.spectrum_detection_enabled) {
+    if (config_.spectrum_detection_enabled) {
+        // Spectrum primary: margin-gated shape detection
         int32_t spectrum_rssi = RSSI_MIN_DBM;
         if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
+            signal_detected = true;
             if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
         }
+        // RSSI fallback: catch strong signals that margin filters out
+        if (!signal_detected && rssi > config_.rssi_threshold_dbm) {
+            signal_detected = true;
+        }
+    } else {
+        signal_detected = (rssi > config_.rssi_threshold_dbm);
     }
 
     if (signal_detected) {
@@ -435,19 +445,32 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     (void)histogram_processor_.update_histogram(spectrum.db.data(), spectrum.db.size());
 
     const int32_t raw_rssi = extract_rssi(spectrum);
+
+    // Median filter: reject single-sample noise spikes
+    // Feed every sample; use median only when enabled and filter is warm
+    rssi_median_filter_.add(raw_rssi);
+    const int32_t rssi = (median_filter_enabled_ && rssi_median_filter_.is_warm())
+        ? rssi_median_filter_.get_median()
+        : raw_rssi;
+
     const SystemTime now = chTimeNow();
 
-    int32_t effective_rssi = raw_rssi;
-    bool signal_detected = (raw_rssi > config_.rssi_threshold_dbm);
+    int32_t effective_rssi = rssi;
+    bool signal_detected = false;
 
-    // Spectrum shape analysis: optional enhancement, does NOT replace basic threshold
-    if (signal_detected && config_.spectrum_detection_enabled) {
+    if (config_.spectrum_detection_enabled) {
+        // Spectrum primary: margin-gated shape detection
         int32_t spectrum_rssi = RSSI_MIN_DBM;
         if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
+            signal_detected = true;
             if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
         }
-        // If shape analysis rejects but raw_rssi still above threshold → keep detection
-        // Shape analysis refines RSSI, does NOT gate detection
+        // RSSI fallback: catch strong signals that margin filters out
+        if (!signal_detected && rssi > config_.rssi_threshold_dbm) {
+            signal_detected = true;
+        }
+    } else {
+        signal_detected = (rssi > config_.rssi_threshold_dbm);
     }
 
     if (signal_detected) {

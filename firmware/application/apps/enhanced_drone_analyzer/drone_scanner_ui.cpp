@@ -719,43 +719,15 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // Looking Glass pattern: stop → process → retune → start
     baseband::spectrum_streaming_stop();
 
-    // Bin-to-pixel mapping — exact LG FASTSCAN pattern
-    // 240 bins per slice, get_max_power smoothing, DC spike interpolation
-    constexpr uint8_t BIN_LENGTH = 240;   // screen_width
-    constexpr uint8_t IGNORE_DC = 4;      // interpolation bins for DC spike gap
+    // Bin-to-pixel mapping (LG FASTSCAN pattern)
+    // Usable bins: 134..253 (120 bins) + 2..121 (120 bins) = 240 bins per slice
+    // Skipping DC spike (bins 120-135) and edge rolloff (bins 0-1, 254-255)
+    for (uint8_t bin = 0; bin < 240; ++bin) {
+        // Remap bin index to actual FFT bin (skip DC + edges)
+        const uint8_t fft_bin = (bin < 120) ? (134 + bin) : (bin - 118);
+        const uint8_t power = spectrum.db[fft_bin];
 
-    for (uint8_t bin = 0; bin < BIN_LENGTH; ++bin) {
-        // LG get_max_power: remap bin to FFT index, take max of adjacent bins
-        uint8_t power = 0;
-        if (bin < 120) {
-            const uint8_t fft_bin = 134 + bin;
-            if (spectrum.db[fft_bin] > power) power = spectrum.db[fft_bin];
-        } else {
-            const uint8_t fft_bin = bin - 118;
-            if (spectrum.db[fft_bin] > power) power = spectrum.db[fft_bin];
-        }
-
-        // DC spike interpolation at bin 119 → 120 boundary
-        // LG averages the last lower bin and first upper bin, emits IGNORE_DC pixels
-        if (bin == 119) {
-            uint8_t next_power = 0;
-            if (spectrum.db[bin - 118] > next_power) next_power = spectrum.db[bin - 118];
-            const uint8_t med_power = (power + next_power) / 2;
-            for (uint8_t it = 0; it < IGNORE_DC; ++it) {
-                if (med_power > sweep_pixel_max_) sweep_pixel_max_ = med_power;
-                sweep_bins_hz_acc_ += EACH_BIN_SIZE;
-                while (sweep_bins_hz_acc_ >= sweep_pixel_step_hz_ && sweep_pixel_index_ < COMPOSITE_SIZE) {
-                    if (sweep_pixel_max_ > composite_buffer_[sweep_pixel_index_]) {
-                        composite_buffer_[sweep_pixel_index_] = sweep_pixel_max_;
-                    }
-                    sweep_pixel_index_++;
-                    sweep_pixel_max_ = 0;
-                    sweep_bins_hz_acc_ -= sweep_pixel_step_hz_;
-                }
-            }
-        }
-
-        // Normal bin processing
+        // Accumulate for pixel mapping
         if (power > sweep_pixel_max_) sweep_pixel_max_ = power;
 
         sweep_bins_hz_acc_ += EACH_BIN_SIZE;
@@ -770,30 +742,22 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     }
 
     // Drone detection: always feed to tracker.
-    // process_spectrum_sweep() computes noise floor + margin check internally.
+    // process_spectrum_sweep() extracts narrow-band peak (bins 100-119, 136-155),
+    // applies median filter, and only updates tracker if filtered RSSI > threshold.
+    // Do NOT pre-gate on raw slice_peak — at high LNA/VGA gain, wide-band noise
+    // spikes pass the gate and create false detections before filter can reject them.
     if (scanner_ptr_ != nullptr) {
         scanner_ptr_->process_spectrum_sweep(spectrum, sweep_f_center_);
     }
 
-    // Advance to next slice
-    sweep_f_center_ += sweep_step_hz_;
-
-    // End of sweep: past frequency range OR all pixels filled
-    // If past range but pixels not all filled, pad remaining with last value
-    const bool past_range = (sweep_f_center_ >= sweep_f_max_);
-    const bool pixels_full = (sweep_pixel_index_ >= COMPOSITE_SIZE);
-    if (past_range || pixels_full) {
-        // Pad unfilled pixels with last valid value (prevents dead-zone artifacts)
-        if (!pixels_full && sweep_pixel_index_ > 0) {
-            for (uint16_t i = sweep_pixel_index_; i < COMPOSITE_SIZE; ++i) {
-                composite_buffer_[i] = composite_buffer_[sweep_pixel_index_ - 1];
-            }
-        }
-        // Display completed sweep
+    // Check if full sweep pass is complete
+    const bool pass_complete = (sweep_pixel_index_ >= COMPOSITE_SIZE);
+    if (pass_complete) {
+        // Display the completed sweep
         drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
         drone_display_.set_dirty();
 
-        // Reset for next pass
+        // Reset for next pass — retune to start (LG pattern)
         for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
             composite_buffer_[i] = 0;
         }
@@ -801,8 +765,12 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         sweep_pixel_max_ = 0;
         sweep_bins_hz_acc_ = 0;
         sweep_f_center_ = sweep_f_center_ini_;
+        sweep_retune();
+        return;
     }
 
+    // Advance to next slice
+    sweep_f_center_ += sweep_step_hz_;
     sweep_retune();
 }
 
