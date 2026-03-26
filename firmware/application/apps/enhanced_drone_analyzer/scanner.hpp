@@ -363,9 +363,42 @@ public:
     /**
      * @brief Set current frequency for sweep mode
      * @note Used by UI sweep loop to keep scanner frequency in sync
+     * @note No mutex — called from UI thread during sweep (scanner thread stopped)
      */
     void set_sweep_frequency(FreqHz freq) noexcept {
         current_frequency_ = freq;
+    }
+
+    /**
+     * @brief Lightweight spectrum processing for sweep mode
+     * @param spectrum Channel spectrum data (256 bins)
+     * @param center_freq Current slice center frequency
+     * @note Skips histogram, insertion sort, median filter, confirm count.
+     * @note Only extracts peak RSSI and updates drone tracker above threshold.
+     * @note Called from UI thread during sweep (scanner thread stopped, no mutex needed)
+     */
+    void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
+        current_frequency_ = center_freq;
+
+        // Peak RSSI from signal bins only (skip DC spike 120-135, skip edges 0-7/248-255)
+        int32_t peak_rssi = RSSI_NOISE_FLOOR_DBM;
+        for (size_t i = 8; i < 120; ++i) {
+            if (spectrum.db[i] > peak_rssi + 120) peak_rssi = static_cast<int32_t>(spectrum.db[i]) - 120;
+        }
+        for (size_t i = 136; i < 248; ++i) {
+            if (spectrum.db[i] > peak_rssi + 120) peak_rssi = static_cast<int32_t>(spectrum.db[i]) - 120;
+        }
+
+        // Median filter for spike rejection (same as normal mode)
+        rssi_median_filter_.add(peak_rssi);
+        if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
+            peak_rssi = rssi_median_filter_.get_median();
+        }
+
+        // Update drone tracker only for above-threshold signals
+        if (peak_rssi > config_.rssi_threshold_dbm) {
+            (void)update_tracked_drone_internal(center_freq, peak_rssi, chTimeNow());
+        }
     }
 
     [[nodiscard]] HistogramProcessor& get_histogram_processor() noexcept {

@@ -142,8 +142,11 @@ private:
     // Band sweep state (UI-driven, processed per spectrum callback)
     static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;  // 240 pixels
     static constexpr FreqHz SWEEP_SLICE_BW = 20000000;  // 20 MHz per slice
+    static constexpr uint8_t DB_SCANS_PER_SWEEP = 20;   // DB scans between sweep passes
     uint8_t composite_buffer_[COMPOSITE_SIZE]{};
     bool composite_active_{false};
+    bool sweep_auto_mode_{false};        // true = interleaved (auto exit after pass), false = manual
+    uint8_t db_scan_count_{0};           // counter for DB scan interleaving
     FreqHz sweep_start_{0};
     FreqHz sweep_end_{0};
     uint16_t sweep_step_index_{0};       // current step in sweep pass
@@ -154,6 +157,8 @@ private:
     uint8_t pixel_max_{0};              // max power for current pixel across slices
 
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
+    void enter_sweep_mode() noexcept;
+    void exit_sweep_mode() noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
