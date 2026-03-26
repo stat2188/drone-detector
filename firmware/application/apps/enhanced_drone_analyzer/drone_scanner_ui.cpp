@@ -45,8 +45,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                     if (this->composite_active_) {
                         this->on_sweep_spectrum(spectrum);
                         // Auto-exit sweep after pass completes (only in interleaved mode)
-                        if (this->sweep_auto_mode_ &&
-                            this->pixel_index_ == 0 && this->sweep_step_index_ == 0) {
+                        // sweep_pixel_index_ is reset to 0 at end of each pass
+                        if (this->sweep_auto_mode_ && this->sweep_pixel_index_ == 0) {
                             this->exit_sweep_mode();
                         }
                     } else {
@@ -344,38 +344,34 @@ void DroneScannerUI::on_show() {
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
     if (composite_active_ && scanner_ptr_ != nullptr) {
         ScanConfig cfg = scanner_ptr_->get_config();
-        sweep_start_ = cfg.sweep_start_freq;
-        sweep_end_ = cfg.sweep_end_freq;
+        sweep_f_min_ = cfg.sweep_start_freq;
+        sweep_f_max_ = cfg.sweep_end_freq;
 
         // Validate: start must be < end
-        if (sweep_start_ >= sweep_end_) {
-            sweep_end_ = sweep_start_ + SWEEP_SLICE_BW;
+        if (sweep_f_min_ >= sweep_f_max_) {
+            sweep_f_max_ = sweep_f_min_ + SWEEP_SLICE_BW;
         }
 
-        // Recalculate steps (use user-configured step if available)
-        constexpr FreqHz EFFECTIVE_STEP = 224 * (SWEEP_SLICE_BW / 256);
-        sweep_step_hz_ = (cfg.sweep_step_freq > 0) ? cfg.sweep_step_freq : EFFECTIVE_STEP;
-        const FreqHz total_range = sweep_end_ - sweep_start_;
-        uint32_t total = static_cast<uint32_t>(total_range / sweep_step_hz_);
-        if (total_range % sweep_step_hz_ != 0) total++;
-        if (total > COMPOSITE_SIZE) total = COMPOSITE_SIZE;
-        sweep_total_steps_ = static_cast<uint16_t>(total);
-        if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
-        sweep_step_index_ = 0;
-        bins_hz_acc_ = 0;
-        pixel_index_ = 0;
-        pixel_max_ = 0;
+        // Recalculate LG-style parameters
+        sweep_pixel_step_hz_ = (sweep_f_max_ - sweep_f_min_) / COMPOSITE_SIZE;
+        sweep_step_hz_ = 244 * EACH_BIN_SIZE;
+        sweep_f_center_ini_ = sweep_f_min_ - (2 * EACH_BIN_SIZE) + (SWEEP_SLICE_BW / 2);
+        sweep_f_center_ = sweep_f_center_ini_;
+        sweep_pixel_index_ = 0;
+        sweep_pixel_max_ = 0;
+        sweep_bins_hz_acc_ = 0;
 
         // Clear composite and update display
         for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
             composite_buffer_[i] = 0;
         }
-        drone_display_.set_sweep_range(sweep_start_, sweep_end_);
+        drone_display_.set_sweep_range(sweep_f_min_, sweep_f_max_);
         drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
 
-        // Retune to new start frequency (direct radio write, bypasses model)
-        radio::set_tuning_frequency(rf::Frequency(sweep_start_));
-        current_frequency_ = sweep_start_;
+        // Retune to start frequency (direct radio write, bypasses model)
+        radio::set_tuning_frequency(rf::Frequency(sweep_f_center_));
+        chThdSleepMilliseconds(5);
+        current_frequency_ = sweep_f_center_;
     }
 }
 
@@ -623,34 +619,32 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     if (scanner_ptr_ != nullptr) {
         cfg = scanner_ptr_->get_config();
     }
-    sweep_start_ = cfg.sweep_start_freq;
-    sweep_end_ = cfg.sweep_end_freq;
+    sweep_f_min_ = cfg.sweep_start_freq;
+    sweep_f_max_ = cfg.sweep_end_freq;
 
     // Validate: start must be < end
-    if (sweep_start_ >= sweep_end_) {
-        sweep_end_ = sweep_start_ + SWEEP_SLICE_BW;
+    if (sweep_f_min_ >= sweep_f_max_) {
+        sweep_f_max_ = sweep_f_min_ + SWEEP_SLICE_BW;
     }
 
-    // Effective step: 224 usable bins × 78125 Hz = 17.5 MHz (overlap covers DC gaps)
-    // Use user-configured step if available, otherwise fall back to calculated step
-    constexpr FreqHz EFFECTIVE_STEP = 224 * (SWEEP_SLICE_BW / 256);
-    sweep_step_hz_ = (cfg.sweep_step_freq > 0) ? cfg.sweep_step_freq : EFFECTIVE_STEP;
+    // LG-style parameters
+    const FreqHz range = sweep_f_max_ - sweep_f_min_;
+    sweep_pixel_step_hz_ = range / COMPOSITE_SIZE;
+    // Step per slice: 240 bins usable (skip 8 edge + 16 DC = 24 bins total)
+    // Looking Glass FASTSCAN: step = 244 * each_bin_size
+    sweep_step_hz_ = 244 * EACH_BIN_SIZE;
 
-    const FreqHz total_range = sweep_end_ - sweep_start_;
-    uint32_t total = static_cast<uint32_t>(total_range / sweep_step_hz_);
-    if (total_range % sweep_step_hz_ != 0) total++;
-    if (total > COMPOSITE_SIZE) total = COMPOSITE_SIZE;
-    sweep_total_steps_ = static_cast<uint16_t>(total);
-    if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
+    // Initial center: offset by 2 bins for edge rolloff, center of first slice
+    sweep_f_center_ini_ = sweep_f_min_ - (2 * EACH_BIN_SIZE) + (SWEEP_SLICE_BW / 2);
+    sweep_f_center_ = sweep_f_center_ini_;
 
     // Clear state
     for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
         composite_buffer_[i] = 0;
     }
-    sweep_step_index_ = 0;
-    bins_hz_acc_ = 0;
-    pixel_index_ = 0;
-    pixel_max_ = 0;
+    sweep_pixel_index_ = 0;
+    sweep_pixel_max_ = 0;
+    sweep_bins_hz_acc_ = 0;
 
     // Stop scanner thread (UI drives tuning during sweep)
     if (scanner_thread_ != nullptr) {
@@ -660,23 +654,23 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         (void)scanner_ptr_->stop_scanning();
     }
 
-    // Wait for scanner thread to finish current scan cycle (avoid radio write race).
-    // Scanner thread sleeps SCANNER_SLEEP_MS=10ms between cycles; 25ms guarantees
-    // it has entered sleep and won't call hardware_.tune_to_frequency() while we
-    // call radio::set_tuning_frequency() from the UI thread.
+    // Wait for scanner thread to finish (avoid radio write race)
     chThdSleepMilliseconds(25);
     scanning_ = false;
 
-    // Configure baseband for sweep bandwidth
+    // Configure baseband for sweep bandwidth (LG pattern)
     portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
     portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);
     baseband::set_spectrum(SWEEP_SLICE_BW, 31);
     spectrum_fifo_ = nullptr;
 
-    // Retune to start and begin streaming
-    drone_display_.set_sweep_range(sweep_start_, sweep_end_);
-    radio::set_tuning_frequency(rf::Frequency(sweep_start_));
-    current_frequency_ = sweep_start_;
+    // Set display range and retune to start
+    drone_display_.set_sweep_range(sweep_f_min_, sweep_f_max_);
+    radio::set_tuning_frequency(rf::Frequency(sweep_f_center_));
+    chThdSleepMilliseconds(5);  // PLL settle
+    current_frequency_ = sweep_f_center_;
+
+    // Start streaming
     baseband::spectrum_streaming_start();
     scanning_ = true;
     button_start_stop_.set_text("Stop");
@@ -690,7 +684,7 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     spectrum_fifo_ = nullptr;
     db_scan_count_ = 0;
 
-    // Stop sweep streaming
+    // Stop streaming
     if (scanning_) {
         baseband::spectrum_streaming_stop();
         scanning_ = false;
@@ -721,89 +715,71 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // Looking Glass pattern: stop → process → retune → start
     baseband::spectrum_streaming_stop();
 
-    // Current sweep step center frequency
-    const FreqHz center_freq = sweep_start_ + static_cast<FreqHz>(sweep_step_index_) * sweep_step_hz_;
+    // Per-slice peak for drone detection (separate from pixel accumulator)
+    uint8_t slice_peak = 0;
 
-    // Lightweight sweep processor: extract peak RSSI, update drone tracker.
-    // Uses scanner's process_spectrum_sweep() which includes median filter
-    // but skips expensive histogram, insertion sort, confirm count.
-    if (scanner_ptr_ != nullptr && scanning_) {
-        scanner_ptr_->process_spectrum_sweep(spectrum, center_freq);
-    }
+    // Bin-to-pixel mapping (LG FASTSCAN pattern)
+    // Usable bins: 134..253 (120 bins) + 2..121 (120 bins) = 240 bins per slice
+    // Skipping DC spike (bins 120-135) and edge rolloff (bins 0-1, 254-255)
+    for (uint8_t bin = 0; bin < 240; ++bin) {
+        // Remap bin index to actual FFT bin (skip DC + edges)
+        const uint8_t fft_bin = (bin < 120) ? (134 + bin) : (bin - 118);
+        const uint8_t power = spectrum.db[fft_bin];
 
-    // Bin-to-pixel mapping (Looking Glass accumulator pattern)
-    constexpr FreqHz BIN_BW = SWEEP_SLICE_BW / 256;
-    constexpr size_t EDGE_SKIP = 8;
+        // Track peak for drone detection
+        if (power > slice_peak) slice_peak = power;
 
-    const FreqHz sweep_range = sweep_end_ - sweep_start_;
-    if (sweep_range == 0 || pixel_index_ >= COMPOSITE_SIZE) {
-        // Degenerate range or pixel buffer already full — skip
-    } else {
-        const FreqHz pixel_step_hz = sweep_range / COMPOSITE_SIZE;
+        // Accumulate for pixel mapping
+        if (power > sweep_pixel_max_) sweep_pixel_max_ = power;
 
-        for (size_t bin = 0; bin < 256; ++bin) {
-            if (bin >= 120 && bin < 136) continue;
-            if (bin < EDGE_SKIP || bin >= 256 - EDGE_SKIP) continue;
-
-            const uint8_t power = spectrum.db[bin];
-            if (power < min_color_power_) {
-                bins_hz_acc_ += BIN_BW;
-                continue;
+        sweep_bins_hz_acc_ += EACH_BIN_SIZE;
+        while (sweep_bins_hz_acc_ >= sweep_pixel_step_hz_ && sweep_pixel_index_ < COMPOSITE_SIZE) {
+            if (sweep_pixel_max_ > composite_buffer_[sweep_pixel_index_]) {
+                composite_buffer_[sweep_pixel_index_] = sweep_pixel_max_;
             }
-
-            const int64_t offset = (static_cast<int64_t>(bin) - 128) * static_cast<int64_t>(BIN_BW);
-            if (offset < 0 && static_cast<FreqHz>(-offset) > center_freq) {
-                bins_hz_acc_ += BIN_BW;
-                continue;
-            }
-            const FreqHz bin_freq = center_freq + static_cast<FreqHz>(offset);
-            if (bin_freq < sweep_start_ || bin_freq >= sweep_end_) {
-                bins_hz_acc_ += BIN_BW;
-                continue;
-            }
-
-            bins_hz_acc_ += BIN_BW;
-            if (power > pixel_max_) pixel_max_ = power;
-
-            while (bins_hz_acc_ >= pixel_step_hz && pixel_index_ < COMPOSITE_SIZE) {
-                if (pixel_max_ > composite_buffer_[pixel_index_]) {
-                    composite_buffer_[pixel_index_] = pixel_max_;
-                }
-                pixel_index_++;
-                pixel_max_ = 0;
-                bins_hz_acc_ -= pixel_step_hz;
-            }
+            sweep_pixel_index_++;
+            sweep_pixel_max_ = 0;
+            sweep_bins_hz_acc_ -= sweep_pixel_step_hz_;
         }
     }
 
-    // Advance to next sweep step
-    sweep_step_index_++;
-    const bool pass_complete = (sweep_step_index_ >= sweep_total_steps_);
-    if (pass_complete) {
-        sweep_step_index_ = 0;
+    // Drone detection: feed slice peak to scanner tracker (above threshold only)
+    if (scanner_ptr_ != nullptr && slice_peak > 0) {
+        const int32_t peak_rssi = static_cast<int32_t>(slice_peak) - 120;
+        if (peak_rssi > RSSI_DETECTION_THRESHOLD_DBM) {
+            scanner_ptr_->process_spectrum_sweep(spectrum, sweep_f_center_);
+        }
     }
 
-    // Retune: direct radio write (fast) + PLL settle (Looking Glass pattern)
-    const FreqHz next_freq = sweep_start_ + static_cast<FreqHz>(sweep_step_index_) * sweep_step_hz_;
-    radio::set_tuning_frequency(rf::Frequency(next_freq));
-    chThdSleepMilliseconds(5);  // PLL settle — Looking Glass uses 5ms
-    current_frequency_ = next_freq;
-
-    // Update display ONLY when a full pass completes
+    // Check if full sweep pass is complete
+    const bool pass_complete = (sweep_pixel_index_ >= COMPOSITE_SIZE);
     if (pass_complete) {
+        // Display the completed sweep
         drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
         drone_display_.set_dirty();
 
-        // Clear buffer and reset pixel state for next pass
+        // Reset for next pass — retune to start (LG pattern)
         for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
             composite_buffer_[i] = 0;
         }
-        pixel_index_ = 0;
-        pixel_max_ = 0;
-        bins_hz_acc_ = 0;
+        sweep_pixel_index_ = 0;
+        sweep_pixel_max_ = 0;
+        sweep_bins_hz_acc_ = 0;
+        sweep_f_center_ = sweep_f_center_ini_;
+        sweep_retune();
+        return;
     }
 
-    // Restart streaming for next slice
+    // Advance to next slice
+    sweep_f_center_ += sweep_step_hz_;
+    sweep_retune();
+}
+
+void DroneScannerUI::sweep_retune() noexcept {
+    // Direct radio tune (bypasses receiver model → avoids slow persistent memory writes)
+    radio::set_tuning_frequency(rf::Frequency(sweep_f_center_));
+    chThdSleepMilliseconds(5);  // PLL settle — Looking Glass uses 5ms
+    current_frequency_ = sweep_f_center_;
     baseband::spectrum_streaming_start();
 }
 

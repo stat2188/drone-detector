@@ -139,24 +139,29 @@ private:
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void on_retune(FreqHz freq, uint32_t range) noexcept;
 
-    // Band sweep state (UI-driven, processed per spectrum callback)
-    static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;  // 240 pixels
-    static constexpr FreqHz SWEEP_SLICE_BW = 20000000;  // 20 MHz per slice
-    static constexpr uint8_t DB_SCANS_PER_SWEEP = 20;   // DB scans between sweep passes
+    // Band sweep state — Looking Glass pattern: stop → process → retune → start
+    static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;   // 240 pixels
+    static constexpr FreqHz SWEEP_SLICE_BW = 20000000;         // 20 MHz per slice
+    static constexpr uint8_t DB_SCANS_PER_SWEEP = 20;          // DB scans between auto-sweep passes
+    static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;  // 78125 Hz per bin
+
     uint8_t composite_buffer_[COMPOSITE_SIZE]{};
     bool composite_active_{false};
     bool sweep_auto_mode_{false};        // true = interleaved (auto exit after pass), false = manual
     uint8_t db_scan_count_{0};           // counter for DB scan interleaving
-    FreqHz sweep_start_{0};
-    FreqHz sweep_end_{0};
-    uint16_t sweep_step_index_{0};       // current step in sweep pass
-    uint16_t sweep_total_steps_{0};      // total steps for full sweep
-    FreqHz sweep_step_hz_{0};           // frequency step per slice
-    FreqHz bins_hz_acc_{0};             // pixel accumulator (Looking Glass pattern)
-    uint16_t pixel_index_{0};           // persistent pixel position across slices
-    uint8_t pixel_max_{0};              // max power for current pixel across slices
+
+    FreqHz sweep_f_min_{0};             // sweep range start (Hz)
+    FreqHz sweep_f_max_{0};             // sweep range end (Hz)
+    FreqHz sweep_f_center_{0};          // current slice center frequency
+    FreqHz sweep_f_center_ini_{0};      // first slice center frequency
+    FreqHz sweep_pixel_step_hz_{0};     // Hz per pixel = range / COMPOSITE_SIZE
+    FreqHz sweep_step_hz_{0};           // frequency step per slice (bin_length * each_bin_size)
+    FreqHz sweep_bins_hz_acc_{0};       // Hz accumulator for bin-to-pixel mapping
+    uint16_t sweep_pixel_index_{0};     // current pixel position (0..COMPOSITE_SIZE-1)
+    uint8_t sweep_pixel_max_{0};        // max power for current pixel across bins
 
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
+    void sweep_retune() noexcept;
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
 
