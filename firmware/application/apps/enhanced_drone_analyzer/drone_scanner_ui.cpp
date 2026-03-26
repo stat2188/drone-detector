@@ -166,6 +166,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             }
             sweep_step_index_ = 0;
             bins_hz_acc_ = 0;
+            pixel_index_ = 0;
+            pixel_max_ = 0;
 
             // Reconfigure baseband for sweep bandwidth
             portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
@@ -417,6 +419,8 @@ void DroneScannerUI::on_show() {
         if (sweep_total_steps_ == 0) sweep_total_steps_ = 1;
         sweep_step_index_ = 0;
         bins_hz_acc_ = 0;
+        pixel_index_ = 0;
+        pixel_max_ = 0;
 
         // Clear composite and update display
         for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
@@ -683,17 +687,15 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     constexpr size_t EDGE_SKIP = 8;                     // Skip edge bins (filter roll-off)
 
     const FreqHz sweep_range = sweep_end_ - sweep_start_;
-    if (sweep_range == 0) {
-        // Degenerate range — skip pixel mapping
+    if (sweep_range == 0 || pixel_index_ >= COMPOSITE_SIZE) {
+        // Degenerate range or pixel buffer already full — skip pixel mapping
     } else {
         // Looking Glass accumulator pattern:
         // Each pixel covers sweep_range/COMPOSITE_SIZE Hz of spectrum.
         // Accumulate bin_bw per valid bin; when enough Hz fill one pixel,
         // emit max power and carry remainder to next pixel.
-        // This correctly maps any sweep range to exactly 240 pixels.
+        // pixel_index_ and pixel_max_ are MEMBERS — persist across callbacks.
         const FreqHz pixel_step_hz = sweep_range / COMPOSITE_SIZE;
-        uint16_t pixel_index = 0;
-        uint8_t pixel_max = 0;
 
         for (size_t bin = 0; bin < 256; ++bin) {
             // DC spike (center 16 bins) — same as Looking Glass
@@ -721,14 +723,14 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
             // Accumulate and emit pixel when full
             bins_hz_acc_ += BIN_BW;
-            if (power > pixel_max) pixel_max = power;
+            if (power > pixel_max_) pixel_max_ = power;
 
-            while (bins_hz_acc_ >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-                if (pixel_max > composite_buffer_[pixel_index]) {
-                    composite_buffer_[pixel_index] = pixel_max;
+            while (bins_hz_acc_ >= pixel_step_hz && pixel_index_ < COMPOSITE_SIZE) {
+                if (pixel_max_ > composite_buffer_[pixel_index_]) {
+                    composite_buffer_[pixel_index_] = pixel_max_;
                 }
-                pixel_index++;
-                pixel_max = 0;
+                pixel_index_++;
+                pixel_max_ = 0;
                 bins_hz_acc_ -= pixel_step_hz;
             }
         }
@@ -746,15 +748,17 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     portapack::receiver_model.set_target_frequency(rf::Frequency(next_freq));
     current_frequency_ = next_freq;
 
-    // Update display (show current pass data BEFORE clearing for next pass)
-    drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
-    drone_display_.set_dirty();
-
-    // Clear buffer AFTER display update for next pass (avoids blank frame flicker)
+    // Update display ONLY when a full pass completes (avoids 10x excessive redraws)
     if (pass_complete) {
+        drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
+        drone_display_.set_dirty();
+
+        // Clear buffer and reset pixel state for next pass
         for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
             composite_buffer_[i] = 0;
         }
+        pixel_index_ = 0;
+        pixel_max_ = 0;
         bins_hz_acc_ = 0;
     }
 

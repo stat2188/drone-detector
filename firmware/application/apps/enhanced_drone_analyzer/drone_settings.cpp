@@ -23,14 +23,14 @@ DroneSettings::DroneSettings() noexcept
     , drone_list_visible(true)
     , status_bar_visible(true)
     , audio_alerts_enabled(true)
-    , alert_rssi_threshold_dbm(RSSI_HIGH_THREAT_THRESHOLD_DBM)
+    , alert_rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
     , min_threat_level(ThreatLevel::LOW)
     , dwell_enabled(false)
     , confirm_count_enabled(false)
     , noise_blacklist_enabled(false)
     , spectrum_detection_enabled(false)
-    , spectrum_margin(50)
-    , spectrum_min_width(4)
+    , spectrum_margin(15)
+    , spectrum_min_width(1)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000) {  // Default 20 MHz (matches SWEEP_BANDWIDTH)
@@ -47,7 +47,7 @@ void DroneSettings::reset_to_defaults() noexcept {
     status_bar_visible = true;
     
     audio_alerts_enabled = true;
-    alert_rssi_threshold_dbm = RSSI_HIGH_THREAT_THRESHOLD_DBM;
+    alert_rssi_threshold_dbm = RSSI_DETECTION_THRESHOLD_DBM;
     
     min_threat_level = ThreatLevel::LOW;
     
@@ -55,8 +55,8 @@ void DroneSettings::reset_to_defaults() noexcept {
     confirm_count_enabled = false;
     noise_blacklist_enabled = false;
     spectrum_detection_enabled = false;
-    spectrum_margin = 50;
-    spectrum_min_width = 4;
+    spectrum_margin = 15;
+    spectrum_min_width = 1;
     
     sweep_start_freq = SWEEP_DEFAULT_START_HZ;
     sweep_end_freq = SWEEP_DEFAULT_END_HZ;
@@ -92,8 +92,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
     , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(13)}, 4, "Mar", false)
-    , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(7)}, 3, {20, 200}, 10, ' ')
-    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(8)}, 2, {2, 20}, 1, ' ')
+    , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(7)}, 3, {5, 200}, 5, ' ')
+    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(8)}, 2, {1, 20}, 1, ' ')
     , field_sweep_start_({UI_POS_X(1), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_end_({UI_POS_X(10), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
     , field_sweep_step_({UI_POS_X(1), UI_POS_Y(8)}, 5, {1000, 99999}, 1000, ' ')

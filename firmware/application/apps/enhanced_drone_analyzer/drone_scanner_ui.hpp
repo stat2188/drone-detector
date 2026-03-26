@@ -150,6 +150,8 @@ private:
     uint16_t sweep_total_steps_{0};      // total steps for full sweep
     FreqHz sweep_step_hz_{0};           // frequency step per slice
     FreqHz bins_hz_acc_{0};             // pixel accumulator (Looking Glass pattern)
+    uint16_t pixel_index_{0};           // persistent pixel position across slices
+    uint8_t pixel_max_{0};              // max power for current pixel across slices
 
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
 
