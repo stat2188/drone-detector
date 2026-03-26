@@ -17,7 +17,7 @@ namespace drone_analyzer {
 DroneSettings::DroneSettings() noexcept
     : scanning_mode(DEFAULT_SCANNING_MODE)
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
-    , scan_sensitivity(38)
+    , scan_sensitivity(70)
     , spectrum_visible(true)
     , histogram_visible(true)
     , drone_list_visible(true)
@@ -39,7 +39,7 @@ DroneSettings::DroneSettings() noexcept
 void DroneSettings::reset_to_defaults() noexcept {
     scanning_mode = DEFAULT_SCANNING_MODE;
     scan_interval_ms = SCAN_CYCLE_INTERVAL_MS;
-    scan_sensitivity = 38;
+    scan_sensitivity = 70;
     
     spectrum_visible = true;
     histogram_visible = true;
@@ -91,7 +91,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
-    , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(13)}, 4, "Spec", false)
+    , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(13)}, 4, "Mar", false)
     , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(7)}, 3, {20, 200}, 10, ' ')
     , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(8)}, 2, {2, 20}, 1, ' ')
     , field_sweep_start_({UI_POS_X(1), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
@@ -139,9 +139,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     });
 
     field_scan_interval_.set_value(settings_.scan_interval_ms);
-    // Convert dBm threshold to sensitivity: sens = (dbm + 120) * 5 / 4
+    // Convert dBm threshold to sensitivity: sens = -(dbm + 20), clamp 0-100
+    // sens=0 → dbm=-20 (min sensitivity), sens=100 → dbm=-120 (max sensitivity)
     {
-        const int32_t sens = (settings_.alert_rssi_threshold_dbm + 120) * 5 / 4;
+        const int32_t sens = -(settings_.alert_rssi_threshold_dbm + 20);
         field_rssi_threshold_.set_value(sens < 0 ? 0 : (sens > 100 ? 100 : sens));
     }
     field_volume_.set_value(portapack::receiver_model.normalized_headphone_volume());
@@ -264,8 +265,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     field_rssi_threshold_.on_change = [this](int32_t v) {
-        // Convert sensitivity (0-100) to dBm threshold (-120 to -40)
-        settings_.alert_rssi_threshold_dbm = -120 + (v * 4 / 5);
+        // Convert sensitivity (0-100) to dBm threshold
+        // sens=0 → dbm=-20 (min sensitivity), sens=100 → dbm=-120 (max sensitivity)
+        settings_.alert_rssi_threshold_dbm = -20 - v;
         settings_.scan_sensitivity = static_cast<uint8_t>(v);
         settings_dirty_ = true;
     };
@@ -468,8 +470,8 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         } else if (key_matches("sensitivity")) {
             const int32_t sens = parse_int();
             settings_.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
-            // Convert sensitivity to dBm: dbm = -120 + sens * 4 / 5
-            settings_.alert_rssi_threshold_dbm = -120 + (settings_.scan_sensitivity * 4 / 5);
+            // Convert sensitivity to dBm: dbm = -20 - sens
+            settings_.alert_rssi_threshold_dbm = -20 - settings_.scan_sensitivity;
         } else if (key_matches("rssi_threshold_db")) {
             bool negative = (val_len > 0 && val_start[0] == '-');
             const uint8_t* num_start = negative ? val_start + 1 : val_start;
@@ -586,9 +588,10 @@ ErrorCode DroneSettingsView::validate_settings() const noexcept {
 
 void DroneSettingsView::apply_settings() noexcept {
     field_scan_interval_.set_value(settings_.scan_interval_ms);
-    // Convert dBm threshold to sensitivity: sens = (dbm + 120) * 5 / 4
+    // Convert dBm threshold to sensitivity: sens = -(dbm + 20), clamp 0-100
+    // sens=0 → dbm=-20 (min sensitivity), sens=100 → dbm=-120 (max sensitivity)
     {
-        const int32_t sens = (settings_.alert_rssi_threshold_dbm + 120) * 5 / 4;
+        const int32_t sens = -(settings_.alert_rssi_threshold_dbm + 20);
         field_rssi_threshold_.set_value(sens < 0 ? 0 : (sens > 100 ? 100 : sens));
     }
     field_volume_.set_value(portapack::receiver_model.normalized_headphone_volume());

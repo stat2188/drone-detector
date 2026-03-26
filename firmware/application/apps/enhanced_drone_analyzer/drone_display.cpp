@@ -144,7 +144,7 @@ void DroneDisplay::render_spectrum(
         else if (value > 100) color = COLOR_MEDIUM_THREAT;
 
         if (bar_height > 0) {
-            draw_rectangle(painter, x, y, bar_width - 1, bar_height, color);
+        draw_rectangle(painter, x, y, bar_width, bar_height, color);
         }
     }
 }
@@ -689,11 +689,9 @@ void DroneDisplay::render_composite(
         draw_text(painter, "SWEEP", start_x + 2, start_y + 2, COLOR_TEXT);
     }
 
-    constexpr uint16_t MIN_BAR_WIDTH = 2;
-    const uint16_t usable_width = width - 4;
     const uint16_t bar_count = static_cast<uint16_t>(composite_size);
-    uint16_t bar_width = usable_width / bar_count;
-    if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
+    // Each composite entry = 1 pixel (240 entries fit in 236px, painter clips)
+    constexpr uint16_t bar_width = 1;
 
     const uint16_t chart_start_x = start_x + 2;
     const uint16_t chart_start_y = start_y + 12;
@@ -716,7 +714,7 @@ void DroneDisplay::render_composite(
         else if (power > 150) color = COLOR_HIGH_THREAT;
         else if (power > 100) color = COLOR_MEDIUM_THREAT;
 
-        draw_rectangle(painter, x, y, bar_width - 1, bar_height, color);
+        draw_rectangle(painter, x, y, bar_width, bar_height, color);
     }
 }
 

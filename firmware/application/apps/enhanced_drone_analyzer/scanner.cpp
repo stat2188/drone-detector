@@ -397,15 +397,22 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
 
     const int32_t rssi = extract_rssi(spectrum);
 
-    bool signal_detected = (rssi > config_.rssi_threshold_dbm);
     int32_t effective_rssi = rssi;
+    bool signal_detected = false;
 
-    if (!signal_detected && config_.spectrum_detection_enabled) {
+    if (config_.spectrum_detection_enabled) {
+        // Spectrum primary: margin-gated shape detection
         int32_t spectrum_rssi = RSSI_MIN_DBM;
         if (analyze_spectrum_shape(spectrum, rssi, spectrum_rssi)) {
             signal_detected = true;
-            effective_rssi = (spectrum_rssi > rssi) ? spectrum_rssi : rssi;
+            if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
         }
+        // RSSI fallback: catch strong signals that margin filters out
+        if (!signal_detected && rssi > config_.rssi_threshold_dbm) {
+            signal_detected = true;
+        }
+    } else {
+        signal_detected = (rssi > config_.rssi_threshold_dbm);
     }
 
     if (signal_detected) {
@@ -448,17 +455,22 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
     const SystemTime now = chTimeNow();
 
-    // Detection: RSSI-based OR spectrum-shape-based
-    bool signal_detected = (rssi > config_.rssi_threshold_dbm);
     int32_t effective_rssi = rssi;
+    bool signal_detected = false;
 
-    // Spectrum shape analysis: detect U/V peaks above flat noise floor
-    if (!signal_detected && config_.spectrum_detection_enabled) {
+    if (config_.spectrum_detection_enabled) {
+        // Spectrum primary: margin-gated shape detection
         int32_t spectrum_rssi = RSSI_MIN_DBM;
         if (analyze_spectrum_shape(spectrum, rssi, spectrum_rssi)) {
             signal_detected = true;
-            effective_rssi = (spectrum_rssi > rssi) ? spectrum_rssi : rssi;
+            if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
         }
+        // RSSI fallback: catch strong signals that margin filters out
+        if (!signal_detected && rssi > config_.rssi_threshold_dbm) {
+            signal_detected = true;
+        }
+    } else {
+        signal_detected = (rssi > config_.rssi_threshold_dbm);
     }
 
     if (signal_detected) {
