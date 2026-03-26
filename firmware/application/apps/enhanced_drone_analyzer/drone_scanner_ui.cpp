@@ -355,6 +355,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     config.mode = scanning_mode_;
     config.rssi_threshold_dbm = RSSI_DETECTION_THRESHOLD_DBM;
     config.scan_interval_ms = SCAN_CYCLE_INTERVAL_MS;
+    load_startup_settings(config);
     const ErrorCode config_err = scanner_ptr_->set_config(config);
     if (config_err != ErrorCode::SUCCESS) {
         show_error(config_err, ERROR_DURATION_MS);

@@ -16,6 +16,14 @@
 namespace drone_analyzer {
 
 /**
+ * @brief Load ScanConfig fields from settings file at startup
+ * @param config ScanConfig to update with saved settings
+ * @note Reads SETTINGS/eda_settings.txt if it exists
+ * @note Missing file is not an error (uses defaults)
+ */
+void load_startup_settings(ScanConfig& config) noexcept;
+
+/**
  * @brief Settings structure for drone analyzer
  * @note Simplified - removed translation system, preset system, about dialog
  */

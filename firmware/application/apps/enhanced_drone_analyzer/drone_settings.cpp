@@ -606,4 +606,113 @@ void DroneSettingsView::apply_settings() noexcept {
     field_sweep_step_.set_value(static_cast<int32_t>(settings_.sweep_step_freq / 1000));
 }
 
+// ============================================================================
+// Startup Settings Loading
+// ============================================================================
+
+void load_startup_settings(ScanConfig& config) noexcept {
+    File file;
+    const auto open_result = file.open(settings_dir / u"eda_settings.txt", true, false);
+    if (open_result) {
+        return;  // File doesn't exist — defaults are fine
+    }
+
+    constexpr size_t READ_CHUNK_SIZE = 256;
+    uint8_t chunk[READ_CHUNK_SIZE];
+    uint8_t line_buf[128];
+    size_t line_len = 0;
+
+    auto parse_line = [&config](const uint8_t* buf, size_t len) {
+        if (len == 0 || buf[0] == '#') return;
+
+        size_t eq_pos = 0;
+        for (size_t i = 0; i < len; ++i) {
+            if (buf[i] == '=') { eq_pos = i; break; }
+        }
+        if (eq_pos == 0 || eq_pos >= len - 1) return;
+
+        char key[32];
+        size_t key_len = eq_pos;
+        if (key_len > 31) key_len = 31;
+        for (size_t i = 0; i < key_len; ++i) {
+            key[i] = static_cast<char>(buf[i]);
+        }
+        key[key_len] = '\0';
+
+        const uint8_t* val_start = buf + eq_pos + 1;
+        size_t val_len = len - eq_pos - 1;
+
+        auto key_matches = [key, key_len](const char* expected) -> bool {
+            const size_t elen = __builtin_strlen(expected);
+            return (key_len == elen) && __builtin_memcmp(key, expected, elen) == 0;
+        };
+
+        auto parse_int = [val_start, val_len]() -> int32_t {
+            int32_t val = 0;
+            for (size_t i = 0; i < val_len; ++i) {
+                if (val_start[i] >= '0' && val_start[i] <= '9')
+                    val = val * 10 + (val_start[i] - '0');
+            }
+            return val;
+        };
+
+        auto parse_bool = [val_start, val_len]() -> bool {
+            return (val_len == 4 &&
+                    val_start[0] == 't' && val_start[1] == 'r' &&
+                    val_start[2] == 'u' && val_start[3] == 'e');
+        };
+
+        if (key_matches("spectrum_detection")) {
+            config.spectrum_detection_enabled = parse_bool();
+        } else if (key_matches("spectrum_margin")) {
+            config.spectrum_margin = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("spectrum_min_width")) {
+            config.spectrum_min_width = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("scan_interval_ms")) {
+            config.scan_interval_ms = static_cast<uint32_t>(parse_int());
+        } else if (key_matches("sweep_start_mhz")) {
+            config.sweep_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep_end_mhz")) {
+            config.sweep_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep_step_khz")) {
+            config.sweep_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("rssi_threshold_db")) {
+            bool negative = (val_len > 0 && val_start[0] == '-');
+            const uint8_t* num_start = negative ? val_start + 1 : val_start;
+            size_t num_len = negative ? val_len - 1 : val_len;
+            int32_t val = 0;
+            for (size_t i = 0; i < num_len; ++i) {
+                if (num_start[i] >= '0' && num_start[i] <= '9')
+                    val = val * 10 + (num_start[i] - '0');
+            }
+            config.rssi_threshold_dbm = negative ? -val : val;
+        } else if (key_matches("dwell_enabled")) {
+            config.dwell_enabled = parse_bool();
+        } else if (key_matches("confirm_count_enabled")) {
+            config.confirm_count_enabled = parse_bool();
+        } else if (key_matches("noise_blacklist_enabled")) {
+            config.noise_blacklist_enabled = parse_bool();
+        }
+    };
+
+    while (true) {
+        const auto read_result = file.read(chunk, READ_CHUNK_SIZE);
+        if (!read_result.is_ok() || read_result.value() == 0) break;
+
+        const size_t bytes_read = read_result.value();
+        for (size_t i = 0; i < bytes_read; ++i) {
+            const char c = static_cast<char>(chunk[i]);
+            if (c == '\r' || c == '\n') {
+                parse_line(line_buf, line_len);
+                line_len = 0;
+            } else if (line_len < sizeof(line_buf) - 1) {
+                line_buf[line_len++] = chunk[i];
+            }
+        }
+    }
+    parse_line(line_buf, line_len);
+
+    file.close();
+}
+
 } // namespace drone_analyzer

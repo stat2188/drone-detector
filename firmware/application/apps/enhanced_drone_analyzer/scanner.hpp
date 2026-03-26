@@ -471,7 +471,7 @@ private:
      * @note Noise floor = flat line. Signal = elevated U/V peak above noise.
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
-    [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) const noexcept;
+    [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t rssi, int32_t& out_rssi) const noexcept;
 
     /**
      * @brief Internal: Trigger alert callback if set

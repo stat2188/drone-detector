@@ -402,7 +402,7 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
 
     if (!signal_detected && config_.spectrum_detection_enabled) {
         int32_t spectrum_rssi = RSSI_MIN_DBM;
-        if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
+        if (analyze_spectrum_shape(spectrum, rssi, spectrum_rssi)) {
             signal_detected = true;
             effective_rssi = (spectrum_rssi > rssi) ? spectrum_rssi : rssi;
         }
@@ -452,10 +452,10 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     bool signal_detected = (rssi > config_.rssi_threshold_dbm);
     int32_t effective_rssi = rssi;
 
-    // Spectrum shape analysis: detect U/V peaks above noise floor
+    // Spectrum shape analysis: detect U/V peaks above flat noise floor
     if (!signal_detected && config_.spectrum_detection_enabled) {
         int32_t spectrum_rssi = RSSI_MIN_DBM;
-        if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
+        if (analyze_spectrum_shape(spectrum, rssi, spectrum_rssi)) {
             signal_detected = true;
             effective_rssi = (spectrum_rssi > rssi) ? spectrum_rssi : rssi;
         }
@@ -858,17 +858,21 @@ void DroneScanner::set_median_filter_enabled(bool enabled) noexcept {
 // Spectrum Shape Analysis — detect U/V peaks above flat noise floor
 // ============================================================================
 
-bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) const noexcept {
+bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t rssi, int32_t& out_rssi) const noexcept {
     constexpr size_t BIN_COUNT = 256;
     constexpr size_t EDGE_SKIP = 6;  // Skip first/last 6 bins (filter rolloff artifacts)
+    constexpr size_t DC_SPIKE_START = 120;
+    constexpr size_t DC_SPIKE_END = 136;
 
-    // Step 1: Find noise floor = median of center bins (skip edges)
+    // Step 1: Find noise floor = median of usable bins
+    // Skip edges AND DC spike (same bins extract_rssi skips)
     uint8_t sorted[BIN_COUNT];
     size_t sort_count = 0;
     for (size_t i = EDGE_SKIP; i < BIN_COUNT - EDGE_SKIP; ++i) {
+        if (i >= DC_SPIKE_START && i < DC_SPIKE_END) continue;
         sorted[sort_count++] = spectrum.db[i];
     }
-    // Insertion sort on center bins
+    // Insertion sort
     for (size_t i = 1; i < sort_count; ++i) {
         const uint8_t key = sorted[i];
         size_t j = i;
@@ -878,12 +882,13 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         }
         sorted[j] = key;
     }
-    const uint8_t noise_floor = sorted[sort_count / 2];  // median
+    const uint8_t noise_floor = sorted[sort_count / 2];
 
-    // Step 2: Find peak bin and peak value (skip edges)
+    // Step 2: Find peak bin and peak value (skip edges AND DC spike)
     uint8_t peak_value = noise_floor;
     size_t peak_index = EDGE_SKIP;
     for (size_t i = EDGE_SKIP; i < BIN_COUNT - EDGE_SKIP; ++i) {
+        if (i >= DC_SPIKE_START && i < DC_SPIKE_END) continue;
         if (spectrum.db[i] > peak_value) {
             peak_value = spectrum.db[i];
             peak_index = i;
@@ -894,21 +899,24 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
     const uint8_t min_margin = config_.spectrum_margin;
     const uint8_t peak_margin = peak_value - noise_floor;
     if (peak_margin < min_margin) {
-        return false;  // No significant signal
+        return false;
     }
 
     // Step 4: Count elevated bins around peak (signal width)
-    // Higher divisor = tighter band, fewer false positives
     const uint8_t elevated_threshold = noise_floor + (peak_margin / 4);
 
-    // Search left from peak (stop at edge)
     size_t left = peak_index;
-    while (left > EDGE_SKIP && spectrum.db[left - 1] >= elevated_threshold) {
+    while (left > EDGE_SKIP) {
+        size_t prev = left - 1;
+        if (prev >= DC_SPIKE_START && prev < DC_SPIKE_END) { --left; continue; }
+        if (spectrum.db[prev] < elevated_threshold) break;
         --left;
     }
-    // Search right from peak (stop at edge)
     size_t right = peak_index;
-    while (right < BIN_COUNT - EDGE_SKIP - 1 && spectrum.db[right + 1] >= elevated_threshold) {
+    while (right < BIN_COUNT - EDGE_SKIP - 1) {
+        size_t next = right + 1;
+        if (next >= DC_SPIKE_START && next < DC_SPIKE_END) { ++right; continue; }
+        if (spectrum.db[next] < elevated_threshold) break;
         ++right;
     }
 
@@ -917,14 +925,13 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
     // Step 5: Signal width must meet minimum (configurable)
     const size_t min_width = config_.spectrum_min_width;
     if (signal_width < min_width) {
-        return false;  // Too narrow — likely noise spike
+        return false;
     }
 
-    // Signal detected — estimate RSSI from peak margin
-    // Map: 0 margin = -120 dBm, 255 margin = -40 dBm
-    out_rssi = -120 + static_cast<int32_t>(peak_margin) * 80 / 255;
-    if (out_rssi > -20) out_rssi = -20;
-    if (out_rssi < -120) out_rssi = -120;
+    // RSSI from actual peak bin value (same conversion as extract_rssi)
+    out_rssi = static_cast<int32_t>(peak_value) - 120;
+    if (out_rssi > RSSI_MAX_DBM) out_rssi = RSSI_MAX_DBM;
+    if (out_rssi < RSSI_MIN_DBM) out_rssi = RSSI_MIN_DBM;
 
     return true;
 }
