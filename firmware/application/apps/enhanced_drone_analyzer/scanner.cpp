@@ -731,6 +731,7 @@ ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     config_ = config;
+    median_filter_enabled_ = config.median_enabled;
 
     return ErrorCode::SUCCESS;
 }

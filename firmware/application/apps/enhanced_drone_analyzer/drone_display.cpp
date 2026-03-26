@@ -222,7 +222,7 @@ void DroneDisplay::render_drone_list(
     if (drones == nullptr || drone_count == 0) {
         draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
         draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-        draw_text(painter, "DETECTED DRONES", start_x + 2, start_y + 2, COLOR_TEXT);
+        draw_text(painter, "DETECTED SIGNALS", start_x + 2, start_y + 2, COLOR_TEXT);
         draw_text(painter, STATUS_NO_DRONES, start_x + 2, start_y + 14, COLOR_UNKNOWN_THREAT);
         return;
     }
@@ -232,7 +232,7 @@ void DroneDisplay::render_drone_list(
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);  // Top border
     
     // Draw header
-    draw_text(painter, "DETECTED DRONES", start_x + 2, start_y + 2, COLOR_TEXT);
+    draw_text(painter, "DETECTED SIGNALS", start_x + 2, start_y + 2, COLOR_TEXT);
     
     // Draw column headers
     constexpr uint16_t HEADER_H = 12;

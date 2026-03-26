@@ -40,6 +40,7 @@ struct ScanConfig {
     bool confirm_count_enabled{false};   // Require multiple confirmations before creating drone
     bool noise_blacklist_enabled{false}; // Skip frequencies with persistent noise
     bool spectrum_detection_enabled{false}; // Detect drone signals by spectrum shape (U/V peaks)
+    bool median_enabled{false};             // Median filter for RSSI spike rejection
     uint8_t spectrum_margin{15};            // Peak margin above noise (0-200, default 15 ≈ 5 dB)
     uint8_t spectrum_min_width{1};          // Min signal width in bins (1-20, default 1)
     
@@ -380,24 +381,50 @@ public:
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
         current_frequency_ = center_freq;
 
-        // Peak RSSI from bins NEAR tuned frequency only (same range as extract_rssi).
-        // Wide-band peak (all 240 bins) picks up noise from ±9.4 MHz at high gain.
-        // Narrow-band peak (bins 100-119, 136-155) only looks at ±1.5 MHz — same as DB scanner.
-        int32_t peak_rssi = RSSI_NOISE_FLOOR_DBM;
-        for (size_t i = 100; i < 120; ++i) {
-            if (spectrum.db[i] > peak_rssi + 120) peak_rssi = static_cast<int32_t>(spectrum.db[i]) - 120;
+        // Step 1: Scan ALL usable bins (8-119, 136-247) for peak + noise floor.
+        // Wide range matches waterfall display — catches signals at any offset in the slice.
+        // Noise floor = median of usable bins (same approach as analyze_spectrum_shape).
+        // Static: called only from UI thread (DisplayFrameSync callback).
+        static uint8_t sorted[240];
+        size_t sort_count = 0;
+        uint8_t raw_peak = 0;
+
+        for (size_t i = 8; i < 120; ++i) {
+            sorted[sort_count++] = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
         }
-        for (size_t i = 136; i < 156; ++i) {
-            if (spectrum.db[i] > peak_rssi + 120) peak_rssi = static_cast<int32_t>(spectrum.db[i]) - 120;
+        for (size_t i = 136; i < 248; ++i) {
+            sorted[sort_count++] = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
         }
 
-        // Median filter for spike rejection (same as normal mode)
+        // Insertion sort for median (O(n²), n=224 → ~0.65ms on Cortex-M4)
+        for (size_t i = 1; i < sort_count; ++i) {
+            const uint8_t key = sorted[i];
+            size_t j = i;
+            while (j > 0 && sorted[j - 1] > key) {
+                sorted[j] = sorted[j - 1];
+                --j;
+            }
+            sorted[j] = key;
+        }
+
+        // Noise floor = median, margin check rejects flat noise
+        // Uses user-configurable spectrum_margin (same as analyze_spectrum_shape)
+        const uint8_t noise_floor = sorted[sort_count / 2];
+        int32_t peak_rssi = static_cast<int32_t>(raw_peak) - 120;
+
+        if (raw_peak <= noise_floor + config_.spectrum_margin) {
+            return;  // Signal too weak above noise floor — reject
+        }
+
+        // Step 2: Median filter for spike rejection
         rssi_median_filter_.add(peak_rssi);
         if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
             peak_rssi = rssi_median_filter_.get_median();
         }
 
-        // Update drone tracker only for above-threshold signals
+        // Step 3: Update drone tracker only for above-threshold signals
         if (peak_rssi > config_.rssi_threshold_dbm) {
             (void)update_tracked_drone_internal(center_freq, peak_rssi, chTimeNow());
         }

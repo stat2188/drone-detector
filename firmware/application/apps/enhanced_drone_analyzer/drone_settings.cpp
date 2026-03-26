@@ -29,6 +29,7 @@ DroneSettings::DroneSettings() noexcept
     , confirm_count_enabled(false)
     , noise_blacklist_enabled(false)
     , spectrum_detection_enabled(false)
+    , median_enabled(false)
     , spectrum_margin(15)
     , spectrum_min_width(1)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
@@ -55,6 +56,7 @@ void DroneSettings::reset_to_defaults() noexcept {
     confirm_count_enabled = false;
     noise_blacklist_enabled = false;
     spectrum_detection_enabled = false;
+    median_enabled = false;
     spectrum_margin = 15;
     spectrum_min_width = 1;
     
@@ -178,6 +180,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.spectrum_detection_enabled = settings_.spectrum_detection_enabled;
             updated_config.spectrum_margin = settings_.spectrum_margin;
             updated_config.spectrum_min_width = settings_.spectrum_min_width;
+            updated_config.median_enabled = settings_.median_enabled;
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
             if (err != ErrorCode::SUCCESS) {
@@ -228,6 +231,14 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 "spectrum_margin=%u\n", (unsigned)settings_.spectrum_margin);
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "spectrum_min_width=%u\n", (unsigned)settings_.spectrum_min_width);
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "dwell_enabled=%s\n", settings_.dwell_enabled ? "true" : "false");
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "confirm_count_enabled=%s\n", settings_.confirm_count_enabled ? "true" : "false");
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "noise_blacklist_enabled=%s\n", settings_.noise_blacklist_enabled ? "true" : "false");
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "median_enabled=%s\n", settings_.median_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "freqman_path=DRONES\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -695,6 +706,8 @@ void load_startup_settings(ScanConfig& config) noexcept {
             config.confirm_count_enabled = parse_bool();
         } else if (key_matches("noise_blacklist_enabled")) {
             config.noise_blacklist_enabled = parse_bool();
+        } else if (key_matches("median_enabled")) {
+            config.median_enabled = parse_bool();
         }
     };
 

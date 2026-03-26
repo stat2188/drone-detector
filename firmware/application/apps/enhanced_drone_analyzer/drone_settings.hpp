@@ -51,6 +51,7 @@ struct DroneSettings {
     bool confirm_count_enabled;
     bool noise_blacklist_enabled;
     bool spectrum_detection_enabled;
+    bool median_enabled;
     uint8_t spectrum_margin;            // Peak margin above noise (50-200)
     uint8_t spectrum_min_width;         // Min signal width in bins (2-20)
     

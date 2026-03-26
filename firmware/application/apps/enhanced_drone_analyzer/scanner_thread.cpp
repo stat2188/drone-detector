@@ -21,8 +21,11 @@ void ScannerThread::run() noexcept {
 
     while (!chThdShouldTerminate()) {
         if (__atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
-            // Dwell: stay on frequency when signal detected (if enabled)
+            // Read config once per iteration (get_config locks mutex internally)
             const ScanConfig cfg = scanner_.get_config();
+            const uint32_t sleep_ms = (cfg.scan_interval_ms > 0) ? cfg.scan_interval_ms : SCANNER_SLEEP_MS;
+
+            // Dwell: stay on frequency when signal detected (if enabled)
             if (cfg.dwell_enabled) {
                 const ScannerState scan_state = scanner_.get_state();
                 if (scan_state == ScannerState::LOCKING || scan_state == ScannerState::TRACKING) {
@@ -37,7 +40,7 @@ void ScannerThread::run() noexcept {
                         scanner_.force_resume_scanning();
                         dwell_cycles_ = 0;
                     }
-                    chThdSleepMilliseconds(SCANNER_SLEEP_MS);
+                    chThdSleepMilliseconds(sleep_ms);
                     continue;
                 }
                 dwell_cycles_ = 0;
