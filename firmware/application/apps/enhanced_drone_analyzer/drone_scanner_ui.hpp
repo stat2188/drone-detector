@@ -141,14 +141,15 @@ private:
 
     // Band sweep state (UI-driven, processed per spectrum callback)
     static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;  // 240 pixels
+    static constexpr FreqHz SWEEP_SLICE_BW = 20000000;  // 20 MHz per slice
     uint8_t composite_buffer_[COMPOSITE_SIZE]{};
     bool composite_active_{false};
     FreqHz sweep_start_{0};
     FreqHz sweep_end_{0};
-    static constexpr FreqHz SWEEP_SLICE_BW = 20000000;  // 20 MHz per slice
     uint16_t sweep_step_index_{0};       // current step in sweep pass
     uint16_t sweep_total_steps_{0};      // total steps for full sweep
     FreqHz sweep_step_hz_{0};           // frequency step per slice
+    FreqHz bins_hz_acc_{0};             // pixel accumulator (Looking Glass pattern)
 
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
 
