@@ -374,57 +374,63 @@ public:
      * @brief Lightweight spectrum processing for sweep mode
      * @param spectrum Channel spectrum data (256 bins)
      * @param center_freq Current slice center frequency
-     * @note Skips histogram, insertion sort, median filter, confirm count.
-     * @note Only extracts peak RSSI and updates drone tracker above threshold.
+     * @note Uses UNIFIED 40-bin window (100-119, 136-155) — same as spectrum mode.
+     *       This ensures LNA/VGA tuning affects both modes identically.
+     * @note Median filter + margin gate for spike/noise rejection.
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex needed)
      */
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
         current_frequency_ = center_freq;
 
-        // Step 1: Scan ALL usable bins (8-119, 136-247) for peak + noise floor.
-        // Wide range matches waterfall display — catches signals at any offset in the slice.
-        // Noise floor = median of usable bins (same approach as analyze_spectrum_shape).
-        // Static: called only from UI thread (DisplayFrameSync callback).
-        static uint8_t sorted[240];
-        size_t sort_count = 0;
+        // Unified RSSI extraction: 40-bin window centered on DC spike
+        // Same bin selection as extract_rssi() in scanner.cpp
+        constexpr size_t DC_SPIKE_START = 120;
+        constexpr size_t DC_SPIKE_END = 136;
+        constexpr size_t LOWER_START = 100;
+        constexpr size_t UPPER_END = 156;
+        constexpr size_t BIN_COUNT = 40;
+
+        // Step 1: Collect bins + find peak
+        // Static: called only from UI thread (DisplayFrameSync callback)
+        static uint8_t usable[BIN_COUNT];
+        size_t idx = 0;
         uint8_t raw_peak = 0;
 
-        for (size_t i = 8; i < 120; ++i) {
-            sorted[sort_count++] = spectrum.db[i];
+        for (size_t i = LOWER_START; i < DC_SPIKE_START; ++i) {
+            usable[idx++] = spectrum.db[i];
             if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
         }
-        for (size_t i = 136; i < 248; ++i) {
-            sorted[sort_count++] = spectrum.db[i];
+        for (size_t i = DC_SPIKE_END; i < UPPER_END; ++i) {
+            usable[idx++] = spectrum.db[i];
             if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
         }
 
-        // Insertion sort for median (O(n²), n=224 → ~0.65ms on Cortex-M4)
-        for (size_t i = 1; i < sort_count; ++i) {
-            const uint8_t key = sorted[i];
+        // Step 2: Insertion sort for median (O(n²), n=40 → ~0.05ms on Cortex-M4)
+        for (size_t i = 1; i < BIN_COUNT; ++i) {
+            const uint8_t key = usable[i];
             size_t j = i;
-            while (j > 0 && sorted[j - 1] > key) {
-                sorted[j] = sorted[j - 1];
+            while (j > 0 && usable[j - 1] > key) {
+                usable[j] = usable[j - 1];
                 --j;
             }
-            sorted[j] = key;
+            usable[j] = key;
         }
 
-        // Noise floor = median, margin check rejects flat noise
-        // Uses user-configurable spectrum_margin (same as analyze_spectrum_shape)
-        const uint8_t noise_floor = sorted[sort_count / 2];
+        // Step 3: Noise floor = median, margin check rejects flat noise
+        const uint8_t noise_floor = usable[BIN_COUNT / 2];
         int32_t peak_rssi = static_cast<int32_t>(raw_peak) - 120;
 
         if (raw_peak <= noise_floor + config_.spectrum_margin) {
             return;  // Signal too weak above noise floor — reject
         }
 
-        // Step 2: Median filter for spike rejection
+        // Step 4: Median filter for spike rejection
         rssi_median_filter_.add(peak_rssi);
         if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
             peak_rssi = rssi_median_filter_.get_median();
         }
 
-        // Step 3: Update drone tracker only for above-threshold signals
+        // Step 5: Update drone tracker only for above-threshold signals
         if (peak_rssi > config_.rssi_threshold_dbm) {
             (void)update_tracked_drone_internal(center_freq, peak_rssi, chTimeNow());
         }
@@ -524,6 +530,23 @@ private:
      * @return ErrorCode::SUCCESS if valid, error code otherwise
      */
     [[nodiscard]] ErrorCode validate_config_internal(const ScanConfig& config) const noexcept;
+
+    /**
+     * @brief Unified RSSI extraction for both spectrum and sweep modes
+     * @param spectrum Channel spectrum data (256 bins, 0-255 each)
+     * @param out_rssi Extracted RSSI in dBm (peak from focused bin window)
+     * @param out_noise_floor Noise floor estimate (0-255 scale, median of usable bins)
+     * @return true if signal detected above noise floor + spectrum_margin
+     * @note Uses focused 40-bin window (100-119, 136-155) centered on DC spike.
+     *       This matches the tuned frequency's actual energy location.
+     * @note Consistent bin selection ensures LNA/VGA tuning affects both modes identically.
+     * @pre Mutex must NOT be held (static buffers, no shared state)
+     */
+    [[nodiscard]] bool extract_rssi_unified(
+        const ChannelSpectrum& spectrum,
+        int32_t& out_rssi,
+        uint8_t& out_noise_floor
+    ) const noexcept;
 
     /**
      * @brief Internal: Analyze spectrum shape for U/V signal peaks

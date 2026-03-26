@@ -6,19 +6,17 @@
 
 namespace drone_analyzer {
 
+/**
+ * @brief Unified RSSI extraction — focused 40-bin window centered on DC spike
+ * @param spectrum Channel spectrum data (256 bins, 0-255 each)
+ * @return RSSI in dBm (peak from bins 100-119 and 136-155)
+ * @note This is the canonical RSSI extractor. Both spectrum and sweep modes
+ *       use the same bin selection to ensure LNA/VGA tuning affects both identically.
+ * @note The HackRF baseband produces spectrum.db[i] = clamp(dBV*5 + 255, 0, 255).
+ *       Center bins 120-135 contain the DC spike from FFT zero-frequency component.
+ *       We skip them and scan the 40 bins where tuned frequency energy actually lives.
+ */
 static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
-    // The HackRF baseband produces spectrum.db[i] = clamp(dBV*5 + 255, 0, 255)
-    // where dBV = mag2_to_dbv_norm(mag_squared).
-    //
-    // The center bins (120-135) contain the DC spike from FFT zero-frequency
-    // component. Looking Glass ignores 16 center bins, Search blanks 12.
-    // We must skip them too — averaging or max across the spike inflates RSSI
-    // and causes every frequency to appear as a "detected signal."
-    //
-    // Usable signal bins: 0-119 and 136-255 (240 bins around the spike).
-    // We scan a window near center where tuned frequency energy actually lives:
-    // bins 100-119 (lower sideband) and 136-155 (upper sideband).
-
     constexpr size_t DC_SPIKE_START = 120;
     constexpr size_t DC_SPIKE_END = 136;
     constexpr size_t LOWER_START = 100;
@@ -866,6 +864,67 @@ void DroneScanner::set_median_filter_enabled(bool enabled) noexcept {
     median_filter_enabled_ = enabled;
     rssi_median_filter_.reset();
 }
+
+// ============================================================================
+// Unified RSSI Extraction — canonical bin selection for both modes
+// ============================================================================
+
+bool DroneScanner::extract_rssi_unified(
+    const ChannelSpectrum& spectrum,
+    int32_t& out_rssi,
+    uint8_t& out_noise_floor
+) const noexcept {
+    constexpr size_t DC_SPIKE_START = 120;
+    constexpr size_t DC_SPIKE_END = 136;
+    constexpr size_t LOWER_START = 100;
+    constexpr size_t UPPER_END = 156;
+    constexpr size_t BIN_COUNT = 40;  // 20 lower + 20 upper
+
+    // Step 1: Collect usable bins into static buffer for noise floor calculation
+    // Static: only called from UI thread (DisplayFrameSync callback)
+    static uint8_t usable[BIN_COUNT];
+    size_t idx = 0;
+    uint8_t peak = 0;
+
+    for (size_t i = LOWER_START; i < DC_SPIKE_START; ++i) {
+        usable[idx++] = spectrum.db[i];
+        if (spectrum.db[i] > peak) peak = spectrum.db[i];
+    }
+    for (size_t i = DC_SPIKE_END; i < UPPER_END; ++i) {
+        usable[idx++] = spectrum.db[i];
+        if (spectrum.db[i] > peak) peak = spectrum.db[i];
+    }
+
+    // Step 2: Insertion sort for median (O(n²), n=40 → ~0.05ms on Cortex-M4)
+    for (size_t i = 1; i < BIN_COUNT; ++i) {
+        const uint8_t key = usable[i];
+        size_t j = i;
+        while (j > 0 && usable[j - 1] > key) {
+            usable[j] = usable[j - 1];
+            --j;
+        }
+        usable[j] = key;
+    }
+
+    // Step 3: Noise floor = median of 40 bins
+    out_noise_floor = usable[BIN_COUNT / 2];
+
+    // Step 4: Margin check — reject flat noise
+    // Uses configurable spectrum_margin (same as analyze_spectrum_shape / process_spectrum_sweep)
+    if (peak <= out_noise_floor + config_.spectrum_margin) {
+        out_rssi = static_cast<int32_t>(peak) - 120;
+        return false;  // Signal too weak above noise floor
+    }
+
+    // Step 5: Convert peak to dBm
+    out_rssi = static_cast<int32_t>(peak) - 120;
+    if (out_rssi < RSSI_MIN_DBM) out_rssi = RSSI_MIN_DBM;
+    if (out_rssi > RSSI_MAX_DBM) out_rssi = RSSI_MAX_DBM;
+
+    return true;
+}
+
+// ============================================================================
 
 // ============================================================================
 // Spectrum Shape Analysis — detect U/V peaks above flat noise floor
