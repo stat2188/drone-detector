@@ -403,7 +403,7 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
     if (config_.spectrum_detection_enabled) {
         // Spectrum primary: margin-gated shape detection
         int32_t spectrum_rssi = RSSI_MIN_DBM;
-        if (analyze_spectrum_shape(spectrum, rssi, spectrum_rssi)) {
+        if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
             signal_detected = true;
             if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
         }
@@ -461,7 +461,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     if (config_.spectrum_detection_enabled) {
         // Spectrum primary: margin-gated shape detection
         int32_t spectrum_rssi = RSSI_MIN_DBM;
-        if (analyze_spectrum_shape(spectrum, rssi, spectrum_rssi)) {
+        if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
             signal_detected = true;
             if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
         }
@@ -870,7 +870,7 @@ void DroneScanner::set_median_filter_enabled(bool enabled) noexcept {
 // Spectrum Shape Analysis — detect U/V peaks above flat noise floor
 // ============================================================================
 
-bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t rssi, int32_t& out_rssi) const noexcept {
+bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) const noexcept {
     constexpr size_t BIN_COUNT = 256;
     constexpr size_t EDGE_SKIP = 6;  // Skip first/last 6 bins (filter rolloff artifacts)
     constexpr size_t DC_SPIKE_START = 120;
@@ -878,7 +878,8 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
 
     // Step 1: Find noise floor = median of usable bins
     // Skip edges AND DC spike (same bins extract_rssi skips)
-    uint8_t sorted[BIN_COUNT];
+    // Static: called only from UI thread (DisplayFrameSync callback)
+    static uint8_t sorted[BIN_COUNT];
     size_t sort_count = 0;
     for (size_t i = EDGE_SKIP; i < BIN_COUNT - EDGE_SKIP; ++i) {
         if (i >= DC_SPIKE_START && i < DC_SPIKE_END) continue;
