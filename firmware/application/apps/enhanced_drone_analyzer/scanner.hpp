@@ -380,12 +380,14 @@ public:
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
         current_frequency_ = center_freq;
 
-        // Peak RSSI from signal bins only (skip DC spike 120-135, skip edges 0-7/248-255)
+        // Peak RSSI from bins NEAR tuned frequency only (same range as extract_rssi).
+        // Wide-band peak (all 240 bins) picks up noise from ±9.4 MHz at high gain.
+        // Narrow-band peak (bins 100-119, 136-155) only looks at ±1.5 MHz — same as DB scanner.
         int32_t peak_rssi = RSSI_NOISE_FLOOR_DBM;
-        for (size_t i = 8; i < 120; ++i) {
+        for (size_t i = 100; i < 120; ++i) {
             if (spectrum.db[i] > peak_rssi + 120) peak_rssi = static_cast<int32_t>(spectrum.db[i]) - 120;
         }
-        for (size_t i = 136; i < 248; ++i) {
+        for (size_t i = 136; i < 156; ++i) {
             if (spectrum.db[i] > peak_rssi + 120) peak_rssi = static_cast<int32_t>(spectrum.db[i]) - 120;
         }
 

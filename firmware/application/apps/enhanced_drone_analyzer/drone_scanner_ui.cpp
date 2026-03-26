@@ -372,6 +372,10 @@ void DroneScannerUI::on_show() {
         radio::set_tuning_frequency(rf::Frequency(sweep_f_center_));
         chThdSleepMilliseconds(5);
         current_frequency_ = sweep_f_center_;
+
+        // Restart streaming (on_hide() stopped it when entering Settings)
+        baseband::spectrum_streaming_start();
+        scanning_ = true;
     }
 }
 
@@ -715,9 +719,6 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // Looking Glass pattern: stop → process → retune → start
     baseband::spectrum_streaming_stop();
 
-    // Per-slice peak for drone detection (separate from pixel accumulator)
-    uint8_t slice_peak = 0;
-
     // Bin-to-pixel mapping (LG FASTSCAN pattern)
     // Usable bins: 134..253 (120 bins) + 2..121 (120 bins) = 240 bins per slice
     // Skipping DC spike (bins 120-135) and edge rolloff (bins 0-1, 254-255)
@@ -725,9 +726,6 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // Remap bin index to actual FFT bin (skip DC + edges)
         const uint8_t fft_bin = (bin < 120) ? (134 + bin) : (bin - 118);
         const uint8_t power = spectrum.db[fft_bin];
-
-        // Track peak for drone detection
-        if (power > slice_peak) slice_peak = power;
 
         // Accumulate for pixel mapping
         if (power > sweep_pixel_max_) sweep_pixel_max_ = power;
@@ -743,12 +741,13 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         }
     }
 
-    // Drone detection: feed slice peak to scanner tracker (above threshold only)
-    if (scanner_ptr_ != nullptr && slice_peak > 0) {
-        const int32_t peak_rssi = static_cast<int32_t>(slice_peak) - 120;
-        if (peak_rssi > RSSI_DETECTION_THRESHOLD_DBM) {
-            scanner_ptr_->process_spectrum_sweep(spectrum, sweep_f_center_);
-        }
+    // Drone detection: always feed to tracker.
+    // process_spectrum_sweep() extracts narrow-band peak (bins 100-119, 136-155),
+    // applies median filter, and only updates tracker if filtered RSSI > threshold.
+    // Do NOT pre-gate on raw slice_peak — at high LNA/VGA gain, wide-band noise
+    // spikes pass the gate and create false detections before filter can reject them.
+    if (scanner_ptr_ != nullptr) {
+        scanner_ptr_->process_spectrum_sweep(spectrum, sweep_f_center_);
     }
 
     // Check if full sweep pass is complete
