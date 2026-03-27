@@ -167,6 +167,8 @@ public:
 
     void set_composite_mode(bool enabled) noexcept { composite_mode_ = enabled; }
     void set_composite_data(const uint8_t* data, size_t size) noexcept;
+    void set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t buffer_size,
+                             const FreqHz* freq_starts, const FreqHz* freq_ends) noexcept;
     void set_sweep_range(FreqHz start, FreqHz end) noexcept {
         sweep_freq_start_ = start;
         sweep_freq_end_ = end;
@@ -392,10 +394,25 @@ private:
     FreqHz sweep_freq_start_{0};
     FreqHz sweep_freq_end_{0};
 
+    // Multi-zone sweep (4 zones)
+    static constexpr uint8_t MAX_ZONES = 4;
+    const uint8_t* multi_zone_data_[MAX_ZONES]{};
+    FreqHz zone_freq_start_[MAX_ZONES]{};
+    FreqHz zone_freq_end_[MAX_ZONES]{};
+    uint8_t multi_zone_count_{0};
+
     void render_composite(
         Painter& painter,
         const uint8_t* composite_data,
         size_t composite_size,
+        uint16_t start_x,
+        uint16_t start_y,
+        uint16_t width,
+        uint16_t height
+    ) noexcept;
+
+    void render_multi_zone(
+        Painter& painter,
         uint16_t start_x,
         uint16_t start_y,
         uint16_t width,

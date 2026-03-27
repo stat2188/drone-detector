@@ -76,6 +76,77 @@ struct ScanStatistics {
     void reset() noexcept;
 };
 
+// ============================================================================
+// Multi-Zone Sweep Structures
+// ============================================================================
+
+/**
+ * @brief Number of sweep zones (4 horizontal display bands)
+ */
+constexpr uint8_t SWEEP_ZONE_COUNT = 4;
+
+/**
+ * @brief Per-zone sweep configuration
+ */
+struct SweepZoneConfig {
+    FreqHz start_freq{0};
+    FreqHz end_freq{0};
+    bool enabled{false};
+};
+
+/**
+ * @brief Multi-zone sweep configuration (stored in SD card settings)
+ */
+struct SweepZonesConfig {
+    SweepZoneConfig zones[SWEEP_ZONE_COUNT];
+
+    SweepZonesConfig() noexcept {
+        // Default: zone 0 = 2.4 GHz ISM, others disabled
+        zones[0] = {2400000000ULL, 2500000000ULL, true};
+        zones[1] = {5700000000ULL, 5800000000ULL, false};
+        zones[2] = {5800000000ULL, 5900000000ULL, false};
+        zones[3] = {1000000000ULL, 1100000000ULL, false};
+    }
+};
+
+/**
+ * @brief Per-zone sweep runtime state
+ */
+struct SweepZoneRuntime {
+    FreqHz current_center{0};
+    FreqHz pixel_step_hz{0};
+    FreqHz step_hz{0};
+    FreqHz bins_hz_acc{0};
+    FreqHz center_ini{0};
+    uint16_t pixel_index{0};
+    uint8_t pixel_max{0};
+
+    void init(const SweepZoneConfig& cfg) noexcept {
+        constexpr FreqHz SLICE_BW = 20000000;
+        constexpr FreqHz BIN_SIZE = SLICE_BW / 256;
+
+        const FreqHz range = cfg.end_freq - cfg.start_freq;
+        pixel_step_hz = (range > 0) ? range / 240 : 0;
+        step_hz = 244 * BIN_SIZE;
+        center_ini = cfg.start_freq - (2 * BIN_SIZE) + (SLICE_BW / 2);
+        current_center = center_ini;
+        pixel_index = 0;
+        pixel_max = 0;
+        bins_hz_acc = 0;
+    }
+
+    void reset_pass() noexcept {
+        current_center = center_ini;
+        pixel_index = 0;
+        pixel_max = 0;
+        bins_hz_acc = 0;
+    }
+
+    [[nodiscard]] bool is_complete() const noexcept {
+        return pixel_index >= 240;
+    }
+};
+
 /**
  * @brief Alert callback function type
  * @param threat_level Threat level based on RSSI

@@ -69,8 +69,12 @@ void DroneDisplay::paint(Painter& painter) {
 
     if (show_spec || show_composite) {
         if (show_composite) {
-            render_composite(painter, composite_data_, composite_data_size_,
-                            ox, y_offset, w, spec_h);
+            if (multi_zone_count_ > 1) {
+                render_multi_zone(painter, ox, y_offset, w, spec_h);
+            } else {
+                render_composite(painter, composite_data_, composite_data_size_,
+                                ox, y_offset, w, spec_h);
+            }
         } else {
             render_spectrum(painter, spectrum_buffer_.data(), spectrum_data_size_,
                             ox, y_offset, w, spec_h);
@@ -715,6 +719,84 @@ void DroneDisplay::render_composite(
         else if (power > 100) color = COLOR_MEDIUM_THREAT;
 
         draw_rectangle(painter, x, y, bar_width, bar_height, color);
+    }
+}
+
+void DroneDisplay::set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t buffer_size,
+                                       const FreqHz* freq_starts, const FreqHz* freq_ends) noexcept {
+    if (zone_count > MAX_ZONES) zone_count = MAX_ZONES;
+    multi_zone_count_ = zone_count;
+    for (uint8_t z = 0; z < zone_count; ++z) {
+        multi_zone_data_[z] = buffers[z];
+        zone_freq_start_[z] = freq_starts[z];
+        zone_freq_end_[z] = freq_ends[z];
+    }
+}
+
+void DroneDisplay::render_multi_zone(
+    Painter& painter,
+    uint16_t start_x,
+    uint16_t start_y,
+    uint16_t width,
+    uint16_t height
+) noexcept {
+    if (multi_zone_count_ == 0 || height < 20) return;
+
+    // Divide height into equal zones with 1px separator
+    const uint16_t zone_h = height / multi_zone_count_;
+    const uint16_t sep_h = 1;
+
+    for (uint8_t z = 0; z < multi_zone_count_; ++z) {
+        const uint16_t zone_y = start_y + z * (zone_h + sep_h);
+        const uint8_t* data = multi_zone_data_[z];
+
+        // Background
+        draw_rectangle(painter, start_x, zone_y, width, zone_h, COLOR_BACKGROUND);
+
+        // Separator line at top (except first zone)
+        if (z > 0) {
+            draw_rectangle(painter, start_x, zone_y - sep_h, width, sep_h, COLOR_UNKNOWN_THREAT);
+        }
+
+        // Title: zone frequency range
+        if (data != nullptr) {
+            char title[16];
+            const uint32_t mhz_lo = static_cast<uint32_t>(zone_freq_start_[z] / 1000000ULL);
+            const uint32_t mhz_hi = static_cast<uint32_t>(zone_freq_end_[z] / 1000000ULL);
+            char* dst = title;
+            size_t rem = sizeof(title);
+            write_uint(dst, rem, mhz_lo);
+            write_str(dst, rem, "-");
+            write_uint(dst, rem, mhz_hi);
+            write_str(dst, rem, "M");
+            *dst = '\0';
+            draw_text(painter, title, start_x + 2, zone_y + 2, COLOR_TEXT);
+
+            // Bar chart
+            constexpr uint16_t bar_width = 1;
+            const uint16_t chart_y = zone_y + 12;
+            const uint16_t chart_h = zone_h - 14;
+            if (chart_h < 4) continue;
+
+            for (uint16_t i = 0; i < width - 4; ++i) {
+                if (i >= 240) break;
+                const uint8_t power = data[i];
+                if (power == 0 || power < min_color_power_) continue;
+
+                const uint16_t bar_h = (static_cast<uint16_t>(power) * chart_h) / 255;
+                if (bar_h == 0) continue;
+
+                const uint16_t x = start_x + 2 + i * bar_width;
+                const uint16_t y = chart_y + chart_h - bar_h;
+
+                uint32_t color = COLOR_LOW_THREAT;
+                if (power > 200) color = COLOR_CRITICAL_THREAT;
+                else if (power > 150) color = COLOR_HIGH_THREAT;
+                else if (power > 100) color = COLOR_MEDIUM_THREAT;
+
+                draw_rectangle(painter, x, y, bar_width, bar_h, color);
+            }
+        }
     }
 }
 

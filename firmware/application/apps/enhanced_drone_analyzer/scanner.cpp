@@ -16,7 +16,7 @@ namespace drone_analyzer {
  *       Center bins 120-135 contain the DC spike from FFT zero-frequency component.
  */
 static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
-    constexpr size_t EDGE_SKIP = 6;
+    constexpr size_t EDGE_SKIP = 10;
     constexpr size_t DC_SPIKE_START = 120;
     constexpr size_t DC_SPIKE_END = 136;
 

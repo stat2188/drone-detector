@@ -104,8 +104,9 @@ private:
 
     ui::Button button_start_stop_{{UI_POS_X(0), 284, UI_POS_WIDTH(6), 28}, "Start"};
     ui::Button button_mode_{{UI_POS_X(7), 284, UI_POS_WIDTH(5), 28}, "Mode"};
-    ui::Button button_load_{{UI_POS_X(13), 284, UI_POS_WIDTH(5), 28}, "Load"};
-    ui::Button button_settings_{{UI_POS_X(19), 284, UI_POS_WIDTH(5), 28}, "Setup"};
+    ui::Button button_load_{{UI_POS_X(13), 284, UI_POS_WIDTH(4), 28}, "Load"};
+    ui::Button button_settings_{{UI_POS_X(18), 284, UI_POS_WIDTH(4), 28}, "Set"};
+    ui::Button button_swp_{{UI_POS_X(23), 284, UI_POS_WIDTH(3), 28}, "SWP"};
 
     FreqHz current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
@@ -145,25 +146,36 @@ private:
     static constexpr uint8_t DB_SCANS_PER_SWEEP = 20;          // DB scans between auto-sweep passes
     static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;  // 78125 Hz per bin
 
-    uint8_t composite_buffer_[COMPOSITE_SIZE]{};
+    // Multi-zone sweep: 4 independent composite buffers
+    uint8_t composite_buffer_[COMPOSITE_SIZE]{};  // legacy single buffer (zone 0 or single-zone mode)
+    uint8_t composite_buffers_[SWEEP_ZONE_COUNT][COMPOSITE_SIZE]{};  // 4-zone mode
+    SweepZonesConfig sweep_zones_config_;
+    SweepZoneRuntime sweep_zones_runtime_[SWEEP_ZONE_COUNT];
+    uint8_t active_zone_{0};              // current zone for round-robin (0-3)
+    uint8_t enabled_zone_count_{1};       // number of enabled zones
+
     bool composite_active_{false};
     bool sweep_auto_mode_{false};        // true = interleaved (auto exit after pass), false = manual
     uint8_t db_scan_count_{0};           // counter for DB scan interleaving
 
-    FreqHz sweep_f_min_{0};             // sweep range start (Hz)
-    FreqHz sweep_f_max_{0};             // sweep range end (Hz)
-    FreqHz sweep_f_center_{0};          // current slice center frequency
-    FreqHz sweep_f_center_ini_{0};      // first slice center frequency
-    FreqHz sweep_pixel_step_hz_{0};     // Hz per pixel = range / COMPOSITE_SIZE
-    FreqHz sweep_step_hz_{0};           // frequency step per slice (bin_length * each_bin_size)
-    FreqHz sweep_bins_hz_acc_{0};       // Hz accumulator for bin-to-pixel mapping
-    uint16_t sweep_pixel_index_{0};     // current pixel position (0..COMPOSITE_SIZE-1)
-    uint8_t sweep_pixel_max_{0};        // max power for current pixel across bins
+    // Legacy sweep state (used for single-zone fallback during transition)
+    FreqHz sweep_f_min_{0};
+    FreqHz sweep_f_max_{0};
+    FreqHz sweep_f_center_{0};
+    FreqHz sweep_f_center_ini_{0};
+    FreqHz sweep_pixel_step_hz_{0};
+    FreqHz sweep_step_hz_{0};
+    FreqHz sweep_bins_hz_acc_{0};
+    uint16_t sweep_pixel_index_{0};
+    uint8_t sweep_pixel_max_{0};
 
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
+    void on_multi_zone_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void sweep_retune() noexcept;
+    void multi_zone_sweep_retune() noexcept;
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
+    uint8_t find_next_enabled_zone() noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
