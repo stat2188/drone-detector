@@ -613,7 +613,12 @@ void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
 
 void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
     if (scanner_ptr_ != nullptr && scanning_) {
-        (void)scanner_ptr_->process_spectrum_message(spectrum);
+        // Capture frequency BEFORE processing — scanner thread may have moved
+        // to the next frequency by the time this callback runs
+        const FreqHz freq = scanner_ptr_->get_spectrum_frequency();
+        if (freq != 0) {
+            (void)scanner_ptr_->process_spectrum_message(spectrum, freq);
+        }
 
         // Feed spectrum to DroneDisplay for visualization only when scanning
         drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());

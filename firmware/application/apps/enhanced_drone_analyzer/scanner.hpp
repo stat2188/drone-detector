@@ -225,6 +225,20 @@ public:
      */
     [[nodiscard]] ErrorCode process_spectrum_message(const ChannelSpectrum& spectrum) noexcept;
 
+    /**
+     * @brief Process spectrum with explicit frequency (avoids race with scanner thread)
+     * @param spectrum Channel spectrum data
+     * @param frequency Frequency this spectrum corresponds to
+     * @return ErrorCode::SUCCESS if processed, error code otherwise
+     */
+    [[nodiscard]] ErrorCode process_spectrum_message(const ChannelSpectrum& spectrum, FreqHz frequency) noexcept;
+
+    /**
+     * @brief Get current frequency for spectrum association (thread-safe)
+     * @return Current frequency under mutex lock
+     */
+    [[nodiscard]] FreqHz get_spectrum_frequency() noexcept;
+
     [[nodiscard]] size_t get_tracked_drones(
         TrackedDrone* drones,
         size_t max_count
@@ -382,13 +396,14 @@ public:
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
         current_frequency_ = center_freq;
 
-        // Unified RSSI extraction: 40-bin window centered on DC spike
-        // Same bin selection as extract_rssi() in scanner.cpp
+        // Expanded bin window: EDGE_SKIP=6 on both sides, skip DC spike
+        // Matches display coverage (240 bins) minus edge artifacts
+        // Display: bins 2-121 + 134-253 (240 bins)
+        // Detection: bins 6-119 + 136-250 (228 bins)
+        constexpr size_t EDGE_SKIP = 6;
         constexpr size_t DC_SPIKE_START = 120;
         constexpr size_t DC_SPIKE_END = 136;
-        constexpr size_t LOWER_START = 100;
-        constexpr size_t UPPER_END = 156;
-        constexpr size_t BIN_COUNT = 40;
+        constexpr size_t BIN_COUNT = 228;  // (120-6) + (256-6-136)
 
         // Step 1: Collect bins + find peak
         // Static: called only from UI thread (DisplayFrameSync callback)
@@ -396,17 +411,17 @@ public:
         size_t idx = 0;
         uint8_t raw_peak = 0;
 
-        for (size_t i = LOWER_START; i < DC_SPIKE_START; ++i) {
+        for (size_t i = EDGE_SKIP; i < DC_SPIKE_START; ++i) {
             usable[idx++] = spectrum.db[i];
             if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
         }
-        for (size_t i = DC_SPIKE_END; i < UPPER_END; ++i) {
+        for (size_t i = DC_SPIKE_END; i < (256 - EDGE_SKIP); ++i) {
             usable[idx++] = spectrum.db[i];
             if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
         }
 
-        // Step 2: Insertion sort for median (O(n²), n=40 → ~0.05ms on Cortex-M4)
-        for (size_t i = 1; i < BIN_COUNT; ++i) {
+        // Step 2: Insertion sort for median (O(n²), n=228)
+        for (size_t i = 1; i < idx; ++i) {
             const uint8_t key = usable[i];
             size_t j = i;
             while (j > 0 && usable[j - 1] > key) {
@@ -417,7 +432,7 @@ public:
         }
 
         // Step 3: Noise floor = median, margin check rejects flat noise
-        const uint8_t noise_floor = usable[BIN_COUNT / 2];
+        const uint8_t noise_floor = usable[idx / 2];
         int32_t peak_rssi = static_cast<int32_t>(raw_peak) - 120;
 
         if (raw_peak <= noise_floor + config_.spectrum_margin) {

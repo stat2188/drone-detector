@@ -436,13 +436,25 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
 }
 
 ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum) noexcept {
+    return process_spectrum_message(spectrum, current_frequency_);
+}
+
+FreqHz DroneScanner::get_spectrum_frequency() noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (lock.is_locked()) {
+        return current_frequency_;
+    }
+    return 0;
+}
+
+ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum, FreqHz frequency) noexcept {
     MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
 
     if (!lock.is_locked()) {
         return ErrorCode::MUTEX_LOCK_FAILED;
     }
 
-    if (current_frequency_ == 0) {
+    if (frequency == 0) {
         return ErrorCode::INVALID_PARAMETER;
     }
 
@@ -488,14 +500,14 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         if (config_.confirm_count_enabled) {
             // Confirm count: require DETECT_CONFIRM_COUNT detections on same frequency
             // before creating a drone. Prevents noise spikes from adding phantom drones.
-            if (current_frequency_ != pending_frequency_) {
-                pending_frequency_ = current_frequency_;
+            if (frequency != pending_frequency_) {
+                pending_frequency_ = frequency;
                 pending_count_ = 1;
             } else if (pending_count_ < DETECT_CONFIRM_COUNT) {
                 pending_count_++;
             }
 
-            ErrorResult<size_t> existing = find_drone_by_frequency_internal(current_frequency_);
+            ErrorResult<size_t> existing = find_drone_by_frequency_internal(frequency);
             if (!existing.has_value() && pending_count_ < DETECT_CONFIRM_COUNT) {
                 should_update = false;  // waiting for more confirmations
             }
@@ -503,7 +515,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
         if (should_update) {
             const ErrorCode err = update_tracked_drone_internal(
-                current_frequency_,
+                frequency,
                 effective_rssi,
                 now
             );
@@ -513,7 +525,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         }
 
         // Reset missed counter for detected drone
-        ErrorResult<size_t> idx = find_drone_by_frequency_internal(current_frequency_);
+        ErrorResult<size_t> idx = find_drone_by_frequency_internal(frequency);
         if (idx.has_value()) {
             tracked_drones_[idx.value()].reset_missed();
         }
@@ -524,7 +536,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         }
 
         // Frequency lock state machine
-        if (current_frequency_ == locked_frequency_) {
+        if (frequency == locked_frequency_) {
             // Same frequency as locked — accumulate persistence count
             if (freq_lock_count_ < MAX_FREQ_LOCK) {
                 freq_lock_count_++;
@@ -539,7 +551,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             // If already LOCKING/TRACKING, the current lock is more valuable
             // than a transient signal on another frequency
             if (state_ == ScannerState::SCANNING) {
-                locked_frequency_ = current_frequency_;
+                locked_frequency_ = frequency;
                 freq_lock_count_ = 1;
                 state_ = ScannerState::LOCKING;
             }
@@ -549,10 +561,10 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     } else {
         // No signal on this frequency — decay tracked drones
         // Only decay once per frequency change (not every frame)
-        if (current_frequency_ != last_decay_freq_) {
-            last_decay_freq_ = current_frequency_;
+        if (frequency != last_decay_freq_) {
+            last_decay_freq_ = frequency;
             constexpr uint8_t DECAY_AFTER_MISSED = 3;
-            ErrorResult<size_t> decay_idx = find_drone_by_frequency_internal(current_frequency_);
+            ErrorResult<size_t> decay_idx = find_drone_by_frequency_internal(frequency);
             if (decay_idx.has_value()) {
                 size_t di = decay_idx.value();
                 if (di < tracked_count_) {
@@ -572,7 +584,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         }
 
         // Only break lock if we're tuned to the locked freq and it's gone
-        if (locked_frequency_ != 0 && current_frequency_ == locked_frequency_) {
+        if (locked_frequency_ != 0 && frequency == locked_frequency_) {
             freq_lock_count_ = 0;
             locked_frequency_ = 0;
             if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
@@ -584,8 +596,6 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
     return ErrorCode::SUCCESS;
 }
-
-
 
 ErrorCode DroneScanner::update_tracked_drone_internal(
     FreqHz frequency,
