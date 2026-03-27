@@ -365,20 +365,6 @@ void DroneScannerUI::destruct_objects() noexcept {
     hardware_ptr_ = nullptr;
 }
 
-void DroneScannerUI::apply_sweep_ui_layout() noexcept {
-    big_display_.hidden(true);
-    sweep_freq_text_.hidden(true);
-    drone_display_.set_histogram_visible(false);
-    drone_display_.set_parent_rect({0, 16, DISPLAY_WIDTH, 258});
-}
-
-void DroneScannerUI::restore_normal_ui_layout() noexcept {
-    big_display_.hidden(false);
-    sweep_freq_text_.hidden(true);
-    drone_display_.set_histogram_visible(histogram_pre_sweep_visible_);
-    drone_display_.set_parent_rect({0, 68, DISPLAY_WIDTH, 206});
-}
-
 void DroneScannerUI::on_show() {
     if (scanner_thread_ != nullptr && !scanner_thread_->is_active()) {
         scanner_thread_->start();
@@ -582,7 +568,9 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }
 
-    // Feed histogram data from scanner (skip in sweep mode — saves CPU)
+    // Feed histogram data
+    // Normal mode: from scanner histogram processor
+    // Sweep mode: from composite buffer (live power distribution)
     if (!composite_active_) {
         static uint16_t hist_data[HISTOGRAM_BUFFER_SIZE];
         const size_t hist_count = scanner_ptr_->get_histogram_snapshot(
@@ -591,10 +579,19 @@ void DroneScannerUI::refresh_ui() noexcept {
         if (hist_count > 0) {
             drone_display_.set_histogram_data(hist_data, hist_count);
         }
+    } else {
+        // Feed composite power levels as histogram bins
+        static uint16_t hist_data[HISTOGRAM_BUFFER_SIZE];
+        const size_t bins = (COMPOSITE_SIZE < HISTOGRAM_BUFFER_SIZE)
+            ? COMPOSITE_SIZE : HISTOGRAM_BUFFER_SIZE;
+        for (size_t i = 0; i < bins; ++i) {
+            hist_data[i] = static_cast<uint16_t>(sweep_[active_sweep_idx_].composite[i]) * 256;
+        }
+        drone_display_.set_histogram_data(hist_data, bins);
     }
 
-    // Update big frequency display (skip in sweep mode — widget is hidden)
-    if (!composite_active_) {
+    // Update big frequency display
+    {
         RssiValue drone_rssi = RSSI_NOISE_FLOOR_DBM;
         if (display_data.drone_count > 0) {
             drone_rssi = display_data.drones[0].rssi;
@@ -657,15 +654,8 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
 }
 
 void DroneScannerUI::enter_sweep_mode() noexcept {
-    // Save histogram state BEFORE marking composite active
-    // (apply_sweep_ui_layout relies on composite_active_ to know context)
-    histogram_pre_sweep_visible_ = drone_display_.get_histogram_visible();
-
     composite_active_ = true;
     drone_display_.set_composite_mode(true);
-
-    // Apply sweep UI layout (single source of truth)
-    apply_sweep_ui_layout();
 
     ScanConfig cfg;
     if (scanner_ptr_ != nullptr) {
@@ -725,9 +715,6 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     drone_display_.set_dual_sweep_mode(false);
     spectrum_fifo_ = nullptr;
     db_scan_count_ = 0;
-
-    // Restore normal UI layout (single source of truth)
-    restore_normal_ui_layout();
 
     if (scanning_) {
         baseband::spectrum_streaming_stop();

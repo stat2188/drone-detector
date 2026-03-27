@@ -65,9 +65,6 @@ private:
     void construct_objects() noexcept;
     void destruct_objects() noexcept;
 
-    void apply_sweep_ui_layout() noexcept;
-    void restore_normal_ui_layout() noexcept;
-
     NavigationView& nav_;
 
     RxRadioState radio_state_{ReceiverModel::Mode::SpectrumAnalysis};
