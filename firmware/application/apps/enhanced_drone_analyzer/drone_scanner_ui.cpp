@@ -56,9 +56,14 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                                 this->sweep2_active_ = true;
                             }
                         }
-                        // Auto-exit sweep after both passes complete (interleaved mode)
-                        if (this->sweep_auto_mode_ && this->sweep_pixel_index_ == 0 &&
-                            (!this->sweep2_enabled_ || this->sweep2_pixel_index_ == 0)) {
+                        // Auto-exit sweep after ALL passes complete (interleaved mode)
+                        // When sweep1 completes (pixel_index_==0):
+                        //   - sweep2 enabled:  line 56 sets sweep2_active_=true → !sweep2_active_=false → skip exit
+                        //   - sweep2 disabled: sweep2_active_ stays false → exit fires
+                        // When sweep2 completes (in on_sweep2_spectrum): sweep2_active_=false, returns to sweep1
+                        // Auto-exit only fires after full cycle (sweep1→sweep2→sweep1 completes with sweep2 disabled)
+                        if (this->sweep_auto_mode_ && !this->sweep2_active_ &&
+                            this->sweep_pixel_index_ == 0) {
                             this->exit_sweep_mode();
                         }
                     } else {
@@ -419,10 +424,13 @@ void DroneScannerUI::on_show() {
         drone_display_.set_histogram_visible(false);
         drone_display_.set_parent_rect({0, 16, DISPLAY_WIDTH, 258});
 
-        // Re-init sweep2 if enabled
+        // Re-init sweep2 if enabled (or reset dual mode if disabled)
         sweep2_enabled_ = cfg.sweep2_enabled;
         if (sweep2_enabled_) {
-            init_sweep2();
+            init_sweep2(cfg.sweep2_start_freq, cfg.sweep2_end_freq);
+        } else {
+            drone_display_.set_dual_sweep_mode(false);
+            sweep2_active_ = false;
         }
     }
 }
@@ -746,7 +754,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
 
     // Initialize sweep window 2 if enabled
     if (sweep2_enabled_) {
-        init_sweep2();
+        init_sweep2(cfg.sweep2_start_freq, cfg.sweep2_end_freq);
     }
 }
 
@@ -833,7 +841,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
         drone_display_.set_dirty();
 
-        // Reset for next pass — retune to start (LG pattern)
+        // Reset for next pass
         for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
             composite_buffer_[i] = 0;
         }
@@ -841,6 +849,12 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         sweep_pixel_max_ = 0;
         sweep_bins_hz_acc_ = 0;
         sweep_f_center_ = sweep_f_center_ini_;
+
+        // If sweep2 is enabled, skip retune — sweep2 will retune next frame
+        // Otherwise retune now for the next sweep1 pass
+        if (sweep2_enabled_) {
+            return;
+        }
         sweep_retune();
         return;
     }
@@ -869,14 +883,9 @@ void DroneScannerUI::sweep_retune() noexcept {
     baseband::spectrum_streaming_start();
 }
 
-void DroneScannerUI::init_sweep2() noexcept {
-    ScanConfig cfg;
-    if (scanner_ptr_ != nullptr) {
-        cfg = scanner_ptr_->get_config();
-    }
-
-    sweep2_f_min_ = cfg.sweep2_start_freq;
-    sweep2_f_max_ = cfg.sweep2_end_freq;
+void DroneScannerUI::init_sweep2(FreqHz start, FreqHz end) noexcept {
+    sweep2_f_min_ = start;
+    sweep2_f_max_ = end;
 
     // Validate
     if (sweep2_f_min_ >= sweep2_f_max_) {

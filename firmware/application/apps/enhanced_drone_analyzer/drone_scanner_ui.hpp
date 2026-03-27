@@ -191,7 +191,7 @@ private:
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
     void sweep_retune() noexcept;
-    void init_sweep2() noexcept;
+    void init_sweep2(FreqHz start, FreqHz end) noexcept;
     void on_sweep2_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void sweep2_retune() noexcept;
 
