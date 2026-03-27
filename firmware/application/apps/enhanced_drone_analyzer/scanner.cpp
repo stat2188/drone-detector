@@ -52,6 +52,7 @@ ScanConfig::ScanConfig() noexcept
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000) {
+    // sweep2 fields use in-class defaults: 2.4GHz, disabled
 }
 
 ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
@@ -64,6 +65,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000) {
+    // sweep2 fields use in-class defaults: 2.4GHz, disabled
 }
 
 // ============================================================================

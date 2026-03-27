@@ -34,7 +34,11 @@ DroneSettings::DroneSettings() noexcept
     , spectrum_min_width(1)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
-    , sweep_step_freq(20000000) {  // Default 20 MHz (matches SWEEP_BANDWIDTH)
+    , sweep_step_freq(20000000)  // Default 20 MHz (matches SWEEP_BANDWIDTH)
+    , sweep2_start_freq(2400000000ULL)
+    , sweep2_end_freq(2500000000ULL)
+    , sweep2_step_freq(20000000)
+    , sweep2_enabled(false) {
 }
 
 void DroneSettings::reset_to_defaults() noexcept {
@@ -63,6 +67,11 @@ void DroneSettings::reset_to_defaults() noexcept {
     sweep_start_freq = SWEEP_DEFAULT_START_HZ;
     sweep_end_freq = SWEEP_DEFAULT_END_HZ;
     sweep_step_freq = 20000000;  // 20 MHz
+
+    sweep2_start_freq = 2400000000ULL;
+    sweep2_end_freq = 2500000000ULL;
+    sweep2_step_freq = 20000000;
+    sweep2_enabled = false;
 }
 
 // ============================================================================
@@ -75,11 +84,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(5)}, "Sweep(MHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(9), UI_POS_Y(5)}, "-", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(7)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(15), UI_POS_Y(7)}, "Mar:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(15), UI_POS_Y(8)}, "Wid:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(15), UI_POS_Y(5)}, "Mar:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(15), UI_POS_Y(6)}, "Wid:", Theme::getInstance()->fg_light->foreground},
     })
     , field_scan_mode_({UI_POS_X(0), UI_POS_Y(0)}, 1, {
         {"-", 0},
@@ -94,11 +100,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
     , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(13)}, 4, "Mar", false)
-    , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(7)}, 3, {5, 200}, 5, ' ')
-    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(8)}, 2, {1, 20}, 1, ' ')
-    , field_sweep_start_({UI_POS_X(1), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
-    , field_sweep_end_({UI_POS_X(10), UI_POS_Y(6)}, 5, {100, 7200}, 1, ' ')
-    , field_sweep_step_({UI_POS_X(1), UI_POS_Y(8)}, 5, {1000, 99999}, 1000, ' ')
+    , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
+    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 2, {1, 20}, 1, ' ')
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
     , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")
     , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
@@ -132,9 +135,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_spectrum_detection_,
         &field_spectrum_margin_,
         &field_spectrum_min_width_,
-        &field_sweep_start_,
-        &field_sweep_end_,
-        &field_sweep_step_,
         &button_defaults_,
         &button_about_,
         &button_save_
@@ -158,13 +158,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     field_spectrum_margin_.set_value(static_cast<int32_t>(settings_.spectrum_margin));
     field_spectrum_min_width_.set_value(static_cast<int32_t>(settings_.spectrum_min_width));
 
-    // Sweep frequency range fields (GHz → MHz for display)
-    field_sweep_start_.set_value(static_cast<int32_t>(settings_.sweep_start_freq / 1000000));
-    field_sweep_end_.set_value(static_cast<int32_t>(settings_.sweep_end_freq / 1000000));
-
-    // Sweep step field (kHz)
-    field_sweep_step_.set_value(static_cast<int32_t>(settings_.sweep_step_freq / 1000));
-
     button_save_.on_select = [this](ui::Button&) {
         if (scanner_ptr_ != nullptr) {
             ScanConfig updated_config = original_config_;
@@ -174,6 +167,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.sweep_start_freq = settings_.sweep_start_freq;
             updated_config.sweep_end_freq = settings_.sweep_end_freq;
             updated_config.sweep_step_freq = settings_.sweep_step_freq;
+            updated_config.sweep2_start_freq = settings_.sweep2_start_freq;
+            updated_config.sweep2_end_freq = settings_.sweep2_end_freq;
+            updated_config.sweep2_step_freq = settings_.sweep2_step_freq;
+            updated_config.sweep2_enabled = settings_.sweep2_enabled;
             updated_config.dwell_enabled = settings_.dwell_enabled;
             updated_config.confirm_count_enabled = settings_.confirm_count_enabled;
             updated_config.noise_blacklist_enabled = settings_.noise_blacklist_enabled;
@@ -220,12 +217,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "show_histogram=%s\n", settings_.histogram_visible ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep_start_mhz=%lu\n", (unsigned long)(settings_.sweep_start_freq / 1000000));
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep_end_mhz=%lu\n", (unsigned long)(settings_.sweep_end_freq / 1000000));
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep_step_khz=%lu\n", (unsigned long)(settings_.sweep_step_freq / 1000));
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "spectrum_detection=%s\n", settings_.spectrum_detection_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "spectrum_margin=%u\n", (unsigned)settings_.spectrum_margin);
@@ -239,6 +230,20 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 "noise_blacklist_enabled=%s\n", settings_.noise_blacklist_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "median_enabled=%s\n", settings_.median_enabled ? "true" : "false");
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sweep_start_mhz=%lu\n", (unsigned long)(settings_.sweep_start_freq / 1000000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sweep_end_mhz=%lu\n", (unsigned long)(settings_.sweep_end_freq / 1000000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sweep_step_khz=%lu\n", (unsigned long)(settings_.sweep_step_freq / 1000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sweep2_start_mhz=%lu\n", (unsigned long)(settings_.sweep2_start_freq / 1000000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sweep2_end_mhz=%lu\n", (unsigned long)(settings_.sweep2_end_freq / 1000000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sweep2_step_khz=%lu\n", (unsigned long)(settings_.sweep2_step_freq / 1000));
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "sweep2_enabled=%s\n", settings_.sweep2_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "freqman_path=DRONES\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -333,32 +338,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_.spectrum_min_width = static_cast<uint8_t>(v);
         settings_dirty_ = true;
     };
-
-    // Sweep frequency range callbacks
-    field_sweep_start_.on_change = [this](int32_t v) {
-        settings_.sweep_start_freq = static_cast<FreqHz>(v) * 1000000ULL;
-        settings_dirty_ = true;
-    };
-    field_sweep_end_.on_change = [this](int32_t v) {
-        settings_.sweep_end_freq = static_cast<FreqHz>(v) * 1000000ULL;
-        settings_dirty_ = true;
-    };
-
-    // Sweep step callback (kHz → Hz)
-    field_sweep_step_.on_change = [this](int32_t v) {
-        settings_.sweep_step_freq = static_cast<FreqHz>(v) * 1000ULL;
-        settings_dirty_ = true;
-    };
-
-    // Frequency keypad callbacks — open on touch
-    auto open_keypad = [this](ui::NumberField& field) {
-        auto keypad = nav_.push<ui::FrequencyKeypadView>(static_cast<rf::Frequency>(field.value()) * 1000000ULL);
-        keypad->on_changed = [&field](rf::Frequency f) {
-            field.set_value(static_cast<int32_t>(f / 1000000));
-        };
-    };
-    field_sweep_start_.on_select = open_keypad;
-    field_sweep_end_.on_select = open_keypad;
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
@@ -370,33 +349,6 @@ void DroneSettingsView::paint(ui::Painter& painter) {
 
 void DroneSettingsView::focus() {
     field_scan_interval_.focus();
-}
-
-bool DroneSettingsView::on_touch(TouchEvent event) {
-    if (event.type == TouchEvent::Type::End) {
-        // Let child widgets (buttons, checkboxes, options) handle touch first
-        if (View::on_touch(event)) {
-            return true;
-        }
-
-        // No child handled it — check if touch is on a frequency field
-        struct FreqField { ui::NumberField* field; };
-        FreqField fields[] = {
-            {&field_sweep_start_}, {&field_sweep_end_},
-            {&field_sweep_step_},
-        };
-        for (auto& ff : fields) {
-            if (ff.field->screen_rect().contains(event.point)) {
-                auto keypad = nav_.push<ui::FrequencyKeypadView>(
-                    static_cast<rf::Frequency>(ff.field->value()) * 1000000ULL);
-                keypad->on_changed = [field = ff.field](rf::Frequency f) {
-                    field->set_value(static_cast<int32_t>(f / 1000000));
-                };
-                return true;
-            }
-        }
-    }
-    return View::on_touch(event);
 }
 
 void DroneSettingsView::reset_settings() noexcept {
@@ -476,6 +428,14 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
             settings_.sweep_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
         } else if (key_matches("sweep_step_khz")) {
             settings_.sweep_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("sweep2_start_mhz")) {
+            settings_.sweep2_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep2_end_mhz")) {
+            settings_.sweep2_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep2_step_khz")) {
+            settings_.sweep2_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("sweep2_enabled")) {
+            settings_.sweep2_enabled = parse_bool();
         } else if (key_matches("scan_interval_ms")) {
             settings_.scan_interval_ms = static_cast<uint32_t>(parse_int());
         } else if (key_matches("sensitivity")) {
@@ -550,6 +510,10 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         updated_config.sweep_start_freq = settings_.sweep_start_freq;
         updated_config.sweep_end_freq = settings_.sweep_end_freq;
         updated_config.sweep_step_freq = settings_.sweep_step_freq;
+        updated_config.sweep2_start_freq = settings_.sweep2_start_freq;
+        updated_config.sweep2_end_freq = settings_.sweep2_end_freq;
+        updated_config.sweep2_step_freq = settings_.sweep2_step_freq;
+        updated_config.sweep2_enabled = settings_.sweep2_enabled;
         updated_config.dwell_enabled = settings_.dwell_enabled;
         updated_config.confirm_count_enabled = settings_.confirm_count_enabled;
         updated_config.noise_blacklist_enabled = settings_.noise_blacklist_enabled;
@@ -615,9 +579,6 @@ void DroneSettingsView::apply_settings() noexcept {
     check_spectrum_detection_.set_value(settings_.spectrum_detection_enabled);
     field_spectrum_margin_.set_value(static_cast<int32_t>(settings_.spectrum_margin));
     field_spectrum_min_width_.set_value(static_cast<int32_t>(settings_.spectrum_min_width));
-    field_sweep_start_.set_value(static_cast<int32_t>(settings_.sweep_start_freq / 1000000));
-    field_sweep_end_.set_value(static_cast<int32_t>(settings_.sweep_end_freq / 1000000));
-    field_sweep_step_.set_value(static_cast<int32_t>(settings_.sweep_step_freq / 1000));
 }
 
 // ============================================================================
@@ -690,6 +651,14 @@ void load_startup_settings(ScanConfig& config) noexcept {
             config.sweep_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
         } else if (key_matches("sweep_step_khz")) {
             config.sweep_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("sweep2_start_mhz")) {
+            config.sweep2_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep2_end_mhz")) {
+            config.sweep2_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep2_step_khz")) {
+            config.sweep2_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("sweep2_enabled")) {
+            config.sweep2_enabled = parse_bool();
         } else if (key_matches("rssi_threshold_db")) {
             bool negative = (val_len > 0 && val_start[0] == '-');
             const uint8_t* num_start = negative ? val_start + 1 : val_start;

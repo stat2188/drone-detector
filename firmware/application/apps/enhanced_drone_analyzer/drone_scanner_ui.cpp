@@ -4,6 +4,7 @@
 #include "scanner.hpp"
 #include "scanner_thread.hpp"
 #include "drone_settings.hpp"
+#include "drone_sweep_view.hpp"
 #include "database.hpp"
 #include "hardware_controller.hpp"
 #include "audio_alerts.hpp"
@@ -44,10 +45,20 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
                     if (this->composite_active_) {
-                        this->on_sweep_spectrum(spectrum);
-                        // Auto-exit sweep after pass completes (only in interleaved mode)
-                        // sweep_pixel_index_ is reset to 0 at end of each pass
-                        if (this->sweep_auto_mode_ && this->sweep_pixel_index_ == 0) {
+                        if (this->sweep2_active_) {
+                            // Currently sweeping window 2
+                            this->on_sweep2_spectrum(spectrum);
+                        } else {
+                            // Currently sweeping window 1
+                            this->on_sweep_spectrum(spectrum);
+                            // Sweep1 pass complete → switch to sweep2 if enabled
+                            if (this->sweep_pixel_index_ == 0 && this->sweep2_enabled_) {
+                                this->sweep2_active_ = true;
+                            }
+                        }
+                        // Auto-exit sweep after both passes complete (interleaved mode)
+                        if (this->sweep_auto_mode_ && this->sweep_pixel_index_ == 0 &&
+                            (!this->sweep2_enabled_ || this->sweep2_pixel_index_ == 0)) {
                             this->exit_sweep_mode();
                         }
                     } else {
@@ -88,6 +99,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &field_rf_amp_,
         &field_volume_,
         &big_display_,
+        &sweep_freq_text_,
         &drone_display_,
         &filter_labels_,
         &field_filter_,
@@ -98,6 +110,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_settings_,
         &button_swp_
     });
+
+    // Hide sweep freq text initially (only visible in sweep mode)
+    sweep_freq_text_.hidden(true);
 
     // Filter callback (Looking Glass style: OFF/MID/HIGH)
     field_filter_.on_change = [this](size_t, int32_t v) {
@@ -260,6 +275,16 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
 
+    // SWP button: open sweep settings view
+    button_swp_.on_select = [this](ui::Button&) {
+        if (initialization_failed_ || scanner_ptr_ == nullptr) {
+            show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
+            return;
+        }
+        ScanConfig config = scanner_ptr_->get_config();
+        nav_.push<DroneSweepView>(config, scanner_ptr_);
+    };
+
     // Hardware initialization (callbacks are already set, safe to early-return)
     construct_objects();
 
@@ -390,7 +415,15 @@ void DroneScannerUI::on_show() {
         histogram_pre_sweep_visible_ = drone_display_.get_histogram_visible();
         // Re-hide widgets for sweep mode
         big_display_.hidden(true);
+        sweep_freq_text_.hidden(false);
         drone_display_.set_histogram_visible(false);
+        drone_display_.set_parent_rect({0, 16, DISPLAY_WIDTH, 258});
+
+        // Re-init sweep2 if enabled
+        sweep2_enabled_ = cfg.sweep2_enabled;
+        if (sweep2_enabled_) {
+            init_sweep2();
+        }
     }
 }
 
@@ -643,31 +676,43 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     // Save user preference, then hide BigFrequency and histogram in sweep mode
     histogram_pre_sweep_visible_ = drone_display_.get_histogram_visible();
     big_display_.hidden(true);
+    sweep_freq_text_.hidden(false);
     drone_display_.set_histogram_visible(false);
 
-    // Count enabled zones
-    enabled_zone_count_ = 0;
-    for (uint8_t z = 0; z < SWEEP_ZONE_COUNT; ++z) {
-        if (sweep_zones_config_.zones[z].enabled &&
-            sweep_zones_config_.zones[z].start_freq < sweep_zones_config_.zones[z].end_freq) {
-            enabled_zone_count_++;
-        }
+    // Expand DroneDisplay to reclaim BigFrequency area (52px at y=16)
+    // Original: {0, 68, 240, 206}, Expanded: {0, 16, 240, 258}
+    drone_display_.set_parent_rect({0, 16, DISPLAY_WIDTH, 258});
+
+    // Read sweep range from scan config
+    ScanConfig cfg;
+    if (scanner_ptr_ != nullptr) {
+        cfg = scanner_ptr_->get_config();
+    }
+    sweep_f_min_ = cfg.sweep_start_freq;
+    sweep_f_max_ = cfg.sweep_end_freq;
+    sweep2_enabled_ = cfg.sweep2_enabled;
+
+    // Validate: start must be < end
+    if (sweep_f_min_ >= sweep_f_max_) {
+        sweep_f_max_ = sweep_f_min_ + SWEEP_SLICE_BW;
     }
 
-    // Initialize all 4 zones
-    for (uint8_t z = 0; z < SWEEP_ZONE_COUNT; ++z) {
-        const auto& zone_cfg = sweep_zones_config_.zones[z];
-        if (zone_cfg.enabled && zone_cfg.start_freq < zone_cfg.end_freq) {
-            sweep_zones_runtime_[z].init(zone_cfg);
-        }
-        // Clear composite buffer for this zone
-        for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
-            composite_buffers_[z][i] = 0;
-        }
-    }
+    // LG-style parameters
+    const FreqHz range = sweep_f_max_ - sweep_f_min_;
+    sweep_pixel_step_hz_ = range / COMPOSITE_SIZE;
+    sweep_step_hz_ = 244 * EACH_BIN_SIZE;
 
-    // Start with first enabled zone
-    active_zone_ = find_next_enabled_zone();
+    // Initial center: offset by 2 bins for edge rolloff, center of first slice
+    sweep_f_center_ini_ = sweep_f_min_ - (2 * EACH_BIN_SIZE) + (SWEEP_SLICE_BW / 2);
+    sweep_f_center_ = sweep_f_center_ini_;
+
+    // Clear state
+    for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+        composite_buffer_[i] = 0;
+    }
+    sweep_pixel_index_ = 0;
+    sweep_pixel_max_ = 0;
+    sweep_bins_hz_acc_ = 0;
 
     // Stop scanner thread (UI drives tuning during sweep)
     if (scanner_thread_ != nullptr) {
@@ -687,35 +732,42 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     baseband::set_spectrum(SWEEP_SLICE_BW, 31);
     spectrum_fifo_ = nullptr;
 
-    // Set display range (use zone 0 range as primary)
-    drone_display_.set_sweep_range(
-        sweep_zones_config_.zones[0].start_freq,
-        sweep_zones_config_.zones[0].end_freq);
-
-    // Tune to first active zone's start
-    if (active_zone_ < SWEEP_ZONE_COUNT) {
-        radio::set_tuning_frequency(rf::Frequency(sweep_zones_runtime_[active_zone_].current_center));
-        chThdSleepMilliseconds(2);  // PLL settle
-        current_frequency_ = sweep_zones_runtime_[active_zone_].current_center;
-    }
+    // Set display range and retune to start
+    drone_display_.set_sweep_range(sweep_f_min_, sweep_f_max_);
+    drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
+    radio::set_tuning_frequency(rf::Frequency(sweep_f_center_));
+    chThdSleepMilliseconds(5);  // PLL settle
+    current_frequency_ = sweep_f_center_;
 
     // Start streaming
     baseband::spectrum_streaming_start();
     scanning_ = true;
     button_start_stop_.set_text("Stop");
+
+    // Initialize sweep window 2 if enabled
+    if (sweep2_enabled_) {
+        init_sweep2();
+    }
 }
 
 void DroneScannerUI::exit_sweep_mode() noexcept {
     const bool was_auto = sweep_auto_mode_;
     composite_active_ = false;
     sweep_auto_mode_ = false;
+    sweep2_enabled_ = false;
+    sweep2_active_ = false;
     drone_display_.set_composite_mode(false);
+    drone_display_.set_dual_sweep_mode(false);
     spectrum_fifo_ = nullptr;
     db_scan_count_ = 0;
 
     // Restore BigFrequency and histogram visibility (user pref, not forced)
     big_display_.hidden(false);
+    sweep_freq_text_.hidden(true);
     drone_display_.set_histogram_visible(histogram_pre_sweep_visible_);
+
+    // Restore DroneDisplay to original rect
+    drone_display_.set_parent_rect({0, 68, DISPLAY_WIDTH, 206});
 
     // Stop streaming
     if (scanning_) {
@@ -745,94 +797,190 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
 }
 
 void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept {
-    // Multi-zone sweep: process spectrum for current active zone
+    // Looking Glass pattern: stop → process → retune → start
     baseband::spectrum_streaming_stop();
 
-    if (active_zone_ >= SWEEP_ZONE_COUNT) {
-        active_zone_ = find_next_enabled_zone();
-        multi_zone_sweep_retune();
-        return;
-    }
-
-    SweepZoneRuntime& rt = sweep_zones_runtime_[active_zone_];
-
     // Bin-to-pixel mapping (LG FASTSCAN pattern)
+    // Usable bins: 134..253 (120 bins) + 2..121 (120 bins) = 240 bins per slice
+    // Skipping DC spike (bins 120-135) and edge rolloff (bins 0-1, 254-255)
     for (uint8_t bin = 0; bin < 240; ++bin) {
         const uint8_t fft_bin = (bin < 120) ? (134 + bin) : (bin - 118);
         const uint8_t power = spectrum.db[fft_bin];
 
-        if (power > rt.pixel_max) rt.pixel_max = power;
+        // Accumulate for pixel mapping
+        if (power > sweep_pixel_max_) sweep_pixel_max_ = power;
 
-        rt.bins_hz_acc += EACH_BIN_SIZE;
-        while (rt.bins_hz_acc >= rt.pixel_step_hz && rt.pixel_index < COMPOSITE_SIZE) {
-            if (rt.pixel_max > composite_buffers_[active_zone_][rt.pixel_index]) {
-                composite_buffers_[active_zone_][rt.pixel_index] = rt.pixel_max;
+        sweep_bins_hz_acc_ += EACH_BIN_SIZE;
+        while (sweep_bins_hz_acc_ >= sweep_pixel_step_hz_ && sweep_pixel_index_ < COMPOSITE_SIZE) {
+            if (sweep_pixel_max_ > composite_buffer_[sweep_pixel_index_]) {
+                composite_buffer_[sweep_pixel_index_] = sweep_pixel_max_;
             }
-            rt.pixel_index++;
-            rt.pixel_max = 0;
-            rt.bins_hz_acc -= rt.pixel_step_hz;
+            sweep_pixel_index_++;
+            sweep_pixel_max_ = 0;
+            sweep_bins_hz_acc_ -= sweep_pixel_step_hz_;
         }
     }
 
-    // Drone detection on current zone
+    // Drone detection: always feed to tracker
     if (scanner_ptr_ != nullptr) {
-        scanner_ptr_->process_spectrum_sweep(spectrum, rt.current_center);
+        scanner_ptr_->process_spectrum_sweep(spectrum, sweep_f_center_);
     }
 
-    // Check if this zone's pass is complete
-    if (rt.is_complete()) {
-        // Display all zones with frequency labels
-        FreqHz freq_starts[SWEEP_ZONE_COUNT];
-        FreqHz freq_ends[SWEEP_ZONE_COUNT];
-        for (uint8_t z = 0; z < SWEEP_ZONE_COUNT; ++z) {
-            freq_starts[z] = sweep_zones_config_.zones[z].start_freq;
-            freq_ends[z] = sweep_zones_config_.zones[z].end_freq;
-        }
-        drone_display_.set_multi_zone_data(composite_buffers_, SWEEP_ZONE_COUNT, COMPOSITE_SIZE,
-                                           freq_starts, freq_ends);
+    // Check if full sweep pass is complete
+    const bool pass_complete = (sweep_pixel_index_ >= COMPOSITE_SIZE);
+    if (pass_complete) {
+        // Display the completed sweep
+        drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
         drone_display_.set_dirty();
 
-        // Reset this zone for next pass
-        rt.reset_pass();
-
-        // Move to next enabled zone
-        active_zone_ = find_next_enabled_zone();
-        if (active_zone_ >= SWEEP_ZONE_COUNT) {
-            // All zones complete — wrap to first
-            active_zone_ = find_next_enabled_zone();
+        // Reset for next pass — retune to start (LG pattern)
+        for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+            composite_buffer_[i] = 0;
         }
+        sweep_pixel_index_ = 0;
+        sweep_pixel_max_ = 0;
+        sweep_bins_hz_acc_ = 0;
+        sweep_f_center_ = sweep_f_center_ini_;
+        sweep_retune();
+        return;
     }
 
     // Advance to next slice
-    multi_zone_sweep_retune();
+    sweep_f_center_ += sweep_step_hz_;
+    sweep_retune();
 }
 
-uint8_t DroneScannerUI::find_next_enabled_zone() noexcept {
-    for (uint8_t i = 1; i <= SWEEP_ZONE_COUNT; ++i) {
-        uint8_t candidate = (active_zone_ + i) % SWEEP_ZONE_COUNT;
-        if (sweep_zones_config_.zones[candidate].enabled) {
-            return candidate;
+void DroneScannerUI::sweep_retune() noexcept {
+    // Direct radio tune (bypasses receiver model → avoids slow persistent memory writes)
+    radio::set_tuning_frequency(rf::Frequency(sweep_f_center_));
+    chThdSleepMilliseconds(5);  // PLL settle — Looking Glass uses 5ms
+    current_frequency_ = sweep_f_center_;
+
+    // Update small frequency text (replaces BigFrequency in sweep mode)
+    {
+        static char freq_buf[20];
+        const uint32_t mhz = static_cast<uint32_t>(sweep_f_center_ / 1000000ULL);
+        const uint32_t khz = static_cast<uint32_t>((sweep_f_center_ % 1000000ULL) / 1000ULL);
+        snprintf(freq_buf, sizeof(freq_buf), "%lu.%03lu MHz",
+                 (unsigned long)mhz, (unsigned long)khz);
+        sweep_freq_text_.set(freq_buf);
+    }
+
+    baseband::spectrum_streaming_start();
+}
+
+void DroneScannerUI::init_sweep2() noexcept {
+    ScanConfig cfg;
+    if (scanner_ptr_ != nullptr) {
+        cfg = scanner_ptr_->get_config();
+    }
+
+    sweep2_f_min_ = cfg.sweep2_start_freq;
+    sweep2_f_max_ = cfg.sweep2_end_freq;
+
+    // Validate
+    if (sweep2_f_min_ >= sweep2_f_max_) {
+        sweep2_f_max_ = sweep2_f_min_ + SWEEP_SLICE_BW;
+    }
+
+    // LG-style parameters
+    const FreqHz range = sweep2_f_max_ - sweep2_f_min_;
+    sweep2_pixel_step_hz_ = range / COMPOSITE_SIZE;
+    sweep2_step_hz_ = 244 * EACH_BIN_SIZE;
+
+    sweep2_f_center_ini_ = sweep2_f_min_ - (2 * EACH_BIN_SIZE) + (SWEEP_SLICE_BW / 2);
+    sweep2_f_center_ = sweep2_f_center_ini_;
+
+    // Clear buffer
+    for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+        composite_buffer2_[i] = 0;
+    }
+    sweep2_pixel_index_ = 0;
+    sweep2_pixel_max_ = 0;
+    sweep2_bins_hz_acc_ = 0;
+    sweep2_active_ = false;
+
+    // Enable dual-sweep display mode
+    drone_display_.set_dual_sweep_mode(true);
+    drone_display_.set_sweep_range(sweep_f_min_, sweep_f_max_);
+    drone_display_.set_sweep2_range(sweep2_f_min_, sweep2_f_max_);
+    drone_display_.set_composite_data(composite_buffer_, COMPOSITE_SIZE);
+    drone_display_.set_sweep2_data(composite_buffer2_, COMPOSITE_SIZE);
+}
+
+void DroneScannerUI::on_sweep2_spectrum(const ChannelSpectrum& spectrum) noexcept {
+    // Looking Glass pattern for sweep window 2
+    baseband::spectrum_streaming_stop();
+
+    for (uint8_t bin = 0; bin < 240; ++bin) {
+        const uint8_t fft_bin = (bin < 120) ? (134 + bin) : (bin - 118);
+        const uint8_t power = spectrum.db[fft_bin];
+
+        if (power > sweep2_pixel_max_) sweep2_pixel_max_ = power;
+
+        sweep2_bins_hz_acc_ += EACH_BIN_SIZE;
+        while (sweep2_bins_hz_acc_ >= sweep2_pixel_step_hz_ && sweep2_pixel_index_ < COMPOSITE_SIZE) {
+            if (sweep2_pixel_max_ > composite_buffer2_[sweep2_pixel_index_]) {
+                composite_buffer2_[sweep2_pixel_index_] = sweep2_pixel_max_;
+            }
+            sweep2_pixel_index_++;
+            sweep2_pixel_max_ = 0;
+            sweep2_bins_hz_acc_ -= sweep2_pixel_step_hz_;
         }
     }
-    return active_zone_;  // fallback: stay on current
-}
 
-void DroneScannerUI::multi_zone_sweep_retune() noexcept {
-    if (active_zone_ >= SWEEP_ZONE_COUNT) return;
-
-    SweepZoneRuntime& rt = sweep_zones_runtime_[active_zone_];
-    rt.current_center += sweep_zones_runtime_[active_zone_].step_hz;
-
-    // Check if we've swept past the zone's end frequency
-    const auto& zone_cfg = sweep_zones_config_.zones[active_zone_];
-    if (rt.current_center > zone_cfg.end_freq + SWEEP_SLICE_BW) {
-        // Wrap back to start of this zone
-        rt.current_center = rt.center_ini;
+    // Drone detection
+    if (scanner_ptr_ != nullptr) {
+        scanner_ptr_->process_spectrum_sweep(spectrum, sweep2_f_center_);
     }
 
-    radio::set_tuning_frequency(rf::Frequency(rt.current_center));
-    chThdSleepMilliseconds(2);  // PLL settle (2ms sufficient for MAX2837)
-    current_frequency_ = rt.current_center;
+    // Check pass completion
+    if (sweep2_pixel_index_ >= COMPOSITE_SIZE) {
+        drone_display_.set_sweep2_data(composite_buffer2_, COMPOSITE_SIZE);
+        drone_display_.set_dirty();
+
+        // Reset for next pass — return to sweep1
+        for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+            composite_buffer2_[i] = 0;
+        }
+        sweep2_pixel_index_ = 0;
+        sweep2_pixel_max_ = 0;
+        sweep2_bins_hz_acc_ = 0;
+        sweep2_f_center_ = sweep2_f_center_ini_;
+        sweep2_active_ = false;  // Switch back to sweep1
+
+        // Also reset sweep1 for full cycle
+        for (uint16_t i = 0; i < COMPOSITE_SIZE; ++i) {
+            composite_buffer_[i] = 0;
+        }
+        sweep_pixel_index_ = 0;
+        sweep_pixel_max_ = 0;
+        sweep_bins_hz_acc_ = 0;
+        sweep_f_center_ = sweep_f_center_ini_;
+        sweep_retune();
+        return;
+    }
+
+    // Advance to next slice
+    sweep2_f_center_ += sweep2_step_hz_;
+    sweep2_retune();
+}
+
+void DroneScannerUI::sweep2_retune() noexcept {
+    radio::set_tuning_frequency(rf::Frequency(sweep2_f_center_));
+    chThdSleepMilliseconds(5);
+    current_frequency_ = sweep2_f_center_;
+
+    // Update frequency text with SW2 indicator
+    {
+        static char freq_buf[24];
+        const uint32_t mhz = static_cast<uint32_t>(sweep2_f_center_ / 1000000ULL);
+        const uint32_t khz = static_cast<uint32_t>((sweep2_f_center_ % 1000000ULL) / 1000ULL);
+        snprintf(freq_buf, sizeof(freq_buf), "2:%lu.%03lu MHz",
+                 (unsigned long)mhz, (unsigned long)khz);
+        sweep_freq_text_.set(freq_buf);
+    }
+
     baseband::spectrum_streaming_start();
 }
 

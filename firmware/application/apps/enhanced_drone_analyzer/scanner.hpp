@@ -30,10 +30,16 @@ struct ScanConfig {
     int32_t rssi_threshold_dbm;
     uint32_t stale_timeout_ms;
     
-    // Sweep range (Hz)
+    // Sweep range (Hz) — window 1
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;
     FreqHz sweep_step_freq;
+
+    // Sweep range (Hz) — window 2 (independent, optional)
+    FreqHz sweep2_start_freq{2400000000ULL};
+    FreqHz sweep2_end_freq{2500000000ULL};
+    FreqHz sweep2_step_freq{20000000};
+    bool sweep2_enabled{false};
 
     // Advanced detection features (OFF by default)
     bool dwell_enabled{false};           // Stay on frequency when signal detected

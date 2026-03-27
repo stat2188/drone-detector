@@ -69,7 +69,9 @@ void DroneDisplay::paint(Painter& painter) {
 
     if (show_spec || show_composite) {
         if (show_composite) {
-            if (multi_zone_count_ > 1) {
+            if (dual_sweep_mode_ && sweep2_data_ != nullptr && sweep2_data_size_ > 0) {
+                render_dual_composite(painter, ox, y_offset, w, spec_h);
+            } else if (multi_zone_count_ > 1) {
                 render_multi_zone(painter, ox, y_offset, w, spec_h);
             } else {
                 render_composite(painter, composite_data_, composite_data_size_,
@@ -798,6 +800,41 @@ void DroneDisplay::render_multi_zone(
             }
         }
     }
+}
+
+void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
+    sweep2_data_ = data;
+    sweep2_data_size_ = size;
+}
+
+void DroneDisplay::render_dual_composite(
+    Painter& painter,
+    uint16_t start_x,
+    uint16_t start_y,
+    uint16_t width,
+    uint16_t height
+) noexcept {
+    if (composite_data_ == nullptr || sweep2_data_ == nullptr || height < 8) {
+        return;
+    }
+
+    // Split height between two sweep bands
+    const uint16_t band_h = height / 2;
+    if (band_h < 4) return;
+
+    // Render sweep 1 (top half)
+    render_composite(painter, composite_data_, composite_data_size_,
+                     start_x, start_y, width, band_h);
+
+    // Render sweep 2 (bottom half) — temporarily swap freq range
+    const FreqHz saved_start = sweep_freq_start_;
+    const FreqHz saved_end = sweep_freq_end_;
+    sweep_freq_start_ = sweep2_freq_start_;
+    sweep_freq_end_ = sweep2_freq_end_;
+    render_composite(painter, sweep2_data_, sweep2_data_size_,
+                     start_x, start_y + band_h, width, band_h);
+    sweep_freq_start_ = saved_start;
+    sweep_freq_end_ = saved_end;
 }
 
 } // namespace drone_analyzer

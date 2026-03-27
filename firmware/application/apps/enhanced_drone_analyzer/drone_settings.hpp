@@ -55,12 +55,16 @@ struct DroneSettings {
     uint8_t spectrum_margin;            // Peak margin above noise (50-200)
     uint8_t spectrum_min_width;         // Min signal width in bins (2-20)
     
-    // Sweep frequency range (Hz)
+    // Sweep frequency range (Hz) — window 1
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;
-
-    // Sweep step (Hz)
     FreqHz sweep_step_freq;
+
+    // Sweep frequency range (Hz) — window 2
+    FreqHz sweep2_start_freq;
+    FreqHz sweep2_end_freq;
+    FreqHz sweep2_step_freq;
+    bool sweep2_enabled;
     
     /**
       * @brief Default constructor
@@ -128,8 +132,6 @@ public:
      */
     void focus() override;
 
-    bool on_touch(TouchEvent event) override;
-
     std::string title() const override { return "EDA Settings"; }
 
 private:
@@ -151,13 +153,6 @@ private:
     // Spectrum detection params
     ui::NumberField field_spectrum_margin_;
     ui::NumberField field_spectrum_min_width_;
-
-    // Sweep frequency range fields (MHz)
-    ui::NumberField field_sweep_start_;
-    ui::NumberField field_sweep_end_;
-
-    // Sweep step field (kHz)
-    ui::NumberField field_sweep_step_;
 
     ui::Button button_defaults_;
     ui::Button button_about_;

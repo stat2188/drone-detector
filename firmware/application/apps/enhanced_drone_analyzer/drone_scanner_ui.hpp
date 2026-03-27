@@ -73,6 +73,9 @@ private:
 
     ui::BigFrequency big_display_;
 
+    // Small frequency text for sweep mode (replaces BigFrequency, compact)
+    ui::Text sweep_freq_text_{{4, 70, 160, 16}, ""};
+
     HardwareController* hardware_ptr_{nullptr};
     DatabaseManager* database_ptr_{nullptr};
     DroneScanner* scanner_ptr_{nullptr};
@@ -170,11 +173,27 @@ private:
     uint16_t sweep_pixel_index_{0};
     uint8_t sweep_pixel_max_{0};
 
+    // Sweep window 2 (independent second sweep range)
+    bool sweep2_enabled_{false};
+    bool sweep2_active_{false};       // true while sweeping window 2
+    uint8_t composite_buffer2_[COMPOSITE_SIZE]{};
+    FreqHz sweep2_f_min_{0};
+    FreqHz sweep2_f_max_{0};
+    FreqHz sweep2_f_center_{0};
+    FreqHz sweep2_f_center_ini_{0};
+    FreqHz sweep2_pixel_step_hz_{0};
+    FreqHz sweep2_step_hz_{0};
+    FreqHz sweep2_bins_hz_acc_{0};
+    uint16_t sweep2_pixel_index_{0};
+    uint8_t sweep2_pixel_max_{0};
+
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
-    void multi_zone_sweep_retune() noexcept;
-    uint8_t find_next_enabled_zone() noexcept;
+    void sweep_retune() noexcept;
+    void init_sweep2() noexcept;
+    void on_sweep2_spectrum(const ChannelSpectrum& spectrum) noexcept;
+    void sweep2_retune() noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};

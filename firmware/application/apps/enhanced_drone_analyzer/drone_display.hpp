@@ -175,6 +175,14 @@ public:
         sweep_freq_end_ = end;
     }
 
+    // Dual-sweep support
+    void set_dual_sweep_mode(bool enabled) noexcept { dual_sweep_mode_ = enabled; }
+    void set_sweep2_data(const uint8_t* data, size_t size) noexcept;
+    void set_sweep2_range(FreqHz start, FreqHz end) noexcept {
+        sweep2_freq_start_ = start;
+        sweep2_freq_end_ = end;
+    }
+
     [[nodiscard]] const char* get_status_text() const noexcept;
 
 private:
@@ -413,6 +421,21 @@ private:
     ) noexcept;
 
     void render_multi_zone(
+        Painter& painter,
+        uint16_t start_x,
+        uint16_t start_y,
+        uint16_t width,
+        uint16_t height
+    ) noexcept;
+
+    // Dual-sweep rendering (two horizontal bands)
+    bool dual_sweep_mode_{false};
+    const uint8_t* sweep2_data_{nullptr};
+    size_t sweep2_data_size_{0};
+    FreqHz sweep2_freq_start_{0};
+    FreqHz sweep2_freq_end_{0};
+
+    void render_dual_composite(
         Painter& painter,
         uint16_t start_x,
         uint16_t start_y,
