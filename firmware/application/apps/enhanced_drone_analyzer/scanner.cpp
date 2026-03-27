@@ -7,25 +7,27 @@
 namespace drone_analyzer {
 
 /**
- * @brief RSSI extraction — scan ALL usable bins (skip DC spike + edges)
+ * @brief RSSI extraction — scan usable bins with edge skip (skip DC spike + filter rolloff)
  * @param spectrum Channel spectrum data (256 bins, 0-255 each)
- * @return RSSI in dBm (peak from all bins except DC spike 120-135)
- * @note Scans 240 usable bins out of 256 (93.75% of channel bandwidth).
- *       Previous version scanned only 40 bins (15.6%), missing signals in outer bins.
+ * @return RSSI in dBm (peak from bins 6-119 and 136-250)
+ * @note EDGE_SKIP=6 avoids filter rolloff artifacts at bins 0-5 (red bar on spectrum).
+ *       Coverage: ~±1 MHz around tuned frequency (matches spectrum display range).
  * @note The HackRF baseband produces spectrum.db[i] = clamp(dBV*5 + 255, 0, 255).
  *       Center bins 120-135 contain the DC spike from FFT zero-frequency component.
  */
 static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
+    constexpr size_t EDGE_SKIP = 6;
     constexpr size_t DC_SPIKE_START = 120;
     constexpr size_t DC_SPIKE_END = 136;
 
     uint8_t peak = 0;
 
-    // All bins except DC spike
-    for (size_t i = 0; i < DC_SPIKE_START; ++i) {
+    // Lower sideband: bins 6-119 (skip edge artifacts 0-5)
+    for (size_t i = EDGE_SKIP; i < DC_SPIKE_START; ++i) {
         if (spectrum.db[i] > peak) peak = spectrum.db[i];
     }
-    for (size_t i = DC_SPIKE_END; i < 256; ++i) {
+    // Upper sideband: bins 136-250 (skip edge artifacts 251-255)
+    for (size_t i = DC_SPIKE_END; i < (256 - EDGE_SKIP); ++i) {
         if (spectrum.db[i] > peak) peak = spectrum.db[i];
     }
 
