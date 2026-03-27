@@ -113,6 +113,10 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
         &button_save_,
     });
 
+    // Show first tab view immediately so focus() works before on_show()
+    view_sw2_.hidden(true);
+    view_sw1_.hidden(false);
+
     // Populate SW1 tab from config
     view_sw1_.set_values(config.sweep_start_freq, config.sweep_end_freq, config.sweep_step_freq);
 

@@ -713,15 +713,17 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     sweep_[1].enabled = false;
     drone_display_.set_composite_mode(false);
     drone_display_.set_dual_sweep_mode(false);
-    spectrum_fifo_ = nullptr;
-    db_scan_count_ = 0;
 
+    // Stop streaming BEFORE nulling fifo — prevents stale data in frame_sync
     if (scanning_) {
         baseband::spectrum_streaming_stop();
         scanning_ = false;
     }
+    spectrum_fifo_ = nullptr;
+    db_scan_count_ = 0;
     button_start_stop_.set_text("Start");
 
+    // Restore baseband to normal bandwidth immediately
     portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
     portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
     baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
