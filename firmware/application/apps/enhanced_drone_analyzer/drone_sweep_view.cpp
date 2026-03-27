@@ -12,7 +12,9 @@ namespace drone_analyzer {
 // Sweep1View
 // ============================================================================
 
-Sweep1View::Sweep1View() noexcept {
+Sweep1View::Sweep1View(Rect parent_rect) noexcept
+    : View(parent_rect) {
+    hidden(true);
     add_children({
         &labels_,
         &field_start_,
@@ -51,7 +53,9 @@ FreqHz Sweep1View::get_step() const noexcept {
 // Sweep2View
 // ============================================================================
 
-Sweep2View::Sweep2View() noexcept {
+Sweep2View::Sweep2View(Rect parent_rect) noexcept
+    : View(parent_rect) {
+    hidden(true);
     add_children({
         &check_enabled_,
         &labels_,
@@ -103,6 +107,8 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     , original_config_(config) {
     add_children({
         &tab_view_,
+        &view_sw1_,
+        &view_sw2_,
         &button_defaults_,
         &button_save_,
     });

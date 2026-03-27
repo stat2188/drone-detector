@@ -22,7 +22,7 @@ class DroneScanner;
  */
 class Sweep1View : public ui::View {
 public:
-    Sweep1View() noexcept;
+    explicit Sweep1View(Rect parent_rect) noexcept;
 
     void focus() override;
 
@@ -52,7 +52,7 @@ private:
  */
 class Sweep2View : public ui::View {
 public:
-    Sweep2View() noexcept;
+    explicit Sweep2View(Rect parent_rect) noexcept;
 
     void focus() override;
 
@@ -105,12 +105,12 @@ private:
     ScanConfig original_config_;
 
     static constexpr int TAB_VIEW_Y = 3;
-    static constexpr int TAB_CONTENT_H = 160;
+    static constexpr int TAB_CONTENT_H = 220;
 
     Rect view_rect_{0, UI_POS_Y(TAB_VIEW_Y), screen_width, TAB_CONTENT_H};
 
-    Sweep1View view_sw1_;
-    Sweep2View view_sw2_;
+    Sweep1View view_sw1_{view_rect_};
+    Sweep2View view_sw2_{view_rect_};
 
     ui::TabView tab_view_{
         {"SW1", Theme::getInstance()->fg_cyan->foreground, &view_sw1_},
