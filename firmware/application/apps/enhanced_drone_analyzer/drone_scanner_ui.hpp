@@ -149,20 +149,15 @@ private:
     static constexpr uint8_t DB_SCANS_PER_SWEEP = 20;          // DB scans between auto-sweep passes
     static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;  // 78125 Hz per bin
 
-    // Multi-zone sweep: 4 independent composite buffers
-    uint8_t composite_buffer_[COMPOSITE_SIZE]{};  // legacy single buffer (zone 0 or single-zone mode)
-    uint8_t composite_buffers_[SWEEP_ZONE_COUNT][COMPOSITE_SIZE]{};  // 4-zone mode
-    SweepZonesConfig sweep_zones_config_;
-    SweepZoneRuntime sweep_zones_runtime_[SWEEP_ZONE_COUNT];
-    uint8_t active_zone_{0};              // current zone for round-robin (0-3)
-    uint8_t enabled_zone_count_{1};       // number of enabled zones
+    uint8_t composite_buffer_[COMPOSITE_SIZE]{};  // sweep1 composite
+    uint8_t composite_buffer2_[COMPOSITE_SIZE]{}; // sweep2 composite
 
     bool composite_active_{false};
     bool sweep_auto_mode_{false};        // true = interleaved (auto exit after pass), false = manual
     uint8_t db_scan_count_{0};           // counter for DB scan interleaving
     bool histogram_pre_sweep_visible_{true};  // user pref saved before sweep hides histogram
 
-    // Legacy sweep state (used for single-zone fallback during transition)
+    // Sweep window 1 state
     FreqHz sweep_f_min_{0};
     FreqHz sweep_f_max_{0};
     FreqHz sweep_f_center_{0};
@@ -173,10 +168,9 @@ private:
     uint16_t sweep_pixel_index_{0};
     uint8_t sweep_pixel_max_{0};
 
-    // Sweep window 2 (independent second sweep range)
+    // Sweep window 2 state
     bool sweep2_enabled_{false};
-    bool sweep2_active_{false};       // true while sweeping window 2
-    uint8_t composite_buffer2_[COMPOSITE_SIZE]{};
+    bool sweep2_active_{false};
     FreqHz sweep2_f_min_{0};
     FreqHz sweep2_f_max_{0};
     FreqHz sweep2_f_center_{0};
@@ -194,6 +188,15 @@ private:
     void init_sweep2(FreqHz start, FreqHz end) noexcept;
     void on_sweep2_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void sweep2_retune() noexcept;
+
+    // Shared sweep helpers (DRY — Scott Meyers: eliminate duplicate code)
+    static void format_freq_mhz(char* buf, size_t buf_size, FreqHz freq, const char* prefix = nullptr) noexcept;
+    void reset_sweep_composite(uint8_t* buf, FreqHz& center, FreqHz center_ini,
+                               uint16_t& pixel_index, uint8_t& pixel_max, FreqHz& bins_acc) noexcept;
+    void process_sweep_bins(const ChannelSpectrum& spectrum,
+                            uint8_t* composite_buf, FreqHz& pixel_step, FreqHz& bins_acc,
+                            uint16_t& pixel_index, uint8_t& pixel_max) noexcept;
+    void retune_sweep(FreqHz center, ui::Text& text_widget, const char* prefix = nullptr) noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
