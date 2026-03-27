@@ -467,17 +467,13 @@ public:
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
         current_frequency_ = center_freq;
 
-        // Expanded bin window: EDGE_SKIP=6 on both sides, skip DC spike
-        // Matches display coverage (240 bins) minus edge artifacts
-        // Display: bins 2-121 + 134-253 (240 bins)
-        // Detection: bins 6-119 + 136-250 (228 bins)
+        // Bin window: EDGE_SKIP=6 on both sides, skip DC spike
         constexpr size_t EDGE_SKIP = 6;
         constexpr size_t DC_SPIKE_START = 120;
         constexpr size_t DC_SPIKE_END = 136;
         constexpr size_t BIN_COUNT = 228;  // (120-6) + (256-6-136)
 
-        // Step 1: Collect bins + find peak
-        // Static: called only from UI thread (DisplayFrameSync callback)
+        // Step 1: Collect bins + find peak (single pass O(n))
         static uint8_t usable[BIN_COUNT];
         size_t idx = 0;
         uint8_t raw_peak = 0;
@@ -491,32 +487,50 @@ public:
             if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
         }
 
-        // Step 2: Insertion sort for median (O(n²), n=228)
-        for (size_t i = 1; i < idx; ++i) {
-            const uint8_t key = usable[i];
-            size_t j = i;
-            while (j > 0 && usable[j - 1] > key) {
-                usable[j] = usable[j - 1];
-                --j;
+        // Step 2: Quickselect median O(n) — replaces insertion sort O(n²)
+        // Only need median for noise floor, not full sorted array
+        const size_t k = idx / 2;
+        uint8_t left = 0;
+        uint8_t right = static_cast<uint8_t>(idx) - 1;
+
+        while (left < right) {
+            const uint8_t pivot_idx = left + (right - left) / 2;
+            uint8_t pivot = usable[pivot_idx];
+            usable[pivot_idx] = usable[right];
+            usable[right] = pivot;
+            uint8_t store = left;
+            for (uint8_t i = left; i < right; ++i) {
+                if (usable[i] < pivot) {
+                    uint8_t t = usable[store];
+                    usable[store] = usable[i];
+                    usable[i] = t;
+                    store++;
+                }
             }
-            usable[j] = key;
+            {
+                uint8_t t = usable[store];
+                usable[store] = usable[right];
+                usable[right] = t;
+            }
+            if (store == k) break;
+            if (store < k) left = store + 1;
+            else right = store - 1;
         }
 
-        // Step 3: Noise floor = median, margin check rejects flat noise
-        const uint8_t noise_floor = usable[idx / 2];
+        const uint8_t noise_floor = usable[k];
         int32_t peak_rssi = static_cast<int32_t>(raw_peak) - 120;
 
         if (raw_peak <= noise_floor + config_.spectrum_margin) {
-            return;  // Signal too weak above noise floor — reject
+            return;
         }
 
-        // Step 4: Median filter for spike rejection
+        // Step 3: Median filter for spike rejection
         rssi_median_filter_.add(peak_rssi);
         if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
             peak_rssi = rssi_median_filter_.get_median();
         }
 
-        // Step 5: Update drone tracker only for above-threshold signals
+        // Step 4: Update drone tracker only for above-threshold signals
         if (peak_rssi > config_.rssi_threshold_dbm) {
             (void)update_tracked_drone_internal(center_freq, peak_rssi, chTimeNow());
         }

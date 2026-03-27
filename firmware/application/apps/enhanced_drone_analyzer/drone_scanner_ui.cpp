@@ -29,6 +29,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : View()
     , nav_(nav)
     , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
+    , sweep_zones_config_{}
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
@@ -384,6 +385,12 @@ void DroneScannerUI::on_show() {
         // Restart streaming (on_hide() stopped it when entering Settings)
         baseband::spectrum_streaming_start();
         scanning_ = true;
+
+        // Re-refresh saved pref (user may have toggled Hist in Settings)
+        histogram_pre_sweep_visible_ = drone_display_.get_histogram_visible();
+        // Re-hide widgets for sweep mode
+        big_display_.hidden(true);
+        drone_display_.set_histogram_visible(false);
     }
 }
 
@@ -555,8 +562,8 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }
 
-    // Feed histogram data from scanner (thread-safe snapshot)
-    {
+    // Feed histogram data from scanner (skip in sweep mode — saves CPU)
+    if (!composite_active_) {
         static uint16_t hist_data[HISTOGRAM_BUFFER_SIZE];
         const size_t hist_count = scanner_ptr_->get_histogram_snapshot(
             hist_data, HISTOGRAM_BUFFER_SIZE
@@ -566,28 +573,30 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }
 
-    // Update big frequency display (use already-fetched drone data)
-    RssiValue drone_rssi = RSSI_NOISE_FLOOR_DBM;
-    if (display_data.drone_count > 0) {
-        drone_rssi = display_data.drones[0].rssi;
-    }
-    current_rssi_ = drone_rssi;
+    // Update big frequency display (skip in sweep mode — widget is hidden)
+    if (!composite_active_) {
+        RssiValue drone_rssi = RSSI_NOISE_FLOOR_DBM;
+        if (display_data.drone_count > 0) {
+            drone_rssi = display_data.drones[0].rssi;
+        }
+        current_rssi_ = drone_rssi;
 
-    BigDisplayColor color = BigDisplayColor::GREY;
-    switch (current_scanner_state_) {
-        case ScannerState::LOCKING:
-            color = BigDisplayColor::YELLOW;
-            break;
-        case ScannerState::TRACKING:
-            color = (current_rssi_ >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM)
-                  ? BigDisplayColor::RED
-                  : BigDisplayColor::GREEN;
-            break;
-        default:
-            color = BigDisplayColor::GREY;
-            break;
+        BigDisplayColor color = BigDisplayColor::GREY;
+        switch (current_scanner_state_) {
+            case ScannerState::LOCKING:
+                color = BigDisplayColor::YELLOW;
+                break;
+            case ScannerState::TRACKING:
+                color = (current_rssi_ >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM)
+                      ? BigDisplayColor::RED
+                      : BigDisplayColor::GREEN;
+                break;
+            default:
+                color = BigDisplayColor::GREY;
+                break;
+        }
+        bigdisplay_update(color);
     }
-    bigdisplay_update(color);
 
     if (current_scanner_state_ == ScannerState::LOCKING) {
         char drone_type[5]{'\0', '\0', '\0', '\0'};
@@ -630,6 +639,11 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
 void DroneScannerUI::enter_sweep_mode() noexcept {
     composite_active_ = true;
     drone_display_.set_composite_mode(true);
+
+    // Save user preference, then hide BigFrequency and histogram in sweep mode
+    histogram_pre_sweep_visible_ = drone_display_.get_histogram_visible();
+    big_display_.hidden(true);
+    drone_display_.set_histogram_visible(false);
 
     // Count enabled zones
     enabled_zone_count_ = 0;
@@ -681,7 +695,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     // Tune to first active zone's start
     if (active_zone_ < SWEEP_ZONE_COUNT) {
         radio::set_tuning_frequency(rf::Frequency(sweep_zones_runtime_[active_zone_].current_center));
-        chThdSleepMilliseconds(5);
+        chThdSleepMilliseconds(2);  // PLL settle
         current_frequency_ = sweep_zones_runtime_[active_zone_].current_center;
     }
 
@@ -698,6 +712,10 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     drone_display_.set_composite_mode(false);
     spectrum_fifo_ = nullptr;
     db_scan_count_ = 0;
+
+    // Restore BigFrequency and histogram visibility (user pref, not forced)
+    big_display_.hidden(false);
+    drone_display_.set_histogram_visible(histogram_pre_sweep_visible_);
 
     // Stop streaming
     if (scanning_) {
@@ -813,7 +831,7 @@ void DroneScannerUI::multi_zone_sweep_retune() noexcept {
     }
 
     radio::set_tuning_frequency(rf::Frequency(rt.current_center));
-    chThdSleepMilliseconds(5);  // PLL settle
+    chThdSleepMilliseconds(2);  // PLL settle (2ms sufficient for MAX2837)
     current_frequency_ = rt.current_center;
     baseband::spectrum_streaming_start();
 }

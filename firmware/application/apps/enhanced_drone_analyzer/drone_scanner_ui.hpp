@@ -157,6 +157,7 @@ private:
     bool composite_active_{false};
     bool sweep_auto_mode_{false};        // true = interleaved (auto exit after pass), false = manual
     uint8_t db_scan_count_{0};           // counter for DB scan interleaving
+    bool histogram_pre_sweep_visible_{true};  // user pref saved before sweep hides histogram
 
     // Legacy sweep state (used for single-zone fallback during transition)
     FreqHz sweep_f_min_{0};
@@ -170,11 +171,9 @@ private:
     uint8_t sweep_pixel_max_{0};
 
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
-    void on_multi_zone_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
-    void sweep_retune() noexcept;
-    void multi_zone_sweep_retune() noexcept;
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
+    void multi_zone_sweep_retune() noexcept;
     uint8_t find_next_enabled_zone() noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)

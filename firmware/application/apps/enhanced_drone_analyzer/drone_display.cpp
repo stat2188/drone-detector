@@ -722,7 +722,7 @@ void DroneDisplay::render_composite(
     }
 }
 
-void DroneDisplay::set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t buffer_size,
+void DroneDisplay::set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t /*buffer_size*/,
                                        const FreqHz* freq_starts, const FreqHz* freq_ends) noexcept {
     if (zone_count > MAX_ZONES) zone_count = MAX_ZONES;
     multi_zone_count_ = zone_count;

@@ -159,6 +159,7 @@ public:
 
     void set_spectrum_visible(bool visible) noexcept { spectrum_visible_ = visible; }
     void set_histogram_visible(bool visible) noexcept { histogram_visible_ = visible; }
+    [[nodiscard]] bool get_histogram_visible() const noexcept { return histogram_visible_; }
     void set_drone_list_visible(bool visible) noexcept { drone_list_visible_ = visible; }
     void set_status_bar_visible(bool visible) noexcept { status_bar_visible_ = visible; }
 
