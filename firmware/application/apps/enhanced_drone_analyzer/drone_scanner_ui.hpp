@@ -65,6 +65,9 @@ private:
     void construct_objects() noexcept;
     void destruct_objects() noexcept;
 
+    void apply_sweep_ui_layout() noexcept;
+    void restore_normal_ui_layout() noexcept;
+
     NavigationView& nav_;
 
     RxRadioState radio_state_{ReceiverModel::Mode::SpectrumAnalysis};
@@ -73,8 +76,9 @@ private:
 
     ui::BigFrequency big_display_;
 
-    // Small frequency text for sweep mode (replaces BigFrequency, compact)
-    ui::Text sweep_freq_text_{{4, 70, 160, 16}, ""};
+    // Frequency text for sweep mode — hidden, composite title shows range instead.
+    // Kept as member to avoid changing add_children() child count.
+    ui::Text sweep_freq_text_{{4, 68, 160, 14}, ""};
 
     HardwareController* hardware_ptr_{nullptr};
     DatabaseManager* database_ptr_{nullptr};

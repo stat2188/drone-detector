@@ -365,6 +365,20 @@ void DroneScannerUI::destruct_objects() noexcept {
     hardware_ptr_ = nullptr;
 }
 
+void DroneScannerUI::apply_sweep_ui_layout() noexcept {
+    big_display_.hidden(true);
+    sweep_freq_text_.hidden(true);
+    drone_display_.set_histogram_visible(false);
+    drone_display_.set_parent_rect({0, 16, DISPLAY_WIDTH, 258});
+}
+
+void DroneScannerUI::restore_normal_ui_layout() noexcept {
+    big_display_.hidden(false);
+    sweep_freq_text_.hidden(true);
+    drone_display_.set_histogram_visible(histogram_pre_sweep_visible_);
+    drone_display_.set_parent_rect({0, 68, DISPLAY_WIDTH, 206});
+}
+
 void DroneScannerUI::on_show() {
     if (scanner_thread_ != nullptr && !scanner_thread_->is_active()) {
         scanner_thread_->start();
@@ -389,12 +403,6 @@ void DroneScannerUI::on_show() {
 
         baseband::spectrum_streaming_start();
         scanning_ = true;
-
-        histogram_pre_sweep_visible_ = drone_display_.get_histogram_visible();
-        big_display_.hidden(true);
-        sweep_freq_text_.hidden(false);
-        drone_display_.set_histogram_visible(false);
-        drone_display_.set_parent_rect({0, 16, DISPLAY_WIDTH, 258});
 
         if (sweep_[1].enabled) {
             drone_display_.set_dual_sweep_mode(true);
@@ -649,14 +657,15 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
 }
 
 void DroneScannerUI::enter_sweep_mode() noexcept {
+    // Save histogram state BEFORE marking composite active
+    // (apply_sweep_ui_layout relies on composite_active_ to know context)
+    histogram_pre_sweep_visible_ = drone_display_.get_histogram_visible();
+
     composite_active_ = true;
     drone_display_.set_composite_mode(true);
 
-    histogram_pre_sweep_visible_ = drone_display_.get_histogram_visible();
-    big_display_.hidden(true);
-    sweep_freq_text_.hidden(false);
-    drone_display_.set_histogram_visible(false);
-    drone_display_.set_parent_rect({0, 16, DISPLAY_WIDTH, 258});
+    // Apply sweep UI layout (single source of truth)
+    apply_sweep_ui_layout();
 
     ScanConfig cfg;
     if (scanner_ptr_ != nullptr) {
@@ -717,10 +726,8 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     spectrum_fifo_ = nullptr;
     db_scan_count_ = 0;
 
-    big_display_.hidden(false);
-    sweep_freq_text_.hidden(true);
-    drone_display_.set_histogram_visible(histogram_pre_sweep_visible_);
-    drone_display_.set_parent_rect({0, 68, DISPLAY_WIDTH, 206});
+    // Restore normal UI layout (single source of truth)
+    restore_normal_ui_layout();
 
     if (scanning_) {
         baseband::spectrum_streaming_stop();
@@ -817,17 +824,7 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     radio::set_tuning_frequency(rf::Frequency(win.f_center));
     chThdSleepMilliseconds(5);
     current_frequency_ = win.f_center;
-    static char freq_buf[24];
-    const uint32_t mhz = static_cast<uint32_t>(win.f_center / 1000000ULL);
-    const uint32_t khz = static_cast<uint32_t>((win.f_center % 1000000ULL) / 1000ULL);
-    if (prefix != nullptr) {
-        snprintf(freq_buf, sizeof(freq_buf), "%s%lu.%03lu MHz", prefix,
-                 (unsigned long)mhz, (unsigned long)khz);
-    } else {
-        snprintf(freq_buf, sizeof(freq_buf), "%lu.%03lu MHz",
-                 (unsigned long)mhz, (unsigned long)khz);
-    }
-    sweep_freq_text_.set(freq_buf);
+    (void)prefix;
     baseband::spectrum_streaming_start();
 }
 

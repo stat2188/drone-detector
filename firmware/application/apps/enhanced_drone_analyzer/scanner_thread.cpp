@@ -44,6 +44,22 @@ void ScannerThread::run() noexcept {
                     continue;
                 }
                 dwell_cycles_ = 0;
+            } else {
+                // Dwell disabled: still respect LOCKING/TRACKING state.
+                // Scanner should hold frequency while UI thread processes the signal.
+                // force_resume_scanning() sets flag which perform_scan_cycle() checks
+                // to transition back to SCANNING state.
+                const ScannerState scan_state = scanner_.get_state();
+                if (scan_state == ScannerState::LOCKING || scan_state == ScannerState::TRACKING) {
+                    dwell_cycles_++;
+                    if (dwell_cycles_ >= MAX_DWELL_CYCLES) {
+                        scanner_.force_resume_scanning();
+                        dwell_cycles_ = 0;
+                    }
+                    chThdSleepMilliseconds(sleep_ms);
+                    continue;
+                }
+                dwell_cycles_ = 0;
             }
 
             ErrorCode err = scanner_.perform_scan_cycle();
