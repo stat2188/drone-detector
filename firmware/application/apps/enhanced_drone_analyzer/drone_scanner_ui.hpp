@@ -143,60 +143,46 @@ private:
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void on_retune(FreqHz freq, uint32_t range) noexcept;
 
-    // Band sweep state — Looking Glass pattern: stop → process → retune → start
+    // Band sweep — Looking Glass pattern: stop → process → retune → start
     static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;   // 240 pixels
     static constexpr FreqHz SWEEP_SLICE_BW = 20000000;         // 20 MHz per slice
     static constexpr uint8_t DB_SCANS_PER_SWEEP = 20;          // DB scans between auto-sweep passes
     static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;  // 78125 Hz per bin
+    static constexpr uint8_t MAX_SWEEP_WINDOWS = 2;
 
-    uint8_t composite_buffer_[COMPOSITE_SIZE]{};  // sweep1 composite
-    uint8_t composite_buffer2_[COMPOSITE_SIZE]{}; // sweep2 composite
+    /**
+     * @brief Encapsulates all state for a single sweep window (Meyers: replace duplication with data)
+     */
+    struct SweepWindow {
+        uint8_t composite[COMPOSITE_SIZE]{};  // pixel buffer
+        FreqHz f_min{0};
+        FreqHz f_max{0};
+        FreqHz f_center{0};
+        FreqHz f_center_ini{0};
+        FreqHz pixel_step_hz{0};
+        FreqHz step_hz{0};
+        FreqHz bins_hz_acc{0};
+        uint16_t pixel_index{0};
+        uint8_t pixel_max{0};
+        bool enabled{false};
+
+        void init(FreqHz start, FreqHz end) noexcept;
+        void reset() noexcept;
+        void process_bins(const ChannelSpectrum& spectrum) noexcept;
+    };
+
+    SweepWindow sweep_[MAX_SWEEP_WINDOWS]{};
 
     bool composite_active_{false};
-    bool sweep_auto_mode_{false};        // true = interleaved (auto exit after pass), false = manual
-    uint8_t db_scan_count_{0};           // counter for DB scan interleaving
-    bool histogram_pre_sweep_visible_{true};  // user pref saved before sweep hides histogram
+    bool sweep_auto_mode_{false};
+    uint8_t active_sweep_idx_{0};         // 0 or 1
+    uint8_t db_scan_count_{0};
+    bool histogram_pre_sweep_visible_{true};
 
-    // Sweep window 1 state
-    FreqHz sweep_f_min_{0};
-    FreqHz sweep_f_max_{0};
-    FreqHz sweep_f_center_{0};
-    FreqHz sweep_f_center_ini_{0};
-    FreqHz sweep_pixel_step_hz_{0};
-    FreqHz sweep_step_hz_{0};
-    FreqHz sweep_bins_hz_acc_{0};
-    uint16_t sweep_pixel_index_{0};
-    uint8_t sweep_pixel_max_{0};
-
-    // Sweep window 2 state
-    bool sweep2_enabled_{false};
-    bool sweep2_active_{false};
-    FreqHz sweep2_f_min_{0};
-    FreqHz sweep2_f_max_{0};
-    FreqHz sweep2_f_center_{0};
-    FreqHz sweep2_f_center_ini_{0};
-    FreqHz sweep2_pixel_step_hz_{0};
-    FreqHz sweep2_step_hz_{0};
-    FreqHz sweep2_bins_hz_acc_{0};
-    uint16_t sweep2_pixel_index_{0};
-    uint8_t sweep2_pixel_max_{0};
-
-    void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
-    void sweep_retune() noexcept;
-    void init_sweep2(FreqHz start, FreqHz end) noexcept;
-    void on_sweep2_spectrum(const ChannelSpectrum& spectrum) noexcept;
-    void sweep2_retune() noexcept;
-
-    // Shared sweep helpers (DRY — Scott Meyers: eliminate duplicate code)
-    static void format_freq_mhz(char* buf, size_t buf_size, FreqHz freq, const char* prefix = nullptr) noexcept;
-    void reset_sweep_composite(uint8_t* buf, FreqHz& center, FreqHz center_ini,
-                               uint16_t& pixel_index, uint8_t& pixel_max, FreqHz& bins_acc) noexcept;
-    void process_sweep_bins(const ChannelSpectrum& spectrum,
-                            uint8_t* composite_buf, FreqHz& pixel_step, FreqHz& bins_acc,
-                            uint16_t& pixel_index, uint8_t& pixel_max) noexcept;
-    void retune_sweep(FreqHz center, ui::Text& text_widget, const char* prefix = nullptr) noexcept;
+    void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
+    void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
