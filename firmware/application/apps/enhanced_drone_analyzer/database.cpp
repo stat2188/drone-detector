@@ -77,14 +77,16 @@ static DroneType parse_drone_type_from_description(
 /**
  * @brief Load database using standard Mayhem freqman mechanism
  * @note Uses load_freqman_file() — same as Recon, Scanner, Looking Glass
- *       freqman_db allocates ~100 entries on heap during load, then frees.
+ *       freqman_db allocates up to MAX_DATABASE_ENTRIES on heap during load, then frees.
  */
 ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     current_index_ = 0;
 
     freqman_db db;
-    if (!load_freqman_file(database_file_, db, {})) {
+    freqman_load_options opts;
+    opts.max_entries = MAX_DATABASE_ENTRIES;
+    if (!load_freqman_file(database_file_, db, opts)) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
     if (db.empty()) {
