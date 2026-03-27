@@ -171,9 +171,13 @@ private:
     // Median filter toggle state
     bool median_enabled_{false};
 
+    // Latest ChannelStatistics.max_db from baseband (full-bandwidth RSSI)
+    int32_t latest_max_db_{RSSI_NOISE_FLOOR_DBM};
+
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;
     MessageHandlerRegistration message_handler_retune;
+    MessageHandlerRegistration message_handler_channel_stats;
 };
 
 } // namespace drone_analyzer

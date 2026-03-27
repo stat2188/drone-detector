@@ -556,7 +556,7 @@ private:
      * @note Noise floor = flat line. Signal = elevated U/V peak above noise.
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
-    [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) const noexcept;
+    [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept;
 
     /**
      * @brief Internal: Trigger alert callback if set
@@ -623,6 +623,13 @@ private:
 
     // State transition control flag
     AtomicFlag state_transition_allowed_;
+
+    // Force-resume flag (set by scanner thread, cleared inside mutex-protected scan cycle)
+    AtomicFlag force_resume_flag_;
+
+    // Sort buffer for analyze_spectrum_shape (class member to avoid static in method)
+    static constexpr size_t SPECTRUM_SORT_BUF_SIZE = 256;
+    uint8_t spectrum_sort_buf_[SPECTRUM_SORT_BUF_SIZE];
 
     // Alert callback in progress flag (prevents re-entrant calls)
     AtomicFlag alert_callback_in_progress_;

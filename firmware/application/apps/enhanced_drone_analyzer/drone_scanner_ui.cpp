@@ -72,6 +72,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             const auto message = *reinterpret_cast<const RetuneMessage*>(p);
             this->on_retune(message.freq, message.range);
         }
+    }
+    , message_handler_channel_stats{
+        Message::ID::ChannelStatistics,
+        [this](Message* const p) {
+            const auto message = *reinterpret_cast<const ChannelStatisticsMessage*>(p);
+            this->latest_max_db_ = message.statistics.max_db;
+        }
     } {
     add_children({
         &labels_,
