@@ -1,8 +1,10 @@
+#include <cstdint>
+
+#include "ch.h"
+
 #include "hardware_controller.hpp"
 #include "portapack.hpp"
 #include "message.hpp"
-
-#include "ch.h"
 
 namespace drone_analyzer {
 

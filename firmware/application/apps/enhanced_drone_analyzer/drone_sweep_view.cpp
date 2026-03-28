@@ -1,10 +1,12 @@
+#include <cstdint>
+#include <cstring>
+
 #include "drone_sweep_view.hpp"
 #include "scanner.hpp"
 #include "constants.hpp"
 #include "ui_receiver.hpp"
 #include "file.hpp"
 #include "file_path.hpp"
-#include <cstring>
 
 namespace drone_analyzer {
 

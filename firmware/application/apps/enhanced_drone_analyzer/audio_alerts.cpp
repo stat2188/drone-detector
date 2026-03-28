@@ -14,10 +14,13 @@
  * GNU General Public License for more details.
  */
 
+#include <cstdint>
+
+#include "ch.h"
+
 #include "audio_alerts.hpp"
 #include "baseband_api.hpp"
 #include "constants.hpp"
-#include "ch.h"
 
 namespace drone_analyzer {
 

@@ -1,6 +1,8 @@
-#include "drone_display.hpp"
-
+#include <cstdint>
+#include <cstring>
 #include <string_view>
+
+#include "drone_display.hpp"
 
 namespace drone_analyzer {
 

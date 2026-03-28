@@ -1,8 +1,10 @@
+#include <cstdint>
+
+#include "ch.h"
+
 #include "scanner.hpp"
 #include "receiver_model.hpp"
 #include "portapack_persistent_memory.hpp"
-
-#include "ch.h"
 
 namespace drone_analyzer {
 

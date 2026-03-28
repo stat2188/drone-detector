@@ -1,4 +1,9 @@
-#include "drone_scanner_ui.hpp"
+#include <cstdint>
+#include <cstring>
+#include <array>
+
+#include "ch.h"
+
 #include "ui.hpp"
 #include "ui_fileman.hpp"
 #include "scanner.hpp"
@@ -16,9 +21,8 @@
 #include "portapack.hpp"
 #include "file_path.hpp"
 #include "radio.hpp"
-#include "ch.h"
-#include <array>
-#include <cstring>
+
+#include "drone_scanner_ui.hpp"
 
 namespace drone_analyzer {
 

@@ -1,3 +1,6 @@
+#include <cstdint>
+#include <cstring>
+
 #include "drone_settings.hpp"
 #include "scanner.hpp"
 #include "audio_alerts.hpp"
@@ -6,7 +9,6 @@
 #include "file.hpp"
 #include "file_path.hpp"
 #include "receiver_model.hpp"
-#include <cstring>
 
 namespace drone_analyzer {
 
