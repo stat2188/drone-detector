@@ -515,6 +515,95 @@ constexpr uint32_t COLOR_BACKGROUND = 0xFF000000;
 constexpr uint32_t COLOR_TEXT = 0xFFFFFFFF;
 
 // ============================================================================
+// FFT Bin Layout Constants (HackRF baseband: 256-bin FFT)
+// ============================================================================
+// The HackRF baseband produces 256 spectrum bins. Center bins 120-135
+// contain the DC spike from the FFT zero-frequency component.
+// Filter rolloff artifacts appear at bins 0-9 and 246-255.
+
+/**
+ * @brief Total FFT bins per spectrum message
+ */
+constexpr size_t FFT_BIN_COUNT = 256;
+
+/**
+ * @brief DC spike start bin index
+ */
+constexpr size_t FFT_DC_SPIKE_START = 120;
+
+/**
+ * @brief DC spike end bin index (exclusive)
+ */
+constexpr size_t FFT_DC_SPIKE_END = 136;
+
+/**
+ * @brief Edge skip for filter rolloff (standard: skip bins 0-9 and 246-255)
+ * @note Used by extract_rssi() and analyze_spectrum_shape()
+ */
+constexpr size_t FFT_EDGE_SKIP = 10;
+
+/**
+ * @brief Edge skip for filter rolloff (narrow: skip bins 0-5 and 250-255)
+ * @note Used by sweep mode (Looking Glass pattern) — tighter window for speed
+ */
+constexpr size_t FFT_EDGE_SKIP_NARROW = 6;
+
+/**
+ * @brief Focused bin window: lower sideband start
+ * @note Bins 100-119 cover ±200 kHz around tuned frequency
+ */
+constexpr size_t FFT_FOCUSED_LOWER_START = 100;
+
+/**
+ * @brief Focused bin window: upper sideband end (exclusive)
+ * @note Bins 136-156 cover the upper sideband mirror
+ */
+constexpr size_t FFT_FOCUSED_UPPER_END = 156;
+
+/**
+ * @brief dBm conversion offset
+ * @note HackRF baseband: spectrum.db = clamp(dBV*5 + 255, 0, 255)
+ *       Approximate dBm = spectrum.db - 120
+ */
+constexpr int32_t FFT_DBM_OFFSET = 120;
+
+/**
+ * @brief Usable bins for spectrum shape analysis
+ * @note Total bins minus DC spike (16) minus edge skip (2×10) = 220
+ */
+constexpr size_t FFT_USABLE_BINS = FFT_BIN_COUNT - (FFT_DC_SPIKE_END - FFT_DC_SPIKE_START) - (2 * FFT_EDGE_SKIP);
+
+// ============================================================================
+// Sweep Bin Mapping Constants (Looking Glass pattern)
+// ============================================================================
+// In sweep mode, 240 bins from the 256-bin FFT are mapped to screen pixels.
+// The mapping rearranges bins to skip the DC spike:
+//   Lower sideband: FFT bins 134-253 → screen pixels 0-119
+//   Upper sideband: FFT bins 0-118   → screen pixels 120-238
+//   Bins 119, 120-135, 254-255 are skipped (DC spike + neighbors)
+
+/**
+ * @brief Screen pixels per sweep slice (= DISPLAY_WIDTH)
+ */
+constexpr uint8_t SWEEP_PIXELS_PER_SLICE = 240;
+
+/**
+ * @brief FFT bin where lower sideband mapping starts
+ */
+constexpr uint8_t SWEEP_FFT_MAP_START = 134;
+
+/**
+ * @brief Crossover pixel index (lower → upper sideband boundary)
+ */
+constexpr uint8_t SWEEP_FFT_MAP_CROSSOVER = 120;
+
+/**
+ * @brief FFT bins per step for sweep advancement
+ * @note 244 bins × 78125 Hz/bin ≈ 19.06 MHz step
+ */
+constexpr uint16_t SWEEP_BINS_PER_STEP = 244;
+
+// ============================================================================
 // Spectrum Filter Constants (matching Looking Glass)
 // ============================================================================
 

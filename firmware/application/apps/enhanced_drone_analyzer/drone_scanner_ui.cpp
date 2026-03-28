@@ -167,7 +167,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     button_load_.on_select = [this](ui::Button&) {
         auto open_view = nav_.push<FileLoadView>(".TXT");
         open_view->push_dir(freqman_dir);
-        open_view->on_changed = [this](std::filesystem::path new_file_path) {
+        open_view->on_changed = [this](const std::filesystem::path& new_file_path) {
             const bool was_scanning = scanning_;
 
             // Stop scanning if active
@@ -474,38 +474,34 @@ void DroneScannerUI::refresh_ui() noexcept {
 
     // Build display data from tracked drones
     // Use single get_tracked_drones call for consistency (one lock, one snapshot)
-    // Static to save ~1500 bytes stack per frame (called at 60 FPS from DisplayFrameSync)
-    static DisplayData display_data;
-    display_data.clear();
+    refresh_display_data_.clear();
 
     {
-        static TrackedDrone drones[MAX_DISPLAYED_DRONES];
-        const size_t count = scanner_ptr_->get_tracked_drones(drones, MAX_DISPLAYED_DRONES);
-        display_data.drone_count = count;
+        const size_t count = scanner_ptr_->get_tracked_drones(refresh_drones_, MAX_DISPLAYED_DRONES);
+        refresh_display_data_.drone_count = count;
         for (size_t i = 0; i < count; ++i) {
-            display_data.drones[i] = DisplayDroneEntry(drones[i]);
+            refresh_display_data_.drones[i] = DisplayDroneEntry(refresh_drones_[i]);
         }
         // Clear stale entries beyond current count
         for (size_t i = count; i < MAX_DISPLAYED_DRONES; ++i) {
-            display_data.drones[i] = DisplayDroneEntry();
+            refresh_display_data_.drones[i] = DisplayDroneEntry();
         }
 
         // Sort by threat level descending (CRITICAL first, NONE last)
         // Simple insertion sort — O(n²) but n ≤ MAX_DISPLAYED_DRONES (small)
         for (size_t i = 1; i < count; ++i) {
-            const DisplayDroneEntry key = display_data.drones[i];
+            const DisplayDroneEntry key = refresh_display_data_.drones[i];
             size_t j = i;
-            while (j > 0 && display_data.drones[j - 1].threat < key.threat) {
-                display_data.drones[j] = display_data.drones[j - 1];
+            while (j > 0 && refresh_display_data_.drones[j - 1].threat < key.threat) {
+                refresh_display_data_.drones[j] = refresh_display_data_.drones[j - 1];
                 --j;
             }
-            display_data.drones[j] = key;
+            refresh_display_data_.drones[j] = key;
         }
     }
 
     // Update status text based on state and database status
     // Always show database entry count so user can verify DB changed after Load
-    static char status_buf[MAX_TEXT_LENGTH];
 
     if (!db_loaded_) {
         drone_display_.set_status_text("No DB");
@@ -514,37 +510,37 @@ void DroneScannerUI::refresh_ui() noexcept {
     } else {
         switch (current_scanner_state_) {
             case ScannerState::SCANNING:
-                snprintf(status_buf, sizeof(status_buf), "Scan (%lu)", (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(status_buf);
+                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Scan (%lu)", (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(refresh_status_buf_);
                 break;
             case ScannerState::LOCKING:
-                snprintf(status_buf, sizeof(status_buf), "Lock (%lu)", (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(status_buf);
+                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Lock (%lu)", (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(refresh_status_buf_);
                 break;
             case ScannerState::TRACKING:
-                snprintf(status_buf, sizeof(status_buf), "Track %lu (%lu)",
-                         (unsigned long)display_data.drone_count, (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(status_buf);
+                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Track %lu (%lu)",
+                         (unsigned long)refresh_display_data_.drone_count, (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(refresh_status_buf_);
                 break;
             case ScannerState::PAUSED:
-                snprintf(status_buf, sizeof(status_buf), "Pause (%lu)", (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(status_buf);
+                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Pause (%lu)", (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(refresh_status_buf_);
                 break;
             default:
-                snprintf(status_buf, sizeof(status_buf), "Ready (%lu)", (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(status_buf);
+                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Ready (%lu)", (unsigned long)db_entry_count_);
+                drone_display_.set_status_text(refresh_status_buf_);
                 break;
         }
     }
 
-    drone_display_.update_display_data(display_data);
+    drone_display_.update_display_data(refresh_display_data_);
 
     // Stop looping SOS alert if no HIGH/CRITICAL threats remain
     // (MEDIUM uses one-shot alerts — don't kill those)
     if (AudioAlertManager::is_sos_looping()) {
         bool has_high_threat = false;
-        for (size_t i = 0; i < display_data.drone_count; ++i) {
-            if (display_data.drones[i].threat >= ThreatLevel::HIGH) {
+        for (size_t i = 0; i < refresh_display_data_.drone_count; ++i) {
+            if (refresh_display_data_.drones[i].threat >= ThreatLevel::HIGH) {
                 has_high_threat = true;
                 break;
             }
@@ -558,29 +554,27 @@ void DroneScannerUI::refresh_ui() noexcept {
     // Normal mode: from scanner histogram processor
     // Sweep mode: from composite buffer (live power distribution)
     if (!composite_active_) {
-        static uint16_t hist_data[HISTOGRAM_BUFFER_SIZE];
         const size_t hist_count = scanner_ptr_->get_histogram_snapshot(
-            hist_data, HISTOGRAM_BUFFER_SIZE
+            refresh_hist_data_, HISTOGRAM_BUFFER_SIZE
         );
         if (hist_count > 0) {
-            drone_display_.set_histogram_data(hist_data, hist_count);
+            drone_display_.set_histogram_data(refresh_hist_data_, hist_count);
         }
     } else {
         // Feed composite power levels as histogram bins
-        static uint16_t hist_data[HISTOGRAM_BUFFER_SIZE];
         const size_t bins = (COMPOSITE_SIZE < HISTOGRAM_BUFFER_SIZE)
             ? COMPOSITE_SIZE : HISTOGRAM_BUFFER_SIZE;
         for (size_t i = 0; i < bins; ++i) {
-            hist_data[i] = static_cast<uint16_t>(sweep_[active_sweep_idx_].composite[i]) * 256;
+            refresh_hist_data_[i] = static_cast<uint16_t>(sweep_[active_sweep_idx_].composite[i]) * 256;
         }
-        drone_display_.set_histogram_data(hist_data, bins);
+        drone_display_.set_histogram_data(refresh_hist_data_, bins);
     }
 
     // Update big frequency display
     {
         RssiValue drone_rssi = RSSI_NOISE_FLOOR_DBM;
-        if (display_data.drone_count > 0) {
-            drone_rssi = display_data.drones[0].rssi;
+        if (refresh_display_data_.drone_count > 0) {
+            drone_rssi = refresh_display_data_.drones[0].rssi;
         }
         current_rssi_ = drone_rssi;
 
@@ -781,8 +775,8 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end) noexcept {
     if (f_min >= f_max) {
         f_max = f_min + SWEEP_SLICE_BW;
     }
-    pixel_step_hz = (f_max - f_min) / COMPOSITE_SIZE;
-    step_hz = 244 * EACH_BIN_SIZE;
+    pixel_step_hz = (f_max - f_min) / SWEEP_PIXELS_PER_SLICE;
+    step_hz = SWEEP_BINS_PER_STEP * EACH_BIN_SIZE;
     f_center_ini = f_min - (2 * EACH_BIN_SIZE) + (SWEEP_SLICE_BW / 2);
     reset();
 }
@@ -796,8 +790,16 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
 }
 
 void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
-    for (uint8_t bin = 0; bin < 240; ++bin) {
-        const uint8_t fft_bin = (bin < 120) ? (134 + bin) : (bin - 118);
+    // FFT bin mapping (Looking Glass pattern):
+    //   Lower sideband: screen pixel 0→119 maps to FFT bins 134→253
+    //   Upper sideband: screen pixel 120→239 maps to FFT bins 2→121
+    //   Skips DC spike region (FFT bins 119-135) and edge rolloff
+    static constexpr uint8_t SWEEP_UPPER_OFFSET = SWEEP_FFT_MAP_CROSSOVER - 2;  // 118
+
+    for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
+        const uint8_t fft_bin = (bin < SWEEP_FFT_MAP_CROSSOVER)
+            ? (SWEEP_FFT_MAP_START + bin)
+            : (bin - SWEEP_UPPER_OFFSET);
         const uint8_t power = spectrum.db[fft_bin];
         if (power > pixel_max) pixel_max = power;
         bins_hz_acc += EACH_BIN_SIZE;

@@ -1,5 +1,6 @@
 /**
- * @note nuclear crutch
+ * @brief Thread synchronization primitives for ChibiOS RTOS
+ * @note RAII mutex wrappers and atomic flag for thread-safe state management
  */
 #ifndef LOCKING_HPP
 #define LOCKING_HPP

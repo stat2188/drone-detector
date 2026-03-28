@@ -129,11 +129,11 @@ struct SweepZoneRuntime {
 
     void init(const SweepZoneConfig& cfg) noexcept {
         constexpr FreqHz SLICE_BW = 20000000;
-        constexpr FreqHz BIN_SIZE = SLICE_BW / 256;
+        constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
 
         const FreqHz range = cfg.end_freq - cfg.start_freq;
-        pixel_step_hz = (range > 0) ? range / 240 : 0;
-        step_hz = 244 * BIN_SIZE;
+        pixel_step_hz = (range > 0) ? range / SWEEP_PIXELS_PER_SLICE : 0;
+        step_hz = SWEEP_BINS_PER_STEP * BIN_SIZE;
         center_ini = cfg.start_freq - (2 * BIN_SIZE) + (SLICE_BW / 2);
         current_center = center_ini;
         pixel_index = 0;
@@ -149,7 +149,7 @@ struct SweepZoneRuntime {
     }
 
     [[nodiscard]] bool is_complete() const noexcept {
-        return pixel_index >= 240;
+        return pixel_index >= SWEEP_PIXELS_PER_SLICE;
     }
 };
 
@@ -473,22 +473,21 @@ public:
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
         current_frequency_ = center_freq;
 
-        // Bin window: EDGE_SKIP=6 on both sides, skip DC spike
-        constexpr size_t EDGE_SKIP = 6;
-        constexpr size_t DC_SPIKE_START = 120;
-        constexpr size_t DC_SPIKE_END = 136;
-        constexpr size_t BIN_COUNT = 228;  // (120-6) + (256-6-136)
+        // Bin window: narrow edge skip on both sides, skip DC spike
+        static constexpr size_t SWEEP_USABLE_BINS =
+            (FFT_DC_SPIKE_START - FFT_EDGE_SKIP_NARROW) +
+            (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - FFT_DC_SPIKE_END);
 
         // Step 1: Collect bins + find peak (single pass O(n))
-        static uint8_t usable[BIN_COUNT];
+        static uint8_t usable[SWEEP_USABLE_BINS];
         size_t idx = 0;
         uint8_t raw_peak = 0;
 
-        for (size_t i = EDGE_SKIP; i < DC_SPIKE_START; ++i) {
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
             usable[idx++] = spectrum.db[i];
             if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
         }
-        for (size_t i = DC_SPIKE_END; i < (256 - EDGE_SKIP); ++i) {
+        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
             usable[idx++] = spectrum.db[i];
             if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
         }
@@ -524,7 +523,7 @@ public:
         }
 
         const uint8_t noise_floor = usable[k];
-        int32_t peak_rssi = static_cast<int32_t>(raw_peak) - 120;
+        int32_t peak_rssi = static_cast<int32_t>(raw_peak) - FFT_DBM_OFFSET;
 
         if (raw_peak <= noise_floor + config_.spectrum_margin) {
             return;

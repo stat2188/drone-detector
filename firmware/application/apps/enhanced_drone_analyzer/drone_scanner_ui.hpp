@@ -189,6 +189,12 @@ private:
     // Latest ChannelStatistics.max_db from baseband (full-bandwidth RSSI)
     int32_t latest_max_db_{RSSI_NOISE_FLOOR_DBM};
 
+    // Reusable buffers for refresh_ui() (class members instead of static locals)
+    DisplayData refresh_display_data_{};
+    TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};
+    char refresh_status_buf_[MAX_TEXT_LENGTH]{};
+    uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
+
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;
     MessageHandlerRegistration message_handler_retune;
