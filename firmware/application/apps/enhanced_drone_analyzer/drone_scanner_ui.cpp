@@ -641,6 +641,15 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     composite_active_ = true;
     drone_display_.set_composite_mode(true);
 
+    // Save last DB frequency and index BEFORE sweep starts (for continue after sweep)
+    // This ensures we resume from the exact DB position, not from a sweep frequency
+    if (scanner_ptr_ != nullptr && current_frequency_ != 0) {
+        last_db_frequency_ = current_frequency_;
+        if (database_ptr_ != nullptr) {
+            last_db_index_ = database_ptr_->get_current_index();
+        }
+    }
+
     ScanConfig cfg;
     if (scanner_ptr_ != nullptr) {
         cfg = scanner_ptr_->get_config();
@@ -712,13 +721,20 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
     baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
 
-    if (was_auto) {
+    if (was_auto && scanner_ptr_ != nullptr) {
+        // Continue scanning from last DB position (skip already-scanned)
+        // Restore both frequency AND database index for exact resume
+        if (last_db_frequency_ != 0) {
+            scanner_ptr_->set_scan_frequency(last_db_frequency_);
+        }
+        if (database_ptr_ != nullptr) {
+            database_ptr_->set_current_index(last_db_index_);
+        }
+
         if (scanner_thread_ != nullptr) {
             scanner_thread_->set_scanning(true);
         }
-        if (scanner_ptr_ != nullptr) {
-            (void)scanner_ptr_->start_scanning();
-        }
+        (void)scanner_ptr_->start_scanning();
         baseband::spectrum_streaming_start();
         scanning_ = true;
         button_start_stop_.set_text("Stop");

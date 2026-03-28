@@ -232,6 +232,21 @@ DatabaseManager::DatabaseManager() noexcept
 DatabaseManager::~DatabaseManager() noexcept {
 }
 
+size_t DatabaseManager::get_current_index() const noexcept {
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    return current_index_;
+}
+
+void DatabaseManager::set_current_index(size_t index) noexcept {
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    if (entry_count_ == 0) {
+        current_index_ = 0;
+        return;
+    }
+    // Clamp to valid range
+    current_index_ = (index < entry_count_) ? index : 0;
+}
+
 void DatabaseManager::set_database_file(const char* filename) noexcept {
     if (filename == nullptr) {
         return;

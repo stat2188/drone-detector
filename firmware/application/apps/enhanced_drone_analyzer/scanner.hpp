@@ -367,6 +367,13 @@ public:
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorResult<FreqHz> get_current_frequency() const noexcept;
+
+    /**
+     * @brief Set scan frequency directly (for continue after sweep)
+     * @param frequency Frequency to set
+     * @note After sweep exit, continue scanning from this frequency
+     */
+    void set_scan_frequency(FreqHz frequency) noexcept;
     
     /**
      * @brief Get number of tracked drones

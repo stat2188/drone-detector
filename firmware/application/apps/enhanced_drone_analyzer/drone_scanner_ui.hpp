@@ -174,6 +174,8 @@ private:
     bool sweep_auto_mode_{false};
     uint8_t active_sweep_idx_{0};         // 0 or 1
     uint8_t db_scan_count_{0};
+    FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
+    size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
 
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;

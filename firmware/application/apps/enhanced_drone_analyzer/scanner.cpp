@@ -789,6 +789,11 @@ ErrorResult<FreqHz> DroneScanner::get_current_frequency() const noexcept {
     return ErrorResult<FreqHz>::success(current_frequency_);
 }
 
+void DroneScanner::set_scan_frequency(FreqHz frequency) noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    current_frequency_ = frequency;
+}
+
 size_t DroneScanner::get_tracked_count() const noexcept {
     MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
     if (!lock.is_locked()) {

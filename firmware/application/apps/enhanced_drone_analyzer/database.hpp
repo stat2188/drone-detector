@@ -47,6 +47,21 @@ public:
     [[nodiscard]] bool is_loaded() const noexcept;
     void set_database_file(const char* filename) noexcept;
     
+    /**
+     * @brief Get current database index (for state save/restore)
+     * @return Current index in database entries array
+     * @note Thread-safe: acquires DATABASE_MUTEX
+     */
+    [[nodiscard]] size_t get_current_index() const noexcept;
+    
+    /**
+     * @brief Set current database index (for state restore after sweep)
+     * @param index Index to restore (must be < entry_count_)
+     * @note Thread-safe: acquires DATABASE_MUTEX
+     * @note Clamps index to valid range if out of bounds
+     */
+    void set_current_index(size_t index) noexcept;
+    
 private:
     
     [[nodiscard]] ErrorResult<size_t> find_entry_index_internal(FreqHz frequency) const noexcept;
