@@ -94,7 +94,7 @@ void DroneSweepView::save_settings() noexcept {
     static char file_buf[2048];
     size_t file_len = 0;
     const auto open_result = file.open(settings_dir / u"eda_settings.txt", true, false);
-    if (open_result) {
+    if (!open_result) {
         // File exists, read it
         constexpr size_t CHUNK = 256;
         uint8_t chunk[CHUNK];
@@ -110,9 +110,9 @@ void DroneSweepView::save_settings() noexcept {
     }
     file_buf[file_len] = '\0';
 
-    // Create/overwrite file
+    // Create/overwrite file for writing
     const auto create_result = file.create(settings_dir / u"eda_settings.txt");
-    if (!create_result) return;
+    if (create_result) return;
 
     // Write output: non-sweep lines from existing file, plus sweep keys
     static char out_buf[2048];

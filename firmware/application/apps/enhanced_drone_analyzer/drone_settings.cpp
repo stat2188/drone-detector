@@ -318,6 +318,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_.spectrum_min_width = static_cast<uint8_t>(v);
         settings_dirty_ = true;
     };
+
+    // Load persisted settings from SD card (overrides config-based defaults)
+    (void)load_settings();
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
@@ -450,6 +453,14 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
             settings_.spectrum_margin = static_cast<uint8_t>(parse_int());
         } else if (key_matches("spectrum_min_width")) {
             settings_.spectrum_min_width = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("dwell_enabled")) {
+            settings_.dwell_enabled = parse_bool();
+        } else if (key_matches("confirm_count_enabled")) {
+            settings_.confirm_count_enabled = parse_bool();
+        } else if (key_matches("noise_blacklist_enabled")) {
+            settings_.noise_blacklist_enabled = parse_bool();
+        } else if (key_matches("median_enabled")) {
+            settings_.median_enabled = parse_bool();
         }
     };
 
@@ -494,6 +505,7 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         updated_config.spectrum_detection_enabled = settings_.spectrum_detection_enabled;
         updated_config.spectrum_margin = settings_.spectrum_margin;
         updated_config.spectrum_min_width = settings_.spectrum_min_width;
+        updated_config.median_enabled = settings_.median_enabled;
 
         const ErrorCode err = scanner_ptr_->set_config(updated_config);
         if (err != ErrorCode::SUCCESS) {

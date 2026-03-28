@@ -753,6 +753,13 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // Dual window mode: alternate 0 → 1 → 0 → 1 ...
         const uint8_t next_idx = (active_sweep_idx_ == 0) ? 1 : 0;
         active_sweep_idx_ = next_idx;
+
+        if (sweep_auto_mode_ && next_idx == 0) {
+            // Both windows completed one full pass — return to DB scanning
+            exit_sweep_mode();
+            return;
+        }
+
         retune_sweep_window(sweep_[next_idx], (next_idx == 1) ? "2:" : nullptr);
     } else if (sweep_auto_mode_) {
         // Single window auto mode: one pass then exit
