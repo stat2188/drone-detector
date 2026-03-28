@@ -178,9 +178,9 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
             current_index_ = 0;
         }
     } else {
-        // Current frequency not in database — return first entry
-        // This ensures we always move forward, never stay stuck
-        current_index_ = 0;
+        // Frequency not in DB — resume from current_index_
+        // Preserves position after sweep restore (last_db_index_)
+        current_index_ = (current_index_ < entry_count_) ? current_index_ : 0;
     }
     
     return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
