@@ -302,7 +302,7 @@ constexpr uint32_t MAX_SCAN_CYCLES = 1000;
  * @brief Maximum database entries
  * @note 300 entries × 16 bytes = 4,800 bytes
  */
-constexpr size_t MAX_DATABASE_ENTRIES = 300;
+constexpr size_t MAX_DATABASE_ENTRIES = 100;
 
 /**
  * @brief Database file path
