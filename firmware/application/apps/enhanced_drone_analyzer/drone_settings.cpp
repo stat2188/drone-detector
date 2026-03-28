@@ -123,6 +123,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
     , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")
     , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
+    , button_info_margin_({UI_POS_X(0), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Mrg?")
+    , button_info_width_({UI_POS_X(5), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Wid?")
+    , button_info_sharp_({UI_POS_X(10), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Shp?")
+    , button_info_ratio_({UI_POS_X(15), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Rat?")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -163,7 +167,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_spectrum_valley_depth_,
         &button_defaults_,
         &button_about_,
-        &button_save_
+        &button_save_,
+        &button_info_margin_,
+        &button_info_width_,
+        &button_info_sharp_,
+        &button_info_ratio_
     });
 
     field_scan_interval_.set_value(settings_.scan_interval_ms);
@@ -293,6 +301,43 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "TQQqcs8V-V28Bf2AGvl8xOc5HR\n"
             "Telegram: @max_ai_master\n"
             "TM PowerHamster2188");
+    };
+
+    // Info buttons for spectrum filter settings
+    button_info_margin_.on_select = [this](ui::Button&) {
+        nav_.display_modal("Margin",
+            "Porog shuma signala.\n"
+            "Skolko dB piki dolzhny\n"
+            "byt vyshe fona.\n"
+            "Bolshe = menshe lozhnyh.\n"
+            "15-25 dlya FPV.");
+    };
+
+    button_info_width_.on_select = [this](ui::Button&) {
+        nav_.display_modal("Max Width",
+            "Maks. shirina signala.\n"
+            "Otbrosit shirokie ploskie\n"
+            "signaly (pomehi).\n"
+            "Drony = uzkij pik.\n"
+            "30-50 optimalno.");
+    };
+
+    button_info_sharp_.on_select = [this](ui::Button&) {
+        nav_.display_modal("Sharpness",
+            "Ostota pika signala.\n"
+            "Video link drona = V-forma.\n"
+            "Bolshe = strogij filtr.\n"
+            "80-150 dlya FPV video.\n"
+            "50 = ljuboj signal.");
+    };
+
+    button_info_ratio_.on_select = [this](ui::Button&) {
+        nav_.display_modal("Peak Ratio",
+            "Otnoshenie vysoty k shirine.\n"
+            "Visokij + uzkoj = dron.\n"
+            "Nizkij = pomeha.\n"
+            "15-30 dlya FPV.\n"
+            "0 = otklychen.");
     };
 
     field_scan_interval_.on_change = [this](int32_t v) {

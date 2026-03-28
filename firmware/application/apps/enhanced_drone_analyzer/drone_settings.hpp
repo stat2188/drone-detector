@@ -166,6 +166,12 @@ private:
     ui::Button button_about_;
     ui::Button button_save_;
 
+    // Compact info buttons for spectrum filter settings
+    ui::Button button_info_margin_;
+    ui::Button button_info_width_;
+    ui::Button button_info_sharp_;
+    ui::Button button_info_ratio_;
+
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
     DroneDisplay* display_ptr_;

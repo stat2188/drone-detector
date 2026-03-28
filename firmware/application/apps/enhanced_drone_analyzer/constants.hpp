@@ -161,7 +161,11 @@ constexpr int32_t RSSI_MAX_DBM = -20;
 
 /**
  * @brief RSSI threshold for signal detection (dBm)
- * @note -70dBm catches real drone signals within ~100m, ignores ambient RF noise
+ * @note -90dBm optimized for open field / rural use (10-20 km from drone)
+ * @note Low ambient RF noise in open areas allows higher sensitivity
+ * @note Analog video 5.8 GHz: ~-85 to -95 dBm at 10 km
+ * @note DJI O3/O4: ~-80 to -95 dBm at 5-15 km
+ * @note ELRS 900 MHz: ~-90 to -105 dBm at 20+ km (long range champion)
  * @note HackRF baseband: spectrum.db = clamp(dBV*5 + 255, 0, 255)
  * @note dBm = (value - 255) / 5 - gain_offset; approximated as value - 120
  * @note Center bins 120-135 contain DC spike (blanked like Looking Glass/Search)

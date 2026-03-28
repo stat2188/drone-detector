@@ -48,7 +48,19 @@ ScanConfig::ScanConfig() noexcept
     , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
-    , sweep_step_freq(20000000) {
+    , sweep_step_freq(20000000)
+    , dwell_enabled(true)           // Stay on freq when signal detected
+    , confirm_count_enabled(true)   // Require 2 confirmations to reduce noise
+    , noise_blacklist_enabled(true) // Skip persistent noise frequencies
+    , spectrum_detection_enabled(true) // Use spectrum shape analysis
+    , median_enabled(true)          // Median filter for RSSI spike rejection
+    , spectrum_margin(15)           // ~5 dB margin (open field has low noise floor)
+    , spectrum_min_width(2)         // Reject single-bin noise spikes
+    , spectrum_max_width(40)        // Permissive for weak distant signals
+    , spectrum_peak_sharpness(80)   // Weak distant signals have less sharp peaks
+    , spectrum_peak_ratio(15)       // Lower ratio catches weaker signals
+    , spectrum_valley_depth(5)      // Shallow valleys OK for distant signals
+{
     // sweep2 fields use in-class defaults: 2.4GHz, disabled
 }
 
@@ -61,7 +73,18 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , stale_timeout_ms(DRONE_STALE_TIMEOUT_MS)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
-    , sweep_step_freq(20000000) {
+    , sweep_step_freq(20000000)
+    , dwell_enabled(true)
+    , confirm_count_enabled(true)
+    , noise_blacklist_enabled(true)
+    , spectrum_detection_enabled(true)
+    , median_enabled(true)
+    , spectrum_margin(15)
+    , spectrum_min_width(2)
+    , spectrum_max_width(40)
+    , spectrum_peak_sharpness(80)
+    , spectrum_peak_ratio(15)
+    , spectrum_valley_depth(5) {
     // sweep2 fields use in-class defaults: 2.4GHz, disabled
 }
 
