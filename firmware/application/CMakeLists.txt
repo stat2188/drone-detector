@@ -253,7 +253,6 @@ set(CPPSRC
 	ui/ui_channel.cpp
 	ui/ui_font_fixed_5x8.cpp
 	ui/ui_font_fixed_8x16.cpp
-	ui/ui_font_fixed_8x16_cyrillic.cpp
 	ui/ui_geomap.cpp
 	ui/ui_qrcode.cpp
 	ui/ui_menu.cpp
