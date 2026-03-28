@@ -84,7 +84,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &field_rf_amp_,
         &field_volume_,
         &big_display_,
-        &sweep_freq_text_,
         &drone_display_,
         &filter_labels_,
         &field_filter_,
@@ -95,9 +94,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_settings_,
         &button_swp_
     });
-
-    // Hide sweep freq text initially (only visible in sweep mode)
-    sweep_freq_text_.hidden(true);
 
     // Filter callback (Looking Glass style: OFF/MID/HIGH)
     field_filter_.on_change = [this](size_t, int32_t v) {

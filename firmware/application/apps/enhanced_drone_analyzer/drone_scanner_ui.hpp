@@ -73,10 +73,6 @@ private:
 
     ui::BigFrequency big_display_;
 
-    // Frequency text for sweep mode — hidden, composite title shows range instead.
-    // Kept as member to avoid changing add_children() child count.
-    ui::Text sweep_freq_text_{{4, 68, 160, 14}, ""};
-
     HardwareController* hardware_ptr_{nullptr};
     DatabaseManager* database_ptr_{nullptr};
     DroneScanner* scanner_ptr_{nullptr};
@@ -178,7 +174,6 @@ private:
     bool sweep_auto_mode_{false};
     uint8_t active_sweep_idx_{0};         // 0 or 1
     uint8_t db_scan_count_{0};
-    bool histogram_pre_sweep_visible_{true};
 
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
