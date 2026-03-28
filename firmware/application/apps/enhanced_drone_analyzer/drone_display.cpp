@@ -41,8 +41,8 @@ void DroneDisplay::paint(Painter& painter) {
     const uint16_t w = sr.size().width();
     const uint16_t total_h = sr.size().height();
 
-    // Clear widget area
-    draw_rectangle(painter, ox, oy, w, total_h, COLOR_BACKGROUND);
+    // NOTE: No full-screen clear — each render_* method clears its own area.
+    // This eliminates double-clear flickering.
 
     // Calculate section heights dynamically
     constexpr uint16_t STATUS_H = 16;
