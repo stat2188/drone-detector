@@ -614,6 +614,44 @@ constexpr uint8_t DEFAULT_SPECTRUM_FILTER = SPECTRUM_FILTER_OFF;
 constexpr uint8_t DEFAULT_SPECTRUM_INTEGRATION = 3;
 
 // ============================================================================
+// Spectrum Shape Filter Constants
+// ============================================================================
+
+/**
+ * @brief Default maximum signal width in bins (1-100)
+ * @note Signals wider than this are rejected as flat-topped U/I noise
+ * @note 100 = no max width filtering (accept all widths)
+ */
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 100;
+
+/**
+ * @brief Default minimum peak sharpness ratio (50-250)
+ * @note sharpness = (peak_margin * 100) / avg_margin
+ * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
+ * @note 50 = no sharpness filtering (accept all shapes)
+ */
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 50;
+
+/**
+ * @brief Default peak-to-width ratio threshold (0-255)
+ * @note ratio = (peak_margin * 10) / signal_width
+ * @note Inverted-V (drone video link): ratio > 50 (tall, narrow)
+ * @note Flat U/I noise: ratio < 20 (wide, short)
+ * @note Needle spikes: ratio > 100 (very tall, very narrow)
+ * @note 0 = no ratio filtering (disabled)
+ */
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
+
+/**
+ * @brief Default valley depth threshold (0-200)
+ * @note Measures margin of bins immediately flanking the signal peak
+ * @note Inverted-V: deep valleys (flanking bins have margin < 5)
+ * @note Flat U/I: shallow valleys (flanking bins still elevated)
+ * @note 0 = no valley depth filtering (disabled)
+ */
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
+
+// ============================================================================
 // Band Sweep Constants
 // ============================================================================
 

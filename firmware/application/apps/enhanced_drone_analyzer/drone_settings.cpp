@@ -34,6 +34,10 @@ DroneSettings::DroneSettings() noexcept
     , median_enabled(false)
     , spectrum_margin(15)
     , spectrum_min_width(1)
+    , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
+    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
+    , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
+    , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000)  // Default 20 MHz (matches SWEEP_BANDWIDTH)
@@ -65,8 +69,12 @@ void DroneSettings::reset_to_defaults() noexcept {
     median_enabled = false;
     spectrum_margin = 15;
     spectrum_min_width = 1;
-    
-    sweep_start_freq = SWEEP_DEFAULT_START_HZ;
+    spectrum_max_width = DEFAULT_SPECTRUM_MAX_WIDTH;
+        spectrum_peak_sharpness = DEFAULT_SPECTRUM_PEAK_SHARPNESS;
+        spectrum_peak_ratio = DEFAULT_SPECTRUM_PEAK_RATIO;
+        spectrum_valley_depth = DEFAULT_SPECTRUM_VALLEY_DEPTH;
+        
+        sweep_start_freq = SWEEP_DEFAULT_START_HZ;
     sweep_end_freq = SWEEP_DEFAULT_END_HZ;
     sweep_step_freq = 20000000;  // 20 MHz
 
@@ -88,6 +96,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(15), UI_POS_Y(5)}, "Mar:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(15), UI_POS_Y(6)}, "Wid:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(10), UI_POS_Y(5)}, "Rat:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(10), UI_POS_Y(6)}, "Vly:", Theme::getInstance()->fg_light->foreground},
     })
     , field_scan_mode_({UI_POS_X(0), UI_POS_Y(0)}, 1, {
         {"-", 0},
@@ -104,6 +116,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(13)}, 4, "Mar", false)
     , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
     , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 2, {1, 20}, 1, ' ')
+    , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {1, 100}, 1, ' ')
+    , field_spectrum_peak_sharpness_({UI_POS_X(6), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
+    , field_spectrum_peak_ratio_({UI_POS_X(13), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')
+    , field_spectrum_valley_depth_({UI_POS_X(13), UI_POS_Y(6)}, 3, {0, 200}, 5, ' ')
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
     , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")
     , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
@@ -122,6 +138,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     settings_.spectrum_detection_enabled = config.spectrum_detection_enabled;
     settings_.spectrum_margin = config.spectrum_margin;
     settings_.spectrum_min_width = config.spectrum_min_width;
+    settings_.spectrum_max_width = config.spectrum_max_width;
+    settings_.spectrum_peak_sharpness = config.spectrum_peak_sharpness;
+    settings_.spectrum_peak_ratio = config.spectrum_peak_ratio;
+    settings_.spectrum_valley_depth = config.spectrum_valley_depth;
 
     add_children({
         &labels_,
@@ -137,6 +157,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_spectrum_detection_,
         &field_spectrum_margin_,
         &field_spectrum_min_width_,
+        &field_spectrum_max_width_,
+        &field_spectrum_peak_sharpness_,
+        &field_spectrum_peak_ratio_,
+        &field_spectrum_valley_depth_,
         &button_defaults_,
         &button_about_,
         &button_save_
@@ -159,6 +183,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     check_spectrum_detection_.set_value(settings_.spectrum_detection_enabled);
     field_spectrum_margin_.set_value(static_cast<int32_t>(settings_.spectrum_margin));
     field_spectrum_min_width_.set_value(static_cast<int32_t>(settings_.spectrum_min_width));
+    field_spectrum_max_width_.set_value(static_cast<int32_t>(settings_.spectrum_max_width));
+    field_spectrum_peak_sharpness_.set_value(static_cast<int32_t>(settings_.spectrum_peak_sharpness));
+    field_spectrum_peak_ratio_.set_value(static_cast<int32_t>(settings_.spectrum_peak_ratio));
+    field_spectrum_valley_depth_.set_value(static_cast<int32_t>(settings_.spectrum_valley_depth));
 
     button_save_.on_select = [this](ui::Button&) {
         if (scanner_ptr_ != nullptr) {
@@ -173,6 +201,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.spectrum_detection_enabled = settings_.spectrum_detection_enabled;
             updated_config.spectrum_margin = settings_.spectrum_margin;
             updated_config.spectrum_min_width = settings_.spectrum_min_width;
+            updated_config.spectrum_max_width = settings_.spectrum_max_width;
+            updated_config.spectrum_peak_sharpness = settings_.spectrum_peak_sharpness;
             updated_config.median_enabled = settings_.median_enabled;
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
@@ -218,6 +248,14 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 "spectrum_margin=%u\n", (unsigned)settings_.spectrum_margin);
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "spectrum_min_width=%u\n", (unsigned)settings_.spectrum_min_width);
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "spectrum_max_width=%u\n", (unsigned)settings_.spectrum_max_width);
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "spectrum_peak_sharpness=%u\n", (unsigned)settings_.spectrum_peak_sharpness);
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "spectrum_peak_ratio=%u\n", (unsigned)settings_.spectrum_peak_ratio);
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "spectrum_valley_depth=%u\n", (unsigned)settings_.spectrum_valley_depth);
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "dwell_enabled=%s\n", settings_.dwell_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -318,6 +356,22 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
     field_spectrum_min_width_.on_change = [this](int32_t v) {
         settings_.spectrum_min_width = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+    field_spectrum_max_width_.on_change = [this](int32_t v) {
+        settings_.spectrum_max_width = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+    field_spectrum_peak_sharpness_.on_change = [this](int32_t v) {
+        settings_.spectrum_peak_sharpness = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+    field_spectrum_peak_ratio_.on_change = [this](int32_t v) {
+        settings_.spectrum_peak_ratio = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+    field_spectrum_valley_depth_.on_change = [this](int32_t v) {
+        settings_.spectrum_valley_depth = static_cast<uint8_t>(v);
         settings_dirty_ = true;
     };
 
@@ -455,6 +509,14 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
             settings_.spectrum_margin = static_cast<uint8_t>(parse_int());
         } else if (key_matches("spectrum_min_width")) {
             settings_.spectrum_min_width = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("spectrum_max_width")) {
+            settings_.spectrum_max_width = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("spectrum_peak_sharpness")) {
+            settings_.spectrum_peak_sharpness = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("spectrum_peak_ratio")) {
+            settings_.spectrum_peak_ratio = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("spectrum_valley_depth")) {
+            settings_.spectrum_valley_depth = static_cast<uint8_t>(parse_int());
         } else if (key_matches("dwell_enabled")) {
             settings_.dwell_enabled = parse_bool();
         } else if (key_matches("confirm_count_enabled")) {
@@ -507,6 +569,8 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         updated_config.spectrum_detection_enabled = settings_.spectrum_detection_enabled;
         updated_config.spectrum_margin = settings_.spectrum_margin;
         updated_config.spectrum_min_width = settings_.spectrum_min_width;
+        updated_config.spectrum_max_width = settings_.spectrum_max_width;
+        updated_config.spectrum_peak_sharpness = settings_.spectrum_peak_sharpness;
         updated_config.median_enabled = settings_.median_enabled;
 
         const ErrorCode err = scanner_ptr_->set_config(updated_config);
@@ -567,6 +631,10 @@ void DroneSettingsView::apply_settings() noexcept {
     check_spectrum_detection_.set_value(settings_.spectrum_detection_enabled);
     field_spectrum_margin_.set_value(static_cast<int32_t>(settings_.spectrum_margin));
     field_spectrum_min_width_.set_value(static_cast<int32_t>(settings_.spectrum_min_width));
+    field_spectrum_max_width_.set_value(static_cast<int32_t>(settings_.spectrum_max_width));
+    field_spectrum_peak_sharpness_.set_value(static_cast<int32_t>(settings_.spectrum_peak_sharpness));
+    field_spectrum_peak_ratio_.set_value(static_cast<int32_t>(settings_.spectrum_peak_ratio));
+    field_spectrum_valley_depth_.set_value(static_cast<int32_t>(settings_.spectrum_valley_depth));
 }
 
 // ============================================================================
@@ -631,6 +699,14 @@ void load_startup_settings(ScanConfig& config) noexcept {
             config.spectrum_margin = static_cast<uint8_t>(parse_int());
         } else if (key_matches("spectrum_min_width")) {
             config.spectrum_min_width = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("spectrum_max_width")) {
+            config.spectrum_max_width = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("spectrum_peak_sharpness")) {
+            config.spectrum_peak_sharpness = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("spectrum_peak_ratio")) {
+            config.spectrum_peak_ratio = static_cast<uint8_t>(parse_int());
+        } else if (key_matches("spectrum_valley_depth")) {
+            config.spectrum_valley_depth = static_cast<uint8_t>(parse_int());
         } else if (key_matches("scan_interval_ms")) {
             config.scan_interval_ms = static_cast<uint32_t>(parse_int());
         } else if (key_matches("sweep_start_mhz")) {

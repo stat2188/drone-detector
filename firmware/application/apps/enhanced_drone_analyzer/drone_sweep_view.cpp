@@ -149,6 +149,10 @@ void DroneSweepView::save_settings() noexcept {
         out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
             "spectrum_min_width=1\n");
         out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+            "spectrum_max_width=100\n");
+        out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+            "spectrum_peak_sharpness=50\n");
+        out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
             "dwell_enabled=false\n");
         out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
             "confirm_count_enabled=false\n");

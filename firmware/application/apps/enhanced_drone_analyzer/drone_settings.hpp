@@ -54,7 +54,11 @@ struct DroneSettings {
     bool median_enabled;
     uint8_t spectrum_margin;            // Peak margin above noise (50-200)
     uint8_t spectrum_min_width;         // Min signal width in bins (2-20)
-    
+    uint8_t spectrum_max_width;         // Max signal width (reject flat U/I shapes)
+    uint8_t spectrum_peak_sharpness;    // Min peak sharpness ratio (enforce V-shape)
+    uint8_t spectrum_peak_ratio;        // Peak-to-width ratio (inverted-V filter)
+    uint8_t spectrum_valley_depth;      // Valley depth threshold (V-shape flanks)
+
     // Sweep frequency range (Hz) — window 1
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;
@@ -153,6 +157,10 @@ private:
     // Spectrum detection params
     ui::NumberField field_spectrum_margin_;
     ui::NumberField field_spectrum_min_width_;
+    ui::NumberField field_spectrum_max_width_;
+    ui::NumberField field_spectrum_peak_sharpness_;
+    ui::NumberField field_spectrum_peak_ratio_;
+    ui::NumberField field_spectrum_valley_depth_;
 
     ui::Button button_defaults_;
     ui::Button button_about_;

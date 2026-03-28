@@ -1014,6 +1014,84 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         return false;
     }
 
+    // Step 6: Signal width must not exceed maximum (reject flat U/I shapes)
+    const size_t max_width = config_.spectrum_max_width;
+    if (signal_width > max_width) {
+        return false;
+    }
+
+    // Step 7: Peak sharpness check — enforce inverted-V shape
+    // sharpness = (peak_margin * 100) / avg_margin
+    // V-shape (drone video link): sharpness >> 100
+    // U/I shape (flat noise):     sharpness ~ 100
+    if (config_.spectrum_peak_sharpness > 50) {
+        int32_t margin_sum = 0;
+        size_t bin_count = 0;
+        for (size_t i = left; i <= right; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] > noise_floor) {
+                margin_sum += (spectrum.db[i] - noise_floor);
+                ++bin_count;
+            }
+        }
+        if (bin_count > 0) {
+            const int32_t avg_margin = margin_sum / static_cast<int32_t>(bin_count);
+            if (avg_margin > 0) {
+                const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+                if (sharpness < config_.spectrum_peak_sharpness) {
+                    return false;  // Flat-topped signal, not V-shaped
+                }
+            }
+        }
+    }
+
+    // Step 8: Peak ratio check — tall + narrow = inverted-V (drone video link)
+    // ratio = (peak_margin * 10) / signal_width
+    // Inverted-V: ratio > 50 (tall, narrow peak)
+    // Flat U/I:   ratio < 20 (wide, short signal)
+    // Needle:     ratio > 100 (very tall, very narrow)
+    if (config_.spectrum_peak_ratio > 0) {
+        const int32_t ratio = (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
+        if (ratio < config_.spectrum_peak_ratio) {
+            return false;  // Signal too flat relative to width
+        }
+    }
+
+    // Step 9: Valley depth check — deep valleys flanking peak = V-shape
+    // Measures margin of bins immediately adjacent to the signal
+    // Inverted-V: deep valleys (flanking bins have margin < 5)
+    // Flat U/I:   shallow valleys (flanking bins still elevated)
+    if (config_.spectrum_valley_depth > 0) {
+        uint8_t left_valley_margin = 0;
+        uint8_t right_valley_margin = 0;
+
+        // Check bin immediately to the left of signal
+        if (left > FFT_EDGE_SKIP_NARROW) {
+            size_t lv = left - 1;
+            if (!(lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END)) {
+                if (spectrum.db[lv] > noise_floor) {
+                    left_valley_margin = spectrum.db[lv] - noise_floor;
+                }
+            }
+        }
+
+        // Check bin immediately to the right of signal
+        if (right < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1) {
+            size_t rv = right + 1;
+            if (!(rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END)) {
+                if (spectrum.db[rv] > noise_floor) {
+                    right_valley_margin = spectrum.db[rv] - noise_floor;
+                }
+            }
+        }
+
+        // Both flanking bins must have margin < valley_depth (deep valleys)
+        const uint8_t max_valley = (left_valley_margin > right_valley_margin) ? left_valley_margin : right_valley_margin;
+        if (max_valley >= config_.spectrum_valley_depth) {
+            return false;  // Valleys too shallow — flat U/I shape
+        }
+    }
+
     // RSSI from actual peak bin value (same conversion as extract_rssi)
     out_rssi = static_cast<int32_t>(peak_value) - FFT_DBM_OFFSET;
     if (out_rssi > RSSI_MAX_DBM) out_rssi = RSSI_MAX_DBM;

@@ -49,7 +49,11 @@ struct ScanConfig {
     bool median_enabled{false};             // Median filter for RSSI spike rejection
     uint8_t spectrum_margin{15};            // Peak margin above noise (0-200, default 15 ≈ 5 dB)
     uint8_t spectrum_min_width{1};          // Min signal width in bins (1-20, default 1)
-    
+    uint8_t spectrum_max_width{DEFAULT_SPECTRUM_MAX_WIDTH};            // Max signal width (reject flat U/I shapes)
+    uint8_t spectrum_peak_sharpness{DEFAULT_SPECTRUM_PEAK_SHARPNESS};  // Min peak sharpness ratio (enforce V-shape)
+    uint8_t spectrum_peak_ratio{DEFAULT_SPECTRUM_PEAK_RATIO};          // Peak-to-width ratio (inverted-V filter)
+    uint8_t spectrum_valley_depth{DEFAULT_SPECTRUM_VALLEY_DEPTH};      // Valley depth threshold (V-shape flanks)
+
     /**
      * @brief Default constructor
      */
@@ -474,7 +478,7 @@ public:
      * @param center_freq Current slice center frequency
      * @note Uses UNIFIED 40-bin window (100-119, 136-155) — same as spectrum mode.
      *       This ensures LNA/VGA tuning affects both modes identically.
-     * @note Median filter + margin gate for spike/noise rejection.
+     * @note Full spectrum shape analysis: margin + min_width + max_width + peak_sharpness + peak_ratio + valley_depth
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex needed)
      */
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
@@ -485,33 +489,33 @@ public:
             (FFT_DC_SPIKE_START - FFT_EDGE_SKIP_NARROW) +
             (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - FFT_DC_SPIKE_END);
 
-        // Step 1: Collect bins + find peak (single pass O(n))
+        // Step 1: Collect bins + find peak + compute noise floor via quickselect (single pass O(n))
         static uint8_t usable[SWEEP_USABLE_BINS];
         size_t idx = 0;
         uint8_t raw_peak = 0;
+        size_t peak_index = FFT_EDGE_SKIP_NARROW;
 
         for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
             usable[idx++] = spectrum.db[i];
-            if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
         }
         for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
             usable[idx++] = spectrum.db[i];
-            if (spectrum.db[i] > raw_peak) raw_peak = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
         }
 
-        // Step 2: Quickselect median O(n) — replaces insertion sort O(n²)
-        // Only need median for noise floor, not full sorted array
+        // Quickselect median O(n) for noise floor
         const size_t k = idx / 2;
-        uint8_t left = 0;
-        uint8_t right = static_cast<uint8_t>(idx) - 1;
+        uint8_t qs_left = 0;
+        uint8_t qs_right = static_cast<uint8_t>(idx) - 1;
 
-        while (left < right) {
-            const uint8_t pivot_idx = left + (right - left) / 2;
+        while (qs_left < qs_right) {
+            const uint8_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
             uint8_t pivot = usable[pivot_idx];
-            usable[pivot_idx] = usable[right];
-            usable[right] = pivot;
-            uint8_t store = left;
-            for (uint8_t i = left; i < right; ++i) {
+            usable[pivot_idx] = usable[qs_right];
+            usable[qs_right] = pivot;
+            uint8_t store = qs_left;
+            for (uint8_t i = qs_left; i < qs_right; ++i) {
                 if (usable[i] < pivot) {
                     uint8_t t = usable[store];
                     usable[store] = usable[i];
@@ -521,28 +525,124 @@ public:
             }
             {
                 uint8_t t = usable[store];
-                usable[store] = usable[right];
-                usable[right] = t;
+                usable[store] = usable[qs_right];
+                usable[qs_right] = t;
             }
             if (store == k) break;
-            if (store < k) left = store + 1;
-            else right = store - 1;
+            if (store < k) qs_left = store + 1;
+            else qs_right = store - 1;
         }
 
         const uint8_t noise_floor = usable[k];
-        int32_t peak_rssi = static_cast<int32_t>(raw_peak) - FFT_DBM_OFFSET;
 
-        if (raw_peak <= noise_floor + config_.spectrum_margin) {
+        // Step 2: Margin check (same as analyze_spectrum_shape)
+        const uint8_t peak_margin = raw_peak - noise_floor;
+        if (peak_margin < config_.spectrum_margin) {
             return;
         }
 
-        // Step 3: Median filter for spike rejection
+        // Step 3: Signal width measurement (scan left/right from peak)
+        const uint8_t elevated_threshold = noise_floor + (peak_margin / 4);
+
+        size_t sig_left = peak_index;
+        while (sig_left > FFT_EDGE_SKIP_NARROW) {
+            size_t prev = sig_left - 1;
+            if (prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) { --sig_left; continue; }
+            if (spectrum.db[prev] < elevated_threshold) break;
+            --sig_left;
+        }
+        size_t sig_right = peak_index;
+        while (sig_right < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1) {
+            size_t next = sig_right + 1;
+            if (next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) { ++sig_right; continue; }
+            if (spectrum.db[next] < elevated_threshold) break;
+            ++sig_right;
+        }
+
+        const size_t signal_width = sig_right - sig_left + 1;
+
+        // Step 4: Min width check (reject single-bin noise spikes)
+        if (signal_width < config_.spectrum_min_width) {
+            return;
+        }
+
+        // Step 5: Max width check (reject flat U/I shaped noise)
+        if (signal_width > config_.spectrum_max_width) {
+            return;
+        }
+
+        // Step 6: Peak sharpness check (enforce V-shape)
+        if (config_.spectrum_peak_sharpness > 50) {
+            int32_t margin_sum = 0;
+            size_t bin_count = 0;
+            for (size_t i = sig_left; i <= sig_right; ++i) {
+                if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+                if (spectrum.db[i] > noise_floor) {
+                    margin_sum += (spectrum.db[i] - noise_floor);
+                    ++bin_count;
+                }
+            }
+            if (bin_count > 0) {
+                const int32_t avg_margin = margin_sum / static_cast<int32_t>(bin_count);
+                if (avg_margin > 0) {
+                    const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+                    if (sharpness < config_.spectrum_peak_sharpness) {
+                        return;  // Flat-topped signal, not V-shaped
+                    }
+                }
+            }
+        }
+
+        // Step 7: Peak ratio check (tall+ narrow = inverted-V)
+        if (config_.spectrum_peak_ratio > 0) {
+            const int32_t ratio = (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
+            if (ratio < config_.spectrum_peak_ratio) {
+                return;  // Signal too flat relative to width
+            }
+        }
+
+        // Step 8: Valley depth check (deep valleys flanking peak = V-shape)
+        if (config_.spectrum_valley_depth > 0) {
+            uint8_t left_valley_margin = 0;
+            uint8_t right_valley_margin = 0;
+
+            // Check bin immediately to the left of signal
+            if (sig_left > FFT_EDGE_SKIP_NARROW) {
+                size_t lv = sig_left - 1;
+                if (!(lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END)) {
+                    if (spectrum.db[lv] > noise_floor) {
+                        left_valley_margin = spectrum.db[lv] - noise_floor;
+                    }
+                }
+            }
+
+            // Check bin immediately to the right of signal
+            if (sig_right < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1) {
+                size_t rv = sig_right + 1;
+                if (!(rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END)) {
+                    if (spectrum.db[rv] > noise_floor) {
+                        right_valley_margin = spectrum.db[rv] - noise_floor;
+                    }
+                }
+            }
+
+            // Both flanking bins must have margin < valley_depth (deep valleys)
+            const uint8_t max_valley = (left_valley_margin > right_valley_margin) ? left_valley_margin : right_valley_margin;
+            if (max_valley >= config_.spectrum_valley_depth) {
+                return;  // Valleys too shallow — flat U/I shape
+            }
+        }
+
+        // Step 9: Convert peak to dBm
+        int32_t peak_rssi = static_cast<int32_t>(raw_peak) - FFT_DBM_OFFSET;
+
+        // Step 10: Median filter for spike rejection
         rssi_median_filter_.add(peak_rssi);
         if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
             peak_rssi = rssi_median_filter_.get_median();
         }
 
-        // Step 4: Update drone tracker only for above-threshold signals
+        // Step 11: Update drone tracker only for above-threshold signals
         if (peak_rssi > config_.rssi_threshold_dbm) {
             (void)update_tracked_drone_internal(center_freq, peak_rssi, chTimeNow());
         }
