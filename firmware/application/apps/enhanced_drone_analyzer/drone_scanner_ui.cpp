@@ -736,46 +736,31 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         scanner_ptr_->process_spectrum_sweep(spectrum, win.f_center);
     }
 
-    if (win.pixel_index >= COMPOSITE_SIZE) {
-        // Sweep pass complete
-        if (active_sweep_idx_ == 0 && sweep_[1].enabled) {
-            // Window 0 done → show data, switch to window 1 immediately
-            drone_display_.set_composite_data(win.composite, COMPOSITE_SIZE);
-            drone_display_.set_dirty();
-            win.reset();
-            active_sweep_idx_ = 1;
-            retune_sweep_window(sweep_[1], "2:");
-            return;
-        }
-        if (active_sweep_idx_ == 1) {
-            // Window 1 done → show data, wrap back to window 0
-            drone_display_.set_composite_data(win.composite, COMPOSITE_SIZE);
-            drone_display_.set_dirty();
-            win.reset();
-            active_sweep_idx_ = 0;
-            retune_sweep_window(sweep_[0], nullptr);
-            return;
-        }
-        // Single window (no SW2) done
-        if (sweep_auto_mode_) {
-            // Auto-exit: show data, exit sweep mode
-            drone_display_.set_composite_data(win.composite, COMPOSITE_SIZE);
-            drone_display_.set_dirty();
-            win.reset();
-            exit_sweep_mode();
-            return;
-        }
-        // Manual mode, single window → wrap
-        drone_display_.set_composite_data(win.composite, COMPOSITE_SIZE);
-        drone_display_.set_dirty();
-        win.reset();
-        retune_sweep_window(win, nullptr);
+    if (win.pixel_index < COMPOSITE_SIZE) {
+        // Normal step: advance frequency within current window
+        win.f_center += win.step_hz;
+        retune_sweep_window(win, (active_sweep_idx_ == 1) ? "2:" : nullptr);
         return;
     }
 
-    // Normal step: advance frequency
-    win.f_center += win.step_hz;
-    retune_sweep_window(win, (active_sweep_idx_ == 1) ? "2:" : nullptr);
+    // Current window sweep pass complete — show data
+    drone_display_.set_composite_data(win.composite, COMPOSITE_SIZE);
+    drone_display_.set_dirty();
+    win.reset();
+
+    // Determine next window
+    if (sweep_[1].enabled) {
+        // Dual window mode: alternate 0 → 1 → 0 → 1 ...
+        const uint8_t next_idx = (active_sweep_idx_ == 0) ? 1 : 0;
+        active_sweep_idx_ = next_idx;
+        retune_sweep_window(sweep_[next_idx], (next_idx == 1) ? "2:" : nullptr);
+    } else if (sweep_auto_mode_) {
+        // Single window auto mode: one pass then exit
+        exit_sweep_mode();
+    } else {
+        // Single window manual mode: wrap and repeat
+        retune_sweep_window(win, nullptr);
+    }
 }
 
 // ============================================================================
