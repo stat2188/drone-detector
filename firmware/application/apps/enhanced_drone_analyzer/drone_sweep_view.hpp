@@ -7,7 +7,6 @@
 
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
-#include "ui_tabview.hpp"
 
 #include "drone_types.hpp"
 #include "constants.hpp"
@@ -18,72 +17,9 @@ namespace drone_analyzer {
 class DroneScanner;
 
 /**
- * @brief Sweep window 1 settings sub-view
- */
-class Sweep1View : public ui::View {
-public:
-    explicit Sweep1View(Rect parent_rect) noexcept;
-
-    void focus() override;
-
-    void set_values(FreqHz start, FreqHz end, FreqHz step) noexcept;
-    [[nodiscard]] FreqHz get_start() const noexcept;
-    [[nodiscard]] FreqHz get_end() const noexcept;
-    [[nodiscard]] FreqHz get_step() const noexcept;
-
-private:
-    static constexpr uint16_t START_MHZ_DEFAULT = 5700;
-    static constexpr uint16_t END_MHZ_DEFAULT = 5900;
-    static constexpr uint32_t STEP_KHZ_DEFAULT = 20000;
-
-    ui::Labels labels_{
-        {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(5)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
-    };
-
-    ui::NumberField field_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_step_{{UI_POS_X(1), UI_POS_Y(6)}, 5, {1000, 99999}, 1000, ' '};
-};
-
-/**
- * @brief Sweep window 2 settings sub-view
- */
-class Sweep2View : public ui::View {
-public:
-    explicit Sweep2View(Rect parent_rect) noexcept;
-
-    void focus() override;
-
-    void set_values(bool enabled, FreqHz start, FreqHz end, FreqHz step) noexcept;
-    [[nodiscard]] bool get_enabled() const noexcept;
-    [[nodiscard]] FreqHz get_start() const noexcept;
-    [[nodiscard]] FreqHz get_end() const noexcept;
-    [[nodiscard]] FreqHz get_step() const noexcept;
-
-private:
-    static constexpr uint16_t START_MHZ_DEFAULT = 2400;
-    static constexpr uint16_t END_MHZ_DEFAULT = 2500;
-    static constexpr uint32_t STEP_KHZ_DEFAULT = 20000;
-
-    ui::Checkbox check_enabled_{{UI_POS_X(1), UI_POS_Y(0)}, 8, "Enabled", false};
-
-    ui::Labels labels_{
-        {{UI_POS_X(1), UI_POS_Y(2)}, "Start(MHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(4)}, "End(MHz):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(6)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
-    };
-
-    ui::NumberField field_start_{{UI_POS_X(1), UI_POS_Y(3)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_end_{{UI_POS_X(1), UI_POS_Y(5)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_step_{{UI_POS_X(1), UI_POS_Y(7)}, 5, {1000, 99999}, 1000, ' '};
-};
-
-/**
  * @brief Sweep settings view — accessible via SWP button
- * @note Uses TabView to separate SW1 and SW2 settings
- * @note Save writes to SETTINGS/eda_settings.txt
+ * @note Flat layout (no TabView) — all fields directly in view for focus support
+ * @note Save writes sweep keys to SETTINGS/eda_settings.txt
  * @note Defaults resets both sweep windows to factory values
  */
 class DroneSweepView : public ui::View {
@@ -104,19 +40,30 @@ private:
     DroneScanner* scanner_ptr_;
     ScanConfig original_config_;
 
-    static constexpr int TAB_VIEW_Y = 3;
-    static constexpr int TAB_CONTENT_H = 220;
-
-    Rect view_rect_{0, UI_POS_Y(TAB_VIEW_Y), screen_width, TAB_CONTENT_H};
-
-    Sweep1View view_sw1_{view_rect_};
-    Sweep2View view_sw2_{view_rect_};
-
-    ui::TabView tab_view_{
-        {"SW1", Theme::getInstance()->fg_cyan->foreground, &view_sw1_},
-        {"SW2", Theme::getInstance()->fg_green->foreground, &view_sw2_},
+    // SW1 section
+    ui::Labels labels_sw1_{
+        {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window 1 --", Theme::getInstance()->fg_cyan->foreground},
+        {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(5)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
     };
+    ui::NumberField field_sw1_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
+    ui::NumberField field_sw1_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '};
+    ui::NumberField field_sw1_step_{{UI_POS_X(1), UI_POS_Y(6)}, 5, {1000, 99999}, 1000, ' '};
 
+    // SW2 section
+    ui::Labels labels_sw2_{
+        {{UI_POS_X(0), UI_POS_Y(8)}, "-- Window 2 --", Theme::getInstance()->fg_green->foreground},
+        {{UI_POS_X(1), UI_POS_Y(10)}, "Start(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(12)}, "End(MHz):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(14)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
+    };
+    ui::Checkbox check_sw2_enabled_{{UI_POS_X(1), UI_POS_Y(9)}, 8, "Enabled", false};
+    ui::NumberField field_sw2_start_{{UI_POS_X(1), UI_POS_Y(11)}, 5, {100, 7200}, 1, ' '};
+    ui::NumberField field_sw2_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '};
+    ui::NumberField field_sw2_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {1000, 99999}, 1000, ' '};
+
+    // Buttons
     ui::Button button_defaults_{{UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULTS"};
     ui::Button button_save_{{UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE"};
 

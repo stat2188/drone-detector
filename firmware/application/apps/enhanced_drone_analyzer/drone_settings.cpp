@@ -164,13 +164,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.mode = settings_.scanning_mode;
             updated_config.scan_interval_ms = settings_.scan_interval_ms;
             updated_config.rssi_threshold_dbm = settings_.alert_rssi_threshold_dbm;
-            updated_config.sweep_start_freq = settings_.sweep_start_freq;
-            updated_config.sweep_end_freq = settings_.sweep_end_freq;
-            updated_config.sweep_step_freq = settings_.sweep_step_freq;
-            updated_config.sweep2_start_freq = settings_.sweep2_start_freq;
-            updated_config.sweep2_end_freq = settings_.sweep2_end_freq;
-            updated_config.sweep2_step_freq = settings_.sweep2_step_freq;
-            updated_config.sweep2_enabled = settings_.sweep2_enabled;
+            // Sweep settings are managed by SWP view — preserve from original_config_
             updated_config.dwell_enabled = settings_.dwell_enabled;
             updated_config.confirm_count_enabled = settings_.confirm_count_enabled;
             updated_config.noise_blacklist_enabled = settings_.noise_blacklist_enabled;
@@ -230,20 +224,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 "noise_blacklist_enabled=%s\n", settings_.noise_blacklist_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "median_enabled=%s\n", settings_.median_enabled ? "true" : "false");
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep_start_mhz=%lu\n", (unsigned long)(settings_.sweep_start_freq / 1000000));
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep_end_mhz=%lu\n", (unsigned long)(settings_.sweep_end_freq / 1000000));
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep_step_khz=%lu\n", (unsigned long)(settings_.sweep_step_freq / 1000));
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep2_start_mhz=%lu\n", (unsigned long)(settings_.sweep2_start_freq / 1000000));
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep2_end_mhz=%lu\n", (unsigned long)(settings_.sweep2_end_freq / 1000000));
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep2_step_khz=%lu\n", (unsigned long)(settings_.sweep2_step_freq / 1000));
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "sweep2_enabled=%s\n", settings_.sweep2_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "freqman_path=DRONES\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -507,13 +487,7 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         updated_config.mode = settings_.scanning_mode;
         updated_config.scan_interval_ms = settings_.scan_interval_ms;
         updated_config.rssi_threshold_dbm = settings_.alert_rssi_threshold_dbm;
-        updated_config.sweep_start_freq = settings_.sweep_start_freq;
-        updated_config.sweep_end_freq = settings_.sweep_end_freq;
-        updated_config.sweep_step_freq = settings_.sweep_step_freq;
-        updated_config.sweep2_start_freq = settings_.sweep2_start_freq;
-        updated_config.sweep2_end_freq = settings_.sweep2_end_freq;
-        updated_config.sweep2_step_freq = settings_.sweep2_step_freq;
-        updated_config.sweep2_enabled = settings_.sweep2_enabled;
+        // Sweep settings are managed by SWP view — preserve from original_config_
         updated_config.dwell_enabled = settings_.dwell_enabled;
         updated_config.confirm_count_enabled = settings_.confirm_count_enabled;
         updated_config.noise_blacklist_enabled = settings_.noise_blacklist_enabled;

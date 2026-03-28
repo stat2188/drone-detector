@@ -8,120 +8,34 @@
 
 namespace drone_analyzer {
 
-// ============================================================================
-// Sweep1View
-// ============================================================================
-
-Sweep1View::Sweep1View(Rect parent_rect) noexcept
-    : View(parent_rect) {
-    hidden(true);
-    add_children({
-        &labels_,
-        &field_start_,
-        &field_end_,
-        &field_step_,
-    });
-
-    field_start_.set_value(START_MHZ_DEFAULT);
-    field_end_.set_value(END_MHZ_DEFAULT);
-    field_step_.set_value(STEP_KHZ_DEFAULT);
-}
-
-void Sweep1View::focus() {
-    field_start_.focus();
-}
-
-void Sweep1View::set_values(FreqHz start, FreqHz end, FreqHz step) noexcept {
-    field_start_.set_value(static_cast<int32_t>(start / 1000000ULL));
-    field_end_.set_value(static_cast<int32_t>(end / 1000000ULL));
-    field_step_.set_value(static_cast<int32_t>(step / 1000ULL));
-}
-
-FreqHz Sweep1View::get_start() const noexcept {
-    return static_cast<FreqHz>(field_start_.value()) * 1000000ULL;
-}
-
-FreqHz Sweep1View::get_end() const noexcept {
-    return static_cast<FreqHz>(field_end_.value()) * 1000000ULL;
-}
-
-FreqHz Sweep1View::get_step() const noexcept {
-    return static_cast<FreqHz>(field_step_.value()) * 1000ULL;
-}
-
-// ============================================================================
-// Sweep2View
-// ============================================================================
-
-Sweep2View::Sweep2View(Rect parent_rect) noexcept
-    : View(parent_rect) {
-    hidden(true);
-    add_children({
-        &check_enabled_,
-        &labels_,
-        &field_start_,
-        &field_end_,
-        &field_step_,
-    });
-
-    field_start_.set_value(START_MHZ_DEFAULT);
-    field_end_.set_value(END_MHZ_DEFAULT);
-    field_step_.set_value(STEP_KHZ_DEFAULT);
-}
-
-void Sweep2View::focus() {
-    check_enabled_.focus();
-}
-
-void Sweep2View::set_values(bool enabled, FreqHz start, FreqHz end, FreqHz step) noexcept {
-    check_enabled_.set_value(enabled);
-    field_start_.set_value(static_cast<int32_t>(start / 1000000ULL));
-    field_end_.set_value(static_cast<int32_t>(end / 1000000ULL));
-    field_step_.set_value(static_cast<int32_t>(step / 1000ULL));
-}
-
-bool Sweep2View::get_enabled() const noexcept {
-    return check_enabled_.value();
-}
-
-FreqHz Sweep2View::get_start() const noexcept {
-    return static_cast<FreqHz>(field_start_.value()) * 1000000ULL;
-}
-
-FreqHz Sweep2View::get_end() const noexcept {
-    return static_cast<FreqHz>(field_end_.value()) * 1000000ULL;
-}
-
-FreqHz Sweep2View::get_step() const noexcept {
-    return static_cast<FreqHz>(field_step_.value()) * 1000ULL;
-}
-
-// ============================================================================
-// DroneSweepView
-// ============================================================================
-
 DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept
     : ui::View()
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , original_config_(config) {
     add_children({
-        &tab_view_,
-        &view_sw1_,
-        &view_sw2_,
+        &labels_sw1_,
+        &field_sw1_start_,
+        &field_sw1_end_,
+        &field_sw1_step_,
+        &labels_sw2_,
+        &check_sw2_enabled_,
+        &field_sw2_start_,
+        &field_sw2_end_,
+        &field_sw2_step_,
         &button_defaults_,
         &button_save_,
     });
 
-    // Show first tab view immediately so focus() works before on_show()
-    view_sw2_.hidden(true);
-    view_sw1_.hidden(false);
+    // Populate from config
+    field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / 1000000ULL));
+    field_sw1_end_.set_value(static_cast<int32_t>(config.sweep_end_freq / 1000000ULL));
+    field_sw1_step_.set_value(static_cast<int32_t>(config.sweep_step_freq / 1000ULL));
 
-    // Populate SW1 tab from config
-    view_sw1_.set_values(config.sweep_start_freq, config.sweep_end_freq, config.sweep_step_freq);
-
-    // Populate SW2 tab from config
-    view_sw2_.set_values(config.sweep2_enabled, config.sweep2_start_freq, config.sweep2_end_freq, config.sweep2_step_freq);
+    check_sw2_enabled_.set_value(config.sweep2_enabled);
+    field_sw2_start_.set_value(static_cast<int32_t>(config.sweep2_start_freq / 1000000ULL));
+    field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / 1000000ULL));
+    field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / 1000ULL));
 
     button_save_.on_select = [this](ui::Button&) {
         save_settings();
@@ -137,19 +51,19 @@ DroneSweepView::~DroneSweepView() noexcept {
 }
 
 void DroneSweepView::focus() {
-    tab_view_.focus();
+    field_sw1_start_.focus();
 }
 
 void DroneSweepView::save_settings() noexcept {
-    // Read values from UI tabs
-    FreqHz sw1_start = view_sw1_.get_start();
-    FreqHz sw1_end = view_sw1_.get_end();
-    FreqHz sw1_step = view_sw1_.get_step();
+    // Read values from UI
+    FreqHz sw1_start = static_cast<FreqHz>(field_sw1_start_.value()) * 1000000ULL;
+    FreqHz sw1_end = static_cast<FreqHz>(field_sw1_end_.value()) * 1000000ULL;
+    FreqHz sw1_step = static_cast<FreqHz>(field_sw1_step_.value()) * 1000ULL;
 
-    bool sw2_enabled = view_sw2_.get_enabled();
-    FreqHz sw2_start = view_sw2_.get_start();
-    FreqHz sw2_end = view_sw2_.get_end();
-    FreqHz sw2_step = view_sw2_.get_step();
+    bool sw2_enabled = check_sw2_enabled_.value();
+    FreqHz sw2_start = static_cast<FreqHz>(field_sw2_start_.value()) * 1000000ULL;
+    FreqHz sw2_end = static_cast<FreqHz>(field_sw2_end_.value()) * 1000000ULL;
+    FreqHz sw2_step = static_cast<FreqHz>(field_sw2_step_.value()) * 1000ULL;
 
     // Validate: start must be < end
     if (sw1_start >= sw1_end) {
@@ -304,17 +218,13 @@ void DroneSweepView::save_settings() noexcept {
 }
 
 void DroneSweepView::apply_defaults() noexcept {
-    view_sw1_.set_values(
-        SWEEP_DEFAULT_START_HZ,
-        SWEEP_DEFAULT_END_HZ,
-        20000000
-    );
-    view_sw2_.set_values(
-        false,
-        2400000000ULL,
-        2500000000ULL,
-        20000000
-    );
+    field_sw1_start_.set_value(5700);
+    field_sw1_end_.set_value(5900);
+    field_sw1_step_.set_value(20000);
+    check_sw2_enabled_.set_value(false);
+    field_sw2_start_.set_value(2400);
+    field_sw2_end_.set_value(2500);
+    field_sw2_step_.set_value(20000);
 }
 
 } // namespace drone_analyzer
