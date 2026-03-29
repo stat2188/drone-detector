@@ -54,12 +54,12 @@ ScanConfig::ScanConfig() noexcept
     , noise_blacklist_enabled(true) // Skip persistent noise frequencies
     , spectrum_detection_enabled(true) // Use spectrum shape analysis
     , median_enabled(true)          // Median filter for RSSI spike rejection
-    , spectrum_margin(15)           // ~5 dB margin (open field has low noise floor)
-    , spectrum_min_width(2)         // Reject single-bin noise spikes
-    , spectrum_max_width(40)        // Permissive for weak distant signals
-    , spectrum_peak_sharpness(80)   // Weak distant signals have less sharp peaks
-    , spectrum_peak_ratio(15)       // Lower ratio catches weaker signals
-    , spectrum_valley_depth(5)      // Shallow valleys OK for distant signals
+    , spectrum_margin(55)           // Empirically tuned for real drone detection
+    , spectrum_min_width(3)         // Reject single-bin noise spikes
+    , spectrum_max_width(20)        // Reject flat U/I noise shapes
+    , spectrum_peak_sharpness(130)  // Enforce V-shape for drone video links
+    , spectrum_peak_ratio(255)      // Tall+narrow = inverted-V filter
+    , spectrum_valley_depth(80)     // Deep valleys flanking peak = V-shape
 {
     // sweep2 fields use in-class defaults: 2.4GHz, disabled
 }
@@ -79,12 +79,12 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , noise_blacklist_enabled(true)
     , spectrum_detection_enabled(true)
     , median_enabled(true)
-    , spectrum_margin(15)
-    , spectrum_min_width(2)
-    , spectrum_max_width(40)
-    , spectrum_peak_sharpness(80)
-    , spectrum_peak_ratio(15)
-    , spectrum_valley_depth(5) {
+    , spectrum_margin(55)
+    , spectrum_min_width(3)
+    , spectrum_max_width(20)
+    , spectrum_peak_sharpness(130)
+    , spectrum_peak_ratio(255)
+    , spectrum_valley_depth(80) {
     // sweep2 fields use in-class defaults: 2.4GHz, disabled
 }
 

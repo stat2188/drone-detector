@@ -99,13 +99,13 @@ constexpr uint16_t DEFAULT_GAIN = 30;
  * @brief Default LNA gain value (MAX2837: 0-40 dB)
  * @note 16 dB — conservative default, no false triggers on startup
  */
-constexpr uint8_t DEFAULT_LNA_GAIN = 24;
+constexpr uint8_t DEFAULT_LNA_GAIN = 32;
 
 /**
  * @brief Default VGA gain value (MAX2837: 0-62 dB)
- * @note 16 dB — conservative default, no false triggers on startup
+ * @note 32 dB — optimized for drone detection range
  */
-constexpr uint8_t DEFAULT_VGA_GAIN = 28;
+constexpr uint8_t DEFAULT_VGA_GAIN = 32;
 
 // ============================================================================
 // Time Constants
@@ -627,15 +627,15 @@ constexpr uint8_t DEFAULT_SPECTRUM_INTEGRATION = 3;
  * @note Signals wider than this are rejected as flat-topped U/I noise
  * @note 100 = no max width filtering (accept all widths)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 100;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 20;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
  * @note sharpness = (peak_margin * 100) / avg_margin
  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
- * @note 50 = no sharpness filtering (accept all shapes)
+ * @note 130 = empirically tuned for real drone detection
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 50;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 130;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)
@@ -643,18 +643,18 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 50;
  * @note Inverted-V (drone video link): ratio > 50 (tall, narrow)
  * @note Flat U/I noise: ratio < 20 (wide, short)
  * @note Needle spikes: ratio > 100 (very tall, very narrow)
- * @note 0 = no ratio filtering (disabled)
+ * @note 255 = empirically tuned for real drone detection
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 255;
 
 /**
  * @brief Default valley depth threshold (0-200)
  * @note Measures margin of bins immediately flanking the signal peak
  * @note Inverted-V: deep valleys (flanking bins have margin < 5)
  * @note Flat U/I: shallow valleys (flanking bins still elevated)
- * @note 0 = no valley depth filtering (disabled)
+ * @note 80 = empirically tuned for real drone detection
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 0;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
 
 // ============================================================================
 // Band Sweep Constants
