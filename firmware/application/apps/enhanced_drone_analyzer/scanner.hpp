@@ -378,6 +378,13 @@ public:
      * @note After sweep exit, continue scanning from this frequency
      */
     void set_scan_frequency(FreqHz frequency) noexcept;
+
+    /**
+     * @brief Clear lock state (LOCKING/TRACKING → SCANNING, reset lock counters)
+     * @note Called before entering sweep mode to prevent stale lock after resume
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     */
+    void clear_lock_state() noexcept;
     
     /**
      * @brief Get number of tracked drones

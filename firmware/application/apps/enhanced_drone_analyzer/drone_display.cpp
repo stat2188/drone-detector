@@ -135,12 +135,48 @@ void DroneDisplay::render_spectrum(
     const uint16_t chart_height = height - 14;
     if (chart_height < 4) return;
 
+    // Compute noise floor from usable bins (skip DC spike + edges) for margin filter
+    uint8_t noise_floor = 0;
+    if (spectrum_shape_margin_ > 0) {
+        uint8_t sorted[240];
+        size_t sort_count = 0;
+        for (size_t i = 0; i < spectrum_size && sort_count < 240; ++i) {
+            if (i >= 120 && i < 136) continue;  // skip DC spike
+            sorted[sort_count++] = spectrum_data[i];
+        }
+        // Insertion sort for median
+        for (size_t i = 1; i < sort_count; ++i) {
+            const uint8_t key = sorted[i];
+            size_t j = i;
+            while (j > 0 && sorted[j - 1] > key) {
+                sorted[j] = sorted[j - 1];
+                --j;
+            }
+            sorted[j] = key;
+        }
+        if (sort_count > 0) {
+            noise_floor = sorted[sort_count / 2];
+        }
+    }
+
+    const uint8_t display_threshold = noise_floor + spectrum_shape_margin_;
+
     for (size_t i = 0; i < spectrum_size; ++i) {
         // Skip DC spike bins
         if (i >= 120 && i < 136) continue;
 
         const uint8_t value = spectrum_data[i];
         if (value < min_color_power_) continue;
+
+        // Apply margin filter: suppress bins below noise floor + margin
+        if (spectrum_shape_margin_ > 0 && value < display_threshold) continue;
+
+        // Apply width filter: reject isolated single-bin spikes
+        if (spectrum_shape_min_width_ > 1 && i > 0 && i < spectrum_size - 1) {
+            const uint8_t prev = spectrum_data[i - 1];
+            const uint8_t next = (i + 1 < spectrum_size) ? spectrum_data[i + 1] : 0;
+            if (prev < display_threshold && next < display_threshold) continue;
+        }
 
         const uint16_t bar_height = (static_cast<uint16_t>(value) * chart_height) / 255;
         const uint16_t x = chart_start_x + static_cast<uint16_t>(i) * bar_width;

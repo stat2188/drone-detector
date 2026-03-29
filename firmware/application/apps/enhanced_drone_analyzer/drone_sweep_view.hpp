@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <string>
 
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"

@@ -693,7 +693,7 @@ void DroneSettingsView::apply_settings() noexcept {
 void load_startup_settings(ScanConfig& config) noexcept {
     File file;
     const auto open_result = file.open(settings_dir / u"eda_settings.txt", true, false);
-    if (open_result) {
+    if (!open_result) {
         return;  // File doesn't exist — defaults are fine
     }
 

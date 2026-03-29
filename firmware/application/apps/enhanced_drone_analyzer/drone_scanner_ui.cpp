@@ -106,6 +106,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
     field_filter_.set_by_value(DEFAULT_SPECTRUM_FILTER);
 
+    // Sync spectrum shape filter params from scanner config to display
+    if (scanner_ptr_ != nullptr) {
+        const ScanConfig cfg = scanner_ptr_->get_config();
+        drone_display_.set_spectrum_shape_params(
+            cfg.spectrum_margin, cfg.spectrum_min_width, cfg.spectrum_max_width);
+    }
+
     // Median filter toggle (spike rejection on RSSI samples)
     button_median_.on_select = [this](ui::Button&) {
         median_enabled_ = !median_enabled_;
@@ -652,18 +659,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_[1].enabled = cfg.sweep2_enabled;
     active_sweep_idx_ = 0;
 
-    // Stop scanner thread FIRST — UI drives tuning during sweep
-    if (scanner_thread_ != nullptr) {
-        scanner_thread_->set_scanning(false);
-    }
-    if (scanner_ptr_ != nullptr) {
-        (void)scanner_ptr_->stop_scanning();
-    }
-    chThdSleepMilliseconds(25);
-    scanning_ = false;
-
-    // Save last DB frequency and index AFTER scanner is stopped (no race)
-    // Use scanner's internal frequency — not UI frequency which may be stale
+    // Save DB frequency and index BEFORE stopping scanner (most accurate snapshot)
     if (scanner_ptr_ != nullptr) {
         ErrorResult<FreqHz> freq_result = scanner_ptr_->get_current_frequency();
         if (freq_result.has_value() && freq_result.value() != 0) {
@@ -675,6 +671,18 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
             last_db_index_ = database_ptr_->get_current_index();
         }
     }
+
+    // Stop scanner thread FIRST — UI drives tuning during sweep
+    if (scanner_thread_ != nullptr) {
+        scanner_thread_->set_scanning(false);
+    }
+    if (scanner_ptr_ != nullptr) {
+        (void)scanner_ptr_->stop_scanning();
+        // Clear lock state to prevent stale LOCKING/TRACKING after resume
+        scanner_ptr_->clear_lock_state();
+    }
+    chThdSleepMilliseconds(25);
+    scanning_ = false;
 
     // Configure baseband for sweep bandwidth
     portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);

@@ -346,6 +346,42 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     }
 
     statistics_.total_scan_cycles++;
+
+    // Global threat decay: increment missed_cycles for ALL tracked drones
+    // This prevents drones on non-current frequencies from hanging at HIGH threat.
+    // Runs every cycle — lightweight O(n) with n ≤ MAX_TRACKED_DRONES (16).
+    // Skip the locked frequency's drone during LOCKING/TRACKING (actively held).
+    {
+        constexpr uint8_t GLOBAL_DECAY_AFTER_MISSED = 5;
+        const bool holding_lock = (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING)
+                                  && locked_frequency_ != 0;
+        size_t write_idx = 0;
+        for (size_t read_idx = 0; read_idx < tracked_count_; ++read_idx) {
+            // Don't decay the actively held lock
+            if (holding_lock && tracked_drones_[read_idx].frequency == locked_frequency_) {
+                if (write_idx != read_idx) {
+                    tracked_drones_[write_idx] = tracked_drones_[read_idx];
+                }
+                ++write_idx;
+                continue;
+            }
+            tracked_drones_[read_idx].increment_missed();
+            if (tracked_drones_[read_idx].get_missed_cycles() >= GLOBAL_DECAY_AFTER_MISSED) {
+                tracked_drones_[read_idx].reset_missed();
+                if (tracked_drones_[read_idx].decay_threat()) {
+                    continue;
+                }
+            }
+            if (write_idx != read_idx) {
+                tracked_drones_[write_idx] = tracked_drones_[read_idx];
+            }
+            ++write_idx;
+        }
+        tracked_count_ = static_cast<uint8_t>(write_idx);
+    }
+
+    // Reset per-frequency decay tracker (each frequency is a fresh detection opportunity)
+    last_decay_freq_ = 0;
     
     // Try to get next frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
@@ -581,29 +617,9 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             // Don't jump. Continue accumulating on locked freq.
         }
     } else {
-        // No signal on this frequency — decay tracked drones
-        // Only decay once per frequency change (not every frame)
-        if (frequency != last_decay_freq_) {
-            last_decay_freq_ = frequency;
-            constexpr uint8_t DECAY_AFTER_MISSED = 3;
-            ErrorResult<size_t> decay_idx = find_drone_by_frequency_internal(frequency);
-            if (decay_idx.has_value()) {
-                size_t di = decay_idx.value();
-                if (di < tracked_count_) {
-                    tracked_drones_[di].increment_missed();
-                    if (tracked_drones_[di].get_missed_cycles() >= DECAY_AFTER_MISSED) {
-                        tracked_drones_[di].reset_missed();
-                        bool should_remove = tracked_drones_[di].decay_threat();
-                        if (should_remove && tracked_count_ > 0) {
-                            tracked_count_--;
-                            if (di < tracked_count_) {
-                                tracked_drones_[di] = tracked_drones_[tracked_count_];
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // No signal on this frequency
+        // Global decay in perform_scan_cycle_internal() handles missed increment
+        // and threat decay for all tracked drones. Here we only handle lock cleanup.
 
         // Only break lock if we're tuned to the locked freq and it's gone
         if (locked_frequency_ != 0 && frequency == locked_frequency_) {
@@ -815,6 +831,15 @@ ErrorResult<FreqHz> DroneScanner::get_current_frequency() const noexcept {
 void DroneScanner::set_scan_frequency(FreqHz frequency) noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     current_frequency_ = frequency;
+}
+
+void DroneScanner::clear_lock_state() noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    freq_lock_count_ = 0;
+    locked_frequency_ = 0;
+    if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
+        state_ = ScannerState::SCANNING;
+    }
 }
 
 size_t DroneScanner::get_tracked_count() const noexcept {

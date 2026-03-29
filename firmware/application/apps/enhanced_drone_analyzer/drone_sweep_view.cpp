@@ -141,8 +141,9 @@ void DroneSweepView::save_settings() noexcept {
                 file_buf[file_len++] = static_cast<char>(chunk[i]);
             }
         }
-        file.close();
     }
+    // Always close before creating/overwriting — prevents file handle leak
+    file.close();
     file_buf[file_len] = '\0';
 
     // Create/overwrite file for writing

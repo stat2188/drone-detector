@@ -166,6 +166,18 @@ public:
     void set_spectrum_filter(uint8_t min_power) noexcept { min_color_power_ = min_power; }
     void set_spectrum_integration(uint8_t factor) noexcept { spectrum_integration_ = factor; }
 
+    /**
+     * @brief Set spectrum shape filter parameters (margin, min_width, max_width)
+     * @param margin Minimum peak margin above noise floor (bins below this are suppressed)
+     * @param min_width Minimum signal width in bins (isolated spikes removed)
+     * @param max_width Maximum signal width (flat noise rejected)
+     */
+    void set_spectrum_shape_params(uint8_t margin, uint8_t min_width, uint8_t max_width) noexcept {
+        spectrum_shape_margin_ = margin;
+        spectrum_shape_min_width_ = min_width;
+        spectrum_shape_max_width_ = max_width;
+    }
+
     void set_composite_mode(bool enabled) noexcept { composite_mode_ = enabled; }
     void set_composite_data(const uint8_t* data, size_t size) noexcept;
     void set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t buffer_size,
@@ -384,6 +396,11 @@ private:
 
     // Spectrum filter threshold (0=OFF, 118=MID, 202=HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
+
+    // Spectrum shape filter params (from Settings: margin, min_width, max_width)
+    uint8_t spectrum_shape_margin_{0};
+    uint8_t spectrum_shape_min_width_{0};
+    uint8_t spectrum_shape_max_width_{100};
 
     // Exponential smoothing buffer for LEVEL-V display
     std::array<int32_t, SPECTRUM_BUFFER_SIZE> spectrum_smoothed_{};

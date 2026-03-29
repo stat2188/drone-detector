@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <string>
 #include "drone_types.hpp"
 #include "constants.hpp"
 #include "scanner.hpp"
