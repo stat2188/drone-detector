@@ -269,6 +269,19 @@ void DroneScanner::force_resume_scanning() noexcept {
     force_resume_flag_.set();
 }
 
+bool DroneScanner::try_consume_force_resume_flag() noexcept {
+    if (!force_resume_flag_.test_and_set()) {
+        return false;
+    }
+    force_resume_flag_.clear();
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
+        state_ = ScannerState::SCANNING;
+        return true;
+    }
+    return false;
+}
+
 void DroneScanner::remove_drone_on_frequency(FreqHz frequency) noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     for (size_t i = 0; i < tracked_count_; ++i) {

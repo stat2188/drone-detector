@@ -25,6 +25,14 @@ void ScannerThread::run() noexcept {
             const ScanConfig cfg = scanner_.get_config();
             const uint32_t sleep_ms = (cfg.scan_interval_ms > 0) ? cfg.scan_interval_ms : SCANNER_SLEEP_MS;
 
+            // Force-resume: consume flag BEFORE dwell logic.
+            // force_resume_scanning() sets flag from scanner thread,
+            // but perform_scan_cycle_internal() is never called during LOCKING.
+            // We must consume the flag here so the state transitions back to SCANNING.
+            if (scanner_.try_consume_force_resume_flag()) {
+                dwell_cycles_ = 0;
+            }
+
             // Dwell: stay on frequency when signal detected (if enabled)
             if (cfg.dwell_enabled) {
                 const ScannerState scan_state = scanner_.get_state();
