@@ -27,17 +27,17 @@ DroneSettings::DroneSettings() noexcept
     , audio_alerts_enabled(true)
     , alert_rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
     , min_threat_level(ThreatLevel::LOW)
-    , dwell_enabled(false)
-    , confirm_count_enabled(false)
-    , noise_blacklist_enabled(false)
-    , spectrum_detection_enabled(false)
-    , median_enabled(false)
+    , dwell_enabled(true)
+    , confirm_count_enabled(true)
+    , noise_blacklist_enabled(true)
+    , spectrum_detection_enabled(true)
+    , median_enabled(true)
     , spectrum_margin(15)
-    , spectrum_min_width(1)
-    , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
-    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
-    , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
-    , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
+    , spectrum_min_width(2)
+    , spectrum_max_width(40)
+    , spectrum_peak_sharpness(80)
+    , spectrum_peak_ratio(15)
+    , spectrum_valley_depth(5)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000)  // Default 20 MHz (matches SWEEP_BANDWIDTH)
@@ -62,19 +62,19 @@ void DroneSettings::reset_to_defaults() noexcept {
     
     min_threat_level = ThreatLevel::LOW;
     
-    dwell_enabled = false;
-    confirm_count_enabled = false;
-    noise_blacklist_enabled = false;
-    spectrum_detection_enabled = false;
-    median_enabled = false;
+    dwell_enabled = true;
+    confirm_count_enabled = true;
+    noise_blacklist_enabled = true;
+    spectrum_detection_enabled = true;
+    median_enabled = true;
     spectrum_margin = 15;
-    spectrum_min_width = 1;
-    spectrum_max_width = DEFAULT_SPECTRUM_MAX_WIDTH;
-        spectrum_peak_sharpness = DEFAULT_SPECTRUM_PEAK_SHARPNESS;
-        spectrum_peak_ratio = DEFAULT_SPECTRUM_PEAK_RATIO;
-        spectrum_valley_depth = DEFAULT_SPECTRUM_VALLEY_DEPTH;
+    spectrum_min_width = 2;
+    spectrum_max_width = 40;
+    spectrum_peak_sharpness = 80;
+    spectrum_peak_ratio = 15;
+    spectrum_valley_depth = 5;
         
-        sweep_start_freq = SWEEP_DEFAULT_START_HZ;
+    sweep_start_freq = SWEEP_DEFAULT_START_HZ;
     sweep_end_freq = SWEEP_DEFAULT_END_HZ;
     sweep_step_freq = 20000000;  // 20 MHz
 

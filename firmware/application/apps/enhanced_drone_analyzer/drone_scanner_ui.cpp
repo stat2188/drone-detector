@@ -659,16 +659,16 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_[1].enabled = cfg.sweep2_enabled;
     active_sweep_idx_ = 0;
 
-    // Save DB frequency and index BEFORE stopping scanner (most accurate snapshot)
-    if (scanner_ptr_ != nullptr) {
+    // Save DB index BEFORE stopping scanner, then derive frequency from DB entry.
+    // This ensures last_db_frequency_ == entries[last_db_index_].frequency,
+    // so get_next_frequency() finds the exact resume point after sweep.
+    if (database_ptr_ != nullptr) {
+        last_db_index_ = database_ptr_->get_current_index();
         ErrorResult<FreqHz> freq_result = scanner_ptr_->get_current_frequency();
         if (freq_result.has_value() && freq_result.value() != 0) {
             last_db_frequency_ = freq_result.value();
         } else {
             last_db_frequency_ = current_frequency_;
-        }
-        if (database_ptr_ != nullptr) {
-            last_db_index_ = database_ptr_->get_current_index();
         }
     }
 

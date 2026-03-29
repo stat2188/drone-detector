@@ -270,6 +270,7 @@ void DroneScanner::force_resume_scanning() noexcept {
 }
 
 void DroneScanner::remove_drone_on_frequency(FreqHz frequency) noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     for (size_t i = 0; i < tracked_count_; ++i) {
         if (tracked_drones_[i].frequency == frequency) {
             tracked_count_--;
@@ -282,6 +283,7 @@ void DroneScanner::remove_drone_on_frequency(FreqHz frequency) noexcept {
 }
 
 void DroneScanner::increment_noise_count(FreqHz frequency) noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     // Find existing entry or first empty slot
     size_t empty_slot = MAX_NOISE_ENTRIES;
     for (size_t i = 0; i < MAX_NOISE_ENTRIES; ++i) {
