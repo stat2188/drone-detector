@@ -279,7 +279,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "settings_version=1.0\n");
 
-            file.write(buffer, offset);
+            const auto write_result = file.write(buffer, offset);
+            if (write_result.is_ok()) {
+                (void)file.sync();
+            }
             file.close();
         }
 

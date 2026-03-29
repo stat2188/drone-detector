@@ -254,6 +254,7 @@ void DroneSweepView::save_settings() noexcept {
         "sweep2_enabled=%s\n", sw2_enabled ? "true" : "false");
 
     file.write(out_buf, out_offset);
+    (void)file.sync();
     file.close();
 }
 
