@@ -160,7 +160,7 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
         return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
     }
     
-    // Find current frequency in database
+    // Find current frequency in database (linear search from start)
     bool found = false;
     size_t found_index = 0;
     for (size_t i = 0; i < entry_count_; ++i) {
@@ -172,8 +172,13 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
     }
     
     if (found) {
-        // Advance to next frequency (wrap around if at end)
+        // Skip ALL entries with the same frequency (handle duplicate channels)
         current_index_ = found_index + 1;
+        while (current_index_ < entry_count_ &&
+               entries_[current_index_].frequency == current_freq) {
+            ++current_index_;
+        }
+        // Wrap to start if we've exhausted all entries
         if (current_index_ >= entry_count_) {
             current_index_ = 0;
         }
