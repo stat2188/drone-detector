@@ -88,7 +88,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     // sweep2 fields use in-class defaults: 2.4GHz, disabled
 }
 
-// ============================================================================
+// ========================================================================
 // ScanStatistics Implementation
 // ============================================================================
 

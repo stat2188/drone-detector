@@ -566,25 +566,6 @@ struct freqman_entry_fixed {
     return ErrorCode::SUCCESS;
 }
 
-// ============================================================================
-// Shared Static Buffers for Settings Save Operations
-// ============================================================================
-// Both DroneSettingsView::save_settings() and DroneSweepView::save_settings()
-// use these buffers. Since they're called from the UI thread (button press),
-// they never execute simultaneously — safe to share.
-
-/**
- * @brief Shared buffer for reading existing settings file
- * @note 2048 bytes static (BSS), shared between all save operations
- */
-inline static char g_settings_file_buf[2048];
-
-/**
- * @brief Shared buffer for writing settings file
- * @note 2048 bytes static (BSS), shared between all save operations
- */
-inline static char g_settings_out_buf[2048];
-
 } // namespace drone_analyzer
 
 #endif // DRONE_TYPES_HPP

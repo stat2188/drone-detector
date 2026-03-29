@@ -633,7 +633,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 20;
  * @brief Default minimum peak sharpness ratio (50-250)
  * @note sharpness = (peak_margin * 100) / avg_margin
  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
- * @note 130 = empirically tuned for real drone detection
+ * @note 50 = no sharpness filtering (accept all shapes)
  */
 constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 130;
 
@@ -643,7 +643,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 130;
  * @note Inverted-V (drone video link): ratio > 50 (tall, narrow)
  * @note Flat U/I noise: ratio < 20 (wide, short)
  * @note Needle spikes: ratio > 100 (very tall, very narrow)
- * @note 255 = empirically tuned for real drone detection
+ * @note 0 = no ratio filtering (disabled)
  */
 constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 255;
 
@@ -652,7 +652,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 255;
  * @note Measures margin of bins immediately flanking the signal peak
  * @note Inverted-V: deep valleys (flanking bins have margin < 5)
  * @note Flat U/I: shallow valleys (flanking bins still elevated)
- * @note 80 = empirically tuned for real drone detection
+ * @note 0 = no valley depth filtering (disabled)
  */
 constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
 
