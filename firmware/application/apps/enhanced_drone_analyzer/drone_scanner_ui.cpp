@@ -641,15 +641,6 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     composite_active_ = true;
     drone_display_.set_composite_mode(true);
 
-    // Save last DB frequency and index BEFORE sweep starts (for continue after sweep)
-    // This ensures we resume from the exact DB position, not from a sweep frequency
-    if (scanner_ptr_ != nullptr && current_frequency_ != 0) {
-        last_db_frequency_ = current_frequency_;
-        if (database_ptr_ != nullptr) {
-            last_db_index_ = database_ptr_->get_current_index();
-        }
-    }
-
     ScanConfig cfg;
     if (scanner_ptr_ != nullptr) {
         cfg = scanner_ptr_->get_config();
@@ -661,7 +652,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_[1].enabled = cfg.sweep2_enabled;
     active_sweep_idx_ = 0;
 
-    // Stop scanner thread (UI drives tuning during sweep)
+    // Stop scanner thread FIRST — UI drives tuning during sweep
     if (scanner_thread_ != nullptr) {
         scanner_thread_->set_scanning(false);
     }
@@ -670,6 +661,20 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     }
     chThdSleepMilliseconds(25);
     scanning_ = false;
+
+    // Save last DB frequency and index AFTER scanner is stopped (no race)
+    // Use scanner's internal frequency — not UI frequency which may be stale
+    if (scanner_ptr_ != nullptr) {
+        ErrorResult<FreqHz> freq_result = scanner_ptr_->get_current_frequency();
+        if (freq_result.has_value() && freq_result.value() != 0) {
+            last_db_frequency_ = freq_result.value();
+        } else {
+            last_db_frequency_ = current_frequency_;
+        }
+        if (database_ptr_ != nullptr) {
+            last_db_index_ = database_ptr_->get_current_index();
+        }
+    }
 
     // Configure baseband for sweep bandwidth
     portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
@@ -811,12 +816,18 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
 
 void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
     // FFT bin mapping (Looking Glass pattern):
-    //   Lower sideband: screen pixel 0→119 maps to FFT bins 134→253
-    //   Upper sideband: screen pixel 120→239 maps to FFT bins 2→121
-    //   Skips DC spike region (FFT bins 119-135) and edge rolloff
+    //   Lower sideband: screen pixels 0→119 map to FFT bins 134→253
+    //   Upper sideband: screen pixels 120→237 map to FFT bins 2→119
+    //   Pixels 238-239 unused (skip DC spike bins 120-121)
+    //   Skips DC spike region (FFT bins 120-135) and edge rolloff (0-1, 254-255)
     static constexpr uint8_t SWEEP_UPPER_OFFSET = SWEEP_FFT_MAP_CROSSOVER - 2;  // 118
+    static constexpr uint8_t SWEEP_UPPER_PIXEL_END = SWEEP_PIXELS_PER_SLICE - 2; // 238
 
     for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
+        // Skip pixels that map to DC spike bins
+        if (bin >= SWEEP_UPPER_PIXEL_END && bin >= SWEEP_FFT_MAP_CROSSOVER) {
+            continue;
+        }
         const uint8_t fft_bin = (bin < SWEEP_FFT_MAP_CROSSOVER)
             ? (SWEEP_FFT_MAP_START + bin)
             : (bin - SWEEP_UPPER_OFFSET);

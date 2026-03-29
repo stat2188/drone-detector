@@ -211,6 +211,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.spectrum_min_width = settings_.spectrum_min_width;
             updated_config.spectrum_max_width = settings_.spectrum_max_width;
             updated_config.spectrum_peak_sharpness = settings_.spectrum_peak_sharpness;
+            updated_config.spectrum_peak_ratio = settings_.spectrum_peak_ratio;
+            updated_config.spectrum_valley_depth = settings_.spectrum_valley_depth;
             updated_config.median_enabled = settings_.median_enabled;
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
@@ -616,6 +618,8 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         updated_config.spectrum_min_width = settings_.spectrum_min_width;
         updated_config.spectrum_max_width = settings_.spectrum_max_width;
         updated_config.spectrum_peak_sharpness = settings_.spectrum_peak_sharpness;
+        updated_config.spectrum_peak_ratio = settings_.spectrum_peak_ratio;
+        updated_config.spectrum_valley_depth = settings_.spectrum_valley_depth;
         updated_config.median_enabled = settings_.median_enabled;
 
         const ErrorCode err = scanner_ptr_->set_config(updated_config);

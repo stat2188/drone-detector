@@ -476,7 +476,7 @@ struct freqman_entry_fixed {
     if (length == 0) {
         return ErrorCode::BUFFER_EMPTY;
     }
-    if (length > 128) {
+    if (length > 240) {
         return ErrorCode::BUFFER_INVALID;
     }
     return ErrorCode::SUCCESS;

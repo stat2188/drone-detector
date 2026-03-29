@@ -55,8 +55,9 @@ constexpr size_t SPECTRUM_BUFFER_SIZE = 256;
 
 /**
  * @brief Histogram buffer size (bins)
+ * @note 240 = DISPLAY_WIDTH = full sweep composite coverage
  */
-constexpr size_t HISTOGRAM_BUFFER_SIZE = 128;
+constexpr size_t HISTOGRAM_BUFFER_SIZE = 240;
 
 /**
  * @brief RSSI history size for each drone

@@ -39,6 +39,39 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / 1000000ULL));
     field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / 1000ULL));
 
+    // Keyboard callbacks for frequency fields (MHz → keypad → MHz)
+    field_sw1_start_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
+            static_cast<rf::Frequency>(field_sw1_start_.value()) * 1000000ULL);
+        new_view->on_changed = [this](rf::Frequency f) {
+            field_sw1_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
+        };
+    };
+
+    field_sw1_end_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
+            static_cast<rf::Frequency>(field_sw1_end_.value()) * 1000000ULL);
+        new_view->on_changed = [this](rf::Frequency f) {
+            field_sw1_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
+        };
+    };
+
+    field_sw2_start_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
+            static_cast<rf::Frequency>(field_sw2_start_.value()) * 1000000ULL);
+        new_view->on_changed = [this](rf::Frequency f) {
+            field_sw2_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
+        };
+    };
+
+    field_sw2_end_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
+            static_cast<rf::Frequency>(field_sw2_end_.value()) * 1000000ULL);
+        new_view->on_changed = [this](rf::Frequency f) {
+            field_sw2_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
+        };
+    };
+
     button_save_.on_select = [this](ui::Button&) {
         save_settings();
         nav_.pop();
