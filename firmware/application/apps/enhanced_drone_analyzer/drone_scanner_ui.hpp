@@ -142,7 +142,7 @@ private:
     // Band sweep — Looking Glass pattern: stop → process → retune → start
     static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;   // 240 pixels
     static constexpr FreqHz SWEEP_SLICE_BW = 20000000;         // 20 MHz per slice
-    static constexpr uint8_t DB_SCANS_PER_SWEEP = 20;          // DB scans between auto-sweep passes
+    static constexpr uint8_t DB_SCANS_PER_SWEEP = 50;          // DB scans between auto-sweep passes
     static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;  // 78125 Hz per bin
     static constexpr uint8_t MAX_SWEEP_WINDOWS = 4;
 
