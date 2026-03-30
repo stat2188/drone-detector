@@ -18,7 +18,7 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
     : ui::View() {
     set_parent_rect(parent_rect);
     add_children({
-        &labels_sw1_,
+        &labels_,
         &field_sw1_start_,
         &field_sw1_end_,
         &field_sw1_step_,
