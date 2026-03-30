@@ -10,11 +10,13 @@
 
 namespace drone_analyzer {
 
-DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept
-    : ui::View()
-    , nav_(nav)
-    , scanner_ptr_(scanner_ptr)
-    , original_config_(config) {
+// ============================================================================
+// SweepWindowGroup1View — Tab 1: Windows 1-2
+// ============================================================================
+
+SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect parent_rect) noexcept
+    : ui::View() {
+    set_parent_rect(parent_rect);
     add_children({
         &labels_sw1_,
         &field_sw1_start_,
@@ -25,52 +27,141 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
         &field_sw2_start_,
         &field_sw2_end_,
         &field_sw2_step_,
-        &button_defaults_,
-        &button_save_,
     });
 
-    // Populate from config
-    field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / 1000000ULL));
-    field_sw1_end_.set_value(static_cast<int32_t>(config.sweep_end_freq / 1000000ULL));
-    field_sw1_step_.set_value(static_cast<int32_t>(config.sweep_step_freq / 1000ULL));
-
-    check_sw2_enabled_.set_value(config.sweep2_enabled);
-    field_sw2_start_.set_value(static_cast<int32_t>(config.sweep2_start_freq / 1000000ULL));
-    field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / 1000000ULL));
-    field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / 1000ULL));
-
     // Keyboard callbacks for frequency fields (MHz → keypad → MHz)
-    field_sw1_start_.on_select = [this](NumberField&) {
-        auto new_view = nav_.push<FrequencyKeypadView>(
+    field_sw1_start_.on_select = [this, &nav](NumberField&) {
+        auto new_view = nav.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_start_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw1_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw1_end_.on_select = [this](NumberField&) {
-        auto new_view = nav_.push<FrequencyKeypadView>(
+    field_sw1_end_.on_select = [this, &nav](NumberField&) {
+        auto new_view = nav.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_end_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw1_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw2_start_.on_select = [this](NumberField&) {
-        auto new_view = nav_.push<FrequencyKeypadView>(
+    field_sw2_start_.on_select = [this, &nav](NumberField&) {
+        auto new_view = nav.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw2_start_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw2_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw2_end_.on_select = [this](NumberField&) {
-        auto new_view = nav_.push<FrequencyKeypadView>(
+    field_sw2_end_.on_select = [this, &nav](NumberField&) {
+        auto new_view = nav.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw2_end_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw2_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
+}
+
+void SweepWindowGroup1View::focus() {
+    field_sw1_start_.focus();
+}
+
+// ============================================================================
+// SweepWindowGroup2View — Tab 2: Windows 3-4
+// ============================================================================
+
+SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect parent_rect) noexcept
+    : ui::View() {
+    set_parent_rect(parent_rect);
+    add_children({
+        &labels_sw3_,
+        &check_sw3_enabled_,
+        &field_sw3_start_,
+        &field_sw3_end_,
+        &field_sw3_step_,
+        &labels_sw4_,
+        &check_sw4_enabled_,
+        &field_sw4_start_,
+        &field_sw4_end_,
+        &field_sw4_step_,
+    });
+
+    // Keyboard callbacks for frequency fields (MHz → keypad → MHz)
+    field_sw3_start_.on_select = [this, &nav](NumberField&) {
+        auto new_view = nav.push<FrequencyKeypadView>(
+            static_cast<rf::Frequency>(field_sw3_start_.value()) * 1000000ULL);
+        new_view->on_changed = [this](rf::Frequency f) {
+            field_sw3_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
+        };
+    };
+
+    field_sw3_end_.on_select = [this, &nav](NumberField&) {
+        auto new_view = nav.push<FrequencyKeypadView>(
+            static_cast<rf::Frequency>(field_sw3_end_.value()) * 1000000ULL);
+        new_view->on_changed = [this](rf::Frequency f) {
+            field_sw3_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
+        };
+    };
+
+    field_sw4_start_.on_select = [this, &nav](NumberField&) {
+        auto new_view = nav.push<FrequencyKeypadView>(
+            static_cast<rf::Frequency>(field_sw4_start_.value()) * 1000000ULL);
+        new_view->on_changed = [this](rf::Frequency f) {
+            field_sw4_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
+        };
+    };
+
+    field_sw4_end_.on_select = [this, &nav](NumberField&) {
+        auto new_view = nav.push<FrequencyKeypadView>(
+            static_cast<rf::Frequency>(field_sw4_end_.value()) * 1000000ULL);
+        new_view->on_changed = [this](rf::Frequency f) {
+            field_sw4_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
+        };
+    };
+}
+
+void SweepWindowGroup2View::focus() {
+    check_sw3_enabled_.focus();
+}
+
+// ============================================================================
+// DroneSweepView — Main sweep settings view with TabView
+// ============================================================================
+
+DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept
+    : ui::View()
+    , nav_(nav)
+    , scanner_ptr_(scanner_ptr)
+    , original_config_(config) {
+    add_children({
+        &view_group1_,
+        &view_group2_,
+        &tab_view_,
+        &button_defaults_,
+        &button_save_,
+    });
+
+    // Populate Tab 1 (Windows 1-2) from config
+    view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / 1000000ULL));
+    view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(config.sweep_end_freq / 1000000ULL));
+    view_group1_.field_sw1_step_.set_value(static_cast<int32_t>(config.sweep_step_freq / 1000ULL));
+
+    view_group1_.check_sw2_enabled_.set_value(config.sweep2_enabled);
+    view_group1_.field_sw2_start_.set_value(static_cast<int32_t>(config.sweep2_start_freq / 1000000ULL));
+    view_group1_.field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / 1000000ULL));
+    view_group1_.field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / 1000ULL));
+
+    // Populate Tab 2 (Windows 3-4) from config
+    view_group2_.check_sw3_enabled_.set_value(config.sweep3_enabled);
+    view_group2_.field_sw3_start_.set_value(static_cast<int32_t>(config.sweep3_start_freq / 1000000ULL));
+    view_group2_.field_sw3_end_.set_value(static_cast<int32_t>(config.sweep3_end_freq / 1000000ULL));
+    view_group2_.field_sw3_step_.set_value(static_cast<int32_t>(config.sweep3_step_freq / 1000ULL));
+
+    view_group2_.check_sw4_enabled_.set_value(config.sweep4_enabled);
+    view_group2_.field_sw4_start_.set_value(static_cast<int32_t>(config.sweep4_start_freq / 1000000ULL));
+    view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / 1000000ULL));
+    view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
 
     button_save_.on_select = [this](ui::Button&) {
         save_settings();
@@ -86,27 +177,35 @@ DroneSweepView::~DroneSweepView() noexcept {
 }
 
 void DroneSweepView::focus() {
-    field_sw1_start_.focus();
+    tab_view_.focus();
 }
 
 void DroneSweepView::save_settings() noexcept {
-    // Read values from UI
-    FreqHz sw1_start = static_cast<FreqHz>(field_sw1_start_.value()) * 1000000ULL;
-    FreqHz sw1_end = static_cast<FreqHz>(field_sw1_end_.value()) * 1000000ULL;
-    FreqHz sw1_step = static_cast<FreqHz>(field_sw1_step_.value()) * 1000ULL;
+    // Read values from child views
+    FreqHz sw1_start = static_cast<FreqHz>(view_group1_.field_sw1_start_.value()) * 1000000ULL;
+    FreqHz sw1_end = static_cast<FreqHz>(view_group1_.field_sw1_end_.value()) * 1000000ULL;
+    FreqHz sw1_step = static_cast<FreqHz>(view_group1_.field_sw1_step_.value()) * 1000ULL;
 
-    bool sw2_enabled = check_sw2_enabled_.value();
-    FreqHz sw2_start = static_cast<FreqHz>(field_sw2_start_.value()) * 1000000ULL;
-    FreqHz sw2_end = static_cast<FreqHz>(field_sw2_end_.value()) * 1000000ULL;
-    FreqHz sw2_step = static_cast<FreqHz>(field_sw2_step_.value()) * 1000ULL;
+    bool sw2_enabled = view_group1_.check_sw2_enabled_.value();
+    FreqHz sw2_start = static_cast<FreqHz>(view_group1_.field_sw2_start_.value()) * 1000000ULL;
+    FreqHz sw2_end = static_cast<FreqHz>(view_group1_.field_sw2_end_.value()) * 1000000ULL;
+    FreqHz sw2_step = static_cast<FreqHz>(view_group1_.field_sw2_step_.value()) * 1000ULL;
+
+    bool sw3_enabled = view_group2_.check_sw3_enabled_.value();
+    FreqHz sw3_start = static_cast<FreqHz>(view_group2_.field_sw3_start_.value()) * 1000000ULL;
+    FreqHz sw3_end = static_cast<FreqHz>(view_group2_.field_sw3_end_.value()) * 1000000ULL;
+    FreqHz sw3_step = static_cast<FreqHz>(view_group2_.field_sw3_step_.value()) * 1000ULL;
+
+    bool sw4_enabled = view_group2_.check_sw4_enabled_.value();
+    FreqHz sw4_start = static_cast<FreqHz>(view_group2_.field_sw4_start_.value()) * 1000000ULL;
+    FreqHz sw4_end = static_cast<FreqHz>(view_group2_.field_sw4_end_.value()) * 1000000ULL;
+    FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
 
     // Validate: start must be < end
-    if (sw1_start >= sw1_end) {
-        sw1_end = sw1_start + 20000000;
-    }
-    if (sw2_enabled && sw2_start >= sw2_end) {
-        sw2_end = sw2_start + 20000000;
-    }
+    if (sw1_start >= sw1_end) sw1_end = sw1_start + 20000000;
+    if (sw2_enabled && sw2_start >= sw2_end) sw2_end = sw2_start + 20000000;
+    if (sw3_enabled && sw3_start >= sw3_end) sw3_end = sw3_start + 20000000;
+    if (sw4_enabled && sw4_start >= sw4_end) sw4_end = sw4_start + 20000000;
 
     // Update scanner config
     if (scanner_ptr_ != nullptr) {
@@ -118,6 +217,14 @@ void DroneSweepView::save_settings() noexcept {
         updated_config.sweep2_end_freq = sw2_end;
         updated_config.sweep2_step_freq = sw2_step;
         updated_config.sweep2_enabled = sw2_enabled;
+        updated_config.sweep3_start_freq = sw3_start;
+        updated_config.sweep3_end_freq = sw3_end;
+        updated_config.sweep3_step_freq = sw3_step;
+        updated_config.sweep3_enabled = sw3_enabled;
+        updated_config.sweep4_start_freq = sw4_start;
+        updated_config.sweep4_end_freq = sw4_end;
+        updated_config.sweep4_step_freq = sw4_step;
+        updated_config.sweep4_enabled = sw4_enabled;
         (void)scanner_ptr_->set_config(updated_config);
     }
 
@@ -210,6 +317,10 @@ void DroneSweepView::save_settings() noexcept {
                         "sweep_start_mhz=", "sweep_end_mhz=", "sweep_step_khz=",
                         "sweep2_start_mhz=", "sweep2_end_mhz=", "sweep2_step_khz=",
                         "sweep2_enabled=",
+                        "sweep3_start_mhz=", "sweep3_end_mhz=", "sweep3_step_khz=",
+                        "sweep3_enabled=",
+                        "sweep4_start_mhz=", "sweep4_end_mhz=", "sweep4_step_khz=",
+                        "sweep4_enabled=",
                     };
                     for (const auto& key : sweep_keys) {
                         const size_t klen = __builtin_strlen(key);
@@ -237,7 +348,7 @@ void DroneSweepView::save_settings() noexcept {
         }
     }
 
-    // Append sweep keys
+    // Append all sweep keys
     out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
         "sweep_start_mhz=%lu\n", (unsigned long)(sw1_start / 1000000));
     out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
@@ -252,6 +363,22 @@ void DroneSweepView::save_settings() noexcept {
         "sweep2_step_khz=%lu\n", (unsigned long)(sw2_step / 1000));
     out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
         "sweep2_enabled=%s\n", sw2_enabled ? "true" : "false");
+    out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+        "sweep3_start_mhz=%lu\n", (unsigned long)(sw3_start / 1000000));
+    out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+        "sweep3_end_mhz=%lu\n", (unsigned long)(sw3_end / 1000000));
+    out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+        "sweep3_step_khz=%lu\n", (unsigned long)(sw3_step / 1000));
+    out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+        "sweep3_enabled=%s\n", sw3_enabled ? "true" : "false");
+    out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+        "sweep4_start_mhz=%lu\n", (unsigned long)(sw4_start / 1000000));
+    out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+        "sweep4_end_mhz=%lu\n", (unsigned long)(sw4_end / 1000000));
+    out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+        "sweep4_step_khz=%lu\n", (unsigned long)(sw4_step / 1000));
+    out_offset += snprintf(out_buf + out_offset, sizeof(out_buf) - out_offset,
+        "sweep4_enabled=%s\n", sw4_enabled ? "true" : "false");
 
     file.write(out_buf, out_offset);
     (void)file.sync();
@@ -259,13 +386,28 @@ void DroneSweepView::save_settings() noexcept {
 }
 
 void DroneSweepView::apply_defaults() noexcept {
-    field_sw1_start_.set_value(5700);
-    field_sw1_end_.set_value(5900);
-    field_sw1_step_.set_value(20000);
-    check_sw2_enabled_.set_value(false);
-    field_sw2_start_.set_value(2400);
-    field_sw2_end_.set_value(2500);
-    field_sw2_step_.set_value(20000);
+    // Window 1: 5700-5900 MHz
+    view_group1_.field_sw1_start_.set_value(5700);
+    view_group1_.field_sw1_end_.set_value(5900);
+    view_group1_.field_sw1_step_.set_value(20000);
+
+    // Window 2: 2400-2500 MHz, disabled
+    view_group1_.check_sw2_enabled_.set_value(false);
+    view_group1_.field_sw2_start_.set_value(2400);
+    view_group1_.field_sw2_end_.set_value(2500);
+    view_group1_.field_sw2_step_.set_value(20000);
+
+    // Window 3: 900-1000 MHz, disabled
+    view_group2_.check_sw3_enabled_.set_value(false);
+    view_group2_.field_sw3_start_.set_value(900);
+    view_group2_.field_sw3_end_.set_value(1000);
+    view_group2_.field_sw3_step_.set_value(20000);
+
+    // Window 4: 1200-1300 MHz, disabled
+    view_group2_.check_sw4_enabled_.set_value(false);
+    view_group2_.field_sw4_start_.set_value(1200);
+    view_group2_.field_sw4_end_.set_value(1300);
+    view_group2_.field_sw4_step_.set_value(20000);
 }
 
 } // namespace drone_analyzer

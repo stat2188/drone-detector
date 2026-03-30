@@ -68,6 +68,18 @@ struct DroneSettings {
     FreqHz sweep2_end_freq;
     FreqHz sweep2_step_freq;
     bool sweep2_enabled;
+
+    // Sweep frequency range (Hz) — window 3 (disabled by default)
+    FreqHz sweep3_start_freq;
+    FreqHz sweep3_end_freq;
+    FreqHz sweep3_step_freq;
+    bool sweep3_enabled;
+
+    // Sweep frequency range (Hz) — window 4 (disabled by default)
+    FreqHz sweep4_start_freq;
+    FreqHz sweep4_end_freq;
+    FreqHz sweep4_step_freq;
+    bool sweep4_enabled;
     
     /**
       * @brief Default constructor

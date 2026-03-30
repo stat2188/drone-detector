@@ -41,6 +41,18 @@ struct ScanConfig {
     FreqHz sweep2_step_freq{20000000};
     bool sweep2_enabled{false};
 
+    // Sweep range (Hz) — window 3 (independent, optional, disabled by default)
+    FreqHz sweep3_start_freq{900000000ULL};
+    FreqHz sweep3_end_freq{1000000000ULL};
+    FreqHz sweep3_step_freq{20000000};
+    bool sweep3_enabled{false};
+
+    // Sweep range (Hz) — window 4 (independent, optional, disabled by default)
+    FreqHz sweep4_start_freq{1200000000ULL};
+    FreqHz sweep4_end_freq{1300000000ULL};
+    FreqHz sweep4_step_freq{20000000};
+    bool sweep4_enabled{false};
+
     // Advanced detection features (OFF by default)
     bool dwell_enabled{false};           // Stay on frequency when signal detected
     bool confirm_count_enabled{false};   // Require multiple confirmations before creating drone

@@ -144,7 +144,7 @@ private:
     static constexpr FreqHz SWEEP_SLICE_BW = 20000000;         // 20 MHz per slice
     static constexpr uint8_t DB_SCANS_PER_SWEEP = 20;          // DB scans between auto-sweep passes
     static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;  // 78125 Hz per bin
-    static constexpr uint8_t MAX_SWEEP_WINDOWS = 2;
+    static constexpr uint8_t MAX_SWEEP_WINDOWS = 4;
 
     /**
      * @brief Encapsulates all state for a single sweep window (Meyers: replace duplication with data)
@@ -171,7 +171,9 @@ private:
 
     bool composite_active_{false};
     bool sweep_auto_mode_{false};
-    uint8_t active_sweep_idx_{0};         // 0 or 1
+    uint8_t active_sweep_idx_{0};         // 0-3
+    uint8_t sweep_page_{0};               // 0 = windows 0+1, 1 = windows 2+3
+    uint8_t start_window_idx_{0};         // first enabled window index (for round-robin wrap detection)
     uint8_t db_scan_count_{0};
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
@@ -180,6 +182,7 @@ private:
     void exit_sweep_mode() noexcept;
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
+    void update_sweep_page_display() noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};

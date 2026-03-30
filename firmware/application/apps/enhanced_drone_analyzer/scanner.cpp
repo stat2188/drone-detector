@@ -61,7 +61,7 @@ ScanConfig::ScanConfig() noexcept
     , spectrum_peak_ratio(255)      // Tall+narrow = inverted-V filter
     , spectrum_valley_depth(80)     // Deep valleys flanking peak = V-shape
 {
-    // sweep2 fields use in-class defaults: 2.4GHz, disabled
+    // sweep2/3/4 fields use in-class defaults: disabled
 }
 
 ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
@@ -85,7 +85,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , spectrum_peak_sharpness(130)
     , spectrum_peak_ratio(255)
     , spectrum_valley_depth(80) {
-    // sweep2 fields use in-class defaults: 2.4GHz, disabled
+    // sweep2/3/4 fields use in-class defaults: disabled
 }
 
 // ========================================================================

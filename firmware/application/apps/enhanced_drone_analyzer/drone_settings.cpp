@@ -44,7 +44,15 @@ DroneSettings::DroneSettings() noexcept
     , sweep2_start_freq(2400000000ULL)
     , sweep2_end_freq(2500000000ULL)
     , sweep2_step_freq(20000000)
-    , sweep2_enabled(false) {
+    , sweep2_enabled(false)
+    , sweep3_start_freq(900000000ULL)
+    , sweep3_end_freq(1000000000ULL)
+    , sweep3_step_freq(20000000)
+    , sweep3_enabled(false)
+    , sweep4_start_freq(1200000000ULL)
+    , sweep4_end_freq(1300000000ULL)
+    , sweep4_step_freq(20000000)
+    , sweep4_enabled(false) {
 }
 
 void DroneSettings::reset_to_defaults() noexcept {
@@ -82,6 +90,16 @@ void DroneSettings::reset_to_defaults() noexcept {
     sweep2_end_freq = 2500000000ULL;
     sweep2_step_freq = 20000000;
     sweep2_enabled = false;
+
+    sweep3_start_freq = 900000000ULL;
+    sweep3_end_freq = 1000000000ULL;
+    sweep3_step_freq = 20000000;
+    sweep3_enabled = false;
+
+    sweep4_start_freq = 1200000000ULL;
+    sweep4_end_freq = 1300000000ULL;
+    sweep4_step_freq = 20000000;
+    sweep4_enabled = false;
 }
 
 // ============================================================================
@@ -525,6 +543,22 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
             settings_.sweep2_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
         } else if (key_matches("sweep2_enabled")) {
             settings_.sweep2_enabled = parse_bool();
+        } else if (key_matches("sweep3_start_mhz")) {
+            settings_.sweep3_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep3_end_mhz")) {
+            settings_.sweep3_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep3_step_khz")) {
+            settings_.sweep3_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("sweep3_enabled")) {
+            settings_.sweep3_enabled = parse_bool();
+        } else if (key_matches("sweep4_start_mhz")) {
+            settings_.sweep4_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep4_end_mhz")) {
+            settings_.sweep4_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep4_step_khz")) {
+            settings_.sweep4_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("sweep4_enabled")) {
+            settings_.sweep4_enabled = parse_bool();
         } else if (key_matches("scan_interval_ms")) {
             settings_.scan_interval_ms = static_cast<uint32_t>(parse_int());
         } else if (key_matches("sensitivity")) {
@@ -775,6 +809,22 @@ void load_startup_settings(ScanConfig& config) noexcept {
             config.sweep2_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
         } else if (key_matches("sweep2_enabled")) {
             config.sweep2_enabled = parse_bool();
+        } else if (key_matches("sweep3_start_mhz")) {
+            config.sweep3_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep3_end_mhz")) {
+            config.sweep3_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep3_step_khz")) {
+            config.sweep3_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("sweep3_enabled")) {
+            config.sweep3_enabled = parse_bool();
+        } else if (key_matches("sweep4_start_mhz")) {
+            config.sweep4_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep4_end_mhz")) {
+            config.sweep4_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+        } else if (key_matches("sweep4_step_khz")) {
+            config.sweep4_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
+        } else if (key_matches("sweep4_enabled")) {
+            config.sweep4_enabled = parse_bool();
         } else if (key_matches("rssi_threshold_db")) {
             bool negative = (val_len > 0 && val_start[0] == '-');
             const uint8_t* num_start = negative ? val_start + 1 : val_start;
