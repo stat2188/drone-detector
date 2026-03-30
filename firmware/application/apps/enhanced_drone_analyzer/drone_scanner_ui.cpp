@@ -831,6 +831,23 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // Reset windows on this page for next pass
         if (sweep_[page_w0].enabled) sweep_[page_w0].reset();
         if (sweep_[page_w1].enabled) sweep_[page_w1].reset();
+
+        // Advance page IMMEDIATELY — find next page with enabled windows
+        bool found_next_page = false;
+        for (uint8_t p = sweep_page_ + 1; p * 2 < MAX_SWEEP_WINDOWS; ++p) {
+            if (sweep_[p * 2].enabled || sweep_[p * 2 + 1].enabled) {
+                sweep_page_ = p;
+                found_next_page = true;
+                break;
+            }
+        }
+        if (found_next_page) {
+            // Set start_window_idx_ to first enabled window on new page
+            const uint8_t pw0 = sweep_page_ * 2;
+            const uint8_t pw1 = pw0 + 1;
+            start_window_idx_ = sweep_[pw0].enabled ? pw0 : pw1;
+        }
+        // If !found_next_page: no more pages — exit handled by round-robin wrap
     }
 
     // Round-robin to next enabled window
@@ -840,26 +857,22 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     } while (!sweep_[next].enabled && next != active_sweep_idx_);
 
     if (next == start_window_idx_) {
-        // Completed a full round-robin pass through all enabled windows
-        // Try to advance to next page with enabled windows
-        bool found_next_page = false;
-        for (uint8_t p = sweep_page_ + 1; p * 2 < MAX_SWEEP_WINDOWS; ++p) {
+        // All pages completed one full round-robin pass
+        if (sweep_auto_mode_) {
+            exit_sweep_mode();
+            return;
+        }
+        // Manual mode: wrap to first page with enabled windows
+        sweep_page_ = 0;
+        for (uint8_t p = 0; p * 2 < MAX_SWEEP_WINDOWS; ++p) {
             if (sweep_[p * 2].enabled || sweep_[p * 2 + 1].enabled) {
                 sweep_page_ = p;
-                found_next_page = true;
                 break;
             }
         }
-        if (!found_next_page) {
-            // All pages done
-            if (sweep_auto_mode_) {
-                exit_sweep_mode();
-                return;
-            }
-            // Manual mode: wrap to page 0 and restart
-            sweep_page_ = 0;
-        }
-        start_window_idx_ = next;
+        const uint8_t pw0 = sweep_page_ * 2;
+        const uint8_t pw1 = pw0 + 1;
+        start_window_idx_ = sweep_[pw0].enabled ? pw0 : pw1;
     }
 
     active_sweep_idx_ = next;
