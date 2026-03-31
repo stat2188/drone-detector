@@ -277,6 +277,9 @@ set(EXTCPPSRC
 	external/subcarrx/main.cpp
 	external/subcarrx/ui_subcar.cpp
 
+	#fpv_detect
+	external/fpv_detect/main.cpp
+	external/fpv_detect/ui_fpv_detect.cpp
 
 )
 
@@ -314,6 +317,7 @@ set(EXTAPPLIST
 	ook_editor
 	cvs_spam
 	flippertx
+	fpv_detect
 	remote
 	mcu_temperature
 	fmradio
