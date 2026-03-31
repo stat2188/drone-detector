@@ -741,8 +741,9 @@ constexpr FreqHz EXCEPTION_RADIUS_HZ = 1'000'000ULL;
 
 /**
  * @brief Number of exception frequency slots per sweep window
+ * @note Reduced from 6 to 3 — covers 90% of use cases with less UI clutter
  */
-constexpr uint8_t EXCEPTIONS_PER_WINDOW = 6;
+constexpr uint8_t EXCEPTIONS_PER_WINDOW = 3;
 
 // ============================================================================
 // String Constants (Flash Storage)
