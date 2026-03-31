@@ -172,7 +172,9 @@ private:
     bool composite_active_{false};
     bool sweep_auto_mode_{false};
     uint8_t active_sweep_idx_{0};         // 0-3, round-robin index
+    uint8_t current_pair_{0};             // Current displayed pair index (0 or 2)
     uint8_t db_scan_count_{0};
+    AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
 

@@ -164,10 +164,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
     button_mode_.on_select = [this](ui::Button&) {
         if (!composite_active_) {
-            // Enter manual sweep mode
+            // Enter manual sweep mode (enter_sweep_mode handles re-entrancy guard)
             this->sweep_auto_mode_ = false;
             this->enter_sweep_mode();
-            button_mode_.set_text("Sweep");
+            if (composite_active_) {
+                button_mode_.set_text("Sweep");
+            }
         } else {
             // Exit sweep mode back to normal DB scanning
             this->exit_sweep_mode();
@@ -390,14 +392,17 @@ void DroneScannerUI::on_show() {
             }
         }
 
+        current_pair_ = pair_first(active_sweep_idx_);
         update_sweep_pair_display();
 
         radio::set_tuning_frequency(rf::Frequency(sweep_[active_sweep_idx_].f_center));
         chThdSleepMilliseconds(5);
         current_frequency_ = sweep_[active_sweep_idx_].f_center;
 
-        baseband::spectrum_streaming_start();
-        scanning_ = true;
+        if (!scanning_) {
+            baseband::spectrum_streaming_start();
+            scanning_ = true;
+        }
     }
 }
 
@@ -662,6 +667,10 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
 }
 
 void DroneScannerUI::enter_sweep_mode() noexcept {
+    // Prevent re-entrant entry (double-tap on Mode button)
+    if (composite_active_) return;
+    if (!sweep_transition_guard_.try_set()) return;
+
     composite_active_ = true;
     drone_display_.set_composite_mode(true);
 
@@ -692,8 +701,12 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         // No enabled windows — abort sweep, return to normal mode
         composite_active_ = false;
         drone_display_.set_composite_mode(false);
+        sweep_transition_guard_.clear();
         return;
     }
+
+    // Initialize pair tracking (pairs: 0=[w0,w1], 2=[w2,w3])
+    current_pair_ = pair_first(active_sweep_idx_);
 
     // Save DB index BEFORE stopping scanner, then derive frequency from DB entry.
     // This ensures last_db_frequency_ == entries[last_db_index_].frequency,
@@ -739,10 +752,14 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
 }
 
 void DroneScannerUI::exit_sweep_mode() noexcept {
+    // Prevent re-entrant exit
+    if (!composite_active_) return;
+
     const bool was_auto = sweep_auto_mode_;
     composite_active_ = false;
     sweep_auto_mode_ = false;
     active_sweep_idx_ = 0;
+    current_pair_ = 0;
     sweep_[0].enabled = false;
     sweep_[1].enabled = false;
     sweep_[2].enabled = false;
@@ -782,6 +799,8 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
         scanning_ = true;
         button_start_stop_.set_text("Stop");
     }
+
+    sweep_transition_guard_.clear();
 }
 
 void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept {
@@ -793,6 +812,9 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         scanner_ptr_->process_spectrum_sweep(spectrum, win.f_center);
     }
 
+    // Live display update: show current pair data every frame
+    update_sweep_pair_display();
+
     if (win.pixel_index < COMPOSITE_SIZE) {
         // Normal step: advance frequency within current window
         win.f_center += win.step_hz;
@@ -802,14 +824,14 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
     // Current window sweep pass complete
     // Check if its pair is fully complete (both windows in the pair done)
-    const uint8_t w0 = pair_first(active_sweep_idx_);
+    const uint8_t w0 = current_pair_;
     const uint8_t w1 = w0 + 1;
     const bool w0_done = !sweep_[w0].enabled || sweep_[w0].pixel_index >= COMPOSITE_SIZE;
     const bool w1_done = (w1 >= MAX_SWEEP_WINDOWS) || !sweep_[w1].enabled || sweep_[w1].pixel_index >= COMPOSITE_SIZE;
     const bool pair_complete = w0_done && w1_done;
 
     if (pair_complete) {
-        // Display this pair BEFORE reset — ensures user sees final data
+        // Display final pair data before reset
         update_sweep_pair_display();
         drone_display_.set_dirty();
 
@@ -817,32 +839,28 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         if (sweep_[w0].enabled) sweep_[w0].reset();
         if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) sweep_[w1].reset();
 
-        // Advance to next pair
-        const uint8_t next_pair = (w0 + 2 < MAX_SWEEP_WINDOWS) ? w0 + 2 : 0;
-        if (next_pair < w0) {
-            // Wrapped back to pair 0 — all pairs displayed once this cycle
+        // Advance to next pair (pairs: 0=[w0,w1], 2=[w2,w3])
+        const uint8_t next_pair = (current_pair_ + 2 < MAX_SWEEP_WINDOWS) ? current_pair_ + 2 : 0;
+
+        if (next_pair == 0) {
+            // Full cycle complete — all pairs have been displayed
             if (sweep_auto_mode_) {
                 exit_sweep_mode();
                 return;
             }
         }
+
+        current_pair_ = next_pair;
     }
 
-    // Round-robin to next enabled window
+    // Round-robin to next enabled window within active pair range
+    const uint8_t pair_start = current_pair_;
+    const uint8_t pair_end = pair_start + 2;
     uint8_t next = active_sweep_idx_;
     do {
-        next = (next + 1) % MAX_SWEEP_WINDOWS;
+        next++;
+        if (next >= pair_end) next = pair_start;
     } while (!sweep_[next].enabled && next != active_sweep_idx_);
-
-    // Wrap detection: if we cycled back to the first window of the pair
-    // that just completed, a full round-robin pass is done
-    if (next == w0) {
-        if (sweep_auto_mode_) {
-            exit_sweep_mode();
-            return;
-        }
-        // Manual mode: continue sweeping (pair already advanced above)
-    }
 
     active_sweep_idx_ = next;
     retune_sweep_window(sweep_[next], nullptr);
