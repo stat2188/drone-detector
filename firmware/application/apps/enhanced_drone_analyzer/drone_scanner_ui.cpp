@@ -45,6 +45,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
+            if (!this->scanning_) return;
+
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
@@ -53,13 +55,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                         // Window switching is handled inside on_sweep_spectrum
                     } else {
                         this->on_channel_spectrum(spectrum);
-                        if (this->scanning_) {
-                            this->db_scan_count_++;
-                            if (this->db_scan_count_ >= this->DB_SCANS_PER_SWEEP) {
-                                this->db_scan_count_ = 0;
-                                this->sweep_auto_mode_ = true;
-                                this->enter_sweep_mode();
-                            }
+                        this->db_scan_count_++;
+                        if (this->db_scan_count_ >= this->DB_SCANS_PER_SWEEP) {
+                            this->db_scan_count_ = 0;
+                            this->sweep_auto_mode_ = true;
+                            this->enter_sweep_mode();
                         }
                     }
                 }
@@ -381,31 +381,16 @@ void DroneScannerUI::on_show() {
         sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq);
         sweep_[3].enabled = cfg.sweep4_enabled;
 
-        // Validate current page — if no windows on it are enabled, reset to page 0
-        sweep_page_ = 0;
-        const uint8_t p0_w0 = 0, p0_w1 = 1;
-        if (!sweep_[p0_w0].enabled && !sweep_[p0_w1].enabled) {
-            // Find first page with at least one enabled window
-            for (uint8_t p = 0; p * 2 < MAX_SWEEP_WINDOWS; ++p) {
-                if (sweep_[p * 2].enabled || sweep_[p * 2 + 1].enabled) {
-                    sweep_page_ = p;
-                    break;
-                }
-            }
-        }
-
-        // Set active window to first enabled window on current page
-        const uint8_t page_first = sweep_page_ * 2;
-        active_sweep_idx_ = page_first;
-        for (uint8_t i = page_first; i < page_first + 2 && i < MAX_SWEEP_WINDOWS; ++i) {
+        // Find first enabled window
+        active_sweep_idx_ = 0;
+        for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
             if (sweep_[i].enabled) {
                 active_sweep_idx_ = i;
                 break;
             }
         }
-        start_window_idx_ = active_sweep_idx_;
 
-        update_sweep_page_display();
+        update_sweep_pair_display();
 
         radio::set_tuning_frequency(rf::Frequency(sweep_[active_sweep_idx_].f_center));
         chThdSleepMilliseconds(5);
@@ -591,13 +576,26 @@ void DroneScannerUI::refresh_ui() noexcept {
             drone_display_.set_histogram_data(refresh_hist_data_, hist_count);
         }
     } else {
-        // Feed composite power levels as histogram bins
-        const size_t bins = (COMPOSITE_SIZE < HISTOGRAM_BUFFER_SIZE)
-            ? COMPOSITE_SIZE : HISTOGRAM_BUFFER_SIZE;
-        for (size_t i = 0; i < bins; ++i) {
-            refresh_hist_data_[i] = static_cast<uint16_t>(sweep_[active_sweep_idx_].composite[i]) * 256;
+        // Feed displayed pair's composite power levels as histogram bins
+        const uint8_t w0 = pair_first(active_sweep_idx_);
+        const uint8_t w1 = w0 + 1;
+        size_t hist_idx = 0;
+
+        if (sweep_[w0].enabled) {
+            const size_t n0 = (COMPOSITE_SIZE < HISTOGRAM_BUFFER_SIZE)
+                ? COMPOSITE_SIZE : HISTOGRAM_BUFFER_SIZE;
+            for (size_t i = 0; i < n0 && hist_idx < HISTOGRAM_BUFFER_SIZE; ++i) {
+                refresh_hist_data_[hist_idx++] = static_cast<uint16_t>(sweep_[w0].composite[i]) * 256;
+            }
         }
-        drone_display_.set_histogram_data(refresh_hist_data_, bins);
+        if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) {
+            for (size_t i = 0; i < COMPOSITE_SIZE && hist_idx < HISTOGRAM_BUFFER_SIZE; ++i) {
+                refresh_hist_data_[hist_idx++] = static_cast<uint16_t>(sweep_[w1].composite[i]) * 256;
+            }
+        }
+        if (hist_idx > 0) {
+            drone_display_.set_histogram_data(refresh_hist_data_, hist_idx);
+        }
     }
 
     // Update big frequency display
@@ -681,7 +679,6 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_[2].enabled = cfg.sweep3_enabled;
     sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq);
     sweep_[3].enabled = cfg.sweep4_enabled;
-    sweep_page_ = 0;
 
     // Find first enabled window for round-robin
     active_sweep_idx_ = MAX_SWEEP_WINDOWS;  // invalid sentinel
@@ -697,7 +694,6 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         drone_display_.set_composite_mode(false);
         return;
     }
-    start_window_idx_ = active_sweep_idx_;
 
     // Save DB index BEFORE stopping scanner, then derive frequency from DB entry.
     // This ensures last_db_frequency_ == entries[last_db_index_].frequency,
@@ -730,8 +726,8 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     baseband::set_spectrum(SWEEP_SLICE_BW, 31);
     spectrum_fifo_ = nullptr;
 
-    // Set up display for current page (2+2 pagination)
-    update_sweep_page_display();
+    // Set up display for current pair (2+2 pagination)
+    update_sweep_pair_display();
 
     radio::set_tuning_frequency(rf::Frequency(sweep_[active_sweep_idx_].f_center));
     chThdSleepMilliseconds(5);
@@ -747,8 +743,6 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     composite_active_ = false;
     sweep_auto_mode_ = false;
     active_sweep_idx_ = 0;
-    sweep_page_ = 0;
-    start_window_idx_ = 0;
     sweep_[0].enabled = false;
     sweep_[1].enabled = false;
     sweep_[2].enabled = false;
@@ -806,48 +800,32 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         return;
     }
 
-    // Current window sweep pass complete — DON'T reset yet (need pixel_index for page check)
+    // Current window sweep pass complete
+    // Check if its pair is fully complete (both windows in the pair done)
+    const uint8_t w0 = pair_first(active_sweep_idx_);
+    const uint8_t w1 = w0 + 1;
+    const bool w0_done = !sweep_[w0].enabled || sweep_[w0].pixel_index >= COMPOSITE_SIZE;
+    const bool w1_done = (w1 >= MAX_SWEEP_WINDOWS) || !sweep_[w1].enabled || sweep_[w1].pixel_index >= COMPOSITE_SIZE;
+    const bool pair_complete = w0_done && w1_done;
 
-    // Check if current page is complete and display needs updating
-    const uint8_t page_w0 = sweep_page_ * 2;
-    const uint8_t page_w1 = page_w0 + 1;
-    bool page_ready = false;
-
-    if (sweep_[page_w0].enabled && sweep_[page_w1].enabled) {
-        // Dual mode: both must be complete
-        page_ready = (sweep_[page_w0].pixel_index >= COMPOSITE_SIZE &&
-                      sweep_[page_w1].pixel_index >= COMPOSITE_SIZE);
-    } else if (sweep_[page_w0].enabled) {
-        // Single mode: only first window on this page
-        page_ready = (sweep_[page_w0].pixel_index >= COMPOSITE_SIZE);
-    } else if (sweep_[page_w1].enabled) {
-        // Only second window on this page (non-contiguous enabled windows)
-        page_ready = (sweep_[page_w1].pixel_index >= COMPOSITE_SIZE);
-    }
-
-    if (page_ready) {
-        update_sweep_page_display();
+    if (pair_complete) {
+        // Display this pair BEFORE reset — ensures user sees final data
+        update_sweep_pair_display();
         drone_display_.set_dirty();
-        // Reset windows on this page for next pass
-        if (sweep_[page_w0].enabled) sweep_[page_w0].reset();
-        if (sweep_[page_w1].enabled) sweep_[page_w1].reset();
 
-        // Advance page IMMEDIATELY — find next page with enabled windows
-        bool found_next_page = false;
-        for (uint8_t p = sweep_page_ + 1; p * 2 < MAX_SWEEP_WINDOWS; ++p) {
-            if (sweep_[p * 2].enabled || sweep_[p * 2 + 1].enabled) {
-                sweep_page_ = p;
-                found_next_page = true;
-                break;
+        // Reset windows in this pair for next scan pass
+        if (sweep_[w0].enabled) sweep_[w0].reset();
+        if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) sweep_[w1].reset();
+
+        // Advance to next pair
+        const uint8_t next_pair = (w0 + 2 < MAX_SWEEP_WINDOWS) ? w0 + 2 : 0;
+        if (next_pair < w0) {
+            // Wrapped back to pair 0 — all pairs displayed once this cycle
+            if (sweep_auto_mode_) {
+                exit_sweep_mode();
+                return;
             }
         }
-        if (found_next_page) {
-            // Set start_window_idx_ to first enabled window on new page
-            const uint8_t pw0 = sweep_page_ * 2;
-            const uint8_t pw1 = pw0 + 1;
-            start_window_idx_ = sweep_[pw0].enabled ? pw0 : pw1;
-        }
-        // If !found_next_page: no more pages — exit handled by round-robin wrap
     }
 
     // Round-robin to next enabled window
@@ -856,36 +834,28 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         next = (next + 1) % MAX_SWEEP_WINDOWS;
     } while (!sweep_[next].enabled && next != active_sweep_idx_);
 
-    if (next == start_window_idx_) {
-        // All pages completed one full round-robin pass
+    // Wrap detection: if we cycled back to the first window of the pair
+    // that just completed, a full round-robin pass is done
+    if (next == w0) {
         if (sweep_auto_mode_) {
             exit_sweep_mode();
             return;
         }
-        // Manual mode: wrap to first page with enabled windows
-        sweep_page_ = 0;
-        for (uint8_t p = 0; p * 2 < MAX_SWEEP_WINDOWS; ++p) {
-            if (sweep_[p * 2].enabled || sweep_[p * 2 + 1].enabled) {
-                sweep_page_ = p;
-                break;
-            }
-        }
-        const uint8_t pw0 = sweep_page_ * 2;
-        const uint8_t pw1 = pw0 + 1;
-        start_window_idx_ = sweep_[pw0].enabled ? pw0 : pw1;
+        // Manual mode: continue sweeping (pair already advanced above)
     }
 
     active_sweep_idx_ = next;
     retune_sweep_window(sweep_[next], nullptr);
 }
 
-void DroneScannerUI::update_sweep_page_display() noexcept {
-    const uint8_t w0 = sweep_page_ * 2;
+void DroneScannerUI::update_sweep_pair_display() noexcept {
+    const uint8_t w0 = pair_first(active_sweep_idx_);
     const uint8_t w1 = w0 + 1;
 
-    if (!sweep_[w0].enabled && !sweep_[w1].enabled) return;
+    if (w0 >= MAX_SWEEP_WINDOWS) return;
+    if (!sweep_[w0].enabled && (w1 >= MAX_SWEEP_WINDOWS || !sweep_[w1].enabled)) return;
 
-    if (sweep_[w0].enabled && sweep_[w1].enabled) {
+    if (w1 < MAX_SWEEP_WINDOWS && sweep_[w0].enabled && sweep_[w1].enabled) {
         // Dual mode: upper = w0, lower = w1
         drone_display_.set_sweep_range(sweep_[w0].f_min, sweep_[w0].f_max);
         drone_display_.set_composite_data(sweep_[w0].composite, COMPOSITE_SIZE);
@@ -897,12 +867,17 @@ void DroneScannerUI::update_sweep_page_display() noexcept {
         drone_display_.set_sweep_range(sweep_[w0].f_min, sweep_[w0].f_max);
         drone_display_.set_composite_data(sweep_[w0].composite, COMPOSITE_SIZE);
         drone_display_.set_dual_sweep_mode(false);
-    } else {
+    } else if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) {
         // Only w1 enabled (non-contiguous): show w1 as single
         drone_display_.set_sweep_range(sweep_[w1].f_min, sweep_[w1].f_max);
         drone_display_.set_composite_data(sweep_[w1].composite, COMPOSITE_SIZE);
         drone_display_.set_dual_sweep_mode(false);
     }
+}
+
+uint8_t DroneScannerUI::pair_first(uint8_t idx) const noexcept {
+    if (idx >= MAX_SWEEP_WINDOWS) return 0;
+    return (idx / 2) * 2;
 }
 
 // ============================================================================

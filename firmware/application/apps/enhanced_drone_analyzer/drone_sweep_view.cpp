@@ -135,9 +135,9 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     , scanner_ptr_(scanner_ptr)
     , original_config_(config) {
     add_children({
+        &tab_view_,
         &view_group1_,
         &view_group2_,
-        &tab_view_,
         &button_defaults_,
         &button_save_,
     });
@@ -177,7 +177,12 @@ DroneSweepView::~DroneSweepView() noexcept {
 }
 
 void DroneSweepView::focus() {
-    tab_view_.focus();
+    // Focus the current tab's content directly (skip tab headers for fast navigation)
+    if (tab_view_.selected() == 0) {
+        view_group1_.focus();
+    } else {
+        view_group2_.focus();
+    }
 }
 
 void DroneSweepView::save_settings() noexcept {

@@ -171,9 +171,7 @@ private:
 
     bool composite_active_{false};
     bool sweep_auto_mode_{false};
-    uint8_t active_sweep_idx_{0};         // 0-3
-    uint8_t sweep_page_{0};               // 0 = windows 0+1, 1 = windows 2+3
-    uint8_t start_window_idx_{0};         // first enabled window index (for round-robin wrap detection)
+    uint8_t active_sweep_idx_{0};         // 0-3, round-robin index
     uint8_t db_scan_count_{0};
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
@@ -182,7 +180,8 @@ private:
     void exit_sweep_mode() noexcept;
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
-    void update_sweep_page_display() noexcept;
+    void update_sweep_pair_display() noexcept;
+    [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
