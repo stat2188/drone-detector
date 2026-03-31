@@ -51,14 +51,13 @@ private:
     // Advanced detection features
     ui::Checkbox check_dwell_enabled_;
     ui::Checkbox check_confirm_count_;
-    ui::NumberField field_confirm_count_;
     ui::Checkbox check_noise_blacklist_;
-    ui::Checkbox check_spectrum_detection_;
 
     // Anti-false-positive features
+    ui::Checkbox check_rssi_variance_;
     ui::Checkbox check_neighbor_margin_;
     ui::NumberField field_neighbor_margin_;
-    ui::Checkbox check_rssi_variance_;
+    ui::Checkbox check_spectrum_detection_;
 
     // Spectrum detection params
     ui::NumberField field_spectrum_margin_;

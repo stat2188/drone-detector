@@ -213,8 +213,8 @@ static void parse_settings_line(
 
 ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     File file;
-    const auto open_result = file.open(settings_dir / u"eda_settings.txt", true, false);
-    if (!open_result) {
+    const auto error = file.open(settings_dir / u"eda_settings.txt", true, false);
+    if (error) {
         return ErrorCode::DATABASE_NOT_LOADED;
     }
 
@@ -277,8 +277,8 @@ ErrorCode SettingsFileManager::save(
 
     File file;
     ensure_directory(settings_dir);
-    const auto open_result = file.create(settings_dir / u"eda_settings.txt");
-    if (!open_result) {
+    const auto create_error = file.create(settings_dir / u"eda_settings.txt");
+    if (create_error) {
         return ErrorCode::INITIALIZATION_FAILED;
     }
 
