@@ -158,6 +158,7 @@ private:
         FreqHz pixel_step_hz{0};
         FreqHz step_hz{0};
         FreqHz bins_hz_acc{0};
+        FreqHz exceptions[EXCEPTIONS_PER_WINDOW]{};  // exception frequencies (0 = unused)
         uint16_t pixel_index{0};
         uint8_t pixel_max{0};
         bool enabled{false};
@@ -165,6 +166,13 @@ private:
         void init(FreqHz start, FreqHz end, FreqHz step = 0) noexcept;
         void reset() noexcept;
         void process_bins(const ChannelSpectrum& spectrum) noexcept;
+
+        /**
+         * @brief Check if a frequency falls within ±EXCEPTION_RADIUS_HZ of any exception
+         * @param hz Frequency to check
+         * @return true if frequency should be suppressed
+         */
+        [[nodiscard]] bool is_exception(FreqHz hz) const noexcept;
     };
 
     SweepWindow sweep_[MAX_SWEEP_WINDOWS]{};

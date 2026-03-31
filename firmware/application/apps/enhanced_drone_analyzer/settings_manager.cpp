@@ -204,6 +204,32 @@ static void parse_settings_line(
         s.sweep4_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
     } else if (key_matches("sweep4_enabled")) {
         s.sweep4_enabled = parse_bool();
+
+    // --- Sweep exceptions ---
+    } else if (key_matches("sw1_exc0_mhz")) { s.sweep_exceptions[0][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw1_exc1_mhz")) { s.sweep_exceptions[0][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw1_exc2_mhz")) { s.sweep_exceptions[0][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw1_exc3_mhz")) { s.sweep_exceptions[0][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw1_exc4_mhz")) { s.sweep_exceptions[0][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw1_exc5_mhz")) { s.sweep_exceptions[0][5] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw2_exc0_mhz")) { s.sweep_exceptions[1][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw2_exc1_mhz")) { s.sweep_exceptions[1][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw2_exc2_mhz")) { s.sweep_exceptions[1][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw2_exc3_mhz")) { s.sweep_exceptions[1][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw2_exc4_mhz")) { s.sweep_exceptions[1][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw2_exc5_mhz")) { s.sweep_exceptions[1][5] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw3_exc0_mhz")) { s.sweep_exceptions[2][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw3_exc1_mhz")) { s.sweep_exceptions[2][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw3_exc2_mhz")) { s.sweep_exceptions[2][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw3_exc3_mhz")) { s.sweep_exceptions[2][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw3_exc4_mhz")) { s.sweep_exceptions[2][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw3_exc5_mhz")) { s.sweep_exceptions[2][5] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw4_exc0_mhz")) { s.sweep_exceptions[3][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw4_exc1_mhz")) { s.sweep_exceptions[3][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw4_exc2_mhz")) { s.sweep_exceptions[3][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw4_exc3_mhz")) { s.sweep_exceptions[3][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw4_exc4_mhz")) { s.sweep_exceptions[3][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
+    } else if (key_matches("sw4_exc5_mhz")) { s.sweep_exceptions[3][5] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     }
 }
 
@@ -273,6 +299,11 @@ ErrorCode SettingsFileManager::save(
         sweep_cfg.sweep4_end_freq = s.sweep4_end_freq;
         sweep_cfg.sweep4_step_freq = s.sweep4_step_freq;
         sweep_cfg.sweep4_enabled = s.sweep4_enabled;
+        for (uint8_t w = 0; w < 4; ++w) {
+            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+                sweep_cfg.sweep_exceptions[w][i] = s.sweep_exceptions[w][i];
+            }
+        }
     }
 
     File file;
@@ -282,7 +313,7 @@ ErrorCode SettingsFileManager::save(
         return ErrorCode::INITIALIZATION_FAILED;
     }
 
-    char buffer[1024];
+    char buffer[2048];
     size_t offset = 0;
 
     offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -382,6 +413,20 @@ ErrorCode SettingsFileManager::save(
     offset += snprintf(buffer + offset, sizeof(buffer) - offset,
         "sweep4_enabled=%s\n", sweep_cfg.sweep4_enabled ? "true" : "false");
 
+    // Sweep exceptions (4 windows × 6 slots)
+    static const char* exc_keys[4][6] = {
+        {"sw1_exc0_mhz", "sw1_exc1_mhz", "sw1_exc2_mhz", "sw1_exc3_mhz", "sw1_exc4_mhz", "sw1_exc5_mhz"},
+        {"sw2_exc0_mhz", "sw2_exc1_mhz", "sw2_exc2_mhz", "sw2_exc3_mhz", "sw2_exc4_mhz", "sw2_exc5_mhz"},
+        {"sw3_exc0_mhz", "sw3_exc1_mhz", "sw3_exc2_mhz", "sw3_exc3_mhz", "sw3_exc4_mhz", "sw3_exc5_mhz"},
+        {"sw4_exc0_mhz", "sw4_exc1_mhz", "sw4_exc2_mhz", "sw4_exc3_mhz", "sw4_exc4_mhz", "sw4_exc5_mhz"},
+    };
+    for (uint8_t w = 0; w < 4; ++w) {
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "%s=%lu\n", exc_keys[w][i], (unsigned long)(sweep_cfg.sweep_exceptions[w][i] / 1000000ULL));
+        }
+    }
+
     // Metadata
     offset += snprintf(buffer + offset, sizeof(buffer) - offset,
         "freqman_path=DRONES\n");
@@ -445,6 +490,13 @@ void SettingsFileManager::apply_to_config(
     config.sweep4_end_freq = s.sweep4_end_freq;
     config.sweep4_step_freq = s.sweep4_step_freq;
     config.sweep4_enabled = s.sweep4_enabled;
+
+    // Sweep exceptions
+    for (uint8_t w = 0; w < 4; ++w) {
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+            config.sweep_exceptions[w][i] = s.sweep_exceptions[w][i];
+        }
+    }
 }
 
 // ============================================================================
@@ -495,6 +547,12 @@ void SettingsFileManager::extract_from_config(
     s.sweep4_end_freq = config.sweep4_end_freq;
     s.sweep4_step_freq = config.sweep4_step_freq;
     s.sweep4_enabled = config.sweep4_enabled;
-}
 
+    // Sweep exceptions
+    for (uint8_t w = 0; w < 4; ++w) {
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+            s.sweep_exceptions[w][i] = config.sweep_exceptions[w][i];
+        }
+    }
+}
 } // namespace drone_analyzer

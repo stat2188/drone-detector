@@ -73,6 +73,9 @@ struct SettingsStruct {
     FreqHz sweep4_step_freq;
     bool sweep4_enabled;
 
+    // Sweep exception frequencies (per window, 0 = unused)
+    FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
+
     SettingsStruct() noexcept;
 };
 

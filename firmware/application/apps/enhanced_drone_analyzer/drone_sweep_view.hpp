@@ -46,6 +46,28 @@ public:
     ui::NumberField field_sw2_start_{{UI_POS_X(1), UI_POS_Y(11)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_sw2_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_sw2_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {1000, 99999}, 1000, ' '};
+
+    // Exception fields — right side of Window 1
+    ui::Labels labels_exc1_{
+        {{UI_POS_X(16), UI_POS_Y(0)}, "Exc(MHz):", Theme::getInstance()->fg_yellow->foreground},
+    };
+    ui::NumberField field_sw1_exc0_{{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw1_exc1_{{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw1_exc2_{{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw1_exc3_{{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw1_exc4_{{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw1_exc5_{{UI_POS_X(16), UI_POS_Y(6)}, 5, {0, 7200}, 1, ' '};
+
+    // Exception fields — right side of Window 2
+    ui::Labels labels_exc2_{
+        {{UI_POS_X(16), UI_POS_Y(8)}, "Exc(MHz):", Theme::getInstance()->fg_yellow->foreground},
+    };
+    ui::NumberField field_sw2_exc0_{{UI_POS_X(16), UI_POS_Y(9)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw2_exc1_{{UI_POS_X(16), UI_POS_Y(10)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw2_exc2_{{UI_POS_X(16), UI_POS_Y(11)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw2_exc3_{{UI_POS_X(16), UI_POS_Y(12)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw2_exc4_{{UI_POS_X(16), UI_POS_Y(13)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw2_exc5_{{UI_POS_X(16), UI_POS_Y(14)}, 5, {0, 7200}, 1, ' '};
 };
 
 /**
@@ -80,6 +102,28 @@ public:
     ui::NumberField field_sw4_start_{{UI_POS_X(1), UI_POS_Y(11)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_sw4_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_sw4_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {1000, 99999}, 1000, ' '};
+
+    // Exception fields — right side of Window 3
+    ui::Labels labels_exc3_{
+        {{UI_POS_X(16), UI_POS_Y(0)}, "Exc(MHz):", Theme::getInstance()->fg_yellow->foreground},
+    };
+    ui::NumberField field_sw3_exc0_{{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw3_exc1_{{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw3_exc2_{{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw3_exc3_{{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw3_exc4_{{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw3_exc5_{{UI_POS_X(16), UI_POS_Y(6)}, 5, {0, 7200}, 1, ' '};
+
+    // Exception fields — right side of Window 4
+    ui::Labels labels_exc4_{
+        {{UI_POS_X(16), UI_POS_Y(8)}, "Exc(MHz):", Theme::getInstance()->fg_yellow->foreground},
+    };
+    ui::NumberField field_sw4_exc0_{{UI_POS_X(16), UI_POS_Y(9)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw4_exc1_{{UI_POS_X(16), UI_POS_Y(10)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw4_exc2_{{UI_POS_X(16), UI_POS_Y(11)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw4_exc3_{{UI_POS_X(16), UI_POS_Y(12)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw4_exc4_{{UI_POS_X(16), UI_POS_Y(13)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_sw4_exc5_{{UI_POS_X(16), UI_POS_Y(14)}, 5, {0, 7200}, 1, ' '};
 };
 
 /**

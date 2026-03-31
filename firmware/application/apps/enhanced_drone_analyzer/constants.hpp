@@ -730,6 +730,21 @@ constexpr FreqHz SWEEP_DEFAULT_START_HZ = 5700000000;   // 5.7 GHz
 constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5900000000;     // 5.9 GHz
 
 // ============================================================================
+// Sweep Exception Constants
+// ============================================================================
+
+/**
+ * @brief Exclusion radius around exception frequencies (±2 MHz)
+ * @note Signals within this radius of an exception frequency are not treated as threats
+ */
+constexpr FreqHz EXCEPTION_RADIUS_HZ = 1'000'000ULL;
+
+/**
+ * @brief Number of exception frequency slots per sweep window
+ */
+constexpr uint8_t EXCEPTIONS_PER_WINDOW = 6;
+
+// ============================================================================
 // String Constants (Flash Storage)
 // ============================================================================
 

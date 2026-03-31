@@ -391,6 +391,13 @@ void DroneScannerUI::on_show() {
         sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq, cfg.sweep4_step_freq);
         sweep_[3].enabled = cfg.sweep4_enabled;
 
+        // Copy exception frequencies to each sweep window
+        for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+                sweep_[w].exceptions[i] = cfg.sweep_exceptions[w][i];
+            }
+        }
+
         // Find first enabled window
         active_sweep_idx_ = 0;
         for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
@@ -697,6 +704,13 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq, cfg.sweep4_step_freq);
     sweep_[3].enabled = cfg.sweep4_enabled;
 
+    // Copy exception frequencies to each sweep window
+    for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+            sweep_[w].exceptions[i] = cfg.sweep_exceptions[w][i];
+        }
+    }
+
     // Find first enabled window for round-robin
     active_sweep_idx_ = MAX_SWEEP_WINDOWS;  // invalid sentinel
     for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
@@ -941,6 +955,17 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
     bins_hz_acc = 0;
 }
 
+bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
+    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+        if (exceptions[i] == 0) continue;
+        if (exceptions[i] < EXCEPTION_RADIUS_HZ) continue;
+        const FreqHz lo = exceptions[i] - EXCEPTION_RADIUS_HZ;
+        const FreqHz hi = exceptions[i] + EXCEPTION_RADIUS_HZ;
+        if (hz >= lo && hz <= hi) return true;
+    }
+    return false;
+}
+
 void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
     // FFT bin mapping (Looking Glass pattern):
     //   Lower sideband: screen pixels 0→119 map to FFT bins 134→253
@@ -962,8 +987,12 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         if (power > pixel_max) pixel_max = power;
         bins_hz_acc += EACH_BIN_SIZE;
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-            if (pixel_max > composite[pixel_index]) {
-                composite[pixel_index] = pixel_max;
+            // Exception filter: suppress signals within ±2 MHz of exception frequencies
+            const FreqHz pixel_freq = f_min + static_cast<FreqHz>(pixel_index) * pixel_step_hz;
+            if (!is_exception(pixel_freq)) {
+                if (pixel_max > composite[pixel_index]) {
+                    composite[pixel_index] = pixel_max;
+                }
             }
             ++pixel_index;
             pixel_max = 0;

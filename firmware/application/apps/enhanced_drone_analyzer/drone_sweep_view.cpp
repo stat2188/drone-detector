@@ -29,6 +29,20 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
         &field_sw2_start_,
         &field_sw2_end_,
         &field_sw2_step_,
+        &labels_exc1_,
+        &field_sw1_exc0_,
+        &field_sw1_exc1_,
+        &field_sw1_exc2_,
+        &field_sw1_exc3_,
+        &field_sw1_exc4_,
+        &field_sw1_exc5_,
+        &labels_exc2_,
+        &field_sw2_exc0_,
+        &field_sw2_exc1_,
+        &field_sw2_exc2_,
+        &field_sw2_exc3_,
+        &field_sw2_exc4_,
+        &field_sw2_exc5_,
     });
 
     // Keyboard callbacks for frequency fields (MHz → keypad → MHz)
@@ -87,6 +101,20 @@ SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect par
         &field_sw4_start_,
         &field_sw4_end_,
         &field_sw4_step_,
+        &labels_exc3_,
+        &field_sw3_exc0_,
+        &field_sw3_exc1_,
+        &field_sw3_exc2_,
+        &field_sw3_exc3_,
+        &field_sw3_exc4_,
+        &field_sw3_exc5_,
+        &labels_exc4_,
+        &field_sw4_exc0_,
+        &field_sw4_exc1_,
+        &field_sw4_exc2_,
+        &field_sw4_exc3_,
+        &field_sw4_exc4_,
+        &field_sw4_exc5_,
     });
 
     // Keyboard callbacks for frequency fields (MHz → keypad → MHz)
@@ -172,6 +200,31 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / 1000000ULL));
     view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
 
+    // Populate exception fields from config (MHz)
+    ui::NumberField* exc1_fields[] = {
+        &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
+        &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
+        &view_group1_.field_sw1_exc4_, &view_group1_.field_sw1_exc5_};
+    ui::NumberField* exc2_fields[] = {
+        &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
+        &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
+        &view_group1_.field_sw2_exc4_, &view_group1_.field_sw2_exc5_};
+    ui::NumberField* exc3_fields[] = {
+        &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
+        &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
+        &view_group2_.field_sw3_exc4_, &view_group2_.field_sw3_exc5_};
+    ui::NumberField* exc4_fields[] = {
+        &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
+        &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
+        &view_group2_.field_sw4_exc4_, &view_group2_.field_sw4_exc5_};
+
+    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+        exc1_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[0][i] / 1000000ULL));
+        exc2_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[1][i] / 1000000ULL));
+        exc3_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[2][i] / 1000000ULL));
+        exc4_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[3][i] / 1000000ULL));
+    }
+
     button_save_.on_select = [this](ui::Button&) {
         save_settings();
         nav_.pop();
@@ -215,6 +268,32 @@ void DroneSweepView::save_settings() noexcept {
     FreqHz sw4_end = static_cast<FreqHz>(view_group2_.field_sw4_end_.value()) * 1000000ULL;
     FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
 
+    // Read exception frequencies (MHz → Hz)
+    FreqHz exc[4][EXCEPTIONS_PER_WINDOW]{};
+    ui::NumberField* exc1_fields[] = {
+        &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
+        &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
+        &view_group1_.field_sw1_exc4_, &view_group1_.field_sw1_exc5_};
+    ui::NumberField* exc2_fields[] = {
+        &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
+        &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
+        &view_group1_.field_sw2_exc4_, &view_group1_.field_sw2_exc5_};
+    ui::NumberField* exc3_fields[] = {
+        &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
+        &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
+        &view_group2_.field_sw3_exc4_, &view_group2_.field_sw3_exc5_};
+    ui::NumberField* exc4_fields[] = {
+        &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
+        &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
+        &view_group2_.field_sw4_exc4_, &view_group2_.field_sw4_exc5_};
+
+    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+        exc[0][i] = static_cast<FreqHz>(exc1_fields[i]->value()) * 1000000ULL;
+        exc[1][i] = static_cast<FreqHz>(exc2_fields[i]->value()) * 1000000ULL;
+        exc[2][i] = static_cast<FreqHz>(exc3_fields[i]->value()) * 1000000ULL;
+        exc[3][i] = static_cast<FreqHz>(exc4_fields[i]->value()) * 1000000ULL;
+    }
+
     // Validate: start must be < end
     if (sw1_start >= sw1_end) sw1_end = sw1_start + 20000000;
     if (sw2_enabled && sw2_start >= sw2_end) sw2_end = sw2_start + 20000000;
@@ -239,6 +318,11 @@ void DroneSweepView::save_settings() noexcept {
         updated_config.sweep4_end_freq = sw4_end;
         updated_config.sweep4_step_freq = sw4_step;
         updated_config.sweep4_enabled = sw4_enabled;
+        for (uint8_t w = 0; w < 4; ++w) {
+            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+                updated_config.sweep_exceptions[w][i] = exc[w][i];
+            }
+        }
         (void)scanner_ptr_->set_config(updated_config);
     }
 
@@ -263,6 +347,11 @@ void DroneSweepView::save_settings() noexcept {
     current.sweep4_end_freq = sw4_end;
     current.sweep4_step_freq = sw4_step;
     current.sweep4_enabled = sw4_enabled;
+    for (uint8_t w = 0; w < 4; ++w) {
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+            current.sweep_exceptions[w][i] = exc[w][i];
+        }
+    }
 
     (void)SettingsFileManager::save(scanner_ptr_, current);
 }
@@ -288,6 +377,25 @@ void DroneSweepView::apply_defaults() noexcept {
     view_group2_.field_sw4_start_.set_value(static_cast<int32_t>(defaults.sweep4_start_freq / 1000000ULL));
     view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(defaults.sweep4_end_freq / 1000000ULL));
     view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(defaults.sweep4_step_freq / 1000ULL));
+
+    // Reset all exception fields to 0 (disabled)
+    ui::NumberField* all_exc[] = {
+        &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
+        &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
+        &view_group1_.field_sw1_exc4_, &view_group1_.field_sw1_exc5_,
+        &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
+        &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
+        &view_group1_.field_sw2_exc4_, &view_group1_.field_sw2_exc5_,
+        &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
+        &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
+        &view_group2_.field_sw3_exc4_, &view_group2_.field_sw3_exc5_,
+        &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
+        &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
+        &view_group2_.field_sw4_exc4_, &view_group2_.field_sw4_exc5_,
+    };
+    for (auto* f : all_exc) {
+        f->set_value(0);
+    }
 }
 
 } // namespace drone_analyzer

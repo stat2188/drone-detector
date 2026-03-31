@@ -71,6 +71,10 @@ struct ScanConfig {
     bool rssi_variance_enabled{false};                        // RSSI variance noise rejection
     uint8_t confirm_count{DEFAULT_CONFIRM_COUNT};             // Configurable confirm count
 
+    // Sweep exception frequencies (per window, 0 = unused slot)
+    // Signals within ±EXCEPTION_RADIUS_HZ of these frequencies are suppressed in sweep display
+    FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};     // 4 windows × 6 slots × 8 bytes = 192 bytes
+
     /**
      * @brief Default constructor
      */
