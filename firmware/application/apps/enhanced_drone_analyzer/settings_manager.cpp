@@ -314,7 +314,8 @@ ErrorCode SettingsFileManager::save(
     }
 
     File file;
-    ensure_directory(settings_dir);
+    // NOTE: ensure_directory() removed to save M0 stack (1KB limit)
+    // Directory should already exist from previous save or system init
     const auto create_error = file.create(settings_dir / u"eda_settings.txt");
     if (create_error) {
         return ErrorCode::INITIALIZATION_FAILED;
