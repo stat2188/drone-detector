@@ -744,21 +744,26 @@ void DroneDisplay::render_composite(
 
     for (uint16_t i = 0; i < bar_count; ++i) {
         const uint8_t power = composite_data[i];
-        if (power == 0) continue;
-        if (power < min_color_power_) continue;
-
-        const uint16_t bar_height = (static_cast<uint16_t>(power) * chart_height) / 255;
-        if (bar_height == 0) continue;
+        
+        // Always draw something - even zero values show as baseline
+        // This prevents gaps after reset() when composite[] is all zeros
+        const uint16_t bar_height = (static_cast<uint16_t>(power + 1) * chart_height) / 256;
+        // Minimum 1 pixel height to show bar exists
+        const uint16_t final_height = (bar_height > 0) ? bar_height : 1;
 
         const uint16_t x = chart_start_x + i * bar_width;
-        const uint16_t y = chart_start_y + chart_height - bar_height;
+        const uint16_t y = chart_start_y + chart_height - final_height;
 
-        uint32_t color = COLOR_LOW_THREAT;
-        if (power > 200) color = COLOR_CRITICAL_THREAT;
-        else if (power > 150) color = COLOR_HIGH_THREAT;
-        else if (power > 100) color = COLOR_MEDIUM_THREAT;
+        // Only color bars above threshold - zero values show as dark baseline
+        uint32_t color = COLOR_BACKGROUND;
+        if (power >= min_color_power_) {
+            if (power > 200) color = COLOR_CRITICAL_THREAT;
+            else if (power > 150) color = COLOR_HIGH_THREAT;
+            else if (power > 100) color = COLOR_MEDIUM_THREAT;
+            else color = COLOR_LOW_THREAT;
+        }
 
-        draw_rectangle(painter, x, y, bar_width, bar_height, color);
+        draw_rectangle(painter, x, y, bar_width, final_height, color);
     }
 }
 
