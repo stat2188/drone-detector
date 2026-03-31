@@ -119,8 +119,8 @@ private:
     };
 
     // Buttons (below tab content area)
-    ui::Button button_defaults_{{UI_POS_X(0), 295, UI_POS_WIDTH(13), 20}, "DEFAULTS"};
-    ui::Button button_save_{{UI_POS_X(15), 295, UI_POS_WIDTH(14), 20}, "SAVE"};
+    ui::Button button_defaults_{{UI_POS_X(0), 285, UI_POS_WIDTH(13), 20}, "DEFAULTS"};
+    ui::Button button_save_{{UI_POS_X(15), 285, UI_POS_WIDTH(14), 20}, "SAVE"};
 
     void save_settings() noexcept;
     void apply_defaults() noexcept;
