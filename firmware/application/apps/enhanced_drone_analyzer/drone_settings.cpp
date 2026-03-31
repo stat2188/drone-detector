@@ -2,6 +2,7 @@
 #include <cstring>
 
 #include "drone_settings.hpp"
+#include "constants.hpp"
 #include "scanner.hpp"
 #include "audio_alerts.hpp"
 #include "drone_display.hpp"
@@ -32,15 +33,15 @@ DroneSettings::DroneSettings() noexcept
     , noise_blacklist_enabled(true)
     , spectrum_detection_enabled(true)
     , median_enabled(true)
-    , spectrum_margin(55)
-    , spectrum_min_width(3)
-    , spectrum_max_width(20)
-    , spectrum_peak_sharpness(130)
-    , spectrum_peak_ratio(255)
-    , spectrum_valley_depth(80)
-    , neighbor_margin_db(3)
+    , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
+    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
+    , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
+    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
+    , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
+    , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
+    , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(false)
-    , confirm_count(5)
+    , confirm_count(DEFAULT_CONFIRM_COUNT)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000)  // Default 20 MHz (matches SWEEP_BANDWIDTH)
@@ -78,15 +79,15 @@ void DroneSettings::reset_to_defaults() noexcept {
     noise_blacklist_enabled = true;
     spectrum_detection_enabled = true;
     median_enabled = true;
-    spectrum_margin = 55;
-    spectrum_min_width = 3;
-    spectrum_max_width = 20;
-    spectrum_peak_sharpness = 130;
-    spectrum_peak_ratio = 255;
-    spectrum_valley_depth = 80;
-    neighbor_margin_db = 3;
+    spectrum_margin = DEFAULT_SPECTRUM_MARGIN;
+    spectrum_min_width = DEFAULT_SPECTRUM_MIN_WIDTH;
+    spectrum_max_width = DEFAULT_SPECTRUM_MAX_WIDTH;
+    spectrum_peak_sharpness = DEFAULT_SPECTRUM_PEAK_SHARPNESS;
+    spectrum_peak_ratio = DEFAULT_SPECTRUM_PEAK_RATIO;
+    spectrum_valley_depth = DEFAULT_SPECTRUM_VALLEY_DEPTH;
+    neighbor_margin_db = DEFAULT_NEIGHBOR_MARGIN_DB;
     rssi_variance_enabled = false;
-    confirm_count = 5;
+    confirm_count = DEFAULT_CONFIRM_COUNT;
         
     sweep_start_freq = SWEEP_DEFAULT_START_HZ;
     sweep_end_freq = SWEEP_DEFAULT_END_HZ;

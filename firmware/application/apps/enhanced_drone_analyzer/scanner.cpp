@@ -54,15 +54,15 @@ ScanConfig::ScanConfig() noexcept
     , noise_blacklist_enabled(true) // Skip persistent noise frequencies
     , spectrum_detection_enabled(true) // Use spectrum shape analysis
     , median_enabled(true)          // Median filter for RSSI spike rejection
-    , spectrum_margin(30)           // ~12 dB above noise (more sensitive)
-    , spectrum_min_width(2)         // Allow narrower signals
-    , spectrum_max_width(40)        // Accommodate wider drone video (~3 MHz)
-    , spectrum_peak_sharpness(100)  // Less strict V-shape
-    , spectrum_peak_ratio(30)       // ENABLED: tall+narrow filter
-    , spectrum_valley_depth(40)     // Less strict valley depth
-    , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)  // 3 dB default
+    , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
+    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
+    , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
+    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
+    , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
+    , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
+    , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(false)  // Off by default (experimental)
-    , confirm_count(DEFAULT_CONFIRM_COUNT)  // 5 confirmations
+    , confirm_count(DEFAULT_CONFIRM_COUNT)
 {
     // sweep2/3/4 fields use in-class defaults: disabled
 }
@@ -82,12 +82,12 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , noise_blacklist_enabled(true)
     , spectrum_detection_enabled(true)
     , median_enabled(true)
-    , spectrum_margin(55)
-    , spectrum_min_width(3)
-    , spectrum_max_width(20)
-    , spectrum_peak_sharpness(130)
-    , spectrum_peak_ratio(255)
-    , spectrum_valley_depth(80) {
+    , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
+    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
+    , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
+    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
+    , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
+    , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH) {
     // sweep2/3/4 fields use in-class defaults: disabled
 }
 

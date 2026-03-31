@@ -623,6 +623,19 @@ constexpr uint8_t DEFAULT_SPECTRUM_INTEGRATION = 3;
 // ============================================================================
 
 /**
+ * @brief Default peak margin above noise floor (5-200)
+ * @note 15 ≈ 5 dB above noise (sensitive)
+ * @note 55 ≈ 20 dB above noise (strict)
+ */
+constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 30;
+
+/**
+ * @brief Default minimum signal width in bins (1-20)
+ * @note Signals narrower than this are rejected as needle spikes
+ */
+constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 2;
+
+/**
  * @brief Default maximum signal width in bins (1-100)
  * @note Signals wider than this are rejected as flat-topped U/I noise
  * @note 100 = no max width filtering (accept all widths)
