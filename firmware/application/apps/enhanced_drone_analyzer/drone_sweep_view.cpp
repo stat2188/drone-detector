@@ -2,6 +2,7 @@
 #include <cstring>
 
 #include "drone_sweep_view.hpp"
+#include "drone_settings.hpp"
 #include "scanner.hpp"
 #include "constants.hpp"
 #include "ui_receiver.hpp"
@@ -242,28 +243,27 @@ void DroneSweepView::save_settings() noexcept {
 }
 
 void DroneSweepView::apply_defaults() noexcept {
-    // Window 1: 5700-5900 MHz
-    view_group1_.field_sw1_start_.set_value(5700);
-    view_group1_.field_sw1_end_.set_value(5900);
-    view_group1_.field_sw1_step_.set_value(20000);
+    DroneSettings defaults;
+    defaults.reset_to_defaults();
 
-    // Window 2: 2400-2500 MHz, disabled
-    view_group1_.check_sw2_enabled_.set_value(false);
-    view_group1_.field_sw2_start_.set_value(2400);
-    view_group1_.field_sw2_end_.set_value(2500);
-    view_group1_.field_sw2_step_.set_value(20000);
+    view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(defaults.sweep_start_freq / 1000000ULL));
+    view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(defaults.sweep_end_freq / 1000000ULL));
+    view_group1_.field_sw1_step_.set_value(static_cast<int32_t>(defaults.sweep_step_freq / 1000ULL));
 
-    // Window 3: 900-1000 MHz, disabled
-    view_group2_.check_sw3_enabled_.set_value(false);
-    view_group2_.field_sw3_start_.set_value(900);
-    view_group2_.field_sw3_end_.set_value(1000);
-    view_group2_.field_sw3_step_.set_value(20000);
+    view_group1_.check_sw2_enabled_.set_value(defaults.sweep2_enabled);
+    view_group1_.field_sw2_start_.set_value(static_cast<int32_t>(defaults.sweep2_start_freq / 1000000ULL));
+    view_group1_.field_sw2_end_.set_value(static_cast<int32_t>(defaults.sweep2_end_freq / 1000000ULL));
+    view_group1_.field_sw2_step_.set_value(static_cast<int32_t>(defaults.sweep2_step_freq / 1000ULL));
 
-    // Window 4: 1200-1300 MHz, disabled
-    view_group2_.check_sw4_enabled_.set_value(false);
-    view_group2_.field_sw4_start_.set_value(1200);
-    view_group2_.field_sw4_end_.set_value(1300);
-    view_group2_.field_sw4_step_.set_value(20000);
+    view_group2_.check_sw3_enabled_.set_value(defaults.sweep3_enabled);
+    view_group2_.field_sw3_start_.set_value(static_cast<int32_t>(defaults.sweep3_start_freq / 1000000ULL));
+    view_group2_.field_sw3_end_.set_value(static_cast<int32_t>(defaults.sweep3_end_freq / 1000000ULL));
+    view_group2_.field_sw3_step_.set_value(static_cast<int32_t>(defaults.sweep3_step_freq / 1000ULL));
+
+    view_group2_.check_sw4_enabled_.set_value(defaults.sweep4_enabled);
+    view_group2_.field_sw4_start_.set_value(static_cast<int32_t>(defaults.sweep4_start_freq / 1000000ULL));
+    view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(defaults.sweep4_end_freq / 1000000ULL));
+    view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(defaults.sweep4_step_freq / 1000ULL));
 }
 
 } // namespace drone_analyzer
