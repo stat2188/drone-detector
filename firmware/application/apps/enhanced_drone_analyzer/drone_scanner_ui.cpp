@@ -391,19 +391,19 @@ void DroneScannerUI::on_show() {
         sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq, cfg.sweep4_step_freq);
         sweep_[3].enabled = cfg.sweep4_enabled;
 
-        // Copy exception frequencies to each sweep window
-        for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
-            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-                sweep_[w].exceptions[i] = cfg.sweep_exceptions[w][i];
-            }
-        }
-
         // Find first enabled window
         active_sweep_idx_ = 0;
         for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
             if (sweep_[i].enabled) {
                 active_sweep_idx_ = i;
                 break;
+            }
+        }
+
+        // Copy exceptions only for active window (lazy copy before each pass)
+        if (active_sweep_idx_ < MAX_SWEEP_WINDOWS) {
+            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+                sweep_[active_sweep_idx_].exceptions[i] = cfg.sweep_exceptions[active_sweep_idx_][i];
             }
         }
 
@@ -704,13 +704,6 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq, cfg.sweep4_step_freq);
     sweep_[3].enabled = cfg.sweep4_enabled;
 
-    // Copy exception frequencies to each sweep window
-    for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            sweep_[w].exceptions[i] = cfg.sweep_exceptions[w][i];
-        }
-    }
-
     // Find first enabled window for round-robin
     active_sweep_idx_ = MAX_SWEEP_WINDOWS;  // invalid sentinel
     for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
@@ -895,6 +888,15 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     }
 
     active_sweep_idx_ = next;
+
+    // Copy exceptions for new active window (lazy copy before each pass)
+    if (scanner_ptr_ != nullptr) {
+        const ScanConfig cfg = scanner_ptr_->get_config();
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+            sweep_[next].exceptions[i] = cfg.sweep_exceptions[next][i];
+        }
+    }
+
     retune_sweep_window(sweep_[next], nullptr);
 }
 
