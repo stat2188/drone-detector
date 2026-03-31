@@ -734,10 +734,10 @@ constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5900000000;     // 5.9 GHz
 // ============================================================================
 
 /**
- * @brief Exclusion radius around exception frequencies (±2 MHz)
+ * @brief Exclusion radius around exception frequencies (±3 MHz)
  * @note Signals within this radius of an exception frequency are not treated as threats
  */
-constexpr FreqHz EXCEPTION_RADIUS_HZ = 1'000'000ULL;
+constexpr FreqHz EXCEPTION_RADIUS_HZ = 3'000'000ULL;
 
 /**
  * @brief Number of exception frequency slots per sweep window
