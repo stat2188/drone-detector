@@ -235,6 +235,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.sweep4_step_freq = current_cfg.sweep4_step_freq;
             updated_config.sweep4_enabled = current_cfg.sweep4_enabled;
 
+            // Preserve sweep exceptions from scanner (SWP view manages them)
+            for (uint8_t w = 0; w < 4; ++w) {
+                for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+                    updated_config.sweep_exceptions[w][i] = current_cfg.sweep_exceptions[w][i];
+                }
+            }
+
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
             if (err != ErrorCode::SUCCESS) {
                 return;
