@@ -244,7 +244,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
             if (err != ErrorCode::SUCCESS) {
-                return;
+                // Save to SD card even if scanner config update fails
+                // (scanner validation may fail on some fields, but settings should still be persisted)
             }
         }
 
