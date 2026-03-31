@@ -43,11 +43,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(11)}, 5, "Hist", false)
     , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
-    , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
+    , check_spectrum_detection_({UI_POS_X(25), UI_POS_Y(11)}, 4, "Mar", false)
+    , field_neighbor_margin_({UI_POS_X(1), UI_POS_Y(15)}, 2, {0, 15}, 1, ' ')
+    , check_neighbor_margin_({UI_POS_X(4), UI_POS_Y(15)}, 4, "NB", false)
+    , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(17)}, 8, "Blklist", false)
     , check_rssi_variance_({UI_POS_X(20), UI_POS_Y(7)}, 5, "RVar", false)
-    , check_neighbor_margin_({UI_POS_X(1), UI_POS_Y(17)}, 4, "NB", false)
-    , field_neighbor_margin_({UI_POS_X(6), UI_POS_Y(17)}, 2, {0, 15}, 1, ' ')
-    , check_spectrum_detection_({UI_POS_X(10), UI_POS_Y(13)}, 4, "Mar", false)
     , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
     , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 2, {1, 20}, 1, ' ')
     , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {1, 100}, 1, ' ')
@@ -81,10 +81,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_histogram_visible_,
         &check_dwell_enabled_,
         &check_confirm_count_,
-        &check_noise_blacklist_,
         &check_spectrum_detection_,
-        &check_neighbor_margin_,
         &field_neighbor_margin_,
+        &check_neighbor_margin_,
+        &check_noise_blacklist_,
         &check_rssi_variance_,
         &field_spectrum_margin_,
         &field_spectrum_min_width_,
