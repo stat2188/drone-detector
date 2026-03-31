@@ -265,6 +265,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
+        // Refresh config from scanner (SWP view may have changed sweep settings)
         ScanConfig config = scanner_ptr_->get_config();
         nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
@@ -823,7 +824,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     }
 
     // Current window sweep pass complete
-    // Check if its pair is fully complete (both windows in the pair done)
+    // Check if its pair is fully complete (both enabled windows in the pair done)
     const uint8_t w0 = current_pair_;
     const uint8_t w1 = w0 + 1;
     const bool w0_done = !sweep_[w0].enabled || sweep_[w0].pixel_index >= COMPOSITE_SIZE;
@@ -853,21 +854,31 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         current_pair_ = next_pair;
     }
 
-    // Round-robin to next enabled window within active pair range
-    const uint8_t pair_start = current_pair_;
-    const uint8_t pair_end = pair_start + 2;
+    // Round-robin to next enabled window (GLOBAL cycling through all 4 windows)
+    // This is critical: cycling must go through ALL windows, not just the current pair.
+    // Otherwise, with 1-2 enabled windows, the round-robin wraps within the pair
+    // and triggers premature pair_complete + auto-exit.
     uint8_t next = active_sweep_idx_;
     do {
-        next++;
-        if (next >= pair_end) next = pair_start;
+        next = (next + 1) % MAX_SWEEP_WINDOWS;
     } while (!sweep_[next].enabled && next != active_sweep_idx_);
+
+    // Wrap detection: if we cycled back to the first window of the pair
+    // that just completed, a full round-robin pass is done
+    if (pair_complete && next == w0) {
+        if (sweep_auto_mode_) {
+            exit_sweep_mode();
+            return;
+        }
+        // Manual mode: continue sweeping (pair already advanced above)
+    }
 
     active_sweep_idx_ = next;
     retune_sweep_window(sweep_[next], nullptr);
 }
 
 void DroneScannerUI::update_sweep_pair_display() noexcept {
-    const uint8_t w0 = pair_first(active_sweep_idx_);
+    const uint8_t w0 = current_pair_;
     const uint8_t w1 = w0 + 1;
 
     if (w0 >= MAX_SWEEP_WINDOWS) return;

@@ -239,11 +239,33 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             }
         }
 
-        // Save settings to SD card file
+        // Save settings to SD card file (read-modify-write to preserve sweep keys)
         File file;
         ensure_directory(settings_dir);
-        const auto open_result = file.create(settings_dir / u"eda_settings.txt");
+
+        // Read existing file content into static buffer
+        static char file_buf[2048];
+        size_t file_len = 0;
+        const auto open_result = file.open(settings_dir / u"eda_settings.txt", true, false);
         if (!open_result) {
+            // File exists, read it
+            constexpr size_t CHUNK = 256;
+            uint8_t chunk[CHUNK];
+            while (true) {
+                const auto read_result = file.read(chunk, CHUNK);
+                if (!read_result.is_ok() || read_result.value() == 0) break;
+                const size_t bytes = read_result.value();
+                for (size_t i = 0; i < bytes && file_len < sizeof(file_buf) - 1; ++i) {
+                    file_buf[file_len++] = static_cast<char>(chunk[i]);
+                }
+            }
+        }
+        file.close();
+        file_buf[file_len] = '\0';
+
+        // Create/overwrite file for writing
+        const auto create_result = file.create(settings_dir / u"eda_settings.txt");
+        if (!create_result) {
             char buffer[1024];
             size_t offset = 0;
 
@@ -296,6 +318,45 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                 "freqman_path=DRONES\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "settings_version=1.0\n");
+
+            // Preserve sweep keys from existing file
+            static const char* sweep_keys[] = {
+                "sweep_start_mhz=", "sweep_end_mhz=", "sweep_step_khz=",
+                "sweep2_start_mhz=", "sweep2_end_mhz=", "sweep2_step_khz=",
+                "sweep2_enabled=",
+                "sweep3_start_mhz=", "sweep3_end_mhz=", "sweep3_step_khz=",
+                "sweep3_enabled=",
+                "sweep4_start_mhz=", "sweep4_end_mhz=", "sweep4_step_khz=",
+                "sweep4_enabled=",
+            };
+            if (file_len > 0) {
+                size_t line_start = 0;
+                for (size_t i = 0; i <= file_len; ++i) {
+                    if (i == file_len || file_buf[i] == '\n' || file_buf[i] == '\r') {
+                        if (i > line_start) {
+                            const size_t line_len = i - line_start;
+                            bool is_sweep = false;
+                            for (const auto& key : sweep_keys) {
+                                const size_t klen = __builtin_strlen(key);
+                                if (line_len >= klen &&
+                                    __builtin_memcmp(file_buf + line_start, key, klen) == 0) {
+                                    is_sweep = true;
+                                    break;
+                                }
+                            }
+                            if (is_sweep && offset + line_len + 1 < sizeof(buffer)) {
+                                __builtin_memcpy(buffer + offset, file_buf + line_start, line_len);
+                                offset += line_len;
+                                buffer[offset++] = '\n';
+                            }
+                        }
+                        if (i < file_len && file_buf[i] == '\r' && (i + 1) < file_len && file_buf[i + 1] == '\n') {
+                            i++;
+                        }
+                        line_start = i + 1;
+                    }
+                }
+            }
 
             const auto write_result = file.write(buffer, offset);
             if (write_result.is_ok()) {

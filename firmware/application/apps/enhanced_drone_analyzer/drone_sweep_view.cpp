@@ -134,6 +134,10 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , original_config_(config) {
+    // Hide non-active tab view BEFORE adding as children
+    // (TabView::set_selected is not called until on_show)
+    view_group2_.hidden(true);
+
     add_children({
         &tab_view_,
         &view_group1_,
@@ -141,6 +145,9 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
         &button_defaults_,
         &button_save_,
     });
+
+    // Initialize tab selection (ensures correct view is visible)
+    tab_view_.set_selected(0);
 
     // Populate Tab 1 (Windows 1-2) from config
     view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / 1000000ULL));
