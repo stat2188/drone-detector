@@ -698,7 +698,7 @@ constexpr int32_t NEIGHBOR_MARGIN_MAX_DB = 15;
  * @brief Default number of confirmations before creating a drone
  * @note Higher = fewer false positives but slower detection
  */
-constexpr uint8_t DEFAULT_CONFIRM_COUNT = 5;
+constexpr uint8_t DEFAULT_CONFIRM_COUNT = 2;
 
 /**
  * @brief Minimum confirm count

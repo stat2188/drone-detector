@@ -402,42 +402,35 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     // Reset per-frequency decay tracker (each frequency is a fresh detection opportunity)
     last_decay_freq_ = 0;
     
-    // Check if we should hold on current frequency waiting for confirm_count
-    // This happens when signal was detected but not yet confirmed
-    const bool hold_for_confirm = (pending_count_ > 0 && pending_count_ < config_.confirm_count);
+    // Try to get next frequency from database
+    ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
     
-    // Try to get next frequency from database (only if not holding for confirmation)
-    ErrorResult<FreqHz> freq_result;
-    if (!hold_for_confirm) {
-        freq_result = database_.get_next_frequency(current_frequency_);
-    
-        if (freq_result.has_value()) {
-            // Got valid frequency from database
-            current_frequency_ = freq_result.value();
+    if (freq_result.has_value()) {
+        // Got valid frequency from database
+        current_frequency_ = freq_result.value();
 
-            // Skip blacklisted frequencies (persistent noise, force-resumed 3+ times)
-            if (config_.noise_blacklist_enabled) {
-                for (size_t skip = 0; skip < MAX_NOISE_ENTRIES && is_blacklisted(current_frequency_); ++skip) {
-                    freq_result = database_.get_next_frequency(current_frequency_);
-                    if (freq_result.has_value()) {
-                        current_frequency_ = freq_result.value();
-                    } else {
-                        break;
-                    }
+        // Skip blacklisted frequencies (persistent noise, force-resumed 3+ times)
+        if (config_.noise_blacklist_enabled) {
+            for (size_t skip = 0; skip < MAX_NOISE_ENTRIES && is_blacklisted(current_frequency_); ++skip) {
+                freq_result = database_.get_next_frequency(current_frequency_);
+                if (freq_result.has_value()) {
+                    current_frequency_ = freq_result.value();
+                } else {
+                    break;
                 }
             }
+        }
+    } else {
+        // Database empty or not loaded — sweep through frequency range
+        // Use frequency step to scan the full range
+        if (current_frequency_ < MIN_FREQUENCY_HZ || current_frequency_ >= MAX_FREQUENCY_HZ) {
+            // Wrap around to start of range
+            current_frequency_ = MIN_FREQUENCY_HZ;
         } else {
-            // Database empty or not loaded — sweep through frequency range
-            // Use frequency step to scan the full range
-            if (current_frequency_ < MIN_FREQUENCY_HZ || current_frequency_ >= MAX_FREQUENCY_HZ) {
-                // Wrap around to start of range
-                current_frequency_ = MIN_FREQUENCY_HZ;
-            } else {
-                // Advance by step size
-                current_frequency_ += FREQUENCY_STEP_HZ;
-                if (current_frequency_ > MAX_FREQUENCY_HZ) {
-                    current_frequency_ = MIN_FREQUENCY_HZ;  // Wrap around
-                }
+            // Advance by step size
+            current_frequency_ += FREQUENCY_STEP_HZ;
+            if (current_frequency_ > MAX_FREQUENCY_HZ) {
+                current_frequency_ = MIN_FREQUENCY_HZ;  // Wrap around
             }
         }
     }
