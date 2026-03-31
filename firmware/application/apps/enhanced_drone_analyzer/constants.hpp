@@ -654,7 +654,60 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 255;
  * @note Flat U/I: shallow valleys (flanking bins still elevated)
  * @note 0 = no valley depth filtering (disabled)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 40;
+
+// ============================================================================
+// Neighbor Margin Check Constants
+// ============================================================================
+
+/**
+ * @brief Default neighbor margin in dB (center must be stronger than neighbors)
+ * @note 0 = disabled, 3 = default (like FPV detect), 5 = strict
+ * @note Eliminates wideband noise false positives (WiFi, BT, microwave)
+ */
+constexpr int32_t DEFAULT_NEIGHBOR_MARGIN_DB = 3;
+
+/**
+ * @brief Minimum neighbor margin (disabled)
+ */
+constexpr int32_t NEIGHBOR_MARGIN_MIN_DB = 0;
+
+/**
+ * @brief Maximum neighbor margin (very strict)
+ */
+constexpr int32_t NEIGHBOR_MARGIN_MAX_DB = 15;
+
+// ============================================================================
+// Confirm Count Constants
+// ============================================================================
+
+/**
+ * @brief Default number of confirmations before creating a drone
+ * @note Higher = fewer false positives but slower detection
+ */
+constexpr uint8_t DEFAULT_CONFIRM_COUNT = 5;
+
+/**
+ * @brief Minimum confirm count
+ */
+constexpr uint8_t CONFIRM_COUNT_MIN = 1;
+
+/**
+ * @brief Maximum confirm count
+ */
+constexpr uint8_t CONFIRM_COUNT_MAX = 20;
+
+// ============================================================================
+// RSSI Variance Noise Rejection Constants
+// ============================================================================
+
+/**
+ * @brief RSSI variance threshold for noise rejection
+ * @note Real drones: variance < 25 (stable signal)
+ * @note Noise: variance > 100 (chaotic fluctuations)
+ * @note 0 = disabled
+ */
+constexpr int32_t DEFAULT_RSSI_VARIANCE_THRESHOLD = 100;
 
 // ============================================================================
 // Band Sweep Constants

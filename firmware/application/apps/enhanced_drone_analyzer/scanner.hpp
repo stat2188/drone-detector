@@ -66,6 +66,11 @@ struct ScanConfig {
     uint8_t spectrum_peak_ratio{DEFAULT_SPECTRUM_PEAK_RATIO};          // Peak-to-width ratio (inverted-V filter)
     uint8_t spectrum_valley_depth{DEFAULT_SPECTRUM_VALLEY_DEPTH};      // Valley depth threshold (V-shape flanks)
 
+    // New anti-false-positive features
+    int32_t neighbor_margin_db{DEFAULT_NEIGHBOR_MARGIN_DB};  // 0=disabled, 3=default
+    bool rssi_variance_enabled{false};                        // RSSI variance noise rejection
+    uint8_t confirm_count{DEFAULT_CONFIRM_COUNT};             // Configurable confirm count
+
     /**
      * @brief Default constructor
      */
@@ -167,6 +172,61 @@ struct SweepZoneRuntime {
     [[nodiscard]] bool is_complete() const noexcept {
         return pixel_index >= SWEEP_PIXELS_PER_SLICE;
     }
+};
+
+/**
+ * @brief Neighbor frequency margin checker (anti-false-positive)
+ * @note Stores last N frequency/RSSI pairs in circular buffer
+ * @note When signal detected, checks if current freq is stronger than neighbors
+ * @note Eliminates wideband noise false positives (WiFi, BT, microwave)
+ * @note Inspired by FPV detect app's MIN_NEIGHBOR_MARGIN_FOR_LOCK_DB
+ */
+class NeighborMarginChecker {
+public:
+    static constexpr size_t WINDOW = 5;
+
+    /**
+     * @brief Add frequency/RSSI sample
+     * @param freq Tuned frequency
+     * @param rssi RSSI in dBm
+     */
+    void add(FreqHz freq, int32_t rssi) noexcept {
+        history_[head_] = {freq, rssi};
+        head_ = (head_ + 1) % WINDOW;
+        if (count_ < WINDOW) count_++;
+    }
+
+    /**
+     * @brief Check if current frequency is stronger than neighbors
+     * @param current_freq Current tuned frequency
+     * @param current_rssi Current RSSI in dBm
+     * @param min_margin_db Minimum dB margin over strongest neighbor
+     * @return true if current freq dominates neighbors, false if wideband noise
+     */
+    [[nodiscard]] bool check_margin(FreqHz current_freq, int32_t current_rssi, int32_t min_margin_db) const noexcept {
+        if (count_ < 2) return true;  // Not enough data — pass through
+        int32_t best_neighbor_rssi = -120;
+        for (uint8_t i = 0; i < count_; ++i) {
+            if (history_[i].freq != current_freq && history_[i].rssi > best_neighbor_rssi) {
+                best_neighbor_rssi = history_[i].rssi;
+            }
+        }
+        return (current_rssi - best_neighbor_rssi) >= min_margin_db;
+    }
+
+    /**
+     * @brief Reset checker state
+     */
+    void reset() noexcept {
+        head_ = 0;
+        count_ = 0;
+    }
+
+private:
+    struct Entry { FreqHz freq; int32_t rssi; };
+    Entry history_[WINDOW]{};
+    uint8_t head_{0};
+    uint8_t count_{0};
 };
 
 /**
@@ -481,6 +541,12 @@ public:
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     void set_median_filter_enabled(bool enabled) noexcept;
+
+    /**
+     * @brief Reset neighbor margin checker state
+     * @note Called on frequency change to prevent stale neighbor data
+     */
+    void reset_neighbor_checker() noexcept;
 
     /**
      * @brief Get filtered RSSI through median filter
@@ -882,6 +948,9 @@ private:
     // Median filter for RSSI spike rejection (window=7 samples)
     MedianFilter<int32_t, 7> rssi_median_filter_;
     bool median_filter_enabled_{false};
+
+    // Neighbor margin checker for anti-false-positive detection
+    NeighborMarginChecker neighbor_margin_checker_;
 };
 
 } // namespace drone_analyzer

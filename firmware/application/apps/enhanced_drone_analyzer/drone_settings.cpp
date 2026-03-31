@@ -38,6 +38,9 @@ DroneSettings::DroneSettings() noexcept
     , spectrum_peak_sharpness(130)
     , spectrum_peak_ratio(255)
     , spectrum_valley_depth(80)
+    , neighbor_margin_db(3)
+    , rssi_variance_enabled(false)
+    , confirm_count(5)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000)  // Default 20 MHz (matches SWEEP_BANDWIDTH)
@@ -81,6 +84,9 @@ void DroneSettings::reset_to_defaults() noexcept {
     spectrum_peak_sharpness = 130;
     spectrum_peak_ratio = 255;
     spectrum_valley_depth = 80;
+    neighbor_margin_db = 3;
+    rssi_variance_enabled = false;
+    confirm_count = 5;
         
     sweep_start_freq = SWEEP_DEFAULT_START_HZ;
     sweep_end_freq = SWEEP_DEFAULT_END_HZ;
@@ -130,8 +136,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(11)}, 5, "Hist", false)
     , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
+    , field_confirm_count_({UI_POS_X(9), UI_POS_Y(13)}, 2, {1, 20}, 1, ' ')
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
     , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(13)}, 4, "Mar", false)
+    , check_neighbor_margin_({UI_POS_X(1), UI_POS_Y(10)}, 8, "NbMgn", false)
+    , field_neighbor_margin_({UI_POS_X(9), UI_POS_Y(10)}, 2, {0, 15}, 1, ' ')
+    , check_rssi_variance_({UI_POS_X(20), UI_POS_Y(10)}, 5, "RVar", false)
     , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
     , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 2, {1, 20}, 1, ' ')
     , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {1, 100}, 1, ' ')
@@ -175,8 +185,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_histogram_visible_,
         &check_dwell_enabled_,
         &check_confirm_count_,
+        &field_confirm_count_,
         &check_noise_blacklist_,
         &check_spectrum_detection_,
+        &check_neighbor_margin_,
+        &field_neighbor_margin_,
+        &check_rssi_variance_,
         &field_spectrum_margin_,
         &field_spectrum_min_width_,
         &field_spectrum_max_width_,
@@ -213,6 +227,27 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     field_spectrum_peak_sharpness_.set_value(static_cast<int32_t>(settings_.spectrum_peak_sharpness));
     field_spectrum_peak_ratio_.set_value(static_cast<int32_t>(settings_.spectrum_peak_ratio));
     field_spectrum_valley_depth_.set_value(static_cast<int32_t>(settings_.spectrum_valley_depth));
+    check_neighbor_margin_.set_value(settings_.neighbor_margin_db > 0);
+    field_neighbor_margin_.set_value(static_cast<int32_t>(settings_.neighbor_margin_db));
+    check_rssi_variance_.set_value(settings_.rssi_variance_enabled);
+    field_confirm_count_.set_value(static_cast<int32_t>(settings_.confirm_count));
+
+    check_neighbor_margin_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.neighbor_margin_db = v ? DEFAULT_NEIGHBOR_MARGIN_DB : 0;
+        settings_dirty_ = true;
+    };
+    field_neighbor_margin_.on_change = [this](int32_t v) {
+        settings_.neighbor_margin_db = v;
+        settings_dirty_ = true;
+    };
+    check_rssi_variance_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.rssi_variance_enabled = v;
+        settings_dirty_ = true;
+    };
+    field_confirm_count_.on_change = [this](int32_t v) {
+        settings_.confirm_count = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
 
     button_save_.on_select = [this](ui::Button&) {
         if (scanner_ptr_ != nullptr) {
@@ -232,6 +267,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             updated_config.spectrum_peak_ratio = settings_.spectrum_peak_ratio;
             updated_config.spectrum_valley_depth = settings_.spectrum_valley_depth;
             updated_config.median_enabled = settings_.median_enabled;
+            updated_config.neighbor_margin_db = settings_.neighbor_margin_db;
+            updated_config.rssi_variance_enabled = settings_.rssi_variance_enabled;
+            updated_config.confirm_count = settings_.confirm_count;
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
             if (err != ErrorCode::SUCCESS) {
@@ -239,53 +277,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             }
         }
 
-        // Save settings to SD card file (preserve sweep keys from existing file)
-        // Step 1: Read existing file and extract sweep keys BEFORE overwrite
-        char sweep_buf[384];
-        size_t sweep_len = 0;
-        {
-            File reader;
-            if (reader.open(settings_dir / u"eda_settings.txt")) {
-                char line[64];
-                while (sweep_len + 64 < sizeof(sweep_buf)) {
-                    char ch = 0;
-                    size_t line_len = 0;
-                    bool eof = true;
-                    while (reader.read(&ch, 1).is_ok() && ch != 0) {
-                        eof = false;
-                        if (ch == '\n' || ch == '\r') break;
-                        if (line_len < sizeof(line) - 1) {
-                            line[line_len++] = ch;
-                        }
-                    }
-                    if (eof && line_len == 0) break;
-                    line[line_len] = '\0';
-                    if (line_len > 0 && line[0] == 's' && (
-                        __builtin_memcmp(line, "sweep_start_mhz=", 16) == 0 ||
-                        __builtin_memcmp(line, "sweep_end_mhz=", 14) == 0 ||
-                        __builtin_memcmp(line, "sweep_step_khz=", 15) == 0 ||
-                        __builtin_memcmp(line, "sweep2_start_mhz=", 17) == 0 ||
-                        __builtin_memcmp(line, "sweep2_end_mhz=", 15) == 0 ||
-                        __builtin_memcmp(line, "sweep2_step_khz=", 16) == 0 ||
-                        __builtin_memcmp(line, "sweep2_enabled=", 15) == 0 ||
-                        __builtin_memcmp(line, "sweep3_start_mhz=", 17) == 0 ||
-                        __builtin_memcmp(line, "sweep3_end_mhz=", 15) == 0 ||
-                        __builtin_memcmp(line, "sweep3_step_khz=", 16) == 0 ||
-                        __builtin_memcmp(line, "sweep3_enabled=", 15) == 0 ||
-                        __builtin_memcmp(line, "sweep4_start_mhz=", 17) == 0 ||
-                        __builtin_memcmp(line, "sweep4_end_mhz=", 15) == 0 ||
-                        __builtin_memcmp(line, "sweep4_step_khz=", 16) == 0 ||
-                        __builtin_memcmp(line, "sweep4_enabled=", 15) == 0
-                    )) {
-                        sweep_len += snprintf(sweep_buf + sweep_len,
-                            sizeof(sweep_buf) - sweep_len, "%s\n", line);
-                    }
-                }
-                reader.close();
-            }
-        }
-
-        // Step 2: Create/overwrite file and write settings + preserved sweep keys
+        // Save settings to SD card file (defaults only, no sweep key preservation)
         File file;
         ensure_directory(settings_dir);
         const auto open_result = file.create(settings_dir / u"eda_settings.txt");
@@ -337,15 +329,15 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "median_enabled=%s\n", settings_.median_enabled ? "true" : "false");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "neighbor_margin_db=%d\n", (int)settings_.neighbor_margin_db);
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "rssi_variance_enabled=%s\n", settings_.rssi_variance_enabled ? "true" : "false");
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                "confirm_count=%u\n", (unsigned)settings_.confirm_count);
+            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "freqman_path=DRONES\n");
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "settings_version=1.0\n");
-
-            // Append preserved sweep keys
-            if (sweep_len > 0 && offset + sweep_len < sizeof(buffer)) {
-                __builtin_memcpy(buffer + offset, sweep_buf, sweep_len);
-                offset += sweep_len;
-            }
 
             const auto write_result = file.write(buffer, offset);
             if (write_result.is_ok()) {
@@ -659,6 +651,12 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
             settings_.noise_blacklist_enabled = parse_bool();
         } else if (key_matches("median_enabled")) {
             settings_.median_enabled = parse_bool();
+        } else if (key_matches("neighbor_margin_db")) {
+            settings_.neighbor_margin_db = parse_int();
+        } else if (key_matches("rssi_variance_enabled")) {
+            settings_.rssi_variance_enabled = parse_bool();
+        } else if (key_matches("confirm_count")) {
+            settings_.confirm_count = static_cast<uint8_t>(parse_int());
         }
     };
 
@@ -708,6 +706,9 @@ ErrorCode DroneSettingsView::load_settings() noexcept {
         updated_config.spectrum_peak_ratio = settings_.spectrum_peak_ratio;
         updated_config.spectrum_valley_depth = settings_.spectrum_valley_depth;
         updated_config.median_enabled = settings_.median_enabled;
+        updated_config.neighbor_margin_db = settings_.neighbor_margin_db;
+        updated_config.rssi_variance_enabled = settings_.rssi_variance_enabled;
+        updated_config.confirm_count = settings_.confirm_count;
 
         const ErrorCode err = scanner_ptr_->set_config(updated_config);
         if (err != ErrorCode::SUCCESS) {
@@ -771,6 +772,10 @@ void DroneSettingsView::apply_settings() noexcept {
     field_spectrum_peak_sharpness_.set_value(static_cast<int32_t>(settings_.spectrum_peak_sharpness));
     field_spectrum_peak_ratio_.set_value(static_cast<int32_t>(settings_.spectrum_peak_ratio));
     field_spectrum_valley_depth_.set_value(static_cast<int32_t>(settings_.spectrum_valley_depth));
+    check_neighbor_margin_.set_value(settings_.neighbor_margin_db > 0);
+    field_neighbor_margin_.set_value(static_cast<int32_t>(settings_.neighbor_margin_db));
+    check_rssi_variance_.set_value(settings_.rssi_variance_enabled);
+    field_confirm_count_.set_value(static_cast<int32_t>(settings_.confirm_count));
 }
 
 // ============================================================================
@@ -893,6 +898,12 @@ void load_startup_settings(ScanConfig& config) noexcept {
             config.noise_blacklist_enabled = parse_bool();
         } else if (key_matches("median_enabled")) {
             config.median_enabled = parse_bool();
+        } else if (key_matches("neighbor_margin_db")) {
+            config.neighbor_margin_db = parse_int();
+        } else if (key_matches("rssi_variance_enabled")) {
+            config.rssi_variance_enabled = parse_bool();
+        } else if (key_matches("confirm_count")) {
+            config.confirm_count = static_cast<uint8_t>(parse_int());
         }
     };
 

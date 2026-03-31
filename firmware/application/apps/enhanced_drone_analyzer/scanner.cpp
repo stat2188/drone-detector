@@ -50,16 +50,19 @@ ScanConfig::ScanConfig() noexcept
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000)
     , dwell_enabled(true)           // Stay on freq when signal detected
-    , confirm_count_enabled(true)   // Require 2 confirmations to reduce noise
+    , confirm_count_enabled(true)   // Require confirmations to reduce noise
     , noise_blacklist_enabled(true) // Skip persistent noise frequencies
     , spectrum_detection_enabled(true) // Use spectrum shape analysis
     , median_enabled(true)          // Median filter for RSSI spike rejection
-    , spectrum_margin(55)           // Empirically tuned for real drone detection
-    , spectrum_min_width(3)         // Reject single-bin noise spikes
-    , spectrum_max_width(20)        // Reject flat U/I noise shapes
-    , spectrum_peak_sharpness(130)  // Enforce V-shape for drone video links
-    , spectrum_peak_ratio(255)      // Tall+narrow = inverted-V filter
-    , spectrum_valley_depth(80)     // Deep valleys flanking peak = V-shape
+    , spectrum_margin(30)           // ~12 dB above noise (more sensitive)
+    , spectrum_min_width(2)         // Allow narrower signals
+    , spectrum_max_width(40)        // Accommodate wider drone video (~3 MHz)
+    , spectrum_peak_sharpness(100)  // Less strict V-shape
+    , spectrum_peak_ratio(30)       // ENABLED: tall+narrow filter
+    , spectrum_valley_depth(40)     // Less strict valley depth
+    , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)  // 3 dB default
+    , rssi_variance_enabled(false)  // Off by default (experimental)
+    , confirm_count(DEFAULT_CONFIRM_COUNT)  // 5 confirmations
 {
     // sweep2/3/4 fields use in-class defaults: disabled
 }
@@ -441,6 +444,9 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     // Reset median filter — old samples from previous frequency are stale
     rssi_median_filter_.reset();
 
+    // Reset neighbor checker on frequency change to prevent stale neighbor data
+    neighbor_margin_checker_.reset();
+
     statistics_.successful_cycles++;
     return ErrorCode::SUCCESS;
 }
@@ -564,6 +570,16 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     }
 
     if (signal_detected) {
+        // Neighbor margin check (if enabled): center freq must dominate neighbors
+        // This eliminates wideband noise false positives (WiFi, BT, microwave)
+        if (config_.neighbor_margin_db > 0) {
+            neighbor_margin_checker_.add(frequency, effective_rssi);
+            if (!neighbor_margin_checker_.check_margin(frequency, effective_rssi, config_.neighbor_margin_db)) {
+                // Current frequency not stronger than neighbors — wideband noise
+                return ErrorCode::SUCCESS;
+            }
+        }
+
         // Feed RSSI detector only with above-threshold samples
         // to prevent noise from polluting trend analysis
         (void)rssi_detector_.process_rssi_sample(effective_rssi, now);
@@ -571,17 +587,17 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         bool should_update = true;
 
         if (config_.confirm_count_enabled) {
-            // Confirm count: require DETECT_CONFIRM_COUNT detections on same frequency
+            // Confirm count: require configurable N detections on same frequency
             // before creating a drone. Prevents noise spikes from adding phantom drones.
             if (frequency != pending_frequency_) {
                 pending_frequency_ = frequency;
                 pending_count_ = 1;
-            } else if (pending_count_ < DETECT_CONFIRM_COUNT) {
+            } else if (pending_count_ < config_.confirm_count) {
                 pending_count_++;
             }
 
             ErrorResult<size_t> existing = find_drone_by_frequency_internal(frequency);
-            if (!existing.has_value() && pending_count_ < DETECT_CONFIRM_COUNT) {
+            if (!existing.has_value() && pending_count_ < config_.confirm_count) {
                 should_update = false;  // waiting for more confirmations
             }
         }
@@ -661,6 +677,16 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         // Existing drone — update and alert on threat increase
         size_t index = index_result.value();
         
+        // RSSI variance rejection: noise has chaotic fluctuations
+        // Real drones have stable signal (variance < 25), noise > 100
+        if (config_.rssi_variance_enabled) {
+            const uint32_t variance = tracked_drones_[index].calculate_rssi_variance();
+            if (variance > static_cast<uint32_t>(DEFAULT_RSSI_VARIANCE_THRESHOLD)) {
+                // RSSI too chaotic — likely noise, don't upgrade threat
+                return ErrorCode::SUCCESS;
+            }
+        }
+
         ThreatLevel old_threat = tracked_drones_[index].get_threat();
         tracked_drones_[index].update_rssi(rssi, timestamp);
         ThreatLevel new_threat = tracked_drones_[index].get_threat();
@@ -947,6 +973,11 @@ void DroneScanner::set_median_filter_enabled(bool enabled) noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     median_filter_enabled_ = enabled;
     rssi_median_filter_.reset();
+}
+
+void DroneScanner::reset_neighbor_checker() noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    neighbor_margin_checker_.reset();
 }
 
 // ============================================================================

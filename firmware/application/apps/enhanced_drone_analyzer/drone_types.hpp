@@ -284,6 +284,29 @@ struct TrackedDrone {
      * @brief Get missed cycles count
      */
     [[nodiscard]] uint8_t get_missed_cycles() const noexcept { return missed_cycles_; }
+
+    /**
+     * @brief Calculate RSSI variance from history (integer arithmetic)
+     * @return Variance value (0 if insufficient samples)
+     * @note Real drones: variance < 25 (stable signal)
+     * @note Noise: variance > 100 (chaotic fluctuations)
+     * @note Uses int16_t history, promotes to int32_t for variance calc
+     */
+    [[nodiscard]] uint32_t calculate_rssi_variance() const noexcept {
+        if (history_index_ < 2) return 0;
+        const uint8_t n = (history_index_ < 6) ? history_index_ : 6;
+        int32_t sum = 0;
+        for (uint8_t i = 0; i < n; ++i) {
+            sum += static_cast<int32_t>(rssi_history_[i]);
+        }
+        const int32_t mean = sum / static_cast<int32_t>(n);
+        uint32_t variance = 0;
+        for (uint8_t i = 0; i < n; ++i) {
+            const int32_t diff = static_cast<int32_t>(rssi_history_[i]) - mean;
+            variance += static_cast<uint32_t>(diff * diff);
+        }
+        return variance / static_cast<uint32_t>(n);
+    }
 };
 
 /**

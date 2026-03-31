@@ -58,6 +58,11 @@ struct DroneSettings {
     uint8_t spectrum_peak_ratio;        // Peak-to-width ratio (inverted-V filter)
     uint8_t spectrum_valley_depth;      // Valley depth threshold (V-shape flanks)
 
+    // New anti-false-positive features
+    int32_t neighbor_margin_db;         // Neighbor margin in dB (0=disabled, 3=default)
+    bool rssi_variance_enabled;         // RSSI variance noise rejection
+    uint8_t confirm_count;              // Configurable confirm count (1-20)
+
     // Sweep frequency range (Hz) — window 1
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;
@@ -162,8 +167,14 @@ private:
     // Advanced detection features
     ui::Checkbox check_dwell_enabled_;
     ui::Checkbox check_confirm_count_;
+    ui::NumberField field_confirm_count_;
     ui::Checkbox check_noise_blacklist_;
     ui::Checkbox check_spectrum_detection_;
+
+    // New anti-false-positive features
+    ui::Checkbox check_neighbor_margin_;
+    ui::NumberField field_neighbor_margin_;
+    ui::Checkbox check_rssi_variance_;
 
     // Spectrum detection params
     ui::NumberField field_spectrum_margin_;
