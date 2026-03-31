@@ -212,31 +212,19 @@ static void parse_settings_line(
     } else if (key_matches("sweep4_enabled")) {
         s.sweep4_enabled = parse_bool();
 
-    // --- Sweep exceptions ---
+    // --- Sweep exceptions (3 slots per window, reduced from 6) ---
     } else if (key_matches("sw1_exc0_mhz")) { s.sweep_exceptions[0][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw1_exc1_mhz")) { s.sweep_exceptions[0][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw1_exc2_mhz")) { s.sweep_exceptions[0][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc3_mhz")) { s.sweep_exceptions[0][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc4_mhz")) { s.sweep_exceptions[0][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc5_mhz")) { s.sweep_exceptions[0][5] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw2_exc0_mhz")) { s.sweep_exceptions[1][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw2_exc1_mhz")) { s.sweep_exceptions[1][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw2_exc2_mhz")) { s.sweep_exceptions[1][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc3_mhz")) { s.sweep_exceptions[1][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc4_mhz")) { s.sweep_exceptions[1][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc5_mhz")) { s.sweep_exceptions[1][5] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw3_exc0_mhz")) { s.sweep_exceptions[2][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw3_exc1_mhz")) { s.sweep_exceptions[2][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw3_exc2_mhz")) { s.sweep_exceptions[2][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc3_mhz")) { s.sweep_exceptions[2][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc4_mhz")) { s.sweep_exceptions[2][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc5_mhz")) { s.sweep_exceptions[2][5] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw4_exc0_mhz")) { s.sweep_exceptions[3][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw4_exc1_mhz")) { s.sweep_exceptions[3][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     } else if (key_matches("sw4_exc2_mhz")) { s.sweep_exceptions[3][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc3_mhz")) { s.sweep_exceptions[3][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc4_mhz")) { s.sweep_exceptions[3][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc5_mhz")) { s.sweep_exceptions[3][5] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
     }
 }
 
@@ -422,12 +410,12 @@ ErrorCode SettingsFileManager::save(
     offset += snprintf(buffer + offset, sizeof(buffer) - offset,
         "sweep4_enabled=%s\n", sweep_cfg.sweep4_enabled ? "true" : "false");
 
-    // Sweep exceptions (4 windows × 6 slots) — skip zero values to save SD space
-    static const char* exc_keys[4][6] = {
-        {"sw1_exc0_mhz", "sw1_exc1_mhz", "sw1_exc2_mhz", "sw1_exc3_mhz", "sw1_exc4_mhz", "sw1_exc5_mhz"},
-        {"sw2_exc0_mhz", "sw2_exc1_mhz", "sw2_exc2_mhz", "sw2_exc3_mhz", "sw2_exc4_mhz", "sw2_exc5_mhz"},
-        {"sw3_exc0_mhz", "sw3_exc1_mhz", "sw3_exc2_mhz", "sw3_exc3_mhz", "sw3_exc4_mhz", "sw3_exc5_mhz"},
-        {"sw4_exc0_mhz", "sw4_exc1_mhz", "sw4_exc2_mhz", "sw4_exc3_mhz", "sw4_exc4_mhz", "sw4_exc5_mhz"},
+    // Sweep exceptions (4 windows × 3 slots) — skip zero values to save SD space
+    static const char* exc_keys[4][EXCEPTIONS_PER_WINDOW] = {
+        {"sw1_exc0_mhz", "sw1_exc1_mhz", "sw1_exc2_mhz"},
+        {"sw2_exc0_mhz", "sw2_exc1_mhz", "sw2_exc2_mhz"},
+        {"sw3_exc0_mhz", "sw3_exc1_mhz", "sw3_exc2_mhz"},
+        {"sw4_exc0_mhz", "sw4_exc1_mhz", "sw4_exc2_mhz"},
     };
     for (uint8_t w = 0; w < 4; ++w) {
         for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
