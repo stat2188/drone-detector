@@ -6,6 +6,7 @@
 #include "drone_types.hpp"
 #include "constants.hpp"
 #include "scanner.hpp"
+#include "settings_manager.hpp"
 
 #include "ui_painter.hpp"
 #include "ui_widget.hpp"
@@ -15,92 +16,9 @@
 namespace drone_analyzer {
 
 /**
- * @brief Load ScanConfig fields from settings file at startup
- * @param config ScanConfig to update with saved settings
- * @note Reads SETTINGS/eda_settings.txt if it exists
- * @note Missing file is not an error (uses defaults)
- */
-void load_startup_settings(ScanConfig& config) noexcept;
-
-/**
- * @brief Settings structure for drone analyzer
- * @note Simplified - removed translation system, preset system, about dialog
- */
-struct DroneSettings {
-    // Scanning settings
-    ScanningMode scanning_mode;
-    uint32_t scan_interval_ms;
-    uint8_t scan_sensitivity;
-    
-    // Display settings
-    bool spectrum_visible;
-    bool histogram_visible;
-    bool drone_list_visible;
-    bool status_bar_visible;
-    
-    // Alert settings
-    bool audio_alerts_enabled;
-    int32_t alert_rssi_threshold_dbm;
-    
-    // Threat settings
-    ThreatLevel min_threat_level;
-
-    // Advanced detection features (OFF by default)
-    bool dwell_enabled;
-    bool confirm_count_enabled;
-    bool noise_blacklist_enabled;
-    bool spectrum_detection_enabled;
-    bool median_enabled;
-    uint8_t spectrum_margin;            // Peak margin above noise (50-200)
-    uint8_t spectrum_min_width;         // Min signal width in bins (2-20)
-    uint8_t spectrum_max_width;         // Max signal width (reject flat U/I shapes)
-    uint8_t spectrum_peak_sharpness;    // Min peak sharpness ratio (enforce V-shape)
-    uint8_t spectrum_peak_ratio;        // Peak-to-width ratio (inverted-V filter)
-    uint8_t spectrum_valley_depth;      // Valley depth threshold (V-shape flanks)
-
-    // New anti-false-positive features
-    int32_t neighbor_margin_db;         // Neighbor margin in dB (0=disabled, 3=default)
-    bool rssi_variance_enabled;         // RSSI variance noise rejection
-    uint8_t confirm_count;              // Configurable confirm count (1-20)
-
-    // Sweep frequency range (Hz) — window 1
-    FreqHz sweep_start_freq;
-    FreqHz sweep_end_freq;
-    FreqHz sweep_step_freq;
-
-    // Sweep frequency range (Hz) — window 2
-    FreqHz sweep2_start_freq;
-    FreqHz sweep2_end_freq;
-    FreqHz sweep2_step_freq;
-    bool sweep2_enabled;
-
-    // Sweep frequency range (Hz) — window 3 (disabled by default)
-    FreqHz sweep3_start_freq;
-    FreqHz sweep3_end_freq;
-    FreqHz sweep3_step_freq;
-    bool sweep3_enabled;
-
-    // Sweep frequency range (Hz) — window 4 (disabled by default)
-    FreqHz sweep4_start_freq;
-    FreqHz sweep4_end_freq;
-    FreqHz sweep4_step_freq;
-    bool sweep4_enabled;
-    
-    /**
-      * @brief Default constructor
-      */
-    DroneSettings() noexcept;
-
-    /**
-      * @brief Reset settings to defaults
-      */
-    void reset_to_defaults() noexcept;
-};
-
-/**
  * @brief Settings UI component for drone analyzer
  * @note Inherits from ui::View
- * @note Simplified - removed translation system, preset system, about dialog
+ * @note Uses SettingsFileManager for all SD card I/O (no duplicated parser)
  */
 class DroneScanner;
 class DroneDisplay;
@@ -109,47 +27,13 @@ class DroneSettingsView : public ui::View {
 public:
     explicit DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display = nullptr) noexcept;
 
-    /**
-     * @brief Destructor
-     */
     ~DroneSettingsView() noexcept override;
 
-    /**
-     * @brief Delete copy constructor (non-copyable)
-     */
     DroneSettingsView(const DroneSettingsView&) = delete;
-
-    /**
-     * @brief Delete copy assignment (non-copyable)
-     */
     DroneSettingsView& operator=(const DroneSettingsView&) = delete;
 
-    /**
-     * @brief Paint method - render settings UI
-     * @param painter Painter instance for drawing
-     */
     void paint(ui::Painter& painter) override;
 
-    /**
-     * @brief Reset settings to defaults
-     */
-    void reset_settings() noexcept;
-
-    /**
-     * @brief Load settings from SD card file
-     * @return ErrorCode::SUCCESS if loaded, error code otherwise
-     */
-    [[nodiscard]] ErrorCode load_settings() noexcept;
-
-    /**
-     * @brief Validate settings
-     * @return ErrorCode::SUCCESS if valid, error code otherwise
-     */
-    [[nodiscard]] ErrorCode validate_settings() const noexcept;
-
-    /**
-     * @brief Focus handler - sets focus to first field
-     */
     void focus() override;
 
     std::string title() const override { return "EDA Settings"; }
@@ -167,10 +51,11 @@ private:
     // Advanced detection features
     ui::Checkbox check_dwell_enabled_;
     ui::Checkbox check_confirm_count_;
+    ui::NumberField field_confirm_count_;
     ui::Checkbox check_noise_blacklist_;
     ui::Checkbox check_spectrum_detection_;
 
-    // New anti-false-positive features
+    // Anti-false-positive features
     ui::Checkbox check_neighbor_margin_;
     ui::NumberField field_neighbor_margin_;
     ui::Checkbox check_rssi_variance_;
@@ -198,10 +83,11 @@ private:
     DroneDisplay* display_ptr_;
 
     ScanConfig original_config_;
-    DroneSettings settings_;
+    SettingsStruct settings_;
     bool settings_dirty_;
 
-    void apply_settings() noexcept;
+    void apply_settings_to_ui() noexcept;
+    void save_settings_to_sd() noexcept;
 };
 
 } // namespace drone_analyzer

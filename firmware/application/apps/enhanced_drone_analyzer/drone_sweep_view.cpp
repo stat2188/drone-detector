@@ -3,6 +3,7 @@
 
 #include "drone_sweep_view.hpp"
 #include "drone_settings.hpp"
+#include "settings_manager.hpp"
 #include "scanner.hpp"
 #include "constants.hpp"
 #include "ui_receiver.hpp"
@@ -220,7 +221,7 @@ void DroneSweepView::save_settings() noexcept {
     if (sw3_enabled && sw3_start >= sw3_end) sw3_end = sw3_start + 20000000;
     if (sw4_enabled && sw4_start >= sw4_end) sw4_end = sw4_start + 20000000;
 
-    // Update scanner config (memory only, no file I/O)
+    // Update scanner config in memory
     if (scanner_ptr_ != nullptr) {
         ScanConfig updated_config = original_config_;
         updated_config.sweep_start_freq = sw1_start;
@@ -240,11 +241,34 @@ void DroneSweepView::save_settings() noexcept {
         updated_config.sweep4_enabled = sw4_enabled;
         (void)scanner_ptr_->set_config(updated_config);
     }
+
+    // Save to SD card via centralized settings manager
+    // Read current settings first (preserves non-sweep settings)
+    SettingsStruct current;
+    (void)SettingsFileManager::load(current);
+
+    // Update sweep fields from UI
+    current.sweep_start_freq = sw1_start;
+    current.sweep_end_freq = sw1_end;
+    current.sweep_step_freq = sw1_step;
+    current.sweep2_start_freq = sw2_start;
+    current.sweep2_end_freq = sw2_end;
+    current.sweep2_step_freq = sw2_step;
+    current.sweep2_enabled = sw2_enabled;
+    current.sweep3_start_freq = sw3_start;
+    current.sweep3_end_freq = sw3_end;
+    current.sweep3_step_freq = sw3_step;
+    current.sweep3_enabled = sw3_enabled;
+    current.sweep4_start_freq = sw4_start;
+    current.sweep4_end_freq = sw4_end;
+    current.sweep4_step_freq = sw4_step;
+    current.sweep4_enabled = sw4_enabled;
+
+    (void)SettingsFileManager::save(scanner_ptr_, current);
 }
 
 void DroneSweepView::apply_defaults() noexcept {
-    DroneSettings defaults;
-    defaults.reset_to_defaults();
+    SettingsStruct defaults;
 
     view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(defaults.sweep_start_freq / 1000000ULL));
     view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(defaults.sweep_end_freq / 1000000ULL));

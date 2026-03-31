@@ -9,6 +9,7 @@
 #include "scanner.hpp"
 #include "scanner_thread.hpp"
 #include "drone_settings.hpp"
+#include "settings_manager.hpp"
 #include "drone_sweep_view.hpp"
 #include "database.hpp"
 #include "hardware_controller.hpp"
@@ -330,7 +331,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     config.mode = scanning_mode_;
     config.rssi_threshold_dbm = RSSI_DETECTION_THRESHOLD_DBM;
     config.scan_interval_ms = SCAN_CYCLE_INTERVAL_MS;
-    load_startup_settings(config);
+
+    // Load all settings from SD card via centralized manager
+    SettingsStruct startup_settings;
+    (void)SettingsFileManager::load(startup_settings);
+    SettingsFileManager::apply_to_config(startup_settings, config);
+
     const ErrorCode config_err = scanner_ptr_->set_config(config);
     if (config_err != ErrorCode::SUCCESS) {
         show_error(config_err, ERROR_DURATION_MS);
