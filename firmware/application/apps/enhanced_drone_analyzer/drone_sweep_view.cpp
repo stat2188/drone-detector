@@ -77,30 +77,6 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
             field_sw2_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
-
-    // Keyboard callbacks for exception fields (MHz → keypad → MHz)
-    auto make_exc_callback = [&nav](ui::NumberField& field) {
-        return [&nav, &field](NumberField&) {
-            auto new_view = nav.push<FrequencyKeypadView>(
-                static_cast<rf::Frequency>(field.value()) * 1000000ULL);
-            new_view->on_changed = [&field](rf::Frequency f) {
-                field.set_value(static_cast<int32_t>(f / 1000000ULL));
-            };
-        };
-    };
-
-    field_sw1_exc0_.on_select = make_exc_callback(field_sw1_exc0_);
-    field_sw1_exc1_.on_select = make_exc_callback(field_sw1_exc1_);
-    field_sw1_exc2_.on_select = make_exc_callback(field_sw1_exc2_);
-    field_sw1_exc3_.on_select = make_exc_callback(field_sw1_exc3_);
-    field_sw1_exc4_.on_select = make_exc_callback(field_sw1_exc4_);
-    field_sw1_exc5_.on_select = make_exc_callback(field_sw1_exc5_);
-    field_sw2_exc0_.on_select = make_exc_callback(field_sw2_exc0_);
-    field_sw2_exc1_.on_select = make_exc_callback(field_sw2_exc1_);
-    field_sw2_exc2_.on_select = make_exc_callback(field_sw2_exc2_);
-    field_sw2_exc3_.on_select = make_exc_callback(field_sw2_exc3_);
-    field_sw2_exc4_.on_select = make_exc_callback(field_sw2_exc4_);
-    field_sw2_exc5_.on_select = make_exc_callback(field_sw2_exc5_);
 }
 
 void SweepWindowGroup1View::focus() {
@@ -173,30 +149,6 @@ SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect par
             field_sw4_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
-
-    // Keyboard callbacks for exception fields (MHz → keypad → MHz)
-    auto make_exc_callback = [&nav](ui::NumberField& field) {
-        return [&nav, &field](NumberField&) {
-            auto new_view = nav.push<FrequencyKeypadView>(
-                static_cast<rf::Frequency>(field.value()) * 1000000ULL);
-            new_view->on_changed = [&field](rf::Frequency f) {
-                field.set_value(static_cast<int32_t>(f / 1000000ULL));
-            };
-        };
-    };
-
-    field_sw3_exc0_.on_select = make_exc_callback(field_sw3_exc0_);
-    field_sw3_exc1_.on_select = make_exc_callback(field_sw3_exc1_);
-    field_sw3_exc2_.on_select = make_exc_callback(field_sw3_exc2_);
-    field_sw3_exc3_.on_select = make_exc_callback(field_sw3_exc3_);
-    field_sw3_exc4_.on_select = make_exc_callback(field_sw3_exc4_);
-    field_sw3_exc5_.on_select = make_exc_callback(field_sw3_exc5_);
-    field_sw4_exc0_.on_select = make_exc_callback(field_sw4_exc0_);
-    field_sw4_exc1_.on_select = make_exc_callback(field_sw4_exc1_);
-    field_sw4_exc2_.on_select = make_exc_callback(field_sw4_exc2_);
-    field_sw4_exc3_.on_select = make_exc_callback(field_sw4_exc3_);
-    field_sw4_exc4_.on_select = make_exc_callback(field_sw4_exc4_);
-    field_sw4_exc5_.on_select = make_exc_callback(field_sw4_exc5_);
 }
 
 void SweepWindowGroup2View::focus() {
@@ -317,21 +269,20 @@ void DroneSweepView::save_settings() noexcept {
     FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
 
     // Read exception frequencies (MHz → Hz)
-    // Static to avoid stack overflow (192 bytes + 96 bytes pointers)
-    static FreqHz exc[4][EXCEPTIONS_PER_WINDOW]{};
-    static ui::NumberField* exc1_fields[] = {
+    FreqHz exc[4][EXCEPTIONS_PER_WINDOW]{};
+    ui::NumberField* exc1_fields[] = {
         &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
         &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
         &view_group1_.field_sw1_exc4_, &view_group1_.field_sw1_exc5_};
-    static ui::NumberField* exc2_fields[] = {
+    ui::NumberField* exc2_fields[] = {
         &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
         &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
         &view_group1_.field_sw2_exc4_, &view_group1_.field_sw2_exc5_};
-    static ui::NumberField* exc3_fields[] = {
+    ui::NumberField* exc3_fields[] = {
         &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
         &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
         &view_group2_.field_sw3_exc4_, &view_group2_.field_sw3_exc5_};
-    static ui::NumberField* exc4_fields[] = {
+    ui::NumberField* exc4_fields[] = {
         &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
         &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
         &view_group2_.field_sw4_exc4_, &view_group2_.field_sw4_exc5_};
@@ -350,10 +301,8 @@ void DroneSweepView::save_settings() noexcept {
     if (sw4_enabled && sw4_start >= sw4_end) sw4_end = sw4_start + 20000000;
 
     // Update scanner config in memory
-    // Static to avoid stack overflow (~400 bytes ScanConfig)
     if (scanner_ptr_ != nullptr) {
-        static ScanConfig updated_config;
-        updated_config = original_config_;
+        ScanConfig updated_config = original_config_;
         updated_config.sweep_start_freq = sw1_start;
         updated_config.sweep_end_freq = sw1_end;
         updated_config.sweep_step_freq = sw1_step;
@@ -379,8 +328,7 @@ void DroneSweepView::save_settings() noexcept {
 
     // Save to SD card via centralized settings manager
     // Read current settings first (preserves non-sweep settings)
-    // Static to avoid stack overflow (~200 bytes SettingsStruct)
-    static SettingsStruct current;
+    SettingsStruct current;
     (void)SettingsFileManager::load(current);
 
     // Update sweep fields from UI

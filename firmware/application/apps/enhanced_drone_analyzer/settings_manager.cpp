@@ -555,5 +555,4 @@ void SettingsFileManager::extract_from_config(
         }
     }
 }
-
 } // namespace drone_analyzer
