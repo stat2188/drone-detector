@@ -29,7 +29,7 @@ using namespace portapack;
 namespace ui::external_app::analogtv {
 
 FullscreenTvView::FullscreenTvView(NavigationView& nav)
-    : nav_(nav) {
+    : nav_(nav), renderer_{} {
     set_parent_rect({0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT});
     add_children({&button_scan, &button_mode, &button_up, &button_down});
 
