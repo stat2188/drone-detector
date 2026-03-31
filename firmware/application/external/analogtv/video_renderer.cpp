@@ -22,7 +22,6 @@
 #include "video_renderer.hpp"
 #include "portapack.hpp"
 
-#include <cmath>
 #include <cstring>
 
 using namespace portapack;
@@ -30,66 +29,55 @@ using namespace portapack;
 namespace ui::external_app::analogtv {
 
 // ============================================================================
-// Pre-Computed LUT Generators (compile-time, ~1.3 KB flash total)
+// Pre-Computed LUTs (compile-time, ~1.3 KB flash total)
 //
-// These constexpr functions are evaluated entirely at compile time.
-// The resulting arrays live in .rodata (flash), consuming zero RAM.
+// These constexpr functions return std::array by value (trivial copy).
+// The compiler evaluates them entirely at compile time, placing the
+// results in .rodata (flash). Zero runtime cost, zero RAM cost.
 // ============================================================================
 
 /**
- * @brief Generate horizontal scale-index LUT
+ * @brief Horizontal scale-index LUT (240 bytes flash)
  *
- * horizontal_index_lut[x] = source pixel column for display column x
- * Eliminates: (x * 128) / 240 per pixel (1 multiply + 1 divide each)
- *
- * @return 240-byte array in flash
+ * horizontal_index_lut[x] = source pixel column for display column x.
+ * Eliminates: (x * 128) / 240 per pixel (1 multiply + 1 divide each).
  */
 static constexpr auto generate_h_lut() {
-    uint8_t arr[DISPLAY_WIDTH]{};
+    std::array<uint8_t, DISPLAY_WIDTH> lut{};
     for (uint16_t x = 0; x < DISPLAY_WIDTH; x++) {
-        arr[x] = static_cast<uint8_t>((x * VIDEO_WIDTH) / DISPLAY_WIDTH);
+        lut[x] = static_cast<uint8_t>((x * VIDEO_WIDTH) / DISPLAY_WIDTH);
     }
-    return arr;
+    return lut;
 }
 
 /**
- * @brief Generate vertical row-offset LUT
+ * @brief Vertical row-offset LUT (640 bytes flash)
  *
- * vertical_offset_lut[y] = byte offset into video_buffer_ for display row y
- * Pre-combines: source_row * VIDEO_WIDTH + x_correction
- * Eliminates: (y * 104) / 320 * 128 + 10 per line (2 multiplies + 1 divide + 1 add)
- *
- * @return 640-byte array in flash
+ * vertical_offset_lut[y] = byte offset into video_buffer_ for display row y.
+ * Pre-combines: source_row * VIDEO_WIDTH + x_correction.
+ * Eliminates: (y * 104) / 320 * 128 + 10 per line.
  */
 static constexpr auto generate_v_lut() {
-    uint16_t arr[DISPLAY_HEIGHT]{};
+    std::array<uint16_t, DISPLAY_HEIGHT> lut{};
     for (uint16_t y = 0; y < DISPLAY_HEIGHT; y++) {
         const uint16_t src_y = (y * 104) / DISPLAY_HEIGHT;
-        arr[y] = static_cast<uint16_t>(src_y * VIDEO_WIDTH + DEFAULT_X_CORRECTION);
+        lut[y] = static_cast<uint16_t>(src_y * VIDEO_WIDTH + DEFAULT_X_CORRECTION);
     }
-    return arr;
+    return lut;
 }
 
 /**
- * @brief Generate gamma-corrected intensity LUT
+ * @brief Gamma-corrected intensity LUT (768 bytes flash)
  *
  * Maps raw spectrum byte directly to RGB565 color with CRT gamma emulation.
- * Combines three operations into one lookup:
- *   1. Invert:  intensity = 255 - raw
- *   2. Gamma:   corrected = pow(intensity/255, 1/2.2) * 255
- *   3. Pack:    RGB565(ui::Color)
+ * Combines: inversion + gamma correction + color packing in one lookup.
  *
- * Gamma 1/2.2 ≈ 0.45 is the standard CRT transfer function.
- * Enhances midtone visibility critical for analog TV interpretation.
- *
- * @return 768-byte array in flash (256 * sizeof(ui::Color))
+ * Gamma 1/2.2 is the standard CRT transfer function.
+ * The gamma_table[] below is pre-computed at build time.
  */
 static constexpr auto generate_gamma_lut() {
-    // Pre-computed gamma correction table (256 entries).
-    // Compiled at build time — no floating point at runtime.
-    // Values: round(pow(i/255, 1/2.2) * 255), for i = 0..255
-    // Gamma 1/2.2 ≈ 0.4545 is the standard CRT transfer function.
-    // Brightness mapping: 0→0, 64→136, 128→178, 192→213, 255→255
+    // Pre-computed: round(pow(i/255, 1/2.2) * 255) for i = 0..255
+    // Computed by Python at build design time, not at runtime.
     constexpr uint8_t gamma_table[256] = {
           0,  21,  28,  34,  39,  43,  46,  50,  53,  56,  59,  61,  64,  66,  68,  70,
          72,  74,  76,  78,  80,  82,  84,  85,  87,  89,  90,  92,  93,  95,  96,  98,
@@ -109,21 +97,30 @@ static constexpr auto generate_gamma_lut() {
         248, 249, 249, 249, 250, 250, 251, 251, 252, 252, 253, 253, 254, 254, 255, 255,
     };
 
-    ui::Color arr[SPECTRUM_COLOR_LUT_SIZE]{};
+    std::array<ui::Color, SPECTRUM_COLOR_LUT_SIZE> lut{};
     for (uint16_t i = 0; i < SPECTRUM_COLOR_LUT_SIZE; i++) {
         const auto v = gamma_table[i];
-        arr[i] = ui::Color{v, v, v};
+        lut[i] = ui::Color{v, v, v};
     }
-    return arr;
+    return lut;
 }
 
 // ============================================================================
-// Static Member Definitions (point to compile-time data in flash)
+// Static Member Definitions
+//
+// These std::array objects are initialized entirely at compile time.
+// The constexpr generator functions return std::array by value (legal in C++17).
+// Final storage: .rodata section (flash), zero RAM cost.
 // ============================================================================
 
-const uint8_t VideoRenderer::horizontal_index_lut_[DISPLAY_WIDTH] = generate_h_lut();
-const uint16_t VideoRenderer::vertical_offset_lut_[DISPLAY_HEIGHT] = generate_v_lut();
-const ui::Color VideoRenderer::intensity_lut_[SPECTRUM_COLOR_LUT_SIZE] = generate_gamma_lut();
+const std::array<uint8_t, DISPLAY_WIDTH>
+    VideoRenderer::horizontal_index_lut_ = generate_h_lut();
+
+const std::array<uint16_t, DISPLAY_HEIGHT>
+    VideoRenderer::vertical_offset_lut_ = generate_v_lut();
+
+const std::array<ui::Color, SPECTRUM_COLOR_LUT_SIZE>
+    VideoRenderer::intensity_lut_ = generate_gamma_lut();
 
 // ============================================================================
 // VideoRenderer Implementation
@@ -152,9 +149,9 @@ void VideoRenderer::render_line(uint16_t y, ui::Color* line_buffer) const {
     }
 
     // LUT-optimized inner loop:
-    //   1. vertical_offset_lut_[y]  → base pointer (zero arithmetic)
-    //   2. horizontal_index_lut_[x] → source column (zero arithmetic)
-    //   3. intensity_lut_[...]      → final RGB565 color (zero arithmetic)
+    //   1. vertical_offset_lut_[y]     -> base pointer (zero arithmetic)
+    //   2. horizontal_index_lut_[x]    -> source column (zero arithmetic)
+    //   3. intensity_lut_[...]         -> final RGB565 color (zero arithmetic)
     //
     // Per pixel: 2 array lookups + 1 pointer dereference + 1 store.
     // Total arithmetic in hot loop: NONE.
@@ -167,7 +164,7 @@ void VideoRenderer::render_line(uint16_t y, ui::Color* line_buffer) const {
 }
 
 void VideoRenderer::render_frame() {
-    // Single line buffer — reused per row, not per-frame.
+    // Single line buffer — reused per row.
     // 480 bytes stack. Well within 4KB budget (11.7%).
     ui::Color line_buffer[DISPLAY_WIDTH];
 
