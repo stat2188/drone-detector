@@ -74,9 +74,6 @@ struct SettingsStruct {
     bool sweep4_enabled;
 
     SettingsStruct() noexcept;
-
-    SettingsStruct(const SettingsStruct&) = delete;
-    SettingsStruct& operator=(const SettingsStruct&) = delete;
 };
 
 /**
