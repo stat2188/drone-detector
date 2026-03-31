@@ -382,13 +382,13 @@ void DroneScannerUI::on_show() {
         ScanConfig cfg = scanner_ptr_->get_config();
 
         // Reinit all windows from config
-        sweep_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq);
+        sweep_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq, cfg.sweep_step_freq);
         sweep_[0].enabled = true;  // Window 0 always enabled
-        sweep_[1].init(cfg.sweep2_start_freq, cfg.sweep2_end_freq);
+        sweep_[1].init(cfg.sweep2_start_freq, cfg.sweep2_end_freq, cfg.sweep2_step_freq);
         sweep_[1].enabled = cfg.sweep2_enabled;
-        sweep_[2].init(cfg.sweep3_start_freq, cfg.sweep3_end_freq);
+        sweep_[2].init(cfg.sweep3_start_freq, cfg.sweep3_end_freq, cfg.sweep3_step_freq);
         sweep_[2].enabled = cfg.sweep3_enabled;
-        sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq);
+        sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq, cfg.sweep4_step_freq);
         sweep_[3].enabled = cfg.sweep4_enabled;
 
         // Find first enabled window
@@ -688,13 +688,13 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     }
 
     // Initialize all 4 sweep windows from config
-    sweep_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq);
+    sweep_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq, cfg.sweep_step_freq);
     sweep_[0].enabled = true;  // Window 0 always enabled
-    sweep_[1].init(cfg.sweep2_start_freq, cfg.sweep2_end_freq);
+    sweep_[1].init(cfg.sweep2_start_freq, cfg.sweep2_end_freq, cfg.sweep2_step_freq);
     sweep_[1].enabled = cfg.sweep2_enabled;
-    sweep_[2].init(cfg.sweep3_start_freq, cfg.sweep3_end_freq);
+    sweep_[2].init(cfg.sweep3_start_freq, cfg.sweep3_end_freq, cfg.sweep3_step_freq);
     sweep_[2].enabled = cfg.sweep3_enabled;
-    sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq);
+    sweep_[3].init(cfg.sweep4_start_freq, cfg.sweep4_end_freq, cfg.sweep4_step_freq);
     sweep_[3].enabled = cfg.sweep4_enabled;
 
     // Find first enabled window for round-robin
@@ -920,14 +920,15 @@ uint8_t DroneScannerUI::pair_first(uint8_t idx) const noexcept {
 // SweepWindow implementations
 // ============================================================================
 
-void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end) noexcept {
+void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) noexcept {
     f_min = start;
     f_max = end;
     if (f_min >= f_max) {
         f_max = f_min + SWEEP_SLICE_BW;
     }
     pixel_step_hz = (f_max - f_min) / SWEEP_PIXELS_PER_SLICE;
-    step_hz = SWEEP_BINS_PER_STEP * EACH_BIN_SIZE;
+    // Use config step if provided, otherwise fall back to FFT-based constant
+    step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * EACH_BIN_SIZE);
     f_center_ini = f_min - (2 * EACH_BIN_SIZE) + (SWEEP_SLICE_BW / 2);
     reset();
 }

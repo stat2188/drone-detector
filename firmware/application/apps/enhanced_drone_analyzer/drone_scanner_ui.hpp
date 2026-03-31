@@ -162,7 +162,7 @@ private:
         uint8_t pixel_max{0};
         bool enabled{false};
 
-        void init(FreqHz start, FreqHz end) noexcept;
+        void init(FreqHz start, FreqHz end, FreqHz step = 0) noexcept;
         void reset() noexcept;
         void process_bins(const ChannelSpectrum& spectrum) noexcept;
     };
