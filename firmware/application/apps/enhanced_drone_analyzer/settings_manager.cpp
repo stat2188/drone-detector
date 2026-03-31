@@ -9,6 +9,13 @@
 #include "receiver_model.hpp"
 #include "portapack.hpp"
 
+// ============================================================================
+// Static buffer for settings save — avoids stack overflow on 1KB stack
+// ============================================================================
+/// @brief 2KB write buffer placed in BSS (not stack) for settings file generation.
+/// Stack limit is only 1KB (0x0400), so this MUST be static/global.
+static char g_settings_write_buf[2048];
+
 namespace drone_analyzer {
 
 // ============================================================================
@@ -313,7 +320,8 @@ ErrorCode SettingsFileManager::save(
         return ErrorCode::INITIALIZATION_FAILED;
     }
 
-    char buffer[2048];
+    // Use static global buffer to avoid stack overflow (1KB stack limit)
+    char* buffer = g_settings_write_buf;
     size_t offset = 0;
 
     offset += snprintf(buffer + offset, sizeof(buffer) - offset,
@@ -413,7 +421,7 @@ ErrorCode SettingsFileManager::save(
     offset += snprintf(buffer + offset, sizeof(buffer) - offset,
         "sweep4_enabled=%s\n", sweep_cfg.sweep4_enabled ? "true" : "false");
 
-    // Sweep exceptions (4 windows × 6 slots)
+    // Sweep exceptions (4 windows × 6 slots) — skip zero values to save SD space
     static const char* exc_keys[4][6] = {
         {"sw1_exc0_mhz", "sw1_exc1_mhz", "sw1_exc2_mhz", "sw1_exc3_mhz", "sw1_exc4_mhz", "sw1_exc5_mhz"},
         {"sw2_exc0_mhz", "sw2_exc1_mhz", "sw2_exc2_mhz", "sw2_exc3_mhz", "sw2_exc4_mhz", "sw2_exc5_mhz"},
@@ -422,6 +430,8 @@ ErrorCode SettingsFileManager::save(
     };
     for (uint8_t w = 0; w < 4; ++w) {
         for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+            // Skip zero (unused) exception slots — don't clutter SD card
+            if (sweep_cfg.sweep_exceptions[w][i] == 0) continue;
             offset += snprintf(buffer + offset, sizeof(buffer) - offset,
                 "%s=%lu\n", exc_keys[w][i], (unsigned long)(sweep_cfg.sweep_exceptions[w][i] / 1000000ULL));
         }
