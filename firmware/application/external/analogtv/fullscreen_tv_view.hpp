@@ -27,174 +27,63 @@
 #include "ui_receiver.hpp"
 #include "ui_navigation.hpp"
 #include "analogtv_constants.hpp"
-#include "video_processor.hpp"
+#include "video_renderer.hpp"
 #include "receiver_model.hpp"
 #include "baseband_api.hpp"
-
-#include <string>
 
 namespace ui::external_app::analogtv {
 
 /**
- * @brief Fullscreen Analog TV view with auto-scan capability
- * 
- * This class provides:
- * - Fullscreen video display (240x320 pixels)
- * - Automatic video carrier search
- * - Manual frequency tuning
- * - Minimal UI controls (hidden by default)
- * 
- * @note Follows Diamond Code standard - clean, flat hierarchy
- * @note No dynamic memory allocation
- * @note Minimal stack usage
+ * @brief Fullscreen Analog TV view with LUT-optimized rendering
+ *
+ * Provides true 240x320 fullscreen video display with automatic
+ * video carrier scanning. Video rendering uses pre-computed LUTs
+ * to eliminate all per-pixel arithmetic (zero division, zero multiply).
+ *
+ * @note No dynamic memory allocation.
+ * @note Max stack usage per render: ~488 bytes.
+ * @note Flash overhead: ~1.3 KB for LUTs.
  */
 class FullscreenTvView : public View {
 public:
-    /**
-     * @brief Construct a new Fullscreen TV View
-     * @param nav Navigation view reference
-     */
     FullscreenTvView(NavigationView& nav);
-
-    /**
-     * @brief Destructor - ensures proper cleanup
-     */
     ~FullscreenTvView() override;
 
-    // Disable copy and move
     FullscreenTvView(const FullscreenTvView&) = delete;
     FullscreenTvView& operator=(const FullscreenTvView&) = delete;
     FullscreenTvView(FullscreenTvView&&) = delete;
     FullscreenTvView& operator=(FullscreenTvView&&) = delete;
 
-    /**
-     * @brief Get view title
-     * @return std::string View title
-     */
     std::string title() const override { return "Analog TV"; }
-
-    /**
-     * @brief Paint the view
-     * @param painter Painter instance
-     */
     void paint(Painter& painter) override;
-
-    /**
-     * @brief Handle focus gained
-     */
     void focus() override;
-
-    /**
-     * @brief Handle view show
-     */
     void on_show() override;
-
-    /**
-     * @brief Handle view hide
-     */
     void on_hide() override;
 
-    /**
-     * @brief Set parent rectangle
-     * @param new_parent_rect New parent rectangle
-     */
-    void set_parent_rect(const Rect new_parent_rect) override;
-
 private:
-    /**
-     * @brief Initialize the view
-     */
     void initialize();
-
-    /**
-     * @brief Start automatic frequency scan
-     */
     void start_auto_scan();
-
-    /**
-     * @brief Stop automatic frequency scan
-     */
     void stop_auto_scan();
-
-    /**
-     * @brief Scan next frequency in sequence
-     */
     void scan_next_frequency();
-
-    /**
-     * @brief Handle video carrier found
-     * @param freq_hz Frequency where carrier was found
-     */
     void on_carrier_found(uint64_t freq_hz);
-
-    /**
-     * @brief Update scan status display
-     */
     void update_scan_status();
-
-    /**
-     * @brief Handle channel spectrum data
-     * @param spectrum Channel spectrum data
-     */
     void on_channel_spectrum(const ChannelSpectrum& spectrum);
-
-    /**
-     * @brief Render video frame to display
-     */
-    void render_video_frame();
-
-    /**
-     * @brief Draw scan status overlay
-     * @param painter Painter instance
-     */
-    void draw_scan_status(Painter& painter);
-
-    /**
-     * @brief Draw frequency information
-     * @param painter Painter instance
-     */
     void draw_frequency_info(Painter& painter);
-
-    /**
-     * @brief Handle key events
-     * @param event Key event
-     * @return true if event was handled
-     */
-    bool on_key(const KeyEvent event);
-
-    /**
-     * @brief Handle encoder events
-     * @param delta Encoder delta
-     * @return true if event was handled
-     */
-    bool on_encoder(const EncoderEvent delta);
-
-    /**
-     * @brief Toggle scan mode (auto/manual)
-     */
+    bool on_key(const KeyEvent event) override;
+    bool on_encoder(const EncoderEvent delta) override;
     void toggle_scan_mode();
-
-    /**
-     * @brief Increase frequency by step
-     */
     void frequency_up();
-
-    /**
-     * @brief Decrease frequency by step
-     */
     void frequency_down();
 
-    // Navigation reference
     NavigationView& nav_;
 
-    // Video processing
-    VideoProcessor video_processor_;
+    // LUT-optimized video renderer (owns 13KB buffer)
+    VideoRenderer renderer_;
 
     // Scan state
     ScanState scan_state_{ScanState::IDLE};
     ScanMode scan_mode_{ScanMode::AUTO_SCAN};
     uint64_t current_scan_frequency_{SCAN_START_HZ};
-    uint32_t scan_timer_{0};
     uint32_t dwell_timer_{0};
     bool carrier_detected_{false};
 
@@ -202,26 +91,14 @@ private:
     uint64_t displayed_frequency_{0};
     bool video_active_{false};
 
-    // UI Buttons
-    Button button_scan{
-        {0, 290, 80, 28},
-        "Scan"};
-    
-    Button button_mode{
-        {85, 290, 70, 28},
-        "Auto"};
-    
-    Button button_up{
-        {160, 290, 35, 28},
-        "+"};
-    
-    Button button_down{
-        {200, 290, 35, 28},
-        "-"};
+    // UI Buttons (overlay on bottom of fullscreen video)
+    Button button_scan{{0, 292, 80, 26}, "Scan"};
+    Button button_mode{{85, 292, 70, 26}, "Auto"};
+    Button button_up{{160, 292, 35, 26}, "+"};
+    Button button_down{{200, 292, 35, 26}, "-"};
 
-    // Spectrum data
+    // Spectrum FIFO
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
-    bool spectrum_update_{false};
 
     // Message handlers
     MessageHandlerRegistration message_handler_spectrum_config{

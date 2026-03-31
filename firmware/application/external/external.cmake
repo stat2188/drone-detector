@@ -15,10 +15,10 @@ set(EXTCPPSRC
 	external/blespam/main.cpp
 	external/blespam/ui_blespam.cpp
 
-	#analogtv - fullscreen with auto-scan (temporarily disabled)
-	#external/analogtv/main.cpp
-	#external/analogtv/video_processor.cpp
-	#external/analogtv/fullscreen_tv_view.cpp
+	#analogtv - fullscreen with LUT-optimized video rendering
+	external/analogtv/main.cpp
+	external/analogtv/video_renderer.cpp
+	external/analogtv/fullscreen_tv_view.cpp
 
 	#nrf_rx  40 byte
 	external/nrf_rx/main.cpp
@@ -285,7 +285,7 @@ set(EXTAPPLIST
 	calculator
 	font_viewer
 	blespam
-	#analogtv
+	analogtv
 	nrf_rx
 	coasterp
 	lge
