@@ -118,9 +118,9 @@ private:
         {"Win 3-4", Theme::getInstance()->fg_yellow->foreground, &view_group2_},
     };
 
-    // Buttons (absolute Y at bottom of screen)
-    ui::Button button_defaults_{{UI_POS_X(0), 270, UI_POS_WIDTH(13), 20}, "DEFAULTS"};
-    ui::Button button_save_{{UI_POS_X(15), 270, UI_POS_WIDTH(14), 20}, "SAVE"};
+    // Buttons (below tab content area)
+    ui::Button button_defaults_{{UI_POS_X(0), 295, UI_POS_WIDTH(13), 20}, "DEFAULTS"};
+    ui::Button button_save_{{UI_POS_X(15), 295, UI_POS_WIDTH(14), 20}, "SAVE"};
 
     void save_settings() noexcept;
     void apply_defaults() noexcept;
