@@ -740,22 +740,37 @@ public:
         }
 
         // Step 10b: Exception check — suppress threats at configured exclusion frequencies
-        // Compute actual peak frequency from FFT bin index (not just center_freq)
-        // FFT bin layout: [0..119=pos, 120..135=DC, 136..253=neg]
-        // peak_freq = center_freq + (peak_index - DC_SPIKE_START) * BIN_SIZE
+        // Compute peak frequency using same pixel grid as display (process_bins):
+        //   Lower sideband: pixels 0-119 map to FFT bins 134-253
+        //   Upper sideband: pixels 120-237 map to FFT bins 2-119
+        //   pixel_freq = f_min + pixel_index * pixel_step_hz
         if (peak_rssi > config_.rssi_threshold_dbm) {
-            constexpr int64_t BIN_SIZE_HZ = 20000000LL / FFT_BIN_COUNT;
-            const int64_t peak_freq = static_cast<int64_t>(center_freq)
-                + (static_cast<int64_t>(peak_index) - static_cast<int64_t>(FFT_DC_SPIKE_START))
-                * BIN_SIZE_HZ;
+            constexpr FreqHz SLICE_BW = 20000000;
+            constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
+            const FreqHz f_center = static_cast<FreqHz>(center_freq);
+            const FreqHz f_min = f_center - (SLICE_BW / 2) + (2 * BIN_SIZE);
+
+            FreqHz peak_freq = 0;
+            if (peak_index >= FFT_DC_SPIKE_END) {
+                // Lower sideband: raw bin i → pixel (i - 134)
+                const FreqHz pixel_idx = peak_index - SWEEP_FFT_MAP_START;
+                peak_freq = f_min + pixel_idx * (SLICE_BW / SWEEP_PIXELS_PER_SLICE);
+            } else if (peak_index >= 2) {
+                // Upper sideband: raw bin i → pixel (i + 118)
+                const FreqHz pixel_idx = peak_index + (SWEEP_FFT_MAP_CROSSOVER - 2);
+                peak_freq = f_min + pixel_idx * (SLICE_BW / SWEEP_PIXELS_PER_SLICE);
+            } else {
+                peak_freq = f_center;
+            }
 
             bool is_exception = false;
             for (uint8_t w = 0; w < 4 && !is_exception; ++w) {
                 for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !is_exception; ++i) {
                     const FreqHz exc = config_.sweep_exceptions[w][i];
                     if (exc == 0) continue;
-                    if (peak_freq >= static_cast<int64_t>(exc) - static_cast<int64_t>(EXCEPTION_RADIUS_HZ) &&
-                        peak_freq <= static_cast<int64_t>(exc) + static_cast<int64_t>(EXCEPTION_RADIUS_HZ)) {
+                    const FreqHz lo = (exc > EXCEPTION_RADIUS_HZ) ? (exc - EXCEPTION_RADIUS_HZ) : 0;
+                    const FreqHz hi = exc + EXCEPTION_RADIUS_HZ;
+                    if (peak_freq >= lo && peak_freq <= hi) {
                         is_exception = true;
                     }
                 }

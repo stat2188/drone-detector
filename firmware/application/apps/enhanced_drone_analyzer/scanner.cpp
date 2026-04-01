@@ -571,6 +571,22 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     }
 
     if (signal_detected) {
+        // Exception check: suppress drones at configured exclusion frequencies
+        // Applies to both normal scanning and sweep detection paths
+        {
+            bool exc_match = false;
+            for (uint8_t w = 0; w < 4 && !exc_match; ++w) {
+                for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !exc_match; ++i) {
+                    const FreqHz exc = config_.sweep_exceptions[w][i];
+                    if (exc == 0) continue;
+                    const FreqHz lo = (exc > EXCEPTION_RADIUS_HZ) ? (exc - EXCEPTION_RADIUS_HZ) : 0;
+                    const FreqHz hi = exc + EXCEPTION_RADIUS_HZ;
+                    if (frequency >= lo && frequency <= hi) exc_match = true;
+                }
+            }
+            if (exc_match) return ErrorCode::SUCCESS;
+        }
+
         // Neighbor margin check (if enabled): center freq must dominate neighbors
         // This eliminates wideband noise false positives (WiFi, BT, microwave)
         if (config_.neighbor_margin_db > 0) {
