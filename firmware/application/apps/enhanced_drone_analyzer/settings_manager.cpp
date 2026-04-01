@@ -94,11 +94,11 @@ static void parse_settings_line(
         return (key_len == elen) && __builtin_memcmp(key, expected, elen) == 0;
     };
 
-    auto parse_int = [val_start, val_len]() -> int32_t {
-        int32_t val = 0;
+    auto parse_int = [val_start, val_len]() -> uint64_t {
+        uint64_t val = 0;
         for (size_t i = 0; i < val_len; ++i) {
             if (val_start[i] >= '0' && val_start[i] <= '9')
-                val = val * 10 + (val_start[i] - '0');
+                val = val * 10ULL + static_cast<uint64_t>(val_start[i] - '0');
         }
         return val;
     };
@@ -113,7 +113,7 @@ static void parse_settings_line(
     if (key_matches("scan_interval_ms")) {
         s.scan_interval_ms = static_cast<uint32_t>(parse_int());
     } else if (key_matches("sensitivity")) {
-        const int32_t sens = parse_int();
+        const int32_t sens = static_cast<int32_t>(parse_int());
         s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
         s.alert_rssi_threshold_dbm = -20 - s.scan_sensitivity;
     } else if (key_matches("rssi_threshold_db")) {
@@ -302,8 +302,7 @@ ErrorCode SettingsFileManager::save(
     }
 
     File file;
-    // NOTE: ensure_directory() removed to save M0 stack (1KB limit)
-    // Directory should already exist from previous save or system init
+    ensure_directory(settings_dir);
     const auto create_error = file.create(settings_dir / u"eda_settings.txt");
     if (create_error) {
         return ErrorCode::INITIALIZATION_FAILED;
