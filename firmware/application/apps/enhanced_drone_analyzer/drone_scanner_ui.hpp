@@ -135,6 +135,7 @@ private:
     bool initialization_failed_{false};
     bool db_loaded_{false};
     size_t db_entry_count_{0};
+    FreqHz last_tuned_freq_{0};  // exact freq radio was tuned to when FFT was captured
 
     DroneDisplay drone_display_{{0, 68, DISPLAY_WIDTH, 206}};
 
