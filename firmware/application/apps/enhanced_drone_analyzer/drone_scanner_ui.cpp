@@ -836,6 +836,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
     if (scanner_ptr_ != nullptr) {
         scanner_ptr_->process_spectrum_sweep(spectrum, win.f_center);
+        scanner_ptr_->apply_sweep_decay();
     }
 
     // Live display update: show current pair data every frame

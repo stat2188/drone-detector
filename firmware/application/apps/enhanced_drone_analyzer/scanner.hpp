@@ -779,8 +779,33 @@ public:
             }
             if (is_exception) return;
 
-            (void)update_tracked_drone_internal(center_freq, peak_rssi, chTimeNow());
+            (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
         }
+    }
+
+    /**
+     * @brief Apply global threat decay for sweep mode
+     * @note Increments missed counter for all tracked drones. After N missed cycles,
+     *       decays threat level. Drones that reach NONE are removed.
+     * @note Called from UI thread after each sweep slice (scanner thread stopped)
+     */
+    void apply_sweep_decay() noexcept {
+        constexpr uint8_t SWEEP_DECAY_AFTER_MISSED = 3;
+        size_t write_idx = 0;
+        for (size_t read_idx = 0; read_idx < tracked_count_; ++read_idx) {
+            tracked_drones_[read_idx].increment_missed();
+            if (tracked_drones_[read_idx].get_missed_cycles() >= SWEEP_DECAY_AFTER_MISSED) {
+                tracked_drones_[read_idx].reset_missed();
+                if (tracked_drones_[read_idx].decay_threat()) {
+                    continue;  // drone removed (threat = NONE)
+                }
+            }
+            if (write_idx != read_idx) {
+                tracked_drones_[write_idx] = tracked_drones_[read_idx];
+            }
+            ++write_idx;
+        }
+        tracked_count_ = static_cast<uint8_t>(write_idx);
     }
 
     [[nodiscard]] HistogramProcessor& get_histogram_processor() noexcept {
