@@ -162,6 +162,7 @@ private:
         FreqHz f_center{0};
         FreqHz f_center_ini{0};
         FreqHz pixel_step_hz{0};
+        FreqHz pixel_step_half_hz{0};  // precomputed: pixel_step_hz / 2
         FreqHz step_hz{0};
         FreqHz bins_hz_acc{0};
         FreqHz exceptions[EXCEPTIONS_PER_WINDOW]{};  // exception frequencies (0 = unused)

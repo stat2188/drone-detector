@@ -967,6 +967,7 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
         f_max = f_min + SWEEP_SLICE_BW;
     }
     pixel_step_hz = (f_max - f_min) / SWEEP_PIXELS_PER_SLICE;
+    pixel_step_half_hz = pixel_step_hz / 2;
     // Use config step if provided, otherwise fall back to FFT-based constant
     step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * EACH_BIN_SIZE);
     f_center_ini = f_min - (2 * EACH_BIN_SIZE) + (SWEEP_SLICE_BW / 2);
@@ -996,15 +997,11 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
     //   Lower sideband: screen pixels 0→119 map to FFT bins 134→253
     //   Upper sideband: screen pixels 120→237 map to FFT bins 2→119
     //   Pixels 238-239 unused (skip DC spike bins 120-121)
-    //   Skips DC spike region (FFT bins 120-135) and edge rolloff (0-1, 254-255)
     static constexpr uint8_t SWEEP_UPPER_OFFSET = SWEEP_FFT_MAP_CROSSOVER - 2;  // 118
     static constexpr uint8_t SWEEP_UPPER_PIXEL_END = SWEEP_PIXELS_PER_SLICE - 2; // 238
 
     for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
-        // Skip pixels that map to DC spike bins
-        if (bin >= SWEEP_UPPER_PIXEL_END && bin >= SWEEP_FFT_MAP_CROSSOVER) {
-            continue;
-        }
+        if (bin >= SWEEP_UPPER_PIXEL_END && bin >= SWEEP_FFT_MAP_CROSSOVER) continue;
         const uint8_t fft_bin = (bin < SWEEP_FFT_MAP_CROSSOVER)
             ? (SWEEP_FFT_MAP_START + bin)
             : (bin - SWEEP_UPPER_OFFSET);
@@ -1012,12 +1009,10 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         if (power > pixel_max) pixel_max = power;
         bins_hz_acc += EACH_BIN_SIZE;
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-            // Exception filter: suppress signals within ±2 MHz of exception frequencies
+            // Exception filter uses precomputed pixel frequency
             const FreqHz pixel_freq = f_min + static_cast<FreqHz>(pixel_index) * pixel_step_hz;
             if (!is_exception(pixel_freq)) {
-                if (pixel_max > composite[pixel_index]) {
-                    composite[pixel_index] = pixel_max;
-                }
+                composite[pixel_index] = pixel_max;
             }
             ++pixel_index;
             pixel_max = 0;
