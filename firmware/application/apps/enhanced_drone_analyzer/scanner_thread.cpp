@@ -40,7 +40,7 @@ void ScannerThread::run() noexcept {
                     dwell_cycles_++;
                     if (dwell_cycles_ >= MAX_DWELL_CYCLES) {
                         // Max dwell reached — force resume scanning
-                        if (cfg.noise_blacklist_enabled) {
+                        if (cfg.noise_blacklist_enabled && __atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
                             const FreqHz locked_freq = scanner_.get_locked_frequency();
                             scanner_.increment_noise_count(locked_freq);
                             scanner_.remove_drone_on_frequency(locked_freq);

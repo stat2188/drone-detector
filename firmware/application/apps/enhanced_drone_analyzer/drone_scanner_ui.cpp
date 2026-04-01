@@ -512,7 +512,10 @@ void DroneScannerUI::refresh_ui() noexcept {
     current_scanner_state_ = scanner_ptr_->get_state();
 
     // Remove stale drones (not seen for DRONE_STALE_TIMEOUT_MS)
-    scanner_ptr_->remove_stale_drones(chTimeNow());
+    // Skip in sweep mode: RSSI-based decay in apply_sweep_decay handles cleanup
+    if (!composite_active_) {
+        scanner_ptr_->remove_stale_drones(chTimeNow());
+    }
 
     // Build display data from tracked drones
     // Use single get_tracked_drones call for consistency (one lock, one snapshot)
@@ -757,6 +760,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     // Stop scanner thread FIRST — UI drives tuning during sweep
     if (scanner_thread_ != nullptr) {
         scanner_thread_->set_scanning(false);
+        scanner_thread_->reset_dwell();
     }
     if (scanner_ptr_ != nullptr) {
         (void)scanner_ptr_->stop_scanning();

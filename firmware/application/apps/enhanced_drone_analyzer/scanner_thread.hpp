@@ -27,6 +27,7 @@ public:
     void set_scanning(bool scanning) noexcept;
     [[nodiscard]] bool is_scanning() const noexcept;
     [[nodiscard]] bool is_active() const noexcept;
+    void reset_dwell() noexcept { dwell_cycles_ = 0; }
 
 private:
     static constexpr size_t STACK_WORDS = THD_WA_SIZE(SCANNER_THREAD_STACK_SIZE) / sizeof(stkalign_t);
