@@ -386,6 +386,7 @@ void DroneScannerUI::on_show() {
 
         // Reinit all windows from config
         last_tuned_freq_ = 0;
+        skip_next_fft_ = true;
         sweep_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq, cfg.sweep_step_freq);
         sweep_[0].enabled = true;  // Window 0 always enabled
         sweep_[1].init(cfg.sweep2_start_freq, cfg.sweep2_end_freq, cfg.sweep2_step_freq);
@@ -693,7 +694,8 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     if (!sweep_transition_guard_.try_set()) return;
 
     composite_active_ = true;
-    last_tuned_freq_ = 0;  // reset: first FFT will use f_center directly
+    last_tuned_freq_ = 0;
+    skip_next_fft_ = true;  // first FFT after entry may be stale
     drone_display_.set_composite_mode(true);
 
     ScanConfig cfg;
@@ -838,6 +840,14 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     baseband::spectrum_streaming_stop();
     auto& win = sweep_[active_sweep_idx_];
     win.process_bins(spectrum);
+
+    // Skip first FFT after sweep entry — may be stale from previous mode
+    // Restart retune at same frequency to get a clean FFT
+    if (skip_next_fft_) {
+        skip_next_fft_ = false;
+        retune_sweep_window(win, nullptr);
+        return;
+    }
 
     if (scanner_ptr_ != nullptr) {
         // Use the exact frequency the radio was tuned to when this FFT was captured.
