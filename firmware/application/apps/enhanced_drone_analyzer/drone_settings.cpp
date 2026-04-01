@@ -25,6 +25,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(6)}, "Wid:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
@@ -38,6 +39,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
+    , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
     , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "Spec", false)
     , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "Hist", false)
@@ -76,6 +78,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_scan_interval_,
         &field_rssi_threshold_,
         &field_volume_,
+        &field_rssi_dec_cyc_,
         &check_audio_alerts_,
         &check_spectrum_visible_,
         &check_histogram_visible_,
@@ -122,6 +125,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     field_volume_.on_change = [this](int32_t v) {
         portapack::receiver_model.set_normalized_headphone_volume(static_cast<uint8_t>(v));
+    };
+
+    field_rssi_dec_cyc_.on_change = [this](int32_t v) {
+        settings_.rssi_decrease_cycles = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
     };
 
     check_audio_alerts_.on_select = [this](ui::Checkbox&, bool v) {
@@ -332,6 +340,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
         field_rssi_threshold_.set_value(sens < 0 ? 0 : (sens > 100 ? 100 : sens));
     }
     field_volume_.set_value(portapack::receiver_model.normalized_headphone_volume());
+    field_rssi_dec_cyc_.set_value(static_cast<int32_t>(settings_.rssi_decrease_cycles));
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);
     check_histogram_visible_.set_value(settings_.histogram_visible);
