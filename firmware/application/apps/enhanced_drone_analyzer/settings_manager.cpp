@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <cstring>
-#include <cstdio>
 
 #include "settings_manager.hpp"
 #include "scanner.hpp"
@@ -8,13 +7,6 @@
 #include "file_path.hpp"
 #include "receiver_model.hpp"
 #include "portapack.hpp"
-
-// ============================================================================
-// Static buffer for settings save — avoids stack overflow on 1KB stack
-// ============================================================================
-/// @brief 2KB write buffer placed in BSS (not stack) for settings file generation.
-/// Stack limit is only 1KB (0x0400), so this MUST be static/global.
-static char g_settings_write_buf[2048];
 
 namespace drone_analyzer {
 
@@ -266,6 +258,49 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
 }
 
 // ============================================================================
+// Direct file write helpers — no snprintf (platform-independent, stack-safe)
+// ============================================================================
+
+static void ws(File& f, const char* s) noexcept {
+    f.write(s, __builtin_strlen(s));
+}
+
+static void wb(File& f, bool v) noexcept {
+    ws(f, v ? "true\n" : "false\n");
+}
+
+static void wi(File& f, int64_t val) noexcept {
+    char buf[24];
+    uint8_t pos = 0;
+    if (val < 0) { buf[pos++] = '-'; val = -val; }
+    char dig[20];
+    uint8_t n = 0;
+    uint64_t uval = static_cast<uint64_t>(val);
+    if (uval == 0) { dig[n++] = '0'; }
+    else { while (uval > 0) { dig[n++] = '0' + static_cast<char>(uval % 10); uval /= 10; } }
+    for (uint8_t i = n; i > 0; --i) buf[pos++] = dig[i - 1];
+    buf[pos++] = '\n';
+    f.write(buf, pos);
+}
+
+static void wl(File& f, const char* key, int64_t val) noexcept {
+    ws(f, key);
+    ws(f, "=");
+    wi(f, val);
+}
+
+static void wbool(File& f, const char* key, bool val) noexcept {
+    ws(f, key);
+    ws(f, "=");
+    wb(f, val);
+}
+
+static void wexc(File& f, const char* key, uint64_t hz) noexcept {
+    if (hz == 0) return;
+    wl(f, key, static_cast<int64_t>(hz / 1000000ULL));
+}
+
+// ============================================================================
 // SettingsFileManager::save
 // ============================================================================
 
@@ -273,12 +308,10 @@ ErrorCode SettingsFileManager::save(
     DroneScanner* scanner_ptr,
     const SettingsStruct& s
 ) noexcept {
-    // Get sweep config from scanner if available
     ScanConfig sweep_cfg;
     if (scanner_ptr != nullptr) {
         sweep_cfg = scanner_ptr->get_config();
     } else {
-        // Use sweep values from settings struct
         sweep_cfg.sweep_start_freq = s.sweep_start_freq;
         sweep_cfg.sweep_end_freq = s.sweep_end_freq;
         sweep_cfg.sweep_step_freq = s.sweep_step_freq;
@@ -308,108 +341,65 @@ ErrorCode SettingsFileManager::save(
         return ErrorCode::INITIALIZATION_FAILED;
     }
 
-    // Use static global buffer to avoid stack overflow (1KB stack limit)
-    char* buffer = g_settings_write_buf;
-    size_t offset = 0;
-
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "# Enhanced Drone Analyzer Settings\n");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "# Auto-generated — do not edit while app is running\n\n");
+    ws(file, "# Enhanced Drone Analyzer Settings\n");
+    ws(file, "# Auto-generated - do not edit while app is running\n\n");
 
     // Scanning
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "spectrum_mode=SEQUENTIAL\n");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "scan_interval_ms=%lu\n", (unsigned long)s.scan_interval_ms);
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sensitivity=%u\n", (unsigned)s.scan_sensitivity);
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "rssi_threshold_db=%ld\n", (long)s.alert_rssi_threshold_dbm);
+    ws(file, "spectrum_mode=SEQUENTIAL\n");
+    wl(file, "scan_interval_ms", static_cast<int64_t>(s.scan_interval_ms));
+    wl(file, "sensitivity", static_cast<int64_t>(s.scan_sensitivity));
+    wl(file, "rssi_threshold_db", static_cast<int64_t>(s.alert_rssi_threshold_dbm));
 
     // Audio / Display
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "enable_audio_alerts=%s\n", s.audio_alerts_enabled ? "true" : "false");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "volume=%u\n", (unsigned)portapack::receiver_model.normalized_headphone_volume());
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "show_spectrum=%s\n", s.spectrum_visible ? "true" : "false");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "show_histogram=%s\n", s.histogram_visible ? "true" : "false");
+    wbool(file, "enable_audio_alerts", s.audio_alerts_enabled);
+    wl(file, "volume", static_cast<int64_t>(portapack::receiver_model.normalized_headphone_volume()));
+    wbool(file, "show_spectrum", s.spectrum_visible);
+    wbool(file, "show_histogram", s.histogram_visible);
 
     // Detection features
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "spectrum_detection=%s\n", s.spectrum_detection_enabled ? "true" : "false");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "dwell_enabled=%s\n", s.dwell_enabled ? "true" : "false");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "confirm_count_enabled=%s\n", s.confirm_count_enabled ? "true" : "false");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "noise_blacklist_enabled=%s\n", s.noise_blacklist_enabled ? "true" : "false");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "median_enabled=%s\n", s.median_enabled ? "true" : "false");
+    wbool(file, "spectrum_detection", s.spectrum_detection_enabled);
+    wbool(file, "dwell_enabled", s.dwell_enabled);
+    wbool(file, "confirm_count_enabled", s.confirm_count_enabled);
+    wbool(file, "noise_blacklist_enabled", s.noise_blacklist_enabled);
+    wbool(file, "median_enabled", s.median_enabled);
 
     // Spectrum shape filter
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "spectrum_margin=%u\n", (unsigned)s.spectrum_margin);
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "spectrum_min_width=%u\n", (unsigned)s.spectrum_min_width);
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "spectrum_max_width=%u\n", (unsigned)s.spectrum_max_width);
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "spectrum_peak_sharpness=%u\n", (unsigned)s.spectrum_peak_sharpness);
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "spectrum_peak_ratio=%u\n", (unsigned)s.spectrum_peak_ratio);
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "spectrum_valley_depth=%u\n", (unsigned)s.spectrum_valley_depth);
+    wl(file, "spectrum_margin", static_cast<int64_t>(s.spectrum_margin));
+    wl(file, "spectrum_min_width", static_cast<int64_t>(s.spectrum_min_width));
+    wl(file, "spectrum_max_width", static_cast<int64_t>(s.spectrum_max_width));
+    wl(file, "spectrum_peak_sharpness", static_cast<int64_t>(s.spectrum_peak_sharpness));
+    wl(file, "spectrum_peak_ratio", static_cast<int64_t>(s.spectrum_peak_ratio));
+    wl(file, "spectrum_valley_depth", static_cast<int64_t>(s.spectrum_valley_depth));
 
     // Anti-false-positive
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "neighbor_margin_db=%d\n", (int)s.neighbor_margin_db);
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "rssi_variance_enabled=%s\n", s.rssi_variance_enabled ? "true" : "false");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "confirm_count=%u\n", (unsigned)s.confirm_count);
+    wl(file, "neighbor_margin_db", static_cast<int64_t>(s.neighbor_margin_db));
+    wbool(file, "rssi_variance_enabled", s.rssi_variance_enabled);
+    wl(file, "confirm_count", static_cast<int64_t>(s.confirm_count));
 
     // Sweep window 1
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep_start_mhz=%lu\n", (unsigned long)(sweep_cfg.sweep_start_freq / 1000000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep_end_mhz=%lu\n", (unsigned long)(sweep_cfg.sweep_end_freq / 1000000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep_step_khz=%lu\n", (unsigned long)(sweep_cfg.sweep_step_freq / 1000ULL));
+    wl(file, "sweep_start_mhz", static_cast<int64_t>(sweep_cfg.sweep_start_freq / 1000000ULL));
+    wl(file, "sweep_end_mhz", static_cast<int64_t>(sweep_cfg.sweep_end_freq / 1000000ULL));
+    wl(file, "sweep_step_khz", static_cast<int64_t>(sweep_cfg.sweep_step_freq / 1000ULL));
 
     // Sweep window 2
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep2_start_mhz=%lu\n", (unsigned long)(sweep_cfg.sweep2_start_freq / 1000000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep2_end_mhz=%lu\n", (unsigned long)(sweep_cfg.sweep2_end_freq / 1000000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep2_step_khz=%lu\n", (unsigned long)(sweep_cfg.sweep2_step_freq / 1000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep2_enabled=%s\n", sweep_cfg.sweep2_enabled ? "true" : "false");
+    wl(file, "sweep2_start_mhz", static_cast<int64_t>(sweep_cfg.sweep2_start_freq / 1000000ULL));
+    wl(file, "sweep2_end_mhz", static_cast<int64_t>(sweep_cfg.sweep2_end_freq / 1000000ULL));
+    wl(file, "sweep2_step_khz", static_cast<int64_t>(sweep_cfg.sweep2_step_freq / 1000ULL));
+    wbool(file, "sweep2_enabled", sweep_cfg.sweep2_enabled);
 
     // Sweep window 3
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep3_start_mhz=%lu\n", (unsigned long)(sweep_cfg.sweep3_start_freq / 1000000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep3_end_mhz=%lu\n", (unsigned long)(sweep_cfg.sweep3_end_freq / 1000000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep3_step_khz=%lu\n", (unsigned long)(sweep_cfg.sweep3_step_freq / 1000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep3_enabled=%s\n", sweep_cfg.sweep3_enabled ? "true" : "false");
+    wl(file, "sweep3_start_mhz", static_cast<int64_t>(sweep_cfg.sweep3_start_freq / 1000000ULL));
+    wl(file, "sweep3_end_mhz", static_cast<int64_t>(sweep_cfg.sweep3_end_freq / 1000000ULL));
+    wl(file, "sweep3_step_khz", static_cast<int64_t>(sweep_cfg.sweep3_step_freq / 1000ULL));
+    wbool(file, "sweep3_enabled", sweep_cfg.sweep3_enabled);
 
     // Sweep window 4
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep4_start_mhz=%lu\n", (unsigned long)(sweep_cfg.sweep4_start_freq / 1000000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep4_end_mhz=%lu\n", (unsigned long)(sweep_cfg.sweep4_end_freq / 1000000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep4_step_khz=%lu\n", (unsigned long)(sweep_cfg.sweep4_step_freq / 1000ULL));
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "sweep4_enabled=%s\n", sweep_cfg.sweep4_enabled ? "true" : "false");
+    wl(file, "sweep4_start_mhz", static_cast<int64_t>(sweep_cfg.sweep4_start_freq / 1000000ULL));
+    wl(file, "sweep4_end_mhz", static_cast<int64_t>(sweep_cfg.sweep4_end_freq / 1000000ULL));
+    wl(file, "sweep4_step_khz", static_cast<int64_t>(sweep_cfg.sweep4_step_freq / 1000ULL));
+    wbool(file, "sweep4_enabled", sweep_cfg.sweep4_enabled);
 
-    // Sweep exceptions (4 windows × 3 slots) — skip zero values to save SD space
+    // Sweep exceptions (4 windows x 3 slots)
     static const char* exc_keys[4][EXCEPTIONS_PER_WINDOW] = {
         {"sw1_exc0_mhz", "sw1_exc1_mhz", "sw1_exc2_mhz"},
         {"sw2_exc0_mhz", "sw2_exc1_mhz", "sw2_exc2_mhz"},
@@ -418,26 +408,18 @@ ErrorCode SettingsFileManager::save(
     };
     for (uint8_t w = 0; w < 4; ++w) {
         for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            // Skip zero (unused) exception slots — don't clutter SD card
-            if (sweep_cfg.sweep_exceptions[w][i] == 0) continue;
-            offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-                "%s=%lu\n", exc_keys[w][i], (unsigned long)(sweep_cfg.sweep_exceptions[w][i] / 1000000ULL));
+            wexc(file, exc_keys[w][i], sweep_cfg.sweep_exceptions[w][i]);
         }
     }
 
     // Metadata
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "freqman_path=DRONES\n");
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset,
-        "settings_version=1.1\n");
+    ws(file, "freqman_path=DRONES\n");
+    ws(file, "settings_version=1.1\n");
 
-    const auto write_result = file.write(buffer, offset);
-    if (write_result.is_ok()) {
-        (void)file.sync();
-    }
+    (void)file.sync();
     file.close();
 
-    return write_result.is_ok() ? ErrorCode::SUCCESS : ErrorCode::INITIALIZATION_FAILED;
+    return ErrorCode::SUCCESS;
 }
 
 // ============================================================================

@@ -739,8 +739,29 @@ public:
             peak_rssi = rssi_median_filter_.get_median();
         }
 
-        // Step 11: Update drone tracker only for above-threshold signals
+        // Step 10b: Exception check — suppress threats at configured exclusion frequencies
+        // Compute actual peak frequency from FFT bin index (not just center_freq)
+        // FFT bin layout: [0..119=pos, 120..135=DC, 136..253=neg]
+        // peak_freq = center_freq + (peak_index - DC_SPIKE_START) * BIN_SIZE
         if (peak_rssi > config_.rssi_threshold_dbm) {
+            constexpr int64_t BIN_SIZE_HZ = 20000000LL / FFT_BIN_COUNT;
+            const int64_t peak_freq = static_cast<int64_t>(center_freq)
+                + (static_cast<int64_t>(peak_index) - static_cast<int64_t>(FFT_DC_SPIKE_START))
+                * BIN_SIZE_HZ;
+
+            bool is_exception = false;
+            for (uint8_t w = 0; w < 4 && !is_exception; ++w) {
+                for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !is_exception; ++i) {
+                    const FreqHz exc = config_.sweep_exceptions[w][i];
+                    if (exc == 0) continue;
+                    if (peak_freq >= static_cast<int64_t>(exc) - static_cast<int64_t>(EXCEPTION_RADIUS_HZ) &&
+                        peak_freq <= static_cast<int64_t>(exc) + static_cast<int64_t>(EXCEPTION_RADIUS_HZ)) {
+                        is_exception = true;
+                    }
+                }
+            }
+            if (is_exception) return;
+
             (void)update_tracked_drone_internal(center_freq, peak_rssi, chTimeNow());
         }
     }
