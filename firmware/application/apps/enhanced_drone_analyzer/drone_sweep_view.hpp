@@ -159,7 +159,7 @@ private:
     };
 
     // Buttons (below tab content area)
-    ui::NumberField field_exc_radius_{{UI_POS_X(0), 285, 3, {1, 100}, 1, ' '};
+    ui::NumberField field_exc_radius_{{UI_POS_X(0), 285}, 3, {1, 100}, 1, ' '};
     ui::Labels labels_exc_radius_{
         {{UI_POS_X(4), 285}, "Exc R(MHz):", Theme::getInstance()->fg_light->foreground},
     };
