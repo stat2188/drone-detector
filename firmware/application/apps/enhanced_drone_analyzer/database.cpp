@@ -1,12 +1,16 @@
 #include "database.hpp"
-#include "file.hpp"
 #include "file_path.hpp"
-#include "freqman_db.hpp"
 #include <cstring>
 #include <ctype.h>
 
 namespace drone_analyzer {
 
+/**
+ * @brief Parse drone type from the first word of a description string
+ * @param buffer Description text (null-terminated)
+ * @param value_len Length of description text
+ * @return DroneType or UNKNOWN if no keyword matched
+ */
 static DroneType parse_drone_type_from_description(
     const char* buffer,
     size_t value_len
@@ -33,81 +37,73 @@ static DroneType parse_drone_type_from_description(
             return false;
         }
         for (size_t i = 0; i < word_len; i++) {
-            const char c1 = buffer[i];
-            const char c2 = word[i];
-            if (::tolower(static_cast<unsigned char>(c1)) !=
-                ::tolower(static_cast<unsigned char>(c2))) {
+            if (::tolower(static_cast<unsigned char>(buffer[i])) !=
+                ::tolower(static_cast<unsigned char>(word[i]))) {
                 return false;
             }
         }
         return true;
     };
 
-    if (compare_word("FPV", 3)) {
-        return DroneType::FPV;
-    }
-    if (compare_word("DJI", 3)) {
-        return DroneType::DJI;
-    }
-    if (compare_word("PARROT", 6)) {
-        return DroneType::PARROT;
-    }
-    if (compare_word("YUNEEC", 6)) {
-        return DroneType::YUNEEC;
-    }
-    if (compare_word("HOBBY", 5)) {
-        return DroneType::HOBBY;
-    }
-    if (compare_word("AUTEL", 5)) {
-        return DroneType::AUTEL;
-    }
-    if (compare_word("3DR", 3)) {
-        return DroneType::DR_3DR;
-    }
-    if (compare_word("OTHER", 5)) {
-        return DroneType::OTHER;
-    }
-    if (compare_word("CUSTOM", 6)) {
-        return DroneType::CUSTOM;
-    }
+    if (compare_word("FPV", 3)) return DroneType::FPV;
+    if (compare_word("DJI", 3)) return DroneType::DJI;
+    if (compare_word("PARROT", 6)) return DroneType::PARROT;
+    if (compare_word("YUNEEC", 6)) return DroneType::YUNEEC;
+    if (compare_word("HOBBY", 5)) return DroneType::HOBBY;
+    if (compare_word("AUTEL", 5)) return DroneType::AUTEL;
+    if (compare_word("3DR", 3)) return DroneType::DR_3DR;
+    if (compare_word("OTHER", 5)) return DroneType::OTHER;
+    if (compare_word("CUSTOM", 6)) return DroneType::CUSTOM;
 
     return DroneType::UNKNOWN;
 }
 
 /**
- * @brief Load database using standard Mayhem freqman mechanism
- * @note Uses load_freqman_file() — same as Recon, Scanner, Looking Glass
- *       freqman_db allocates up to MAX_DATABASE_ENTRIES on heap during load, then frees.
+ * @brief Load frequency database using FreqmanDB framework API
+ *
+ * Opens the freqman file via FreqmanDB (file-based iterator — no bulk heap
+ * allocation for entries). Copies each entry into the fixed entries_[] array,
+ * then closes the file. Same pattern as ui_freqman and recon.
+ *
+ * @return ErrorCode::SUCCESS if at least one entry loaded
+ * @pre Mutex must be held (DATABASE_MUTEX)
  */
 ErrorCode DatabaseManager::load_from_file_internal() noexcept {
     entry_count_ = 0;
     current_index_ = 0;
 
-    freqman_db db;
-    freqman_load_options opts;
-    opts.max_entries = MAX_DATABASE_ENTRIES;
-    if (!load_freqman_file(database_file_, db, opts)) {
-        return ErrorCode::DATABASE_NOT_LOADED;
+    // Build path using framework helper: "/FREQMAN/<stem>"
+    const auto path = get_freqman_path(database_file_);
+
+    // Open via FreqmanDB — single heap alloc for FileWrapper (~620 bytes)
+    if (!freqman_db_.open(path)) {
+        // File doesn't exist — try creating empty
+        if (!freqman_db_.open(path, true)) {
+            return ErrorCode::DATABASE_NOT_LOADED;
+        }
     }
-    if (db.empty()) {
+
+    if (freqman_db_.empty()) {
+        freqman_db_.close();
         return ErrorCode::DATABASE_EMPTY;
     }
 
-    for (const auto& e : db) {
-        if (e == nullptr || entry_count_ >= MAX_DATABASE_ENTRIES)
-            break;
+    // Copy entries from FreqmanDB into fixed array
+    // FreqmanDB::operator[] returns freqman_entry by value (read from file)
+    const size_t count = freqman_db_.entry_count();
+    for (size_t i = 0; i < count && entry_count_ < MAX_DATABASE_ENTRIES; ++i) {
+        const auto entry = freqman_db_[i];
 
-        const auto freq = static_cast<FreqHz>(e->frequency_a);
-        if (freq < MIN_FREQUENCY_HZ || freq > MAX_FREQUENCY_HZ)
+        const auto freq = static_cast<FreqHz>(entry.frequency_a);
+        if (freq < MIN_FREQUENCY_HZ || freq > MAX_FREQUENCY_HZ) {
             continue;
+        }
 
-        // Parse drone type from description.
-        // Entries without recognized drone keywords are loaded as OTHER
-        // so general freqman files (SCANNER.TXT, OTHERS.TXT) work too.
+        // Parse drone type from description
         DroneType type = DroneType::OTHER;
-        if (e->description.size() > 0) {
+        if (!entry.description.empty()) {
             const DroneType parsed = parse_drone_type_from_description(
-                e->description.c_str(), e->description.size());
+                entry.description.c_str(), entry.description.size());
             if (parsed != DroneType::UNKNOWN) {
                 type = parsed;
             }
@@ -115,6 +111,8 @@ ErrorCode DatabaseManager::load_from_file_internal() noexcept {
 
         entries_[entry_count_++] = FrequencyEntry(freq, type);
     }
+
+    freqman_db_.close();
 
     if (entry_count_ == 0) {
         return ErrorCode::DATABASE_EMPTY;
@@ -137,11 +135,7 @@ ErrorCode DatabaseManager::load_frequency_database() noexcept {
     const ErrorCode result = load_from_file_internal();
 
     if (result == ErrorCode::SUCCESS) {
-        if (entry_count_ > 0) {
-            loaded_.set();
-        } else {
-            return ErrorCode::DATABASE_EMPTY;
-        }
+        loaded_.set();
     }
 
     return result;
@@ -149,17 +143,17 @@ ErrorCode DatabaseManager::load_frequency_database() noexcept {
 
 ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noexcept {
     MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
-    
+
     if (entry_count_ == 0) {
         return ErrorResult<FreqHz>::failure(ErrorCode::DATABASE_EMPTY);
     }
-    
+
     // If current_freq is 0, return first frequency (initial case)
     if (current_freq == 0) {
         current_index_ = 0;
         return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
     }
-    
+
     // Find current frequency in database (linear search from start)
     bool found = false;
     size_t found_index = 0;
@@ -170,7 +164,7 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
             break;
         }
     }
-    
+
     if (found) {
         // Skip ALL entries with the same frequency (handle duplicate channels)
         current_index_ = found_index + 1;
@@ -187,7 +181,7 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
         // Preserves position after sweep restore (last_db_index_)
         current_index_ = (current_index_ < entry_count_) ? current_index_ : 0;
     }
-    
+
     return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
 }
 
@@ -203,7 +197,7 @@ ErrorResult<FrequencyEntry> DatabaseManager::find_entry(FreqHz frequency) const 
             return ErrorResult<FrequencyEntry>::success(entries_[i]);
         }
     }
-    
+
     return ErrorResult<FrequencyEntry>::failure(ErrorCode::INVALID_PARAMETER);
 }
 
@@ -221,7 +215,7 @@ ErrorResult<size_t> DatabaseManager::find_entry_index_internal(FreqHz frequency)
             return ErrorResult<size_t>::success(i);
         }
     }
-    
+
     return ErrorResult<size_t>::failure(ErrorCode::INVALID_PARAMETER);
 }
 
@@ -230,7 +224,8 @@ DatabaseManager::DatabaseManager() noexcept
     , current_index_(0)
     , entry_count_(0)
     , loaded_()
-    , mutex_() {
+    , mutex_()
+    , freqman_db_() {
     chMtxInit(&mutex_);
 }
 
@@ -248,7 +243,6 @@ void DatabaseManager::set_current_index(size_t index) noexcept {
         current_index_ = 0;
         return;
     }
-    // Clamp to valid range
     current_index_ = (index < entry_count_) ? index : 0;
 }
 
@@ -256,19 +250,18 @@ void DatabaseManager::set_database_file(const char* filename) noexcept {
     if (filename == nullptr) {
         return;
     }
-    
-    // Copy filename (max 31 chars + null terminator)
+
     size_t i = 0;
     while (i < 31 && filename[i] != '\0') {
         database_file_[i] = filename[i];
         ++i;
     }
     database_file_[i] = '\0';
-    
+
     // Reset state so database will be fully reloaded
     loaded_.clear();
     current_index_ = 0;
     entry_count_ = 0;
 }
 
-} 
+} // namespace drone_analyzer

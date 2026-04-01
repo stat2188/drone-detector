@@ -197,21 +197,23 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Start");
             }
 
-            // Extract filename stem from path (avoid std::string heap)
-            // Path format: "FREQMAN/DRONES.TXT" → stem = "DRONES"
+            // Extract filename stem from path — iterate native() chars directly
+            // Avoids path::string() which allocates std::string on heap
+            // native() returns const std::u16string& (reference, no copy)
             char filename[32];
-            const auto path_str = new_file_path.string();
+            const auto& native_path = new_file_path.native();
             size_t last_slash = 0;
             size_t last_dot = 0;
-            for (size_t j = 0; path_str[j] != '\0'; ++j) {
-                if (path_str[j] == '/' || path_str[j] == '\\') last_slash = j + 1;
-                if (path_str[j] == '.') last_dot = j;
+            for (size_t j = 0; j < native_path.size(); ++j) {
+                const char c = static_cast<char>(native_path[j]);
+                if (c == '/' || c == '\\') last_slash = j + 1;
+                if (c == '.') last_dot = j;
             }
             size_t i = 0;
             const size_t stem_start = last_slash;
             const size_t stem_end = (last_dot > last_slash) ? last_dot : last_slash + 31;
-            for (; i < 31 && (stem_start + i) < stem_end && path_str[stem_start + i] != '\0'; ++i) {
-                filename[i] = path_str[stem_start + i];
+            for (; i < 31 && (stem_start + i) < stem_end && (stem_start + i) < native_path.size(); ++i) {
+                filename[i] = static_cast<char>(native_path[stem_start + i]);
             }
             filename[i] = '\0';
 

@@ -8,6 +8,7 @@
 #include "drone_types.hpp"
 #include "locking.hpp"
 #include "constants.hpp"
+#include "freqman_db.hpp"
 
 namespace drone_analyzer {
 
@@ -74,6 +75,8 @@ private:
     AtomicFlag loaded_;
     mutable Mutex mutex_;
     char database_file_[32]{'D', 'R', 'O', 'N', 'E', 'S', '\0'};
+
+    FreqmanDB freqman_db_;
 };
 
 } // namespace drone_analyzer

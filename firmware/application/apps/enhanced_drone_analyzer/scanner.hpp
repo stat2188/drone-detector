@@ -716,23 +716,6 @@ private:
     [[nodiscard]] ErrorCode validate_config_internal(const ScanConfig& config) const noexcept;
 
     /**
-     * @brief Unified RSSI extraction for both spectrum and sweep modes
-     * @param spectrum Channel spectrum data (256 bins, 0-255 each)
-     * @param out_rssi Extracted RSSI in dBm (peak from focused bin window)
-     * @param out_noise_floor Noise floor estimate (0-255 scale, median of usable bins)
-     * @return true if signal detected above noise floor + spectrum_margin
-     * @note Uses focused 40-bin window (100-119, 136-155) centered on DC spike.
-     *       This matches the tuned frequency's actual energy location.
-     * @note Consistent bin selection ensures LNA/VGA tuning affects both modes identically.
-     * @pre Mutex must NOT be held (static buffers, no shared state)
-     */
-    [[nodiscard]] bool extract_rssi_unified(
-        const ChannelSpectrum& spectrum,
-        int32_t& out_rssi,
-        uint8_t& out_noise_floor
-    ) const noexcept;
-
-    /**
      * @brief Internal: Analyze spectrum shape for U/V signal peaks
      * @param spectrum Channel spectrum data (256 bins, 0-255 each)
      * @param out_rssi Estimated RSSI in dBm if signal detected
@@ -814,6 +797,12 @@ private:
     // Sort buffer for analyze_spectrum_shape (class member to avoid static in method)
     static constexpr size_t SPECTRUM_SORT_BUF_SIZE = 256;
     uint8_t spectrum_sort_buf_[SPECTRUM_SORT_BUF_SIZE];
+
+    // Usable bins buffer for process_spectrum_sweep (class member to avoid static in method)
+    // (FFT_DC_SPIKE_START - FFT_EDGE_SKIP_NARROW) + (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - FFT_DC_SPIKE_END)
+    // = (120 - 6) + (256 - 6 - 136) = 114 + 114 = 228
+    static constexpr size_t SWEEP_USABLE_BINS = 228;
+    uint8_t sweep_usable_buf_[SWEEP_USABLE_BINS];
 
     // Alert callback in progress flag (prevents re-entrant calls)
     AtomicFlag alert_callback_in_progress_;
