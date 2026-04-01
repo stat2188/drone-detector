@@ -85,6 +85,10 @@ private:
     ui::VGAGainField field_vga_{{UI_POS_X(11), 0}};
     ui::RFAmpField field_rf_amp_{{UI_POS_X(18), 0}};
     ui::AudioVolumeField field_volume_{{UI_POS_X_RIGHT(2), UI_POS_Y(0)}};
+    ui::NumberField field_rssi_dec_cyc_{{UI_POS_X_RIGHT(6), UI_POS_Y(0)}, 2, {1, 50}, 1, ' '};
+    ui::Labels labels_cyc_{
+        {{UI_POS_X_RIGHT(9), UI_POS_Y(0)}, "cy", Theme::getInstance()->fg_light->foreground},
+    };
 
     ui::Labels filter_labels_{
         {{UI_POS_X(0), 268}, "FILT:", Theme::getInstance()->fg_light->foreground},

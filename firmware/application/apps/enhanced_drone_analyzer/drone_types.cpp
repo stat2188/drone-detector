@@ -77,7 +77,10 @@ TrackedDrone::TrackedDrone() noexcept
     , rssi_history_{0}
     , timestamp_history_{0}
     , history_index_{0}
-    , missed_cycles_{0} {
+    , missed_cycles_{0}
+    , last_rssi_{RSSI_NOISE_FLOOR_DBM}
+    , rssi_decrease_counter_{0}
+    , rssi_increased_{false} {
 }
 
 TrackedDrone::TrackedDrone(
@@ -94,7 +97,10 @@ TrackedDrone::TrackedDrone(
     , rssi_history_{0}
     , timestamp_history_{0}
     , history_index_{0}
-    , missed_cycles_{0} {
+    , missed_cycles_{0}
+    , last_rssi_{RSSI_NOISE_FLOOR_DBM}
+    , rssi_decrease_counter_{0}
+    , rssi_increased_{false} {
 }
 
 void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcept {

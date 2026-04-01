@@ -220,6 +220,9 @@ struct TrackedDrone {
     SystemTime timestamp_history_[6];   // 24 bytes (6 × uint32_t)
     uint8_t history_index_;
     uint8_t missed_cycles_;             // 1 byte — consecutive scans without detection
+    int16_t last_rssi_;                 // 2 bytes — RSSI from previous cycle (for decay)
+    uint8_t rssi_decrease_counter_;     // 1 bytes — consecutive cycles with RSSI decrease
+    bool rssi_increased_;               // 1 byte — set true when new RSSI > previous
     
     // Total: 57 bytes (no vtable, no virtual functions)
     

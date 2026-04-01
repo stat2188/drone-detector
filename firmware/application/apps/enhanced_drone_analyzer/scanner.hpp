@@ -74,6 +74,7 @@ struct ScanConfig {
     // Sweep exception frequencies (per window, 0 = unused slot)
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
     uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100, configurable exclusion radius
+    uint8_t rssi_decrease_cycles{5};  // sweep cycles of RSSI decrease before threat decay
 
     /**
      * @brief Default constructor
@@ -784,19 +785,32 @@ public:
     }
 
     /**
-     * @brief Apply global threat decay for sweep mode
-     * @note Increments missed counter for all tracked drones. After N missed cycles,
-     *       decays threat level. Drones that reach NONE are removed.
-     * @note Called from UI thread after each sweep slice (scanner thread stopped)
+     * @brief Apply RSSI-based threat decay for sweep mode (call once per sweep cycle)
+     * @note For each drone: if RSSI decreased or drone not detected this cycle,
+     *       increment decrease counter. If counter reaches rssi_decrease_cycles, decay threat.
+     *       If RSSI increased, reset counter.
+     * @note Called from UI thread at end of each full sweep cycle (scanner thread stopped)
      */
     void apply_sweep_decay() noexcept {
-        constexpr uint8_t SWEEP_DECAY_AFTER_MISSED = 3;
+        const uint8_t threshold = config_.rssi_decrease_cycles;
         size_t write_idx = 0;
         for (size_t read_idx = 0; read_idx < tracked_count_; ++read_idx) {
-            tracked_drones_[read_idx].increment_missed();
-            if (tracked_drones_[read_idx].get_missed_cycles() >= SWEEP_DECAY_AFTER_MISSED) {
-                tracked_drones_[read_idx].reset_missed();
-                if (tracked_drones_[read_idx].decay_threat()) {
+            auto& drone = tracked_drones_[read_idx];
+            if (drone.rssi_increased_) {
+                // RSSI went up this cycle — signal strengthening, reset decrease counter
+                drone.rssi_decrease_counter_ = 0;
+                drone.last_rssi_ = drone.rssi;
+                drone.rssi_increased_ = false;
+            } else {
+                // RSSI decreased or drone not detected this cycle
+                if (drone.rssi_decrease_counter_ < 255) {
+                    drone.rssi_decrease_counter_++;
+                }
+                drone.last_rssi_ = drone.rssi;
+            }
+            if (drone.rssi_decrease_counter_ >= threshold) {
+                drone.rssi_decrease_counter_ = 0;
+                if (drone.decay_threat()) {
                     continue;  // drone removed (threat = NONE)
                 }
             }

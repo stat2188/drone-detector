@@ -706,6 +706,7 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         }
 
         ThreatLevel old_threat = tracked_drones_[index].get_threat();
+        tracked_drones_[index].rssi_increased_ = (rssi > tracked_drones_[index].last_rssi_);
         tracked_drones_[index].update_rssi(rssi, timestamp);
         ThreatLevel new_threat = tracked_drones_[index].get_threat();
         
@@ -721,6 +722,9 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         if (add_result != ErrorCode::SUCCESS) {
             return add_result;
         }
+        // First detection: mark as increasing to prevent immediate decay
+        tracked_drones_[new_index].rssi_increased_ = true;
+        tracked_drones_[new_index].last_rssi_ = static_cast<int16_t>(rssi);
         // Alert for newly added drone's actual threat level
         ThreatLevel new_threat = tracked_drones_[new_index].get_threat();
         if (new_threat > ThreatLevel::NONE) {

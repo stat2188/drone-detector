@@ -76,6 +76,7 @@ struct SettingsStruct {
     // Sweep exception frequencies (per window, 0 = unused)
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
     uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100 MHz exclusion radius
+    uint8_t rssi_decrease_cycles{5};  // sweep cycles of RSSI decrease before threat decay
 
     SettingsStruct() noexcept;
 };

@@ -89,6 +89,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &field_vga_,
         &field_rf_amp_,
         &field_volume_,
+        &labels_cyc_,
+        &field_rssi_dec_cyc_,
         &big_display_,
         &drone_display_,
         &filter_labels_,
@@ -113,6 +115,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         const ScanConfig cfg = scanner_ptr_->get_config();
         drone_display_.set_spectrum_shape_params(
             cfg.spectrum_margin, cfg.spectrum_min_width, cfg.spectrum_max_width);
+        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
     }
 
     // Median filter toggle (spike rejection on RSSI samples)
@@ -836,7 +839,6 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
     if (scanner_ptr_ != nullptr) {
         scanner_ptr_->process_spectrum_sweep(spectrum, win.f_center);
-        scanner_ptr_->apply_sweep_decay();
     }
 
     // Live display update: show current pair data every frame
@@ -871,6 +873,9 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
         if (next_pair == 0) {
             // Full cycle complete — all pairs have been displayed
+            if (scanner_ptr_ != nullptr) {
+                scanner_ptr_->apply_sweep_decay();
+            }
             if (sweep_auto_mode_) {
                 exit_sweep_mode();
                 return;
