@@ -392,10 +392,12 @@ void DroneScannerUI::on_show() {
         sweep_[3].enabled = cfg.sweep4_enabled;
 
         // Copy exception frequencies to each sweep window
+        const FreqHz on_show_exc_radius = static_cast<FreqHz>(cfg.exception_radius_mhz) * 1000000ULL;
         for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
             for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
                 sweep_[w].exceptions[i] = cfg.sweep_exceptions[w][i];
             }
+            sweep_[w].exception_radius_hz = on_show_exc_radius;
         }
 
         // Find first enabled window
@@ -705,10 +707,12 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_[3].enabled = cfg.sweep4_enabled;
 
     // Copy exception frequencies to each sweep window
+    const FreqHz exc_radius_hz = static_cast<FreqHz>(cfg.exception_radius_mhz) * 1000000ULL;
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
         for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
             sweep_[w].exceptions[i] = cfg.sweep_exceptions[w][i];
         }
+        sweep_[w].exception_radius_hz = exc_radius_hz;
     }
 
     // Find first enabled window for round-robin
@@ -958,9 +962,8 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
 bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
     for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
         if (exceptions[i] == 0) continue;
-        if (exceptions[i] < EXCEPTION_RADIUS_HZ) continue;
-        const FreqHz lo = exceptions[i] - EXCEPTION_RADIUS_HZ;
-        const FreqHz hi = exceptions[i] + EXCEPTION_RADIUS_HZ;
+        const FreqHz lo = (exceptions[i] > exception_radius_hz) ? (exceptions[i] - exception_radius_hz) : 0;
+        const FreqHz hi = exceptions[i] + exception_radius_hz;
         if (hz >= lo && hz <= hi) return true;
     }
     return false;

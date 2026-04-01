@@ -159,6 +159,7 @@ private:
         FreqHz step_hz{0};
         FreqHz bins_hz_acc{0};
         FreqHz exceptions[EXCEPTIONS_PER_WINDOW]{};  // exception frequencies (0 = unused)
+        FreqHz exception_radius_hz{3000000ULL};       // configurable exclusion radius (Hz)
         uint16_t pixel_index{0};
         uint8_t pixel_max{0};
         bool enabled{false};

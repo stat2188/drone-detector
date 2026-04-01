@@ -72,8 +72,8 @@ struct ScanConfig {
     uint8_t confirm_count{DEFAULT_CONFIRM_COUNT};             // Configurable confirm count
 
     // Sweep exception frequencies (per window, 0 = unused slot)
-    // Signals within ±EXCEPTION_RADIUS_HZ of these frequencies are suppressed in sweep display
-    FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};     // 4 windows × 6 slots × 8 bytes = 192 bytes
+    FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
+    uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100, configurable exclusion radius
 
     /**
      * @brief Default constructor
@@ -763,13 +763,15 @@ public:
                 peak_freq = f_center;
             }
 
+            const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
+
             bool is_exception = false;
             for (uint8_t w = 0; w < 4 && !is_exception; ++w) {
                 for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !is_exception; ++i) {
                     const FreqHz exc = config_.sweep_exceptions[w][i];
                     if (exc == 0) continue;
-                    const FreqHz lo = (exc > EXCEPTION_RADIUS_HZ) ? (exc - EXCEPTION_RADIUS_HZ) : 0;
-                    const FreqHz hi = exc + EXCEPTION_RADIUS_HZ;
+                    const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
+                    const FreqHz hi = exc + exc_radius;
                     if (peak_freq >= lo && peak_freq <= hi) {
                         is_exception = true;
                     }

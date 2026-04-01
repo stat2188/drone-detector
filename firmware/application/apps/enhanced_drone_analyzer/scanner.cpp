@@ -574,13 +574,14 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // Exception check: suppress drones at configured exclusion frequencies
         // Applies to both normal scanning and sweep detection paths
         {
+            const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
             bool exc_match = false;
             for (uint8_t w = 0; w < 4 && !exc_match; ++w) {
                 for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !exc_match; ++i) {
                     const FreqHz exc = config_.sweep_exceptions[w][i];
                     if (exc == 0) continue;
-                    const FreqHz lo = (exc > EXCEPTION_RADIUS_HZ) ? (exc - EXCEPTION_RADIUS_HZ) : 0;
-                    const FreqHz hi = exc + EXCEPTION_RADIUS_HZ;
+                    const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
+                    const FreqHz hi = exc + exc_radius;
                     if (frequency >= lo && frequency <= hi) exc_match = true;
                 }
             }

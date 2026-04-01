@@ -734,16 +734,16 @@ constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5900000000;     // 5.9 GHz
 // ============================================================================
 
 /**
- * @brief Exclusion radius around exception frequencies (±3 MHz)
- * @note Signals within this radius of an exception frequency are not treated as threats
+ * @brief Default exclusion radius around exception frequencies (±3 MHz)
+ * @note Configurable at runtime via ScanConfig.exception_radius_mhz (1-100)
  */
+constexpr uint8_t DEFAULT_EXCEPTION_RADIUS_MHZ = 3;
 constexpr FreqHz EXCEPTION_RADIUS_HZ = 3'000'000ULL;
 
 /**
  * @brief Number of exception frequency slots per sweep window
- * @note Reduced from 6 to 3 — covers 90% of use cases with less UI clutter
  */
-constexpr uint8_t EXCEPTIONS_PER_WINDOW = 3;
+constexpr uint8_t EXCEPTIONS_PER_WINDOW = 5;
 
 // ============================================================================
 // String Constants (Flash Storage)
