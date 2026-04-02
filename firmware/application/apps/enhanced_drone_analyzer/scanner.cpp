@@ -367,12 +367,11 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
 
     statistics_.total_scan_cycles++;
 
-    // Global threat decay: increment missed_cycles for ALL tracked drones
-    // This prevents drones on non-current frequencies from hanging at HIGH threat.
-    // Runs every cycle — lightweight O(n) with n ≤ MAX_TRACKED_DRONES (16).
-    // Skip the locked frequency's drone during LOCKING/TRACKING (actively held).
+    // Unified threat decay: uses config_.rssi_decrease_cycles (CYC setting).
+    // Missed-cycle decay: drone not detected → increment missed counter → decay after CYC cycles.
+    // RSSI-based decay: drone detected but signal weakening → increment rssi counter → decay after CYC cycles.
     {
-        constexpr uint8_t GLOBAL_DECAY_AFTER_MISSED = 5;
+        const uint8_t decay_threshold = config_.rssi_decrease_cycles;
         const bool holding_lock = (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING)
                                   && locked_frequency_ != 0;
         size_t write_idx = 0;
@@ -386,10 +385,10 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
                 continue;
             }
             tracked_drones_[read_idx].increment_missed();
-            if (tracked_drones_[read_idx].get_missed_cycles() >= GLOBAL_DECAY_AFTER_MISSED) {
+            if (tracked_drones_[read_idx].get_missed_cycles() >= decay_threshold) {
                 tracked_drones_[read_idx].reset_missed();
                 if (tracked_drones_[read_idx].decay_threat()) {
-                    continue;
+                    continue;  // drone removed (threat = NONE)
                 }
             }
             if (write_idx != read_idx) {
@@ -398,6 +397,14 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
             ++write_idx;
         }
         tracked_count_ = static_cast<uint8_t>(write_idx);
+
+        // RSSI-based decay: once every CYC scan cycles, decay drones with weakening signal.
+        // This prevents drones detected with decreasing RSSI from staying at HIGH threat forever.
+        ++rssi_decay_cycle_counter_;
+        if (rssi_decay_cycle_counter_ >= decay_threshold) {
+            rssi_decay_cycle_counter_ = 0;
+            apply_rssi_decay();
+        }
     }
 
     // Reset per-frequency decay tracker (each frequency is a fresh detection opportunity)
@@ -706,7 +713,15 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
             }
         }
 
+        // Update drone type from DB if it was UNKNOWN (DB may have loaded after first detection)
+        if (tracked_drones_[index].drone_type == DroneType::UNKNOWN) {
+            tracked_drones_[index].drone_type = determine_drone_type_internal(frequency);
+        }
+
         ThreatLevel old_threat = tracked_drones_[index].get_threat();
+        // Compare against last_rssi_ which is the PREVIOUS CYCLE's baseline.
+        // It is only updated by apply_rssi_decay() at cycle boundaries,
+        // NOT here — this preserves the cross-cycle comparison.
         tracked_drones_[index].rssi_increased_ = (rssi > tracked_drones_[index].last_rssi_);
         tracked_drones_[index].update_rssi(rssi, timestamp);
         ThreatLevel new_threat = tracked_drones_[index].get_threat();

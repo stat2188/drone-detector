@@ -582,11 +582,16 @@ public:
      */
     static FreqHz fft_bin_to_freq(FreqHz f_center, size_t bin) noexcept {
         constexpr FreqHz SLICE_BW = 20000000;
-        constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
+        constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;  // 78125
+        // Looking Glass bin reordering: bin 0 = Nyquist, bin 128 = DC.
+        // Lower sideband (bin >= 136): freq = f_center - 120*BIN_SIZE + bin*BIN_SIZE
+        //   Avoids negative cast: (bin-256) would overflow uint64_t.
+        // Upper sideband (bin < 120):  freq = f_center - 126*BIN_SIZE + bin*BIN_SIZE
+        //   Avoids negative cast: (bin-126) would overflow uint64_t.
         if (bin >= FFT_DC_SPIKE_END) {
-            return f_center + static_cast<FreqHz>(bin - FFT_BIN_COUNT) * BIN_SIZE;
+            return f_center - 120 * BIN_SIZE + static_cast<FreqHz>(bin) * BIN_SIZE;
         }
-        return f_center + static_cast<FreqHz>(bin - 126) * BIN_SIZE;
+        return f_center - 126 * BIN_SIZE + static_cast<FreqHz>(bin) * BIN_SIZE;
     }
 
     /**
@@ -602,29 +607,28 @@ public:
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept;
 
     /**
-     * @brief Apply RSSI-based threat decay for sweep mode (call once per sweep cycle)
+     * @brief Apply RSSI-based threat decay (unified for both normal and sweep modes)
      * @note For each drone: if RSSI decreased or drone not detected this cycle,
-     *       increment decrease counter. If counter reaches rssi_decrease_cycles, decay threat.
+     *       increment decrease counter. If counter reaches rssi_decrease_cycles (CYC), decay threat.
      *       If RSSI increased, reset counter.
-     * @note Called from UI thread at end of each full sweep cycle (scanner thread stopped)
+     * @note Updates last_rssi_ to current rssi as new baseline for next cycle comparison.
+     * @note Called from perform_scan_cycle_internal() (normal mode) and on_sweep_spectrum() (sweep mode)
      */
-    void apply_sweep_decay() noexcept {
+    void apply_rssi_decay() noexcept {
         const uint8_t threshold = config_.rssi_decrease_cycles;
         size_t write_idx = 0;
         for (size_t read_idx = 0; read_idx < tracked_count_; ++read_idx) {
             auto& drone = tracked_drones_[read_idx];
             if (drone.rssi_increased_) {
-                // RSSI went up this cycle — signal strengthening, reset decrease counter
                 drone.rssi_decrease_counter_ = 0;
-                drone.last_rssi_ = drone.rssi;
                 drone.rssi_increased_ = false;
             } else {
-                // RSSI decreased or drone not detected this cycle
                 if (drone.rssi_decrease_counter_ < 255) {
                     drone.rssi_decrease_counter_++;
                 }
-                drone.last_rssi_ = drone.rssi;
             }
+            // Update baseline for next cycle comparison
+            drone.last_rssi_ = static_cast<int16_t>(drone.rssi);
             if (drone.rssi_decrease_counter_ >= threshold) {
                 drone.rssi_decrease_counter_ = 0;
                 if (drone.decay_threat()) {
@@ -788,6 +792,9 @@ private:
 
     // Decay: run once per frequency change (not every frame)
     FreqHz last_decay_freq_{0};
+
+    // RSSI-based decay cycle counter (normal mode): triggers apply_rssi_decay() every CYC cycles
+    uint8_t rssi_decay_cycle_counter_{0};
 
     // Noise blacklist: track force-resume count per frequency
     // If we force-resume from a freq 3+ times without threat upgrade → skip it

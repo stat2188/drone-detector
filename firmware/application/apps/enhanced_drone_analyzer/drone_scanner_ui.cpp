@@ -514,7 +514,7 @@ void DroneScannerUI::refresh_ui() noexcept {
     current_scanner_state_ = scanner_ptr_->get_state();
 
     // Remove stale drones (not seen for DRONE_STALE_TIMEOUT_MS)
-    // Skip in sweep mode: RSSI-based decay in apply_sweep_decay handles cleanup
+    // Skip in sweep mode: RSSI-based decay in apply_rssi_decay handles cleanup
     if (!composite_active_) {
         scanner_ptr_->remove_stale_drones(chTimeNow());
     }
@@ -895,7 +895,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         if (next_pair == 0) {
             // Full cycle complete — all pairs have been displayed
             if (scanner_ptr_ != nullptr) {
-                scanner_ptr_->apply_sweep_decay();
+                scanner_ptr_->apply_rssi_decay();
             }
             if (sweep_auto_mode_) {
                 exit_sweep_mode();
@@ -1017,11 +1017,12 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
             // Exception filter: use actual FFT BIN frequency, not pixel display frequency.
             // Looking Glass reordering means bin frequency != f_min + pixel*step.
-            // Lower sideband (pixel 0-119): bin_freq = f_center - 9.531MHz + pixel * BIN_SIZE
-            // Upper sideband (pixel 120+):  bin_freq = f_center - 9.531MHz + (pixel-2) * BIN_SIZE
+            // Arithmetic avoids negative offsets (uint64_t overflow):
+            //   Lower: f_center - 122*BIN_SIZE + pixel*BIN_SIZE
+            //   Upper: f_center - 124*BIN_SIZE + pixel*BIN_SIZE
             const FreqHz bin_freq = (pixel_index < SWEEP_FFT_MAP_CROSSOVER)
-                ? (f_center + static_cast<FreqHz>(pixel_index - 122) * EACH_BIN_SIZE)
-                : (f_center + static_cast<FreqHz>(pixel_index - 124) * EACH_BIN_SIZE);
+                ? (f_center - 122 * EACH_BIN_SIZE + static_cast<FreqHz>(pixel_index) * EACH_BIN_SIZE)
+                : (f_center - 124 * EACH_BIN_SIZE + static_cast<FreqHz>(pixel_index) * EACH_BIN_SIZE);
             if (!is_exception(bin_freq)) {
                 composite[pixel_index] = pixel_max;
             }
