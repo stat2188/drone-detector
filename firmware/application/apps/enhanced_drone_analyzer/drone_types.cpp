@@ -138,12 +138,20 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcep
         classified = ThreatLevel::MEDIUM;
     }
 
-    // Only upgrade threat level — never downgrade during re-detection
-    // This prevents drones from bouncing between LOW/MEDIUM when signal
-    // fluctuates around the threshold
-    if (classified > threat_level) {
-        threat_level = classified;
+    // Allow both upgrade and downgrade of threat level during re-detection.
+    // Upgrade: signal getting stronger (e.g., drone approaching).
+    // Downgrade: signal degrading (e.g., drone receding or intermittent).
+    // Gradual decay via apply_rssi_decay() handles sustained decrease over CYC cycles.
+    // Immediate downgrade here catches dramatic RSSI drops (e.g., -40 → -85 dBm).
+    threat_level = classified;
+
+    // Track RSSI trend: compare against previous sample (last_rssi_).
+    // This flag is read by apply_rssi_decay() at cycle boundaries to decide decay.
+    if (new_rssi > last_rssi_) {
+        rssi_increased_ = true;
     }
+    // Update last_rssi_ for next sample comparison (intra-cycle tracking)
+    last_rssi_ = static_cast<int16_t>(new_rssi);
 }
 
 RssiValue TrackedDrone::get_average_rssi() const noexcept {

@@ -608,10 +608,10 @@ public:
 
     /**
      * @brief Apply RSSI-based threat decay (unified for both normal and sweep modes)
-     * @note For each drone: if RSSI decreased or drone not detected this cycle,
+     * @note For each drone: if RSSI did not increase during this cycle,
      *       increment decrease counter. If counter reaches rssi_decrease_cycles (CYC), decay threat.
-     *       If RSSI increased, reset counter.
-     * @note Updates last_rssi_ to current rssi as new baseline for next cycle comparison.
+     *       If RSSI increased at any point during the cycle, reset counter.
+     * @note Resets rssi_increased_ flag for next cycle.
      * @note Called from perform_scan_cycle_internal() (normal mode) and on_sweep_spectrum() (sweep mode)
      */
     void apply_rssi_decay() noexcept {
@@ -619,16 +619,18 @@ public:
         size_t write_idx = 0;
         for (size_t read_idx = 0; read_idx < tracked_count_; ++read_idx) {
             auto& drone = tracked_drones_[read_idx];
+            // rssi_increased_ reflects whether ANY update_rssi() call during
+            // this cycle showed RSSI > last_rssi_ (intra-cycle sample comparison).
+            // If RSSI never increased during the cycle, increment decay counter.
             if (drone.rssi_increased_) {
                 drone.rssi_decrease_counter_ = 0;
-                drone.rssi_increased_ = false;
             } else {
                 if (drone.rssi_decrease_counter_ < 255) {
                     drone.rssi_decrease_counter_++;
                 }
             }
-            // Update baseline for next cycle comparison
-            drone.last_rssi_ = static_cast<int16_t>(drone.rssi);
+            // Reset flag for next cycle — update_rssi() will set true if RSSI rises
+            drone.rssi_increased_ = false;
             if (drone.rssi_decrease_counter_ >= threshold) {
                 drone.rssi_decrease_counter_ = 0;
                 if (drone.decay_threat()) {
