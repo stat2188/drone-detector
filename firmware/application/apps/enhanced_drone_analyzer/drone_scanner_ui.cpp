@@ -977,7 +977,10 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     pixel_step_half_hz = pixel_step_hz / 2;
     // Use config step if provided, otherwise fall back to FFT-based constant
     step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * EACH_BIN_SIZE);
-    f_center_ini = f_min - (2 * EACH_BIN_SIZE) + (SWEEP_SLICE_BW / 2);
+    // f_center_ini positioned so pixel 239 maps to f_max.
+    // With -2*BIN_SIZE the FFT overshoots f_max by ~20 MHz → false positives at f_max+15.
+    // Looking Glass places f_center at f_min + SLICE_BW/2 → last pixel ≈ f_max.
+    f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
     reset();
 }
 
