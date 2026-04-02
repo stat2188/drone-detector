@@ -456,15 +456,13 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
     bool signal_detected = false;
 
     if (config_.spectrum_detection_enabled) {
-        // Spectrum primary: margin-gated shape detection
+        // Spectrum-only: shape analysis gates detection. If the signal
+        // fails all shape filters (margin, width, sharpness, flatness, symmetry, etc.)
+        // it is NOT a drone — reject regardless of raw RSSI.
         int32_t spectrum_rssi = RSSI_MIN_DBM;
         if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
             signal_detected = true;
             if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
-        }
-        // RSSI fallback: catch strong signals that margin filters out
-        if (!signal_detected && rssi > config_.rssi_threshold_dbm) {
-            signal_detected = true;
         }
     } else {
         signal_detected = (rssi > config_.rssi_threshold_dbm);
@@ -526,15 +524,11 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     bool signal_detected = false;
 
     if (config_.spectrum_detection_enabled) {
-        // Spectrum primary: margin-gated shape detection
+        // Spectrum-only: shape analysis gates detection
         int32_t spectrum_rssi = RSSI_MIN_DBM;
         if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
             signal_detected = true;
             if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
-        }
-        // RSSI fallback: catch strong signals that margin filters out
-        if (!signal_detected && rssi > config_.rssi_threshold_dbm) {
-            signal_detected = true;
         }
     } else {
         signal_detected = (rssi > config_.rssi_threshold_dbm);
