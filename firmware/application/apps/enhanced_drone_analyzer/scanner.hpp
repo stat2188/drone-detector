@@ -65,6 +65,8 @@ struct ScanConfig {
     uint8_t spectrum_peak_sharpness{DEFAULT_SPECTRUM_PEAK_SHARPNESS};  // Min peak sharpness ratio (enforce V-shape)
     uint8_t spectrum_peak_ratio{DEFAULT_SPECTRUM_PEAK_RATIO};          // Peak-to-width ratio (inverted-V filter)
     uint8_t spectrum_valley_depth{DEFAULT_SPECTRUM_VALLEY_DEPTH};      // Valley depth threshold (V-shape flanks)
+    uint8_t spectrum_flatness{DEFAULT_SPECTRUM_FLATNESS};              // Peak-to-average ratio (reject flat-top WiFi/FM)
+    uint8_t spectrum_symmetry{DEFAULT_SPECTRUM_SYMMETRY};              // Left/right width symmetry % (reject asymmetric noise)
 
     // New anti-false-positive features
     int32_t neighbor_margin_db{DEFAULT_NEIGHBOR_MARGIN_DB};  // 0=disabled, 3=default

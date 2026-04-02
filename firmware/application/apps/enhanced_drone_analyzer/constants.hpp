@@ -669,6 +669,26 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 255;
  */
 constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 40;
 
+/**
+ * @brief Default peak flatness threshold (50-250)
+ * @note flatness = (peak_margin * 100) / avg_margin
+ * @note WiFi/BT flat-top: flatness ~ 100-120 (peak barely above average)
+ * @note Drone V-shape: flatness >> 200 (peak dominates average)
+ * @note Higher = stricter (rejects more flat signals)
+ * @note 50 = no flatness filtering (disabled)
+ */
+constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 150;
+
+/**
+ * @brief Default signal symmetry threshold (0-100, percent)
+ * @note symmetry = min(left_width, right_width) * 100 / max(left_width, right_width)
+ * @note Drone video V-shape: symmetry > 50% (both sides similar)
+ * @note Noise/asymmetric: symmetry < 30% (one side dominant)
+ * @note Lower = stricter (requires more symmetry)
+ * @note 0 = no symmetry filtering (disabled)
+ */
+constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 35;
+
 // ============================================================================
 // Neighbor Margin Check Constants
 // ============================================================================

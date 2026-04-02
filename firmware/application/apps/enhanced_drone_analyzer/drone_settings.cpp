@@ -32,6 +32,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(10), UI_POS_Y(5)}, "Rat:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(10), UI_POS_Y(6)}, "Vly:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(10), UI_POS_Y(4)}, "Flat:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(17), UI_POS_Y(4)}, "Sym:", Theme::getInstance()->fg_light->foreground},
     })
     , field_scan_mode_({UI_POS_X(0), UI_POS_Y(0)}, 1, {
         {"-", 0},
@@ -56,6 +58,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_spectrum_peak_sharpness_({UI_POS_X(6), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
     , field_spectrum_peak_ratio_({UI_POS_X(13), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')
     , field_spectrum_valley_depth_({UI_POS_X(13), UI_POS_Y(6)}, 3, {0, 200}, 5, ' ')
+    , field_spectrum_flatness_({UI_POS_X(14), UI_POS_Y(4)}, 3, {50, 250}, 5, ' ')
+    , field_spectrum_symmetry_({UI_POS_X(20), UI_POS_Y(4)}, 3, {0, 100}, 5, ' ')
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
     , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")
     , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
@@ -95,6 +99,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_spectrum_peak_sharpness_,
         &field_spectrum_peak_ratio_,
         &field_spectrum_valley_depth_,
+        &field_spectrum_flatness_,
+        &field_spectrum_symmetry_,
         &button_defaults_,
         &button_about_,
         &button_save_,
@@ -216,6 +222,16 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     field_spectrum_valley_depth_.on_change = [this](int32_t v) {
         settings_.spectrum_valley_depth = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+
+    field_spectrum_flatness_.on_change = [this](int32_t v) {
+        settings_.spectrum_flatness = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+
+    field_spectrum_symmetry_.on_change = [this](int32_t v) {
+        settings_.spectrum_symmetry = static_cast<uint8_t>(v);
         settings_dirty_ = true;
     };
 
@@ -354,6 +370,8 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_spectrum_peak_sharpness_.set_value(static_cast<int32_t>(settings_.spectrum_peak_sharpness));
     field_spectrum_peak_ratio_.set_value(static_cast<int32_t>(settings_.spectrum_peak_ratio));
     field_spectrum_valley_depth_.set_value(static_cast<int32_t>(settings_.spectrum_valley_depth));
+    field_spectrum_flatness_.set_value(static_cast<int32_t>(settings_.spectrum_flatness));
+    field_spectrum_symmetry_.set_value(static_cast<int32_t>(settings_.spectrum_symmetry));
     check_neighbor_margin_.set_value(settings_.neighbor_margin_db > 0);
     field_neighbor_margin_.set_value(static_cast<int32_t>(settings_.neighbor_margin_db));
     check_rssi_variance_.set_value(settings_.rssi_variance_enabled);

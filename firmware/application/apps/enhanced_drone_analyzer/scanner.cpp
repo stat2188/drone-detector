@@ -1131,6 +1131,50 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         }
     }
 
+    // Step 10: Flatness check — peak must dominate average margin
+    // flatness = (peak_margin * 100) / avg_margin
+    // WiFi/BT flat-top: flatness ~ 100-120 (peak barely above average elevation)
+    // Drone V-shape: flatness >> 200 (peak towers above flanking bins)
+    // Plateau: flatness ~ 100 (all bins at same level)
+    if (config_.spectrum_flatness > 50) {
+        int32_t margin_sum = 0;
+        size_t bin_count = 0;
+        for (size_t i = left; i <= right; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] > noise_floor) {
+                margin_sum += (spectrum.db[i] - noise_floor);
+                ++bin_count;
+            }
+        }
+        if (bin_count > 1) {
+            const int32_t avg_margin = margin_sum / static_cast<int32_t>(bin_count);
+            if (avg_margin > 0) {
+                const int32_t flatness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+                if (flatness < config_.spectrum_flatness) {
+                    return false;  // Flat-top signal — peak does not dominate (WiFi, FM, BT)
+                }
+            }
+        }
+    }
+
+    // Step 11: Symmetry check — V-shape signal must have similar left/right width
+    // symmetry = min(left_w, right_w) * 100 / max(left_w, right_w)
+    // Drone video V-shape: symmetry > 50% (both sides of peak are similar)
+    // Noise burst: symmetry < 25% (one side dominates)
+    // Disabled when signal_width <= 1 (single bin, no sides to compare)
+    if (config_.spectrum_symmetry > 0 && signal_width > 1) {
+        const size_t left_width = peak_index - left;
+        const size_t right_width = right - peak_index;
+        const size_t max_side = (left_width > right_width) ? left_width : right_width;
+        const size_t min_side = (left_width < right_width) ? left_width : right_width;
+        if (max_side > 0) {
+            const uint8_t sym_pct = static_cast<uint8_t>((min_side * 100) / max_side);
+            if (sym_pct < config_.spectrum_symmetry) {
+                return false;  // Asymmetric signal — likely noise burst
+            }
+        }
+    }
+
     // RSSI from actual peak bin value (same conversion as extract_rssi)
     out_rssi = static_cast<int32_t>(peak_value) - FFT_DBM_OFFSET;
     if (out_rssi > RSSI_MAX_DBM) out_rssi = RSSI_MAX_DBM;
@@ -1153,6 +1197,8 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     const uint8_t cfg_sharpness = config_.spectrum_peak_sharpness;
     const uint8_t cfg_ratio = config_.spectrum_peak_ratio;
     const uint8_t cfg_valley = config_.spectrum_valley_depth;
+    const uint8_t cfg_flatness = config_.spectrum_flatness;
+    const uint8_t cfg_symmetry = config_.spectrum_symmetry;
     const int32_t cfg_rssi_thresh = config_.rssi_threshold_dbm;
 
     // Step 1: Collect bins + find peak + compute noise floor via quickselect (single pass O(n))
@@ -1275,6 +1321,38 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
 
         const uint8_t max_valley = (left_valley > right_valley) ? left_valley : right_valley;
         if (max_valley >= cfg_valley) return;
+    }
+
+    // Step 8b: Flatness check — peak must dominate average margin
+    if (cfg_flatness > 50) {
+        int32_t margin_sum = 0;
+        size_t bin_count = 0;
+        for (size_t i = sig_left; i <= sig_right; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] > noise_floor) {
+                margin_sum += (spectrum.db[i] - noise_floor);
+                ++bin_count;
+            }
+        }
+        if (bin_count > 1) {
+            const int32_t avg_margin = margin_sum / static_cast<int32_t>(bin_count);
+            if (avg_margin > 0) {
+                const int32_t flat = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+                if (flat < cfg_flatness) return;
+            }
+        }
+    }
+
+    // Step 8c: Symmetry check — V-shape must have similar left/right width
+    if (cfg_symmetry > 0 && signal_width > 1) {
+        const size_t left_w = peak_index - sig_left;
+        const size_t right_w = sig_right - peak_index;
+        const size_t max_s = (left_w > right_w) ? left_w : right_w;
+        const size_t min_s = (left_w < right_w) ? left_w : right_w;
+        if (max_s > 0) {
+            const uint8_t sym_pct = static_cast<uint8_t>((min_s * 100) / max_s);
+            if (sym_pct < cfg_symmetry) return;
+        }
     }
 
     // Step 9: Convert peak to dBm

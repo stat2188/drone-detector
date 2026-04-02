@@ -44,6 +44,8 @@ struct SettingsStruct {
     uint8_t spectrum_peak_sharpness;
     uint8_t spectrum_peak_ratio;
     uint8_t spectrum_valley_depth;
+    uint8_t spectrum_flatness;
+    uint8_t spectrum_symmetry;
 
     // Anti-false-positive
     int32_t neighbor_margin_db;

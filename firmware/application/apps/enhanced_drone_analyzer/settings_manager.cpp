@@ -33,6 +33,8 @@ SettingsStruct::SettingsStruct() noexcept
     , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
     , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
     , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
+    , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
+    , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(false)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
@@ -157,6 +159,10 @@ static void parse_settings_line(
         s.spectrum_peak_ratio = static_cast<uint8_t>(parse_int());
     } else if (key_matches("spectrum_valley_depth")) {
         s.spectrum_valley_depth = static_cast<uint8_t>(parse_int());
+    } else if (key_matches("spectrum_flatness")) {
+        s.spectrum_flatness = static_cast<uint8_t>(parse_int());
+    } else if (key_matches("spectrum_symmetry")) {
+        s.spectrum_symmetry = static_cast<uint8_t>(parse_int());
 
     // --- Anti-false-positive ---
     } else if (key_matches("neighbor_margin_db")) {
@@ -388,6 +394,8 @@ ErrorCode SettingsFileManager::save(
     wl(file, "spectrum_peak_sharpness", static_cast<int64_t>(s.spectrum_peak_sharpness));
     wl(file, "spectrum_peak_ratio", static_cast<int64_t>(s.spectrum_peak_ratio));
     wl(file, "spectrum_valley_depth", static_cast<int64_t>(s.spectrum_valley_depth));
+    wl(file, "spectrum_flatness", static_cast<int64_t>(s.spectrum_flatness));
+    wl(file, "spectrum_symmetry", static_cast<int64_t>(s.spectrum_symmetry));
 
     // Anti-false-positive
     wl(file, "neighbor_margin_db", static_cast<int64_t>(s.neighbor_margin_db));
@@ -467,6 +475,8 @@ void SettingsFileManager::apply_to_config(
     config.spectrum_peak_sharpness = s.spectrum_peak_sharpness;
     config.spectrum_peak_ratio = s.spectrum_peak_ratio;
     config.spectrum_valley_depth = s.spectrum_valley_depth;
+    config.spectrum_flatness = s.spectrum_flatness;
+    config.spectrum_symmetry = s.spectrum_symmetry;
     config.median_enabled = s.median_enabled;
     config.neighbor_margin_db = s.neighbor_margin_db;
     config.rssi_variance_enabled = s.rssi_variance_enabled;
@@ -526,6 +536,8 @@ void SettingsFileManager::extract_from_config(
     s.spectrum_peak_sharpness = config.spectrum_peak_sharpness;
     s.spectrum_peak_ratio = config.spectrum_peak_ratio;
     s.spectrum_valley_depth = config.spectrum_valley_depth;
+    s.spectrum_flatness = config.spectrum_flatness;
+    s.spectrum_symmetry = config.spectrum_symmetry;
     s.median_enabled = config.median_enabled;
     s.neighbor_margin_db = config.neighbor_margin_db;
     s.rssi_variance_enabled = config.rssi_variance_enabled;

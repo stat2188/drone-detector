@@ -68,6 +68,8 @@ private:
     ui::NumberField field_spectrum_peak_sharpness_;
     ui::NumberField field_spectrum_peak_ratio_;
     ui::NumberField field_spectrum_valley_depth_;
+    ui::NumberField field_spectrum_flatness_;
+    ui::NumberField field_spectrum_symmetry_;
 
     ui::Button button_defaults_;
     ui::Button button_about_;
