@@ -1015,9 +1015,14 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         if (power > pixel_max) pixel_max = power;
         bins_hz_acc += EACH_BIN_SIZE;
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-            // Exception filter uses precomputed pixel frequency
-            const FreqHz pixel_freq = f_min + static_cast<FreqHz>(pixel_index) * pixel_step_hz;
-            if (!is_exception(pixel_freq)) {
+            // Exception filter: use actual FFT BIN frequency, not pixel display frequency.
+            // Looking Glass reordering means bin frequency != f_min + pixel*step.
+            // Lower sideband (pixel 0-119): bin_freq = f_center - 9.531MHz + pixel * BIN_SIZE
+            // Upper sideband (pixel 120+):  bin_freq = f_center - 9.531MHz + (pixel-2) * BIN_SIZE
+            const FreqHz bin_freq = (pixel_index < SWEEP_FFT_MAP_CROSSOVER)
+                ? (f_center + static_cast<FreqHz>(pixel_index - 122) * EACH_BIN_SIZE)
+                : (f_center + static_cast<FreqHz>(pixel_index - 124) * EACH_BIN_SIZE);
+            if (!is_exception(bin_freq)) {
                 composite[pixel_index] = pixel_max;
             }
             ++pixel_index;

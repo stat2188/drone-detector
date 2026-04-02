@@ -571,6 +571,25 @@ public:
     }
 
     /**
+     * @brief Convert FFT bin index (Looking Glass reordering) to actual RF frequency
+     * @param f_center Slice center frequency (Hz)
+     * @param bin FFT bin index (0-255, after Looking Glass reordering)
+     * @return Actual RF frequency for this bin (Hz)
+     * @note Looking Glass reordering: bin 0 = Nyquist, bin 128 = DC.
+     *       Bins 134-253 (lower sideband): freq = f_center + (bin-256)*BIN_SIZE
+     *       Bins 2-119 (upper sideband):   freq = f_center + (bin-126)*BIN_SIZE
+     *       Bins 120-133 and 0-1, 254-255 are DC spike / edge (should be skipped)
+     */
+    static FreqHz fft_bin_to_freq(FreqHz f_center, size_t bin) noexcept {
+        constexpr FreqHz SLICE_BW = 20000000;
+        constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
+        if (bin >= FFT_DC_SPIKE_END) {
+            return f_center + static_cast<FreqHz>(bin - FFT_BIN_COUNT) * BIN_SIZE;
+        }
+        return f_center + static_cast<FreqHz>(bin - 126) * BIN_SIZE;
+    }
+
+    /**
      * @brief Lightweight spectrum processing for sweep mode
      * @param spectrum Channel spectrum data (256 bins)
      * @param center_freq Current slice center frequency

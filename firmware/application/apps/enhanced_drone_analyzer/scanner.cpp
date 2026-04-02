@@ -1312,21 +1312,11 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
 
     // Step 10b: Exception check + tracking
     if (peak_rssi > cfg_rssi_thresh) {
-        constexpr FreqHz SLICE_BW = 20000000;
-        constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
-        const FreqHz f_center = static_cast<FreqHz>(center_freq);
-        const FreqHz f_min = f_center - (SLICE_BW / 2) + (2 * BIN_SIZE);
-
-        FreqHz peak_freq = 0;
-        if (peak_index >= FFT_DC_SPIKE_END) {
-            const FreqHz pixel_idx = peak_index - SWEEP_FFT_MAP_START;
-            peak_freq = f_min + pixel_idx * (SLICE_BW / SWEEP_PIXELS_PER_SLICE);
-        } else if (peak_index >= 2) {
-            const FreqHz pixel_idx = peak_index + (SWEEP_FFT_MAP_CROSSOVER - 2);
-            peak_freq = f_min + pixel_idx * (SLICE_BW / SWEEP_PIXELS_PER_SLICE);
-        } else {
-            peak_freq = f_center;
-        }
+        // Convert FFT bin index to ACTUAL RF frequency using Looking Glass mapping.
+        // The pixel formula (f_min + pixel_index * step) is WRONG for FFT bins
+        // because Looking Glass reorders bins. Each bin has a fixed frequency offset
+        // from f_center that depends on its position in the reordering.
+        const FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
 
         const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
         bool is_exception = false;
