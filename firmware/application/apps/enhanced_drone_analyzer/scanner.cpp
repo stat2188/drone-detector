@@ -1053,11 +1053,13 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         return false;
     }
 
-    // Step 7: Peak sharpness check — enforce inverted-V shape
+    // Step 7+10: Compute average margin ONCE for both sharpness and flatness checks
     // sharpness = (peak_margin * 100) / avg_margin
-    // V-shape (drone video link): sharpness >> 100
-    // U/I shape (flat noise):     sharpness ~ 100
-    if (config_.spectrum_peak_sharpness > 50) {
+    // flatness  = (peak_margin * 100) / avg_margin
+    // V-shape (drone video link): sharpness >> 100, flatness >> 200
+    // U/I shape (flat noise):     sharpness ~ 100, flatness ~ 100-120
+    int32_t avg_margin = 0;
+    if (config_.spectrum_peak_sharpness > 50 || config_.spectrum_flatness > 50) {
         int32_t margin_sum = 0;
         size_t bin_count = 0;
         for (size_t i = left; i <= right; ++i) {
@@ -1068,13 +1070,15 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
             }
         }
         if (bin_count > 0) {
-            const int32_t avg_margin = margin_sum / static_cast<int32_t>(bin_count);
-            if (avg_margin > 0) {
-                const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-                if (sharpness < config_.spectrum_peak_sharpness) {
-                    return false;  // Flat-topped signal, not V-shaped
-                }
-            }
+            avg_margin = margin_sum / static_cast<int32_t>(bin_count);
+        }
+    }
+
+    // Step 7: Peak sharpness check — enforce inverted-V shape
+    if (config_.spectrum_peak_sharpness > 50 && avg_margin > 0) {
+        const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+        if (sharpness < config_.spectrum_peak_sharpness) {
+            return false;  // Flat-topped signal, not V-shaped
         }
     }
 
@@ -1125,29 +1129,15 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         }
     }
 
-    // Step 10: Flatness check — peak must dominate average margin
+    // Step 10: Flatness check — peak must dominate average margin (reuses avg_margin from step 7)
     // flatness = (peak_margin * 100) / avg_margin
     // WiFi/BT flat-top: flatness ~ 100-120 (peak barely above average elevation)
     // Drone V-shape: flatness >> 200 (peak towers above flanking bins)
     // Plateau: flatness ~ 100 (all bins at same level)
-    if (config_.spectrum_flatness > 50) {
-        int32_t margin_sum = 0;
-        size_t bin_count = 0;
-        for (size_t i = left; i <= right; ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] > noise_floor) {
-                margin_sum += (spectrum.db[i] - noise_floor);
-                ++bin_count;
-            }
-        }
-        if (bin_count > 1) {
-            const int32_t avg_margin = margin_sum / static_cast<int32_t>(bin_count);
-            if (avg_margin > 0) {
-                const int32_t flatness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-                if (flatness < config_.spectrum_flatness) {
-                    return false;  // Flat-top signal — peak does not dominate (WiFi, FM, BT)
-                }
-            }
+    if (config_.spectrum_flatness > 50 && avg_margin > 0) {
+        const int32_t flatness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+        if (flatness < config_.spectrum_flatness) {
+            return false;  // Flat-top signal — peak does not dominate (WiFi, FM, BT)
         }
     }
 
@@ -1269,8 +1259,9 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     if (signal_width < cfg_min_width) return;
     if (signal_width > cfg_max_width) return;
 
-    // Step 6: Peak sharpness check (V-shape)
-    if (cfg_sharpness > 50) {
+    // Step 6+8b: Compute average margin ONCE for both sharpness and flatness checks
+    int32_t avg_margin = 0;
+    if (cfg_sharpness > 50 || cfg_flatness > 50) {
         int32_t margin_sum = 0;
         size_t bin_count = 0;
         for (size_t i = sig_left; i <= sig_right; ++i) {
@@ -1281,12 +1272,14 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
             }
         }
         if (bin_count > 0) {
-            const int32_t avg_margin = margin_sum / static_cast<int32_t>(bin_count);
-            if (avg_margin > 0) {
-                const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-                if (sharpness < cfg_sharpness) return;
-            }
+            avg_margin = margin_sum / static_cast<int32_t>(bin_count);
         }
+    }
+
+    // Step 6: Peak sharpness check (V-shape)
+    if (cfg_sharpness > 50 && avg_margin > 0) {
+        const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+        if (sharpness < cfg_sharpness) return;
     }
 
     // Step 7: Peak ratio check
@@ -1317,24 +1310,10 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         if (max_valley >= cfg_valley) return;
     }
 
-    // Step 8b: Flatness check — peak must dominate average margin
-    if (cfg_flatness > 50) {
-        int32_t margin_sum = 0;
-        size_t bin_count = 0;
-        for (size_t i = sig_left; i <= sig_right; ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] > noise_floor) {
-                margin_sum += (spectrum.db[i] - noise_floor);
-                ++bin_count;
-            }
-        }
-        if (bin_count > 1) {
-            const int32_t avg_margin = margin_sum / static_cast<int32_t>(bin_count);
-            if (avg_margin > 0) {
-                const int32_t flat = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-                if (flat < cfg_flatness) return;
-            }
-        }
+    // Step 8b: Flatness check — peak must dominate average margin (reuses avg_margin from step 6)
+    if (cfg_flatness > 50 && avg_margin > 0) {
+        const int32_t flat = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+        if (flat < cfg_flatness) return;
     }
 
     // Step 8c: Symmetry check — V-shape must have similar left/right width
