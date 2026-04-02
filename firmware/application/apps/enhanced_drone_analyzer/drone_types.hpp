@@ -223,8 +223,10 @@ struct TrackedDrone {
     int16_t last_rssi_;                 // 2 bytes — RSSI from previous cycle (for decay)
     uint8_t rssi_decrease_counter_;     // 1 bytes — consecutive cycles with RSSI decrease
     bool rssi_increased_;               // 1 byte — set true when new RSSI > previous
+    SystemTime last_increase_time_;     // 4 bytes — timestamp when RSSI last increased (for time-based decay)
+    SystemTime created_time_;           // 4 bytes — timestamp when drone was first detected (min lifetime)
     
-    // Total: 57 bytes (no vtable, no virtual functions)
+    // Total: 65 bytes (no vtable, no virtual functions)
     
     /**
      * @brief Default constructor

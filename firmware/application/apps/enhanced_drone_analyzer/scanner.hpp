@@ -607,32 +607,45 @@ public:
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept;
 
     /**
-     * @brief Apply RSSI-based threat decay (unified for both normal and sweep modes)
-     * @note For each drone: if RSSI did not increase during this cycle,
-     *       increment decrease counter. If counter reaches rssi_decrease_cycles (CYC), decay threat.
-     *       If RSSI increased at any point during the cycle, reset counter.
-     * @note Resets rssi_increased_ flag for next cycle.
+     * @brief Apply RSSI-based threat decay (time-based, unified for normal and sweep modes)
+     * @note Each drone: if RSSI did not increase for decay_threshold_ms (CYC × 1000ms),
+     *       decay threat by one step. If RSSI increased, reset timer.
+     * @note Enforces minimum drone lifetime of DRONE_STALE_TIMEOUT_MS (5s) before removal.
+     * @note Resets rssi_increased_ flag after each call.
      * @note Called from perform_scan_cycle_internal() (normal mode) and on_sweep_spectrum() (sweep mode)
      */
     void apply_rssi_decay() noexcept {
-        const uint8_t threshold = config_.rssi_decrease_cycles;
+        const uint32_t decay_threshold_ms =
+            static_cast<uint32_t>(config_.rssi_decrease_cycles) * 1000U;
+        const SystemTime now = chTimeNow();
         size_t write_idx = 0;
         for (size_t read_idx = 0; read_idx < tracked_count_; ++read_idx) {
             auto& drone = tracked_drones_[read_idx];
-            // rssi_increased_ reflects whether ANY update_rssi() call during
-            // this cycle showed RSSI > last_rssi_ (intra-cycle sample comparison).
-            // If RSSI never increased during the cycle, increment decay counter.
             if (drone.rssi_increased_) {
                 drone.rssi_decrease_counter_ = 0;
+                drone.last_increase_time_ = now;
             } else {
-                if (drone.rssi_decrease_counter_ < 255) {
-                    drone.rssi_decrease_counter_++;
+                const uint32_t elapsed = now - drone.last_increase_time_;
+                if (elapsed >= decay_threshold_ms) {
+                    drone.rssi_decrease_counter_ = 1;
+                } else {
+                    drone.rssi_decrease_counter_ = 0;
                 }
             }
-            // Reset flag for next cycle — update_rssi() will set true if RSSI rises
             drone.rssi_increased_ = false;
-            if (drone.rssi_decrease_counter_ >= threshold) {
+            if (drone.rssi_decrease_counter_ > 0) {
                 drone.rssi_decrease_counter_ = 0;
+                drone.last_increase_time_ = now;
+                // Enforce minimum lifetime before allowing removal
+                const uint32_t lifetime = now - drone.created_time_;
+                if (lifetime < DRONE_STALE_TIMEOUT_MS) {
+                    // Too young to remove — keep even if threat would be NONE
+                    if (write_idx != read_idx) {
+                        tracked_drones_[write_idx] = tracked_drones_[read_idx];
+                    }
+                    ++write_idx;
+                    continue;
+                }
                 if (drone.decay_threat()) {
                     continue;  // drone removed (threat = NONE)
                 }
@@ -791,12 +804,6 @@ private:
     FreqHz pending_frequency_{0};
     uint8_t pending_count_{0};
     static constexpr uint8_t DETECT_CONFIRM_COUNT = 2;
-
-    // Decay: run once per frequency change (not every frame)
-    FreqHz last_decay_freq_{0};
-
-    // RSSI-based decay cycle counter (normal mode): triggers apply_rssi_decay() every CYC cycles
-    uint8_t rssi_decay_cycle_counter_{0};
 
     // Noise blacklist: track force-resume count per frequency
     // If we force-resume from a freq 3+ times without threat upgrade → skip it

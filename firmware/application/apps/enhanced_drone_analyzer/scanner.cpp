@@ -367,21 +367,10 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
 
     statistics_.total_scan_cycles++;
 
-    // Unified threat decay: uses config_.rssi_decrease_cycles (CYC setting).
-    // Runs once every CYC scan cycles via apply_rssi_decay().
-    // Drones are only decayed when their RSSI is decreasing or they are not detected
-    // for CYC consecutive cycles. Re-detected drones have their counter reset.
-    {
-        const uint8_t decay_threshold = config_.rssi_decrease_cycles;
-        ++rssi_decay_cycle_counter_;
-        if (rssi_decay_cycle_counter_ >= decay_threshold) {
-            rssi_decay_cycle_counter_ = 0;
-            apply_rssi_decay();
-        }
-    }
-
-    // Reset per-frequency decay tracker (each frequency is a fresh detection opportunity)
-    last_decay_freq_ = 0;
+    // Time-based threat decay: apply_rssi_decay() uses chTimeNow() internally.
+    // CYC controls the threshold in SECONDS (CYC=5 → 5 seconds without RSSI increase → decay).
+    // Works identically in normal mode (called every scan cycle) and sweep mode (called per sweep pass).
+    apply_rssi_decay();
     
     // Try to get next frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
@@ -765,6 +754,8 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     DroneType type = determine_drone_type_internal(frequency_hz);
 
     tracked_drones_[tracked_count_] = TrackedDrone(frequency_hz, type, ThreatLevel::NONE);
+    tracked_drones_[tracked_count_].created_time_ = timestamp_ms;
+    tracked_drones_[tracked_count_].last_increase_time_ = timestamp_ms;
     tracked_drones_[tracked_count_].update_rssi(rssi_dbm, timestamp_ms);
 
     tracked_count_++;

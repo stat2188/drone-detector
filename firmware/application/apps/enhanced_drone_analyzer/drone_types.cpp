@@ -80,7 +80,9 @@ TrackedDrone::TrackedDrone() noexcept
     , missed_cycles_{0}
     , last_rssi_{RSSI_NOISE_FLOOR_DBM}
     , rssi_decrease_counter_{0}
-    , rssi_increased_{false} {
+    , rssi_increased_{false}
+    , last_increase_time_{0}
+    , created_time_{0} {
 }
 
 TrackedDrone::TrackedDrone(
@@ -100,7 +102,9 @@ TrackedDrone::TrackedDrone(
     , missed_cycles_{0}
     , last_rssi_{RSSI_NOISE_FLOOR_DBM}
     , rssi_decrease_counter_{0}
-    , rssi_increased_{false} {
+    , rssi_increased_{false}
+    , last_increase_time_{0}
+    , created_time_{0} {
 }
 
 void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcept {
@@ -129,26 +133,23 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcep
         ? get_average_rssi()
         : new_rssi;
     
-    ThreatLevel classified = ThreatLevel::LOW;
+    // All signals above detection threshold start at MEDIUM (not LOW).
+    // LOW is only reached through decay from MEDIUM — prevents instant-stuck-LOW loop.
+    ThreatLevel classified = ThreatLevel::MEDIUM;
     if (classify_rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
         classified = ThreatLevel::CRITICAL;
     } else if (classify_rssi >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
         classified = ThreatLevel::HIGH;
-    } else if (classify_rssi >= RSSI_DETECTION_THRESHOLD_DBM) {
-        classified = ThreatLevel::MEDIUM;
     }
 
     // Allow both upgrade and downgrade of threat level during re-detection.
-    // Upgrade: signal getting stronger (e.g., drone approaching).
-    // Downgrade: signal degrading (e.g., drone receding or intermittent).
-    // Gradual decay via apply_rssi_decay() handles sustained decrease over CYC cycles.
-    // Immediate downgrade here catches dramatic RSSI drops (e.g., -40 → -85 dBm).
     threat_level = classified;
 
     // Track RSSI trend: compare against previous sample (last_rssi_).
     // This flag is read by apply_rssi_decay() at cycle boundaries to decide decay.
     if (new_rssi > last_rssi_) {
         rssi_increased_ = true;
+        last_increase_time_ = timestamp;
     }
     // Update last_rssi_ for next sample comparison (intra-cycle tracking)
     last_rssi_ = static_cast<int16_t>(new_rssi);
