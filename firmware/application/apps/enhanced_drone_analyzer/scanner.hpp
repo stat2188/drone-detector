@@ -630,14 +630,10 @@ public:
                 const uint32_t elapsed = now - drone.last_increase_time_;
                 if (elapsed >= decay_threshold_ms) {
                     drone.rssi_decrease_counter_ = 1;
-                } else {
-                    drone.rssi_decrease_counter_ = 0;
                 }
             }
             drone.rssi_increased_ = false;
             if (drone.rssi_decrease_counter_ > 0) {
-                drone.rssi_decrease_counter_ = 0;
-                drone.last_increase_time_ = now;
                 // Enforce minimum lifetime before allowing removal
                 const uint32_t lifetime = now - drone.created_time_;
                 if (lifetime < DRONE_STALE_TIMEOUT_MS) {
@@ -649,6 +645,7 @@ public:
                     continue;
                 }
                 if (drone.decay_threat()) {
+                    drone.rssi_decrease_counter_ = 0;
                     continue;  // drone removed (threat = NONE)
                 }
             }

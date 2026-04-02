@@ -752,11 +752,13 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     // so get_next_frequency() finds the exact resume point after sweep.
     if (database_ptr_ != nullptr) {
         last_db_index_ = database_ptr_->get_current_index();
-        ErrorResult<FreqHz> freq_result = scanner_ptr_->get_current_frequency();
-        if (freq_result.has_value() && freq_result.value() != 0) {
-            last_db_frequency_ = freq_result.value();
-        } else {
+        // Use current frequency from scanner (thread-safe via atomic read)
+        // This is the frequency the scanner was tuned to before sweep entry
+        if (current_frequency_ != 0) {
             last_db_frequency_ = current_frequency_;
+        } else {
+            // Fallback: try to get from scanner's locked frequency
+            last_db_frequency_ = scanner_ptr_->get_locked_frequency();
         }
     }
 
@@ -1019,15 +1021,10 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         if (power > pixel_max) pixel_max = power;
         bins_hz_acc += EACH_BIN_SIZE;
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-            // Exception filter: use actual FFT BIN frequency, not pixel display frequency.
-            // Looking Glass reordering means bin frequency != f_min + pixel*step.
-            // Arithmetic avoids negative offsets (uint64_t overflow):
-            //   Lower: f_center - 122*BIN_SIZE + pixel*BIN_SIZE
-            //   Upper: f_center - 124*BIN_SIZE + pixel*BIN_SIZE
-            const FreqHz bin_freq = (pixel_index < SWEEP_FFT_MAP_CROSSOVER)
-                ? (f_center - 122 * EACH_BIN_SIZE + static_cast<FreqHz>(pixel_index) * EACH_BIN_SIZE)
-                : (f_center - 124 * EACH_BIN_SIZE + static_cast<FreqHz>(pixel_index) * EACH_BIN_SIZE);
-            if (!is_exception(bin_freq)) {
+            // Exception filter: use actual pixel display frequency (f_min + pixel * step).
+            // This matches the frequency the user sees at that pixel position.
+            const FreqHz pixel_freq = f_min + static_cast<FreqHz>(pixel_index) * pixel_step_hz;
+            if (!is_exception(pixel_freq)) {
                 composite[pixel_index] = pixel_max;
             }
             ++pixel_index;

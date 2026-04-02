@@ -1200,6 +1200,9 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
     }
 
+    // Guard: no usable bins (all in DC spike or edge skip)
+    if (idx == 0) return;
+
     // Quickselect median O(n) for noise floor
     const size_t k = idx / 2;
     uint8_t qs_left = 0;
