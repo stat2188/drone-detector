@@ -460,11 +460,26 @@ void DroneSweepView::save_settings() noexcept {
     // Read exception radius (1-100 MHz)
     const uint8_t exc_radius = static_cast<uint8_t>(field_exc_radius_.value());
 
-    // Validate: start must be < end
+    // Validate: start must be < end AND within hardware limits
+    // HackRF One RFFC5072 mixer practical limit: 6 GHz
+    if (sw1_start < HARDWARE_MIN_FREQ_HZ) sw1_start = HARDWARE_MIN_FREQ_HZ;
+    if (sw1_end > HARDWARE_MAX_FREQ_HZ) sw1_end = HARDWARE_MAX_FREQ_HZ;
     if (sw1_start >= sw1_end) sw1_end = sw1_start + 20000000;
-    if (sw2_enabled && sw2_start >= sw2_end) sw2_end = sw2_start + 20000000;
-    if (sw3_enabled && sw3_start >= sw3_end) sw3_end = sw3_start + 20000000;
-    if (sw4_enabled && sw4_start >= sw4_end) sw4_end = sw4_start + 20000000;
+    if (sw2_enabled) {
+        if (sw2_start < HARDWARE_MIN_FREQ_HZ) sw2_start = HARDWARE_MIN_FREQ_HZ;
+        if (sw2_end > HARDWARE_MAX_FREQ_HZ) sw2_end = HARDWARE_MAX_FREQ_HZ;
+        if (sw2_start >= sw2_end) sw2_end = sw2_start + 20000000;
+    }
+    if (sw3_enabled) {
+        if (sw3_start < HARDWARE_MIN_FREQ_HZ) sw3_start = HARDWARE_MIN_FREQ_HZ;
+        if (sw3_end > HARDWARE_MAX_FREQ_HZ) sw3_end = HARDWARE_MAX_FREQ_HZ;
+        if (sw3_start >= sw3_end) sw3_end = sw3_start + 20000000;
+    }
+    if (sw4_enabled) {
+        if (sw4_start < HARDWARE_MIN_FREQ_HZ) sw4_start = HARDWARE_MIN_FREQ_HZ;
+        if (sw4_end > HARDWARE_MAX_FREQ_HZ) sw4_end = HARDWARE_MAX_FREQ_HZ;
+        if (sw4_start >= sw4_end) sw4_end = sw4_start + 20000000;
+    }
 
     // Update scanner config in memory
     if (scanner_ptr_ != nullptr) {

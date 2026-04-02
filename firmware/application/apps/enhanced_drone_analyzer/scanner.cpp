@@ -824,8 +824,10 @@ ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
 }
 
 ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const noexcept {
-    if (config.start_frequency < MIN_FREQUENCY_HZ ||
-        config.end_frequency > MAX_FREQUENCY_HZ ||
+    // Validate against HARDWARE limits (not theoretical MAX_FREQUENCY_HZ)
+    // HackRF One RFFC5072 mixer practical limit: 6 GHz
+    if (config.start_frequency < HARDWARE_MIN_FREQ_HZ ||
+        config.end_frequency > HARDWARE_MAX_FREQ_HZ ||
         config.start_frequency >= config.end_frequency) {
         return ErrorCode::INVALID_PARAMETER;
     }
@@ -839,6 +841,34 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
     const uint8_t mode_value = static_cast<uint8_t>(config.mode);
     if (mode_value >= SCANNING_MODE_COUNT) {
         return ErrorCode::INVALID_PARAMETER;
+    }
+
+    // Validate sweep windows against hardware limits
+    if (config.sweep_start_freq < HARDWARE_MIN_FREQ_HZ ||
+        config.sweep_end_freq > HARDWARE_MAX_FREQ_HZ ||
+        config.sweep_start_freq >= config.sweep_end_freq) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    if (config.sweep2_enabled) {
+        if (config.sweep2_start_freq < HARDWARE_MIN_FREQ_HZ ||
+            config.sweep2_end_freq > HARDWARE_MAX_FREQ_HZ ||
+            config.sweep2_start_freq >= config.sweep2_end_freq) {
+            return ErrorCode::INVALID_PARAMETER;
+        }
+    }
+    if (config.sweep3_enabled) {
+        if (config.sweep3_start_freq < HARDWARE_MIN_FREQ_HZ ||
+            config.sweep3_end_freq > HARDWARE_MAX_FREQ_HZ ||
+            config.sweep3_start_freq >= config.sweep3_end_freq) {
+            return ErrorCode::INVALID_PARAMETER;
+        }
+    }
+    if (config.sweep4_enabled) {
+        if (config.sweep4_start_freq < HARDWARE_MIN_FREQ_HZ ||
+            config.sweep4_end_freq > HARDWARE_MAX_FREQ_HZ ||
+            config.sweep4_start_freq >= config.sweep4_end_freq) {
+            return ErrorCode::INVALID_PARAMETER;
+        }
     }
     
     return ErrorCode::SUCCESS;

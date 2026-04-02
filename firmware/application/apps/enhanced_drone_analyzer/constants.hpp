@@ -17,9 +17,22 @@ namespace drone_analyzer {
 constexpr FreqHz MIN_FREQUENCY_HZ = 1'000'000ULL;
 
 /**
- * @brief Maximum frequency in Hz (7.2 GHz - HackRF One maximum)
+ * @brief Maximum frequency in Hz (7.2 GHz - HackRF One theoretical maximum)
  */
 constexpr FreqHz MAX_FREQUENCY_HZ = 7'200'000'000ULL;
+
+/**
+ * @brief Hardware practical maximum frequency in Hz (6 GHz - RFFC5072 mixer limit)
+ * @note HackRF One uses RFFC5072 mixer which has practical limit of 6 GHz
+ * @note Frequencies above this may fail PLL lock or produce artifacts
+ * @note Use this for validation of sweep ranges and database entries
+ */
+constexpr FreqHz HARDWARE_MAX_FREQ_HZ = 7'200'000'000ULL;
+
+/**
+ * @brief Hardware practical minimum frequency in Hz (1 MHz)
+ */
+constexpr FreqHz HARDWARE_MIN_FREQ_HZ = 1'000'000ULL;
 
 /**
  * @brief Frequency step size in Hz (1 MHz)
