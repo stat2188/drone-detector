@@ -70,14 +70,17 @@ void ScannerThread::run() noexcept {
                 dwell_cycles_ = 0;
             }
 
+            // Capture frequency BEFORE scan cycle — this is the frequency the hardware
+            // is CURRENTLY tuned to. The spectrum data arriving from the baseband was
+            // captured at this frequency. After perform_scan_cycle, current_frequency_
+            // will point to the NEXT frequency (already tuned).
+            ErrorResult<FreqHz> freq_before = scanner_.get_current_frequency();
+
             ErrorCode err = scanner_.perform_scan_cycle();
-            if (err == ErrorCode::SUCCESS) {
-                ErrorResult<FreqHz> freq_result = scanner_.get_current_frequency();
-                if (freq_result.has_value()) {
-                    message.freq = static_cast<int64_t>(freq_result.value());
-                    message.range = 0;
-                    EventDispatcher::send_message(message);
-                }
+            if (err == ErrorCode::SUCCESS && freq_before.has_value()) {
+                message.freq = static_cast<int64_t>(freq_before.value());
+                message.range = 0;
+                EventDispatcher::send_message(message);
             }
         }
         chThdSleepMilliseconds(SCANNER_SLEEP_MS);

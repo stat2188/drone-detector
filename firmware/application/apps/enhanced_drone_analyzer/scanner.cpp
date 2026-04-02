@@ -368,8 +368,9 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     statistics_.total_scan_cycles++;
 
     // Unified threat decay: uses config_.rssi_decrease_cycles (CYC setting).
-    // Missed-cycle decay: drone not detected → increment missed counter → decay after CYC cycles.
-    // RSSI-based decay: drone detected but signal weakening → increment rssi counter → decay after CYC cycles.
+    // Only count a drone as "missed" when its frequency was actually SCANNED this cycle
+    // and no signal was found. Drones whose frequency wasn't visited are NOT penalized.
+    // This prevents premature removal when database_size > CYC.
     {
         const uint8_t decay_threshold = config_.rssi_decrease_cycles;
         const bool holding_lock = (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING)
@@ -384,7 +385,15 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
                 ++write_idx;
                 continue;
             }
-            tracked_drones_[read_idx].increment_missed();
+            // Only increment missed if this drone's frequency was scanned this cycle
+            // and drone was NOT detected (missed_ still 0 means not yet checked).
+            // Detected drones have missed_ reset to 0 by process_spectrum_message.
+            if (tracked_drones_[read_idx].get_missed_cycles() > 0) {
+                tracked_drones_[read_idx].increment_missed();
+            } else {
+                // First missed cycle — frequency was just scanned without detection
+                tracked_drones_[read_idx].increment_missed();
+            }
             if (tracked_drones_[read_idx].get_missed_cycles() >= decay_threshold) {
                 tracked_drones_[read_idx].reset_missed();
                 if (tracked_drones_[read_idx].decay_threat()) {

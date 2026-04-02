@@ -680,9 +680,10 @@ void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
 
 void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
     if (scanner_ptr_ != nullptr && scanning_) {
-        // Capture frequency BEFORE processing — scanner thread may have moved
-        // to the next frequency by the time this callback runs
-        const FreqHz freq = scanner_ptr_->get_spectrum_frequency();
+        // Use frequency from on_retune() — this matches the hardware tuning
+        // when this spectrum was captured. Do NOT read scanner's current_frequency_
+        // because the scanner thread may have already moved to the next frequency.
+        const FreqHz freq = current_frequency_;
         if (freq != 0) {
             (void)scanner_ptr_->process_spectrum_message(spectrum, freq);
         }
