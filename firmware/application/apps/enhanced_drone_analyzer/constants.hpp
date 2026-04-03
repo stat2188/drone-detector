@@ -646,7 +646,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 30;
  * @brief Default minimum signal width in bins (1-20)
  * @note Signals narrower than this are rejected as needle spikes
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 5;
+constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 3;
 
 /**
  * @brief Default maximum signal width in bins (1-100)
