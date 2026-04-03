@@ -35,6 +35,10 @@ SettingsStruct::SettingsStruct() noexcept
     , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
     , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
+    , cfar_mode(DEFAULT_CFAR_MODE)
+    , cfar_ref_cells(DEFAULT_CFAR_REF_CELLS)
+    , cfar_guard_cells(DEFAULT_CFAR_GUARD_CELLS)
+    , cfar_threshold_x10(DEFAULT_CFAR_THRESHOLD_X10)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(false)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
@@ -241,6 +245,17 @@ static void parse_settings_line(
     } else if (key_matches("rssi_decrease_cycles")) {
         const int32_t c = static_cast<int32_t>(parse_int());
         s.rssi_decrease_cycles = static_cast<uint8_t>(c > 50 ? 50 : (c < 1 ? 1 : c));
+
+    // --- CFAR detection ---
+    } else if (key_matches("cfar_mode")) {
+        const int32_t m = static_cast<int32_t>(parse_int());
+        s.cfar_mode = static_cast<CFARMode>(m > 4 ? 0 : m);
+    } else if (key_matches("cfar_ref_cells")) {
+        s.cfar_ref_cells = static_cast<uint8_t>(parse_int());
+    } else if (key_matches("cfar_guard_cells")) {
+        s.cfar_guard_cells = static_cast<uint8_t>(parse_int());
+    } else if (key_matches("cfar_threshold_x10")) {
+        s.cfar_threshold_x10 = static_cast<uint8_t>(parse_int());
     }
 }
 
@@ -444,6 +459,12 @@ ErrorCode SettingsFileManager::save(
     // RSSI decrease cycles
     wl(file, "rssi_decrease_cycles", static_cast<int64_t>(s.rssi_decrease_cycles));
 
+    // CFAR detection
+    wl(file, "cfar_mode", static_cast<int64_t>(static_cast<uint8_t>(s.cfar_mode)));
+    wl(file, "cfar_ref_cells", static_cast<int64_t>(s.cfar_ref_cells));
+    wl(file, "cfar_guard_cells", static_cast<int64_t>(s.cfar_guard_cells));
+    wl(file, "cfar_threshold_x10", static_cast<int64_t>(s.cfar_threshold_x10));
+
     // Metadata
     ws(file, "freqman_path=DRONES\n");
     ws(file, "settings_version=1.1\n");
@@ -481,6 +502,12 @@ void SettingsFileManager::apply_to_config(
     config.neighbor_margin_db = s.neighbor_margin_db;
     config.rssi_variance_enabled = s.rssi_variance_enabled;
     config.confirm_count = s.confirm_count;
+
+    // CFAR detection
+    config.cfar_mode = s.cfar_mode;
+    config.cfar_ref_cells = s.cfar_ref_cells;
+    config.cfar_guard_cells = s.cfar_guard_cells;
+    config.cfar_threshold_x10 = s.cfar_threshold_x10;
 
     // Sweep window 1
     config.sweep_start_freq = s.sweep_start_freq;
@@ -542,6 +569,12 @@ void SettingsFileManager::extract_from_config(
     s.neighbor_margin_db = config.neighbor_margin_db;
     s.rssi_variance_enabled = config.rssi_variance_enabled;
     s.confirm_count = config.confirm_count;
+
+    // CFAR detection
+    s.cfar_mode = config.cfar_mode;
+    s.cfar_ref_cells = config.cfar_ref_cells;
+    s.cfar_guard_cells = config.cfar_guard_cells;
+    s.cfar_threshold_x10 = config.cfar_threshold_x10;
 
     // Sweep window 1
     s.sweep_start_freq = config.sweep_start_freq;

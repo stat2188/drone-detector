@@ -47,6 +47,12 @@ struct SettingsStruct {
     uint8_t spectrum_flatness;
     uint8_t spectrum_symmetry;
 
+    // CFAR detection
+    CFARMode cfar_mode;
+    uint8_t cfar_ref_cells;
+    uint8_t cfar_guard_cells;
+    uint8_t cfar_threshold_x10;
+
     // Anti-false-positive
     int32_t neighbor_margin_db;
     bool rssi_variance_enabled;

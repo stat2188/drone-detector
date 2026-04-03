@@ -22,26 +22,31 @@ namespace drone_analyzer {
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display) noexcept
     : ui::View()
     , labels_({
-        {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(0)}, "CFAR:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(8), UI_POS_Y(0)}, "Ref:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(11), UI_POS_Y(0)}, "Grd:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(13), UI_POS_Y(0)}, "Thr:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(2)}, "Mode:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(3)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(6)}, "Wid:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(10), UI_POS_Y(5)}, "Rat:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(10), UI_POS_Y(6)}, "Vly:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(10), UI_POS_Y(4)}, "Flat:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(4)}, "Sym:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(5)}, "Sens:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(13), UI_POS_Y(5)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(7)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(8)}, "Shrp:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(10), UI_POS_Y(7)}, "Rat:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(10), UI_POS_Y(8)}, "Vly:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(10), UI_POS_Y(6)}, "Flat:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(17), UI_POS_Y(6)}, "Sym:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(17), UI_POS_Y(7)}, "Mar:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(17), UI_POS_Y(8)}, "Wid:", Theme::getInstance()->fg_light->foreground},
     })
-    , field_scan_mode_({UI_POS_X(0), UI_POS_Y(0)}, 1, {
+    , field_scan_mode_({UI_POS_X(5), UI_POS_Y(2)}, 1, {
         {"-", 0},
 })
-    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
-    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
+    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(3)}, 4, {10, 1000}, 10, ' ')
+    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(5)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
-    , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
+    , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(4)}, 2, {1, 50}, 1, ' ')
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
     , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "Spec", false)
     , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "Hist", false)
@@ -67,6 +72,17 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_info_width_({UI_POS_X(5), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Wid?")
     , button_info_sharp_({UI_POS_X(10), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Shp?")
     , button_info_ratio_({UI_POS_X(15), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Rat?")
+    , field_cfar_mode_({UI_POS_X(0), UI_POS_Y(1)}, 7, {
+        {"OFF", static_cast<int32_t>(CFARMode::OFF)},
+        {"CA", static_cast<int32_t>(CFARMode::CA)},
+        {"GO", static_cast<int32_t>(CFARMode::GO)},
+        {"SO", static_cast<int32_t>(CFARMode::SO)},
+        {"HYBRID", static_cast<int32_t>(CFARMode::HYBRID)},
+    })
+    , field_cfar_ref_cells_({UI_POS_X(8), UI_POS_Y(1)}, 2, {4, 64}, 4, ' ')
+    , field_cfar_guard_cells_({UI_POS_X(11), UI_POS_Y(1)}, 1, {0, 8}, 1, ' ')
+    , field_cfar_threshold_({UI_POS_X(13), UI_POS_Y(1)}, 3, {10, 100}, 5, ' ')
+    , button_info_cfar_({UI_POS_X(17), UI_POS_Y(1), UI_POS_WIDTH(3), 16}, "CF?")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -107,7 +123,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &button_info_margin_,
         &button_info_width_,
         &button_info_sharp_,
-        &button_info_ratio_
+        &button_info_ratio_,
+        &field_cfar_mode_,
+        &field_cfar_ref_cells_,
+        &field_cfar_guard_cells_,
+        &field_cfar_threshold_,
+        &button_info_cfar_,
     });
 
     // Load persisted settings from SD card (overrides config-based defaults)
@@ -332,6 +353,37 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "15-30 dlya FPV.\n"
             "0 = otklychen.");
     };
+
+    // CFAR callbacks
+    field_cfar_mode_.on_change = [this](size_t, int32_t v) {
+        settings_.cfar_mode = static_cast<CFARMode>(v);
+        settings_dirty_ = true;
+    };
+
+    field_cfar_ref_cells_.on_change = [this](int32_t v) {
+        settings_.cfar_ref_cells = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+
+    field_cfar_guard_cells_.on_change = [this](int32_t v) {
+        settings_.cfar_guard_cells = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+
+    field_cfar_threshold_.on_change = [this](int32_t v) {
+        settings_.cfar_threshold_x10 = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+
+    button_info_cfar_.on_select = [this](ui::Button&) {
+        nav_.display_modal("CFAR",
+            "Adaptivnyj porog CFAR.\n"
+            "CA = srednee shuma.\n"
+            "GO = max iz okon.\n"
+            "SO = min iz okon.\n"
+            "HYBRID = smes.\n"
+            "OFF = fiksirovannyj.");
+    };
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
@@ -375,6 +427,10 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_neighbor_margin_.set_value(settings_.neighbor_margin_db > 0);
     field_neighbor_margin_.set_value(static_cast<int32_t>(settings_.neighbor_margin_db));
     check_rssi_variance_.set_value(settings_.rssi_variance_enabled);
+    field_cfar_mode_.set_by_value(static_cast<int32_t>(settings_.cfar_mode));
+    field_cfar_ref_cells_.set_value(static_cast<int32_t>(settings_.cfar_ref_cells));
+    field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));
+    field_cfar_threshold_.set_value(static_cast<int32_t>(settings_.cfar_threshold_x10));
 }
 
 // ============================================================================

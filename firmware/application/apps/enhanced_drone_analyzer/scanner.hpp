@@ -73,6 +73,15 @@ struct ScanConfig {
     bool rssi_variance_enabled{false};                        // RSSI variance noise rejection
     uint8_t confirm_count{DEFAULT_CONFIRM_COUNT};             // Configurable confirm count
 
+    // CFAR detection (Constant False Alarm Rate)
+    CFARMode cfar_mode{DEFAULT_CFAR_MODE};                    // CFAR mode (OFF/CA/GO/SO/HYBRID)
+    uint8_t cfar_ref_cells{DEFAULT_CFAR_REF_CELLS};          // Reference cells (8-64)
+    uint8_t cfar_guard_cells{DEFAULT_CFAR_GUARD_CELLS};      // Guard cells (0-8)
+    uint8_t cfar_threshold_x10{DEFAULT_CFAR_THRESHOLD_X10};  // Threshold ×10 (10-100 = 1.0-10.0)
+    uint8_t cfar_hybrid_alpha{DEFAULT_CFAR_HYBRID_ALPHA};    // CA weight (0-100)
+    uint8_t cfar_hybrid_beta{DEFAULT_CFAR_HYBRID_BETA};      // GO weight (0-100)
+    uint8_t cfar_hybrid_gamma{DEFAULT_CFAR_HYBRID_GAMMA};    // SO weight (0-100)
+
     // Sweep exception frequencies (per window, 0 = unused slot)
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
     uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100, configurable exclusion radius
@@ -178,6 +187,176 @@ struct SweepZoneRuntime {
 
     [[nodiscard]] bool is_complete() const noexcept {
         return pixel_index >= SWEEP_PIXELS_PER_SLICE;
+    }
+};
+
+/**
+ * @brief CFAR (Constant False Alarm Rate) detector
+ * @note Adapts detection threshold to local noise level
+ * @note Supports CA-CFAR, GO-CFAR, SO-CFAR, and Hybrid modes
+ * @note Formula: F_CFAR(i) = 1 if P(i) > T * (1/N_ref) * sum(P(k))
+ * @note T = G * (N_ref^(1/N_ref) - 1) for CA-CFAR
+ * @note Hybrid: w_hybrid = α*w_CA + β*w_GO + γ*w_SO
+ */
+class CFARDetector {
+public:
+    /**
+     * @brief Run CFAR detection on spectrum data
+     * @param spectrum FFT spectrum data (0-255 power values)
+     * @param bin_count Total number of bins
+     * @param cbin Cell Under Test index
+     * @param mode CFAR mode (CA/GO/SO/HYBRID)
+     * @param ref_cells Number of reference cells (N_ref)
+     * @param guard_cells Number of guard cells
+     * @param threshold_x10 Threshold multiplier ×10 (e.g., 50 = 5.0)
+     * @param alpha CA weight for hybrid mode ×100
+     * @param beta GO weight for hybrid mode ×100
+     * @param gamma SO weight for hybrid mode ×100
+     * @return true if signal detected (power > adaptive threshold)
+     */
+    [[nodiscard]] static bool detect(
+        const uint8_t* spectrum,
+        size_t bin_count,
+        size_t cbin,
+        CFARMode mode,
+        uint8_t ref_cells,
+        uint8_t guard_cells,
+        uint8_t threshold_x10,
+        uint8_t alpha = 50,
+        uint8_t beta = 30,
+        uint8_t gamma = 20
+    ) noexcept {
+        if (mode == CFARMode::OFF) return false;
+        if (spectrum == nullptr || bin_count == 0) return false;
+        if (cbin >= bin_count) return false;
+
+        // Guard: ref_cells must be reasonable
+        if (ref_cells < CFAR_REF_CELLS_MIN) ref_cells = CFAR_REF_CELLS_MIN;
+        if (ref_cells > CFAR_REF_CELLS_MAX) ref_cells = CFAR_REF_CELLS_MAX;
+        if (guard_cells > CFAR_GUARD_CELLS_MAX) guard_cells = CFAR_GUARD_CELLS_MAX;
+
+        // Calculate reference window boundaries
+        // Left window: [cbin - guard_cells - ref_cells ... cbin - guard_cells - 1]
+        // Right window: [cbin + guard_cells + 1 ... cbin + guard_cells + ref_cells]
+        const int32_t total_span = static_cast<int32_t>(guard_cells + ref_cells);
+        
+        // Sum left reference window
+        int32_t left_sum = 0;
+        int32_t left_count = 0;
+        for (int32_t k = static_cast<int32_t>(cbin) - total_span; 
+             k < static_cast<int32_t>(cbin) - static_cast<int32_t>(guard_cells); ++k) {
+            if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
+                // Skip DC spike region
+                if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) && 
+                    k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
+                left_sum += spectrum[k];
+                ++left_count;
+            }
+        }
+
+        // Sum right reference window
+        int32_t right_sum = 0;
+        int32_t right_count = 0;
+        for (int32_t k = static_cast<int32_t>(cbin) + static_cast<int32_t>(guard_cells) + 1;
+             k <= static_cast<int32_t>(cbin) + total_span; ++k) {
+            if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
+                // Skip DC spike region
+                if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) && 
+                    k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
+                right_sum += spectrum[k];
+                ++right_count;
+            }
+        }
+
+        // Need at least one reference cell on each side
+        if (left_count == 0 || right_count == 0) return false;
+
+        // Compute noise estimates for each CFAR mode
+        // CA-CFAR: average of both windows
+        const int32_t ca_noise = (left_sum + right_sum) / (left_count + right_count);
+        
+        // GO-CFAR: maximum of the two window averages
+        const int32_t left_avg = (left_count > 0) ? left_sum / left_count : 0;
+        const int32_t right_avg = (right_count > 0) ? right_sum / right_count : 0;
+        const int32_t go_noise = (left_avg > right_avg) ? left_avg : right_avg;
+        
+        // SO-CFAR: minimum of the two window averages
+        const int32_t so_noise = (left_avg < right_avg) ? left_avg : right_avg;
+
+        // Compute final noise estimate based on mode
+        int32_t noise_estimate = 0;
+        switch (mode) {
+            case CFARMode::CA:
+                noise_estimate = ca_noise;
+                break;
+            case CFARMode::GO:
+                noise_estimate = go_noise;
+                break;
+            case CFARMode::SO:
+                noise_estimate = so_noise;
+                break;
+            case CFARMode::HYBRID: {
+                // Hybrid: w_hybrid = α*w_CA + β*w_GO + γ*w_SO
+                // Weights are ×100, so divide by 100 at the end
+                const int32_t weighted = 
+                    static_cast<int32_t>(alpha) * ca_noise +
+                    static_cast<int32_t>(beta) * go_noise +
+                    static_cast<int32_t>(gamma) * so_noise;
+                noise_estimate = weighted / 100;
+                break;
+            }
+            default:
+                return false;
+        }
+
+        // Compute adaptive threshold: T_adaptive = G * noise_estimate
+        // threshold_x10 is G × 10, so: threshold = threshold_x10 * noise_estimate / 10
+        const int32_t adaptive_threshold = 
+            (static_cast<int32_t>(threshold_x10) * noise_estimate) / 10;
+
+        // Signal detected if CUT power > adaptive threshold
+        return static_cast<int32_t>(spectrum[cbin]) > adaptive_threshold;
+    }
+
+    /**
+     * @brief Run CFAR on entire spectrum and return peak bin
+     * @param spectrum FFT spectrum data
+     * @param bin_count Total bins
+     * @param mode CFAR mode
+     * @param ref_cells Reference cells
+     * @param guard_cells Guard cells
+     * @param threshold_x10 Threshold ×10
+     * @param skip_start Skip bins from start (for edge/DC)
+     * @param skip_end Skip bins from end (for edge)
+     * @return Peak bin index that passed CFAR, or bin_count if none detected
+     */
+    [[nodiscard]] static size_t find_peak_cfar(
+        const uint8_t* spectrum,
+        size_t bin_count,
+        CFARMode mode,
+        uint8_t ref_cells,
+        uint8_t guard_cells,
+        uint8_t threshold_x10,
+        size_t skip_start,
+        size_t skip_end
+    ) noexcept {
+        if (mode == CFARMode::OFF || spectrum == nullptr) return bin_count;
+        
+        size_t peak_bin = bin_count;
+        uint8_t peak_power = 0;
+
+        for (size_t i = skip_start; i < bin_count - skip_end; ++i) {
+            // Skip DC spike
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            
+            if (detect(spectrum, bin_count, i, mode, ref_cells, guard_cells, threshold_x10)) {
+                if (spectrum[i] > peak_power) {
+                    peak_power = spectrum[i];
+                    peak_bin = i;
+                }
+            }
+        }
+        return peak_bin;
     }
 };
 

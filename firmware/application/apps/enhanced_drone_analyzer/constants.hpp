@@ -703,6 +703,77 @@ constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 150;
 constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 35;
 
 // ============================================================================
+// CFAR Detection Constants (Constant False Alarm Rate)
+// ============================================================================
+// CFAR adapts threshold to local noise level, reducing false alarms
+// in varying noise environments (WiFi, Bluetooth, etc.)
+
+/**
+ * @brief CFAR mode selection
+ */
+enum class CFARMode : uint8_t {
+    OFF = 0,    // CFAR disabled — use fixed threshold
+    CA = 1,     // Cell Averaging CFAR — best for homogeneous noise
+    GO = 2,     // Greatest Of CFAR — robust at noise edges
+    SO = 3,     // Smallest Of CFAR — better in cluttered environments
+    HYBRID = 4  // Hybrid CFAR — weighted combination of CA/GO/SO
+};
+
+/**
+ * @brief Default CFAR mode (OFF = disabled)
+ */
+constexpr CFARMode DEFAULT_CFAR_MODE = CFARMode::OFF;
+
+/**
+ * @brief CFAR reference window size (number of reference cells)
+ * @note Must be power of 2 for efficient computation
+ * @note Typical: 8-32 cells. More cells = better noise estimate, slower adaptation
+ */
+constexpr uint8_t DEFAULT_CFAR_REF_CELLS = 16;
+
+/**
+ * @brief CFAR guard cells (protect signal from contaminating noise estimate)
+ * @note Cells adjacent to CUT (Cell Under Test) that are excluded from reference
+ * @note Typical: 2-4 cells
+ */
+constexpr uint8_t DEFAULT_CFAR_GUARD_CELLS = 2;
+
+/**
+ * @brief CFAR threshold multiplier (G in formula)
+ * @note Higher = fewer false alarms, more missed detections
+ * @note Lower = more detections, more false alarms
+ * @note Typical: 3.0-10.0 (stored as integer × 10 for embedded)
+ */
+constexpr uint8_t DEFAULT_CFAR_THRESHOLD_X10 = 50;  // 5.0
+
+/**
+ * @brief CFAR threshold range (×10 for integer storage)
+ */
+constexpr uint8_t CFAR_THRESHOLD_MIN_X10 = 10;   // 1.0
+constexpr uint8_t CFAR_THRESHOLD_MAX_X10 = 100;  // 10.0
+
+/**
+ * @brief CFAR reference cells range
+ */
+constexpr uint8_t CFAR_REF_CELLS_MIN = 4;
+constexpr uint8_t CFAR_REF_CELLS_MAX = 64;
+
+/**
+ * @brief CFAR guard cells range
+ */
+constexpr uint8_t CFAR_GUARD_CELLS_MIN = 0;
+constexpr uint8_t CFAR_GUARD_CELLS_MAX = 8;
+
+/**
+ * @brief CFAR hybrid mode weights (×100 for integer storage)
+ * @note w_hybrid = α*w_CA + β*w_GO + γ*w_SO
+ * @note α + β + γ = 100
+ */
+constexpr uint8_t DEFAULT_CFAR_HYBRID_ALPHA = 50;  // CA weight (0.5)
+constexpr uint8_t DEFAULT_CFAR_HYBRID_BETA = 30;   // GO weight (0.3)
+constexpr uint8_t DEFAULT_CFAR_HYBRID_GAMMA = 20;  // SO weight (0.2)
+
+// ============================================================================
 // Neighbor Margin Check Constants
 // ============================================================================
 

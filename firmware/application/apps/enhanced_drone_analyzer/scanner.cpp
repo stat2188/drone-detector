@@ -1012,6 +1012,32 @@ void DroneScanner::reset_neighbor_checker() noexcept {
 // ============================================================================
 
 bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept {
+    // CFAR detection: if enabled, use adaptive threshold instead of fixed margin
+    if (config_.cfar_mode != CFARMode::OFF) {
+        const size_t cfar_peak = CFARDetector::find_peak_cfar(
+            spectrum.db.data(),
+            FFT_BIN_COUNT,
+            config_.cfar_mode,
+            config_.cfar_ref_cells,
+            config_.cfar_guard_cells,
+            config_.cfar_threshold_x10,
+            FFT_EDGE_SKIP_NARROW,
+            FFT_EDGE_SKIP_NARROW
+        );
+        
+        if (cfar_peak >= FFT_BIN_COUNT) {
+            return false;  // No signal detected by CFAR
+        }
+        
+        // CFAR detected a signal — compute RSSI from peak bin
+        out_rssi = static_cast<int32_t>(spectrum.db[cfar_peak]) - FFT_DBM_OFFSET;
+        if (out_rssi > RSSI_MAX_DBM) out_rssi = RSSI_MAX_DBM;
+        if (out_rssi < RSSI_MIN_DBM) out_rssi = RSSI_MIN_DBM;
+        
+        // Still apply shape filters (width, sharpness, etc.) for drone discrimination
+        // Fall through to shape analysis below using CFAR peak as the detected peak
+    }
+
     // Step 1: Find noise floor = median of usable bins
     // Skip edges AND DC spike (same bins extract_rssi skips)
     // Uses class member buffer (mutable) — no static in method
@@ -1045,10 +1071,13 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
     }
 
     // Step 3: Peak must be significantly above noise floor (configurable)
-    const uint8_t min_margin = config_.spectrum_margin;
+    // If CFAR is enabled, skip this check (CFAR already validated the peak)
     const uint8_t peak_margin = peak_value - noise_floor;
-    if (peak_margin < min_margin) {
-        return false;
+    if (config_.cfar_mode == CFARMode::OFF) {
+        const uint8_t min_margin = config_.spectrum_margin;
+        if (peak_margin < min_margin) {
+            return false;
+        }
     }
 
     // Step 4: Count elevated bins around peak (signal width)
@@ -1215,58 +1244,123 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     const uint8_t cfg_symmetry = config_.spectrum_symmetry;
     const int32_t cfg_rssi_thresh = config_.rssi_threshold_dbm;
 
-    // Step 1: Collect bins + find peak + compute noise floor via quickselect (single pass O(n))
-    uint8_t* usable = sweep_usable_buf_;
-    size_t idx = 0;
-    uint8_t raw_peak = 0;
+    // CFAR detection: if enabled, use adaptive threshold instead of fixed margin
     size_t peak_index = FFT_EDGE_SKIP_NARROW;
+    uint8_t raw_peak = 0;
+    uint8_t noise_floor = 0;
 
-    for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-        usable[idx++] = spectrum.db[i];
-        if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
-    }
-    for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-        usable[idx++] = spectrum.db[i];
-        if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
-    }
-
-    // Guard: no usable bins (all in DC spike or edge skip)
-    if (idx == 0) return;
-
-    // Quickselect median O(n) for noise floor
-    const size_t k = idx / 2;
-    uint8_t qs_left = 0;
-    uint8_t qs_right = static_cast<uint8_t>(idx) - 1;
-
-    while (qs_left < qs_right) {
-        const uint8_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
-        uint8_t pivot = usable[pivot_idx];
-        usable[pivot_idx] = usable[qs_right];
-        usable[qs_right] = pivot;
-        uint8_t store = qs_left;
-        for (uint8_t i = qs_left; i < qs_right; ++i) {
-            if (usable[i] < pivot) {
-                uint8_t t = usable[store];
-                usable[store] = usable[i];
-                usable[i] = t;
-                store++;
+    if (config_.cfar_mode != CFARMode::OFF) {
+        const size_t cfar_peak = CFARDetector::find_peak_cfar(
+            spectrum.db.data(),
+            FFT_BIN_COUNT,
+            config_.cfar_mode,
+            config_.cfar_ref_cells,
+            config_.cfar_guard_cells,
+            config_.cfar_threshold_x10,
+            FFT_EDGE_SKIP_NARROW,
+            FFT_EDGE_SKIP_NARROW
+        );
+        
+        if (cfar_peak >= FFT_BIN_COUNT) return;  // No signal detected by CFAR
+        
+        peak_index = cfar_peak;
+        raw_peak = spectrum.db[cfar_peak];
+        
+        // Compute noise floor for shape analysis (still needed for width/sharpness checks)
+        uint8_t* usable = sweep_usable_buf_;
+        size_t idx = 0;
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
+            usable[idx++] = spectrum.db[i];
+        }
+        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
+            usable[idx++] = spectrum.db[i];
+        }
+        if (idx > 0) {
+            const size_t k = idx / 2;
+            uint8_t qs_left = 0;
+            uint8_t qs_right = static_cast<uint8_t>(idx) - 1;
+            while (qs_left < qs_right) {
+                const uint8_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
+                uint8_t pivot = usable[pivot_idx];
+                usable[pivot_idx] = usable[qs_right];
+                usable[qs_right] = pivot;
+                uint8_t store = qs_left;
+                for (uint8_t i = qs_left; i < qs_right; ++i) {
+                    if (usable[i] < pivot) {
+                        uint8_t t = usable[store];
+                        usable[store] = usable[i];
+                        usable[i] = t;
+                        store++;
+                    }
+                }
+                {
+                    uint8_t t = usable[store];
+                    usable[store] = usable[qs_right];
+                    usable[qs_right] = t;
+                }
+                if (store == k) break;
+                if (store < k) qs_left = store + 1;
+                else qs_right = store - 1;
             }
+            noise_floor = usable[k];
         }
-        {
-            uint8_t t = usable[store];
-            usable[store] = usable[qs_right];
-            usable[qs_right] = t;
+    } else {
+        // Original fixed-threshold detection
+        uint8_t* usable = sweep_usable_buf_;
+        size_t idx = 0;
+        raw_peak = 0;
+        peak_index = FFT_EDGE_SKIP_NARROW;
+
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
+            usable[idx++] = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
         }
-        if (store == k) break;
-        if (store < k) qs_left = store + 1;
-        else qs_right = store - 1;
+        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
+            usable[idx++] = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
+        }
+
+        // Guard: no usable bins (all in DC spike or edge skip)
+        if (idx == 0) return;
+
+        // Quickselect median O(n) for noise floor
+        const size_t k = idx / 2;
+        uint8_t qs_left = 0;
+        uint8_t qs_right = static_cast<uint8_t>(idx) - 1;
+
+        while (qs_left < qs_right) {
+            const uint8_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
+            uint8_t pivot = usable[pivot_idx];
+            usable[pivot_idx] = usable[qs_right];
+            usable[qs_right] = pivot;
+            uint8_t store = qs_left;
+            for (uint8_t i = qs_left; i < qs_right; ++i) {
+                if (usable[i] < pivot) {
+                    uint8_t t = usable[store];
+                    usable[store] = usable[i];
+                    usable[i] = t;
+                    store++;
+                }
+            }
+            {
+                uint8_t t = usable[store];
+                usable[store] = usable[qs_right];
+                usable[qs_right] = t;
+            }
+            if (store == k) break;
+            if (store < k) qs_left = store + 1;
+            else qs_right = store - 1;
+        }
+
+        noise_floor = usable[k];
+
+        // Step 2: Margin check
+        const uint8_t peak_margin_fixed = raw_peak - noise_floor;
+        if (peak_margin_fixed < cfg_margin) return;
     }
 
-    const uint8_t noise_floor = usable[k];
-
-    // Step 2: Margin check
+    // Compute peak_margin (always needed for shape analysis)
     const uint8_t peak_margin = raw_peak - noise_floor;
-    if (peak_margin < cfg_margin) return;
 
     // Step 3: Signal width measurement (scan left/right from peak)
     const uint8_t elevated_threshold = noise_floor + (peak_margin / 4);

@@ -81,6 +81,13 @@ private:
     ui::Button button_info_sharp_;
     ui::Button button_info_ratio_;
 
+    // CFAR detection controls
+    ui::OptionsField field_cfar_mode_;
+    ui::NumberField field_cfar_ref_cells_;
+    ui::NumberField field_cfar_guard_cells_;
+    ui::NumberField field_cfar_threshold_;
+    ui::Button button_info_cfar_;
+
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
     DroneDisplay* display_ptr_;
