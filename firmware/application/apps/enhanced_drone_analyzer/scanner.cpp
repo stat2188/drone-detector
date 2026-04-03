@@ -60,6 +60,8 @@ ScanConfig::ScanConfig() noexcept
     , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
     , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
     , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
+    , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
+    , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(false)  // Off by default (experimental)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
@@ -87,7 +89,9 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
     , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
     , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
-    , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH) {
+    , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
+    , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
+    , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY) {
     // sweep2/3/4 fields use in-class defaults: disabled
 }
 

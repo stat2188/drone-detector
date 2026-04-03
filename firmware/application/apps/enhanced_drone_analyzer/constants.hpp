@@ -646,20 +646,22 @@ constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 30;
  * @brief Default minimum signal width in bins (1-20)
  * @note Signals narrower than this are rejected as needle spikes
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 2;
+constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 5;
 
 /**
  * @brief Default maximum signal width in bins (1-100)
  * @note Signals wider than this are rejected as flat-topped U/I noise
  * @note 100 = no max width filtering (accept all widths)
+ * @note 80 = accommodates FPV dual-peak signals (~6 MHz = ~77 bins)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 20;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 80;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
  * @note sharpness = (peak_margin * 100) / avg_margin
  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
  * @note 50 = no sharpness filtering (accept all shapes)
+ * @note 130 = enforces V-shape for drone signals
  */
 constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 130;
 
@@ -671,7 +673,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 130;
  * @note Needle spikes: ratio > 100 (very tall, very narrow)
  * @note 0 = no ratio filtering (disabled)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 255;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 20;
 
 /**
  * @brief Default valley depth threshold (0-200)
@@ -679,8 +681,9 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 255;
  * @note Inverted-V: deep valleys (flanking bins have margin < 5)
  * @note Flat U/I: shallow valleys (flanking bins still elevated)
  * @note 0 = no valley depth filtering (disabled)
+ * @note 80 = accepts FPV dual-peak (powerful peaks = shallow valley between them)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 40;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
 
 /**
  * @brief Default peak flatness threshold (50-250)
@@ -689,8 +692,9 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 40;
  * @note Drone V-shape: flatness >> 200 (peak dominates average)
  * @note Higher = stricter (rejects more flat signals)
  * @note 50 = no flatness filtering (disabled)
+ * @note 100 = accepts FPV dual-peak (2 powerful peaks raise avg_margin)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 150;
+constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 100;
 
 /**
  * @brief Default signal symmetry threshold (0-100, percent)
@@ -720,23 +724,23 @@ enum class CFARMode : uint8_t {
 };
 
 /**
- * @brief Default CFAR mode (OFF = disabled)
+ * @brief Default CFAR mode (SO = Smallest Of — best in cluttered environments)
  */
-constexpr CFARMode DEFAULT_CFAR_MODE = CFARMode::OFF;
+constexpr CFARMode DEFAULT_CFAR_MODE = CFARMode::SO;
 
 /**
  * @brief CFAR reference window size (number of reference cells)
  * @note Must be power of 2 for efficient computation
  * @note Typical: 8-32 cells. More cells = better noise estimate, slower adaptation
  */
-constexpr uint8_t DEFAULT_CFAR_REF_CELLS = 16;
+constexpr uint8_t DEFAULT_CFAR_REF_CELLS = 32;
 
 /**
  * @brief CFAR guard cells (protect signal from contaminating noise estimate)
  * @note Cells adjacent to CUT (Cell Under Test) that are excluded from reference
  * @note Typical: 2-4 cells
  */
-constexpr uint8_t DEFAULT_CFAR_GUARD_CELLS = 2;
+constexpr uint8_t DEFAULT_CFAR_GUARD_CELLS = 3;
 
 /**
  * @brief CFAR threshold multiplier (G in formula)
