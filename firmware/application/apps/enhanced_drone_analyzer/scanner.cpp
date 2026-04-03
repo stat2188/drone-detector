@@ -1234,7 +1234,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
 // process_spectrum_sweep — moved from header to reduce code bloat
 // ============================================================================
 
-void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
+void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq, FreqHz f_min, FreqHz f_max) noexcept {
     current_frequency_ = center_freq;
 
     // Cache config values locally (avoid repeated member access in hot loop)
@@ -1475,6 +1475,14 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         // because Looking Glass reorders bins. Each bin has a fixed frequency offset
         // from f_center that depends on its position in the reordering.
         const FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
+
+        // Check if peak frequency is within sweep range (prevent false positives outside range)
+        // This prevents detections at 6017 MHz when sweep ends at 6000 MHz
+        if (f_min != 0 && f_max != 0) {
+            if (peak_freq < f_min || peak_freq > f_max) {
+                return;  // Peak outside sweep range — reject to prevent false positives
+            }
+        }
 
         const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
         bool is_exception = false;

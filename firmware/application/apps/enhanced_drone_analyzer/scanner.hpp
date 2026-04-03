@@ -779,13 +779,15 @@ public:
      * @brief Lightweight spectrum processing for sweep mode
      * @param spectrum Channel spectrum data (256 bins)
      * @param center_freq Current slice center frequency
+     * @param f_min Minimum frequency of sweep range (0 = no range check)
+     * @param f_max Maximum frequency of sweep range (0 = no range check)
      * @note Uses UNIFIED 40-bin window (100-119, 136-155) — same as spectrum mode.
      *       This ensures LNA/VGA tuning affects both modes identically.
      * @note Full spectrum shape analysis: margin + min_width + max_width + peak_sharpness + peak_ratio + valley_depth
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex needed)
      * @note Implementation in scanner.cpp — NOT inline (200+ lines, too large for header)
      */
-    void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept;
+    void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq, FreqHz f_min = 0, FreqHz f_max = 0) noexcept;
 
     /**
      * @brief Apply RSSI-based threat decay (time-based, unified for normal and sweep modes)

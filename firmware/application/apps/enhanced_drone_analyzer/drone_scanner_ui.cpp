@@ -860,7 +860,8 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // Use the exact frequency the radio was tuned to when this FFT was captured.
         // f_center may have already been incremented from the previous frame's step.
         const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
-        scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq);
+        // Pass sweep range boundaries to prevent false positives outside the range
+        scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq, win.f_min, win.f_max);
     }
 
     // Live display update: show current pair data every frame
@@ -871,9 +872,12 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // Clamp to f_max to prevent overshoot
         if (win.f_center + win.step_hz <= win.f_max) {
             win.f_center += win.step_hz;
+            retune_sweep_window(win, nullptr);
+            return;
         }
-        retune_sweep_window(win, nullptr);
-        return;
+        // Reached end of range — force pixel_index to COMPOSITE_SIZE
+        // to trigger pair_complete logic instead of infinite loop
+        win.pixel_index = COMPOSITE_SIZE;
     }
 
     // Current window sweep pass complete
