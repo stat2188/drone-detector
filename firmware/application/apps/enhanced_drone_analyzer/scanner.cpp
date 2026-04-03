@@ -1227,73 +1227,14 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
 }
 
 // ============================================================================
-// Sweep helper: find noise floor via quickselect median
+// process_spectrum_sweep — moved from header to reduce code bloat
 // ============================================================================
 
-uint8_t DroneScanner::sweep_find_noise_floor(
-    const ChannelSpectrum& spectrum,
-    size_t& peak_index,
-    uint8_t& raw_peak
-) noexcept {
-    uint8_t* usable = sweep_usable_buf_;
-    size_t idx = 0;
-    raw_peak = 0;
-    peak_index = FFT_EDGE_SKIP_NARROW;
+void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
+    current_frequency_ = center_freq;
 
-    for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-        usable[idx++] = spectrum.db[i];
-        if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
-    }
-    for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-        usable[idx++] = spectrum.db[i];
-        if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
-    }
-
-    if (idx == 0) return 0;
-
-    // Quickselect median O(n)
-    const size_t k = idx / 2;
-    uint8_t qs_left = 0;
-    uint8_t qs_right = static_cast<uint8_t>(idx) - 1;
-
-    while (qs_left < qs_right) {
-        const uint8_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
-        uint8_t pivot = usable[pivot_idx];
-        usable[pivot_idx] = usable[qs_right];
-        usable[qs_right] = pivot;
-        uint8_t store = qs_left;
-        for (uint8_t i = qs_left; i < qs_right; ++i) {
-            if (usable[i] < pivot) {
-                uint8_t t = usable[store];
-                usable[store] = usable[i];
-                usable[i] = t;
-                store++;
-            }
-        }
-        {
-            uint8_t t = usable[store];
-            usable[store] = usable[qs_right];
-            usable[qs_right] = t;
-        }
-        if (store == k) break;
-        if (store < k) qs_left = store + 1;
-        else qs_right = store - 1;
-    }
-
-    return usable[k];
-}
-
-// ============================================================================
-// Sweep helper: apply shape filters (width, sharpness, valley, flatness, symmetry)
-// ============================================================================
-
-bool DroneScanner::sweep_apply_shape_filters(
-    const ChannelSpectrum& spectrum,
-    size_t peak_index,
-    uint8_t raw_peak,
-    uint8_t noise_floor,
-    uint8_t peak_margin
-) noexcept {
+    // Cache config values locally (avoid repeated member access in hot loop)
+    const uint8_t cfg_margin = config_.spectrum_margin;
     const uint8_t cfg_min_width = config_.spectrum_min_width;
     const uint8_t cfg_max_width = config_.spectrum_max_width;
     const uint8_t cfg_sharpness = config_.spectrum_peak_sharpness;
@@ -1301,8 +1242,127 @@ bool DroneScanner::sweep_apply_shape_filters(
     const uint8_t cfg_valley = config_.spectrum_valley_depth;
     const uint8_t cfg_flatness = config_.spectrum_flatness;
     const uint8_t cfg_symmetry = config_.spectrum_symmetry;
+    const int32_t cfg_rssi_thresh = config_.rssi_threshold_dbm;
 
-    // Signal width measurement
+    // CFAR detection: if enabled, use adaptive threshold instead of fixed margin
+    size_t peak_index = FFT_EDGE_SKIP_NARROW;
+    uint8_t raw_peak = 0;
+    uint8_t noise_floor = 0;
+
+    if (config_.cfar_mode != CFARMode::OFF) {
+        const size_t cfar_peak = CFARDetector::find_peak_cfar(
+            spectrum.db.data(),
+            FFT_BIN_COUNT,
+            config_.cfar_mode,
+            config_.cfar_ref_cells,
+            config_.cfar_guard_cells,
+            config_.cfar_threshold_x10,
+            FFT_EDGE_SKIP_NARROW,
+            FFT_EDGE_SKIP_NARROW
+        );
+        
+        if (cfar_peak >= FFT_BIN_COUNT) return;  // No signal detected by CFAR
+        
+        peak_index = cfar_peak;
+        raw_peak = spectrum.db[cfar_peak];
+        
+        // Compute noise floor for shape analysis (still needed for width/sharpness checks)
+        uint8_t* usable = sweep_usable_buf_;
+        size_t idx = 0;
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
+            usable[idx++] = spectrum.db[i];
+        }
+        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
+            usable[idx++] = spectrum.db[i];
+        }
+        if (idx > 0) {
+            const size_t k = idx / 2;
+            uint8_t qs_left = 0;
+            uint8_t qs_right = static_cast<uint8_t>(idx) - 1;
+            while (qs_left < qs_right) {
+                const uint8_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
+                uint8_t pivot = usable[pivot_idx];
+                usable[pivot_idx] = usable[qs_right];
+                usable[qs_right] = pivot;
+                uint8_t store = qs_left;
+                for (uint8_t i = qs_left; i < qs_right; ++i) {
+                    if (usable[i] < pivot) {
+                        uint8_t t = usable[store];
+                        usable[store] = usable[i];
+                        usable[i] = t;
+                        store++;
+                    }
+                }
+                {
+                    uint8_t t = usable[store];
+                    usable[store] = usable[qs_right];
+                    usable[qs_right] = t;
+                }
+                if (store == k) break;
+                if (store < k) qs_left = store + 1;
+                else qs_right = store - 1;
+            }
+            noise_floor = usable[k];
+        }
+    } else {
+        // Original fixed-threshold detection
+        uint8_t* usable = sweep_usable_buf_;
+        size_t idx = 0;
+        raw_peak = 0;
+        peak_index = FFT_EDGE_SKIP_NARROW;
+
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
+            usable[idx++] = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
+        }
+        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
+            usable[idx++] = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
+        }
+
+        // Guard: no usable bins (all in DC spike or edge skip)
+        if (idx == 0) return;
+
+        // Quickselect median O(n) for noise floor
+        const size_t k = idx / 2;
+        uint8_t qs_left = 0;
+        uint8_t qs_right = static_cast<uint8_t>(idx) - 1;
+
+        while (qs_left < qs_right) {
+            const uint8_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
+            uint8_t pivot = usable[pivot_idx];
+            usable[pivot_idx] = usable[qs_right];
+            usable[qs_right] = pivot;
+            uint8_t store = qs_left;
+            for (uint8_t i = qs_left; i < qs_right; ++i) {
+                if (usable[i] < pivot) {
+                    uint8_t t = usable[store];
+                    usable[store] = usable[i];
+                    usable[i] = t;
+                    store++;
+                }
+            }
+            {
+                uint8_t t = usable[store];
+                usable[store] = usable[qs_right];
+                usable[qs_right] = t;
+            }
+            if (store == k) break;
+            if (store < k) qs_left = store + 1;
+            else qs_right = store - 1;
+        }
+
+        noise_floor = usable[k];
+
+        // Step 2: Margin check
+        const uint8_t peak_margin_fixed = raw_peak - noise_floor;
+        if (peak_margin_fixed < cfg_margin) return;
+    }
+
+    // Compute peak_margin (always needed for shape analysis)
+    const uint8_t peak_margin = raw_peak - noise_floor;
+
+    // Step 3: Signal width measurement (scan left/right from peak)
     const uint8_t elevated_threshold = noise_floor + (peak_margin / 4);
 
     size_t sig_left = peak_index;
@@ -1322,12 +1382,11 @@ bool DroneScanner::sweep_apply_shape_filters(
 
     const size_t signal_width = sig_right - sig_left + 1;
 
-    // Width checks
-    if (signal_width == 0) return false;
-    if (signal_width < cfg_min_width) return false;
-    if (signal_width > cfg_max_width) return false;
+    // Step 4-5: Width checks
+    if (signal_width < cfg_min_width) return;
+    if (signal_width > cfg_max_width) return;
 
-    // Compute average margin for sharpness and flatness
+    // Step 6+8b: Compute average margin ONCE for both sharpness and flatness checks
     int32_t avg_margin = 0;
     if (cfg_sharpness > 50 || cfg_flatness > 50) {
         int32_t margin_sum = 0;
@@ -1344,19 +1403,19 @@ bool DroneScanner::sweep_apply_shape_filters(
         }
     }
 
-    // Peak sharpness check (V-shape)
+    // Step 6: Peak sharpness check (V-shape)
     if (cfg_sharpness > 50 && avg_margin > 0) {
         const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-        if (sharpness < cfg_sharpness) return false;
+        if (sharpness < cfg_sharpness) return;
     }
 
-    // Peak ratio check
+    // Step 7: Peak ratio check
     if (cfg_ratio > 0) {
         const int32_t ratio_val = (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
-        if (ratio_val < cfg_ratio) return false;
+        if (ratio_val < cfg_ratio) return;
     }
 
-    // Valley depth check
+    // Step 8: Valley depth check
     if (cfg_valley > 0) {
         uint8_t left_valley = 0;
         uint8_t right_valley = 0;
@@ -1375,16 +1434,16 @@ bool DroneScanner::sweep_apply_shape_filters(
         }
 
         const uint8_t max_valley = (left_valley > right_valley) ? left_valley : right_valley;
-        if (max_valley >= cfg_valley) return false;
+        if (max_valley >= cfg_valley) return;
     }
 
-    // Flatness check
+    // Step 8b: Flatness check — peak must dominate average margin (reuses avg_margin from step 6)
     if (cfg_flatness > 50 && avg_margin > 0) {
         const int32_t flat = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-        if (flat < cfg_flatness) return false;
+        if (flat < cfg_flatness) return;
     }
 
-    // Symmetry check
+    // Step 8c: Symmetry check — V-shape must have similar left/right width
     if (cfg_symmetry > 0 && signal_width > 1) {
         const size_t left_w = peak_index - sig_left;
         const size_t right_w = sig_right - peak_index;
@@ -1392,86 +1451,41 @@ bool DroneScanner::sweep_apply_shape_filters(
         const size_t min_s = (left_w < right_w) ? left_w : right_w;
         if (max_s > 0) {
             const uint8_t sym_pct = static_cast<uint8_t>((min_s * 100) / max_s);
-            if (sym_pct < cfg_symmetry) return false;
+            if (sym_pct < cfg_symmetry) return;
         }
     }
 
-    return true;
-}
-
-// ============================================================================
-// Sweep helper: process detection (exception check, median filter, tracking)
-// ============================================================================
-
-void DroneScanner::sweep_process_detection(
-    int32_t peak_rssi,
-    size_t peak_index,
-    FreqHz center_freq
-) noexcept {
-    const FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
-
-    // Exception check
-    const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
-    for (uint8_t w = 0; w < 4; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            const FreqHz exc = config_.sweep_exceptions[w][i];
-            if (exc == 0) continue;
-            const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
-            const FreqHz hi = exc + exc_radius;
-            if (peak_freq >= lo && peak_freq <= hi) return;
-        }
-    }
-
-    (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
-}
-
-// ============================================================================
-// process_spectrum_sweep — refactored to use helper methods
-// ============================================================================
-
-void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq) noexcept {
-    current_frequency_ = center_freq;
-
-    // Step 1: Find noise floor and peak
-    size_t peak_index = FFT_EDGE_SKIP_NARROW;
-    uint8_t raw_peak = 0;
-    uint8_t noise_floor = 0;
-
-    if (config_.cfar_mode != CFARMode::OFF) {
-        const size_t cfar_peak = CFARDetector::find_peak_cfar(
-            spectrum.db.data(), FFT_BIN_COUNT,
-            config_.cfar_mode, config_.cfar_ref_cells, config_.cfar_guard_cells,
-            config_.cfar_threshold_x10, FFT_EDGE_SKIP_NARROW, FFT_EDGE_SKIP_NARROW
-        );
-        if (cfar_peak >= FFT_BIN_COUNT) return;
-        peak_index = cfar_peak;
-        raw_peak = spectrum.db[cfar_peak];
-        noise_floor = sweep_find_noise_floor(spectrum, peak_index, raw_peak);
-    } else {
-        noise_floor = sweep_find_noise_floor(spectrum, peak_index, raw_peak);
-        if (noise_floor == 0 && raw_peak == 0) return;
-        const uint8_t peak_margin_check = raw_peak - noise_floor;
-        if (peak_margin_check < config_.spectrum_margin) return;
-    }
-
-    // Step 2: Compute peak margin
-    const uint8_t peak_margin = raw_peak - noise_floor;
-
-    // Step 3: Apply shape filters via helper
-    if (!sweep_apply_shape_filters(spectrum, peak_index, raw_peak, noise_floor, peak_margin)) return;
-
-    // Step 4: Convert peak to dBm
+    // Step 9: Convert peak to dBm
     int32_t peak_rssi = static_cast<int32_t>(raw_peak) - FFT_DBM_OFFSET;
 
-    // Step 5: Median filter
+    // Step 10: Median filter
     rssi_median_filter_.add(peak_rssi);
     if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
         peak_rssi = rssi_median_filter_.get_median();
     }
 
-    // Step 6: Process detection via helper
-    if (peak_rssi > config_.rssi_threshold_dbm) {
-        sweep_process_detection(peak_rssi, peak_index, center_freq);
+    // Step 10b: Exception check + tracking
+    if (peak_rssi > cfg_rssi_thresh) {
+        // Convert FFT bin index to ACTUAL RF frequency using Looking Glass mapping.
+        // The pixel formula (f_min + pixel_index * step) is WRONG for FFT bins
+        // because Looking Glass reorders bins. Each bin has a fixed frequency offset
+        // from f_center that depends on its position in the reordering.
+        const FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
+
+        const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
+        bool is_exception = false;
+        for (uint8_t w = 0; w < 4 && !is_exception; ++w) {
+            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !is_exception; ++i) {
+                const FreqHz exc = config_.sweep_exceptions[w][i];
+                if (exc == 0) continue;
+                const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
+                const FreqHz hi = exc + exc_radius;
+                if (peak_freq >= lo && peak_freq <= hi) is_exception = true;
+            }
+        }
+        if (is_exception) return;
+
+        (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
     }
 }
 

@@ -41,8 +41,8 @@ public:
     DroneScannerUI(const DroneScannerUI&) = delete;
     DroneScannerUI& operator=(const DroneScannerUI&) = delete;
 
-    const char* title() const override {
-        return "EDA";
+    std::string title() const override {
+        return std::string("EDA");
     }
     void paint(Painter& painter) override;
     void focus() override;
@@ -118,7 +118,7 @@ private:
     char displayed_drone_type_[MAX_DRONE_TYPE_DISPLAY + 1]{};
     uint32_t drone_type_display_timer_{0};
 
-    volatile bool scanning_{false};
+    bool scanning_{false};
     ScanningMode scanning_mode_{DEFAULT_SCANNING_MODE};
 
     bool alert_active_{false};
@@ -185,8 +185,8 @@ private:
 
     SweepWindow sweep_[MAX_SWEEP_WINDOWS]{};
 
-    volatile bool composite_active_{false};
-    volatile bool sweep_auto_mode_{false};
+    bool composite_active_{false};
+    bool sweep_auto_mode_{false};
     uint8_t active_sweep_idx_{0};         // 0-3, round-robin index
     uint8_t current_pair_{0};             // Current displayed pair index (0 or 2)
     uint8_t db_scan_count_{0};
@@ -215,11 +215,6 @@ private:
     TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
     uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
-
-    // Reusable buffers for button_load_.on_select callback
-    char load_status_buf_[MAX_TEXT_LENGTH]{};
-    char load_msg_buf_[MAX_TEXT_LENGTH]{};
-    char load_err_msg_buf_[MAX_TEXT_LENGTH]{};
 
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;
