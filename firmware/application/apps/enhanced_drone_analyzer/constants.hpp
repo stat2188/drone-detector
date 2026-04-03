@@ -720,7 +720,9 @@ enum class CFARMode : uint8_t {
     CA = 1,     // Cell Averaging CFAR — best for homogeneous noise
     GO = 2,     // Greatest Of CFAR — robust at noise edges
     SO = 3,     // Smallest Of CFAR — better in cluttered environments
-    HYBRID = 4  // Hybrid CFAR — weighted combination of CA/GO/SO
+    HYBRID = 4, // Hybrid CFAR — weighted combination of CA/GO/SO
+    OS = 5,     // Ordered Statistic CFAR — best for multi-target environments
+    VI = 6      // Variability Index CFAR — adaptive mode switching based on local statistics
 };
 
 /**
@@ -776,6 +778,44 @@ constexpr uint8_t CFAR_GUARD_CELLS_MAX = 8;
 constexpr uint8_t DEFAULT_CFAR_HYBRID_ALPHA = 50;  // CA weight (0.5)
 constexpr uint8_t DEFAULT_CFAR_HYBRID_BETA = 30;   // GO weight (0.3)
 constexpr uint8_t DEFAULT_CFAR_HYBRID_GAMMA = 20;  // SO weight (0.2)
+
+// ============================================================================
+// OS-CFAR Constants (Ordered Statistic)
+// ============================================================================
+
+/**
+ * @brief OS-CFAR k-th order statistic index (as fraction of N_ref × 100)
+ * @note k = (N_ref * OS_CFAR_K_PERCENT) / 100
+ * @note 75 = 75% of sorted cells (robust against multi-target masking)
+ * @note Higher = more aggressive noise estimate, fewer false alarms
+ * @note Lower = more sensitive, more false alarms in multi-target
+ */
+constexpr uint8_t DEFAULT_OS_CFAR_K_PERCENT = 75;
+
+/**
+ * @brief OS-CFAR k-th order range (percent)
+ */
+constexpr uint8_t OS_CFAR_K_PERCENT_MIN = 50;   // Median (most aggressive)
+constexpr uint8_t OS_CFAR_K_PERCENT_MAX = 90;   // Near-maximum (very conservative)
+
+// ============================================================================
+// VI-CFAR Constants (Variability Index)
+// ============================================================================
+
+/**
+ * @brief VI-CFAR variability index threshold (×10 for integer storage)
+ * @note VI = variance / mean^2
+ * @note VI < threshold → homogeneous noise → use CA-CFAR
+ * @note VI > threshold → clutter edge → use GO-CFAR or SO-CFAR
+ * @note Typical: 10-50 (stored as ×10, so 15 = 1.5)
+ */
+constexpr uint8_t DEFAULT_VI_CFAR_THRESHOLD_X10 = 15;  // 1.5
+
+/**
+ * @brief VI-CFAR threshold range (×10)
+ */
+constexpr uint8_t VI_CFAR_THRESHOLD_MIN_X10 = 5;   // 0.5 (very sensitive)
+constexpr uint8_t VI_CFAR_THRESHOLD_MAX_X10 = 50;  // 5.0 (very tolerant)
 
 // ============================================================================
 // Neighbor Margin Check Constants

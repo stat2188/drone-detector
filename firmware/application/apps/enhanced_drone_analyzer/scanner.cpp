@@ -1026,7 +1026,12 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
             config_.cfar_guard_cells,
             config_.cfar_threshold_x10,
             FFT_EDGE_SKIP_NARROW,
-            FFT_EDGE_SKIP_NARROW
+            FFT_EDGE_SKIP_NARROW,
+            config_.cfar_hybrid_alpha,
+            config_.cfar_hybrid_beta,
+            config_.cfar_hybrid_gamma,
+            config_.os_cfar_k_percent,
+            config_.vi_cfar_threshold_x10
         );
         
         if (cfar_peak >= FFT_BIN_COUNT) {
@@ -1262,7 +1267,12 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
             config_.cfar_guard_cells,
             config_.cfar_threshold_x10,
             FFT_EDGE_SKIP_NARROW,
-            FFT_EDGE_SKIP_NARROW
+            FFT_EDGE_SKIP_NARROW,
+            config_.cfar_hybrid_alpha,
+            config_.cfar_hybrid_beta,
+            config_.cfar_hybrid_gamma,
+            config_.os_cfar_k_percent,
+            config_.vi_cfar_threshold_x10
         );
         
         if (cfar_peak >= FFT_BIN_COUNT) return;  // No signal detected by CFAR
