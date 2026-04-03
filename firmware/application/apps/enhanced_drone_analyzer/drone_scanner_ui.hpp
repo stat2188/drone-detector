@@ -67,8 +67,6 @@ private:
     NavigationView& nav_;
 
     RxRadioState radio_state_{ReceiverModel::Mode::SpectrumAnalysis};
-    app_settings::SettingsManager settings_{
-        "rx_eda"sv, app_settings::Mode::RX};
 
     ui::BigFrequency big_display_;
 
@@ -162,7 +160,6 @@ private:
         FreqHz f_center{0};
         FreqHz f_center_ini{0};
         FreqHz pixel_step_hz{0};
-        FreqHz pixel_step_half_hz{0};  // precomputed: pixel_step_hz / 2
         FreqHz step_hz{0};
         FreqHz bins_hz_acc{0};
         FreqHz exceptions[EXCEPTIONS_PER_WINDOW]{};  // exception frequencies (0 = unused)

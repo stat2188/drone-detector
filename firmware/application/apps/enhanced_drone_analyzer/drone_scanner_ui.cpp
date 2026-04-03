@@ -27,6 +27,18 @@
 
 namespace drone_analyzer {
 
+/**
+ * @brief M0 baseband phase decimation trigger for wideband spectrum.
+ * Controls how many samples are accumulated per FFT frame.
+ */
+static constexpr size_t SWEEP_FFT_TRIGGER = 31;
+
+/**
+ * @brief Scale factor for converting 8-bit composite power to 16-bit histogram bins.
+ * Shifts uint8_t range [0,255] to uint16_t range [0,65280].
+ */
+static constexpr uint16_t COMPOSITE_TO_HIST_SCALE = 256;
+
 static HardwareController s_hardware;
 static DatabaseManager s_database;
 static DroneScanner s_scanner(s_database, s_hardware);
@@ -312,7 +324,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
     portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
     portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
-    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
+    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
     portapack::receiver_model.enable();
 
     // Set default headphone volume to 70/99 if not already set higher
@@ -615,12 +627,12 @@ void DroneScannerUI::refresh_ui() noexcept {
             const size_t n0 = (COMPOSITE_SIZE < HISTOGRAM_BUFFER_SIZE)
                 ? COMPOSITE_SIZE : HISTOGRAM_BUFFER_SIZE;
             for (size_t i = 0; i < n0 && hist_idx < HISTOGRAM_BUFFER_SIZE; ++i) {
-                refresh_hist_data_[hist_idx++] = static_cast<uint16_t>(sweep_[w0].composite[i]) * 256;
+                refresh_hist_data_[hist_idx++] = static_cast<uint16_t>(sweep_[w0].composite[i]) * COMPOSITE_TO_HIST_SCALE;
             }
         }
         if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) {
             for (size_t i = 0; i < COMPOSITE_SIZE && hist_idx < HISTOGRAM_BUFFER_SIZE; ++i) {
-                refresh_hist_data_[hist_idx++] = static_cast<uint16_t>(sweep_[w1].composite[i]) * 256;
+                refresh_hist_data_[hist_idx++] = static_cast<uint16_t>(sweep_[w1].composite[i]) * COMPOSITE_TO_HIST_SCALE;
             }
         }
         if (hist_idx > 0) {
@@ -776,7 +788,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     // Configure baseband for sweep bandwidth
     portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
     portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);
-    baseband::set_spectrum(SWEEP_SLICE_BW, 31);
+    baseband::set_spectrum(SWEEP_SLICE_BW, SWEEP_FFT_TRIGGER);
     spectrum_fifo_ = nullptr;
 
     // Set up display for current pair (2+2 pagination)
@@ -819,7 +831,7 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     // Restore baseband to normal bandwidth immediately
     portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
     portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
-    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, 31);
+    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
 
     if (was_auto && scanner_ptr_ != nullptr) {
         // Continue scanning from last DB position (skip already-scanned)
@@ -869,15 +881,20 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
     if (win.pixel_index < COMPOSITE_SIZE) {
         // Normal step: advance frequency within current window
-        // Clamp to f_max to prevent overshoot
-        if (win.f_center + win.step_hz <= win.f_max) {
+        // Use < instead of <= to allow final step that slightly overshoots f_max.
+        // The peak frequency range check in process_spectrum_sweep() rejects
+        // any detections outside [f_min, f_max], so overshoot is safe.
+        // This ensures all 240 composite pixels are filled.
+        if (win.f_center < win.f_max) {
             win.f_center += win.step_hz;
             retune_sweep_window(win, nullptr);
             return;
         }
-        // Reached end of range — force pixel_index to COMPOSITE_SIZE
-        // to trigger pair_complete logic instead of infinite loop
+        // Reached end of range — force completion and clear accumulators
+        // to prevent stale values from affecting the next sweep pass.
         win.pixel_index = COMPOSITE_SIZE;
+        win.bins_hz_acc = 0;
+        win.pixel_max = 0;
     }
 
     // Current window sweep pass complete
@@ -897,21 +914,18 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         if (sweep_[w0].enabled) sweep_[w0].reset();
         if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) sweep_[w1].reset();
 
-        // Apply RSSI decay after each pair completes (not just at full cycle end)
-        // This ensures drones are tracked and updated more frequently
-        if (scanner_ptr_ != nullptr) {
-            scanner_ptr_->apply_rssi_decay();
-        }
-
         // Advance to next pair (pairs: 0=[w0,w1], 2=[w2,w3])
         const uint8_t next_pair = (current_pair_ + 2 < MAX_SWEEP_WINDOWS) ? current_pair_ + 2 : 0;
 
-        if (next_pair == 0) {
-            // Full cycle complete — all pairs have been displayed
-            if (sweep_auto_mode_) {
-                exit_sweep_mode();
-                return;
+        // Full cycle wrap: all pairs have been visited.
+        // Exit auto-mode before round-robin changes active_sweep_idx_,
+        // but apply decay first (see wrap detection block below for rationale).
+        if (next_pair == 0 && sweep_auto_mode_) {
+            if (scanner_ptr_ != nullptr) {
+                scanner_ptr_->apply_rssi_decay();
             }
+            exit_sweep_mode();
+            return;
         }
 
         current_pair_ = next_pair;
@@ -927,8 +941,16 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     } while (!sweep_[next].enabled && next != active_sweep_idx_);
 
     // Wrap detection: if we cycled back to the first window of the pair
-    // that just completed, a full round-robin pass is done
+    // that just completed, a full round-robin pass is done.
+    // This is the correct trigger for RSSI decay — it fires when ALL enabled
+    // windows have been scanned once, regardless of how many windows are active.
+    // A drone detected in the first window may not be re-seen for several seconds
+    // while remaining windows are scanned — premature decay would remove it.
     if (pair_complete && next == w0) {
+        if (scanner_ptr_ != nullptr) {
+            scanner_ptr_->apply_rssi_decay();
+        }
+
         if (sweep_auto_mode_) {
             exit_sweep_mode();
             return;
@@ -984,13 +1006,14 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
         f_max = f_min + SWEEP_SLICE_BW;
     }
     pixel_step_hz = (f_max - f_min) / SWEEP_PIXELS_PER_SLICE;
-    pixel_step_half_hz = pixel_step_hz / 2;
     // Use config step if provided, otherwise fall back to FFT-based constant
     step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * EACH_BIN_SIZE);
     // f_center_ini positioned so pixel 239 maps to f_max.
-    // With -2*BIN_SIZE the FFT overshoots f_max by ~20 MHz → false positives at f_max+15.
-    // Looking Glass places f_center at f_min + SLICE_BW/2 → last pixel ≈ f_max.
-    f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
+    // The -2*BIN_SIZE offset prevents FFT overshoot beyond f_max which causes
+    // false positives at frequencies outside the sweep range.
+    // Looking Glass: f_center at f_min + SLICE_BW/2 - 2*BIN_SIZE → last pixel ≈ f_max.
+    constexpr FreqHz BIN_SIZE = SWEEP_SLICE_BW / 256;
+    f_center_ini = f_min - (2 * BIN_SIZE) + (SWEEP_SLICE_BW / 2);
     reset();
 }
 
@@ -1021,6 +1044,11 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
     static constexpr uint8_t SWEEP_UPPER_PIXEL_END = SWEEP_PIXELS_PER_SLICE - 2; // 238
 
     for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
+        // Guard: stop processing when composite buffer is full.
+        // Prevents bins_hz_acc and pixel_max from accumulating stale values
+        // that would corrupt the next sweep pass after window reset.
+        if (pixel_index >= COMPOSITE_SIZE) break;
+
         if (bin >= SWEEP_UPPER_PIXEL_END && bin >= SWEEP_FFT_MAP_CROSSOVER) continue;
         const uint8_t fft_bin = (bin < SWEEP_FFT_MAP_CROSSOVER)
             ? (SWEEP_FFT_MAP_START + bin)
