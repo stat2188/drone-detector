@@ -22,31 +22,30 @@ namespace drone_analyzer {
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display) noexcept
     : ui::View()
     , labels_({
+        {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(17), UI_POS_Y(6)}, "Wid:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(10), UI_POS_Y(5)}, "Rat:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(10), UI_POS_Y(6)}, "Vly:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(10), UI_POS_Y(4)}, "Flat:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(17), UI_POS_Y(4)}, "Sym:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(0)}, "CFAR:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(1)}, "Ref:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(20), UI_POS_Y(1)}, "Grd:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(22), UI_POS_Y(1)}, "Thr:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(0), UI_POS_Y(2)}, "Mode:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(3)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(5)}, "Sens:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(13), UI_POS_Y(5)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(0), UI_POS_Y(7)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(0), UI_POS_Y(8)}, "Shrp:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(10), UI_POS_Y(7)}, "Rat:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(10), UI_POS_Y(8)}, "Vly:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(10), UI_POS_Y(6)}, "Flat:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(6)}, "Sym:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(7)}, "Mar:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(8)}, "Wid:", Theme::getInstance()->fg_light->foreground},
     })
-    , field_scan_mode_({UI_POS_X(5), UI_POS_Y(2)}, 1, {
+    , field_scan_mode_({UI_POS_X(0), UI_POS_Y(0)}, 1, {
         {"-", 0},
 })
-    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(3)}, 4, {10, 1000}, 10, ' ')
-    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(5)}, 3, {0, 100}, 1, ' ')
+    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
+    , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
-    , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(4)}, 2, {1, 50}, 1, ' ')
+    , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
     , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "Spec", false)
     , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "Hist", false)
