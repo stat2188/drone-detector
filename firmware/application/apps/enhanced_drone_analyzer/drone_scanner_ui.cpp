@@ -868,7 +868,10 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
     if (win.pixel_index < COMPOSITE_SIZE) {
         // Normal step: advance frequency within current window
-        win.f_center += win.step_hz;
+        // Clamp to f_max to prevent overshoot
+        if (win.f_center + win.step_hz <= win.f_max) {
+            win.f_center += win.step_hz;
+        }
         retune_sweep_window(win, nullptr);
         return;
     }
