@@ -40,7 +40,6 @@ public:
 
 private:
     ui::Labels labels_;
-    ui::OptionsField field_scan_mode_;
     ui::NumberField field_scan_interval_;
     ui::NumberField field_rssi_threshold_;
     ui::NumberField field_volume_;

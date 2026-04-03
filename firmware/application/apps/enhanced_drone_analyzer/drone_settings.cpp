@@ -34,14 +34,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(10), UI_POS_Y(6)}, "Vly:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(10), UI_POS_Y(4)}, "Flat:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(4)}, "Sym:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(0)}, "CFAR:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(1)}, "Ref:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(20), UI_POS_Y(1)}, "Grd:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(22), UI_POS_Y(1)}, "Thr:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(0)}, "CFAR:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(11), UI_POS_Y(0)}, "Ref:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(17), UI_POS_Y(0)}, "Grd:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(22), UI_POS_Y(0)}, "Thr:", Theme::getInstance()->fg_light->foreground},
     })
-    , field_scan_mode_({UI_POS_X(0), UI_POS_Y(0)}, 1, {
-        {"-", 0},
-})
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
@@ -71,17 +68,17 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_info_width_({UI_POS_X(5), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Wid?")
     , button_info_sharp_({UI_POS_X(10), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Shp?")
     , button_info_ratio_({UI_POS_X(15), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Rat?")
-    , field_cfar_mode_({UI_POS_X(17), UI_POS_Y(1)}, 7, {
+    , field_cfar_mode_({UI_POS_X(4), UI_POS_Y(0)}, 7, {
         {"OFF", static_cast<int32_t>(CFARMode::OFF)},
         {"CA", static_cast<int32_t>(CFARMode::CA)},
         {"GO", static_cast<int32_t>(CFARMode::GO)},
         {"SO", static_cast<int32_t>(CFARMode::SO)},
         {"HYBRID", static_cast<int32_t>(CFARMode::HYBRID)},
     })
-    , field_cfar_ref_cells_({UI_POS_X(17), UI_POS_Y(2)}, 2, {4, 64}, 4, ' ')
-    , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(2)}, 1, {0, 8}, 1, ' ')
-    , field_cfar_threshold_({UI_POS_X(22), UI_POS_Y(2)}, 3, {10, 100}, 5, ' ')
-    , button_info_cfar_({UI_POS_X(24), UI_POS_Y(0), UI_POS_WIDTH(3), 16}, "CF?")
+    , field_cfar_ref_cells_({UI_POS_X(14), UI_POS_Y(0)}, 2, {4, 64}, 4, ' ')
+    , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
+    , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
+    , button_info_cfar_({UI_POS_X(29), UI_POS_Y(0), UI_POS_WIDTH(3), 16}, "CF?")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)

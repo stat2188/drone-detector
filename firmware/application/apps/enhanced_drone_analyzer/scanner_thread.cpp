@@ -38,7 +38,10 @@ void ScannerThread::run() noexcept {
                 const ScannerState scan_state = scanner_.get_state();
                 if (scan_state == ScannerState::LOCKING || scan_state == ScannerState::TRACKING) {
                     dwell_cycles_++;
-                    if (dwell_cycles_ >= MAX_DWELL_CYCLES) {
+                    // Increase dwell time when confirm count is enabled
+                    // so scanner has time to make 2 confirmations
+                    const uint8_t max_dwell = cfg.confirm_count_enabled ? (MAX_DWELL_CYCLES * 2) : MAX_DWELL_CYCLES;
+                    if (dwell_cycles_ >= max_dwell) {
                         // Max dwell reached — force resume scanning
                         if (cfg.noise_blacklist_enabled && __atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
                             const FreqHz locked_freq = scanner_.get_locked_frequency();
@@ -60,7 +63,11 @@ void ScannerThread::run() noexcept {
                 const ScannerState scan_state = scanner_.get_state();
                 if (scan_state == ScannerState::LOCKING || scan_state == ScannerState::TRACKING) {
                     dwell_cycles_++;
-                    if (dwell_cycles_ >= MAX_DWELL_CYCLES) {
+                    // If confirm count is enabled, dwell longer to allow 2 confirmations
+                    const uint8_t max_dwell = cfg.confirm_count_enabled 
+                        ? (MAX_DWELL_CYCLES + cfg.confirm_count) 
+                        : MAX_DWELL_CYCLES;
+                    if (dwell_cycles_ >= max_dwell) {
                         scanner_.force_resume_scanning();
                         dwell_cycles_ = 0;
                     }
