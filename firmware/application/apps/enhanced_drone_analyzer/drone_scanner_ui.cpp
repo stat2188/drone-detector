@@ -513,11 +513,9 @@ void DroneScannerUI::refresh_ui() noexcept {
 
     current_scanner_state_ = scanner_ptr_->get_state();
 
-    // Remove stale drones (not seen for DRONE_STALE_TIMEOUT_MS)
-    // Skip in sweep mode: RSSI-based decay in apply_rssi_decay handles cleanup
-    if (!composite_active_) {
-        scanner_ptr_->remove_stale_drones(chTimeNow());
-    }
+    // Remove stale drones (not seen for DRONE_REMOVAL_TIMEOUT_MS)
+    // Works in both normal and sweep mode
+    scanner_ptr_->remove_stale_drones(chTimeNow());
 
     // Build display data from tracked drones
     // Use single get_tracked_drones call for consistency (one lock, one snapshot)
@@ -892,14 +890,17 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         if (sweep_[w0].enabled) sweep_[w0].reset();
         if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) sweep_[w1].reset();
 
+        // Apply RSSI decay after each pair completes (not just at full cycle end)
+        // This ensures drones are tracked and updated more frequently
+        if (scanner_ptr_ != nullptr) {
+            scanner_ptr_->apply_rssi_decay();
+        }
+
         // Advance to next pair (pairs: 0=[w0,w1], 2=[w2,w3])
         const uint8_t next_pair = (current_pair_ + 2 < MAX_SWEEP_WINDOWS) ? current_pair_ + 2 : 0;
 
         if (next_pair == 0) {
             // Full cycle complete — all pairs have been displayed
-            if (scanner_ptr_ != nullptr) {
-                scanner_ptr_->apply_rssi_decay();
-            }
             if (sweep_auto_mode_) {
                 exit_sweep_mode();
                 return;
