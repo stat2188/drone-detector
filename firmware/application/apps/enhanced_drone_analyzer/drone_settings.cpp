@@ -74,6 +74,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {"GO", static_cast<int32_t>(CFARMode::GO)},
         {"SO", static_cast<int32_t>(CFARMode::SO)},
         {"HYBRID", static_cast<int32_t>(CFARMode::HYBRID)},
+        {"OS", static_cast<int32_t>(CFARMode::OS)},
+        {"VI", static_cast<int32_t>(CFARMode::VI)},
     })
     , field_cfar_ref_cells_({UI_POS_X(14), UI_POS_Y(0)}, 2, {4, 64}, 4, ' ')
     , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')

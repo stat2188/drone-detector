@@ -249,7 +249,7 @@ static void parse_settings_line(
     // --- CFAR detection ---
     } else if (key_matches("cfar_mode")) {
         const int32_t m = static_cast<int32_t>(parse_int());
-        s.cfar_mode = static_cast<CFARMode>(m > 4 ? 0 : m);
+        s.cfar_mode = static_cast<CFARMode>(m > 6 ? 0 : m);
     } else if (key_matches("cfar_ref_cells")) {
         s.cfar_ref_cells = static_cast<uint8_t>(parse_int());
     } else if (key_matches("cfar_guard_cells")) {

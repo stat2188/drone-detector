@@ -52,6 +52,11 @@ constexpr uint16_t VIDEO_WIDTH = 128;
 constexpr uint16_t VIDEO_HEIGHT = 208;
 
 /**
+ * @brief Source lines per frame (104 = 208/2, PAL half-frame)
+ */
+constexpr uint16_t SOURCE_LINES = 104;
+
+/**
  * @brief Video buffer size (must accommodate VIDEO_WIDTH * VIDEO_HEIGHT)
  */
 constexpr size_t VIDEO_BUFFER_SIZE = 13312;  // 128 * 104 = 13312

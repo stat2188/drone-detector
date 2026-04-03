@@ -60,7 +60,7 @@ static constexpr auto generate_h_lut() {
 static constexpr auto generate_v_lut() {
     std::array<uint16_t, DISPLAY_HEIGHT> lut{};
     for (uint16_t y = 0; y < DISPLAY_HEIGHT; y++) {
-        const uint16_t src_y = (y * 104) / DISPLAY_HEIGHT;
+        const uint16_t src_y = (y * SOURCE_LINES) / DISPLAY_HEIGHT;
         lut[y] = static_cast<uint16_t>(src_y * VIDEO_WIDTH + DEFAULT_X_CORRECTION);
     }
     return lut;
@@ -164,9 +164,9 @@ void VideoRenderer::render_line(uint16_t y, ui::Color* line_buffer) const {
 }
 
 void VideoRenderer::render_frame() {
-    // Single line buffer — reused per row.
-    // 480 bytes stack. Well within 4KB budget (11.7%).
-    ui::Color line_buffer[DISPLAY_WIDTH];
+    // Static line buffer — moved from stack to .bss to protect M0's 1KB stack.
+    // 480 bytes in .bss (zero stack cost).
+    static ui::Color line_buffer[DISPLAY_WIDTH];
 
     for (uint16_t y = 0; y < DISPLAY_HEIGHT; y++) {
         render_line(y, line_buffer);

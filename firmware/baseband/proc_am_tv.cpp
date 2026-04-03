@@ -43,16 +43,14 @@ void WidebandFMAudio::execute(const buffer_c8_t& buffer) {
     const buffer_c16_t buffer_c16{spectrum.data(), spectrum.size(), buffer.sampling_rate};
     channel_spectrum.feed(buffer_c16);
 
-    int8_t re;
-    // int8_t im;
-    // int8_t mag;
-
+    // Integer-only arithmetic — zero float overhead in ISR context.
+    // re is int8_t [-128..+127], shift to [0..255] range.
     for (size_t i = 0; i < 128; i++) {
-        re = buffer.p[i].real();
-        // im = buffer.p[i].imag();
-        // mag = __builtin_sqrtf((re * re) + (im * im)) ;
-        const unsigned int v = re + 127.0f;  // timescope
-        audio_spectrum.db[i] = std::max(0U, std::min(255U, v));
+        const int re = buffer.p[i].real();
+        const int v = re + 127;
+        audio_spectrum.db[i] = static_cast<uint8_t>(
+            (v < 0) ? 0 : ((v > 255) ? 255 : v)
+        );
     }
     AudioSpectrumMessage message{&audio_spectrum};
     shared_memory.application_queue.push(message);
