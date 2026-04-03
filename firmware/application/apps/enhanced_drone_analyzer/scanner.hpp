@@ -942,6 +942,48 @@ private:
     [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept;
 
     /**
+     * @brief Sweep helper: find noise floor via quickselect median
+     * @param spectrum FFT spectrum data
+     * @param peak_index Output: peak bin index
+     * @param raw_peak Output: peak power value
+     * @return Noise floor power value (median of usable bins)
+     */
+    [[nodiscard]] uint8_t sweep_find_noise_floor(
+        const ChannelSpectrum& spectrum,
+        size_t& peak_index,
+        uint8_t& raw_peak
+    ) noexcept;
+
+    /**
+     * @brief Sweep helper: measure signal width and apply shape filters
+     * @param spectrum FFT spectrum data
+     * @param peak_index Peak bin index
+     * @param raw_peak Peak power value
+     * @param noise_floor Noise floor power value
+     * @param peak_margin Peak margin above noise (output: computed if needed)
+     * @return true if signal passes all shape filters
+     */
+    [[nodiscard]] bool sweep_apply_shape_filters(
+        const ChannelSpectrum& spectrum,
+        size_t peak_index,
+        uint8_t raw_peak,
+        uint8_t noise_floor,
+        uint8_t peak_margin
+    ) noexcept;
+
+    /**
+     * @brief Sweep helper: process detected signal (exception check, median filter, tracking)
+     * @param peak_rssi Peak RSSI in dBm
+     * @param peak_index Peak FFT bin index
+     * @param center_freq Slice center frequency
+     */
+    void sweep_process_detection(
+        int32_t peak_rssi,
+        size_t peak_index,
+        FreqHz center_freq
+    ) noexcept;
+
+    /**
      * @brief Internal: Trigger alert callback if set
      * @param threat_level Threat level to report
      * @note Re-entrant safe via AtomicFlag guard

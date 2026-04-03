@@ -227,15 +227,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
             if (err == ErrorCode::SUCCESS && db_entry_count_ > 0) {
                 // Build status message with filename and entry count
-                static char status_buf[MAX_TEXT_LENGTH];
-                snprintf(status_buf, sizeof(status_buf), "%s (%lu)",
+                snprintf(load_status_buf_, sizeof(load_status_buf_), "%s (%lu)",
                          filename, (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(status_buf);
+                drone_display_.set_status_text(load_status_buf_);
 
                 // Show alert with confirmation
-                static char msg[MAX_TEXT_LENGTH];
-                snprintf(msg, sizeof(msg), "DB: %s loaded", filename);
-                show_alert(msg, 2000);
+                snprintf(load_msg_buf_, sizeof(load_msg_buf_), "DB: %s loaded", filename);
+                show_alert(load_msg_buf_, 2000);
 
                 // Reset scanner frequency to first entry in new database
                 scanner_ptr_->reset_frequency();
@@ -254,10 +252,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 set_dirty();
             } else {
                 // Show error with filename for debugging
-                static char err_msg[MAX_TEXT_LENGTH];
-                snprintf(err_msg, sizeof(err_msg), "Failed: %s (err %d)",
+                snprintf(load_err_msg_buf_, sizeof(load_err_msg_buf_), "Failed: %s (err %d)",
                          filename, static_cast<int>(err));
-                show_alert(err_msg, 3000);
+                show_alert(load_err_msg_buf_, 3000);
 
                 // Show error in status
                 drone_display_.set_status_text("DB load error");
