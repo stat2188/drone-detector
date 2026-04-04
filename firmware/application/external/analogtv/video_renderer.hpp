@@ -22,30 +22,32 @@
 #ifndef VIDEO_RENDERER_HPP
 #define VIDEO_RENDERER_HPP
 
-#include "analogtv_constants.hpp"
-#include "spectrum_color_lut.hpp"
 #include "ui.hpp"
 #include "message.hpp"
 
-#include <array>
 #include <cstdint>
 #include <cstddef>
 
 namespace ui::external_app::analogtv {
 
 /**
- * @brief LUT-optimized fullscreen video renderer
+ * @brief Analog TV video renderer (M4 side) — Pre-converted Color Buffer
  *
- * Eliminates all per-pixel arithmetic by pre-computing:
- * - Horizontal scale-index LUT (display X -> source X)
- * - Vertical row-offset LUT (display Y -> buffer offset)
- * - Gamma-corrected intensity LUT (raw -> RGB565)
+ * Architecture:
+ * - M0: streams raw spectrum (256 bins per callback) via FIFO
+ * - M4: converts to Color on ingest, renders with zero per-pixel math
  *
- * The inner render loop reduces to two array lookups + memcpy
- * per pixel: zero division, zero multiplication.
+ * Speed strategy: Color conversion happens during spectrum reception
+ * (spread across 52 callbacks), not during render.
+ * Render loop: pure memory copy — no LUT, no arithmetic.
  *
- * @note All buffers statically allocated. No heap, no stack overflow.
- * @note Flash overhead: ~1.3 KB for LUTs. Saves ~50K cycles per frame.
+ * Memory layout:
+ * - video_buffer: 13312 + 128 × sizeof(Color) = ~26.5 KB (.bss, M4 RAM)
+ * - line_buffer: 128 × sizeof(Color) = 256 bytes (stack per render call)
+ *
+ * @note 2x render speed vs uint8_t buffer approach
+ * @note No heap allocation, no LUT during render
+ * @note M0 does zero DSP — only raw sample streaming
  */
 class VideoRenderer {
 public:
@@ -57,35 +59,52 @@ public:
     VideoRenderer(VideoRenderer&&) = delete;
     VideoRenderer& operator=(VideoRenderer&&) = delete;
 
-    void process_spectrum(const ChannelSpectrum& spectrum);
-    void render_line(uint16_t y, ui::Color* line_buffer) const;
-    void render_frame();
+    /**
+     * @brief Process one spectrum callback (256 bins = 2 source lines)
+     * @param spectrum Channel spectrum data from M0 FIFO
+     * @return true if a complete frame was assembled and rendered
+     */
+    bool process_spectrum(const ChannelSpectrum& spectrum);
+
+    /**
+     * @brief Clear the video buffer and reset frame counter
+     */
     void clear_buffer();
-    bool is_frame_ready() const { return frame_ready_; }
-    void reset_frame_ready() { frame_ready_ = false; }
+
+    /**
+     * @brief Set horizontal alignment offset
+     * @param correction Pixel offset (0-128)
+     */
     void set_x_correction(uint8_t correction);
-    bool detect_video_carrier(const std::array<uint8_t, 256>& spectrum_data) const;
+
+    /**
+     * @brief Get current horizontal correction
+     */
+    uint8_t get_x_correction() const { return x_correction_; }
 
 private:
-    static constexpr uint8_t MAX_X_CORRECTION = 127;
-    static constexpr uint16_t SOURCE_LINES = 104;
+    /**
+     * @brief Render accumulated frame line-by-line with line doubling
+     */
+    void render_frame();
+
+    /**
+     * @brief Render a single source line to display (doubled vertically)
+     * @param source_line Source line index (0-103)
+     */
+    void render_source_line(uint16_t source_line);
+
+    static constexpr size_t VIDEO_WIDTH = 128;
+    static constexpr size_t SOURCE_LINES = 104;
+    static constexpr size_t BUFFER_SIZE = VIDEO_WIDTH * SOURCE_LINES;
     static constexpr size_t BUFFER_PADDING = 128;
-    static constexpr size_t BUFFER_SIZE =
-        static_cast<size_t>(SOURCE_LINES) * VIDEO_WIDTH + BUFFER_PADDING;
+    static constexpr size_t X_CORRECTION_MAX = 128;
     static constexpr uint32_t CALLBACKS_PER_FRAME = 52;
-    static constexpr int32_t CARRIER_THRESHOLD_DBM = -80;
+    static constexpr size_t SPECTRUM_BINS = 256;
 
-    bool is_carrier_value(uint8_t value) const;
-
-    uint8_t video_buffer_[BUFFER_SIZE]{};
+    ui::Color video_buffer_[BUFFER_SIZE + BUFFER_PADDING]{};
     uint32_t callback_count_{0};
-    uint8_t x_correction_{DEFAULT_X_CORRECTION};
-    bool frame_ready_{false};
-
-    // Pre-computed LUTs (std::array for constexpr init, stored in flash)
-    static const std::array<uint8_t, DISPLAY_WIDTH> horizontal_index_lut_;
-    static const std::array<uint16_t, DISPLAY_HEIGHT> vertical_offset_lut_;
-    static const std::array<ui::Color, SPECTRUM_COLOR_LUT_SIZE> intensity_lut_;
+    uint8_t x_correction_{10};
 };
 
 }  // namespace ui::external_app::analogtv

@@ -26,23 +26,23 @@
 #include "ui_widget.hpp"
 #include "ui_receiver.hpp"
 #include "ui_navigation.hpp"
-#include "analogtv_constants.hpp"
 #include "video_renderer.hpp"
 #include "receiver_model.hpp"
 #include "baseband_api.hpp"
 
+#include <string>
+
 namespace ui::external_app::analogtv {
 
 /**
- * @brief Fullscreen Analog TV view with LUT-optimized rendering
+ * @brief Fullscreen Analog TV view
  *
- * Provides true 240x320 fullscreen video display with automatic
- * video carrier scanning. Video rendering uses pre-computed LUTs
- * to eliminate all per-pixel arithmetic (zero division, zero multiply).
+ * Receives spectrum data from M0 via FIFO, renders analog TV image.
+ * Manual frequency tuning only — no auto-scanning.
  *
- * @note No dynamic memory allocation.
- * @note Max stack usage per render: ~488 bytes.
- * @note Flash overhead: ~1.3 KB for LUTs.
+ * @note M0 only streams raw spectrum — zero DSP on M0
+ * @note Video buffer: ~13.5KB in .bss (M4 RAM)
+ * @note Stack per frame: 256 bytes (line buffer)
  */
 class FullscreenTvView : public View {
 public:
@@ -62,40 +62,32 @@ public:
 
 private:
     void initialize();
-    void start_auto_scan();
-    void stop_auto_scan();
-    void scan_next_frequency();
-    void on_carrier_found(uint64_t freq_hz);
-    void update_scan_status();
     void on_channel_spectrum(const ChannelSpectrum& spectrum);
     void draw_frequency_info(Painter& painter);
     bool on_key(const KeyEvent event) override;
     bool on_encoder(const EncoderEvent delta) override;
-    void toggle_scan_mode();
     void frequency_up();
     void frequency_down();
 
+    static constexpr ui::Coord DISPLAY_W = 240;
+    static constexpr ui::Coord DISPLAY_H = 320;
+    static constexpr ui::Coord INFO_BAR_H = 20;
+    static constexpr ui::Coord BUTTON_Y = 292;
+    static constexpr uint32_t FREQ_STEP_HZ = 1000000;
+    static constexpr uint64_t FREQ_MIN_HZ = 50000000ULL;
+    static constexpr uint64_t FREQ_MAX_HZ = 7200000000ULL;
+    static constexpr uint32_t SAMPLE_RATE_HZ = 2000000;
+    static constexpr uint32_t BASEBAND_BW_HZ = 2000000;
+
     NavigationView& nav_;
-
-    // LUT-optimized video renderer (owns 13KB buffer)
     VideoRenderer renderer_;
-
-    // Scan state
-    ScanState scan_state_{ScanState::IDLE};
-    ScanMode scan_mode_{ScanMode::AUTO_SCAN};
-    uint64_t current_scan_frequency_{SCAN_START_HZ};
-    uint32_t dwell_timer_{0};
-    bool carrier_detected_{false};
-
-    // UI state
-    uint64_t displayed_frequency_{0};
+    uint64_t current_frequency_{FREQ_MIN_HZ};
     bool video_active_{false};
 
-    // UI Buttons (overlay on bottom of fullscreen video)
-    Button button_scan{{0, 292, 80, 26}, "Scan"};
-    Button button_mode{{85, 292, 70, 26}, "Auto"};
-    Button button_up{{160, 292, 35, 26}, "+"};
-    Button button_down{{200, 292, 35, 26}, "-"};
+    // UI Buttons
+    Button button_up{{0, BUTTON_Y, 80, 26}, "+"};
+    Button button_down{{85, BUTTON_Y, 80, 26}, "-"};
+    Button button_xcorr{{170, BUTTON_Y, 65, 26}, "XCorr"};
 
     // Spectrum FIFO
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
