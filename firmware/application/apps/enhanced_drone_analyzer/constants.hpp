@@ -654,7 +654,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 3;
  * @note 100 = no max width filtering (accept all widths)
  * @note 80 = accommodates FPV dual-peak signals (~6 MHz = ~77 bins)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 80;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 40;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
@@ -663,7 +663,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 80;
  * @note 50 = no sharpness filtering (accept all shapes)
  * @note 130 = enforces V-shape for drone signals
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 130;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 80;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)
@@ -673,7 +673,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 130;
  * @note Needle spikes: ratio > 100 (very tall, very narrow)
  * @note 0 = no ratio filtering (disabled)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 20;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 150;
 
 /**
  * @brief Default valley depth threshold (0-200)
@@ -683,7 +683,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 20;
  * @note 0 = no valley depth filtering (disabled)
  * @note 80 = accepts FPV dual-peak (powerful peaks = shallow valley between them)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 60;
 
 /**
  * @brief Default peak flatness threshold (50-250)
@@ -704,7 +704,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 100;
  * @note Lower = stricter (requires more symmetry)
  * @note 0 = no symmetry filtering (disabled)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 35;
+constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 20;
 
 // ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)
