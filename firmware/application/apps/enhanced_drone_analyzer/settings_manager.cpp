@@ -26,7 +26,7 @@ SettingsStruct::SettingsStruct() noexcept
     , confirm_count_enabled(true)
     , noise_blacklist_enabled(true)
     , spectrum_detection_enabled(true)
-    , median_enabled(true)
+    , median_enabled(false)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
