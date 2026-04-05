@@ -100,7 +100,7 @@ private:
             {"HIGH", SPECTRUM_FILTER_HIGH},
         }};
 
-    ui::Button button_median_{{UI_POS_X(10), 268, UI_POS_WIDTH(3), 16}, "MED"};
+    ui::Button button_median_{{UI_POS_X(10), 268, UI_POS_WIDTH(3), 16}, "OFF"};
 
     ui::Button button_start_stop_{{UI_POS_X(0), 284, UI_POS_WIDTH(6), 28}, "Start"};
     ui::Button button_mode_{{UI_POS_X(7), 284, UI_POS_WIDTH(5), 28}, "Mode"};

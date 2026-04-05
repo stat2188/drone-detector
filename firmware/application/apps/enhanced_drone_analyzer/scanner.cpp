@@ -53,7 +53,7 @@ ScanConfig::ScanConfig() noexcept
     , confirm_count_enabled(true)   // Require confirmations to reduce noise
     , noise_blacklist_enabled(true) // Skip persistent noise frequencies
     , spectrum_detection_enabled(true) // Use spectrum shape analysis
-    , median_enabled(true)        // Median filter for RSSI spike rejection (OFF by default)
+    , median_enabled(false)       // Median filter for RSSI spike rejection (OFF by default)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
@@ -83,7 +83,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , confirm_count_enabled(true)
     , noise_blacklist_enabled(true)
     , spectrum_detection_enabled(true)
-    , median_enabled(true)
+    , median_enabled(false)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
@@ -1086,6 +1086,7 @@ void DroneScanner::trigger_alert(ThreatLevel threat_level) noexcept {
 void DroneScanner::set_median_filter_enabled(bool enabled) noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     median_filter_enabled_ = enabled;
+    config_.median_enabled = enabled;
     rssi_median_filter_.reset();
 }
 
