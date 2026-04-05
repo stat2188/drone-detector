@@ -649,11 +649,21 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
         // Only break lock if we're tuned to the locked freq and it's gone
         if (locked_frequency_ != 0 && frequency == locked_frequency_) {
-            freq_lock_count_ = 0;
-            locked_frequency_ = 0;
-            if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
-                state_ = ScannerState::SCANNING;
+            // Use confirm_count as tolerance for intermittent signals (FHSS, burst, fading)
+            // Default confirm_count=2 means 2 consecutive misses break the lock
+            // Guard against confirm_count=0 (would break lock on every miss)
+            const uint8_t miss_tolerance = (config_.confirm_count > 0) ? config_.confirm_count : 1;
+            missed_lock_count_++;
+            if (missed_lock_count_ >= miss_tolerance) {
+                freq_lock_count_ = 0;
+                locked_frequency_ = 0;
+                missed_lock_count_ = 0;
+                if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
+                    state_ = ScannerState::SCANNING;
+                }
             }
+        } else {
+            missed_lock_count_ = 0;
         }
         // If tuned to a non-locked freq and no signal: normal scanning, ignore
     }
