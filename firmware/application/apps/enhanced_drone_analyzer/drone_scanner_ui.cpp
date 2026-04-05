@@ -348,6 +348,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     if (config_err != ErrorCode::SUCCESS) {
         show_error(config_err, ERROR_DURATION_MS);
     }
+
+    // Sync UI median_enabled from loaded config
+    median_enabled_ = config.median_enabled;
+    button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
 }
 
 DroneScannerUI::~DroneScannerUI() noexcept {
