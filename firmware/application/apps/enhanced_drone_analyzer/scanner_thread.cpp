@@ -30,9 +30,11 @@ void ScannerThread::run() noexcept {
                 EventDispatcher::send_message(message);
             }
 
-            // Sleep ONLY during dwell — normal scanning runs at full speed
+            // Sleep during dwell — use scan_interval_ms from settings (default 100ms)
             if (scanner_.is_dwelling()) {
-                chThdSleepMilliseconds(SCANNER_SLEEP_MS);
+                const ScanConfig cfg = scanner_.get_config();
+                const uint32_t dwell_sleep = (cfg.scan_interval_ms > 0) ? cfg.scan_interval_ms : SCANNER_SLEEP_MS;
+                chThdSleepMilliseconds(dwell_sleep);
             }
         }
         chThdSleepMilliseconds(SCANNER_SLEEP_MS);
