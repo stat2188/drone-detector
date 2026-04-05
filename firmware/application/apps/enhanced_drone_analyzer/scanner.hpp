@@ -1112,6 +1112,9 @@ private:
     uint8_t pending_count_{0};
     static constexpr uint8_t DETECT_CONFIRM_COUNT = 2;
 
+    // Consecutive missed detections on locked frequency (prevents premature lock-break)
+    uint8_t missed_lock_count_{0};
+
     // Noise blacklist: track force-resume count per frequency
     // If we force-resume from a freq 3+ times without threat upgrade → skip it
     static constexpr size_t MAX_NOISE_ENTRIES = 8;

@@ -138,7 +138,7 @@ void DroneDisplay::render_spectrum(
     // Noise floor and margin filtering are pre-computed in set_spectrum_data()
     // Here we only draw — pure paint, no DSP
     for (size_t i = 0; i < spectrum_size; ++i) {
-        if (i >= 120 && i < 136) continue;
+        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
 
         const uint8_t value = spectrum_data[i];
         if (value < min_color_power_) continue;
@@ -332,7 +332,7 @@ ErrorCode DroneDisplay::set_spectrum_data(
         uint8_t sorted[240];
         size_t sort_count = 0;
         for (size_t i = 0; i < count && sort_count < 240; ++i) {
-            if (i >= 120 && i < 136) continue;
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
             sorted[sort_count++] = spectrum_data[i];
         }
         if (sort_count > 0) {
