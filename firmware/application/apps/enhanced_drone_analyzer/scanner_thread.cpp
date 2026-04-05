@@ -31,13 +31,14 @@ void ScannerThread::run() noexcept {
             }
 
             // Sleep during dwell — use scan_interval_ms from settings (default 100ms)
+            // Normal scanning: no sleep, runs at full hardware speed
             if (scanner_.is_dwelling()) {
                 const ScanConfig cfg = scanner_.get_config();
                 const uint32_t dwell_sleep = (cfg.scan_interval_ms > 0) ? cfg.scan_interval_ms : SCANNER_SLEEP_MS;
                 chThdSleepMilliseconds(dwell_sleep);
             }
         }
-        chThdSleepMilliseconds(SCANNER_SLEEP_MS);
+        chThdSleepMilliseconds(1);  // Yield to RTOS when not scanning
     }
 }
 
