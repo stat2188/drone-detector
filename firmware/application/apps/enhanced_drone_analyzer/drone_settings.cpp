@@ -134,6 +134,14 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // Load persisted settings from SD card (overrides config-based defaults)
     (void)SettingsFileManager::load(settings_);
 
+    // Median filter is controlled by main UI button (Md+), not settings view.
+    // Restore from scanner config to prevent SD card stale value from overriding
+    // the user's button toggle.
+    if (scanner_ptr_ != nullptr) {
+        const ScanConfig live_cfg = scanner_ptr_->get_config();
+        settings_.median_enabled = live_cfg.median_enabled;
+    }
+
     // Populate UI fields from loaded settings
     apply_settings_to_ui();
 
