@@ -27,7 +27,12 @@ public:
     void set_scanning(bool scanning) noexcept;
     [[nodiscard]] bool is_scanning() const noexcept;
     [[nodiscard]] bool is_active() const noexcept;
-    void reset_dwell() noexcept { dwell_cycles_ = 0; }
+
+    /**
+     * @brief Reset dwell counter in scanner class
+     * @note Called when entering sweep mode to clear stale dwell state
+     */
+    void reset_dwell() noexcept { scanner_.reset_dwell_cycles(); }
 
 private:
     static constexpr size_t STACK_WORDS = THD_WA_SIZE(SCANNER_THREAD_STACK_SIZE) / sizeof(stkalign_t);
@@ -40,9 +45,6 @@ private:
     stkalign_t wa_[STACK_WORDS];
 
     bool scanning_{false};
-
-    // Dwell: stay on frequency when signal detected
-    uint8_t dwell_cycles_{0};
 };
 
 } // namespace drone_analyzer

@@ -21,66 +21,9 @@ void ScannerThread::run() noexcept {
 
     while (!chThdShouldTerminate()) {
         if (__atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
-            // Read config once per iteration (get_config locks mutex internally)
-            const ScanConfig cfg = scanner_.get_config();
-            const uint32_t sleep_ms = (cfg.scan_interval_ms > 0) ? cfg.scan_interval_ms : SCANNER_SLEEP_MS;
-
-            // Force-resume: consume flag BEFORE dwell logic.
-            // force_resume_scanning() sets flag from scanner thread,
-            // but perform_scan_cycle_internal() is never called during LOCKING.
-            // We must consume the flag here so the state transitions back to SCANNING.
-            if (scanner_.try_consume_force_resume_flag()) {
-                dwell_cycles_ = 0;
-            }
-
-            // Dwell: stay on frequency when signal detected (if enabled)
-            if (cfg.dwell_enabled) {
-                const ScannerState scan_state = scanner_.get_state();
-                if (scan_state == ScannerState::LOCKING || scan_state == ScannerState::TRACKING) {
-                    dwell_cycles_++;
-                    // Increase dwell time when confirm count is enabled
-                    // so scanner has time to make 2 confirmations
-                    const uint8_t max_dwell = cfg.confirm_count_enabled ? (MAX_DWELL_CYCLES * 2) : MAX_DWELL_CYCLES;
-                    if (dwell_cycles_ >= max_dwell) {
-                        // Max dwell reached — force resume scanning
-                        if (cfg.noise_blacklist_enabled && __atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
-                            const FreqHz locked_freq = scanner_.get_locked_frequency();
-                            scanner_.increment_noise_count(locked_freq);
-                            scanner_.remove_drone_on_frequency(locked_freq);
-                        }
-                        scanner_.force_resume_scanning();
-                        dwell_cycles_ = 0;
-                    }
-                    chThdSleepMilliseconds(sleep_ms);
-                    continue;
-                }
-                dwell_cycles_ = 0;
-            } else {
-                // Dwell disabled: still respect LOCKING/TRACKING state.
-                // Scanner should hold frequency while UI thread processes the signal.
-                // force_resume_scanning() sets flag which perform_scan_cycle() checks
-                // to transition back to SCANNING state.
-                const ScannerState scan_state = scanner_.get_state();
-                if (scan_state == ScannerState::LOCKING || scan_state == ScannerState::TRACKING) {
-                    dwell_cycles_++;
-                    // If confirm count is enabled, dwell longer to allow 2 confirmations
-                    const uint8_t max_dwell = cfg.confirm_count_enabled 
-                        ? (MAX_DWELL_CYCLES + cfg.confirm_count) 
-                        : MAX_DWELL_CYCLES;
-                    if (dwell_cycles_ >= max_dwell) {
-                        scanner_.force_resume_scanning();
-                        dwell_cycles_ = 0;
-                    }
-                    chThdSleepMilliseconds(sleep_ms);
-                    continue;
-                }
-                dwell_cycles_ = 0;
-            }
-
-            // Capture frequency BEFORE scan cycle — this is the frequency the hardware
-            // is CURRENTLY tuned to. The spectrum data arriving from the baseband was
-            // captured at this frequency. After perform_scan_cycle, current_frequency_
-            // will point to the NEXT frequency (already tuned).
+            // Scanner class owns dwell/confirm logic.
+            // perform_scan_cycle() internally checks dwell state and skips
+            // the frequency hop when the UI has requested a hold.
             ErrorResult<FreqHz> freq_before = scanner_.get_current_frequency();
 
             ErrorCode err = scanner_.perform_scan_cycle();
@@ -89,6 +32,10 @@ void ScannerThread::run() noexcept {
                 message.range = 0;
                 EventDispatcher::send_message(message);
             }
+
+            // Sleep interval — scanner class controls actual dwell timing
+            // via perform_scan_cycle_internal() returning early when dwelling.
+            chThdSleepMilliseconds(SCANNER_SLEEP_MS);
         }
         chThdSleepMilliseconds(SCANNER_SLEEP_MS);
     }

@@ -862,6 +862,19 @@ public:
     void reset_neighbor_checker() noexcept;
 
     /**
+     * @brief Request dwell hold (called by UI thread when signal detected)
+     * @note Thread-safe: uses AtomicFlag (lock-free)
+     * @note Tells scanner thread to skip frequency hop on next cycle
+     */
+    void request_dwell() noexcept;
+
+    /**
+     * @brief Reset dwell cycle counter
+     * @note Called when entering sweep mode to clear stale dwell state
+     */
+    void reset_dwell_cycles() noexcept { dwell_cycles_ = 0; }
+
+    /**
      * @brief Get filtered RSSI through median filter
      * @return Filtered or raw RSSI
      */
@@ -1138,6 +1151,12 @@ private:
 
     // Force-resume flag (set by scanner thread, cleared inside mutex-protected scan cycle)
     AtomicFlag force_resume_flag_;
+
+    // Dwell request flag (set by UI thread on signal detection, consumed by scanner thread)
+    AtomicFlag dwell_request_;
+
+    // Dwell cycle counter (persistent across scan cycles, managed by scanner class)
+    uint8_t dwell_cycles_{0};
 
     // Sort buffer for analyze_spectrum_shape (class member to avoid static in method)
     static constexpr size_t SPECTRUM_SORT_BUF_SIZE = 256;

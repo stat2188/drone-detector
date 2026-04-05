@@ -53,7 +53,7 @@ ScanConfig::ScanConfig() noexcept
     , confirm_count_enabled(true)   // Require confirmations to reduce noise
     , noise_blacklist_enabled(true) // Skip persistent noise frequencies
     , spectrum_detection_enabled(true) // Use spectrum shape analysis
-    , median_enabled(false)         // Median filter for RSSI spike rejection
+    , median_enabled(false)        // Median filter for RSSI spike rejection (OFF by default)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
@@ -139,6 +139,7 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , mutex_()
     , state_transition_allowed_()
     , force_resume_flag_()
+    , dwell_request_()
     , spectrum_sort_buf_{}
     , sweep_usable_buf_{}
     , alert_callback_in_progress_()
@@ -278,6 +279,12 @@ void DroneScanner::force_resume_scanning() noexcept {
     force_resume_flag_.set();
 }
 
+void DroneScanner::request_dwell() noexcept {
+    // Set dwell request — scanner thread will check this BEFORE hopping frequency.
+    // This is the critical link: UI detects signal → requests dwell → scanner holds.
+    dwell_request_.set();
+}
+
 bool DroneScanner::try_consume_force_resume_flag() noexcept {
     if (!force_resume_flag_.test_and_set()) {
         return false;
@@ -361,29 +368,86 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
 }
 
 ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
-    // Check force-resume flag (set by scanner thread when dwell expires)
+    // Check force-resume flag (set when max dwell expires)
     if (force_resume_flag_.test_and_set()) {
         force_resume_flag_.clear();
         if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
             state_ = ScannerState::SCANNING;
         }
+        dwell_cycles_ = 0;
     }
 
+    // Check dwell request from UI thread (signal detected, hold frequency)
+    if (dwell_request_.test_and_set()) {
+        dwell_request_.clear();
+        dwell_cycles_ = 1;  // Start at 1 so should_dwell triggers immediately
+    }
+
+    // Dwell: if UI requested hold or state is LOCKING/TRACKING, skip frequency hop
+    const bool should_dwell = config_.dwell_enabled &&
+        (dwell_cycles_ > 0 || state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING);
+
+    if (should_dwell) {
+        dwell_cycles_++;
+
+        // Calculate max dwell: more time when confirm_count enabled for 2nd confirmation
+        const uint8_t max_dwell = config_.confirm_count_enabled
+            ? (MAX_DWELL_CYCLES * 2) : MAX_DWELL_CYCLES;
+
+        if (dwell_cycles_ >= max_dwell) {
+            // Max dwell reached — force resume scanning
+            if (config_.noise_blacklist_enabled) {
+                const FreqHz locked_freq = locked_frequency_;
+                // Find or add noise entry
+                size_t empty_slot = MAX_NOISE_ENTRIES;
+                for (size_t i = 0; i < MAX_NOISE_ENTRIES; ++i) {
+                    if (noise_blacklist_[i].freq == locked_freq) {
+                        if (noise_blacklist_[i].count < 255) {
+                            noise_blacklist_[i].count++;
+                        }
+                        break;
+                    }
+                    if (noise_blacklist_[i].freq == 0 && empty_slot == MAX_NOISE_ENTRIES) {
+                        empty_slot = i;
+                    }
+                }
+                if (empty_slot < MAX_NOISE_ENTRIES && locked_freq != 0) {
+                    noise_blacklist_[empty_slot].freq = locked_freq;
+                    noise_blacklist_[empty_slot].count = 1;
+                }
+                // Remove drone on this frequency
+                for (size_t i = 0; i < tracked_count_; ++i) {
+                    if (tracked_drones_[i].frequency == locked_freq) {
+                        tracked_count_--;
+                        if (i < tracked_count_) {
+                            tracked_drones_[i] = tracked_drones_[tracked_count_];
+                        }
+                        break;
+                    }
+                }
+            }
+            force_resume_flag_.set();
+            dwell_cycles_ = 0;
+        }
+
+        // Stay on current frequency — do NOT hop
+        statistics_.successful_cycles++;
+        return ErrorCode::SUCCESS;
+    }
+
+    // No dwell — normal frequency hop
+    dwell_cycles_ = 0;
     statistics_.total_scan_cycles++;
 
-    // Time-based threat decay: apply_rssi_decay() uses chTimeNow() internally.
-    // CYC controls the threshold in SECONDS (CYC=5 → 5 seconds without RSSI increase → decay).
-    // Works identically in normal mode (called every scan cycle) and sweep mode (called per sweep pass).
     apply_rssi_decay();
-    
+
     // Try to get next frequency from database
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(current_frequency_);
-    
+
     if (freq_result.has_value()) {
-        // Got valid frequency from database
         current_frequency_ = freq_result.value();
 
-        // Skip blacklisted frequencies (persistent noise, force-resumed 3+ times)
+        // Skip blacklisted frequencies
         if (config_.noise_blacklist_enabled) {
             for (size_t skip = 0; skip < MAX_NOISE_ENTRIES && is_blacklisted(current_frequency_); ++skip) {
                 freq_result = database_.get_next_frequency(current_frequency_);
@@ -395,34 +459,26 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
             }
         }
     } else {
-        // Database empty or not loaded — sweep through frequency range
-        // Use frequency step to scan the full range
+        // Database empty — sweep through frequency range
         if (current_frequency_ < MIN_FREQUENCY_HZ || current_frequency_ >= MAX_FREQUENCY_HZ) {
-            // Wrap around to start of range
             current_frequency_ = MIN_FREQUENCY_HZ;
         } else {
-            // Advance by step size
             current_frequency_ += FREQUENCY_STEP_HZ;
             if (current_frequency_ > MAX_FREQUENCY_HZ) {
-                current_frequency_ = MIN_FREQUENCY_HZ;  // Wrap around
+                current_frequency_ = MIN_FREQUENCY_HZ;
             }
         }
     }
-    
-    // Tune hardware to new frequency
+
     ErrorCode tune_result = hardware_.tune_to_frequency(current_frequency_);
     if (tune_result != ErrorCode::SUCCESS) {
         statistics_.failed_cycles++;
         return tune_result;
     }
 
-    // Reset median filter — old samples from previous frequency are stale
     rssi_median_filter_.reset();
-
-    // Reset neighbor checker on frequency change to prevent stale neighbor data
     neighbor_margin_checker_.reset();
 
-    // Reset pending confirm state — old pending count belongs to previous frequency
     if (current_frequency_ != pending_frequency_) {
         pending_frequency_ = 0;
         pending_count_ = 0;
@@ -638,6 +694,10 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 freq_lock_count_ = 1;
                 missed_lock_count_ = 0;
                 state_ = ScannerState::LOCKING;
+                // CRITICAL: Request scanner thread to hold frequency.
+                // Without this, the scanner thread hops to the next DB entry
+                // before the UI thread can transition state to LOCKING.
+                dwell_request_.set();
             }
             // If LOCKING/TRACKING and different freq detected:
             // Don't jump. Continue accumulating on locked freq.
