@@ -529,8 +529,11 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
         // it is NOT a drone — reject regardless of raw RSSI.
         int32_t spectrum_rssi = RSSI_MIN_DBM;
         if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
-            signal_detected = true;
-            if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
+            // Shape passed — still enforce RSSI threshold (sens setting)
+            if (rssi > config_.rssi_threshold_dbm) {
+                signal_detected = true;
+                if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
+            }
         }
     } else {
         signal_detected = (rssi > config_.rssi_threshold_dbm);
@@ -595,8 +598,11 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // Spectrum-only: shape analysis gates detection
         int32_t spectrum_rssi = RSSI_MIN_DBM;
         if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
-            signal_detected = true;
-            if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
+            // Shape passed — still enforce RSSI threshold (sens setting)
+            if (rssi > config_.rssi_threshold_dbm) {
+                signal_detected = true;
+                if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
+            }
         }
     } else {
         signal_detected = (rssi > config_.rssi_threshold_dbm);

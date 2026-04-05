@@ -137,7 +137,7 @@ constexpr uint32_t DRONE_REMOVAL_TIMEOUT_MS = 30000;
 /**
  * @brief Scan cycle interval in milliseconds (100 ms)
  */
-constexpr uint32_t SCAN_CYCLE_INTERVAL_MS = 100;
+constexpr uint32_t SCAN_CYCLE_INTERVAL_MS = 50;
 
 /**
  * @brief PLL lock timeout in milliseconds
