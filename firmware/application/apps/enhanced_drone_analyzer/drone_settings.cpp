@@ -48,6 +48,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "Hist", false)
     , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
+    , field_confirm_count_({UI_POS_X(13), UI_POS_Y(13)}, 2, {1, 10}, 1, ' ')
         , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(11)}, 5, "Spec", false)
     , field_neighbor_margin_({UI_POS_X(17), UI_POS_Y(15)}, 2, {0, 15}, 1, ' ')
     , check_neighbor_margin_({UI_POS_X(20), UI_POS_Y(15)}, 4, "NB", false)
@@ -102,6 +103,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_histogram_visible_,
         &check_dwell_enabled_,
         &check_confirm_count_,
+        &field_confirm_count_,
         &check_spectrum_detection_,
         &field_neighbor_margin_,
         &check_neighbor_margin_,
@@ -186,6 +188,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     check_confirm_count_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.confirm_count_enabled = v;
+        settings_dirty_ = true;
+    };
+
+    field_confirm_count_.on_change = [this](int32_t v) {
+        settings_.confirm_count = static_cast<uint8_t>(v);
         settings_dirty_ = true;
     };
 
@@ -412,6 +419,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_histogram_visible_.set_value(settings_.histogram_visible);
     check_dwell_enabled_.set_value(settings_.dwell_enabled);
     check_confirm_count_.set_value(settings_.confirm_count_enabled);
+    field_confirm_count_.set_value(static_cast<int32_t>(settings_.confirm_count));
     check_noise_blacklist_.set_value(settings_.noise_blacklist_enabled);
     check_spectrum_detection_.set_value(settings_.spectrum_detection_enabled);
     field_spectrum_margin_.set_value(static_cast<int32_t>(settings_.spectrum_margin));

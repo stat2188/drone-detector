@@ -51,6 +51,7 @@ private:
     // Detection features
     ui::Checkbox check_dwell_enabled_;
     ui::Checkbox check_confirm_count_;
+    ui::NumberField field_confirm_count_;
     ui::Checkbox check_spectrum_detection_;
 
     // Neighbor margin
