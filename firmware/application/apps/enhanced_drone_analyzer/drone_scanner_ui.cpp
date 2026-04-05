@@ -388,17 +388,6 @@ void DroneScannerUI::on_show() {
         scanner_thread_->start();
     }
 
-    // Re-sync display params from scanner config (settings may have changed)
-    if (scanner_ptr_ != nullptr) {
-        const ScanConfig cfg = scanner_ptr_->get_config();
-        drone_display_.set_spectrum_shape_params(
-            cfg.spectrum_margin, cfg.spectrum_min_width, cfg.spectrum_max_width);
-        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
-        median_enabled_ = cfg.median_enabled;
-        button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
-        scanner_ptr_->set_median_filter_enabled(median_enabled_);
-    }
-
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
     if (composite_active_ && scanner_ptr_ != nullptr) {
         ScanConfig cfg = scanner_ptr_->get_config();
