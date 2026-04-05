@@ -199,7 +199,7 @@ private:
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
     // Median filter toggle state
-    bool median_enabled_{false};
+    bool median_enabled_{true};
 
     // Latest ChannelStatistics.max_db from baseband (full-bandwidth RSSI)
     int32_t latest_max_db_{RSSI_NOISE_FLOOR_DBM};
