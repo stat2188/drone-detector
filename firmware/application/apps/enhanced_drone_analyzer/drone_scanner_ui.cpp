@@ -124,7 +124,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         if (scanner_ptr_ != nullptr) {
             scanner_ptr_->set_median_filter_enabled(median_enabled_);
         }
-        button_median_.set_text(median_enabled_ ? "Md+" : "MED");
+        button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
     };
 
     // Register button callbacks BEFORE any early returns
@@ -386,7 +386,7 @@ void DroneScannerUI::on_show() {
             cfg.spectrum_margin, cfg.spectrum_min_width, cfg.spectrum_max_width);
         field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
         median_enabled_ = cfg.median_enabled;
-        button_median_.set_text(median_enabled_ ? "Md+" : "MED");
+        button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
         scanner_ptr_->set_median_filter_enabled(median_enabled_);
     }
 
