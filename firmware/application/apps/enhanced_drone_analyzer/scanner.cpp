@@ -422,6 +422,12 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     // Reset neighbor checker on frequency change to prevent stale neighbor data
     neighbor_margin_checker_.reset();
 
+    // Reset pending confirm state — old pending count belongs to previous frequency
+    if (current_frequency_ != pending_frequency_) {
+        pending_frequency_ = 0;
+        pending_count_ = 0;
+    }
+
     statistics_.successful_cycles++;
     return ErrorCode::SUCCESS;
 }
@@ -614,6 +620,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // Frequency lock state machine
         if (frequency == locked_frequency_) {
             // Same frequency as locked — accumulate persistence count
+            missed_lock_count_ = 0;  // Reset miss counter on successful detection
             if (freq_lock_count_ < MAX_FREQ_LOCK) {
                 freq_lock_count_++;
             }
@@ -629,6 +636,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             if (state_ == ScannerState::SCANNING) {
                 locked_frequency_ = frequency;
                 freq_lock_count_ = 1;
+                missed_lock_count_ = 0;
                 state_ = ScannerState::LOCKING;
             }
             // If LOCKING/TRACKING and different freq detected:
@@ -641,11 +649,19 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
         // Only break lock if we're tuned to the locked freq and it's gone
         if (locked_frequency_ != 0 && frequency == locked_frequency_) {
-            freq_lock_count_ = 0;
-            locked_frequency_ = 0;
-            if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
-                state_ = ScannerState::SCANNING;
+            // Use confirm_count as tolerance for intermittent signals (FHSS, burst, fading)
+            // Default confirm_count=2 means 2 consecutive misses break the lock
+            missed_lock_count_++;
+            if (missed_lock_count_ >= config_.confirm_count) {
+                freq_lock_count_ = 0;
+                locked_frequency_ = 0;
+                missed_lock_count_ = 0;
+                if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
+                    state_ = ScannerState::SCANNING;
+                }
             }
+        } else {
+            missed_lock_count_ = 0;
         }
         // If tuned to a non-locked freq and no signal: normal scanning, ignore
     }
@@ -905,6 +921,7 @@ void DroneScanner::clear_lock_state() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     freq_lock_count_ = 0;
     locked_frequency_ = 0;
+    missed_lock_count_ = 0;
     if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
         state_ = ScannerState::SCANNING;
     }
@@ -1488,8 +1505,11 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
 
         // Check if peak frequency is within sweep range (prevent false positives outside range)
         // This prevents detections at 6017 MHz when sweep ends at 6000 MHz
-        if (f_min != 0 && f_max != 0) {
-            if (peak_freq < f_min || peak_freq > f_max) {
+        // Fallback to config sweep range if f_min/f_max are uninitialized (0)
+        const FreqHz range_min = (f_min != 0) ? f_min : config_.sweep_start_freq;
+        const FreqHz range_max = (f_max != 0) ? f_max : config_.sweep_end_freq;
+        if (range_min != 0 && range_max != 0) {
+            if (peak_freq < range_min || peak_freq > range_max) {
                 return;  // Peak outside sweep range — reject to prevent false positives
             }
         }
