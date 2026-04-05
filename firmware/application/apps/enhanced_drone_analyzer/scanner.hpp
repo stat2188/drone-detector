@@ -875,6 +875,12 @@ public:
     void reset_dwell_cycles() noexcept { dwell_cycles_ = 0; }
 
     /**
+     * @brief Check if scanner is currently in dwell (holding frequency)
+     * @return true if dwelling, false if scanning normally
+     */
+    [[nodiscard]] bool is_dwelling() const noexcept { return dwell_cycles_ > 0; }
+
+    /**
      * @brief Get filtered RSSI through median filter
      * @return Filtered or raw RSSI
      */

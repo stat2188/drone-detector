@@ -390,9 +390,11 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     if (should_dwell) {
         dwell_cycles_++;
 
-        // Calculate max dwell: more time when confirm_count enabled for 2nd confirmation
+        // Max dwell: 200ms total (4 cycles × 50ms).
+        // Enough time for 2 confirmations at 60fps (~33ms each).
+        static constexpr uint8_t MAX_DWELL_CYCLES = 4;
         const uint8_t max_dwell = config_.confirm_count_enabled
-            ? (MAX_DWELL_CYCLES * 2) : MAX_DWELL_CYCLES;
+            ? MAX_DWELL_CYCLES : (MAX_DWELL_CYCLES / 2);
 
         if (dwell_cycles_ >= max_dwell) {
             // Max dwell reached — force resume scanning

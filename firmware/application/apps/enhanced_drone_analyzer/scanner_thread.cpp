@@ -21,9 +21,6 @@ void ScannerThread::run() noexcept {
 
     while (!chThdShouldTerminate()) {
         if (__atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
-            // Scanner class owns dwell/confirm logic.
-            // perform_scan_cycle() internally checks dwell state and skips
-            // the frequency hop when the UI has requested a hold.
             ErrorResult<FreqHz> freq_before = scanner_.get_current_frequency();
 
             ErrorCode err = scanner_.perform_scan_cycle();
@@ -33,9 +30,10 @@ void ScannerThread::run() noexcept {
                 EventDispatcher::send_message(message);
             }
 
-            // Sleep interval — scanner class controls actual dwell timing
-            // via perform_scan_cycle_internal() returning early when dwelling.
-            chThdSleepMilliseconds(SCANNER_SLEEP_MS);
+            // Sleep ONLY during dwell — normal scanning runs at full speed
+            if (scanner_.is_dwelling()) {
+                chThdSleepMilliseconds(SCANNER_SLEEP_MS);
+            }
         }
         chThdSleepMilliseconds(SCANNER_SLEEP_MS);
     }
