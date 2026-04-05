@@ -18,6 +18,7 @@
 #include "scanner.hpp"
 #include "scanner_thread.hpp"
 #include "drone_display.hpp"
+#include "sweep_processor.hpp"
 
 namespace drone_analyzer {
 
@@ -41,9 +42,7 @@ public:
     DroneScannerUI(const DroneScannerUI&) = delete;
     DroneScannerUI& operator=(const DroneScannerUI&) = delete;
 
-    std::string title() const override {
-        return std::string("EDA");
-    }
+    std::string title() const override { return "EDA"; }
     void paint(Painter& painter) override;
     void focus() override;
     void on_show() override;
@@ -144,11 +143,9 @@ private:
     void on_retune(FreqHz freq, uint32_t range) noexcept;
 
     // Band sweep — Looking Glass pattern: stop → process → retune → start
-    static constexpr uint16_t COMPOSITE_SIZE = DISPLAY_WIDTH;   // 240 pixels
-    static constexpr FreqHz SWEEP_SLICE_BW = 20000000;         // 20 MHz per slice
-    static constexpr uint8_t DB_SCANS_PER_SWEEP = 50;          // DB scans between auto-sweep passes
-    static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;  // 78125 Hz per bin
-    static constexpr uint8_t MAX_SWEEP_WINDOWS = 4;
+    // COMPOSITE_SIZE, SWEEP_SLICE_BW, MAX_SWEEP_WINDOWS defined in constants.hpp
+    static constexpr uint8_t DB_SCANS_PER_SWEEP = 50;
+    static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;
 
     /**
      * @brief Encapsulates all state for a single sweep window (Meyers: replace duplication with data)

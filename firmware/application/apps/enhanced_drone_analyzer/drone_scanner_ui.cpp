@@ -27,18 +27,6 @@
 
 namespace drone_analyzer {
 
-/**
- * @brief M0 baseband phase decimation trigger for wideband spectrum.
- * Controls how many samples are accumulated per FFT frame.
- */
-static constexpr size_t SWEEP_FFT_TRIGGER = 31;
-
-/**
- * @brief Scale factor for converting 8-bit composite power to 16-bit histogram bins.
- * Shifts uint8_t range [0,255] to uint16_t range [0,65280].
- */
-static constexpr uint16_t COMPOSITE_TO_HIST_SCALE = 256;
-
 static HardwareController s_hardware;
 static DatabaseManager s_database;
 static DroneScanner s_scanner(s_database, s_hardware);
@@ -238,16 +226,14 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             db_entry_count_ = database_ptr_->get_database_size();
 
             if (err == ErrorCode::SUCCESS && db_entry_count_ > 0) {
-                // Build status message with filename and entry count
-                static char status_buf[MAX_TEXT_LENGTH];
+                char status_buf[MAX_TEXT_LENGTH];
                 snprintf(status_buf, sizeof(status_buf), "%s (%lu)",
                          filename, (unsigned long)db_entry_count_);
                 drone_display_.set_status_text(status_buf);
 
-                // Show alert with confirmation
-                static char msg[MAX_TEXT_LENGTH];
-                snprintf(msg, sizeof(msg), "DB: %s loaded", filename);
-                show_alert(msg, 2000);
+                char alert_buf[MAX_TEXT_LENGTH];
+                snprintf(alert_buf, sizeof(alert_buf), "DB: %s loaded", filename);
+                show_alert(alert_buf, 2000);
 
                 // Reset scanner frequency to first entry in new database
                 scanner_ptr_->reset_frequency();
@@ -265,11 +251,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 drone_display_.set_dirty();
                 set_dirty();
             } else {
-                // Show error with filename for debugging
-                static char err_msg[MAX_TEXT_LENGTH];
-                snprintf(err_msg, sizeof(err_msg), "Failed: %s (err %d)",
+                char err_buf[MAX_TEXT_LENGTH];
+                snprintf(err_buf, sizeof(err_buf), "Failed: %s (err %d)",
                          filename, static_cast<int>(err));
-                show_alert(err_msg, 3000);
+                show_alert(err_buf, 3000);
 
                 // Show error in status
                 drone_display_.set_status_text("DB load error");
@@ -432,7 +417,6 @@ void DroneScannerUI::on_show() {
         update_sweep_pair_display();
 
         radio::set_tuning_frequency(rf::Frequency(sweep_[active_sweep_idx_].f_center));
-        chThdSleepMilliseconds(5);
         current_frequency_ = sweep_[active_sweep_idx_].f_center;
 
         if (!scanning_) {
@@ -782,7 +766,6 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         // Clear lock state to prevent stale LOCKING/TRACKING after resume
         scanner_ptr_->clear_lock_state();
     }
-    chThdSleepMilliseconds(25);
     scanning_ = false;
 
     // Configure baseband for sweep bandwidth
@@ -795,7 +778,6 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     update_sweep_pair_display();
 
     radio::set_tuning_frequency(rf::Frequency(sweep_[active_sweep_idx_].f_center));
-    chThdSleepMilliseconds(5);
     current_frequency_ = sweep_[active_sweep_idx_].f_center;
 
     baseband::spectrum_streaming_start();
@@ -1036,45 +1018,24 @@ bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
 }
 
 void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
-    // FFT bin mapping (Looking Glass pattern):
-    //   Lower sideband: screen pixels 0→119 map to FFT bins 134→253
-    //   Upper sideband: screen pixels 120→237 map to FFT bins 2→119
-    //   Pixels 238-239 unused (skip DC spike bins 120-121)
-    static constexpr uint8_t SWEEP_UPPER_OFFSET = SWEEP_FFT_MAP_CROSSOVER - 2;  // 118
-    static constexpr uint8_t SWEEP_UPPER_PIXEL_END = SWEEP_PIXELS_PER_SLICE - 2; // 238
-
-    for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
-        // Guard: stop processing when composite buffer is full.
-        // Prevents bins_hz_acc and pixel_max from accumulating stale values
-        // that would corrupt the next sweep pass after window reset.
-        if (pixel_index >= COMPOSITE_SIZE) break;
-
-        if (bin >= SWEEP_UPPER_PIXEL_END && bin >= SWEEP_FFT_MAP_CROSSOVER) continue;
-        const uint8_t fft_bin = (bin < SWEEP_FFT_MAP_CROSSOVER)
-            ? (SWEEP_FFT_MAP_START + bin)
-            : (bin - SWEEP_UPPER_OFFSET);
-        const uint8_t power = spectrum.db[fft_bin];
-        if (power > pixel_max) pixel_max = power;
-        bins_hz_acc += EACH_BIN_SIZE;
-        while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-            // Exception filter: use actual pixel display frequency (f_min + pixel * step).
-            // This matches the frequency the user sees at that pixel position.
-            const FreqHz pixel_freq = f_min + static_cast<FreqHz>(pixel_index) * pixel_step_hz;
-            if (!is_exception(pixel_freq)) {
-                composite[pixel_index] = pixel_max;
-            }
-            ++pixel_index;
-            pixel_max = 0;
-            bins_hz_acc -= pixel_step_hz;
-        }
-    }
+    SweepProcessor::process_frame(
+        spectrum,
+        composite,
+        pixel_index,
+        pixel_max,
+        bins_hz_acc,
+        pixel_step_hz,
+        f_min,
+        exception_radius_hz,
+        exceptions,
+        EXCEPTIONS_PER_WINDOW
+    );
 }
 
 void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) noexcept {
     radio::set_tuning_frequency(rf::Frequency(win.f_center));
-    chThdSleepMilliseconds(5);
     current_frequency_ = win.f_center;
-    last_tuned_freq_ = win.f_center;  // remember freq for next FFT processing
+    last_tuned_freq_ = win.f_center;
     (void)prefix;
     baseband::spectrum_streaming_start();
 }

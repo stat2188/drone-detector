@@ -15,6 +15,7 @@
 #include "histogram_processor.hpp"
 #include "median_filter.hpp"
 #include "message.hpp"
+#include "spectrum_shape.hpp"
 
 namespace drone_analyzer {
 

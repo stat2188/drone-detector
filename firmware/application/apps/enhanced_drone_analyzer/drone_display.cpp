@@ -135,48 +135,13 @@ void DroneDisplay::render_spectrum(
     const uint16_t chart_height = height - 14;
     if (chart_height < 4) return;
 
-    // Compute noise floor from usable bins (skip DC spike + edges) for margin filter
-    uint8_t noise_floor = 0;
-    if (spectrum_shape_margin_ > 0) {
-        uint8_t sorted[240];
-        size_t sort_count = 0;
-        for (size_t i = 0; i < spectrum_size && sort_count < 240; ++i) {
-            if (i >= 120 && i < 136) continue;  // skip DC spike
-            sorted[sort_count++] = spectrum_data[i];
-        }
-        // Insertion sort for median
-        for (size_t i = 1; i < sort_count; ++i) {
-            const uint8_t key = sorted[i];
-            size_t j = i;
-            while (j > 0 && sorted[j - 1] > key) {
-                sorted[j] = sorted[j - 1];
-                --j;
-            }
-            sorted[j] = key;
-        }
-        if (sort_count > 0) {
-            noise_floor = sorted[sort_count / 2];
-        }
-    }
-
-    const uint8_t display_threshold = noise_floor + spectrum_shape_margin_;
-
+    // Noise floor and margin filtering are pre-computed in set_spectrum_data()
+    // Here we only draw — pure paint, no DSP
     for (size_t i = 0; i < spectrum_size; ++i) {
-        // Skip DC spike bins
         if (i >= 120 && i < 136) continue;
 
         const uint8_t value = spectrum_data[i];
         if (value < min_color_power_) continue;
-
-        // Apply margin filter: suppress bins below noise floor + margin
-        if (spectrum_shape_margin_ > 0 && value < display_threshold) continue;
-
-        // Apply width filter: reject isolated single-bin spikes
-        if (spectrum_shape_min_width_ > 1 && i > 0 && i < spectrum_size - 1) {
-            const uint8_t prev = spectrum_data[i - 1];
-            const uint8_t next = (i + 1 < spectrum_size) ? spectrum_data[i + 1] : 0;
-            if (prev < display_threshold && next < display_threshold) continue;
-        }
 
         const uint16_t bar_height = (static_cast<uint16_t>(value) * chart_height) / 255;
         const uint16_t x = chart_start_x + static_cast<uint16_t>(i) * bar_width;
@@ -188,7 +153,7 @@ void DroneDisplay::render_spectrum(
         else if (value > 100) color = COLOR_MEDIUM_THREAT;
 
         if (bar_height > 0) {
-        draw_rectangle(painter, x, y, bar_width, bar_height, color);
+            draw_rectangle(painter, x, y, bar_width, bar_height, color);
         }
     }
 }
@@ -359,8 +324,59 @@ ErrorCode DroneDisplay::set_spectrum_data(
 
     const size_t count = (spectrum_size < spectrum_buffer_.size()) ? spectrum_size : spectrum_buffer_.size();
     spectrum_data_size_ = count;
-    for (size_t i = 0; i < count; ++i) {
-        spectrum_buffer_[i] = spectrum_data[i];
+
+    // Pre-filter: apply shape margin filter during copy (not during paint)
+    // This moves noise floor computation out of the hot paint() path
+    if (spectrum_shape_margin_ > 0) {
+        // Quickselect median — O(n) vs O(n²) insertion sort
+        uint8_t sorted[240];
+        size_t sort_count = 0;
+        for (size_t i = 0; i < count && sort_count < 240; ++i) {
+            if (i >= 120 && i < 136) continue;
+            sorted[sort_count++] = spectrum_data[i];
+        }
+        if (sort_count > 0) {
+            const size_t k = sort_count / 2;
+            size_t qs_left = 0;
+            size_t qs_right = sort_count - 1;
+            while (qs_left < qs_right) {
+                const size_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
+                const uint8_t pivot = sorted[pivot_idx];
+                sorted[pivot_idx] = sorted[qs_right];
+                sorted[qs_right] = pivot;
+                size_t store = qs_left;
+                for (size_t i = qs_left; i < qs_right; ++i) {
+                    if (sorted[i] < pivot) {
+                        const uint8_t t = sorted[store];
+                        sorted[store] = sorted[i];
+                        sorted[i] = t;
+                        ++store;
+                    }
+                }
+                {
+                    const uint8_t t = sorted[store];
+                    sorted[store] = sorted[qs_right];
+                    sorted[qs_right] = t;
+                }
+                if (store == k) break;
+                if (store < k) qs_left = store + 1;
+                else qs_right = store - 1;
+            }
+            const uint8_t noise_floor = sorted[k];
+            const uint8_t display_threshold = noise_floor + spectrum_shape_margin_;
+            for (size_t i = 0; i < count; ++i) {
+                const uint8_t val = spectrum_data[i];
+                spectrum_buffer_[i] = (val >= display_threshold) ? val : 0;
+            }
+        } else {
+            for (size_t i = 0; i < count; ++i) {
+                spectrum_buffer_[i] = spectrum_data[i];
+            }
+        }
+    } else {
+        for (size_t i = 0; i < count; ++i) {
+            spectrum_buffer_[i] = spectrum_data[i];
+        }
     }
 
     return ErrorCode::SUCCESS;

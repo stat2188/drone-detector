@@ -606,6 +606,16 @@ constexpr size_t FFT_USABLE_BINS = FFT_BIN_COUNT - (FFT_DC_SPIKE_END - FFT_DC_SP
 constexpr uint8_t SWEEP_PIXELS_PER_SLICE = 240;
 
 /**
+ * @brief Sweep slice bandwidth in Hz (20 MHz per slice)
+ */
+constexpr FreqHz SWEEP_SLICE_BW = 20000000;
+
+/**
+ * @brief Composite buffer size (pixels)
+ */
+constexpr uint16_t COMPOSITE_SIZE = 240;
+
+/**
  * @brief FFT bin where lower sideband mapping starts
  */
 constexpr uint8_t SWEEP_FFT_MAP_START = 134;
@@ -620,6 +630,23 @@ constexpr uint8_t SWEEP_FFT_MAP_CROSSOVER = 120;
  * @note 244 bins × 78125 Hz/bin ≈ 19.06 MHz step
  */
 constexpr uint16_t SWEEP_BINS_PER_STEP = 244;
+
+/**
+ * @brief M0 baseband phase decimation trigger for wideband spectrum.
+ * @note Controls how many samples are accumulated per FFT frame.
+ */
+constexpr size_t SWEEP_FFT_TRIGGER = 31;
+
+/**
+ * @brief Scale factor for converting 8-bit composite power to 16-bit histogram bins.
+ * @note Shifts uint8_t range [0,255] to uint16_t range [0,65280].
+ */
+constexpr uint16_t COMPOSITE_TO_HIST_SCALE = 256;
+
+/**
+ * @brief Maximum number of sweep windows
+ */
+constexpr uint8_t MAX_SWEEP_WINDOWS = 4;
 
 // ============================================================================
 // Spectrum Filter Constants (matching Looking Glass)

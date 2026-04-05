@@ -323,6 +323,8 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/audio_alerts.cpp
 	apps/enhanced_drone_analyzer/drone_sweep_view.cpp
 	apps/enhanced_drone_analyzer/settings_manager.cpp
+	apps/enhanced_drone_analyzer/sweep_processor.cpp
+	apps/enhanced_drone_analyzer/spectrum_shape.cpp
 
 	protocols/aprs.cpp
 	protocols/ax25.cpp
