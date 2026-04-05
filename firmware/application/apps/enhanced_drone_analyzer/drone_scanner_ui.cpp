@@ -392,6 +392,7 @@ void DroneScannerUI::on_show() {
         field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
         median_enabled_ = cfg.median_enabled;
         button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
+        scanner_ptr_->set_median_filter_enabled(median_enabled_);
     }
 
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
