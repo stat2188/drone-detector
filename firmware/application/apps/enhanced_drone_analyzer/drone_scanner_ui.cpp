@@ -859,9 +859,13 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         return;
     }
 
-    // Skip spectrum processing in sweep mode — scanner thread is stopped
-    // Only update display and retune. UI drives tuning, not scanner.
-    // scanner_ptr_->process_spectrum_sweep() is NOT called to prevent dwell interference.
+    if (scanner_ptr_ != nullptr) {
+        // Use the exact frequency the radio was tuned to when this FFT was captured.
+        // f_center may have already been incremented from the previous frame's step.
+        const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
+        // Pass sweep range boundaries to prevent false positives outside the range
+        scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq, win.f_min, win.f_max);
+    }
 
     // Live display update: show current pair data every frame
     update_sweep_pair_display();
