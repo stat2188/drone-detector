@@ -125,7 +125,6 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , hardware_(hardware)
     , state_(ScannerState::IDLE)
     , config_()
-    , mahalanobis_detector_()
     , freq_lock_count_{0}
     , locked_frequency_{0}
     , track_start_time_{0}
@@ -148,7 +147,8 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , rssi_detector_()
     , histogram_processor_()
     , rssi_median_filter_()
-    , neighbor_margin_checker_() {
+    , neighbor_margin_checker_()
+    , mahalanobis_detector_() {
 
     // Initialize mutex
     chMtxInit(&mutex_);

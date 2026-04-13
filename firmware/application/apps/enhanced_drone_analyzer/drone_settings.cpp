@@ -44,6 +44,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
     , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
+    , check_mahalanobis_({UI_POS_X(24), UI_POS_Y(2)}, 7, "M-Gate", false)
+    , field_mahalanobis_threshold_({UI_POS_X(27), UI_POS_Y(2)}, 3,
+                               {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
+                               5, ' ')
+    , button_info_mahalanobis_({UI_POS_X(29), UI_POS_Y(2), UI_POS_WIDTH(3), 16}, "?")
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
     , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "Spec", false)
     , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "Hist", false)
@@ -70,11 +75,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_info_width_({UI_POS_X(5), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Wid?")
     , button_info_sharp_({UI_POS_X(10), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Shp?")
     , button_info_ratio_({UI_POS_X(15), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Rat?")
-    , check_mahalanobis_({UI_POS_X(24), UI_POS_Y(2)}, 7, "M-Gate", false)
-    , field_mahalanobis_threshold_({UI_POS_X(27), UI_POS_Y(2)}, 3,
-                               {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
-                               5, ' ')
-    , button_info_mahalanobis_({UI_POS_X(29), UI_POS_Y(2), UI_POS_WIDTH(3), 16}, "?")
     , field_cfar_mode_({UI_POS_X(4), UI_POS_Y(0)}, 7, {
         {"OFF", static_cast<int32_t>(CFARMode::OFF)},
         {"CA", static_cast<int32_t>(CFARMode::CA)},
