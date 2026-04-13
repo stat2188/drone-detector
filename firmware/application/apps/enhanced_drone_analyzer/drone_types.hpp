@@ -6,25 +6,6 @@
 #include <array>
 #include "freqman_types.hpp"
 
-// ============================================================================
-// Mahalanobis Statistics (POD type - no heap allocation)
-// ============================================================================
-
-/**
- * @brief Mahalanobis statistics for outlier detection
- * @note POD type - no virtual functions, no heap allocation
- * @note Stored in Q8.8 fixed-point format
- */
-struct MahalanobisStatistics {
-    using FeatureVector = std::array<int16_t, 2>;
-
-    FeatureVector mean{};           ///< Running mean (Q8.8)
-    FeatureVector variance{};       ///< Running variance (Q8.8)
-    std::array<FeatureVector, 8> history{};  ///< Sample history
-    uint8_t sample_count{0};        ///< Number of samples collected
-    uint8_t history_index{0};       ///< Circular buffer index
-};
-
 namespace drone_analyzer {
 
 /**
@@ -288,7 +269,7 @@ struct TrackedDrone {
         return mahalanobis_stats_;
     }
 
-    // Total: 65 + 48 = 113 bytes (no vtable, no virtual functions)
+    // Total: 65 bytes base + 48 bytes Mahalanobis = 113 bytes (no vtable, no virtual functions)
     
     /**
      * @brief Default constructor

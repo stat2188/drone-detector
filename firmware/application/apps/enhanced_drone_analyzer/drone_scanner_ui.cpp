@@ -110,14 +110,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
     field_filter_.set_by_value(DEFAULT_SPECTRUM_FILTER);
 
-    // Sync spectrum shape filter params from scanner config to display
-    if (scanner_ptr_ != nullptr) {
-        const ScanConfig cfg = scanner_ptr_->get_config();
-        drone_display_.set_spectrum_shape_params(
-            cfg.spectrum_margin, cfg.spectrum_min_width, cfg.spectrum_max_width);
-        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
-    }
-
     // Median filter toggle (spike rejection on RSSI samples)
     button_median_.on_select = [this](ui::Button&) {
         median_enabled_ = !median_enabled_;
@@ -291,6 +283,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
     // Hardware initialization (callbacks are already set, safe to early-return)
     construct_objects();
+
+    // Sync spectrum shape filter params from scanner config to display
+    // Must happen AFTER construct_objects() — scanner_ptr_ is null before that
+    if (scanner_ptr_ != nullptr) {
+        const ScanConfig cfg = scanner_ptr_->get_config();
+        drone_display_.set_spectrum_shape_params(
+            cfg.spectrum_margin, cfg.spectrum_min_width, cfg.spectrum_max_width);
+        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
+    }
 
     if (scanner_ptr_ == nullptr) {
         show_error(ErrorCode::INITIALIZATION_FAILED, ERROR_DURATION_MS);

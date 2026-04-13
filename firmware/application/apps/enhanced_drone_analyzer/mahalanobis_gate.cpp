@@ -67,6 +67,20 @@ void MahalanobisDetector::update_statistics(
         int32_t delta2 = sample[i] - stats.mean[i];
         stats.variance[i] += (delta * delta2) / (n - 1);
     }
+
+    // Variance decay: prevent unbounded growth during long scans.
+    // Without decay, variance accumulates indefinitely and eventually
+    // hits the 32767 clamp, making the gate permanently permissive.
+    // Decay by 1/8 every HISTORY_SIZE samples (exponential moving average).
+    if (stats.sample_count >= MAHALANOBIS_HISTORY_SIZE &&
+        stats.history_index == 0) {
+        for (uint8_t i = 0; i < MAHALANOBIS_DIMENSIONS; ++i) {
+            stats.variance[i] = (stats.variance[i] * 7) / 8;
+            if (stats.variance[i] < MAHALANOBIS_MIN_VARIANCE) {
+                stats.variance[i] = MAHALANOBIS_MIN_VARIANCE;
+            }
+        }
+    }
 }
 
 // ============================================================================
