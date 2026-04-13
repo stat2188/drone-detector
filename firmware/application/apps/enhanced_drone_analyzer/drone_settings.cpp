@@ -70,6 +70,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_info_width_({UI_POS_X(5), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Wid?")
     , button_info_sharp_({UI_POS_X(10), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Shp?")
     , button_info_ratio_({UI_POS_X(15), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Rat?")
+    , check_mahalanobis_({UI_POS_X(24), UI_POS_Y(2)}, 7, "M-Gate", false)
+    , field_mahalanobis_threshold_({UI_POS_X(27), UI_POS_Y(2)}, 3,
+                               {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
+                               5, ' ')
+    , button_info_mahalanobis_({UI_POS_X(29), UI_POS_Y(2), UI_POS_WIDTH(3), 16}, "?")
     , field_cfar_mode_({UI_POS_X(4), UI_POS_Y(0)}, 7, {
         {"OFF", static_cast<int32_t>(CFARMode::OFF)},
         {"CA", static_cast<int32_t>(CFARMode::CA)},
@@ -83,11 +88,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
     , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
     , button_info_cfar_({UI_POS_X(29), UI_POS_Y(0), UI_POS_WIDTH(3), 16}, "CF?")
-    , check_mahalanobis_({UI_POS_X(24), UI_POS_Y(2)}, 7, "M-Gate", false)
-    , field_mahalanobis_threshold_({UI_POS_X(27), UI_POS_Y(2)}, 3,
-                               {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
-                               5, ' ')
-    , button_info_mahalanobis_({UI_POS_X(29), UI_POS_Y(2), UI_POS_WIDTH(3), 16}, "?")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)

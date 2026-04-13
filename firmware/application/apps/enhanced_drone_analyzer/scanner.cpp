@@ -125,10 +125,11 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , hardware_(hardware)
     , state_(ScannerState::IDLE)
     , config_()
+    , mahalanobis_detector_()
     , freq_lock_count_{0}
     , locked_frequency_{0}
     , track_start_time_{0}
-    , current_drone_type_{'\0', '\0', '\0', '\0', '\0'}
+    , current_drone_type_{'\0', '\0', '\0', '\0'}
     , drone_type_valid_{false}
     , statistics_()
     , tracked_drones_()
@@ -765,7 +766,7 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         // Mahalanobis gate validation
         // ====================================================================
         if (config_.mahalanobis_enabled) {
-            MahalanobisDetector::Statistics& stats = tracked_drones_[index].get_mahalanobis_stats();
+            MahalanobisStatistics& stats = tracked_drones_[index].get_mahalanobis_stats();
 
             if (!mahalanobis_detector_.validate(
                 rssi,
