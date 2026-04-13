@@ -67,11 +67,6 @@ struct SettingsStruct {
      */
     uint8_t mahalanobis_threshold_x10{DEFAULT_MAHALOBIS_THRESHOLD_X10};
 
-    /**
-     * @brief History buffer size for statistics
-     */
-    uint8_t mahalanobis_history_size{MAHALANOBIS_HISTORY_SIZE};
-
     // Anti-false-positive
     int32_t neighbor_margin_db;
     bool rssi_variance_enabled;

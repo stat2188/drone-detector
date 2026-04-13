@@ -265,11 +265,6 @@ static void parse_settings_line(
         if (v >= MAHALANOBIS_THRESHOLD_MIN_X10 && v <= MAHALANOBIS_THRESHOLD_MAX_X10) {
             s.mahalanobis_threshold_x10 = static_cast<uint8_t>(v);
         }
-    } else if (key_matches("mahalanobis_history_size")) {
-        const int32_t v = static_cast<int32_t>(parse_int());
-        if (v >= 4 && v <= 16) {
-            s.mahalanobis_history_size = static_cast<uint8_t>(v);
-        }
     }
 }
 
@@ -482,7 +477,6 @@ ErrorCode SettingsFileManager::save(
     // Mahalanobis gate
     wbool(file, "mahalanobis_enabled", s.mahalanobis_enabled);
     wl(file, "mahalanobis_threshold_x10", static_cast<int64_t>(s.mahalanobis_threshold_x10));
-    wl(file, "mahalanobis_history_size", static_cast<int64_t>(s.mahalanobis_history_size));
 
     // Metadata
     ws(file, "freqman_path=DRONES\n");
@@ -531,7 +525,6 @@ void SettingsFileManager::apply_to_config(
     // Mahalanobis gate
     config.mahalanobis_enabled = s.mahalanobis_enabled;
     config.mahalanobis_threshold_x10 = s.mahalanobis_threshold_x10;
-    config.mahalanobis_history_size = s.mahalanobis_history_size;
 
     // Sweep window 1
     config.sweep_start_freq = s.sweep_start_freq;
@@ -603,7 +596,6 @@ void SettingsFileManager::extract_from_config(
     // Mahalanobis gate
     s.mahalanobis_enabled = config.mahalanobis_enabled;
     s.mahalanobis_threshold_x10 = config.mahalanobis_threshold_x10;
-    s.mahalanobis_history_size = config.mahalanobis_history_size;
 
     // Sweep window 1
     s.sweep_start_freq = config.sweep_start_freq;

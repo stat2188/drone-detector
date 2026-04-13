@@ -95,14 +95,12 @@ private:
      * @param rssi Current RSSI value (dBm)
      * @param center_freq Center frequency (Hz)
      * @param tuned_freq Tuned frequency (Hz)
-     * @param rssi_variance Variance from TrackedDrone (optional, for future)
      * @return Feature vector in Q8.8 format
      */
     [[nodiscard]] FeatureVector extract_features(
         RssiValue rssi,
         FreqHz center_freq,
-        FreqHz tuned_freq,
-        uint32_t rssi_variance
+        FreqHz tuned_freq
     ) const noexcept;
 
     /**

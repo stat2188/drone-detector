@@ -30,7 +30,7 @@ bool MahalanobisDetector::validate(
         return true;
     }
 
-    FeatureVector sample = extract_features(rssi, frequency, frequency, 0);
+    FeatureVector sample = extract_features(rssi, frequency, frequency);
     int32_t distance_sq = compute_distance_squared(sample, stats);
 
     int32_t threshold_sq = static_cast<int32_t>(threshold_x10) * threshold_x10;
@@ -45,7 +45,7 @@ void MahalanobisDetector::update_statistics(
     FreqHz center_freq,
     FreqHz tuned_freq
 ) noexcept {
-    FeatureVector sample = extract_features(rssi, center_freq, tuned_freq, 0);
+    FeatureVector sample = extract_features(rssi, center_freq, tuned_freq);
 
     stats.history[stats.history_index] = sample;
     stats.history_index = (stats.history_index + 1) % MAHALANOBIS_HISTORY_SIZE;
@@ -56,10 +56,16 @@ void MahalanobisDetector::update_statistics(
 
     for (uint8_t i = 0; i < MAHALANOBIS_DIMENSIONS; ++i) {
         int32_t n = stats.sample_count;
+
+        if (n < 2) {
+            stats.mean[i] = sample[i];
+            continue;
+        }
+
         int32_t delta = sample[i] - stats.mean[i];
         stats.mean[i] += delta / n;
         int32_t delta2 = sample[i] - stats.mean[i];
-        stats.variance[i] += (delta * delta2) / ((n > 1) ? (n - 1) : 1);
+        stats.variance[i] += (delta * delta2) / (n - 1);
     }
 }
 
@@ -70,8 +76,7 @@ void MahalanobisDetector::update_statistics(
 MahalanobisDetector::FeatureVector MahalanobisDetector::extract_features(
     RssiValue rssi,
     FreqHz center_freq,
-    FreqHz tuned_freq,
-    uint32_t rssi_variance
+    FreqHz tuned_freq
 ) const noexcept {
     FeatureVector features{};
 
@@ -84,8 +89,12 @@ MahalanobisDetector::FeatureVector MahalanobisDetector::extract_features(
     rssi_norm = rssi_norm / (MAHALANOBIS_RSSI_MAX_DBM - MAHALANOBIS_RSSI_MIN_DBM) * 255;
     features[0] = static_cast<int16_t>(rssi_norm);
 
-    int32_t diff = static_cast<int32_t>(tuned_freq - center_freq);
-    int32_t abs_diff = (diff < 0) ? -diff : diff;
+    uint64_t abs_diff;
+    if (tuned_freq >= center_freq) {
+        abs_diff = tuned_freq - center_freq;
+    } else {
+        abs_diff = center_freq - tuned_freq;
+    }
 
     int32_t stability = Q_SCALE;
     if (abs_diff < FREQUENCY_BANDWIDTH_HZ) {

@@ -96,14 +96,9 @@ struct ScanConfig {
     bool mahalanobis_enabled{false};
 
     /**
-     * @brief Mahalanobis distance threshold ×10
+     * @brief Mahalanobis threshold ×10 (e.g., 30 = 3.0)
      */
     uint8_t mahalanobis_threshold_x10{DEFAULT_MAHALOBIS_THRESHOLD_X10};
-
-    /**
-     * @brief History buffer size for statistics
-     */
-    uint8_t mahalanobis_history_size{MAHALANOBIS_HISTORY_SIZE};
 
     // Sweep exception frequencies (per window, 0 = unused slot)
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
