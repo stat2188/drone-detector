@@ -46,7 +46,6 @@ private:
     ui::NumberField field_rssi_dec_cyc_;
     ui::Checkbox check_mahalanobis_;
     ui::NumberField field_mahalanobis_threshold_;
-    ui::Button button_info_mahalanobis_;
     ui::Checkbox check_audio_alerts_;
     ui::Checkbox check_spectrum_visible_;
     ui::Checkbox check_histogram_visible_;
@@ -78,18 +77,11 @@ private:
     ui::Button button_about_;
     ui::Button button_save_;
 
-    // Compact info buttons for spectrum filter settings
-    ui::Button button_info_margin_;
-    ui::Button button_info_width_;
-    ui::Button button_info_sharp_;
-    ui::Button button_info_ratio_;
-
     // CFAR detection controls
     ui::OptionsField field_cfar_mode_;
     ui::NumberField field_cfar_ref_cells_;
     ui::NumberField field_cfar_guard_cells_;
     ui::NumberField field_cfar_threshold_;
-    ui::Button button_info_cfar_;
 
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;

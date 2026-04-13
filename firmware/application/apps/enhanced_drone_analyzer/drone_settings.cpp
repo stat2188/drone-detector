@@ -27,6 +27,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(24), UI_POS_Y(1)}, "MG:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(30), UI_POS_Y(2)}, "int:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(6)}, "Wid:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
@@ -48,7 +49,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_mahalanobis_threshold_({UI_POS_X(27), UI_POS_Y(2)}, 3,
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
                                5, ' ')
-    , button_info_mahalanobis_({UI_POS_X(29), UI_POS_Y(2), UI_POS_WIDTH(3), 16}, "?")
+
+
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
     , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "Spec", false)
     , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "Hist", false)
@@ -71,10 +73,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
     , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")
     , button_save_({UI_POS_X(15), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(14), 20}, "SAVE")
-    , button_info_margin_({UI_POS_X(0), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Mrg?")
-    , button_info_width_({UI_POS_X(5), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Wid?")
-    , button_info_sharp_({UI_POS_X(10), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Shp?")
-    , button_info_ratio_({UI_POS_X(15), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Rat?")
     , field_cfar_mode_({UI_POS_X(4), UI_POS_Y(0)}, 7, {
         {"OFF", static_cast<int32_t>(CFARMode::OFF)},
         {"CA", static_cast<int32_t>(CFARMode::CA)},
@@ -87,7 +85,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_cfar_ref_cells_({UI_POS_X(14), UI_POS_Y(0)}, 2, {4, 64}, 4, ' ')
     , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
     , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
-    , button_info_cfar_({UI_POS_X(29), UI_POS_Y(0), UI_POS_WIDTH(3), 16}, "CF?")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -126,18 +123,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &button_defaults_,
         &button_about_,
         &button_save_,
-        &button_info_margin_,
-        &button_info_width_,
-        &button_info_sharp_,
-        &button_info_ratio_,
         &field_cfar_mode_,
         &field_cfar_ref_cells_,
         &field_cfar_guard_cells_,
         &field_cfar_threshold_,
-        &button_info_cfar_,
         &check_mahalanobis_,
         &field_mahalanobis_threshold_,
-        &button_info_mahalanobis_,
     });
 
     // Load persisted settings from SD card (overrides config-based defaults)
@@ -339,43 +330,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "TM PowerHamster2188");
     };
 
-    // Info buttons for spectrum filter settings
-    button_info_margin_.on_select = [this](ui::Button&) {
-        nav_.display_modal("Margin",
-            "Porog shuma signala.\n"
-            "Skolko dB piki dolzhny\n"
-            "byt vyshe fona.\n"
-            "Bolshe = menshe lozhnyh.\n"
-            "15-25 dlya FPV.");
-    };
-
-    button_info_width_.on_select = [this](ui::Button&) {
-        nav_.display_modal("Max Width",
-            "Maks. shirina signala.\n"
-            "Otbrosit shirokie ploskie\n"
-            "signaly (pomehi).\n"
-            "Drony = uzkij pik.\n"
-            "30-50 optimalno.");
-    };
-
-    button_info_sharp_.on_select = [this](ui::Button&) {
-        nav_.display_modal("Sharpness",
-            "Ostota pika signala.\n"
-            "Video link drona = V-forma.\n"
-            "Bolshe = strogij filtr.\n"
-            "80-150 dlya FPV video.\n"
-            "50 = ljuboj signal.");
-    };
-
-    button_info_ratio_.on_select = [this](ui::Button&) {
-        nav_.display_modal("Peak Ratio",
-            "Otnoshenie vysoty k shirine.\n"
-            "Visokij + uzkoj = dron.\n"
-            "Nizkij = pomeha.\n"
-            "15-30 dlya FPV.\n"
-            "0 = otklychen.");
-    };
-
     // CFAR callbacks
     field_cfar_mode_.on_change = [this](size_t, int32_t v) {
         settings_.cfar_mode = static_cast<CFARMode>(v);
@@ -397,16 +351,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
-    button_info_cfar_.on_select = [this](ui::Button&) {
-        nav_.display_modal("CFAR",
-            "Adaptivnyj porog CFAR.\n"
-            "CA = srednee shuma.\n"
-            "GO = max iz okon.\n"
-            "SO = min iz okon.\n"
-            "HYBRID = smes.\n"
-            "OFF = fiksirovannyj.");
-    };
-
     // Mahalanobis gate callbacks
     check_mahalanobis_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.mahalanobis_enabled = v;
@@ -416,16 +360,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     field_mahalanobis_threshold_.on_change = [this](int32_t v) {
         settings_.mahalanobis_threshold_x10 = static_cast<uint8_t>(v);
         settings_dirty_ = true;
-    };
-
-    button_info_mahalanobis_.on_select = [this](ui::Button&) {
-        nav_.display_modal("M-Gate",
-            "Statisticheskij filtr.\n"
-            "D² < Porog = valid.\n"
-            "Men'she = strozhe.\n"
-            "Bolshe = milee.\n"
-            "20-40 optimalno.\n"
-            "OFF = otklychen.");
     };
 }
 

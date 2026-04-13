@@ -333,14 +333,14 @@ MovementTrend TrackedDrone::get_movement_trend() const noexcept {
     uint8_t recent_count = 0;
 
     for (size_t i = 0; i < RSSI_HISTORY_SIZE; ++i) {
-        const uint8_t logical_idx = (history_index_ + i) % RSSI_HISTORY_SIZE;
-        const int16_t val = rssi_history_[logical_idx];
-
+        const int16_t val = rssi_history_[i];
+        
         if (val <= SILENCE_THRESHOLD) {
             continue;
         }
-
-        if (i < HALF_HISTORY) {
+        
+        const int8_t age = (i - history_index_ + RSSI_HISTORY_SIZE) % RSSI_HISTORY_SIZE;
+        if (age < static_cast<int8_t>(HALF_HISTORY)) {
             older_sum += val;
             older_count++;
         } else {

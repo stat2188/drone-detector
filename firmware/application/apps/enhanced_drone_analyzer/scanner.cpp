@@ -382,7 +382,12 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     // Check dwell request from UI thread (signal detected, hold frequency)
     if (dwell_request_.test_and_set()) {
         dwell_request_.clear();
-        dwell_cycles_ = 1;  // Start at 1 so should_dwell triggers immediately
+        // Only reset dwell_cycles_ if we're tuned to the locked frequency
+        // If current frequency differs, scanner will hop to next frequency
+        // and the dwell will be handled naturally on the locked frequency
+        if (current_frequency_ == locked_frequency_) {
+            dwell_cycles_ = 1;  // Start at 1 so should_dwell triggers immediately
+        }
     }
 
     // Dwell: if UI requested hold or state is LOCKING/TRACKING, skip frequency hop
