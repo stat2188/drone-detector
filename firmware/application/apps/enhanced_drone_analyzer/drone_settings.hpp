@@ -44,6 +44,9 @@ private:
     ui::NumberField field_rssi_threshold_;
     ui::NumberField field_volume_;
     ui::NumberField field_rssi_dec_cyc_;
+    ui::Checkbox check_mahalanobis_;
+    ui::NumberField field_mahalanobis_threshold_;
+    ui::Button button_info_mahalanobis_;
     ui::Checkbox check_audio_alerts_;
     ui::Checkbox check_spectrum_visible_;
     ui::Checkbox check_histogram_visible_;

@@ -845,6 +845,62 @@ constexpr uint8_t VI_CFAR_THRESHOLD_MIN_X10 = 5;   // 0.5 (very sensitive)
 constexpr uint8_t VI_CFAR_THRESHOLD_MAX_X10 = 50;  // 5.0 (very tolerant)
 
 // ============================================================================
+// Mahalanobis Gate Constants
+// ============================================================================
+// Mahalanobis distance for multi-dimensional outlier detection.
+// Simplified for embedded: assumes diagonal covariance matrix.
+
+/**
+ * @brief Number of feature dimensions for Mahalanobis calculation
+ * @note Dimensions: [0]=RSSI normalized, [1]=Frequency stability
+ */
+constexpr uint8_t MAHALANOBIS_DIMENSIONS = 2;
+
+/**
+ * @brief History size for computing running statistics
+ * @note Must be power of 2 for efficient modulo operation
+ */
+constexpr uint8_t MAHALANOBIS_HISTORY_SIZE = 8;
+
+/**
+ * @brief Default Mahalanobis threshold ×10 (3.0)
+ * @note D²_M < threshold → signal accepted as valid drone
+ */
+constexpr uint8_t DEFAULT_MAHALOBIS_THRESHOLD_X10 = 30;
+
+/**
+ * @brief Minimum Mahalanobis threshold ×10 (1.0)
+ */
+constexpr uint8_t MAHALANOBIS_THRESHOLD_MIN_X10 = 10;
+
+/**
+ * @brief Maximum Mahalanobis threshold ×10 (10.0)
+ */
+constexpr uint8_t MAHALANOBIS_THRESHOLD_MAX_X10 = 100;
+
+/**
+ * @brief Q-format for fixed-point arithmetic (Q8.8 = 8 integer bits, 8 fractional bits)
+ * @note Range: -128.0 to 127.99 with 0.004 precision
+ */
+constexpr uint8_t MAHALANOBIS_Q_FORMAT = 8;
+
+/**
+ * @brief Q_SCALE for Q8.8 arithmetic (2^8 = 256)
+ */
+constexpr int32_t MAHALANOBIS_Q_SCALE = 256;
+
+/**
+ * @brief Minimum variance for clamping (1.0 in Q8.8 = 256)
+ */
+constexpr int32_t MAHALANOBIS_MIN_VARIANCE = 256;
+
+/**
+ * @brief RSSI normalization range (dBm)
+ */
+constexpr int32_t MAHALANOBIS_RSSI_MIN_DBM = -120;
+constexpr int32_t MAHALANOBIS_RSSI_MAX_DBM = -20;
+
+// ============================================================================
 // Neighbor Margin Check Constants
 // ============================================================================
 

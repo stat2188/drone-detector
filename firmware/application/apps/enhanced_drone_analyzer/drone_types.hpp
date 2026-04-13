@@ -205,6 +205,11 @@ private:
 // ============================================================================
 
 /**
+ * @brief Forward declaration for MahalanobisDetector
+ */
+class MahalanobisDetector;
+
+/**
  * @brief Tracked drone data structure (56 bytes)
  * @note No virtual functions, no vtable
  * @note Memory layout optimized for cache efficiency
@@ -225,8 +230,32 @@ struct TrackedDrone {
     bool rssi_increased_;               // 1 byte — set true when new RSSI > previous
     SystemTime last_increase_time_;     // 4 bytes — timestamp when RSSI last increased (for time-based decay)
     SystemTime created_time_;           // 4 bytes — timestamp when drone was first detected (min lifetime)
-    
-    // Total: 65 bytes (no vtable, no virtual functions)
+
+    // ========================================================================
+    // Mahalanobis statistics
+    // ========================================================================
+
+    /**
+     * @brief Mahalanobis statistics for this tracked drone
+     * @note Used for outlier detection
+     */
+    MahalanobisDetector::Statistics mahalanobis_stats_;
+
+    /**
+     * @brief Get reference to Mahalanobis statistics
+     */
+    [[nodiscard]] MahalanobisDetector::Statistics& get_mahalanobis_stats() noexcept {
+        return mahalanobis_stats_;
+    }
+
+    /**
+     * @brief Get const reference to Mahalanobis statistics
+     */
+    [[nodiscard]] const MahalanobisDetector::Statistics& get_mahalanobis_stats() const noexcept {
+        return mahalanobis_stats_;
+    }
+
+    // Total: 65 + 48 = 113 bytes (no vtable, no virtual functions)
     
     /**
      * @brief Default constructor
@@ -595,5 +624,7 @@ struct freqman_entry_fixed {
 }
 
 } // namespace drone_analyzer
+
+#include "mahalanobis_gate.hpp"
 
 #endif // DRONE_TYPES_HPP

@@ -5,6 +5,7 @@
 #include "scanner.hpp"
 #include "receiver_model.hpp"
 #include "portapack_persistent_memory.hpp"
+#include "mahalanobis_gate.hpp"
 
 namespace drone_analyzer {
 
@@ -758,6 +759,30 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
                 // RSSI too chaotic — likely noise, don't upgrade threat
                 return ErrorCode::SUCCESS;
             }
+        }
+
+        // ====================================================================
+        // Mahalanobis gate validation
+        // ====================================================================
+        if (config_.mahalanobis_enabled) {
+            MahalanobisDetector::Statistics& stats = tracked_drones_[index].get_mahalanobis_stats();
+
+            if (!mahalanobis_detector_.validate(
+                rssi,
+                frequency,
+                stats,
+                config_.mahalanobis_threshold_x10
+            )) {
+                increment_noise_count(frequency);
+                return ErrorCode::SUCCESS;
+            }
+
+            mahalanobis_detector_.update_statistics(
+                stats,
+                rssi,
+                frequency,
+                frequency
+            );
         }
 
         // Update drone type from DB if it was UNKNOWN (DB may have loaded after first detection)

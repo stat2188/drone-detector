@@ -53,6 +53,25 @@ struct SettingsStruct {
     uint8_t cfar_guard_cells;
     uint8_t cfar_threshold_x10;
 
+    // ========================================================================
+    // Mahalanobis Gate Filter
+    // ========================================================================
+
+    /**
+     * @brief Enable Mahalanobis gate for outlier detection
+     */
+    bool mahalanobis_enabled{false};
+
+    /**
+     * @brief Mahalanobis threshold ×10 (e.g., 30 = 3.0)
+     */
+    uint8_t mahalanobis_threshold_x10{DEFAULT_MAHALOBIS_THRESHOLD_X10};
+
+    /**
+     * @brief History buffer size for statistics
+     */
+    uint8_t mahalanobis_history_size{MAHALANOBIS_HISTORY_SIZE};
+
     // Anti-false-positive
     int32_t neighbor_margin_db;
     bool rssi_variance_enabled;

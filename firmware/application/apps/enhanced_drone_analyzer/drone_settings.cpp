@@ -26,6 +26,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(24), UI_POS_Y(1)}, "MG:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(6)}, "Wid:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
@@ -82,6 +83,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
     , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
     , button_info_cfar_({UI_POS_X(29), UI_POS_Y(0), UI_POS_WIDTH(3), 16}, "CF?")
+    , check_mahalanobis_({UI_POS_X(24), UI_POS_Y(2)}, 7, "M-Gate", false)
+    , field_mahalanobis_threshold_({UI_POS_X(27), UI_POS_Y(2)}, 3,
+                               {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
+                               5, ' ')
+    , button_info_mahalanobis_({UI_POS_X(29), UI_POS_Y(2), UI_POS_WIDTH(3), 16}, "?")
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -129,6 +135,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_cfar_guard_cells_,
         &field_cfar_threshold_,
         &button_info_cfar_,
+        &check_mahalanobis_,
+        &field_mahalanobis_threshold_,
+        &button_info_mahalanobis_,
     });
 
     // Load persisted settings from SD card (overrides config-based defaults)
@@ -397,6 +406,27 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "HYBRID = smes.\n"
             "OFF = fiksirovannyj.");
     };
+
+    // Mahalanobis gate callbacks
+    check_mahalanobis_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.mahalanobis_enabled = v;
+        settings_dirty_ = true;
+    };
+
+    field_mahalanobis_threshold_.on_change = [this](int32_t v) {
+        settings_.mahalanobis_threshold_x10 = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+
+    button_info_mahalanobis_.on_select = [this](ui::Button&) {
+        nav_.display_modal("M-Gate",
+            "Statisticheskij filtr.\n"
+            "D² < Porog = valid.\n"
+            "Men'she = strozhe.\n"
+            "Bolshe = milee.\n"
+            "20-40 optimalno.\n"
+            "OFF = otklychen.");
+    };
 }
 
 DroneSettingsView::~DroneSettingsView() noexcept {
@@ -445,6 +475,8 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_cfar_ref_cells_.set_value(static_cast<int32_t>(settings_.cfar_ref_cells));
     field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));
     field_cfar_threshold_.set_value(static_cast<int32_t>(settings_.cfar_threshold_x10));
+    check_mahalanobis_.set_value(settings_.mahalanobis_enabled);
+    field_mahalanobis_threshold_.set_value(static_cast<int32_t>(settings_.mahalanobis_threshold_x10));
 }
 
 // ============================================================================

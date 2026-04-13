@@ -16,6 +16,7 @@
 #include "median_filter.hpp"
 #include "message.hpp"
 #include "spectrum_shape.hpp"
+#include "mahalanobis_gate.hpp"
 
 namespace drone_analyzer {
 
@@ -84,6 +85,25 @@ struct ScanConfig {
     uint8_t cfar_hybrid_gamma{DEFAULT_CFAR_HYBRID_GAMMA};    // SO weight (0-100)
     uint8_t os_cfar_k_percent{DEFAULT_OS_CFAR_K_PERCENT};    // OS-CFAR k-th order (50-90%)
     uint8_t vi_cfar_threshold_x10{DEFAULT_VI_CFAR_THRESHOLD_X10};  // VI-CFAR threshold ×10 (5-50)
+
+    // ========================================================================
+    // Mahalanobis Gate Filter
+    // ========================================================================
+
+    /**
+     * @brief Enable Mahalanobis gate validation
+     */
+    bool mahalanobis_enabled{false};
+
+    /**
+     * @brief Mahalanobis distance threshold ×10
+     */
+    uint8_t mahalanobis_threshold_x10{DEFAULT_MAHALOBIS_THRESHOLD_X10};
+
+    /**
+     * @brief History buffer size for statistics
+     */
+    uint8_t mahalanobis_history_size{MAHALANOBIS_HISTORY_SIZE};
 
     // Sweep exception frequencies (per window, 0 = unused slot)
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
@@ -1189,6 +1209,9 @@ private:
 
     // Neighbor margin checker for anti-false-positive detection
     NeighborMarginChecker neighbor_margin_checker_;
+
+    // Mahalanobis gate for statistical outlier detection
+    MahalanobisDetector mahalanobis_detector_;
 };
 
 } // namespace drone_analyzer
