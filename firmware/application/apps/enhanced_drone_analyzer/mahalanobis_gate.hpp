@@ -44,20 +44,6 @@ public:
     using FeatureVector = std::array<int16_t, MAHALANOBIS_DIMENSIONS>;
 
     /**
-     * @brief Running statistics for Mahalanobis calculation
-     * @note Stored in Q8.8 fixed-point format
-     */
-    struct Statistics {
-        FeatureVector mean{};           ///< Running mean (Q8.8)
-        FeatureVector variance{};       ///< Running variance (Q8.8)
-        std::array<FeatureVector, MAHALANOBIS_HISTORY_SIZE> history{}; ///< Sample history
-        uint8_t sample_count{0};        ///< Number of samples collected
-        uint8_t history_index{0};       ///< Circular buffer index
-
-        Statistics() noexcept = default;
-    };
-
-    /**
      * @brief Validate signal against statistical model
      * @param rssi Current RSSI value (dBm)
      * @param frequency Current frequency (Hz)
@@ -71,7 +57,7 @@ public:
     [[nodiscard]] bool validate(
         RssiValue rssi,
         FreqHz frequency,
-        const Statistics& stats,
+        const MahalanobisStatistics& stats,
         uint8_t threshold_x10
     ) const noexcept;
 
@@ -85,7 +71,7 @@ public:
      * @note Uses simplified Welford's algorithm with integer approximation
      */
     void update_statistics(
-        Statistics& stats,
+        MahalanobisStatistics& stats,
         RssiValue rssi,
         FreqHz center_freq,
         FreqHz tuned_freq
@@ -95,7 +81,7 @@ public:
      * @brief Reset statistics to initial state
      * @param stats Statistics to reset
      */
-    static void reset(Statistics& stats) noexcept {
+    static void reset(MahalanobisStatistics& stats) noexcept {
         stats.mean = {};
         stats.variance = {};
         stats.history = {};
@@ -129,7 +115,7 @@ private:
      */
     [[nodiscard]] int32_t compute_distance_squared(
         const FeatureVector& sample,
-        const Statistics& stats
+        const MahalanobisStatistics& stats
     ) const noexcept;
 
     static constexpr int32_t Q_SCALE = MAHALANOBIS_Q_SCALE;

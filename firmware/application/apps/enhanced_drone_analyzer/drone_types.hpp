@@ -6,6 +6,25 @@
 #include <array>
 #include "freqman_types.hpp"
 
+// ============================================================================
+// Mahalanobis Statistics (POD type - no heap allocation)
+// ============================================================================
+
+/**
+ * @brief Mahalanobis statistics for outlier detection
+ * @note POD type - no virtual functions, no heap allocation
+ * @note Stored in Q8.8 fixed-point format
+ */
+struct MahalanobisStatistics {
+    using FeatureVector = std::array<int16_t, 2>;
+
+    FeatureVector mean{};           ///< Running mean (Q8.8)
+    FeatureVector variance{};       ///< Running variance (Q8.8)
+    std::array<FeatureVector, 8> history{};  ///< Sample history
+    uint8_t sample_count{0};        ///< Number of samples collected
+    uint8_t history_index{0};       ///< Circular buffer index
+};
+
 namespace drone_analyzer {
 
 /**
@@ -171,6 +190,25 @@ private:
     T value_;
 };
 
+// ============================================================================
+// Mahalanobis Statistics (POD type - no heap allocation)
+// ============================================================================
+
+/**
+ * @brief Mahalanobis statistics for outlier detection
+ * @note POD type - no virtual functions, no heap allocation
+ * @note Stored in Q8.8 fixed-point format
+ */
+struct MahalanobisStatistics {
+    using FeatureVector = std::array<int16_t, 2>;
+
+    FeatureVector mean{};           ///< Running mean (Q8.8)
+    FeatureVector variance{};       ///< Running variance (Q8.8)
+    std::array<FeatureVector, 8> history{};  ///< Sample history
+    uint8_t sample_count{0};        ///< Number of samples collected
+    uint8_t history_index{0};       ///< Circular buffer index
+};
+
 template<>
 class ErrorResult<void> {
 public:
@@ -205,11 +243,6 @@ private:
 // ============================================================================
 
 /**
- * @brief Forward declaration for MahalanobisDetector
- */
-class MahalanobisDetector;
-
-/**
  * @brief Tracked drone data structure (56 bytes)
  * @note No virtual functions, no vtable
  * @note Memory layout optimized for cache efficiency
@@ -239,19 +272,19 @@ struct TrackedDrone {
      * @brief Mahalanobis statistics for this tracked drone
      * @note Used for outlier detection
      */
-    MahalanobisDetector::Statistics mahalanobis_stats_;
+    MahalanobisStatistics mahalanobis_stats_;
 
     /**
      * @brief Get reference to Mahalanobis statistics
      */
-    [[nodiscard]] MahalanobisDetector::Statistics& get_mahalanobis_stats() noexcept {
+    [[nodiscard]] MahalanobisStatistics& get_mahalanobis_stats() noexcept {
         return mahalanobis_stats_;
     }
 
     /**
      * @brief Get const reference to Mahalanobis statistics
      */
-    [[nodiscard]] const MahalanobisDetector::Statistics& get_mahalanobis_stats() const noexcept {
+    [[nodiscard]] const MahalanobisStatistics& get_mahalanobis_stats() const noexcept {
         return mahalanobis_stats_;
     }
 
@@ -624,7 +657,5 @@ struct freqman_entry_fixed {
 }
 
 } // namespace drone_analyzer
-
-#include "mahalanobis_gate.hpp"
 
 #endif // DRONE_TYPES_HPP

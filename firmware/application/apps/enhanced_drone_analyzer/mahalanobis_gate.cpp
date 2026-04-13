@@ -19,7 +19,7 @@ namespace drone_analyzer {
 bool MahalanobisDetector::validate(
     RssiValue rssi,
     FreqHz frequency,
-    const Statistics& stats,
+    const MahalanobisStatistics& stats,
     uint8_t threshold_x10
 ) const noexcept {
     if (stats.sample_count < 3) {
@@ -40,7 +40,7 @@ bool MahalanobisDetector::validate(
 }
 
 void MahalanobisDetector::update_statistics(
-    Statistics& stats,
+    MahalanobisStatistics& stats,
     RssiValue rssi,
     FreqHz center_freq,
     FreqHz tuned_freq
@@ -98,7 +98,7 @@ MahalanobisDetector::FeatureVector MahalanobisDetector::extract_features(
 
 int32_t MahalanobisDetector::compute_distance_squared(
     const FeatureVector& sample,
-    const Statistics& stats
+    const MahalanobisStatistics& stats
 ) const noexcept {
     int32_t distance_sq = 0;
 
