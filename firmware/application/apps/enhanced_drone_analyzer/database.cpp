@@ -142,7 +142,12 @@ ErrorCode DatabaseManager::load_frequency_database() noexcept {
 }
 
 ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    // Use MutexTryLock to avoid deadlock when scanner holds DATA_MUTEX
+    // and calls get_next_frequency() then find_entry() (both need DATABASE_MUTEX)
+    MutexTryLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return ErrorResult<FreqHz>::failure(ErrorCode::MUTEX_LOCK_FAILED);
+    }
 
     if (entry_count_ == 0) {
         return ErrorResult<FreqHz>::failure(ErrorCode::DATABASE_EMPTY);
@@ -194,7 +199,12 @@ ErrorResult<FrequencyEntry> DatabaseManager::find_entry(FreqHz frequency) const 
         return ErrorResult<FrequencyEntry>::failure(ErrorCode::DATABASE_NOT_LOADED);
     }
 
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    // Use MutexTryLock to avoid deadlock - find_entry() may be called
+    // while scanner holds DATA_MUTEX and another thread holds DATABASE_MUTEX
+    MutexTryLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return ErrorResult<FrequencyEntry>::failure(ErrorCode::MUTEX_LOCK_FAILED);
+    }
 
     for (size_t i = 0; i < entry_count_; ++i) {
         if (entries_[i].frequency == frequency) {
@@ -237,12 +247,15 @@ DatabaseManager::~DatabaseManager() noexcept {
 }
 
 size_t DatabaseManager::get_current_index() const noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    MutexTryLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return 0;
+    }
     return current_index_;
 }
 
 void DatabaseManager::set_current_index(size_t index) noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    MutexTryLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     if (entry_count_ == 0) {
         current_index_ = 0;
         return;
@@ -251,7 +264,10 @@ void DatabaseManager::set_current_index(size_t index) noexcept {
 }
 
 ErrorResult<FreqHz> DatabaseManager::get_frequency_at_index(size_t index) const noexcept {
-    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    MutexTryLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return ErrorResult<FreqHz>::failure(ErrorCode::MUTEX_LOCK_FAILED);
+    }
     if (entry_count_ == 0 || index >= entry_count_) {
         return ErrorResult<FreqHz>::failure(ErrorCode::INVALID_PARAMETER);
     }
