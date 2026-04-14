@@ -485,11 +485,17 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
 
         // Skip blacklisted frequencies
         if (config_.noise_blacklist_enabled) {
+            FreqHz last_visited_freq = current_frequency_;
             for (size_t skip = 0; skip < MAX_NOISE_ENTRIES && is_blacklisted(current_frequency_); ++skip) {
                 freq_result = database_.get_next_frequency(current_frequency_);
-                if (freq_result.has_value()) {
-                    current_frequency_ = freq_result.value();
-                } else {
+                if (!freq_result.has_value()) {
+                    break;
+                }
+                current_frequency_ = freq_result.value();
+                
+                // CRITICAL FIX: Detect complete DB loop (all frequencies blacklisted)
+                // If we returned to the starting frequency, we've visited every entry
+                if (current_frequency_ == last_visited_freq) {
                     break;
                 }
             }
@@ -803,7 +809,7 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         // ====================================================================
         if (config_.mahalanobis_enabled) {
             MahalanobisStatistics& stats = tracked_drones_[index].get_mahalanobis_stats();
-
+            
             if (!mahalanobis_detector_.validate(
                 rssi,
                 frequency,

@@ -177,9 +177,13 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
             current_index_ = 0;
         }
     } else {
-        // Frequency not in DB — resume from current_index_
-        // Preserves position after sweep restore (last_db_index_)
-        current_index_ = (current_index_ < entry_count_) ? current_index_ : 0;
+        // Frequency not in DB — advance from current_index_
+        // CRITICAL FIX: Always advance to prevent infinite loop when all frequencies are blacklisted
+        // Previous code preserved current_index_ when freq not found, causing scanner to loop forever
+        // on the same frequency if it's not in DB but current_index_ points to it
+        if (entry_count_ > 0) {
+            current_index_ = (current_index_ + 1) % entry_count_;
+        }
     }
 
     return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);
