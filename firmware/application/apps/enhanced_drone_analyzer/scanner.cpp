@@ -282,26 +282,20 @@ void DroneScanner::force_resume_scanning() noexcept {
 }
 
 void DroneScanner::request_dwell(FreqHz frequency) noexcept {
-    // Set dwell request with timestamp — scanner thread will check this BEFORE hopping frequency.
+    // CRITICAL FIX: Require explicit frequency, never fall back to current_frequency_
+    // Previous logic (frequency != 0 ? frequency : current_frequency_) was race-prone
+    // because current_frequency_ could change between request and processing.
+    if (frequency == 0) {
+        // Invalid request - ignore
+        return;
+    }
+    
+    // Set dwell request with timestamp for debugging (not used for filtering)
     // This is the critical link: UI detects signal → requests dwell → scanner holds.
-    // Using copy-and-write pattern to avoid race with force-resume clear operation.
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    dwell_request_.frequency = (frequency != 0) ? frequency : current_frequency_;
+    dwell_request_.frequency = frequency;
     dwell_request_.timestamp = chTimeNow();
     dwell_request_.pending = true;
-}
-
-bool DroneScanner::try_consume_force_resume_flag() noexcept {
-    if (!force_resume_flag_.test_and_set()) {
-        return false;
-    }
-    force_resume_flag_.clear();
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-    if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
-        state_ = ScannerState::SCANNING;
-        return true;
-    }
-    return false;
 }
 
 void DroneScanner::remove_drone_on_frequency(FreqHz frequency) noexcept {
@@ -381,36 +375,31 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
 
 ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     // Check force-resume flag (set when max dwell expires)
+    // CRITICAL FIX: Process force-resume without nested mutex lock
+    // Mutex is already held by caller (perform_scan_cycle())
     if (force_resume_flag_.test_and_set()) {
         force_resume_flag_.clear();
-
-        const SystemTime force_resume_time = chTimeNow();
-
+ 
         if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
             state_ = ScannerState::SCANNING;
             locked_frequency_ = 0;  // Clear locked frequency to allow new locks
         }
         dwell_cycles_ = 0;
         dwell_reason_ = DwellReason::NONE;
-
-        // Only clear dwell requests that are stale (older than force_resume_time)
-        // This prevents race where UI request arrives after force-resume but before clear
-        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-        if (dwell_request_.pending && dwell_request_.timestamp < force_resume_time) {
-            dwell_request_.pending = false;
-            dwell_request_.frequency = 0;
-        }
+ 
+        // CRITICAL FIX: Clear dwell request without timestamp-based filtering
+        // Previous timestamp logic had race condition - just clear pending request
+        dwell_request_.pending = false;
+        dwell_request_.frequency = 0;
+        dwell_request_.timestamp = 0;
     }
-
+ 
     // Check dwell request from UI thread (signal detected, hold frequency)
     // Use copy-and-clear approach to minimize time in critical section
     DwellRequest local_request;
     {
-        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-        if (dwell_request_.pending) {
-            local_request = dwell_request_;
-            dwell_request_.pending = false;
-        }
+        local_request = dwell_request_;
+        dwell_request_.pending = false;
     }
 
     if (local_request.pending) {
@@ -1082,16 +1071,21 @@ void DroneScanner::clear_tracked_drones() noexcept {
 }
 
 void DroneScanner::reset_frequency() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-
-    // Get first frequency from new database
+    // CRITICAL FIX: Prevent deadlock by acquiring DATABASE_MUTEX before DATA_MUTEX
+    // Previous code acquired DATA_MUTEX then called database_.get_next_frequency()
+    // which requires DATABASE_MUTEX. If another thread holds DATABASE_MUTEX,
+    // we get deadlock.
+    //
+    // Solution: Call database FIRST (it doesn't need DATA_MUTEX), then acquire DATA_MUTEX
     ErrorResult<FreqHz> freq_result = database_.get_next_frequency(0);
+    FreqHz new_frequency = MIN_FREQUENCY_HZ;
     if (freq_result.has_value()) {
-        current_frequency_ = freq_result.value();
-    } else {
-        current_frequency_ = MIN_FREQUENCY_HZ;
+        new_frequency = freq_result.value();
     }
-
+    
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    current_frequency_ = new_frequency;
+    
     // Reset tracking state
     freq_lock_count_ = 0;
     locked_frequency_ = 0;

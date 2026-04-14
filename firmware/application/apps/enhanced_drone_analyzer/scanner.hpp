@@ -634,14 +634,6 @@ public:
     void force_resume_scanning() noexcept;
 
     /**
-     * @brief Consume force-resume flag and transition to SCANNING
-     * @return true if flag was set and state transitioned, false otherwise
-     * @note Thread-safe: uses AtomicFlag test_and_clear + mutex for state
-     * @note Called by scanner thread BEFORE dwell logic to break out of LOCKING
-     */
-    bool try_consume_force_resume_flag() noexcept;
-    
-    /**
      * @brief Remove tracked drone on a specific frequency (no mutex)
      * @note Called by scanner thread after force-resume
      */

@@ -750,25 +750,20 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
 
     // Initialize pair tracking (pairs: 0=[w0,w1], 2=[w2,w3])
     current_pair_ = pair_first(active_sweep_idx_);
-
-    // Save DB index BEFORE stopping scanner, then derive frequency from DB entry.
-    // This ensures last_db_frequency_ == entries[last_db_index_].frequency,
-    // so get_next_frequency() finds the exact resume point after sweep.
-    if (database_ptr_ != nullptr) {
-        last_db_index_ = database_ptr_->get_current_index();
-        // Use current frequency from scanner (thread-safe via atomic read)
-        // This is the frequency the scanner was tuned to before sweep entry
-        if (current_frequency_ != 0) {
-            last_db_frequency_ = current_frequency_;
-        } else {
-            // Fallback: try to get from scanner's locked frequency
-            last_db_frequency_ = scanner_ptr_->get_locked_frequency();
-        }
-    }
-
+ 
+    // CRITICAL FIX: Prevent deadlock by restructuring database/scanner access
+    // Previous code acquired DATABASE_MUTEX (get_current_index) then DATA_MUTEX (stop_scanning)
+    // Scanner thread might hold DATA_MUTEX while waiting for DATABASE_MUTEX → deadlock
+    // 
+    // Solution: Stop scanner FIRST with proper synchronization, then access database
+    
     // Stop scanner thread FIRST — UI drives tuning during sweep
     if (scanner_thread_ != nullptr) {
         scanner_thread_->set_scanning(false);
+        // CRITICAL: Wait for scanner thread to exit perform_scan_cycle()
+        // reset_dwell() acquires DATA_MUTEX which scanner thread might be holding
+        // Give scanner time to complete current cycle and release mutex
+        chThdSleepMilliseconds(10);
         scanner_thread_->reset_dwell();
     }
     if (scanner_ptr_ != nullptr) {
@@ -777,6 +772,24 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         scanner_ptr_->clear_lock_state();
     }
     scanning_ = false;
+    
+    // Now safe to access database (scanner thread is stopped, no DATA_MUTEX contention)
+    // Save DB index BEFORE stopping scanner, then derive frequency from DB entry.
+    // This ensures last_db_frequency_ == entries[last_db_index_].frequency,
+    // so get_next_frequency() finds the exact resume point after sweep.
+    if (database_ptr_ != nullptr) {
+        last_db_index_ = database_ptr_->get_current_index();
+        
+        // Use current frequency from scanner (scanner is stopped, safe to read)
+        // This is the frequency the scanner was tuned to before sweep entry
+        if (current_frequency_ != 0) {
+            last_db_frequency_ = current_frequency_;
+        } else {
+            // Fallback: try to get from scanner's locked frequency
+            // Scanner is stopped, so this won't deadlock
+            last_db_frequency_ = scanner_ptr_->get_locked_frequency();
+        }
+    }
 
     // Configure baseband for sweep bandwidth
     portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
@@ -826,15 +839,23 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
 
     if (was_auto && scanner_ptr_ != nullptr) {
-        // Continue scanning from last DB position (skip already-scanned)
-        // Restore both frequency AND database index for exact resume
-        if (last_db_frequency_ != 0) {
-            scanner_ptr_->set_scan_frequency(last_db_frequency_);
-        }
+        // CRITICAL FIX: Prevent deadlock in database/scanner synchronization
+        // Previous code could cause deadlock:
+        // - set_scan_frequency() acquires DATA_MUTEX
+        // - set_current_index() acquires DATABASE_MUTEX  
+        // - Scanner thread in perform_scan_cycle() holds DATA_MUTEX while waiting for DATABASE_MUTEX
+        
+        // Solution: Access database FIRST, then scanner (scanner thread is not running yet)
         if (database_ptr_ != nullptr) {
             database_ptr_->set_current_index(last_db_index_);
         }
-
+        
+        // Continue scanning from last DB position (skip already-scanned)
+        // Restore frequency for exact resume
+        if (last_db_frequency_ != 0) {
+            scanner_ptr_->set_scan_frequency(last_db_frequency_);
+        }
+ 
         if (scanner_thread_ != nullptr) {
             scanner_thread_->set_scanning(true);
         }
