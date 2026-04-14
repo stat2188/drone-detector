@@ -936,7 +936,10 @@ size_t DroneScanner::get_tracked_drones(
     TrackedDrone* drones,
     size_t max_count
 ) const noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return 0;
+    }
     
     if (drones == nullptr || max_count == 0) {
         return 0;

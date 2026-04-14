@@ -721,6 +721,14 @@ public:
      */
     [[nodiscard]] FreqHz get_spectrum_frequency() noexcept;
 
+    /**
+     * @brief Get tracked drones for display
+     * @param drones Output buffer for drone data
+     * @param max_count Maximum number of drones to copy
+     * @return Number of drones copied (0 if lock acquisition failed)
+     * @note Uses MutexTryLock to avoid deadlock with scanner thread.
+     *       If lock fails, returns 0 (no data copied).
+     */
     [[nodiscard]] size_t get_tracked_drones(
         TrackedDrone* drones,
         size_t max_count
