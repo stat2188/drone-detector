@@ -26,8 +26,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(24), UI_POS_Y(1)}, "MG:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(30), UI_POS_Y(2)}, "int:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(6)}, "Wid:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
@@ -45,8 +43,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
     , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
-    , check_mahalanobis_({UI_POS_X(24), UI_POS_Y(2)}, 7, "M-Gate", false)
-    , field_mahalanobis_threshold_({UI_POS_X(27), UI_POS_Y(2)}, 3,
+    , check_mahalanobis_({UI_POS_X(21), UI_POS_Y(2)}, 3, "MG", false)
+    , field_mahalanobis_threshold_({UI_POS_X(24), UI_POS_Y(2)}, 3,
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
                                5, ' ')
 

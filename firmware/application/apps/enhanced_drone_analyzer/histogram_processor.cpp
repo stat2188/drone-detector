@@ -12,7 +12,8 @@ HistogramProcessor::HistogramProcessor() noexcept
     , signal_floor_threshold_(HISTOGRAM_SIGNAL_THRESHOLD)
     , histogram_{}
     , statistics_{}
-    , initialized_(false) {
+    , initialized_(false)
+    , samples_since_reset_(0) {
 }
 
 // ============================================================================
@@ -59,11 +60,14 @@ ErrorCode HistogramProcessor::update_histogram(
     }
 
     // Reset histogram periodically to prevent monotonic overflow
-    // After 256 samples, reset to maintain relative differences
-    if (statistics_.total_samples > 0 && (statistics_.total_samples % 256) == 0) {
+    // FIXED: Use cycle counter instead of unbounded total_samples to prevent
+    // overflow after many scan cycles which causes hang in histogram display
+    samples_since_reset_ += static_cast<uint32_t>(length);
+    if (samples_since_reset_ >= 256) {
         for (size_t i = 0; i < HISTOGRAM_BUFFER_SIZE; ++i) {
             histogram_[i] = 0;
         }
+        samples_since_reset_ = 0;
     }
 
     // Bin data into histogram
@@ -156,6 +160,7 @@ void HistogramProcessor::reset() noexcept {
     statistics_.noise_floor = 0;
     statistics_.signal_floor = 0;
     statistics_.active_bins = 0;
+    samples_since_reset_ = 0;
 }
 
 void HistogramProcessor::get_statistics(HistogramStatistics& stats) const noexcept {

@@ -76,19 +76,20 @@ void MahalanobisDetector::update_statistics(
     // Store current tuned frequency for next drift measurement
     stats.last_tuned_frequency = tuned_freq;
 
-    // Variance decay: prevent unbounded growth during long scans.
-    // Without decay, variance accumulates indefinitely and eventually
-    // hits the 32767 clamp, making the gate permanently permissive.
-    // Decay by 1/8 every HISTORY_SIZE samples (exponential moving average).
-    if (stats.sample_count >= MAHALANOBIS_HISTORY_SIZE &&
-        stats.history_index == 0) {
+    // FIXED: Aggressive variance decay to prevent unbounded accumulation.
+    // Previous logic only decayed when sample_count >= HISTORY_SIZE and history_index == 0,
+    // which could happen very rarely or not at all if samples are missed.
+    // New logic: decay every 16 samples regardless of history_index, ensuring
+    // variance stays bounded and gate remains effective during long scans.
+    if (stats.sample_count > 0 && (stats.sample_count % 16) == 0) {
         for (uint8_t i = 0; i < MAHALANOBIS_DIMENSIONS; ++i) {
-            stats.variance[i] = (stats.variance[i] * 7) / 8;
+            stats.variance[i] = (stats.variance[i] * 15) / 16;
             if (stats.variance[i] < MAHALANOBIS_MIN_VARIANCE) {
                 stats.variance[i] = MAHALANOBIS_MIN_VARIANCE;
             }
         }
     }
+}
 }
 
 // ============================================================================

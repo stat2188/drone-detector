@@ -217,6 +217,7 @@ private:
 
     // State
     bool initialized_;
+    uint32_t samples_since_reset_;  // Cycle counter for periodic reset (0-255)
 };
 
 } // namespace drone_analyzer

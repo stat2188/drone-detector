@@ -395,9 +395,11 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     }
  
     // Check dwell request from UI thread (signal detected, hold frequency)
-    // Use copy-and-clear approach to minimize time in critical section
+    // FIXED: Acquire mutex during entire copy-and-clear operation to prevent race condition
+    // where UI thread writes new request between copy and clear operations
     DwellRequest local_request;
     {
+        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
         local_request = dwell_request_;
         dwell_request_.pending = false;
     }
@@ -513,7 +515,11 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     rssi_median_filter_.reset();
     neighbor_margin_checker_.reset();
 
-    if (current_frequency_ != pending_frequency_) {
+    // FIXED: Only reset confirm count when NOT dwelling. When dwell_cycles_ > 0,
+    // the scanner is holding on a frequency and consecutive detections should increment
+    // the confirm count. Previous code reset pending_frequency_ on EVERY frequency hop,
+    // causing confirm count to never be reached and scanner to fly through frequencies.
+    if (current_frequency_ != pending_frequency_ && !dwell_cycles_) {
         pending_frequency_ = 0;
         pending_count_ = 0;
     }

@@ -246,6 +246,14 @@ void DatabaseManager::set_current_index(size_t index) noexcept {
     current_index_ = (index < entry_count_) ? index : 0;
 }
 
+ErrorResult<FreqHz> DatabaseManager::get_frequency_at_index(size_t index) const noexcept {
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    if (entry_count_ == 0 || index >= entry_count_) {
+        return ErrorResult<FreqHz>::failure(ErrorCode::INVALID_PARAMETER);
+    }
+    return ErrorResult<FreqHz>::success(entries_[index].frequency);
+}
+
 void DatabaseManager::set_database_file(const char* filename) noexcept {
     if (filename == nullptr) {
         return;

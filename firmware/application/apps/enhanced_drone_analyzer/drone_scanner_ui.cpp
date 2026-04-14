@@ -847,7 +847,18 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
         
         // Solution: Access database FIRST, then scanner (scanner thread is not running yet)
         if (database_ptr_ != nullptr) {
+            // FIXED: Restore index and get exact frequency from that position
+            // Previous code used set_scan_frequency(last_db_frequency_) which stored
+            // frequency from before sweep. But scanner's get_next_frequency() searches
+            // for this frequency in the database, which may return a different index
+            // than expected due to duplicate frequencies or search logic.
+            // New approach: Restore index directly, then fetch frequency at that index
+            // to ensure exact resume position.
             database_ptr_->set_current_index(last_db_index_);
+            ErrorResult<FreqHz> freq_result = database_ptr_->get_frequency_at_index(last_db_index_);
+            if (freq_result.has_value()) {
+                last_db_frequency_ = freq_result.value();
+            }
         }
         
         // Continue scanning from last DB position (skip already-scanned)
@@ -855,7 +866,7 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
         if (last_db_frequency_ != 0) {
             scanner_ptr_->set_scan_frequency(last_db_frequency_);
         }
- 
+  
         if (scanner_thread_ != nullptr) {
             scanner_thread_->set_scanning(true);
         }

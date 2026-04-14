@@ -63,6 +63,15 @@ public:
      */
     void set_current_index(size_t index) noexcept;
     
+    /**
+     * @brief Get frequency at specific index without advancing cursor
+     * @param index Index to retrieve (must be < entry_count_)
+     * @return ErrorResult with frequency or error
+     * @note Thread-safe: acquires DATABASE_MUTEX
+     * @note Does NOT modify current_index_ (unlike get_next_frequency)
+     */
+    [[nodiscard]] ErrorResult<FreqHz> get_frequency_at_index(size_t index) const noexcept;
+    
 private:
     
     [[nodiscard]] ErrorResult<size_t> find_entry_index_internal(FreqHz frequency) const noexcept;
