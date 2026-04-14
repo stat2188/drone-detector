@@ -281,10 +281,14 @@ void DroneScanner::force_resume_scanning() noexcept {
     force_resume_flag_.set();
 }
 
-void DroneScanner::request_dwell() noexcept {
-    // Set dwell request — scanner thread will check this BEFORE hopping frequency.
+void DroneScanner::request_dwell(FreqHz frequency) noexcept {
+    // Set dwell request with timestamp — scanner thread will check this BEFORE hopping frequency.
     // This is the critical link: UI detects signal → requests dwell → scanner holds.
-    dwell_request_.set();
+    // Using copy-and-write pattern to avoid race with force-resume clear operation.
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    dwell_request_.frequency = (frequency != 0) ? frequency : current_frequency_;
+    dwell_request_.timestamp = chTimeNow();
+    dwell_request_.pending = true;
 }
 
 bool DroneScanner::try_consume_force_resume_flag() noexcept {
@@ -373,20 +377,46 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     // Check force-resume flag (set when max dwell expires)
     if (force_resume_flag_.test_and_set()) {
         force_resume_flag_.clear();
+
+        const SystemTime force_resume_time = chTimeNow();
+
         if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
             state_ = ScannerState::SCANNING;
+            locked_frequency_ = 0;  // Clear locked frequency to allow new locks
         }
         dwell_cycles_ = 0;
+        dwell_reason_ = DwellReason::NONE;
+
+        // Only clear dwell requests that are stale (older than force_resume_time)
+        // This prevents race where UI request arrives after force-resume but before clear
+        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+        if (dwell_request_.pending && dwell_request_.timestamp < force_resume_time) {
+            dwell_request_.pending = false;
+            dwell_request_.frequency = 0;
+        }
     }
 
     // Check dwell request from UI thread (signal detected, hold frequency)
-    if (dwell_request_.test_and_set()) {
-        dwell_request_.clear();
-        // Only reset dwell_cycles_ if we're tuned to the locked frequency
-        // If current frequency differs, scanner will hop to next frequency
-        // and the dwell will be handled naturally on the locked frequency
-        if (current_frequency_ == locked_frequency_) {
+    // Use copy-and-clear approach to minimize time in critical section
+    DwellRequest local_request;
+    {
+        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+        if (dwell_request_.pending) {
+            local_request = dwell_request_;
+            dwell_request_.pending = false;
+        }
+    }
+
+    if (local_request.pending) {
+        // Dwell when:
+        // 1. New signal detected on current frequency (initiate dwell)
+        // 2. Already tuned to locked frequency (continue dwelling)
+        // 3. Locked frequency is 0 (no lock yet, allow dwell on current freq)
+        if (locked_frequency_ == 0 || current_frequency_ == locked_frequency_) {
             dwell_cycles_ = 1;  // Start at 1 so should_dwell triggers immediately
+            dwell_reason_ = (locked_frequency_ == 0)
+                ? DwellReason::NEW_SIGNAL
+                : DwellReason::CONTINUING;
         }
     }
 
@@ -710,9 +740,9 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 missed_lock_count_ = 0;
                 state_ = ScannerState::LOCKING;
                 // CRITICAL: Request scanner thread to hold frequency.
-                // Without this, the scanner thread hops to the next DB entry
+                // Without this, scanner thread hops to the next DB entry
                 // before the UI thread can transition state to LOCKING.
-                dwell_request_.set();
+                request_dwell(frequency);
             }
             // If LOCKING/TRACKING and different freq detected:
             // Don't jump. Continue accumulating on locked freq.

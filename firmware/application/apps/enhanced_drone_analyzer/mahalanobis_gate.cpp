@@ -99,8 +99,9 @@ MahalanobisDetector::FeatureVector MahalanobisDetector::extract_features(
         (rssi > MAHALANOBIS_RSSI_MAX_DBM) ? MAHALANOBIS_RSSI_MAX_DBM : rssi
     );
 
-    int32_t rssi_norm = (rssi_clamped - MAHALANOBIS_RSSI_MIN_DBM) * Q_SCALE;
-    rssi_norm = rssi_norm / (MAHALANOBIS_RSSI_MAX_DBM - MAHALANOBIS_RSSI_MIN_DBM) * 255;
+    int32_t rssi_norm = rssi_clamped - MAHALANOBIS_RSSI_MIN_DBM;
+    rssi_norm = (rssi_norm * 255) / (MAHALANOBIS_RSSI_MAX_DBM - MAHALANOBIS_RSSI_MIN_DBM);
+    rssi_norm = q_multiply_safe(rssi_norm, Q_SCALE) / 255;
     features[0] = static_cast<int16_t>(rssi_norm);
 
     uint64_t abs_diff;
@@ -112,7 +113,9 @@ MahalanobisDetector::FeatureVector MahalanobisDetector::extract_features(
 
     int32_t stability = Q_SCALE;
     if (abs_diff < FREQUENCY_BANDWIDTH_HZ) {
-        stability = (Q_SCALE * (FREQUENCY_BANDWIDTH_HZ - abs_diff)) / FREQUENCY_BANDWIDTH_HZ;
+        int32_t bandwidth_delta = static_cast<int32_t>(FREQUENCY_BANDWIDTH_HZ - abs_diff);
+        stability = q_multiply_safe(bandwidth_delta, Q_SCALE);
+        stability = stability / FREQUENCY_BANDWIDTH_HZ;
     }
     features[1] = static_cast<int16_t>(stability);
 
@@ -127,7 +130,9 @@ int32_t MahalanobisDetector::compute_distance_squared(
 
     for (uint8_t i = 0; i < MAHALANOBIS_DIMENSIONS; ++i) {
         int32_t diff_Q = sample[i] - stats.mean[i];
-        int32_t diff_sq = (diff_Q * diff_Q) / Q_SCALE;
+
+        int64_t diff_sq_64 = static_cast<int64_t>(diff_Q) * diff_Q;
+        diff_sq_64 /= Q_SCALE;
 
         int32_t var = stats.variance[i];
         if (var < MAHALANOBIS_MIN_VARIANCE) {
@@ -137,7 +142,11 @@ int32_t MahalanobisDetector::compute_distance_squared(
             var = 32767;
         }
 
-        int32_t term = (diff_sq * Q_SCALE) / var;
+        int32_t diff_sq = static_cast<int32_t>(diff_sq_64);
+        int64_t term_64 = static_cast<int64_t>(diff_sq) * Q_SCALE;
+        term_64 /= var;
+
+        int32_t term = static_cast<int32_t>(term_64);
         distance_sq += term;
     }
 

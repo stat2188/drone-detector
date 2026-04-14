@@ -877,17 +877,23 @@ public:
     void reset_neighbor_checker() noexcept;
 
     /**
-     * @brief Request dwell hold (called by UI thread when signal detected)
-     * @note Thread-safe: uses AtomicFlag (lock-free)
+     * @brief Request dwell hold on specific frequency (called by UI thread when signal detected)
+     * @param frequency Frequency to hold (0 = current frequency)
+     * @note Thread-safe: uses copy-and-write pattern with timestamp
      * @note Tells scanner thread to skip frequency hop on next cycle
      */
-    void request_dwell() noexcept;
+    void request_dwell(FreqHz frequency = 0) noexcept;
 
     /**
-     * @brief Reset dwell cycle counter
-     * @note Called when entering sweep mode to clear stale dwell state
+     * @brief Reset dwell state (called when entering sweep mode)
+     * @note Clears dwell cycles, dwell request, and dwell reason
      */
-    void reset_dwell_cycles() noexcept { dwell_cycles_ = 0; }
+    void reset_dwell() noexcept {
+        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+        dwell_cycles_ = 0;
+        dwell_request_ = DwellRequest{};
+        dwell_reason_ = DwellReason::NONE;
+    }
 
     /**
      * @brief Check if scanner is currently in dwell (holding frequency)
@@ -1173,8 +1179,22 @@ private:
     // Force-resume flag (set by scanner thread, cleared inside mutex-protected scan cycle)
     AtomicFlag force_resume_flag_;
 
-    // Dwell request flag (set by UI thread on signal detection, consumed by scanner thread)
-    AtomicFlag dwell_request_;
+    /**
+     * @brief Dwell request with timestamp to prevent race conditions
+     * @note Prevents race where UI request arrives after force-resume but is cleared as stale
+     */
+    struct DwellRequest {
+        FreqHz frequency{0};
+        SystemTime timestamp{0};
+        bool pending{false};
+    };
+
+    // Dwell request from UI thread (signal detected, hold frequency)
+    DwellRequest dwell_request_;
+
+    // Dwell reason tracking (for debugging and logic clarity)
+    enum class DwellReason : uint8_t { NONE, NEW_SIGNAL, CONTINUING };
+    DwellReason dwell_reason_{DwellReason::NONE};
 
     // Dwell cycle counter (persistent across scan cycles, managed by scanner class)
     uint8_t dwell_cycles_{0};

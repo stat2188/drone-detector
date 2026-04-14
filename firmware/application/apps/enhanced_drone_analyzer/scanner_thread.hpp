@@ -29,10 +29,10 @@ public:
     [[nodiscard]] bool is_active() const noexcept;
 
     /**
-     * @brief Reset dwell counter in scanner class
+     * @brief Reset dwell state in scanner class
      * @note Called when entering sweep mode to clear stale dwell state
      */
-    void reset_dwell() noexcept { scanner_.reset_dwell_cycles(); }
+    void reset_dwell() noexcept { scanner_.reset_dwell(); }
 
 private:
     static constexpr size_t STACK_WORDS = THD_WA_SIZE(SCANNER_THREAD_STACK_SIZE) / sizeof(stkalign_t);

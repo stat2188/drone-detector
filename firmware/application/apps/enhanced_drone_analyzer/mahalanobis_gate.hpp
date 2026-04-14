@@ -110,6 +110,7 @@ private:
      * @return D²_M in Q8.8 format
      *
      * @note Clamps variance to MAHALANOBIS_MIN_VARIANCE to avoid division by 0
+     * @note Uses overflow-safe arithmetic to prevent integer overflow in extreme cases
      */
     [[nodiscard]] int32_t compute_distance_squared(
         const FeatureVector& sample,
@@ -117,6 +118,23 @@ private:
     ) const noexcept;
 
     static constexpr int32_t Q_SCALE = MAHALANOBIS_Q_SCALE;
+
+    /**
+     * @brief Safe Q-format multiplication (prevents overflow)
+     * @param a First operand (Q8.8)
+     * @param b Second operand (Q8.8)
+     * @return (a * b) / Q_SCALE in Q8.8 format
+     *
+     * @note If result would overflow int32_t, returns clamped value
+     * @note Uses int64_t intermediate for safe squaring operations
+     */
+    [[nodiscard]] static int32_t q_multiply_safe(int32_t a, int32_t b) noexcept {
+        int64_t product = static_cast<int64_t>(a) * b;
+        product /= Q_SCALE;
+        if (product > INT32_MAX) return INT32_MAX;
+        if (product < INT32_MIN) return INT32_MIN;
+        return static_cast<int32_t>(product);
+    }
 };
 
 } // namespace drone_analyzer
