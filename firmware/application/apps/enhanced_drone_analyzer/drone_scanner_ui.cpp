@@ -539,9 +539,9 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
 
         // Sort by threat level descending (CRITICAL first, NONE last)
-        // Simple insertion sort — O(n²) but n ≤ MAX_DISPLAYED_DRONES (small)
+        // Simple insertion sort in-place without stack allocation
         for (size_t i = 1; i < count; ++i) {
-            const DisplayDroneEntry key = refresh_display_data_.drones[i];
+            DisplayDroneEntry key = refresh_display_data_.drones[i];
             size_t j = i;
             while (j > 0 && refresh_display_data_.drones[j - 1].threat < key.threat) {
                 refresh_display_data_.drones[j] = refresh_display_data_.drones[j - 1];

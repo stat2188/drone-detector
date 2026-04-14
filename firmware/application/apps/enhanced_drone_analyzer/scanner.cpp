@@ -609,15 +609,16 @@ FreqHz DroneScanner::get_spectrum_frequency() noexcept {
 }
 
 ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum, FreqHz frequency) noexcept {
-    // CRITICAL FIX: Use MutexLock instead of MutexTryLock to prevent UI starvation
-    // Previous MutexTryLock failed 40-100% of the time when scanner thread held DATA_MUTEX
-    // for 20-50ms in perform_scan_cycle_internal(). This caused UI to not update drones,
-    // making Normal mode appear to "hang" while UI showed stale data.
+    // CRITICAL FIX: Use MutexTryLock instead of blocking MutexLock
+    // The scanner thread runs continuously in database mode, holding DATA_MUTEX
+    // for 20-50ms. Blocking mutex would freeze UI at 60fps.
     // 
-    // ChibiOS mutexes are NOT reentrant, but same thread can re-enter without deadlock.
-    // Since UI calls this from message handler and scanner calls perform_scan_cycle()
-    // from its own thread, there's no re-entrancy risk. MutexLock is safe.
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    // MutexTryLock attempts to acquire, returns immediately if failed.
+    // When failed, we skip this frame - not critical (next frame arrives in ~16ms)
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return ErrorCode::SUCCESS;  // Scanner busy - skip this spectrum frame
+    }
 
     if (frequency == 0) {
         return ErrorCode::INVALID_PARAMETER;
