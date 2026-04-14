@@ -22,7 +22,9 @@ bool MahalanobisDetector::validate(
     const MahalanobisStatistics& stats,
     uint8_t threshold_x10
 ) const noexcept {
-    if (stats.sample_count < 3) {
+    // Require at least half of history size for statistical confidence
+    constexpr uint8_t MIN_SAMPLES = MAHALANOBIS_HISTORY_SIZE / 2;  // 4 samples
+    if (stats.sample_count < MIN_SAMPLES) {
         return true;
     }
 
@@ -30,7 +32,8 @@ bool MahalanobisDetector::validate(
         return true;
     }
 
-    FeatureVector sample = extract_features(rssi, frequency, frequency);
+    // Use actual drift from history instead of degenerate center_freq comparison
+    FeatureVector sample = extract_features(rssi, frequency, frequency, stats.last_tuned_frequency);
     int32_t distance_sq = compute_distance_squared(sample, stats);
 
     int32_t threshold_sq = static_cast<int32_t>(threshold_x10) * threshold_x10;
@@ -45,7 +48,9 @@ void MahalanobisDetector::update_statistics(
     FreqHz center_freq,
     FreqHz tuned_freq
 ) noexcept {
-    FeatureVector sample = extract_features(rssi, center_freq, tuned_freq);
+    // Extract features using the previous tuned frequency for drift measurement
+    const FreqHz last_freq = stats.last_tuned_frequency;
+    FeatureVector sample = extract_features(rssi, center_freq, tuned_freq, last_freq);
 
     stats.history[stats.history_index] = sample;
     stats.history_index = (stats.history_index + 1) % MAHALANOBIS_HISTORY_SIZE;
@@ -67,6 +72,9 @@ void MahalanobisDetector::update_statistics(
         int32_t delta2 = sample[i] - stats.mean[i];
         stats.variance[i] += (delta * delta2) / (n - 1);
     }
+
+    // Store current tuned frequency for next drift measurement
+    stats.last_tuned_frequency = tuned_freq;
 
     // Variance decay: prevent unbounded growth during long scans.
     // Without decay, variance accumulates indefinitely and eventually
@@ -90,7 +98,8 @@ void MahalanobisDetector::update_statistics(
 MahalanobisDetector::FeatureVector MahalanobisDetector::extract_features(
     RssiValue rssi,
     FreqHz center_freq,
-    FreqHz tuned_freq
+    FreqHz tuned_freq,
+    FreqHz last_tuned_frequency
 ) const noexcept {
     FeatureVector features{};
 
@@ -104,13 +113,23 @@ MahalanobisDetector::FeatureVector MahalanobisDetector::extract_features(
     rssi_norm = q_multiply_safe(rssi_norm, Q_SCALE) / 255;
     features[0] = static_cast<int16_t>(rssi_norm);
 
-    uint64_t abs_diff;
-    if (tuned_freq >= center_freq) {
-        abs_diff = tuned_freq - center_freq;
-    } else {
-        abs_diff = center_freq - tuned_freq;
+    // center_freq parameter is kept for API compatibility but unused for stability calculation
+    (void)center_freq;
+
+    // Measure actual drift from previous measurement to fix degenerate feature
+    uint64_t abs_diff = 0;
+    if (last_tuned_frequency != 0) {
+        // Compute absolute difference between current and previous tuned frequencies
+        if (tuned_freq >= last_tuned_frequency) {
+            abs_diff = tuned_freq - last_tuned_frequency;
+        } else {
+            abs_diff = last_tuned_frequency - tuned_freq;
+        }
     }
 
+    // Convert drift to stability metric (Q8.8)
+    // Stability = 256 when drift = 0 (no frequency change)
+    // Stability decreases linearly with drift, minimum = 0 when drift >= FREQUENCY_BANDWIDTH_HZ
     int32_t stability = Q_SCALE;
     if (abs_diff < FREQUENCY_BANDWIDTH_HZ) {
         int32_t bandwidth_delta = static_cast<int32_t>(FREQUENCY_BANDWIDTH_HZ - abs_diff);

@@ -51,7 +51,7 @@ public:
      * @param threshold_x10 Mahalanobis threshold ×10
      * @return true if signal is valid (not outlier), false otherwise
      *
-     * @note If sample_count < 3, returns true (pass through - insufficient data)
+     * @note If sample_count < MAHALANOBIS_HISTORY_SIZE/2, returns true (pass through - insufficient data)
      * @note If threshold_x10 == 0, returns true (disabled)
      */
     [[nodiscard]] bool validate(
@@ -69,6 +69,7 @@ public:
      * @param tuned_freq Tuned frequency (Hz)
      *
      * @note Uses simplified Welford's algorithm with integer approximation
+     * @note Stores tuned_freq as last_tuned_frequency for next drift measurement
      */
     void update_statistics(
         MahalanobisStatistics& stats,
@@ -93,14 +94,21 @@ private:
     /**
      * @brief Extract feature vector from RSSI and frequency
      * @param rssi Current RSSI value (dBm)
-     * @param center_freq Center frequency (Hz)
-     * @param tuned_freq Tuned frequency (Hz)
+     * @param center_freq Center frequency (Hz) - currently unused, kept for API compatibility
+     * @param tuned_freq Current tuned frequency (Hz)
+     * @param last_tuned_frequency Previous tuned frequency (Hz) for drift measurement
      * @return Feature vector in Q8.8 format
+     *
+     * @note Frequency stability is computed as actual drift from previous measurement:
+     *       stability = Q_SCALE * (1 - abs(current_freq - last_freq) / FREQUENCY_BANDWIDTH_HZ)
+     *       This provides true discrimination instead of the degenerate case where
+     *       center_freq == tuned_freq (always returns Q_SCALE)
      */
     [[nodiscard]] FeatureVector extract_features(
         RssiValue rssi,
         FreqHz center_freq,
-        FreqHz tuned_freq
+        FreqHz tuned_freq,
+        FreqHz last_tuned_frequency
     ) const noexcept;
 
     /**

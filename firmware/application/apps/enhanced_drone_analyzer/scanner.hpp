@@ -650,6 +650,7 @@ public:
     /**
      * @brief Increment noise count for a frequency (blacklist tracking)
      * @note Called by scanner thread when force-resuming from noise
+     * @note Also called from UI thread during sweep (uses MutexTryLock internally)
      */
     void increment_noise_count(FreqHz frequency) noexcept;
 

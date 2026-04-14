@@ -188,6 +188,7 @@ struct MahalanobisStatistics {
     std::array<FeatureVector, 8> history{};  ///< Sample history
     uint8_t sample_count{0};        ///< Number of samples collected
     uint8_t history_index{0};       ///< Circular buffer index
+    FreqHz last_tuned_frequency{0}; ///< Previous tuned frequency for drift measurement
 };
 
 template<>

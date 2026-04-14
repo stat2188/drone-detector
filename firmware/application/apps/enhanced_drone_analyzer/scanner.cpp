@@ -318,7 +318,13 @@ void DroneScanner::remove_drone_on_frequency(FreqHz frequency) noexcept {
 }
 
 void DroneScanner::increment_noise_count(FreqHz frequency) noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    // Use MutexTryLock to avoid deadlock when called from UI thread (sweep mode)
+    // If lock cannot be acquired immediately, skip this update - not critical
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return;  // Cannot acquire mutex - skip to avoid deadlock
+    }
+    
     // Find existing entry or first empty slot
     size_t empty_slot = MAX_NOISE_ENTRIES;
     for (size_t i = 0; i < MAX_NOISE_ENTRIES; ++i) {
@@ -895,21 +901,25 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     if (tracked_count_ >= MAX_TRACKED_DRONES) {
         return ErrorCode::BUFFER_FULL;
     }
-
+    
     DroneType type = determine_drone_type_internal(frequency_hz);
-
+    
     tracked_drones_[tracked_count_] = TrackedDrone(frequency_hz, type, ThreatLevel::NONE);
     tracked_drones_[tracked_count_].created_time_ = timestamp_ms;
     tracked_drones_[tracked_count_].last_increase_time_ = timestamp_ms;
+    
+    // Initialize Mahalanobis statistics: store first frequency as baseline
+    tracked_drones_[tracked_count_].get_mahalanobis_stats().last_tuned_frequency = frequency_hz;
+    
     tracked_drones_[tracked_count_].update_rssi(rssi_dbm, timestamp_ms);
-
+    
     tracked_count_++;
     statistics_.drones_detected++;
-
+    
     // NOTE: Do NOT call trigger_alert() here.
-    // update_rssi() set the initial threat level inside the drone.
-    // update_tracked_drone_internal() will compare and trigger the alert.
-
+    // update_rssi() set initial threat level inside TrackedDrone.
+    // update_tracked_drone_internal() will compare and trigger alert.
+    
     return ErrorCode::SUCCESS;
 }
 
@@ -1389,6 +1399,14 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
 // ============================================================================
 
 void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq, FreqHz f_min, FreqHz f_max) noexcept {
+    // Acquire mutex for thread-safe access to tracked_drones_
+    // Use MutexTryLock to avoid deadlock: if scanner thread holds lock,
+    // skip this frame (next frame will retry)
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return;  // Scanner thread is busy - skip this frame
+    }
+
     current_frequency_ = center_freq;
 
     // Cache config values locally (avoid repeated member access in hot loop)
@@ -1658,6 +1676,39 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
             }
         }
         if (is_exception) return;
+
+        // Mahalanobis gate validation for sweep mode
+        // Ensures consistent filtering across normal and sweep modes
+        if (config_.mahalanobis_enabled) {
+            // Find if drone already tracked
+            ErrorResult<size_t> drone_result = find_drone_by_frequency_internal(peak_freq);
+            if (drone_result.has_value()) {
+                // Existing drone: validate against its statistical model
+                const size_t drone_idx = drone_result.value();
+                MahalanobisStatistics& stats = tracked_drones_[drone_idx].get_mahalanobis_stats();
+                
+                if (!mahalanobis_detector_.validate(
+                    peak_rssi,
+                    peak_freq,
+                    stats,
+                    config_.mahalanobis_threshold_x10
+                )) {
+                    // Signal is an outlier - reject
+                    increment_noise_count(peak_freq);
+                    return;
+                }
+                
+                // Update statistics with new sample
+                mahalanobis_detector_.update_statistics(
+                    stats,
+                    peak_rssi,
+                    peak_freq,
+                    peak_freq
+                );
+            }
+            // Note: New drones are created in update_tracked_drone_internal()
+            // which will initialize Mahalanobis statistics on first detection
+        }
 
         (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
     }
