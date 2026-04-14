@@ -395,16 +395,22 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     }
  
     // Check dwell request from UI thread (signal detected, hold frequency)
-    // FIXED: Acquire mutex during entire copy-and-clear operation to prevent race condition
-    // where UI thread writes new request between copy and clear operations
+    // Mutex is already held by caller (perform_scan_cycle), so we use
+    // GCC builtin atomic operations (from locking.hpp) to avoid nested mutex deadlock.
+    // ChibiOS mutexes are NOT reentrant.
     DwellRequest local_request;
-    {
-        MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-        local_request = dwell_request_;
-        dwell_request_.pending = false;
-    }
 
-    if (local_request.pending) {
+    // Atomic test-and-set operation: read pending flag atomically and clear it if set
+    // Uses same primitives as AtomicFlag::set() from locking.hpp
+    // Returns: true if we acquired the request (pending was true)
+    //          false if no request pending
+    uint8_t pending_flag = __atomic_test_and_set(&dwell_request_.pending, __ATOMIC_SEQ_CST);
+    const bool pending = (pending_flag != 0);
+
+    if (pending) {
+        // Copy of full request structure (frequency and timestamp)
+        local_request = dwell_request_;
+
         // Dwell when:
         // 1. New signal detected on current frequency (initiate dwell)
         // 2. Already tuned to locked frequency (continue dwelling)
@@ -415,6 +421,8 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
                 ? DwellReason::NEW_SIGNAL
                 : DwellReason::CONTINUING;
         }
+    } else {
+        local_request.pending = false;
     }
 
     // Dwell: if UI requested hold or state is LOCKING/TRACKING, skip frequency hop
