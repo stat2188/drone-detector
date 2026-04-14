@@ -90,7 +90,6 @@ void MahalanobisDetector::update_statistics(
         }
     }
 }
-}
 
 // ============================================================================
 // Private Methods
