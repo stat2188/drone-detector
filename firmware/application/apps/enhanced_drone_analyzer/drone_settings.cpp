@@ -22,7 +22,6 @@ namespace drone_analyzer {
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display) noexcept
     : ui::View()
     , labels_({
-        {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
@@ -38,13 +37,14 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(11), UI_POS_Y(0)}, "Ref:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(17), UI_POS_Y(0)}, "Grd:", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(22), UI_POS_Y(0)}, "Thr:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(8), UI_POS_Y(10)}, "Dwell:", Theme::getInstance()->fg_light->foreground},
     })
-    , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
+    , field_scan_interval_({UI_POS_X(8), UI_POS_Y(11)}, 3, {10, 999}, 50, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
     , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
-    , check_mahalanobis_({UI_POS_X(21), UI_POS_Y(2)}, 3, "MG", false)
-    , field_mahalanobis_threshold_({UI_POS_X(24), UI_POS_Y(2)}, 3,
+    , check_mahalanobis_({UI_POS_X(21), UI_POS_Y(1)}, 3, "MG", false)
+    , field_mahalanobis_threshold_({UI_POS_X(24), UI_POS_Y(1)}, 3,
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
                                5, ' ')
 
