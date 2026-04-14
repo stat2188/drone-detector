@@ -18,14 +18,45 @@ msg_t ScannerThread::static_fn(void* arg) {
 
 void ScannerThread::run() noexcept {
     static RetuneMessage message{};
-
+    
     while (!chThdShouldTerminate()) {
         if (__atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
-            ErrorResult<FreqHz> freq_before = scanner_.get_current_frequency();
-
+            // CRITICAL FIX: Perform scan cycle FIRST, then get frequency
+            // Previous code captured frequency BEFORE perform_scan_cycle(),
+            // causing RetuneMessage to contain stale (old) frequency
+            // while spectrum data was captured AFTER tuning to new frequency.
+            // This created a permanent 1-cycle offset causing database
+            // tracking errors and overflow on 5th frequency.
+            //
+            // Timeline of bug:
+            //   1. freq_before = get_current_frequency() → gets F[i]
+            //   2. perform_scan_cycle() → updates to F[i+1], tunes hardware to F[i+1]
+            //   3. RetuneMessage sent with F[i] (WRONG - frequency is stale!)
+            //   4. Hardware captures spectrum at F[i+1]
+            //   5. UI receives spectrum but thinks it's from F[i]
+            //   6. process_spectrum_message() associates spectrum with wrong frequency
+            //   7. Tracked drones accumulate at incorrect frequencies
+            //   8. By 5th cycle, accumulated error causes database wraparound/overflow
+            //
+            // Fixed timeline:
+            //   1. perform_scan_cycle() → updates to F[i+1], tunes hardware to F[i+1]
+            //   2. freq_after = get_current_frequency() → returns F[i+1] (actual tuned frequency)
+            //   3. RetuneMessage sent with F[i+1] (CORRECT - matches hardware state)
+            //   4. Hardware captures spectrum at F[i+1]
+            //   5. UI receives spectrum and knows it's from F[i+1]
+            //   6. process_spectrum_message() correctly associates spectrum with F[i+1]
+            //   7. No frequency offset, no accumulation, no overflow
             ErrorCode err = scanner_.perform_scan_cycle();
-            if (err == ErrorCode::SUCCESS && freq_before.has_value()) {
-                message.freq = static_cast<int64_t>(freq_before.value());
+
+            // Get frequency AFTER scan cycle (when radio is already tuned to new frequency)
+            // perform_scan_cycle_internal() guarantees current_frequency_ is updated on SUCCESS:
+            //   - Line 479: freq_result = database_.get_next_frequency(current_frequency_)
+            //   - Line 482: current_frequency_ = freq_result.value()
+            //   - Line 513: hardware_.tune_to_frequency(current_frequency_)
+            //   - Line 531-532: return ErrorCode::SUCCESS (only if tuning succeeded)
+            ErrorResult<FreqHz> freq_result = scanner_.get_current_frequency();
+            if (err == ErrorCode::SUCCESS && freq_result.has_value()) {
+                message.freq = static_cast<int64_t>(freq_result.value());
                 message.range = 0;
                 EventDispatcher::send_message(message);
             }
