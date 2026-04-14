@@ -809,28 +809,22 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         }
 
         // ====================================================================
-        // Mahalanobis gate validation
+        // MAHALANOBIS GATE - DISABLED FOR DATABASE MODE
         // ====================================================================
-        if (config_.mahalanobis_enabled) {
-            MahalanobisStatistics& stats = tracked_drones_[index].get_mahalanobis_stats();
-            
-            if (!mahalanobis_detector_.validate(
-                rssi,
-                frequency,
-                stats,
-                config_.mahalanobis_threshold_x10
-            )) {
-                increment_noise_count(frequency);
-                return ErrorCode::SUCCESS;
-            }
-
-            mahalanobis_detector_.update_statistics(
-                stats,
-                rssi,
-                frequency,
-                frequency
-            );
-        }
+        // IMPORTANT: Mahalanobis gate is intentionally DISABLED here.
+        // 
+        // Rationale:
+        // - update_tracked_drone_internal() is called from BOTH database mode
+        //   (process_spectrum_message) and sweep mode (process_spectrum_sweep)
+        // - Applying mahalanobis gate here would affect database mode incorrectly
+        // - Sweep mode has its own dedicated mahalanobis implementation in
+        //   process_spectrum_sweep() (lines 1690-1737) which is sweep-specific
+        // - Database mode should use: Dwell + Confirm Count + all other filters
+        // - Sweep mode uses: All filters INCLUDING Mahalanobis
+        //
+        // Future enhancement: If ScanningMode::SWEEP enum is added,
+        // move sweep-specific mahalanobis code here and check mode before applying.
+        // ====================================================================
 
         // Update drone type from DB if it was UNKNOWN (DB may have loaded after first detection)
         if (tracked_drones_[index].drone_type == DroneType::UNKNOWN) {
@@ -1686,9 +1680,17 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
             }
         }
         if (is_exception) return;
-
-        // Mahalanobis gate validation for sweep mode
-        // Ensures consistent filtering across normal and sweep modes
+ 
+        // ====================================================================
+        // Mahalanobis Gate - SWEEP MODE ONLY
+        // ====================================================================
+        // IMPORTANT: Mahalanobis gate is ONLY used in sweep mode.
+        // Database (sequential) mode uses: Dwell + Confirm Count + other filters.
+        // 
+        // This code is in process_spectrum_sweep() which is called ONLY from
+        // UI thread during sweep (scanner thread is stopped).
+        // Database mode uses update_tracked_drone_internal() WITHOUT mahalanobis.
+        // ====================================================================
         if (config_.mahalanobis_enabled) {
             // Find if drone already tracked
             ErrorResult<size_t> drone_result = find_drone_by_frequency_internal(peak_freq);
