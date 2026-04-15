@@ -53,8 +53,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_neighbor_margin_({UI_POS_X(17), UI_POS_Y(15)}, 2, {0, 15}, 1, ' ')
     , check_neighbor_margin_({UI_POS_X(20), UI_POS_Y(15)}, 4, "NB", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
-    , check_rssi_variance_({UI_POS_X(20), UI_POS_Y(15)}, 5, "RVar", false)
-    , check_mahalanobis_({UI_POS_X(21), UI_POS_Y(1)}, 3, "MG", false)
+    , check_rssi_variance_({UI_POS_X(20), UI_POS_Y(7)}, 5, "RVar", false)
+    , check_mahalanobis_({UI_POS_X(20), UI_POS_Y(3)}, 3, "MG", false)
     , field_mahalanobis_threshold_({UI_POS_X(24), UI_POS_Y(1)}, 3,
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
                                DEFAULT_MAHALOBIS_THRESHOLD_X10, ' ')

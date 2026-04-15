@@ -57,10 +57,12 @@ void MahalanobisDetector::update_statistics(
 
     if (stats.sample_count < MAHALANOBIS_HISTORY_SIZE) {
         stats.sample_count++;
+    } else {
+        stats.sample_count = MAHALANOBIS_HISTORY_SIZE;
     }
 
     for (uint8_t i = 0; i < MAHALANOBIS_DIMENSIONS; ++i) {
-        int32_t n = stats.sample_count;
+        const uint8_t n = (stats.sample_count < MAHALANOBIS_HISTORY_SIZE) ? stats.sample_count : MAHALANOBIS_HISTORY_SIZE;
 
         if (n < 2) {
             stats.mean[i] = sample[i];
