@@ -53,7 +53,11 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_neighbor_margin_({UI_POS_X(17), UI_POS_Y(15)}, 2, {0, 15}, 1, ' ')
     , check_neighbor_margin_({UI_POS_X(20), UI_POS_Y(15)}, 4, "NB", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
-    , check_rssi_variance_({UI_POS_X(20), UI_POS_Y(7)}, 5, "RVar", false)
+    , check_rssi_variance_({UI_POS_X(20), UI_POS_Y(15)}, 5, "RVar", false)
+    , check_mahalanobis_({UI_POS_X(21), UI_POS_Y(1)}, 3, "MG", false)
+    , field_mahalanobis_threshold_({UI_POS_X(24), UI_POS_Y(1)}, 3,
+                               {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
+                               DEFAULT_MAHALOBIS_THRESHOLD_X10, ' ')
     , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
     , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 2, {1, 20}, 1, ' ')
     , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {1, 100}, 1, ' ')
@@ -109,6 +113,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_neighbor_margin_,
         &check_noise_blacklist_,
         &check_rssi_variance_,
+        &check_mahalanobis_,
+        &field_mahalanobis_threshold_,
         &field_spectrum_margin_,
         &field_spectrum_min_width_,
         &field_spectrum_max_width_,
@@ -388,6 +394,17 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
+    // Mahalanobis gate callbacks
+    check_mahalanobis_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.mahalanobis_enabled = v;
+        settings_dirty_ = true;
+    };
+
+    field_mahalanobis_threshold_.on_change = [this](int32_t v) {
+        settings_.mahalanobis_threshold_x10 = static_cast<uint8_t>(v);
+        settings_dirty_ = true;
+    };
+
     button_info_cfar_.on_select = [this](ui::Button&) {
         nav_.display_modal("CFAR",
             "Adaptivnyj porog CFAR.\n"
@@ -441,6 +458,8 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_neighbor_margin_.set_value(settings_.neighbor_margin_db > 0);
     field_neighbor_margin_.set_value(static_cast<int32_t>(settings_.neighbor_margin_db));
     check_rssi_variance_.set_value(settings_.rssi_variance_enabled);
+    check_mahalanobis_.set_value(settings_.mahalanobis_enabled);
+    field_mahalanobis_threshold_.set_value(static_cast<int32_t>(settings_.mahalanobis_threshold_x10));
     field_cfar_mode_.set_by_value(static_cast<int32_t>(settings_.cfar_mode));
     field_cfar_ref_cells_.set_value(static_cast<int32_t>(settings_.cfar_ref_cells));
     field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));

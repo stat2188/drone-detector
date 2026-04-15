@@ -325,6 +325,7 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/settings_manager.cpp
 	apps/enhanced_drone_analyzer/sweep_processor.cpp
 	apps/enhanced_drone_analyzer/spectrum_shape.cpp
+	apps/enhanced_drone_analyzer/mahalanobis_gate.cpp
 
 	protocols/aprs.cpp
 	protocols/ax25.cpp

@@ -171,6 +171,26 @@ private:
     T value_;
 };
 
+// ============================================================================
+// Mahalanobis Statistics (POD type - no heap allocation)
+// ============================================================================
+
+/**
+ * @brief Mahalanobis statistics for outlier detection
+ * @note POD type - no virtual functions, no heap allocation
+ * @note Stored in Q8.8 fixed-point format
+ */
+struct MahalanobisStatistics {
+    using FeatureVector = std::array<int16_t, 2>;
+
+    FeatureVector mean{};           ///< Running mean (Q8.8)
+    FeatureVector variance{};       ///< Running variance (Q8.8)
+    std::array<FeatureVector, 8> history{};  ///< Sample history
+    uint8_t sample_count{0};     ///< Number of samples collected
+    uint8_t history_index{0};    ///< Circular buffer index
+    FreqHz last_tuned_frequency{0}; ///< Previous tuned frequency for drift measurement
+};
+
 template<>
 class ErrorResult<void> {
 public:
@@ -225,8 +245,32 @@ struct TrackedDrone {
     bool rssi_increased_;               // 1 byte — set true when new RSSI > previous
     SystemTime last_increase_time_;     // 4 bytes — timestamp when RSSI last increased (for time-based decay)
     SystemTime created_time_;           // 4 bytes — timestamp when drone was first detected (min lifetime)
-    
-    // Total: 65 bytes (no vtable, no virtual functions)
+
+    // ========================================================================
+    // Mahalanobis statistics
+    // ========================================================================
+
+    /**
+     * @brief Mahalanobis statistics for this tracked drone
+     * @note Used for outlier detection
+     */
+    MahalanobisStatistics mahalanobis_stats_;
+
+    /**
+     * @brief Get reference to Mahalanobis statistics
+     */
+    [[nodiscard]] MahalanobisStatistics& get_mahalanobis_stats() noexcept {
+        return mahalanobis_stats_;
+    }
+
+    /**
+     * @brief Get const reference to Mahalanobis statistics
+     */
+    [[nodiscard]] const MahalanobisStatistics& get_mahalanobis_stats() const noexcept {
+        return mahalanobis_stats_;
+    }
+
+    // Total: 65 bytes base + 48 bytes Mahalanobis = 113 bytes (no vtable, no virtual functions)
     
     /**
      * @brief Default constructor

@@ -256,6 +256,13 @@ static void parse_settings_line(
         s.cfar_guard_cells = static_cast<uint8_t>(parse_int());
     } else if (key_matches("cfar_threshold_x10")) {
         s.cfar_threshold_x10 = static_cast<uint8_t>(parse_int());
+    } else if (key_matches("mahalanobis_enabled")) {
+        s.mahalanobis_enabled = parse_bool();
+    } else if (key_matches("mahalanobis_threshold_x10")) {
+        const int64_t v = parse_int64();
+        if (v >= MAHALANOBIS_THRESHOLD_MIN_X10 && v <= MAHALANOBIS_THRESHOLD_MAX_X10) {
+            s.mahalanobis_threshold_x10 = static_cast<uint8_t>(v);
+        }
     }
 }
 
@@ -465,6 +472,10 @@ ErrorCode SettingsFileManager::save(
     wl(file, "cfar_guard_cells", static_cast<int64_t>(s.cfar_guard_cells));
     wl(file, "cfar_threshold_x10", static_cast<int64_t>(s.cfar_threshold_x10));
 
+    // Mahalanobis gate
+    wbool(file, "mahalanobis_enabled", s.mahalanobis_enabled);
+    wl(file, "mahalanobis_threshold_x10", static_cast<int64_t>(s.mahalanobis_threshold_x10));
+
     // Metadata
     ws(file, "freqman_path=DRONES\n");
     ws(file, "settings_version=1.1\n");
@@ -490,15 +501,12 @@ void SettingsFileManager::apply_to_config(
     config.confirm_count_enabled = s.confirm_count_enabled;
     config.noise_blacklist_enabled = s.noise_blacklist_enabled;
     config.spectrum_detection_enabled = s.spectrum_detection_enabled;
-    config.spectrum_margin = s.spectrum_margin;
-    config.spectrum_min_width = s.spectrum_min_width;
-    config.spectrum_max_width = s.spectrum_max_width;
-    config.spectrum_peak_sharpness = s.spectrum_peak_sharpness;
-    config.spectrum_peak_ratio = s.spectrum_peak_ratio;
-    config.spectrum_valley_depth = s.spectrum_valley_depth;
-    config.spectrum_flatness = s.spectrum_flatness;
-    config.spectrum_symmetry = s.spectrum_symmetry;
     config.median_enabled = s.median_enabled;
+
+    // Mahalanobis gate
+    config.mahalanobis_enabled = s.mahalanobis_enabled;
+    config.mahalanobis_threshold_x10 = s.mahalanobis_threshold_x10;
+
     config.neighbor_margin_db = s.neighbor_margin_db;
     config.rssi_variance_enabled = s.rssi_variance_enabled;
     config.confirm_count = s.confirm_count;
@@ -607,5 +615,9 @@ void SettingsFileManager::extract_from_config(
     }
     s.exception_radius_mhz = config.exception_radius_mhz;
     s.rssi_decrease_cycles = config.rssi_decrease_cycles;
+
+    // Mahalanobis gate
+    s.mahalanobis_enabled = config.mahalanobis_enabled;
+    s.mahalanobis_threshold_x10 = config.mahalanobis_threshold_x10;
 }
 } // namespace drone_analyzer

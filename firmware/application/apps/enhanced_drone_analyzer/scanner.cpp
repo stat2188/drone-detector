@@ -146,7 +146,8 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , rssi_detector_()
     , histogram_processor_()
     , rssi_median_filter_()
-    , neighbor_margin_checker_() {
+    , neighbor_margin_checker_()
+    , mahalanobis_detector_() {
 
     // Initialize mutex
     chMtxInit(&mutex_);
@@ -1597,6 +1598,50 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
             }
         }
         if (is_exception) return;
+
+        // Mahalanobis Gate - SWEEP MODE ONLY
+        // IMPORTANT: Mahalanobis gate is ONLY used in sweep mode.
+        // Database mode uses update_tracked_drone_internal() WITHOUT mahalanobis.
+        if (config_.mahalanobis_enabled) {
+            // Find existing drone to update statistics
+            size_t drone_idx = 0;
+            bool drone_found = false;
+            for (uint8_t i = 0; i < tracked_count_; ++i) {
+                if (tracked_drones_[i].frequency == peak_freq) {
+                    drone_idx = i;
+                    drone_found = true;
+                    break;
+                }
+            }
+
+            if (drone_found) {
+                MahalanobisStatistics& stats = tracked_drones_[drone_idx].get_mahalanobis_stats();
+
+                // Validate signal against statistical model
+                if (!mahalanobis_detector_.validate(
+                    peak_rssi,
+                    center_freq,
+                    stats,
+                    config_.mahalanobis_threshold_x10
+                )) {
+                    return;  // Signal is outlier - reject
+                }
+
+                // Update statistics with new sample
+                mahalanobis_detector_.update_statistics(
+                    stats,
+                    peak_rssi,
+                    center_freq,
+                    peak_freq
+                );
+            } else {
+                // New drone - initialize Mahalanobis statistics
+                (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
+                if (tracked_count_ > 0) {
+                    tracked_drones_[tracked_count_ - 1].get_mahalanobis_stats().last_tuned_frequency = peak_freq;
+                }
+            }
+        }
 
         (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
     }

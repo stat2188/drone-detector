@@ -61,6 +61,10 @@ private:
     ui::Checkbox check_noise_blacklist_;
     ui::Checkbox check_rssi_variance_;
 
+    // Mahalanobis gate controls
+    ui::Checkbox check_mahalanobis_;
+    ui::NumberField field_mahalanobis_threshold_;
+
     // Spectrum detection params
     ui::NumberField field_spectrum_margin_;
     ui::NumberField field_spectrum_min_width_;

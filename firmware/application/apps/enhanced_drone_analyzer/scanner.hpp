@@ -16,6 +16,7 @@
 #include "median_filter.hpp"
 #include "message.hpp"
 #include "spectrum_shape.hpp"
+#include "mahalanobis_gate.hpp"
 
 namespace drone_analyzer {
 
@@ -68,6 +69,10 @@ struct ScanConfig {
     uint8_t spectrum_valley_depth{DEFAULT_SPECTRUM_VALLEY_DEPTH};      // Valley depth threshold (V-shape flanks)
     uint8_t spectrum_flatness{DEFAULT_SPECTRUM_FLATNESS};              // Peak-to-average ratio (reject flat-top WiFi/FM)
     uint8_t spectrum_symmetry{DEFAULT_SPECTRUM_SYMMETRY};              // Left/right width symmetry % (reject asymmetric noise)
+
+    // Mahalanobis Gate Filter
+    bool mahalanobis_enabled{false};                                    // Enable Mahalanobis gate for outlier detection
+    uint8_t mahalanobis_threshold_x10{DEFAULT_MAHALOBIS_THRESHOLD_X10};  // Mahalanobis threshold ×10
 
     // New anti-false-positive features
     int32_t neighbor_margin_db{DEFAULT_NEIGHBOR_MARGIN_DB};  // 0=disabled, 3=default
@@ -1189,6 +1194,9 @@ private:
 
     // Neighbor margin checker for anti-false-positive detection
     NeighborMarginChecker neighbor_margin_checker_;
+
+    // Mahalanobis detector for statistical outlier detection (Sweep mode only)
+    MahalanobisDetector mahalanobis_detector_;
 };
 
 } // namespace drone_analyzer

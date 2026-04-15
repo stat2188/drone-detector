@@ -58,6 +58,10 @@ struct SettingsStruct {
     bool rssi_variance_enabled;
     uint8_t confirm_count;
 
+    // Mahalanobis Gate Filter
+    bool mahalanobis_enabled;
+    uint8_t mahalanobis_threshold_x10;
+
     // Sweep window 1
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;
