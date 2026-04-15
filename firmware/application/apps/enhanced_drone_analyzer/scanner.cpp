@@ -1220,13 +1220,12 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         return false;
     }
 
-    // Step 7+10: Compute average margin ONCE for both sharpness and flatness checks
+    // Step 7: Compute average margin for sharpness check (flatness uses different metric)
     // sharpness = (peak_margin * 100) / avg_margin
-    // flatness  = (peak_margin * 100) / avg_margin
-    // V-shape (drone video link): sharpness >> 100, flatness >> 200
-    // U/I shape (flat noise):     sharpness ~ 100, flatness ~ 100-120
+    // V-shape (drone video link): sharpness >> 100
+    // U/I shape (flat noise):     sharpness ~ 100
     int32_t avg_margin = 0;
-    if (config_.spectrum_peak_sharpness > 50 || config_.spectrum_flatness > 50) {
+    if (config_.spectrum_peak_sharpness > 50) {
         int32_t margin_sum = 0;
         size_t bin_count = 0;
         for (size_t i = left; i <= right; ++i) {
@@ -1242,7 +1241,11 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
     }
 
     // Step 7: Peak sharpness check — enforce inverted-V shape
-    if (config_.spectrum_peak_sharpness > 50 && avg_margin > 0) {
+    // avg_margin <= 0 means flat signal (no bins above noise) → REJECT
+    if (config_.spectrum_peak_sharpness > 50) {
+        if (avg_margin <= 0) {
+            return false;  // Flat signal - reject
+        }
         const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
         if (sharpness < config_.spectrum_peak_sharpness) {
             return false;  // Flat-topped signal, not V-shaped
@@ -1296,15 +1299,43 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         }
     }
 
-    // Step 10: Flatness check — peak must dominate average margin (reuses avg_margin from step 7)
-    // flatness = (peak_margin * 100) / avg_margin
-    // WiFi/BT flat-top: flatness ~ 100-120 (peak barely above average elevation)
-    // Drone V-shape: flatness >> 200 (peak towers above flanking bins)
-    // Plateau: flatness ~ 100 (all bins at same level)
-    if (config_.spectrum_flatness > 50 && avg_margin > 0) {
-        const int32_t flatness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-        if (flatness < config_.spectrum_flatness) {
-            return false;  // Flat-top signal — peak does not dominate (WiFi, FM, BT)
+    // Step 10: Flatness check — count consecutive bins at 90%+ of peak power
+    // flatness = (high_power_bins * 100) / signal_width
+    // WiFi/BT flat-top: flatness ~ 50-80% (many bins near peak power)
+    // Drone V-shape: flatness ~ 5-20% (only peak bin at high power)
+    // Plateau: flatness ~ 50-100% (all bins at similar level)
+    if (config_.spectrum_flatness > 0) {
+        const uint8_t high_power_threshold = peak_value * 9 / 10;  // 90% of peak
+
+        size_t high_power_count = 0;
+
+        // Count consecutive high-power bins on left side (from peak outward)
+        for (size_t i = peak_index; i > left && i > FFT_EDGE_SKIP_NARROW; --i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] >= high_power_threshold) {
+                ++high_power_count;
+            } else {
+                break;
+            }
+        }
+
+        // Count consecutive high-power bins on right side (from peak outward)
+        for (size_t i = peak_index + 1; i <= right && i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] >= high_power_threshold) {
+                ++high_power_count;
+            } else {
+                break;
+            }
+        }
+
+        const size_t signal_width_bins = right - left + 1;
+        if (signal_width_bins > 0) {
+            const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / signal_width_bins);
+            // REJECT if flatness is too high (too many bins near peak = flat-top signal)
+            if (flatness_pct >= config_.spectrum_flatness) {
+                return false;  // Flat-top signal — likely WiFi, FM, BT
+            }
         }
     }
 

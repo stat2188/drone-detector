@@ -64,7 +64,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_spectrum_peak_sharpness_({UI_POS_X(6), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
     , field_spectrum_peak_ratio_({UI_POS_X(13), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')
     , field_spectrum_valley_depth_({UI_POS_X(13), UI_POS_Y(6)}, 3, {0, 200}, 5, ' ')
-    , field_spectrum_flatness_({UI_POS_X(14), UI_POS_Y(4)}, 3, {50, 250}, 5, ' ')
+    , field_spectrum_flatness_({UI_POS_X(14), UI_POS_Y(4)}, 3, {0, 100}, 5, ' ')
     , field_spectrum_symmetry_({UI_POS_X(20), UI_POS_Y(4)}, 3, {0, 100}, 5, ' ')
     , button_defaults_({UI_POS_X(0), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(13), 20}, "DEFAULT")
     , button_about_({UI_POS_X(13), UI_POS_Y_BOTTOM(2), UI_POS_WIDTH(2), 20}, "!")

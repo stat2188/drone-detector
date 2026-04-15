@@ -690,7 +690,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 40;
  * @note 50 = no sharpness filtering (accept all shapes)
  * @note 130 = enforces V-shape for drone signals
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 80;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 130;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)
@@ -699,8 +699,9 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 80;
  * @note Flat U/I noise: ratio < 20 (wide, short)
  * @note Needle spikes: ratio > 100 (very tall, very narrow)
  * @note 0 = no ratio filtering (disabled)
+ * @note 80 allows signals up to 31 bins wide with peak_margin=255
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 150;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 80;
 
 /**
  * @brief Default valley depth threshold (0-200)
@@ -713,15 +714,16 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 150;
 constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 60;
 
 /**
- * @brief Default peak flatness threshold (50-250)
- * @note flatness = (peak_margin * 100) / avg_margin
- * @note WiFi/BT flat-top: flatness ~ 100-120 (peak barely above average)
- * @note Drone V-shape: flatness >> 200 (peak dominates average)
- * @note Higher = stricter (rejects more flat signals)
- * @note 50 = no flatness filtering (disabled)
- * @note 100 = accepts FPV dual-peak (2 powerful peaks raise avg_margin)
+ * @brief Default peak flatness threshold (0-100, percentage)
+ * @note flatness = (high_power_bins * 100) / signal_width
+ * @note Measures how many bins are at 90%+ of peak power
+ * @note WiFi/BT flat-top: flatness ~ 50-80% (many bins near peak)
+ * @note Drone V-shape: flatness ~ 5-20% (only peak bin at high power)
+ * @note Higher threshold = stricter (rejects more flat signals)
+ * @note 0 = no flatness filtering (disabled)
+ * @note 30 = rejects signals where 30%+ of width is at 90%+ power
  */
-constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 100;
+constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 30;
 
 /**
  * @brief Default signal symmetry threshold (0-100, percent)
@@ -730,8 +732,9 @@ constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 100;
  * @note Noise/asymmetric: symmetry < 30% (one side dominant)
  * @note Lower = stricter (requires more symmetry)
  * @note 0 = no symmetry filtering (disabled)
+ * @note 50 = requires symmetric V-shape (per comment)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 20;
+constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 50;
 
 // ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)

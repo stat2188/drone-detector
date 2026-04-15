@@ -127,11 +127,23 @@ private:
     ) noexcept;
 
     /**
-     * @brief Check flatness (peak must dominate average margin)
+     * @brief Check flatness (flat-top detection for wideband signals)
+     * @param spectrum FFT spectrum data (256 bins)
+     * @param peak_index Peak bin index
+     * @param left Signal left boundary (from measure_width)
+     * @param right Signal right boundary (from measure_width)
+     * @param threshold Flatness threshold (0-100%)
+     * @return true if sharp signal (low flatness), false if flat-top (high flatness)
+     * @note Counts consecutive bins at 90%+ of peak power
+     * @note WiFi/BT flat-top: flatness ~ 50-80% (many bins near peak)
+     * @note Drone V-shape: flatness ~ 5-20% (only peak bin at high power)
+     * @note Higher threshold = stricter (rejects more flat signals)
      */
     [[nodiscard]] static bool check_flatness(
-        uint8_t peak_margin,
-        int32_t avg_margin,
+        const uint8_t* spectrum,
+        size_t peak_index,
+        size_t left,
+        size_t right,
         uint8_t threshold
     ) noexcept;
 

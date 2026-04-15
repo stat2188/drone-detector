@@ -119,7 +119,8 @@ bool SpectrumShape::check_sharpness(
     int32_t avg_margin,
     uint8_t threshold
 ) noexcept {
-    if (threshold <= 50 || avg_margin <= 0) return true;
+    if (avg_margin <= 0) return false;
+    if (threshold <= 50) return true;
     const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
     return sharpness >= threshold;
 }
@@ -165,13 +166,46 @@ bool SpectrumShape::check_valley_depth(
 }
 
 bool SpectrumShape::check_flatness(
-    uint8_t peak_margin,
-    int32_t avg_margin,
+    const uint8_t* spectrum,
+    size_t peak_index,
+    size_t left,
+    size_t right,
     uint8_t threshold
 ) noexcept {
-    if (threshold <= 50 || avg_margin <= 0) return true;
-    const int32_t flatness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-    return flatness >= threshold;
+    if (threshold == 0) return true;
+
+    // Count how many bins in signal are at 90%+ of peak power
+    // High flatness = flat-top signal (WiFi/BT) → reject
+    // Low flatness = sharp peak (drone V-shape) → accept
+
+    const uint8_t high_power_threshold = spectrum[peak_index] * 9 / 10;  // 90% of peak
+
+    size_t high_power_count = 0;
+
+    // Count consecutive high-power bins on left side (from peak outward)
+    for (size_t i = peak_index; i > left && i > FFT_EDGE_SKIP_NARROW; --i) {
+        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+        if (spectrum[i] >= high_power_threshold) {
+            ++high_power_count;
+        } else {
+            break;
+        }
+    }
+
+    // Count consecutive high-power bins on right side (from peak outward)
+    for (size_t i = peak_index + 1; i <= right && i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+        if (spectrum[i] >= high_power_threshold) {
+            ++high_power_count;
+        } else {
+            break;
+        }
+    }
+
+    if (right - left < 1) return true;  // Single-bin signal, no flatness check
+
+    const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / (right - left + 1));
+    return flatness_pct < threshold;  // Reject if flatness (high percentage = flat-top)
 }
 
 bool SpectrumShape::check_symmetry(
@@ -224,7 +258,7 @@ SpectrumShape::AnalysisResult SpectrumShape::analyze(
     if (!check_sharpness(result.peak_margin, avg_margin, config.peak_sharpness)) return result;
     if (!check_peak_ratio(result.peak_margin, result.signal_width, config.peak_ratio)) return result;
     if (!check_valley_depth(spectrum, sig_left, sig_right, result.noise_floor, config.valley_depth)) return result;
-    if (!check_flatness(result.peak_margin, avg_margin, config.flatness)) return result;
+    if (!check_flatness(spectrum, result.peak_index, sig_left, sig_right, config.flatness)) return result;
     if (!check_symmetry(result.peak_index, sig_left, sig_right, result.signal_width, config.symmetry)) return result;
 
     result.signal_detected = true;
