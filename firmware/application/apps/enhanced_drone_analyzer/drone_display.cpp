@@ -329,11 +329,11 @@ ErrorCode DroneDisplay::set_spectrum_data(
     // This moves noise floor computation out of the hot paint() path
     if (spectrum_shape_margin_ > 0) {
         // Quickselect median — O(n) vs O(n²) insertion sort
-        uint8_t sorted[240];
+        // Use class member buffer to avoid stack allocation (was: uint8_t sorted[240])
         size_t sort_count = 0;
-        for (size_t i = 0; i < count && sort_count < 240; ++i) {
+        for (size_t i = 0; i < count && sort_count < spectrum_sort_buffer_.size(); ++i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            sorted[sort_count++] = spectrum_data[i];
+            spectrum_sort_buffer_[sort_count++] = spectrum_data[i];
         }
         if (sort_count > 0) {
             const size_t k = sort_count / 2;
@@ -341,28 +341,28 @@ ErrorCode DroneDisplay::set_spectrum_data(
             size_t qs_right = sort_count - 1;
             while (qs_left < qs_right) {
                 const size_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
-                const uint8_t pivot = sorted[pivot_idx];
-                sorted[pivot_idx] = sorted[qs_right];
-                sorted[qs_right] = pivot;
+                const uint8_t pivot = spectrum_sort_buffer_[pivot_idx];
+                spectrum_sort_buffer_[pivot_idx] = spectrum_sort_buffer_[qs_right];
+                spectrum_sort_buffer_[qs_right] = pivot;
                 size_t store = qs_left;
                 for (size_t i = qs_left; i < qs_right; ++i) {
-                    if (sorted[i] < pivot) {
-                        const uint8_t t = sorted[store];
-                        sorted[store] = sorted[i];
-                        sorted[i] = t;
+                    if (spectrum_sort_buffer_[i] < pivot) {
+                        const uint8_t t = spectrum_sort_buffer_[store];
+                        spectrum_sort_buffer_[store] = spectrum_sort_buffer_[i];
+                        spectrum_sort_buffer_[i] = t;
                         ++store;
                     }
                 }
                 {
-                    const uint8_t t = sorted[store];
-                    sorted[store] = sorted[qs_right];
-                    sorted[qs_right] = t;
+                    const uint8_t t = spectrum_sort_buffer_[store];
+                    spectrum_sort_buffer_[store] = spectrum_sort_buffer_[qs_right];
+                    spectrum_sort_buffer_[qs_right] = t;
                 }
                 if (store == k) break;
                 if (store < k) qs_left = store + 1;
                 else qs_right = store - 1;
             }
-            const uint8_t noise_floor = sorted[k];
+            const uint8_t noise_floor = spectrum_sort_buffer_[k];
             const uint8_t display_threshold = noise_floor + spectrum_shape_margin_;
             for (size_t i = 0; i < count; ++i) {
                 const uint8_t val = spectrum_data[i];

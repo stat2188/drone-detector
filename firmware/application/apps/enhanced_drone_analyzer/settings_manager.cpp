@@ -513,6 +513,16 @@ void SettingsFileManager::apply_to_config(
     config.rssi_variance_enabled = s.rssi_variance_enabled;
     config.confirm_count = s.confirm_count;
 
+    // Spectrum shape filter parameters
+    config.spectrum_margin = s.spectrum_margin;
+    config.spectrum_min_width = s.spectrum_min_width;
+    config.spectrum_max_width = s.spectrum_max_width;
+    config.spectrum_peak_sharpness = s.spectrum_peak_sharpness;
+    config.spectrum_peak_ratio = s.spectrum_peak_ratio;
+    config.spectrum_valley_depth = s.spectrum_valley_depth;
+    config.spectrum_flatness = s.spectrum_flatness;
+    config.spectrum_symmetry = s.spectrum_symmetry;
+
     // CFAR detection
     config.cfar_mode = s.cfar_mode;
     config.cfar_ref_cells = s.cfar_ref_cells;

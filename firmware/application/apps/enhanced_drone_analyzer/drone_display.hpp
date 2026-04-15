@@ -398,9 +398,9 @@ private:
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
     // Spectrum shape filter params (from Settings: margin, min_width, max_width)
-    uint8_t spectrum_shape_margin_{0};
-    uint8_t spectrum_shape_min_width_{0};
-    uint8_t spectrum_shape_max_width_{100};
+    uint8_t spectrum_shape_margin_{DEFAULT_SPECTRUM_MARGIN};
+    uint8_t spectrum_shape_min_width_{DEFAULT_SPECTRUM_MIN_WIDTH};
+    uint8_t spectrum_shape_max_width_{DEFAULT_SPECTRUM_MAX_WIDTH};
 
     // Exponential smoothing buffer for LEVEL-V display
     std::array<int32_t, SPECTRUM_BUFFER_SIZE> spectrum_smoothed_{};
@@ -412,6 +412,9 @@ private:
     // Previous frame bar heights for dirty-check optimization
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_cached_{};
     bool spectrum_cache_valid_{false};
+
+    // Sorting buffer for noise floor calculation (avoid stack allocation)
+    std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_sort_buffer_{};
 
     // Band sweep composite mode
     bool composite_mode_{false};
