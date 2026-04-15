@@ -42,6 +42,8 @@ SettingsStruct::SettingsStruct() noexcept
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(false)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
+    , mahalanobis_enabled(false)
+    , mahalanobis_threshold_x10(DEFAULT_MAHALOBIS_THRESHOLD_X10)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000)
@@ -259,7 +261,7 @@ static void parse_settings_line(
     } else if (key_matches("mahalanobis_enabled")) {
         s.mahalanobis_enabled = parse_bool();
     } else if (key_matches("mahalanobis_threshold_x10")) {
-        const int64_t v = parse_int64();
+        const uint64_t v = parse_int();
         if (v >= MAHALANOBIS_THRESHOLD_MIN_X10 && v <= MAHALANOBIS_THRESHOLD_MAX_X10) {
             s.mahalanobis_threshold_x10 = static_cast<uint8_t>(v);
         }
