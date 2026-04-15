@@ -179,7 +179,13 @@ ErrorResult<FreqHz> DatabaseManager::get_next_frequency(FreqHz current_freq) noe
     } else {
         // Frequency not in DB — resume from current_index_
         // Preserves position after sweep restore (last_db_index_)
-        current_index_ = (current_index_ < entry_count_) ? current_index_ : 0;
+
+        // FIX: Add explicit bounds check to prevent out-of-bounds array access.
+        // If current_index_ >= entry_count_, reset to 0 to ensure valid index.
+        if (current_index_ >= entry_count_ || entry_count_ == 0) {
+            current_index_ = 0;
+        }
+        // Otherwise, preserve current_index_ as-is (it should be valid)
     }
 
     return ErrorResult<FreqHz>::success(entries_[current_index_].frequency);

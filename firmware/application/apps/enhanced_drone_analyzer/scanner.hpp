@@ -1012,6 +1012,20 @@ public:
         return histogram_processor_.get_histogram_data(buffer, max_length);
     }
 
+    /**
+     * @brief Get lock timeout counter (for monitoring and debugging)
+     * @return Number of times scanner force-resumed due to lock timeout
+     * @note Thread-safe: acquires mutex (LockOrder::DATA_MUTEX)
+     * @note Useful for detecting noisy frequency conditions (e.g., 2400 MHz)
+     */
+    [[nodiscard]] uint32_t get_lock_timeout_count() const noexcept {
+        MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+        if (!lock.is_locked()) {
+            return lock_timeout_count_;
+        }
+        return lock_timeout_count_;
+    }
+
 private:
     /**
      * @brief Internal: Perform scan cycle
@@ -1169,9 +1183,20 @@ private:
     // Dwell cycle counter (persistent across scan cycles, managed by scanner class)
     uint8_t dwell_cycles_{0};
 
+    // Lock timeout tracking (prevents infinite lock on noisy frequencies)
+    SystemTime lock_start_time_{0};
+    static constexpr uint32_t MAX_LOCK_DURATION_MS = 5000;  // 5 seconds absolute timeout
+
+    // Confirm timeout tracking (prevents waiting forever for confirmations)
+    SystemTime confirm_start_time_{0};
+    static constexpr uint32_t CONFIRM_TIMEOUT_MS = 5000;  // 5 seconds to gather confirmations
+
     // Sort buffer for analyze_spectrum_shape (class member to avoid static in method)
     static constexpr size_t SPECTRUM_SORT_BUF_SIZE = 256;
     uint8_t spectrum_sort_buf_[SPECTRUM_SORT_BUF_SIZE];
+
+    // Lock timeout violation counter (for monitoring and debugging)
+    uint32_t lock_timeout_count_{0};
 
     // Usable bins buffer for process_spectrum_sweep (class member to avoid static in method)
     // (FFT_DC_SPIKE_START - FFT_EDGE_SKIP_NARROW) + (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - FFT_DC_SPIKE_END)

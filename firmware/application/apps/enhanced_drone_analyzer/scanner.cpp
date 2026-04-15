@@ -127,7 +127,7 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , freq_lock_count_{0}
     , locked_frequency_{0}
     , track_start_time_{0}
-    , current_drone_type_{'\0', '\0', '\0', '\0', '\0'}
+    , current_drone_type_{'\0', '\0', '\0', '\0'}
     , drone_type_valid_{false}
     , statistics_()
     , tracked_drones_()
@@ -140,6 +140,9 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , state_transition_allowed_()
     , force_resume_flag_()
     , dwell_request_()
+    , lock_start_time_{0}
+    , confirm_start_time_{0}
+    , lock_timeout_count_{0}
     , spectrum_sort_buf_{}
     , sweep_usable_buf_{}
     , alert_callback_in_progress_()
@@ -294,6 +297,9 @@ bool DroneScanner::try_consume_force_resume_flag() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
         state_ = ScannerState::SCANNING;
+        // Clear lock timing when force-resuming (consistent with perform_scan_cycle_internal)
+        lock_start_time_ = 0;
+        confirm_start_time_ = 0;
         return true;
     }
     return false;
@@ -374,8 +380,38 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
         force_resume_flag_.clear();
         if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
             state_ = ScannerState::SCANNING;
+            // Clear lock timing when force-resuming
+            lock_start_time_ = 0;
+            confirm_start_time_ = 0;
         }
         dwell_cycles_ = 0;
+        return ErrorCode::SUCCESS;
+    }
+
+    // ABSOLUTE LOCK TIMEOUT: Force exit from LOCKING/TRACKING after MAX_LOCK_DURATION_MS
+    // This prevents infinite lock on noisy frequencies where signal intermittently exceeds threshold
+    if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
+        if (lock_start_time_ != 0) {
+            const uint32_t lock_duration = chTimeNow() - lock_start_time_;
+            if (lock_duration >= MAX_LOCK_DURATION_MS) {
+                // Lock timeout exceeded - force transition to SCANNING
+                state_ = ScannerState::SCANNING;
+                freq_lock_count_ = 0;
+                locked_frequency_ = 0;
+                lock_start_time_ = 0;
+                confirm_start_time_ = 0;
+                dwell_cycles_ = 0;
+                lock_timeout_count_++;
+                // Continue to frequency hop (fall through to dwell check)
+            }
+        } else {
+            // Just entered LOCKING/TRACKING state - start timing
+            lock_start_time_ = chTimeNow();
+        }
+    } else {
+        // Not locked - clear timing
+        lock_start_time_ = 0;
+        confirm_start_time_ = 0;
     }
 
     // Check dwell request from UI thread (signal detected, hold frequency)
@@ -656,11 +692,32 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         if (config_.confirm_count_enabled) {
             // Confirm count: require configurable N detections on same frequency
             // before creating a drone. Prevents noise spikes from adding phantom drones.
+            //
+            // FIX: Added CONFIRM_TIMEOUT_MS to prevent infinite waiting on noisy frequencies.
+            // On 2400 MHz with intermittent noise, pending_count_ may never reach
+            // config_.confirm_count, causing scanner to wait forever.
+
             if (frequency != pending_frequency_) {
+                // New frequency - start fresh confirmation
                 pending_frequency_ = frequency;
                 pending_count_ = 1;
+                confirm_start_time_ = now;  // Start confirmation timer
             } else if (pending_count_ < config_.confirm_count) {
+                // Still accumulating confirmations on same frequency
                 pending_count_++;
+            }
+
+            // CONFIRM TIMEOUT: Force continue if taking too long to gather confirmations
+            // This prevents indefinite blocking on frequencies with intermittent noise.
+            if (confirm_start_time_ != 0) {
+                const uint32_t confirm_elapsed = now - confirm_start_time_;
+                if (confirm_elapsed >= CONFIRM_TIMEOUT_MS) {
+                    // Timeout exceeded - give up on confirmation, allow frequency hop
+                    pending_frequency_ = 0;
+                    pending_count_ = 0;
+                    confirm_start_time_ = 0;
+                    // Continue to next part of logic (fall through to existing drone check)
+                }
             }
 
             ErrorResult<size_t> existing = find_drone_by_frequency_internal(frequency);
@@ -705,21 +762,26 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             }
         } else {
             // Different frequency detected
-            // Only jump lock if currently in SCANNING (no active lock)
-            // If already LOCKING/TRACKING, the current lock is more valuable
-            // than a transient signal on another frequency
             if (state_ == ScannerState::SCANNING) {
+                // No active lock — jump to new frequency immediately
                 locked_frequency_ = frequency;
                 freq_lock_count_ = 1;
                 missed_lock_count_ = 0;
                 state_ = ScannerState::LOCKING;
+                lock_start_time_ = chTimeNow();  // Start lock timing
+                confirm_start_time_ = 0;  // Reset confirm timer (not applicable for new lock)
                 // CRITICAL: Request scanner thread to hold frequency.
                 // Without this, the scanner thread hops to the next DB entry
                 // before the UI thread can transition state to LOCKING.
                 dwell_request_.set();
+            } else if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
+                // Already locked — don't jump to transient signal.
+                // The current lock is more valuable than a momentary spike.
+                // Continue accumulating on the locked frequency.
+                // Note: The "different frequency" here is likely noise or interference
+                // on the locked frequency, not a genuine signal on another frequency.
             }
-            // If LOCKING/TRACKING and different freq detected:
-            // Don't jump. Continue accumulating on locked freq.
+            // No action needed — stay in current state
         }
     } else {
         // No signal on this frequency
@@ -1003,6 +1065,9 @@ void DroneScanner::clear_lock_state() noexcept {
     freq_lock_count_ = 0;
     locked_frequency_ = 0;
     missed_lock_count_ = 0;
+    // Clear lock timing timers for consistency
+    lock_start_time_ = 0;
+    confirm_start_time_ = 0;
     if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
         state_ = ScannerState::SCANNING;
     }
@@ -1035,6 +1100,10 @@ void DroneScanner::reset_frequency() noexcept {
     // Reset tracking state
     freq_lock_count_ = 0;
     locked_frequency_ = 0;
+    missed_lock_count_ = 0;
+    // Reset lock timing for consistency
+    lock_start_time_ = 0;
+    confirm_start_time_ = 0;
 }
 
 void DroneScanner::remove_stale_drones(SystemTime current_time) noexcept {
