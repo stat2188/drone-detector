@@ -398,9 +398,16 @@ private:
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
     // Spectrum shape filter params (from Settings: margin, min_width, max_width)
-    uint8_t spectrum_shape_margin_{DEFAULT_SPECTRUM_MARGIN};
+    // Used only for syncing from config when user changes settings via set_spectrum_shape_params()
+    uint8_t spectrum_shape_margin_{0};
     uint8_t spectrum_shape_min_width_{DEFAULT_SPECTRUM_MIN_WIDTH};
     uint8_t spectrum_shape_max_width_{DEFAULT_SPECTRUM_MAX_WIDTH};
+
+    // Display-only margin filter (separate from detection margin)
+    // Default: 0 = show full spectrum (no noise floor filtering)
+    // When > 0, only shows bins above noise_floor + display_margin
+    // Updated independently from scanner config to allow different display vs detection behavior
+    uint8_t display_margin_{0};
 
     // Exponential smoothing buffer for LEVEL-V display
     std::array<int32_t, SPECTRUM_BUFFER_SIZE> spectrum_smoothed_{};

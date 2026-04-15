@@ -325,9 +325,11 @@ ErrorCode DroneDisplay::set_spectrum_data(
     const size_t count = (spectrum_size < spectrum_buffer_.size()) ? spectrum_size : spectrum_buffer_.size();
     spectrum_data_size_ = count;
 
-    // Pre-filter: apply shape margin filter during copy (not during paint)
+    // Pre-filter: apply display margin filter during copy (not during paint)
     // This moves noise floor computation out of the hot paint() path
-    if (spectrum_shape_margin_ > 0) {
+    // display_margin_ is separate from spectrum_shape_margin_ (detection margin)
+    // Default: 0 = show full spectrum (no filtering)
+    if (display_margin_ > 0) {
         // Quickselect median — O(n) vs O(n²) insertion sort
         // Use class member buffer to avoid stack allocation (was: uint8_t sorted[240])
         size_t sort_count = 0;
@@ -363,7 +365,7 @@ ErrorCode DroneDisplay::set_spectrum_data(
                 else qs_right = store - 1;
             }
             const uint8_t noise_floor = spectrum_sort_buffer_[k];
-            const uint8_t display_threshold = noise_floor + spectrum_shape_margin_;
+            const uint8_t display_threshold = noise_floor + display_margin_;
             for (size_t i = 0; i < count; ++i) {
                 const uint8_t val = spectrum_data[i];
                 spectrum_buffer_[i] = (val >= display_threshold) ? val : 0;

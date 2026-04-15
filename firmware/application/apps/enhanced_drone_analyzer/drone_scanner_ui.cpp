@@ -110,11 +110,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
     field_filter_.set_by_value(DEFAULT_SPECTRUM_FILTER);
 
-    // Sync spectrum shape filter params from scanner config to display
+    // Sync RSSI decrease cycles from scanner config to UI field
+    // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
+    // (display and detection filtering are now separate)
     if (scanner_ptr_ != nullptr) {
         const ScanConfig cfg = scanner_ptr_->get_config();
-        drone_display_.set_spectrum_shape_params(
-            cfg.spectrum_margin, cfg.spectrum_min_width, cfg.spectrum_max_width);
         field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
     }
 
