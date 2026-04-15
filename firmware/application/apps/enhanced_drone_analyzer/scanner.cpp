@@ -452,13 +452,22 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
 
         // Skip blacklisted frequencies
         if (config_.noise_blacklist_enabled) {
-            for (size_t skip = 0; skip < MAX_NOISE_ENTRIES && is_blacklisted(current_frequency_); ++skip) {
-                freq_result = database_.get_next_frequency(current_frequency_);
-                if (freq_result.has_value()) {
-                    current_frequency_ = freq_result.value();
-                } else {
+            bool found_clean_freq = false;
+            for (size_t skip_count = 0; skip_count < MAX_NOISE_ENTRIES; ++skip_count) {
+                if (!is_blacklisted(current_frequency_)) {
+                    found_clean_freq = true;
                     break;
                 }
+                freq_result = database_.get_next_frequency(current_frequency_);
+                if (!freq_result.has_value()) {
+                    break;  // Database exhausted
+                }
+                current_frequency_ = freq_result.value();
+            }
+            
+            if (!found_clean_freq) {
+                // All frequencies are blacklisted - fallback to minimum frequency
+                current_frequency_ = MIN_FREQUENCY_HZ;
             }
         }
     } else {
@@ -578,6 +587,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         return ErrorCode::INVALID_PARAMETER;
     }
 
+    // ChannelSpectrum has fixed-size array (256 bins), no empty check needed
     // Feed spectrum to histogram processor for noise floor analysis
     (void)histogram_processor_.update_histogram(spectrum.db.data(), spectrum.db.size());
 
