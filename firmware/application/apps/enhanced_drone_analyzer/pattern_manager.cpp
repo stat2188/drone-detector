@@ -2,6 +2,10 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
+#include <ctype.h>
+#include "file_path.hpp"
+#include "string_format.hpp"
 
 namespace drone_analyzer {
 
@@ -25,7 +29,8 @@ ErrorCode PatternManager::load_patterns() noexcept {
 
     pattern_count_ = 0;
 
-    const FRESULT res = f_opendir(&dir_, PATTERN_DIR);
+    const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
+    const FRESULT res = f_opendir(&dir_, pattern_dir_path.tchar());
     if (res != FR_OK) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
@@ -77,12 +82,12 @@ ErrorCode PatternManager::load_patterns() noexcept {
 }
 
 ErrorCode PatternManager::load_from_file(const char* filename) noexcept {
-    char path_buffer[64];
-    snprintf(path_buffer, sizeof(path_buffer), "%s/%s.TXT", PATTERN_DIR, filename);
-
+    const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
+    const auto file_path = pattern_dir_path / (std::filesystem::path{filename} + u".TXT");
+    
     File file;
-    const File::Error open_err = file.open(path_buffer, true, false);
-    if (open_err.is_valid()) {
+    const auto open_err = file.open(file_path, true, false);
+    if (!open_err.is_ok()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
 
@@ -241,12 +246,12 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
 }
 
 ErrorCode PatternManager::save_to_file(const SignalPattern& pattern) noexcept {
-    char path_buffer[64];
-    snprintf(path_buffer, sizeof(path_buffer), "%s/%s.TXT", PATTERN_DIR, pattern.name);
-
+    const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
+    const auto file_path = pattern_dir_path / (std::filesystem::path{pattern.name} + u".TXT");
+    
     File file;
-    const File::Error open_err = file.create(path_buffer);
-    if (open_err.is_valid()) {
+    const auto open_err = file.create(file_path);
+    if (!open_err.ok()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
 
@@ -298,28 +303,27 @@ ErrorCode PatternManager::save_to_file(const SignalPattern& pattern) noexcept {
     write_int(static_cast<int32_t>(pattern.flags));
     write_char('\n');
 
-    const File::Error write_err = file.write(write_buf, write_pos);
+    const File::Result<File::Size> write_result = file.write(write_buf, write_pos);
     file.close();
-
-    if (write_err.is_valid()) {
+    
+    if (!write_result.is_ok()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
-
+    
     return ErrorCode::SUCCESS;
 }
 
 ErrorCode PatternManager::delete_pattern(size_t index) noexcept {
     MutexLock<LockOrder::PATTERN_MUTEX> lock(mutex_);
-
+    
     if (index >= pattern_count_) {
         return ErrorCode::INVALID_PARAMETER;
     }
-
-    char path_buffer[64];
-    snprintf(path_buffer, sizeof(path_buffer), "%s/%s.TXT",
-             PATTERN_DIR, patterns_[index].name);
-    const File::Error del_err = delete_file(freqman_dir / patterns_[index].name);
-    if (del_err.is_valid()) {
+    
+    const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
+    const auto file_path = pattern_dir_path / (std::filesystem::path{patterns_[index].name} + u".TXT");
+    const auto del_err = delete_file(file_path);
+    if (!del_err.ok()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
 

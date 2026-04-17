@@ -1301,24 +1301,30 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
         pattern.waveform[i] = pattern_waveform_sum_[i] / PATTERN_CAPTURE_FRAMES;
     }
 
-    // Extract features from current spectrum
-    // Use SpectrumShape to analyze the selected region
-
+    // Extract features from current spectrum using SpectrumShape analyzer
     // Get current frequency from active sweep window
     if (scanner_ptr_ != nullptr) {
-        ScanConfig cfg = scanner_ptr_->get_config();
-        SpectrumShape::Config config{
-            cfg.spectrum_margin,
-            cfg.spectrum_min_width,
-            cfg.spectrum_max_width,
-            cfg.spectrum_peak_sharpness,
-            cfg.spectrum_peak_ratio,
-            cfg.spectrum_valley_depth,
-            cfg.spectrum_flatness,
-            cfg.spectrum_symmetry,
+        const FreqHz center_freq = sweep_[active_sweep_idx_].f_center;
+        
+        // Use current spectrum data for shape analysis (need to access spectrum via parameter)
+        // This is called after pattern capture completes, so we analyze the final averaged waveform
+        SpectrumShape::Config shape_config{
+            scanner_ptr_->get_config().spectrum_margin,
+            scanner_ptr_->get_config().spectrum_min_width,
+            scanner_ptr_->get_config().spectrum_max_width,
+            scanner_ptr_->get_config().spectrum_peak_sharpness,
+            scanner_ptr_->get_config().spectrum_peak_ratio,
+            scanner_ptr_->get_config().spectrum_valley_depth,
+            scanner_ptr_->get_config().spectrum_flatness,
+            scanner_ptr_->get_config().spectrum_symmetry,
             false
         };
-        (void)config;  // Will be used for feature extraction in future
+        
+        // Note: Pattern features are currently not extracted from live spectrum
+        // This would require passing the current ChannelSpectrum data here
+        // For now, features remain at default values (zeros)
+        (void)shape_config;
+        (void)center_freq;
     }
     
     // Create pattern name with timestamp
