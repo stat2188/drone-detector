@@ -41,10 +41,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , pattern_capture_frames_(0)
     , pattern_waveform_sum_{}
     , pattern_capture_freq_{0}
-    , pattern_capture_rssi_(0)
     , pattern_match_counter_(0)
     , fifo_state_{}
     , sweep_transition_guard_()
+    , pattern_capture_rssi_(0)
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
         [this](const Message* const p) {
@@ -1251,8 +1251,6 @@ void DroneScannerUI::capture_pattern_frame(const ChannelSpectrum& spectrum) noex
     // Composite pixels map to FFT bins via Looking Glass pattern
     // Lower sideband: pixels 0-119 → bins 134-253
     // Upper sideband: pixels 120-239 → bins 2-119
-    
-    constexpr size_t FFT_BINS_PER_PIXEL = SWEEP_SLICE_BW / SWEEP_PIXELS_PER_SLICE;
     
     // Normalize spectrum to 16-bin waveform using member buffer
     uint8_t* wave_16 = pattern_capture_buffer_;

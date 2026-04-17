@@ -3,9 +3,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
-#include <ctype.h>
+#include <cctype>
+#include <string>
 #include "file_path.hpp"
 #include "string_format.hpp"
+#include "file.hpp"
 
 namespace drone_analyzer {
 
@@ -19,9 +21,7 @@ PatternManager::PatternManager() noexcept
 }
 
 PatternManager::~PatternManager() noexcept {
-    if (dir_open_) {
-        f_closedir(&dir_);
-    }
+    // No cleanup needed - directory_iterator RAII handles resources
 }
 
 ErrorCode PatternManager::load_patterns() noexcept {
@@ -30,24 +30,9 @@ ErrorCode PatternManager::load_patterns() noexcept {
     pattern_count_ = 0;
 
     const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
-    const FRESULT res = f_opendir(&dir_, pattern_dir_path.tchar());
-    if (res != FR_OK) {
-        return ErrorCode::DATABASE_LOAD_TIMEOUT;
-    }
-    dir_open_ = true;
 
-    while (true) {
-        const FRESULT res = f_readdir(&dir_, &fno_);
-        if (res != FR_OK || fno_.fname[0] == '\0') {
-            break;
-        }
-
-        if (fno_.fattrib & AM_DIR) {
-            continue;
-        }
-
-        const char* const ext = strrchr(fno_.fname, '.');
-        if (ext == nullptr || strcmp(ext, ".TXT") != 0) {
+    for (const auto& entry : std::filesystem::directory_iterator(pattern_dir_path, (const TCHAR*)u"*.TXT")) {
+        if (!std::filesystem::is_regular_file(entry.status())) {
             continue;
         }
 
@@ -55,24 +40,25 @@ ErrorCode PatternManager::load_patterns() noexcept {
             break;
         }
 
-        const size_t name_len = strlen(fno_.fname);
-        char filename_stem[PATTERN_NAME_MAX_LEN];
-        const ptrdiff_t stem_len = ext - fno_.fname;
-        const size_t copy_len = (stem_len < 0 || static_cast<size_t>(stem_len) >= PATTERN_NAME_MAX_LEN)
-            ? (PATTERN_NAME_MAX_LEN - 1)
-            : static_cast<size_t>(stem_len);
+        const auto& entry_path = entry.path();
+        auto stem = entry_path.stem();
 
-        memcpy(filename_stem, fno_.fname, copy_len);
+        char filename_stem[PATTERN_NAME_MAX_LEN];
+        const auto& stem_native = stem.native();
+        const size_t copy_len = (stem_native.length() >= PATTERN_NAME_MAX_LEN)
+            ? (PATTERN_NAME_MAX_LEN - 1)
+            : stem_native.length();
+
+        for (size_t i = 0; i < copy_len; ++i) {
+            filename_stem[i] = static_cast<char>(stem_native[i]);
+        }
         filename_stem[copy_len] = '\0';
 
-        const ErrorCode err = load_from_file(filename_stem);
+        const ErrorCode err = load_from_file(entry_path);
         if (err == ErrorCode::SUCCESS) {
             ++pattern_count_;
         }
     }
-
-    f_closedir(&dir_);
-    dir_open_ = false;
 
     if (pattern_count_ > 0) {
         loaded_.set();
@@ -81,13 +67,10 @@ ErrorCode PatternManager::load_patterns() noexcept {
     return ErrorCode::SUCCESS;
 }
 
-ErrorCode PatternManager::load_from_file(const char* filename) noexcept {
-    const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
-    const auto file_path = pattern_dir_path / (std::filesystem::path{filename} + u".TXT");
-    
+ErrorCode PatternManager::load_from_file(const std::filesystem::path& file_path) noexcept {
     File file;
     const auto open_err = file.open(file_path, true, false);
-    if (!open_err.is_ok()) {
+    if (open_err.is_valid()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
 
@@ -147,7 +130,7 @@ ErrorCode PatternManager::load_pattern_from_line(
     }
 
     SignalPattern& pattern = patterns_[pattern_count_];
-    memset(&pattern, 0, sizeof(SignalPattern));
+    pattern = SignalPattern{};
 
     size_t field = 0;
     char temp[16];
@@ -161,7 +144,7 @@ ErrorCode PatternManager::load_pattern_from_line(
 
             switch (field) {
                 case 0:
-                    safe_str_copy(pattern.name, PATTERN_NAME_MAX_LEN, temp);
+                    (void)safe_str_copy(pattern.name, PATTERN_NAME_MAX_LEN, temp);
                     break;
                 case 1:
                 case 2:
@@ -247,11 +230,16 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
 
 ErrorCode PatternManager::save_to_file(const SignalPattern& pattern) noexcept {
     const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
-    const auto file_path = pattern_dir_path / (std::filesystem::path{pattern.name} + u".TXT");
+    
+    std::u16string name_u16;
+    for (size_t i = 0; i < PATTERN_NAME_MAX_LEN && pattern.name[i] != '\0'; ++i) {
+        name_u16 += static_cast<char16_t>(pattern.name[i]);
+    }
+    const auto file_path = pattern_dir_path / (std::filesystem::path{name_u16} + u".TXT");
     
     File file;
     const auto open_err = file.create(file_path);
-    if (!open_err.ok()) {
+    if (open_err.is_valid()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
 
@@ -265,8 +253,8 @@ ErrorCode PatternManager::save_to_file(const SignalPattern& pattern) noexcept {
     };
 
     auto write_int = [&](int32_t val) noexcept -> void {
-        char tmp[8];
-        const int len = snprintf(tmp, sizeof(tmp), "%d", val);
+        char tmp[12];
+        const int len = snprintf(tmp, sizeof(tmp), "%ld", static_cast<int32_t>(val));
         for (int i = 0; i < len; ++i) {
             write_char(tmp[i]);
         }
@@ -303,7 +291,7 @@ ErrorCode PatternManager::save_to_file(const SignalPattern& pattern) noexcept {
     write_int(static_cast<int32_t>(pattern.flags));
     write_char('\n');
 
-    const File::Result<File::Size> write_result = file.write(write_buf, write_pos);
+    const File::Result<File::Size> write_result = file.write(write_buf, static_cast<File::Size>(write_pos));
     file.close();
     
     if (!write_result.is_ok()) {
@@ -321,7 +309,12 @@ ErrorCode PatternManager::delete_pattern(size_t index) noexcept {
     }
     
     const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
-    const auto file_path = pattern_dir_path / (std::filesystem::path{patterns_[index].name} + u".TXT");
+    
+    std::u16string name_u16;
+    for (size_t i = 0; i < PATTERN_NAME_MAX_LEN && patterns_[index].name[i] != '\0'; ++i) {
+        name_u16 += static_cast<char16_t>(patterns_[index].name[i]);
+    }
+    const auto file_path = pattern_dir_path / (std::filesystem::path{name_u16} + u".TXT");
     const auto del_err = delete_file(file_path);
     if (!del_err.ok()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
@@ -375,7 +368,9 @@ void PatternManager::clear_all_patterns() noexcept {
     MutexLock<LockOrder::PATTERN_MUTEX> lock(mutex_);
 
     pattern_count_ = 0;
-    memset(patterns_.data(), 0, sizeof(patterns_));
+    for (auto& pattern : patterns_) {
+        pattern = SignalPattern{};
+    }
 }
 
 bool PatternManager::is_loaded() const noexcept {

@@ -145,6 +145,8 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , lock_timeout_count_{0}
     , spectrum_sort_buf_{}
     , sweep_usable_buf_{}
+    , pattern_manager_()
+    , pattern_matcher_()
     , alert_callback_in_progress_()
     , rssi_detector_()
     , histogram_processor_()

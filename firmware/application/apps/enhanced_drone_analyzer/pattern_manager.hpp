@@ -10,6 +10,8 @@
 #include "file.hpp"
 #include "file_path.hpp"
 #include "pattern_types.hpp"
+#include <array>
+
 #include "locking.hpp"
 #include "optional.hpp"
 #include "result.hpp"
@@ -34,7 +36,7 @@ public:
     [[nodiscard]] const SignalPattern* get_patterns_array() const noexcept;
     [[nodiscard]] size_t get_pattern_count() const noexcept;
 
-    [[nodiscard]] ErrorCode load_from_file(const char* filename) noexcept;
+    [[nodiscard]] ErrorCode load_from_file(const std::filesystem::path& file_path) noexcept;
     [[nodiscard]] ErrorCode save_to_file(const SignalPattern& pattern) noexcept;
 
     [[nodiscard]] size_t find_pattern_by_name(const char* name) const noexcept;
@@ -47,10 +49,7 @@ private:
     std::array<SignalPattern, MAX_PATTERNS> patterns_;
     size_t pattern_count_;
     AtomicFlag loaded_;
-    Mutex mutex_;
-
-    DIR dir_;
-    FILINFO fno_;
+    mutable Mutex mutex_;
     bool dir_open_{false};
 
     [[nodiscard]] ErrorCode load_pattern_from_line(
