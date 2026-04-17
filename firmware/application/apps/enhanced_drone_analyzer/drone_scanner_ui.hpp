@@ -268,6 +268,9 @@ private:
     
     // Reusable buffer for pattern capture (prevents stack allocation)
     uint8_t pattern_capture_buffer_[PATTERN_WAVEFORM_SIZE];
+
+    // Synthetic spectrum buffer for pattern feature extraction (prevents stack allocation)
+    uint8_t synthetic_spectrum_buf_[FFT_BIN_COUNT];
     
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;

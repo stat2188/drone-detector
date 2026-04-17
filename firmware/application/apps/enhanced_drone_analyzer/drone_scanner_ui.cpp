@@ -1349,22 +1349,21 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
         
         // Interpolate 16-element averaged waveform to 256-bin synthetic spectrum
         constexpr size_t BINS_PER_WAVEFORM_ELEM = FFT_BIN_COUNT / PATTERN_WAVEFORM_SIZE;
-        uint8_t synthetic_spectrum[FFT_BIN_COUNT];
-        memset(synthetic_spectrum, 0, sizeof(synthetic_spectrum));
+        memset(synthetic_spectrum_buf_, 0, sizeof(synthetic_spectrum_buf_));
         
         for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
             const uint8_t value = pattern.waveform[i];
             for (size_t j = 0; j < BINS_PER_WAVEFORM_ELEM; ++j) {
                 const size_t bin_idx = i * BINS_PER_WAVEFORM_ELEM + j;
                 if (bin_idx < FFT_BIN_COUNT) {
-                    synthetic_spectrum[bin_idx] = value;
+                    synthetic_spectrum_buf_[bin_idx] = value;
                 }
             }
         }
         
         // Analyze synthetic spectrum to extract features
         const SpectrumShape::AnalysisResult shape = SpectrumShape::analyze(
-            synthetic_spectrum,
+            synthetic_spectrum_buf_,
             spectrum_shape_sort_buf_,
             shape_config
         );
