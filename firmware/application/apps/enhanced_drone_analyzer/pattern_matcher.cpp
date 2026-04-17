@@ -266,34 +266,5 @@ PatternMatchResult PatternMatcher::match(
 
     return result;
 }
-            }
-
-            if (result.matched) break;
-
-            const auto& candidates_minus = get_candidates(mapped_peak - offset, mapped_width);
-            for (size_t i = 0; i < 4; ++i) {
-                if (candidates_minus[i] >= pattern_count_) break;
-
-                const size_t pattern_idx = candidates_minus[i];
-                const SignalPattern& pattern = patterns_[pattern_idx];
-
-                const uint16_t corr = compute_correlation(
-                    pattern.waveform,
-                    normalized_
-                );
-
-                if (corr >= pattern.match_threshold) {
-                    result.pattern_index = pattern_idx;
-                    result.correlation_score = corr;
-                    result.matched = true;
-                    result.status = PatternMatchStatus::MODERATE_MATCH;
-                    break;
-                }
-            }
-        }
-    }
-
-    return result;
-}
 
 } // namespace drone_analyzer

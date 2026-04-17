@@ -1284,6 +1284,11 @@ private:
     // Neighbor margin checker for anti-false-positive detection
     NeighborMarginChecker neighbor_margin_checker_;
 
+    // Spectrum shape parameters (runtime override of config values)
+    uint8_t spectrum_shape_margin_{DEFAULT_SPECTRUM_MARGIN};
+    uint8_t spectrum_shape_min_width_{DEFAULT_SPECTRUM_MIN_WIDTH};
+    uint8_t spectrum_shape_max_width_{DEFAULT_SPECTRUM_MAX_WIDTH};
+
     // Mahalanobis detector for statistical outlier detection (Sweep mode only)
     MahalanobisDetector mahalanobis_detector_;
 };

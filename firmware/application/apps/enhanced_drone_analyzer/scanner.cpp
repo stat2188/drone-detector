@@ -150,6 +150,9 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , histogram_processor_()
     , rssi_median_filter_()
     , neighbor_margin_checker_()
+    , spectrum_shape_margin_(DEFAULT_SPECTRUM_MARGIN)
+    , spectrum_shape_min_width_(DEFAULT_SPECTRUM_MIN_WIDTH)
+    , spectrum_shape_max_width_(DEFAULT_SPECTRUM_MAX_WIDTH)
     , mahalanobis_detector_() {
 
     // Initialize mutex

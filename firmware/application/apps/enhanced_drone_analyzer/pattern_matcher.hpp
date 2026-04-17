@@ -11,15 +11,8 @@
 
 namespace drone_analyzer {
 
-#include <cstdint>
-#include <cstddef>
-#include <cstring>
-#include <array>
-#include "pattern_types.hpp"
-#include "spectrum_shape.hpp"
-#include "constants.hpp"
-
 class PatternMatcher {
+public:
     static constexpr uint16_t CORRELATION_SCALE_BITS = 8;
     static constexpr uint16_t CORRELATION_MAX_SCORE = 1000;
     static constexpr uint16_t CORRELATION_EXCELLENT = 800;
