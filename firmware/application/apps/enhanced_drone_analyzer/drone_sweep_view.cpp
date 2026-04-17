@@ -394,19 +394,31 @@ void DroneSweepView::focus() {
     }
 }
 
-// Static storage for exception frequencies (reduces stack pressure)
-static constexpr FreqHz EMPTY_EXCEPTIONS[4][EXCEPTIONS_PER_WINDOW] = {
-    {0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0},
-    {0, 0, 0, 0, 0}
-};
+
 
 void DroneSweepView::save_settings() noexcept {
-    // CRITICAL: Use static array instead of stack allocation (saves ~160 bytes on stack)
-    FreqHz exc[4][EXCEPTIONS_PER_WINDOW];
-    __builtin_memcpy(exc, EMPTY_EXCEPTIONS, sizeof(exc));
-    
+    // Read sweep values from UI fields (MHz → Hz conversion)
+    FreqHz sw1_start = static_cast<FreqHz>(view_group1_.field_sw1_start_.value()) * 1000000ULL;
+    FreqHz sw1_end = static_cast<FreqHz>(view_group1_.field_sw1_end_.value()) * 1000000ULL;
+    FreqHz sw1_step = static_cast<FreqHz>(view_group1_.field_sw1_step_.value()) * 1000ULL;
+
+    bool sw2_enabled = view_group1_.check_sw2_enabled_.value();
+    FreqHz sw2_start = static_cast<FreqHz>(view_group1_.field_sw2_start_.value()) * 1000000ULL;
+    FreqHz sw2_end = static_cast<FreqHz>(view_group1_.field_sw2_end_.value()) * 1000000ULL;
+    FreqHz sw2_step = static_cast<FreqHz>(view_group1_.field_sw2_step_.value()) * 1000ULL;
+
+    bool sw3_enabled = view_group2_.check_sw3_enabled_.value();
+    FreqHz sw3_start = static_cast<FreqHz>(view_group2_.field_sw3_start_.value()) * 1000000ULL;
+    FreqHz sw3_end = static_cast<FreqHz>(view_group2_.field_sw3_end_.value()) * 1000000ULL;
+    FreqHz sw3_step = static_cast<FreqHz>(view_group2_.field_sw3_step_.value()) * 1000ULL;
+
+    bool sw4_enabled = view_group2_.check_sw4_enabled_.value();
+    FreqHz sw4_start = static_cast<FreqHz>(view_group2_.field_sw4_start_.value()) * 1000000ULL;
+    FreqHz sw4_end = static_cast<FreqHz>(view_group2_.field_sw4_end_.value()) * 1000000ULL;
+    FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
+
+    FreqHz exc[4][EXCEPTIONS_PER_WINDOW] = {};
+
     ui::NumberField* exc1_fields[] = {
         &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
         &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
