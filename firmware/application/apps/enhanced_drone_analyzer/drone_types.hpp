@@ -81,6 +81,15 @@ enum class MovementTrend : uint8_t {
 };
 
 /**
+ * @brief Pattern capture state
+ */
+enum class PatternCaptureState : uint8_t {
+    IDLE = 0,
+    SELECTING = 1,
+    CAPTURING = 2
+};
+
+/**
  * @brief Error codes for EDA operations
  * @note All errors are recoverable or have fallback behavior
  */

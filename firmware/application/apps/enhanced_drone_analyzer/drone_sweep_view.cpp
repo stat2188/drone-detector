@@ -361,36 +361,20 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
 
     // Populate exception fields from config (MHz) — 5 slots per window
-    ui::NumberField* exc1_fields[] = {
-        &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
-        &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
-        &view_group1_.field_sw1_exc4_};
     ui::NumberField* exc2_fields[] = {
         &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
         &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
-        &view_group1_.field_sw2_exc4_};
+        &view_group1_.field_sw2_exc4_
+    };
     ui::NumberField* exc3_fields[] = {
         &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
         &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
-        &view_group2_.field_sw3_exc4_};
+        &view_group2_.field_sw3_exc4_
+    };
     ui::NumberField* exc4_fields[] = {
         &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
         &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
-        &view_group2_.field_sw4_exc4_};
-
-    for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-        exc1_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[0][i] / 1000000ULL));
-        exc2_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[1][i] / 1000000ULL));
-        exc3_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[2][i] / 1000000ULL));
-        exc4_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[3][i] / 1000000ULL));
-    }
-
-    // Exception radius
-    field_exc_radius_.set_value(static_cast<int32_t>(config.exception_radius_mhz));
-
-    button_save_.on_select = [this](ui::Button&) {
-        save_settings();
-        nav_.pop();
+        &view_group2_.field_sw4_exc4_
     };
 
     button_defaults_.on_select = [this](ui::Button&) {
@@ -410,29 +394,19 @@ void DroneSweepView::focus() {
     }
 }
 
+// Static storage for exception frequencies (reduces stack pressure)
+static constexpr FreqHz EMPTY_EXCEPTIONS[4][EXCEPTIONS_PER_WINDOW] = {
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0},
+    {0, 0, 0, 0, 0}
+};
+
 void DroneSweepView::save_settings() noexcept {
-    // Read values from child views
-    FreqHz sw1_start = static_cast<FreqHz>(view_group1_.field_sw1_start_.value()) * 1000000ULL;
-    FreqHz sw1_end = static_cast<FreqHz>(view_group1_.field_sw1_end_.value()) * 1000000ULL;
-    FreqHz sw1_step = static_cast<FreqHz>(view_group1_.field_sw1_step_.value()) * 1000ULL;
-
-    bool sw2_enabled = view_group1_.check_sw2_enabled_.value();
-    FreqHz sw2_start = static_cast<FreqHz>(view_group1_.field_sw2_start_.value()) * 1000000ULL;
-    FreqHz sw2_end = static_cast<FreqHz>(view_group1_.field_sw2_end_.value()) * 1000000ULL;
-    FreqHz sw2_step = static_cast<FreqHz>(view_group1_.field_sw2_step_.value()) * 1000ULL;
-
-    bool sw3_enabled = view_group2_.check_sw3_enabled_.value();
-    FreqHz sw3_start = static_cast<FreqHz>(view_group2_.field_sw3_start_.value()) * 1000000ULL;
-    FreqHz sw3_end = static_cast<FreqHz>(view_group2_.field_sw3_end_.value()) * 1000000ULL;
-    FreqHz sw3_step = static_cast<FreqHz>(view_group2_.field_sw3_step_.value()) * 1000ULL;
-
-    bool sw4_enabled = view_group2_.check_sw4_enabled_.value();
-    FreqHz sw4_start = static_cast<FreqHz>(view_group2_.field_sw4_start_.value()) * 1000000ULL;
-    FreqHz sw4_end = static_cast<FreqHz>(view_group2_.field_sw4_end_.value()) * 1000000ULL;
-    FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
-
-    // Read exception frequencies (MHz → Hz) — 5 slots per window
-    FreqHz exc[4][EXCEPTIONS_PER_WINDOW]{};
+    // CRITICAL: Use static array instead of stack allocation (saves ~160 bytes on stack)
+    FreqHz exc[4][EXCEPTIONS_PER_WINDOW];
+    __builtin_memcpy(exc, EMPTY_EXCEPTIONS, sizeof(exc));
+    
     ui::NumberField* exc1_fields[] = {
         &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
         &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,

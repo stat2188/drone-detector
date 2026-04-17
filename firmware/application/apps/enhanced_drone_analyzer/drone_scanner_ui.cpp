@@ -37,24 +37,34 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , nav_(nav)
     , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
     , sweep_transition_guard_()
+    , pattern_capture_state_(PatternCaptureState::IDLE)
+    , pattern_select_start_(0)
+    , pattern_select_end_(0)
+    , pattern_capture_frames_(0)
+    , pattern_waveform_sum_{}
+    , pattern_capture_freq_{0}
+    , pattern_capture_rssi_(0)
+    , pattern_match_counter_(0)
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
             const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
+            
+            this->safe_set_fifo(message.fifo);
+            
             this->spectrum_fifo_ = message.fifo;
         }
     }
     , message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
-        [this](Message* const) {
+        [this](Message* const p) {
             if (!this->scanning_) return;
-
+            
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
                     if (this->composite_active_) {
                         this->on_sweep_spectrum(spectrum);
-                        // Window switching is handled inside on_sweep_spectrum
                     } else {
                         this->on_channel_spectrum(spectrum);
                         this->db_scan_count_++;
@@ -64,6 +74,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                             this->enter_sweep_mode();
                         }
                     }
+                    
+                    this->fifo_state_.mark_access(chTimeNow());
                 }
             }
             this->refresh_ui();
@@ -82,8 +94,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             const auto message = *reinterpret_cast<const ChannelStatisticsMessage*>(p);
             this->latest_max_db_ = message.statistics.max_db;
         }
-    } {
-    add_children({
+    }
+    , add_children({
         &labels_,
         &field_lna_,
         &field_vga_,
@@ -100,7 +112,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_mode_,
         &button_load_,
         &button_settings_,
-        &button_swp_
+        &button_swp_,
+        &button_ptr_
     });
 
     // Filter callback (Looking Glass style: OFF/MID/HIGH)
@@ -288,7 +301,16 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         ScanConfig config = scanner_ptr_->get_config();
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };
-
+    
+    // PTR button: toggle pattern capture mode
+    button_ptr_.on_select = [this](ui::Button&) {
+        if (initialization_failed_ || scanner_ptr_ == nullptr) {
+            show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
+            return;
+        }
+        on_pattern_capture_toggle();
+    };
+    
     // Hardware initialization (callbacks are already set, safe to early-return)
     construct_objects();
 
@@ -360,6 +382,56 @@ DroneScannerUI::~DroneScannerUI() noexcept {
     audio::output::stop();
     portapack::receiver_model.disable();
     baseband::shutdown();
+}
+
+void DroneScannerUI::safe_clear_fifo() noexcept {
+    if (!fifo_state_.fifo_changing_.try_set()) {
+        return;
+    }
+    
+    SystemTime now = chTimeNow();
+    
+    if (!fifo_state_.is_safe_to_clear(now, 100)) {
+        fifo_state_.fifo_changing_.clear();
+        return;
+    }
+    
+    fifo_state_.fifo = nullptr;
+    fifo_state_.fifo_active_.clear();
+    fifo_state_.fifo_changing_.clear();
+}
+
+void DroneScannerUI::safe_set_fifo(ChannelSpectrumFIFO* fifo) noexcept {
+    if (!fifo_state_.fifo_changing_.try_set()) {
+        return;
+    }
+    
+    SystemTime now = chTimeNow();
+    
+    ChannelSpectrumFIFO* old_fifo = fifo_state_.fifo;
+    fifo_state_.fifo = fifo;
+    fifo_state_.mark_access(now);
+    
+    if (fifo != nullptr) {
+        fifo_state_.fifo_active_.set();
+    } else {
+        fifo_state_.fifo_active_.clear();
+    }
+    
+    fifo_state_.fifo_changing_.clear();
+}
+
+bool DroneScannerUI::verify_baseband_stopped(SystemTime now, uint32_t timeout_ms) const noexcept {
+    if (scanning_) {
+        return false;
+    }
+    
+    if (now < fifo_state_.last_access_time_ms) {
+        return (UINT32_MAX - fifo_state_.last_access_time_ms + now) >= timeout_ms;
+    }
+    
+    const uint32_t elapsed_ms = now - fifo_state_.last_access_time_ms;
+    return elapsed_ms >= timeout_ms;
 }
 
 void DroneScannerUI::focus() {
@@ -681,6 +753,31 @@ void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
     current_frequency_ = freq;
 }
 
+bool DroneScannerUI::on_touch(const ui::TouchEvent event) noexcept {
+    if (pattern_capture_state_ != PatternCaptureState::SELECTING) {
+        return false;  // Let parent handle touch events
+    }
+    
+    // Only process Start events (user taps screen)
+    if (event.type != ui::TouchEvent::Type::Start) {
+        return false;
+    }
+    
+    // Check if touch is within spectrum display area
+    // Spectrum display: x=0-239, y=68-273 (from DroneDisplay rect)
+    const uint16_t display_x = event.point.x;
+    const uint16_t display_y = event.point.y;
+    
+    if (display_x < 240 && display_y >= 68 && display_y < 274) {
+        // Convert screen X to composite pixel (0-239)
+        const uint16_t pixel_x = display_x;
+        on_touch_spectrum(pixel_x);
+        return true;  // Event handled
+    }
+    
+    return false;  // Let parent handle touch events outside spectrum area
+}
+
 void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
     if (scanner_ptr_ != nullptr && scanning_) {
         // Use frequency from on_retune() — this matches the hardware tuning
@@ -776,12 +873,22 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         scanner_ptr_->clear_lock_state();
     }
     scanning_ = false;
-
+    
+    // CRITICAL: Verify baseband has stopped before touching FIFO
+    SystemTime start_time = chTimeNow();
+    constexpr uint32_t STOP_TIMEOUT_MS = 200;
+    while (!verify_baseband_stopped(chTimeNow(), STOP_TIMEOUT_MS) && (chTimeNow() - start_time) < STOP_TIMEOUT_MS) {
+        chThdSleepMilliseconds(5);
+    }
+    
+    // CRITICAL: Safe FIFO clear using new method
+    safe_clear_fifo();
+    
     // Configure baseband for sweep bandwidth
     portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
     portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);
     baseband::set_spectrum(SWEEP_SLICE_BW, SWEEP_FFT_TRIGGER);
-    spectrum_fifo_ = nullptr;
+    // Note: spectrum_fifo_ remains nullptr until new mode starts streaming
 
     // Set up display for current pair (2+2 pagination)
     update_sweep_pair_display();
@@ -815,7 +922,16 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
         baseband::spectrum_streaming_stop();
         scanning_ = false;
     }
-    spectrum_fifo_ = nullptr;
+    
+    // CRITICAL: Verify baseband has stopped before touching FIFO
+    SystemTime start_time = chTimeNow();
+    constexpr uint32_t STOP_TIMEOUT_MS = 200;
+    while (!verify_baseband_stopped(chTimeNow(), STOP_TIMEOUT_MS) && (chTimeNow() - start_time) < STOP_TIMEOUT_MS) {
+        chThdSleepMilliseconds(5);
+    }
+    
+    // CRITICAL: Safe FIFO clear using new method
+    safe_clear_fifo();
     db_scan_count_ = 0;
     button_start_stop_.set_text("Start");
 
@@ -860,11 +976,22 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     }
 
     if (scanner_ptr_ != nullptr) {
-        // Use the exact frequency the radio was tuned to when this FFT was captured.
+        // Use the exact frequency to radio was tuned to when this FFT was captured.
         // f_center may have already been incremented from the previous frame's step.
         const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
-        // Pass sweep range boundaries to prevent false positives outside the range
+        // Pass sweep range boundaries to prevent false positives outside of range
         scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq, win.f_min, win.f_max);
+    }
+    
+    // Pattern capture: accumulate frames when in capture mode
+    if (pattern_capture_state_ == PatternCaptureState::CAPTURING) {
+        capture_pattern_frame(spectrum);
+    }
+    
+    // Pattern matching: check for patterns periodically
+    if (pattern_capture_state_ != PatternCaptureState::CAPTURING) {
+        const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
+        match_patterns_in_sweep(spectrum, fft_freq);
     }
 
     // Live display update: show current pair data every frame
@@ -1047,6 +1174,244 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     last_tuned_freq_ = win.f_center;
     (void)prefix;
     baseband::spectrum_streaming_start();
+}
+
+void DroneScannerUI::on_pattern_capture_toggle() noexcept {
+    if (pattern_capture_state_ == PatternCaptureState::IDLE) {
+        // Enter pattern capture mode
+        if (!composite_active_) {
+            show_alert("Pattern capture needs Sweep mode", 2000);
+            return;
+        }
+        pattern_capture_state_ = PatternCaptureState::SELECTING;
+        pattern_select_start_ = 0;
+        pattern_select_end_ = 0;
+        button_ptr_.set_text("SEL");
+        drone_display_.set_status_text("Tap spectrum to select region");
+    } else if (pattern_capture_state_ == PatternCaptureState::SELECTING) {
+        // Cancel selection
+        pattern_capture_state_ = PatternCaptureState::IDLE;
+        button_ptr_.set_text("PTR");
+        drone_display_.set_status_text("Pattern capture cancelled");
+    } else {
+        // Cancel capture
+        pattern_capture_state_ = PatternCaptureState::IDLE;
+        button_ptr_.set_text("PTR");
+        drone_display_.set_status_text("Pattern capture cancelled");
+    }
+}
+
+void DroneScannerUI::on_touch_spectrum(uint16_t pixel_x) noexcept {
+    if (pattern_capture_state_ != PatternCaptureState::SELECTING) return;
+    
+    if (pixel_x >= COMPOSITE_SIZE) return;
+    
+    if (pattern_select_start_ == 0) {
+        // First touch - set start
+        pattern_select_start_ = pixel_x;
+        char status_buf[MAX_TEXT_LENGTH];
+        snprintf(status_buf, sizeof(status_buf), "Start: %d, tap end", pixel_x);
+        drone_display_.set_status_text(status_buf);
+    } else {
+        // Second touch - set end and start capture
+        pattern_select_end_ = pixel_x;
+        
+        // Ensure start < end
+        if (pattern_select_end_ < pattern_select_start_) {
+            const uint16_t temp = pattern_select_start_;
+            pattern_select_start_ = pattern_select_end_;
+            pattern_select_end_ = temp;
+        }
+        
+        // Validate selection (must be at least 10 pixels wide)
+        if ((pattern_select_end_ - pattern_select_start_) < 10) {
+            show_alert("Selection too small (min 10 pixels)", 2000);
+            pattern_capture_state_ = PatternCaptureState::IDLE;
+            button_ptr_.set_text("PTR");
+            drone_display_.set_status_text("Selection cancelled");
+            return;
+        }
+        
+        // Start capturing frames
+        pattern_capture_state_ = PatternCaptureState::CAPTURING;
+        pattern_capture_frames_ = 0;
+        pattern_waveform_sum_.fill(0);
+        button_ptr_.set_text("CAP");
+        drone_display_.set_status_text("Capturing pattern...");
+    }
+}
+
+void DroneScannerUI::capture_pattern_frame(const ChannelSpectrum& spectrum) noexcept {
+    if (pattern_capture_state_ != PatternCaptureState::CAPTURING) return;
+    
+    // Calculate FFT bin range from pixel selection
+    // Composite pixels map to FFT bins via Looking Glass pattern
+    // Lower sideband: pixels 0-119 → bins 134-253
+    // Upper sideband: pixels 120-239 → bins 2-119
+    
+    constexpr size_t FFT_BINS_PER_PIXEL = SWEEP_SLICE_BW / SWEEP_PIXELS_PER_SLICE;
+    
+    // Normalize spectrum to 16-bin waveform
+    uint8_t wave_16[PATTERN_WAVEFORM_SIZE];
+    for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
+        const size_t pixel_pos = pattern_select_start_ + (i * (pattern_select_end_ - pattern_select_start_) / PATTERN_WAVEFORM_SIZE;
+        if (pixel_pos >= COMPOSITE_SIZE) break;
+        
+        // Map pixel to FFT bin
+        uint8_t fft_bin;
+        if (pixel_pos < SWEEP_FFT_MAP_CROSSOVER) {
+            // Lower sideband: pixel → bin 134-253
+            fft_bin = SWEEP_FFT_MAP_START + pixel_pos;
+            if (fft_bin >= FFT_BIN_COUNT) fft_bin = FFT_BIN_COUNT - 1;
+        } else {
+            // Upper sideband: pixel → bin 2-119
+            fft_bin = pixel_pos - SWEEP_FFT_MAP_CROSSOVER + 2;
+            if (fft_bin >= FFT_DC_SPIKE_START) fft_bin = FFT_DC_SPIKE_END;
+        }
+        
+        if (fft_bin < FFT_BIN_COUNT) {
+            wave_16[i] = spectrum.db[fft_bin];
+        } else {
+            wave_16[i] = 0;
+        }
+    }
+    
+    // Accumulate waveform
+    for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
+        pattern_waveform_sum_[i] += wave_16[i];
+    }
+    
+    pattern_capture_frames_++;
+    
+    if (pattern_capture_frames_ >= PATTERN_CAPTURE_FRAMES) {
+        finalize_pattern_capture();
+    }
+}
+
+void DroneScannerUI::finalize_pattern_capture() noexcept {
+    if (pattern_capture_frames_ < PATTERN_CAPTURE_FRAMES) {
+        return;
+    }
+    
+    // Average accumulated waveform
+    SignalPattern pattern;
+    pattern.match_count = 0;
+    pattern.created_time = chTimeNow();
+    pattern.flags = SignalPattern::Flags::ENABLED;
+    pattern.match_threshold = DEFAULT_PATTERN_CORRELATION_THRESHOLD;
+    
+    for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
+        pattern.waveform[i] = pattern_waveform_sum_[i] / PATTERN_CAPTURE_FRAMES;
+    }
+    
+    // Extract features from current spectrum
+    // Use SpectrumShape to analyze the selected region
+    uint8_t sort_buf[256];
+    
+    // Get current frequency from active sweep window
+    if (scanner_ptr_ != nullptr) {
+        ScanConfig cfg = scanner_ptr_->get_config();
+        SpectrumShape::Config config{
+            cfg.spectrum_margin,
+            cfg.spectrum_min_width,
+            cfg.spectrum_max_width,
+            cfg.spectrum_peak_sharpness,
+            cfg.spectrum_peak_ratio,
+            cfg.spectrum_valley_depth,
+            cfg.spectrum_flatness,
+            cfg.spectrum_symmetry,
+            false
+        };
+        (void)config;  // Will be used for feature extraction in future
+    }
+    
+    // Create pattern name with timestamp
+    char name_buf[PATTERN_NAME_MAX_LEN];
+    const FreqHz center_freq = sweep_[active_sweep_idx_].f_center;
+    const uint32_t freq_mhz = static_cast<uint32_t>(center_freq / 1000000);
+    snprintf(name_buf, sizeof(name_buf), "PAT_%luMHz", (unsigned long)freq_mhz);
+    safe_str_copy(pattern.name, PATTERN_NAME_MAX_LEN, name_buf);
+    
+    // Save pattern via PatternManager
+    if (scanner_ptr_ != nullptr) {
+        const ErrorCode err = scanner_ptr_->save_pattern(pattern);
+        if (err == ErrorCode::SUCCESS) {
+            char success_msg[MAX_TEXT_LENGTH];
+            snprintf(success_msg, sizeof(success_msg), "Saved: %s", name_buf);
+            show_alert(success_msg, 2000);
+            drone_display_.set_status_text(success_msg);
+        } else {
+            char error_msg[MAX_TEXT_LENGTH];
+            snprintf(error_msg, sizeof(error_msg), "Save failed: err %d", (int)err);
+            show_alert(error_msg, 3000);
+            drone_display_.set_status_text("Pattern save failed");
+        }
+    }
+    
+    // Reset capture state
+    pattern_capture_state_ = PatternCaptureState::IDLE;
+    button_ptr_.set_text("PTR");
+    pattern_select_start_ = 0;
+    pattern_select_end_ = 0;
+    pattern_capture_frames_ = 0;
+}
+
+void DroneScannerUI::match_patterns_in_sweep(const ChannelSpectrum& spectrum, FreqHz freq) noexcept {
+    if (scanner_ptr_ == nullptr) return;
+    
+    // Only match every PATTERN_MATCH_INTERVAL frames to save CPU
+    pattern_match_counter_++;
+    if (pattern_match_counter_ < PATTERN_MATCH_INTERVAL) return;
+    pattern_match_counter_ = 0;
+    
+    // Check if pattern matching is enabled
+    ScanConfig cfg = scanner_ptr_->get_config();
+    if (!cfg.pattern_matching_enabled) return;
+    
+    // Analyze spectrum shape
+    SpectrumShape::Config shape_config{
+        cfg.spectrum_margin,
+        cfg.spectrum_min_width,
+        cfg.spectrum_max_width,
+        cfg.spectrum_peak_sharpness,
+        cfg.spectrum_peak_ratio,
+        cfg.spectrum_valley_depth,
+        cfg.spectrum_flatness,
+        cfg.spectrum_symmetry,
+        false
+    };
+    
+    const SpectrumShape::AnalysisResult shape = SpectrumShape::analyze(
+        spectrum.db.data(),
+        spectrum_shape_sort_buf_,
+        shape_config
+    );
+    
+    if (!shape.signal_detected) return;
+    
+    // Match against loaded patterns
+    PatternMatcher& matcher = scanner_ptr_->get_pattern_matcher();
+    const PatternMatchResult result = matcher.match(spectrum.db.data(), shape);
+    
+    if (result.matched && result.correlation_score >= cfg.pattern_min_correlation) {
+        // Pattern matched!
+        const SignalPattern* patterns = scanner_ptr_->get_patterns();
+        const size_t pattern_count = scanner_ptr_->get_pattern_count();
+        
+        if (result.pattern_index < pattern_count) {
+            const SignalPattern& matched_pattern = patterns[result.pattern_index];
+            
+            // Show match notification in status
+            char match_msg[MAX_TEXT_LENGTH];
+            const uint32_t freq_mhz = static_cast<uint32_t>(freq / 1000000);
+            snprintf(match_msg, sizeof(match_msg), "MATCH: %s @ %luMHz",
+                     matched_pattern.name, (unsigned long)freq_mhz);
+            drone_display_.set_status_text(match_msg);
+            
+            // Optionally update display to show matched pattern name
+            // This could be integrated with drone display or shown as overlay
+        }
+    }
 }
 
 } // namespace drone_analyzer

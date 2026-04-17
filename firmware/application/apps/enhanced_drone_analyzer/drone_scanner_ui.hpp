@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <array>
 
 #include "ui.hpp"
 #include "ui_widget.hpp"
@@ -47,6 +48,7 @@ public:
     void focus() override;
     void on_show() override;
     void on_hide() override;
+    bool on_touch(const ui::TouchEvent event) override;
 
     void show_alert(const char* message, uint32_t duration_ms) noexcept;
     void show_error(ErrorCode error, uint32_t duration_ms) noexcept;
@@ -107,7 +109,8 @@ private:
     ui::Button button_load_{{UI_POS_X(13), 284, UI_POS_WIDTH(4), 28}, "Load"};
     ui::Button button_settings_{{UI_POS_X(18), 284, UI_POS_WIDTH(4), 28}, "Set"};
     ui::Button button_swp_{{UI_POS_X(23), 284, UI_POS_WIDTH(3), 28}, "SWP"};
-
+    ui::Button button_ptr_{{UI_POS_X(27), 284, UI_POS_WIDTH(3), 28}, "PTR"};
+    
     FreqHz current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
     ScannerState current_scanner_state_{ScannerState::IDLE};
@@ -184,6 +187,43 @@ private:
     uint8_t active_sweep_idx_{0};         // 0-3, round-robin index
     uint8_t current_pair_{0};             // Current displayed pair index (0 or 2)
     uint8_t db_scan_count_{0};
+    
+    // Pattern capture state
+    PatternCaptureState pattern_capture_state_{PatternCaptureState::IDLE};
+    uint16_t pattern_select_start_{0};
+    uint16_t pattern_select_end_{0};
+    uint8_t pattern_capture_frames_{0};
+    static constexpr uint8_t PATTERN_CAPTURE_FRAMES = 5;
+    static constexpr uint16_t PATTERN_MATCH_INTERVAL = 10;  // Match every 10th frame
+    
+    // FIFO lifecycle management - prevents M0 use-after-free crashes
+    struct SpectrumFIFOState {
+        ChannelSpectrumFIFO* fifo{nullptr};
+        AtomicFlag fifo_active_;        // M0 is using this FIFO
+        AtomicFlag fifo_changing_;      // Prevents concurrent changes
+        uint32_t last_access_time_ms{0};   // ChibiOS timestamp
+        
+        [[nodiscard]] bool is_safe_to_clear(SystemTime now, uint32_t timeout_ms = 100) const noexcept {
+            if (fifo == nullptr) return true;
+            if (fifo_active_.test()) return false;           // M0 still using
+            if (fifo_changing_.test()) return false;        // Change in progress
+            const uint32_t elapsed_ms = (now >= last_access_time_ms) 
+                ? (now - last_access_time_ms) 
+                : (UINT32_MAX - last_access_time_ms + now);
+            return elapsed_ms >= timeout_ms;
+        }
+        
+        void mark_access(SystemTime now) noexcept {
+            last_access_time_ms = now;
+        }
+    };
+    
+    // Safe FIFO management methods - prevent M0 memory overflow crashes
+    void safe_clear_fifo() noexcept;
+    void safe_set_fifo(ChannelSpectrumFIFO* fifo) noexcept;
+    [[nodiscard]] bool verify_baseband_stopped(SystemTime now, uint32_t timeout_ms = 200) const noexcept;
+    
+    SpectrumFIFOState fifo_state_;
     AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
@@ -194,6 +234,13 @@ private:
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
     void update_sweep_pair_display() noexcept;
     [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
+    
+    // Pattern capture methods
+    void on_pattern_capture_toggle() noexcept;
+    void on_touch_spectrum(uint16_t pixel_x) noexcept;
+    void capture_pattern_frame(const ChannelSpectrum& spectrum) noexcept;
+    void finalize_pattern_capture() noexcept;
+    void match_patterns_in_sweep(const ChannelSpectrum& spectrum, FreqHz freq) noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
@@ -209,6 +256,12 @@ private:
     TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
     uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
+    
+    // Pattern capture buffer (accumulates multiple frames)
+    std::array<uint8_t, PATTERN_WAVEFORM_SIZE> pattern_waveform_sum_{};
+    FreqHz pattern_capture_freq_{0};
+    RssiValue pattern_capture_rssi_{0};
+    uint8_t pattern_match_counter_{0};  // Counter for frame interval matching
 
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;

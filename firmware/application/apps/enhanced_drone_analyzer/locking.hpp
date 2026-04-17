@@ -16,6 +16,7 @@ enum class LockOrder : uint8_t {
     DATA_MUTEX = 0,
     DATABASE_MUTEX = 1,
     STATE_MUTEX = 2,
+    PATTERN_MUTEX = 3,
 };
 
 class AtomicFlag {
