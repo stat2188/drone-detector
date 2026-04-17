@@ -35,6 +35,10 @@ public:
     void paint(Painter& painter) override;
     void focus() override;
 
+    std::function<void()> on_cancel;
+    std::function<void()> on_refresh;
+    std::function<void()> on_clear;
+
 private:
     static constexpr uint16_t TITLE_Y = 4;
     static constexpr uint16_t BUTTON_Y = 30;
