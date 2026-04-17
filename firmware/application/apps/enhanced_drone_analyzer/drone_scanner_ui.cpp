@@ -1,8 +1,7 @@
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 #include <array>
-
-#include "ch.h"
 
 #include "ui.hpp"
 #include "ui_fileman.hpp"
@@ -36,7 +35,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : View()
     , nav_(nav)
     , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
-    , sweep_transition_guard_()
     , pattern_capture_state_(PatternCaptureState::IDLE)
     , pattern_select_start_(0)
     , pattern_select_end_(0)
@@ -45,21 +43,23 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , pattern_capture_freq_{0}
     , pattern_capture_rssi_(0)
     , pattern_match_counter_(0)
+    , fifo_state_{}
+    , sweep_transition_guard_()
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
-        [this](Message* const p) {
+        [this](const Message* const p) {
             const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            
+
             this->safe_set_fifo(message.fifo);
-            
+
             this->spectrum_fifo_ = message.fifo;
-        }
-    }
+        }}
     , message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
-        [this](Message* const p) {
+        [this](const Message* const p) {
+            (void)p;
             if (!this->scanning_) return;
-            
+
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
@@ -74,27 +74,24 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                             this->enter_sweep_mode();
                         }
                     }
-                    
+
                     this->fifo_state_.mark_access(chTimeNow());
                 }
             }
             this->refresh_ui();
-        }
-    }
+        }}
     , message_handler_retune{
         Message::ID::Retune,
-        [this](Message* const p) {
+        [this](const Message* const p) {
             const auto message = *reinterpret_cast<const RetuneMessage*>(p);
             this->on_retune(message.freq, message.range);
-        }
-    }
+        }}
     , message_handler_channel_stats{
         Message::ID::ChannelStatistics,
-        [this](Message* const p) {
+        [this](const Message* const p) {
             const auto message = *reinterpret_cast<const ChannelStatisticsMessage*>(p);
             this->latest_max_db_ = message.statistics.max_db;
-        }
-    }
+        }}
     , add_children({
         &labels_,
         &field_lna_,
@@ -114,8 +111,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_settings_,
         &button_swp_,
         &button_ptr_
-    });
-
+    })
+{
     // Filter callback (Looking Glass style: OFF/MID/HIGH)
     field_filter_.on_change = [this](size_t, int32_t v) {
         min_color_power_ = static_cast<uint8_t>(v);
@@ -765,8 +762,8 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) noexcept {
     
     // Check if touch is within spectrum display area
     // Spectrum display: x=0-239, y=68-273 (from DroneDisplay rect)
-    const uint16_t display_x = event.point.x;
-    const uint16_t display_y = event.point.y;
+    const uint16_t display_x = event.point.x();
+    const uint16_t display_y = event.point.y();
     
     if (display_x < 240 && display_y >= 68 && display_y < 274) {
         // Convert screen X to composite pixel (0-239)
