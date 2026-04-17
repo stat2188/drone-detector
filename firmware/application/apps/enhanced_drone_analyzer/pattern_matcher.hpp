@@ -40,7 +40,6 @@ private:
     size_t pattern_count_{0};
 
     uint8_t normalized_[PATTERN_WAVEFORM_SIZE];
-    uint8_t temp_sort_buf_[256];
     std::array<size_t, 4> candidates_;
 
     void normalize_spectrum(

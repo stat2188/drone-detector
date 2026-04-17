@@ -21,6 +21,9 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#ifndef RESULT_HPP
+#define RESULT_HPP
+
 #include <utility>
 
 template <typename TValue, typename TError>
@@ -82,3 +85,5 @@ struct Result {
             error_.~TError();
     }
 };
+
+#endif // RESULT_HPP;

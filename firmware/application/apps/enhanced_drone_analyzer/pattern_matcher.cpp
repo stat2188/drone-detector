@@ -104,17 +104,17 @@ uint16_t PatternMatcher::compute_correlation(
         const int32_t x = static_cast<int32_t>(pattern_a[i]);
         const int32_t y = static_cast<int32_t>(pattern_b[i]);
 
-        sum_xy += (x * y) >> 8;
+        sum_xy += x * y;
         sum_x += x;
         sum_y += y;
-        sum_x2 += (x * x) >> 8;
-        sum_y2 += (y * y) >> 8;
+        sum_x2 += x * x;
+        sum_y2 += y * y;
     }
 
     const int32_t n = static_cast<int32_t>(PATTERN_WAVEFORM_SIZE);
-    const int32_t numerator = (n * sum_xy) - ((sum_x * sum_y) >> 8);
-    const int32_t denom_x = (n * sum_x2) - ((sum_x * sum_x) >> 8);
-    const int32_t denom_y = (n * sum_y2) - ((sum_y * sum_y) >> 8);
+    const int32_t numerator = (n * sum_xy) - (sum_x * sum_y);
+    const int32_t denom_x = (n * sum_x2) - (sum_x * sum_x);
+    const int32_t denom_y = (n * sum_y2) - (sum_y * sum_y);
 
     if (denom_x == 0 || denom_y == 0) {
         return 0;

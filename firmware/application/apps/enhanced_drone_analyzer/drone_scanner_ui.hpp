@@ -263,6 +263,9 @@ private:
     RssiValue pattern_capture_rssi_{0};
     uint8_t pattern_match_counter_{0};  // Counter for frame interval matching
 
+    // Spectrum shape sort buffer (for SpectrumShape::analyze in sweep mode)
+    uint8_t spectrum_shape_sort_buf_[256];
+
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;
     MessageHandlerRegistration message_handler_retune;

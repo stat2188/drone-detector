@@ -1303,11 +1303,10 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
         pattern.waveform[i] = pattern_waveform_sum_[i] / PATTERN_CAPTURE_FRAMES;
     }
-    
+
     // Extract features from current spectrum
     // Use SpectrumShape to analyze the selected region
-    uint8_t sort_buf[256];
-    
+
     // Get current frequency from active sweep window
     if (scanner_ptr_ != nullptr) {
         ScanConfig cfg = scanner_ptr_->get_config();
