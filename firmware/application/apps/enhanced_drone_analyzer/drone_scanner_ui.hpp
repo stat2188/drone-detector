@@ -223,6 +223,7 @@ private:
     void safe_set_fifo(ChannelSpectrumFIFO* fifo) noexcept;
     [[nodiscard]] bool verify_baseband_stopped(SystemTime now, uint32_t timeout_ms = 200) const noexcept;
     
+    uint8_t pattern_match_counter_{0};  // Counter for frame interval matching (init first)
     SpectrumFIFOState fifo_state_;
     AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
@@ -261,7 +262,6 @@ private:
     std::array<uint8_t, PATTERN_WAVEFORM_SIZE> pattern_waveform_sum_{};
     FreqHz pattern_capture_freq_{0};
     RssiValue pattern_capture_rssi_{0};
-    uint8_t pattern_match_counter_{0};  // Counter for frame interval matching
 
     // Spectrum shape sort buffer (for SpectrumShape::analyze in sweep mode)
     uint8_t spectrum_shape_sort_buf_[256];

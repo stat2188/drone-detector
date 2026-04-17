@@ -92,7 +92,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             const auto message = *reinterpret_cast<const ChannelStatisticsMessage*>(p);
             this->latest_max_db_ = message.statistics.max_db;
         }}
-    , add_children({
+{
+    add_children({
         &labels_,
         &field_lna_,
         &field_vga_,
@@ -111,8 +112,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_settings_,
         &button_swp_,
         &button_ptr_
-    })
-{
+    });
     // Filter callback (Looking Glass style: OFF/MID/HIGH)
     field_filter_.on_change = [this](size_t, int32_t v) {
         min_color_power_ = static_cast<uint8_t>(v);
@@ -405,7 +405,6 @@ void DroneScannerUI::safe_set_fifo(ChannelSpectrumFIFO* fifo) noexcept {
     
     SystemTime now = chTimeNow();
     
-    ChannelSpectrumFIFO* old_fifo = fifo_state_.fifo;
     fifo_state_.fifo = fifo;
     fifo_state_.mark_access(now);
     
@@ -1258,7 +1257,7 @@ void DroneScannerUI::capture_pattern_frame(const ChannelSpectrum& spectrum) noex
     // Normalize spectrum to 16-bin waveform using member buffer
     uint8_t* wave_16 = pattern_capture_buffer_;
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
-        const size_t pixel_pos = pattern_select_start_ + (i * (pattern_select_end_ - pattern_select_start_) / PATTERN_WAVEFORM_SIZE;
+        const size_t pixel_pos = pattern_select_start_ + (i * (pattern_select_end_ - pattern_select_start_)) / PATTERN_WAVEFORM_SIZE;
         if (pixel_pos >= COMPOSITE_SIZE) break;
         
         // Map pixel to FFT bin
@@ -1396,7 +1395,7 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
     const FreqHz center_freq = sweep_[active_sweep_idx_].f_center;
     const uint32_t freq_mhz = static_cast<uint32_t>(center_freq / 1000000);
     snprintf(name_buf, sizeof(name_buf), "PAT_%luMHz", (unsigned long)freq_mhz);
-    safe_str_copy(pattern.name, PATTERN_NAME_MAX_LEN, name_buf);
+    (void)safe_str_copy(pattern.name, PATTERN_NAME_MAX_LEN, name_buf);
     
     // Save pattern via PatternManager
     if (scanner_ptr_ != nullptr) {

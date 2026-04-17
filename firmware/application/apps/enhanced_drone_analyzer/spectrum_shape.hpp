@@ -26,6 +26,8 @@ public:
         uint8_t noise_floor{0};
         uint8_t peak_margin{0};
         size_t signal_width{0};
+        uint8_t peak_flatness{0};
+        uint8_t peak_symmetry{0};
     };
 
     /**
