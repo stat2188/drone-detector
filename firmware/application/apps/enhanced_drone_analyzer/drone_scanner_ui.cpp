@@ -960,7 +960,6 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
 }
 
 void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept {
-    baseband::spectrum_streaming_stop();
     auto& win = sweep_[active_sweep_idx_];
     win.process_bins(spectrum);
 
@@ -1190,11 +1189,19 @@ void DroneScannerUI::on_pattern_capture_toggle() noexcept {
         pattern_capture_state_ = PatternCaptureState::IDLE;
         button_ptr_.set_text("PTR");
         drone_display_.set_status_text("Pattern capture cancelled");
+        pattern_select_start_ = 0;
+        pattern_select_end_ = 0;
+        pattern_capture_frames_ = 0;
+        pattern_waveform_sum_.fill(0);
     } else {
         // Cancel capture
         pattern_capture_state_ = PatternCaptureState::IDLE;
         button_ptr_.set_text("PTR");
         drone_display_.set_status_text("Pattern capture cancelled");
+        pattern_select_start_ = 0;
+        pattern_select_end_ = 0;
+        pattern_capture_frames_ = 0;
+        pattern_waveform_sum_.fill(0);
     }
 }
 
@@ -1248,8 +1255,8 @@ void DroneScannerUI::capture_pattern_frame(const ChannelSpectrum& spectrum) noex
     
     constexpr size_t FFT_BINS_PER_PIXEL = SWEEP_SLICE_BW / SWEEP_PIXELS_PER_SLICE;
     
-    // Normalize spectrum to 16-bin waveform
-    uint8_t wave_16[PATTERN_WAVEFORM_SIZE];
+    // Normalize spectrum to 16-bin waveform using member buffer
+    uint8_t* wave_16 = pattern_capture_buffer_;
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
         const size_t pixel_pos = pattern_select_start_ + (i * (pattern_select_end_ - pattern_select_start_) / PATTERN_WAVEFORM_SIZE;
         if (pixel_pos >= COMPOSITE_SIZE) break;
@@ -1301,13 +1308,34 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
         pattern.waveform[i] = pattern_waveform_sum_[i] / PATTERN_CAPTURE_FRAMES;
     }
 
-    // Extract features from current spectrum using SpectrumShape analyzer
-    // Get current frequency from active sweep window
+    // Validate waveform has sufficient signal strength
+    bool has_valid_signal = false;
+    uint8_t max_amplitude = 0;
+    for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
+        const uint8_t avg = pattern.waveform[i];
+        if (avg > 20) {
+            has_valid_signal = true;
+        }
+        if (avg > max_amplitude) {
+            max_amplitude = avg;
+        }
+    }
+
+    if (!has_valid_signal || max_amplitude < 30) {
+        show_alert("Pattern too weak (signal too low)", 2000);
+        drone_display_.set_status_text("Pattern capture failed");
+
+        pattern_capture_state_ = PatternCaptureState::IDLE;
+        button_ptr_.set_text("PTR");
+        pattern_select_start_ = 0;
+        pattern_select_end_ = 0;
+        pattern_capture_frames_ = 0;
+        pattern_waveform_sum_.fill(0);
+        return;
+    }
+
+    // Extract features from averaged waveform using SpectrumShape analyzer
     if (scanner_ptr_ != nullptr) {
-        const FreqHz center_freq = sweep_[active_sweep_idx_].f_center;
-        
-        // Use current spectrum data for shape analysis (need to access spectrum via parameter)
-        // This is called after pattern capture completes, so we analyze the final averaged waveform
         SpectrumShape::Config shape_config{
             scanner_ptr_->get_config().spectrum_margin,
             scanner_ptr_->get_config().spectrum_min_width,
@@ -1320,11 +1348,47 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
             false
         };
         
-        // Note: Pattern features are currently not extracted from live spectrum
-        // This would require passing the current ChannelSpectrum data here
-        // For now, features remain at default values (zeros)
-        (void)shape_config;
-        (void)center_freq;
+        // Interpolate 16-element averaged waveform to 256-bin synthetic spectrum
+        constexpr size_t BINS_PER_WAVEFORM_ELEM = FFT_BIN_COUNT / PATTERN_WAVEFORM_SIZE;
+        uint8_t synthetic_spectrum[FFT_BIN_COUNT];
+        memset(synthetic_spectrum, 0, sizeof(synthetic_spectrum));
+        
+        for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
+            const uint8_t value = pattern.waveform[i];
+            for (size_t j = 0; j < BINS_PER_WAVEFORM_ELEM; ++j) {
+                const size_t bin_idx = i * BINS_PER_WAVEFORM_ELEM + j;
+                if (bin_idx < FFT_BIN_COUNT) {
+                    synthetic_spectrum[bin_idx] = value;
+                }
+            }
+        }
+        
+        // Analyze synthetic spectrum to extract features
+        const SpectrumShape::AnalysisResult shape = SpectrumShape::analyze(
+            synthetic_spectrum,
+            spectrum_shape_sort_buf_,
+            shape_config
+        );
+        
+        // Fill pattern features from analysis result
+        if (shape.signal_detected) {
+            pattern.features.peak_position = static_cast<uint8_t>(
+                (shape.peak_index * PATTERN_WAVEFORM_SIZE) / FFT_BIN_COUNT
+            );
+            pattern.features.peak_value = shape.peak_value;
+            pattern.features.noise_floor = shape.noise_floor;
+            pattern.features.margin = shape.peak_margin;
+            pattern.features.width = static_cast<uint8_t>(shape.signal_width);
+            pattern.features.sharpness = static_cast<uint8_t>(
+                (shape.signal_width > 0) ? (shape.peak_margin * 100) / shape.signal_width : 0
+            );
+            pattern.features.flatness = static_cast<uint8_t>(
+                (shape.signal_width > 0) ? shape.peak_flatness : 0
+            );
+            pattern.features.symmetry = static_cast<uint8_t>(
+                (shape.signal_width > 0) ? shape.peak_symmetry : 0
+            );
+        }
     }
     
     // Create pattern name with timestamp
@@ -1356,6 +1420,7 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
     pattern_select_start_ = 0;
     pattern_select_end_ = 0;
     pattern_capture_frames_ = 0;
+    pattern_waveform_sum_.fill(0);
 }
 
 void DroneScannerUI::match_patterns_in_sweep(const ChannelSpectrum& spectrum, FreqHz freq) noexcept {

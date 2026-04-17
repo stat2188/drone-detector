@@ -331,6 +331,11 @@ ErrorCode PatternManager::delete_pattern(size_t index) noexcept {
         patterns_[i] = patterns_[i + 1];
     }
 
+    // Clear last slot to prevent stale data
+    if (pattern_count_ > 0) {
+        patterns_[pattern_count_ - 1] = SignalPattern{};
+    }
+
     --pattern_count_;
 
     return ErrorCode::SUCCESS;

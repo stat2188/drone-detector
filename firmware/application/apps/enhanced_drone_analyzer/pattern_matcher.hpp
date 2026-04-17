@@ -64,6 +64,8 @@ private:
 
     [[nodiscard]] static uint32_t isqrt(uint32_t x) noexcept;
 
+    [[nodiscard]] static uint64_t isqrt64(uint64_t x) noexcept;
+
     [[nodiscard]] PatternMatchResult try_match_with_offset(
         uint8_t peak_position,
         uint8_t width,

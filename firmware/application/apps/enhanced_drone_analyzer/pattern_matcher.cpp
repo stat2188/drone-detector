@@ -94,15 +94,15 @@ uint16_t PatternMatcher::compute_correlation(
         return 0;
     }
 
-    int32_t sum_xy = 0;
-    int32_t sum_x = 0;
-    int32_t sum_y = 0;
-    int32_t sum_x2 = 0;
-    int32_t sum_y2 = 0;
+    int64_t sum_xy = 0;
+    int64_t sum_x = 0;
+    int64_t sum_y = 0;
+    int64_t sum_x2 = 0;
+    int64_t sum_y2 = 0;
 
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
-        const int32_t x = static_cast<int32_t>(pattern_a[i]);
-        const int32_t y = static_cast<int32_t>(pattern_b[i]);
+        const int64_t x = static_cast<int64_t>(pattern_a[i]);
+        const int64_t y = static_cast<int64_t>(pattern_b[i]);
 
         sum_xy += x * y;
         sum_x += x;
@@ -111,24 +111,25 @@ uint16_t PatternMatcher::compute_correlation(
         sum_y2 += y * y;
     }
 
-    const int32_t n = static_cast<int32_t>(PATTERN_WAVEFORM_SIZE);
-    const int32_t numerator = (n * sum_xy) - (sum_x * sum_y);
-    const int32_t denom_x = (n * sum_x2) - (sum_x * sum_x);
-    const int32_t denom_y = (n * sum_y2) - (sum_y * sum_y);
+    const int64_t n = static_cast<int64_t>(PATTERN_WAVEFORM_SIZE);
+    const int64_t numerator = (n * sum_xy) - (sum_x * sum_y);
+    const int64_t denom_x = (n * sum_x2) - (sum_x * sum_x);
+    const int64_t denom_y = (n * sum_y2) - (sum_y * sum_y);
 
     if (denom_x == 0 || denom_y == 0) {
         return 0;
     }
 
-    const uint32_t denom_product = static_cast<uint32_t>(denom_x) *
-                                 static_cast<uint32_t>(denom_y);
-    const int32_t denominator = static_cast<int32_t>(isqrt(denom_product));
+    const uint64_t denom_product = static_cast<uint64_t>(denom_x) *
+                                     static_cast<uint64_t>(denom_y);
+    const int64_t denominator = static_cast<int64_t>(isqrt64(denom_product));
 
     if (denominator == 0) {
         return 0;
     }
 
-    const int32_t r = (numerator << 8) / denominator;
+    const int64_t r_scaled = (static_cast<int64_t>(numerator) << 8);
+    const int64_t r = r_scaled / denominator;
 
     if (r < 0) {
         return 0;
@@ -179,6 +180,31 @@ uint32_t PatternMatcher::isqrt(uint32_t x) noexcept {
             result = result >> 1u;
         }
         bit >>= 2u;
+    }
+
+    return result;
+}
+
+uint64_t PatternMatcher::isqrt64(uint64_t x) noexcept {
+    if (x == 0) {
+        return 0;
+    }
+
+    uint64_t result = 0;
+    uint64_t bit = 1ULL << 62;
+
+    while (bit > x) {
+        bit >>= 2ULL;
+    }
+
+    while (bit != 0ULL) {
+        if (x >= result + bit) {
+            x -= result + bit;
+            result = (result >> 1ULL) + bit;
+        } else {
+            result = result >> 1ULL;
+        }
+        bit >>= 2ULL;
     }
 
     return result;

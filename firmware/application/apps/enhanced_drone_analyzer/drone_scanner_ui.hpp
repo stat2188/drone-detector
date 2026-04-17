@@ -265,7 +265,10 @@ private:
 
     // Spectrum shape sort buffer (for SpectrumShape::analyze in sweep mode)
     uint8_t spectrum_shape_sort_buf_[256];
-
+    
+    // Reusable buffer for pattern capture (prevents stack allocation)
+    uint8_t pattern_capture_buffer_[PATTERN_WAVEFORM_SIZE];
+    
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;
     MessageHandlerRegistration message_handler_retune;
