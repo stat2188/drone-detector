@@ -220,6 +220,13 @@ PatternMatchResult PatternMatcher::match(
     if (spectrum == nullptr || patterns_ == nullptr || pattern_count_ == 0) {
         return result;
     }
+    
+    // Когда есть совпадение по паттерну - мы всегда возвращаем детекцию, игнорируя все глобальные фильтры
+    // Паттерн имеет высший приоритет над любыми другими проверками формы спектра
+    if (!apply_global_filters && !shape.signal_detected) {
+        // Даже если сигнал не прошёл глобальные фильтры - всё равно анализируем паттерны
+        // Это позволяет детектировать сигналы которые не подходят под стандартные профили но есть в базе
+    }
 
     normalize_spectrum(spectrum, normalized_);
 

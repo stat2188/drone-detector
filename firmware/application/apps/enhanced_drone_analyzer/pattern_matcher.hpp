@@ -35,7 +35,8 @@ public:
 
     [[nodiscard]] PatternMatchResult match(
         const uint8_t* spectrum,
-        const SpectrumShape::AnalysisResult& shape
+        const SpectrumShape::AnalysisResult& shape,
+        bool apply_global_filters = true
     ) noexcept;
 
     void clear_patterns() noexcept;

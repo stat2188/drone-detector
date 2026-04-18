@@ -5,8 +5,6 @@
 #include <cstddef>
 #include "constants.hpp"
 
-typedef uint8_t uint8_t;
-typedef size_t size_t;
 
 namespace drone_analyzer {
 

@@ -246,9 +246,9 @@ SpectrumShape::AnalysisResult SpectrumShape::analyze(
     size_t sig_left = 0, sig_right = 0;
     result.signal_width = measure_width(spectrum, result.peak_index, elevated_threshold, sig_left, sig_right);
 
-    int32_t avg_margin = 0;
+    /* avg_margin calculation is reserved for future peak sharpness checks */
     if (config.peak_sharpness > 50 || config.flatness > 50) {
-        avg_margin = compute_avg_margin(spectrum, sig_left, sig_right, result.noise_floor);
+        (void)compute_avg_margin(spectrum, sig_left, sig_right, result.noise_floor);
     }
 
     // ✅ Больше нет ранних возвратов. Все параметры вычисляются всегда.
