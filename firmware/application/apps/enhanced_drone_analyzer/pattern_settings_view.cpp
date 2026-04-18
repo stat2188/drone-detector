@@ -30,7 +30,10 @@ PatternSettingsView::PatternSettingsView(
     , pattern_count_label_(Rect{UI_POS_X(0), LIST_Y + 16, UI_POS_WIDTH(30), 16}, "")
     , button_back_(Rect{UI_POS_X(0), LIST_Y + LIST_HEIGHT - 30, UI_POS_WIDTH(6), BUTTON_HEIGHT}, "Back")
     , button_refresh_(Rect{UI_POS_X(7), LIST_Y + LIST_HEIGHT - 30, UI_POS_WIDTH(6), BUTTON_HEIGHT}, "Reload")
-    , button_clear_(Rect{UI_POS_X(14), LIST_Y + LIST_HEIGHT - 30, UI_POS_WIDTH(6), BUTTON_HEIGHT}, "Clear") {
+    , button_clear_(Rect{UI_POS_X(14), LIST_Y + LIST_HEIGHT - 30, UI_POS_WIDTH(6), BUTTON_HEIGHT}, "Clear")
+    , on_cancel{nullptr}
+    , on_refresh{nullptr}
+    , on_clear{nullptr} {
 
     check_enable_.on_select = [this](Checkbox&, bool value) {
         config_.pattern_matching_enabled = value;

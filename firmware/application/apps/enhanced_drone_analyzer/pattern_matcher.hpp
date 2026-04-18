@@ -20,7 +20,12 @@ public:
     static constexpr uint16_t CORRELATION_MODERATE = 400;
     static constexpr uint16_t CORRELATION_WEAK = 200;
 
-    PatternMatcher() noexcept = default;
+    PatternMatcher() noexcept
+        : patterns_{nullptr}
+        , pattern_count_{0}
+        , normalized_{}
+        , candidates_{} {
+    }
     ~PatternMatcher() noexcept = default;
 
     PatternMatcher(const PatternMatcher&) = delete;

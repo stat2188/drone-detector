@@ -122,6 +122,9 @@ void ScanStatistics::reset() noexcept {
 DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardware) noexcept
     : database_(database)
     , hardware_(hardware)
+    , pattern_manager_()
+    , pattern_matcher_()
+    , pattern_sort_buf_{}
     , state_(ScannerState::IDLE)
     , config_()
     , freq_lock_count_{0}
@@ -133,6 +136,10 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , tracked_drones_()
     , tracked_count_{0}
     , current_frequency_{0}
+    , pending_frequency_{0}
+    , pending_count_{0}
+    , missed_lock_count_{0}
+    , noise_blacklist_{}
     , last_scan_time_{0}
     , scanning_active_()
     , alert_callback_(nullptr)
@@ -140,10 +147,9 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , state_transition_allowed_()
     , force_resume_flag_()
     , dwell_request_()
+    , dwell_cycles_{0}
     , lock_start_time_{0}
     , confirm_start_time_{0}
-    , pattern_manager_()
-    , pattern_matcher_()
     , spectrum_sort_buf_{}
     , lock_timeout_count_{0}
     , sweep_usable_buf_{}
@@ -151,6 +157,7 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , rssi_detector_()
     , histogram_processor_()
     , rssi_median_filter_()
+    , median_filter_enabled_{false}
     , neighbor_margin_checker_()
     , spectrum_shape_margin_(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_shape_min_width_(DEFAULT_SPECTRUM_MIN_WIDTH)

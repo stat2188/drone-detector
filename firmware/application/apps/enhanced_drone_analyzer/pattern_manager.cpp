@@ -41,19 +41,6 @@ ErrorCode PatternManager::load_patterns() noexcept {
         }
 
         const auto& entry_path = entry.path();
-        auto stem = entry_path.stem();
-
-        char filename_stem[PATTERN_NAME_MAX_LEN];
-        const auto& stem_native = stem.native();
-        const size_t copy_len = (stem_native.length() >= PATTERN_NAME_MAX_LEN)
-            ? (PATTERN_NAME_MAX_LEN - 1)
-            : stem_native.length();
-
-        for (size_t i = 0; i < copy_len; ++i) {
-            filename_stem[i] = static_cast<char>(stem_native[i]);
-        }
-        filename_stem[copy_len] = '\0';
-
         const ErrorCode err = load_from_file(entry_path);
         if (err == ErrorCode::SUCCESS) {
             ++pattern_count_;

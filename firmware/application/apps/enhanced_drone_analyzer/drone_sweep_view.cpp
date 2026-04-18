@@ -360,23 +360,6 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / 1000000ULL));
     view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
 
-    // Populate exception fields from config (MHz) — 5 slots per window
-    ui::NumberField* exc2_fields[] = {
-        &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
-        &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
-        &view_group1_.field_sw2_exc4_
-    };
-    ui::NumberField* exc3_fields[] = {
-        &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
-        &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
-        &view_group2_.field_sw3_exc4_
-    };
-    ui::NumberField* exc4_fields[] = {
-        &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
-        &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
-        &view_group2_.field_sw4_exc4_
-    };
-
     button_defaults_.on_select = [this](ui::Button&) {
         apply_defaults();
     };
