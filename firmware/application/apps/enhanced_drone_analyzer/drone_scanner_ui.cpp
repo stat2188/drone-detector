@@ -911,10 +911,10 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         capture_pattern_frame(spectrum);
     }
     
-    // Pattern matching: check for patterns periodically
+    // Pattern matching: DISABLED by default - runs in UI thread causing freezes
+    // TODO: Move to background scanner thread for proper async operation
     if (pattern_capture_state_ != PatternCaptureState::CAPTURING) {
-        const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
-        match_patterns_in_sweep(spectrum, fft_freq);
+        // match_patterns_in_sweep() disabled - causes UI freeze
     }
 
     // Live display update: show current pair data every frame
