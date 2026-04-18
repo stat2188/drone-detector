@@ -196,6 +196,11 @@ private:
     static constexpr uint8_t PATTERN_CAPTURE_FRAMES = 5;
     static constexpr uint16_t PATTERN_MATCH_INTERVAL = 10;  // Match every 10th frame
 
+    // Pattern capture buffers
+    std::array<uint16_t, SPECTRUM_BUFFER_SIZE> pattern_waveform_sum_{};
+    FreqHz pattern_capture_freq_{0};
+    int16_t pattern_capture_rssi_{0};
+
     uint8_t pattern_match_counter_{0};  // Counter for frame interval matching (init first)
     FreqHz last_matched_pattern_freq_{0};  // Frequency of last pattern match
     uint16_t last_matched_pattern_correlation_{0};  // Correlation score (0-1000)

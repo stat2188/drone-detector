@@ -21,7 +21,8 @@ DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     , spectrum_visible_(true)
     , histogram_visible_(true)
     , drone_list_visible_(true)
-    , status_bar_visible_(true) {
+    , status_bar_visible_(true)
+    , pattern_match_info_{} {
     set_parent_rect(parent_rect);
     set_status_text(STATUS_READY);
 }

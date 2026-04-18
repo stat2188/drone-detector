@@ -1296,8 +1296,10 @@ private:
     uint16_t pattern_match_correlation_{0};
     SystemTime pattern_match_timestamp_{0};
 
+public:
     void set_pattern_match_info(FreqHz frequency, uint16_t correlation, SystemTime timestamp) noexcept;
 
+private:
     void elevate_drone_threat(FreqHz frequency, ThreatLevel min_threat) noexcept;
 };
 
