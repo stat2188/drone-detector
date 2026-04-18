@@ -196,38 +196,15 @@ private:
     static constexpr uint8_t PATTERN_CAPTURE_FRAMES = 5;
     static constexpr uint16_t PATTERN_MATCH_INTERVAL = 10;  // Match every 10th frame
     
-    // FIFO lifecycle management - prevents M0 use-after-free crashes
-    struct SpectrumFIFOState {
-        ChannelSpectrumFIFO* fifo{nullptr};
-        AtomicFlag fifo_active_;        // M0 is using this FIFO
-        AtomicFlag fifo_changing_;      // Prevents concurrent changes
-        uint32_t last_access_time_ms{0};   // ChibiOS timestamp
-        
-        [[nodiscard]] bool is_safe_to_clear(SystemTime now, uint32_t timeout_ms = 100) const noexcept {
-            if (fifo == nullptr) return true;
-            if (fifo_active_.test()) return false;           // M0 still using
-            if (fifo_changing_.test()) return false;        // Change in progress
-            const uint32_t elapsed_ms = (now >= last_access_time_ms) 
-                ? (now - last_access_time_ms) 
-                : (UINT32_MAX - last_access_time_ms + now);
-            return elapsed_ms >= timeout_ms;
-        }
-        
-        void mark_access(SystemTime now) noexcept {
-            last_access_time_ms = now;
-        }
-    };
-    
-    // Safe FIFO management methods - prevent M0 memory overflow crashes
-    void safe_clear_fifo() noexcept;
-    void safe_set_fifo(ChannelSpectrumFIFO* fifo) noexcept;
-    [[nodiscard]] bool verify_baseband_stopped(SystemTime now, uint32_t timeout_ms = 200) const noexcept;
-    
     uint8_t pattern_match_counter_{0};  // Counter for frame interval matching (init first)
-    SpectrumFIFOState fifo_state_;
     AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
+
+    // Pattern capture buffer (accumulates multiple frames)
+    std::array<uint8_t, PATTERN_WAVEFORM_SIZE> pattern_waveform_sum_{};
+    FreqHz pattern_capture_freq_{0};
+    RssiValue pattern_capture_rssi_{0};
 
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
@@ -263,15 +240,6 @@ private:
     FreqHz pattern_capture_freq_{0};
     RssiValue pattern_capture_rssi_{0};
 
-    // Spectrum shape sort buffer (for SpectrumShape::analyze in sweep mode)
-    uint8_t spectrum_shape_sort_buf_[256];
-    
-    // Reusable buffer for pattern capture (prevents stack allocation)
-    uint8_t pattern_capture_buffer_[PATTERN_WAVEFORM_SIZE];
-
-    // Synthetic spectrum buffer for pattern feature extraction (prevents stack allocation)
-    uint8_t synthetic_spectrum_buf_[FFT_BIN_COUNT];
-    
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;
     MessageHandlerRegistration message_handler_retune;

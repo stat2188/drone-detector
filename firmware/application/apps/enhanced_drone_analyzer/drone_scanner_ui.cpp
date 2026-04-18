@@ -39,19 +39,17 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , pattern_select_start_(0)
     , pattern_select_end_(0)
     , pattern_capture_frames_(0)
-    , pattern_match_counter_(0)
-    , fifo_state_{}
-    , sweep_transition_guard_()
     , pattern_waveform_sum_{}
     , pattern_capture_freq_{0}
     , pattern_capture_rssi_(0)
+    , pattern_match_counter_(0)
+    , sweep_transition_guard_()
+    , last_db_frequency_(0)
+    , last_db_index_(0)
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
         [this](const Message* const p) {
             const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-
-            this->safe_set_fifo(message.fifo);
-
             this->spectrum_fifo_ = message.fifo;
         }}
     , message_handler_frame_sync{
@@ -74,8 +72,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                             this->enter_sweep_mode();
                         }
                     }
-
-                    this->fifo_state_.mark_access(chTimeNow());
                 }
             }
             this->refresh_ui();
@@ -379,55 +375,6 @@ DroneScannerUI::~DroneScannerUI() noexcept {
     audio::output::stop();
     portapack::receiver_model.disable();
     baseband::shutdown();
-}
-
-void DroneScannerUI::safe_clear_fifo() noexcept {
-    if (!fifo_state_.fifo_changing_.try_set()) {
-        return;
-    }
-    
-    SystemTime now = chTimeNow();
-    
-    if (!fifo_state_.is_safe_to_clear(now, 100)) {
-        fifo_state_.fifo_changing_.clear();
-        return;
-    }
-    
-    fifo_state_.fifo = nullptr;
-    fifo_state_.fifo_active_.clear();
-    fifo_state_.fifo_changing_.clear();
-}
-
-void DroneScannerUI::safe_set_fifo(ChannelSpectrumFIFO* fifo) noexcept {
-    if (!fifo_state_.fifo_changing_.try_set()) {
-        return;
-    }
-    
-    SystemTime now = chTimeNow();
-    
-    fifo_state_.fifo = fifo;
-    fifo_state_.mark_access(now);
-    
-    if (fifo != nullptr) {
-        fifo_state_.fifo_active_.set();
-    } else {
-        fifo_state_.fifo_active_.clear();
-    }
-    
-    fifo_state_.fifo_changing_.clear();
-}
-
-bool DroneScannerUI::verify_baseband_stopped(SystemTime now, uint32_t timeout_ms) const noexcept {
-    if (scanning_) {
-        return false;
-    }
-    
-    if (now < fifo_state_.last_access_time_ms) {
-        return (UINT32_MAX - fifo_state_.last_access_time_ms + now) >= timeout_ms;
-    }
-    
-    const uint32_t elapsed_ms = now - fifo_state_.last_access_time_ms;
-    return elapsed_ms >= timeout_ms;
 }
 
 void DroneScannerUI::focus() {
@@ -869,17 +816,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         scanner_ptr_->clear_lock_state();
     }
     scanning_ = false;
-    
-    // CRITICAL: Verify baseband has stopped before touching FIFO
-    SystemTime start_time = chTimeNow();
-    constexpr uint32_t STOP_TIMEOUT_MS = 200;
-    while (!verify_baseband_stopped(chTimeNow(), STOP_TIMEOUT_MS) && (chTimeNow() - start_time) < STOP_TIMEOUT_MS) {
-        chThdSleepMilliseconds(5);
-    }
-    
-    // CRITICAL: Safe FIFO clear using new method
-    safe_clear_fifo();
-    
+
     // Configure baseband for sweep bandwidth
     portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
     portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);
@@ -918,16 +855,7 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
         baseband::spectrum_streaming_stop();
         scanning_ = false;
     }
-    
-    // CRITICAL: Verify baseband has stopped before touching FIFO
-    SystemTime start_time = chTimeNow();
-    constexpr uint32_t STOP_TIMEOUT_MS = 200;
-    while (!verify_baseband_stopped(chTimeNow(), STOP_TIMEOUT_MS) && (chTimeNow() - start_time) < STOP_TIMEOUT_MS) {
-        chThdSleepMilliseconds(5);
-    }
-    
-    // CRITICAL: Safe FIFO clear using new method
-    safe_clear_fifo();
+    spectrum_fifo_ = nullptr;
     db_scan_count_ = 0;
     button_start_stop_.set_text("Start");
 
@@ -1246,18 +1174,18 @@ void DroneScannerUI::on_touch_spectrum(uint16_t pixel_x) noexcept {
 
 void DroneScannerUI::capture_pattern_frame(const ChannelSpectrum& spectrum) noexcept {
     if (pattern_capture_state_ != PatternCaptureState::CAPTURING) return;
-    
+
     // Calculate FFT bin range from pixel selection
     // Composite pixels map to FFT bins via Looking Glass pattern
     // Lower sideband: pixels 0-119 → bins 134-253
     // Upper sideband: pixels 120-239 → bins 2-119
-    
-    // Normalize spectrum to 16-bin waveform using member buffer
-    uint8_t* wave_16 = pattern_capture_buffer_;
+
+    // Normalize spectrum to 16-bin waveform (stack-local buffer)
+    uint8_t wave_16[PATTERN_WAVEFORM_SIZE];
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
         const size_t pixel_pos = pattern_select_start_ + (i * (pattern_select_end_ - pattern_select_start_)) / PATTERN_WAVEFORM_SIZE;
         if (pixel_pos >= COMPOSITE_SIZE) break;
-        
+
         // Map pixel to FFT bin
         uint8_t fft_bin;
         if (pixel_pos < SWEEP_FFT_MAP_CROSSOVER) {
@@ -1269,21 +1197,21 @@ void DroneScannerUI::capture_pattern_frame(const ChannelSpectrum& spectrum) noex
             fft_bin = pixel_pos - SWEEP_FFT_MAP_CROSSOVER + 2;
             if (fft_bin >= FFT_DC_SPIKE_START) fft_bin = FFT_DC_SPIKE_END;
         }
-        
+
         if (fft_bin < FFT_BIN_COUNT) {
             wave_16[i] = spectrum.db[fft_bin];
         } else {
             wave_16[i] = 0;
         }
     }
-    
+
     // Accumulate waveform
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
         pattern_waveform_sum_[i] += wave_16[i];
     }
-    
+
     pattern_capture_frames_++;
-    
+
     if (pattern_capture_frames_ >= PATTERN_CAPTURE_FRAMES) {
         finalize_pattern_capture();
     }
@@ -1293,14 +1221,14 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
     if (pattern_capture_frames_ < PATTERN_CAPTURE_FRAMES) {
         return;
     }
-    
+
     // Average accumulated waveform
     SignalPattern pattern;
     pattern.match_count = 0;
     pattern.created_time = chTimeNow();
     pattern.flags = SignalPattern::Flags::ENABLED;
     pattern.match_threshold = DEFAULT_PATTERN_CORRELATION_THRESHOLD;
-    
+
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
         pattern.waveform[i] = pattern_waveform_sum_[i] / PATTERN_CAPTURE_FRAMES;
     }
@@ -1344,28 +1272,30 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
             scanner_ptr_->get_config().spectrum_symmetry,
             false
         };
-        
-        // Interpolate 16-element averaged waveform to 256-bin synthetic spectrum
+
+        // Interpolate 16-element averaged waveform to 256-bin synthetic spectrum (stack-local)
+        uint8_t synthetic_spectrum_buf[FFT_BIN_COUNT];
         constexpr size_t BINS_PER_WAVEFORM_ELEM = FFT_BIN_COUNT / PATTERN_WAVEFORM_SIZE;
-        memset(synthetic_spectrum_buf_, 0, sizeof(synthetic_spectrum_buf_));
-        
+        memset(synthetic_spectrum_buf, 0, sizeof(synthetic_spectrum_buf));
+
         for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
             const uint8_t value = pattern.waveform[i];
             for (size_t j = 0; j < BINS_PER_WAVEFORM_ELEM; ++j) {
                 const size_t bin_idx = i * BINS_PER_WAVEFORM_ELEM + j;
                 if (bin_idx < FFT_BIN_COUNT) {
-                    synthetic_spectrum_buf_[bin_idx] = value;
+                    synthetic_spectrum_buf[bin_idx] = value;
                 }
             }
         }
-        
-        // Analyze synthetic spectrum to extract features
+
+        // Analyze synthetic spectrum to extract features (stack-local sort buffer)
+        uint8_t spectrum_shape_sort_buf[256];
         const SpectrumShape::AnalysisResult shape = SpectrumShape::analyze(
-            synthetic_spectrum_buf_,
-            spectrum_shape_sort_buf_,
+            synthetic_spectrum_buf,
+            spectrum_shape_sort_buf,
             shape_config
         );
-        
+
         // Fill pattern features from analysis result
         if (shape.signal_detected) {
             pattern.features.peak_position = static_cast<uint8_t>(
@@ -1386,14 +1316,14 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
             );
         }
     }
-    
+
     // Create pattern name with timestamp
     char name_buf[PATTERN_NAME_MAX_LEN];
     const FreqHz center_freq = sweep_[active_sweep_idx_].f_center;
     const uint32_t freq_mhz = static_cast<uint32_t>(center_freq / 1000000);
     snprintf(name_buf, sizeof(name_buf), "PAT_%luMHz", (unsigned long)freq_mhz);
     (void)safe_str_copy(pattern.name, PATTERN_NAME_MAX_LEN, name_buf);
-    
+
     // Save pattern via PatternManager
     if (scanner_ptr_ != nullptr) {
         const ErrorCode err = scanner_ptr_->save_pattern(pattern);
@@ -1409,7 +1339,7 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
             drone_display_.set_status_text("Pattern save failed");
         }
     }
-    
+
     // Reset capture state
     pattern_capture_state_ = PatternCaptureState::IDLE;
     button_ptr_.set_text("PTR");
@@ -1421,17 +1351,18 @@ void DroneScannerUI::finalize_pattern_capture() noexcept {
 
 void DroneScannerUI::match_patterns_in_sweep(const ChannelSpectrum& spectrum, FreqHz freq) noexcept {
     if (scanner_ptr_ == nullptr) return;
-    
+
     // Only match every PATTERN_MATCH_INTERVAL frames to save CPU
     pattern_match_counter_++;
     if (pattern_match_counter_ < PATTERN_MATCH_INTERVAL) return;
     pattern_match_counter_ = 0;
-    
+
     // Check if pattern matching is enabled
     ScanConfig cfg = scanner_ptr_->get_config();
     if (!cfg.pattern_matching_enabled) return;
-    
-    // Analyze spectrum shape
+
+    // Analyze spectrum shape (stack-local sort buffer)
+    uint8_t spectrum_shape_sort_buf[256];
     SpectrumShape::Config shape_config{
         cfg.spectrum_margin,
         cfg.spectrum_min_width,
@@ -1443,34 +1374,34 @@ void DroneScannerUI::match_patterns_in_sweep(const ChannelSpectrum& spectrum, Fr
         cfg.spectrum_symmetry,
         false
     };
-    
+
     const SpectrumShape::AnalysisResult shape = SpectrumShape::analyze(
         spectrum.db.data(),
-        spectrum_shape_sort_buf_,
+        spectrum_shape_sort_buf,
         shape_config
     );
-    
+
     if (!shape.signal_detected) return;
-    
+
     // Match against loaded patterns
     PatternMatcher& matcher = scanner_ptr_->get_pattern_matcher();
     const PatternMatchResult result = matcher.match(spectrum.db.data(), shape);
-    
+
     if (result.matched && result.correlation_score >= cfg.pattern_min_correlation) {
         // Pattern matched!
         const SignalPattern* patterns = scanner_ptr_->get_patterns();
         const size_t pattern_count = scanner_ptr_->get_pattern_count();
-        
+
         if (result.pattern_index < pattern_count) {
             const SignalPattern& matched_pattern = patterns[result.pattern_index];
-            
+
             // Show match notification in status
             char match_msg[MAX_TEXT_LENGTH];
             const uint32_t freq_mhz = static_cast<uint32_t>(freq / 1000000);
             snprintf(match_msg, sizeof(match_msg), "MATCH: %s @ %luMHz",
                      matched_pattern.name, (unsigned long)freq_mhz);
             drone_display_.set_status_text(match_msg);
-            
+
             // Optionally update display to show matched pattern name
             // This could be integrated with drone display or shown as overlay
         }
