@@ -212,7 +212,8 @@ uint64_t PatternMatcher::isqrt64(uint64_t x) noexcept {
 
 PatternMatchResult PatternMatcher::match(
     const uint8_t* spectrum,
-    const SpectrumShape::AnalysisResult& shape
+    const SpectrumShape::AnalysisResult& shape,
+    bool apply_global_filters
 ) noexcept {
     PatternMatchResult result = PatternMatchResult::no_match();
 
@@ -243,6 +244,10 @@ PatternMatchResult PatternMatcher::match(
         );
 
         if (corr >= pattern.match_threshold) {
+            // ✅ ЕСТЬ СОВПАДЕНИЕ С ПАТТЕРНОМ
+            // ✅ ИГНОРИРУЕМ ВСЕ ГЛОБАЛЬНЫЕ ФИЛЬТРЫ ПО ФОРМЕ
+            // ✅ Пользователь явно сказал что этот сигнал нужно детектировать в любом виде
+
             const uint8_t feature_dist = compute_feature_distance(
                 shape,
                 pattern.features
@@ -288,6 +293,12 @@ PatternMatchResult PatternMatcher::match(
                 break;
             }
         }
+    }
+
+    // ✅ Если мы нашли совпадение с паттерном - это всегда достаточное условие
+    // ✅ Никакие глобальные фильтры больше не имеют права отклонить этот сигнал
+    if (result.matched && !apply_global_filters) {
+        return result;
     }
 
     return result;
