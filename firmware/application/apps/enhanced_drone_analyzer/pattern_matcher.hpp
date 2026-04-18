@@ -48,6 +48,23 @@ private:
     uint8_t normalized_[PATTERN_WAVEFORM_SIZE];
     std::array<size_t, 4> candidates_;
 
+    enum class TrainingLabel : uint8_t {
+        POSITIVE = 1,
+        NEGATIVE = 0,
+        RESET = 2
+    };
+
+    [[nodiscard]] static uint8_t neural_infer(const uint8_t* spectrum_16) noexcept;
+    [[nodiscard]] bool train_current(TrainingLabel label) noexcept;
+    
+    [[nodiscard]] bool save_weights() noexcept;
+    [[nodiscard]] bool load_weights() noexcept;
+    void reset_weights() noexcept;
+
+    [[nodiscard]] static constexpr uint8_t relu(int16_t x) noexcept {
+        return static_cast<uint8_t>(x > 0 ? x : 0);
+    }
+
     void normalize_spectrum(
         const uint8_t* fft_256,
         uint8_t* wave_16
