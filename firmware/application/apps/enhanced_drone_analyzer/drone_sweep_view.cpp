@@ -13,6 +13,51 @@
 namespace drone_analyzer {
 
 // ============================================================================
+// STATIC WIDGET DEFINITIONS (BSS MEMORY - NO STACK USAGE)
+// ============================================================================
+
+// SweepWindowGroup1View static widgets
+ui::Labels SweepWindowGroup1View::labels_{
+    {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window 1 --", Theme::getInstance()->fg_cyan->foreground},
+    {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Theme::getInstance()->fg_light->foreground},
+    {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Theme::getInstance()->fg_light->foreground},
+    {{UI_POS_X(1), UI_POS_Y(5)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
+};
+ui::NumberField SweepWindowGroup1View::field_sw1_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw1_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw1_step_{{UI_POS_X(1), UI_POS_Y(6)}, 5, {1000, 99999}, 1000, ' '};
+
+ui::Labels SweepWindowGroup1View::labels_sw2_{
+    {{UI_POS_X(0), UI_POS_Y(8)}, "-- Window 2 --", Theme::getInstance()->fg_green->foreground},
+    {{UI_POS_X(1), UI_POS_Y(10)}, "Start(MHz):", Theme::getInstance()->fg_light->foreground},
+    {{UI_POS_X(1), UI_POS_Y(12)}, "End(MHz):", Theme::getInstance()->fg_light->foreground},
+    {{UI_POS_X(1), UI_POS_Y(14)}, "Step(kHz):", Theme::getInstance()->fg_light->foreground},
+};
+ui::Checkbox SweepWindowGroup1View::check_sw2_enabled_{{UI_POS_X(1), UI_POS_Y(9)}, 8, "Enabled", false};
+ui::NumberField SweepWindowGroup1View::field_sw2_start_{{UI_POS_X(1), UI_POS_Y(11)}, 5, {100, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw2_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw2_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {1000, 99999}, 1000, ' '};
+
+ui::Labels SweepWindowGroup1View::labels_exc1_{
+    {{UI_POS_X(16), UI_POS_Y(0)}, "Exc(MHz):", Theme::getInstance()->fg_yellow->foreground},
+};
+ui::NumberField SweepWindowGroup1View::field_sw1_exc0_{{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw1_exc1_{{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw1_exc2_{{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw1_exc3_{{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw1_exc4_{{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
+
+ui::Labels SweepWindowGroup1View::labels_exc2_{
+    {{UI_POS_X(16), UI_POS_Y(8)}, "Exc(MHz):", Theme::getInstance()->fg_yellow->foreground},
+};
+ui::NumberField SweepWindowGroup1View::field_sw2_exc0_{{UI_POS_X(16), UI_POS_Y(9)}, 5, {0, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw2_exc1_{{UI_POS_X(16), UI_POS_Y(10)}, 5, {0, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw2_exc2_{{UI_POS_X(16), UI_POS_Y(11)}, 5, {0, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw2_exc3_{{UI_POS_X(16), UI_POS_Y(12)}, 5, {0, 7200}, 1, ' '};
+ui::NumberField SweepWindowGroup1View::field_sw2_exc4_{{UI_POS_X(16), UI_POS_Y(13)}, 5, {0, 7200}, 1, ' '};
+
+
+// ============================================================================
 // SweepWindowGroup1View — Tab 1: Windows 1-2
 // ============================================================================
 
