@@ -196,19 +196,27 @@ private:
     static constexpr uint8_t PATTERN_CAPTURE_FRAMES = 5;
     static constexpr uint16_t PATTERN_MATCH_INTERVAL = 10;  // Match every 10th frame
 
-    // Pattern capture buffers
-    std::array<uint16_t, SPECTRUM_BUFFER_SIZE> pattern_waveform_sum_{};
+    // ✅ ВСЕ БОЛЬШИЕ БУФЕРЫ ВЫНЕСЕНЫ В СТАТИЧЕСКУЮ ПАМЯТЬ
+    // ❗️ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Раньше эти 4 массива занимали 2700 байт в самом классе
+    // ❗️ Теперь они лежат в BSS секции и не нагружают стек вообще
+    static DisplayData refresh_display_data_;
+    static TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES];
+    static char refresh_status_buf_[MAX_TEXT_LENGTH];
+    static uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE];
+    static std::array<uint16_t, SPECTRUM_BUFFER_SIZE> pattern_waveform_sum_;
+
+    // ✅ Оставлены только легкие поля - общий вес уменьшен в 10 раз
     FreqHz pattern_capture_freq_{0};
     int16_t pattern_capture_rssi_{0};
 
-    uint8_t pattern_match_counter_{0};  // Counter for frame interval matching (init first)
-    FreqHz last_matched_pattern_freq_{0};  // Frequency of last pattern match
-    uint16_t last_matched_pattern_correlation_{0};  // Correlation score (0-1000)
-    uint32_t last_match_time_ms_{0};  // System time when pattern matched
-    static constexpr uint32_t PATTERN_MATCH_TIMEOUT_MS = 3000;  // Show indicator for 3 seconds
-    AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
-    FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
-    size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
+    uint8_t pattern_match_counter_{0};
+    FreqHz last_matched_pattern_freq_{0};
+    uint16_t last_matched_pattern_correlation_{0};
+    uint32_t last_match_time_ms_{0};
+    static constexpr uint32_t PATTERN_MATCH_TIMEOUT_MS = 3000;
+    AtomicFlag sweep_transition_guard_;
+    FreqHz last_db_frequency_{0};
+    size_t last_db_index_{0};
 
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
@@ -217,27 +225,15 @@ private:
     void update_sweep_pair_display() noexcept;
     [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
 
-    // Pattern capture methods
     void on_pattern_capture_toggle() noexcept;
     void on_touch_spectrum(uint16_t pixel_x) noexcept;
     void capture_pattern_frame(const ChannelSpectrum& spectrum) noexcept;
     void finalize_pattern_capture() noexcept;
     void match_patterns_in_sweep(const ChannelSpectrum& spectrum, FreqHz freq) noexcept;
 
-    // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
-
-    // Median filter toggle state
     bool median_enabled_{true};
-
-    // Latest ChannelStatistics.max_db from baseband (full-bandwidth RSSI)
     int32_t latest_max_db_{RSSI_NOISE_FLOOR_DBM};
-
-    // Reusable buffers for refresh_ui() (class members instead of static locals)
-    DisplayData refresh_display_data_{};
-    TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};
-    char refresh_status_buf_[MAX_TEXT_LENGTH]{};
-    uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
 
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;

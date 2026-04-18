@@ -26,6 +26,14 @@
 
 namespace drone_analyzer {
 
+// ✅ Статические поля класса DroneScannerUI
+// ❗️ Занимают память один раз в BSS секции, не имеют отношения к стеку
+DisplayData DroneScannerUI::refresh_display_data_{};
+TrackedDrone DroneScannerUI::refresh_drones_[MAX_DISPLAYED_DRONES]{};
+char DroneScannerUI::refresh_status_buf_[MAX_TEXT_LENGTH]{};
+uint16_t DroneScannerUI::refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
+std::array<uint16_t, SPECTRUM_BUFFER_SIZE> DroneScannerUI::pattern_waveform_sum_{};
+
 static HardwareController s_hardware;
 static DatabaseManager s_database;
 static DroneScanner s_scanner(s_database, s_hardware);
