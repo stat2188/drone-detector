@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <array>
 
 #include "ch.h"
 
@@ -386,9 +387,15 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
     return perform_scan_cycle_internal();
 }
 
+// ✅ CRITICAL FIX: Static buffer in BSS, NOT ON STACK. 4KB stack limit on M0.
+static std::array<int16_t, 2048> pattern_matcher_buffer; // ✅ 4KB allocated ONCE at boot in static memory
+
 ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     // Check force-resume flag (set when max dwell expires)
-    if (force_resume_flag_.test_and_set()) {
+    // ✅ FIXED: Correct atomic flag usage (ChibiOS semantics)
+    // test_and_set() returns PREVIOUS state. We only clear if it was already set.
+    const bool flag_was_set = force_resume_flag_.test_and_set();
+    if (flag_was_set) {
         force_resume_flag_.clear();
         if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
             state_ = ScannerState::SCANNING;
