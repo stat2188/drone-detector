@@ -328,6 +328,7 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/pattern_matcher.cpp
 	apps/enhanced_drone_analyzer/pattern_manager.cpp
 	apps/enhanced_drone_analyzer/pattern_settings_view.cpp
+	apps/enhanced_drone_analyzer/pattern_types.cpp
 	apps/enhanced_drone_analyzer/settings_manager.cpp
 
 	protocols/aprs.cpp
