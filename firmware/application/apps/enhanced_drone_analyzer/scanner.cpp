@@ -1474,11 +1474,10 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     // Check for pending pattern match override (set from UI thread)
     const bool has_pattern_override = pattern_match_correlation_ > 0;
     const uint16_t pattern_correlation = pattern_match_correlation_;
-    const SystemTime pattern_timestamp = pattern_match_timestamp_;
-    const FreqHz pattern_freq = pattern_match_frequency_;
 
     // Clear pattern match info after reading
     pattern_match_correlation_ = 0;
+    pattern_match_timestamp_ = 0;
     pattern_match_frequency_ = 0;
 
     // CFAR detection: if enabled, use adaptive threshold instead of fixed margin
