@@ -418,7 +418,7 @@ void DroneScannerUI::on_show() {
 
         // Reinit all windows from config
         last_tuned_freq_ = 0;
-        skip_next_fft_ = true;
+        skip_fft_counter_ = 3;
         sweep_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq, cfg.sweep_step_freq);
         sweep_[0].enabled = true;  // Window 0 always enabled
         sweep_[1].init(cfg.sweep2_start_freq, cfg.sweep2_end_freq, cfg.sweep2_step_freq);
