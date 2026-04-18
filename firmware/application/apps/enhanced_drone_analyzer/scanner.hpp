@@ -330,8 +330,9 @@ public:
             case CFARMode::OS: {
                 // OS-CFAR (Ordered Statistic): collect all reference cells, sort, take k-th value
                 // Better in multi-target environments (resists masking from nearby signals)
-                // Use a small stack buffer to collect and sort reference cells
-                uint8_t ref_buf[CFAR_REF_CELLS_MAX * 2];  // Max 128 cells (64 left + 64 right)
+                // ✅ CRITICAL FIX: MOVED FROM STACK TO STATIC BSS MEMORY
+                // Previously this 128 byte buffer was causing stack overflow when called nested
+                static uint8_t ref_buf[CFAR_REF_CELLS_MAX * 2];  // Max 128 cells (64 left + 64 right)
                 size_t ref_idx = 0;
                 
                 // Collect left window cells
@@ -1201,7 +1202,8 @@ private:
     ScanStatistics statistics_;
     
     // Tracked drones (fixed-size array, no heap allocation)
-    std::array<TrackedDrone, MAX_TRACKED_DRONES> tracked_drones_;
+    // ✅ Mayhem standard: C-style array, no std::array
+    TrackedDrone tracked_drones_[MAX_TRACKED_DRONES]{};
     
     // Number of tracked drones (uint8_t sufficient for MAX_TRACKED_DRONES=16)
     uint8_t tracked_count_;
