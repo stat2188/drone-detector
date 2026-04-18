@@ -248,9 +248,11 @@ public:
         uint8_t os_k_percent = 75,
         uint8_t vi_threshold_x10 = 15
     ) noexcept {
-        if (mode == CFARMode::OFF) return false;
-        if (spectrum == nullptr || bin_count == 0) return false;
-        if (cbin >= bin_count) return false;
+        // ✅ GUARD CLAUSES FIRST (Scott Meyers Rule #19)
+        if (mode == CFARMode::OFF)                     return false;
+        if (spectrum == nullptr || bin_count == 0)      return false;
+        if (cbin >= bin_count)                          return false;
+        if (threshold_x10 == 0)                         return false;
 
         // Guard: ref_cells must be reasonable
         if (ref_cells < CFAR_REF_CELLS_MIN) ref_cells = CFAR_REF_CELLS_MIN;
