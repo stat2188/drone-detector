@@ -21,13 +21,13 @@ PatternSettingsView::PatternSettingsView(
     : View()
     , config_(config)
     , scanner_(scanner)
-    , enable_label_(Rect{UI_POS_X(0), BUTTON_Y}, "Pattern Matching:")
-    , check_enable_(Point{UI_POS_X(16), BUTTON_Y}, 18, "Enable", false)
-    , threshold_label_(Rect{UI_POS_X(0), BUTTON_Y + BUTTON_HEIGHT + BUTTON_SPACING}, "Min Correlation:")
-    , field_threshold_(Rect{UI_POS_X(16), BUTTON_Y + BUTTON_HEIGHT + BUTTON_SPACING}, FIELD_LENGTH, {0, 255},
+    , enable_label_(Rect{UI_POS_X(0), BUTTON_Y, UI_POS_WIDTH(15), 16}, "Pattern Matching:")
+    , check_enable_(Point{UI_POS_X(16), BUTTON_Y}, 18, "Enable", config_.pattern_matching_enabled)
+    , threshold_label_(Rect{UI_POS_X(0), BUTTON_Y + BUTTON_HEIGHT + BUTTON_SPACING, UI_POS_WIDTH(15), 16}, "Min Correlation:")
+    , field_threshold_(Point{UI_POS_X(16), BUTTON_Y + BUTTON_HEIGHT + BUTTON_SPACING}, FIELD_LENGTH, {0, 255},
                      static_cast<int32_t>(config_.pattern_min_correlation), ' ')
-    , list_label_(Rect{UI_POS_X(0), LIST_Y}, "Loaded Patterns:")
-    , pattern_count_label_(Rect{UI_POS_X(0), LIST_Y + 16}, "")
+    , list_label_(Rect{UI_POS_X(0), LIST_Y, UI_POS_WIDTH(30), 16}, "Loaded Patterns:")
+    , pattern_count_label_(Rect{UI_POS_X(0), LIST_Y + 16, UI_POS_WIDTH(30), 16}, "")
     , button_back_(Rect{UI_POS_X(0), LIST_Y + LIST_HEIGHT - 30, UI_POS_WIDTH(6), BUTTON_HEIGHT}, "Back")
     , button_refresh_(Rect{UI_POS_X(7), LIST_Y + LIST_HEIGHT - 30, UI_POS_WIDTH(6), BUTTON_HEIGHT}, "Reload")
     , button_clear_(Rect{UI_POS_X(14), LIST_Y + LIST_HEIGHT - 30, UI_POS_WIDTH(6), BUTTON_HEIGHT}, "Clear") {
@@ -41,15 +41,15 @@ PatternSettingsView::PatternSettingsView(
     };
 
     button_back_.on_select = [this](Button&) {
-        on_cancel();
+        if (on_cancel) on_cancel();
     };
 
     button_refresh_.on_select = [this](Button&) {
-        on_refresh();
+        if (on_refresh) on_refresh();
     };
 
     button_clear_.on_select = [this](Button&) {
-        on_clear();
+        if (on_clear) on_clear();
     };
 
     add_children({

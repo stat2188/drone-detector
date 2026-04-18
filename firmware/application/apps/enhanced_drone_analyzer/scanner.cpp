@@ -142,11 +142,11 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , dwell_request_()
     , lock_start_time_{0}
     , confirm_start_time_{0}
-    , lock_timeout_count_{0}
-    , spectrum_sort_buf_{}
-    , sweep_usable_buf_{}
     , pattern_manager_()
     , pattern_matcher_()
+    , spectrum_sort_buf_{}
+    , lock_timeout_count_{0}
+    , sweep_usable_buf_{}
     , alert_callback_in_progress_()
     , rssi_detector_()
     , histogram_processor_()

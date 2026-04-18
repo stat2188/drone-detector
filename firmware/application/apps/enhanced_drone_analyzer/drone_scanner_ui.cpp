@@ -39,11 +39,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , pattern_select_start_(0)
     , pattern_select_end_(0)
     , pattern_capture_frames_(0)
-    , pattern_waveform_sum_{}
-    , pattern_capture_freq_{0}
     , pattern_match_counter_(0)
     , fifo_state_{}
     , sweep_transition_guard_()
+    , pattern_waveform_sum_{}
+    , pattern_capture_freq_{0}
     , pattern_capture_rssi_(0)
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
