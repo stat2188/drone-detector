@@ -86,7 +86,7 @@ struct ScanConfig {
     uint8_t confirm_count{DEFAULT_CONFIRM_COUNT};             // Configurable confirm count
     
     // Pattern matching features (frequency-independent signal recognition)
-    bool pattern_matching_enabled{false};                      // Enable pattern-based detection
+    bool pattern_matching_enabled{true};                       // Enable pattern-based detection
     uint8_t pattern_min_correlation{150};                      // Minimum correlation to match (0-255)
     
     // CFAR detection (Constant False Alarm Rate)

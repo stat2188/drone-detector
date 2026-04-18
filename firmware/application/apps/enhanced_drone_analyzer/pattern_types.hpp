@@ -8,7 +8,7 @@
 
 namespace drone_analyzer {
 
-constexpr size_t MAX_PATTERNS = 50;
+constexpr size_t MAX_PATTERNS = 20;
 constexpr size_t PATTERN_WAVEFORM_SIZE = 16;
 constexpr char PATTERN_DIR[] = "/PATTERNS";
 constexpr size_t PATTERN_NAME_MAX_LEN = 28;

@@ -4,10 +4,10 @@
 #include <cstdlib>
 #include <algorithm>
 #include <cctype>
-#include <string>
-#include "file_path.hpp"
+#include <strings.h>
 #include "string_format.hpp"
 #include "file.hpp"
+#include "ff.h"
 
 namespace drone_analyzer {
 
@@ -29,10 +29,26 @@ ErrorCode PatternManager::load_patterns() noexcept {
 
     pattern_count_ = 0;
 
-    const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
+    DIR dir;
+    FILINFO fno;
+    const FRESULT res = f_opendir(&dir, PATTERN_DIR);
 
-    for (const auto& entry : std::filesystem::directory_iterator(pattern_dir_path, (const TCHAR*)u"*.TXT")) {
-        if (!std::filesystem::is_regular_file(entry.status())) {
+    if (res != FR_OK) {
+        return ErrorCode::DATABASE_NOT_LOADED;
+    }
+
+    while (true) {
+        const FRESULT readdir_res = f_readdir(&dir, &fno);
+        if (readdir_res != FR_OK || fno.fname[0] == '\0') {
+            break;
+        }
+
+        if (fno.fattrib & AM_DIR) {
+            continue;
+        }
+
+        const size_t fname_len = strlen(fno.fname);
+        if (fname_len < 4 || strcasecmp(&fno.fname[fname_len - 4], ".TXT") != 0) {
             continue;
         }
 
@@ -40,12 +56,16 @@ ErrorCode PatternManager::load_patterns() noexcept {
             break;
         }
 
-        const auto& entry_path = entry.path();
-        const ErrorCode err = load_from_file(entry_path);
+        char full_path[64];
+        snprintf(full_path, sizeof(full_path), "%s/%s", PATTERN_DIR, fno.fname);
+
+        const ErrorCode err = load_from_file(full_path);
         if (err == ErrorCode::SUCCESS) {
             ++pattern_count_;
         }
     }
+
+    f_closedir(&dir);
 
     if (pattern_count_ > 0) {
         loaded_.set();
@@ -54,9 +74,13 @@ ErrorCode PatternManager::load_patterns() noexcept {
     return ErrorCode::SUCCESS;
 }
 
-ErrorCode PatternManager::load_from_file(const std::filesystem::path& file_path) noexcept {
+ErrorCode PatternManager::load_from_file(const char* file_path) noexcept {
+    if (file_path == nullptr) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+
     File file;
-    const auto open_err = file.open(file_path, true, false);
+    const auto open_err = file.open(file_path);
     if (open_err.is_valid()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
@@ -216,16 +240,11 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
 }
 
 ErrorCode PatternManager::save_to_file(const SignalPattern& pattern) noexcept {
-    const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
-    
-    std::u16string name_u16;
-    for (size_t i = 0; i < PATTERN_NAME_MAX_LEN && pattern.name[i] != '\0'; ++i) {
-        name_u16 += static_cast<char16_t>(pattern.name[i]);
-    }
-    const auto file_path = pattern_dir_path / (std::filesystem::path{name_u16} + u".TXT");
-    
+    char filename[PATTERN_NAME_MAX_LEN + 8];
+    snprintf(filename, sizeof(filename), "%s/%s.TXT", PATTERN_DIR, pattern.name);
+
     File file;
-    const auto open_err = file.create(file_path);
+    const auto open_err = file.create(filename);
     if (open_err.is_valid()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
@@ -290,19 +309,15 @@ ErrorCode PatternManager::save_to_file(const SignalPattern& pattern) noexcept {
 
 ErrorCode PatternManager::delete_pattern(size_t index) noexcept {
     MutexLock<LockOrder::PATTERN_MUTEX> lock(mutex_);
-    
+
     if (index >= pattern_count_) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    
-    const auto pattern_dir_path = std::filesystem::path{PATTERN_DIR};
-    
-    std::u16string name_u16;
-    for (size_t i = 0; i < PATTERN_NAME_MAX_LEN && patterns_[index].name[i] != '\0'; ++i) {
-        name_u16 += static_cast<char16_t>(patterns_[index].name[i]);
-    }
-    const auto file_path = pattern_dir_path / (std::filesystem::path{name_u16} + u".TXT");
-    const auto del_err = delete_file(file_path);
+
+    char filename[PATTERN_NAME_MAX_LEN + 8];
+    snprintf(filename, sizeof(filename), "%s/%s.TXT", PATTERN_DIR, patterns_[index].name);
+
+    const auto del_err = delete_file(filename);
     if (!del_err.ok()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }

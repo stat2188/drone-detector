@@ -36,7 +36,7 @@ public:
     [[nodiscard]] const SignalPattern* get_patterns_array() const noexcept;
     [[nodiscard]] size_t get_pattern_count() const noexcept;
 
-    [[nodiscard]] ErrorCode load_from_file(const std::filesystem::path& file_path) noexcept;
+    [[nodiscard]] ErrorCode load_from_file(const char* file_path) noexcept;
     [[nodiscard]] ErrorCode save_to_file(const SignalPattern& pattern) noexcept;
 
     [[nodiscard]] size_t find_pattern_by_name(const char* name) const noexcept;

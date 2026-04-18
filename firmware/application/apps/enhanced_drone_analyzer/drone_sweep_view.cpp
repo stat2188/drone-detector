@@ -363,6 +363,11 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     button_defaults_.on_select = [this](ui::Button&) {
         apply_defaults();
     };
+
+    button_save_.on_select = [this](ui::Button&) {
+        save_settings();
+        nav_.pop();
+    };
 }
 
 DroneSweepView::~DroneSweepView() noexcept {
