@@ -1464,6 +1464,16 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     const uint8_t cfg_symmetry = config_.spectrum_symmetry;
     const int32_t cfg_rssi_thresh = config_.rssi_threshold_dbm;
 
+    // Check for pending pattern match override (set from UI thread)
+    const bool has_pattern_override = pattern_match_correlation_ > 0;
+    const uint16_t pattern_correlation = pattern_match_correlation_;
+    const SystemTime pattern_timestamp = pattern_match_timestamp_;
+    const FreqHz pattern_freq = pattern_match_frequency_;
+
+    // Clear pattern match info after reading
+    pattern_match_correlation_ = 0;
+    pattern_match_frequency_ = 0;
+
     // CFAR detection: if enabled, use adaptive threshold instead of fixed margin
     size_t peak_index = FFT_EDGE_SKIP_NARROW;
     uint8_t raw_peak = 0;
@@ -1766,6 +1776,35 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         }
 
         (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
+
+        // Elevate threat level for pattern match (HIGH or CRITICAL)
+        if (has_pattern_override) {
+            if (pattern_correlation >= 800) {
+                elevate_drone_threat(peak_freq, ThreatLevel::CRITICAL);
+            } else if (pattern_correlation >= 600) {
+                elevate_drone_threat(peak_freq, ThreatLevel::HIGH);
+            }
+        }
+    }
+}
+
+void DroneScanner::set_pattern_match_info(FreqHz frequency, uint16_t correlation, SystemTime timestamp) noexcept {
+    pattern_match_frequency_ = frequency;
+    pattern_match_correlation_ = correlation;
+    pattern_match_timestamp_ = timestamp;
+}
+
+void DroneScanner::elevate_drone_threat(FreqHz frequency, ThreatLevel min_threat) noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+
+    for (size_t i = 0; i < tracked_count_; ++i) {
+        if (tracked_drones_[i].frequency == frequency) {
+            const ThreatLevel current = tracked_drones_[i].get_threat();
+            if (current < min_threat) {
+                tracked_drones_[i].threat_level = min_threat;
+            }
+            break;
+        }
     }
 }
 

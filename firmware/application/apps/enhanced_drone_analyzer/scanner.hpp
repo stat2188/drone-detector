@@ -1291,6 +1291,14 @@ private:
 
     // Mahalanobis detector for statistical outlier detection (Sweep mode only)
     MahalanobisDetector mahalanobis_detector_;
+
+    FreqHz pattern_match_frequency_{0};
+    uint16_t pattern_match_correlation_{0};
+    SystemTime pattern_match_timestamp_{0};
+
+    void set_pattern_match_info(FreqHz frequency, uint16_t correlation, SystemTime timestamp) noexcept;
+
+    void elevate_drone_threat(FreqHz frequency, ThreatLevel min_threat) noexcept;
 };
 
 } // namespace drone_analyzer

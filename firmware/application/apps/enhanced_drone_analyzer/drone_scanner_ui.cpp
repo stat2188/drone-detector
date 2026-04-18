@@ -1029,6 +1029,14 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
         drone_display_.set_composite_data(sweep_[w1].composite, COMPOSITE_SIZE);
         drone_display_.set_dual_sweep_mode(false);
     }
+
+    // Update pattern match indicator (red frame)
+    const SystemTime now = chTimeNow();
+    if (last_matched_pattern_freq_ != 0 && (now - last_match_time_ms_) < PATTERN_MATCH_TIMEOUT_MS) {
+        drone_display_.set_pattern_match(last_matched_pattern_freq_, last_match_time_ms_);
+    } else {
+        drone_display_.set_pattern_match(0, 0);
+    }
 }
 
 uint8_t DroneScannerUI::pair_first(uint8_t idx) const noexcept {
@@ -1395,15 +1403,20 @@ void DroneScannerUI::match_patterns_in_sweep(const ChannelSpectrum& spectrum, Fr
         if (result.pattern_index < pattern_count) {
             const SignalPattern& matched_pattern = patterns[result.pattern_index];
 
+            // Save pattern match info for red frame display
+            last_matched_pattern_freq_ = freq;
+            last_matched_pattern_correlation_ = result.correlation_score;
+            last_match_time_ms_ = chTimeNow();
+
+            // Pass pattern match info to scanner for threat elevation (HIGH/CRITICAL)
+            scanner_ptr_->set_pattern_match_info(freq, result.correlation_score, last_match_time_ms_);
+
             // Show match notification in status
             char match_msg[MAX_TEXT_LENGTH];
             const uint32_t freq_mhz = static_cast<uint32_t>(freq / 1000000);
             snprintf(match_msg, sizeof(match_msg), "MATCH: %s @ %luMHz",
                      matched_pattern.name, (unsigned long)freq_mhz);
             drone_display_.set_status_text(match_msg);
-
-            // Optionally update display to show matched pattern name
-            // This could be integrated with drone display or shown as overlay
         }
     }
 }

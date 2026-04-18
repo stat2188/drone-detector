@@ -718,6 +718,12 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
     composite_data_size_ = size;
 }
 
+void DroneDisplay::set_pattern_match(FreqHz frequency, uint32_t time_ms) noexcept {
+    pattern_match_info_.frequency = frequency;
+    pattern_match_info_.time_ms = time_ms;
+    pattern_match_info_.is_active = (frequency != 0 && time_ms != 0);
+}
+
 void DroneDisplay::render_composite(
     Painter& painter,
     const uint8_t* composite_data,
@@ -782,6 +788,54 @@ void DroneDisplay::render_composite(
         }
 
         draw_rectangle(painter, x, y, bar_width, final_height, color);
+    }
+
+    // Draw red frame around matched pattern frequency
+    if (pattern_match_info_.is_active &&
+        sweep_freq_start_ < sweep_freq_end_ &&
+        bar_count > 0) {
+        const FreqHz match_freq = pattern_match_info_.frequency;
+        const FreqHz freq_range = sweep_freq_end_ - sweep_freq_start_;
+
+        if (match_freq >= sweep_freq_start_ && match_freq <= sweep_freq_end_ && freq_range > 0) {
+            // Calculate x position from frequency
+            const uint32_t relative_pos = static_cast<uint32_t>(match_freq - sweep_freq_start_);
+            const uint16_t match_x = chart_start_x + static_cast<uint16_t>(
+                (static_cast<uint64_t>(relative_pos) * bar_count) / freq_range
+            );
+
+            // Draw red frame around the bar (2 pixels wide around the matched position)
+            const uint16_t frame_x = (match_x > 0) ? match_x - 1 : match_x;
+            const uint16_t frame_width = 3;
+            const uint16_t frame_y = chart_start_y;
+            const uint16_t frame_height = chart_height;
+
+            // Top horizontal line
+            draw_rectangle(painter, frame_x, frame_y, frame_width, 1, COLOR_PATTERN_MATCH);
+            // Bottom horizontal line
+            draw_rectangle(painter, frame_x, frame_y + frame_height - 1, frame_width, 1, COLOR_PATTERN_MATCH);
+            // Left vertical line (partial, avoids corner overlap)
+            if (frame_x > chart_start_x) {
+                draw_rectangle(painter, frame_x, frame_y, 1, frame_height, COLOR_PATTERN_MATCH);
+            }
+        }
+    }
+}
+
+void DroneDisplay::draw_pattern_match_frame(
+    Painter& painter,
+    uint16_t x,
+    uint16_t y,
+    uint16_t bar_height
+) noexcept {
+    // Draw 2x2 red frame around bar
+    const uint16_t frame_x = (x > 0) ? x - 1 : x;
+    const uint16_t frame_width = 3;
+
+    draw_rectangle(painter, frame_x, y - 2, frame_width, 1, COLOR_PATTERN_MATCH);
+    draw_rectangle(painter, frame_x, y + bar_height + 1, frame_width, 1, COLOR_PATTERN_MATCH);
+    if (frame_x > 0) {
+        draw_rectangle(painter, frame_x, y - 2, 1, bar_height + 4, COLOR_PATTERN_MATCH);
     }
 }
 

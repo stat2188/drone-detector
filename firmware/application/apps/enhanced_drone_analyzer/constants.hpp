@@ -532,6 +532,11 @@ constexpr uint32_t COLOR_BACKGROUND = 0xFF000000;
  */
 constexpr uint32_t COLOR_TEXT = 0xFFFFFFFF;
 
+/**
+ * @brief Color for pattern match indication (red frame)
+ */
+constexpr uint32_t COLOR_PATTERN_MATCH = 0xFFFF0000;
+
 // ============================================================================
 // FFT Bin Layout Constants (HackRF baseband: 256-bin FFT)
 // ============================================================================

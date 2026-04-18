@@ -195,8 +195,12 @@ private:
     uint8_t pattern_capture_frames_{0};
     static constexpr uint8_t PATTERN_CAPTURE_FRAMES = 5;
     static constexpr uint16_t PATTERN_MATCH_INTERVAL = 10;  // Match every 10th frame
-    
+
     uint8_t pattern_match_counter_{0};  // Counter for frame interval matching (init first)
+    FreqHz last_matched_pattern_freq_{0};  // Frequency of last pattern match
+    uint16_t last_matched_pattern_correlation_{0};  // Correlation score (0-1000)
+    uint32_t last_match_time_ms_{0};  // System time when pattern matched
+    static constexpr uint32_t PATTERN_MATCH_TIMEOUT_MS = 3000;  // Show indicator for 3 seconds
     AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
@@ -212,7 +216,7 @@ private:
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
     void update_sweep_pair_display() noexcept;
     [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
-    
+
     // Pattern capture methods
     void on_pattern_capture_toggle() noexcept;
     void on_touch_spectrum(uint16_t pixel_x) noexcept;

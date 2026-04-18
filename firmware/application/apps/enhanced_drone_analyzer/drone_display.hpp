@@ -197,6 +197,8 @@ public:
 
     [[nodiscard]] const char* get_status_text() const noexcept;
 
+    void set_pattern_match(FreqHz frequency, uint32_t time_ms) noexcept;
+
 private:
     /**
      * @brief Draw spectrum line
@@ -469,6 +471,22 @@ private:
         uint16_t width,
         uint16_t height
     ) noexcept;
+
+    void draw_pattern_match_frame(
+        Painter& painter,
+        uint16_t x,
+        uint16_t y,
+        uint16_t bar_height
+    ) noexcept;
+
+    struct PatternMatchInfo {
+        FreqHz frequency{0};
+        uint32_t time_ms{0};
+        bool is_active{false};
+    };
+
+private:
+    PatternMatchInfo pattern_match_info_;
 };
 
 } // namespace drone_analyzer
