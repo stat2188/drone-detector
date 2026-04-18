@@ -5,6 +5,9 @@
 #include <cstddef>
 #include "constants.hpp"
 
+typedef uint8_t uint8_t;
+typedef size_t size_t;
+
 namespace drone_analyzer {
 
 /**
@@ -56,6 +59,17 @@ public:
     [[nodiscard]] static AnalysisResult analyze(
         const uint8_t* spectrum,
         uint8_t* sort_buf,
+        const Config& config
+    ) noexcept;
+
+    /**
+     * @brief Проверить проходит ли сигнал все фильтры по форме
+     * @param result Результат анализа от analyze()
+     * @param config Конфигурация фильтров
+     * @return true если сигнал прошел все проверки
+     */
+    [[nodiscard]] static bool pass_filters(
+        const AnalysisResult& result,
         const Config& config
     ) noexcept;
 

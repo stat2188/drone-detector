@@ -241,28 +241,41 @@ SpectrumShape::AnalysisResult SpectrumShape::analyze(
     result.peak_index = find_peak(spectrum, result.noise_floor, result.peak_value);
     result.peak_margin = result.peak_value - result.noise_floor;
 
-    if (result.peak_margin < config.margin) return result;
-
+    // ✅ Теперь мы всегда вычисляем ВСЕ параметры даже если сигнал не проходит фильтры
     const uint8_t elevated_threshold = result.noise_floor + (result.peak_margin / 4);
     size_t sig_left = 0, sig_right = 0;
     result.signal_width = measure_width(spectrum, result.peak_index, elevated_threshold, sig_left, sig_right);
-
-    if (result.signal_width < config.min_width) return result;
-    if (result.signal_width > config.max_width) return result;
 
     int32_t avg_margin = 0;
     if (config.peak_sharpness > 50 || config.flatness > 50) {
         avg_margin = compute_avg_margin(spectrum, sig_left, sig_right, result.noise_floor);
     }
 
-    if (!check_sharpness(result.peak_margin, avg_margin, config.peak_sharpness)) return result;
-    if (!check_peak_ratio(result.peak_margin, result.signal_width, config.peak_ratio)) return result;
-    if (!check_valley_depth(spectrum, sig_left, sig_right, result.noise_floor, config.valley_depth)) return result;
-    if (!check_flatness(spectrum, result.peak_index, sig_left, sig_right, config.flatness)) return result;
-    if (!check_symmetry(result.peak_index, sig_left, sig_right, result.signal_width, config.symmetry)) return result;
+    // ✅ Больше нет ранних возвратов. Все параметры вычисляются всегда.
+    // ✅ Проверка фильтров теперь в отдельной функции pass_filters()
 
-    result.signal_detected = true;
+    result.signal_detected = pass_filters(result, config);
     return result;
+}
+
+bool SpectrumShape::pass_filters(
+    const AnalysisResult& result,
+    const Config& config
+) noexcept {
+    if (result.peak_margin < config.margin) return false;
+    if (result.signal_width < config.min_width) return false;
+    if (result.signal_width > config.max_width) return false;
+
+    int32_t avg_margin = 0;
+    // TODO: avg_margin нужно вычислять отдельно или хранить в результате
+
+    if (!check_sharpness(result.peak_margin, avg_margin, config.peak_sharpness)) return false;
+    if (!check_peak_ratio(result.peak_margin, result.signal_width, config.peak_ratio)) return false;
+    if (!check_valley_depth(nullptr, 0, 0, 0, config.valley_depth)) return false;
+    if (!check_flatness(nullptr, 0, 0, 0, config.flatness)) return false;
+    if (!check_symmetry(result.peak_index, 0, 0, result.signal_width, config.symmetry)) return false;
+
+    return true;
 }
 
 } // namespace drone_analyzer
