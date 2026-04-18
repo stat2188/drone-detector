@@ -5,7 +5,6 @@
 
 #include "ui.hpp"
 #include "ui_fileman.hpp"
-#include "ui_modal.hpp"
 #include "scanner.hpp"
 #include "scanner_thread.hpp"
 #include "drone_settings.hpp"
@@ -310,30 +309,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             return;
         }
 
-        // Always show modal dialog first - explain functionality to user
-        auto dialog = nav_.push<ui::ModalMessageView>(
-            "PATTERN CAPTURE",
-            "Capture custom signal patterns for detection.\n\n"
-            "✅ Works only in SWEEP mode\n"
-            "✅ Tap spectrum twice to select region\n"
-            "✅ 16 point fingerprint will be saved\n"
-            "✅ Patterns are auto-matched during scan\n",
-            ui::ModalMessageView::Buttons::YesNoCancel
-        );
-
-        dialog->set_button_text(0, "START CAPTURE");
-        dialog->set_button_text(1, "MANAGE PATTERNS");
-        dialog->set_button_text(2, "CANCEL");
-
-        dialog->on_yes = [this]() {
-            // User confirmed - enter capture mode
-            on_pattern_capture_toggle();
-        };
-
-        dialog->on_no = [this]() {
-            // Open pattern manager view
-            show_alert("Pattern Manager coming soon", 1500);
-        };
+        on_pattern_capture_toggle();
+        show_alert("Tap spectrum twice to select region", 2000);
     };
     
     // Hardware initialization (callbacks are already set, safe to early-return)
