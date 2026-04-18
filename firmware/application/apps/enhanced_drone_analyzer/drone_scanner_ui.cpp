@@ -5,6 +5,7 @@
 
 #include "ui.hpp"
 #include "ui_fileman.hpp"
+#include "ui_modal.hpp"
 #include "scanner.hpp"
 #include "scanner_thread.hpp"
 #include "drone_settings.hpp"
@@ -47,7 +48,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , pattern_select_start_(0)
     , pattern_select_end_(0)
     , pattern_capture_frames_(0)
-    , pattern_waveform_sum_{}
     , pattern_capture_freq_{0}
     , pattern_capture_rssi_(0)
     , pattern_match_counter_(0)
@@ -311,14 +311,14 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         }
 
         // Always show modal dialog first - explain functionality to user
-        auto dialog = nav_.push<ui::ModalDialogView>(
+        auto dialog = nav_.push<ui::ModalMessageView>(
             "PATTERN CAPTURE",
             "Capture custom signal patterns for detection.\n\n"
             "✅ Works only in SWEEP mode\n"
             "✅ Tap spectrum twice to select region\n"
             "✅ 16 point fingerprint will be saved\n"
             "✅ Patterns are auto-matched during scan\n",
-            ui::ModalDialogView::Buttons::YesNoCancel
+            ui::ModalMessageView::Buttons::YesNoCancel
         );
 
         dialog->set_button_text(0, "START CAPTURE");
