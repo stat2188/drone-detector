@@ -387,9 +387,6 @@ ErrorCode DroneScanner::perform_scan_cycle() noexcept {
     return perform_scan_cycle_internal();
 }
 
-// ✅ CRITICAL FIX: Static buffer in BSS, NOT ON STACK. 4KB stack limit on M0.
-static std::array<int16_t, 2048> pattern_matcher_buffer; // ✅ 4KB allocated ONCE at boot in static memory
-
 ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     // Check force-resume flag (set when max dwell expires)
     // ✅ FIXED: Correct atomic flag usage (ChibiOS semantics)

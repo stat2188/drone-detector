@@ -753,7 +753,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
 
     composite_active_ = true;
     last_tuned_freq_ = 0;
-    skip_next_fft_ = true;  // first FFT after entry may be stale
+    skip_fft_counter_ = 3;  // ✅ Аппаратной части нужно минимум 3 кадра чтобы стабилизироваться после перестройки
     drone_display_.set_composite_mode(true);
 
     ScanConfig cfg;
@@ -899,10 +899,10 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     auto& win = sweep_[active_sweep_idx_];
     win.process_bins(spectrum);
 
-    // Skip first FFT after sweep entry — may be stale from previous mode
-    // Restart retune at same frequency to get a clean FFT
-    if (skip_next_fft_) {
-        skip_next_fft_ = false;
+    // ✅ Пропускаем нестабильные кадры FFT после перестройки приемника
+    // RFFC5072 + MAX2837 требуют ~45мс для полной стабилизации = 3 кадра по 15мс
+    if (skip_fft_counter_ > 0) {
+        skip_fft_counter_--;
         retune_sweep_window(win, nullptr);
         return;
     }

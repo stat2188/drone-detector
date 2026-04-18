@@ -405,7 +405,9 @@ void DroneSweepView::save_settings() noexcept {
     FreqHz sw4_end = static_cast<FreqHz>(view_group2_.field_sw4_end_.value()) * 1000000ULL;
     FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
 
-    FreqHz exc[4][EXCEPTIONS_PER_WINDOW] = {};
+    // ✅ Статический массив в BSS секции, не занимает стек
+    static FreqHz exc[4][EXCEPTIONS_PER_WINDOW] = {};
+    std::memset(exc, 0, sizeof(exc));
 
     ui::NumberField* exc1_fields[] = {
         &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
