@@ -295,13 +295,37 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };
     
-    // PTR button: toggle pattern capture mode
+    // PTR button: Pattern Capture Manager
     button_ptr_.on_select = [this](ui::Button&) {
         if (initialization_failed_ || scanner_ptr_ == nullptr) {
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        on_pattern_capture_toggle();
+
+        // Always show modal dialog first - explain functionality to user
+        auto dialog = nav_.push<ui::ModalDialogView>(
+            "PATTERN CAPTURE",
+            "Capture custom signal patterns for detection.\n\n"
+            "✅ Works only in SWEEP mode\n"
+            "✅ Tap spectrum twice to select region\n"
+            "✅ 16 point fingerprint will be saved\n"
+            "✅ Patterns are auto-matched during scan\n",
+            ui::ModalDialogView::Buttons::YesNoCancel
+        );
+
+        dialog->set_button_text(0, "START CAPTURE");
+        dialog->set_button_text(1, "MANAGE PATTERNS");
+        dialog->set_button_text(2, "CANCEL");
+
+        dialog->on_yes = [this]() {
+            // User confirmed - enter capture mode
+            on_pattern_capture_toggle();
+        };
+
+        dialog->on_no = [this]() {
+            // Open pattern manager view
+            show_alert("Pattern Manager coming soon", 1500);
+        };
     };
     
     // Hardware initialization (callbacks are already set, safe to early-return)
