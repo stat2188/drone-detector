@@ -205,11 +205,6 @@ private:
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
 
-    // Pattern capture buffer (accumulates multiple frames)
-    std::array<uint8_t, PATTERN_WAVEFORM_SIZE> pattern_waveform_sum_{};
-    FreqHz pattern_capture_freq_{0};
-    RssiValue pattern_capture_rssi_{0};
-
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
@@ -238,11 +233,6 @@ private:
     TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
     uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
-    
-    // Pattern capture buffer (accumulates multiple frames)
-    std::array<uint8_t, PATTERN_WAVEFORM_SIZE> pattern_waveform_sum_{};
-    FreqHz pattern_capture_freq_{0};
-    RssiValue pattern_capture_rssi_{0};
 
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;
