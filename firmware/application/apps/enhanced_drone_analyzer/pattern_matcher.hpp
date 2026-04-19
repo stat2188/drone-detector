@@ -24,7 +24,8 @@ public:
     static constexpr uint16_t CORRELATION_WEAK = 200;
 
     PatternMatcher() noexcept
-        : patterns_(nullptr)
+        : patterns_copy_{}
+        , patterns_(nullptr)
         , pattern_count_(0)
         , normalized_{}
         , candidates_{} {

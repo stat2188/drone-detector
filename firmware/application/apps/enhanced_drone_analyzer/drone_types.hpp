@@ -81,6 +81,18 @@ enum class MovementTrend : uint8_t {
 };
 
 /**
+ * @brief Pattern match status classification
+ * @note Used by pattern matcher to indicate match quality
+ */
+enum class PatternMatchStatus : uint8_t {
+    NO_MATCH = 0,
+    WEAK_MATCH = 1,
+    MODERATE_MATCH = 2,
+    STRONG_MATCH = 3,
+    EXCELLENT_MATCH = 4
+};
+
+/**
  * @brief Error codes for EDA operations
  * @note All errors are recoverable or have fallback behavior
  */

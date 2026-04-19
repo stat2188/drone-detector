@@ -10,6 +10,7 @@
 #include "file.hpp"
 #include "file_path.hpp"
 #include "pattern_types.hpp"
+#include "constants.hpp"
 #include <array>
 
 #include "locking.hpp"

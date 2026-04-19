@@ -6,23 +6,9 @@
 #include <array>
 
 #include "drone_types.hpp"
+#include "constants.hpp"
 
 namespace drone_analyzer {
-
-constexpr size_t MAX_PATTERNS = 20;
-constexpr size_t PATTERN_WAVEFORM_SIZE = 16;
-constexpr char PATTERN_DIR[] = "/PATTERNS";
-constexpr size_t PATTERN_NAME_MAX_LEN = 28;
-constexpr uint16_t DEFAULT_PATTERN_CORRELATION_THRESHOLD = 200;
-constexpr uint8_t DEFAULT_PATTERN_MATCH_CONFIDENCE = 50;
-
-enum class PatternMatchStatus : uint8_t {
-    NO_MATCH = 0,
-    WEAK_MATCH = 1,
-    MODERATE_MATCH = 2,
-    STRONG_MATCH = 3,
-    EXCELLENT_MATCH = 4
-};
 
 struct PatternFeatures {
     uint8_t peak_position;

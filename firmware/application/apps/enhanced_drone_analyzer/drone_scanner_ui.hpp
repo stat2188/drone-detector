@@ -56,6 +56,8 @@ public:
     }
 
 private:
+    static DroneScanner s_scanner;
+
     static constexpr uint16_t BIG_FREQUENCY_X = 4;
     static constexpr uint16_t BIG_FREQUENCY_Y = 1 * 16;
     static constexpr uint16_t BIG_FREQUENCY_WIDTH = 28 * 8;
