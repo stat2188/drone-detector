@@ -25,7 +25,7 @@ namespace drone_analyzer {
         {{UI_POS_X(0), UI_POS_Y(0)}, "Pattern Manager", Theme::getInstance()->fg_light->foreground},
         {{UI_POS_X(0), UI_POS_Y(2)}, "Count: --", Theme::getInstance()->fg_light->foreground}
     }
-    , field_patterns_{{0, LIST_Y, DISPLAY_WIDTH}}
+    , field_patterns_{{0, LIST_Y}, 20, {}, false}
     , button_add_{{UI_POS_X(0), 284, UI_POS_WIDTH(3), 28}, "Add"}
     , button_edit_{{UI_POS_X(7), 284, UI_POS_WIDTH(3), 28}, "Edt"}
     , button_delete_{{UI_POS_X(11), 284, UI_POS_WIDTH(3), 28}, "Del"}
@@ -68,10 +68,9 @@ namespace drone_analyzer {
 }
 
 void PatternManagerView::focus() noexcept {
-    // Get pattern manager from scanner
     DroneScanner* scanner_ptr = DroneScannerUI::get_scanner();
     if (scanner_ptr != nullptr) {
-        pattern_manager_ptr_ = scanner_ptr->get_pattern_manager();
+        pattern_manager_ptr_ = &scanner_ptr->get_pattern_manager();
     }
 
     refresh_list();
@@ -167,5 +166,7 @@ void PatternManagerView::paint(ui::Painter& painter) noexcept {
     (void)painter;
     // UI components handle their own rendering
 }
+
+PatternManagerView::~PatternManagerView() noexcept = default;
 
 } // namespace drone_analyzer

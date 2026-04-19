@@ -36,7 +36,6 @@ private:
     NavigationView& nav_;
 
     PatternManager* pattern_manager_ptr_{nullptr};
-    DroneScanner* scanner_ptr_{nullptr};
 
     ui::Labels labels_;
     ui::OptionsField field_patterns_;
