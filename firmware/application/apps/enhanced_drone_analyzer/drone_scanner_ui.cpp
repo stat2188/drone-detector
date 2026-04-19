@@ -11,6 +11,7 @@
 #include "drone_settings.hpp"
 #include "settings_manager.hpp"
 #include "drone_sweep_view.hpp"
+#include "pattern_manager_view.hpp"
 #include "database.hpp"
 #include "hardware_controller.hpp"
 #include "audio_alerts.hpp"
