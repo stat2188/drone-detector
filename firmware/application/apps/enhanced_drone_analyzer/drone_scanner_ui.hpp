@@ -51,12 +51,7 @@ public:
     void show_alert(const char* message, uint32_t duration_ms) noexcept;
     void show_error(ErrorCode error, uint32_t duration_ms) noexcept;
 
-    [[nodiscard]] static DroneScanner* get_scanner() noexcept {
-        return &s_scanner;
-    }
-
 private:
-    static DroneScanner s_scanner;
 
     static constexpr uint16_t BIG_FREQUENCY_X = 4;
     static constexpr uint16_t BIG_FREQUENCY_Y = 1 * 16;
@@ -222,6 +217,8 @@ private:
     MessageHandlerRegistration message_handler_retune;
     MessageHandlerRegistration message_handler_channel_stats;
 };
+
+DroneScanner& get_scanner_instance() noexcept;
 
 } // namespace drone_analyzer
 

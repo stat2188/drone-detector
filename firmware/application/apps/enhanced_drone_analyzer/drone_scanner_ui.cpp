@@ -1060,4 +1060,8 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     baseband::spectrum_streaming_start();
 }
 
+DroneScanner& get_scanner_instance() noexcept {
+    return s_scanner;
+}
+
 } // namespace drone_analyzer

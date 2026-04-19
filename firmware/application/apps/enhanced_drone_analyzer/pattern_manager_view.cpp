@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <cstring>
-#include <vector>
 #include <array>
 
 #include "ch.h"
@@ -68,10 +67,8 @@ namespace drone_analyzer {
 }
 
 void PatternManagerView::focus() noexcept {
-    DroneScanner* scanner_ptr = DroneScannerUI::get_scanner();
-    if (scanner_ptr != nullptr) {
-        pattern_manager_ptr_ = &scanner_ptr->get_pattern_manager();
-    }
+    DroneScanner& scanner_ref = get_scanner_instance();
+    pattern_manager_ptr_ = &scanner_ref.get_pattern_manager();
 
     refresh_list();
 }
@@ -83,38 +80,29 @@ void PatternManagerView::refresh_list() noexcept {
 
     const size_t pattern_count = pattern_manager_ptr_->get_pattern_count();
 
-    // NOTE: ui::OptionsField requires std::vector which uses heap allocation.
-    // This is a limitation of the existing UI framework. Workaround:
-    // Use scoped std::vector with pre-reserved capacity to minimize heap fragmentation.
-    // The vector is destroyed immediately after set_options() returns.
-    std::vector<ui::OptionsField::option_t> options;
-    options.reserve(21);  // Pre-allocate to avoid multiple allocations
-    
+    std::array<ui::OptionsField::option_t, 21> options{};
+    size_t option_count = 0;
+
     char item_str[64];
 
-    for (size_t i = 0; i < pattern_count && i < 20; ++i) {
+    for (size_t i = 0; i < pattern_count && i < 20 && option_count < 20; ++i) {
         const SignalPattern* pattern = pattern_manager_ptr_->get_pattern(i);
         if (pattern != nullptr) {
             const char* status = pattern->is_enabled() ? "+" : "-";
-            // CRITICAL FIX: Explicit width limit to prevent buffer overflow
-            // pattern.name can be up to 28 chars, item_str is 64 bytes
-            // "[%s] %.28s" ensures at most 32 chars for name part
             snprintf(item_str, sizeof(item_str), "[%s] %.28s", status, pattern->name);
-            item_str[sizeof(item_str) - 1] = '\0';  // Null terminator guarantee
-            options.push_back({item_str, static_cast<int32_t>(i)});
+            item_str[sizeof(item_str) - 1] = '\0';
+            options[option_count++] = {item_str, static_cast<int32_t>(i)};
         }
     }
 
-    if (pattern_count == 0) {
-        options.push_back({"No patterns", 0});
+    if (pattern_count == 0 && option_count < 21) {
+        options[option_count++] = {"No patterns", 0};
     }
 
-    field_patterns_.set_options(options);
+    field_patterns_.set_options({options.data(), option_count});
 
-    // Update count label
     char count_str[32];
     snprintf(count_str, sizeof(count_str), "Count: %zu", pattern_count);
-    // labels_[1].set_text(count_str); // Would need to update label if available
 }
 
 void PatternManagerView::show_pattern_details() noexcept {
