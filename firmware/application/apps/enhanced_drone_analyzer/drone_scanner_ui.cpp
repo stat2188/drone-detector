@@ -100,7 +100,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_mode_,
         &button_load_,
         &button_settings_,
-        &button_swp_
+        &button_swp_,
+        &button_ptr_
     });
 
     // Filter callback (Looking Glass style: OFF/MID/HIGH)
@@ -287,6 +288,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         }
         ScanConfig config = scanner_ptr_->get_config();
         nav_.push<DroneSweepView>(config, scanner_ptr_);
+    };
+
+    // PTR button: open pattern manager view
+    button_ptr_.on_select = [this](ui::Button&) {
+        if (initialization_failed_ || scanner_ptr_ == nullptr) {
+            show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
+            return;
+        }
+        nav_.push<PatternManagerView>();
     };
 
     // Hardware initialization (callbacks are already set, safe to early-return)

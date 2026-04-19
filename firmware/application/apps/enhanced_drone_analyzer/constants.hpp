@@ -737,6 +737,55 @@ constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 30;
 constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 50;
 
 // ============================================================================
+// Pattern Matching Constants
+// ============================================================================
+
+/**
+ * @brief Maximum number of patterns to store
+ */
+constexpr size_t MAX_PATTERNS = 20;
+
+/**
+ * @brief Pattern waveform size (16 bins from 256-bin FFT)
+ * @note 256 bins are downsampled to 16 bins for pattern matching
+ * @note Reduces memory usage and improves matching speed
+ */
+constexpr size_t PATTERN_WAVEFORM_SIZE = 16;
+
+/**
+ * @brief Pattern directory name for SD card storage
+ */
+constexpr char PATTERN_DIR[] = "/PATTERNS";
+
+/**
+ * @brief Maximum pattern name length (including null terminator)
+ */
+constexpr size_t PATTERN_NAME_MAX_LEN = 28;
+
+/**
+ * @brief Default correlation threshold for pattern matching (0-1000)
+ * @note 200 = 20% correlation (moderate match)
+ * @note Higher threshold = stricter matching (fewer false positives)
+ * @note Lower threshold = more permissive (more false positives)
+ */
+constexpr uint16_t DEFAULT_PATTERN_CORRELATION_THRESHOLD = 200;
+
+/**
+ * @brief Pattern match confidence threshold (0-255)
+ * @note Used for neural network inference output
+ * @note 50 = 20% confidence (default)
+ */
+constexpr uint8_t DEFAULT_PATTERN_MATCH_CONFIDENCE = 50;
+
+/**
+ * @brief Correlation score thresholds for match quality classification
+ */
+constexpr uint16_t PATTERN_CORRELATION_EXCELLENT = 800;  // 80% match
+constexpr uint16_t PATTERN_CORRELATION_STRONG = 600;    // 60% match
+constexpr uint16_t PATTERN_CORRELATION_MODERATE = 400;  // 40% match
+constexpr uint16_t PATTERN_CORRELATION_WEAK = 200;      // 20% match
+
+// ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)
 // ============================================================================
 // CFAR adapts threshold to local noise level, reducing false alarms

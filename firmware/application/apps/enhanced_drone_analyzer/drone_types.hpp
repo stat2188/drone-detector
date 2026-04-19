@@ -371,8 +371,12 @@ struct DisplayDroneEntry {
     char type_name[16];         // 16 bytes
     uint32_t display_color;     // 4 bytes (RGBA)
     MovementTrend trend;        // 1 byte (uint8_t)
+    bool pattern_matched;         // 1 byte - Pattern match indicator
+    uint16_t pattern_correlation; // 2 bytes - Correlation score (0-1000)
+    PatternMatchStatus pattern_status; // 1 byte - Match status
+    char pattern_name[16];       // 16 bytes - Matched pattern name
     
-    // Total: 39 bytes (no vtable, POD type)
+    // Total: 47 bytes (no vtable, POD type)
     
     /**
      * @brief Default constructor

@@ -326,6 +326,10 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/sweep_processor.cpp
 	apps/enhanced_drone_analyzer/spectrum_shape.cpp
 	apps/enhanced_drone_analyzer/mahalanobis_gate.cpp
+	apps/enhanced_drone_analyzer/pattern_types.cpp
+	apps/enhanced_drone_analyzer/pattern_matcher.cpp
+	apps/enhanced_drone_analyzer/pattern_manager.cpp
+	apps/enhanced_drone_analyzer/pattern_manager_view.cpp
 
 	protocols/aprs.cpp
 	protocols/ax25.cpp

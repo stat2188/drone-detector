@@ -49,11 +49,11 @@ ScanConfig::ScanConfig() noexcept
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(20000000)
-    , dwell_enabled(true)           // Stay on freq when signal detected
-    , confirm_count_enabled(true)   // Require confirmations to reduce noise
-    , noise_blacklist_enabled(true) // Skip persistent noise frequencies
-    , spectrum_detection_enabled(true) // Use spectrum shape analysis
-    , median_enabled(true)        // Median filter for RSSI spike rejection (ON by default)
+    , dwell_enabled(true)
+    , confirm_count_enabled(true)
+    , noise_blacklist_enabled(true)
+    , spectrum_detection_enabled(true)
+    , median_enabled(true)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
@@ -63,9 +63,49 @@ ScanConfig::ScanConfig() noexcept
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
     , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
-    , rssi_variance_enabled(false)  // Off by default (experimental)
+    , rssi_variance_enabled(false)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
-{
+    , pattern_matching_enabled(false)
+    , patterns_bypass_filters(false)
+    , patterns_additional_check(false)
+    , pattern_match_mode(0)
+    , pattern_correlation_threshold(DEFAULT_PATTERN_CORRELATION_THRESHOLD)
+    , pattern_neural_threshold(DEFAULT_PATTERN_MATCH_CONFIDENCE) {
+    // sweep2/3/4 fields use in-class defaults: disabled
+}
+
+ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
+    : mode(m)
+    , start_frequency(start)
+    , end_frequency(end)
+    , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
+    , rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
+    , stale_timeout_ms(DRONE_REMOVAL_TIMEOUT_MS)
+    , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
+    , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
+    , sweep_step_freq(20000000)
+    , dwell_enabled(true)
+    , confirm_count_enabled(true)
+    , noise_blacklist_enabled(true)
+    , spectrum_detection_enabled(true)
+    , median_enabled(true)
+    , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
+    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
+    , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
+    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
+    , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
+    , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
+    , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
+    , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
+    , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
+    , rssi_variance_enabled(false)
+    , confirm_count(DEFAULT_CONFIRM_COUNT)
+    , pattern_matching_enabled(false)
+    , patterns_bypass_filters(false)
+    , patterns_additional_check(false)
+    , pattern_match_mode(0)
+    , pattern_correlation_threshold(DEFAULT_PATTERN_CORRELATION_THRESHOLD)
+    , pattern_neural_threshold(DEFAULT_PATTERN_MATCH_CONFIDENCE) {
     // sweep2/3/4 fields use in-class defaults: disabled
 }
 
@@ -127,7 +167,7 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , freq_lock_count_{0}
     , locked_frequency_{0}
     , track_start_time_{0}
-    , current_drone_type_{'\0', '\0', '\0', '\0'}
+    , current_drone_type_{'\0', '\0', '\0'}
     , drone_type_valid_{false}
     , statistics_()
     , tracked_drones_()
@@ -150,7 +190,9 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , histogram_processor_()
     , rssi_median_filter_()
     , neighbor_margin_checker_()
-    , mahalanobis_detector_() {
+    , mahalanobis_detector_()
+    , pattern_matcher_()
+    , pattern_manager_() {
 
     // Initialize mutex
     chMtxInit(&mutex_);
@@ -191,6 +233,16 @@ ErrorCode DroneScanner::initialize() noexcept {
 
     state_ = ScannerState::IDLE;
     statistics_.reset();
+
+    // Load patterns from SD card
+    const ErrorCode patterns_err = pattern_manager_.load_patterns();
+    if (patterns_err == ErrorCode::SUCCESS) {
+        // Set patterns to matcher
+        pattern_matcher_.set_patterns(
+            pattern_manager_.get_patterns_array(),
+            pattern_manager_.get_pattern_count()
+        );
+    }
 
     return ErrorCode::SUCCESS;
 }
@@ -1184,6 +1236,43 @@ void DroneScanner::reset_neighbor_checker() noexcept {
 // ============================================================================
 
 bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept {
+    // Pattern matching bypass: check patterns BEFORE shape filters
+    if (config_.patterns_bypass_filters) {
+        size_t peak_index = 0;
+        uint8_t peak_value = 0;
+
+        // Find peak in spectrum
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] > peak_value) {
+                peak_value = spectrum.db[i];
+                peak_index = i;
+            }
+        }
+
+        if (peak_value > 0) {
+            SpectrumShape::AnalysisResult shape_result;
+            shape_result.signal_detected = true;
+            shape_result.peak_value = peak_value;
+            shape_result.noise_floor = 0;
+            shape_result.peak_margin = 0;
+            shape_result.signal_width = 1;
+            shape_result.peak_index = peak_index;
+
+            const PatternMatchResult pattern_result = try_match_pattern_internal(
+                spectrum.db.data(),
+                shape_result
+            );
+
+            if (pattern_result.matched) {
+                out_rssi = static_cast<int32_t>(peak_value) - FFT_DBM_OFFSET;
+                if (out_rssi > RSSI_MAX_DBM) out_rssi = RSSI_MAX_DBM;
+                if (out_rssi < RSSI_MIN_DBM) out_rssi = RSSI_MIN_DBM;
+                return true;
+            }
+        }
+    }
+
     // CFAR detection: if enabled, use adaptive threshold instead of fixed margin
     if (config_.cfar_mode != CFARMode::OFF) {
         const size_t cfar_peak = CFARDetector::find_peak_cfar(
@@ -1432,6 +1521,23 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
     if (out_rssi < RSSI_MIN_DBM) out_rssi = RSSI_MIN_DBM;
 
     return true;
+}
+
+PatternMatchResult DroneScanner::try_match_pattern_internal(
+    const uint8_t* spectrum,
+    const SpectrumShape::AnalysisResult& shape_result
+) noexcept {
+    PatternMatchResult result = PatternMatchResult::no_match();
+
+    if (!config_.pattern_matching_enabled) {
+        return result;
+    }
+
+    if (pattern_manager_.get_pattern_count() == 0) {
+        return result;
+    }
+
+    return pattern_matcher_.match(spectrum, shape_result);
 }
 
 // ============================================================================
@@ -1749,6 +1855,37 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
                 (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
                 if (tracked_count_ > 0) {
                     tracked_drones_[tracked_count_ - 1].get_mahalanobis_stats().last_tuned_frequency = peak_freq;
+                }
+            }
+
+            // Pattern matching: check if signal matches any stored pattern
+            if (config_.patterns_bypass_filters || config_.patterns_additional_check) {
+                SpectrumShape::AnalysisResult shape_result;
+                shape_result.signal_detected = true;
+                shape_result.peak_value = raw_peak;
+                shape_result.noise_floor = noise_floor;
+                shape_result.peak_margin = peak_margin;
+                shape_result.signal_width = static_cast<size_t>(signal_width);
+                shape_result.peak_index = peak_index;
+
+                const PatternMatchResult pattern_result = try_match_pattern_internal(
+                    spectrum.db.data(),
+                    shape_result
+                );
+
+                if (pattern_result.matched) {
+                    const SignalPattern* pattern = pattern_manager_.get_pattern(pattern_result.pattern_index);
+                    if (pattern != nullptr && pattern->name[0] != '\0') {
+                        if (tracked_count_ > 0) {
+                            auto& drone = tracked_drones_[tracked_count_ - 1];
+                            drone.drone_type = DroneType::CUSTOM;
+                        }
+                    }
+
+                    if (config_.patterns_bypass_filters) {
+                        // Pattern matched and bypass enabled - skip to update_tracked_drone_internal
+                        return;
+                    }
                 }
             }
         }

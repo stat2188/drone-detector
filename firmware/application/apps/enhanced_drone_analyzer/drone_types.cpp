@@ -263,7 +263,35 @@ DisplayDroneEntry::DisplayDroneEntry() noexcept
     , last_seen{0}
     , type_name{'\0'}
     , display_color{0xFFFFFFFF}
-    , trend{MovementTrend::UNKNOWN} {
+    , trend{MovementTrend::UNKNOWN}
+    , pattern_matched{false}
+    , pattern_correlation{0}
+    , pattern_status{PatternMatchStatus::NO_MATCH}
+    , pattern_name{'\0'} {
+}
+
+DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
+    : frequency(drone.frequency)
+    , type(drone.drone_type)
+    , threat(drone.get_threat())
+    , rssi(drone.rssi)
+    , last_seen(drone.last_seen)
+    , type_name{0}
+    , display_color(0xFFFFFFFF)
+    , trend(drone.get_movement_trend())
+    , pattern_matched{false}
+    , pattern_correlation{0}
+    , pattern_status{PatternMatchStatus::NO_MATCH}
+    , pattern_name{'\0'} {
+    
+    const char* type_str = drone_type_to_string(drone.drone_type);
+    size_t i = 0;
+    while (i < DRONE_TYPE_NAME_LENGTH - 1 && type_str[i] != '\0') {
+        type_name[i] = type_str[i];
+        ++i;
+    }
+    
+    set_color_from_threat();
 }
 
 const char* drone_type_to_string(DroneType type) noexcept {
@@ -290,27 +318,6 @@ const char* drone_type_to_string(DroneType type) noexcept {
         default:
             return DRONE_TYPE_UNKNOWN;
     }
-}
-
-DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
-    : frequency(drone.frequency)
-    , type(drone.drone_type)
-    , threat(drone.threat_level)
-    , rssi(drone.rssi)
-    , last_seen(drone.last_seen)
-    , type_name{0}
-    , display_color(0xFFFFFFFF)
-    , trend(drone.get_movement_trend()) {
-    
-    const char* type_str = drone_type_to_string(drone.drone_type);
-    size_t i = 0;
-    while (i < DRONE_TYPE_NAME_LENGTH - 1 && type_str[i] != '\0') {
-        type_name[i] = type_str[i];
-        ++i;
-    }
-    type_name[i] = '\0';
-    
-    set_color_from_threat();
 }
 
 const char* DisplayDroneEntry::get_type_name() const noexcept {

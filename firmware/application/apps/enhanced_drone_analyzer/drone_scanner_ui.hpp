@@ -51,6 +51,10 @@ public:
     void show_alert(const char* message, uint32_t duration_ms) noexcept;
     void show_error(ErrorCode error, uint32_t duration_ms) noexcept;
 
+    [[nodiscard]] static DroneScanner* get_scanner() noexcept {
+        return &s_scanner;
+    }
+
 private:
     static constexpr uint16_t BIG_FREQUENCY_X = 4;
     static constexpr uint16_t BIG_FREQUENCY_Y = 1 * 16;
@@ -107,6 +111,7 @@ private:
     ui::Button button_load_{{UI_POS_X(13), 284, UI_POS_WIDTH(4), 28}, "Load"};
     ui::Button button_settings_{{UI_POS_X(18), 284, UI_POS_WIDTH(4), 28}, "Set"};
     ui::Button button_swp_{{UI_POS_X(23), 284, UI_POS_WIDTH(3), 28}, "SWP"};
+    ui::Button button_ptr_{{UI_POS_X(27), 284, UI_POS_WIDTH(3), 28}, "PTR"};
 
     FreqHz current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};

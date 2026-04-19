@@ -17,6 +17,8 @@
 #include "message.hpp"
 #include "spectrum_shape.hpp"
 #include "mahalanobis_gate.hpp"
+#include "pattern_matcher.hpp"
+#include "pattern_manager.hpp"
 
 namespace drone_analyzer {
 
@@ -94,7 +96,14 @@ struct ScanConfig {
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
     uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100, configurable exclusion radius
     uint8_t rssi_decrease_cycles{5};  // sweep cycles of RSSI decrease before threat decay
-
+    
+    // Pattern matching settings
+    bool pattern_matching_enabled{false};              // Enable/disable pattern matching
+    bool patterns_bypass_filters{false};              // Patterns override shape filters
+    bool patterns_additional_check{false};            // AND with shape filters (not OR)
+    uint8_t pattern_match_mode{0};                // 0=correlation, 1=neural, 2=hybrid
+    uint8_t pattern_correlation_threshold{DEFAULT_PATTERN_CORRELATION_THRESHOLD};  // 0-1000
+    uint8_t pattern_neural_threshold{DEFAULT_PATTERN_MATCH_CONFIDENCE};  // 0-255
     /**
      * @brief Default constructor
      */
@@ -1026,6 +1035,15 @@ public:
         return lock_timeout_count_;
     }
 
+    /**
+     * @brief Get pattern manager (for UI access)
+     * @return Reference to pattern manager
+     * @note Thread-safe: pattern manager is already thread-safe internally
+     */
+    [[nodiscard]] PatternManager& get_pattern_manager() noexcept {
+        return pattern_manager_;
+    }
+
 private:
     /**
      * @brief Internal: Perform scan cycle
@@ -1107,6 +1125,19 @@ private:
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept;
+
+    /**
+     * @brief Internal: Try to match spectrum against stored patterns
+     * @param spectrum Channel spectrum data (256 bins)
+     * @param shape_result Spectrum shape analysis result
+     * @return PatternMatchResult with match status
+     * @note Checks config flags: pattern_matching_enabled, patterns_bypass_filters
+     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
+     */
+    [[nodiscard]] PatternMatchResult try_match_pattern_internal(
+        const uint8_t* spectrum,
+        const SpectrumShape::AnalysisResult& shape_result
+    ) noexcept;
 
     /**
      * @brief Internal: Trigger alert callback if set
@@ -1222,6 +1253,12 @@ private:
 
     // Mahalanobis detector for statistical outlier detection (Sweep mode only)
     MahalanobisDetector mahalanobis_detector_;
+
+    // Pattern matcher for signal pattern recognition
+    PatternMatcher pattern_matcher_;
+
+    // Pattern manager for loading/saving patterns from SD card
+    PatternManager pattern_manager_;
 };
 
 } // namespace drone_analyzer
