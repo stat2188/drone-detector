@@ -142,15 +142,19 @@ public:
     std::string title() const override { return "SWP Settings"; }
 
 private:
+    void load_active_tab() noexcept;
+    void unload_tab(const uint32_t tab_index) noexcept;
+
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
     ScanConfig original_config_;
+    uint32_t current_tab_ = 0;
 
-    // Child views for tabs
-    static constexpr ui::Dim TAB_BAR_H = 24;
+    // Child views for tabs - LAZY LOADED, POINTER BASED
+    static constexpr int TAB_BAR_H = 24;
 
-    SweepWindowGroup1View view_group1_;
-    SweepWindowGroup2View view_group2_;
+    SweepWindowGroup1View* view_group1_ = nullptr;
+    SweepWindowGroup2View* view_group2_ = nullptr;
 
     ui::TabView tab_view_;
 
