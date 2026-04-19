@@ -149,8 +149,8 @@ private:
     // Child views for tabs
     static constexpr ui::Dim TAB_BAR_H = 24;
 
-    SweepWindowGroup1View* view_group1_ = nullptr;
-    SweepWindowGroup2View* view_group2_ = nullptr;
+    SweepWindowGroup1View view_group1_;
+    SweepWindowGroup2View view_group2_;
 
     ui::TabView tab_view_;
 

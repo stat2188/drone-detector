@@ -321,18 +321,15 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     : ui::View()
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
-    , original_config_(config) {
-    // Calculate tab content rect locally (no stack bloat)
-    static constexpr ui::Dim TAB_BAR_H = 24;
-    const Rect tab_content_rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H};
-
-    // Allocate tab views on HEAP (not stack!)
-    view_group1_ = new SweepWindowGroup1View(nav, tab_content_rect);
-    view_group2_ = new SweepWindowGroup2View(nav, tab_content_rect);
-
-    // Initialize TabView AFTER heap allocation (pass references not pointers)
-    tab_view_.add_tab("Win 1-2", Theme::getInstance()->fg_cyan->foreground, *view_group1_);
-    tab_view_.add_tab("Win 3-4", Theme::getInstance()->fg_yellow->foreground, *view_group2_);
+    , original_config_(config)
+    , view_group1_(nav, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H})
+    , view_group2_(nav, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H})
+    , tab_view_({
+        {"Win 1-2", Theme::getInstance()->fg_cyan->foreground, &view_group1_},
+        {"Win 3-4", Theme::getInstance()->fg_yellow->foreground, &view_group2_}
+    }) {
+    // Hide non-active tab view BEFORE adding as children
+    view_group2_.hidden(true);
 
     // Hide non-active tab view BEFORE adding as children
     view_group2_->hidden(true);
