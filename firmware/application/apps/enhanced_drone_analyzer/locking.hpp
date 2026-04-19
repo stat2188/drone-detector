@@ -68,7 +68,7 @@ public:
     }
 
     ~MutexLock() noexcept {
-        chMtxUnlock(&mutex_);
+        chMtxUnlock();
     }
 
     MutexLock(const MutexLock&) = delete;
@@ -88,7 +88,7 @@ public:
 
     ~MutexTryLock() noexcept {
         if (locked_) {
-            chMtxUnlock(&mutex_);
+            chMtxUnlock();
         }
     }
 
