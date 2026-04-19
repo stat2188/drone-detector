@@ -148,10 +148,9 @@ private:
 
     // Child views for tabs
     static constexpr ui::Dim TAB_BAR_H = 24;
-    Rect tab_content_rect_{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H};
 
-    SweepWindowGroup1View view_group1_{nav_, tab_content_rect_};
-    SweepWindowGroup2View view_group2_{nav_, tab_content_rect_};
+    SweepWindowGroup1View* view_group1_ = nullptr;
+    SweepWindowGroup2View* view_group2_ = nullptr;
 
     ui::TabView tab_view_{
         {"Win 1-2", Theme::getInstance()->fg_cyan->foreground, &view_group1_},

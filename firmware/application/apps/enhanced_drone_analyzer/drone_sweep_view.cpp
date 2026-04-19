@@ -322,14 +322,21 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , original_config_(config) {
+    // Calculate tab content rect locally (no stack bloat)
+    static constexpr ui::Dim TAB_BAR_H = 24;
+    const Rect tab_content_rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H};
+
+    // Allocate tab views on HEAP (not stack!)
+    view_group1_ = new SweepWindowGroup1View(nav, tab_content_rect);
+    view_group2_ = new SweepWindowGroup2View(nav, tab_content_rect);
+
     // Hide non-active tab view BEFORE adding as children
-    // (TabView::set_selected is not called until on_show)
-    view_group2_.hidden(true);
+    view_group2_->hidden(true);
 
     add_children({
         &tab_view_,
-        &view_group1_,
-        &view_group2_,
+        view_group1_,
+        view_group2_,
         &labels_exc_radius_,
         &field_exc_radius_,
         &button_defaults_,
@@ -399,6 +406,12 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
 }
 
 DroneSweepView::~DroneSweepView() noexcept {
+    // Properly cleanup heap allocated views
+    delete view_group1_;
+    delete view_group2_;
+    
+    // Force stack unwinding barrier
+    chThdSleepMilliseconds(1);
 }
 
 void DroneSweepView::focus() {
