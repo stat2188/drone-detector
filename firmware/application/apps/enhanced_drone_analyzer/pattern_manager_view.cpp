@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstring>
+#include <vector>
 #include <array>
 
 #include "ch.h"
@@ -16,6 +17,22 @@
 #include "pattern_manager.hpp"
 
 namespace drone_analyzer {
+
+/**
+ * @note UI FRAMEWORK LIMITATION:
+ * OptionsField::set_options() requires std::vector<options_t> parameter.
+ * This is a limitation of the existing UI widget system that cannot be changed
+ * without rewriting the entire UI framework.
+ *
+ * WORKAROUND: Use scoped std::vector with emplace_back (move semantics).
+ * The vector is destroyed immediately after set_options() returns, so heap usage
+ * is transient and bounded (max 21 options = ~336 bytes).
+ *
+ * ALTERNATIVE: Rewrite OptionsField to accept pointer+size (requires ui_widget.hpp changes).
+ *
+ * DIAMOND CODE STANDARD: Core logic (pattern_manager.cpp) uses std::array.
+ * UI layer (this file) must conform to OptionsField API requirements.
+ */
 
     PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
     : View()
@@ -80,26 +97,26 @@ void PatternManagerView::refresh_list() noexcept {
 
     const size_t pattern_count = pattern_manager_ptr_->get_pattern_count();
 
-    std::array<ui::OptionsField::option_t, 21> options{};
-    size_t option_count = 0;
-
+    std::vector<ui::OptionsField::option_t> options;
+    options.reserve(21);
+    
     char item_str[64];
 
-    for (size_t i = 0; i < pattern_count && i < 20 && option_count < 20; ++i) {
+    for (size_t i = 0; i < pattern_count && i < 20; ++i) {
         const SignalPattern* pattern = pattern_manager_ptr_->get_pattern(i);
         if (pattern != nullptr) {
             const char* status = pattern->is_enabled() ? "+" : "-";
             snprintf(item_str, sizeof(item_str), "[%s] %.28s", status, pattern->name);
             item_str[sizeof(item_str) - 1] = '\0';
-            options[option_count++] = {item_str, static_cast<int32_t>(i)};
+            options.emplace_back(item_str, static_cast<int32_t>(i));
         }
     }
 
-    if (pattern_count == 0 && option_count < 21) {
-        options[option_count++] = {"No patterns", 0};
+    if (pattern_count == 0) {
+        options.emplace_back("No patterns", 0);
     }
 
-    field_patterns_.set_options({options.data(), option_count});
+    field_patterns_.set_options(options);
 
     char count_str[32];
     snprintf(count_str, sizeof(count_str), "Count: %zu", pattern_count);
