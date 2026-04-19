@@ -109,31 +109,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     // sweep2/3/4 fields use in-class defaults: disabled
 }
 
-ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
-    : mode(m)
-    , start_frequency(start)
-    , end_frequency(end)
-    , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
-    , rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
-    , stale_timeout_ms(DRONE_REMOVAL_TIMEOUT_MS)
-    , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
-    , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
-    , sweep_step_freq(20000000)
-    , dwell_enabled(true)
-    , confirm_count_enabled(true)
-    , noise_blacklist_enabled(true)
-    , spectrum_detection_enabled(true)
-    , median_enabled(true)
-    , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
-    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
-    , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
-    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
-    , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
-    , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
-    , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
-    , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY) {
-    // sweep2/3/4 fields use in-class defaults: disabled
-}
+
 
 // ========================================================================
 // ScanStatistics Implementation
@@ -167,7 +143,7 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , freq_lock_count_{0}
     , locked_frequency_{0}
     , track_start_time_{0}
-    , current_drone_type_{'\0', '\0', '\0'}
+    , current_drone_type_{'\0', '\0', '\0', '\0', '\0'}
     , drone_type_valid_{false}
     , statistics_()
     , tracked_drones_()
@@ -182,9 +158,9 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , dwell_request_()
     , lock_start_time_{0}
     , confirm_start_time_{0}
-    , lock_timeout_count_{0}
     , spectrum_sort_buf_{}
     , sweep_usable_buf_{}
+    , lock_timeout_count_{0}
     , alert_callback_in_progress_()
     , rssi_detector_()
     , histogram_processor_()
