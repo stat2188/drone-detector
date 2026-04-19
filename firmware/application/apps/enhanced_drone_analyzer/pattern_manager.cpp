@@ -46,7 +46,6 @@ bool PatternManager::str_equals_ignore_case(
     }
     return a[0] == '\0' && b[0] == '\0';
 }
-}
 
 PatternManager::PatternManager() noexcept
     : patterns_{}
@@ -185,63 +184,6 @@ ErrorCode PatternManager::load_pattern_from_line(
         }
     }
 
-    return ErrorCode::SUCCESS;
-}
-
-    if (pattern_count_ >= MAX_PATTERNS) {
-        return ErrorCode::BUFFER_FULL;
-    }
-
-    File file;
-    const auto open_err = file.open(reinterpret_cast<const TCHAR*>(filepath));
-    if (open_err.is_valid()) {
-        return ErrorCode::DATABASE_LOAD_TIMEOUT;
-    }
-
-    constexpr size_t READ_BUF_SIZE = 512;
-    uint8_t read_buf[READ_BUF_SIZE];
-    char line_buf[READ_BUF_SIZE];
-    size_t line_pos = 0;
-    bool eof = false;
-
-    while (!eof) {
-        const auto read_result = file.read(read_buf, READ_BUF_SIZE);
-        if (!read_result.is_ok()) {
-            file.close();
-            return ErrorCode::DATABASE_LOAD_TIMEOUT;
-        }
-
-        const size_t bytes_read = read_result.value();
-        if (bytes_read == 0) {
-            eof = true;
-        }
-
-        for (size_t i = 0; i < bytes_read; ++i) {
-            const char c = static_cast<char>(read_buf[i]);
-
-            if (c == '\n' || c == '\r' || line_pos >= READ_BUF_SIZE - 1) {
-                if (line_pos > 0) {
-                    line_buf[line_pos] = '\0';
-
-                    const ErrorCode parse_err = parse_pattern_csv(line_buf, line_pos);
-                    if (parse_err == ErrorCode::SUCCESS) {
-                        ++pattern_count_;
-                    }
-
-                    line_pos = 0;
-
-                    if (pattern_count_ >= MAX_PATTERNS) {
-                        file.close();
-                        return ErrorCode::SUCCESS;
-                    }
-                }
-            } else if (c != '\n' && c != '\r') {
-                line_buf[line_pos++] = c;
-            }
-        }
-    }
-
-    file.close();
     return ErrorCode::SUCCESS;
 }
 
