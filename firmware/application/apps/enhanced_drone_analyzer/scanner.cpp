@@ -149,6 +149,10 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , tracked_drones_()
     , tracked_count_{0}
     , current_frequency_{0}
+    , pending_frequency_{0}
+    , pending_count_{0}
+    , missed_lock_count_{0}
+    , noise_blacklist_{}
     , last_scan_time_{0}
     , scanning_active_()
     , alert_callback_(nullptr)
@@ -156,15 +160,17 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , state_transition_allowed_()
     , force_resume_flag_()
     , dwell_request_()
+    , dwell_cycles_{0}
     , lock_start_time_{0}
     , confirm_start_time_{0}
     , spectrum_sort_buf_{}
-    , sweep_usable_buf_{}
     , lock_timeout_count_{0}
+    , sweep_usable_buf_{}
     , alert_callback_in_progress_()
     , rssi_detector_()
     , histogram_processor_()
     , rssi_median_filter_()
+    , median_filter_enabled_{false}
     , neighbor_margin_checker_()
     , mahalanobis_detector_()
     , pattern_matcher_()

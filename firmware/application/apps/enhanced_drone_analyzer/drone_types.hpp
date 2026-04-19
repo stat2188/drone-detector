@@ -654,6 +654,15 @@ struct freqman_entry_fixed {
     return ErrorCode::SUCCESS;
 }
 
+/**
+ * @brief Convert drone type enum to human-readable string
+ * @param type Drone type to convert
+ * @return Static string pointer (Flash storage, no heap allocation)
+ * @note Returns pointer to constexpr string constants in Flash
+ * @note Thread-safe (read-only data)
+ */
+[[nodiscard]] const char* drone_type_to_string(DroneType type) noexcept;
+
 } // namespace drone_analyzer
 
 #endif // DRONE_TYPES_HPP
