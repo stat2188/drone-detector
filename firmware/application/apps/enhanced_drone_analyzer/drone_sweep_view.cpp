@@ -331,13 +331,10 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     // Hide non-active tab view BEFORE adding as children
     view_group2_.hidden(true);
 
-    // Hide non-active tab view BEFORE adding as children
-    view_group2_->hidden(true);
-
     add_children({
         &tab_view_,
-        view_group1_,
-        view_group2_,
+        &view_group1_,
+        &view_group2_,
         &labels_exc_radius_,
         &field_exc_radius_,
         &button_defaults_,
@@ -407,10 +404,6 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
 }
 
 DroneSweepView::~DroneSweepView() noexcept {
-    // Properly cleanup heap allocated views
-    delete view_group1_;
-    delete view_group2_;
-    
     // Force stack unwinding barrier
     chThdSleepMilliseconds(1);
 }
