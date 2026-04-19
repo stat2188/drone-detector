@@ -330,6 +330,10 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     view_group1_ = new SweepWindowGroup1View(nav, tab_content_rect);
     view_group2_ = new SweepWindowGroup2View(nav, tab_content_rect);
 
+    // Initialize TabView AFTER heap allocation (pass references not pointers)
+    tab_view_.add_tab("Win 1-2", Theme::getInstance()->fg_cyan->foreground, *view_group1_);
+    tab_view_.add_tab("Win 3-4", Theme::getInstance()->fg_yellow->foreground, *view_group2_);
+
     // Hide non-active tab view BEFORE adding as children
     view_group2_->hidden(true);
 

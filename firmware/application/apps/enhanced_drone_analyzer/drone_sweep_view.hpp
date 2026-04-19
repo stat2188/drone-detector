@@ -152,10 +152,7 @@ private:
     SweepWindowGroup1View* view_group1_ = nullptr;
     SweepWindowGroup2View* view_group2_ = nullptr;
 
-    ui::TabView tab_view_{
-        {"Win 1-2", Theme::getInstance()->fg_cyan->foreground, &view_group1_},
-        {"Win 3-4", Theme::getInstance()->fg_yellow->foreground, &view_group2_},
-    };
+    ui::TabView tab_view_;
 
     // Buttons (below tab content area)
     ui::NumberField field_exc_radius_{{UI_POS_X(0), 285}, 3, {1, 100}, 1, ' '};
