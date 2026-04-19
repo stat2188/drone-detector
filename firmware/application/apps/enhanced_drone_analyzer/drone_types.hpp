@@ -111,6 +111,7 @@ enum class ErrorCode : uint8_t {
     DATABASE_LOAD_TIMEOUT = 11,
     DATABASE_CORRUPTED = 12,
     DATABASE_EMPTY = 13,
+    DATABASE_FORMAT_INVALID = 14,
     
     // Buffer errors (20-29)
     BUFFER_EMPTY = 20,
@@ -601,6 +602,8 @@ struct freqman_entry_fixed {
             return "Database corrupted";
         case ErrorCode::DATABASE_EMPTY:
             return "Database empty";
+        case ErrorCode::DATABASE_FORMAT_INVALID:
+            return "Database format invalid";
         case ErrorCode::BUFFER_EMPTY:
             return "Buffer empty";
         case ErrorCode::BUFFER_FULL:

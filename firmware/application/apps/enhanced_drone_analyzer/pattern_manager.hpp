@@ -45,7 +45,7 @@ private:
     std::array<SignalPattern, MAX_PATTERNS> patterns_;
     size_t pattern_count_;
     AtomicFlag loaded_;
-    Mutex mutex_;
+    mutable Mutex mutex_;
     bool dir_open_{false};
 
     [[nodiscard]] ErrorCode load_pattern_from_line(

@@ -138,9 +138,12 @@ ErrorCode PatternManager::load_pattern_from_line(
 
     // CRITICAL FIX: RAII file guard ensures file is always closed
     struct FileGuard {
-        File* file;
-        FileGuard(File* f) noexcept : file(f) {}
+        File* const file;
+        explicit FileGuard(File* f) noexcept : file(f) {}
         ~FileGuard() { if (file) file->close(); }
+        
+        FileGuard(const FileGuard&) = delete;
+        FileGuard& operator=(const FileGuard&) = delete;
     } file_guard(&file);
 
     constexpr size_t READ_BUF_SIZE = 512;
@@ -259,7 +262,7 @@ ErrorCode PatternManager::parse_pattern_csv(
     }
 
     if (field_index < 25) {
-        return ErrorCode::INVALID_FORMAT;
+        return ErrorCode::DATABASE_FORMAT_INVALID;
     }
 
     pattern.created_time = chTimeNow();
@@ -299,9 +302,12 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
 
     // CRITICAL FIX: RAII file guard ensures file is always closed
     struct FileGuard {
-        File* file;
-        FileGuard(File* f) noexcept : file(f) {}
+        File* const file;
+        explicit FileGuard(File* f) noexcept : file(f) {}
         ~FileGuard() { if (file) file->close(); }
+        
+        FileGuard(const FileGuard&) = delete;
+        FileGuard& operator=(const FileGuard&) = delete;
     } file_guard(&file);
 
     uint8_t write_buf[256];
