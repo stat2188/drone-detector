@@ -364,20 +364,13 @@ void DroneSweepView::construct_objects() noexcept {
 }
 
 void DroneSweepView::destruct_objects() noexcept {
-    if (view_group2_) {
-        delete view_group2_;
-        view_group2_ = nullptr;
-    }
-
-    if (view_group1_) {
-        delete view_group1_;
-        view_group1_ = nullptr;
-    }
-
     if (tab_view_) {
         delete tab_view_;
         tab_view_ = nullptr;
     }
+
+    view_group1_ = nullptr;
+    view_group2_ = nullptr;
 }
 
 DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept
