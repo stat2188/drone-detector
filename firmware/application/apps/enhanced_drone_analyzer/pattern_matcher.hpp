@@ -29,6 +29,7 @@ public:
         , pattern_count_(0)
         , normalized_{}
         , candidates_{} {
+        normalized_.fill(0);
     }
     ~PatternMatcher() noexcept = default;
 
