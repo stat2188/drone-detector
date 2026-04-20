@@ -783,6 +783,18 @@ void DroneDisplay::render_composite(
 
         draw_rectangle(painter, x, y, bar_width, final_height, color);
     }
+
+    // Draw red frame for matched pattern
+    if (matched_pattern_bin_ >= 0) {
+        const uint16_t frame_x = chart_start_x + static_cast<uint16_t>(matched_pattern_bin_) - 3;
+        const uint16_t frame_w = 7;
+        painter.draw_rectangle({
+            frame_x,
+            chart_start_y,
+            frame_w,
+            chart_height
+        }, Color::red());
+    }
 }
 
 void DroneDisplay::set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t /*buffer_size*/,

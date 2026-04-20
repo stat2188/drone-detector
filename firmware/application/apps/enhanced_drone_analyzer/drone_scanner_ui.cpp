@@ -876,6 +876,13 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
         // Pass sweep range boundaries to prevent false positives outside the range
         scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq, win.f_min, win.f_max);
+
+        // Update pattern match highlight (red frame)
+        if (scanner_ptr_->is_pattern_matched()) {
+            drone_display_.set_matched_pattern_bin(static_cast<int16_t>(scanner_ptr_->get_matched_pattern_bin()));
+        } else {
+            drone_display_.set_matched_pattern_bin(-1);
+        }
     }
 
     // Live display update: show current pair data every frame

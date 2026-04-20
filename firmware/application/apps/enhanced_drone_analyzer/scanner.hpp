@@ -1259,6 +1259,16 @@ private:
 
     // Pattern manager for loading/saving patterns from SD card
     PatternManager pattern_manager_;
+
+    // Matched pattern index (-1 if no pattern matched in sweep)
+    int8_t matched_pattern_index_{-1};
+    size_t matched_pattern_bin_{0};
+
+public:
+    [[nodiscard]] bool is_pattern_matched() const noexcept { return matched_pattern_index_ >= 0; }
+    [[nodiscard]] int8_t get_matched_pattern_index() const noexcept { return matched_pattern_index_; }
+    [[nodiscard]] size_t get_matched_pattern_bin() const noexcept { return matched_pattern_bin_; }
+    void clear_matched_pattern() noexcept { matched_pattern_index_ = -1; matched_pattern_bin_ = 0; }
 };
 
 } // namespace drone_analyzer

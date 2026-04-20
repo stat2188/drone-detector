@@ -455,13 +455,6 @@ private:
         uint16_t height
     ) noexcept;
 
-    // Dual-sweep rendering (two horizontal bands)
-    bool dual_sweep_mode_{false};
-    const uint8_t* sweep2_data_{nullptr};
-    size_t sweep2_data_size_{0};
-    FreqHz sweep2_freq_start_{0};
-    FreqHz sweep2_freq_end_{0};
-
     void render_dual_composite(
         Painter& painter,
         uint16_t start_x,
@@ -469,6 +462,20 @@ private:
         uint16_t width,
         uint16_t height
     ) noexcept;
+
+public:
+    void set_matched_pattern_bin(int16_t bin) noexcept { matched_pattern_bin_ = bin; }
+
+private:
+    // Dual-sweep rendering (two horizontal bands)
+    bool dual_sweep_mode_{false};
+    const uint8_t* sweep2_data_{nullptr};
+    size_t sweep2_data_size_{0};
+    FreqHz sweep2_freq_start_{0};
+    FreqHz sweep2_freq_end_{0};
+
+    // Pattern match highlight (red frame in sweep)
+    int16_t matched_pattern_bin_{-1};
 };
 
 } // namespace drone_analyzer

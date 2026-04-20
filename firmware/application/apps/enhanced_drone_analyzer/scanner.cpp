@@ -1840,34 +1840,34 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
                 }
             }
 
-            // Pattern matching: check if signal matches any stored pattern
-            if (config_.patterns_bypass_filters || config_.patterns_additional_check) {
-                SpectrumShape::AnalysisResult shape_result;
-                shape_result.signal_detected = true;
-                shape_result.peak_value = raw_peak;
-                shape_result.noise_floor = noise_floor;
-                shape_result.peak_margin = peak_margin;
-                shape_result.signal_width = static_cast<size_t>(signal_width);
-                shape_result.peak_index = peak_index;
+            // Pattern matching: ALWAYS check in sweep mode for pattern recognition
+        // This provides visual feedback (red frame) and adds to threats
+        SpectrumShape::AnalysisResult shape_result;
+        shape_result.signal_detected = true;
+        shape_result.peak_value = raw_peak;
+        shape_result.noise_floor = noise_floor;
+        shape_result.peak_margin = peak_margin;
+        shape_result.signal_width = static_cast<size_t>(signal_width);
+        shape_result.peak_index = peak_index;
 
-                const PatternMatchResult pattern_result = try_match_pattern_internal(
-                    spectrum.db.data(),
-                    shape_result
-                );
+        matched_pattern_index_ = -1;
+        matched_pattern_bin_ = 0;
 
-                if (pattern_result.matched) {
-                    const SignalPattern* pattern = pattern_manager_.get_pattern(pattern_result.pattern_index);
-                    if (pattern != nullptr && pattern->name[0] != '\0') {
-                        if (tracked_count_ > 0) {
-                            auto& drone = tracked_drones_[tracked_count_ - 1];
-                            drone.drone_type = DroneType::CUSTOM;
-                        }
-                    }
+        const PatternMatchResult pattern_result = try_match_pattern_internal(
+            spectrum.db.data(),
+            shape_result
+        );
 
-                    if (config_.patterns_bypass_filters) {
-                        // Pattern matched and bypass enabled - skip to update_tracked_drone_internal
-                        return;
-                    }
+        if (pattern_result.matched) {
+            const SignalPattern* pattern = pattern_manager_.get_pattern(pattern_result.pattern_index);
+            if (pattern != nullptr && pattern->name[0] != '\0') {
+                matched_pattern_index_ = static_cast<int8_t>(pattern_result.pattern_index);
+                matched_pattern_bin_ = peak_index;
+
+                // Set drone type to CUSTOM (pattern recognized)
+                if (tracked_count_ > 0) {
+                    auto& drone = tracked_drones_[tracked_count_ - 1];
+                    drone.drone_type = DroneType::CUSTOM;
                 }
             }
         }
