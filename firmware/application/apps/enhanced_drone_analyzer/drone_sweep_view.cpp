@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstring>
+#include <new>
 
 #include "drone_sweep_view.hpp"
 #include "drone_settings.hpp"
@@ -321,7 +322,7 @@ void DroneSweepView::construct_view(const uint8_t index) noexcept {
     const Rect content_rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H};
 
     if (index == 0) {
-        auto* v = new (view_storage_) SweepWindowGroup1View(nav_, content_rect);
+        auto* v = new (&view_storage_) SweepWindowGroup1View(nav_, content_rect);
         active_view_ = v;
 
         v->field_sw1_start_.set_value(static_cast<int32_t>(state_buffer_.sw1_start / 1000000ULL));
@@ -347,7 +348,7 @@ void DroneSweepView::construct_view(const uint8_t index) noexcept {
             exc2_fields[i]->set_value(static_cast<int32_t>(state_buffer_.sw2_exc[i] / 1000000ULL));
         }
     } else {
-        auto* v = new (view_storage_) SweepWindowGroup2View(nav_, content_rect);
+        auto* v = new (&view_storage_) SweepWindowGroup2View(nav_, content_rect);
         active_view_ = v;
 
         v->check_sw3_enabled_.set_value(state_buffer_.sw3_enabled);

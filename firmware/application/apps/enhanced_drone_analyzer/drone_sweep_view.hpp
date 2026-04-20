@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <type_traits>
+#include <new>
 
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
