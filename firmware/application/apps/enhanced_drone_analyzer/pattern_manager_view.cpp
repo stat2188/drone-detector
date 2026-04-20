@@ -243,9 +243,9 @@ FreqHz PatternManagerView::bin_to_frequency(int16_t bin) const noexcept {
     constexpr FreqHz SLICE_BW = SWEEP_SLICE_BW;
     constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
     FreqHz offset = 0;
-    if (bin >= FFT_DC_SPIKE_END) {
+    if (bin >= static_cast<int16_t>(FFT_DC_SPIKE_END)) {
         offset = static_cast<FreqHz>(bin - 256) * BIN_SIZE;
-    } else if (bin < FFT_DC_SPIKE_START) {
+    } else if (bin < static_cast<int16_t>(FFT_DC_SPIKE_START)) {
         offset = static_cast<FreqHz>(bin - 128) * BIN_SIZE;
     }
     return live_center_frequency_ + offset;
@@ -259,7 +259,7 @@ int16_t PatternManagerView::frequency_to_bin(FreqHz freq) const noexcept {
     const int32_t offset = static_cast<int32_t>(freq - live_center_frequency_);
     int16_t bin = static_cast<int16_t>(offset / static_cast<int32_t>(bin_size)) + 128;
     if (bin < 0) bin = 0;
-    if (bin >= FFT_BIN_COUNT) bin = FFT_BIN_COUNT - 1;
+    if (bin >= static_cast<int16_t>(FFT_BIN_COUNT)) bin = static_cast<int16_t>(FFT_BIN_COUNT - 1);
     return bin;
 }
 
@@ -290,7 +290,7 @@ bool PatternManagerView::on_touch(const ui::TouchEvent event) noexcept {
             y >= SPECTRUM_Y && y < SPECTRUM_Y + SPECTRUM_HEIGHT) {
 
             int16_t bin = static_cast<int16_t>(x);
-            if (bin >= 0 && bin < FFT_BIN_COUNT) {
+            if (bin >= 0 && bin < static_cast<int16_t>(FFT_BIN_COUNT)) {
                 on_bin_selected(bin);
                 return true;
             }
@@ -394,9 +394,6 @@ void PatternManagerView::on_frame_sync() noexcept {
 }
 
 void PatternManagerView::start_live_spectrum() noexcept {
-    DroneScanner& scanner_ref = get_scanner_instance();
-    ScanConfig cfg = scanner_ref.get_config();
-
     capture_frequency_ = get_range_center_freq(selected_range_idx_);
 
     if (capture_frequency_ == 0) {
@@ -556,7 +553,7 @@ void PatternManagerView::draw_spectrum_with_selection(
         }, bar_color);
     }
 
-    if (sel_bin >= 0 && sel_bin < FFT_BIN_COUNT) {
+    if (sel_bin >= 0 && sel_bin < static_cast<int16_t>(FFT_BIN_COUNT)) {
         painter.draw_rectangle({
             static_cast<uint16_t>(sel_bin - 2) + start_x,
             start_y,
@@ -581,7 +578,6 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     }
 
     SignalPattern new_pattern{};
-    std::memset(&new_pattern, 0, sizeof(SignalPattern));
 
     size_t name_len = 0;
     while (name[name_len] != '\0' && name_len < PATTERN_NAME_MAX_LEN - 1) {
