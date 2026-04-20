@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <cstring>
 #include <array>
+#include <vector>
 
 #include "ch.h"
 
@@ -28,10 +29,10 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         {{UI_POS_X(0), 20}, "Tap spectrum to select", Color::white()}
     }
     , field_patterns_{{0, LIST_Y}, 18, {}, false}
-    , field_range_{{UI_POS_X(16), 20}, 4, {
+    , field_range_{{UI_POS_X(18), 0}, 4, {
         {"SWP1", 0}, {"SWP2", 1}, {"SWP3", 2}, {"SWP4", 3}
     }}
-    , button_freq_{{UI_POS_X(22), 20, UI_POS_WIDTH(3), 16}, "Freq"}
+    , button_freq_{{UI_POS_X(23), 0, UI_POS_WIDTH(3), 16}, "Freq"}
     , button_add_{{UI_POS_X(0), 270, UI_POS_WIDTH(4), 20}, "Capt"}
     , button_save_{{UI_POS_X(5), 270, UI_POS_WIDTH(4), 20}, "Save"}
     , button_edit_{{UI_POS_X(10), 270, UI_POS_WIDTH(4), 20}, "Edit"}
@@ -43,7 +44,7 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         {{UI_POS_X(0), 30}, "Idle", Color::white()}
     }
     , label_range_{
-        {{UI_POS_X(0), 20}, "Range:", Color::white()}
+        {{UI_POS_X(14), 0}, "Rng:", Color::white()}
     }
     , view_state_(ViewState::IDLE)
     , selected_bin_(-1)
@@ -258,8 +259,9 @@ int16_t PatternManagerView::frequency_to_bin(FreqHz freq) const noexcept {
     if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
         return -1;
     }
-    int32_t offset = static_cast<int32_t>(freq - live_center_frequency_);
-    int16_t bin = static_cast<int16_t>(offset / static_cast<int32_t>(SWEEP_SLICE_BW / FFT_BIN_COUNT)) + 128;
+    const FreqHz bin_size = SWEEP_SLICE_BW / FFT_BIN_COUNT;
+    const int32_t offset = static_cast<int32_t>(freq - live_center_frequency_);
+    int16_t bin = static_cast<int16_t>(offset / static_cast<int32_t>(bin_size)) + 128;
     if (bin < 0) bin = 0;
     if (bin >= FFT_BIN_COUNT) bin = FFT_BIN_COUNT - 1;
     return bin;
@@ -674,12 +676,12 @@ void PatternManagerView::refresh_list() noexcept {
             const char* status = pattern->is_enabled() ? "+" : "-";
             snprintf(item_str, sizeof(item_str), "[%s] %.20s", status, pattern->name);
             item_str[sizeof(item_str) - 1] = '\0';
-            options.emplace_back(item_str, static_cast<int32_t>(i));
+            options.push_back({item_str, static_cast<int32_t>(i)});
         }
     }
 
-    if (pattern_count == 0) {
-        options.emplace_back("No patterns", 0);
+    if (options.empty()) {
+        options.push_back({"No patterns", 0});
     }
 
     field_patterns_.set_options(options);
