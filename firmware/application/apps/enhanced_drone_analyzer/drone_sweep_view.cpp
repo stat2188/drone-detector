@@ -319,37 +319,54 @@ void SweepWindowGroup2View::focus() {
 void DroneSweepView::construct_objects() noexcept {
     Rect tab_content_rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H};
 
+    tab_view_ = nullptr;
+    view_group1_ = nullptr;
+    view_group2_ = nullptr;
+
     view_group1_ = new (std::nothrow) SweepWindowGroup1View(nav_, tab_content_rect);
-    view_group2_ = new (std::nothrow) SweepWindowGroup2View(nav_, tab_content_rect);
-
-    if (view_group1_ && view_group2_) {
-        view_group2_->hidden(true);
-
-        tab_view_ = new (std::nothrow) ui::TabView({
-            {"Win 1-2", Color::white(), view_group1_},
-            {"Win 3-4", Color::white(), view_group2_}
-        });
-
-        if (tab_view_) {
-            add_children({
-                tab_view_,
-                view_group1_,
-                view_group2_,
-                &labels_exc_radius_,
-                &field_exc_radius_,
-                &button_defaults_,
-                &button_save_,
-            });
-
-            tab_view_->set_selected(0);
-        }
+    if (!view_group1_) {
+        return;
     }
+
+    view_group2_ = new (std::nothrow) SweepWindowGroup2View(nav_, tab_content_rect);
+    if (!view_group2_) {
+        delete view_group1_;
+        view_group1_ = nullptr;
+        return;
+    }
+
+    view_group2_->hidden(true);
+
+    tab_view_ = new (std::nothrow) ui::TabView({
+        {"Win 1-2", Color::white(), view_group1_},
+        {"Win 3-4", Color::white(), view_group2_}
+    });
+
+    if (!tab_view_) {
+        delete view_group2_;
+        view_group2_ = nullptr;
+        delete view_group1_;
+        view_group1_ = nullptr;
+        return;
+    }
+
+    add_children({
+        tab_view_,
+        view_group1_,
+        view_group2_,
+        &labels_exc_radius_,
+        &field_exc_radius_,
+        &button_defaults_,
+        &button_save_,
+    });
+
+    tab_view_->set_selected(0);
 }
 
 void DroneSweepView::destruct_objects() noexcept {
-    if (tab_view_) {
-        delete tab_view_;
-        tab_view_ = nullptr;
+    if (view_group2_) {
+        delete view_group2_;
+        view_group2_ = nullptr;
     }
 
     if (view_group1_) {
@@ -357,9 +374,9 @@ void DroneSweepView::destruct_objects() noexcept {
         view_group1_ = nullptr;
     }
 
-    if (view_group2_) {
-        delete view_group2_;
-        view_group2_ = nullptr;
+    if (tab_view_) {
+        delete tab_view_;
+        tab_view_ = nullptr;
     }
 }
 

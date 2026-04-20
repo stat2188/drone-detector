@@ -742,8 +742,9 @@ constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 50;
 
 /**
  * @brief Maximum number of patterns to store
+ * @note Reduced from 20 to 10 to save RAM (each pattern ~500 bytes)
  */
-constexpr size_t MAX_PATTERNS = 20;
+constexpr size_t MAX_PATTERNS = 10;
 
 /**
  * @brief Pattern waveform size (16 bins from 256-bin FFT)

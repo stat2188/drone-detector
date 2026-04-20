@@ -146,7 +146,7 @@ ErrorCode PatternManager::load_pattern_from_line(
         FileGuard& operator=(const FileGuard&) = delete;
     } file_guard(&file);
 
-    constexpr size_t READ_BUF_SIZE = 512;
+    constexpr size_t READ_BUF_SIZE = 256;
     uint8_t read_buf[READ_BUF_SIZE];
     char line_buf[READ_BUF_SIZE];
     size_t line_pos = 0;
