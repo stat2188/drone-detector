@@ -62,6 +62,9 @@ struct SettingsStruct {
     bool mahalanobis_enabled;
     uint8_t mahalanobis_threshold_x10;
 
+    // Pattern matching
+    bool pattern_matching_enabled;
+
     // Sweep window 1
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;

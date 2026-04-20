@@ -109,7 +109,21 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
             set_dirty();
             return;
         }
-        show_frequency_keypad();
+        if (!capture_active_ && capture_spectrum_[0] != 0) {
+            char default_name[PATTERN_NAME_MAX_LEN];
+            const size_t count = pattern_manager_ptr_ ? pattern_manager_ptr_->get_pattern_count() : 0;
+            snprintf(default_name, sizeof(default_name), "PTR_%zu", count + 1);
+            const ErrorCode err = save_current_pattern(default_name);
+            if (err == ErrorCode::SUCCESS) {
+                label_status_.set("Pattern saved!");
+                refresh_list();
+            } else {
+                label_status_.set("Save failed!");
+            }
+            set_dirty();
+        } else {
+            show_frequency_keypad();
+        }
     };
 
     button_edit_.on_select = [this](ui::Button&) {
@@ -317,9 +331,7 @@ void PatternManagerView::on_show() noexcept {
     DroneScanner& scanner_ref = get_scanner_instance();
     pattern_manager_ptr_ = &scanner_ref.get_pattern_manager();
 
-    if (pattern_manager_ptr_->get_pattern_count() == 0) {
-        (void)pattern_manager_ptr_->load_patterns();
-    }
+    (void)pattern_manager_ptr_->load_patterns();
 
     load_sweep_ranges();
     refresh_list();
@@ -348,6 +360,10 @@ void PatternManagerView::on_channel_spectrum_config(ChannelSpectrumFIFO* fifo) n
 
 void PatternManagerView::on_frame_sync() noexcept {
     if (spectrum_fifo_ == nullptr) {
+        return;
+    }
+
+    if (view_state_ == ViewState::IDLE && !capture_active_) {
         return;
     }
 

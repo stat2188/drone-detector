@@ -98,7 +98,7 @@ struct ScanConfig {
     uint8_t rssi_decrease_cycles{5};  // sweep cycles of RSSI decrease before threat decay
     
     // Pattern matching settings
-    bool pattern_matching_enabled{false};              // Enable/disable pattern matching
+    bool pattern_matching_enabled{true};              // Enable/disable pattern matching
     bool patterns_bypass_filters{false};              // Patterns override shape filters
     bool patterns_additional_check{false};            // AND with shape filters (not OR)
     uint8_t pattern_match_mode{0};                // 0=correlation, 1=neural, 2=hybrid

@@ -62,6 +62,10 @@ PatternManager::~PatternManager() noexcept {
 ErrorCode PatternManager::load_patterns() noexcept {
     MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
 
+    if (loaded_.test()) {
+        return ErrorCode::SUCCESS;
+    }
+
     pattern_count_ = 0;
 
     DIR dir;
@@ -69,8 +73,14 @@ ErrorCode PatternManager::load_patterns() noexcept {
     const FRESULT res = f_opendir(&dir, reinterpret_cast<const TCHAR*>(PATTERN_DIR));
 
     if (res != FR_OK) {
-        return ErrorCode::DATABASE_NOT_LOADED;
+        loaded_.set();
+        return ErrorCode::SUCCESS;
     }
+
+    struct DirGuard {
+        DIR* dir;
+        ~DirGuard() { if (dir) f_closedir(dir); }
+    } dir_guard = {&dir};
 
     while (true) {
         const FRESULT readdir_res = f_readdir(&dir, &fno);
@@ -108,8 +118,6 @@ ErrorCode PatternManager::load_patterns() noexcept {
             ++pattern_count_;
         }
     }
-
-    f_closedir(&dir);
 
     if (pattern_count_ > 0) {
         loaded_.set();
