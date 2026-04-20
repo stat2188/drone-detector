@@ -28,12 +28,15 @@ public:
     void focus() override;
     void on_show() override;
     void on_hide() override;
+    bool on_touch(const ui::TouchEvent event) override;
 
     std::string title() const override { return "PTR Pattern"; }
 
 private:
     static constexpr uint16_t SPECTRUM_Y = 40;
     static constexpr uint16_t SPECTRUM_HEIGHT = 100;
+    static constexpr uint16_t SPECTRUM_X = 0;
+    static constexpr uint16_t SPECTRUM_WIDTH = 240;
     static constexpr uint16_t LIST_Y = 150;
     static constexpr uint16_t LIST_HEIGHT = 120;
 
@@ -43,7 +46,14 @@ private:
     enum class ViewState : uint8_t {
         IDLE,
         CAPTURING,
-        SAVING
+        SAVING,
+        LIVE
+    };
+
+    enum class RangeSelectState : uint8_t {
+        NOT_SELECTED,
+        WAITING_FOR_CAPTURE,
+        CAPTURE_COMPLETE
     };
 
     NavigationView& nav_;
@@ -52,6 +62,8 @@ private:
 
     ui::Labels labels_;
     ui::OptionsField field_patterns_;
+    ui::OptionsField field_range_;
+    ui::Button button_freq_;
     ui::Button button_add_;
     ui::Button button_save_;
     ui::Button button_edit_;
@@ -61,11 +73,15 @@ private:
 
     ui::Button button_start_capture_;
     ui::Labels label_status_;
+    ui::Labels label_range_;
 
     uint8_t selected_index_{0};
     ViewState view_state_{ViewState::IDLE};
+    RangeSelectState range_select_state_{RangeSelectState::NOT_SELECTED};
 
     FreqHz capture_frequency_{0};
+    FreqHz live_center_frequency_{0};
+    FreqHz live_bin_step_hz_{0};
     uint8_t capture_spectrum_[FFT_BIN_COUNT]{};
     uint8_t capture_spectrum_avg_[FFT_BIN_COUNT]{};
     uint8_t spectrum_fifo_[MAX_SPECTRUM_FIFO][FFT_BIN_COUNT]{};
@@ -78,6 +94,14 @@ private:
     int16_t selected_bin_{-1};
     bool bin_selected_{false};
 
+    uint8_t selected_range_idx_{0};
+
+    void load_sweep_ranges() noexcept;
+    FreqHz get_range_center_freq(uint8_t range_idx) const noexcept;
+    FreqHz get_range_bin_step(uint8_t range_idx) const noexcept;
+    FreqHz bin_to_frequency(int16_t bin) const noexcept;
+    int16_t frequency_to_bin(FreqHz freq) const noexcept;
+
     ErrorCode perform_capture(FreqHz freq) noexcept;
     void update_spectrum_display() noexcept;
     void draw_spectrum_with_selection(ui::Painter& painter, const uint8_t* spectrum, int16_t sel_bin) noexcept;
@@ -86,7 +110,11 @@ private:
     void delete_selected_pattern() noexcept;
     void clear_all_patterns() noexcept;
     void start_capture_sequence() noexcept;
+    void start_live_spectrum() noexcept;
     void on_capture_complete() noexcept;
+    void on_bin_selected(int16_t bin) noexcept;
+    void show_frequency_keypad() noexcept;
+    void refresh_list() noexcept;
 
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;

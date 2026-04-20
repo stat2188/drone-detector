@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <cstring>
-#include <vector>
 #include <array>
 
 #include "ch.h"
@@ -26,22 +25,30 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
     , nav_(nav)
     , labels_{
         {{UI_POS_X(0), UI_POS_Y(0)}, "PTR Pattern", Color::white()},
-        {{UI_POS_X(0), 20}, "Select freq from spectrum", Color::white()}
+        {{UI_POS_X(0), 20}, "Tap spectrum to select", Color::white()}
     }
     , field_patterns_{{0, LIST_Y}, 18, {}, false}
+    , field_range_{{UI_POS_X(16), 20}, 4, {
+        {"SWP1", 0}, {"SWP2", 1}, {"SWP3", 2}, {"SWP4", 3}
+    }}
+    , button_freq_{{UI_POS_X(22), 20, UI_POS_WIDTH(3), 16}, "Freq"}
     , button_add_{{UI_POS_X(0), 270, UI_POS_WIDTH(4), 20}, "Capt"}
     , button_save_{{UI_POS_X(5), 270, UI_POS_WIDTH(4), 20}, "Save"}
     , button_edit_{{UI_POS_X(10), 270, UI_POS_WIDTH(4), 20}, "Edit"}
     , button_delete_{{UI_POS_X(15), 270, UI_POS_WIDTH(4), 20}, "Del"}
     , button_clear_all_{{UI_POS_X(20), 270, UI_POS_WIDTH(4), 20}, "Clr"}
     , button_back_{{UI_POS_X(24), 270, UI_POS_WIDTH(3), 20}, "<="}
-    , button_start_capture_{{120, 270, UI_POS_WIDTH(5), 20}, "START"}
+    , button_start_capture_{{UI_POS_X(15), 270, UI_POS_WIDTH(5), 20}, "START"}
     , label_status_{
-        {{UI_POS_X(15), 20}, "Idle", Color::white()}
+        {{UI_POS_X(0), 30}, "Idle", Color::white()}
+    }
+    , label_range_{
+        {{UI_POS_X(0), 20}, "Range:", Color::white()}
     }
     , view_state_(ViewState::IDLE)
     , selected_bin_(-1)
     , bin_selected_(false)
+    , selected_range_idx_(0)
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
@@ -63,6 +70,9 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 
     add_children({
         &labels_,
+        &label_range_,
+        &field_range_,
+        &button_freq_,
         &field_patterns_,
         &button_add_,
         &button_save_,
@@ -78,35 +88,31 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         nav_.pop();
     };
 
+    button_freq_.on_select = [this](ui::Button&) {
+        show_frequency_keypad();
+    };
+
+    field_range_.on_change = [this](size_t index, int32_t) {
+        selected_range_idx_ = static_cast<uint8_t>(index);
+        load_sweep_ranges();
+    };
+
     button_add_.on_select = [this](ui::Button&) {
+        if (!bin_selected_) {
+            label_status_.set_text("Select bin first!");
+            set_dirty();
+            return;
+        }
         start_capture_sequence();
     };
 
     button_save_.on_select = [this](ui::Button&) {
-        if (!bin_selected_) {
+        if (!bin_selected_ || selected_bin_ < 0) {
             label_status_.set_text("Select bin first");
+            set_dirty();
             return;
         }
-        auto freq_view = nav_.push<FrequencyKeypadView>(capture_frequency_);
-        freq_view->on_changed = [this](rf::Frequency f) {
-            char name_buf[PATTERN_NAME_MAX_LEN] = {};
-            size_t name_len = 0;
-            const char* src = "Pattern";
-            while (src[name_len] != '\0' && name_len < PATTERN_NAME_MAX_LEN - 1) {
-                name_buf[name_len++] = src[name_len];
-            }
-            snprintf(name_buf + name_len, sizeof(name_buf) - name_len, "_%u",
-                     (unsigned int)(f / 1000000));
-            name_buf[sizeof(name_buf) - 1] = '\0';
-
-            ErrorCode err = save_current_pattern(name_buf);
-            if (err == ErrorCode::SUCCESS) {
-                label_status_.set_text("Saved!");
-                refresh_list();
-            } else {
-                label_status_.set_text("Save failed");
-            }
-        };
+        show_frequency_keypad();
     };
 
     button_edit_.on_select = [this](ui::Button&) {
@@ -122,12 +128,191 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
     };
 
     button_start_capture_.on_select = [this](ui::Button&) {
-        start_capture_sequence();
+        if (view_state_ == ViewState::LIVE) {
+            view_state_ = ViewState::IDLE;
+            button_start_capture_.set_text("START");
+            label_status_.set_text("Stopped");
+        } else if (bin_selected_) {
+            start_capture_sequence();
+        } else {
+            start_live_spectrum();
+        }
     };
 
     field_patterns_.on_change = [this](size_t index, int32_t) {
         selected_index_ = static_cast<uint8_t>(index);
     };
+}
+
+void PatternManagerView::load_sweep_ranges() noexcept {
+    DroneScanner& scanner_ref = get_scanner_instance();
+    ScanConfig cfg = scanner_ref.get_config();
+
+    live_center_frequency_ = 0;
+    live_bin_step_hz_ = 0;
+
+    switch (selected_range_idx_) {
+        case 0:
+            live_center_frequency_ = cfg.sweep_start_freq + (cfg.sweep_end_freq - cfg.sweep_start_freq) / 2;
+            live_bin_step_hz_ = (cfg.sweep_end_freq - cfg.sweep_start_freq) / 240;
+            break;
+        case 1:
+            if (cfg.sweep2_enabled) {
+                live_center_frequency_ = cfg.sweep2_start_freq + (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / 2;
+                live_bin_step_hz_ = (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / 240;
+            }
+            break;
+        case 2:
+            if (cfg.sweep3_enabled) {
+                live_center_frequency_ = cfg.sweep3_start_freq + (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / 2;
+                live_bin_step_hz_ = (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / 240;
+            }
+            break;
+        case 3:
+            if (cfg.sweep4_enabled) {
+                live_center_frequency_ = cfg.sweep4_start_freq + (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / 2;
+                live_bin_step_hz_ = (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / 240;
+            }
+            break;
+    }
+
+    char range_info[32];
+    if (live_center_frequency_ > 0) {
+        snprintf(range_info, sizeof(range_info), "%.1fMHz",
+                 live_center_frequency_ / 1000000.0);
+    } else {
+        snprintf(range_info, sizeof(range_info), "N/A");
+    }
+    label_status_.set_text(range_info);
+    set_dirty();
+}
+
+FreqHz PatternManagerView::get_range_center_freq(uint8_t range_idx) const noexcept {
+    DroneScanner& scanner_ref = get_scanner_instance();
+    ScanConfig cfg = scanner_ref.get_config();
+
+    switch (range_idx) {
+        case 0:
+            return cfg.sweep_start_freq + (cfg.sweep_end_freq - cfg.sweep_start_freq) / 2;
+        case 1:
+            if (cfg.sweep2_enabled) {
+                return cfg.sweep2_start_freq + (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / 2;
+            }
+            break;
+        case 2:
+            if (cfg.sweep3_enabled) {
+                return cfg.sweep3_start_freq + (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / 2;
+            }
+            break;
+        case 3:
+            if (cfg.sweep4_enabled) {
+                return cfg.sweep4_start_freq + (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / 2;
+            }
+            break;
+    }
+    return 0;
+}
+
+FreqHz PatternManagerView::get_range_bin_step(uint8_t range_idx) const noexcept {
+    DroneScanner& scanner_ref = get_scanner_instance();
+    ScanConfig cfg = scanner_ref.get_config();
+
+    switch (range_idx) {
+        case 0:
+            return (cfg.sweep_end_freq - cfg.sweep_start_freq) / 240;
+        case 1:
+            if (cfg.sweep2_enabled) {
+                return (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / 240;
+            }
+            break;
+        case 2:
+            if (cfg.sweep3_enabled) {
+                return (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / 240;
+            }
+            break;
+        case 3:
+            if (cfg.sweep4_enabled) {
+                return (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / 240;
+            }
+            break;
+    }
+    return 0;
+}
+
+FreqHz PatternManagerView::bin_to_frequency(int16_t bin) const noexcept {
+    if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
+        return 0;
+    }
+    constexpr FreqHz SLICE_BW = SWEEP_SLICE_BW;
+    constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
+    FreqHz offset = 0;
+    if (bin >= FFT_DC_SPIKE_END) {
+        offset = static_cast<FreqHz>(bin - 256) * BIN_SIZE;
+    } else if (bin < FFT_DC_SPIKE_START) {
+        offset = static_cast<FreqHz>(bin - 128) * BIN_SIZE;
+    }
+    return live_center_frequency_ + offset;
+}
+
+int16_t PatternManagerView::frequency_to_bin(FreqHz freq) const noexcept {
+    if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
+        return -1;
+    }
+    int32_t offset = static_cast<int32_t>(freq - live_center_frequency_);
+    int16_t bin = static_cast<int16_t>(offset / static_cast<int32_t>(SWEEP_SLICE_BW / FFT_BIN_COUNT)) + 128;
+    if (bin < 0) bin = 0;
+    if (bin >= FFT_BIN_COUNT) bin = FFT_BIN_COUNT - 1;
+    return bin;
+}
+
+void PatternManagerView::show_frequency_keypad() noexcept {
+    auto freq_view = nav_.push<FrequencyKeypadView>(capture_frequency_);
+    freq_view->on_changed = [this](rf::Frequency f) {
+        capture_frequency_ = static_cast<FreqHz>(f);
+        int16_t bin = frequency_to_bin(capture_frequency_);
+        if (bin >= 0) {
+            selected_bin_ = bin;
+            bin_selected_ = true;
+            char status[32];
+            snprintf(status, sizeof(status), "Bin:%d %.3fMHz", (int)selected_bin_, capture_frequency_ / 1000000.0);
+            label_status_.set_text(status);
+        } else {
+            label_status_.set_text("Out of range!");
+        }
+        set_dirty();
+    };
+}
+
+bool PatternManagerView::on_touch(const ui::TouchEvent event) noexcept {
+    if (event.type == ui::TouchEvent::Type::Start) {
+        int16_t x = event.point.x();
+        int16_t y = event.point.y();
+
+        if (x >= SPECTRUM_X && x < SPECTRUM_X + SPECTRUM_WIDTH &&
+            y >= SPECTRUM_Y && y < SPECTRUM_Y + SPECTRUM_HEIGHT) {
+
+            int16_t bin = static_cast<int16_t>(x);
+            if (bin >= 0 && bin < FFT_BIN_COUNT) {
+                on_bin_selected(bin);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void PatternManagerView::on_bin_selected(int16_t bin) noexcept {
+    selected_bin_ = bin;
+    bin_selected_ = true;
+    range_select_state_ = RangeSelectState::WAITING_FOR_CAPTURE;
+
+    capture_frequency_ = bin_to_frequency(bin);
+
+    char status[32];
+    snprintf(status, sizeof(status), "Bin:%d %.1fMHz",
+             (int)bin, capture_frequency_ / 1000000.0);
+    label_status_.set_text(status);
+    set_dirty();
 }
 
 void PatternManagerView::on_show() noexcept {
@@ -138,11 +323,15 @@ void PatternManagerView::on_show() noexcept {
         (void)pattern_manager_ptr_->load_patterns();
     }
 
+    load_sweep_ranges();
     refresh_list();
     set_dirty();
 }
 
 void PatternManagerView::on_hide() noexcept {
+    view_state_ = ViewState::IDLE;
+    capture_active_ = false;
+    button_start_capture_.set_text("START");
 }
 
 void PatternManagerView::focus() noexcept {
@@ -160,12 +349,24 @@ void PatternManagerView::on_channel_spectrum_config(ChannelSpectrumFIFO* fifo) n
 }
 
 void PatternManagerView::on_frame_sync() noexcept {
-    if (!capture_active_ || spectrum_fifo_ == nullptr) {
+    if (spectrum_fifo_ == nullptr) {
         return;
     }
 
     ChannelSpectrum spectrum;
     if (spectrum_fifo_->out(spectrum)) {
+        if (view_state_ == ViewState::LIVE) {
+            for (size_t i = 0; i < FFT_BIN_COUNT && i < spectrum.db.size(); ++i) {
+                capture_spectrum_[i] = spectrum.db[i];
+            }
+            set_dirty();
+            return;
+        }
+
+        if (!capture_active_) {
+            return;
+        }
+
         if (fifo_count_ < MAX_SPECTRUM_FIFO) {
             for (size_t i = 0; i < FFT_BIN_COUNT && i < spectrum.db.size(); ++i) {
                 spectrum_fifo_[fifo_count_][i] = spectrum.db[i];
@@ -183,6 +384,8 @@ void PatternManagerView::on_frame_sync() noexcept {
             }
 
             capture_active_ = false;
+            view_state_ = ViewState::IDLE;
+            button_start_capture_.set_text("START");
             on_capture_complete();
             return;
         }
@@ -192,19 +395,61 @@ void PatternManagerView::on_frame_sync() noexcept {
     }
 }
 
+void PatternManagerView::start_live_spectrum() noexcept {
+    DroneScanner& scanner_ref = get_scanner_instance();
+    ScanConfig cfg = scanner_ref.get_config();
+
+    capture_frequency_ = get_range_center_freq(selected_range_idx_);
+
+    if (capture_frequency_ == 0) {
+        label_status_.set_text("Range not set!");
+        set_dirty();
+        return;
+    }
+
+    live_center_frequency_ = capture_frequency_;
+    live_bin_step_hz_ = get_range_bin_step(selected_range_idx_);
+
+    label_status_.set_text("Live mode...");
+    view_state_ = ViewState::LIVE;
+    capture_active_ = false;
+    bin_selected_ = false;
+    selected_bin_ = -1;
+
+    button_start_capture_.set_text("STOP");
+
+    portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
+    portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);
+    baseband::set_spectrum(SWEEP_SLICE_BW, SWEEP_FFT_TRIGGER);
+
+    radio::set_tuning_frequency(rf::Frequency(capture_frequency_));
+    baseband::spectrum_streaming_start();
+
+    set_dirty();
+}
+
 void PatternManagerView::start_capture_sequence() noexcept {
     DroneScanner& scanner_ref = get_scanner_instance();
     ScanConfig cfg = scanner_ref.get_config();
 
-    capture_frequency_ = cfg.sweep_start_freq;
+    if (!bin_selected_ || selected_bin_ < 0 || capture_frequency_ == 0) {
+        label_status_.set_text("Select bin first!");
+        set_dirty();
+        return;
+    }
+
+    live_center_frequency_ = capture_frequency_;
+    live_bin_step_hz_ = get_range_bin_step(selected_range_idx_);
+
+    if (live_bin_step_hz_ == 0) {
+        live_bin_step_hz_ = (cfg.sweep_end_freq - cfg.sweep_start_freq) / 240;
+    }
 
     label_status_.set_text("Capturing...");
     view_state_ = ViewState::CAPTURING;
     capture_active_ = true;
     capture_pass_ = 0;
     fifo_count_ = 0;
-    selected_bin_ = -1;
-    bin_selected_ = false;
 
     std::memset(spectrum_fifo_, 0, sizeof(spectrum_fifo_));
 
@@ -220,32 +465,33 @@ void PatternManagerView::start_capture_sequence() noexcept {
 
 void PatternManagerView::on_capture_complete() noexcept {
     view_state_ = ViewState::IDLE;
+    range_select_state_ = RangeSelectState::CAPTURE_COMPLETE;
 
     std::memcpy(capture_spectrum_, capture_spectrum_avg_, FFT_BIN_COUNT);
 
-    size_t peak_bin = 0;
-    uint8_t peak_val = 0;
-    for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
-        if (capture_spectrum_[i] > peak_val) {
-            peak_val = capture_spectrum_[i];
-            peak_bin = i;
+    if (!bin_selected_ || selected_bin_ < 0) {
+        size_t peak_bin = 0;
+        uint8_t peak_val = 0;
+        for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
+            if (capture_spectrum_[i] > peak_val) {
+                peak_val = capture_spectrum_[i];
+                peak_bin = i;
+            }
+        }
+
+        if (peak_val > 50) {
+            selected_bin_ = static_cast<int16_t>(peak_bin);
+            bin_selected_ = true;
+            capture_frequency_ = bin_to_frequency(selected_bin_);
         }
     }
 
-    if (peak_val > 50) {
-        selected_bin_ = static_cast<int16_t>(peak_bin);
-        bin_selected_ = true;
-    } else {
-        selected_bin_ = -1;
-        bin_selected_ = false;
-    }
-
     char status_buf[32];
-    if (bin_selected_) {
-        snprintf(status_buf, sizeof(status_buf), "Peak: bin %d (sel)",
+    if (bin_selected_ && selected_bin_ >= 0) {
+        snprintf(status_buf, sizeof(status_buf), "Done! Bin:%d",
                  (int)selected_bin_);
     } else {
-        snprintf(status_buf, sizeof(status_buf), "Done - %d bins", (int)fifo_count_);
+        snprintf(status_buf, sizeof(status_buf), "Done - weak sig");
     }
     label_status_.set_text(status_buf);
 
@@ -257,9 +503,9 @@ void PatternManagerView::draw_spectrum_with_selection(
     const uint8_t* spectrum,
     int16_t sel_bin
 ) noexcept {
-    const uint16_t start_x = 0;
+    const uint16_t start_x = SPECTRUM_X;
     const uint16_t start_y = SPECTRUM_Y;
-    const uint16_t width = 240;
+    const uint16_t width = SPECTRUM_WIDTH;
     const uint16_t height = SPECTRUM_HEIGHT;
 
     painter.fill_rectangle(
@@ -272,7 +518,6 @@ void PatternManagerView::draw_spectrum_with_selection(
     }
 
     const uint8_t max_display = 180;
-    bool prev_in_sel = false;
 
     for (size_t i = 0; i < 240; ++i) {
         const uint8_t val = (i < FFT_BIN_COUNT) ? spectrum[i] : 0;
@@ -313,7 +558,7 @@ void PatternManagerView::draw_spectrum_with_selection(
         }, bar_color);
     }
 
-    if (sel_bin >= 0) {
+    if (sel_bin >= 0 && sel_bin < FFT_BIN_COUNT) {
         painter.draw_rectangle({
             static_cast<uint16_t>(sel_bin - 2) + start_x,
             start_y,
@@ -326,7 +571,8 @@ void PatternManagerView::draw_spectrum_with_selection(
 void PatternManagerView::paint(ui::Painter& painter) noexcept {
     (void)painter;
 
-    if (view_state_ == ViewState::CAPTURING || capture_spectrum_[0] != 0) {
+    if (view_state_ == ViewState::CAPTURING || view_state_ == ViewState::LIVE ||
+        capture_spectrum_[0] != 0) {
         draw_spectrum_with_selection(painter, capture_spectrum_, selected_bin_);
     }
 }
