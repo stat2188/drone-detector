@@ -325,10 +325,10 @@ void DroneSweepView::construct_objects() noexcept {
     if (view_group1_ && view_group2_) {
         view_group2_->hidden(true);
 
-        tab_view_ = new (std::nothrow) ui::TabView(
+        tab_view_ = new (std::nothrow) ui::TabView({
             {"Win 1-2", Color::white(), view_group1_},
             {"Win 3-4", Color::white(), view_group2_}
-        );
+        });
 
         if (tab_view_) {
             add_children({
