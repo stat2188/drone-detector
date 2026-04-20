@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <type_traits>
 
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
@@ -150,12 +151,23 @@ private:
     static constexpr ui::Dim TAB_BAR_H = 24;
 
     struct TabValuesBuffer {
-        uint32_t values[32];
-        uint8_t enabled_flags;
-    } __attribute__((packed));
+        // Window 1-2 values
+        uint32_t sw1_start, sw1_end, sw1_step;
+        uint32_t sw2_start, sw2_end, sw2_step;
+        uint8_t  sw2_enabled;
+        uint32_t sw1_exc[5], sw2_exc[5];
+        
+        // Window 3-4 values
+        uint32_t sw3_start, sw3_end, sw3_step;
+        uint32_t sw4_start, sw4_end, sw4_step;
+        uint8_t  sw3_enabled, sw4_enabled;
+        uint32_t sw3_exc[5], sw4_exc[5];
+    } __attribute__((packed, aligned(4)));
 
-    ui::View* active_tab_view_ { nullptr };
-    TabValuesBuffer tab_buffer_ {};
+    typename std::aligned_storage<sizeof(SweepWindowGroup1View), alignof(SweepWindowGroup1View)>::type view_storage_ {};
+    ui::View* active_view_ { nullptr };
+    uint8_t active_tab_index_ { 0 };
+    TabValuesBuffer state_buffer_ {};
 
     ui::TabView tab_view_;
 
@@ -169,6 +181,11 @@ private:
 
     void save_settings() noexcept;
     void apply_defaults() noexcept;
+
+    void serialize_active_view() noexcept;
+    void deserialize_to_active_view() noexcept;
+    void switch_tab(uint8_t new_index) noexcept;
+    void construct_view(uint8_t index) noexcept;
 };
 
 } // namespace drone_analyzer
