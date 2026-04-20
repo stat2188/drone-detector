@@ -165,7 +165,7 @@ private:
     };
 
     struct TabLifecycle {
-        TabState state = TabState.INACTIVE;
+        TabState state = TabState::INACTIVE;
     } tab_states_[2];
 
     typename std::aligned_storage<sizeof(SweepWindowGroup1View), alignof(SweepWindowGroup1View)>::type view_storage_ {};
