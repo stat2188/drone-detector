@@ -1839,8 +1839,9 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
                     tracked_drones_[tracked_count_ - 1].get_mahalanobis_stats().last_tuned_frequency = peak_freq;
                 }
             }
+        }
 
-            // Pattern matching: ALWAYS check in sweep mode for pattern recognition
+        // Pattern matching: ALWAYS check in sweep mode for pattern recognition
         // This provides visual feedback (red frame) and adds to threats
         SpectrumShape::AnalysisResult shape_result;
         shape_result.signal_detected = true;
