@@ -7,7 +7,6 @@
 
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
-#include "ui_tabview.hpp"
 
 #include "drone_types.hpp"
 #include "constants.hpp"
@@ -147,31 +146,37 @@ private:
     DroneScanner* scanner_ptr_;
     ScanConfig original_config_;
 
-    // Child views for tabs
     static constexpr ui::Dim TAB_BAR_H = 24;
 
     struct TabValuesBuffer {
-        // Window 1-2 values
         uint32_t sw1_start, sw1_end, sw1_step;
         uint32_t sw2_start, sw2_end, sw2_step;
         uint8_t  sw2_enabled;
         uint32_t sw1_exc[5], sw2_exc[5];
-        
-        // Window 3-4 values
         uint32_t sw3_start, sw3_end, sw3_step;
         uint32_t sw4_start, sw4_end, sw4_step;
         uint8_t  sw3_enabled, sw4_enabled;
         uint32_t sw3_exc[5], sw4_exc[5];
     } __attribute__((packed, aligned(4)));
 
+    enum class TabState : uint8_t {
+        INACTIVE = 0,
+        CONSTRUCTED = 1
+    };
+
+    struct TabLifecycle {
+        TabState state = TabState.INACTIVE;
+    } tab_states_[2];
+
     typename std::aligned_storage<sizeof(SweepWindowGroup1View), alignof(SweepWindowGroup1View)>::type view_storage_ {};
     ui::View* active_view_ { nullptr };
     uint8_t active_tab_index_ { 0 };
     TabValuesBuffer state_buffer_ {};
 
-    ui::TabView tab_view_;
+    // Custom tab buttons (replaces TabView for lazy loading)
+    ui::Button button_tab1_{{0, 0, screen_width / 2 - 1, TAB_BAR_H - 1}, "Win 1-2"};
+    ui::Button button_tab2_{{screen_width / 2 + 1, 0, screen_width / 2 - 1, TAB_BAR_H - 1}, "Win 3-4"};
 
-    // Buttons (below tab content area)
     ui::NumberField field_exc_radius_{{UI_POS_X(0), 285}, 3, {1, 100}, 1, ' '};
     ui::Labels labels_exc_radius_{
         {{UI_POS_X(4), 285}, "Exc R(MHz):", Theme::getInstance()->fg_light->foreground},
@@ -183,9 +188,9 @@ private:
     void apply_defaults() noexcept;
 
     void serialize_active_view() noexcept;
-    void deserialize_to_active_view() noexcept;
     void switch_tab(uint8_t new_index) noexcept;
     void construct_view(uint8_t index) noexcept;
+    void destroy_active_view() noexcept;
 };
 
 } // namespace drone_analyzer
