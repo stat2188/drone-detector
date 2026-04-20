@@ -40,12 +40,8 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
     , button_clear_all_{{UI_POS_X(20), 270, UI_POS_WIDTH(4), 20}, "Clr"}
     , button_back_{{UI_POS_X(24), 270, UI_POS_WIDTH(3), 20}, "<="}
     , button_start_capture_{{UI_POS_X(15), 270, UI_POS_WIDTH(5), 20}, "START"}
-    , label_status_{
-        {{UI_POS_X(0), 30}, "Idle", Color::white()}
-    }
-    , label_range_{
-        {{UI_POS_X(14), 0}, "Rng:", Color::white()}
-    }
+    , label_status_{{UI_POS_X(0), 30, UI_POS_WIDTH(28), 20}, "Idle"}
+    , label_range_{{UI_POS_X(14), 0, UI_POS_WIDTH(10), 20}, "Rng:"}
     , view_state_(ViewState::IDLE)
     , selected_bin_(-1)
     , bin_selected_(false)

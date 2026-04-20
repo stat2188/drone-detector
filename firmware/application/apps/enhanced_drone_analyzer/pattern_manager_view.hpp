@@ -72,8 +72,8 @@ private:
     ui::Button button_back_;
 
     ui::Button button_start_capture_;
-    ui::Labels label_status_;
-    ui::Labels label_range_;
+    ui::Text label_status_;
+    ui::Text label_range_;
 
     uint8_t selected_index_{0};
     ViewState view_state_{ViewState::IDLE};
