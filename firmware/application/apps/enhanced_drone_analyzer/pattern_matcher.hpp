@@ -29,7 +29,7 @@ public:
         , pattern_count_(0)
         , normalized_{}
         , candidates_{} {
-        normalized_.fill(0);
+        std::memset(normalized_, 0, sizeof(normalized_));
     }
     ~PatternMatcher() noexcept = default;
 
