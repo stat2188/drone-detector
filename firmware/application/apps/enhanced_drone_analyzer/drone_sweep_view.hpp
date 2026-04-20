@@ -131,6 +131,7 @@ public:
  * @note TabView layout: Tab 1 = Win 1-2, Tab 2 = Win 3-4
  * @note Save writes sweep keys to SETTINGS/eda_settings.txt
  * @note Defaults resets all sweep windows to factory values (Win 3-4 disabled)
+ * @note Memory optimized: child views use pointers for lazy initialization
  */
 class DroneSweepView : public ui::View {
 public:
@@ -146,21 +147,20 @@ public:
     std::string title() const override { return "SWP Settings"; }
 
 private:
+    static constexpr ui::Dim TAB_BAR_H = 24;
+
+    void construct_objects() noexcept;
+    void destruct_objects() noexcept;
+
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
     ScanConfig original_config_;
 
-    // Child views for tabs
-    static constexpr ui::Dim TAB_BAR_H = 24;
-    Rect tab_content_rect_{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H};
+    // Child views as pointers (lazy init to reduce heap at construction)
+    SweepWindowGroup1View* view_group1_{nullptr};
+    SweepWindowGroup2View* view_group2_{nullptr};
 
-    SweepWindowGroup1View view_group1_{nav_, tab_content_rect_};
-    SweepWindowGroup2View view_group2_{nav_, tab_content_rect_};
-
-    ui::TabView tab_view_{
-        {"Win 1-2", Color::white(), &view_group1_},
-        {"Win 3-4", Color::white(), &view_group2_},
-    };
+    ui::TabView* tab_view_{nullptr};
 
     // Buttons (below tab content area)
     ui::NumberField field_exc_radius_{{UI_POS_X(0), 285}, 3, {1, 100}, 1, ' '};

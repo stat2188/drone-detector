@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstring>
+#include <new>
 
 #include "drone_sweep_view.hpp"
 #include "drone_settings.hpp"
@@ -44,7 +45,6 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
         &field_sw2_exc4_,
     });
 
-    // Keyboard callbacks for frequency fields (MHz → keypad → MHz)
     field_sw1_start_.on_select = [this](NumberField&) {
         auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_start_.value()) * 1000000ULL);
@@ -77,7 +77,6 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
         };
     };
 
-    // Keyboard callbacks for exception fields (MHz → keypad → MHz)
     field_sw1_exc0_.on_select = [this](NumberField&) {
         auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_exc0_.value()) * 1000000ULL);
@@ -196,7 +195,6 @@ SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect par
         &field_sw4_exc4_,
     });
 
-    // Keyboard callbacks for frequency fields (MHz → keypad → MHz)
     field_sw3_start_.on_select = [this](NumberField&) {
         auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw3_start_.value()) * 1000000ULL);
@@ -229,7 +227,6 @@ SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect par
         };
     };
 
-    // Keyboard callbacks for exception fields (MHz → keypad → MHz)
     field_sw3_exc0_.on_select = [this](NumberField&) {
         auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw3_exc0_.value()) * 1000000ULL);
@@ -319,66 +316,99 @@ void SweepWindowGroup2View::focus() {
 // DroneSweepView — Main sweep settings view with TabView
 // ============================================================================
 
+void DroneSweepView::construct_objects() noexcept {
+    Rect tab_content_rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H};
+
+    view_group1_ = new (std::nothrow) SweepWindowGroup1View(nav_, tab_content_rect);
+    view_group2_ = new (std::nothrow) SweepWindowGroup2View(nav_, tab_content_rect);
+
+    if (view_group1_ && view_group2_) {
+        view_group2_->hidden(true);
+
+        tab_view_ = new (std::nothrow) ui::TabView(
+            {"Win 1-2", Color::white(), view_group1_},
+            {"Win 3-4", Color::white(), view_group2_}
+        );
+
+        if (tab_view_) {
+            add_children({
+                tab_view_,
+                view_group1_,
+                view_group2_,
+                &labels_exc_radius_,
+                &field_exc_radius_,
+                &button_defaults_,
+                &button_save_,
+            });
+
+            tab_view_->set_selected(0);
+        }
+    }
+}
+
+void DroneSweepView::destruct_objects() noexcept {
+    if (tab_view_) {
+        delete tab_view_;
+        tab_view_ = nullptr;
+    }
+
+    if (view_group1_) {
+        delete view_group1_;
+        view_group1_ = nullptr;
+    }
+
+    if (view_group2_) {
+        delete view_group2_;
+        view_group2_ = nullptr;
+    }
+}
+
 DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept
     : ui::View()
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , original_config_(config) {
-    // Hide non-active tab view BEFORE adding as children
-    // (TabView::set_selected is not called until on_show)
-    view_group2_.hidden(true);
+    construct_objects();
 
-    add_children({
-        &tab_view_,
-        &view_group1_,
-        &view_group2_,
-        &labels_exc_radius_,
-        &field_exc_radius_,
-        &button_defaults_,
-        &button_save_,
-    });
+    if (!view_group1_ || !view_group2_ || !tab_view_) {
+        return;
+    }
 
-    // Initialize tab selection (ensures correct view is visible)
-    tab_view_.set_selected(0);
+    view_group1_->field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / 1000000ULL));
+    view_group1_->field_sw1_end_.set_value(static_cast<int32_t>(config.sweep_end_freq / 1000000ULL));
+    view_group1_->field_sw1_step_.set_value(static_cast<int32_t>(config.sweep_step_freq / 1000ULL));
 
-    // Populate Tab 1 (Windows 1-2) from config
-    view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / 1000000ULL));
-    view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(config.sweep_end_freq / 1000000ULL));
-    view_group1_.field_sw1_step_.set_value(static_cast<int32_t>(config.sweep_step_freq / 1000ULL));
+    view_group1_->check_sw2_enabled_.set_value(config.sweep2_enabled);
+    view_group1_->field_sw2_start_.set_value(static_cast<int32_t>(config.sweep2_start_freq / 1000000ULL));
+    view_group1_->field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / 1000000ULL));
+    view_group1_->field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / 1000ULL));
 
-    view_group1_.check_sw2_enabled_.set_value(config.sweep2_enabled);
-    view_group1_.field_sw2_start_.set_value(static_cast<int32_t>(config.sweep2_start_freq / 1000000ULL));
-    view_group1_.field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / 1000000ULL));
-    view_group1_.field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / 1000ULL));
+    view_group2_->check_sw3_enabled_.set_value(config.sweep3_enabled);
+    view_group2_->field_sw3_start_.set_value(static_cast<int32_t>(config.sweep3_start_freq / 1000000ULL));
+    view_group2_->field_sw3_end_.set_value(static_cast<int32_t>(config.sweep3_end_freq / 1000000ULL));
+    view_group2_->field_sw3_step_.set_value(static_cast<int32_t>(config.sweep3_step_freq / 1000ULL));
 
-    // Populate Tab 2 (Windows 3-4) from config
-    view_group2_.check_sw3_enabled_.set_value(config.sweep3_enabled);
-    view_group2_.field_sw3_start_.set_value(static_cast<int32_t>(config.sweep3_start_freq / 1000000ULL));
-    view_group2_.field_sw3_end_.set_value(static_cast<int32_t>(config.sweep3_end_freq / 1000000ULL));
-    view_group2_.field_sw3_step_.set_value(static_cast<int32_t>(config.sweep3_step_freq / 1000ULL));
+    view_group2_->check_sw4_enabled_.set_value(config.sweep4_enabled);
+    view_group2_->field_sw4_start_.set_value(static_cast<int32_t>(config.sweep4_start_freq / 1000000ULL));
+    view_group2_->field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / 1000000ULL));
+    view_group2_->field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
 
-    view_group2_.check_sw4_enabled_.set_value(config.sweep4_enabled);
-    view_group2_.field_sw4_start_.set_value(static_cast<int32_t>(config.sweep4_start_freq / 1000000ULL));
-    view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / 1000000ULL));
-    view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
-
-    // Populate exception fields from config (MHz) — 5 slots per window
     ui::NumberField* exc1_fields[] = {
-        &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
-        &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
-        &view_group1_.field_sw1_exc4_};
+        &view_group1_->field_sw1_exc0_, &view_group1_->field_sw1_exc1_,
+        &view_group1_->field_sw1_exc2_, &view_group1_->field_sw1_exc3_,
+        &view_group1_->field_sw1_exc4_};
     ui::NumberField* exc2_fields[] = {
-        &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
-        &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
-        &view_group1_.field_sw2_exc4_};
+        &view_group1_->field_sw2_exc0_, &view_group1_->field_sw2_exc1_,
+        &view_group1_->field_sw2_exc2_, &view_group1_->field_sw2_exc3_,
+        &view_group1_->field_sw2_exc4_};
     ui::NumberField* exc3_fields[] = {
-        &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
-        &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
-        &view_group2_.field_sw3_exc4_};
+        &view_group2_->field_sw3_exc0_, &view_group2_->field_sw3_exc1_,
+        &view_group2_->field_sw3_exc2_, &view_group2_->field_sw3_exc3_,
+        &view_group2_->field_sw3_exc4_};
     ui::NumberField* exc4_fields[] = {
-        &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
-        &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
-        &view_group2_.field_sw4_exc4_};
+        &view_group2_->field_sw4_exc0_, &view_group2_->field_sw4_exc1_,
+        &view_group2_->field_sw4_exc2_, &view_group2_->field_sw4_exc3_,
+        &view_group2_->field_sw4_exc4_};
 
     for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
         exc1_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[0][i] / 1000000ULL));
@@ -387,7 +417,6 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
         exc4_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[3][i] / 1000000ULL));
     }
 
-    // Exception radius
     field_exc_radius_.set_value(static_cast<int32_t>(config.exception_radius_mhz));
 
     button_save_.on_select = [this](ui::Button&) {
@@ -401,56 +430,60 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
 }
 
 DroneSweepView::~DroneSweepView() noexcept {
+    destruct_objects();
 }
 
 void DroneSweepView::focus() {
-    // Focus the current tab's content directly (skip tab headers for fast navigation)
-    if (tab_view_.selected() == 0) {
-        view_group1_.focus();
-    } else {
-        view_group2_.focus();
+    if (tab_view_ && view_group1_) {
+        if (tab_view_->selected() == 0) {
+            view_group1_->focus();
+        } else if (view_group2_) {
+            view_group2_->focus();
+        }
     }
 }
 
 void DroneSweepView::save_settings() noexcept {
-    // Read values from child views
-    FreqHz sw1_start = static_cast<FreqHz>(view_group1_.field_sw1_start_.value()) * 1000000ULL;
-    FreqHz sw1_end = static_cast<FreqHz>(view_group1_.field_sw1_end_.value()) * 1000000ULL;
-    FreqHz sw1_step = static_cast<FreqHz>(view_group1_.field_sw1_step_.value()) * 1000ULL;
+    if (!view_group1_ || !view_group2_ || !tab_view_) {
+        return;
+    }
 
-    bool sw2_enabled = view_group1_.check_sw2_enabled_.value();
-    FreqHz sw2_start = static_cast<FreqHz>(view_group1_.field_sw2_start_.value()) * 1000000ULL;
-    FreqHz sw2_end = static_cast<FreqHz>(view_group1_.field_sw2_end_.value()) * 1000000ULL;
-    FreqHz sw2_step = static_cast<FreqHz>(view_group1_.field_sw2_step_.value()) * 1000ULL;
+    FreqHz sw1_start = static_cast<FreqHz>(view_group1_->field_sw1_start_.value()) * 1000000ULL;
+    FreqHz sw1_end = static_cast<FreqHz>(view_group1_->field_sw1_end_.value()) * 1000000ULL;
+    FreqHz sw1_step = static_cast<FreqHz>(view_group1_->field_sw1_step_.value()) * 1000ULL;
 
-    bool sw3_enabled = view_group2_.check_sw3_enabled_.value();
-    FreqHz sw3_start = static_cast<FreqHz>(view_group2_.field_sw3_start_.value()) * 1000000ULL;
-    FreqHz sw3_end = static_cast<FreqHz>(view_group2_.field_sw3_end_.value()) * 1000000ULL;
-    FreqHz sw3_step = static_cast<FreqHz>(view_group2_.field_sw3_step_.value()) * 1000ULL;
+    bool sw2_enabled = view_group1_->check_sw2_enabled_.value();
+    FreqHz sw2_start = static_cast<FreqHz>(view_group1_->field_sw2_start_.value()) * 1000000ULL;
+    FreqHz sw2_end = static_cast<FreqHz>(view_group1_->field_sw2_end_.value()) * 1000000ULL;
+    FreqHz sw2_step = static_cast<FreqHz>(view_group1_->field_sw2_step_.value()) * 1000ULL;
 
-    bool sw4_enabled = view_group2_.check_sw4_enabled_.value();
-    FreqHz sw4_start = static_cast<FreqHz>(view_group2_.field_sw4_start_.value()) * 1000000ULL;
-    FreqHz sw4_end = static_cast<FreqHz>(view_group2_.field_sw4_end_.value()) * 1000000ULL;
-    FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
+    bool sw3_enabled = view_group2_->check_sw3_enabled_.value();
+    FreqHz sw3_start = static_cast<FreqHz>(view_group2_->field_sw3_start_.value()) * 1000000ULL;
+    FreqHz sw3_end = static_cast<FreqHz>(view_group2_->field_sw3_end_.value()) * 1000000ULL;
+    FreqHz sw3_step = static_cast<FreqHz>(view_group2_->field_sw3_step_.value()) * 1000ULL;
 
-    // Read exception frequencies (MHz → Hz) — 5 slots per window
+    bool sw4_enabled = view_group2_->check_sw4_enabled_.value();
+    FreqHz sw4_start = static_cast<FreqHz>(view_group2_->field_sw4_start_.value()) * 1000000ULL;
+    FreqHz sw4_end = static_cast<FreqHz>(view_group2_->field_sw4_end_.value()) * 1000000ULL;
+    FreqHz sw4_step = static_cast<FreqHz>(view_group2_->field_sw4_step_.value()) * 1000ULL;
+
     FreqHz exc[4][EXCEPTIONS_PER_WINDOW]{};
     ui::NumberField* exc1_fields[] = {
-        &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
-        &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
-        &view_group1_.field_sw1_exc4_};
+        &view_group1_->field_sw1_exc0_, &view_group1_->field_sw1_exc1_,
+        &view_group1_->field_sw1_exc2_, &view_group1_->field_sw1_exc3_,
+        &view_group1_->field_sw1_exc4_};
     ui::NumberField* exc2_fields[] = {
-        &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
-        &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
-        &view_group1_.field_sw2_exc4_};
+        &view_group1_->field_sw2_exc0_, &view_group1_->field_sw2_exc1_,
+        &view_group1_->field_sw2_exc2_, &view_group1_->field_sw2_exc3_,
+        &view_group1_->field_sw2_exc4_};
     ui::NumberField* exc3_fields[] = {
-        &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
-        &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
-        &view_group2_.field_sw3_exc4_};
+        &view_group2_->field_sw3_exc0_, &view_group2_->field_sw3_exc1_,
+        &view_group2_->field_sw3_exc2_, &view_group2_->field_sw3_exc3_,
+        &view_group2_->field_sw3_exc4_};
     ui::NumberField* exc4_fields[] = {
-        &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
-        &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
-        &view_group2_.field_sw4_exc4_};
+        &view_group2_->field_sw4_exc0_, &view_group2_->field_sw4_exc1_,
+        &view_group2_->field_sw4_exc2_, &view_group2_->field_sw4_exc3_,
+        &view_group2_->field_sw4_exc4_};
 
     for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
         exc[0][i] = static_cast<FreqHz>(exc1_fields[i]->value()) * 1000000ULL;
@@ -459,11 +492,8 @@ void DroneSweepView::save_settings() noexcept {
         exc[3][i] = static_cast<FreqHz>(exc4_fields[i]->value()) * 1000000ULL;
     }
 
-    // Read exception radius (1-100 MHz)
     const uint8_t exc_radius = static_cast<uint8_t>(field_exc_radius_.value());
 
-    // Validate: start must be < end AND within hardware limits
-    // HackRF One RFFC5072 mixer practical limit: 6 GHz
     if (sw1_start < HARDWARE_MIN_FREQ_HZ) sw1_start = HARDWARE_MIN_FREQ_HZ;
     if (sw1_end > HARDWARE_MAX_FREQ_HZ) sw1_end = HARDWARE_MAX_FREQ_HZ;
     if (sw1_start >= sw1_end) sw1_end = sw1_start + 20000000;
@@ -483,7 +513,6 @@ void DroneSweepView::save_settings() noexcept {
         if (sw4_start >= sw4_end) sw4_end = sw4_start + 20000000;
     }
 
-    // Update scanner config in memory
     if (scanner_ptr_ != nullptr) {
         ScanConfig updated_config = original_config_;
         updated_config.sweep_start_freq = sw1_start;
@@ -510,12 +539,9 @@ void DroneSweepView::save_settings() noexcept {
         (void)scanner_ptr_->set_config(updated_config);
     }
 
-    // Save to SD card via centralized settings manager
-    // Read current settings first (preserves non-sweep settings)
     SettingsStruct current;
     (void)SettingsFileManager::load(current);
 
-    // Update sweep fields from UI
     current.sweep_start_freq = sw1_start;
     current.sweep_end_freq = sw1_end;
     current.sweep_step_freq = sw1_step;
@@ -542,47 +568,49 @@ void DroneSweepView::save_settings() noexcept {
 }
 
 void DroneSweepView::apply_defaults() noexcept {
+    if (!view_group1_ || !view_group2_) {
+        return;
+    }
+
     SettingsStruct defaults;
 
-    view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(defaults.sweep_start_freq / 1000000ULL));
-    view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(defaults.sweep_end_freq / 1000000ULL));
-    view_group1_.field_sw1_step_.set_value(static_cast<int32_t>(defaults.sweep_step_freq / 1000ULL));
+    view_group1_->field_sw1_start_.set_value(static_cast<int32_t>(defaults.sweep_start_freq / 1000000ULL));
+    view_group1_->field_sw1_end_.set_value(static_cast<int32_t>(defaults.sweep_end_freq / 1000000ULL));
+    view_group1_->field_sw1_step_.set_value(static_cast<int32_t>(defaults.sweep_step_freq / 1000ULL));
 
-    view_group1_.check_sw2_enabled_.set_value(defaults.sweep2_enabled);
-    view_group1_.field_sw2_start_.set_value(static_cast<int32_t>(defaults.sweep2_start_freq / 1000000ULL));
-    view_group1_.field_sw2_end_.set_value(static_cast<int32_t>(defaults.sweep2_end_freq / 1000000ULL));
-    view_group1_.field_sw2_step_.set_value(static_cast<int32_t>(defaults.sweep2_step_freq / 1000ULL));
+    view_group1_->check_sw2_enabled_.set_value(defaults.sweep2_enabled);
+    view_group1_->field_sw2_start_.set_value(static_cast<int32_t>(defaults.sweep2_start_freq / 1000000ULL));
+    view_group1_->field_sw2_end_.set_value(static_cast<int32_t>(defaults.sweep2_end_freq / 1000000ULL));
+    view_group1_->field_sw2_step_.set_value(static_cast<int32_t>(defaults.sweep2_step_freq / 1000ULL));
 
-    view_group2_.check_sw3_enabled_.set_value(defaults.sweep3_enabled);
-    view_group2_.field_sw3_start_.set_value(static_cast<int32_t>(defaults.sweep3_start_freq / 1000000ULL));
-    view_group2_.field_sw3_end_.set_value(static_cast<int32_t>(defaults.sweep3_end_freq / 1000000ULL));
-    view_group2_.field_sw3_step_.set_value(static_cast<int32_t>(defaults.sweep3_step_freq / 1000ULL));
+    view_group2_->check_sw3_enabled_.set_value(defaults.sweep3_enabled);
+    view_group2_->field_sw3_start_.set_value(static_cast<int32_t>(defaults.sweep3_start_freq / 1000000ULL));
+    view_group2_->field_sw3_end_.set_value(static_cast<int32_t>(defaults.sweep3_end_freq / 1000000ULL));
+    view_group2_->field_sw3_step_.set_value(static_cast<int32_t>(defaults.sweep3_step_freq / 1000ULL));
 
-    view_group2_.check_sw4_enabled_.set_value(defaults.sweep4_enabled);
-    view_group2_.field_sw4_start_.set_value(static_cast<int32_t>(defaults.sweep4_start_freq / 1000000ULL));
-    view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(defaults.sweep4_end_freq / 1000000ULL));
-    view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(defaults.sweep4_step_freq / 1000ULL));
+    view_group2_->check_sw4_enabled_.set_value(defaults.sweep4_enabled);
+    view_group2_->field_sw4_start_.set_value(static_cast<int32_t>(defaults.sweep4_start_freq / 1000000ULL));
+    view_group2_->field_sw4_end_.set_value(static_cast<int32_t>(defaults.sweep4_end_freq / 1000000ULL));
+    view_group2_->field_sw4_step_.set_value(static_cast<int32_t>(defaults.sweep4_step_freq / 1000ULL));
 
-    // Reset all exception fields to 0 (disabled) — 5 slots per window
     ui::NumberField* all_exc[] = {
-        &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
-        &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
-        &view_group1_.field_sw1_exc4_,
-        &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
-        &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
-        &view_group1_.field_sw2_exc4_,
-        &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
-        &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
-        &view_group2_.field_sw3_exc4_,
-        &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
-        &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
-        &view_group2_.field_sw4_exc4_,
+        &view_group1_->field_sw1_exc0_, &view_group1_->field_sw1_exc1_,
+        &view_group1_->field_sw1_exc2_, &view_group1_->field_sw1_exc3_,
+        &view_group1_->field_sw1_exc4_,
+        &view_group1_->field_sw2_exc0_, &view_group1_->field_sw2_exc1_,
+        &view_group1_->field_sw2_exc2_, &view_group1_->field_sw2_exc3_,
+        &view_group1_->field_sw2_exc4_,
+        &view_group2_->field_sw3_exc0_, &view_group2_->field_sw3_exc1_,
+        &view_group2_->field_sw3_exc2_, &view_group2_->field_sw3_exc3_,
+        &view_group2_->field_sw3_exc4_,
+        &view_group2_->field_sw4_exc0_, &view_group2_->field_sw4_exc1_,
+        &view_group2_->field_sw4_exc2_, &view_group2_->field_sw4_exc3_,
+        &view_group2_->field_sw4_exc4_,
     };
     for (auto* f : all_exc) {
         f->set_value(0);
     }
 
-    // Reset exception radius to default (3 MHz)
     field_exc_radius_.set_value(static_cast<int32_t>(DEFAULT_EXCEPTION_RADIUS_MHZ));
 }
 
