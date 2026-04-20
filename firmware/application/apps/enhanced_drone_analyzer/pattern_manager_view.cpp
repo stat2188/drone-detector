@@ -371,7 +371,7 @@ void PatternManagerView::on_frame_sync() noexcept {
 
         if (fifo_count_ < MAX_SPECTRUM_FIFO) {
             for (size_t i = 0; i < FFT_BIN_COUNT && i < spectrum.db.size(); ++i) {
-                spectrum_fifo_[fifo_count_][i] = spectrum.db[i];
+                fft_capture_buf_[fifo_count_][i] = spectrum.db[i];
             }
             ++fifo_count_;
         }
@@ -380,7 +380,7 @@ void PatternManagerView::on_frame_sync() noexcept {
             for (size_t i = 0; i < FFT_BIN_COUNT; ++i) {
                 uint32_t sum = 0;
                 for (size_t j = 0; j < AVG_PASSES; ++j) {
-                    sum += spectrum_fifo_[j][i];
+                    sum += fft_capture_buf_[j][i];
                 }
                 capture_spectrum_avg_[i] = static_cast<uint8_t>(sum / AVG_PASSES);
             }
@@ -453,7 +453,7 @@ void PatternManagerView::start_capture_sequence() noexcept {
     capture_pass_ = 0;
     fifo_count_ = 0;
 
-    std::memset(spectrum_fifo_, 0, sizeof(spectrum_fifo_));
+    std::memset(fft_capture_buf_, 0, sizeof(fft_capture_buf_));
 
     portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
     portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);

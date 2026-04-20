@@ -84,7 +84,7 @@ private:
     FreqHz live_bin_step_hz_{0};
     uint8_t capture_spectrum_[FFT_BIN_COUNT]{};
     uint8_t capture_spectrum_avg_[FFT_BIN_COUNT]{};
-    uint8_t spectrum_fifo_[MAX_SPECTRUM_FIFO][FFT_BIN_COUNT]{};
+    uint8_t fft_capture_buf_[MAX_SPECTRUM_FIFO][FFT_BIN_COUNT]{};
     uint8_t fifo_index_{0};
     uint8_t fifo_count_{0};
     bool capture_active_{false};
