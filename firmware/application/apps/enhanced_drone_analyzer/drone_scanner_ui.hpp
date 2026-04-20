@@ -76,7 +76,7 @@ private:
     ScannerThread* scanner_thread_{nullptr};
 
     ui::Labels labels_{
-        {{UI_POS_X(0), UI_POS_Y(0)}, "LNA   VGA   AMP  ", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), UI_POS_Y(0)}, "LNA   VGA   AMP  ", Color::white()},
     };
 
     ui::LNAGainField field_lna_{{UI_POS_X(4), 0}};
@@ -85,11 +85,11 @@ private:
     ui::AudioVolumeField field_volume_{{UI_POS_X_RIGHT(2), UI_POS_Y(0)}};
     ui::NumberField field_rssi_dec_cyc_{{UI_POS_X_RIGHT(6), UI_POS_Y(0)}, 2, {1, 50}, 1, ' '};
     ui::Labels labels_cyc_{
-        {{UI_POS_X_RIGHT(9), UI_POS_Y(0)}, "cy", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X_RIGHT(9), UI_POS_Y(0)}, "cy", Color::white()},
     };
 
     ui::Labels filter_labels_{
-        {{UI_POS_X(0), 268}, "FILT:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(0), 268}, "FILT:", Color::white()},
     };
 
     ui::OptionsField field_filter_{

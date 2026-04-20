@@ -22,22 +22,22 @@ namespace drone_analyzer {
 DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr, DroneDisplay* display) noexcept
     : ui::View()
     , labels_({
-        {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(6)}, "Wid:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(10), UI_POS_Y(5)}, "Rat:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(10), UI_POS_Y(6)}, "Vly:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(10), UI_POS_Y(4)}, "Flat:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(4)}, "Sym:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(0), UI_POS_Y(0)}, "CFAR:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(11), UI_POS_Y(0)}, "Ref:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(17), UI_POS_Y(0)}, "Grd:", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(22), UI_POS_Y(0)}, "Thr:", Theme::getInstance()->fg_light->foreground},
+        {{UI_POS_X(1), UI_POS_Y(1)}, "Int(ms):", Color::white()},
+        {{UI_POS_X(1), UI_POS_Y(3)}, "Sens:", Color::white()},
+        {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Color::white()},
+        {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Color::white()},
+        {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Color::white()},
+        {{UI_POS_X(17), UI_POS_Y(6)}, "Wid:", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Color::white()},
+        {{UI_POS_X(10), UI_POS_Y(5)}, "Rat:", Color::white()},
+        {{UI_POS_X(10), UI_POS_Y(6)}, "Vly:", Color::white()},
+        {{UI_POS_X(10), UI_POS_Y(4)}, "Flat:", Color::white()},
+        {{UI_POS_X(17), UI_POS_Y(4)}, "Sym:", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(0)}, "CFAR:", Color::white()},
+        {{UI_POS_X(11), UI_POS_Y(0)}, "Ref:", Color::white()},
+        {{UI_POS_X(17), UI_POS_Y(0)}, "Grd:", Color::white()},
+        {{UI_POS_X(22), UI_POS_Y(0)}, "Thr:", Color::white()},
     })
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')

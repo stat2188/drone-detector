@@ -38,8 +38,8 @@ namespace drone_analyzer {
     : View()
     , nav_(nav)
     , labels_{
-        {{UI_POS_X(0), UI_POS_Y(0)}, "Pattern Manager", Theme::getInstance()->fg_light->foreground},
-        {{UI_POS_X(0), UI_POS_Y(2)}, "Count: --", Theme::getInstance()->fg_light->foreground}
+        {{UI_POS_X(0), UI_POS_Y(0)}, "Pattern Manager", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(2)}, "Count: --", Color::white()}
     }
     , field_patterns_{{0, LIST_Y}, 20, {}, false}
     , button_add_{{UI_POS_X(0), 284, UI_POS_WIDTH(3), 28}, "Add"}
