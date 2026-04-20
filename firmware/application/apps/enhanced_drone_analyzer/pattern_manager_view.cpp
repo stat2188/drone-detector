@@ -96,7 +96,7 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 
     button_add_.on_select = [this](ui::Button&) {
         if (!bin_selected_) {
-            label_status_.set_text("Select bin first!");
+            label_status_.set("Select bin first!");
             set_dirty();
             return;
         }
@@ -105,7 +105,7 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 
     button_save_.on_select = [this](ui::Button&) {
         if (!bin_selected_ || selected_bin_ < 0) {
-            label_status_.set_text("Select bin first");
+            label_status_.set("Select bin first");
             set_dirty();
             return;
         }
@@ -128,7 +128,7 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         if (view_state_ == ViewState::LIVE) {
             view_state_ = ViewState::IDLE;
             button_start_capture_.set_text("START");
-            label_status_.set_text("Stopped");
+            label_status_.set("Stopped");
         } else if (bin_selected_) {
             start_capture_sequence();
         } else {
@@ -180,7 +180,7 @@ void PatternManagerView::load_sweep_ranges() noexcept {
     } else {
         snprintf(range_info, sizeof(range_info), "N/A");
     }
-    label_status_.set_text(range_info);
+    label_status_.set(range_info);
     set_dirty();
 }
 
@@ -273,9 +273,9 @@ void PatternManagerView::show_frequency_keypad() noexcept {
             bin_selected_ = true;
             char status[32];
             snprintf(status, sizeof(status), "Bin:%d %.3fMHz", (int)selected_bin_, capture_frequency_ / 1000000.0);
-            label_status_.set_text(status);
+            label_status_.set(status);
         } else {
-            label_status_.set_text("Out of range!");
+            label_status_.set("Out of range!");
         }
         set_dirty();
     };
@@ -309,7 +309,7 @@ void PatternManagerView::on_bin_selected(int16_t bin) noexcept {
     char status[32];
     snprintf(status, sizeof(status), "Bin:%d %.1fMHz",
              (int)bin, capture_frequency_ / 1000000.0);
-    label_status_.set_text(status);
+    label_status_.set(status);
     set_dirty();
 }
 
@@ -400,7 +400,7 @@ void PatternManagerView::start_live_spectrum() noexcept {
     capture_frequency_ = get_range_center_freq(selected_range_idx_);
 
     if (capture_frequency_ == 0) {
-        label_status_.set_text("Range not set!");
+        label_status_.set("Range not set!");
         set_dirty();
         return;
     }
@@ -408,7 +408,7 @@ void PatternManagerView::start_live_spectrum() noexcept {
     live_center_frequency_ = capture_frequency_;
     live_bin_step_hz_ = get_range_bin_step(selected_range_idx_);
 
-    label_status_.set_text("Live mode...");
+    label_status_.set("Live mode...");
     view_state_ = ViewState::LIVE;
     capture_active_ = false;
     bin_selected_ = false;
@@ -431,7 +431,7 @@ void PatternManagerView::start_capture_sequence() noexcept {
     ScanConfig cfg = scanner_ref.get_config();
 
     if (!bin_selected_ || selected_bin_ < 0 || capture_frequency_ == 0) {
-        label_status_.set_text("Select bin first!");
+        label_status_.set("Select bin first!");
         set_dirty();
         return;
     }
@@ -443,7 +443,7 @@ void PatternManagerView::start_capture_sequence() noexcept {
         live_bin_step_hz_ = (cfg.sweep_end_freq - cfg.sweep_start_freq) / 240;
     }
 
-    label_status_.set_text("Capturing...");
+    label_status_.set("Capturing...");
     view_state_ = ViewState::CAPTURING;
     capture_active_ = true;
     capture_pass_ = 0;
@@ -491,7 +491,7 @@ void PatternManagerView::on_capture_complete() noexcept {
     } else {
         snprintf(status_buf, sizeof(status_buf), "Done - weak sig");
     }
-    label_status_.set_text(status_buf);
+    label_status_.set(status_buf);
 
     set_dirty();
 }
