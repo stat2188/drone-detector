@@ -28,7 +28,6 @@ public:
 
     NavigationView& nav_;
 
-private:
     ui::Labels labels_{
         {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window 1 --", Color::white()},
         {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Color::white()},
@@ -84,7 +83,6 @@ public:
 
     NavigationView& nav_;
 
-private:
     ui::Labels labels_sw3_{
         {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window 3 --", Color::white()},
         {{UI_POS_X(1), UI_POS_Y(2)}, "Start(MHz):", Color::white()},
