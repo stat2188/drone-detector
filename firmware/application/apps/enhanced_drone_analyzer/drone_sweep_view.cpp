@@ -17,7 +17,8 @@ namespace drone_analyzer {
 // ============================================================================
 
 SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect parent_rect) noexcept
-    : ui::View() {
+    : ui::View()
+    , nav_(nav) {
     set_parent_rect(parent_rect);
     add_children({
         &labels_,
@@ -44,32 +45,32 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
     });
 
     // Keyboard callbacks for frequency fields (MHz → keypad → MHz)
-    field_sw1_start_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw1_start_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_start_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw1_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw1_end_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw1_end_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_end_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw1_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw2_start_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw2_start_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw2_start_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw2_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw2_end_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw2_end_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw2_end_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw2_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
@@ -77,80 +78,80 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
     };
 
     // Keyboard callbacks for exception fields (MHz → keypad → MHz)
-    field_sw1_exc0_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw1_exc0_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_exc0_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw1_exc0_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw1_exc1_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw1_exc1_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_exc1_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw1_exc1_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw1_exc2_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw1_exc2_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_exc2_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw1_exc2_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw2_exc0_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw2_exc0_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw2_exc0_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw2_exc0_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw2_exc1_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw2_exc1_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw2_exc1_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw2_exc1_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw2_exc2_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw2_exc2_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw2_exc2_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw2_exc2_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw1_exc3_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw1_exc3_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_exc3_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw1_exc3_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw1_exc4_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw1_exc4_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw1_exc4_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw1_exc4_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw2_exc3_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw2_exc3_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw2_exc3_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw2_exc3_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw2_exc4_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw2_exc4_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw2_exc4_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw2_exc4_.set_value(static_cast<int32_t>(f / 1000000ULL));
@@ -167,7 +168,8 @@ void SweepWindowGroup1View::focus() {
 // ============================================================================
 
 SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect parent_rect) noexcept
-    : ui::View() {
+    : ui::View()
+    , nav_(nav) {
     set_parent_rect(parent_rect);
     add_children({
         &labels_sw3_,
@@ -195,32 +197,32 @@ SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect par
     });
 
     // Keyboard callbacks for frequency fields (MHz → keypad → MHz)
-    field_sw3_start_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw3_start_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw3_start_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw3_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw3_end_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw3_end_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw3_end_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw3_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw4_start_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw4_start_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw4_start_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw4_start_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw4_end_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw4_end_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw4_end_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw4_end_.set_value(static_cast<int32_t>(f / 1000000ULL));
@@ -228,80 +230,80 @@ SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect par
     };
 
     // Keyboard callbacks for exception fields (MHz → keypad → MHz)
-    field_sw3_exc0_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw3_exc0_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw3_exc0_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw3_exc0_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw3_exc1_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw3_exc1_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw3_exc1_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw3_exc1_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw3_exc2_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw3_exc2_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw3_exc2_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw3_exc2_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw4_exc0_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw4_exc0_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw4_exc0_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw4_exc0_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw4_exc1_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw4_exc1_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw4_exc1_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw4_exc1_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw4_exc2_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw4_exc2_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw4_exc2_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw4_exc2_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw3_exc3_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw3_exc3_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw3_exc3_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw3_exc3_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw3_exc4_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw3_exc4_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw3_exc4_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw3_exc4_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw4_exc3_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw4_exc3_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw4_exc3_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw4_exc3_.set_value(static_cast<int32_t>(f / 1000000ULL));
         };
     };
 
-    field_sw4_exc4_.on_select = [this, &nav](NumberField&) {
-        auto new_view = nav.push<FrequencyKeypadView>(
+    field_sw4_exc4_.on_select = [this](NumberField&) {
+        auto new_view = nav_.push<FrequencyKeypadView>(
             static_cast<rf::Frequency>(field_sw4_exc4_.value()) * 1000000ULL);
         new_view->on_changed = [this](rf::Frequency f) {
             field_sw4_exc4_.set_value(static_cast<int32_t>(f / 1000000ULL));
