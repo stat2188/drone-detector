@@ -309,12 +309,20 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             return;
         }
         // CRITICAL: Stop ALL streaming BEFORE navigating away to prevent
-        // DBLREG hard fault. The message handler map panics if the same
-        // message ID is registered while still active (MsgDblReg panic).
-        // Use exit_sweep_mode() for full cleanup (bandwidth restore, etc).
-        // The guard sweep_transition_guard_.try_set() will prevent double-stop.
-        exit_sweep_mode();
-        // Now scanning_ should be false, push the new view
+        // DBLREG hard fault.
+        // Stop streaming first to unregister message handlers from baseband.
+        if (scanning_) {
+            baseband::spectrum_streaming_stop();
+            scanning_ = false;
+        }
+        if (scanner_thread_ != nullptr && scanner_thread_->is_scanning()) {
+            scanner_thread_->set_scanning(false);
+        }
+        // Exit sweep mode if active - this also restores bandwidth.
+        if (composite_active_) {
+            exit_sweep_mode();
+        }
+        // Push new view AFTER stopping streaming - handlers unregister on destruction.
         nav_.push<PatternManagerView>();
     };
 
