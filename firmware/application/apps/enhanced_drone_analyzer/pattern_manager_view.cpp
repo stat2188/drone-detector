@@ -83,11 +83,11 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 
     button_back_.on_select = [this](ui::Button&) {
         // CRITICAL: Stop streaming before going back to prevent
-        // DBLREG hard fault when returning to main scanner view
+        // DBLREG hard fault when returning to main scanner view.
+        // Mirror Looking Glass: stop streaming immediately.
         if (view_state_ == ViewState::LIVE || view_state_ == ViewState::CAPTURING) {
             baseband::spectrum_streaming_stop();
-            // Wait for baseband to fully process stop command
-            for (volatile int i = 0; i < 10000; ++i) { }
+            view_state_ = ViewState::IDLE;
         }
         nav_.pop();
     };
@@ -370,11 +370,10 @@ void PatternManagerView::on_show() noexcept {
 
 void PatternManagerView::on_hide() noexcept {
     // CRITICAL: Stop baseband streaming before hiding to prevent
-    // DBLREG hard fault when returning to main scanner view
+    // DBLREG hard fault when returning to main scanner view.
+    // Mirror Looking Glass: stop streaming immediately.
     if (view_state_ == ViewState::LIVE || view_state_ == ViewState::CAPTURING) {
         baseband::spectrum_streaming_stop();
-        // Wait for baseband to fully process stop command
-        for (volatile int i = 0; i < 10000; ++i) { }
     }
 
     view_state_ = ViewState::IDLE;

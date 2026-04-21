@@ -308,16 +308,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        // CRITICAL: Exit sweep mode before navigating away to prevent
-        // baseband streaming conflicts that cause DBLREG hard fault
-        if (composite_active_) {
-            exit_sweep_mode();
-        }
-        // CRITICAL FIX: Wait for baseband streaming to fully stop before
-        // pushing new view. The M0 baseband processes stop command asynchronously.
-        // Without this delay, both DroneScannerUI and PatternManagerView handlers
-        // can conflict, causing DBLREG hard fault.
-        for (volatile int i = 0; i < 10000; ++i) { }
+        // CRITICAL: Stop ALL streaming BEFORE navigating away to prevent
+        // DBLREG hard fault. The message handler map panics if the same
+        // message ID is registered while still active (MsgDblReg panic).
+        // Use exit_sweep_mode() for full cleanup (bandwidth restore, etc).
+        // The guard sweep_transition_guard_.try_set() will prevent double-stop.
+        exit_sweep_mode();
+        // Now scanning_ should be false, push the new view
         nav_.push<PatternManagerView>();
     };
 
