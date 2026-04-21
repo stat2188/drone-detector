@@ -829,6 +829,9 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     baseband::spectrum_streaming_start();
     scanning_ = true;
     button_start_stop_.set_text("Stop");
+
+    // Allow exit_sweep_mode() to work after enter completes
+    sweep_transition_guard_.clear();
 }
 
 void DroneScannerUI::exit_sweep_mode() noexcept {
