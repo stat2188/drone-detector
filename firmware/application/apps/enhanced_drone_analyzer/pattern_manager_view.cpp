@@ -380,7 +380,6 @@ void PatternManagerView::focus() noexcept {
             pattern_manager_ptr_ = &scanner_ptr->get_pattern_manager();
         }
     }
-    }
 
     refresh_list();
     button_start_capture_.focus();
