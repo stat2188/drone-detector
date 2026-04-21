@@ -313,6 +313,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         if (composite_active_) {
             exit_sweep_mode();
         }
+        // CRITICAL FIX: Wait for baseband streaming to fully stop before
+        // pushing new view. The M0 baseband processes stop command asynchronously.
+        // Without this delay, both DroneScannerUI and PatternManagerView handlers
+        // can conflict, causing DBLREG hard fault.
+        for (volatile int i = 0; i < 10000; ++i) { }
         nav_.push<PatternManagerView>();
     };
 
@@ -913,7 +918,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // Pass sweep range boundaries to prevent false positives outside the range
         scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq, win.f_min, win.f_max);
 
-        // Update pattern match highlight (red frame)
+        // Update pattern match highlight (red frame) if pattern matching is enabled
         if (scanner_ptr_->is_pattern_matched()) {
             drone_display_.set_matched_pattern_bin(static_cast<int16_t>(scanner_ptr_->get_matched_pattern_bin()));
         } else {
