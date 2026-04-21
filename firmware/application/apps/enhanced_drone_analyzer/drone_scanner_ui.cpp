@@ -38,6 +38,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , nav_(nav)
     , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
     , sweep_transition_guard_()
+    , button_debounce_guard_()
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
