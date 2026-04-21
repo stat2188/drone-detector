@@ -141,6 +141,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
+        // Debounce rapid taps that could cause race conditions
+        if (!button_debounce_guard_.try_set()) return;
+
         if (scanning_) {
             // Stop
             if (composite_active_) {
@@ -172,9 +175,14 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Stop");
             }
         }
+        // Clear debounce guard after handling completes
+        button_debounce_guard_.clear();
     };
 
     button_mode_.on_select = [this](ui::Button&) {
+        // Debounce rapid taps that could cause race conditions
+        if (!button_debounce_guard_.try_set()) return;
+
         if (!composite_active_) {
             // Enter manual sweep mode (enter_sweep_mode handles re-entrancy guard)
             this->sweep_auto_mode_ = false;
@@ -187,6 +195,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             this->exit_sweep_mode();
             button_mode_.set_text("Mode");
         }
+        // Clear debounce guard after state transition completes
+        button_debounce_guard_.clear();
     };
 
     button_load_.on_select = [this](ui::Button&) {
@@ -371,6 +381,9 @@ DroneScannerUI::~DroneScannerUI() noexcept {
     audio::output::stop();
     portapack::receiver_model.disable();
     baseband::shutdown();
+
+    // Ensure atomic flags are cleared on destruction
+    button_debounce_guard_.clear();
 }
 
 void DroneScannerUI::focus() {
@@ -806,8 +819,9 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
 }
 
 void DroneScannerUI::exit_sweep_mode() noexcept {
-    // Prevent re-entrant exit
+    // Prevent re-entrant exit — must match enter_sweep_mode() guard pattern
     if (!composite_active_) return;
+    if (!sweep_transition_guard_.try_set()) return;
 
     const bool was_auto = sweep_auto_mode_;
     composite_active_ = false;
@@ -858,6 +872,12 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
 }
 
 void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept {
+    // Bounds check — prevent out-of-bounds access if state corrupted
+    if (active_sweep_idx_ >= MAX_SWEEP_WINDOWS) {
+        baseband::spectrum_streaming_stop();
+        return;
+    }
+
     baseband::spectrum_streaming_stop();
     auto& win = sweep_[active_sweep_idx_];
     win.process_bins(spectrum);
