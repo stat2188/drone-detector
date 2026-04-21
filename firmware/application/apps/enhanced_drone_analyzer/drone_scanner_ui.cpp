@@ -308,6 +308,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
+        // CRITICAL: Exit sweep mode before navigating away to prevent
+        // baseband streaming conflicts that cause DBLREG hard fault
+        if (composite_active_) {
+            exit_sweep_mode();
+        }
         nav_.push<PatternManagerView>();
     };
 
@@ -377,6 +382,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 }
 
 DroneScannerUI::~DroneScannerUI() noexcept {
+    // CRITICAL: Exit sweep mode first to stop baseband streaming
+    // Prevents DBLREG hard fault when PatternManagerView is pushed after sweep
+    if (composite_active_) {
+        exit_sweep_mode();
+    }
+
     destruct_objects();
 
     audio::output::stop();
@@ -385,6 +396,7 @@ DroneScannerUI::~DroneScannerUI() noexcept {
 
     // Ensure atomic flags are cleared on destruction
     button_debounce_guard_.clear();
+    sweep_transition_guard_.clear();
 }
 
 void DroneScannerUI::focus() {
@@ -1090,6 +1102,10 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
 
 DroneScanner& get_scanner_instance() noexcept {
     return s_scanner;
+}
+
+DroneScanner* get_scanner_ptr() noexcept {
+    return &s_scanner;
 }
 
 } // namespace drone_analyzer

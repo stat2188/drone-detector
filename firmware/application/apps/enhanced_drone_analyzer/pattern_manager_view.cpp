@@ -156,8 +156,16 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 }
 
 void PatternManagerView::load_sweep_ranges() noexcept {
-    DroneScanner& scanner_ref = get_scanner_instance();
-    ScanConfig cfg = scanner_ref.get_config();
+    DroneScanner* scanner_ptr = get_scanner_ptr();
+    if (scanner_ptr == nullptr) {
+        live_center_frequency_ = 0;
+        live_bin_step_hz_ = 0;
+        label_status_.set("Scanner error");
+        set_dirty();
+        return;
+    }
+
+    ScanConfig cfg = scanner_ptr->get_config();
 
     live_center_frequency_ = 0;
     live_bin_step_hz_ = 0;
@@ -199,8 +207,12 @@ void PatternManagerView::load_sweep_ranges() noexcept {
 }
 
 FreqHz PatternManagerView::get_range_center_freq(uint8_t range_idx) const noexcept {
-    DroneScanner& scanner_ref = get_scanner_instance();
-    ScanConfig cfg = scanner_ref.get_config();
+    DroneScanner* scanner_ptr = get_scanner_ptr();
+    if (scanner_ptr == nullptr) {
+        return 0;
+    }
+
+    ScanConfig cfg = scanner_ptr->get_config();
 
     switch (range_idx) {
         case 0:
@@ -225,8 +237,12 @@ FreqHz PatternManagerView::get_range_center_freq(uint8_t range_idx) const noexce
 }
 
 FreqHz PatternManagerView::get_range_bin_step(uint8_t range_idx) const noexcept {
-    DroneScanner& scanner_ref = get_scanner_instance();
-    ScanConfig cfg = scanner_ref.get_config();
+    DroneScanner* scanner_ptr = get_scanner_ptr();
+    if (scanner_ptr == nullptr) {
+        return 0;
+    }
+
+    ScanConfig cfg = scanner_ptr->get_config();
 
     switch (range_idx) {
         case 0:
@@ -328,8 +344,15 @@ void PatternManagerView::on_bin_selected(int16_t bin) noexcept {
 }
 
 void PatternManagerView::on_show() noexcept {
-    DroneScanner& scanner_ref = get_scanner_instance();
-    pattern_manager_ptr_ = &scanner_ref.get_pattern_manager();
+    DroneScanner* scanner_ptr = get_scanner_ptr();
+    if (scanner_ptr == nullptr) {
+        label_status_.set("Scanner not ready");
+        set_dirty();
+        return;
+    }
+
+    PatternManager& pm = scanner_ptr->get_pattern_manager();
+    pattern_manager_ptr_ = &pm;
 
     (void)pattern_manager_ptr_->load_patterns();
 
@@ -339,6 +362,12 @@ void PatternManagerView::on_show() noexcept {
 }
 
 void PatternManagerView::on_hide() noexcept {
+    // CRITICAL: Stop baseband streaming before hiding to prevent
+    // DBLREG hard fault when returning to main scanner view
+    if (view_state_ == ViewState::LIVE || view_state_ == ViewState::CAPTURING) {
+        baseband::spectrum_streaming_stop();
+    }
+
     view_state_ = ViewState::IDLE;
     capture_active_ = false;
     button_start_capture_.set_text("START");
@@ -346,8 +375,11 @@ void PatternManagerView::on_hide() noexcept {
 
 void PatternManagerView::focus() noexcept {
     if (pattern_manager_ptr_ == nullptr) {
-        DroneScanner& scanner_ref = get_scanner_instance();
-        pattern_manager_ptr_ = &scanner_ref.get_pattern_manager();
+        DroneScanner* scanner_ptr = get_scanner_ptr();
+        if (scanner_ptr != nullptr) {
+            pattern_manager_ptr_ = &scanner_ptr->get_pattern_manager();
+        }
+    }
     }
 
     refresh_list();
@@ -440,8 +472,14 @@ void PatternManagerView::start_live_spectrum() noexcept {
 }
 
 void PatternManagerView::start_capture_sequence() noexcept {
-    DroneScanner& scanner_ref = get_scanner_instance();
-    ScanConfig cfg = scanner_ref.get_config();
+    DroneScanner* scanner_ptr = get_scanner_ptr();
+    if (scanner_ptr == nullptr) {
+        label_status_.set("Scanner error");
+        set_dirty();
+        return;
+    }
+
+    ScanConfig cfg = scanner_ptr->get_config();
 
     if (!bin_selected_ || selected_bin_ < 0 || capture_frequency_ == 0) {
         label_status_.set("Select bin first!");

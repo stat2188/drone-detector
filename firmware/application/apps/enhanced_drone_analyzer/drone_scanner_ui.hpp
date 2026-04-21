@@ -220,6 +220,7 @@ private:
 };
 
 DroneScanner& get_scanner_instance() noexcept;
+DroneScanner* get_scanner_ptr() noexcept;
 
 } // namespace drone_analyzer
 
