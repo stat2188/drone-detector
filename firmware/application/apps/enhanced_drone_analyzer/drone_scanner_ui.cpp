@@ -1,9 +1,7 @@
 #include <cstdint>
 #include <cstring>
 #include <array>
-
-// Bare-metal placement-new: embedded <new> may not declare this.
-inline void* operator new(__SIZE_TYPE__, void* p) noexcept { return p; }
+#include <new>
 
 #include "ch.h"
 
