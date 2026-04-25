@@ -213,10 +213,22 @@ private:
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
     uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
 
-    MessageHandlerRegistration message_handler_spectrum_config;
-    MessageHandlerRegistration message_handler_frame_sync;
-    MessageHandlerRegistration message_handler_retune;
-    MessageHandlerRegistration message_handler_channel_stats;
+    /**
+     * @brief Storage layout for message handlers.
+     * @note No constructor — members are placement-new'd manually.
+     *       Prevents DBLREG hard fault when pushing PatternManagerView.
+     */
+    struct HandlerStorage {
+        MessageHandlerRegistration spectrum_config;
+        MessageHandlerRegistration frame_sync;
+        MessageHandlerRegistration retune;
+        MessageHandlerRegistration channel_stats;
+    };
+    alignas(alignof(HandlerStorage)) uint8_t handler_storage_[sizeof(HandlerStorage)];
+    bool handlers_active_{false};
+
+    void register_handlers() noexcept;
+    void unregister_handlers() noexcept;
 };
 
 DroneScanner& get_scanner_instance() noexcept;

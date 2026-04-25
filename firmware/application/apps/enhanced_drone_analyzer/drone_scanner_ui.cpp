@@ -2,6 +2,9 @@
 #include <cstring>
 #include <array>
 
+// Bare-metal placement-new: embedded <new> may not declare this.
+inline void* operator new(__SIZE_TYPE__, void* p) noexcept { return p; }
+
 #include "ch.h"
 
 #include "ui.hpp"
@@ -33,30 +36,31 @@ static DatabaseManager s_database;
 static DroneScanner s_scanner(s_database, s_hardware);
 static ScannerThread s_scanner_thread(s_scanner);
 
-DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
-    : View()
-    , nav_(nav)
-    , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
-    , sweep_transition_guard_()
-    , button_debounce_guard_()
-    , message_handler_spectrum_config{
+// ============================================================================
+// Handler registration — placement-new to allow manual lifetime control.
+// Prevents DBLREG hard fault when PatternManagerView is pushed.
+// ============================================================================
+void DroneScannerUI::register_handlers() noexcept {
+    if (handlers_active_) return;
+
+    auto* const h = reinterpret_cast<HandlerStorage*>(handler_storage_);
+
+    new (&h->spectrum_config) MessageHandlerRegistration{
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
             const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
             this->spectrum_fifo_ = message.fifo;
         }
-    }
-    , message_handler_frame_sync{
+    };
+    new (&h->frame_sync) MessageHandlerRegistration{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
             if (!this->scanning_) return;
-
             if (this->spectrum_fifo_ != nullptr) {
                 ChannelSpectrum spectrum;
                 if (this->spectrum_fifo_->out(spectrum)) {
                     if (this->composite_active_) {
                         this->on_sweep_spectrum(spectrum);
-                        // Window switching is handled inside on_sweep_spectrum
                     } else {
                         this->on_channel_spectrum(spectrum);
                         this->db_scan_count_++;
@@ -70,21 +74,43 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             }
             this->refresh_ui();
         }
-    }
-    , message_handler_retune{
+    };
+    new (&h->retune) MessageHandlerRegistration{
         Message::ID::Retune,
         [this](Message* const p) {
             const auto message = *reinterpret_cast<const RetuneMessage*>(p);
             this->on_retune(message.freq, message.range);
         }
-    }
-    , message_handler_channel_stats{
+    };
+    new (&h->channel_stats) MessageHandlerRegistration{
         Message::ID::ChannelStatistics,
         [this](Message* const p) {
             const auto message = *reinterpret_cast<const ChannelStatisticsMessage*>(p);
             this->latest_max_db_ = message.statistics.max_db;
         }
-    } {
+    };
+
+    handlers_active_ = true;
+}
+
+void DroneScannerUI::unregister_handlers() noexcept {
+    if (!handlers_active_) return;
+
+    auto* const h = reinterpret_cast<HandlerStorage*>(handler_storage_);
+    h->spectrum_config.~MessageHandlerRegistration();
+    h->frame_sync.~MessageHandlerRegistration();
+    h->retune.~MessageHandlerRegistration();
+    h->channel_stats.~MessageHandlerRegistration();
+
+    handlers_active_ = false;
+}
+
+DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
+    : View()
+    , nav_(nav)
+    , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
+    , sweep_transition_guard_()
+    , button_debounce_guard_() {
     add_children({
         &labels_,
         &field_lna_,
@@ -308,9 +334,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        // CRITICAL: Stop ALL streaming BEFORE navigating away to prevent
-        // DBLREG hard fault.
-        // Stop streaming first to unregister message handlers from baseband.
+        // CRITICAL: Unregister message handlers BEFORE pushing PatternManagerView.
+        // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
+        // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
+        unregister_handlers();
+
+        // Stop streaming and scanner thread
         if (scanning_) {
             baseband::spectrum_streaming_stop();
             scanning_ = false;
@@ -322,7 +351,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         if (composite_active_) {
             exit_sweep_mode();
         }
-        // Push new view AFTER stopping streaming - handlers unregister on destruction.
         nav_.push<PatternManagerView>();
     };
 
@@ -392,6 +420,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 }
 
 DroneScannerUI::~DroneScannerUI() noexcept {
+    // Unregister handlers before destroying anything else.
+    unregister_handlers();
+
     // CRITICAL: Exit sweep mode first to stop baseband streaming
     // Prevents DBLREG hard fault when PatternManagerView is pushed after sweep
     if (composite_active_) {
@@ -431,6 +462,9 @@ void DroneScannerUI::destruct_objects() noexcept {
 }
 
 void DroneScannerUI::on_show() {
+    // Re-register handlers when becoming visible (after returning from sub-view)
+    register_handlers();
+
     if (scanner_thread_ != nullptr && !scanner_thread_->is_active()) {
         scanner_thread_->start();
     }

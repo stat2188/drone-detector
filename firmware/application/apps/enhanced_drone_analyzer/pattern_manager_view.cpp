@@ -203,8 +203,10 @@ void PatternManagerView::load_sweep_ranges() noexcept {
 
     char range_info[32];
     if (live_center_frequency_ > 0) {
-        snprintf(range_info, sizeof(range_info), "%.1fMHz",
-                 live_center_frequency_ / 1000000.0);
+        const uint32_t mhz = static_cast<uint32_t>(live_center_frequency_ / 1000000);
+        const uint32_t tenths = static_cast<uint32_t>((live_center_frequency_ % 1000000) / 100000);
+        snprintf(range_info, sizeof(range_info), "%lu.%01luMHz",
+                 static_cast<unsigned long>(mhz), static_cast<unsigned long>(tenths));
     } else {
         snprintf(range_info, sizeof(range_info), "N/A");
     }
@@ -308,7 +310,10 @@ void PatternManagerView::show_frequency_keypad() noexcept {
             selected_bin_ = bin;
             bin_selected_ = true;
             char status[32];
-            snprintf(status, sizeof(status), "Bin:%d %.3fMHz", (int)selected_bin_, capture_frequency_ / 1000000.0);
+            const uint32_t mhz = static_cast<uint32_t>(capture_frequency_ / 1000000);
+            const uint32_t khz = static_cast<uint32_t>((capture_frequency_ % 1000000) / 1000);
+            snprintf(status, sizeof(status), "Bin:%d %lu.%03luMHz",
+                     (int)selected_bin_, static_cast<unsigned long>(mhz), static_cast<unsigned long>(khz));
             label_status_.set(status);
         } else {
             label_status_.set("Out of range!");
@@ -343,8 +348,10 @@ void PatternManagerView::on_bin_selected(int16_t bin) noexcept {
     capture_frequency_ = bin_to_frequency(bin);
 
     char status[32];
-    snprintf(status, sizeof(status), "Bin:%d %.1fMHz",
-             (int)bin, capture_frequency_ / 1000000.0);
+    const uint32_t mhz = static_cast<uint32_t>(capture_frequency_ / 1000000);
+    const uint32_t tenths = static_cast<uint32_t>((capture_frequency_ % 1000000) / 100000);
+    snprintf(status, sizeof(status), "Bin:%d %lu.%01luMHz",
+             (int)bin, static_cast<unsigned long>(mhz), static_cast<unsigned long>(tenths));
     label_status_.set(status);
     set_dirty();
 }

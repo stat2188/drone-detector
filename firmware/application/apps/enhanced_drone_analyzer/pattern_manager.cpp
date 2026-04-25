@@ -114,9 +114,9 @@ ErrorCode PatternManager::load_patterns() noexcept {
         }
 
         const ErrorCode err = load_pattern_from_line(full_path, strlen(full_path));
-        if (err == ErrorCode::SUCCESS) {
-            ++pattern_count_;
-        }
+        // NOTE: parse_pattern_csv() inside load_pattern_from_line() already increments
+        // pattern_count_ on success. Do NOT increment here — that would double-count.
+        (void)err;
     }
 
     if (pattern_count_ > 0) {
