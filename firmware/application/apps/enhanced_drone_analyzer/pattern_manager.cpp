@@ -286,18 +286,11 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
         return ErrorCode::BUFFER_FULL;
     }
 
-    f_mkdir(reinterpret_cast<const TCHAR*>(PATTERN_DIR));
-
-    patterns_[pattern_count_] = pattern;
-    ++pattern_count_;
-
-    // CRITICAL FIX: Calculate maximum filename size to prevent buffer overflow
-    // PATTERN_DIR = "/PATTERNS/" (11 bytes) + "/" + pattern.name (28) + ".TXT" (4) + null = 45 bytes
+    // Write file first, update RAM only on success
     constexpr size_t MAX_FILENAME_LEN = sizeof(PATTERN_DIR) + PATTERN_NAME_MAX_LEN + 8;
     char filename[MAX_FILENAME_LEN];
     const int written = snprintf(filename, sizeof(filename), "%s/%s.TXT", PATTERN_DIR, pattern.name);
     
-    // Validate filename was not truncated
     if (written < 0 || static_cast<size_t>(written) >= sizeof(filename)) {
         return ErrorCode::INVALID_PARAMETER;
     }
@@ -308,7 +301,6 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
 
-    // CRITICAL FIX: RAII file guard ensures file is always closed
     struct FileGuard {
         File* const file;
         explicit FileGuard(File* f) noexcept : file(f) {}
@@ -371,6 +363,10 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
     if (!write_result.is_ok()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
+
+    // Only update in-memory state after successful file write
+    patterns_[pattern_count_] = pattern;
+    ++pattern_count_;
 
     return ErrorCode::SUCCESS;
 }

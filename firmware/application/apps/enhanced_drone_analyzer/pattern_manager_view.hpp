@@ -41,7 +41,7 @@ private:
     static constexpr uint16_t LIST_HEIGHT = 120;
 
     static constexpr uint8_t AVG_PASSES = 5;
-    static constexpr uint8_t MAX_SPECTRUM_FIFO = 8;
+    static constexpr uint8_t MAX_SPECTRUM_FIFO = 5;
 
     enum class ViewState : uint8_t {
         IDLE,

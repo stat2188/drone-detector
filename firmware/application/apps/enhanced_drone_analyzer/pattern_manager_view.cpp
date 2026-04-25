@@ -110,26 +110,42 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
     };
 
     button_save_.on_select = [this](ui::Button&) {
+        if (pattern_manager_ptr_ == nullptr) {
+            label_status_.set("Pattern manager not ready");
+            set_dirty();
+            return;
+        }
         if (!bin_selected_ || selected_bin_ < 0) {
             label_status_.set("Select bin first");
             set_dirty();
             return;
         }
-        if (!capture_active_ && capture_spectrum_[0] != 0) {
-            char default_name[PATTERN_NAME_MAX_LEN];
-            const size_t count = pattern_manager_ptr_ ? pattern_manager_ptr_->get_pattern_count() : 0;
-            snprintf(default_name, sizeof(default_name), "PTR_%zu", count + 1);
-            const ErrorCode err = save_current_pattern(default_name);
-            if (err == ErrorCode::SUCCESS) {
-                label_status_.set("Pattern saved!");
-                refresh_list();
-            } else {
-                label_status_.set("Save failed!");
-            }
+        if (capture_active_) {
+            label_status_.set("Capture in progress");
             set_dirty();
-        } else {
-            show_frequency_keypad();
+            return;
         }
+        if (capture_spectrum_[0] == 0) {
+            label_status_.set("No capture data - run Capt first");
+            set_dirty();
+            return;
+        }
+        char default_name[PATTERN_NAME_MAX_LEN];
+        const size_t count = pattern_manager_ptr_->get_pattern_count();
+        snprintf(default_name, sizeof(default_name), "PTR_%zu", count + 1);
+        const ErrorCode err = save_current_pattern(default_name);
+        if (err == ErrorCode::SUCCESS) {
+            label_status_.set("Pattern saved!");
+            refresh_list();
+            std::memset(capture_spectrum_, 0, sizeof(capture_spectrum_));
+            selected_bin_ = -1;
+            bin_selected_ = false;
+        } else if (err == ErrorCode::BUFFER_FULL) {
+            label_status_.set("Max patterns reached");
+        } else {
+            label_status_.set("Save failed!");
+        }
+        set_dirty();
     };
 
     button_edit_.on_select = [this](ui::Button&) {
@@ -740,32 +756,31 @@ void PatternManagerView::refresh_list() noexcept {
         return;
     }
 
-    constexpr size_t MAX_OPTIONS = 21;
-    static std::vector<ui::OptionsField::option_t> cached_options;
-    cached_options.clear();
-    cached_options.reserve(MAX_OPTIONS);
+    constexpr size_t MAX_OPTIONS = MAX_PATTERNS + 1;
+    static char option_texts[MAX_OPTIONS][64]{};
+    static ui::OptionsField::option_t options[MAX_OPTIONS];
+    size_t option_count = 0;
 
     const size_t pattern_count = pattern_manager_ptr_->get_pattern_count();
-    char item_str[64];
 
-    for (size_t i = 0; i < pattern_count && i < 20 && i < MAX_OPTIONS; ++i) {
+    for (size_t i = 0; i < pattern_count && i < MAX_PATTERNS && option_count < MAX_OPTIONS - 1; ++i) {
         const SignalPattern* pattern = pattern_manager_ptr_->get_pattern(i);
         if (pattern != nullptr) {
             const char* status = pattern->is_enabled() ? "+" : "-";
-            snprintf(item_str, sizeof(item_str), "[%s] %.20s", status, pattern->name);
-            item_str[sizeof(item_str) - 1] = '\0';
-            cached_options.push_back({std::string{item_str}, static_cast<int32_t>(i)});
+            snprintf(option_texts[option_count], sizeof(option_texts[option_count]), "[%s] %.20s", status, pattern->name);
+            option_texts[option_count][sizeof(option_texts[option_count]) - 1] = '\0';
+            options[option_count] = {option_texts[option_count], static_cast<int32_t>(i)};
+            ++option_count;
         }
     }
 
-    if (cached_options.empty()) {
-        cached_options.push_back({"No patterns", 0});
+    if (option_count == 0) {
+        snprintf(option_texts[0], sizeof(option_texts[0]), "No patterns");
+        options[0] = {option_texts[0], 0};
+        option_count = 1;
     }
 
-    field_patterns_.set_options(cached_options);
-
-    char count_str[32];
-    snprintf(count_str, sizeof(count_str), "Count: %zu", pattern_count);
+    field_patterns_.set_options({options, options + option_count});
 }
 
 void PatternManagerView::show_pattern_details() noexcept {
