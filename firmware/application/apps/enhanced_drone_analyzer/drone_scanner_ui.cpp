@@ -311,7 +311,14 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        // Refresh config from scanner (SWP view may have changed sweep settings)
+        unregister_handlers();
+
+        if (scanning_) {
+            baseband::spectrum_streaming_stop();
+            scanning_ = false;
+            button_start_stop_.set_text("Start");
+        }
+
         ScanConfig config = scanner_ptr_->get_config();
         nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
@@ -322,6 +329,14 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
+        unregister_handlers();
+
+        if (scanning_) {
+            baseband::spectrum_streaming_stop();
+            scanning_ = false;
+            button_start_stop_.set_text("Start");
+        }
+
         ScanConfig config = scanner_ptr_->get_config();
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };

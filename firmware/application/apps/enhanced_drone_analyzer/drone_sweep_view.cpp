@@ -365,6 +365,9 @@ void DroneSweepView::construct_objects() noexcept {
 
 void DroneSweepView::destruct_objects() noexcept {
     if (tab_view_) {
+        if (view_group1_) remove_child(view_group1_);
+        if (view_group2_) remove_child(view_group2_);
+        remove_child(tab_view_);
         delete tab_view_;
         tab_view_ = nullptr;
     }
