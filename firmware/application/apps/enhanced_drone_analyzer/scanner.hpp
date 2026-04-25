@@ -1059,7 +1059,7 @@ public:
      * @note Thread-safe: pattern manager is internally thread-safe
      */
     [[nodiscard]] const SignalPattern* get_patterns() const noexcept {
-        return pattern_manager_.get_patterns();
+        return pattern_manager_.get_patterns_array();
     }
 
 private:
