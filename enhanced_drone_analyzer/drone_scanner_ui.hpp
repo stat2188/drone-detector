@@ -180,7 +180,7 @@ private:
         [[nodiscard]] bool is_exception(FreqHz hz) const noexcept;
     };
 
-    SweepWindow sweep_[MAX_SWEEP_WINDOWS]{};
+    static SweepWindow sweep_[MAX_SWEEP_WINDOWS];
 
     bool composite_active_{false};
     bool sweep_auto_mode_{false};

@@ -667,9 +667,9 @@ public:
      * @note Called periodically by scanner thread
      * @return ErrorCode::SUCCESS if cycle completed, error code otherwise
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     * @note ChibiOS mutexes are recursive per-thread: nested calls from the
-     *       same thread (perform_scan_cycle → perform_scan_cycle_internal)
-     *       succeed without deadlock.
+     * @warning ChibiOS fast mutexes are NOT recursive. Nested calls from the
+     *          same thread will deadlock. perform_scan_cycle_internal() must
+     *          NOT acquire DATA_MUTEX again.
      * @note This method only advances the frequency; RSSI detection is done
      *       by the UI thread via process_spectrum_message().
      */
@@ -1042,6 +1042,24 @@ public:
      */
     [[nodiscard]] PatternManager& get_pattern_manager() noexcept {
         return pattern_manager_;
+    }
+
+    /**
+     * @brief Get number of loaded patterns
+     * @return Pattern count from pattern manager
+     * @note Thread-safe: pattern manager is internally thread-safe
+     */
+    [[nodiscard]] size_t get_pattern_count() const noexcept {
+        return pattern_manager_.get_pattern_count();
+    }
+
+    /**
+     * @brief Get loaded pattern array
+     * @return Pointer to first pattern (may be nullptr if count == 0)
+     * @note Thread-safe: pattern manager is internally thread-safe
+     */
+    [[nodiscard]] const SignalPattern* get_patterns() const noexcept {
+        return pattern_manager_.get_patterns();
     }
 
 private:

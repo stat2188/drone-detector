@@ -358,8 +358,9 @@ ErrorCode SettingsFileManager::save(
 ) noexcept {
     ScanConfig sweep_cfg;
     if (scanner_ptr != nullptr) {
-        // ✅ FIXED: Use SettingsStruct values, not old scanner config
-        extract_from_config(scanner_ptr->get_config(), const_cast<SettingsStruct&>(s));
+        // ✅ FIXED: Avoid const_cast UB by creating a mutable copy on stack
+        SettingsStruct settings_copy = s;
+        extract_from_config(scanner_ptr->get_config(), settings_copy);
         sweep_cfg = scanner_ptr->get_config();
     } else {
         sweep_cfg.sweep_start_freq = s.sweep_start_freq;

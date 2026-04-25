@@ -33,6 +33,7 @@ TrackedDrone DroneScannerUI::refresh_drones_[MAX_DISPLAYED_DRONES]{};
 char DroneScannerUI::refresh_status_buf_[MAX_TEXT_LENGTH]{};
 uint16_t DroneScannerUI::refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
 std::array<uint16_t, SPECTRUM_BUFFER_SIZE> DroneScannerUI::pattern_waveform_sum_{};
+DroneScannerUI::SweepWindow DroneScannerUI::sweep_[MAX_SWEEP_WINDOWS]{};
 
 static HardwareController s_hardware;
 static DatabaseManager s_database;
@@ -123,26 +124,17 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
     field_filter_.set_by_value(DEFAULT_SPECTRUM_FILTER);
 
-    // Sync RSSI decrease cycles from scanner config to UI field
-    // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
-    // (display and detection filtering are now separate)
-    if (scanner_ptr_ != nullptr) {
-        const ScanConfig cfg = scanner_ptr_->get_config();
-        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
-    }
-
     // Median filter toggle (spike rejection on RSSI samples)
+    // NOTE: SD card save is deferred to app hide to avoid blocking UI thread
     button_median_.on_select = [this](ui::Button&) {
         median_enabled_ = !median_enabled_;
         if (scanner_ptr_ != nullptr) {
             scanner_ptr_->set_median_filter_enabled(median_enabled_);
         }
         button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
-        // Persist to SD card so state survives app restart
-        SettingsStruct persist_settings;
-        (void)SettingsFileManager::load(persist_settings);
-        persist_settings.median_enabled = median_enabled_;
-        (void)SettingsFileManager::save(scanner_ptr_, persist_settings);
+        // Deferred save: settings are persisted on app hide (on_hide) or
+        // explicit settings dialog save. Immediate f_write here would stall
+        // the UI loop for 50-200ms on SD card sync.
     };
 
     // Register button callbacks BEFORE any early returns
@@ -361,6 +353,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     
     // Hardware initialization (callbacks are already set, safe to early-return)
     construct_objects();
+
+    // Sync RSSI decrease cycles from scanner config to UI field
+    // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
+    if (scanner_ptr_ != nullptr) {
+        const ScanConfig cfg = scanner_ptr_->get_config();
+        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
+    }
 
     if (scanner_ptr_ == nullptr) {
         show_error(ErrorCode::INITIALIZATION_FAILED, ERROR_DURATION_MS);
@@ -982,7 +981,8 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // any detections outside [f_min, f_max], so overshoot is safe.
         // This ensures all 240 composite pixels are filled.
         // Align to hardware PLL step boundaries
-        const FreqHz next_step = win.step_hz + (SWEEP_STEP_ALIGNMENT_HZ - (win.step_hz % SWEEP_STEP_ALIGNMENT_HZ));
+        const FreqHz align_remainder = win.step_hz % SWEEP_STEP_ALIGNMENT_HZ;
+        const FreqHz next_step = win.step_hz + ((align_remainder == 0) ? 0 : (SWEEP_STEP_ALIGNMENT_HZ - align_remainder));
         if (win.f_center < win.f_max) {
             win.f_center += next_step;
             // Align frequency to 125 kHz hardware granularity

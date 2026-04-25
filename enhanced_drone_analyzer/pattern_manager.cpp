@@ -2,7 +2,6 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
-#include <algorithm>
 #include <cctype>
 #include <strings.h>
 #include "string_format.hpp"
