@@ -30,7 +30,7 @@ public:
     void on_hide() override;
     bool on_touch(const ui::TouchEvent event) override;
 
-    std::string title() const override { return "PTR Pattern"; }
+    const char* title() const override { return "PTR Pattern"; }
 
 private:
     static constexpr uint16_t SPECTRUM_Y = 40;
@@ -98,6 +98,12 @@ private:
 
     uint8_t selected_range_idx_{0};
 
+    // Sweep state for LIVE mode (frequency hopping)
+    FreqHz sweep_start_{0};
+    FreqHz sweep_end_{0};
+    FreqHz sweep_step_{0};
+    FreqHz current_sweep_freq_{0};
+
     void load_sweep_ranges() noexcept;
     FreqHz get_range_center_freq(uint8_t range_idx) const noexcept;
     FreqHz get_range_bin_step(uint8_t range_idx) const noexcept;
@@ -117,6 +123,7 @@ private:
     void on_bin_selected(int16_t bin) noexcept;
     void show_frequency_keypad() noexcept;
     void refresh_list() noexcept;
+    void init_sweep_range(uint8_t range_idx) noexcept;
 
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;

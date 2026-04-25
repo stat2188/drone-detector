@@ -201,7 +201,7 @@ void PatternManagerView::load_sweep_ranges() noexcept {
             current_range_start_ = cfg.sweep_start_freq;
             current_range_end_ = cfg.sweep_end_freq;
             live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
-            live_bin_step_hz_ = (current_range_end_ - current_range_start_) / 240;
+            live_bin_step_hz_ = (current_range_end_ - current_range_start_) / SWEEP_PIXELS_PER_SLICE;
             range_enabled = true;
             break;
         case 1:
@@ -209,7 +209,7 @@ void PatternManagerView::load_sweep_ranges() noexcept {
                 current_range_start_ = cfg.sweep2_start_freq;
                 current_range_end_ = cfg.sweep2_end_freq;
                 live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
-                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / 240;
+                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / SWEEP_PIXELS_PER_SLICE;
                 range_enabled = true;
             }
             break;
@@ -218,7 +218,7 @@ void PatternManagerView::load_sweep_ranges() noexcept {
                 current_range_start_ = cfg.sweep3_start_freq;
                 current_range_end_ = cfg.sweep3_end_freq;
                 live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
-                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / 240;
+                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / SWEEP_PIXELS_PER_SLICE;
                 range_enabled = true;
             }
             break;
@@ -227,7 +227,7 @@ void PatternManagerView::load_sweep_ranges() noexcept {
                 current_range_start_ = cfg.sweep4_start_freq;
                 current_range_end_ = cfg.sweep4_end_freq;
                 live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
-                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / 240;
+                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / SWEEP_PIXELS_PER_SLICE;
                 range_enabled = true;
             }
             break;
@@ -246,6 +246,76 @@ void PatternManagerView::load_sweep_ranges() noexcept {
     }
     label_status_.set(range_info);
     set_dirty();
+}
+
+void PatternManagerView::init_sweep_range(uint8_t range_idx) noexcept {
+    DroneScanner* scanner_ptr = get_scanner_ptr();
+    if (scanner_ptr == nullptr) {
+        sweep_start_ = 0;
+        sweep_end_ = 0;
+        sweep_step_ = 0;
+        current_sweep_freq_ = 0;
+        return;
+    }
+
+    ScanConfig cfg = scanner_ptr->get_config();
+    FreqHz start = 0;
+    FreqHz end = 0;
+    FreqHz step = 0;
+    bool enabled = false;
+
+    switch (range_idx) {
+        case 0:
+            start = cfg.sweep_start_freq;
+            end = cfg.sweep_end_freq;
+            step = cfg.sweep_step_freq;
+            enabled = true;
+            break;
+        case 1:
+            if (cfg.sweep2_enabled) {
+                start = cfg.sweep2_start_freq;
+                end = cfg.sweep2_end_freq;
+                step = cfg.sweep2_step_freq;
+                enabled = true;
+            }
+            break;
+        case 2:
+            if (cfg.sweep3_enabled) {
+                start = cfg.sweep3_start_freq;
+                end = cfg.sweep3_end_freq;
+                step = cfg.sweep3_step_freq;
+                enabled = true;
+            }
+            break;
+        case 3:
+            if (cfg.sweep4_enabled) {
+                start = cfg.sweep4_start_freq;
+                end = cfg.sweep4_end_freq;
+                step = cfg.sweep4_step_freq;
+                enabled = true;
+            }
+            break;
+    }
+
+    if (!enabled || start >= end) {
+        sweep_start_ = 0;
+        sweep_end_ = 0;
+        sweep_step_ = 0;
+        current_sweep_freq_ = 0;
+        return;
+    }
+
+    sweep_start_ = start;
+    sweep_end_ = end;
+
+    if (step > 0) {
+        sweep_step_ = step;
+    } else {
+        constexpr FreqHz BIN_SIZE = SWEEP_SLICE_BW / FFT_BIN_COUNT;
+        sweep_step_ = static_cast<FreqHz>(SWEEP_BINS_PER_STEP) * BIN_SIZE;
+    }
+
+    current_sweep_freq_ = start;
 }
 
 FreqHz PatternManagerView::get_range_center_freq(uint8_t range_idx) const noexcept {
@@ -288,20 +358,20 @@ FreqHz PatternManagerView::get_range_bin_step(uint8_t range_idx) const noexcept 
 
     switch (range_idx) {
         case 0:
-            return (cfg.sweep_end_freq - cfg.sweep_start_freq) / 240;
+            return (cfg.sweep_end_freq - cfg.sweep_start_freq) / SWEEP_PIXELS_PER_SLICE;
         case 1:
             if (cfg.sweep2_enabled) {
-                return (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / 240;
+                return (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / SWEEP_PIXELS_PER_SLICE;
             }
             break;
         case 2:
             if (cfg.sweep3_enabled) {
-                return (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / 240;
+                return (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / SWEEP_PIXELS_PER_SLICE;
             }
             break;
         case 3:
             if (cfg.sweep4_enabled) {
-                return (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / 240;
+                return (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / SWEEP_PIXELS_PER_SLICE;
             }
             break;
     }
@@ -453,6 +523,18 @@ void PatternManagerView::on_frame_sync() noexcept {
                 capture_spectrum_[i] = spectrum.db[i];
             }
             set_dirty();
+
+            if (sweep_start_ > 0 && sweep_end_ > sweep_start_ && sweep_step_ > 0) {
+                if (current_sweep_freq_ < sweep_end_) {
+                    current_sweep_freq_ += sweep_step_;
+                    radio::set_tuning_frequency(rf::Frequency(current_sweep_freq_));
+                    baseband::spectrum_streaming_start();
+                } else {
+                    current_sweep_freq_ = sweep_start_;
+                    radio::set_tuning_frequency(rf::Frequency(current_sweep_freq_));
+                    baseband::spectrum_streaming_start();
+                }
+            }
             return;
         }
 
@@ -489,9 +571,9 @@ void PatternManagerView::on_frame_sync() noexcept {
 }
 
 void PatternManagerView::start_live_spectrum() noexcept {
-    capture_frequency_ = get_range_center_freq(selected_range_idx_);
+    init_sweep_range(selected_range_idx_);
 
-    if (capture_frequency_ == 0) {
+    if (sweep_start_ == 0 || sweep_end_ <= sweep_start_) {
         label_status_.set("Range not set!");
         set_dirty();
         return;
@@ -512,7 +594,7 @@ void PatternManagerView::start_live_spectrum() noexcept {
     portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);
     baseband::set_spectrum(SWEEP_SLICE_BW, SWEEP_FFT_TRIGGER);
 
-    radio::set_tuning_frequency(rf::Frequency(capture_frequency_));
+    radio::set_tuning_frequency(rf::Frequency(current_sweep_freq_));
     baseband::spectrum_streaming_start();
 
     set_dirty();
@@ -538,7 +620,7 @@ void PatternManagerView::start_capture_sequence() noexcept {
     live_bin_step_hz_ = get_range_bin_step(selected_range_idx_);
 
     if (live_bin_step_hz_ == 0) {
-        live_bin_step_hz_ = (cfg.sweep_end_freq - cfg.sweep_start_freq) / 240;
+        live_bin_step_hz_ = (cfg.sweep_end_freq - cfg.sweep_start_freq) / SWEEP_PIXELS_PER_SLICE;
     }
 
     label_status_.set("Capturing...");
