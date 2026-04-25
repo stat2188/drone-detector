@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include <string>
 
 #include "ui_painter.hpp"
 #include "ui_widget.hpp"
@@ -30,7 +31,7 @@ public:
     void on_hide() override;
     bool on_touch(const ui::TouchEvent event) override;
 
-    const char* title() const override { return "PTR Pattern"; }
+    std::string title() const override { return "PTR Pattern"; }
 
 private:
     static constexpr uint16_t SPECTRUM_Y = 40;

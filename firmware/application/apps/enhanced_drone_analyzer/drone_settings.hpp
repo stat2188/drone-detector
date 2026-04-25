@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <string>
 #include "drone_types.hpp"
 #include "constants.hpp"
 #include "scanner.hpp"
@@ -36,7 +37,7 @@ public:
 
     void focus() override;
 
-    const char* title() const override { return "EDA Settings"; }
+    std::string title() const override { return "EDA Settings"; }
 
 private:
     ui::Labels labels_;
