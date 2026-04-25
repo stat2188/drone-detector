@@ -164,6 +164,8 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 void PatternManagerView::load_sweep_ranges() noexcept {
     DroneScanner* scanner_ptr = get_scanner_ptr();
     if (scanner_ptr == nullptr) {
+        current_range_start_ = 0;
+        current_range_end_ = 0;
         live_center_frequency_ = 0;
         live_bin_step_hz_ = 0;
         label_status_.set("Scanner error");
@@ -172,41 +174,57 @@ void PatternManagerView::load_sweep_ranges() noexcept {
     }
 
     ScanConfig cfg = scanner_ptr->get_config();
-
+    current_range_start_ = 0;
+    current_range_end_ = 0;
     live_center_frequency_ = 0;
     live_bin_step_hz_ = 0;
+    bool range_enabled = false;
 
     switch (selected_range_idx_) {
         case 0:
-            live_center_frequency_ = cfg.sweep_start_freq + (cfg.sweep_end_freq - cfg.sweep_start_freq) / 2;
-            live_bin_step_hz_ = (cfg.sweep_end_freq - cfg.sweep_start_freq) / 240;
+            current_range_start_ = cfg.sweep_start_freq;
+            current_range_end_ = cfg.sweep_end_freq;
+            live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
+            live_bin_step_hz_ = (current_range_end_ - current_range_start_) / 240;
+            range_enabled = true;
             break;
         case 1:
             if (cfg.sweep2_enabled) {
-                live_center_frequency_ = cfg.sweep2_start_freq + (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / 2;
-                live_bin_step_hz_ = (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / 240;
+                current_range_start_ = cfg.sweep2_start_freq;
+                current_range_end_ = cfg.sweep2_end_freq;
+                live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
+                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / 240;
+                range_enabled = true;
             }
             break;
         case 2:
             if (cfg.sweep3_enabled) {
-                live_center_frequency_ = cfg.sweep3_start_freq + (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / 2;
-                live_bin_step_hz_ = (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / 240;
+                current_range_start_ = cfg.sweep3_start_freq;
+                current_range_end_ = cfg.sweep3_end_freq;
+                live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
+                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / 240;
+                range_enabled = true;
             }
             break;
         case 3:
             if (cfg.sweep4_enabled) {
-                live_center_frequency_ = cfg.sweep4_start_freq + (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / 2;
-                live_bin_step_hz_ = (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / 240;
+                current_range_start_ = cfg.sweep4_start_freq;
+                current_range_end_ = cfg.sweep4_end_freq;
+                live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
+                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / 240;
+                range_enabled = true;
             }
             break;
     }
 
     char range_info[32];
-    if (live_center_frequency_ > 0) {
-        const uint32_t mhz = static_cast<uint32_t>(live_center_frequency_ / 1000000);
-        const uint32_t tenths = static_cast<uint32_t>((live_center_frequency_ % 1000000) / 100000);
-        snprintf(range_info, sizeof(range_info), "%lu.%01luMHz",
-                 static_cast<unsigned long>(mhz), static_cast<unsigned long>(tenths));
+    if (range_enabled && current_range_start_ > 0 && current_range_end_ > current_range_start_) {
+        const uint32_t start_mhz = static_cast<uint32_t>(current_range_start_ / 1000000);
+        const uint32_t end_mhz = static_cast<uint32_t>(current_range_end_ / 1000000);
+        snprintf(range_info, sizeof(range_info), "%lu-%luMHz",
+                 static_cast<unsigned long>(start_mhz), static_cast<unsigned long>(end_mhz));
+    } else if (!range_enabled) {
+        snprintf(range_info, sizeof(range_info), "Disabled");
     } else {
         snprintf(range_info, sizeof(range_info), "N/A");
     }

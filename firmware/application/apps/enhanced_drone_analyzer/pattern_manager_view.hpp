@@ -82,6 +82,8 @@ private:
     FreqHz capture_frequency_{0};
     FreqHz live_center_frequency_{0};
     FreqHz live_bin_step_hz_{0};
+    FreqHz current_range_start_{0};
+    FreqHz current_range_end_{0};
     uint8_t capture_spectrum_[FFT_BIN_COUNT]{};
     uint8_t capture_spectrum_avg_[FFT_BIN_COUNT]{};
     uint8_t fft_capture_buf_[MAX_SPECTRUM_FIFO][FFT_BIN_COUNT]{};
