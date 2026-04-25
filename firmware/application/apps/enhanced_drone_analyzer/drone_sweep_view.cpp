@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <cstring>
-#include <new>
 
 #include "drone_sweep_view.hpp"
 #include "drone_settings.hpp"
@@ -316,112 +315,66 @@ void SweepWindowGroup2View::focus() {
 // DroneSweepView — Main sweep settings view with TabView
 // ============================================================================
 
-void DroneSweepView::construct_objects() noexcept {
-    Rect tab_content_rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H};
-
-    tab_view_ = nullptr;
-    view_group1_ = nullptr;
-    view_group2_ = nullptr;
-
-    view_group1_ = new (std::nothrow) SweepWindowGroup1View(nav_, tab_content_rect);
-    if (!view_group1_) {
-        return;
-    }
-
-    view_group2_ = new (std::nothrow) SweepWindowGroup2View(nav_, tab_content_rect);
-    if (!view_group2_) {
-        delete view_group1_;
-        view_group1_ = nullptr;
-        return;
-    }
-
-    view_group2_->hidden(true);
-
-    tab_view_ = new (std::nothrow) ui::TabView({
-        {"Win 1-2", Color::white(), view_group1_},
-        {"Win 3-4", Color::white(), view_group2_}
-    });
-
-    if (!tab_view_) {
-        delete view_group2_;
-        view_group2_ = nullptr;
-        delete view_group1_;
-        view_group1_ = nullptr;
-        return;
-    }
+DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept
+    : ui::View()
+    , nav_(nav)
+    , scanner_ptr_(scanner_ptr)
+    , original_config_(config)
+    , group1_(nav, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H})
+    , group2_(nav, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H})
+    , tab_view_({
+        {"Win 1-2", Color::white(), &group1_},
+        {"Win 3-4", Color::white(), &group2_}
+      }) {
+    group2_.hidden(true);
 
     add_children({
-        tab_view_,
-        view_group1_,
-        view_group2_,
+        &tab_view_,
+        &group1_,
+        &group2_,
         &labels_exc_radius_,
         &field_exc_radius_,
         &button_defaults_,
         &button_save_,
     });
 
-    tab_view_->set_selected(0);
-}
+    tab_view_.set_selected(0);
 
-void DroneSweepView::destruct_objects() noexcept {
-    if (tab_view_) {
-        if (view_group1_) remove_child(view_group1_);
-        if (view_group2_) remove_child(view_group2_);
-        remove_child(tab_view_);
-        delete tab_view_;
-        tab_view_ = nullptr;
-    }
+    group1_.field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / 1000000ULL));
+    group1_.field_sw1_end_.set_value(static_cast<int32_t>(config.sweep_end_freq / 1000000ULL));
+    group1_.field_sw1_step_.set_value(static_cast<int32_t>(config.sweep_step_freq / 1000ULL));
 
-    view_group1_ = nullptr;
-    view_group2_ = nullptr;
-}
+    group1_.check_sw2_enabled_.set_value(config.sweep2_enabled);
+    group1_.field_sw2_start_.set_value(static_cast<int32_t>(config.sweep2_start_freq / 1000000ULL));
+    group1_.field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / 1000000ULL));
+    group1_.field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / 1000ULL));
 
-DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, DroneScanner* scanner_ptr) noexcept
-    : ui::View()
-    , nav_(nav)
-    , scanner_ptr_(scanner_ptr)
-    , original_config_(config) {
-    construct_objects();
+    group2_.check_sw3_enabled_.set_value(config.sweep3_enabled);
+    group2_.field_sw3_start_.set_value(static_cast<int32_t>(config.sweep3_start_freq / 1000000ULL));
+    group2_.field_sw3_end_.set_value(static_cast<int32_t>(config.sweep3_end_freq / 1000000ULL));
+    group2_.field_sw3_step_.set_value(static_cast<int32_t>(config.sweep3_step_freq / 1000ULL));
 
-    if (!view_group1_ || !view_group2_ || !tab_view_) {
-        return;
-    }
-
-    view_group1_->field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / 1000000ULL));
-    view_group1_->field_sw1_end_.set_value(static_cast<int32_t>(config.sweep_end_freq / 1000000ULL));
-    view_group1_->field_sw1_step_.set_value(static_cast<int32_t>(config.sweep_step_freq / 1000ULL));
-
-    view_group1_->check_sw2_enabled_.set_value(config.sweep2_enabled);
-    view_group1_->field_sw2_start_.set_value(static_cast<int32_t>(config.sweep2_start_freq / 1000000ULL));
-    view_group1_->field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / 1000000ULL));
-    view_group1_->field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / 1000ULL));
-
-    view_group2_->check_sw3_enabled_.set_value(config.sweep3_enabled);
-    view_group2_->field_sw3_start_.set_value(static_cast<int32_t>(config.sweep3_start_freq / 1000000ULL));
-    view_group2_->field_sw3_end_.set_value(static_cast<int32_t>(config.sweep3_end_freq / 1000000ULL));
-    view_group2_->field_sw3_step_.set_value(static_cast<int32_t>(config.sweep3_step_freq / 1000ULL));
-
-    view_group2_->check_sw4_enabled_.set_value(config.sweep4_enabled);
-    view_group2_->field_sw4_start_.set_value(static_cast<int32_t>(config.sweep4_start_freq / 1000000ULL));
-    view_group2_->field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / 1000000ULL));
-    view_group2_->field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
+    group2_.check_sw4_enabled_.set_value(config.sweep4_enabled);
+    group2_.field_sw4_start_.set_value(static_cast<int32_t>(config.sweep4_start_freq / 1000000ULL));
+    group2_.field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / 1000000ULL));
+    group2_.field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
 
     ui::NumberField* exc1_fields[] = {
-        &view_group1_->field_sw1_exc0_, &view_group1_->field_sw1_exc1_,
-        &view_group1_->field_sw1_exc2_, &view_group1_->field_sw1_exc3_,
-        &view_group1_->field_sw1_exc4_};
+        &group1_.field_sw1_exc0_, &group1_.field_sw1_exc1_,
+        &group1_.field_sw1_exc2_, &group1_.field_sw1_exc3_,
+        &group1_.field_sw1_exc4_};
     ui::NumberField* exc2_fields[] = {
-        &view_group1_->field_sw2_exc0_, &view_group1_->field_sw2_exc1_,
-        &view_group1_->field_sw2_exc2_, &view_group1_->field_sw2_exc3_,
-        &view_group1_->field_sw2_exc4_};
+        &group1_.field_sw2_exc0_, &group1_.field_sw2_exc1_,
+        &group1_.field_sw2_exc2_, &group1_.field_sw2_exc3_,
+        &group1_.field_sw2_exc4_};
     ui::NumberField* exc3_fields[] = {
-        &view_group2_->field_sw3_exc0_, &view_group2_->field_sw3_exc1_,
-        &view_group2_->field_sw3_exc2_, &view_group2_->field_sw3_exc3_,
-        &view_group2_->field_sw3_exc4_};
+        &group2_.field_sw3_exc0_, &group2_.field_sw3_exc1_,
+        &group2_.field_sw3_exc2_, &group2_.field_sw3_exc3_,
+        &group2_.field_sw3_exc4_};
     ui::NumberField* exc4_fields[] = {
-        &view_group2_->field_sw4_exc0_, &view_group2_->field_sw4_exc1_,
-        &view_group2_->field_sw4_exc2_, &view_group2_->field_sw4_exc3_,
-        &view_group2_->field_sw4_exc4_};
+        &group2_.field_sw4_exc0_, &group2_.field_sw4_exc1_,
+        &group2_.field_sw4_exc2_, &group2_.field_sw4_exc3_,
+        &group2_.field_sw4_exc4_};
 
     for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
         exc1_fields[i]->set_value(static_cast<int32_t>(config.sweep_exceptions[0][i] / 1000000ULL));
@@ -442,61 +395,51 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     };
 }
 
-DroneSweepView::~DroneSweepView() noexcept {
-    destruct_objects();
-}
-
 void DroneSweepView::focus() {
-    if (tab_view_ && view_group1_) {
-        if (tab_view_->selected() == 0) {
-            view_group1_->focus();
-        } else if (view_group2_) {
-            view_group2_->focus();
-        }
+    if (tab_view_.selected() == 0) {
+        group1_.focus();
+    } else {
+        group2_.focus();
     }
 }
 
 void DroneSweepView::save_settings() noexcept {
-    if (!view_group1_ || !view_group2_ || !tab_view_) {
-        return;
-    }
+    FreqHz sw1_start = static_cast<FreqHz>(group1_.field_sw1_start_.value()) * 1000000ULL;
+    FreqHz sw1_end = static_cast<FreqHz>(group1_.field_sw1_end_.value()) * 1000000ULL;
+    FreqHz sw1_step = static_cast<FreqHz>(group1_.field_sw1_step_.value()) * 1000ULL;
 
-    FreqHz sw1_start = static_cast<FreqHz>(view_group1_->field_sw1_start_.value()) * 1000000ULL;
-    FreqHz sw1_end = static_cast<FreqHz>(view_group1_->field_sw1_end_.value()) * 1000000ULL;
-    FreqHz sw1_step = static_cast<FreqHz>(view_group1_->field_sw1_step_.value()) * 1000ULL;
+    bool sw2_enabled = group1_.check_sw2_enabled_.value();
+    FreqHz sw2_start = static_cast<FreqHz>(group1_.field_sw2_start_.value()) * 1000000ULL;
+    FreqHz sw2_end = static_cast<FreqHz>(group1_.field_sw2_end_.value()) * 1000000ULL;
+    FreqHz sw2_step = static_cast<FreqHz>(group1_.field_sw2_step_.value()) * 1000ULL;
 
-    bool sw2_enabled = view_group1_->check_sw2_enabled_.value();
-    FreqHz sw2_start = static_cast<FreqHz>(view_group1_->field_sw2_start_.value()) * 1000000ULL;
-    FreqHz sw2_end = static_cast<FreqHz>(view_group1_->field_sw2_end_.value()) * 1000000ULL;
-    FreqHz sw2_step = static_cast<FreqHz>(view_group1_->field_sw2_step_.value()) * 1000ULL;
+    bool sw3_enabled = group2_.check_sw3_enabled_.value();
+    FreqHz sw3_start = static_cast<FreqHz>(group2_.field_sw3_start_.value()) * 1000000ULL;
+    FreqHz sw3_end = static_cast<FreqHz>(group2_.field_sw3_end_.value()) * 1000000ULL;
+    FreqHz sw3_step = static_cast<FreqHz>(group2_.field_sw3_step_.value()) * 1000ULL;
 
-    bool sw3_enabled = view_group2_->check_sw3_enabled_.value();
-    FreqHz sw3_start = static_cast<FreqHz>(view_group2_->field_sw3_start_.value()) * 1000000ULL;
-    FreqHz sw3_end = static_cast<FreqHz>(view_group2_->field_sw3_end_.value()) * 1000000ULL;
-    FreqHz sw3_step = static_cast<FreqHz>(view_group2_->field_sw3_step_.value()) * 1000ULL;
-
-    bool sw4_enabled = view_group2_->check_sw4_enabled_.value();
-    FreqHz sw4_start = static_cast<FreqHz>(view_group2_->field_sw4_start_.value()) * 1000000ULL;
-    FreqHz sw4_end = static_cast<FreqHz>(view_group2_->field_sw4_end_.value()) * 1000000ULL;
-    FreqHz sw4_step = static_cast<FreqHz>(view_group2_->field_sw4_step_.value()) * 1000ULL;
+    bool sw4_enabled = group2_.check_sw4_enabled_.value();
+    FreqHz sw4_start = static_cast<FreqHz>(group2_.field_sw4_start_.value()) * 1000000ULL;
+    FreqHz sw4_end = static_cast<FreqHz>(group2_.field_sw4_end_.value()) * 1000000ULL;
+    FreqHz sw4_step = static_cast<FreqHz>(group2_.field_sw4_step_.value()) * 1000ULL;
 
     FreqHz exc[4][EXCEPTIONS_PER_WINDOW]{};
     ui::NumberField* exc1_fields[] = {
-        &view_group1_->field_sw1_exc0_, &view_group1_->field_sw1_exc1_,
-        &view_group1_->field_sw1_exc2_, &view_group1_->field_sw1_exc3_,
-        &view_group1_->field_sw1_exc4_};
+        &group1_.field_sw1_exc0_, &group1_.field_sw1_exc1_,
+        &group1_.field_sw1_exc2_, &group1_.field_sw1_exc3_,
+        &group1_.field_sw1_exc4_};
     ui::NumberField* exc2_fields[] = {
-        &view_group1_->field_sw2_exc0_, &view_group1_->field_sw2_exc1_,
-        &view_group1_->field_sw2_exc2_, &view_group1_->field_sw2_exc3_,
-        &view_group1_->field_sw2_exc4_};
+        &group1_.field_sw2_exc0_, &group1_.field_sw2_exc1_,
+        &group1_.field_sw2_exc2_, &group1_.field_sw2_exc3_,
+        &group1_.field_sw2_exc4_};
     ui::NumberField* exc3_fields[] = {
-        &view_group2_->field_sw3_exc0_, &view_group2_->field_sw3_exc1_,
-        &view_group2_->field_sw3_exc2_, &view_group2_->field_sw3_exc3_,
-        &view_group2_->field_sw3_exc4_};
+        &group2_.field_sw3_exc0_, &group2_.field_sw3_exc1_,
+        &group2_.field_sw3_exc2_, &group2_.field_sw3_exc3_,
+        &group2_.field_sw3_exc4_};
     ui::NumberField* exc4_fields[] = {
-        &view_group2_->field_sw4_exc0_, &view_group2_->field_sw4_exc1_,
-        &view_group2_->field_sw4_exc2_, &view_group2_->field_sw4_exc3_,
-        &view_group2_->field_sw4_exc4_};
+        &group2_.field_sw4_exc0_, &group2_.field_sw4_exc1_,
+        &group2_.field_sw4_exc2_, &group2_.field_sw4_exc3_,
+        &group2_.field_sw4_exc4_};
 
     for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
         exc[0][i] = static_cast<FreqHz>(exc1_fields[i]->value()) * 1000000ULL;
@@ -581,44 +524,40 @@ void DroneSweepView::save_settings() noexcept {
 }
 
 void DroneSweepView::apply_defaults() noexcept {
-    if (!view_group1_ || !view_group2_) {
-        return;
-    }
-
     SettingsStruct defaults;
 
-    view_group1_->field_sw1_start_.set_value(static_cast<int32_t>(defaults.sweep_start_freq / 1000000ULL));
-    view_group1_->field_sw1_end_.set_value(static_cast<int32_t>(defaults.sweep_end_freq / 1000000ULL));
-    view_group1_->field_sw1_step_.set_value(static_cast<int32_t>(defaults.sweep_step_freq / 1000ULL));
+    group1_.field_sw1_start_.set_value(static_cast<int32_t>(defaults.sweep_start_freq / 1000000ULL));
+    group1_.field_sw1_end_.set_value(static_cast<int32_t>(defaults.sweep_end_freq / 1000000ULL));
+    group1_.field_sw1_step_.set_value(static_cast<int32_t>(defaults.sweep_step_freq / 1000ULL));
 
-    view_group1_->check_sw2_enabled_.set_value(defaults.sweep2_enabled);
-    view_group1_->field_sw2_start_.set_value(static_cast<int32_t>(defaults.sweep2_start_freq / 1000000ULL));
-    view_group1_->field_sw2_end_.set_value(static_cast<int32_t>(defaults.sweep2_end_freq / 1000000ULL));
-    view_group1_->field_sw2_step_.set_value(static_cast<int32_t>(defaults.sweep2_step_freq / 1000ULL));
+    group1_.check_sw2_enabled_.set_value(defaults.sweep2_enabled);
+    group1_.field_sw2_start_.set_value(static_cast<int32_t>(defaults.sweep2_start_freq / 1000000ULL));
+    group1_.field_sw2_end_.set_value(static_cast<int32_t>(defaults.sweep2_end_freq / 1000000ULL));
+    group1_.field_sw2_step_.set_value(static_cast<int32_t>(defaults.sweep2_step_freq / 1000ULL));
 
-    view_group2_->check_sw3_enabled_.set_value(defaults.sweep3_enabled);
-    view_group2_->field_sw3_start_.set_value(static_cast<int32_t>(defaults.sweep3_start_freq / 1000000ULL));
-    view_group2_->field_sw3_end_.set_value(static_cast<int32_t>(defaults.sweep3_end_freq / 1000000ULL));
-    view_group2_->field_sw3_step_.set_value(static_cast<int32_t>(defaults.sweep3_step_freq / 1000ULL));
+    group2_.check_sw3_enabled_.set_value(defaults.sweep3_enabled);
+    group2_.field_sw3_start_.set_value(static_cast<int32_t>(defaults.sweep3_start_freq / 1000000ULL));
+    group2_.field_sw3_end_.set_value(static_cast<int32_t>(defaults.sweep3_end_freq / 1000000ULL));
+    group2_.field_sw3_step_.set_value(static_cast<int32_t>(defaults.sweep3_step_freq / 1000ULL));
 
-    view_group2_->check_sw4_enabled_.set_value(defaults.sweep4_enabled);
-    view_group2_->field_sw4_start_.set_value(static_cast<int32_t>(defaults.sweep4_start_freq / 1000000ULL));
-    view_group2_->field_sw4_end_.set_value(static_cast<int32_t>(defaults.sweep4_end_freq / 1000000ULL));
-    view_group2_->field_sw4_step_.set_value(static_cast<int32_t>(defaults.sweep4_step_freq / 1000ULL));
+    group2_.check_sw4_enabled_.set_value(defaults.sweep4_enabled);
+    group2_.field_sw4_start_.set_value(static_cast<int32_t>(defaults.sweep4_start_freq / 1000000ULL));
+    group2_.field_sw4_end_.set_value(static_cast<int32_t>(defaults.sweep4_end_freq / 1000000ULL));
+    group2_.field_sw4_step_.set_value(static_cast<int32_t>(defaults.sweep4_step_freq / 1000ULL));
 
     ui::NumberField* all_exc[] = {
-        &view_group1_->field_sw1_exc0_, &view_group1_->field_sw1_exc1_,
-        &view_group1_->field_sw1_exc2_, &view_group1_->field_sw1_exc3_,
-        &view_group1_->field_sw1_exc4_,
-        &view_group1_->field_sw2_exc0_, &view_group1_->field_sw2_exc1_,
-        &view_group1_->field_sw2_exc2_, &view_group1_->field_sw2_exc3_,
-        &view_group1_->field_sw2_exc4_,
-        &view_group2_->field_sw3_exc0_, &view_group2_->field_sw3_exc1_,
-        &view_group2_->field_sw3_exc2_, &view_group2_->field_sw3_exc3_,
-        &view_group2_->field_sw3_exc4_,
-        &view_group2_->field_sw4_exc0_, &view_group2_->field_sw4_exc1_,
-        &view_group2_->field_sw4_exc2_, &view_group2_->field_sw4_exc3_,
-        &view_group2_->field_sw4_exc4_,
+        &group1_.field_sw1_exc0_, &group1_.field_sw1_exc1_,
+        &group1_.field_sw1_exc2_, &group1_.field_sw1_exc3_,
+        &group1_.field_sw1_exc4_,
+        &group1_.field_sw2_exc0_, &group1_.field_sw2_exc1_,
+        &group1_.field_sw2_exc2_, &group1_.field_sw2_exc3_,
+        &group1_.field_sw2_exc4_,
+        &group2_.field_sw3_exc0_, &group2_.field_sw3_exc1_,
+        &group2_.field_sw3_exc2_, &group2_.field_sw3_exc3_,
+        &group2_.field_sw3_exc4_,
+        &group2_.field_sw4_exc0_, &group2_.field_sw4_exc1_,
+        &group2_.field_sw4_exc2_, &group2_.field_sw4_exc3_,
+        &group2_.field_sw4_exc4_,
     };
     for (auto* f : all_exc) {
         f->set_value(0);

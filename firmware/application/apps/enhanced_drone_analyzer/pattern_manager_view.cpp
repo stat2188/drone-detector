@@ -92,6 +92,11 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
     };
 
     button_freq_.on_select = [this](ui::Button&) {
+        if (capture_frequency_ < HARDWARE_MIN_FREQ_HZ || capture_frequency_ > HARDWARE_MAX_FREQ_HZ) {
+            label_status_.set("Set range first!");
+            set_dirty();
+            return;
+        }
         show_frequency_keypad();
     };
 
@@ -406,9 +411,32 @@ int16_t PatternManagerView::frequency_to_bin(FreqHz freq) const noexcept {
 }
 
 void PatternManagerView::show_frequency_keypad() noexcept {
+    if (capture_frequency_ < HARDWARE_MIN_FREQ_HZ || capture_frequency_ > HARDWARE_MAX_FREQ_HZ) {
+        label_status_.set("Invalid frequency!");
+        set_dirty();
+        return;
+    }
     auto freq_view = nav_.push<FrequencyKeypadView>(capture_frequency_);
     freq_view->on_changed = [this](rf::Frequency f) {
         capture_frequency_ = static_cast<FreqHz>(f);
+        
+        DroneScanner* scanner = get_scanner_ptr();
+        if (scanner) {
+            ScanConfig cfg = scanner->get_config();
+            FreqHz range_span = cfg.sweep_end_freq - cfg.sweep_start_freq;
+            cfg.sweep_start_freq = (capture_frequency_ > range_span / 2) 
+                ? (capture_frequency_ - range_span / 2) 
+                : HARDWARE_MIN_FREQ_HZ;
+            cfg.sweep_end_freq = cfg.sweep_start_freq + range_span;
+            if (cfg.sweep_end_freq > HARDWARE_MAX_FREQ_HZ) {
+                cfg.sweep_end_freq = HARDWARE_MAX_FREQ_HZ;
+                cfg.sweep_start_freq = (cfg.sweep_end_freq > range_span) 
+                    ? (cfg.sweep_end_freq - range_span) 
+                    : HARDWARE_MIN_FREQ_HZ;
+            }
+            scanner->set_config(cfg);
+        }
+        
         int16_t bin = frequency_to_bin(capture_frequency_);
         if (bin >= 0) {
             selected_bin_ = bin;
@@ -466,6 +494,13 @@ void PatternManagerView::on_show() noexcept {
         label_status_.set("Scanner not ready");
         set_dirty();
         return;
+    }
+
+    ScanConfig cfg = scanner_ptr->get_config();
+    if (cfg.sweep_start_freq > 0 && cfg.sweep_end_freq > cfg.sweep_start_freq) {
+        capture_frequency_ = cfg.sweep_start_freq + (cfg.sweep_end_freq - cfg.sweep_start_freq) / 2;
+    } else {
+        capture_frequency_ = cfg.sweep_start_freq;
     }
 
     PatternManager& pm = scanner_ptr->get_pattern_manager();

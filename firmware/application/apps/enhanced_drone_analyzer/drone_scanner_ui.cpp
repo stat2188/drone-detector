@@ -530,6 +530,11 @@ void DroneScannerUI::on_show() {
 }
 
 void DroneScannerUI::on_hide() {
+    // Reset sweep index to safe bounds before stopping
+    if (active_sweep_idx_ >= MAX_SWEEP_WINDOWS) {
+        active_sweep_idx_ = 0;
+    }
+
     if (scanning_) {
         scanner_thread_->set_scanning(false);
         if (scanner_ptr_ != nullptr) {
@@ -947,6 +952,7 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
 void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept {
     // Bounds check — prevent out-of-bounds access if state corrupted
     if (active_sweep_idx_ >= MAX_SWEEP_WINDOWS) {
+        active_sweep_idx_ = 0;
         baseband::spectrum_streaming_stop();
         return;
     }
