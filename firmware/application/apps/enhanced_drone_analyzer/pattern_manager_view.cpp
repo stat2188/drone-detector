@@ -422,6 +422,7 @@ void PatternManagerView::show_frequency_keypad() noexcept {
         }
     }
 
+    baseband::spectrum_streaming_stop();
     auto freq_view = nav_.push<FrequencyKeypadView>(capture_frequency_);
     freq_view->on_changed = [this](rf::Frequency f) {
         capture_frequency_ = static_cast<FreqHz>(f);
