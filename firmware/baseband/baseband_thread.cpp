@@ -80,9 +80,8 @@ void BasebandThread::run() {
     baseband_sgpio.init();
     baseband::dma::init();
 
-    const auto baseband_buffer = std::make_unique<std::array<baseband::sample_t, 8192>>();
-    baseband::dma::configure(baseband_buffer->data(), direction());
-    // baseband::dma::allocate(4, 2048);
+    static std::array<baseband::sample_t, 8192> baseband_buffer;
+    baseband::dma::configure(baseband_buffer.data(), direction());
 
     baseband_sgpio.configure(direction());
     baseband::dma::enable(direction());
