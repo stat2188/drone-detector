@@ -144,7 +144,7 @@ public:
 
     void focus() override;
 
-    const char* title() const override { return "SWP Settings"; }
+    std::string title() const override { return "SWP Settings"; }
 
 private:
     static constexpr ui::Dim TAB_BAR_H = 24;
