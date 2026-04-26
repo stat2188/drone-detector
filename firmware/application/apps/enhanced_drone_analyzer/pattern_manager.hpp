@@ -39,6 +39,8 @@ public:
 
     void clear_all_patterns() noexcept;
 
+    [[nodiscard]] ErrorCode reload_patterns() noexcept;
+
     [[nodiscard]] bool is_loaded() const noexcept;
 
 private:

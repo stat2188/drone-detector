@@ -1062,6 +1062,12 @@ public:
         return pattern_manager_.get_patterns_array();
     }
 
+    /**
+     * @brief Force reload patterns from SD and update matcher
+     * @note Called when returning from PTR view to ensure SWEEP sees new patterns
+     */
+    void refresh_patterns() noexcept;
+
 private:
     /**
      * @brief Internal: Perform scan cycle

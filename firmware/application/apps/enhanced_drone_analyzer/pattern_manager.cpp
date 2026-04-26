@@ -457,6 +457,65 @@ bool PatternManager::is_loaded() const noexcept {
     return loaded_.test();
 }
 
+ErrorCode PatternManager::reload_patterns() noexcept {
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+
+    loaded_.clear();
+    pattern_count_ = 0;
+
+    DIR dir;
+    FILINFO fno;
+    const FRESULT res = f_opendir(&dir, reinterpret_cast<const TCHAR*>(PATTERN_DIR));
+
+    if (res != FR_OK) {
+        loaded_.set();
+        return ErrorCode::SUCCESS;
+    }
+
+    struct DirGuard {
+        DIR* dir;
+        ~DirGuard() { if (dir) f_closedir(dir); }
+    } dir_guard = {&dir};
+
+    while (true) {
+        const FRESULT readdir_res = f_readdir(&dir, &fno);
+        if (readdir_res != FR_OK || fno.fname[0] == (TCHAR)'\0') {
+            break;
+        }
+
+        if (fno.fattrib & AM_DIR) {
+            continue;
+        }
+
+        char fname_buf[FATFS_MAX_FILENAME];
+        const size_t fname_len = tchar_to_char(fno.fname, fname_buf, sizeof(fname_buf));
+        if (fname_len < 4 || str_equals_ignore_case(&fname_buf[fname_len - 4], ".TXT") == false) {
+            continue;
+        }
+
+        if (pattern_count_ >= MAX_PATTERNS) {
+            break;
+        }
+
+        constexpr size_t MAX_FULL_PATH_LEN = sizeof(PATTERN_DIR) + FATFS_MAX_FILENAME + 8;
+        char full_path[MAX_FULL_PATH_LEN];
+        const int written = snprintf(full_path, sizeof(full_path), "%s/%s", PATTERN_DIR, fname_buf);
+        
+        if (written < 0 || static_cast<size_t>(written) >= sizeof(full_path)) {
+            continue;
+        }
+
+        const ErrorCode err = load_pattern_from_line(full_path, strlen(full_path));
+        (void)err;
+    }
+
+    if (pattern_count_ > 0) {
+        loaded_.set();
+    }
+
+    return ErrorCode::SUCCESS;
+}
+
 bool PatternManager::safe_str_copy(
     char* dest,
     size_t dest_size,

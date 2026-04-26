@@ -756,7 +756,7 @@ constexpr size_t PATTERN_WAVEFORM_SIZE = 16;
 /**
  * @brief Pattern directory name for SD card storage
  */
-constexpr char PATTERN_DIR[] = "/PATTERNS";
+constexpr char PATTERN_DIR[] = "/ptr_patterns";
 
 /**
  * @brief Maximum pattern name length (including null terminator)

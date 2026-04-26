@@ -1209,6 +1209,18 @@ void DroneScanner::reset_neighbor_checker() noexcept {
     neighbor_margin_checker_.reset();
 }
 
+void DroneScanner::refresh_patterns() noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+
+    const ErrorCode err = pattern_manager_.reload_patterns();
+    if (err == ErrorCode::SUCCESS && config_.pattern_matching_enabled) {
+        pattern_matcher_.set_patterns(
+            pattern_manager_.get_patterns_array(),
+            pattern_manager_.get_pattern_count()
+        );
+    }
+}
+
 // ============================================================================
 // process_spectrum_sweep — moved from header to reduce code bloat
 // ============================================================================
