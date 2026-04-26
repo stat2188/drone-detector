@@ -35,8 +35,8 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
     , button_add_{{UI_POS_X(0), 270, UI_POS_WIDTH(4), 20}, "Capt"}
     , button_save_{{UI_POS_X(5), 270, UI_POS_WIDTH(4), 20}, "Save"}
     , button_edit_{{UI_POS_X(10), 270, UI_POS_WIDTH(4), 20}, "Edit"}
-    , button_delete_{{UI_POS_X(15), 270, UI_POS_WIDTH(4), 20}, "Del"}
-    , button_clear_all_{{UI_POS_X(20), 270, UI_POS_WIDTH(4), 20}, "Clr"}
+    , button_delete_{{UI_POS_X(20), 270, UI_POS_WIDTH(4), 20}, "Del"}
+    , button_clear_all_{{UI_POS_X(15), 270, UI_POS_WIDTH(4), 20}, "Clr"}
     , button_back_{{UI_POS_X(24), 270, UI_POS_WIDTH(3), 20}, "<="}
     , button_start_capture_{{UI_POS_X(15), 270, UI_POS_WIDTH(5), 20}, "START"}
     , label_status_{{UI_POS_X(0), 30, UI_POS_WIDTH(28), 20}, "Idle"}
@@ -397,6 +397,12 @@ int16_t PatternManagerView::frequency_to_bin(FreqHz freq) const noexcept {
     if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
         return -1;
     }
+    // Check if frequency is within current sweep window
+    if (current_range_start_ > 0 && current_range_end_ > current_range_start_) {
+        if (freq < current_range_start_ || freq > current_range_end_) {
+            return -1;
+        }
+    }
     const FreqHz bin_size = SWEEP_SLICE_BW / FFT_BIN_COUNT;
     const int32_t offset = static_cast<int32_t>(freq - live_center_frequency_);
     int16_t bin = static_cast<int16_t>(offset / static_cast<int32_t>(bin_size)) + 128;
@@ -406,6 +412,16 @@ int16_t PatternManagerView::frequency_to_bin(FreqHz freq) const noexcept {
 }
 
 void PatternManagerView::show_frequency_keypad() noexcept {
+    // Load sweep range if not initialized
+    if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
+        load_sweep_ranges();
+        if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
+            label_status_.set("Select sweep range first!");
+            set_dirty();
+            return;
+        }
+    }
+
     auto freq_view = nav_.push<FrequencyKeypadView>(capture_frequency_);
     freq_view->on_changed = [this](rf::Frequency f) {
         capture_frequency_ = static_cast<FreqHz>(f);
@@ -867,13 +883,29 @@ void PatternManagerView::refresh_list() noexcept {
 
 void PatternManagerView::show_pattern_details() noexcept {
     if (pattern_manager_ptr_ == nullptr || selected_index_ >= pattern_manager_ptr_->get_pattern_count()) {
+        label_status_.set("No pattern selected!");
+        set_dirty();
         return;
     }
 
     const SignalPattern* pattern = pattern_manager_ptr_->get_pattern(selected_index_);
     if (pattern == nullptr) {
+        label_status_.set("Invalid pattern!");
+        set_dirty();
         return;
     }
+
+    // Display pattern details in status label
+    char details[64];
+    snprintf(details, sizeof(details),
+             "[%s] Pk:%d Mn:%d W:%d Mt:%d",
+             pattern->name,
+             pattern->features.peak_position,
+             pattern->features.margin,
+             pattern->features.width,
+             pattern->match_threshold);
+    label_status_.set(details);
+    set_dirty();
 }
 
 void PatternManagerView::delete_selected_pattern() noexcept {

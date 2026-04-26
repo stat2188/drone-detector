@@ -286,6 +286,12 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
         return ErrorCode::BUFFER_FULL;
     }
 
+    // Create /PATTERNS directory if it doesn't exist
+    const FRESULT mkdir_res = f_mkdir(reinterpret_cast<const TCHAR*>(PATTERN_DIR));
+    if (mkdir_res != FR_OK && mkdir_res != FR_EXIST) {
+        return ErrorCode::FILE_SYSTEM_ERROR;
+    }
+
     // Write file first, update RAM only on success
     constexpr size_t MAX_FILENAME_LEN = sizeof(PATTERN_DIR) + PATTERN_NAME_MAX_LEN + 8;
     char filename[MAX_FILENAME_LEN];

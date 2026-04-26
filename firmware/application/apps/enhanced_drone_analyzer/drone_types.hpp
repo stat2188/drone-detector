@@ -130,6 +130,7 @@ enum class ErrorCode : uint8_t {
     // General errors (50-59)
     INVALID_PARAMETER = 50,
     NOT_IMPLEMENTED = 51,
+    FILE_SYSTEM_ERROR = 52,
     UNKNOWN_ERROR = 255
 };
 
