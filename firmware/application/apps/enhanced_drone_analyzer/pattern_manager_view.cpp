@@ -136,7 +136,9 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         const ErrorCode err = save_current_pattern(default_name);
         if (err == ErrorCode::SUCCESS) {
             label_status_.set("Pattern saved!");
-            pattern_manager_ptr_->reload_patterns();
+            if (const auto reload_err = pattern_manager_ptr_->reload_patterns(); reload_err != ErrorCode::SUCCESS) {
+                label_status_.set("Pattern list refresh failed");
+            }
             refresh_list();
             std::memset(capture_spectrum_, 0, sizeof(capture_spectrum_));
             selected_bin_ = -1;
@@ -489,7 +491,9 @@ void PatternManagerView::on_show() noexcept {
     PatternManager& pm = scanner_ptr->get_pattern_manager();
     pattern_manager_ptr_ = &pm;
 
-    pattern_manager_ptr_->reload_patterns();
+    if (const auto reload_err = pattern_manager_ptr_->reload_patterns(); reload_err != ErrorCode::SUCCESS) {
+        label_status_.set("Pattern load failed");
+    }
 
     load_sweep_ranges();
     refresh_list();
