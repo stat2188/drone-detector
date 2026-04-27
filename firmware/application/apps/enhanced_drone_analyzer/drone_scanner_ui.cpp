@@ -55,7 +55,8 @@ void DroneScannerUI::register_handlers() noexcept {
         [this](Message* const) {
             if (!this->scanning_) return;
             if (this->spectrum_fifo_ != nullptr) {
-                ChannelSpectrum spectrum;
+                // Use class member buffer instead of local stack to prevent M0 overflow
+                ChannelSpectrum& spectrum = this->spectrum_buffer_;
                 if (this->spectrum_fifo_->out(spectrum)) {
                     if (this->composite_active_) {
                         this->on_sweep_spectrum(spectrum);

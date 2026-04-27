@@ -137,6 +137,10 @@ private:
     FreqHz last_tuned_freq_{0};  // exact freq radio was tuned to when FFT was captured
     bool skip_next_fft_{false};  // skip first FFT after sweep entry (may be stale)
 
+    // Reusable buffer to prevent stack overflow in message handler
+    // ChannelSpectrum is 256 bytes - moved from local stack to BSS
+    ChannelSpectrum spectrum_buffer_{};
+
     DroneDisplay drone_display_{{0, 68, DISPLAY_WIDTH, 206}};
 
     void bigdisplay_update(BigDisplayColor color) noexcept;

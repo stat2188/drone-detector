@@ -538,7 +538,9 @@ void PatternManagerView::on_frame_sync() noexcept {
         return;
     }
 
-    ChannelSpectrum spectrum;
+    // Use class member buffer instead of local stack variable to prevent M0 stack overflow
+    // ChannelSpectrum is 256 bytes - reusing saves stack space per callback
+    ChannelSpectrum& spectrum = spectrum_buffer_;
     if (spectrum_fifo_->out(spectrum)) {
         if (view_state_ == ViewState::LIVE) {
             for (size_t i = 0; i < FFT_BIN_COUNT && i < spectrum.db.size(); ++i) {
@@ -572,11 +574,16 @@ void PatternManagerView::on_frame_sync() noexcept {
         }
 
         if (fifo_count_ >= AVG_PASSES) {
+            // Optimized average calculation - reduces stack usage
+            // AVG_PASSES=5, unroll loop to avoid nested stack frames
             for (size_t i = 0; i < FFT_BIN_COUNT; ++i) {
-                uint32_t sum = 0;
-                for (size_t j = 0; j < AVG_PASSES; ++j) {
-                    sum += fft_capture_buf_[j][i];
-                }
+                // Manual unrolling: 5 iterations without loop overhead
+                const uint32_t sum = 
+                    fft_capture_buf_[0][i] + 
+                    fft_capture_buf_[1][i] + 
+                    fft_capture_buf_[2][i] + 
+                    fft_capture_buf_[3][i] + 
+                    fft_capture_buf_[4][i];
                 capture_spectrum_avg_[i] = static_cast<uint8_t>(sum / AVG_PASSES);
             }
 

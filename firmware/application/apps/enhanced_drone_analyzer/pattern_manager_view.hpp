@@ -14,6 +14,8 @@
 #include "scanner.hpp"
 #include "constants.hpp"
 
+#include "message.hpp"
+
 namespace drone_analyzer {
 
 class PatternManagerView : public ui::View {
@@ -128,6 +130,10 @@ private:
     MessageHandlerRegistration message_handler_spectrum_config;
     MessageHandlerRegistration message_handler_frame_sync;
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
+
+    // Reusable buffer to prevent stack overflow in on_frame_sync()
+    // ChannelSpectrum is 256 bytes - moved from local stack to BSS
+    ChannelSpectrum spectrum_buffer_{};
 
     void on_channel_spectrum_config(ChannelSpectrumFIFO* fifo) noexcept;
     void on_frame_sync() noexcept;
