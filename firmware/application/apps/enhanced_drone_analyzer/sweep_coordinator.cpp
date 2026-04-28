@@ -15,7 +15,7 @@ void SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) noexcept {
         f_max = f_min + SWEEP_SLICE_BW;
     }
     pixel_step_hz = (f_max - f_min) / SWEEP_PIXELS_PER_SLICE;
-    step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * EACH_BIN_SIZE);
+    step_hz = (step > 0) ? step : pixel_step_hz;
     f_center_ini = f_min - (2 * BIN_SIZE) + (SWEEP_SLICE_BW / 2);
     reset();
 }
@@ -60,7 +60,7 @@ SweepCoordinator::SweepCoordinator() noexcept
     , pair_idx_(0)
     , pair_complete_count_(0)
     , last_tuned_freq_(0)
-    , skip_next_fft_(true)
+    , skip_next_fft_(false)
     , transition_guard_() {
 }
 
@@ -74,7 +74,7 @@ bool SweepCoordinator::start_sweep(const ScanConfig& cfg) noexcept {
 
     active_ = true;
     last_tuned_freq_ = 0;
-    skip_next_fft_ = true;
+    skip_next_fft_ = false;
 
     windows_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq, cfg.sweep_step_freq);
     windows_[0].enabled = true;
@@ -122,7 +122,7 @@ void SweepCoordinator::stop_sweep() noexcept {
     pair_idx_ = 0;
     pair_complete_count_ = 0;
     last_tuned_freq_ = 0;
-    skip_next_fft_ = true;
+    skip_next_fft_ = false;
 
     for (auto& win : windows_) {
         win.enabled = false;
@@ -137,11 +137,6 @@ bool SweepCoordinator::process_spectrum(const ChannelSpectrum& spectrum, [[maybe
 
     auto& win = windows_[active_idx_];
     win.process_bins(spectrum);
-
-    if (skip_next_fft_) {
-        skip_next_fft_ = false;
-        return true;
-    }
 
     if (win.pixel_index < COMPOSITE_SIZE) {
         if (win.f_center < win.f_max) {
@@ -186,7 +181,11 @@ bool SweepCoordinator::process_spectrum(const ChannelSpectrum& spectrum, [[maybe
 
 FreqHz SweepCoordinator::get_retune_frequency() const noexcept {
     if (!active_ || active_idx_ >= MAX_SWEEP_WINDOWS) return 0;
-    return windows_[active_idx_].f_center;
+    const auto& win = windows_[active_idx_];
+    FreqHz freq = win.f_center;
+    if (freq < win.f_min) freq = win.f_min;
+    if (freq > win.f_max) freq = win.f_max;
+    return freq;
 }
 
 bool SweepCoordinator::advance_to_next_pair() noexcept {

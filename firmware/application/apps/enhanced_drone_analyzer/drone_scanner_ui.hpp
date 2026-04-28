@@ -177,6 +177,10 @@ private:
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
     uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
 
+    // Reusable sweep display buffers (moved from stack to class members)
+    uint8_t sweep_data0_[COMPOSITE_SIZE]{};
+    uint8_t sweep_data1_[COMPOSITE_SIZE]{};
+
     /**
      * @brief Storage layout for message handlers.
      * @note No constructor — members are placement-new'd manually.

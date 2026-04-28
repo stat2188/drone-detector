@@ -877,29 +877,27 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
     const uint8_t w0 = pair_idx;
     const uint8_t w1 = w0 + 1;
 
-    uint8_t data0[COMPOSITE_SIZE];
-    uint8_t data1[COMPOSITE_SIZE];
     FreqHz f_min0 = 0, f_max0 = 0, f_min1 = 0, f_max1 = 0;
 
-    const bool has0 = sweep_coordinator_.get_composite_data(w0, data0, COMPOSITE_SIZE);
-    const bool has1 = sweep_coordinator_.get_composite_data(w1, data1, COMPOSITE_SIZE);
+    const bool has0 = sweep_coordinator_.get_composite_data(w0, sweep_data0_, COMPOSITE_SIZE);
+    const bool has1 = sweep_coordinator_.get_composite_data(w1, sweep_data1_, COMPOSITE_SIZE);
 
     if (has0) (void)sweep_coordinator_.get_window_range(w0, f_min0, f_max0);
     if (has1) (void)sweep_coordinator_.get_window_range(w1, f_min1, f_max1);
 
     if (has0 && has1) {
         drone_display_.set_sweep_range(f_min0, f_max0);
-        drone_display_.set_composite_data(data0, COMPOSITE_SIZE);
+        drone_display_.set_composite_data(sweep_data0_, COMPOSITE_SIZE);
         drone_display_.set_dual_sweep_mode(true);
         drone_display_.set_sweep2_range(f_min1, f_max1);
-        drone_display_.set_sweep2_data(data1, COMPOSITE_SIZE);
+        drone_display_.set_sweep2_data(sweep_data1_, COMPOSITE_SIZE);
     } else if (has0) {
         drone_display_.set_sweep_range(f_min0, f_max0);
-        drone_display_.set_composite_data(data0, COMPOSITE_SIZE);
+        drone_display_.set_composite_data(sweep_data0_, COMPOSITE_SIZE);
         drone_display_.set_dual_sweep_mode(false);
     } else if (has1) {
         drone_display_.set_sweep_range(f_min1, f_max1);
-        drone_display_.set_composite_data(data1, COMPOSITE_SIZE);
+        drone_display_.set_composite_data(sweep_data1_, COMPOSITE_SIZE);
         drone_display_.set_dual_sweep_mode(false);
     }
 }
