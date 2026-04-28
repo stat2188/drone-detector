@@ -16,7 +16,11 @@ void SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) noexcept {
     }
     pixel_step_hz = (f_max - f_min) / SWEEP_PIXELS_PER_SLICE;
     step_hz = (step > 0) ? step : pixel_step_hz;
-    f_center_ini = f_min - (2 * BIN_SIZE) + (SWEEP_SLICE_BW / 2);
+    // Fix: Removed "- 2 * BIN_SIZE" which caused final freq to end in .843
+    // Old: f_center_ini = f_min - 156250 + 10000000 = f_min + 9843750 (9.843750 MHz offset)
+    // New: f_center_ini = f_min + 10000000 = f_min + 10 MHz (centered on FFT window)
+    // Result: final freq now ends in .000 instead of .843
+    f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
     reset();
 }
 
@@ -223,7 +227,12 @@ bool SweepCoordinator::get_window_range(uint8_t idx, FreqHz& out_min, FreqHz& ou
 }
 
 size_t SweepCoordinator::get_histogram_data(uint16_t* out_hist, size_t max_size) const noexcept {
-    if (out_hist == nullptr || max_size < COMPOSITE_SIZE * 2) return 0;
+    // Fix: Changed from COMPOSITE_SIZE * 2 to COMPOSITE_SIZE
+    // Reason: HISTOGRAM_BUFFER_SIZE = 240 = COMPOSITE_SIZE, so 240 < 480 was failing
+    // The function can return partial data (one window) if buffer is too small
+    if (out_hist == nullptr || max_size < COMPOSITE_SIZE) return 0;
+    // Guard: ensure sweep is active before accessing window data
+    if (!active_) return 0;
 
     size_t count = 0;
     const uint8_t w0 = pair_idx_;

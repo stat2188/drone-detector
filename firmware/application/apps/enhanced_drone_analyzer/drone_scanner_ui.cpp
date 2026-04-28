@@ -757,13 +757,20 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_coordinator_.set_auto_mode(false);
     drone_display_.set_composite_mode(true);
 
+    // Save database state before entering sweep mode
+    // Priority: 1) current_frequency from UI, 2) locked frequency from scanner, 3) scanner's current
     if (database_ptr_ != nullptr) {
         last_db_index_ = database_ptr_->get_current_index();
+        FreqHz save_freq = 0;
         if (current_frequency_ != 0) {
-            last_db_frequency_ = current_frequency_;
-        } else {
-            last_db_frequency_ = scanner_ptr_->get_locked_frequency();
+            save_freq = current_frequency_;
+        } else if (scanner_ptr_ != nullptr) {
+            save_freq = scanner_ptr_->get_locked_frequency();
+            if (save_freq == 0 && scanner_ptr_->get_current_frequency().has_value()) {
+                save_freq = scanner_ptr_->get_current_frequency().value();
+            }
         }
+        last_db_frequency_ = save_freq;
     }
 
     if (scanner_thread_ != nullptr) {
@@ -819,12 +826,23 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
     baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
 
-    if (was_auto && scanner_ptr_ != nullptr) {
+    // Restore database scanning state - check if we have valid DB state to restore
+    // This replaces the old was_auto check which could fail to restore in some cases
+    if (scanner_ptr_ != nullptr && database_ptr_ != nullptr && db_loaded_) {
+        // Always restore database index and frequency when exiting sweep to DB mode
+        // Use set_current_index for direct index restoration (more reliable than frequency match)
+        if (last_db_index_ < db_entry_count_) {
+            database_ptr_->set_current_index(last_db_index_);
+        } else {
+            database_ptr_->set_current_index(0);  // Safe fallback
+        }
+
+        // Set scanner frequency - if last_db_frequency_ is 0, scanner will get next from DB
         if (last_db_frequency_ != 0) {
             scanner_ptr_->set_scan_frequency(last_db_frequency_);
-        }
-        if (database_ptr_ != nullptr) {
-            database_ptr_->set_current_index(last_db_index_);
+        } else {
+            // Reset to first DB entry if no valid frequency was saved
+            scanner_ptr_->reset_frequency();
         }
 
         if (scanner_thread_ != nullptr) {
