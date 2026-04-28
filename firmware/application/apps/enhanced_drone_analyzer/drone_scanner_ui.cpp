@@ -904,4 +904,12 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
     }
 }
 
+DroneScanner* get_scanner_ptr() noexcept {
+    return &s_scanner;
+}
+
+DroneScanner& get_scanner_instance() noexcept {
+    return s_scanner;
+}
+
 } // namespace drone_analyzer
