@@ -11,6 +11,7 @@
 #include "constants.hpp"
 #include "locking.hpp"
 #include "sweep_processor.hpp"
+#include "scanner.hpp"
 
 namespace drone_analyzer {
 
@@ -77,7 +78,7 @@ public:
      * @return true if display should be updated.
      * @note Updates internal state and determines if retune is needed.
      */
-    [[nodiscard]] bool process_spectrum(const ChannelSpectrum& spectrum, FreqHz current_freq) noexcept;
+    [[nodiscard]] bool process_spectrum(const ChannelSpectrum& spectrum, [[maybe_unused]] FreqHz current_freq) noexcept;
 
     /**
      * @brief Get the frequency the next retune should target.

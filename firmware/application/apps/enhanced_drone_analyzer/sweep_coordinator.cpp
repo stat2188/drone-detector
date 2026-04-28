@@ -131,7 +131,7 @@ void SweepCoordinator::stop_sweep() noexcept {
     transition_guard_.clear();
 }
 
-bool SweepCoordinator::process_spectrum(const ChannelSpectrum& spectrum, FreqHz current_freq) noexcept {
+bool SweepCoordinator::process_spectrum(const ChannelSpectrum& spectrum, [[maybe_unused]] FreqHz current_freq) noexcept {
     if (!active_) return false;
     if (active_idx_ >= MAX_SWEEP_WINDOWS) return false;
 
