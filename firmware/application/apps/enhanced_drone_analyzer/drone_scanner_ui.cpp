@@ -817,7 +817,6 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     if (!composite_active_) return;
     if (!sweep_transition_guard_.try_set()) return;
 
-    const bool was_auto = sweep_auto_mode_;
     composite_active_ = false;
     sweep_auto_mode_ = false;
     sweep_coordinator_.stop_sweep();
