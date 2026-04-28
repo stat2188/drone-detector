@@ -106,7 +106,7 @@ void DroneScannerUI::unregister_handlers() noexcept {
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : View()
     , nav_(nav)
-    , big_display_({{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0)
+    , big_display_({BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0)
     , drone_display_({{0, 68, DISPLAY_WIDTH, 206}})
     , sweep_transition_guard_()
     , button_debounce_guard_() {
