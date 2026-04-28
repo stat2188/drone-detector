@@ -18,7 +18,7 @@
 #include "scanner.hpp"
 #include "scanner_thread.hpp"
 #include "drone_display.hpp"
-#include "sweep_processor.hpp"
+#include "sweep_coordinator.hpp"
 
 namespace drone_analyzer {
 
@@ -134,73 +134,29 @@ private:
     bool initialization_failed_{false};
     bool db_loaded_{false};
     size_t db_entry_count_{0};
-    FreqHz last_tuned_freq_{0};  // exact freq radio was tuned to when FFT was captured
-    bool skip_next_fft_{false};  // skip first FFT after sweep entry (may be stale)
-
-    // Reusable buffer to prevent stack overflow in message handler
-    // ChannelSpectrum is 256 bytes - moved from local stack to BSS
-    ChannelSpectrum spectrum_buffer_{};
-
-    DroneDisplay drone_display_{{0, 68, DISPLAY_WIDTH, 206}};
+    FreqHz last_tuned_freq_{0};
+    bool skip_next_fft_{false};
 
     void bigdisplay_update(BigDisplayColor color) noexcept;
     void refresh_ui() noexcept;
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void on_retune(FreqHz freq, uint32_t range) noexcept;
 
-    // Band sweep — Looking Glass pattern: stop → process → retune → start
-    // COMPOSITE_SIZE, SWEEP_SLICE_BW, MAX_SWEEP_WINDOWS defined in constants.hpp
     static constexpr uint8_t DB_SCANS_PER_SWEEP = 50;
-    static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;
 
-    /**
-     * @brief Encapsulates all state for a single sweep window (Meyers: replace duplication with data)
-     */
-    struct SweepWindow {
-        uint8_t composite[COMPOSITE_SIZE]{};  // pixel buffer
-        FreqHz f_min{0};
-        FreqHz f_max{0};
-        FreqHz f_center{0};
-        FreqHz f_center_ini{0};
-        FreqHz pixel_step_hz{0};
-        FreqHz step_hz{0};
-        FreqHz bins_hz_acc{0};
-        FreqHz exceptions[EXCEPTIONS_PER_WINDOW]{};  // exception frequencies (0 = unused)
-        FreqHz exception_radius_hz{3000000ULL};       // configurable exclusion radius (Hz)
-        uint16_t pixel_index{0};
-        uint8_t pixel_max{0};
-        bool enabled{false};
-
-        void init(FreqHz start, FreqHz end, FreqHz step = 0) noexcept;
-        void reset() noexcept;
-        void process_bins(const ChannelSpectrum& spectrum) noexcept;
-
-        /**
-         * @brief Check if a frequency falls within ±EXCEPTION_RADIUS_HZ of any exception
-         * @param hz Frequency to check
-         * @return true if frequency should be suppressed
-         */
-        [[nodiscard]] bool is_exception(FreqHz hz) const noexcept;
-    };
-
-    SweepWindow sweep_[MAX_SWEEP_WINDOWS]{};
-
+    SweepCoordinator sweep_coordinator_{};
     bool composite_active_{false};
     bool sweep_auto_mode_{false};
-    uint8_t active_sweep_idx_{0};         // 0-3, round-robin index
-    uint8_t current_pair_{0};             // Current displayed pair index (0 or 2)
     uint8_t db_scan_count_{0};
-    AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
-    AtomicFlag button_debounce_guard_;     // Debounces button_mode_/start_stop rapid taps
-    FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
-    size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
+    AtomicFlag sweep_transition_guard_;
+    AtomicFlag button_debounce_guard_;
+    FreqHz last_db_frequency_{0};
+    size_t last_db_index_{0};
 
     void enter_sweep_mode() noexcept;
     void exit_sweep_mode() noexcept;
-    void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
-    void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
+    void on_sweep_spectrum(const ChannelSpectrum& spectrum, FreqHz current_freq) noexcept;
     void update_sweep_pair_display() noexcept;
-    [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
 
     // Spectrum filter threshold (OFF/MID/HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
