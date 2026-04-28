@@ -394,6 +394,30 @@ private:
     bool drone_list_visible_;
     bool status_bar_visible_;
 
+    // Dirty flags for flicker-free rendering (only repaint components that changed)
+    bool spectrum_dirty_{true};
+    bool histogram_dirty_{true};
+    bool drone_list_dirty_{true};
+    bool status_dirty_{true};
+
+    // Track previous status text for change detection
+    char last_status_text_[MAX_TEXT_LENGTH]{};
+
+public:
+    // Check if any component needs repaint
+    [[nodiscard]] bool has_pending_updates() const noexcept {
+        return spectrum_dirty_ || histogram_dirty_ || drone_list_dirty_ || status_dirty_;
+    }
+
+    // Clear all dirty flags after rendering
+    void clear_dirty_flags() noexcept {
+        spectrum_dirty_ = false;
+        histogram_dirty_ = false;
+        drone_list_dirty_ = false;
+        status_dirty_ = false;
+    }
+
+private:
     // Spectrum filter threshold (0=OFF, 118=MID, 202=HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
@@ -415,10 +439,6 @@ private:
 
     // Spectrum integration factor for smoothing
     uint8_t spectrum_integration_{DEFAULT_SPECTRUM_INTEGRATION};
-
-    // Previous frame bar heights for dirty-check optimization
-    std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_cached_{};
-    bool spectrum_cache_valid_{false};
 
     // Sorting buffer for noise floor calculation (avoid stack allocation)
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_sort_buffer_{};

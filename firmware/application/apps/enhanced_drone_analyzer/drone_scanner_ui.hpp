@@ -116,6 +116,10 @@ private:
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
     ScannerState current_scanner_state_{ScannerState::IDLE};
 
+    // Track last displayed big frequency state to avoid redundant widget updates
+    FreqHz last_displayed_freq_{0};
+    BigDisplayColor last_displayed_color_{BigDisplayColor::GREY};
+
     char displayed_drone_type_[MAX_DRONE_TYPE_DISPLAY + 1]{};
     uint32_t drone_type_display_timer_{0};
 

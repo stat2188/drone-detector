@@ -69,7 +69,8 @@ void DroneDisplay::paint(Painter& painter) {
 
     uint16_t y_offset = oy;
 
-    if (show_spec || show_composite) {
+    // Only render spectrum if dirty (data actually changed)
+    if (spectrum_dirty_ && (show_spec || show_composite)) {
         if (show_composite) {
             if (dual_sweep_mode_ && sweep2_data_ != nullptr && sweep2_data_size_ > 0) {
                 render_dual_composite(painter, ox, y_offset, w, spec_h);
@@ -83,23 +84,36 @@ void DroneDisplay::paint(Painter& painter) {
             render_spectrum(painter, spectrum_buffer_.data(), spectrum_data_size_,
                             ox, y_offset, w, spec_h);
         }
+        spectrum_dirty_ = false;
+        y_offset += spec_h;
+    } else {
         y_offset += spec_h;
     }
 
-    if (show_hist) {
+    // Only render histogram if dirty (data actually changed)
+    if (histogram_dirty_ && show_hist) {
         render_histogram(painter, histogram_buffer_.data(), histogram_data_size_,
                          ox, y_offset, w, hist_h);
+        histogram_dirty_ = false;
+        y_offset += hist_h;
+    } else {
         y_offset += hist_h;
     }
 
-    if (show_list && drone_h > 0) {
+    // Only render drone list if dirty (data actually changed)
+    if (drone_list_dirty_ && show_list && drone_h > 0) {
         render_drone_list(painter, display_data_.drones, display_data_.drone_count,
                           ox, y_offset, w, drone_h);
+        drone_list_dirty_ = false;
+        y_offset += drone_h;
+    } else {
         y_offset += drone_h;
     }
 
-    if (status_h > 0) {
+    // Only render status bar if dirty (text actually changed)
+    if (status_dirty_ && status_h > 0) {
         render_status_bar(painter, status_text_, ox, y_offset, w, status_h);
+        status_dirty_ = false;
     }
 }
 
@@ -323,62 +337,24 @@ ErrorCode DroneDisplay::set_spectrum_data(
     }
 
     const size_t count = (spectrum_size < spectrum_buffer_.size()) ? spectrum_size : spectrum_buffer_.size();
+
+    // Check if data actually changed to avoid unnecessary repaints
+    bool data_changed = false;
+    for (size_t i = 0; i < count; ++i) {
+        if (spectrum_buffer_[i] != spectrum_data[i]) {
+            data_changed = true;
+            break;
+        }
+    }
+
     spectrum_data_size_ = count;
 
-    // Pre-filter: apply display margin filter during copy (not during paint)
-    // This moves noise floor computation out of the hot paint() path
-    // display_margin_ is separate from spectrum_shape_margin_ (detection margin)
-    // Default: 0 = show full spectrum (no filtering)
-    if (display_margin_ > 0) {
-        // Quickselect median — O(n) vs O(n²) insertion sort
-        // Use class member buffer to avoid stack allocation (was: uint8_t sorted[240])
-        size_t sort_count = 0;
-        for (size_t i = 0; i < count && sort_count < spectrum_sort_buffer_.size(); ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            spectrum_sort_buffer_[sort_count++] = spectrum_data[i];
-        }
-        if (sort_count > 0) {
-            const size_t k = sort_count / 2;
-            size_t qs_left = 0;
-            size_t qs_right = sort_count - 1;
-            while (qs_left < qs_right) {
-                const size_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
-                const uint8_t pivot = spectrum_sort_buffer_[pivot_idx];
-                spectrum_sort_buffer_[pivot_idx] = spectrum_sort_buffer_[qs_right];
-                spectrum_sort_buffer_[qs_right] = pivot;
-                size_t store = qs_left;
-                for (size_t i = qs_left; i < qs_right; ++i) {
-                    if (spectrum_sort_buffer_[i] < pivot) {
-                        const uint8_t t = spectrum_sort_buffer_[store];
-                        spectrum_sort_buffer_[store] = spectrum_sort_buffer_[i];
-                        spectrum_sort_buffer_[i] = t;
-                        ++store;
-                    }
-                }
-                {
-                    const uint8_t t = spectrum_sort_buffer_[store];
-                    spectrum_sort_buffer_[store] = spectrum_sort_buffer_[qs_right];
-                    spectrum_sort_buffer_[qs_right] = t;
-                }
-                if (store == k) break;
-                if (store < k) qs_left = store + 1;
-                else qs_right = store - 1;
-            }
-            const uint8_t noise_floor = spectrum_sort_buffer_[k];
-            const uint8_t display_threshold = noise_floor + display_margin_;
-            for (size_t i = 0; i < count; ++i) {
-                const uint8_t val = spectrum_data[i];
-                spectrum_buffer_[i] = (val >= display_threshold) ? val : 0;
-            }
-        } else {
-            for (size_t i = 0; i < count; ++i) {
-                spectrum_buffer_[i] = spectrum_data[i];
-            }
-        }
-    } else {
+    // Only update buffer and mark dirty if data changed
+    if (data_changed) {
         for (size_t i = 0; i < count; ++i) {
             spectrum_buffer_[i] = spectrum_data[i];
         }
+        spectrum_dirty_ = true;
     }
 
     return ErrorCode::SUCCESS;
@@ -393,13 +369,26 @@ ErrorCode DroneDisplay::set_histogram_data(
     if (error != ErrorCode::SUCCESS) {
         return error;
     }
-    
-    // Copy histogram data
-    histogram_data_size_ = histogram_size;
-    for (size_t i = 0; i < histogram_size && i < histogram_buffer_.size(); ++i) {
-        histogram_buffer_[i] = histogram_data[i];
+
+    // Check if data actually changed to avoid unnecessary repaints
+    bool data_changed = false;
+    const size_t copy_count = (histogram_size < histogram_buffer_.size()) ? histogram_size : histogram_buffer_.size();
+    for (size_t i = 0; i < copy_count; ++i) {
+        if (histogram_buffer_[i] != histogram_data[i]) {
+            data_changed = true;
+            break;
+        }
     }
-    
+
+    // Copy histogram data and mark dirty only if changed
+    histogram_data_size_ = histogram_size;
+    if (data_changed) {
+        for (size_t i = 0; i < copy_count; ++i) {
+            histogram_buffer_[i] = histogram_data[i];
+        }
+        histogram_dirty_ = true;
+    }
+
     return ErrorCode::SUCCESS;
 }
 
@@ -407,14 +396,32 @@ void DroneDisplay::set_status_text(const char* status_text) noexcept {
     if (status_text == nullptr) {
         return;
     }
-    
-    // Copy status text
+
+    // Check if text actually changed to avoid unnecessary repaints
     size_t i = 0;
+    bool text_changed = false;
+    while (i < MAX_TEXT_LENGTH - 1 && status_text[i] != '\0') {
+        if (status_text_[i] != status_text[i]) {
+            text_changed = true;
+        }
+        ++i;
+    }
+    // Check for null terminator difference
+    if (status_text_[i] != '\0') {
+        text_changed = true;
+    }
+
+    // Copy status text and mark dirty only if changed
+    i = 0;
     while (i < MAX_TEXT_LENGTH - 1 && status_text[i] != '\0') {
         status_text_[i] = status_text[i];
         ++i;
     }
     status_text_[i] = '\0';
+
+    if (text_changed) {
+        status_dirty_ = true;
+    }
 }
 
 const char* DroneDisplay::get_status_text() const noexcept {

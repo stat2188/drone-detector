@@ -673,7 +673,7 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }
 
-    // Update big frequency display
+    // Update big frequency display (only if frequency or color changed)
     {
         RssiValue drone_rssi = RSSI_NOISE_FLOOR_DBM;
         if (refresh_display_data_.drone_count > 0) {
@@ -695,7 +695,14 @@ void DroneScannerUI::refresh_ui() noexcept {
                 color = BigDisplayColor::GREY;
                 break;
         }
-        bigdisplay_update(color);
+
+        // Only update BigFrequency widget if frequency or color actually changed
+        // This prevents redundant widget repaints that cause flicker
+        if (current_frequency_ != last_displayed_freq_ || color != last_displayed_color_) {
+            bigdisplay_update(color);
+            last_displayed_freq_ = current_frequency_;
+            last_displayed_color_ = color;
+        }
     }
 
     if (current_scanner_state_ == ScannerState::LOCKING) {
@@ -713,7 +720,11 @@ void DroneScannerUI::refresh_ui() noexcept {
     // Drive SOS/multi-beep pattern at ~60Hz
     AudioAlertManager::update();
 
-    set_dirty();
+    // Only mark UI dirty if DroneDisplay has actual changes to render
+    // This eliminates redundant full-view repaints that cause screen flicker
+    if (drone_display_.has_pending_updates()) {
+        set_dirty();
+    }
 }
 
 void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
