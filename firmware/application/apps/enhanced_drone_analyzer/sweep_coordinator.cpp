@@ -53,10 +53,6 @@ void SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
     );
 }
 
-FreqHz SweepWindow_center(SweepWindow& win) noexcept {
-    return win.f_center;
-}
-
 SweepCoordinator::SweepCoordinator() noexcept
     : active_(false)
     , auto_mode_(false)
@@ -144,14 +140,12 @@ bool SweepCoordinator::process_spectrum(const ChannelSpectrum& spectrum, FreqHz 
 
     if (skip_next_fft_) {
         skip_next_fft_ = false;
-        retune_active_window();
         return true;
     }
 
     if (win.pixel_index < COMPOSITE_SIZE) {
         if (win.f_center < win.f_max) {
             win.f_center += win.step_hz;
-            retune_active_window();
             return true;
         }
         win.pixel_index = COMPOSITE_SIZE;
@@ -187,7 +181,6 @@ bool SweepCoordinator::process_spectrum(const ChannelSpectrum& spectrum, FreqHz 
 
     active_idx_ = next;
     last_tuned_freq_ = windows_[next].f_center;
-    retune_active_window();
     return true;
 }
 
@@ -249,9 +242,6 @@ size_t SweepCoordinator::get_histogram_data(uint16_t* out_hist, size_t max_size)
         }
     }
     return count;
-}
-
-void SweepCoordinator::retune_active_window() noexcept {
 }
 
 uint8_t SweepCoordinator::pair_first(uint8_t idx) const noexcept {

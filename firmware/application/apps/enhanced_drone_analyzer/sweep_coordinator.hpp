@@ -143,7 +143,6 @@ public:
 
 private:
     [[nodiscard]] uint8_t pair_first(uint8_t idx) const noexcept;
-    void retune_active_window() noexcept;
 
     std::array<SweepWindow, MAX_SWEEP_WINDOWS> windows_{};
     bool active_{false};
@@ -155,8 +154,6 @@ private:
     bool skip_next_fft_{true};
     AtomicFlag transition_guard_;
 };
-
-FreqHz SweepWindow_center(SweepWindow& win) noexcept;
 
 } // namespace drone_analyzer
 

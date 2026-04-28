@@ -106,7 +106,8 @@ void DroneScannerUI::unregister_handlers() noexcept {
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : View()
     , nav_(nav)
-    , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
+    , big_display_({{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0)
+    , drone_display_({{0, 68, DISPLAY_WIDTH, 206}})
     , sweep_transition_guard_()
     , button_debounce_guard_() {
     add_children({
@@ -472,7 +473,7 @@ void DroneScannerUI::on_show() {
 
     if (composite_active_ && scanner_ptr_ != nullptr) {
         ScanConfig cfg = scanner_ptr_->get_config();
-        sweep_coordinator_.start_sweep(cfg);
+        (void)sweep_coordinator_.start_sweep(cfg);
 
         update_sweep_pair_display();
 
@@ -883,8 +884,8 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
     const bool has0 = sweep_coordinator_.get_composite_data(w0, data0, COMPOSITE_SIZE);
     const bool has1 = sweep_coordinator_.get_composite_data(w1, data1, COMPOSITE_SIZE);
 
-    if (has0) sweep_coordinator_.get_window_range(w0, f_min0, f_max0);
-    if (has1) sweep_coordinator_.get_window_range(w1, f_min1, f_max1);
+    if (has0) (void)sweep_coordinator_.get_window_range(w0, f_min0, f_max0);
+    if (has1) (void)sweep_coordinator_.get_window_range(w1, f_min1, f_max1);
 
     if (has0 && has1) {
         drone_display_.set_sweep_range(f_min0, f_max0);

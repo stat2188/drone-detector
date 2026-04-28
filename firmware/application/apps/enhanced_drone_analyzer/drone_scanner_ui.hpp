@@ -70,6 +70,8 @@ private:
 
     ui::BigFrequency big_display_;
 
+    DroneDisplay drone_display_;
+
     HardwareController* hardware_ptr_{nullptr};
     DatabaseManager* database_ptr_{nullptr};
     DroneScanner* scanner_ptr_{nullptr};
@@ -136,6 +138,8 @@ private:
     size_t db_entry_count_{0};
     FreqHz last_tuned_freq_{0};
     bool skip_next_fft_{false};
+
+    ChannelSpectrum spectrum_buffer_{};
 
     void bigdisplay_update(BigDisplayColor color) noexcept;
     void refresh_ui() noexcept;
