@@ -720,9 +720,13 @@ void DroneScannerUI::refresh_ui() noexcept {
     // Drive SOS/multi-beep pattern at ~60Hz
     AudioAlertManager::update();
 
-    // Only mark UI dirty if DroneDisplay has actual changes to render
-    // This eliminates redundant full-view repaints that cause screen flicker
-    if (drone_display_.has_pending_updates()) {
+    // Detect scanner state change for repaint
+    const bool state_changed = (current_scanner_state_ != last_scanner_state_);
+    last_scanner_state_ = current_scanner_state_;
+
+    // Trigger repaint if DroneDisplay has updates OR scanner state changed
+    // This ensures state transition UI updates even without data changes
+    if (drone_display_.has_pending_updates() || state_changed) {
         set_dirty();
     }
 }
@@ -817,6 +821,7 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     if (!composite_active_) return;
     if (!sweep_transition_guard_.try_set()) return;
 
+    const bool was_auto = sweep_auto_mode_;
     composite_active_ = false;
     sweep_auto_mode_ = false;
     sweep_coordinator_.stop_sweep();

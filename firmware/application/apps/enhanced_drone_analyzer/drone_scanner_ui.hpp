@@ -115,6 +115,7 @@ private:
     FreqHz current_frequency_{0};
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
     ScannerState current_scanner_state_{ScannerState::IDLE};
+    ScannerState last_scanner_state_{ScannerState::IDLE};  // Track for state transition detection
 
     // Track last displayed big frequency state to avoid redundant widget updates
     FreqHz last_displayed_freq_{0};

@@ -78,7 +78,7 @@ bool SweepCoordinator::start_sweep(const ScanConfig& cfg) noexcept {
 
     active_ = true;
     last_tuned_freq_ = 0;
-    skip_next_fft_ = false;
+    skip_next_fft_ = true;  // Skip first FFT after sweep entry (may be stale)
 
     windows_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq, cfg.sweep_step_freq);
     windows_[0].enabled = true;
@@ -140,6 +140,17 @@ bool SweepCoordinator::process_spectrum(const ChannelSpectrum& spectrum, [[maybe
     if (active_idx_ >= MAX_SWEEP_WINDOWS) return false;
 
     auto& win = windows_[active_idx_];
+
+    // Skip first FFT after sweep entry - may be stale from previous mode
+    // Restart retune at same frequency to get a clean FFT
+    if (skip_next_fft_) {
+        skip_next_fft_ = false;
+        if (win.f_center < win.f_max) {
+            win.f_center += win.step_hz;
+        }
+        return true;
+    }
+
     win.process_bins(spectrum);
 
     if (win.pixel_index < COMPOSITE_SIZE) {
