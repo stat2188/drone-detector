@@ -86,13 +86,20 @@ const std::array<size_t, 4>& PatternMatcher::get_candidates(
             continue;
         }
 
+        if (!pattern.is_valid()) {
+            continue;
+        }
+
         const int8_t peak_diff = static_cast<int8_t>(pattern.features.peak_position) -
                                static_cast<int8_t>(peak_position);
         const int8_t width_diff = static_cast<int8_t>(pattern.features.width) -
                                static_cast<int8_t>(width);
 
-        if (peak_diff >= -1 && peak_diff <= 1 &&
-            width_diff >= -1 && width_diff <= 1) {
+        constexpr int8_t PEAK_TOL = 2;
+        constexpr int8_t WIDTH_TOL = 3;
+
+        if (peak_diff >= -PEAK_TOL && peak_diff <= PEAK_TOL &&
+            width_diff >= -WIDTH_TOL && width_diff <= WIDTH_TOL) {
             candidates_[count++] = i;
         }
     }
@@ -108,6 +115,24 @@ uint16_t PatternMatcher::compute_correlation(
         return 0;
     }
 
+    uint8_t norm_a[PATTERN_WAVEFORM_SIZE];
+    uint8_t norm_b[PATTERN_WAVEFORM_SIZE];
+
+    uint16_t sum_a = 0;
+    uint16_t sum_b = 0;
+    for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
+        sum_a += pattern_a[i];
+        sum_b += pattern_b[i];
+    }
+
+    const uint16_t mean_a = (sum_a > 0) ? (sum_a / PATTERN_WAVEFORM_SIZE) : 1;
+    const uint16_t mean_b = (sum_b > 0) ? (sum_b / PATTERN_WAVEFORM_SIZE) : 1;
+
+    for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
+        norm_a[i] = static_cast<uint8_t>((static_cast<uint16_t>(pattern_a[i]) * 255) / mean_a);
+        norm_b[i] = static_cast<uint8_t>((static_cast<uint16_t>(pattern_b[i]) * 255) / mean_b);
+    }
+
     int64_t sum_xy = 0;
     int64_t sum_x = 0;
     int64_t sum_y = 0;
@@ -115,8 +140,8 @@ uint16_t PatternMatcher::compute_correlation(
     int64_t sum_y2 = 0;
 
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
-        const int64_t x = static_cast<int64_t>(pattern_a[i]);
-        const int64_t y = static_cast<int64_t>(pattern_b[i]);
+        const int64_t x = static_cast<int64_t>(norm_a[i]);
+        const int64_t y = static_cast<int64_t>(norm_b[i]);
 
         sum_xy += x * y;
         sum_x += x;
@@ -247,16 +272,64 @@ PatternMatchResult PatternMatcher::match(
         return result;
     }
 
+    if (pattern_count_ == 0) {
+        return result;
+    }
+
     normalize_spectrum(spectrum, normalized_);
 
+    const uint8_t peak_idx = shape.peak_index;
+    const uint8_t sig_width = shape.signal_width;
+
+    if (peak_idx >= FFT_BIN_COUNT) {
+        return result;
+    }
+
+    if (sig_width == 0) {
+        return result;
+    }
+
     const uint8_t mapped_peak = static_cast<uint8_t>(
-        (shape.peak_index * PATTERN_WAVEFORM_SIZE) / FFT_BIN_COUNT
+        (peak_idx * PATTERN_WAVEFORM_SIZE) / FFT_BIN_COUNT
     );
     const uint8_t mapped_width = static_cast<uint8_t>(
-        (shape.signal_width * PATTERN_WAVEFORM_SIZE) / FFT_BIN_COUNT
+        (sig_width * PATTERN_WAVEFORM_SIZE) / FFT_BIN_COUNT
     );
 
     const auto& candidates = get_candidates(mapped_peak, mapped_width);
+
+    bool has_candidates = false;
+    for (size_t i = 0; i < 4; ++i) {
+        if (candidates[i] < pattern_count_) {
+            has_candidates = true;
+            break;
+        }
+    }
+
+    if (!has_candidates) {
+        const uint8_t alt_peak = (mapped_peak < 255) ? (mapped_peak + 1) : mapped_peak;
+        const auto& alt_candidates = get_candidates(alt_peak, mapped_width);
+        for (size_t i = 0; i < 4 && i < pattern_count_; ++i) {
+            const size_t pattern_idx = alt_candidates[i];
+            if (pattern_idx >= pattern_count_) break;
+
+            const SignalPattern& pattern = patterns_[pattern_idx];
+
+            const uint16_t corr = compute_correlation(
+                pattern.waveform,
+                normalized_
+            );
+
+            if (corr >= pattern.match_threshold) {
+                result.pattern_index = pattern_idx;
+                result.correlation_score = corr;
+                result.matched = true;
+                result.status = PatternMatchStatus::MODERATE_MATCH;
+                break;
+            }
+        }
+        return result;
+    }
 
     for (size_t i = 0; i < 4 && i < pattern_count_; ++i) {
         const size_t pattern_idx = candidates[i];
@@ -290,29 +363,6 @@ PatternMatchResult PatternMatcher::match(
                 } else {
                     result.status = PatternMatchStatus::WEAK_MATCH;
                 }
-            }
-        }
-    }
-
-    if (!result.matched) {
-        const auto& candidates_plus = get_candidates(mapped_peak + 1, mapped_width);
-        for (size_t i = 0; i < 4; ++i) {
-            if (candidates_plus[i] >= pattern_count_) break;
-
-            const size_t pattern_idx = candidates_plus[i];
-            const SignalPattern& pattern = patterns_[pattern_idx];
-
-            const uint16_t corr = compute_correlation(
-                pattern.waveform,
-                normalized_
-            );
-
-            if (corr >= pattern.match_threshold) {
-                result.pattern_index = pattern_idx;
-                result.correlation_score = corr;
-                result.matched = true;
-                result.status = PatternMatchStatus::MODERATE_MATCH;
-                break;
             }
         }
     }
