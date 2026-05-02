@@ -34,7 +34,7 @@ uint32_t AudioAlertManager::last_beep_tick_ = 0;
 AudioAlertManager::SOSState AudioAlertManager::sos_state_{};
 
 // ============================================================================
-// AudioAlertConfig Implementation
+// AudioAlertConfig Implementation.
 // ============================================================================
 
 AudioAlertConfig::AudioAlertConfig() noexcept
