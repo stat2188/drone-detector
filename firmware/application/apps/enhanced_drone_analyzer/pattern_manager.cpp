@@ -108,6 +108,8 @@ ErrorCode PatternManager::load_patterns() noexcept {
     FILINFO fno;
     const FRESULT res = f_opendir(&dir, reinterpret_cast<const TCHAR*>(PATTERN_DIR));
 
+    // If directory doesn't exist or can't be opened, that's fine - no patterns yet.
+    // Don't return error, just return empty pattern list.
     if (res != FR_OK) {
         loaded_.set();
         return ErrorCode::SUCCESS;
@@ -176,7 +178,8 @@ ErrorCode PatternManager::load_pattern_from_line(
 
     File file;
     const auto open_err = file.open(reinterpret_cast<const TCHAR*>(filepath));
-    if (open_err.is_valid()) {
+    // operator bool() returns true when Optional contains a value (error present)
+    if (open_err) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
 
@@ -336,7 +339,7 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
     constexpr size_t MAX_FILENAME_LEN = sizeof(PATTERN_DIR) + PATTERN_NAME_MAX_LEN + 8;
     char filename[MAX_FILENAME_LEN];
     const int written = snprintf(filename, sizeof(filename), "%s/%s.TXT", PATTERN_DIR, pattern.name);
-    
+
     if (written < 0 || static_cast<size_t>(written) >= sizeof(filename)) {
         return ErrorCode::INVALID_PARAMETER;
     }
@@ -529,8 +532,13 @@ ErrorCode PatternManager::reload_patterns() noexcept {
     const FRESULT res = f_opendir(&dir, reinterpret_cast<const TCHAR*>(PATTERN_DIR));
 
     if (res != FR_OK) {
-        loaded_.set();
-        return ErrorCode::SUCCESS;
+        // If directory doesn't exist yet (FR_NO_PATH/FR_NO_DIR), that's fine - no patterns yet.
+        // Only report error for actual file system problems.
+        if (res == FR_NO_PATH || res == FR_NO_DIR) {
+            loaded_.set();
+            return ErrorCode::SUCCESS;
+        }
+        return ErrorCode::FILE_SYSTEM_ERROR;
     }
 
     struct DirGuard {

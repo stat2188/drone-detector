@@ -136,9 +136,10 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         const ErrorCode err = save_current_pattern(default_name);
         if (err == ErrorCode::SUCCESS) {
             label_status_.set("Pattern saved!");
-            if (const auto reload_err = pattern_manager_ptr_->reload_patterns(); reload_err != ErrorCode::SUCCESS) {
-                label_status_.set("Pattern list refresh failed");
-            }
+            // Note: reload_patterns() is called to sync in-memory patterns with SD card.
+            // This handles the case where a pattern was saved (in memory), then app restarted.
+            // Don't show error if reload fails since save succeeded.
+            (void)pattern_manager_ptr_->reload_patterns();
             DroneScanner* scanner_ptr = get_scanner_ptr();
             if (scanner_ptr != nullptr) {
                 scanner_ptr->refresh_patterns();
