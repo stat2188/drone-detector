@@ -35,8 +35,13 @@ uint16_t SweepProcessor::process_frame(
     uint8_t num_exceptions
 ) noexcept {
     static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;
+    static constexpr FreqHz FFT_ALIGN_OFFSET = 2 * EACH_BIN_SIZE;
 
-    for (uint8_t bin = 0; bin < FFT_BIN_COUNT; ++bin) {
+    if (pixel_step_hz == 0) {
+        return pixel_index;
+    }
+
+    for (uint8_t bin = 0; bin < SWEEP_PIXELS_PER_SLICE; ++bin) {
         if (pixel_index >= COMPOSITE_SIZE) break;
 
         if (bin >= UPPER_PIXEL_END && bin >= SWEEP_FFT_MAP_CROSSOVER) continue;
@@ -50,7 +55,7 @@ uint16_t SweepProcessor::process_frame(
         bins_hz_acc += EACH_BIN_SIZE;
 
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-            const FreqHz pixel_freq = f_min + static_cast<FreqHz>(pixel_index) * pixel_step_hz;
+            const FreqHz pixel_freq = f_min + FFT_ALIGN_OFFSET + static_cast<FreqHz>(pixel_index) * pixel_step_hz;
             if (!is_exception_freq(pixel_freq, exception_radius_hz, exceptions, num_exceptions)) {
                 composite[pixel_index] = pixel_max;
             }

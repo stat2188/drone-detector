@@ -1101,12 +1101,11 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     pixel_step_hz = (f_max - f_min) / SWEEP_PIXELS_PER_SLICE;
     // Use config step if provided, otherwise fall back to FFT-based constant
     step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * EACH_BIN_SIZE);
-    // f_center_ini positioned so pixel 239 maps to f_max.
-    // The -2*BIN_SIZE offset prevents FFT overshoot beyond f_max which causes
-    // false positives at frequencies outside the sweep range.
-    // Looking Glass: f_center at f_min + SLICE_BW/2 - 2*BIN_SIZE → last pixel ≈ f_max.
+    // f_center_ini positioned so slice is centered on f_min + SLICE_BW/2.
+    // Note: FFT alignment offset (2*BIN_SIZE) is now handled in sweep_processor.cpp
+    // pixel_freq calculation to correctly map pixels to exception check frequencies.
     constexpr FreqHz BIN_SIZE = SWEEP_SLICE_BW / 256;
-    f_center_ini = f_min - (2 * BIN_SIZE) + (SWEEP_SLICE_BW / 2);
+    f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
     reset();
 }
 
