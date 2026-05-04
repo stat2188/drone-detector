@@ -30,7 +30,7 @@ public:
      * @param pixel_max      In/out: running max power for current pixel
      * @param bins_hz_acc    In/out: accumulated Hz since last pixel boundary
      * @param pixel_step_hz  Hz per pixel
-     * @param f_min          Sweep start frequency (for exception check)
+     * @param f_center       FFT slice center frequency (Hz, f_min + SLICE_BW/2)
      * @param exception_radius_hz Exclusion radius around exception frequencies
      * @param exceptions     Exception frequency array
      * @param num_exceptions Number of valid exception entries
@@ -43,7 +43,7 @@ public:
         uint8_t& pixel_max,
         FreqHz& bins_hz_acc,
         FreqHz pixel_step_hz,
-        FreqHz f_min,
+        FreqHz f_center,
         FreqHz exception_radius_hz,
         const FreqHz* exceptions,
         uint8_t num_exceptions

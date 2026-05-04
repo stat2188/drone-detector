@@ -3,6 +3,7 @@
 #include "sweep_processor.hpp"
 #include "message.hpp"
 #include "constants.hpp"
+#include "scanner.hpp"
 
 namespace drone_analyzer {
 
@@ -29,13 +30,12 @@ uint16_t SweepProcessor::process_frame(
     uint8_t& pixel_max,
     FreqHz& bins_hz_acc,
     FreqHz pixel_step_hz,
-    FreqHz f_min,
+    FreqHz f_center,
     FreqHz exception_radius_hz,
     const FreqHz* exceptions,
     uint8_t num_exceptions
 ) noexcept {
     static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;
-    static constexpr FreqHz FFT_ALIGN_OFFSET = 2 * EACH_BIN_SIZE;
 
     if (pixel_step_hz == 0) {
         return pixel_index;
@@ -55,7 +55,7 @@ uint16_t SweepProcessor::process_frame(
         bins_hz_acc += EACH_BIN_SIZE;
 
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
-            const FreqHz pixel_freq = f_min + FFT_ALIGN_OFFSET + static_cast<FreqHz>(pixel_index) * pixel_step_hz;
+            const FreqHz pixel_freq = DroneScanner::fft_bin_to_freq(f_center, fft_bin);
             if (!is_exception_freq(pixel_freq, exception_radius_hz, exceptions, num_exceptions)) {
                 composite[pixel_index] = pixel_max;
             }
