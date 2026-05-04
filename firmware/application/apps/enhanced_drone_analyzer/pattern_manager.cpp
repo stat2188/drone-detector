@@ -532,9 +532,9 @@ ErrorCode PatternManager::reload_patterns() noexcept {
     const FRESULT res = f_opendir(&dir, reinterpret_cast<const TCHAR*>(PATTERN_DIR));
 
     if (res != FR_OK) {
-        // If directory doesn't exist yet (FR_NO_PATH/FR_NO_DIR), that's fine - no patterns yet.
+        // If directory doesn't exist yet (FR_NO_PATH), that's fine - no patterns yet.
         // Only report error for actual file system problems.
-        if (res == FR_NO_PATH || res == FR_NO_DIR) {
+        if (res == FR_NO_PATH) {
             loaded_.set();
             return ErrorCode::SUCCESS;
         }
