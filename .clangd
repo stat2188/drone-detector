@@ -78,6 +78,7 @@ CompileFlags:
     - "-Wall"
     - "-Wextra"
     - "-Wuninitialized"
+    - "-Wno-volatile"
     - "-Wno-unused-parameter"
     - "-Wno-missing-field-initializers"
     # Clang-specific: suppress GCC-only warnings
