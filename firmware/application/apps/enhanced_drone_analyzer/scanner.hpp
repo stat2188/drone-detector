@@ -184,7 +184,6 @@ struct SweepZoneRuntime {
     void init(const SweepZoneConfig& cfg) noexcept {
         constexpr FreqHz SLICE_BW = 20000000;
         constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
-        constexpr FreqHz FFT_ALIGN_OFFSET = 2 * BIN_SIZE;
 
         const FreqHz range = cfg.end_freq - cfg.start_freq;
         if (range == 0 || !cfg.enabled) {
