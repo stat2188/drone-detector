@@ -454,7 +454,7 @@ bool PatternManagerView::on_touch(const ui::TouchEvent event) noexcept {
         if (x >= SPECTRUM_X && x < SPECTRUM_X + SPECTRUM_WIDTH &&
             y >= SPECTRUM_Y && y < SPECTRUM_Y + SPECTRUM_HEIGHT) {
 
-            int16_t bin = static_cast<int16_t>(x);
+            int16_t bin = static_cast<int16_t>((x - SPECTRUM_X) * FFT_BIN_COUNT / SPECTRUM_WIDTH);
             if (bin >= 0 && bin < static_cast<int16_t>(FFT_BIN_COUNT)) {
                 on_bin_selected(bin);
                 return true;
@@ -858,6 +858,10 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     new_pattern.flags = SignalPattern::Flags::ENABLED;
     new_pattern.created_time = chTimeNow();
     new_pattern.match_count = 0;
+    new_pattern.center_freq = capture_frequency_;
+    new_pattern.range_width = (current_range_end_ > current_range_start_)
+        ? (current_range_end_ - current_range_start_)
+        : SWEEP_SLICE_BW;
 
     return pattern_manager_ptr_->save_pattern(new_pattern);
 }

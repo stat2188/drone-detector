@@ -9,7 +9,9 @@ SignalPattern::SignalPattern() noexcept
     , match_threshold(DEFAULT_PATTERN_CORRELATION_THRESHOLD)
     , flags(SignalPattern::Flags::ENABLED)
     , created_time(0)
-    , match_count(0) {
+    , match_count(0)
+    , center_freq(0)
+    , range_width(0) {
 }
 
 } // namespace drone_analyzer

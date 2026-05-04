@@ -35,10 +35,12 @@ struct SignalPattern {
     char name[PATTERN_NAME_MAX_LEN];
     uint8_t waveform[PATTERN_WAVEFORM_SIZE];
     PatternFeatures features;
-    uint8_t match_threshold;
+    uint16_t match_threshold;
     uint8_t flags;
     uint32_t created_time;
     uint32_t match_count;
+    FreqHz center_freq;
+    FreqHz range_width;
 
     enum Flags : uint8_t {
         NONE = 0x00,

@@ -33,6 +33,30 @@ uint8_t PatternManager::parse_uint8(const char* str, size_t len) noexcept {
     return result;
 }
 
+uint16_t PatternManager::parse_uint16(const char* str, size_t len) noexcept {
+    if (str == nullptr || len == 0) {
+        return 0;
+    }
+
+    uint16_t result = 0;
+    for (size_t i = 0; i < len && str[i] >= '0' && str[i] <= '9'; ++i) {
+        result = result * 10 + static_cast<uint16_t>(str[i] - '0');
+    }
+    return result;
+}
+
+uint32_t PatternManager::parse_uint32(const char* str, size_t len) noexcept {
+    if (str == nullptr || len == 0) {
+        return 0;
+    }
+
+    uint32_t result = 0;
+    for (size_t i = 0; i < len && str[i] >= '0' && str[i] <= '9'; ++i) {
+        result = result * 10 + static_cast<uint32_t>(str[i] - '0');
+    }
+    return result;
+}
+
 bool PatternManager::str_equals_ignore_case(
     const char* a,
     const char* b
@@ -261,9 +285,13 @@ ErrorCode PatternManager::parse_pattern_csv(
         } else if (field_index == 24) {
             pattern.features.symmetry = parse_uint8(&csv_line[field_start], field_len);
         } else if (field_index == 25) {
-            pattern.match_threshold = parse_uint8(&csv_line[field_start], field_len);
+            pattern.match_threshold = parse_uint16(&csv_line[field_start], field_len);
         } else if (field_index == 26) {
             pattern.flags = parse_uint8(&csv_line[field_start], field_len);
+        } else if (field_index == 27) {
+            pattern.center_freq = static_cast<FreqHz>(parse_uint32(&csv_line[field_start], field_len));
+        } else if (field_index == 28) {
+            pattern.range_width = static_cast<FreqHz>(parse_uint32(&csv_line[field_start], field_len));
         }
 
         ++field_index;
@@ -325,9 +353,26 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
         }
     };
 
+    constexpr size_t INT32_STR_BUF_SIZE = 12;
+    constexpr size_t UINT64_STR_BUF_SIZE = 24;
+
     auto write_int = [&](int32_t val) noexcept -> void {
-        char tmp[12];
+        char tmp[INT32_STR_BUF_SIZE];
         const int len = snprintf(tmp, sizeof(tmp), "%ld", static_cast<int32_t>(val));
+        if (len <= 0 || len >= static_cast<int>(sizeof(tmp))) {
+            return;
+        }
+        for (int i = 0; i < len; ++i) {
+            write_char(tmp[i]);
+        }
+    };
+
+    auto write_uint64 = [&](uint64_t val) noexcept -> void {
+        char tmp[UINT64_STR_BUF_SIZE];
+        const int len = snprintf(tmp, sizeof(tmp), "%llu", static_cast<unsigned long long>(val));
+        if (len <= 0 || len >= static_cast<int>(sizeof(tmp))) {
+            return;
+        }
         for (int i = 0; i < len; ++i) {
             write_char(tmp[i]);
         }
@@ -362,6 +407,10 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
     write_int(static_cast<int32_t>(pattern.match_threshold));
     write_char(',');
     write_int(static_cast<int32_t>(pattern.flags));
+    write_char(',');
+    write_uint64(pattern.center_freq);
+    write_char(',');
+    write_uint64(pattern.range_width);
     write_char('\n');
 
     const File::Result<File::Size> write_result = file.write(write_buf, static_cast<File::Size>(write_pos));
