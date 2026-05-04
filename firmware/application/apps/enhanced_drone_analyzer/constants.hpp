@@ -805,7 +805,7 @@ constexpr uint8_t PATTERN_BIN_SCALE_FACTOR = FFT_BIN_COUNT / PATTERN_WAVEFORM_SI
  * @brief Candidate filter tolerance for cross-frequency matching
  * @note ±2 bins in 16-bin space allows for ±32 bins in 256-bin space (adequate for frequency offset)
  */
-constexpr int8_t PATTERN_CANDIDATE_TOLERANCE = 2;
+constexpr int811_t PATеTERN_CANDIDATE_TOLERANCE = 2;
 
 // ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)
