@@ -319,8 +319,7 @@ void PatternManagerView::init_sweep_range(uint8_t range_idx) noexcept {
     if (step > 0) {
         sweep_step_ = step;
     } else {
-        constexpr FreqHz BIN_SIZE = SWEEP_SLICE_BW / FFT_BIN_COUNT;
-        sweep_step_ = static_cast<FreqHz>(SWEEP_BINS_PER_STEP) * BIN_SIZE;
+        sweep_step_ = static_cast<FreqHz>(SWEEP_BINS_PER_STEP) * SWEEP_BIN_SIZE;
     }
 
     current_sweep_freq_ = start;
@@ -390,13 +389,11 @@ FreqHz PatternManagerView::bin_to_frequency(int16_t bin) const noexcept {
     if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
         return 0;
     }
-    constexpr FreqHz SLICE_BW = SWEEP_SLICE_BW;
-    constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
     FreqHz offset = 0;
     if (bin >= static_cast<int16_t>(FFT_DC_SPIKE_END)) {
-        offset = static_cast<FreqHz>(bin - 256) * BIN_SIZE;
+        offset = static_cast<FreqHz>(bin - 256) * SWEEP_BIN_SIZE;
     } else if (bin < static_cast<int16_t>(FFT_DC_SPIKE_START)) {
-        offset = static_cast<FreqHz>(bin - 128) * BIN_SIZE;
+        offset = static_cast<FreqHz>(bin - 128) * SWEEP_BIN_SIZE;
     }
     return live_center_frequency_ + offset;
 }

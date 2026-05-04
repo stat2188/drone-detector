@@ -35,8 +35,6 @@ uint16_t SweepProcessor::process_frame(
     const FreqHz* exceptions,
     uint8_t num_exceptions
 ) noexcept {
-    static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;
-
     if (pixel_step_hz == 0) {
         return pixel_index;
     }
@@ -52,7 +50,7 @@ uint16_t SweepProcessor::process_frame(
 
         const uint8_t power = spectrum.db[fft_bin];
         if (power > pixel_max) pixel_max = power;
-        bins_hz_acc += EACH_BIN_SIZE;
+        bins_hz_acc += SWEEP_BIN_SIZE;
 
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
             const FreqHz pixel_freq = DroneScanner::fft_bin_to_freq(f_center, fft_bin);

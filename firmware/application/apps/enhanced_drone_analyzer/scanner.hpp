@@ -182,17 +182,14 @@ struct SweepZoneRuntime {
     uint8_t pixel_max{0};
 
     void init(const SweepZoneConfig& cfg) noexcept {
-        constexpr FreqHz SLICE_BW = 20000000;
-        constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;
-
         const FreqHz range = cfg.end_freq - cfg.start_freq;
         if (range == 0 || !cfg.enabled) {
-            pixel_step_hz = SLICE_BW / SWEEP_PIXELS_PER_SLICE;
+            pixel_step_hz = SWEEP_SLICE_BW / SWEEP_PIXELS_PER_SLICE;
         } else {
             pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;
         }
-        step_hz = SWEEP_BINS_PER_STEP * BIN_SIZE;
-        center_ini = cfg.start_freq + (SLICE_BW / 2);
+        step_hz = SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE;
+        center_ini = cfg.start_freq + (SWEEP_SLICE_BW / 2);
         current_center = center_ini;
         pixel_index = 0;
         pixel_max = 0;
@@ -756,6 +753,15 @@ public:
     [[nodiscard]] ScanConfig get_config() const noexcept;
     
     /**
+     * @brief Get sweep step frequency in Hz
+     * @return Sweep step frequency (bins per step × bin size)
+     * @note Uses unified constant SWEEP_BIN_SIZE from constants.hpp
+     */
+    [[nodiscard]] FreqHz get_sweep_step() const noexcept {
+        return SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE;
+    }
+    
+    /**
      * @brief Set scan configuration
      * @param config Configuration to apply
      * @return ErrorCode::SUCCESS if set, error code otherwise
@@ -921,22 +927,20 @@ public:
      * @param bin FFT bin index (0-255, after Looking Glass reordering)
      * @return Actual RF frequency for this bin (Hz)
      * @note Looking Glass reordering: bin 0 = Nyquist, bin 128 = DC.
-     *       Bins 134-253 (lower sideband): freq = f_center + (bin-256)*BIN_SIZE
-     *       Bins 2-119 (upper sideband):   freq = f_center + (bin-126)*BIN_SIZE
+     *       Bins 134-253 (lower sideband): freq = f_center + (bin-256)*SWEEP_BIN_SIZE
+     *       Bins 2-119 (upper sideband):   freq = f_center + (bin-126)*SWEEP_BIN_SIZE
      *       Bins 120-133 and 0-1, 254-255 are DC spike / edge (should be skipped)
      */
     static FreqHz fft_bin_to_freq(FreqHz f_center, size_t bin) noexcept {
-        constexpr FreqHz SLICE_BW = 20000000;
-        constexpr FreqHz BIN_SIZE = SLICE_BW / FFT_BIN_COUNT;  // 78125
         // Looking Glass bin reordering: bin 0 = Nyquist, bin 128 = DC.
-        // Lower sideband (bin >= 136): freq = f_center - 120*BIN_SIZE + bin*BIN_SIZE
+        // Lower sideband (bin >= 136): freq = f_center - 120*SWEEP_BIN_SIZE + bin*SWEEP_BIN_SIZE
         //   Avoids negative cast: (bin-256) would overflow uint64_t.
-        // Upper sideband (bin < 120):  freq = f_center - 126*BIN_SIZE + bin*BIN_SIZE
+        // Upper sideband (bin < 120):  freq = f_center - 126*SWEEP_BIN_SIZE + bin*SWEEP_BIN_SIZE
         //   Avoids negative cast: (bin-126) would overflow uint64_t.
         if (bin >= FFT_DC_SPIKE_END) {
-            return f_center - 120 * BIN_SIZE + static_cast<FreqHz>(bin) * BIN_SIZE;
+            return f_center - 120 * SWEEP_BIN_SIZE + static_cast<FreqHz>(bin) * SWEEP_BIN_SIZE;
         }
-        return f_center - 126 * BIN_SIZE + static_cast<FreqHz>(bin) * BIN_SIZE;
+        return f_center - 126 * SWEEP_BIN_SIZE + static_cast<FreqHz>(bin) * SWEEP_BIN_SIZE;
     }
 
     /**

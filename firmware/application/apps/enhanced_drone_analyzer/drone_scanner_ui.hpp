@@ -151,7 +151,7 @@ private:
     // Band sweep — Looking Glass pattern: stop → process → retune → start
     // COMPOSITE_SIZE, SWEEP_SLICE_BW, MAX_SWEEP_WINDOWS defined in constants.hpp
     static constexpr uint8_t DB_SCANS_PER_SWEEP = 50;
-    static constexpr FreqHz EACH_BIN_SIZE = SWEEP_SLICE_BW / 256;
+    // EACH_BIN_SIZE removed — use SWEEP_BIN_SIZE from constants.hpp instead
 
     /**
      * @brief Encapsulates all state for a single sweep window (Meyers: replace duplication with data)

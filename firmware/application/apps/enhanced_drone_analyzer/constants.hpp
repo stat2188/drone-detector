@@ -591,6 +591,18 @@ constexpr int32_t FFT_DBM_OFFSET = 120;
  */
 constexpr size_t FFT_USABLE_BINS = FFT_BIN_COUNT - (FFT_DC_SPIKE_END - FFT_DC_SPIKE_START) - (2 * FFT_EDGE_SKIP);
 
+/**
+ * @brief Usable bins for sweep mode (narrow edge skip)
+ * @note Total bins minus DC spike (16) minus edge skip narrow (2×6) = 228
+ */
+constexpr size_t FFT_USABLE_BINS_NARROW = FFT_BIN_COUNT - (FFT_DC_SPIKE_END - FFT_DC_SPIKE_START) - (2 * FFT_EDGE_SKIP_NARROW);
+
+/**
+ * @brief Unified bin size in Hz (78125 Hz per bin)
+ * @note Used by both Logic and UI layers to avoid duplication
+ */
+constexpr FreqHz SWEEP_BIN_SIZE = SWEEP_SLICE_BW / FFT_BIN_COUNT;
+
 // ============================================================================
 // Sweep Bin Mapping Constants (Looking Glass pattern)
 // ============================================================================
@@ -627,9 +639,9 @@ constexpr uint8_t SWEEP_FFT_MAP_CROSSOVER = 120;
 
 /**
  * @brief FFT bins per step for sweep advancement
- * @note 244 bins × 78125 Hz/bin ≈ 19.06 MHz step
+ * @note 228 bins × 78125 Hz/bin = 17.8125 MHz step (matches usable narrow bins)
  */
-constexpr uint16_t SWEEP_BINS_PER_STEP = 244;
+constexpr uint16_t SWEEP_BINS_PER_STEP = FFT_USABLE_BINS_NARROW;
 
 /**
  * @brief M0 baseband phase decimation trigger for wideband spectrum.
