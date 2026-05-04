@@ -35,8 +35,8 @@ void PatternMatcher::normalize_spectrum(
         return;
     }
 
-    constexpr size_t valid_start = FFT_EDGE_SKIP_NARROW;
-    constexpr size_t valid_end = FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW;
+    constexpr size_t valid_start = PATTERN_NORM_EDGE_SKIP;
+    constexpr size_t valid_end = FFT_BIN_COUNT - PATTERN_NORM_EDGE_SKIP;
     constexpr size_t valid_bins = valid_end - valid_start;
     constexpr size_t bins_per_pattern = valid_bins / PATTERN_WAVEFORM_SIZE;
 
@@ -72,7 +72,7 @@ const std::array<size_t, 4>& PatternMatcher::get_candidates(
     uint8_t peak_position,
     uint8_t width
 ) noexcept {
-    candidates_.fill(0);
+    candidates_.fill(INVALID_PATTERN_INDEX);
     size_t count = 0;
 
     if (patterns_ == nullptr || pattern_count_ == 0) {
@@ -91,8 +91,8 @@ const std::array<size_t, 4>& PatternMatcher::get_candidates(
         const int8_t width_diff = static_cast<int8_t>(pattern.features.width) -
                                static_cast<int8_t>(width);
 
-        if (peak_diff >= -1 && peak_diff <= 1 &&
-            width_diff >= -1 && width_diff <= 1) {
+        if (peak_diff >= -PATTERN_CANDIDATE_TOLERANCE && peak_diff <= PATTERN_CANDIDATE_TOLERANCE &&
+            width_diff >= -PATTERN_CANDIDATE_TOLERANCE && width_diff <= PATTERN_CANDIDATE_TOLERANCE) {
             candidates_[count++] = i;
         }
     }
@@ -258,9 +258,9 @@ PatternMatchResult PatternMatcher::match(
 
     const auto& candidates = get_candidates(mapped_peak, mapped_width);
 
-    for (size_t i = 0; i < 4 && i < pattern_count_; ++i) {
+    for (size_t i = 0; i < 4; ++i) {
         const size_t pattern_idx = candidates[i];
-        if (pattern_idx >= pattern_count_) break;
+        if (pattern_idx >= pattern_count_ || pattern_idx == INVALID_PATTERN_INDEX) continue;
 
         const SignalPattern& pattern = patterns_[pattern_idx];
 
@@ -297,7 +297,7 @@ PatternMatchResult PatternMatcher::match(
     if (!result.matched) {
         const auto& candidates_plus = get_candidates(mapped_peak + 1, mapped_width);
         for (size_t i = 0; i < 4; ++i) {
-            if (candidates_plus[i] >= pattern_count_) break;
+            if (candidates_plus[i] >= pattern_count_ || candidates_plus[i] == INVALID_PATTERN_INDEX) continue;
 
             const size_t pattern_idx = candidates_plus[i];
             const SignalPattern& pattern = patterns_[pattern_idx];
@@ -315,6 +315,56 @@ PatternMatchResult PatternMatcher::match(
                 break;
             }
         }
+    }
+
+    return result;
+}
+
+PatternMatchResult PatternMatcher::match(
+    const uint8_t* spectrum,
+    const SpectrumShape::AnalysisResult& shape,
+    bool skip_candidate_filter
+) noexcept {
+    PatternMatchResult result = PatternMatchResult::no_match();
+
+    if (spectrum == nullptr || patterns_ == nullptr || pattern_count_ == 0) {
+        return result;
+    }
+
+    normalize_spectrum(spectrum, normalized_);
+
+    if (skip_candidate_filter) {
+        for (size_t i = 0; i < pattern_count_; ++i) {
+            const SignalPattern& pattern = patterns_[i];
+            if (!pattern.is_enabled()) {
+                continue;
+            }
+
+            const uint16_t corr = compute_correlation(
+                pattern.waveform,
+                normalized_
+            );
+
+            if (corr >= pattern.match_threshold) {
+                if (corr > result.correlation_score) {
+                    result.pattern_index = i;
+                    result.correlation_score = corr;
+                    result.matched = true;
+
+                    if (corr >= 800) {
+                        result.status = PatternMatchStatus::EXCELLENT_MATCH;
+                    } else if (corr >= 600) {
+                        result.status = PatternMatchStatus::STRONG_MATCH;
+                    } else if (corr >= 400) {
+                        result.status = PatternMatchStatus::MODERATE_MATCH;
+                    } else {
+                        result.status = PatternMatchStatus::WEAK_MATCH;
+                    }
+                }
+            }
+        }
+    } else {
+        return match(spectrum, shape);
     }
 
     return result;

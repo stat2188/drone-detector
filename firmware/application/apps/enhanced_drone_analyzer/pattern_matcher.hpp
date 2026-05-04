@@ -22,6 +22,7 @@ public:
     static constexpr uint16_t CORRELATION_STRONG = 600;
     static constexpr uint16_t CORRELATION_MODERATE = 400;
     static constexpr uint16_t CORRELATION_WEAK = 200;
+    static constexpr size_t INVALID_PATTERN_INDEX = MAX_PATTERNS;
 
     PatternMatcher() noexcept
         : patterns_copy_{}
@@ -41,6 +42,12 @@ public:
     [[nodiscard]] PatternMatchResult match(
         const uint8_t* spectrum,
         const SpectrumShape::AnalysisResult& shape
+    ) noexcept;
+
+    [[nodiscard]] PatternMatchResult match(
+        const uint8_t* spectrum,
+        const SpectrumShape::AnalysisResult& shape,
+        bool skip_candidate_filter
     ) noexcept;
 
     void clear_patterns() noexcept;

@@ -81,6 +81,11 @@ private:
         size_t len
     ) noexcept;
 
+    [[nodiscard]] static uint64_t parse_uint64(
+        const char* str,
+        size_t len
+    ) noexcept;
+
     [[nodiscard]] static bool str_equals_ignore_case(
         const char* a,
         const char* b

@@ -57,6 +57,18 @@ uint32_t PatternManager::parse_uint32(const char* str, size_t len) noexcept {
     return result;
 }
 
+uint64_t PatternManager::parse_uint64(const char* str, size_t len) noexcept {
+    if (str == nullptr || len == 0) {
+        return 0;
+    }
+
+    uint64_t result = 0;
+    for (size_t i = 0; i < len && str[i] >= '0' && str[i] <= '9'; ++i) {
+        result = result * 10 + static_cast<uint64_t>(str[i] - '0');
+    }
+    return result;
+}
+
 bool PatternManager::str_equals_ignore_case(
     const char* a,
     const char* b
@@ -240,7 +252,7 @@ ErrorCode PatternManager::parse_pattern_csv(
     size_t pos = 0;
     uint8_t field_index = 0;
 
-    while (pos < csv_length && field_index < 27) {
+    while (pos < csv_length && field_index < 29) {
         while (pos < csv_length && (csv_line[pos] == ',' || csv_line[pos] == ' ' || csv_line[pos] == '\t')) {
             ++pos;
         }
@@ -289,9 +301,9 @@ ErrorCode PatternManager::parse_pattern_csv(
         } else if (field_index == 26) {
             pattern.flags = parse_uint8(&csv_line[field_start], field_len);
         } else if (field_index == 27) {
-            pattern.center_freq = static_cast<FreqHz>(parse_uint32(&csv_line[field_start], field_len));
+            pattern.center_freq = parse_uint64(&csv_line[field_start], field_len);
         } else if (field_index == 28) {
-            pattern.range_width = static_cast<FreqHz>(parse_uint32(&csv_line[field_start], field_len));
+            pattern.range_width = parse_uint64(&csv_line[field_start], field_len);
         }
 
         ++field_index;

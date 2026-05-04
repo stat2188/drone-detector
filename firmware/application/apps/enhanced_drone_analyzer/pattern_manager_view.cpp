@@ -139,6 +139,10 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
             if (const auto reload_err = pattern_manager_ptr_->reload_patterns(); reload_err != ErrorCode::SUCCESS) {
                 label_status_.set("Pattern list refresh failed");
             }
+            DroneScanner* scanner_ptr = get_scanner_ptr();
+            if (scanner_ptr != nullptr) {
+                scanner_ptr->refresh_patterns();
+            }
             refresh_list();
             std::memset(capture_spectrum_, 0, sizeof(capture_spectrum_));
             selected_bin_ = -1;
@@ -831,7 +835,7 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
         }
     }
 
-    new_pattern.features.peak_position = static_cast<uint8_t>(peak_idx);
+    new_pattern.features.peak_position = static_cast<uint8_t>(peak_idx / PATTERN_BIN_SCALE_FACTOR);
     new_pattern.features.peak_value = peak_val;
 
     uint8_t noise_floor = 255;
@@ -852,7 +856,7 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     while (right < FFT_BIN_COUNT - 1 && capture_spectrum_[right] > noise_floor + new_pattern.features.margin / 2) {
         ++right;
     }
-    new_pattern.features.width = static_cast<uint8_t>(right - left);
+    new_pattern.features.width = static_cast<uint8_t>((right - left) / PATTERN_BIN_SCALE_FACTOR);
 
     new_pattern.match_threshold = DEFAULT_PATTERN_CORRELATION_THRESHOLD;
     new_pattern.flags = SignalPattern::Flags::ENABLED;
@@ -932,6 +936,10 @@ void PatternManagerView::delete_selected_pattern() noexcept {
 
     const ErrorCode err = pattern_manager_ptr_->delete_pattern(selected_index_);
     if (err == ErrorCode::SUCCESS) {
+        DroneScanner* scanner_ptr = get_scanner_ptr();
+        if (scanner_ptr != nullptr) {
+            scanner_ptr->refresh_patterns();
+        }
         refresh_list();
     }
 }
@@ -942,6 +950,10 @@ void PatternManagerView::clear_all_patterns() noexcept {
     }
 
     pattern_manager_ptr_->clear_all_patterns();
+    DroneScanner* scanner_ptr = get_scanner_ptr();
+    if (scanner_ptr != nullptr) {
+        scanner_ptr->refresh_patterns();
+    }
     refresh_list();
 }
 

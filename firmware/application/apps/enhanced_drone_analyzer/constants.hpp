@@ -786,6 +786,27 @@ constexpr uint16_t PATTERN_CORRELATION_STRONG = 600;    // 60% match
 constexpr uint16_t PATTERN_CORRELATION_MODERATE = 400;  // 40% match
 constexpr uint16_t PATTERN_CORRELATION_WEAK = 200;      // 20% match
 
+/**
+ * @brief Fixed edge skip for pattern normalization
+ * @note Used for ALL pattern operations (saving, matching) to ensure consistency
+ * @note FFT_EDGE_SKIP_NARROW=6 is used for sweep mode, FFT_EDGE_SKIP=10 for normal mode
+ * @note Using 6 ensures compatibility with both modes and keeps maximum spectrum coverage
+ */
+constexpr size_t PATTERN_NORM_EDGE_SKIP = 6;
+
+/**
+ * @brief Scaling factor to convert 256-bin FFT indices to 16-bin pattern space
+ * @note Used to normalize peak_position and width when saving patterns
+ * @note 256 / 16 = 16, so divide 256-bin index by 16 to get 16-bin index
+ */
+constexpr uint8_t PATTERN_BIN_SCALE_FACTOR = FFT_BIN_COUNT / PATTERN_WAVEFORM_SIZE;  // 256/16 = 16
+
+/**
+ * @brief Candidate filter tolerance for cross-frequency matching
+ * @note ±2 bins in 16-bin space allows for ±32 bins in 256-bin space (adequate for frequency offset)
+ */
+constexpr int8_t PATTERN_CANDIDATE_TOLERANCE = 2;
+
 // ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)
 // ============================================================================

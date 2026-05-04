@@ -1531,6 +1531,10 @@ PatternMatchResult DroneScanner::try_match_pattern_internal(
         return result;
     }
 
+    if (config_.patterns_bypass_filters) {
+        return pattern_matcher_.match(spectrum, shape_result, true);
+    }
+
     return pattern_matcher_.match(spectrum, shape_result);
 }
 
