@@ -343,7 +343,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "Skolko dB piki dolzhny\n"
             "byt vyshe fona.\n"
             "Bolshe = menshe lozhnyh.\n"
-            "15-25 dlya FPV.");
+            "20 = FPV po umolchaniyu.");
     };
 
     button_info_width_.on_select = [this](ui::Button&) {
@@ -351,8 +351,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "Maks. shirina signala.\n"
             "Otbrosit shirokie ploskie\n"
             "signaly (pomehi).\n"
-            "Drony = uzkij pik.\n"
-            "30-50 optimalno.");
+            "80 = dlya FPV (~6MHz),\n"
+            "40 = dlya uzkapolnyh.");
     };
 
     button_info_sharp_.on_select = [this](ui::Button&) {
@@ -369,8 +369,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             "Otnoshenie vysoty k shirine.\n"
             "Visokij + uzkoj = dron.\n"
             "Nizkij = pomeha.\n"
-            "15-30 dlya FPV.\n"
-            "0 = otklychen.");
+            "0 = FPV (otklychen),\n"
+            "80 = dlya uzkipolnyh.");
     };
 
     // CFAR callbacks

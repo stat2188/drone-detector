@@ -683,8 +683,9 @@ constexpr uint8_t DEFAULT_SPECTRUM_INTEGRATION = 3;
  * @brief Default peak margin above noise floor (5-200)
  * @note 15 ≈ 5 dB above noise (sensitive)
  * @note 55 ≈ 20 dB above noise (strict)
+ * @note 20 ≈ 7 dB (FPV-optimized default for weak signal detection)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 30;
+constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 20;
 
 /**
  * @brief Default minimum signal width in bins (1-20)
@@ -696,9 +697,10 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 3;
  * @brief Default maximum signal width in bins (1-100)
  * @note Signals wider than this are rejected as flat-topped U/I noise
  * @note 100 = no max width filtering (accept all widths)
- * @note 80 = accommodates FPV dual-peak signals (~6 MHz = ~77 bins)
+ * @note 40 = default for narrowband drones
+ * @note 80 = FPV-optimized: accommodates FPV dual-peak signals (~6 MHz = ~77 bins)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 40;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 80;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
@@ -715,10 +717,11 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 130;
  * @note Inverted-V (drone video link): ratio > 50 (tall, narrow)
  * @note Flat U/I noise: ratio < 20 (wide, short)
  * @note Needle spikes: ratio > 100 (very tall, very narrow)
- * @note 0 = no ratio filtering (disabled)
+ * @note 0 = no ratio filtering (disabled) - RECOMMENDED for FPV
  * @note 80 allows signals up to 31 bins wide with peak_margin=255
+ * @note FPV: disabled due to wide signal width (~77 bins) having low ratio
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 80;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
 
 /**
  * @brief Default valley depth threshold (0-200)
@@ -726,9 +729,10 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 80;
  * @note Inverted-V: deep valleys (flanking bins have margin < 5)
  * @note Flat U/I: shallow valleys (flanking bins still elevated)
  * @note 0 = no valley depth filtering (disabled)
- * @note 80 = accepts FPV dual-peak (powerful peaks = shallow valley between them)
+ * @note 60 = default for narrowband drones
+ * @note 80 = FPV-optimized: accepts FPV dual-peak (powerful peaks = shallow valley)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 60;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
 
 /**
  * @brief Default peak flatness threshold (0-100, percentage)
