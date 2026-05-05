@@ -598,6 +598,12 @@ constexpr size_t FFT_USABLE_BINS = FFT_BIN_COUNT - (FFT_DC_SPIKE_END - FFT_DC_SP
 constexpr size_t FFT_USABLE_BINS_NARROW = FFT_BIN_COUNT - (FFT_DC_SPIKE_END - FFT_DC_SPIKE_START) - (2 * FFT_EDGE_SKIP_NARROW);
 
 /**
+ * @brief Sweep slice bandwidth in Hz (20 MHz per slice)
+ * @note MUST be defined BEFORE SWEEP_BIN_SIZE - C++ requires forward declaration
+ */
+constexpr FreqHz SWEEP_SLICE_BW = 20000000;
+
+/**
  * @brief Unified bin size in Hz (78125 Hz per bin)
  * @note Used by both Logic and UI layers to avoid duplication
  */
@@ -616,11 +622,6 @@ constexpr FreqHz SWEEP_BIN_SIZE = SWEEP_SLICE_BW / FFT_BIN_COUNT;
  * @brief Screen pixels per sweep slice (= DISPLAY_WIDTH)
  */
 constexpr uint8_t SWEEP_PIXELS_PER_SLICE = 240;
-
-/**
- * @brief Sweep slice bandwidth in Hz (20 MHz per slice)
- */
-constexpr FreqHz SWEEP_SLICE_BW = 20000000;
 
 /**
  * @brief Composite buffer size (pixels)
