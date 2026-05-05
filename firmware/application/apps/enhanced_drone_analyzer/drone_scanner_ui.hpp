@@ -111,6 +111,8 @@ private:
     ui::Button button_ptr_{{UI_POS_X(27), 284, UI_POS_WIDTH(3), 28}, "PTR"};
 
     FreqHz current_frequency_{0};
+    void set_current_frequency_safe(FreqHz freq) noexcept;
+    [[nodiscard]] FreqHz get_current_frequency_safe() const noexcept;
     int32_t current_rssi_{RSSI_NOISE_FLOOR_DBM};
     ScannerState current_scanner_state_{ScannerState::IDLE};
 

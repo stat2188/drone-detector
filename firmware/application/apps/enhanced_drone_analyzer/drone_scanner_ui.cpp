@@ -104,6 +104,22 @@ void DroneScannerUI::unregister_handlers() noexcept {
     handlers_active_ = false;
 }
 
+// ============================================================================
+// Atomic 64-bit frequency access — prevents torn reads on Cortex-M4
+// ============================================================================
+void DroneScannerUI::set_current_frequency_safe(FreqHz freq) noexcept {
+    chSysLock();
+    current_frequency_ = freq;
+    chSysUnlock();
+}
+
+FreqHz DroneScannerUI::get_current_frequency_safe() const noexcept {
+    chSysLock();
+    const FreqHz freq = current_frequency_;
+    chSysUnlock();
+    return freq;
+}
+
 DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     : View()
     , nav_(nav)
@@ -511,7 +527,7 @@ void DroneScannerUI::on_show() {
         update_sweep_pair_display();
 
         radio::set_tuning_frequency(rf::Frequency(sweep_[active_sweep_idx_].f_center));
-        current_frequency_ = sweep_[active_sweep_idx_].f_center;
+        set_current_frequency_safe(sweep_[active_sweep_idx_].f_center);
 
         if (!scanning_) {
             baseband::spectrum_streaming_start();
@@ -586,14 +602,14 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
     
     // BigFrequency::set() only accepts rf::Frequency (numeric), not strings
     // When frequency is 0 (uninitialized), display 0 Hz which formats as "0.000"
-    big_display_.set(current_frequency_);
+    big_display_.set(get_current_frequency_safe());
 }
 
 void DroneScannerUI::refresh_ui() noexcept {
     if (scanner_ptr_ == nullptr || initialization_failed_) {
         current_scanner_state_ = ScannerState::IDLE;
         current_rssi_ = RSSI_NOISE_FLOOR_DBM;
-        current_frequency_ = 0;
+        set_current_frequency_safe(0);
         bigdisplay_update(BigDisplayColor::GREY);
         displayed_drone_type_[0] = '\0';
         drone_type_display_timer_ = 0;
@@ -763,7 +779,7 @@ void DroneScannerUI::refresh_ui() noexcept {
 
 void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
     (void)range;
-    current_frequency_ = freq;
+    set_current_frequency_safe(freq);
 }
 
 void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
@@ -771,7 +787,7 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
         // Use frequency from on_retune() — this matches the hardware tuning
         // when this spectrum was captured. Do NOT read scanner's current_frequency_
         // because the scanner thread may have already moved to the next frequency.
-        const FreqHz freq = current_frequency_;
+        const FreqHz freq = get_current_frequency_safe();
         if (freq != 0) {
             (void)scanner_ptr_->process_spectrum_message(spectrum, freq);
         }
@@ -842,8 +858,9 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
         last_db_index_ = database_ptr_->get_current_index();
         // Use current frequency from scanner (thread-safe via atomic read)
         // This is the frequency the scanner was tuned to before sweep entry
-        if (current_frequency_ != 0) {
-            last_db_frequency_ = current_frequency_;
+        const FreqHz cur_freq = get_current_frequency_safe();
+        if (cur_freq != 0) {
+            last_db_frequency_ = cur_freq;
         } else {
             // Fallback: try to get from scanner's locked frequency
             last_db_frequency_ = scanner_ptr_->get_locked_frequency();
@@ -876,7 +893,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     // This is the initial sweep entry - ensures first FFT is valid.
     // Using 5ms to match Looking Glass app delay for consistency.
     chThdSleepMilliseconds(5);
-    current_frequency_ = sweep_[active_sweep_idx_].f_center;
+    set_current_frequency_safe(sweep_[active_sweep_idx_].f_center);
 
     baseband::spectrum_streaming_start();
     scanning_ = true;
@@ -1151,7 +1168,7 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     // - Spectral artifacts from frequency drift
     // Using 5ms to match Looking Glass app delay for consistency.
     chThdSleepMilliseconds(5);
-    current_frequency_ = win.f_center;
+    set_current_frequency_safe(win.f_center);
     last_tuned_freq_ = win.f_center;
     (void)prefix;
     baseband::spectrum_streaming_start();
