@@ -647,6 +647,10 @@ constexpr uint16_t SWEEP_BINS_PER_STEP = FFT_USABLE_BINS_NARROW;
 /**
  * @brief M0 baseband phase decimation trigger for wideband spectrum.
  * @note Controls how many samples are accumulated per FFT frame.
+ * @note Current: 32 buffers @ 20MHz = 3.3ms integration = baseline sensitivity
+ * @note OPTIONAL: Increase to 63 for ~6.5ms integration = +3dB SNR improvement
+ * @note Trade-off: Sweep takes 2× longer (0.8s → 1.6s for 240 freq)
+ * @note Set to 63 only if maximum sensitivity is prioritized over speed.
  */
 constexpr size_t SWEEP_FFT_TRIGGER = 31;
 

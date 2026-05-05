@@ -554,10 +554,12 @@ void PatternManagerView::on_frame_sync() noexcept {
                 if (current_sweep_freq_ < sweep_end_) {
                     current_sweep_freq_ += sweep_step_;
                     radio::set_tuning_frequency(rf::Frequency(current_sweep_freq_));
+                    chThdSleepMilliseconds(5);
                     baseband::spectrum_streaming_start();
                 } else {
                     current_sweep_freq_ = sweep_start_;
                     radio::set_tuning_frequency(rf::Frequency(current_sweep_freq_));
+                    chThdSleepMilliseconds(5);
                     baseband::spectrum_streaming_start();
                 }
             }
@@ -597,6 +599,7 @@ void PatternManagerView::on_frame_sync() noexcept {
         }
 
         radio::set_tuning_frequency(rf::Frequency(capture_frequency_));
+        chThdSleepMilliseconds(5);
         baseband::spectrum_streaming_start();
     }
 }
@@ -626,6 +629,7 @@ void PatternManagerView::start_live_spectrum() noexcept {
     baseband::set_spectrum(SWEEP_SLICE_BW, SWEEP_FFT_TRIGGER);
 
     radio::set_tuning_frequency(rf::Frequency(current_sweep_freq_));
+    chThdSleepMilliseconds(5);
     baseband::spectrum_streaming_start();
 
     set_dirty();
@@ -667,6 +671,7 @@ void PatternManagerView::start_capture_sequence() noexcept {
     baseband::set_spectrum(SWEEP_SLICE_BW, SWEEP_FFT_TRIGGER);
 
     radio::set_tuning_frequency(rf::Frequency(capture_frequency_));
+    chThdSleepMilliseconds(5);
     baseband::spectrum_streaming_start();
 
     set_dirty();

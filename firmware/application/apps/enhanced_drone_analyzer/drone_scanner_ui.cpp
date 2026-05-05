@@ -872,6 +872,10 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     update_sweep_pair_display();
 
     radio::set_tuning_frequency(rf::Frequency(sweep_[active_sweep_idx_].f_center));
+    // CRITICAL FIX: Wait for PLLs to settle before starting spectrum capture.
+    // This is the initial sweep entry - ensures first FFT is valid.
+    // Using 5ms to match Looking Glass app delay for consistency.
+    chThdSleepMilliseconds(5);
     current_frequency_ = sweep_[active_sweep_idx_].f_center;
 
     baseband::spectrum_streaming_start();
@@ -1140,6 +1144,13 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
 
 void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) noexcept {
     radio::set_tuning_frequency(rf::Frequency(win.f_center));
+    // CRITICAL FIX: Wait for RFFC5072 + MAX2837 PLLs to settle after frequency change.
+    // Without this delay, FFT captures data before PLLs are locked, causing:
+    // - Incorrect frequency mapping in FFT bins
+    // - Reduced sensitivity (signes not fully captured)
+    // - Spectral artifacts from frequency drift
+    // Using 5ms to match Looking Glass app delay for consistency.
+    chThdSleepMilliseconds(5);
     current_frequency_ = win.f_center;
     last_tuned_freq_ = win.f_center;
     (void)prefix;
