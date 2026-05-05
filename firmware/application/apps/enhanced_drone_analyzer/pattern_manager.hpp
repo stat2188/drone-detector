@@ -52,7 +52,8 @@ private:
 
     [[nodiscard]] ErrorCode load_pattern_from_line(
         const char* filepath,
-        size_t filepath_length
+        size_t filepath_length,
+        const wchar_t* utf16_filepath
     ) noexcept;
 
     [[nodiscard]] ErrorCode parse_pattern_csv(

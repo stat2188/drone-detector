@@ -6,6 +6,27 @@ namespace drone_analyzer {
 namespace {
 static constexpr size_t FATFS_MAX_FILENAME = 128;
 
+static size_t char_to_utf16(const char* src, wchar_t* dest, size_t dest_capacity_wchars) noexcept {
+    if (src == nullptr || dest == nullptr || dest_capacity_wchars == 0) {
+        return 0;
+    }
+    size_t i = 0;
+    while (src[i] != '\0' && i < dest_capacity_wchars - 1) {
+        dest[i] = static_cast<wchar_t>(static_cast<uint8_t>(src[i]));
+        ++i;
+    }
+    dest[i] = L'\0';
+    return i;
+}
+    size_t i = 0;
+    while (src[i] != '\0' && i < dest_capacity_wchars - 1) {
+        dest[i] = static_cast<wchar_t>(static_cast<uint8_t>(src[i]));
+        ++i;
+    }
+    dest[i] = L'\0';
+    return i;
+}
+
 static size_t tchar_to_char(const TCHAR* src, char* dest, size_t dest_size) noexcept {
     if (src == nullptr || dest == nullptr || dest_size == 0) {
         return 0;
@@ -104,9 +125,13 @@ ErrorCode PatternManager::load_patterns() noexcept {
 
     pattern_count_ = 0;
 
+    // Convert PATTERN_DIR to UTF-16 for FatFS
+    wchar_t utf16_dir[sizeof(PATTERN_DIR)];
+    char_to_utf16(PATTERN_DIR, utf16_dir, sizeof(utf16_dir) / sizeof(wchar_t));
+
     DIR dir;
     FILINFO fno;
-    const FRESULT res = f_opendir(&dir, reinterpret_cast<const TCHAR*>(PATTERN_DIR));
+    const FRESULT res = f_opendir(&dir, reinterpret_cast<const TCHAR*>(utf16_dir));
 
     // If directory doesn't exist or can't be opened, that's fine - no patterns yet.
     // Don't return error, just return empty pattern list.
@@ -140,18 +165,22 @@ ErrorCode PatternManager::load_patterns() noexcept {
             break;
         }
 
-        // CRITICAL FIX: Calculate maximum path size to prevent buffer overflow
-        // PATTERN_DIR = "/PATTERNS/" (11 bytes) + "/" + filename (FATFS_MAX_FILENAME = 128) + ".TXT" (4) + null = 145 bytes
+        // Build full path: char version (for load_pattern_from_line) + UTF-16 version (for file.open)
+        // Note: load_pattern_from_line takes char* path, works correctly with ASCII
         constexpr size_t MAX_FULL_PATH_LEN = sizeof(PATTERN_DIR) + FATFS_MAX_FILENAME + 8;
         char full_path[MAX_FULL_PATH_LEN];
         const int written = snprintf(full_path, sizeof(full_path), "%s/%s", PATTERN_DIR, fname_buf);
-        
+
         // Validate path was not truncated
         if (written < 0 || static_cast<size_t>(written) >= sizeof(full_path)) {
             continue;  // Skip files with too-long paths
         }
 
-        const ErrorCode err = load_pattern_from_line(full_path, strlen(full_path));
+        // Also build UTF-16 path for file.open (FatFS)
+        wchar_t utf16_filepath[MAX_FULL_PATH_LEN];
+        char_to_utf16(full_path, utf16_filepath, MAX_FULL_PATH_LEN);
+
+        const ErrorCode err = load_pattern_from_line(full_path, strlen(full_path), utf16_filepath);
         // NOTE: parse_pattern_csv() inside load_pattern_from_line() already increments
         // pattern_count_ on success. Do NOT increment here — that would double-count.
         (void)err;
@@ -166,9 +195,10 @@ ErrorCode PatternManager::load_patterns() noexcept {
 
 ErrorCode PatternManager::load_pattern_from_line(
     const char* filepath,
-    size_t filepath_length
+    size_t filepath_length,
+    const wchar_t* utf16_filepath
 ) noexcept {
-    if (filepath == nullptr || filepath_length == 0) {
+    if (filepath == nullptr || filepath_length == 0 || utf16_filepath == nullptr) {
         return ErrorCode::INVALID_PARAMETER;
     }
 
@@ -177,7 +207,7 @@ ErrorCode PatternManager::load_pattern_from_line(
     }
 
     File file;
-    const auto open_err = file.open(reinterpret_cast<const TCHAR*>(filepath));
+    const auto open_err = file.open(reinterpret_cast<const TCHAR*>(utf16_filepath));
     // operator bool() returns true when Optional contains a value (error present)
     if (open_err) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
@@ -329,23 +359,32 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
         return ErrorCode::BUFFER_FULL;
     }
 
-    // Create /PATTERNS directory if it doesn't exist
-    const FRESULT mkdir_res = f_mkdir(reinterpret_cast<const TCHAR*>(PATTERN_DIR));
+    // Create /PATTERNS directory if it doesn't exist (UTF-16 for FatFS)
+    wchar_t utf16_dir[sizeof(PATTERN_DIR)];
+    char_to_utf16(PATTERN_DIR, utf16_dir, sizeof(utf16_dir) / sizeof(wchar_t));
+    const FRESULT mkdir_res = f_mkdir(reinterpret_cast<const TCHAR*>(utf16_dir));
     if (mkdir_res != FR_OK && mkdir_res != FR_EXIST) {
         return ErrorCode::FILE_SYSTEM_ERROR;
     }
 
-    // Write file first, update RAM only on success
-    constexpr size_t MAX_FILENAME_LEN = sizeof(PATTERN_DIR) + PATTERN_NAME_MAX_LEN + 8;
-    char filename[MAX_FILENAME_LEN];
-    const int written = snprintf(filename, sizeof(filename), "%s/%s.TXT", PATTERN_DIR, pattern.name);
-
-    if (written < 0 || static_cast<size_t>(written) >= sizeof(filename)) {
-        return ErrorCode::INVALID_PARAMETER;
+    // Build UTF-16 filepath for FatFS
+    constexpr size_t MAX_FILENAME_WCHAR = (sizeof(PATTERN_DIR) / sizeof(char)) + PATTERN_NAME_MAX_LEN + 8;
+    wchar_t utf16_filepath[MAX_FILENAME_WCHAR];
+    size_t path_pos = char_to_utf16(PATTERN_DIR, utf16_filepath, MAX_FILENAME_WCHAR);
+    if (path_pos < MAX_FILENAME_WCHAR - 1) {
+        utf16_filepath[path_pos++] = L'/';
     }
+    for (size_t i = 0; pattern.name[i] != '\0' && path_pos < MAX_FILENAME_WCHAR - 1; ++i) {
+        utf16_filepath[path_pos++] = static_cast<wchar_t>(static_cast<uint8_t>(pattern.name[i]));
+    }
+    const char txt_ext[] = ".TXT";
+    for (size_t i = 0; txt_ext[i] != '\0' && path_pos < MAX_FILENAME_WCHAR - 1; ++i) {
+        utf16_filepath[path_pos++] = static_cast<wchar_t>(static_cast<uint8_t>(txt_ext[i]));
+    }
+    utf16_filepath[path_pos] = L'\0';
 
     File file;
-    const auto open_err = file.create(reinterpret_cast<const TCHAR*>(filename));
+    const auto open_err = file.create(reinterpret_cast<const TCHAR*>(utf16_filepath));
     if (open_err.is_valid()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
@@ -448,17 +487,23 @@ ErrorCode PatternManager::delete_pattern(size_t index) noexcept {
         return ErrorCode::INVALID_PARAMETER;
     }
 
-    // CRITICAL FIX: Calculate maximum filename size to prevent buffer overflow
-    constexpr size_t MAX_FILENAME_LEN = sizeof(PATTERN_DIR) + PATTERN_NAME_MAX_LEN + 8;
-    char filename[MAX_FILENAME_LEN];
-    const int written = snprintf(filename, sizeof(filename), "%s/%s.TXT", PATTERN_DIR, patterns_[index].name);
-    
-    // Validate filename was not truncated
-    if (written < 0 || static_cast<size_t>(written) >= sizeof(filename)) {
-        return ErrorCode::INVALID_PARAMETER;
+    // Build UTF-16 filepath for FatFS
+    constexpr size_t MAX_FILENAME_WCHAR = (sizeof(PATTERN_DIR) / sizeof(char)) + PATTERN_NAME_MAX_LEN + 8;
+    wchar_t utf16_filepath[MAX_FILENAME_WCHAR];
+    size_t path_pos = char_to_utf16(PATTERN_DIR, utf16_filepath, MAX_FILENAME_WCHAR);
+    if (path_pos < MAX_FILENAME_WCHAR - 1) {
+        utf16_filepath[path_pos++] = L'/';
     }
+    for (size_t i = 0; patterns_[index].name[i] != '\0' && path_pos < MAX_FILENAME_WCHAR - 1; ++i) {
+        utf16_filepath[path_pos++] = static_cast<wchar_t>(static_cast<uint8_t>(patterns_[index].name[i]));
+    }
+    const char txt_ext[] = ".TXT";
+    for (size_t i = 0; txt_ext[i] != '\0' && path_pos < MAX_FILENAME_WCHAR - 1; ++i) {
+        utf16_filepath[path_pos++] = static_cast<wchar_t>(static_cast<uint8_t>(txt_ext[i]));
+    }
+    utf16_filepath[path_pos] = L'\0';
 
-    const auto del_err = delete_file(reinterpret_cast<const TCHAR*>(filename));
+    const auto del_err = delete_file(reinterpret_cast<const TCHAR*>(utf16_filepath));
     if (!del_err.ok()) {
         return ErrorCode::DATABASE_LOAD_TIMEOUT;
     }
@@ -527,9 +572,13 @@ ErrorCode PatternManager::reload_patterns() noexcept {
     loaded_.clear();
     pattern_count_ = 0;
 
+    // Convert PATTERN_DIR to UTF-16 for FatFS
+    wchar_t utf16_dir[sizeof(PATTERN_DIR)];
+    char_to_utf16(PATTERN_DIR, utf16_dir, sizeof(utf16_dir) / sizeof(wchar_t));
+
     DIR dir;
     FILINFO fno;
-    const FRESULT res = f_opendir(&dir, reinterpret_cast<const TCHAR*>(PATTERN_DIR));
+    const FRESULT res = f_opendir(&dir, reinterpret_cast<const TCHAR*>(utf16_dir));
 
     if (res != FR_OK) {
         // If directory doesn't exist yet (FR_NO_PATH), that's fine - no patterns yet.
@@ -566,15 +615,20 @@ ErrorCode PatternManager::reload_patterns() noexcept {
             break;
         }
 
+        // Build full path: char version + UTF-16 version
         constexpr size_t MAX_FULL_PATH_LEN = sizeof(PATTERN_DIR) + FATFS_MAX_FILENAME + 8;
         char full_path[MAX_FULL_PATH_LEN];
         const int written = snprintf(full_path, sizeof(full_path), "%s/%s", PATTERN_DIR, fname_buf);
-        
+
         if (written < 0 || static_cast<size_t>(written) >= sizeof(full_path)) {
             continue;
         }
 
-        const ErrorCode err = load_pattern_from_line(full_path, strlen(full_path));
+        // Also build UTF-16 path for file.open
+        wchar_t utf16_filepath[MAX_FULL_PATH_LEN];
+        char_to_utf16(full_path, utf16_filepath, MAX_FULL_PATH_LEN);
+
+        const ErrorCode err = load_pattern_from_line(full_path, strlen(full_path), utf16_filepath);
         (void)err;
     }
 
