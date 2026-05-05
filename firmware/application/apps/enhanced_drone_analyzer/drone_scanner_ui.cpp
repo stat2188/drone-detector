@@ -1098,7 +1098,7 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     if (f_min >= f_max) {
         f_max = f_min + SWEEP_SLICE_BW;
     }
-    constexpr FreqHz range = f_max - f_min;
+    const FreqHz range = f_max - f_min;
     pixel_step_hz = (range + SWEEP_PIXELS_PER_SLICE - 1) / SWEEP_PIXELS_PER_SLICE;
     step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE);
     f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
