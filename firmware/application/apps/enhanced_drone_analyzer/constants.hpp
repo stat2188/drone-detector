@@ -1053,8 +1053,8 @@ constexpr int32_t DEFAULT_RSSI_VARIANCE_THRESHOLD = 100;
 // Band Sweep Constants
 // ============================================================================
 
-constexpr FreqHz SWEEP_DEFAULT_START_HZ = 5700000000;   // 5.7 GHz
-constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5900000000;     // 5.9 GHz
+constexpr FreqHz SWEEP_DEFAULT_START_HZ = 5645000000;   // 5.645 GHz - full 5.8 GHz FPV band
+constexpr FreqHz SWEEP_DEFAULT_END_HZ = 5945000000;     // 5.945 GHz - 300 MHz span
 
 // ============================================================================
 // Sweep Exception Constants
