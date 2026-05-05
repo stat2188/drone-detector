@@ -18,14 +18,6 @@ static size_t char_to_utf16(const char* src, wchar_t* dest, size_t dest_capacity
     dest[i] = L'\0';
     return i;
 }
-    size_t i = 0;
-    while (src[i] != '\0' && i < dest_capacity_wchars - 1) {
-        dest[i] = static_cast<wchar_t>(static_cast<uint8_t>(src[i]));
-        ++i;
-    }
-    dest[i] = L'\0';
-    return i;
-}
 
 static size_t tchar_to_char(const TCHAR* src, char* dest, size_t dest_size) noexcept {
     if (src == nullptr || dest == nullptr || dest_size == 0) {
