@@ -182,6 +182,7 @@ struct SweepZoneRuntime {
     uint8_t pixel_max{0};
 
     void init(const SweepZoneConfig& cfg) noexcept {
+        constexpr FreqHz BIN_SIZE = SWEEP_SLICE_BW / FFT_BIN_COUNT;
         const FreqHz range = cfg.end_freq - cfg.start_freq;
         if (range == 0 || !cfg.enabled) {
             pixel_step_hz = SWEEP_SLICE_BW / SWEEP_PIXELS_PER_SLICE;
@@ -189,7 +190,7 @@ struct SweepZoneRuntime {
             pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;
         }
         step_hz = SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE;
-        center_ini = cfg.start_freq + (SWEEP_SLICE_BW / 2);
+        center_ini = cfg.start_freq - (2 * BIN_SIZE) + (SWEEP_SLICE_BW / 2);
         current_center = center_ini;
         pixel_index = 0;
         pixel_max = 0;
