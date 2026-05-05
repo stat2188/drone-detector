@@ -688,19 +688,22 @@ constexpr uint8_t DEFAULT_SPECTRUM_INTEGRATION = 3;
 constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 20;
 
 /**
- * @brief Default minimum signal width in bins (1-20)
+ * @brief Default minimum signal width in bins (1-100)
  * @note Signals narrower than this are rejected as needle spikes
+ * @note 3 bins = 234 kHz (default)
+ * @note 20 bins = 1.56 MHz (aggressive filtering)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 3;
+constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 5;
 
 /**
- * @brief Default maximum signal width in bins (1-100)
+ * @brief Default maximum signal width in bins (1-255)
  * @note Signals wider than this are rejected as flat-topped U/I noise
- * @note 100 = no max width filtering (accept all widths)
- * @note 40 = default for narrowband drones
- * @note 80 = FPV-optimized: accommodates FPV dual-peak signals (~6 MHz = ~77 bins)
+ * @note 100 = UI limit for some apps
+ * @note 200 = FPV video: accommodates ~15 MHz (~192 bins at 78 kHz/bin)
+ * @note 255 = accepts all widths (no filtering)
+ * @note 40 = original default (too narrow for FPV)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 80;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)

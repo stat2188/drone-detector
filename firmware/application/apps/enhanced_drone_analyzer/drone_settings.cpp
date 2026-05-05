@@ -59,8 +59,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
                                DEFAULT_MAHALOBIS_THRESHOLD_X10, ' ')
     , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
-    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 2, {1, 20}, 1, ' ')
-    , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {1, 100}, 1, ' ')
+    , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 3, {1, 100}, 1, ' ')
+    , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {1, 255}, 1, ' ')
     , field_spectrum_peak_sharpness_({UI_POS_X(6), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
     , field_spectrum_peak_ratio_({UI_POS_X(13), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')
     , field_spectrum_valley_depth_({UI_POS_X(13), UI_POS_Y(6)}, 3, {0, 200}, 5, ' ')
@@ -347,12 +347,14 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     button_info_width_.on_select = [this](ui::Button&) {
-        nav_.display_modal("Max Width",
-            "Maks. shirina signala.\n"
-            "Otbrosit shirokie ploskie\n"
-            "signaly (pomehi).\n"
-            "80 = dlya FPV (~6MHz),\n"
-            "40 = dlya uzkapolnyh.");
+        nav_.display_modal("Width",
+            "Min: otbrasyvaet uzskie\n"
+            "  ( игly )\n"
+            " 3 = 234kHz (po umolch.)\n"
+            "Max: otbrasyvaet shirokie\n"
+            "  ( ploskie pomehi )\n"
+            "200 = FPV (~15MHz),\n"
+            "255 = prinyat vse.");
     };
 
     button_info_sharp_.on_select = [this](ui::Button&) {
