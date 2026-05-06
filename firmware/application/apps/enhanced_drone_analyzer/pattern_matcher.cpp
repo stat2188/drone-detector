@@ -5,25 +5,20 @@ namespace drone_analyzer {
 
 void PatternMatcher::set_patterns(const SignalPattern* patterns, size_t count) noexcept {
     if (patterns == nullptr) {
-        patterns_ = nullptr;
         pattern_count_ = 0;
         return;
     }
 
-    // CRITICAL FIX: Copy patterns instead of storing pointer to prevent race conditions
-    // PatternManager may modify its internal array while matcher is using it
     const size_t copy_count = (count > MAX_PATTERNS) ? MAX_PATTERNS : count;
-    
+
     for (size_t i = 0; i < copy_count; ++i) {
         patterns_copy_[i] = patterns[i];
     }
-    
-    patterns_ = patterns_copy_.data();
+
     pattern_count_ = copy_count;
 }
 
 void PatternMatcher::clear_patterns() noexcept {
-    patterns_ = nullptr;
     pattern_count_ = 0;
 }
 
@@ -75,12 +70,14 @@ const std::array<size_t, 4>& PatternMatcher::get_candidates(
     candidates_.fill(INVALID_PATTERN_INDEX);
     size_t count = 0;
 
-    if (patterns_ == nullptr || pattern_count_ == 0) {
+    if (pattern_count_ == 0) {
         return candidates_;
     }
 
+    const SignalPattern* const patterns = patterns_copy_.data();
+
     for (size_t i = 0; i < pattern_count_ && count < 4; ++i) {
-        const SignalPattern& pattern = patterns_[i];
+        const SignalPattern& pattern = patterns[i];
 
         if (!pattern.is_enabled()) {
             continue;
@@ -243,11 +240,11 @@ PatternMatchResult PatternMatcher::match(
 ) noexcept {
     PatternMatchResult result = PatternMatchResult::no_match();
 
-    if (spectrum == nullptr || patterns_ == nullptr || pattern_count_ == 0) {
+    if (spectrum == nullptr || pattern_count_ == 0) {
         return result;
     }
 
-    normalize_spectrum(spectrum, normalized_);
+    normalize_spectrum(spectrum, normalized_.data());
 
     const uint8_t mapped_peak = static_cast<uint8_t>(
         (shape.peak_index * PATTERN_WAVEFORM_SIZE) / FFT_BIN_COUNT
@@ -257,16 +254,17 @@ PatternMatchResult PatternMatcher::match(
     );
 
     const auto& candidates = get_candidates(mapped_peak, mapped_width);
+    const SignalPattern* const patterns = patterns_copy_.data();
 
     for (size_t i = 0; i < 4; ++i) {
         const size_t pattern_idx = candidates[i];
         if (pattern_idx >= pattern_count_ || pattern_idx == INVALID_PATTERN_INDEX) continue;
 
-        const SignalPattern& pattern = patterns_[pattern_idx];
+        const SignalPattern& pattern = patterns[pattern_idx];
 
         const uint16_t corr = compute_correlation(
             pattern.waveform,
-            normalized_
+            normalized_.data()
         );
 
         if (corr >= pattern.match_threshold) {
@@ -281,11 +279,11 @@ PatternMatchResult PatternMatcher::match(
                 result.feature_distance = feature_dist;
                 result.matched = true;
 
-                if (corr >= 800) {
+                if (corr >= PATTERN_CORRELATION_EXCELLENT) {
                     result.status = PatternMatchStatus::EXCELLENT_MATCH;
-                } else if (corr >= 600) {
+                } else if (corr >= PATTERN_CORRELATION_STRONG) {
                     result.status = PatternMatchStatus::STRONG_MATCH;
-                } else if (corr >= 400) {
+                } else if (corr >= PATTERN_CORRELATION_MODERATE) {
                     result.status = PatternMatchStatus::MODERATE_MATCH;
                 } else {
                     result.status = PatternMatchStatus::WEAK_MATCH;
@@ -300,11 +298,11 @@ PatternMatchResult PatternMatcher::match(
             if (candidates_plus[i] >= pattern_count_ || candidates_plus[i] == INVALID_PATTERN_INDEX) continue;
 
             const size_t pattern_idx = candidates_plus[i];
-            const SignalPattern& pattern = patterns_[pattern_idx];
+            const SignalPattern& pattern = patterns[pattern_idx];
 
             const uint16_t corr = compute_correlation(
                 pattern.waveform,
-                normalized_
+                normalized_.data()
             );
 
             if (corr >= pattern.match_threshold) {
@@ -327,22 +325,24 @@ PatternMatchResult PatternMatcher::match(
 ) noexcept {
     PatternMatchResult result = PatternMatchResult::no_match();
 
-    if (spectrum == nullptr || patterns_ == nullptr || pattern_count_ == 0) {
+    if (spectrum == nullptr || pattern_count_ == 0) {
         return result;
     }
 
-    normalize_spectrum(spectrum, normalized_);
+    normalize_spectrum(spectrum, normalized_.data());
 
     if (skip_candidate_filter) {
+        const SignalPattern* const patterns = patterns_copy_.data();
+
         for (size_t i = 0; i < pattern_count_; ++i) {
-            const SignalPattern& pattern = patterns_[i];
+            const SignalPattern& pattern = patterns[i];
             if (!pattern.is_enabled()) {
                 continue;
             }
 
             const uint16_t corr = compute_correlation(
                 pattern.waveform,
-                normalized_
+                normalized_.data()
             );
 
             if (corr >= pattern.match_threshold) {
@@ -351,11 +351,11 @@ PatternMatchResult PatternMatcher::match(
                     result.correlation_score = corr;
                     result.matched = true;
 
-                    if (corr >= 800) {
+                    if (corr >= PATTERN_CORRELATION_EXCELLENT) {
                         result.status = PatternMatchStatus::EXCELLENT_MATCH;
-                    } else if (corr >= 600) {
+                    } else if (corr >= PATTERN_CORRELATION_STRONG) {
                         result.status = PatternMatchStatus::STRONG_MATCH;
-                    } else if (corr >= 400) {
+                    } else if (corr >= PATTERN_CORRELATION_MODERATE) {
                         result.status = PatternMatchStatus::MODERATE_MATCH;
                     } else {
                         result.status = PatternMatchStatus::WEAK_MATCH;

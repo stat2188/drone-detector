@@ -16,21 +16,13 @@ namespace drone_analyzer {
 
 class PatternMatcher {
 public:
-    static constexpr uint16_t CORRELATION_SCALE_BITS = 8;
-    static constexpr uint16_t CORRELATION_MAX_SCORE = 1000;
-    static constexpr uint16_t CORRELATION_EXCELLENT = 800;
-    static constexpr uint16_t CORRELATION_STRONG = 600;
-    static constexpr uint16_t CORRELATION_MODERATE = 400;
-    static constexpr uint16_t CORRELATION_WEAK = 200;
     static constexpr size_t INVALID_PATTERN_INDEX = MAX_PATTERNS;
 
     PatternMatcher() noexcept
         : patterns_copy_{}
-        , patterns_(nullptr)
         , pattern_count_(0)
         , normalized_{}
         , candidates_{} {
-        std::memset(normalized_, 0, sizeof(normalized_));
     }
     ~PatternMatcher() noexcept = default;
 
@@ -54,11 +46,10 @@ public:
 
 private:
     std::array<SignalPattern, MAX_PATTERNS> patterns_copy_;
-    const SignalPattern* patterns_{nullptr};
     size_t pattern_count_{0};
 
-    uint8_t normalized_[PATTERN_WAVEFORM_SIZE];
-    std::array<size_t, 4> candidates_;
+    std::array<uint8_t, PATTERN_WAVEFORM_SIZE> normalized_{};
+    std::array<size_t, 4> candidates_{};
 
     void normalize_spectrum(
         const uint8_t* fft_256,
