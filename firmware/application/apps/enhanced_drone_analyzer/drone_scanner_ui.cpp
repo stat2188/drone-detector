@@ -1033,11 +1033,10 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
         // Full cycle wrap: all pairs have been visited.
         // Exit auto-mode before round-robin changes active_sweep_idx_,
-        // but apply decay first (see wrap detection block below for rationale).
+        // but apply SWEEP-AWARE decay first (see wrap detection block below for rationale).
         if (next_pair == 0 && sweep_auto_mode_) {
-            if (scanner_ptr_ != nullptr) {
-                scanner_ptr_->apply_rssi_decay();
-            }
+            // REMOVED: Duplicate apply_rssi_decay() call - now handled in wrap detection block below
+            // RSSI decay is now applied only once per full cycle, with is_sweep_mode=true
             exit_sweep_mode();
             return;
         }
@@ -1060,9 +1059,11 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // windows have been scanned once, regardless of how many windows are active.
     // A drone detected in the first window may not be re-seen for several seconds
     // while remaining windows are scanned — premature decay would remove it.
+    // SWEEP-AWARE DECAY: Use cycle-based decay (is_sweep_mode=true) to tolerate
+    // long gaps between visits in sweep mode.
     if (pair_complete && next == w0) {
         if (scanner_ptr_ != nullptr) {
-            scanner_ptr_->apply_rssi_decay();
+            scanner_ptr_->apply_rssi_decay(true);  // is_sweep_mode = true
         }
 
         if (sweep_auto_mode_) {

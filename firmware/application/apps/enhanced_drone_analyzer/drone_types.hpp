@@ -260,6 +260,11 @@ struct TrackedDrone {
     SystemTime last_increase_time_;     // 4 bytes — timestamp when RSSI last increased (for time-based decay)
     SystemTime created_time_;           // 4 bytes — timestamp when drone was first detected (min lifetime)
 
+    // Sweep-aware decay fields (cycle-based for sweep mode)
+    SystemTime last_seen_time_;         // 4 bytes — timestamp when drone was last seen (ANY detection)
+    uint8_t sweep_cycles_missed_{0};    // 1 byte — consecutive full sweep cycles without seeing this drone
+    static constexpr uint8_t MAX_SWEEP_CYCLES_MISSED = 3;  // Allow 3 full cycles (~6-15 sec) before decay
+
     // ========================================================================
     // Mahalanobis statistics
     // ========================================================================
@@ -332,6 +337,28 @@ struct TrackedDrone {
      * @return true if threat is now NONE (should be removed)
      */
     bool decay_threat() noexcept;
+
+    /**
+     * @brief Mark drone as seen at current time (for sweep-aware decay)
+     * @param now Current system time
+     * @note Resets sweep_cycles_missed_ and updates rssi_increased_/last_increase_time_
+     */
+    void mark_seen(SystemTime now) noexcept {
+        last_seen_time_ = now;
+        rssi_increased_ = true;
+        last_increase_time_ = now;
+        sweep_cycles_missed_ = 0;
+    }
+
+    /**
+     * @brief Increment missed sweep cycle counter
+     * @note Called at end of each full sweep cycle when drone was NOT seen
+     */
+    void increment_missed_cycle() noexcept {
+        if (sweep_cycles_missed_ < 255) {
+            ++sweep_cycles_missed_;
+        }
+    }
 
     /**
      * @brief Reset missed cycles counter (drone was detected)

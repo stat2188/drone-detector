@@ -958,14 +958,18 @@ public:
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq, FreqHz f_min = 0, FreqHz f_max = 0) noexcept;
 
     /**
-     * @brief Apply RSSI-based threat decay (time-based, unified for normal and sweep modes)
-     * @note Each drone: if RSSI did not increase for decay_threshold_ms (CYC × 1000ms),
-     *       decay threat by one step. If RSSI increased, reset timer.
+     * @brief Apply RSSI-based threat decay with SWEEP-aware logic
+     * @param is_sweep_mode If true, use cycle-based decay for sweep mode; if false, use time-based (normal mode)
+     * @note NORMAL mode: time-based decay (fast, continuous scanning)
+     * @note SWEEP mode: cycle-based decay (tolerates long gaps between visits)
+     * @note Each drone: if RSSI did not increase for decay_threshold_ms (CYC × 1000ms in normal mode),
+     *       OR if drone was not seen for more than MAX_SWEEP_CYCLES_MISSED cycles (in sweep mode),
+     *       decay threat by one step. If RSSI increased or drone seen, reset counters.
      * @note Enforces minimum drone lifetime of DRONE_STALE_TIMEOUT_MS (5s) before removal.
      * @note Resets rssi_increased_ flag after each call.
      * @note Called from perform_scan_cycle_internal() (normal mode) and on_sweep_spectrum() (sweep mode)
      */
-    void apply_rssi_decay() noexcept {
+    void apply_rssi_decay(bool is_sweep_mode = false) noexcept {
         const uint32_t decay_threshold_ms =
             static_cast<uint32_t>(config_.rssi_decrease_cycles) * 1000U;
         const SystemTime now = chTimeNow();
@@ -975,10 +979,23 @@ public:
             if (drone.rssi_increased_) {
                 drone.rssi_decrease_counter_ = 0;
                 drone.last_increase_time_ = now;
+                drone.sweep_cycles_missed_ = 0;
             } else {
-                const uint32_t elapsed = now - drone.last_increase_time_;
-                if (elapsed >= decay_threshold_ms) {
-                    drone.rssi_decrease_counter_ = 1;
+                if (is_sweep_mode) {
+                    // SWEEP mode: cycle-based decay
+                    drone.increment_missed_cycle();
+                    const uint8_t max_missed = (drone.threat_level >= ThreatLevel::HIGH)
+                        ? TrackedDrone::MAX_SWEEP_CYCLES_MISSED * 2  // HIGH/CRITICAL: 6 cycles
+                        : TrackedDrone::MAX_SWEEP_CYCLES_MISSED;     // LOW/MEDIUM: 3 cycles
+                    if (drone.sweep_cycles_missed_ > max_missed) {
+                        drone.rssi_decrease_counter_ = 1;
+                    }
+                } else {
+                    // NORMAL mode: time-based decay (original logic)
+                    const uint32_t elapsed = now - drone.last_increase_time_;
+                    if (elapsed >= decay_threshold_ms) {
+                        drone.rssi_decrease_counter_ = 1;
+                    }
                 }
             }
             drone.rssi_increased_ = false;
