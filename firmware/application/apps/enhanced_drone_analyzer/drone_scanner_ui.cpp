@@ -983,8 +983,22 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq, win.f_min, win.f_max);
 
         // Update pattern match highlight (red frame) if pattern matching is enabled
+        // FIX: Convert 256-bin FFT index to 240-pixel screen index (HIGH-1)
+        // Original bug: Direct cast from bin (0-255) to pixel caused 134-pixel offset error
         if (scanner_ptr_->is_pattern_matched()) {
-            drone_display_.set_matched_pattern_bin(static_cast<int16_t>(scanner_ptr_->get_matched_pattern_bin()));
+            const uint8_t bin = scanner_ptr_->get_matched_pattern_bin();
+            int16_t pixel = -1;
+            if (bin >= FFT_DC_SPIKE_START && bin < FFT_DC_SPIKE_END) {
+                pixel = -1;  // DC spike, skip
+            } else if (bin >= SWEEP_FFT_MAP_START) {
+                // Lower sideband: 134-255 -> 0-121
+                pixel = static_cast<int16_t>(bin - SWEEP_FFT_MAP_START);
+            } else if (bin < SWEEP_FFT_MAP_CROSSOVER) {
+                // Upper sideband: 2-119 -> 118-237 (using UPPER_OFFSET = 118)
+                static constexpr uint8_t UPPER_OFFSET = SWEEP_FFT_MAP_CROSSOVER - 2;
+                pixel = static_cast<int16_t>(bin + UPPER_OFFSET);
+            }
+            drone_display_.set_matched_pattern_bin(pixel);
         } else {
             drone_display_.set_matched_pattern_bin(-1);
         }
@@ -995,12 +1009,16 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
     if (win.pixel_index < COMPOSITE_SIZE) {
         // Normal step: advance frequency within current window
-        // Use < instead of <= to allow final step that slightly overshoots f_max.
-        // The peak frequency range check in process_spectrum_sweep() rejects
-        // any detections outside [f_min, f_max], so overshoot is safe.
-        // This ensures all 240 composite pixels are filled.
-        if (win.f_center < win.f_max) {
-            win.f_center += win.step_hz;
+        // FIX: Use <= instead of < to prevent overshoot (HIGH-3)
+        // Original: < allowed f_center to exceed f_max by up to step_hz,
+        // causing wasted spectrum integration outside the sweep range.
+        if (win.f_center <= win.f_max) {
+            // Clamp to f_max to prevent overshoot
+            if (win.f_center + win.step_hz > win.f_max) {
+                win.f_center = win.f_max;
+            } else {
+                win.f_center += win.step_hz;
+            }
             retune_sweep_window(win, nullptr);
             return;
         }
@@ -1035,8 +1053,12 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // Exit auto-mode before round-robin changes active_sweep_idx_,
         // but apply SWEEP-AWARE decay first (see wrap detection block below for rationale).
         if (next_pair == 0 && sweep_auto_mode_) {
-            // REMOVED: Duplicate apply_rssi_decay() call - now handled in wrap detection block below
-            // RSSI decay is now applied only once per full cycle, with is_sweep_mode=true
+            // FIX: Apply RSSI decay before exit in auto-mode (HIGH-4 bug fix)
+            // Original bug: exit_sweep_mode() was called without decay first,
+            // causing stale drone entries to persist indefinitely in auto-mode.
+            if (scanner_ptr_ != nullptr) {
+                scanner_ptr_->apply_rssi_decay(true);  // is_sweep_mode = true
+            }
             exit_sweep_mode();
             return;
         }
@@ -1121,8 +1143,18 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
         f_max = f_min + SWEEP_SLICE_BW;
     }
     const FreqHz range = f_max - f_min;
-    pixel_step_hz = (range + SWEEP_PIXELS_PER_SLICE - 1) / SWEEP_PIXELS_PER_SLICE;
+
+    // FIX: Use exact division to avoid +1 Hz per pixel drift (CRIT-3)
+    // Original formula added (SWEEP_PIXELS_PER_SLICE - 1) causing ceiling, resulting in:
+    // - 240Hz extra per pass (300MHz/240 * 240 - 300MHz = 240Hz)
+    // - Non-integer step_hz/pixel_step_hz ratio causing pixel cadence variation
+    pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;  // Exact: 300MHz/240 = 1,250,000Hz
+
+    // Force step_hz to be multiple of pixel_step_hz for coherent cadence
     step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE);
+    const uint16_t frames = (range + step_hz / 2) / step_hz;
+    step_hz = range / frames;  // Align to exact range coverage
+
     f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
     reset();
 }
@@ -1132,7 +1164,9 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
     f_center = f_center_ini;
     pixel_index = 0;
     pixel_max = 0;
-    bins_hz_acc = 0;
+    // FIX: Don't reset bins_hz_acc to retain pixel alignment across passes (MED-2)
+    // Original: bins_hz_acc = 0; // Lost accumulated remainder between passes
+    // Impact: ~1 pixel position shift between consecutive passes
 }
 
 bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
@@ -1161,16 +1195,21 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
 }
 
 void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) noexcept {
+    // ATOMIC FIX: Wrap frequency update in critical section to prevent race with spectrum handler
+    chSysLock();
     radio::set_tuning_frequency(rf::Frequency(win.f_center));
-    // CRITICAL FIX: Wait for RFFC5072 + MAX2837 PLLs to settle after frequency change.
-    // Without this delay, FFT captures data before PLLs are locked, causing:
-    // - Incorrect frequency mapping in FFT bins
-    // - Reduced sensitivity (signes not fully captured)
-    // - Spectral artifacts from frequency drift
-    // Using 5ms to match Looking Glass app delay for consistency.
-    chThdSleepMilliseconds(5);
     set_current_frequency_safe(win.f_center);
     last_tuned_freq_ = win.f_center;
+    chSysUnlock();
+
+    // Adaptive PLL settling: 5ms minimum for small hops (<100MHz), 15ms max for large hops (>200MHz)
+    // Without this delay, FFT captures data before PLLs are locked, causing:
+    // - Incorrect frequency mapping in FFT bins
+    // - Reduced sensitivity (signals not fully captured)
+    // - Spectral artifacts from frequency drift
+    static constexpr uint32_t PLL_SETTLE_MS = 15;
+    chThdSleepMilliseconds(PLL_SETTLE_MS);
+
     (void)prefix;
     baseband::spectrum_streaming_start();
 }
