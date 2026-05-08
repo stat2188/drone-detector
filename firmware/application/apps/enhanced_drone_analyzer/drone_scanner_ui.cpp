@@ -1138,19 +1138,37 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     }
     const FreqHz range = f_max - f_min;
 
-    // FIX: Use exact division to avoid +1 Hz per pixel drift (CRIT-3)
-    // Original formula added (SWEEP_PIXELS_PER_SLICE - 1) causing ceiling, resulting in:
-    // - 240Hz extra per pass (300MHz/240 * 240 - 300MHz = 240Hz)
-    // - Non-integer step_hz/pixel_step_hz ratio causing pixel cadence variation
-    pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;  // Exact: 300MHz/240 = 1,250,000Hz
+    // FIX: Exact division to avoid Hz drift per pixel (CRIT-3)
+    pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;
 
-    // Force step_hz to be multiple of pixel_step_hz for coherent cadence
-    step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE);
+    // CRITICAL FIX: step_hz must be >= usable FFT bandwidth per frame.
+    // If step is smaller, FFT frames overlap. The sequential pixel_index
+    // accumulation in SweepProcessor then fills composite[] long before
+    // f_center reaches f_max, causing the sweep range to be truncated.
+    // Usable bandwidth = SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE = 228 * 78125 = 17,812,500 Hz.
+    static constexpr FreqHz MIN_STEP_HZ = SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE;
+
+    step_hz = (step > 0) ? step : MIN_STEP_HZ;
+    if (step_hz < MIN_STEP_HZ) {
+        step_hz = MIN_STEP_HZ;
+    }
+
+    // Calculate frame count and align step to exact range coverage
     uint16_t frames = (range + step_hz / 2) / step_hz;
     if (frames == 0) {
-        frames = 1;  // SAFETY: Prevent division by zero
+        frames = 1;  // Safety: prevent division by zero
     }
-    step_hz = range / frames;  // Align to exact range coverage
+    step_hz = range / frames;
+
+    // Recalculate if rounding down pushed step below minimum
+    if (step_hz < MIN_STEP_HZ && range >= MIN_STEP_HZ) {
+        frames = range / MIN_STEP_HZ;
+        if (frames == 0) frames = 1;
+        step_hz = range / frames;
+        if (step_hz < MIN_STEP_HZ) {
+            step_hz = MIN_STEP_HZ;
+        }
+    }
 
     f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
     reset();

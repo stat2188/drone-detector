@@ -36,7 +36,7 @@ public:
     };
     ui::NumberField field_sw1_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_sw1_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw1_step_{{UI_POS_X(1), UI_POS_Y(6)}, 5, {1000, 99999}, 1000, ' '};
+    ui::NumberField field_sw1_step_{{UI_POS_X(1), UI_POS_Y(6)}, 5, {17813, 99999}, 17813, ' '};
 
     ui::Labels labels_sw2_{
         {{UI_POS_X(0), UI_POS_Y(8)}, "-- Window 2 --", Color::white()},
@@ -47,7 +47,7 @@ public:
     ui::Checkbox check_sw2_enabled_{{UI_POS_X(1), UI_POS_Y(9)}, 8, "Enabled", false};
     ui::NumberField field_sw2_start_{{UI_POS_X(1), UI_POS_Y(11)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_sw2_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw2_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {1000, 99999}, 1000, ' '};
+    ui::NumberField field_sw2_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {17813, 99999}, 17813, ' '};
 
     // Exception fields — right side of Window 1 (5 slots)
     ui::Labels labels_exc1_{
@@ -92,7 +92,7 @@ public:
     ui::Checkbox check_sw3_enabled_{{UI_POS_X(1), UI_POS_Y(1)}, 8, "Enabled", false};
     ui::NumberField field_sw3_start_{{UI_POS_X(1), UI_POS_Y(3)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_sw3_end_{{UI_POS_X(1), UI_POS_Y(5)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw3_step_{{UI_POS_X(1), UI_POS_Y(7)}, 5, {1000, 99999}, 1000, ' '};
+    ui::NumberField field_sw3_step_{{UI_POS_X(1), UI_POS_Y(7)}, 5, {17813, 99999}, 17813, ' '};
 
     ui::Labels labels_sw4_{
         {{UI_POS_X(0), UI_POS_Y(8)}, "-- Window 4 --", Color::white()},
@@ -103,7 +103,7 @@ public:
     ui::Checkbox check_sw4_enabled_{{UI_POS_X(1), UI_POS_Y(9)}, 8, "Enabled", false};
     ui::NumberField field_sw4_start_{{UI_POS_X(1), UI_POS_Y(11)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_sw4_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw4_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {1000, 99999}, 1000, ' '};
+    ui::NumberField field_sw4_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {17813, 99999}, 17813, ' '};
 
     // Exception fields — right side of Window 3 (5 slots)
     ui::Labels labels_exc3_{
