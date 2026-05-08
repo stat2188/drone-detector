@@ -534,8 +534,14 @@ public:
     [[nodiscard]] bool check_margin(FreqHz current_freq, int32_t current_rssi, int32_t min_margin_db) const noexcept {
         if (count_ < 2) return true;  // Not enough data — pass through
         int32_t best_neighbor_rssi = -120;
+        // FIX: Add 1MHz frequency window to avoid cross-band suppression in sweep mode
+        // Without this, a strong signal at 5700MHz suppresses detection at 5900MHz
+        constexpr FreqHz NEIGHBOR_WINDOW_HZ = 1'000'000ULL;
         for (uint8_t i = 0; i < count_; ++i) {
-            if (history_[i].freq != current_freq && history_[i].rssi > best_neighbor_rssi) {
+            const auto freq_diff = (history_[i].freq > current_freq)
+                ? (history_[i].freq - current_freq)
+                : (current_freq - history_[i].freq);
+            if (history_[i].freq != current_freq && freq_diff <= NEIGHBOR_WINDOW_HZ && history_[i].rssi > best_neighbor_rssi) {
                 best_neighbor_rssi = history_[i].rssi;
             }
         }
