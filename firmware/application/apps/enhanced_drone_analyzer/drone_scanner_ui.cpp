@@ -1009,16 +1009,10 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
     if (win.pixel_index < COMPOSITE_SIZE) {
         // Normal step: advance frequency within current window
-        // FIX: Use <= instead of < to prevent overshoot (HIGH-3)
-        // Original: < allowed f_center to exceed f_max by up to step_hz,
-        // causing wasted spectrum integration outside the sweep range.
-        if (win.f_center <= win.f_max) {
-            // Clamp to f_max to prevent overshoot
-            if (win.f_center + win.step_hz > win.f_max) {
-                win.f_center = win.f_max;
-            } else {
-                win.f_center += win.step_hz;
-            }
+        // REVERT (CRITICAL): Use < to prevent infinite stall at f_max.
+        // The overshoot is safely rejected by process_spectrum_sweep() frequency range check.
+        if (win.f_center < win.f_max) {
+            win.f_center += win.step_hz;
             retune_sweep_window(win, nullptr);
             return;
         }
@@ -1152,7 +1146,10 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
 
     // Force step_hz to be multiple of pixel_step_hz for coherent cadence
     step_hz = (step > 0) ? step : (SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE);
-    const uint16_t frames = (range + step_hz / 2) / step_hz;
+    uint16_t frames = (range + step_hz / 2) / step_hz;
+    if (frames == 0) {
+        frames = 1;  // SAFETY: Prevent division by zero
+    }
     step_hz = range / frames;  // Align to exact range coverage
 
     f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
@@ -1164,9 +1161,7 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
     f_center = f_center_ini;
     pixel_index = 0;
     pixel_max = 0;
-    // FIX: Don't reset bins_hz_acc to retain pixel alignment across passes (MED-2)
-    // Original: bins_hz_acc = 0; // Lost accumulated remainder between passes
-    // Impact: ~1 pixel position shift between consecutive passes
+    bins_hz_acc = 0;  // REVERT (HIGH): Reset to prevent stale accumulator between passes
 }
 
 bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
@@ -1195,19 +1190,14 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
 }
 
 void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) noexcept {
-    // ATOMIC FIX: Wrap frequency update in critical section to prevent race with spectrum handler
-    chSysLock();
+    // NOTE: radio::set_tuning_frequency is thread-safe via internal SPI driver mutex
+    // Removed invalid chSysLock() wrapper that could cause deadlock with interrupt-driven SPI
     radio::set_tuning_frequency(rf::Frequency(win.f_center));
     set_current_frequency_safe(win.f_center);
     last_tuned_freq_ = win.f_center;
-    chSysUnlock();
 
-    // Adaptive PLL settling: 5ms minimum for small hops (<100MHz), 15ms max for large hops (>200MHz)
-    // Without this delay, FFT captures data before PLLs are locked, causing:
-    // - Incorrect frequency mapping in FFT bins
-    // - Reduced sensitivity (signals not fully captured)
-    // - Spectral artifacts from frequency drift
-    static constexpr uint32_t PLL_SETTLE_MS = 15;
+    // 5ms PLL settle delay matches Looking Glass app - validated for RFFC5072 + MAX2837 lock
+    static constexpr uint32_t PLL_SETTLE_MS = 5;
     chThdSleepMilliseconds(PLL_SETTLE_MS);
 
     (void)prefix;
