@@ -83,7 +83,8 @@ TrackedDrone::TrackedDrone() noexcept
     , rssi_increased_{false}
     , last_increase_time_{0}
     , created_time_{0}
-    , mahalanobis_stats_{} {
+    , mahalanobis_stats_{}
+    , last_seen_time_{0} {
 }
 
 TrackedDrone::TrackedDrone(
@@ -106,7 +107,8 @@ TrackedDrone::TrackedDrone(
     , rssi_increased_{false}
     , last_increase_time_{0}
     , created_time_{0}
-    , mahalanobis_stats_{} {
+    , mahalanobis_stats_{}
+    , last_seen_time_{0} {
 }
 
 void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcept {
