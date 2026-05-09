@@ -19,9 +19,9 @@
 #ifndef ANALOG_VIDEO_VIEW_HPP
 #define ANALOG_VIDEO_VIEW_HPP
 
-#include <cstdint>
-#include <cstddef>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "ui_widget.hpp"
@@ -41,9 +41,9 @@ namespace drone_analyzer {
  * using the spectrum_rgb4_lut greyscale color lookup table.
  *
  * Memory:
- *   BSS: ~13,568 bytes (video_buffer_[13312+128] + state)
+ *   BSS: ~13,824 bytes (video_buffer_[13312+128] + line_buffer_[256] + state)
  *   Stack per on_channel_spectrum(): 0 bytes (no local allocations)
- *   Stack per render_frame(): ~256 bytes (line_buffer[128] of ui::Color)
+ *   Stack per render_frame(): 0 bytes (line_buffer_ moved to BSS)
  *   Flash: ~512 bytes (code)
  *
  * @note Audio is NOT rendered — simplified view for drone video inspection
@@ -66,7 +66,7 @@ public:
     /**
      * @brief Push a ChannelSpectrum sample for video accumulation
      * @param spectrum Incoming 256-byte spectrum data
-     * @note Stack: ~8 bytes
+     * @note Stack: 0 bytes
      * @note Called from DisplayFrameSync handler (UI thread)
      * @note Accumulates 52 frames, then renders full video frame
      */
@@ -93,13 +93,16 @@ private:
     /** @brief Frame buffer — BSS, ~13,440 bytes */
     uint8_t video_buffer_[VIDEO_BUFFER_SIZE]{};
 
+    /** @brief Line render buffer — BSS, eliminates 256-byte stack allocation */
+    std::array<ui::Color, LINE_WIDTH> line_buffer_{};
+
     uint32_t frame_count_{0};    //!< Number of spectra accumulated (0..51)
     bool active_{false};          //!< Rendering active
     uint8_t x_correction_{DEFAULT_X_CORRECTION};   //!< Horizontal correction offset (default 10, matches analogtv)
 
     /**
      * @brief Render accumulated frame to display
-     * @note Stack: ~256 bytes (line_buffer[128] of ui::Color)
+     * @note Stack: 0 bytes (line_buffer_ in BSS)
      * @note Uses display.render_line() for direct pixel write
      */
     void render_frame() noexcept;
@@ -112,8 +115,8 @@ private:
  * and forwards data to VideoWidget for rendering.
  *
  * Memory:
- *   BSS: ~13,600 bytes (VideoWidget + AnalogVideoView + handler storage)
- *   Stack per paint(): ~48 bytes (freq_str[24] + locals)
+ *   BSS: ~13,850 bytes (VideoWidget + AnalogVideoView + handler storage)
+ *   Stack per paint(): ~16 bytes (freq_str[16] + locals)
  *   Flash: ~768 bytes (code)
  *
  * @note No audio — audio is muted for the session

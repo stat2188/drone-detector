@@ -18,8 +18,8 @@
 
 #include "analog_video_view.hpp"
 
-#include <cstring>
-#include <cstdio>
+#include <cstdint>
+#include <cstddef>
 #include <new>
 
 #include "baseband_api.hpp"
@@ -38,12 +38,13 @@ namespace drone_analyzer {
 // VideoWidget implementation
 // ============================================================================
 // Memory:
-//   BSS: ~13,440 bytes (video_buffer_[13312+128])
+//   BSS: ~13,824 bytes (video_buffer_ + line_buffer_ + state)
 //   Stack per on_channel_spectrum(): 0 bytes
-//   Stack per render_frame(): ~256 bytes (line_buffer of ui::Color[128])
+//   Stack per render_frame(): 0 bytes (line_buffer_ in BSS)
 
 VideoWidget::VideoWidget()
     : video_buffer_{}
+    , line_buffer_{}
     , frame_count_{0}
     , active_{false}
     , x_correction_{10} {
@@ -74,11 +75,10 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
         return;
     }
 
-    // Accumulate 256 spectrum bytes into frame buffer
-    // Each callback provides 256 bytes which is 2 video lines at 128px each
+    // 52 frames × 256 bytes = 13312, always inside VIDEO_BUFFER_SIZE (13440)
     const size_t offset = frame_count_ * 256;
-    for (size_t i = 0; i < 256 && offset + i < VIDEO_BUFFER_SIZE; ++i) {
-        // Invert: spectrum.db[i]=0 (strong) -> 255 (white), spectrum.db[i]=255 (noise) -> 0 (black)
+    for (size_t i = 0; i < 256; ++i) {
+        // Invert: strong signal (0) -> white (255), noise (255) -> black (0)
         video_buffer_[offset + i] = 255 - spectrum.db[i];
     }
 
@@ -92,38 +92,29 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 }
 
 void VideoWidget::render_frame() noexcept {
-    // Stack: ~256 bytes (line_buffer[128] of ui::Color = 128 * 2 bytes = 256 bytes)
+    // Stack: 0 bytes (line_buffer_ lives in BSS)
     // Flash: ~200 bytes (loop code)
 
-    // Render 104 native video lines, each doubled to span 208 screen lines
-    // Starting at Y=VIDEO_START_Y (below header), centered at X=VIDEO_START_X
-    // Uses spectrum_rgb4_lut for grayscale color mapping (same as analogtv)
-
-    ui::Color line_buffer[LINE_WIDTH];  // Stack: 256 bytes
-
     for (uint16_t line = 0; line < VIDEO_LINES_HALF; ++line) {
-        // Build one video line from the frame buffer with x_correction
-        const size_t buf_offset = line * 128;
+        const size_t buf_offset = line * LINE_WIDTH;
+
         for (uint16_t px = 0; px < LINE_WIDTH; ++px) {
-            // Apply horizontal correction (shift by x_correction_ pixels)
-            // Wrap around within the 128-pixel line
-            const size_t src_idx = buf_offset + ((px + x_correction_) % LINE_WIDTH);
-            const uint8_t pixel_val = video_buffer_[src_idx];
-            line_buffer[px] = spectrum_rgb4_lut[pixel_val];
+            // Fast modulo-128 via bitmask (LINE_WIDTH is power of two)
+            const uint8_t src_idx = static_cast<uint8_t>((px + x_correction_) & (LINE_WIDTH - 1));
+            line_buffer_[px] = spectrum_rgb4_lut[video_buffer_[buf_offset + src_idx]];
         }
 
-        // Write each native line twice (line doubling for vertical scaling)
         const ui::Coord y0 = VIDEO_START_Y + static_cast<ui::Coord>(line * 2);
-        const ui::Coord y1 = VIDEO_START_Y + static_cast<ui::Coord>(line * 2 + 1);
 
         portapack::display.render_line(
             {VIDEO_START_X, y0},
             LINE_WIDTH,
-            line_buffer);
+            line_buffer_.data());
+
         portapack::display.render_line(
-            {VIDEO_START_X, y1},
+            {VIDEO_START_X, static_cast<ui::Coord>(y0 + 1)},
             LINE_WIDTH,
-            line_buffer);
+            line_buffer_.data());
     }
 }
 
@@ -131,8 +122,8 @@ void VideoWidget::render_frame() noexcept {
 // AnalogVideoView implementation
 // ============================================================================
 // Memory:
-//   BSS: ~13,600 bytes (VideoWidget + state + handler storage)
-//   Stack per paint(): ~48 bytes (freq_str[24] + loop vars)
+//   BSS: ~13,850 bytes (VideoWidget + state + handler storage)
+//   Stack per paint(): ~16 bytes (freq_str[16] + locals)
 //   Flash: ~768 bytes (code)
 
 [[nodiscard]] bool AnalogVideoView::is_frequency_valid(FreqHz freq) noexcept {
@@ -285,7 +276,7 @@ void AnalogVideoView::on_hide() {
 }
 
 void AnalogVideoView::paint(Painter& painter) {
-    // Stack: ~48 bytes (freq_str[24] + loop vars)
+    // Stack: ~16 bytes (freq_str[16] + loop vars)
 
     // First paint children (video_widget_)
     View::paint(painter);
@@ -293,17 +284,30 @@ void AnalogVideoView::paint(Painter& painter) {
     // Draw header background
     painter.fill_rectangle({0, 0, 240, HEADER_H}, Color::black());
 
-    // Format frequency for header display
-    char freq_str[24];
+    // Format frequency for header display — inline zero-allocation decimal formatter
+    char freq_str[16];
     if (!is_frequency_valid(frequency_)) {
-        strncpy(freq_str, "Invalid Freq", sizeof(freq_str) - 1);
-        freq_str[sizeof(freq_str) - 1] = '\0';
+        freq_str[0] = 'B'; freq_str[1] = 'a'; freq_str[2] = 'd';
+        freq_str[3] = ' '; freq_str[4] = 'F'; freq_str[5] = 'r';
+        freq_str[6] = 'e'; freq_str[7] = 'q'; freq_str[8] = '\0';
     } else {
         const uint32_t mhz = static_cast<uint32_t>(frequency_ / 1'000'000ULL);
         const uint32_t khz = static_cast<uint32_t>((frequency_ % 1'000'000ULL) / 1'000ULL);
-        snprintf(freq_str, sizeof(freq_str), "%lu.%03lu MHz",
-                 static_cast<unsigned long>(mhz),
-                 static_cast<unsigned long>(khz));
+
+        char* p = freq_str;
+        uint32_t m = mhz;
+
+        if (m >= 1000) { *p++ = '0' + static_cast<char>((m / 1000) % 10); }
+        if (m >= 100)  { *p++ = '0' + static_cast<char>((m / 100) % 10); }
+        if (m >= 10)   { *p++ = '0' + static_cast<char>((m / 10) % 10); }
+        *p++ = '0' + static_cast<char>(m % 10);
+
+        *p++ = '.';
+        *p++ = '0' + static_cast<char>((khz / 100) % 10);
+        *p++ = '0' + static_cast<char>((khz / 10) % 10);
+        *p++ = '0' + static_cast<char>(khz % 10);
+
+        *p++ = ' '; *p++ = 'M'; *p++ = 'H'; *p++ = 'z'; *p = '\0';
     }
 
     painter.draw_string(
