@@ -467,6 +467,28 @@ public:
     void set_matched_pattern_bin(int16_t bin) noexcept { matched_pattern_bin_ = bin; }
 
     /**
+     * @brief Layout metrics computed once per paint/hit_test cycle.
+     * @note SINGLE SOURCE OF TRUTH for all coordinate calculations.
+     *       Eliminates the desync bug where paint() and hit_test() computed
+     *       section heights independently with potentially different logic.
+     */
+    struct LayoutMetrics {
+        uint16_t spec_h;         // Spectrum/composite section height (0 if hidden)
+        uint16_t hist_h;         // Histogram section height (0 if hidden)
+        uint16_t status_h;       // Status bar height (0 if hidden)
+        uint16_t drone_h;        // Drone list section height (remaining space)
+        uint16_t list_start_y;   // Y offset where drone list begins (relative to parent)
+    };
+
+    /**
+     * @brief Calculate layout metrics from current display state.
+     * @return LayoutMetrics struct with all computed heights.
+     * @note Used by both paint() and hit_test() — single source of truth.
+     * @note Stack: ~0 bytes (all data returned by value, small struct).
+     */
+    [[nodiscard]] LayoutMetrics calculate_layout() const noexcept;
+
+    /**
      * @brief Hit-test: determine drone index at touch coordinates.
      * @param x Local X within DroneDisplay.
      * @param y Local Y within DroneDisplay.

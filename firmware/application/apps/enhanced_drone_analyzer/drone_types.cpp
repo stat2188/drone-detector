@@ -74,8 +74,8 @@ TrackedDrone::TrackedDrone() noexcept
     , update_count{0}
     , last_seen{0}
     , rssi{RSSI_NOISE_FLOOR_DBM}
-    , rssi_history_{0}
-    , timestamp_history_{0}
+    , rssi_history_{}
+    , timestamp_history_{}
     , history_index_{0}
     , missed_cycles_{0}
     , last_rssi_{RSSI_NOISE_FLOOR_DBM}
@@ -83,8 +83,9 @@ TrackedDrone::TrackedDrone() noexcept
     , rssi_increased_{false}
     , last_increase_time_{0}
     , created_time_{0}
-    , mahalanobis_stats_{}
-    , last_seen_time_{0} {
+    , last_seen_time_{0}
+    , sweep_cycles_missed_{0}
+    , mahalanobis_stats_{} {
 }
 
 TrackedDrone::TrackedDrone(
@@ -98,8 +99,8 @@ TrackedDrone::TrackedDrone(
     , update_count{0}
     , last_seen{0}
     , rssi{RSSI_NOISE_FLOOR_DBM}
-    , rssi_history_{0}
-    , timestamp_history_{0}
+    , rssi_history_{}
+    , timestamp_history_{}
     , history_index_{0}
     , missed_cycles_{0}
     , last_rssi_{RSSI_NOISE_FLOOR_DBM}
@@ -107,8 +108,9 @@ TrackedDrone::TrackedDrone(
     , rssi_increased_{false}
     , last_increase_time_{0}
     , created_time_{0}
-    , mahalanobis_stats_{}
-    , last_seen_time_{0} {
+    , last_seen_time_{0}
+    , sweep_cycles_missed_{0}
+    , mahalanobis_stats_{} {
 }
 
 void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcept {

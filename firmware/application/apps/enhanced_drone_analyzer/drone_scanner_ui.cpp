@@ -453,6 +453,7 @@ DroneScannerUI::~DroneScannerUI() noexcept {
     // Ensure atomic flags are cleared on destruction
     button_debounce_guard_.clear();
     sweep_transition_guard_.clear();
+    video_transition_guard_.clear();
 }
 
 void DroneScannerUI::focus() {
@@ -477,6 +478,9 @@ void DroneScannerUI::destruct_objects() noexcept {
 }
 
 void DroneScannerUI::on_show() {
+    // Clear video transition guard when returning from AnalogVideoView (paired with on_touch() set)
+    video_transition_guard_.clear();
+
     if (baseband_needs_restore_ && !composite_active_) {
         baseband_needs_restore_ = false;
         baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
@@ -598,8 +602,16 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
         return true;
     }
 
+    // CRITICAL: Prevent double-tap from pushing multiple AnalogVideoView instances.
+    // AtomicFlag::try_set() returns false if already set, so the second tap
+    // within the same transition window is silently consumed.
+    if (!video_transition_guard_.try_set()) {
+        return true;
+    }
+
     const auto display_rect = drone_display_.screen_rect();
     if (!display_rect.contains(event.point)) {
+        video_transition_guard_.clear();
         return false;
     }
 
@@ -610,11 +622,13 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
         static_cast<uint16_t>(local_x),
         static_cast<uint16_t>(local_y));
     if (hit_idx < 0) {
+        video_transition_guard_.clear();
         return false;
     }
 
     const auto& display_data = drone_display_.get_display_data();
     if (hit_idx >= static_cast<int16_t>(display_data.drone_count)) {
+        video_transition_guard_.clear();
         return false;
     }
 
@@ -622,12 +636,15 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
 
     const bool is_fpv_band =
         (drone.frequency >= 5645000000ULL && drone.frequency <= 5945000000ULL) ||
-        (drone.frequency >= 1000000000ULL  && drone.frequency <= 1400000000ULL);
+        (drone.frequency >= 2400000000ULL  && drone.frequency <= 2483500000ULL) ||
+        (drone.frequency >= 1000000000ULL  && drone.frequency <= 1400000000ULL) ||
+        (drone.frequency >= 900000000ULL   && drone.frequency <= 930000000ULL);
 
     const bool has_video = (drone.type == DroneType::FPV) || is_fpv_band;
 
     if (!has_video) {
         show_alert("No video carrier", 1500);
+        video_transition_guard_.clear();
         return true;
     }
 
@@ -652,6 +669,11 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
     baseband_needs_restore_ = true;
 
     nav_.push<AnalogVideoView>(drone.frequency);
+    // Guard is NOT cleared here — it will be cleared in on_show() when the
+    // view returns, preventing double-tap during the AnalogVideoView transition.
+    // SAFETY: If AnalogVideoView is never pushed (e.g. nav_.push fails), the
+    // guard would leak. In practice, NavigationView always pushes successfully.
+    // Clear in on_show() pairs with this set.
     return true;
 }
 

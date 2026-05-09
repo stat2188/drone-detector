@@ -34,29 +34,20 @@ DroneDisplay::~DroneDisplay() noexcept {
 // Paint Method
 // ============================================================================
 
-void DroneDisplay::paint(Painter& painter) {
-    const auto sr = screen_rect();
-    const uint16_t ox = sr.location().x();
-    const uint16_t oy = sr.location().y();
-    const uint16_t w = sr.size().width();
-    const uint16_t total_h = sr.size().height();
-
-    // NOTE: No full-screen clear — each render_* method clears its own area.
-    // This eliminates double-clear flickering.
-
-    // Calculate section heights dynamically
+DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
     constexpr uint16_t STATUS_H = 16;
     constexpr uint16_t SPECTRUM_H = 50;
     constexpr uint16_t HISTOGRAM_H = 30;
 
+    const uint16_t total_h = parent_rect().size().height();
+
     uint16_t remaining = total_h;
 
-    const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0);
-    const bool show_composite = (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0);
+    const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0) ||
+                           (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0);
     const bool show_hist = (histogram_visible_ && histogram_data_size_ > 0);
-    const bool show_list = (drone_list_visible_ && display_data_.drone_count > 0);
 
-    const uint16_t spec_h = (show_spec || show_composite) ? SPECTRUM_H : 0;
+    const uint16_t spec_h = show_spec ? SPECTRUM_H : 0;
     if (spec_h <= remaining) remaining -= spec_h; else remaining = 0;
 
     const uint16_t hist_h = show_hist ? HISTOGRAM_H : 0;
@@ -67,39 +58,61 @@ void DroneDisplay::paint(Painter& painter) {
 
     const uint16_t drone_h = remaining;
 
+    uint16_t list_start_y = 0;
+    if (show_spec) list_start_y += spec_h;
+    if (show_hist) list_start_y += hist_h;
+
+    return LayoutMetrics{spec_h, hist_h, status_h, drone_h, list_start_y};
+}
+
+void DroneDisplay::paint(Painter& painter) {
+    const auto sr = screen_rect();
+    const uint16_t ox = sr.location().x();
+    const uint16_t oy = sr.location().y();
+    const uint16_t w = sr.size().width();
+
+    // NOTE: No full-screen clear — each render_* method clears its own area.
+    // This eliminates double-clear flickering.
+
+    const auto layout = calculate_layout();
     uint16_t y_offset = oy;
 
-    if (show_spec || show_composite) {
-        if (show_composite) {
+    const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0) ||
+                           (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0);
+    const bool show_hist = (histogram_visible_ && histogram_data_size_ > 0);
+    const bool show_list = (drone_list_visible_ && display_data_.drone_count > 0);
+
+    if (show_spec) {
+        if (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0) {
             if (dual_sweep_mode_ && sweep2_data_ != nullptr && sweep2_data_size_ > 0) {
-                render_dual_composite(painter, ox, y_offset, w, spec_h);
+                render_dual_composite(painter, ox, y_offset, w, layout.spec_h);
             } else if (multi_zone_count_ > 1) {
-                render_multi_zone(painter, ox, y_offset, w, spec_h);
+                render_multi_zone(painter, ox, y_offset, w, layout.spec_h);
             } else {
                 render_composite(painter, composite_data_, composite_data_size_,
-                                ox, y_offset, w, spec_h);
+                                ox, y_offset, w, layout.spec_h);
             }
         } else {
             render_spectrum(painter, spectrum_buffer_.data(), spectrum_data_size_,
-                            ox, y_offset, w, spec_h);
+                            ox, y_offset, w, layout.spec_h);
         }
-        y_offset += spec_h;
+        y_offset += layout.spec_h;
     }
 
     if (show_hist) {
         render_histogram(painter, histogram_buffer_.data(), histogram_data_size_,
-                         ox, y_offset, w, hist_h);
-        y_offset += hist_h;
+                         ox, y_offset, w, layout.hist_h);
+        y_offset += layout.hist_h;
     }
 
-    if (show_list && drone_h > 0) {
+    if (show_list && layout.drone_h > 0) {
         render_drone_list(painter, display_data_.drones, display_data_.drone_count,
-                          ox, y_offset, w, drone_h);
-        y_offset += drone_h;
+                          ox, y_offset, w, layout.drone_h);
+        y_offset += layout.drone_h;
     }
 
-    if (status_h > 0) {
-        render_status_bar(painter, status_text_, ox, y_offset, w, status_h);
+    if (layout.status_h > 0) {
+        render_status_bar(painter, status_text_, ox, y_offset, w, layout.status_h);
     }
 }
 
@@ -915,41 +928,19 @@ int16_t DroneDisplay::hit_test(uint16_t x, uint16_t y) const noexcept {
         return -1;
     }
 
-    const uint16_t total_h = parent_rect().size().height();
     const uint16_t width = parent_rect().size().width();
     if (x >= width) return -1;
 
-    constexpr uint16_t STATUS_H = 16;
-    constexpr uint16_t SPECTRUM_H = 50;
-    constexpr uint16_t HISTOGRAM_H = 30;
+    // SINGLE SOURCE OF TRUTH: Use calculate_layout() — same as paint() uses
+    const auto layout = calculate_layout();
 
-    uint16_t remaining = total_h;
-    const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0) ||
-                           (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0);
-    const bool show_hist = (histogram_visible_ && histogram_data_size_ > 0);
-
-    const uint16_t spec_h = show_spec ? SPECTRUM_H : 0;
-    if (spec_h <= remaining) remaining -= spec_h; else remaining = 0;
-
-    const uint16_t hist_h = show_hist ? HISTOGRAM_H : 0;
-    if (hist_h <= remaining) remaining -= hist_h; else remaining = 0;
-
-    const uint16_t status_h = (remaining >= STATUS_H) ? STATUS_H : 0;
-    if (status_h <= remaining) remaining -= status_h; else remaining = 0;
-
-    const uint16_t drone_h = remaining;
-
-    uint16_t list_start_y = 0;
-    if (show_spec) list_start_y += spec_h;
-    if (show_hist) list_start_y += hist_h;
-
-    if (y < list_start_y || y >= list_start_y + drone_h) return -1;
+    if (y < layout.list_start_y || y >= layout.list_start_y + layout.drone_h) return -1;
 
     constexpr uint16_t HEADER_H = 12;
-    if (y < list_start_y + HEADER_H) return -1;
+    if (y < layout.list_start_y + HEADER_H) return -1;
 
-    const uint16_t entry_y = y - (list_start_y + HEADER_H);
-    const uint16_t available_h = drone_h - HEADER_H;
+    const uint16_t entry_y = y - (layout.list_start_y + HEADER_H);
+    const uint16_t available_h = layout.drone_h - HEADER_H;
 
     uint16_t entry_height = available_h / static_cast<uint16_t>(display_data_.drone_count);
     if (entry_height > 40) entry_height = 40;

@@ -26,6 +26,7 @@
 #include "portapack.hpp"
 #include "portapack_shared_memory.hpp"
 #include "audio.hpp"
+#include "audio_alerts.hpp"
 #include "spectrum_color_lut.hpp"
 #include "lcd_ili9341.hpp"
 
@@ -168,7 +169,13 @@ void AnalogVideoView::register_handlers() noexcept {
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
             const auto message = *reinterpret_cast<const ChannelSpectrumConfigMessage*>(p);
-            this->spectrum_fifo_ = message.fifo;
+
+            // HIGH FIX: Validate FIFO pointer before use.
+            // If baseband failed to initialize the FIFO, message.fifo will be nullptr.
+            // Only assign if valid — prevents null dereference in frame_sync handler.
+            if (message.fifo != nullptr) {
+                this->spectrum_fifo_ = message.fifo;
+            }
         }
     };
 
@@ -236,6 +243,10 @@ void AnalogVideoView::on_show() {
         return;
     }
 
+    // MEDIUM: Stop any ongoing audio alerts before video playback.
+    // Prevents SOS beep from interfering with video audio (if unmuted).
+    AudioAlertManager::stop_alert();
+
     if (!is_frequency_valid(frequency_)) {
         // Invalid frequency -- show empty screen with "Invalid Freq"
         video_widget_.on_show();
@@ -244,6 +255,11 @@ void AnalogVideoView::on_show() {
 
     // Setup hardware: load AM TV baseband, configure receiver
     setup_video_receiver();
+
+    // CRITICAL: Wait for PLL to settle after frequency change before starting
+    // spectrum capture. Si5351/MAX2837 PLL requires ~1-5ms to lock.
+    // Without this delay, the first FFT frames capture stale frequency data.
+    chThdSleepMilliseconds(5);
 
     // Register message handlers for spectrum streaming
     register_handlers();
