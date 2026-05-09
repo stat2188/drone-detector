@@ -125,7 +125,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , nav_(nav)
     , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
     , sweep_transition_guard_()
-    , button_debounce_guard_() {
+    , button_debounce_guard_()
+    , video_transition_guard_() {
     add_children({
         &labels_,
         &field_lna_,
