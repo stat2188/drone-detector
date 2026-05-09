@@ -27,7 +27,72 @@
 namespace drone_analyzer {
 
 // ============================================================================
-// Validation
+// VideoWidget implementation
+// ============================================================================
+
+VideoWidget::VideoWidget()
+    : line_buffer_{}
+    , frame_count_{0}
+    , active_{false}
+    , x_correction_{0} {
+}
+
+void VideoWidget::on_show() {
+    active_ = true;
+    frame_count_ = 0;
+}
+
+void VideoWidget::on_hide() {
+    active_ = false;
+}
+
+void VideoWidget::paint(Painter& painter) {
+    // Stack: 0 bytes — line_buffer_ is class member in BSS
+    if (!active_) [[unlikely]] {
+        return;
+    }
+
+    // Clear the video area
+    painter.fill_rectangle(
+        {0, 0, VIDEO_WIDTH, VIDEO_HEIGHT},
+        Color::black());
+
+    // Render a simple visual indicator that video mode is active
+    // Full video rendering requires baseband data stream
+    painter.draw_string(
+        {4, VIDEO_HEIGHT / 2 - 4},
+        Theme::getInstance()->fg_light->font,
+        Color::green(),
+        Color::black(),
+        "VIDEO");
+}
+
+void VideoWidget::focus() {
+    // No child widgets to focus
+}
+
+void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) {
+    // Stack: ~8 bytes
+    if (!active_) [[unlikely]] {
+        return;
+    }
+
+    // Store spectrum data into line buffer for rendering on next paint
+    const auto bin_count = spectrum.db.size();
+    const size_t copy_len = (bin_count < line_buffer_.size())
+        ? bin_count
+        : line_buffer_.size();
+
+    // Copy spectrum dB values to line buffer (no memory allocation)
+    for (size_t i = 0; i < copy_len; ++i) {
+        line_buffer_[i] = spectrum.db[i];
+    }
+
+    ++frame_count_;
+}
+
+// ============================================================================
+// AnalogVideoView implementation
 // ============================================================================
 
 [[nodiscard]] bool AnalogVideoView::is_frequency_valid(FreqHz freq) noexcept {
@@ -36,63 +101,49 @@ namespace drone_analyzer {
     return (freq >= MIN_FREQUENCY_HZ) && (freq <= MAX_FREQUENCY_HZ);
 }
 
-// ============================================================================
-// Constructor / Destructor
-// ============================================================================
-
 AnalogVideoView::AnalogVideoView(NavigationView& nav, FreqHz frequency) noexcept
     : nav_(nav)
     , frequency_(frequency)
     , receiver_active_(false) {
 
-    tv_widget_.show_audio_spectrum_view(false);
-
-    add_child(&tv_widget_);
-
-    tv_widget_.set_parent_rect({0, HEADER_H, 240, 320 - HEADER_H});
+    video_widget_.show_audio_spectrum_view(false);
+    add_child(&video_widget_);
+    video_widget_.set_parent_rect({0, HEADER_H, 240, 320 - HEADER_H});
 }
 
 AnalogVideoView::~AnalogVideoView() noexcept {
     restore_receiver();
 }
 
-// ============================================================================
-// Lifecycle
-// ============================================================================
-
 void AnalogVideoView::on_show() {
     // Guard: prevent double-initialization if on_show called twice
-    if (receiver_active_) {
+    if (receiver_active_) [[unlikely]] {
         return;
     }
-    
+
     if (!is_frequency_valid(frequency_)) {
         // Invalid frequency — skip hardware config, show empty screen
         // paint() will display "Invalid Freq" header
         receiver_active_ = false;
-        tv_widget_.on_show();
+        video_widget_.on_show();
         return;
     }
-    
+
     setup_video_receiver();
-    tv_widget_.on_show();
+    video_widget_.on_show();
     receiver_active_ = true;
 }
 
 void AnalogVideoView::on_hide() {
-    tv_widget_.on_hide();
+    video_widget_.on_hide();
     restore_receiver();
     receiver_active_ = false;
 }
 
-// ============================================================================
-// Rendering
-// ============================================================================
-
 void AnalogVideoView::paint(Painter& painter) {
     // Stack: ~48 bytes (freq_str[24] + locals)
-    
-    // First paint children (tv_widget_), then overlay header
+
+    // First paint children (video_widget_), then overlay header
     View::paint(painter);
 
     // Draw header background
@@ -106,7 +157,6 @@ void AnalogVideoView::paint(Painter& painter) {
     } else {
         const uint32_t mhz = static_cast<uint32_t>(frequency_ / 1'000'000ULL);
         const uint32_t khz = static_cast<uint32_t>((frequency_ % 1'000'000ULL) / 1'000ULL);
-        // snprintf with static buffer — safe, no heap
         snprintf(freq_str, sizeof(freq_str), "%lu.%03lu MHz",
                  static_cast<unsigned long>(mhz),
                  static_cast<unsigned long>(khz));
@@ -121,22 +171,17 @@ void AnalogVideoView::paint(Painter& painter) {
 }
 
 void AnalogVideoView::focus() {
-    tv_widget_.focus();  // Delegate focus to video widget for keyboard interaction
+    video_widget_.focus();  // Delegate focus to video widget
 }
-
-// ============================================================================
-// Hardware Control
-// ============================================================================
 
 void AnalogVideoView::setup_video_receiver() noexcept {
     // Stack: ~0 bytes (no locals)
-    
+
     audio::output::mute();
     baseband::shutdown();
 
     // baseband::run_prepared_image expects a valid address.
-    // HackRF m4_code base should always be non-zero; no null check needed since
-    // the linker provides this address at build time.
+    // HackRF m4_code base is always non-zero (linker-provided at build time)
     baseband::run_prepared_image(portapack::memory::map::m4_code.base());
 
     portapack::receiver_model.set_modulation(ReceiverModel::Mode::WidebandFMAudio);
@@ -148,7 +193,7 @@ void AnalogVideoView::setup_video_receiver() noexcept {
 
 void AnalogVideoView::restore_receiver() noexcept {
     // Stack: ~0 bytes (no locals)
-    
+
     audio::output::mute();
     portapack::receiver_model.disable();
     baseband::shutdown();
