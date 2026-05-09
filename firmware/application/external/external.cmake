@@ -15,10 +15,10 @@ set(EXTCPPSRC
 	external/blespam/main.cpp
 	external/blespam/ui_blespam.cpp
 
-	#analogtv - fullscreen with LUT-optimized video rendering
+	#analogtv
 	external/analogtv/main.cpp
-	external/analogtv/video_renderer.cpp
-	external/analogtv/fullscreen_tv_view.cpp
+	external/analogtv/analog_tv_app.cpp
+	external/analogtv/ui_tv.cpp
 
 	#nrf_rx  40 byte
 	external/nrf_rx/main.cpp

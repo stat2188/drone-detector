@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <array>
 
 #include "ui.hpp"
 #include "ui_widget.hpp"
@@ -43,7 +44,10 @@ public:
     DroneScannerUI(const DroneScannerUI&) = delete;
     DroneScannerUI& operator=(const DroneScannerUI&) = delete;
 
-    std::string title() const override { return "EDA"; }
+    std::string title() const override {
+        static const std::string title_str = "EDA";
+        return title_str;
+    }
     void paint(Painter& painter) override;
     void focus() override;
     void on_show() override;
@@ -231,6 +235,9 @@ private:
         MessageHandlerRegistration retune;
         MessageHandlerRegistration channel_stats;
     };
+    // handler_storage_ is explicitly sized to sizeof(HandlerStorage) — guaranteed safe.
+    // Prevents DBLREG hard fault via placement new at runtime.
+    static_assert(sizeof(HandlerStorage) <= 256, "HandlerStorage unexpectedly large (>256 bytes)");
     alignas(alignof(HandlerStorage)) uint8_t handler_storage_[sizeof(HandlerStorage)];
     bool handlers_active_{false};
 

@@ -19,10 +19,12 @@
 #ifndef ANALOG_VIDEO_VIEW_HPP
 #define ANALOG_VIDEO_VIEW_HPP
 
+#include <string>
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
 #include "ui_tv.hpp"
 #include "drone_types.hpp"
+#include "constants.hpp"  // For MIN_FREQUENCY_HZ, MAX_FREQUENCY_HZ
 
 namespace drone_analyzer {
 
@@ -43,16 +45,34 @@ public:
     void paint(Painter& painter) override;
     void focus() override;
 
-    std::string title() const override { return "FPV Video"; }
+    std::string title() const override {
+        static const std::string title_str = "FPV Video";
+        return title_str;
+    }
+
+    /**
+     * @brief Check if video receiver is properly configured
+     * @return true if frequency valid and hardware ready
+     */
+    [[nodiscard]] bool is_valid() const noexcept;
 
 private:
     NavigationView& nav_;
     FreqHz frequency_{0};
 
-    ui::external_app::analogtv::tv::TVWidget tv_widget_{};
+    ui::tv::TVWidget tv_widget_{};
+
+    // Guard against double-initialization
+    bool receiver_active_{false};
 
     void setup_video_receiver() noexcept;
     void restore_receiver() noexcept;
+    
+    /**
+     * @brief Validate frequency against hardware limits
+     * @return true if frequency is within HackRF operational range
+     */
+    [[nodiscard]] static bool is_frequency_valid(FreqHz freq) noexcept;
 };
 
 }  // namespace drone_analyzer
