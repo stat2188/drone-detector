@@ -489,6 +489,11 @@ void DroneScannerUI::on_show() {
         portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
         baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
         portapack::receiver_model.enable();
+
+        // CRITICAL FIX: Restore audio output that was muted by AnalogVideoView::setup_video_receiver().
+        // Without this, the scanner returns to operation with muted audio alerts.
+        // audio::output::mute() is called in analog_video_view.cpp, we must unmute here.
+        audio::output::unmute();
     }
 
     // Re-register handlers when becoming visible (after returning from sub-view)
@@ -551,6 +556,11 @@ void DroneScannerUI::on_show() {
 }
 
 void DroneScannerUI::on_hide() {
+    // Clear video transition guard on ANY hide event.
+    // This prevents permanent guard leak if AnalogVideoView push failed
+    // or if the navigation stack popped unexpectedly.
+    video_transition_guard_.clear();
+
     if (scanning_) {
         scanner_thread_->set_scanning(false);
         if (scanner_ptr_ != nullptr) {
@@ -636,10 +646,10 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
     const auto& drone = display_data.drones[hit_idx];
 
     const bool is_fpv_band =
-        (drone.frequency >= 5645000000ULL && drone.frequency <= 5945000000ULL) ||
-        (drone.frequency >= 2400000000ULL  && drone.frequency <= 2483500000ULL) ||
-        (drone.frequency >= 1000000000ULL  && drone.frequency <= 1400000000ULL) ||
-        (drone.frequency >= 900000000ULL   && drone.frequency <= 930000000ULL);
+        (drone.frequency >= FPV_BAND_5GHZ_START && drone.frequency <= FPV_BAND_5GHZ_END) ||
+        (drone.frequency >= FPV_BAND_2GHZ_START  && drone.frequency <= FPV_BAND_2GHZ_END) ||
+        (drone.frequency >= FPV_BAND_1GHZ_START  && drone.frequency <= FPV_BAND_1GHZ_END) ||
+        (drone.frequency >= FPV_BAND_900MHZ_START && drone.frequency <= FPV_BAND_900MHZ_END);
 
     const bool has_video = (drone.type == DroneType::FPV) || is_fpv_band;
 

@@ -83,12 +83,19 @@ private:
     static constexpr size_t VIDEO_BUFFER_SIZE = 13312 + 128; // 52×256 + xcorr padding
     static constexpr uint16_t LINE_WIDTH = 128;       // Pixels per video line
 
+    /**
+     * @brief Default horizontal pixel shift for video centering.
+     * @note Value 10 shifts image 10px right to center NTSC/PAL video on 128px display.
+     *       Matches analogtv app behavior.
+     */
+    static constexpr uint8_t DEFAULT_X_CORRECTION = 10;
+
     /** @brief Frame buffer — BSS, ~13,440 bytes */
     uint8_t video_buffer_[VIDEO_BUFFER_SIZE]{};
 
     uint32_t frame_count_{0};    //!< Number of spectra accumulated (0..51)
     bool active_{false};          //!< Rendering active
-    uint8_t x_correction_{10};   //!< Horizontal correction offset (default 10, matches analogtv)
+    uint8_t x_correction_{DEFAULT_X_CORRECTION};   //!< Horizontal correction offset (default 10, matches analogtv)
 
     /**
      * @brief Render accumulated frame to display

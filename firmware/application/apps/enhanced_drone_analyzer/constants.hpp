@@ -44,8 +44,53 @@ constexpr FreqHz FREQUENCY_STEP_HZ = 1'000'000ULL;
  */
 constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 20'000'000ULL;
 
+// ============================================================================
+// FPV Frequency Band Constants (Analog Video)
+// ============================================================================
 
+/**
+ * @brief 5.8 GHz FPV band: start frequency (Hz)
+ * @note Common 5.8 GHz video transmitters: 5645-5945 MHz (RaceBand)
+ */
+constexpr FreqHz FPV_BAND_5GHZ_START = 5'645'000'000ULL;
 
+/**
+ * @brief 5.8 GHz FPV band: end frequency (Hz)
+ */
+constexpr FreqHz FPV_BAND_5GHZ_END = 5'945'000'000ULL;
+
+/**
+ * @brief 2.4 GHz FPV band: start frequency (Hz)
+ * @note Common 2.4 GHz video transmitters: 2400-2483.5 MHz
+ */
+constexpr FreqHz FPV_BAND_2GHZ_START = 2'400'000'000ULL;
+
+/**
+ * @brief 2.4 GHz FPV band: end frequency (Hz)
+ */
+constexpr FreqHz FPV_BAND_2GHZ_END = 2'483'500'000ULL;
+
+/**
+ * @brief 1.2 GHz FPV band: start frequency (Hz)
+ * @note Common 1.2 GHz video transmitters: 1000-1400 MHz
+ */
+constexpr FreqHz FPV_BAND_1GHZ_START = 1'000'000'000ULL;
+
+/**
+ * @brief 1.2 GHz FPV band: end frequency (Hz)
+ */
+constexpr FreqHz FPV_BAND_1GHZ_END = 1'400'000'000ULL;
+
+/**
+ * @brief 900 MHz FPV band: start frequency (Hz)
+ * @note Common 900 MHz video transmitters: 900-930 MHz
+ */
+constexpr FreqHz FPV_BAND_900MHZ_START = 900'000'000ULL;
+
+/**
+ * @brief 900 MHz FPV band: end frequency (Hz)
+ */
+constexpr FreqHz FPV_BAND_900MHZ_END = 930'000'000ULL;
 // ============================================================================
 // Buffer Size Constants
 // ============================================================================
