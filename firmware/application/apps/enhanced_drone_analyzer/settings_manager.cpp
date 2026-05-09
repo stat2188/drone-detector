@@ -47,18 +47,18 @@ SettingsStruct::SettingsStruct() noexcept
     , pattern_matching_enabled(true)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
-    , sweep_step_freq(20000000)
+    , sweep_step_freq(17813000)
     , sweep2_start_freq(2400000000ULL)
     , sweep2_end_freq(2500000000ULL)
-    , sweep2_step_freq(20000000)
+    , sweep2_step_freq(17813000)
     , sweep2_enabled(false)
     , sweep3_start_freq(900000000ULL)
     , sweep3_end_freq(1000000000ULL)
-    , sweep3_step_freq(20000000)
+    , sweep3_step_freq(17813000)
     , sweep3_enabled(false)
     , sweep4_start_freq(1200000000ULL)
     , sweep4_end_freq(1300000000ULL)
-    , sweep4_step_freq(20000000)
+    , sweep4_step_freq(17813000)
     , sweep4_enabled(false) {
 }
 

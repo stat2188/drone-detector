@@ -42,19 +42,19 @@ struct ScanConfig {
     // Sweep range (Hz) — window 2 (2.4 GHz: drone control, Wi-Fi drones)
     FreqHz sweep2_start_freq{2400000000ULL};
     FreqHz sweep2_end_freq{2483500000ULL};
-    FreqHz sweep2_step_freq{20000000};
+    FreqHz sweep2_step_freq{17813000};
     bool sweep2_enabled{true};
 
     // Sweep range (Hz) — window 3 (1.2 GHz: long-range FPV)
     FreqHz sweep3_start_freq{1120000000ULL};
     FreqHz sweep3_end_freq{1360000000ULL};
-    FreqHz sweep3_step_freq{20000000};
+    FreqHz sweep3_step_freq{17813000};
     bool sweep3_enabled{true};
 
     // Sweep range (Hz) — window 4 (433 MHz + 868/915 MHz: control/telemetry)
     FreqHz sweep4_start_freq{433000000ULL};
     FreqHz sweep4_end_freq{928000000ULL};
-    FreqHz sweep4_step_freq{20000000};
+    FreqHz sweep4_step_freq{17813000};
     bool sweep4_enabled{true};
 
     // Advanced detection features (OFF by default)
