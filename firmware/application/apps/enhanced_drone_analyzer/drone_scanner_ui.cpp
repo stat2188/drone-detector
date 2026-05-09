@@ -477,6 +477,15 @@ void DroneScannerUI::destruct_objects() noexcept {
 }
 
 void DroneScannerUI::on_show() {
+    if (baseband_needs_restore_ && !composite_active_) {
+        baseband_needs_restore_ = false;
+        baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
+        portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
+        portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
+        baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
+        portapack::receiver_model.enable();
+    }
+
     // Re-register handlers when becoming visible (after returning from sub-view)
     register_handlers();
 
@@ -582,6 +591,68 @@ void DroneScannerUI::show_error(ErrorCode error, uint32_t duration_ms) noexcept 
     last_error_ = error;
     error_start_time_ = chTimeNow();
     error_duration_ms_ = duration_ms;
+}
+
+bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
+    if (View::on_touch(event)) {
+        return true;
+    }
+
+    const auto display_rect = drone_display_.screen_rect();
+    if (!display_rect.contains(event.point)) {
+        return false;
+    }
+
+    const int16_t local_x = event.point.x() - display_rect.location().x();
+    const int16_t local_y = event.point.y() - display_rect.location().y();
+
+    const int16_t hit_idx = drone_display_.hit_test(
+        static_cast<uint16_t>(local_x),
+        static_cast<uint16_t>(local_y));
+    if (hit_idx < 0) {
+        return false;
+    }
+
+    const auto& display_data = drone_display_.get_display_data();
+    if (hit_idx >= static_cast<int16_t>(display_data.drone_count)) {
+        return false;
+    }
+
+    const auto& drone = display_data.drones[hit_idx];
+
+    const bool is_fpv_band =
+        (drone.frequency >= 5645000000ULL && drone.frequency <= 5945000000ULL) ||
+        (drone.frequency >= 1000000000ULL  && drone.frequency <= 1400000000ULL);
+
+    const bool has_video = (drone.type == DroneType::FPV) || is_fpv_band;
+
+    if (!has_video) {
+        show_alert("No video carrier", 1500);
+        return true;
+    }
+
+    if (scanning_) {
+        if (composite_active_) {
+            exit_sweep_mode();
+        } else {
+            scanner_thread_->set_scanning(false);
+            if (scanner_ptr_ != nullptr) {
+                (void)scanner_ptr_->stop_scanning();
+            }
+            baseband::spectrum_streaming_stop();
+        }
+        scanning_ = false;
+        button_start_stop_.set_text("Start");
+    }
+
+    if (scanner_thread_ != nullptr) {
+        scanner_thread_->stop();
+    }
+
+    baseband_needs_restore_ = true;
+
+    nav_.push<AnalogVideoView>(drone.frequency);
+    return true;
 }
 
 void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {

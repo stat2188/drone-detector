@@ -466,6 +466,15 @@ private:
 public:
     void set_matched_pattern_bin(int16_t bin) noexcept { matched_pattern_bin_ = bin; }
 
+    /**
+     * @brief Hit-test: determine drone index at touch coordinates.
+     * @param x Local X within DroneDisplay.
+     * @param y Local Y within DroneDisplay.
+     * @return Drone index (0-based) or -1 if miss.
+     * @note Must mirror paint() layout — update here when paint() changes.
+     */
+    [[nodiscard]] int16_t hit_test(uint16_t x, uint16_t y) const noexcept;
+
 private:
     // Dual-sweep rendering (two horizontal bands)
     bool dual_sweep_mode_{false};

@@ -910,4 +910,55 @@ void DroneDisplay::render_dual_composite(
     sweep_freq_end_ = saved_end;
 }
 
+int16_t DroneDisplay::hit_test(uint16_t x, uint16_t y) const noexcept {
+    if (!drone_list_visible_ || display_data_.drone_count == 0) {
+        return -1;
+    }
+
+    const uint16_t total_h = parent_rect().size().height();
+    const uint16_t width = parent_rect().size().width();
+    if (x >= width) return -1;
+
+    constexpr uint16_t STATUS_H = 16;
+    constexpr uint16_t SPECTRUM_H = 50;
+    constexpr uint16_t HISTOGRAM_H = 30;
+
+    uint16_t remaining = total_h;
+    const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0) ||
+                           (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0);
+    const bool show_hist = (histogram_visible_ && histogram_data_size_ > 0);
+
+    const uint16_t spec_h = show_spec ? SPECTRUM_H : 0;
+    if (spec_h <= remaining) remaining -= spec_h; else remaining = 0;
+
+    const uint16_t hist_h = show_hist ? HISTOGRAM_H : 0;
+    if (hist_h <= remaining) remaining -= hist_h; else remaining = 0;
+
+    const uint16_t status_h = (remaining >= STATUS_H) ? STATUS_H : 0;
+    if (status_h <= remaining) remaining -= status_h; else remaining = 0;
+
+    const uint16_t drone_h = remaining;
+
+    uint16_t list_start_y = 0;
+    if (show_spec) list_start_y += spec_h;
+    if (show_hist) list_start_y += hist_h;
+
+    if (y < list_start_y || y >= list_start_y + drone_h) return -1;
+
+    constexpr uint16_t HEADER_H = 12;
+    if (y < list_start_y + HEADER_H) return -1;
+
+    const uint16_t entry_y = y - (list_start_y + HEADER_H);
+    const uint16_t available_h = drone_h - HEADER_H;
+
+    uint16_t entry_height = available_h / static_cast<uint16_t>(display_data_.drone_count);
+    if (entry_height > 40) entry_height = 40;
+    if (entry_height < 22) entry_height = 22;
+
+    const uint16_t idx = entry_y / entry_height;
+    if (idx >= display_data_.drone_count) return -1;
+
+    return static_cast<int16_t>(idx);
+}
+
 } // namespace drone_analyzer

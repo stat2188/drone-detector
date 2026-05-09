@@ -19,6 +19,7 @@
 #include "scanner_thread.hpp"
 #include "drone_display.hpp"
 #include "sweep_processor.hpp"
+#include "analog_video_view.hpp"
 
 namespace drone_analyzer {
 
@@ -235,6 +236,9 @@ private:
 
     void register_handlers() noexcept;
     void unregister_handlers() noexcept;
+
+    bool on_touch(const ui::TouchEvent event) override;
+    bool baseband_needs_restore_{false};
 };
 
 DroneScanner& get_scanner_instance() noexcept;
