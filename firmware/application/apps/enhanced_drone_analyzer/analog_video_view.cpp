@@ -35,19 +35,27 @@ using namespace portapack;
 namespace drone_analyzer {
 
 // ============================================================================
+// VideoWidget static member definitions — BSS allocation (~13,952 bytes total)
+// Shared across all VideoWidget instances, not per-instance.
+// This eliminates ~13.5KB from each AnalogVideoView object, preventing OOM
+// when nav_.push creates AnalogVideoView after DroneScannerUI.
+// ============================================================================
+uint8_t VideoWidget::video_buffer_[VideoWidget::VIDEO_BUFFER_SIZE];
+std::array<ui::Color, VideoWidget::LINE_WIDTH> VideoWidget::line_buffer_;
+
+// ============================================================================
 // VideoWidget implementation
 // ============================================================================
 // Memory:
-//   BSS: ~13,824 bytes (video_buffer_ + line_buffer_ + state)
+//   BSS (static): ~13,952 bytes (video_buffer_ + line_buffer_, shared across instances)
+//   Instance: ~16 bytes (frame_count_ + active_ + x_correction_)
 //   Stack per on_channel_spectrum(): 0 bytes
 //   Stack per render_frame(): 0 bytes (line_buffer_ in BSS)
 
 VideoWidget::VideoWidget()
-    : video_buffer_{}
-    , line_buffer_{}
-    , frame_count_{0}
+    : frame_count_{0}
     , active_{false}
-    , x_correction_{10} {
+    , x_correction_{DEFAULT_X_CORRECTION} {
 }
 
 void VideoWidget::on_show() {
@@ -122,7 +130,8 @@ void VideoWidget::render_frame() noexcept {
 // AnalogVideoView implementation
 // ============================================================================
 // Memory:
-//   BSS: ~13,850 bytes (VideoWidget + state + handler storage)
+//   BSS (static VideoWidget): ~13,952 bytes (shared, not per-instance)
+//   Instance: ~320 bytes (VideoWidget state ~16B + AnalogVideoView state ~300B)
 //   Stack per paint(): ~16 bytes (freq_str[16] + locals)
 //   Flash: ~768 bytes (code)
 

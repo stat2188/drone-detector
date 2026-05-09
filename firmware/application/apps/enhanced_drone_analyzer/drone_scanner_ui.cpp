@@ -659,6 +659,13 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
         return true;
     }
 
+    // Stop audio alerts — SOS loop could consume stack during video init
+    AudioAlertManager::stop_alert();
+
+    // Remove message handlers — prevents stale lambda calls during AnalogVideoView init
+    unregister_handlers();
+
+    // Stop scanning and streaming in ALL modes
     if (scanning_) {
         if (composite_active_) {
             exit_sweep_mode();
@@ -667,24 +674,22 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
             if (scanner_ptr_ != nullptr) {
                 (void)scanner_ptr_->stop_scanning();
             }
-            baseband::spectrum_streaming_stop();
         }
+        baseband::spectrum_streaming_stop();
         scanning_ = false;
         button_start_stop_.set_text("Start");
     }
 
+    // Wait for scanner thread to fully terminate (frees 2KB stack)
     if (scanner_thread_ != nullptr) {
         scanner_thread_->stop();
     }
 
-    baseband_needs_restore_ = true;
+    // Disable RF to prevent Si5351/MAX2837 races with AnalogVideoView
+    portapack::receiver_model.disable();
 
+    baseband_needs_restore_ = true;
     nav_.push<AnalogVideoView>(drone.frequency);
-    // Guard is NOT cleared here — it will be cleared in on_show() when the
-    // view returns, preventing double-tap during the AnalogVideoView transition.
-    // SAFETY: If AnalogVideoView is never pushed (e.g. nav_.push fails), the
-    // guard would leak. In practice, NavigationView always pushes successfully.
-    // Clear in on_show() pairs with this set.
     return true;
 }
 

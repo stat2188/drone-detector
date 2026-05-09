@@ -41,13 +41,15 @@ namespace drone_analyzer {
  * using the spectrum_rgb4_lut greyscale color lookup table.
  *
  * Memory:
- *   BSS: ~13,824 bytes (video_buffer_[13312+128] + line_buffer_[256] + state)
+ *   BSS (static): ~13,952 bytes (video_buffer_[13312+128] + line_buffer_[256], shared)
+ *   Instance: ~16 bytes (frame_count_ + active_ + x_correction_)
  *   Stack per on_channel_spectrum(): 0 bytes (no local allocations)
- *   Stack per render_frame(): 0 bytes (line_buffer_ moved to BSS)
+ *   Stack per render_frame(): 0 bytes (line_buffer_ in BSS)
  *   Flash: ~512 bytes (code)
  *
  * @note Audio is NOT rendered — simplified view for drone video inspection
  * @note No heap allocation — all buffers are compile-time fixed arrays
+ * @note Static buffers are shared across ALL VideoWidget instances (BSS, not per-instance)
  */
 class VideoWidget : public ui::Widget {
 public:
@@ -90,11 +92,11 @@ private:
      */
     static constexpr uint8_t DEFAULT_X_CORRECTION = 10;
 
-    /** @brief Frame buffer — BSS, ~13,440 bytes */
-    uint8_t video_buffer_[VIDEO_BUFFER_SIZE]{};
+    /** @brief Frame buffer — BSS, ~13,440 bytes (shared across all VideoWidget instances) */
+    static uint8_t video_buffer_[VIDEO_BUFFER_SIZE];
 
-    /** @brief Line render buffer — BSS, eliminates 256-byte stack allocation */
-    std::array<ui::Color, LINE_WIDTH> line_buffer_{};
+    /** @brief Line render buffer — BSS, eliminates 256-byte stack allocation (shared) */
+    static std::array<ui::Color, LINE_WIDTH> line_buffer_;
 
     uint32_t frame_count_{0};    //!< Number of spectra accumulated (0..51)
     bool active_{false};          //!< Rendering active
@@ -115,7 +117,8 @@ private:
  * and forwards data to VideoWidget for rendering.
  *
  * Memory:
- *   BSS: ~13,850 bytes (VideoWidget + AnalogVideoView + handler storage)
+ *   BSS (static): ~13,952 bytes (VideoWidget buffers shared, not per-instance)
+ *   Instance: ~320 bytes (VideoWidget instance ~16B + AnalogVideoView state ~300B)
  *   Stack per paint(): ~16 bytes (freq_str[16] + locals)
  *   Flash: ~768 bytes (code)
  *
