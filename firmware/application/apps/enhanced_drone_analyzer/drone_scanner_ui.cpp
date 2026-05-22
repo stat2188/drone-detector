@@ -364,8 +364,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             scanner_thread_->set_scanning(false);
         }
         // Exit sweep mode if active - this also restores bandwidth.
+        // suppress_auto_restart: PatternManagerView handles its own streaming state.
         if (composite_active_) {
-            exit_sweep_mode();
+            exit_sweep_mode(true);
         }
         nav_.push<PatternManagerView>();
     };
@@ -665,17 +666,19 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
     // Remove message handlers — prevents stale lambda calls during AnalogVideoView init
     unregister_handlers();
 
-    // Stop scanning and streaming in ALL modes
+    // Stop scanning and streaming in ALL modes.
+    // suppress_auto_restart=true prevents exit_sweep_mode from
+    // restarting streaming — avoids send_message() spin race.
     if (scanning_) {
         if (composite_active_) {
-            exit_sweep_mode();
+            exit_sweep_mode(true);
         } else {
             scanner_thread_->set_scanning(false);
             if (scanner_ptr_ != nullptr) {
                 (void)scanner_ptr_->stop_scanning();
             }
+            baseband::spectrum_streaming_stop();
         }
-        baseband::spectrum_streaming_stop();
         scanning_ = false;
         button_start_stop_.set_text("Start");
     }
@@ -1012,7 +1015,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_transition_guard_.clear();
 }
 
-void DroneScannerUI::exit_sweep_mode() noexcept {
+void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     // Prevent re-entrant exit — must match enter_sweep_mode() guard pattern
     if (!composite_active_) return;
     if (!sweep_transition_guard_.try_set()) return;
@@ -1043,7 +1046,11 @@ void DroneScannerUI::exit_sweep_mode() noexcept {
     portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
     baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
 
-    if (was_auto && scanner_ptr_ != nullptr) {
+    // Only auto-restart scanning if NOT being called from view transition.
+    // When suppress_auto_restart=true (video or pattern manager push),
+    // the streaming restart would be immediately stopped by the caller,
+    // creating a send_message() race that can panic "Baseband Send Fail".
+    if (!suppress_auto_restart && was_auto && scanner_ptr_ != nullptr) {
         // Continue scanning from last DB position (skip already-scanned)
         // Restore both frequency AND database index for exact resume
         if (last_db_frequency_ != 0) {

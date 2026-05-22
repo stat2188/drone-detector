@@ -204,7 +204,7 @@ private:
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
 
     void enter_sweep_mode() noexcept;
-    void exit_sweep_mode() noexcept;
+    void exit_sweep_mode(bool suppress_auto_restart = false) noexcept;
     void on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void retune_sweep_window(SweepWindow& win, const char* prefix = nullptr) noexcept;
     void update_sweep_pair_display() noexcept;

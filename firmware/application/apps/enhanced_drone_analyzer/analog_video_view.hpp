@@ -118,8 +118,9 @@ private:
  *
  * Memory:
  *   BSS (static): ~13,952 bytes (VideoWidget buffers shared, not per-instance)
- *   Instance: ~320 bytes (VideoWidget instance ~16B + AnalogVideoView state ~300B)
+ *   Instance: ~592 bytes (VideoWidget ~16B + spectrum_buffer_ ~272B + state ~300B)
  *   Stack per paint(): ~16 bytes (freq_str[16] + locals)
+ *   Stack per frame_sync handler: 0 bytes (spectrum_buffer_ is class member)
  *   Flash: ~768 bytes (code)
  *
  * @note No audio — audio is muted for the session
@@ -165,6 +166,10 @@ private:
     alignas(alignof(HandlerStorage)) uint8_t handler_storage_[sizeof(HandlerStorage)];
     bool handlers_active_{false};
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
+
+    // Reusable buffer to prevent 272-byte stack allocation in frame_sync handler.
+    // Same pattern as DroneScannerUI::spectrum_buffer_ — class member instead of local.
+    ChannelSpectrum spectrum_buffer_{};
 
     void register_handlers() noexcept;
     void unregister_handlers() noexcept;

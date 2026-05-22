@@ -131,8 +131,9 @@ void VideoWidget::render_frame() noexcept {
 // ============================================================================
 // Memory:
 //   BSS (static VideoWidget): ~13,952 bytes (shared, not per-instance)
-//   Instance: ~320 bytes (VideoWidget state ~16B + AnalogVideoView state ~300B)
+//   Instance: ~592 bytes (VideoWidget ~16B + spectrum_buffer_ ~272B + state ~300B)
 //   Stack per paint(): ~16 bytes (freq_str[16] + locals)
+//   Stack per frame_sync handler: 0 bytes (spectrum_buffer_ is class member)
 //   Flash: ~768 bytes (code)
 
 [[nodiscard]] bool AnalogVideoView::is_frequency_valid(FreqHz freq) noexcept {
@@ -180,13 +181,13 @@ void AnalogVideoView::register_handlers() noexcept {
     };
 
     // Handler for DisplayFrameSync -- dequeue spectra and feed to video widget
+    // Uses class member spectrum_buffer_ instead of stack allocation (272 bytes saved).
     new (&h->frame_sync) MessageHandlerRegistration{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
             if (this->spectrum_fifo_ != nullptr) {
-                ChannelSpectrum spectrum;
-                while (this->spectrum_fifo_->out(spectrum)) {
-                    this->video_widget_.on_channel_spectrum(spectrum);
+                while (this->spectrum_fifo_->out(this->spectrum_buffer_)) {
+                    this->video_widget_.on_channel_spectrum(this->spectrum_buffer_);
                 }
             }
         }
@@ -207,7 +208,7 @@ void AnalogVideoView::unregister_handlers() noexcept {
 }
 
 void AnalogVideoView::setup_video_receiver() noexcept {
-    // Stack: ~0 bytes
+    // Stack: ~64 bytes (chThdSleepMilliseconds frame)
     // Flash: ~128 bytes (function calls)
 
     audio::output::mute();
@@ -220,8 +221,17 @@ void AnalogVideoView::setup_video_receiver() noexcept {
     static constexpr portapack::spi_flash::image_tag_t am_tv_tag = {'P', 'A', 'M', 'T'};
     baseband::run_image(am_tv_tag);
 
-    // Configure receiver for analog TV: WFM modulation at 2MHz sampling rate
-    receiver_model.set_modulation(ReceiverModel::Mode::WidebandFMAudio);
+    // Let baseband image fully settle before sending configuration commands.
+    // run_image waits for baseband_ready, but an extra 1ms prevents
+    // send_message() spin collisions when receiver_model calls follow immediately.
+    chThdSleepMilliseconds(1);
+
+    // Configure RF frontend for analog video at the target frequency.
+    // NOTE: Modulation is intentionally NOT set here. The AM TV baseband
+    // handles its own demodulation regardless of the modulation register.
+    // The external analogtv app also keeps set_modulation() commented out
+    // for this reason — setting WidebandFMAudio would conflict with raw AM
+    // processing and may cause undefined baseband behavior.
     receiver_model.set_sampling_rate(2000000);
     receiver_model.set_baseband_bandwidth(2000000);
     receiver_model.set_target_frequency(frequency_);
