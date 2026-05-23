@@ -239,73 +239,49 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     field_spectrum_margin_.on_change = [this](int32_t v) {
         settings_.spectrum_margin = static_cast<uint8_t>(v);
-        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
-                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
-                            settings_.spectrum_peak_ratio, settings_.spectrum_valley_depth,
-                            settings_.spectrum_flatness, settings_.spectrum_symmetry);
+        update_preview();
         settings_dirty_ = true;
     };
 
     field_spectrum_min_width_.on_change = [this](int32_t v) {
         settings_.spectrum_min_width = static_cast<uint8_t>(v);
-        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
-                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
-                            settings_.spectrum_peak_ratio, settings_.spectrum_valley_depth,
-                            settings_.spectrum_flatness, settings_.spectrum_symmetry);
+        update_preview();
         settings_dirty_ = true;
     };
 
     field_spectrum_max_width_.on_change = [this](int32_t v) {
         settings_.spectrum_max_width = static_cast<uint8_t>(v);
-        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
-                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
-                            settings_.spectrum_peak_ratio, settings_.spectrum_valley_depth,
-                            settings_.spectrum_flatness, settings_.spectrum_symmetry);
+        update_preview();
         settings_dirty_ = true;
     };
 
     field_spectrum_peak_sharpness_.on_change = [this](int32_t v) {
         settings_.spectrum_peak_sharpness = static_cast<uint8_t>(v);
-        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
-                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
-                            settings_.spectrum_peak_ratio, settings_.spectrum_valley_depth,
-                            settings_.spectrum_flatness, settings_.spectrum_symmetry);
+        update_preview();
         settings_dirty_ = true;
     };
 
     field_spectrum_peak_ratio_.on_change = [this](int32_t v) {
         settings_.spectrum_peak_ratio = static_cast<uint8_t>(v);
-        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
-                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
-                            settings_.spectrum_peak_ratio, settings_.spectrum_valley_depth,
-                            settings_.spectrum_flatness, settings_.spectrum_symmetry);
+        update_preview();
         settings_dirty_ = true;
     };
 
     field_spectrum_valley_depth_.on_change = [this](int32_t v) {
         settings_.spectrum_valley_depth = static_cast<uint8_t>(v);
-        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
-                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
-                            settings_.spectrum_peak_ratio, settings_.spectrum_valley_depth,
-                            settings_.spectrum_flatness, settings_.spectrum_symmetry);
+        update_preview();
         settings_dirty_ = true;
     };
 
     field_spectrum_flatness_.on_change = [this](int32_t v) {
         settings_.spectrum_flatness = static_cast<uint8_t>(v);
-        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
-                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
-                            settings_.spectrum_peak_ratio, settings_.spectrum_valley_depth,
-                            settings_.spectrum_flatness, settings_.spectrum_symmetry);
+        update_preview();
         settings_dirty_ = true;
     };
 
     field_spectrum_symmetry_.on_change = [this](int32_t v) {
         settings_.spectrum_symmetry = static_cast<uint8_t>(v);
-        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
-                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
-                            settings_.spectrum_peak_ratio, settings_.spectrum_valley_depth,
-                            settings_.spectrum_flatness, settings_.spectrum_symmetry);
+        update_preview();
         settings_dirty_ = true;
     };
 
@@ -501,6 +477,14 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));
     field_cfar_threshold_.set_value(static_cast<int32_t>(settings_.cfar_threshold_x10));
 
+    update_preview();
+}
+
+// ============================================================================
+// Preview Update Helper
+// ============================================================================
+
+void DroneSettingsView::update_preview() noexcept {
     preview_.set_params(
         settings_.spectrum_margin,
         settings_.spectrum_min_width,
@@ -510,7 +494,6 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
         settings_.spectrum_valley_depth,
         settings_.spectrum_flatness,
         settings_.spectrum_symmetry);
-    preview_.set_dirty();
 }
 
 // ============================================================================

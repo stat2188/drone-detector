@@ -104,6 +104,7 @@ private:
     bool settings_dirty_;
 
     void apply_settings_to_ui() noexcept;
+    void update_preview() noexcept;
     void save_settings_to_sd() noexcept;
 };
 
