@@ -210,15 +210,11 @@ void AnalogVideoView::setup_video_receiver() noexcept {
     // Shut down current baseband (wideband spectrum from scanner)
     baseband::shutdown();
 
-    // Load AM TV baseband image
-    // The tag {'P','A','M','T'} matches image_tag_am_tv in the external analogtv app
-    static constexpr portapack::spi_flash::image_tag_t am_tv_tag = {'P', 'A', 'M', 'T'};
-    baseband::run_image(am_tv_tag);
-
-    // Let baseband image fully settle before sending configuration commands.
-    // run_image waits for baseband_ready, but an extra 1ms prevents
-    // send_message() spin collisions when receiver_model calls follow immediately.
-    chThdSleepMilliseconds(1);
+    // Load AM TV baseband image from pre-linked M4 code region.
+    // NOTE: Must use run_prepared_image (not run_image by tag) because
+    // the baseband is now linked into the M4 code memory, not loaded from SPI flash.
+    // All external apps (analogtv, sstvrx, etc.) follow this pattern.
+    baseband::run_prepared_image(portapack::memory::map::m4_code.base());
 
     // Configure RF frontend for analog video.
     // Must match external analogtv: modulation=WFM, 2MHz sampling.
@@ -289,10 +285,16 @@ void AnalogVideoView::on_hide() {
 void AnalogVideoView::paint(Painter& painter) {
     // Stack: ~16 bytes (freq_str[16])
 
-    // Draw header background (NavigationView backdrop handles rest)
-    painter.fill_rectangle({0, 0, 240, HEADER_H}, Color::black());
+    // CRITICAL: Use screen_rect() for absolute screen coordinates.
+    // Painter methods (fill_rectangle, draw_string) use absolute coords.
+    // screen_rect() = parent_rect + parent()->screen_pos()
+    // For this view: {NavView.left, NavView.top+HEADER_H, 240, 304}
+    const auto r = screen_rect();
 
-    // Paint children (video_widget_)
+    // Draw header background at the view's screen position
+    painter.fill_rectangle({r.left(), r.top(), r.width(), HEADER_H}, Color::black());
+
+    // Paint children (video_widget_ — paint is a no-op)
     View::paint(painter);
 
     // Cache theme pointers — eliminate repeated dereference chains
@@ -328,8 +330,9 @@ void AnalogVideoView::paint(Painter& painter) {
         *p++ = ' '; *p++ = 'M'; *p++ = 'H'; *p++ = 'z'; *p = '\0';
     }
 
+    // Offset from view's screen position so frequency text appears within the header
     painter.draw_string(
-        Point{4, 4},
+        Point{r.left() + 4, r.top() + 4},
         font, fg,
         Color::black(),
         freq_str);
