@@ -66,11 +66,7 @@ ScanConfig::ScanConfig() noexcept
     , rssi_variance_enabled(false)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , pattern_matching_enabled(true)
-    , patterns_bypass_filters(false)
-    , patterns_additional_check(false)
-    , pattern_match_mode(0)
-    , pattern_correlation_threshold(DEFAULT_PATTERN_CORRELATION_THRESHOLD)
-    , pattern_neural_threshold(DEFAULT_PATTERN_MATCH_CONFIDENCE) {
+    , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD) {
     // sweep2/3/4 fields use in-class defaults: disabled
 }
 
@@ -101,11 +97,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , rssi_variance_enabled(false)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , pattern_matching_enabled(true)
-    , patterns_bypass_filters(false)
-    , patterns_additional_check(false)
-    , pattern_match_mode(0)
-    , pattern_correlation_threshold(DEFAULT_PATTERN_CORRELATION_THRESHOLD)
-    , pattern_neural_threshold(DEFAULT_PATTERN_MATCH_CONFIDENCE) {
+    , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD) {
     // sweep2/3/4 fields use in-class defaults: disabled
 }
 
@@ -692,23 +684,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     // Pattern matching in normal scan mode: run after shape analysis passes
     PatternMatchResult normal_pattern_result = PatternMatchResult::no_match();
     if (signal_detected && config_.pattern_matching_enabled && pattern_manager_.get_pattern_count() > 0) {
-        // Find peak in spectrum for pattern matching
-        uint8_t peak_val = 0;
-        size_t peak_idx = FFT_EDGE_SKIP_NARROW;
-        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] > peak_val) { peak_val = spectrum.db[i]; peak_idx = i; }
-        }
-        if (peak_val > 0) {
-            SpectrumShape::AnalysisResult shape_for_match;
-            shape_for_match.signal_detected = true;
-            shape_for_match.peak_value = peak_val;
-            shape_for_match.noise_floor = 0;
-            shape_for_match.peak_margin = 0;
-            shape_for_match.signal_width = 1;
-            shape_for_match.peak_index = peak_idx;
-            normal_pattern_result = try_match_pattern_internal(spectrum.db.data(), shape_for_match);
-        }
+        normal_pattern_result = try_match_pattern_internal(spectrum.db.data());
     }
 
     if (signal_detected) {
@@ -801,7 +777,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 if (pm_idx.has_value()) {
                     auto& d = tracked_drones_[pm_idx.value()];
                     d.drone_type = DroneType::CUSTOM;
-                    d.set_pattern_match(normal_pattern_result.correlation_score, normal_pattern_result.status, p->name);
+                    d.set_pattern_match(normal_pattern_result.score, p->name);
                 }
             }
         }
@@ -1247,8 +1223,7 @@ void DroneScanner::reset_neighbor_checker() noexcept {
 void DroneScanner::refresh_patterns() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
 
-    const ErrorCode err = pattern_manager_.reload_patterns();
-    if (err == ErrorCode::SUCCESS && config_.pattern_matching_enabled) {
+    if (config_.pattern_matching_enabled) {
         pattern_matcher_.set_patterns(
             pattern_manager_.get_patterns_array(),
             pattern_manager_.get_pattern_count()
@@ -1265,43 +1240,6 @@ void DroneScanner::refresh_patterns() noexcept {
 // ============================================================================
 
 bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept {
-    // Pattern matching bypass: check patterns BEFORE shape filters
-    if (config_.patterns_bypass_filters) {
-        size_t peak_index = 0;
-        uint8_t peak_value = 0;
-
-        // Find peak in spectrum
-        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] > peak_value) {
-                peak_value = spectrum.db[i];
-                peak_index = i;
-            }
-        }
-
-        if (peak_value > 0) {
-            SpectrumShape::AnalysisResult shape_result;
-            shape_result.signal_detected = true;
-            shape_result.peak_value = peak_value;
-            shape_result.noise_floor = 0;
-            shape_result.peak_margin = 0;
-            shape_result.signal_width = 1;
-            shape_result.peak_index = peak_index;
-
-            const PatternMatchResult pattern_result = try_match_pattern_internal(
-                spectrum.db.data(),
-                shape_result
-            );
-
-            if (pattern_result.matched) {
-                out_rssi = static_cast<int32_t>(peak_value) - FFT_DBM_OFFSET;
-                if (out_rssi > RSSI_MAX_DBM) out_rssi = RSSI_MAX_DBM;
-                if (out_rssi < RSSI_MIN_DBM) out_rssi = RSSI_MIN_DBM;
-                return true;
-            }
-        }
-    }
-
     // CFAR detection: if enabled, use adaptive threshold instead of fixed margin
     if (config_.cfar_mode != CFARMode::OFF) {
         const size_t cfar_peak = CFARDetector::find_peak_cfar(
@@ -1553,24 +1491,17 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
 }
 
 PatternMatchResult DroneScanner::try_match_pattern_internal(
-    const uint8_t* spectrum,
-    const SpectrumShape::AnalysisResult& shape_result
+    const uint8_t* spectrum
 ) noexcept {
-    PatternMatchResult result = PatternMatchResult::no_match();
-
     if (!config_.pattern_matching_enabled) {
-        return result;
+        return PatternMatchResult::no_match();
     }
 
     if (pattern_manager_.get_pattern_count() == 0) {
-        return result;
+        return PatternMatchResult::no_match();
     }
 
-    if (config_.patterns_bypass_filters) {
-        return pattern_matcher_.match(spectrum, shape_result, true);
-    }
-
-    return pattern_matcher_.match(spectrum, shape_result);
+    return pattern_matcher_.match(spectrum);
 }
 
 // ============================================================================
@@ -1718,38 +1649,20 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     // Compute peak_margin (always needed for shape analysis)
     const uint8_t peak_margin = raw_peak - noise_floor;
 
-    // FIX: Early pattern matching (BEFORE shape filters)
-    // FPV signals are wide (~15MHz) and fail shape filters (valley depth, sharpness)
-    // but are recognized by pattern matching. Run pattern match EARLY to allow
-    // pattern-matched signals to bypass shape filters in sweep mode.
+    // Run pattern matching (supplements shape filters — does NOT bypass them)
     bool early_pattern_matched = false;
     int8_t early_pattern_index = -1;
     size_t early_pattern_bin = 0;
     uint16_t early_pattern_correlation = 0;
-    PatternMatchStatus early_pattern_status = PatternMatchStatus::NO_MATCH;
 
-    if (config_.pattern_matching_enabled) {
-        // Prepare minimal shape_result for pattern matching
-        SpectrumShape::AnalysisResult early_shape;
-        early_shape.signal_detected = true;
-        early_shape.peak_value = raw_peak;
-        early_shape.noise_floor = noise_floor;
-        early_shape.peak_margin = peak_margin;
-        early_shape.peak_index = peak_index;
-        // Estimate signal width for pattern (will be refined later if needed)
-        early_shape.signal_width = 50;  // Conservative estimate for wide FPV signals
-
-        const PatternMatchResult early_result = try_match_pattern_internal(
-            spectrum.db.data(),
-            early_shape
-        );
+    if (config_.pattern_matching_enabled && pattern_manager_.get_pattern_count() > 0) {
+        const PatternMatchResult early_result = pattern_matcher_.match(spectrum.db.data());
 
         if (early_result.matched) {
             early_pattern_matched = true;
             early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
             early_pattern_bin = peak_index;
-            early_pattern_correlation = early_result.correlation_score;
-            early_pattern_status = early_result.status;
+            early_pattern_correlation = early_result.score;
         }
     }
 
@@ -1774,11 +1687,8 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     const size_t signal_width = sig_right - sig_left + 1;
 
     // Step 4-5: Width checks
-    // FIX: Bypass width checks if pattern matched (FPV signals are wide)
-    if (!early_pattern_matched) {
-        if (signal_width < cfg_min_width) return;
-        if (signal_width > cfg_max_width) return;
-    }
+    if (signal_width < cfg_min_width) return;
+    if (signal_width > cfg_max_width) return;
 
     // Step 6+8b: Compute average margin ONCE for both sharpness and flatness checks
     int32_t avg_margin = 0;
@@ -1798,21 +1708,15 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     }
 
     // Step 6: Peak sharpness check (V-shape)
-    // FIX: Bypass if pattern matched (FPV signals may not have sharp V-shape)
-    if (!early_pattern_matched) {
-        if (cfg_sharpness > 50 && avg_margin > 0) {
-            const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-            if (sharpness < cfg_sharpness) return;
-        }
+    if (cfg_sharpness > 50 && avg_margin > 0) {
+        const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+        if (sharpness < cfg_sharpness) return;
     }
 
     // Step 7: Peak ratio check
-    // FIX: Bypass if pattern matched
-    if (!early_pattern_matched) {
-        if (cfg_ratio > 0) {
-            const int32_t ratio_val = (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
-            if (ratio_val < cfg_ratio) return;
-        }
+    if (cfg_ratio > 0) {
+        const int32_t ratio_val = (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
+        if (ratio_val < cfg_ratio) return;
     }
 
     // Step 8: Valley depth check
@@ -1834,31 +1738,24 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         }
 
         const uint8_t max_valley = (left_valley > right_valley) ? left_valley : right_valley;
-        // FIX: Bypass if pattern matched (FPV signals may have shallow valleys)
-        if (!early_pattern_matched && max_valley >= cfg_valley) return;
+        if (max_valley >= cfg_valley) return;
     }
 
     // Step 8b: Flatness check — peak must dominate average margin (reuses avg_margin from step 6)
-    // FIX: Bypass if pattern matched (FPV signals are flat/broad)
-    if (!early_pattern_matched) {
-        if (cfg_flatness > 50 && avg_margin > 0) {
-            const int32_t flat = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-            if (flat < cfg_flatness) return;
-        }
+    if (cfg_flatness > 50 && avg_margin > 0) {
+        const int32_t flat = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+        if (flat < cfg_flatness) return;
     }
 
     // Step 8c: Symmetry check — V-shape must have similar left/right width
-    // FIX: Bypass if pattern matched (FPV signals may be asymmetric)
-    if (!early_pattern_matched) {
-        if (cfg_symmetry > 0 && signal_width > 1) {
-            const size_t left_w = peak_index - sig_left;
-            const size_t right_w = sig_right - peak_index;
-            const size_t max_s = (left_w > right_w) ? left_w : right_w;
-            const size_t min_s = (left_w < right_w) ? left_w : right_w;
-            if (max_s > 0) {
-                const uint8_t sym_pct = static_cast<uint8_t>((min_s * 100) / max_s);
-                if (sym_pct < cfg_symmetry) return;
-            }
+    if (cfg_symmetry > 0 && signal_width > 1) {
+        const size_t left_w = peak_index - sig_left;
+        const size_t right_w = sig_right - peak_index;
+        const size_t max_s = (left_w > right_w) ? left_w : right_w;
+        const size_t min_s = (left_w < right_w) ? left_w : right_w;
+        if (max_s > 0) {
+            const uint8_t sym_pct = static_cast<uint8_t>((min_s * 100) / max_s);
+            if (sym_pct < cfg_symmetry) return;
         }
     }
 
@@ -1966,7 +1863,7 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
                 if (pm_idx.has_value()) {
                     auto& drone = tracked_drones_[pm_idx.value()];
                     drone.drone_type = DroneType::CUSTOM;
-                    drone.set_pattern_match(early_pattern_correlation, early_pattern_status, pattern->name);
+                    drone.set_pattern_match(early_pattern_correlation, pattern->name);
                 }
             }
         }

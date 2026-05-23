@@ -805,8 +805,8 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     }
     new_pattern.name[name_len] = '\0';
 
-    constexpr size_t valid_start = FFT_EDGE_SKIP_NARROW;
-    constexpr size_t valid_end = FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW;
+    constexpr size_t valid_start = PATTERN_NORM_EDGE_SKIP;
+    constexpr size_t valid_end = FFT_BIN_COUNT - PATTERN_NORM_EDGE_SKIP;
     constexpr size_t valid_bins = valid_end - valid_start;
     constexpr size_t bins_per_pattern = valid_bins / PATTERN_WAVEFORM_SIZE;
 
@@ -842,7 +842,7 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     new_pattern.features.peak_value = peak_val;
 
     uint8_t noise_floor = 255;
-    for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
+    for (size_t i = PATTERN_NORM_EDGE_SKIP; i < FFT_BIN_COUNT - PATTERN_NORM_EDGE_SKIP; ++i) {
         if (capture_spectrum_[i] < noise_floor && capture_spectrum_[i] > 0) {
             noise_floor = capture_spectrum_[i];
         }
@@ -861,7 +861,7 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     }
     new_pattern.features.width = static_cast<uint8_t>((right - left) / PATTERN_BIN_SCALE_FACTOR);
 
-    new_pattern.match_threshold = DEFAULT_PATTERN_CORRELATION_THRESHOLD;
+    new_pattern.match_threshold = DEFAULT_PATTERN_SIMILARITY_THRESHOLD;
     new_pattern.flags = SignalPattern::Flags::ENABLED;
     new_pattern.created_time = chTimeNow();
     new_pattern.match_count = 0;

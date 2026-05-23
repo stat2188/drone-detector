@@ -6,7 +6,7 @@ SignalPattern::SignalPattern() noexcept
     : name{}
     , waveform{}
     , features{}
-    , match_threshold(DEFAULT_PATTERN_CORRELATION_THRESHOLD)
+    , match_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD)
     , flags(SignalPattern::Flags::ENABLED)
     , created_time(0)
     , match_count(0)

@@ -269,8 +269,7 @@ DisplayDroneEntry::DisplayDroneEntry() noexcept
     , display_color{0xFFFFFFFF}
     , trend{MovementTrend::UNKNOWN}
     , pattern_matched{false}
-    , pattern_correlation{0}
-    , pattern_status{PatternMatchStatus::NO_MATCH}
+    , pattern_score{0}
     , pattern_name{'\0'} {
 }
 
@@ -284,8 +283,7 @@ DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
     , display_color(0xFFFFFFFF)
     , trend(drone.get_movement_trend())
     , pattern_matched(drone.pattern_matched_)
-    , pattern_correlation(drone.pattern_correlation_)
-    , pattern_status(drone.pattern_status_)
+    , pattern_score(drone.pattern_score_)
     , pattern_name{'\0'} {
     
     const char* type_str = drone_type_to_string(drone.drone_type);

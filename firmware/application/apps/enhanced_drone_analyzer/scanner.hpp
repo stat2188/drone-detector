@@ -99,11 +99,7 @@ struct ScanConfig {
     
     // Pattern matching settings
     bool pattern_matching_enabled{true};              // Enable/disable pattern matching
-    bool patterns_bypass_filters{false};              // Patterns override shape filters
-    bool patterns_additional_check{false};            // AND with shape filters (not OR)
-    uint8_t pattern_match_mode{0};                // 0=correlation, 1=neural, 2=hybrid
-    uint8_t pattern_correlation_threshold{DEFAULT_PATTERN_CORRELATION_THRESHOLD};  // 0-1000
-    uint8_t pattern_neural_threshold{DEFAULT_PATTERN_MATCH_CONFIDENCE};  // 0-255
+    uint16_t pattern_similarity_threshold{DEFAULT_PATTERN_SIMILARITY_THRESHOLD};  // 0-1000
     /**
      * @brief Default constructor
      */
@@ -1184,14 +1180,12 @@ private:
     /**
      * @brief Internal: Try to match spectrum against stored patterns
      * @param spectrum Channel spectrum data (256 bins)
-     * @param shape_result Spectrum shape analysis result
      * @return PatternMatchResult with match status
-     * @note Checks config flags: pattern_matching_enabled, patterns_bypass_filters
+     * @note Checks config flag: pattern_matching_enabled
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] PatternMatchResult try_match_pattern_internal(
-        const uint8_t* spectrum,
-        const SpectrumShape::AnalysisResult& shape_result
+        const uint8_t* spectrum
     ) noexcept;
 
     /**

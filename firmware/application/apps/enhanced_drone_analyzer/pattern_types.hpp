@@ -75,24 +75,14 @@ struct SignalPattern {
 };
 
 struct PatternMatchResult {
-    size_t pattern_index;
-    uint16_t correlation_score;
-    uint8_t feature_distance;
-    PatternMatchStatus status;
-    bool matched;
+    size_t pattern_index{0};
+    uint16_t score{0};
+    bool matched{false};
 
-    PatternMatchResult() noexcept
-        : pattern_index(0)
-        , correlation_score(0)
-        , feature_distance(255)
-        , status(PatternMatchStatus::NO_MATCH)
-        , matched(false) {}
+    constexpr PatternMatchResult() noexcept = default;
 
     static PatternMatchResult no_match() noexcept {
-        PatternMatchResult result;
-        result.matched = false;
-        result.status = PatternMatchStatus::NO_MATCH;
-        return result;
+        return {};
     }
 };
 

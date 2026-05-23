@@ -10,8 +10,8 @@ namespace drone_analyzer {
 
 /**
  * @brief Maximum pattern name length (including null terminator)
- * @note Defined here (not in constants.hpp) to break circular dependency:
- *       drone_types.hpp → constants.hpp → drone_types.hpp
+ * @note Defined here (not in constants.hpp or pattern_types.hpp) to break circular dependency:
+ *       pattern_types.hpp → drone_types.hpp → pattern_types.hpp
  */
 constexpr size_t PATTERN_NAME_MAX_LEN = 28;
 
@@ -87,17 +87,6 @@ enum class MovementTrend : uint8_t {
     RECEDING = 3
 };
 
-/**
- * @brief Pattern match status classification
- * @note Used by pattern matcher to indicate match quality
- */
-enum class PatternMatchStatus : uint8_t {
-    NO_MATCH = 0,
-    WEAK_MATCH = 1,
-    MODERATE_MATCH = 2,
-    STRONG_MATCH = 3,
-    EXCELLENT_MATCH = 4
-};
 
 /**
  * @brief Error codes for EDA operations
@@ -277,8 +266,7 @@ struct TrackedDrone {
     // ========================================================================
 
     bool pattern_matched_{false};              // 1 byte — pattern match indicator
-    uint16_t pattern_correlation_{0};          // 2 bytes — correlation score (0-1000)
-    PatternMatchStatus pattern_status_{PatternMatchStatus::NO_MATCH}; // 1 byte
+    uint16_t pattern_score_{0};                // 2 bytes — similarity score (0-1000)
     char pattern_name_[PATTERN_NAME_MAX_LEN]; // 28 bytes — matched pattern name
 
     // ========================================================================
@@ -368,14 +356,12 @@ struct TrackedDrone {
 
     /**
      * @brief Set pattern match state on this tracked drone
-     * @param correlation Correlation score (0-1000)
-     * @param status Match quality status
+     * @param score Similarity score (0-1000)
      * @param name Pattern name string (copied internally, truncated to PATTERN_NAME_MAX_LEN-1)
      */
-    void set_pattern_match(uint16_t correlation, PatternMatchStatus status, const char* name) noexcept {
+    void set_pattern_match(uint16_t score, const char* name) noexcept {
         pattern_matched_ = true;
-        pattern_correlation_ = correlation;
-        pattern_status_ = status;
+        pattern_score_ = score;
         size_t i = 0;
         while (name != nullptr && name[i] != '\0' && i < PATTERN_NAME_MAX_LEN - 1) {
             pattern_name_[i] = name[i];
@@ -389,8 +375,7 @@ struct TrackedDrone {
      */
     void clear_pattern_match() noexcept {
         pattern_matched_ = false;
-        pattern_correlation_ = 0;
-        pattern_status_ = PatternMatchStatus::NO_MATCH;
+        pattern_score_ = 0;
         pattern_name_[0] = '\0';
     }
 
@@ -457,8 +442,7 @@ struct DisplayDroneEntry {
     uint32_t display_color;     // 4 bytes (RGBA)
     MovementTrend trend;        // 1 byte (uint8_t)
     bool pattern_matched;         // 1 byte - Pattern match indicator
-    uint16_t pattern_correlation; // 2 bytes - Correlation score (0-1000)
-    PatternMatchStatus pattern_status; // 1 byte - Match status
+    uint16_t pattern_score;       // 2 bytes - Similarity score (0-1000)
     char pattern_name[16];       // 16 bytes - Matched pattern name
     
     // Total: 47 bytes (no vtable, POD type)

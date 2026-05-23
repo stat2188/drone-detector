@@ -816,58 +816,39 @@ constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 50;
 constexpr size_t MAX_PATTERNS = 10;
 
 /**
- * @brief Pattern waveform size (48 bins from 256-bin FFT)
- * @note 256 bins are downsampled to 48 bins for pattern matching
- * @note 3x improvement over previous 16 bins — each bin = ~312 kHz at 20 MHz BW
- * @note Sufficient to resolve FPV signal structure (~15 MHz = ~48 bins width)
+ * @brief Pattern waveform size (16 bins from 256-bin FFT)
+ * @note 256 bins are downsampled to 16 bins for pattern matching
+ * @note Clean divisor: 256/16 = 16 (no fractional bin mapping)
+ * @note Each bin = ~1.25 MHz at 20 MHz BW
  */
-constexpr size_t PATTERN_WAVEFORM_SIZE = 48;
+constexpr size_t PATTERN_WAVEFORM_SIZE = 16;
 
 /**
- * @brief Default correlation threshold for pattern matching (0-1000)
- * @note PATTERN_NAME_MAX_LEN (28) is defined in drone_types.hpp to break circular dependency
- * @note 200 = 20% correlation (moderate match)
+ * @brief Default similarity threshold for pattern matching (0-1000)
+ * @note 600 = 60% similarity — balanced for drone signal detection
  * @note Higher threshold = stricter matching (fewer false positives)
  * @note Lower threshold = more permissive (more false positives)
  */
-constexpr uint16_t DEFAULT_PATTERN_CORRELATION_THRESHOLD = 200;
+constexpr uint16_t DEFAULT_PATTERN_SIMILARITY_THRESHOLD = 600;
 
 /**
- * @brief Pattern match confidence threshold (0-255)
- * @note Used for neural network inference output
- * @note 50 = 20% confidence (default)
+ * @brief Similarity score thresholds for match quality classification
  */
-constexpr uint8_t DEFAULT_PATTERN_MATCH_CONFIDENCE = 50;
-
-/**
- * @brief Correlation score thresholds for match quality classification
- */
-constexpr uint16_t PATTERN_CORRELATION_EXCELLENT = 800;  // 80% match
-constexpr uint16_t PATTERN_CORRELATION_STRONG = 600;    // 60% match
-constexpr uint16_t PATTERN_CORRELATION_MODERATE = 400;  // 40% match
-constexpr uint16_t PATTERN_CORRELATION_WEAK = 200;      // 20% match
+constexpr uint16_t SIMILARITY_EXCELLENT = 800;  // 80% match
+constexpr uint16_t SIMILARITY_STRONG = 600;    // 60% match
+constexpr uint16_t SIMILARITY_MODERATE = 400;  // 40% match
 
 /**
  * @brief Fixed edge skip for pattern normalization
- * @note Used for ALL pattern operations (saving, matching) to ensure consistency
- * @note FFT_EDGE_SKIP_NARROW=6 is used for sweep mode, FFT_EDGE_SKIP=10 for normal mode
- * @note Using 6 ensures compatibility with both modes and keeps maximum spectrum coverage
+ * @note Must match FFT_EDGE_SKIP (10) for consistency between save and match
  */
-constexpr size_t PATTERN_NORM_EDGE_SKIP = 6;
+constexpr size_t PATTERN_NORM_EDGE_SKIP = 10;
 
 /**
  * @brief Scaling factor to convert 256-bin FFT indices to 16-bin pattern space
- * @note Used to normalize peak_position and width when saving patterns
- * @note 256 / 16 = 16, so divide 256-bin index by 16 to get 16-bin index
+ * @note 256 / 16 = 16 — exact integer division, no fractional error
  */
-constexpr uint8_t PATTERN_BIN_SCALE_FACTOR = FFT_BIN_COUNT / PATTERN_WAVEFORM_SIZE;  // 256/16 = 16
-
-/**
- * @brief Candidate filter tolerance for cross-frequency matching
- * @note ±6 bins in 48-bin space = ±32 bins in 256-bin space = ±2.5 MHz (adequate for frequency offset)
- * @note Scaled from original ±2 in 16-bin space (48/16 = 3x increase)
- */
-constexpr int8_t PATTERN_CANDIDATE_TOLERANCE = 6;
+constexpr uint8_t PATTERN_BIN_SCALE_FACTOR = FFT_BIN_COUNT / PATTERN_WAVEFORM_SIZE;
 
 // ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)
