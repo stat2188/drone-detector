@@ -66,9 +66,14 @@ void VideoWidget::paint(Painter& painter) {
 }
 
 void VideoWidget::focus() {
-    // This widget is the sole focus target in AnalogVideoView.
-    // Being focusable enables the hardware cursor to reach this view.
-    // The parent AnalogVideoView handles all key events.
+    // Focus lands here so FocusManager has a target; parent handles all events.
+}
+
+void VideoWidget::x_correction_increment(int8_t delta) noexcept {
+    int16_t val = static_cast<int16_t>(x_correction_) + delta;
+    if (val < 0) val = 0;
+    if (val > MAX_X_CORRECTION) val = MAX_X_CORRECTION;
+    x_correction_ = static_cast<uint8_t>(val);
 }
 
 void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
@@ -350,6 +355,19 @@ void AnalogVideoView::paint(Painter& painter) {
         font, fg,
         Color::black(),
         freq_str);
+
+    // Show X correction value for encoder feedback
+    const uint8_t xc = video_widget_.x_correction();
+    char xc_str[8];
+    xc_str[0] = 'X'; xc_str[1] = ':';
+    xc_str[2] = '0' + (xc / 10);
+    xc_str[3] = '0' + (xc % 10);
+    xc_str[4] = '\0';
+    painter.draw_string(
+        Point{r.right() - 36, r.top() + 4},
+        font, fg,
+        Color::black(),
+        xc_str);
 }
 
 void AnalogVideoView::focus() {
@@ -361,7 +379,25 @@ bool AnalogVideoView::on_key(const KeyEvent key) {
         nav_.pop();
         return true;
     }
+    if (key == KeyEvent::Up) {
+        video_widget_.x_correction_increment(1);
+        set_dirty();
+        return true;
+    }
+    if (key == KeyEvent::Down) {
+        video_widget_.x_correction_increment(-1);
+        set_dirty();
+        return true;
+    }
     return false;
+}
+
+bool AnalogVideoView::on_encoder(const EncoderEvent delta) {
+    // Joystick encoder adjusts horizontal X correction for video alignment
+    const int8_t step = (delta > 0) ? 1 : -1;
+    video_widget_.x_correction_increment(step);
+    set_dirty();
+    return true;
 }
 
 [[nodiscard]] bool AnalogVideoView::is_valid() const noexcept {

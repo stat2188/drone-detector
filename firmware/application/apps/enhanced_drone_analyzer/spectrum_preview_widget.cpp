@@ -7,18 +7,29 @@ namespace drone_analyzer {
 
 namespace {
 
-constexpr int PEAK1_CENTER = 72;
-constexpr int PEAK2_CENTER = 172;
+constexpr int CENTER = 120;
 constexpr int NOISE_FLOOR_OFFSET = 4;
+constexpr int VALLEY_ZONE = 5;
 
-int32_t peak_height_at(
-    int32_t x,
-    int32_t center,
-    int32_t peak_width,
-    int32_t max_peak_h) noexcept {
-    int32_t dx = x - center;
-    int32_t pw2 = peak_width * peak_width;
-    return (max_peak_h * pw2) / (pw2 + dx * dx);
+int32_t v_shape_height(
+    int32_t dx,
+    int32_t half_width,
+    int32_t peak_height,
+    int32_t valley_margin_px,
+    int32_t valley_depth_px) noexcept {
+    if (dx <= half_width) {
+        return peak_height - dx * (peak_height * 3 / 4) / std::max(1, half_width);
+    }
+    int32_t v_dist = dx - half_width;
+    if (v_dist < VALLEY_ZONE) {
+        return valley_margin_px * (VALLEY_ZONE - v_dist) / VALLEY_ZONE;
+    }
+    return 0;
+}
+
+int32_t flat_top_width(int32_t flatness, int32_t half_width) noexcept {
+    if (flatness == 0) return 0;
+    return half_width * flatness / 200;
 }
 
 } // namespace
@@ -32,12 +43,18 @@ void SpectrumPreviewWidget::set_params(
     uint8_t min_width,
     uint8_t max_width,
     uint8_t sharpness,
-    uint8_t peak_ratio) noexcept {
+    uint8_t peak_ratio,
+    uint8_t valley_depth,
+    uint8_t flatness,
+    uint8_t symmetry) noexcept {
     margin_ = margin;
     min_width_ = min_width;
     max_width_ = max_width;
     sharpness_ = sharpness;
     peak_ratio_ = peak_ratio;
+    valley_depth_ = valley_depth;
+    flatness_ = flatness;
+    symmetry_ = symmetry;
     set_dirty();
 }
 
@@ -63,67 +80,79 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
 
     painter.fill_rectangle(r, ui::Color::black());
 
-    const int floor_local = h - NOISE_FLOOR_OFFSET;
-    const int floor_abs_y = y0 + floor_local;
-    const int max_peak_h = h - 8;
+    const int floor_y = y0 + h - NOISE_FLOOR_OFFSET;
+    const int peak_h = h - 8;
+    const int elevated_h = peak_h / 4;
 
-    painter.draw_hline({x0, floor_abs_y}, w, ui::Color::darker_grey());
+    painter.draw_hline({x0, floor_y}, w, ui::Color::darker_grey());
 
-    int peak_width = 120 - (static_cast<int>(sharpness_) - 50) * 100 / 200;
-    peak_width = std::max(15, peak_width);
+    const int elevated_abs_y = floor_y - elevated_h;
 
-    int effective_max_h = max_peak_h * (128 + static_cast<int>(peak_ratio_)) / 256;
-    effective_max_h = std::min(max_peak_h, std::max(4, effective_max_h));
+    int half_width = (static_cast<int>(min_width_) + static_cast<int>(max_width_)) / 2;
+    half_width = std::max(5, std::min(w / 3, half_width * w / 512));
 
-    int margin_h = 2 + static_cast<int>(margin_) * (floor_local - 4) / 200;
-    margin_h = std::min(floor_local - 2, margin_h);
+    int valley_margin_px = static_cast<int>(valley_depth_) * 10 / 255;
 
-    int min_w_px = 2 + static_cast<int>(min_width_) * 58 / 100;
-    int max_w_px = 4 + static_cast<int>(max_width_) * 116 / 255;
+    int flat_top_px = flat_top_width(flatness_, half_width);
 
-    for (int column = 0; column < w; column++) {
-        int h1 = peak_height_at(column, PEAK1_CENTER, peak_width, effective_max_h);
-        int h2 = peak_height_at(column, PEAK2_CENTER, peak_width, effective_max_h);
-        int combined = std::max(h1, h2);
-        if (combined > 0) {
-            combined = std::min(combined, floor_local - 2);
-            painter.draw_vline(
-                {x0 + column, floor_abs_y - combined},
-                combined,
-                amplitude_color(combined, effective_max_h));
+    int sym_offset_x = 0;
+    if (symmetry_ > 0) {
+        sym_offset_x = (static_cast<int>(symmetry_) - 50) * half_width / 200;
+    }
+    int actual_center = CENTER + sym_offset_x;
+
+    for (int col = 0; col < w; col++) {
+        int dx = std::abs(col - actual_center);
+        int ft_dx = std::abs(col - actual_center);
+
+        int h_px;
+        if (flat_top_px > 0 && ft_dx <= flat_top_px) {
+            h_px = peak_h;
+        } else {
+            int valley_display_h = valley_margin_px;
+            h_px = v_shape_height(dx, half_width, peak_h, valley_display_h, valley_margin_px);
+        }
+
+        h_px = std::max(0, std::min(peak_h, h_px));
+        if (h_px > 0) {
+            ui::Color c = amplitude_color(h_px, peak_h);
+            painter.draw_vline({x0 + col, floor_y - h_px}, h_px, c);
         }
     }
 
-    for (int pi = 0; pi < 2; pi++) {
-        int cx = (pi == 0) ? PEAK1_CENTER : PEAK2_CENTER;
-
-        int l_min = cx - min_w_px;
-        int r_min = cx + min_w_px;
-        int l_max = cx - max_w_px;
-        int r_max = cx + max_w_px;
-
-        if (l_min >= 0) {
-            painter.draw_vline({x0 + l_min, y0 + 2}, 3, ui::Color::cyan());
-            painter.draw_hline({x0 + l_min, y0 + 2}, 3, ui::Color::cyan());
-        }
-        if (r_min < w) {
-            painter.draw_vline({x0 + r_min, y0 + 2}, 3, ui::Color::cyan());
-            painter.draw_hline({x0 + r_min - 2, y0 + 2}, 3, ui::Color::cyan());
-        }
-        if (l_max >= 0) {
-            painter.draw_vline({x0 + l_max, y0 + 2}, 3, ui::Color::grey());
-            painter.draw_hline({x0 + l_max, y0 + 2}, 3, ui::Color::grey());
-        }
-        if (r_max < w) {
-            painter.draw_vline({x0 + r_max, y0 + 2}, 3, ui::Color::grey());
-            painter.draw_hline({x0 + r_max - 2, y0 + 2}, 3, ui::Color::grey());
-        }
-    }
-
-    if (margin_h > 2) {
-        int margin_abs_y = floor_abs_y - margin_h;
+    int margin_px = static_cast<int>(margin_) * peak_h / 255;
+    int margin_abs_y = floor_y - margin_px;
+    if (margin_px > 2) {
         for (int x = x0; x < x0 + w; x += 5) {
-            painter.draw_hline({x, margin_abs_y}, 3, ui::Color::grey());
+            painter.draw_hline({x, margin_abs_y}, 3, ui::Color::orange());
+        }
+    }
+
+    painter.draw_hline({x0, elevated_abs_y}, w, ui::Color::dark_grey());
+
+    int min_w_px = static_cast<int>(min_width_) * w / 512;
+    int max_w_px = static_cast<int>(max_width_) * w / 256;
+
+    for (int side = -1; side <= 1; side += 2) {
+        int l = actual_center + side * min_w_px;
+        if (l >= 0 && l < w) {
+            painter.draw_vline({x0 + l, elevated_abs_y - 2}, 5, ui::Color::cyan());
+        }
+        int r = actual_center + side * max_w_px;
+        if (r >= 0 && r < w) {
+            painter.draw_vline({x0 + r, elevated_abs_y - 2}, 5, ui::Color::grey());
+        }
+    }
+
+    int half_sig = half_width;
+    for (int side = -1; side <= 1; side += 2) {
+        int vx = actual_center + side * (half_sig + 1);
+        if (vx >= 0 && vx < w && valley_margin_px > 0) {
+            int vh = std::min(valley_margin_px, h - NOISE_FLOOR_OFFSET - 2);
+            if (vh > 0) {
+                ui::Color vc = (valley_depth_ < 10) ? ui::Color::green() : ui::Color::red();
+                painter.fill_rectangle({x0 + vx - 1, floor_y - vh, 3, vh}, vc);
+            }
         }
     }
 }

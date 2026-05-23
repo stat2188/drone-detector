@@ -21,7 +21,10 @@ public:
         uint8_t min_width,
         uint8_t max_width,
         uint8_t sharpness,
-        uint8_t peak_ratio) noexcept;
+        uint8_t peak_ratio,
+        uint8_t valley_depth,
+        uint8_t flatness,
+        uint8_t symmetry) noexcept;
 
 private:
     uint8_t margin_{20};
@@ -29,6 +32,9 @@ private:
     uint8_t max_width_{200};
     uint8_t sharpness_{80};
     uint8_t peak_ratio_{0};
+    uint8_t valley_depth_{0};
+    uint8_t flatness_{0};
+    uint8_t symmetry_{0};
 
     static ui::Color amplitude_color(int32_t h, int32_t max_h) noexcept;
 };

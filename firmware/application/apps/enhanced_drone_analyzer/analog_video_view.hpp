@@ -68,6 +68,9 @@ public:
      */
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
 
+    void x_correction_increment(int8_t delta) noexcept;
+    [[nodiscard]] uint8_t x_correction() const noexcept { return x_correction_; }
+
     void show_audio_spectrum_view(bool) const noexcept {}
 
 private:
@@ -81,6 +84,7 @@ private:
     static constexpr uint16_t LINE_WIDTH = 128;         // Pixels per video line
 
     static constexpr uint8_t DEFAULT_X_CORRECTION = 10;
+    static constexpr uint8_t MAX_X_CORRECTION = 31;
 
     /** @brief Frame buffer — instance member, ~2.2KB */
     uint8_t video_buffer_[VIDEO_BUFFER_SIZE]{};
@@ -128,6 +132,7 @@ public:
     void paint(Painter& painter) override;
     void focus() override;
     bool on_key(const KeyEvent key) override;
+    bool on_encoder(const EncoderEvent delta) override;
 
     std::string title() const override {
         return "FPV Video";
