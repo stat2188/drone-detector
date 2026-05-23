@@ -35,25 +35,17 @@ using namespace portapack;
 namespace drone_analyzer {
 
 // ============================================================================
-// VideoWidget static member definitions — BSS allocation (~13,952 bytes total)
-// Shared across all VideoWidget instances, not per-instance.
-// This eliminates ~13.5KB from each AnalogVideoView object, preventing OOM
-// when nav_.push creates AnalogVideoView after DroneScannerUI.
-// ============================================================================
-uint8_t VideoWidget::video_buffer_[VideoWidget::VIDEO_BUFFER_SIZE];
-std::array<ui::Color, VideoWidget::LINE_WIDTH> VideoWidget::line_buffer_;
-
-// ============================================================================
 // VideoWidget implementation
 // ============================================================================
 // Memory:
-//   BSS (static): ~13,952 bytes (video_buffer_ + line_buffer_, shared across instances)
-//   Instance: ~16 bytes (frame_count_ + active_ + x_correction_)
+//   Instance: ~6,912 bytes (video_buffer_[6784] + line_buffer_[512] + state ~16B)
 //   Stack per on_channel_spectrum(): 0 bytes
-//   Stack per render_frame(): 0 bytes (line_buffer_ in BSS)
+//   Stack per render_frame(): 0 bytes (line_buffer_ is member)
 
 VideoWidget::VideoWidget()
-    : frame_count_{0}
+    : video_buffer_{}
+    , line_buffer_{}
+    , frame_count_{0}
     , active_{false}
     , x_correction_{DEFAULT_X_CORRECTION} {
 }
@@ -83,7 +75,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
         return;
     }
 
-    // 52 frames × 256 bytes = 13312, always inside VIDEO_BUFFER_SIZE (13440)
+    // 26 frames × 256 bytes = 6656, always inside VIDEO_BUFFER_SIZE (6784)
     const size_t offset = frame_count_ * 256;
     for (size_t i = 0; i < 256; ++i) {
         // Invert: strong signal (0) -> white (255), noise (255) -> black (0)
@@ -92,7 +84,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 
     ++frame_count_;
 
-    // When 52 spectra accumulated (104 video lines), render the frame
+    // When 26 spectra accumulated (52 video lines), render the frame
     if (frame_count_ >= ACCUMULATED_FRAMES) {
         render_frame();
         frame_count_ = 0;
@@ -100,7 +92,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 }
 
 void VideoWidget::render_frame() noexcept {
-    // Stack: 0 bytes (line_buffer_ lives in BSS)
+    // Stack: 0 bytes (line_buffer_ is class member, not stack)
     // Flash: ~200 bytes (loop code)
 
     for (uint16_t line = 0; line < VIDEO_LINES_HALF; ++line) {
