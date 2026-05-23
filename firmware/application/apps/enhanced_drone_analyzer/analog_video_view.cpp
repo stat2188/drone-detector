@@ -38,13 +38,12 @@ namespace drone_analyzer {
 // VideoWidget implementation
 // ============================================================================
 // Memory:
-//   Instance: ~6,912 bytes (video_buffer_[6784] + line_buffer_[512] + state ~16B)
-//   Stack per on_channel_spectrum(): 0 bytes
-//   Stack per render_frame(): 0 bytes (line_buffer_ is member)
+//   Instance: ~2,208 bytes (video_buffer_[2176] + state ~32B)
+//   Stack per render_frame(): ~520 bytes (line_buffer on stack)
+//     OK: called ~3/sec, total stack < 4KB per AGENTS.md
 
 VideoWidget::VideoWidget()
     : video_buffer_{}
-    , line_buffer_{}
     , frame_count_{0}
     , active_{false}
     , x_correction_{DEFAULT_X_CORRECTION} {
@@ -75,7 +74,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
         return;
     }
 
-    // 26 frames × 256 bytes = 6656, always inside VIDEO_BUFFER_SIZE (6784)
+    // 8 frames × 256 bytes = 2048, always inside VIDEO_BUFFER_SIZE (2176)
     const size_t offset = frame_count_ * 256;
     for (size_t i = 0; i < 256; ++i) {
         // Invert: strong signal (0) -> white (255), noise (255) -> black (0)
@@ -84,7 +83,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 
     ++frame_count_;
 
-    // When 26 spectra accumulated (52 video lines), render the frame
+    // When 8 spectra accumulated (16 video lines), render the frame
     if (frame_count_ >= ACCUMULATED_FRAMES) {
         render_frame();
         frame_count_ = 0;
@@ -92,16 +91,16 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 }
 
 void VideoWidget::render_frame() noexcept {
-    // Stack: 0 bytes (line_buffer_ is class member, not stack)
-    // Flash: ~200 bytes (loop code)
+    // Stack: ~520 bytes (line_buffer on stack, 512B + locals)
+    // Called ~3/sec, well within 4KB stack limit
+    ui::Color line_buffer[LINE_WIDTH]{};
 
     for (uint16_t line = 0; line < VIDEO_LINES_HALF; ++line) {
         const size_t buf_offset = line * LINE_WIDTH;
 
         for (uint16_t px = 0; px < LINE_WIDTH; ++px) {
-            // Fast modulo-128 via bitmask (LINE_WIDTH is power of two)
             const uint8_t src_idx = static_cast<uint8_t>((px + x_correction_) & (LINE_WIDTH - 1));
-            line_buffer_[px] = spectrum_rgb4_lut[video_buffer_[buf_offset + src_idx]];
+            line_buffer[px] = spectrum_rgb4_lut[video_buffer_[buf_offset + src_idx]];
         }
 
         const ui::Coord y0 = VIDEO_START_Y + static_cast<ui::Coord>(line * 2);
@@ -109,12 +108,12 @@ void VideoWidget::render_frame() noexcept {
         portapack::display.render_line(
             {VIDEO_START_X, y0},
             LINE_WIDTH,
-            line_buffer_.data());
+            line_buffer);
 
         portapack::display.render_line(
             {VIDEO_START_X, static_cast<ui::Coord>(y0 + 1)},
             LINE_WIDTH,
-            line_buffer_.data());
+            line_buffer);
     }
 }
 

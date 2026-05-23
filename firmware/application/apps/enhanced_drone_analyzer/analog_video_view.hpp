@@ -33,22 +33,19 @@
 namespace drone_analyzer {
 
 /**
- * @brief Analog video rendering widget — zero allocation, renders NTSC/PAL-like video
- *        from ChannelSpectrum data using the AM TV baseband.
+ * @brief Analog video rendering widget — minimum memory, maximum reliability.
  *
- * Accumulates 26 × 256-byte ChannelSpectrum frames into a 6.8KB frame buffer,
- * then renders 52 video lines (doubled to 104 screen lines) via display.render_line()
- * using the spectrum_rgb4_lut greyscale color lookup table.
+ * Accumulates 8 × 256-byte ChannelSpectrum frames into a 2.2KB frame buffer,
+ * renders 8 native lines (doubled to 16 screen lines) at ~2.5 FPS.
+ * Line buffer is stack-allocated during render to minimize instance footprint.
  *
- * Memory: (per AnalogVideoView instance on heap)
- *   Instance: ~6,912 bytes (video_buffer_[6784] + line_buffer_[512] + state ~16B)
- *   Stack per on_channel_spectrum(): 0 bytes (no local allocations)
- *   Stack per render_frame(): 0 bytes (line_buffer_ is member)
+ * Memory:
+ *   Instance: ~2.2KB (video_buffer_[2176] + state ~32B)
+ *   Stack per render_frame(): ~520 bytes (line_buffer on stack, called ~3/sec)
  *   Flash: ~512 bytes (code)
  *
- * @note Audio is NOT rendered — simplified view for drone video inspection
- * @note No heap allocation beyond the instance itself
- * @note Halved vertical resolution (104→52 lines) for memory fit on 128KB SRAM
+ * @note Aggressively reduced for OOM prevention when nav_.push<AnalogVideoView>()
+ *       allocates on a fragmented heap. FPS sacrificed for reliability.
  */
 class VideoWidget : public ui::Widget {
 public:
@@ -69,39 +66,34 @@ public:
      * @param spectrum Incoming 256-byte spectrum data
      * @note Stack: 0 bytes
      * @note Called from DisplayFrameSync handler (UI thread)
-     * @note Accumulates 26 frames, then renders full video frame
+     * @note Accumulates 8 frames (16 native lines), then renders
      */
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
 
     void show_audio_spectrum_view(bool) const noexcept {}
 
 private:
-    // Reduced from 52→26 frames to fit within 128KB SRAM:
-    //   Before: 52 frames × 256 = 13,312 bytes BSS → OOM at app launch
-    //   After:  26 frames × 256 =  6,656 bytes as instance → heap during video push
-    static constexpr uint16_t VIDEO_LINES = 104;      // 52 × 2 (line doubling)
-    static constexpr uint16_t VIDEO_LINES_HALF = 52;  // Native video lines
+    // 8 frames × 256 = 2048 + 128 xcorr padding = 2176 → fits any heap fragment
+    static constexpr uint16_t VIDEO_LINES = 16;        // 8 × 2 (line doubling)
+    static constexpr uint16_t VIDEO_LINES_HALF = 8;    // Native video lines
     static constexpr int16_t VIDEO_START_Y = 16;        // Below header
     static constexpr int16_t VIDEO_START_X = 56;        // Centered: (240-128)/2
-    static constexpr uint8_t ACCUMULATED_FRAMES = 26; // Frames per video frame (reduced for memory)
-    static constexpr size_t VIDEO_BUFFER_SIZE = 6784; // 26×256 + 128 xcorr padding
-    static constexpr uint16_t LINE_WIDTH = 128;       // Pixels per video line
+    static constexpr uint8_t ACCUMULATED_FRAMES = 8;    // Frames per video frame
+    static constexpr size_t VIDEO_BUFFER_SIZE = 2176;   // 8×256 + 128 xcorr padding
+    static constexpr uint16_t LINE_WIDTH = 128;         // Pixels per video line
 
     static constexpr uint8_t DEFAULT_X_CORRECTION = 10;
 
-    /** @brief Frame buffer — instance member, ~6.8KB on heap when AnalogVideoView is pushed */
+    /** @brief Frame buffer — instance member, ~2.2KB */
     uint8_t video_buffer_[VIDEO_BUFFER_SIZE]{};
 
-    /** @brief Line render buffer — instance member, eliminates 256-byte stack allocation */
-    std::array<ui::Color, LINE_WIDTH> line_buffer_{};
-
-    uint32_t frame_count_{0};    //!< Number of spectra accumulated (0..25)
+    uint32_t frame_count_{0};    //!< Number of spectra accumulated (0..7)
     bool active_{false};          //!< Rendering active
-    uint8_t x_correction_{DEFAULT_X_CORRECTION};   //!< Horizontal correction offset (default 10, matches analogtv)
+    uint8_t x_correction_{DEFAULT_X_CORRECTION};   //!< Horizontal correction offset
 
     /**
      * @brief Render accumulated frame to display
-     * @note Stack: 0 bytes (line_buffer_ is class member)
+     * @note Stack: ~520 bytes (line_buffer on stack, 512B + locals)
      * @note Uses display.render_line() for direct pixel write
      */
     void render_frame() noexcept;
@@ -114,13 +106,13 @@ private:
  * and forwards data to VideoWidget for rendering.
  *
  * Memory:
- *   Instance: ~7,504 bytes (VideoWidget ~6,912B + spectrum_buffer_ ~272B + state ~300B + handler ~16B)
+ *   Instance: ~2,800 bytes (VideoWidget ~2.2KB + spectrum_buffer_ ~272B + handler_storage ~128B + state ~100B)
  *   Stack per paint(): ~16 bytes (freq_str[16] + locals)
- *   Stack per frame_sync handler: 0 bytes (spectrum_buffer_ is class member)
+ *   Stack per frame_sync handler: ~520 bytes (line_buffer in render_frame)
  *   Flash: ~768 bytes (code)
  *
- * @note No audio — audio is muted for the session
- * @note No gain controls — simplified for drone video inspection
+ * @note No audio, no gain controls — minimum viable for drone video inspection
+ * @note 8-screen-line video (16 with doubling) at ~2.5 FPS — enough to see activity
  */
 class AnalogVideoView : public ui::View {
 public:
@@ -148,7 +140,7 @@ private:
     NavigationView& nav_;
     FreqHz frequency_{0};
 
-    // Video rendering widget (heap member when view is pushed, ~6.9KB)
+    // Video rendering widget (on heap when view is pushed, ~2.2KB)
     VideoWidget video_widget_{};
 
     bool receiver_active_{false};
