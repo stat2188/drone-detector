@@ -15,10 +15,9 @@ int32_t v_shape_height(
     int32_t dx,
     int32_t half_width,
     int32_t peak_height,
-    int32_t valley_margin_px,
-    int32_t valley_depth_px) noexcept {
+    int32_t valley_margin_px) noexcept {
     if (dx <= half_width) {
-        return peak_height - dx * (peak_height * 3 / 4) / std::max(1, half_width);
+        return peak_height - dx * (peak_height * 3 / 4) / std::max<int32_t>(1, half_width);
     }
     int32_t v_dist = dx - half_width;
     if (v_dist < VALLEY_ZONE) {
@@ -110,7 +109,7 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
             h_px = peak_h;
         } else {
             int valley_display_h = valley_margin_px;
-            h_px = v_shape_height(dx, half_width, peak_h, valley_display_h, valley_margin_px);
+            h_px = v_shape_height(dx, half_width, peak_h, valley_display_h);
         }
 
         h_px = std::max(0, std::min(peak_h, h_px));
