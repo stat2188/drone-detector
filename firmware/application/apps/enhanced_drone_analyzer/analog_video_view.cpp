@@ -95,6 +95,10 @@ void VideoWidget::render_frame() noexcept {
     // Called ~3/sec, well within 4KB stack limit
     ui::Color line_buffer[LINE_WIDTH]{};
 
+    // Spread 16 native lines as horizontal stripes with gaps
+    constexpr ui::Coord STRIPE_H = 14;     // pixels per stripe
+    constexpr ui::Coord STRIDE = 18;       // stripe + gap
+
     for (uint16_t line = 0; line < VIDEO_LINES_HALF; ++line) {
         const size_t buf_offset = line * LINE_WIDTH;
 
@@ -103,17 +107,14 @@ void VideoWidget::render_frame() noexcept {
             line_buffer[px] = spectrum_rgb4_lut[video_buffer_[buf_offset + src_idx]];
         }
 
-        const ui::Coord y0 = VIDEO_START_Y + static_cast<ui::Coord>(line * 2);
+        const ui::Coord y0 = static_cast<ui::Coord>(32 + line * STRIDE);
 
-        portapack::display.render_line(
-            {VIDEO_START_X, y0},
-            LINE_WIDTH,
-            line_buffer);
-
-        portapack::display.render_line(
-            {VIDEO_START_X, static_cast<ui::Coord>(y0 + 1)},
-            LINE_WIDTH,
-            line_buffer);
+        for (ui::Coord dy = 0; dy < STRIPE_H; ++dy) {
+            portapack::display.render_line(
+                {VIDEO_START_X, static_cast<ui::Coord>(y0 + dy)},
+                LINE_WIDTH,
+                line_buffer);
+        }
     }
 }
 
@@ -217,12 +218,10 @@ void AnalogVideoView::setup_video_receiver() noexcept {
     // send_message() spin collisions when receiver_model calls follow immediately.
     chThdSleepMilliseconds(1);
 
-    // Configure RF frontend for analog video at the target frequency.
-    // NOTE: Modulation is intentionally NOT set here. The AM TV baseband
-    // handles its own demodulation regardless of the modulation register.
-    // The external analogtv app also keeps set_modulation() commented out
-    // for this reason — setting WidebandFMAudio would conflict with raw AM
-    // processing and may cause undefined baseband behavior.
+    // Configure RF frontend for analog video.
+    // Must match external analogtv: modulation=WFM, 2MHz sampling.
+    // The AM TV baseband processes raw IQ regardless of modulation setting.
+    receiver_model.set_modulation(ReceiverModel::Mode::WidebandFMAudio);
     receiver_model.set_sampling_rate(2000000);
     receiver_model.set_baseband_bandwidth(2000000);
     receiver_model.set_target_frequency(frequency_);
@@ -286,15 +285,18 @@ void AnalogVideoView::on_hide() {
 }
 
 void AnalogVideoView::paint(Painter& painter) {
-    // Stack: ~16 bytes (freq_str[16] + loop vars)
+    // Stack: ~48 bytes (freq_str[16] + "BACK" + loop vars)
 
-    // First paint children (video_widget_)
-    View::paint(painter);
+    // Fill entire view background black to prevent HackRF UI bleed-through
+    painter.fill_rectangle({0, 0, 240, 320}, Color::black());
 
     // Draw header background
     painter.fill_rectangle({0, 0, 240, HEADER_H}, Color::black());
 
-    // Format frequency for header display — inline zero-allocation decimal formatter
+    // Paint children (video_widget_)
+    View::paint(painter);
+
+    // Format frequency for header display
     char freq_str[16];
     if (!is_frequency_valid(frequency_)) {
         freq_str[0] = 'B'; freq_str[1] = 'a'; freq_str[2] = 'd';
@@ -327,10 +329,25 @@ void AnalogVideoView::paint(Painter& painter) {
         Color::black(),
         freq_str);
 
+    // Draw "BACK" button at bottom-right
+    painter.draw_string(
+        Point{190, 300},
+        Theme::getInstance()->fg_light->font,
+        Theme::getInstance()->fg_light->foreground,
+        Color::black(),
+        "BACK");
 }
 
 void AnalogVideoView::focus() {
     video_widget_.focus();
+}
+
+bool AnalogVideoView::on_keydown(const KeyEvent key) {
+    if (key == KeyEvent::Back) {
+        nav_.pop();
+        return true;
+    }
+    return false;
 }
 
 [[nodiscard]] bool AnalogVideoView::is_valid() const noexcept {

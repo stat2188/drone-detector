@@ -35,17 +35,15 @@ namespace drone_analyzer {
 /**
  * @brief Analog video rendering widget — minimum memory, maximum reliability.
  *
- * Accumulates 8 × 256-byte ChannelSpectrum frames into a 2.2KB frame buffer,
- * renders 8 native lines (doubled to 16 screen lines) at ~2.5 FPS.
- * Line buffer is stack-allocated during render to minimize instance footprint.
+ * Accumulates 8 × 256-byte ChannelSpectrum frames (2.2KB buffer) into
+ * 16 native lines, rendered as horizontal stripes across the screen.
  *
  * Memory:
  *   Instance: ~2.2KB (video_buffer_[2176] + state ~32B)
- *   Stack per render_frame(): ~520 bytes (line_buffer on stack, called ~3/sec)
+ *   Stack per render_frame(): ~520 bytes (line_buffer on stack, ~3/sec)
  *   Flash: ~512 bytes (code)
  *
- * @note Aggressively reduced for OOM prevention when nav_.push<AnalogVideoView>()
- *       allocates on a fragmented heap. FPS sacrificed for reliability.
+ * @note Aggressively reduced for OOM prevention. FPS sacrificed for reliability.
  */
 class VideoWidget : public ui::Widget {
 public:
@@ -73,10 +71,10 @@ public:
     void show_audio_spectrum_view(bool) const noexcept {}
 
 private:
-    // 8 frames × 256 = 2048 + 128 xcorr padding = 2176 → fits any heap fragment
-    static constexpr uint16_t VIDEO_LINES = 16;        // 8 × 2 (line doubling)
-    static constexpr uint16_t VIDEO_LINES_HALF = 8;    // Native video lines
-    static constexpr int16_t VIDEO_START_Y = 16;        // Below header
+    // 8 frames × 256 = 2048 → 16 native lines of 128px each
+    static constexpr uint16_t VIDEO_LINES = 16;
+    static constexpr uint16_t VIDEO_LINES_HALF = 16;
+    static constexpr int16_t VIDEO_START_Y = 16;
     static constexpr int16_t VIDEO_START_X = 56;        // Centered: (240-128)/2
     static constexpr uint8_t ACCUMULATED_FRAMES = 8;    // Frames per video frame
     static constexpr size_t VIDEO_BUFFER_SIZE = 2176;   // 8×256 + 128 xcorr padding
@@ -107,12 +105,13 @@ private:
  *
  * Memory:
  *   Instance: ~2,800 bytes (VideoWidget ~2.2KB + spectrum_buffer_ ~272B + handler_storage ~128B + state ~100B)
- *   Stack per paint(): ~16 bytes (freq_str[16] + locals)
+ *   Stack per paint(): ~48 bytes (freq_str[16] + locals)
  *   Stack per frame_sync handler: ~520 bytes (line_buffer in render_frame)
  *   Flash: ~768 bytes (code)
  *
- * @note No audio, no gain controls — minimum viable for drone video inspection
- * @note 8-screen-line video (16 with doubling) at ~2.5 FPS — enough to see activity
+ * @note No audio, no gain controls
+ * @note 16 stripes of video at ~2.5 FPS
+ * @note Press BACK to exit
  */
 class AnalogVideoView : public ui::View {
 public:
@@ -128,6 +127,7 @@ public:
     void on_hide() override;
     void paint(Painter& painter) override;
     void focus() override;
+    bool on_keydown(const KeyEvent key) override;
 
     std::string title() const override {
         static const std::string t = "FPV Video";
