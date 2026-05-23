@@ -91,19 +91,21 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 }
 
 void VideoWidget::render_frame() noexcept {
-    // Stack: ~520 bytes (line_buffer on stack, 512B + locals)
+    // Stack: ~272 bytes (line_buffer 256B + 16B locals)
     // Called ~3/sec, well within 4KB stack limit
-    ui::Color line_buffer[LINE_WIDTH]{};
+    ui::Color line_buffer[LINE_WIDTH];
 
     // Spread 16 native lines as horizontal stripes with gaps
     constexpr ui::Coord STRIPE_H = 14;     // pixels per stripe
     constexpr ui::Coord STRIDE = 18;       // stripe + gap
 
+    const uint8_t xcorr = x_correction_;
+
     for (uint16_t line = 0; line < VIDEO_LINES_HALF; ++line) {
         const size_t buf_offset = line * LINE_WIDTH;
 
         for (uint16_t px = 0; px < LINE_WIDTH; ++px) {
-            const uint8_t src_idx = static_cast<uint8_t>((px + x_correction_) & (LINE_WIDTH - 1));
+            const uint8_t src_idx = static_cast<uint8_t>((px + xcorr) & (LINE_WIDTH - 1));
             line_buffer[px] = spectrum_rgb4_lut[video_buffer_[buf_offset + src_idx]];
         }
 
@@ -285,16 +287,18 @@ void AnalogVideoView::on_hide() {
 }
 
 void AnalogVideoView::paint(Painter& painter) {
-    // Stack: ~48 bytes (freq_str[16] + "BACK" + loop vars)
+    // Stack: ~16 bytes (freq_str[16])
 
-    // Fill entire view background black to prevent HackRF UI bleed-through
-    painter.fill_rectangle({0, 0, 240, 320}, Color::black());
-
-    // Draw header background
+    // Draw header background (NavigationView backdrop handles rest)
     painter.fill_rectangle({0, 0, 240, HEADER_H}, Color::black());
 
     // Paint children (video_widget_)
     View::paint(painter);
+
+    // Cache theme pointers — eliminate repeated dereference chains
+    const auto theme = Theme::getInstance();
+    const auto& font = theme->fg_light->font;
+    const auto  fg   = theme->fg_light->foreground;
 
     // Format frequency for header display
     char freq_str[16];
@@ -303,8 +307,10 @@ void AnalogVideoView::paint(Painter& painter) {
         freq_str[3] = ' '; freq_str[4] = 'F'; freq_str[5] = 'r';
         freq_str[6] = 'e'; freq_str[7] = 'q'; freq_str[8] = '\0';
     } else {
-        const uint32_t mhz = static_cast<uint32_t>(frequency_ / 1'000'000ULL);
-        const uint32_t khz = static_cast<uint32_t>((frequency_ % 1'000'000ULL) / 1'000ULL);
+        // One 64-bit div instead of two (saves ~80 cycles on Cortex-M4F)
+        const uint32_t khz_total = static_cast<uint32_t>(frequency_ / 1000ULL);
+        const uint32_t mhz = khz_total / 1000u;
+        const uint32_t khz = khz_total % 1000u;
 
         char* p = freq_str;
         uint32_t m = mhz;
@@ -324,25 +330,16 @@ void AnalogVideoView::paint(Painter& painter) {
 
     painter.draw_string(
         Point{4, 4},
-        Theme::getInstance()->fg_light->font,
-        Theme::getInstance()->fg_light->foreground,
+        font, fg,
         Color::black(),
         freq_str);
-
-    // Draw "BACK" button at bottom-right
-    painter.draw_string(
-        Point{190, 300},
-        Theme::getInstance()->fg_light->font,
-        Theme::getInstance()->fg_light->foreground,
-        Color::black(),
-        "BACK");
 }
 
 void AnalogVideoView::focus() {
     video_widget_.focus();
 }
 
-bool AnalogVideoView::on_keydown(const KeyEvent key) {
+bool AnalogVideoView::on_key(const KeyEvent key) {
     if (key == KeyEvent::Back) {
         nav_.pop();
         return true;

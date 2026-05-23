@@ -127,11 +127,10 @@ public:
     void on_hide() override;
     void paint(Painter& painter) override;
     void focus() override;
-    bool on_keydown(const KeyEvent key) override;
+    bool on_key(const KeyEvent key) override;
 
     std::string title() const override {
-        static const std::string t = "FPV Video";
-        return t;
+        return "FPV Video";
     }
 
     [[nodiscard]] bool is_valid() const noexcept;
