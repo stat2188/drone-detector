@@ -246,6 +246,8 @@ SpectrumShape::AnalysisResult SpectrumShape::analyze(
     const uint8_t elevated_threshold = result.noise_floor + (result.peak_margin / 4);
     size_t sig_left = 0, sig_right = 0;
     result.signal_width = measure_width(spectrum, result.peak_index, elevated_threshold, sig_left, sig_right);
+    result.sig_left = sig_left;
+    result.sig_right = sig_right;
 
     if (result.signal_width < config.min_width) return result;
     if (result.signal_width > config.max_width) return result;

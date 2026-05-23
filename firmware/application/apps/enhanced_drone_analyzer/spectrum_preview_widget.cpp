@@ -8,7 +8,7 @@ namespace drone_analyzer {
 namespace {
 
 constexpr uint8_t NOISE_FLOOR = 100;
-constexpr uint8_t PEAK_VALUE = 200;
+constexpr uint8_t PEAK_MARGIN = 100;
 constexpr size_t PEAK_BIN = FFT_BIN_COUNT / 2 - 12;
 
 } // namespace
@@ -55,48 +55,69 @@ void SpectrumPreviewWidget::set_params(
 }
 
 void SpectrumPreviewWidget::recompute() noexcept {
-    // Fill with noise floor
     synthetic_spectrum_.fill(NOISE_FLOOR);
 
-    // Average min/max width as design half-width, clamped to fit before DC spike
-    size_t hw = (static_cast<size_t>(params_.min_width) + static_cast<size_t>(params_.max_width)) / 2;
+    // Signal width derived from min_width.
+    // Symmetry maps to right/left ratio:
+    //   sym=0 (disabled) → symmetric via else branch
+    //   sym=50 → right = 75% of left (moderate asymmetry)
+    //   sym=100 → right = 100% of left (perfect symmetry)
+    size_t left_w = 1, right_w = 1;
+
+    if (params_.symmetry > 0 && params_.symmetry < 100) {
+        // Ensure (left + right + 1) >= min_width where right = left * ratio/100
+        const uint32_t right_ratio = 50u + (static_cast<uint32_t>(params_.symmetry) + 1u) / 2u;
+        const size_t denom = 100u + right_ratio;
+        const size_t min_left = ((static_cast<size_t>(params_.min_width) - 1) * 100u + denom - 1u) / denom;
+        left_w = std::max<size_t>(min_left, 2);
+        right_w = std::max<size_t>(1, left_w * right_ratio / 100u);
+    } else {
+        left_w = static_cast<size_t>(params_.min_width) / 2;
+        if (left_w < 1) left_w = 1;
+        right_w = static_cast<size_t>(params_.min_width) - left_w - 1;
+        if (right_w < 1) right_w = 1;
+    }
+
+    // Clamp to fit within usable spectrum range (DC spike at 120-135, edge skip 6)
     const size_t right_room = FFT_DC_SPIKE_START - 1 - PEAK_BIN;
     const size_t left_room = PEAK_BIN - FFT_EDGE_SKIP_NARROW;
-    hw = std::max<size_t>(2, std::min(hw, std::min(left_room, right_room)));
-
-    // Symmetry: generate signal with ~70% of config_symmetry asymmetry
-    // so the user sees the effect of tightening/loosening this filter
-    size_t left_w = hw;
-    size_t right_w = hw;
-    {
-        // Make the generated signal somewhat asymmetric to give symmetry filter meaningful feedback
-        const uint32_t gen_sym = (static_cast<uint32_t>(params_.symmetry) + 100u) / 2u;
-        if (gen_sym < 100u && params_.symmetry > 0) {
-            right_w = std::max<size_t>(1, left_w * gen_sym / 100u);
+    const size_t max_total = left_room + right_room + 1;
+    if (left_w + right_w + 1 > max_total) {
+        const size_t max_pair = max_total - 1;
+        const size_t total_hw = left_w + right_w;
+        if (total_hw > 0) {
+            left_w = std::max<size_t>(1, left_w * max_pair / total_hw);
+            right_w = max_pair - left_w;
+            if (right_w < 1) right_w = 1;
         }
     }
 
-    // Flat top: signal bins at peak power
+    // Flat top: bins at peak power
     size_t flat_bins = 0;
-    if (params_.flatness > 0 && params_.flatness < 100) {
-        const size_t total_w = left_w + right_w;
-        flat_bins = std::max<size_t>(1, total_w * params_.flatness / 200);
+    if (params_.flatness == 0) {
+        flat_bins = 0;
     } else if (params_.flatness >= 100) {
         flat_bins = std::max(left_w, right_w);
+    } else {
+        flat_bins = (left_w + right_w) * static_cast<size_t>(params_.flatness) / 200;
     }
 
-    // Peak ratio: ensure enough peak margin to pass the ratio check
-    uint8_t peak_val = PEAK_VALUE;
+    // Peak value: PEAK_MARGIN above noise floor, increased by peak_ratio if needed
+    uint8_t peak_val = NOISE_FLOOR + PEAK_MARGIN;
     if (params_.peak_ratio > 0) {
-        const size_t total_w = left_w + right_w + 1;
-        const int32_t needed_margin = (static_cast<int32_t>(params_.peak_ratio) * static_cast<int32_t>(total_w)) / 10;
+        const int32_t effective_width = static_cast<int32_t>(left_w + right_w + 1);
+        const int32_t needed_margin = (static_cast<int32_t>(params_.peak_ratio) * effective_width) / 10;
         const int32_t needed_peak = static_cast<int32_t>(NOISE_FLOOR) + needed_margin;
-        if (needed_peak > static_cast<int32_t>(PEAK_VALUE) && needed_peak < 250) {
+        if (needed_peak > 250) {
+            peak_val = 250;
+        } else if (needed_peak > static_cast<int32_t>(peak_val)) {
             peak_val = static_cast<uint8_t>(needed_peak);
         }
     }
 
-    // Generate the V-shape across usable bins
+    const uint32_t sharp_factor = std::min<uint32_t>(static_cast<uint32_t>(params_.sharpness), 250u);
+    const int32_t peak_above_noise = static_cast<int32_t>(peak_val) - static_cast<int32_t>(NOISE_FLOOR);
+
     for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
         if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
 
@@ -106,43 +127,45 @@ void SpectrumPreviewWidget::recompute() noexcept {
             val = peak_val;
         } else if (i > PEAK_BIN) {
             const size_t dist = i - PEAK_BIN;
-            if (dist <= flat_bins) {
+            if (flat_bins > 0 && dist <= flat_bins) {
                 val = peak_val;
             } else if (dist <= right_w) {
-                const size_t slope_dist = dist - flat_bins;
+                const size_t slope_dist = dist - std::min(flat_bins, dist);
                 const size_t max_slope_dist = right_w - std::min(flat_bins, right_w);
                 if (max_slope_dist > 0) {
-                    const uint32_t factor = std::min<uint32_t>(params_.sharpness, 250u);
                     val = static_cast<int32_t>(peak_val)
-                        - static_cast<int32_t>(static_cast<uint32_t>(slope_dist) * factor
-                            * static_cast<uint32_t>(peak_val - NOISE_FLOOR)
-                            / (250u * static_cast<uint32_t>(std::max<size_t>(1, max_slope_dist))));
+                        - static_cast<int32_t>(static_cast<uint32_t>(slope_dist) * sharp_factor
+                            * static_cast<uint32_t>(peak_above_noise)
+                            / (200u * static_cast<uint32_t>(max_slope_dist)));
                     val = std::max<int32_t>(NOISE_FLOOR, val);
                 }
             } else {
-                const size_t v_dist = dist - right_w;
-                const uint32_t depth = 60u / std::max<uint32_t>(1, static_cast<uint32_t>(v_dist));
-                val = NOISE_FLOOR + static_cast<int32_t>(std::min<uint32_t>(depth, 155u));
+                // Valley height depends on flatness:
+                // flatness=0  → NOISE_FLOOR+2  (deep V, passes valley check easily)
+                // flatness=50 → NOISE_FLOOR+24 (moderate, tests valley check)
+                // flatness=100 → NOISE_FLOOR+24 (capped so valley < elevated threshold ~125)
+                const uint32_t raw_extra = 2u + static_cast<uint32_t>(params_.flatness) * 58u / 100u;
+                const uint32_t valley_extra = std::min<uint32_t>(raw_extra, 24u);
+                val = NOISE_FLOOR + static_cast<int32_t>(valley_extra);
             }
         } else {
             const size_t dist = PEAK_BIN - i;
-            if (dist <= flat_bins) {
+            if (flat_bins > 0 && dist <= flat_bins) {
                 val = peak_val;
             } else if (dist <= left_w) {
-                const size_t slope_dist = dist - flat_bins;
+                const size_t slope_dist = dist - std::min(flat_bins, dist);
                 const size_t max_slope_dist = left_w - std::min(flat_bins, left_w);
                 if (max_slope_dist > 0) {
-                    const uint32_t factor = std::min<uint32_t>(params_.sharpness, 250u);
                     val = static_cast<int32_t>(peak_val)
-                        - static_cast<int32_t>(static_cast<uint32_t>(slope_dist) * factor
-                            * static_cast<uint32_t>(peak_val - NOISE_FLOOR)
-                            / (250u * static_cast<uint32_t>(std::max<size_t>(1, max_slope_dist))));
+                        - static_cast<int32_t>(static_cast<uint32_t>(slope_dist) * sharp_factor
+                            * static_cast<uint32_t>(peak_above_noise)
+                            / (200u * static_cast<uint32_t>(max_slope_dist)));
                     val = std::max<int32_t>(NOISE_FLOOR, val);
                 }
             } else {
-                const size_t v_dist = dist - left_w;
-                const uint32_t depth = 60u / std::max<uint32_t>(1, static_cast<uint32_t>(v_dist));
-                val = NOISE_FLOOR + static_cast<int32_t>(std::min<uint32_t>(depth, 155u));
+                const uint32_t raw_extra = 2u + static_cast<uint32_t>(params_.flatness) * 58u / 100u;
+                const uint32_t valley_extra = std::min<uint32_t>(raw_extra, 24u);
+                val = NOISE_FLOOR + static_cast<int32_t>(valley_extra);
             }
         }
 
@@ -178,7 +201,6 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
 
     painter.fill_rectangle(r, ui::Color::black());
 
-    // Find display range
     uint8_t min_val = 255, max_val = 0;
     for (const auto v : synthetic_spectrum_) {
         if (v > max_val) max_val = v;
@@ -189,7 +211,7 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     const int graph_h = h - 2;
     const int floor_y = y0 + h - 1;
 
-    // Draw spectrum vertical bars (256 bins → 240 pixels)
+    // Spectrum vertical bars (256 bins -> 240 pixels)
     for (int px = 0; px < w; px++) {
         const size_t bin = static_cast<size_t>(px) * FFT_BIN_COUNT / static_cast<size_t>(w);
         const uint8_t val = synthetic_spectrum_[std::min(bin, FFT_BIN_COUNT - 1)];
@@ -200,7 +222,7 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         }
     }
 
-    // PASS/FAIL indicator (top-left corner)
+    // PASS/FAIL indicator (top-left)
     {
         const auto indicator_color = result_.signal_detected ? ui::Color::green() : ui::Color::red();
         painter.fill_rectangle({x0 + 2, y0 + 2, 6, 6}, indicator_color);
@@ -225,9 +247,12 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         }
     }
 
+    if (result_.peak_value == 0) return;
+
+    const int peak_px = x0 + static_cast<int>(result_.peak_index) * w / static_cast<int>(FFT_BIN_COUNT);
+
     // Peak marker (white vertical line)
-    if (result_.peak_value > 0) {
-        const int peak_px = x0 + static_cast<int>(result_.peak_index) * w / static_cast<int>(FFT_BIN_COUNT);
+    {
         const int p_px = static_cast<int>(static_cast<int32_t>(result_.peak_value - min_val) * graph_h / static_cast<int32_t>(max_val - min_val + 1));
         painter.draw_vline({peak_px, floor_y - p_px}, std::max(1, p_px), ui::Color::white());
     }
@@ -238,23 +263,25 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         const int e_px = static_cast<int>(static_cast<int32_t>(elev_val - min_val) * graph_h / static_cast<int32_t>(max_val - min_val + 1));
         const int e_y = floor_y - e_px;
         painter.draw_hline({x0, e_y}, w, ui::Color::darker_grey());
-    }
 
-    // Width markers: min=cyan, max=grey (only with valid peak)
-    if (result_.peak_margin > 0) {
-        const int peak_px = x0 + static_cast<int>(result_.peak_index) * w / static_cast<int>(FFT_BIN_COUNT);
-        const int e_px = static_cast<int>(static_cast<int32_t>(result_.noise_floor + result_.peak_margin / 4 - min_val) * graph_h / static_cast<int32_t>(max_val - min_val + 1));
-        const int e_y = floor_y - e_px;
-        const int min_w_px = static_cast<int>(shape_config_.min_width) * w / static_cast<int>(FFT_BIN_COUNT);
-        const int max_w_px = static_cast<int>(shape_config_.max_width) * w / static_cast<int>(FFT_BIN_COUNT);
-        for (int side = -1; side <= 1; side += 2) {
-            const int l = peak_px + side * min_w_px;
-            if (l >= x0 && l < x0 + w) {
-                painter.draw_vline({l, e_y - 2}, 5, ui::Color::cyan());
-            }
-            const int r = peak_px + side * max_w_px;
-            if (r >= x0 && r < x0 + w) {
-                painter.draw_vline({r, e_y - 2}, 5, ui::Color::grey());
+        if (result_.signal_width > 0) {
+            // Measured signal boundaries (cyan) — where signal drops below elevated threshold
+            const int sig_left_px = x0 + static_cast<int>(result_.sig_left) * w / static_cast<int>(FFT_BIN_COUNT);
+            const int sig_right_px = x0 + static_cast<int>(result_.sig_right) * w / static_cast<int>(FFT_BIN_COUNT);
+            painter.draw_vline({sig_left_px, e_y - 2}, 5, ui::Color::cyan());
+            painter.draw_vline({sig_right_px, e_y - 2}, 5, ui::Color::cyan());
+
+            // Max width rejection boundary (grey) — signals wider than this boundary fail
+            if (shape_config_.max_width < FFT_BIN_COUNT) {
+                const int max_hw_px = static_cast<int>(shape_config_.max_width) * w / (2 * static_cast<int>(FFT_BIN_COUNT));
+                if (max_hw_px > 0) {
+                    const int max_l = peak_px - max_hw_px;
+                    const int max_r = peak_px + max_hw_px;
+                    if (max_l >= x0)
+                        painter.draw_vline({max_l, e_y - 2}, 5, ui::Color::grey());
+                    if (max_r < x0 + w)
+                        painter.draw_vline({max_r, e_y - 2}, 5, ui::Color::grey());
+                }
             }
         }
     }
