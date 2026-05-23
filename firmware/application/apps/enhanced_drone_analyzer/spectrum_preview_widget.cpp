@@ -14,7 +14,13 @@ constexpr size_t PEAK_BIN = FFT_BIN_COUNT / 2 - 12;
 } // namespace
 
 SpectrumPreviewWidget::SpectrumPreviewWidget(ui::Rect parent_rect) noexcept
-    : Widget{parent_rect} {
+    : Widget{parent_rect}
+    , params_{}
+    , synthetic_spectrum_{}
+    , sort_buf_{}
+    , shape_config_{}
+    , result_{}
+    , dirty_{true} {
     recompute();
 }
 
@@ -115,10 +121,8 @@ void SpectrumPreviewWidget::recompute() noexcept {
                 }
             } else {
                 const size_t v_dist = dist - right_w;
-                const uint32_t depth = std::min<uint32_t>(
-                    static_cast<uint32_t>(params_.valley_depth) * 3u / std::max<uint32_t>(1, static_cast<uint32_t>(v_dist)),
-                    20u);
-                val = NOISE_FLOOR + static_cast<int32_t>(depth);
+                const uint32_t depth = 60u / std::max<uint32_t>(1, static_cast<uint32_t>(v_dist));
+                val = NOISE_FLOOR + static_cast<int32_t>(std::min<uint32_t>(depth, 155u));
             }
         } else {
             const size_t dist = PEAK_BIN - i;
@@ -137,14 +141,13 @@ void SpectrumPreviewWidget::recompute() noexcept {
                 }
             } else {
                 const size_t v_dist = dist - left_w;
-                const uint32_t depth = std::min<uint32_t>(
-                    static_cast<uint32_t>(params_.valley_depth) * 3u / std::max<uint32_t>(1, static_cast<uint32_t>(v_dist)),
-                    20u);
-                val = NOISE_FLOOR + static_cast<int32_t>(depth);
+                const uint32_t depth = 60u / std::max<uint32_t>(1, static_cast<uint32_t>(v_dist));
+                val = NOISE_FLOOR + static_cast<int32_t>(std::min<uint32_t>(depth, 155u));
             }
         }
 
-        synthetic_spectrum_[i] = static_cast<uint8_t>(std::min(255, std::max(0, val)));
+        val = std::max<int32_t>(0, std::min<int32_t>(255, val));
+        synthetic_spectrum_[i] = static_cast<uint8_t>(val);
     }
 
     result_ = SpectrumShape::analyze(synthetic_spectrum_.data(), sort_buf_.data(), shape_config_);
