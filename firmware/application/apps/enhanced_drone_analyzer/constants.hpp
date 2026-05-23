@@ -824,11 +824,6 @@ constexpr size_t MAX_PATTERNS = 10;
 constexpr size_t PATTERN_WAVEFORM_SIZE = 48;
 
 /**
- * @brief Pattern directory name for SD card storage
- */
-constexpr char PATTERN_DIR[] = "/ptr_patterns";
-
-/**
  * @brief Default correlation threshold for pattern matching (0-1000)
  * @note PATTERN_NAME_MAX_LEN (28) is defined in drone_types.hpp to break circular dependency
  * @note 200 = 20% correlation (moderate match)

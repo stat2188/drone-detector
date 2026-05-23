@@ -6,7 +6,6 @@
 #include <cstring>
 
 #include "ch.h"
-#include "ff.h"
 #include "file.hpp"
 #include "file_path.hpp"
 #include "pattern_types.hpp"
@@ -48,12 +47,9 @@ private:
     size_t pattern_count_;
     AtomicFlag loaded_;
     mutable Mutex mutex_;
-    bool dir_open_{false};
 
     [[nodiscard]] ErrorCode load_pattern_from_line(
-        const char* filepath,
-        size_t filepath_length,
-        const wchar_t* utf16_filepath
+        const std::filesystem::path& filepath
     ) noexcept;
 
     [[nodiscard]] ErrorCode parse_pattern_csv(
