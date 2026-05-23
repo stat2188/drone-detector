@@ -9,6 +9,13 @@
 namespace drone_analyzer {
 
 /**
+ * @brief Maximum pattern name length (including null terminator)
+ * @note Defined here (not in constants.hpp) to break circular dependency:
+ *       drone_types.hpp → constants.hpp → drone_types.hpp
+ */
+constexpr size_t PATTERN_NAME_MAX_LEN = 28;
+
+/**
  * @brief Type alias for frequency in Hz
  */
 using FreqHz = uint64_t;
@@ -266,6 +273,15 @@ struct TrackedDrone {
     static constexpr uint8_t MAX_SWEEP_CYCLES_MISSED = 3;  // Allow 3 full cycles (~6-15 sec) before decay
 
     // ========================================================================
+    // Pattern match state
+    // ========================================================================
+
+    bool pattern_matched_{false};              // 1 byte — pattern match indicator
+    uint16_t pattern_correlation_{0};          // 2 bytes — correlation score (0-1000)
+    PatternMatchStatus pattern_status_{PatternMatchStatus::NO_MATCH}; // 1 byte
+    char pattern_name_[PATTERN_NAME_MAX_LEN]; // 28 bytes — matched pattern name
+
+    // ========================================================================
     // Mahalanobis statistics
     // ========================================================================
 
@@ -348,6 +364,34 @@ struct TrackedDrone {
         rssi_increased_ = true;
         last_increase_time_ = now;
         sweep_cycles_missed_ = 0;
+    }
+
+    /**
+     * @brief Set pattern match state on this tracked drone
+     * @param correlation Correlation score (0-1000)
+     * @param status Match quality status
+     * @param name Pattern name string (copied internally, truncated to PATTERN_NAME_MAX_LEN-1)
+     */
+    void set_pattern_match(uint16_t correlation, PatternMatchStatus status, const char* name) noexcept {
+        pattern_matched_ = true;
+        pattern_correlation_ = correlation;
+        pattern_status_ = status;
+        size_t i = 0;
+        while (name != nullptr && name[i] != '\0' && i < PATTERN_NAME_MAX_LEN - 1) {
+            pattern_name_[i] = name[i];
+            ++i;
+        }
+        pattern_name_[i] = '\0';
+    }
+
+    /**
+     * @brief Clear pattern match state
+     */
+    void clear_pattern_match() noexcept {
+        pattern_matched_ = false;
+        pattern_correlation_ = 0;
+        pattern_status_ = PatternMatchStatus::NO_MATCH;
+        pattern_name_[0] = '\0';
     }
 
     /**

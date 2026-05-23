@@ -178,9 +178,7 @@ ErrorCode PatternManager::load_patterns() noexcept {
         (void)err;
     }
 
-    if (pattern_count_ > 0) {
-        loaded_.set();
-    }
+    loaded_.set();
 
     return ErrorCode::SUCCESS;
 }
@@ -215,7 +213,7 @@ ErrorCode PatternManager::load_pattern_from_line(
         FileGuard& operator=(const FileGuard&) = delete;
     } file_guard(&file);
 
-    constexpr size_t READ_BUF_SIZE = 256;
+    constexpr size_t READ_BUF_SIZE = 384;
     uint8_t read_buf[READ_BUF_SIZE];
     char line_buf[READ_BUF_SIZE];
     size_t line_pos = 0;
@@ -277,7 +275,11 @@ ErrorCode PatternManager::parse_pattern_csv(
     size_t pos = 0;
     uint8_t field_index = 0;
 
-    while (pos < csv_length && field_index < 29) {
+    // CSV format: name + waveform[PATTERN_WAVEFORM_SIZE] + 8 features + threshold + flags + center_freq + range_width
+    constexpr uint8_t CSV_FEATURE_COUNT = 8;
+    constexpr uint8_t CSV_FIELD_COUNT = 1 + PATTERN_WAVEFORM_SIZE + CSV_FEATURE_COUNT + 4;
+
+    while (pos < csv_length && field_index < CSV_FIELD_COUNT) {
         while (pos < csv_length && (csv_line[pos] == ',' || csv_line[pos] == ' ' || csv_line[pos] == '\t')) {
             ++pos;
         }
@@ -300,7 +302,7 @@ ErrorCode PatternManager::parse_pattern_csv(
                 pattern.name[i] = csv_line[field_start + i];
             }
             pattern.name[copy_len] = '\0';
-        } else if (field_index >= 1 && field_index <= 16) {
+        } else if (field_index >= 1 && field_index <= PATTERN_WAVEFORM_SIZE) {
             const uint8_t bin_idx = field_index - 1;
             if (bin_idx < PATTERN_WAVEFORM_SIZE) {
                 pattern.waveform[bin_idx] = parse_uint8(&csv_line[field_start], field_len);
@@ -334,7 +336,7 @@ ErrorCode PatternManager::parse_pattern_csv(
         ++field_index;
     }
 
-    if (field_index < 25) {
+    if (field_index < 1 + PATTERN_WAVEFORM_SIZE + CSV_FEATURE_COUNT) {
         return ErrorCode::DATABASE_FORMAT_INVALID;
     }
 
@@ -390,7 +392,7 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
         FileGuard& operator=(const FileGuard&) = delete;
     } file_guard(&file);
 
-    uint8_t write_buf[256];
+    uint8_t write_buf[384];
     size_t write_pos = 0;
 
     auto write_char = [&](char c) noexcept -> void {
@@ -624,9 +626,7 @@ ErrorCode PatternManager::reload_patterns() noexcept {
         (void)err;
     }
 
-    if (pattern_count_ > 0) {
-        loaded_.set();
-    }
+    loaded_.set();
 
     return ErrorCode::SUCCESS;
 }

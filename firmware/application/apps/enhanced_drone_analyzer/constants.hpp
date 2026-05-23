@@ -816,11 +816,12 @@ constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 50;
 constexpr size_t MAX_PATTERNS = 10;
 
 /**
- * @brief Pattern waveform size (16 bins from 256-bin FFT)
- * @note 256 bins are downsampled to 16 bins for pattern matching
- * @note Reduces memory usage and improves matching speed
+ * @brief Pattern waveform size (48 bins from 256-bin FFT)
+ * @note 256 bins are downsampled to 48 bins for pattern matching
+ * @note 3x improvement over previous 16 bins — each bin = ~312 kHz at 20 MHz BW
+ * @note Sufficient to resolve FPV signal structure (~15 MHz = ~48 bins width)
  */
-constexpr size_t PATTERN_WAVEFORM_SIZE = 16;
+constexpr size_t PATTERN_WAVEFORM_SIZE = 48;
 
 /**
  * @brief Pattern directory name for SD card storage
@@ -828,12 +829,8 @@ constexpr size_t PATTERN_WAVEFORM_SIZE = 16;
 constexpr char PATTERN_DIR[] = "/ptr_patterns";
 
 /**
- * @brief Maximum pattern name length (including null terminator)
- */
-constexpr size_t PATTERN_NAME_MAX_LEN = 28;
-
-/**
  * @brief Default correlation threshold for pattern matching (0-1000)
+ * @note PATTERN_NAME_MAX_LEN (28) is defined in drone_types.hpp to break circular dependency
  * @note 200 = 20% correlation (moderate match)
  * @note Higher threshold = stricter matching (fewer false positives)
  * @note Lower threshold = more permissive (more false positives)
@@ -872,9 +869,10 @@ constexpr uint8_t PATTERN_BIN_SCALE_FACTOR = FFT_BIN_COUNT / PATTERN_WAVEFORM_SI
 
 /**
  * @brief Candidate filter tolerance for cross-frequency matching
- * @note ±2 bins in 16-bin space allows for ±32 bins in 256-bin space (adequate for frequency offset)
+ * @note ±6 bins in 48-bin space = ±32 bins in 256-bin space = ±2.5 MHz (adequate for frequency offset)
+ * @note Scaled from original ±2 in 16-bin space (48/16 = 3x increase)
  */
-constexpr int8_t PATTERN_CANDIDATE_TOLERANCE = 2;
+constexpr int8_t PATTERN_CANDIDATE_TOLERANCE = 6;
 
 // ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)

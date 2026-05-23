@@ -283,9 +283,9 @@ DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
     , type_name{0}
     , display_color(0xFFFFFFFF)
     , trend(drone.get_movement_trend())
-    , pattern_matched{false}
-    , pattern_correlation{0}
-    , pattern_status{PatternMatchStatus::NO_MATCH}
+    , pattern_matched(drone.pattern_matched_)
+    , pattern_correlation(drone.pattern_correlation_)
+    , pattern_status(drone.pattern_status_)
     , pattern_name{'\0'} {
     
     const char* type_str = drone_type_to_string(drone.drone_type);
@@ -293,6 +293,16 @@ DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
     while (i < DRONE_TYPE_NAME_LENGTH - 1 && type_str[i] != '\0') {
         type_name[i] = type_str[i];
         ++i;
+    }
+
+    // Copy pattern name from tracked drone
+    if (drone.pattern_matched_) {
+        size_t j = 0;
+        while (j < 15 && drone.pattern_name_[j] != '\0') {
+            pattern_name[j] = drone.pattern_name_[j];
+            ++j;
+        }
+        pattern_name[j] = '\0';
     }
     
     set_color_from_threat();

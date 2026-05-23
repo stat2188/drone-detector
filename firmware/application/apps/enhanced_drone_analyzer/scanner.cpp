@@ -689,6 +689,28 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         signal_detected = (rssi > config_.rssi_threshold_dbm);
     }
 
+    // Pattern matching in normal scan mode: run after shape analysis passes
+    PatternMatchResult normal_pattern_result = PatternMatchResult::no_match();
+    if (signal_detected && config_.pattern_matching_enabled && pattern_manager_.get_pattern_count() > 0) {
+        // Find peak in spectrum for pattern matching
+        uint8_t peak_val = 0;
+        size_t peak_idx = FFT_EDGE_SKIP_NARROW;
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] > peak_val) { peak_val = spectrum.db[i]; peak_idx = i; }
+        }
+        if (peak_val > 0) {
+            SpectrumShape::AnalysisResult shape_for_match;
+            shape_for_match.signal_detected = true;
+            shape_for_match.peak_value = peak_val;
+            shape_for_match.noise_floor = 0;
+            shape_for_match.peak_margin = 0;
+            shape_for_match.signal_width = 1;
+            shape_for_match.peak_index = peak_idx;
+            normal_pattern_result = try_match_pattern_internal(spectrum.db.data(), shape_for_match);
+        }
+    }
+
     if (signal_detected) {
         // Exception check: suppress drones at configured exclusion frequencies
         // Applies to both normal scanning and sweep detection paths
@@ -768,6 +790,19 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             );
             if (err != ErrorCode::SUCCESS) {
                 return err;
+            }
+        }
+
+        // Propagate pattern match result to tracked drone entry (normal mode)
+        if (normal_pattern_result.matched && should_update) {
+            const SignalPattern* p = pattern_manager_.get_pattern(normal_pattern_result.pattern_index);
+            if (p != nullptr && p->name[0] != '\0') {
+                ErrorResult<size_t> pm_idx = find_drone_by_frequency_internal(frequency);
+                if (pm_idx.has_value()) {
+                    auto& d = tracked_drones_[pm_idx.value()];
+                    d.drone_type = DroneType::CUSTOM;
+                    d.set_pattern_match(normal_pattern_result.correlation_score, normal_pattern_result.status, p->name);
+                }
             }
         }
 
@@ -1690,6 +1725,8 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     bool early_pattern_matched = false;
     int8_t early_pattern_index = -1;
     size_t early_pattern_bin = 0;
+    uint16_t early_pattern_correlation = 0;
+    PatternMatchStatus early_pattern_status = PatternMatchStatus::NO_MATCH;
 
     if (config_.pattern_matching_enabled) {
         // Prepare minimal shape_result for pattern matching
@@ -1711,6 +1748,8 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
             early_pattern_matched = true;
             early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
             early_pattern_bin = peak_index;
+            early_pattern_correlation = early_result.correlation_score;
+            early_pattern_status = early_result.status;
         }
     }
 
@@ -1911,26 +1950,27 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
             }
         }
 
-        // Pattern matching: Use early result (already computed before shape filters)
-        // This provides visual feedback (red frame) and adds to threats
-        // FIX: Reuse early_pattern_matched instead of running redundant pattern match
+        // Update tracked drone (creates new or updates existing)
+        (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
+
+        // Pattern matching: Propagate early result to the tracked drone entry
+        // This enables pattern info to flow through to DisplayDroneEntry and the UI
         if (early_pattern_matched) {
             const SignalPattern* pattern = pattern_manager_.get_pattern(early_pattern_index);
             if (pattern != nullptr && pattern->name[0] != '\0') {
                 matched_pattern_index_ = early_pattern_index;
                 matched_pattern_bin_ = early_pattern_bin;
 
-                // Set drone type to CUSTOM (pattern recognized)
-                if (tracked_count_ > 0) {
-                    auto& drone = tracked_drones_[tracked_count_ - 1];
+                // Find the drone we just updated and set pattern match info on it
+                const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
+                if (pm_idx.has_value()) {
+                    auto& drone = tracked_drones_[pm_idx.value()];
                     drone.drone_type = DroneType::CUSTOM;
+                    drone.set_pattern_match(early_pattern_correlation, early_pattern_status, pattern->name);
                 }
             }
         }
 
-        // FIX: Reset sweep_cycles_missed_ to prevent premature removal in sweep mode
-        // Without this, stable detections disappear after 3 cycles due to RSSI fluctuations
-        (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
         // Find and mark the drone as seen
         const auto idx_result = find_drone_by_frequency_internal(peak_freq);
         if (idx_result.has_value()) {

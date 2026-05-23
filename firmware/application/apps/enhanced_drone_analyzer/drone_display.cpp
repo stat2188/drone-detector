@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 #include <string_view>
 
 #include "drone_display.hpp"
@@ -522,6 +523,18 @@ void DroneDisplay::draw_drone_entry(
     // Trend symbol at far right
     char trend_buffer[2] = {trend_symbol, '\0'};
     draw_text(painter, trend_buffer, x + col4_end + PAD, y + 12, COLOR_TEXT);
+
+    // Line 3 (optional): Pattern match info — only when pattern is matched
+    if (drone.pattern_matched && drone.pattern_name[0] != '\0') {
+        char pattern_buf[22];
+        const uint16_t corr_pct = (drone.pattern_correlation * 100) / 1000;
+        snprintf(pattern_buf, sizeof(pattern_buf), "PTR:%.12s(%u%%)",
+                 drone.pattern_name,
+                 static_cast<unsigned>(corr_pct));
+        const uint32_t pm_color = (drone.pattern_correlation >= PATTERN_CORRELATION_STRONG)
+            ? COLOR_MEDIUM_THREAT : COLOR_LOW_THREAT;
+        draw_text(painter, pattern_buf, x + col1_end + PAD, y + 12, pm_color);
+    }
 }
 
 void DroneDisplay::draw_text(
