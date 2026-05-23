@@ -1690,9 +1690,9 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     if (signal_width < cfg_min_width) return;
     if (signal_width > cfg_max_width) return;
 
-    // Step 6+8b: Compute average margin ONCE for both sharpness and flatness checks
+    // Step 6: Compute average margin for sharpness check only
     int32_t avg_margin = 0;
-    if (cfg_sharpness > 50 || cfg_flatness > 50) {
+    if (cfg_sharpness > 50) {
         int32_t margin_sum = 0;
         size_t bin_count = 0;
         for (size_t i = sig_left; i <= sig_right; ++i) {
@@ -1741,10 +1741,36 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         if (max_valley >= cfg_valley) return;
     }
 
-    // Step 8b: Flatness check — peak must dominate average margin (reuses avg_margin from step 6)
-    if (cfg_flatness > 50 && avg_margin > 0) {
-        const int32_t flat = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-        if (flat < cfg_flatness) return;
+    // Step 8b: Flatness check — count consecutive bins at 90%+ of peak power
+    if (cfg_flatness > 0) {
+        const uint8_t high_power_threshold = raw_peak * 9 / 10;
+        size_t high_power_count = 0;
+
+        for (size_t i = peak_index; i > sig_left && i > FFT_EDGE_SKIP_NARROW; --i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] >= high_power_threshold) {
+                ++high_power_count;
+            } else {
+                break;
+            }
+        }
+
+        for (size_t i = peak_index + 1; i <= sig_right && i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] >= high_power_threshold) {
+                ++high_power_count;
+            } else {
+                break;
+            }
+        }
+
+        const size_t signal_width_bins = sig_right - sig_left + 1;
+        if (signal_width_bins > 0) {
+            const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / signal_width_bins);
+            if (flatness_pct >= cfg_flatness) {
+                return;
+            }
+        }
     }
 
     // Step 8c: Symmetry check — V-shape must have similar left/right width

@@ -28,7 +28,7 @@ int32_t v_shape_height(
 
 int32_t flat_top_width(int32_t flatness, int32_t half_width) noexcept {
     if (flatness == 0) return 0;
-    return half_width * flatness / 200;
+    return half_width * flatness / 100;
 }
 
 } // namespace
