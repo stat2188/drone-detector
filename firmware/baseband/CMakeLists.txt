@@ -548,6 +548,12 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PUSB sd_over_usb)
 
+### AM TV — moved to internal firmware so AnalogVideoView can load it via run_image()
+set(MODE_CPPSRC
+	proc_am_tv.cpp
+)
+DeclareTargets(PAMT am_tv)
+
 ### Place external app and disabled images below so they don't get added to the firmware
 set(add_to_firmware FALSE)
 set(MODE_FLAGS "-O3")
@@ -595,13 +601,6 @@ set(MODE_CPPSRC
 	proc_jammer.cpp
 )
 DeclareTargets(PJAM jammer)
-
-### AM TV
-
-set(MODE_CPPSRC
-	proc_am_tv.cpp
-)
-DeclareTargets(PAMT am_tv)
 
 ### GPS Simulator
 
