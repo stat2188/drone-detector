@@ -47,6 +47,7 @@ VideoWidget::VideoWidget()
     , frame_count_{0}
     , active_{false}
     , x_correction_{DEFAULT_X_CORRECTION} {
+    set_focusable(true);
 }
 
 void VideoWidget::on_show() {
@@ -65,7 +66,9 @@ void VideoWidget::paint(Painter& painter) {
 }
 
 void VideoWidget::focus() {
-    // No child widgets to focus
+    // This widget is the sole focus target in AnalogVideoView.
+    // Being focusable enables the hardware cursor to reach this view.
+    // The parent AnalogVideoView handles all key events.
 }
 
 void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
@@ -210,11 +213,18 @@ void AnalogVideoView::setup_video_receiver() noexcept {
     // Shut down current baseband (wideband spectrum from scanner)
     baseband::shutdown();
 
-    // Load AM TV baseband image from pre-linked M4 code region.
-    // NOTE: Must use run_prepared_image (not run_image by tag) because
-    // the baseband is now linked into the M4 code memory, not loaded from SPI flash.
-    // All external apps (analogtv, sstvrx, etc.) follow this pattern.
-    baseband::run_prepared_image(portapack::memory::map::m4_code.base());
+    // Load AM TV baseband image from SPI flash by image tag.
+    // NOTE: The pre-linked code at memory::map::m4_code.base() is the host app's
+    // baseband (drone scanner wideband), NOT the AM TV baseband.
+    // The AM TV baseband is only accessible via SPI flash tag {'P','A','M','T'}.
+    // This matches image_tag_am_tv in the external analogtv app.
+    static constexpr portapack::spi_flash::image_tag_t am_tv_tag = {'P', 'A', 'M', 'T'};
+    baseband::run_image(am_tv_tag);
+
+    // Let baseband image fully settle before sending configuration commands.
+    // run_image waits for baseband_ready, but an extra 1ms prevents
+    // send_message() spin collisions when receiver_model calls follow immediately.
+    chThdSleepMilliseconds(1);
 
     // Configure RF frontend for analog video.
     // Must match external analogtv: modulation=WFM, 2MHz sampling.
@@ -251,6 +261,13 @@ void AnalogVideoView::on_show() {
         return;
     }
 
+    // CRITICAL: Register message handlers BEFORE enabling the receiver.
+    // The baseband sends ChannelSpectrumConfig (containing the FIFO pointer)
+    // during initialization, right after run_image completes.
+    // If handlers aren't registered by then, spectrum_fifo_ stays nullptr
+    // and the DisplayFrameSync handler silently drops all spectra → black screen.
+    register_handlers();
+
     // Setup hardware: load AM TV baseband, configure receiver
     setup_video_receiver();
 
@@ -258,9 +275,6 @@ void AnalogVideoView::on_show() {
     // spectrum capture. Si5351/MAX2837 PLL requires ~1-5ms to lock.
     // Without this delay, the first FFT frames capture stale frequency data.
     chThdSleepMilliseconds(5);
-
-    // Register message handlers for spectrum streaming
-    register_handlers();
 
     // Start spectrum streaming
     baseband::spectrum_streaming_start();
@@ -343,7 +357,7 @@ void AnalogVideoView::focus() {
 }
 
 bool AnalogVideoView::on_key(const KeyEvent key) {
-    if (key == KeyEvent::Back) {
+    if (key == KeyEvent::Back || key == KeyEvent::Select || key == KeyEvent::Left) {
         nav_.pop();
         return true;
     }
