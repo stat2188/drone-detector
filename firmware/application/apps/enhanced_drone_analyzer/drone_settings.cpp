@@ -86,6 +86,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
     , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
     , button_info_cfar_({UI_POS_X(29), UI_POS_Y(0), UI_POS_WIDTH(3), 16}, "CF?")
+    , preview_({0, 152, 240, 48})
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -97,6 +98,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     SettingsFileManager::extract_from_config(config, settings_);
 
     add_children({
+        &preview_,
         &labels_,
         &field_scan_interval_,
         &field_rssi_threshold_,
@@ -237,26 +239,41 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     field_spectrum_margin_.on_change = [this](int32_t v) {
         settings_.spectrum_margin = static_cast<uint8_t>(v);
+        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
+                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
+                            settings_.spectrum_peak_ratio);
         settings_dirty_ = true;
     };
 
     field_spectrum_min_width_.on_change = [this](int32_t v) {
         settings_.spectrum_min_width = static_cast<uint8_t>(v);
+        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
+                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
+                            settings_.spectrum_peak_ratio);
         settings_dirty_ = true;
     };
 
     field_spectrum_max_width_.on_change = [this](int32_t v) {
         settings_.spectrum_max_width = static_cast<uint8_t>(v);
+        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
+                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
+                            settings_.spectrum_peak_ratio);
         settings_dirty_ = true;
     };
 
     field_spectrum_peak_sharpness_.on_change = [this](int32_t v) {
         settings_.spectrum_peak_sharpness = static_cast<uint8_t>(v);
+        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
+                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
+                            settings_.spectrum_peak_ratio);
         settings_dirty_ = true;
     };
 
     field_spectrum_peak_ratio_.on_change = [this](int32_t v) {
         settings_.spectrum_peak_ratio = static_cast<uint8_t>(v);
+        preview_.set_params(settings_.spectrum_margin, settings_.spectrum_min_width,
+                            settings_.spectrum_max_width, settings_.spectrum_peak_sharpness,
+                            settings_.spectrum_peak_ratio);
         settings_dirty_ = true;
     };
 
@@ -466,6 +483,14 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_cfar_ref_cells_.set_value(static_cast<int32_t>(settings_.cfar_ref_cells));
     field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));
     field_cfar_threshold_.set_value(static_cast<int32_t>(settings_.cfar_threshold_x10));
+
+    preview_.set_params(
+        settings_.spectrum_margin,
+        settings_.spectrum_min_width,
+        settings_.spectrum_max_width,
+        settings_.spectrum_peak_sharpness,
+        settings_.spectrum_peak_ratio);
+    preview_.set_dirty();
 }
 
 // ============================================================================

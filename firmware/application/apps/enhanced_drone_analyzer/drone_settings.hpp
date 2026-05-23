@@ -12,6 +12,7 @@
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
 #include "ui_receiver.hpp"
+#include "spectrum_preview_widget.hpp"
 
 namespace drone_analyzer {
 
@@ -60,6 +61,8 @@ private:
 
     ui::Checkbox check_noise_blacklist_;
     ui::Checkbox check_rssi_variance_;
+
+    SpectrumPreviewWidget preview_;
 
     // Mahalanobis gate controls
     ui::Checkbox check_mahalanobis_;
