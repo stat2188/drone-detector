@@ -54,6 +54,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , check_neighbor_margin_({UI_POS_X(20), UI_POS_Y(15)}, 4, "NB", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
     , check_rssi_variance_({UI_POS_X(20), UI_POS_Y(7)}, 5, "RVar", false)
+    , preview_({0, 152, 240, 48})
     , check_mahalanobis_({UI_POS_X(20), UI_POS_Y(2)}, 3, "MG", false)
     , field_mahalanobis_threshold_({UI_POS_X(22), UI_POS_Y(1)}, 3,
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
@@ -84,7 +85,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     })
     , field_cfar_ref_cells_({UI_POS_X(14), UI_POS_Y(0)}, 2, {4, 64}, 4, ' ')
     , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
-    , preview_({0, 152, 240, 48})
     , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
     , button_info_cfar_({UI_POS_X(29), UI_POS_Y(0), UI_POS_WIDTH(3), 16}, "CF?")
     , nav_(nav)
