@@ -62,6 +62,11 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     int half_px = (static_cast<int>(min_width_) + static_cast<int>(max_width_)) / 2;
     half_px = std::max(5, std::min(w / 3, half_px * w / 512));
 
+    // Peak ratio narrows the peak: high ratio = tall + narrow (selective).
+    // Mirrors scanner logic: ratio = peak_margin * 10 / signal_width.
+    half_px = half_px * (255 - static_cast<int>(peak_ratio_)) / 255;
+    half_px = std::max(1, half_px);
+
     // Valley floor height (pixels above baseline)
     int valley_px = static_cast<int>(valley_depth_) * peak_h / 765;
     valley_px = std::min(valley_px, peak_h / 3);
@@ -82,9 +87,9 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     // Sharpness factor (0-250, matches original)
     const int sharp_factor = std::min(static_cast<int>(sharpness_), 250);
 
-    // Peak boost from peak_ratio (0-255 maps to 0-50% extra height)
-    const int peak_boost = static_cast<int>(peak_ratio_) * peak_h / 510;
-    const int peak_height = std::min(h - 2, peak_h + peak_boost);
+    // Peak ratio height: maps 0-255 linearly across available vertical space.
+    const int height_range = h - 2 - peak_h;
+    const int peak_height = peak_h + (static_cast<int>(peak_ratio_) * height_range / 255);
 
     const int peak_above = peak_height - valley_px;
     const int max_slope = std::max(1, half_px - flat_px);
