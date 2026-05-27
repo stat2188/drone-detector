@@ -58,8 +58,8 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     // Noise floor line
     painter.draw_hline({x0, floor_y}, w, ui::Color::darker_grey());
 
-    // Half-width in pixels: average of min/max width, scaled to widget
-    int half_px = (static_cast<int>(min_width_) + static_cast<int>(max_width_)) / 2;
+    // Half-width in pixels: peak shows maximum acceptable signal width.
+    int half_px = static_cast<int>(max_width_);
     half_px = std::max(5, std::min(w / 3, half_px * w / 512));
 
     // Peak ratio narrows the peak: high ratio = tall + narrow (selective).
@@ -136,15 +136,15 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         }
     }
 
-    // Min width markers (cyan vlines at elevated line)
+    // Min width markers (red vertical lines — signal must be at least this wide)
     const int min_px = static_cast<int>(min_width_) * w / 512;
     // Max width markers (grey vlines at elevated line)
     const int max_px = static_cast<int>(max_width_) * w / 512;
 
     for (int side = -1; side <= 1; side += 2) {
         const int ml = center + side * min_px;
-        if (ml >= 0 && ml < w) {
-            painter.draw_vline({x0 + ml, elev_y - 2}, 5, ui::Color::cyan());
+        if (ml >= 0 && ml < w && min_px > 0) {
+            painter.draw_vline({x0 + ml, y0 + 1}, h - 3, ui::Color::red());
         }
         const int mr = center + side * max_px;
         if (mr >= 0 && mr < w) {
