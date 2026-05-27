@@ -1240,7 +1240,31 @@ void DroneScanner::refresh_patterns() noexcept {
 // ============================================================================
 
 bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept {
-    // CFAR detection: if enabled, use adaptive threshold instead of fixed margin
+    // Step 1: Find noise floor = median of usable bins
+    // Skip edges AND DC spike (same bins extract_rssi skips)
+    // Uses class member buffer — no static in method
+    uint8_t* sorted = spectrum_sort_buf_;
+    size_t sort_count = 0;
+    for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+        sorted[sort_count++] = spectrum.db[i];
+    }
+    for (size_t i = 1; i < sort_count; ++i) {
+        const uint8_t key = sorted[i];
+        size_t j = i;
+        while (j > 0 && sorted[j - 1] > key) {
+            sorted[j] = sorted[j - 1];
+            --j;
+        }
+        sorted[j] = key;
+    }
+    const uint8_t noise_floor = sorted[sort_count / 2];
+
+    // Step 2: Find peak bin and peak value (skip edges AND DC spike)
+    uint8_t peak_value = noise_floor;
+    size_t peak_index = FFT_EDGE_SKIP_NARROW;
+
+    // CFAR detection: if enabled, use adaptive threshold to find peak
     if (config_.cfar_mode != CFARMode::OFF) {
         const size_t cfar_peak = CFARDetector::find_peak_cfar(
             spectrum.db.data(),
@@ -1257,49 +1281,19 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
             config_.os_cfar_k_percent,
             config_.vi_cfar_threshold_x10
         );
-        
+
         if (cfar_peak >= FFT_BIN_COUNT) {
-            return false;  // No signal detected by CFAR
+            return false;
         }
-        
-        // CFAR detected a signal — compute RSSI from peak bin
-        out_rssi = static_cast<int32_t>(spectrum.db[cfar_peak]) - FFT_DBM_OFFSET;
-        if (out_rssi > RSSI_MAX_DBM) out_rssi = RSSI_MAX_DBM;
-        if (out_rssi < RSSI_MIN_DBM) out_rssi = RSSI_MIN_DBM;
-        
-        // Still apply shape filters (width, sharpness, etc.) for drone discrimination
-        // Fall through to shape analysis below using CFAR peak as the detected peak
-    }
-
-    // Step 1: Find noise floor = median of usable bins
-    // Skip edges AND DC spike (same bins extract_rssi skips)
-    // Uses class member buffer (mutable) — no static in method
-    uint8_t* sorted = spectrum_sort_buf_;
-    size_t sort_count = 0;
-    for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
-        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-        sorted[sort_count++] = spectrum.db[i];
-    }
-    // Insertion sort
-    for (size_t i = 1; i < sort_count; ++i) {
-        const uint8_t key = sorted[i];
-        size_t j = i;
-        while (j > 0 && sorted[j - 1] > key) {
-            sorted[j] = sorted[j - 1];
-            --j;
-        }
-        sorted[j] = key;
-    }
-    const uint8_t noise_floor = sorted[sort_count / 2];
-
-    // Step 2: Find peak bin and peak value (skip edges AND DC spike)
-    uint8_t peak_value = noise_floor;
-    size_t peak_index = FFT_EDGE_SKIP_NARROW;
-    for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
-        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-        if (spectrum.db[i] > peak_value) {
-            peak_value = spectrum.db[i];
-            peak_index = i;
+        peak_index = cfar_peak;
+        peak_value = spectrum.db[cfar_peak];
+    } else {
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] > peak_value) {
+                peak_value = spectrum.db[i];
+                peak_index = i;
+            }
         }
     }
 
@@ -1827,10 +1821,8 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         if (is_exception) return;
 
         // Mahalanobis Gate - SWEEP MODE ONLY
-        // IMPORTANT: Mahalanobis gate is ONLY used in sweep mode.
-        // Database mode uses update_tracked_drone_internal() WITHOUT mahalanobis.
+        bool mahalanobis_rejected = false;
         if (config_.mahalanobis_enabled) {
-            // Find existing drone to update statistics
             size_t drone_idx = 0;
             bool drone_found = false;
             for (uint8_t i = 0; i < tracked_count_; ++i) {
@@ -1843,61 +1835,51 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
 
             if (drone_found) {
                 MahalanobisStatistics& stats = tracked_drones_[drone_idx].get_mahalanobis_stats();
-
-                // Validate signal against statistical model
                 if (!mahalanobis_detector_.validate(
-                    peak_rssi,
-                    center_freq,
-                    stats,
-                    config_.mahalanobis_threshold_x10
+                    peak_rssi, center_freq, stats, config_.mahalanobis_threshold_x10
                 )) {
-                    return;  // Signal is outlier - reject
+                    mahalanobis_rejected = true;
+                } else {
+                    mahalanobis_detector_.update_statistics(stats, peak_rssi, center_freq, peak_freq);
                 }
-
-                // Update statistics with new sample
-                mahalanobis_detector_.update_statistics(
-                    stats,
-                    peak_rssi,
-                    center_freq,
-                    peak_freq
-                );
-            } else {
-                // New drone - initialize Mahalanobis statistics
-                (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
-                // FIX: Reset sweep_cycles_missed_ to prevent premature removal in sweep mode
-                // Without this, stable detections disappear after 3 cycles due to RSSI fluctuations
-                if (tracked_count_ > 0) {
-                    tracked_drones_[tracked_count_ - 1].mark_seen(chTimeNow());
-                    tracked_drones_[tracked_count_ - 1].get_mahalanobis_stats().last_tuned_frequency = peak_freq;
-                }
-            }
-        }
-
-        // Update tracked drone (creates new or updates existing)
-        (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
-
-        // Pattern matching: Propagate early result to the tracked drone entry
-        // This enables pattern info to flow through to DisplayDroneEntry and the UI
-        if (early_pattern_matched) {
-            const SignalPattern* pattern = pattern_manager_.get_pattern(early_pattern_index);
-            if (pattern != nullptr && pattern->name[0] != '\0') {
-                matched_pattern_index_ = early_pattern_index;
-                matched_pattern_bin_ = early_pattern_bin;
-
-                // Find the drone we just updated and set pattern match info on it
-                const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
-                if (pm_idx.has_value()) {
-                    auto& drone = tracked_drones_[pm_idx.value()];
-                    drone.drone_type = DroneType::CUSTOM;
-                    drone.set_pattern_match(early_pattern_correlation, pattern->name);
+            } else if (tracked_count_ < MAX_TRACKED_DRONES) {
+                const size_t new_idx = tracked_count_;
+                tracked_drones_[new_idx] = TrackedDrone(peak_freq, DroneType::UNKNOWN, ThreatLevel::NONE);
+                auto& drone = tracked_drones_[new_idx];
+                drone.created_time_ = chTimeNow();
+                drone.last_increase_time_ = chTimeNow();
+                drone.mark_seen(chTimeNow());
+                drone.update_rssi(peak_rssi, chTimeNow());
+                drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
+                tracked_count_++;
+                statistics_.drones_detected++;
+                if (drone.threat_level > ThreatLevel::NONE) {
+                    trigger_alert(drone.threat_level);
                 }
             }
         }
 
-        // Find and mark the drone as seen
-        const auto idx_result = find_drone_by_frequency_internal(peak_freq);
-        if (idx_result.has_value()) {
-            tracked_drones_[idx_result.value()].mark_seen(chTimeNow());
+        if (!mahalanobis_rejected) {
+            (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
+
+            if (early_pattern_matched) {
+                const SignalPattern* pattern = pattern_manager_.get_pattern(early_pattern_index);
+                if (pattern != nullptr && pattern->name[0] != '\0') {
+                    matched_pattern_index_ = early_pattern_index;
+                    matched_pattern_bin_ = early_pattern_bin;
+                    const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
+                    if (pm_idx.has_value()) {
+                        auto& drone = tracked_drones_[pm_idx.value()];
+                        drone.drone_type = DroneType::CUSTOM;
+                        drone.set_pattern_match(early_pattern_correlation, pattern->name);
+                    }
+                }
+            }
+
+            const auto idx_result = find_drone_by_frequency_internal(peak_freq);
+            if (idx_result.has_value()) {
+                tracked_drones_[idx_result.value()].mark_seen(chTimeNow());
+            }
         }
     }
 }

@@ -582,10 +582,16 @@ void SettingsFileManager::extract_from_config(
     s.scanning_mode = config.mode;
     s.scan_interval_ms = config.scan_interval_ms;
     s.alert_rssi_threshold_dbm = config.rssi_threshold_dbm;
+    s.scan_sensitivity = static_cast<uint8_t>(
+        (config.rssi_threshold_dbm > -20) ? 0 :
+        (config.rssi_threshold_dbm < -120) ? 100 :
+        (-20 - config.rssi_threshold_dbm)
+    );
     s.dwell_enabled = config.dwell_enabled;
     s.confirm_count_enabled = config.confirm_count_enabled;
     s.noise_blacklist_enabled = config.noise_blacklist_enabled;
     s.spectrum_detection_enabled = config.spectrum_detection_enabled;
+    s.median_enabled = config.median_enabled;
     s.spectrum_margin = config.spectrum_margin;
     s.spectrum_min_width = config.spectrum_min_width;
     s.spectrum_max_width = config.spectrum_max_width;
@@ -594,7 +600,6 @@ void SettingsFileManager::extract_from_config(
     s.spectrum_valley_depth = config.spectrum_valley_depth;
     s.spectrum_flatness = config.spectrum_flatness;
     s.spectrum_symmetry = config.spectrum_symmetry;
-    s.median_enabled = config.median_enabled;
     s.neighbor_margin_db = config.neighbor_margin_db;
     s.rssi_variance_enabled = config.rssi_variance_enabled;
     s.confirm_count = config.confirm_count;

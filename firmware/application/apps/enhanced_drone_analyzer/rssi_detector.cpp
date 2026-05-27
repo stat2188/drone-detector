@@ -241,24 +241,28 @@ bool RSSIDetector::is_approaching() const noexcept {
     if (samples_count_ < 2) {
         return false;
     }
-
     const size_t latest_idx = (history_index_ > 0) ? (history_index_ - 1) : 0;
     const RssiValue latest = rssi_history_[latest_idx % RSSI_HISTORY_SIZE];
-    const RssiValue oldest = rssi_history_[0];
-
-    return (latest - oldest) >= 3;
+    // When buffer wraps, the oldest occupies the slot history_index_ % RSSI_HISTORY_SIZE
+    // (the next slot to be overwritten). When not yet full: index 0.
+    const size_t oldest_idx = (samples_count_ >= RSSI_HISTORY_SIZE)
+        ? (history_index_ % RSSI_HISTORY_SIZE)
+        : 0;
+    const RssiValue oldest = rssi_history_[oldest_idx];
+    return (latest - oldest) >= MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
 }
 
 bool RSSIDetector::is_receding() const noexcept {
     if (samples_count_ < 2) {
         return false;
     }
-
     const size_t latest_idx = (history_index_ > 0) ? (history_index_ - 1) : 0;
     const RssiValue latest = rssi_history_[latest_idx % RSSI_HISTORY_SIZE];
-    const RssiValue oldest = rssi_history_[0];
-
-    return (oldest - latest) >= 3;
+    const size_t oldest_idx = (samples_count_ >= RSSI_HISTORY_SIZE)
+        ? (history_index_ % RSSI_HISTORY_SIZE)
+        : 0;
+    const RssiValue oldest = rssi_history_[oldest_idx];
+    return (oldest - latest) >= MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
 }
 
 bool RSSIDetector::is_static() const noexcept {
