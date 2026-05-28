@@ -37,7 +37,7 @@ ui::Color SpectrumPreviewWidget::amplitude_color(int32_t h, int32_t max_h) noexc
     } else if (scaled < 512u) {
         return ui::Color(static_cast<uint8_t>(scaled - 256u), 255u, 0);
     } else {
-        const uint32_t clamped = std::min(scaled, 767u);
+        const uint32_t clamped = std::min<uint32_t>(scaled, 767u);
         const uint32_t g = 255u - (clamped - 512u);
         return ui::Color(255u, static_cast<uint8_t>(g & 0xFFu), 0);
     }
