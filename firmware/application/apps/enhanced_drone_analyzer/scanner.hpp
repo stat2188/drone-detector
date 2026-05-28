@@ -1230,6 +1230,11 @@ private:
     uint8_t pending_count_{0};
     static constexpr uint8_t DETECT_CONFIRM_COUNT = 2;
 
+    // RSSI hysteresis state (Schmitt trigger: 3 dB to turn ON, 0 dB to turn OFF)
+    bool signal_present_{false};
+    FreqHz last_hysteresis_freq_{0};
+    static constexpr int32_t RSSI_HYSTERESIS_DB = 3;
+
     // Consecutive missed detections on locked frequency (prevents premature lock-break)
     uint8_t missed_lock_count_{0};
 

@@ -453,9 +453,11 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     if (should_dwell) {
         dwell_cycles_++;
 
-        // Max dwell: 200ms total (4 cycles × 50ms).
-        // Enough time for 2 confirmations at 60fps (~33ms each).
-        static constexpr uint8_t MAX_DWELL_CYCLES = 4;
+        // Max dwell: 300ms total (6 cycles × 50ms).
+        // Enough for median filter to warm up (4 samples) + 2 more frames for
+        // reliable lock accumulation. At 60fps, 6 frames ≈ 10 increments of
+        // freq_lock_count_ toward MAX_FREQ_LOCK (10) → TRACKING transition.
+        static constexpr uint8_t MAX_DWELL_CYCLES = 6;
         const uint8_t max_dwell = config_.confirm_count_enabled
             ? MAX_DWELL_CYCLES : (MAX_DWELL_CYCLES / 2);
 
@@ -664,6 +666,20 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
     const SystemTime now = chTimeNow();
 
+    // ----- RSSI Hysteresis (Schmitt trigger) -----
+    // Reset hysteresis state when frequency changes (new hop or new lock target)
+    if (frequency != last_hysteresis_freq_) {
+        signal_present_ = false;
+        last_hysteresis_freq_ = frequency;
+    }
+
+    // Effective threshold: 3 dB harder to turn ON, 3 dB easier to stay ON
+    // Prevents signal toggling at the threshold boundary (8-bit FFT quantization
+    // causes ±1 bin fluctuation = ~0.19 dB, enough to toggle detection)
+    const int32_t rssi_threshold = signal_present_
+        ? (config_.rssi_threshold_dbm - RSSI_HYSTERESIS_DB)
+        : (config_.rssi_threshold_dbm + RSSI_HYSTERESIS_DB);
+
     int32_t effective_rssi = rssi;
     bool signal_detected = false;
 
@@ -671,14 +687,22 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         // Spectrum-only: shape analysis gates detection
         int32_t spectrum_rssi = RSSI_MIN_DBM;
         if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
-            // Shape passed — still enforce RSSI threshold (sens setting)
-            if (rssi > config_.rssi_threshold_dbm) {
+            // Shape passed — enforce RSSI threshold with hysteresis
+            if (rssi > rssi_threshold) {
                 signal_detected = true;
+                signal_present_ = true;
                 if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
+            } else if (signal_present_) {
+                signal_present_ = false;
             }
         }
     } else {
-        signal_detected = (rssi > config_.rssi_threshold_dbm);
+        signal_detected = (rssi > rssi_threshold);
+        if (signal_detected) {
+            signal_present_ = true;
+        } else if (signal_present_) {
+            signal_present_ = false;
+        }
     }
 
     // Pattern matching in normal scan mode: run after shape analysis passes
@@ -835,10 +859,13 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
         // Only break lock if we're tuned to the locked freq and it's gone
         if (locked_frequency_ != 0 && frequency == locked_frequency_) {
-            // Use confirm_count as tolerance for intermittent signals (FHSS, burst, fading)
-            // Default confirm_count=2 means 2 consecutive misses break the lock
-            // Guard against confirm_count=0 (would break lock on every miss)
-            const uint8_t miss_tolerance = (config_.confirm_count > 0) ? config_.confirm_count : 1;
+            // Use confirm_count × 2 as tolerance for intermittent signals (FHSS, burst, fading)
+            // Default confirm_count=2 → 4 consecutive misses (~66ms) before breaking lock.
+            // The ×2 factor gives a grace period for brief fades without dropping the lock.
+            // Guard against confirm_count=0 (would break lock on every miss).
+            const uint8_t miss_tolerance = (config_.confirm_count > 0)
+                ? static_cast<uint8_t>(config_.confirm_count * 2)
+                : 1;
             missed_lock_count_++;
             if (missed_lock_count_ >= miss_tolerance) {
                 freq_lock_count_ = 0;
@@ -1245,7 +1272,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
     // Uses class member buffer — no static in method
     uint8_t* sorted = spectrum_sort_buf_;
     size_t sort_count = 0;
-    for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+    for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
         if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
         sorted[sort_count++] = spectrum.db[i];
     }
@@ -1262,7 +1289,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
 
     // Step 2: Find peak bin and peak value (skip edges AND DC spike)
     uint8_t peak_value = noise_floor;
-    size_t peak_index = FFT_EDGE_SKIP_NARROW;
+    size_t peak_index = FFT_EDGE_SKIP;
 
     // CFAR detection: if enabled, use adaptive threshold to find peak
     if (config_.cfar_mode != CFARMode::OFF) {
@@ -1273,8 +1300,8 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
             config_.cfar_ref_cells,
             config_.cfar_guard_cells,
             config_.cfar_threshold_x10,
-            FFT_EDGE_SKIP_NARROW,
-            FFT_EDGE_SKIP_NARROW,
+            FFT_EDGE_SKIP,
+            FFT_EDGE_SKIP,
             config_.cfar_hybrid_alpha,
             config_.cfar_hybrid_beta,
             config_.cfar_hybrid_gamma,
@@ -1288,7 +1315,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         peak_index = cfar_peak;
         peak_value = spectrum.db[cfar_peak];
     } else {
-        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+        for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
             if (spectrum.db[i] > peak_value) {
                 peak_value = spectrum.db[i];
@@ -1311,14 +1338,14 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
     const uint8_t elevated_threshold = noise_floor + (peak_margin / 4);
 
     size_t left = peak_index;
-    while (left > FFT_EDGE_SKIP_NARROW) {
+    while (left > FFT_EDGE_SKIP) {
         size_t prev = left - 1;
         if (prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) { --left; continue; }
         if (spectrum.db[prev] < elevated_threshold) break;
         --left;
     }
     size_t right = peak_index;
-    while (right < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1) {
+    while (right < FFT_BIN_COUNT - FFT_EDGE_SKIP - 1) {
         size_t next = right + 1;
         if (next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) { ++right; continue; }
         if (spectrum.db[next] < elevated_threshold) break;
@@ -1392,7 +1419,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         uint8_t right_valley_margin = 0;
 
         // Check bin immediately to the left of signal
-        if (left > FFT_EDGE_SKIP_NARROW) {
+        if (left > FFT_EDGE_SKIP) {
             size_t lv = left - 1;
             if (!(lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END)) {
                 if (spectrum.db[lv] > noise_floor) {
@@ -1402,7 +1429,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         }
 
         // Check bin immediately to the right of signal
-        if (right < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1) {
+        if (right < FFT_BIN_COUNT - FFT_EDGE_SKIP - 1) {
             size_t rv = right + 1;
             if (!(rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END)) {
                 if (spectrum.db[rv] > noise_floor) {
@@ -1429,7 +1456,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         size_t high_power_count = 0;
 
         // Count consecutive high-power bins on left side (from peak outward)
-        for (size_t i = peak_index; i > left && i > FFT_EDGE_SKIP_NARROW; --i) {
+        for (size_t i = peak_index; i > left && i > FFT_EDGE_SKIP; --i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
             if (spectrum.db[i] >= high_power_threshold) {
                 ++high_power_count;
@@ -1439,7 +1466,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         }
 
         // Count consecutive high-power bins on right side (from peak outward)
-        for (size_t i = peak_index + 1; i <= right && i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+        for (size_t i = peak_index + 1; i <= right && i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
             if (spectrum.db[i] >= high_power_threshold) {
                 ++high_power_count;
