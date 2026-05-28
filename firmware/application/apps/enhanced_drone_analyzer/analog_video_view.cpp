@@ -38,9 +38,9 @@ namespace drone_analyzer {
 // VideoWidget implementation
 // ============================================================================
 // Memory:
-//   Instance: ~2,208 bytes (video_buffer_[2176] + state ~32B)
+//   Instance: ~13,344 bytes (video_buffer_[13312] + state ~32B)
 //   Stack per render_frame(): ~520 bytes (line_buffer on stack)
-//     OK: called ~3/sec, total stack < 4KB per AGENTS.md
+//     OK: called at frame sync rate, total stack < 4KB per AGENTS.md
 
 VideoWidget::VideoWidget()
     : video_buffer_{}
@@ -82,7 +82,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
         return;
     }
 
-    // 8 frames × 256 bytes = 2048, always inside VIDEO_BUFFER_SIZE (2176)
+    // 51 frames × 256 bytes = 13056, always inside VIDEO_BUFFER_SIZE (13312)
     const size_t offset = frame_count_ * 256;
     for (size_t i = 0; i < 256; ++i) {
         // Invert: strong signal (0) -> white (255), noise (255) -> black (0)
@@ -91,7 +91,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 
     ++frame_count_;
 
-    // When 8 spectra accumulated (16 video lines), render the frame
+    // When 51 spectra accumulated (104 video lines), render the frame (line-doubled to 208)
     if (frame_count_ >= ACCUMULATED_FRAMES) {
         render_frame();
         frame_count_ = 0;
@@ -100,12 +100,12 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 
 void VideoWidget::render_frame() noexcept {
     // Stack: ~272 bytes (line_buffer 256B + 16B locals)
-    // Called ~3/sec, well within 4KB stack limit
+    // Called at frame sync rate, well within 4KB stack limit
     ui::Color line_buffer[LINE_WIDTH];
 
-    // Spread 16 native lines as horizontal stripes with gaps
-    constexpr ui::Coord STRIPE_H = 14;     // pixels per stripe
-    constexpr ui::Coord STRIDE = 18;       // stripe + gap
+    // Line-doubling: each native video line is rendered twice (two consecutive scanlines)
+    // 104 native lines × 2 = 208 display lines, starting at Y=32 (after 16px header)
+    constexpr ui::Coord VIDEO_START_Y = 32;
 
     const uint8_t xcorr = x_correction_;
 
@@ -117,14 +117,13 @@ void VideoWidget::render_frame() noexcept {
             line_buffer[px] = spectrum_rgb4_lut[video_buffer_[buf_offset + src_idx]];
         }
 
-        const ui::Coord y0 = static_cast<ui::Coord>(32 + line * STRIDE);
-
-        for (ui::Coord dy = 0; dy < STRIPE_H; ++dy) {
-            portapack::display.render_line(
-                {VIDEO_START_X, static_cast<ui::Coord>(y0 + dy)},
-                LINE_WIDTH,
-                line_buffer);
-        }
+        const ui::Coord y = static_cast<ui::Coord>(VIDEO_START_Y + line * 2);
+        portapack::display.render_line(
+            {VIDEO_START_X, y},
+            LINE_WIDTH, line_buffer);
+        portapack::display.render_line(
+            {VIDEO_START_X, static_cast<ui::Coord>(y + 1)},
+            LINE_WIDTH, line_buffer);
     }
 }
 
@@ -132,8 +131,7 @@ void VideoWidget::render_frame() noexcept {
 // AnalogVideoView implementation
 // ============================================================================
 // Memory:
-//   BSS (static VideoWidget): ~13,952 bytes (shared, not per-instance)
-//   Instance: ~592 bytes (VideoWidget ~16B + spectrum_buffer_ ~272B + state ~300B)
+//   Instance: ~13,812 bytes (VideoWidget ~13.3KB + spectrum_buffer_ ~272B + handler_storage ~128B + state ~100B)
 //   Stack per paint(): ~16 bytes (freq_str[16] + locals)
 //   Stack per frame_sync handler: 0 bytes (spectrum_buffer_ is class member)
 //   Flash: ~768 bytes (code)
