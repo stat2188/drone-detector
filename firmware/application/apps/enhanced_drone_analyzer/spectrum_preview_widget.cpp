@@ -37,7 +37,8 @@ ui::Color SpectrumPreviewWidget::amplitude_color(int32_t h, int32_t max_h) noexc
     } else if (scaled < 512u) {
         return ui::Color(static_cast<uint8_t>(scaled - 256u), 255u, 0);
     } else {
-        uint32_t g = std::min<uint32_t>(255u, 255u - (scaled - 512u));
+        const uint32_t clamped = std::min(scaled, 767u);
+        const uint32_t g = 255u - (clamped - 512u);
         return ui::Color(255u, static_cast<uint8_t>(g & 0xFFu), 0);
     }
 }
@@ -68,7 +69,7 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
     half_px = std::max(1, half_px);
 
     // Valley floor height (pixels above baseline)
-    int valley_px = static_cast<int>(valley_depth_) * peak_h / 765;
+    int valley_px = static_cast<int>(valley_depth_) * peak_h / 400;
     valley_px = std::min(valley_px, peak_h / 3);
 
     // Flat top width (pixels)
@@ -77,11 +78,11 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         flat_px = half_px * static_cast<int>(flatness_) / 200;
     }
 
-    // Symmetry offset
-    int sym_off = 0;
-    if (symmetry_ > 0) {
-        sym_off = (static_cast<int>(symmetry_) - 50) * half_px / 200;
-    }
+    // Symmetry offset: shows MAXIMUM allowed asymmetry
+    // higher symmetry_ = stricter filter = more centered peak
+    // symmetry_ = 100 (perfect required) → centered (0 offset)
+    // symmetry_ = 0   (disabled)         → max offset
+    int sym_off = (100 - static_cast<int>(symmetry_)) * half_px / 400;
     const int center = w / 2 + sym_off;
 
     // Sharpness factor (0-250, matches original)
@@ -138,8 +139,9 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
 
     // Min width markers (red vertical lines — signal must be at least this wide)
     const int min_px = static_cast<int>(min_width_) * w / 512;
-    // Max width markers (grey vlines at elevated line)
-    const int max_px = static_cast<int>(max_width_) * w / 512;
+    // Max width markers (grey vlines at elevated line) — use same base as half_px (incl. w/3 clamp)
+    const int base_max = static_cast<int>(max_width_) * w / 512;
+    const int max_px = std::max(5, std::min(w / 3, base_max));
 
     for (int side = -1; side <= 1; side += 2) {
         const int ml = center + side * min_px;
@@ -157,7 +159,7 @@ void SpectrumPreviewWidget::paint(ui::Painter& painter) {
         const int vx = center + side * (half_px + 1);
         if (vx >= 0 && vx < w && valley_px > 0) {
             const int vh = std::min(valley_px, h - 4);
-            const ui::Color vc = (valley_depth_ < 10) ? ui::Color::green() : ui::Color::red();
+            const ui::Color vc = (valley_depth_ == 0) ? ui::Color::green() : ui::Color::red();
             painter.fill_rectangle({x0 + vx - 1, floor_y - vh, 3, vh}, vc);
         }
     }
