@@ -38,7 +38,7 @@ namespace drone_analyzer {
 // VideoWidget implementation
 // ============================================================================
 // Memory:
-//   Instance: ~13,344 bytes (video_buffer_[13312] + state ~32B)
+//   Instance: ~3,360 bytes (video_buffer_[3328] + state ~32B)
 //   Stack per render_frame(): ~520 bytes (line_buffer on stack)
 //     OK: called at frame sync rate, total stack < 4KB per AGENTS.md
 
@@ -82,7 +82,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
         return;
     }
 
-    // 51 frames × 256 bytes = 13056, always inside VIDEO_BUFFER_SIZE (13312)
+    // 13 frames × 256 bytes = 3328, always inside VIDEO_BUFFER_SIZE (3328)
     const size_t offset = frame_count_ * 256;
     for (size_t i = 0; i < 256; ++i) {
         // Invert: strong signal (0) -> white (255), noise (255) -> black (0)
@@ -91,7 +91,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 
     ++frame_count_;
 
-    // When 51 spectra accumulated (104 video lines), render the frame (line-doubled to 208)
+    // When 13 spectra accumulated (26 video lines), render the frame (line-doubled to 52)
     if (frame_count_ >= ACCUMULATED_FRAMES) {
         render_frame();
         frame_count_ = 0;
@@ -104,7 +104,7 @@ void VideoWidget::render_frame() noexcept {
     ui::Color line_buffer[LINE_WIDTH];
 
     // Line-doubling: each native video line is rendered twice (two consecutive scanlines)
-    // 104 native lines × 2 = 208 display lines, starting at Y=32 (after 16px header)
+    // 26 native lines × 2 = 52 display lines, starting at Y=32 (after 16px header)
     constexpr ui::Coord VIDEO_START_Y = 32;
 
     const uint8_t xcorr = x_correction_;
@@ -131,7 +131,7 @@ void VideoWidget::render_frame() noexcept {
 // AnalogVideoView implementation
 // ============================================================================
 // Memory:
-//   Instance: ~13,812 bytes (VideoWidget ~13.3KB + spectrum_buffer_ ~272B + handler_storage ~128B + state ~100B)
+//   Instance: ~3,828 bytes (VideoWidget ~3.3KB + spectrum_buffer_ ~272B + handler_storage ~128B + state ~100B)
 //   Stack per paint(): ~16 bytes (freq_str[16] + locals)
 //   Stack per frame_sync handler: 0 bytes (spectrum_buffer_ is class member)
 //   Flash: ~768 bytes (code)
