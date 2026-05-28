@@ -129,6 +129,7 @@ public:
     void on_show() override;
     void on_hide() override;
     void paint(Painter& painter) override;
+    void set_parent_rect(const Rect new_parent_rect) override;
     void focus() override;
     bool on_key(const KeyEvent key) override;
     bool on_encoder(const EncoderEvent delta) override;

@@ -29,6 +29,7 @@
 #include "audio_alerts.hpp"
 #include "spectrum_color_lut.hpp"
 #include "lcd_ili9341.hpp"
+#include "ui_painter.hpp"
 
 using namespace portapack;
 
@@ -53,10 +54,19 @@ VideoWidget::VideoWidget()
 void VideoWidget::on_show() {
     active_ = true;
     frame_count_ = 0;
+
+    // Clear the video area and set up scrolling (matches working Analog TV pattern).
+    // The video widget occupies the full view below the header.
+    const auto r = screen_rect();
+    if (r.width() > 0 && r.height() > 0) {
+        portapack::display.fill_rectangle(r, Color::black());
+        portapack::display.scroll_set_area(r.top(), r.bottom());
+    }
 }
 
 void VideoWidget::on_hide() {
     active_ = false;
+    portapack::display.scroll_disable();
 }
 
 void VideoWidget::paint(Painter& painter) {
@@ -299,6 +309,14 @@ void AnalogVideoView::on_hide() {
     }
 }
 
+void AnalogVideoView::set_parent_rect(const Rect new_parent_rect) {
+    View::set_parent_rect(new_parent_rect);
+
+    // Recalculate video widget rect when parent resizes.
+    // Video starts immediately below the 16px header.
+    video_widget_.set_parent_rect({0, HEADER_H, new_parent_rect.width(), new_parent_rect.height() - HEADER_H});
+}
+
 void AnalogVideoView::paint(Painter& painter) {
     // Stack: ~16 bytes (freq_str[16])
 
@@ -311,8 +329,10 @@ void AnalogVideoView::paint(Painter& painter) {
     // Draw header background at the view's screen position
     painter.fill_rectangle({r.left(), r.top(), r.width(), HEADER_H}, Color::black());
 
-    // Paint children (video_widget_ — paint is a no-op)
-    View::paint(painter);
+    // Fill video area background (don't call View::paint() — it floods screen_rect()
+    // with style().background, overwriting video pixels written by render_frame()).
+    // Video data is rendered directly via display.render_line() in DisplayFrameSync handler.
+    painter.fill_rectangle({r.left(), r.top() + HEADER_H, r.width(), r.height() - HEADER_H}, Color::black());
 
     // Cache theme pointers — eliminate repeated dereference chains
     const auto theme = Theme::getInstance();
