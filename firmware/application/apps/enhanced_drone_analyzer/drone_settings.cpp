@@ -27,7 +27,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(13), UI_POS_Y(2)}, "Vol:", Color::white()},
         {{UI_POS_X(13), UI_POS_Y(3)}, "Cyc:", Color::white()},
         {{UI_POS_X(17), UI_POS_Y(5)}, "Mar:", Color::white()},
-        {{UI_POS_X(17), UI_POS_Y(6)}, "Wid:", Color::white()},
+        {{UI_POS_X(17), UI_POS_Y(6)}, "Min:", Color::white()},
         {{UI_POS_X(0), UI_POS_Y(5)}, "MaxW:", Color::white()},
         {{UI_POS_X(0), UI_POS_Y(6)}, "Shrp:", Color::white()},
         {{UI_POS_X(10), UI_POS_Y(5)}, "Rat:", Color::white()},
@@ -44,12 +44,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_volume_({UI_POS_X(17), UI_POS_Y(2)}, 2, {0, 99}, 1, ' ')
     , field_rssi_dec_cyc_({UI_POS_X(17), UI_POS_Y(3)}, 2, {1, 50}, 1, ' ')
     , check_audio_alerts_({UI_POS_X(1), UI_POS_Y(9)}, 6, "Audio", false)
-    , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "Spec", false)
+    , check_spectrum_visible_({UI_POS_X(20), UI_POS_Y(9)}, 5, "SpVis", false)
     , check_histogram_visible_({UI_POS_X(20), UI_POS_Y(13)}, 5, "Hist", false)
     , check_dwell_enabled_({UI_POS_X(1), UI_POS_Y(11)}, 6, "Dwell", false)
     , check_confirm_count_({UI_POS_X(1), UI_POS_Y(13)}, 8, "Confirm", false)
     , field_confirm_count_({UI_POS_X(13), UI_POS_Y(13)}, 2, {1, 10}, 1, ' ')
-        , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(11)}, 5, "Spec", false)
+        , check_spectrum_detection_({UI_POS_X(20), UI_POS_Y(11)}, 5, "SpDet", false)
     , field_neighbor_margin_({UI_POS_X(17), UI_POS_Y(15)}, 2, {0, 15}, 1, ' ')
     , check_neighbor_margin_({UI_POS_X(20), UI_POS_Y(15)}, 4, "NB", false)
     , check_noise_blacklist_({UI_POS_X(1), UI_POS_Y(15)}, 8, "Blklist", false)
