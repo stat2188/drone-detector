@@ -4,17 +4,36 @@
 
 #include "scanner.hpp"
 #include "receiver_model.hpp"
+#include "portapack.hpp"
 #include "portapack_persistent_memory.hpp"
 
 namespace drone_analyzer {
+
+/**
+ * @brief Convert a spectrum.db uint8_t value to calibrated dBm
+ * @param value Raw spectrum.db value (0-255, from baseband)
+ * @return RSSI in dBm, gain-compensated
+ * @note Encoding: spectrum.db = clamp(dBV*5 + 255, 0, 255) => dBV_norm = (value - 255) / 5
+ * @note dBm = dBV_norm - (lna + vga + rf_amp_gain)
+ */
+static int32_t spectrum_value_to_dbm(const uint8_t value) noexcept {
+    const int32_t dbv_norm = (static_cast<int32_t>(value) - 255) / 5;
+    const int32_t total_gain =
+        static_cast<int32_t>(portapack::receiver_model.lna()) +
+        static_cast<int32_t>(portapack::receiver_model.vga()) +
+        (portapack::receiver_model.rf_amp() ? RF_AMP_GAIN_DB : 0);
+    int32_t rssi = dbv_norm - total_gain;
+    if (rssi < RSSI_MIN_DBM) rssi = RSSI_MIN_DBM;
+    if (rssi > RSSI_MAX_DBM) rssi = RSSI_MAX_DBM;
+    return rssi;
+}
 
 /**
  * @brief RSSI extraction — scan usable bins with edge skip (skip DC spike + filter rolloff)
  * @param spectrum Channel spectrum data (256 bins, 0-255 each)
  * @return RSSI in dBm (peak from bins FFT_EDGE_SKIP to DC_SPIKE_START and DC_SPIKE_END to end)
  * @note EDGE_SKIP avoids filter rolloff artifacts at edge bins.
- * @note The HackRF baseband produces spectrum.db[i] = clamp(dBV*5 + 255, 0, 255).
- *       Center bins 120-135 contain the DC spike from FFT zero-frequency component.
+ * @note Uses gain-compensated conversion: dBm = (value-255)/5 - (lna+vga+rf_amp_gain)
  */
 static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
     uint8_t peak = 0;
@@ -28,11 +47,7 @@ static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
         if (spectrum.db[i] > peak) peak = spectrum.db[i];
     }
 
-    // Clamp to valid dBm range
-    int32_t rssi = static_cast<int32_t>(peak) - FFT_DBM_OFFSET;
-    if (rssi < RSSI_MIN_DBM) rssi = RSSI_MIN_DBM;
-    if (rssi > RSSI_MAX_DBM) rssi = RSSI_MAX_DBM;
-    return rssi;
+    return spectrum_value_to_dbm(peak);
 }
 
 // ============================================================================
@@ -1504,10 +1519,8 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         }
     }
 
-    // RSSI from actual peak bin value (same conversion as extract_rssi)
-    out_rssi = static_cast<int32_t>(peak_value) - FFT_DBM_OFFSET;
-    if (out_rssi > RSSI_MAX_DBM) out_rssi = RSSI_MAX_DBM;
-    if (out_rssi < RSSI_MIN_DBM) out_rssi = RSSI_MIN_DBM;
+    // RSSI from actual peak bin value (gain-compensated, same conversion as extract_rssi)
+    out_rssi = spectrum_value_to_dbm(peak_value);
 
     return true;
 }
@@ -1808,8 +1821,8 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         }
     }
 
-    // Step 9: Convert peak to dBm
-    int32_t peak_rssi = static_cast<int32_t>(raw_peak) - FFT_DBM_OFFSET;
+    // Step 9: Convert peak to dBm (gain-compensated)
+    int32_t peak_rssi = spectrum_value_to_dbm(raw_peak);
 
     // Step 10: Median filter
     rssi_median_filter_.add(peak_rssi);

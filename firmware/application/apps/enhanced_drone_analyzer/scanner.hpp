@@ -222,7 +222,7 @@ public:
      * @param mode CFAR mode (CA/GO/SO/HYBRID/OS/VI)
      * @param ref_cells Number of reference cells (N_ref)
      * @param guard_cells Number of guard cells
-     * @param threshold_x10 Threshold multiplier ×10 (e.g., 50 = 5.0)
+     * @param threshold_x10 Threshold offset ×10 in spectrum.db units (e.g., 50 = 5.0 units ≈ 1 dB above noise)
      * @param alpha CA weight for hybrid mode ×100
      * @param beta GO weight for hybrid mode ×100
      * @param gamma SO weight for hybrid mode ×100
@@ -436,10 +436,11 @@ public:
                 return false;
         }
 
-        // Compute adaptive threshold: T_adaptive = G * noise_estimate
-        // threshold_x10 is G × 10, so: threshold = threshold_x10 * noise_estimate / 10
+        // Compute adaptive threshold: T_adaptive = noise_estimate + offset_db
+        // spectrum.db is dB-compressed (0.2 dB/unit), so threshold is additive, NOT multiplicative.
+        // threshold_x10 is offset × 10 (in spectrum.db units), so: threshold = noise_estimate + (threshold_x10 / 10)
         const int32_t adaptive_threshold = 
-            (static_cast<int32_t>(threshold_x10) * noise_estimate) / 10;
+            noise_estimate + (static_cast<int32_t>(threshold_x10) / 10);
 
         // Signal detected if CUT power > adaptive threshold
         return static_cast<int32_t>(spectrum[cbin]) > adaptive_threshold;
@@ -452,7 +453,7 @@ public:
      * @param mode CFAR mode
      * @param ref_cells Reference cells
      * @param guard_cells Guard cells
-     * @param threshold_x10 Threshold ×10
+     * @param threshold_x10 Threshold offset ×10 in spectrum.db units (additive, see detect())
      * @param skip_start Skip bins from start (for edge/DC)
      * @param skip_end Skip bins from end (for edge)
      * @param alpha CA weight for hybrid mode ×100

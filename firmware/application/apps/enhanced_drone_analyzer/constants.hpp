@@ -246,6 +246,12 @@ constexpr int32_t RSSI_CRITICAL_THREAT_THRESHOLD_DBM = -40;
  */
 constexpr int32_t RSSI_NOISE_FLOOR_DBM = -100;
 
+/**
+ * @brief RF amplifier gain (dB) when enabled
+ * @note HackRF RF amp (HMC627A/VGA) provides ~14 dB when enabled, 0 dB bypass when off
+ */
+constexpr int32_t RF_AMP_GAIN_DB = 14;
+
 // ============================================================================
 // Histogram Constants
 // ============================================================================
@@ -624,9 +630,11 @@ constexpr size_t FFT_FOCUSED_LOWER_START = 100;
 constexpr size_t FFT_FOCUSED_UPPER_END = 156;
 
 /**
- * @brief dBm conversion offset
+ * @brief Legacy dBm conversion offset (for uncorrected RSSI)
  * @note HackRF baseband: spectrum.db = clamp(dBV*5 + 255, 0, 255)
- *       Approximate dBm = spectrum.db - 120
+ * @note LEGACY: Approximate dBm = spectrum.db - 120 (NO gain correction, slope error)
+ * @note CORRECT: dBm = (spectrum.db - 255) / 5 - (lna + vga + rf_amp_gain)
+ * @note See extract_rssi() for the gain-compensated implementation.
  */
 constexpr int32_t FFT_DBM_OFFSET = 120;
 
@@ -896,9 +904,11 @@ enum class CFARMode : uint8_t {
 };
 
 /**
- * @brief Default CFAR mode (SO = Smallest Of — best in cluttered environments)
+ * @brief Default CFAR mode (GO = Greatest Of — lower false alarm rate at sweep band edges)
+ * @note GO-CFAR is more robust than SO-CFAR at clutter/noise edges (sweep slice boundaries).
+ *       SO-CFAR has higher PFA at transitions; GO-CFAR conservatively picks the max window.
  */
-constexpr CFARMode DEFAULT_CFAR_MODE = CFARMode::SO;
+constexpr CFARMode DEFAULT_CFAR_MODE = CFARMode::GO;
 
 /**
  * @brief CFAR reference window size (number of reference cells)
@@ -915,18 +925,20 @@ constexpr uint8_t DEFAULT_CFAR_REF_CELLS = 32;
 constexpr uint8_t DEFAULT_CFAR_GUARD_CELLS = 3;
 
 /**
- * @brief CFAR threshold multiplier (G in formula)
+ * @brief CFAR threshold offset (dB offset above noise in spectrum.db units)
+ * @note Additive offset in dB-compressed domain: threshold = noise_estimate + (value / 10)
  * @note Higher = fewer false alarms, more missed detections
  * @note Lower = more detections, more false alarms
- * @note Typical: 3.0-10.0 (stored as integer × 10 for embedded)
+ * @note Each unit ≈ 0.2 dB. Typical: 1.0-10.0 dB offset
  */
-constexpr uint8_t DEFAULT_CFAR_THRESHOLD_X10 = 50;  // 5.0
+constexpr uint8_t DEFAULT_CFAR_THRESHOLD_X10 = 50;  // 5.0 units (≈1 dB offset above noise)
 
 /**
- * @brief CFAR threshold range (×10 for integer storage)
+ * @brief CFAR threshold range (×10 for integer storage, offset in spectrum.db units)
+ * @note Each unit ≈ 0.2 dB offset above noise floor
  */
-constexpr uint8_t CFAR_THRESHOLD_MIN_X10 = 10;   // 1.0
-constexpr uint8_t CFAR_THRESHOLD_MAX_X10 = 100;  // 10.0
+constexpr uint8_t CFAR_THRESHOLD_MIN_X10 = 10;   // 1.0 (~0.2 dB)
+constexpr uint8_t CFAR_THRESHOLD_MAX_X10 = 100;  // 10.0 (~2.0 dB)
 
 /**
  * @brief CFAR reference cells range
