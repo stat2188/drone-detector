@@ -740,8 +740,70 @@ uint16_t DroneDisplay::clamp(
 }
 
 void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept {
-    composite_data_ = data;
-    composite_data_size_ = size;
+    if (data == nullptr || size == 0) {
+        composite_data_ = nullptr;
+        composite_data_size_ = 0;
+        return;
+    }
+
+    const size_t copy_n = (size < COMPOSITE_SIZE) ? size : COMPOSITE_SIZE;
+
+    // Apply EMA persistence: keep old data unless new data has a higher peak.
+    // Effectively max(raw, old * DECAY), which holds peaks steady between passes
+    // while letting noise floor decay toward zero.
+    if (!composite_persist_initialized_) {
+        for (size_t i = 0; i < copy_n; ++i) {
+            composite_persist_buf_[i] = data[i];
+        }
+        composite_persist_initialized_ = true;
+    } else {
+        for (size_t i = 0; i < copy_n; ++i) {
+            const uint16_t decayed = (static_cast<uint16_t>(composite_persist_buf_[i])
+                                      * SWEEP_PERSISTENCE_DECAY_Q8) >> 8;
+            composite_persist_buf_[i] = (data[i] > static_cast<uint8_t>(decayed))
+                ? data[i]
+                : static_cast<uint8_t>(decayed);
+        }
+    }
+
+    composite_data_ = composite_persist_buf_;
+    composite_data_size_ = copy_n;
+
+    // Auto-compute noise floor from composite data for display filtering.
+    // Uses quickselect median (O(n)) on the persistence buffer.
+    if (copy_n > 0) {
+        for (size_t i = 0; i < copy_n; ++i) {
+            composite_sort_buf_[i] = composite_persist_buf_[i];
+        }
+        const size_t k = copy_n / 2;
+        size_t ql = 0;
+        size_t qr = copy_n - 1;
+        while (ql < qr) {
+            const size_t pv = ql + (qr - ql) / 2;
+            const uint8_t pivot = composite_sort_buf_[pv];
+            composite_sort_buf_[pv] = composite_sort_buf_[qr];
+            composite_sort_buf_[qr] = pivot;
+            size_t st = ql;
+            for (size_t i = ql; i < qr; ++i) {
+                if (composite_sort_buf_[i] < pivot) {
+                    const uint8_t t = composite_sort_buf_[st];
+                    composite_sort_buf_[st] = composite_sort_buf_[i];
+                    composite_sort_buf_[i] = t;
+                    ++st;
+                }
+            }
+            {
+                const uint8_t t = composite_sort_buf_[st];
+                composite_sort_buf_[st] = composite_sort_buf_[qr];
+                composite_sort_buf_[qr] = t;
+            }
+            if (st == k) break;
+            if (st < k) ql = st + 1;
+            else qr = st - 1;
+        }
+        composite_noise_floor_ = composite_sort_buf_[k];
+        composite_noise_floor_valid_ = true;
+    }
 }
 
 void DroneDisplay::render_composite(
@@ -786,28 +848,41 @@ void DroneDisplay::render_composite(
     const uint16_t chart_height = height - 14;
     if (chart_height < 4) return;
 
+    // Compute display threshold: subtract noise floor + margin from all power values.
+    // This eliminates the visible noise baseline while preserving signal peaks.
+    const uint8_t noise_floor = (composite_noise_floor_valid_)
+        ? composite_noise_floor_
+        : 0;
+    const uint8_t display_threshold = min_color_power_;
+
     for (uint16_t i = 0; i < bar_count; ++i) {
-        const uint8_t power = composite_data[i];
-        
-        // Always draw something - even zero values show as baseline
-        // This prevents gaps after reset() when composite[] is all zeros
-        const uint16_t bar_height = (static_cast<uint16_t>(power + 1) * chart_height) / 256;
-        // Minimum 1 pixel height to show bar exists
-        const uint16_t final_height = (bar_height > 0) ? bar_height : 1;
+        uint8_t power = composite_data[i];
 
-        const uint16_t x = chart_start_x + i * bar_width;
-        const uint16_t y = chart_start_y + chart_height - final_height;
+        // Subtract noise floor: only show energy above baseline
+        if (power > noise_floor) {
+            power -= noise_floor;
+        } else {
+            power = 0;
+        }
 
-        // Only color bars above threshold - zero values show as dark baseline
+        // Determine color based on noise-subtracted power vs threshold
         uint32_t color = COLOR_BACKGROUND;
-        if (power >= min_color_power_) {
+        if (power >= display_threshold) {
             if (power > 200) color = COLOR_CRITICAL_THREAT;
             else if (power > 150) color = COLOR_HIGH_THREAT;
             else if (power > 100) color = COLOR_MEDIUM_THREAT;
             else color = COLOR_LOW_THREAT;
         }
 
-        draw_rectangle(painter, x, y, bar_width, final_height, color);
+        // Bar height proportional to noise-subtracted power.
+        // Only draw non-zero bars above threshold to keep noise floor invisible.
+        if (color != COLOR_BACKGROUND || power > 0) {
+            const uint16_t bar_height = (static_cast<uint16_t>(power) * chart_height) / 256;
+            const uint16_t final_height = (bar_height > 0) ? bar_height : 1;
+            const uint16_t x = chart_start_x + i;
+            const uint16_t y = chart_start_y + chart_height - final_height;
+            draw_rectangle(painter, x, y, 1, final_height, color);
+        }
     }
 
     // Draw red frame for matched pattern

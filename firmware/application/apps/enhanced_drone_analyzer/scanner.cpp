@@ -1538,6 +1538,23 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     // Prevents red frame from persisting when signal drops out between frames
     clear_matched_pattern();
 
+    // Step 0: FFT pre-smoothing (EMA) — reduces Rayleigh noise variance ~50%.
+    // All subsequent detection uses sweep_ema_buf_ (noise floor, CFAR, shape).
+    if (!sweep_ema_initialized_) {
+        for (size_t i = 0; i < FFT_BIN_COUNT; ++i) {
+            sweep_ema_buf_[i] = spectrum.db[i];
+        }
+        sweep_ema_initialized_ = true;
+    } else {
+        for (size_t i = 0; i < FFT_BIN_COUNT; ++i) {
+            const uint16_t raw = spectrum.db[i];
+            const uint16_t old = sweep_ema_buf_[i];
+            sweep_ema_buf_[i] = static_cast<uint8_t>(
+                (raw * SWEEP_FFT_EMA_ALPHA_Q8 + old * (256U - SWEEP_FFT_EMA_ALPHA_Q8)) >> 8
+            );
+        }
+    }
+
     // Cache config values locally (avoid repeated member access in hot loop)
     const uint8_t cfg_margin = config_.spectrum_margin;
     const uint8_t cfg_min_width = config_.spectrum_min_width;
@@ -1556,7 +1573,7 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
 
     if (config_.cfar_mode != CFARMode::OFF) {
         const size_t cfar_peak = CFARDetector::find_peak_cfar(
-            spectrum.db.data(),
+            sweep_ema_buf_,
             FFT_BIN_COUNT,
             config_.cfar_mode,
             config_.cfar_ref_cells,
@@ -1574,16 +1591,16 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         if (cfar_peak >= FFT_BIN_COUNT) return;  // No signal detected by CFAR
         
         peak_index = cfar_peak;
-        raw_peak = spectrum.db[cfar_peak];
+        raw_peak = sweep_ema_buf_[cfar_peak];
         
         // Compute noise floor for shape analysis (still needed for width/sharpness checks)
         uint8_t* usable = sweep_usable_buf_;
         size_t idx = 0;
         for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-            usable[idx++] = spectrum.db[i];
+            usable[idx++] = sweep_ema_buf_[i];
         }
         for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-            usable[idx++] = spectrum.db[i];
+            usable[idx++] = sweep_ema_buf_[i];
         }
         if (idx > 0) {
             const size_t k = idx / 2;
@@ -1622,12 +1639,12 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         peak_index = FFT_EDGE_SKIP_NARROW;
 
         for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-            usable[idx++] = spectrum.db[i];
-            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
+            usable[idx++] = sweep_ema_buf_[i];
+            if (sweep_ema_buf_[i] > raw_peak) { raw_peak = sweep_ema_buf_[i]; peak_index = i; }
         }
         for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-            usable[idx++] = spectrum.db[i];
-            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
+            usable[idx++] = sweep_ema_buf_[i];
+            if (sweep_ema_buf_[i] > raw_peak) { raw_peak = sweep_ema_buf_[i]; peak_index = i; }
         }
 
         // Guard: no usable bins (all in DC spike or edge skip)
@@ -1679,7 +1696,7 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     uint16_t early_pattern_correlation = 0;
 
     if (config_.pattern_matching_enabled && pattern_manager_.get_pattern_count() > 0) {
-        const PatternMatchResult early_result = pattern_matcher_.match(spectrum.db.data(), center_freq);
+        const PatternMatchResult early_result = pattern_matcher_.match(sweep_ema_buf_, center_freq);
 
         if (early_result.matched) {
             early_pattern_matched = true;
@@ -1696,14 +1713,14 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     while (sig_left > FFT_EDGE_SKIP_NARROW) {
         size_t prev = sig_left - 1;
         if (prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) { --sig_left; continue; }
-        if (spectrum.db[prev] < elevated_threshold) break;
+        if (sweep_ema_buf_[prev] < elevated_threshold) break;
         --sig_left;
     }
     size_t sig_right = peak_index;
     while (sig_right < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1) {
         size_t next = sig_right + 1;
         if (next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) { ++sig_right; continue; }
-        if (spectrum.db[next] < elevated_threshold) break;
+        if (sweep_ema_buf_[next] < elevated_threshold) break;
         ++sig_right;
     }
 
@@ -1720,8 +1737,8 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         size_t bin_count = 0;
         for (size_t i = sig_left; i <= sig_right; ++i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] > noise_floor) {
-                margin_sum += (spectrum.db[i] - noise_floor);
+            if (sweep_ema_buf_[i] > noise_floor) {
+                margin_sum += (sweep_ema_buf_[i] - noise_floor);
                 ++bin_count;
             }
         }
@@ -1749,14 +1766,14 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
 
         if (sig_left > FFT_EDGE_SKIP_NARROW) {
             size_t lv = sig_left - 1;
-            if (!(lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END) && spectrum.db[lv] > noise_floor) {
-                left_valley = spectrum.db[lv] - noise_floor;
+            if (!(lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END) && sweep_ema_buf_[lv] > noise_floor) {
+                left_valley = sweep_ema_buf_[lv] - noise_floor;
             }
         }
         if (sig_right < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1) {
             size_t rv = sig_right + 1;
-            if (!(rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END) && spectrum.db[rv] > noise_floor) {
-                right_valley = spectrum.db[rv] - noise_floor;
+            if (!(rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END) && sweep_ema_buf_[rv] > noise_floor) {
+                right_valley = sweep_ema_buf_[rv] - noise_floor;
             }
         }
 
@@ -1771,7 +1788,7 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
 
         for (size_t i = peak_index; i > sig_left && i > FFT_EDGE_SKIP_NARROW; --i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] >= high_power_threshold) {
+            if (sweep_ema_buf_[i] >= high_power_threshold) {
                 ++high_power_count;
             } else {
                 break;
@@ -1780,7 +1797,7 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
 
         for (size_t i = peak_index + 1; i <= sig_right && i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] >= high_power_threshold) {
+            if (sweep_ema_buf_[i] >= high_power_threshold) {
                 ++high_power_count;
             } else {
                 break;

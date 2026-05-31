@@ -430,6 +430,19 @@ private:
     FreqHz sweep_freq_start_{0};
     FreqHz sweep_freq_end_{0};
 
+    // Composite persistence buffer (EMA over sweep passes).
+    // Updated each pass: buf[i] = max(raw[i], (buf[i] * DECAY) >> 8).
+    // Reduces visual noise by smoothing frame-to-frame variance.
+    uint8_t composite_persist_buf_[COMPOSITE_SIZE]{};
+    bool composite_persist_initialized_{false};
+
+    // Sort buffer for composite noise floor computation (avoids stack allocation).
+    uint8_t composite_sort_buf_[COMPOSITE_SIZE]{};
+
+    // Auto-computed noise floor for composite display noise floor subtraction.
+    uint8_t composite_noise_floor_{0};
+    bool composite_noise_floor_valid_{false};
+
     // Multi-zone sweep (4 zones)
     static constexpr uint8_t MAX_ZONES = 4;
     const uint8_t* multi_zone_data_[MAX_ZONES]{};

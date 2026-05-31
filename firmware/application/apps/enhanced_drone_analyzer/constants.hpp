@@ -711,6 +711,39 @@ constexpr uint16_t COMPOSITE_TO_HIST_SCALE = 256;
 constexpr uint8_t MAX_SWEEP_WINDOWS = 4;
 
 // ============================================================================
+// Sweep Persistence & Smoothing Constants
+// ============================================================================
+
+/**
+ * @brief Composite EMA decay factor for sweep persistence.
+ * @note new_val = max(raw_val, (persist_val * DECAY) >> 8)
+ * @note 192/256 = 0.75: signal decays to ~32% after 4 passes (~1.5s at 374ms/pass)
+ * @note Range: 128 (fast fade) to 255 (slow fade)
+ */
+constexpr uint16_t SWEEP_PERSISTENCE_DECAY_Q8 = 192;
+
+/**
+ * @brief FFT pre-smoothing EMA alpha factor (Q8.8 fixed-point).
+ * @note ema[i] = (raw[i] * ALPHA + ema[i] * (256 - ALPHA)) >> 8
+ * @note 64/256 = 0.25: strong smoothing, cuts Rayleigh noise sigma ~50%
+ * @note 128/256 = 0.50: light smoothing, cuts sigma ~30%
+ */
+constexpr uint16_t SWEEP_FFT_EMA_ALPHA_Q8 = 64;
+
+/**
+ * @brief Number of FFT frames to discard after frequency retune.
+ * @note Allows baseband filters to settle after PLL lock.
+ * @note 2 frames * ~16.7ms = ~33ms settle (beyond 5ms PLL lock).
+ */
+constexpr uint8_t SWEEP_SETTLE_FRAMES = 2;
+
+/**
+ * @brief Noise margin for composite display floor subtraction.
+ * @note render_composite suppresses bins below noise_floor + this.
+ */
+constexpr uint8_t SWEEP_DISPLAY_NOISE_MARGIN = 8;
+
+// ============================================================================
 // Spectrum Filter Constants (matching Looking Glass)
 // ============================================================================
 

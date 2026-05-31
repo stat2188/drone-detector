@@ -919,6 +919,11 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     last_tuned_freq_ = 0;
     skip_next_fft_ = true;  // first FFT after entry may be stale
     drone_display_.set_composite_mode(true);
+    // Auto-enable noise floor filtering for composite display.
+    // This suppresses the visible noise baseline without affecting the data.
+    // Using SWEEP_DISPLAY_NOISE_MARGIN so only signals above noise + margin draw color.
+    // The composite noise floor itself is computed automatically in set_composite_data().
+    drone_display_.set_spectrum_filter(SWEEP_DISPLAY_NOISE_MARGIN);
 
     ScanConfig cfg;
     if (scanner_ptr_ != nullptr) {
@@ -1031,6 +1036,10 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     sweep_[3].enabled = false;
     drone_display_.set_composite_mode(false);
     drone_display_.set_dual_sweep_mode(false);
+    // Restore normal display filter when returning from sweep mode.
+    // Without this, the sweep noise floor threshold would persist in normal mode,
+    // causing weak signals to be invisible in non-sweep view.
+    drone_display_.set_spectrum_filter(DEFAULT_SPECTRUM_FILTER);
 
     // Stop streaming BEFORE nulling fifo — prevents stale data in frame_sync
     if (scanning_) {
@@ -1295,7 +1304,9 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
     f_center = f_center_ini;
     pixel_index = 0;
     pixel_max = 0;
-    bins_hz_acc = 0;  // REVERT (HIGH): Reset to prevent stale accumulator between passes
+    bins_hz_acc = 0;
+    bins_rem_ns = 0;
+    settle_frames_remaining_ = 0;
 }
 
 bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
@@ -1309,12 +1320,18 @@ bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
 }
 
 void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
+    // Skip initial frames after frequency retune — baseband filters need time to settle.
+    if (settle_frames_remaining_ > 0) {
+        --settle_frames_remaining_;
+        return;
+    }
     SweepProcessor::process_frame(
         spectrum,
         composite,
         pixel_index,
         pixel_max,
         bins_hz_acc,
+        bins_rem_ns,
         pixel_step_hz,
         f_center,
         exception_radius_hz,
@@ -1336,6 +1353,10 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
 
     (void)prefix;
     baseband::spectrum_streaming_start();
+
+    // Skip initial FFT frames after retune to let baseband filters settle.
+    // The first few frames contain transient artifacts from frequency switching.
+    win.settle_frames_remaining_ = SWEEP_SETTLE_FRAMES;
 }
 
 DroneScanner& get_scanner_instance() noexcept {

@@ -29,6 +29,7 @@ uint16_t SweepProcessor::process_frame(
     uint16_t& pixel_index,
     uint8_t& pixel_max,
     FreqHz& bins_hz_acc,
+    uint16_t& bins_rem_ns,
     FreqHz pixel_step_hz,
     FreqHz f_center,
     FreqHz exception_radius_hz,
@@ -50,6 +51,10 @@ uint16_t SweepProcessor::process_frame(
 
         const uint8_t power = spectrum.db[fft_bin];
         if (power > pixel_max) pixel_max = power;
+
+        // Accumulate Hz. bins_rem_ns accumulates sub-Hz remainder to prevent
+        // cumulative drift over many sweep passes when SWEEP_BIN_SIZE (78125 Hz)
+        // doesn't divide evenly into pixel_step_hz.
         bins_hz_acc += SWEEP_BIN_SIZE;
 
         while (bins_hz_acc >= pixel_step_hz && pixel_index < COMPOSITE_SIZE) {
