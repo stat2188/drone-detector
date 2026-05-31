@@ -700,12 +700,10 @@ constexpr uint16_t SWEEP_BINS_PER_STEP = FFT_USABLE_BINS_NARROW;
 /**
  * @brief M0 baseband phase decimation trigger for wideband spectrum.
  * @note Controls how many samples are accumulated per FFT frame.
- * @note Current: 32 buffers @ 20MHz = 3.3ms integration = baseline sensitivity
- * @note OPTIONAL: Increase to 63 for ~6.5ms integration = +3dB SNR improvement
- * @note Trade-off: Sweep takes 2× longer (0.8s → 1.6s for 240 freq)
- * @note Set to 63 only if maximum sensitivity is prioritized over speed.
+ * @note 63 buffers @ 20MHz = ~6.5ms integration = maximum sensitivity
+ * @note +3dB SNR improvement over trigger=31, sweep takes ~1.6s for 240 freq
  */
-constexpr size_t SWEEP_FFT_TRIGGER = 31;
+constexpr size_t SWEEP_FFT_TRIGGER = 63;
 
 /**
  * @brief Scale factor for converting 8-bit composite power to 16-bit histogram bins.
@@ -725,18 +723,19 @@ constexpr uint8_t MAX_SWEEP_WINDOWS = 4;
 /**
  * @brief Composite EMA decay factor for sweep persistence.
  * @note new_val = max(raw_val, (persist_val * DECAY) >> 8)
- * @note 192/256 = 0.75: signal decays to ~32% after 4 passes (~1.5s at 374ms/pass)
+ * @note 224/256 = 0.875: signal decays to ~59% after 4 passes (~3s at 1.6s/pass)
+ * @note Increased from 192 to retain weak signals longer between sweep cycles.
  * @note Range: 128 (fast fade) to 255 (slow fade)
  */
-constexpr uint16_t SWEEP_PERSISTENCE_DECAY_Q8 = 192;
+constexpr uint16_t SWEEP_PERSISTENCE_DECAY_Q8 = 224;
 
 /**
  * @brief Number of FFT frames to discard after frequency retune.
- * @note 1 frame settle is sufficient given the 5ms PLL delay already exceeds
- *       the MAX2837/RFFC5072 lock time (~200us). The single frame skip covers
- *       any remaining baseband filter transient.
+ * @note 0 frames: 5ms PLL settle delay in retune_sweep_window() already exceeds
+ *       the MAX2837/RFFC5072 lock time (~200us). No frame skip needed.
+ * @note Previously 1, but the 5ms sleep is more than sufficient.
  */
-constexpr uint8_t SWEEP_SETTLE_FRAMES = 1;
+constexpr uint8_t SWEEP_SETTLE_FRAMES = 0;
 
 /**
  * @brief Noise margin for composite display floor subtraction.
@@ -1105,6 +1104,12 @@ constexpr uint8_t CONFIRM_COUNT_MAX = 20;
  * @note 0 = disabled
  */
 constexpr int32_t DEFAULT_RSSI_VARIANCE_THRESHOLD = 100;
+
+/**
+ * @brief Noise blacklist threshold — consecutive noise events before frequency is skipped.
+ * @note If scanner force-resumes from a frequency 3+ times without threat upgrade → skip it.
+ */
+constexpr uint8_t NOISE_BLACKLIST_THRESHOLD = 3;
 
 // ============================================================================
 // Band Sweep Constants

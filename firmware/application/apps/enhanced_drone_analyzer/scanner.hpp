@@ -1179,6 +1179,25 @@ private:
     [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept;
 
     /**
+     * @brief Shared spectrum shape analysis with configurable edge skip.
+     * @note Called by both analyze_spectrum_shape() and process_spectrum_sweep()
+     *       to eliminate 200-line code duplication and ensure identical filter logic.
+     * @param spectrum 256-bin FFT data
+     * @param out_rssi Output: RSSI in dBm if signal detected
+     * @param edge_skip Number of edge bins to skip (FFT_EDGE_SKIP=10 for normal, FFT_EDGE_SKIP_NARROW=6 for sweep)
+     * @return true if drone-like signal detected
+     */
+    [[nodiscard]] bool analyze_spectrum_shape_impl(
+        const ChannelSpectrum& spectrum,
+        size_t peak_index,
+        uint8_t raw_peak,
+        uint8_t noise_floor,
+        int32_t& out_rssi,
+        size_t edge_skip,
+        int32_t total_gain
+    ) noexcept;
+
+    /**
      * @brief Internal: Try to match spectrum against stored patterns
      * @param spectrum Channel spectrum data (256 bins)
      * @return PatternMatchResult with match status
@@ -1319,6 +1338,8 @@ private:
     // Matched pattern index (-1 if no pattern matched in sweep)
     int8_t matched_pattern_index_{-1};
     size_t matched_pattern_bin_{0};
+
+    // No gain cache — use get_current_total_gain() directly to avoid stale values.
 
 public:
     [[nodiscard]] bool is_pattern_matched() const noexcept { return matched_pattern_index_ >= 0; }
