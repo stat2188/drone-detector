@@ -1185,7 +1185,8 @@ private:
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] PatternMatchResult try_match_pattern_internal(
-        const uint8_t* spectrum
+        const uint8_t* spectrum,
+        FreqHz current_freq
     ) noexcept;
 
     /**

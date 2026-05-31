@@ -708,7 +708,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     // Pattern matching in normal scan mode: run after shape analysis passes
     PatternMatchResult normal_pattern_result = PatternMatchResult::no_match();
     if (signal_detected && config_.pattern_matching_enabled && pattern_manager_.get_pattern_count() > 0) {
-        normal_pattern_result = try_match_pattern_internal(spectrum.db.data());
+        normal_pattern_result = try_match_pattern_internal(spectrum.db.data(), frequency);
     }
 
     if (signal_detected) {
@@ -794,13 +794,14 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         }
 
         // Propagate pattern match result to tracked drone entry (normal mode)
+        // NOTE: drone_type is NOT overwritten — database classification (DJI, FPV, etc.)
+        // is preserved. Pattern match info is supplementary via pattern_matched_ fields.
         if (normal_pattern_result.matched && should_update) {
             const SignalPattern* p = pattern_manager_.get_pattern(normal_pattern_result.pattern_index);
             if (p != nullptr && p->name[0] != '\0') {
                 ErrorResult<size_t> pm_idx = find_drone_by_frequency_internal(frequency);
                 if (pm_idx.has_value()) {
                     auto& d = tracked_drones_[pm_idx.value()];
-                    d.drone_type = DroneType::CUSTOM;
                     d.set_pattern_match(normal_pattern_result.score, p->name);
                 }
             }
@@ -1512,7 +1513,8 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
 }
 
 PatternMatchResult DroneScanner::try_match_pattern_internal(
-    const uint8_t* spectrum
+    const uint8_t* spectrum,
+    FreqHz current_freq
 ) noexcept {
     if (!config_.pattern_matching_enabled) {
         return PatternMatchResult::no_match();
@@ -1522,7 +1524,7 @@ PatternMatchResult DroneScanner::try_match_pattern_internal(
         return PatternMatchResult::no_match();
     }
 
-    return pattern_matcher_.match(spectrum);
+    return pattern_matcher_.match(spectrum, current_freq);
 }
 
 // ============================================================================
@@ -1677,7 +1679,7 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     uint16_t early_pattern_correlation = 0;
 
     if (config_.pattern_matching_enabled && pattern_manager_.get_pattern_count() > 0) {
-        const PatternMatchResult early_result = pattern_matcher_.match(spectrum.db.data());
+        const PatternMatchResult early_result = pattern_matcher_.match(spectrum.db.data(), center_freq);
 
         if (early_result.matched) {
             early_pattern_matched = true;
@@ -1897,7 +1899,7 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
                     const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
                     if (pm_idx.has_value()) {
                         auto& drone = tracked_drones_[pm_idx.value()];
-                        drone.drone_type = DroneType::CUSTOM;
+                        // drone_type is preserved from database classification
                         drone.set_pattern_match(early_pattern_correlation, pattern->name);
                     }
                 }

@@ -59,12 +59,14 @@ bool PatternManager::str_equals_ignore_case(
 ) noexcept {
     if (a == nullptr || b == nullptr) return false;
 
-    for (size_t i = 0; a[i] != '\0' && b[i] != '\0'; ++i) {
+    size_t i = 0;
+    while (a[i] != '\0' && b[i] != '\0') {
         const char ca = (a[i] >= 'A' && a[i] <= 'Z') ? a[i] + 32 : a[i];
         const char cb = (b[i] >= 'A' && b[i] <= 'Z') ? b[i] + 32 : b[i];
         if (ca != cb) return false;
+        ++i;
     }
-    return a[0] == '\0' && b[0] == '\0';
+    return a[i] == '\0' && b[i] == '\0';
 }
 
 PatternManager::PatternManager() noexcept

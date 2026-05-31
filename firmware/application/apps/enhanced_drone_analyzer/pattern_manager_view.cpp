@@ -14,6 +14,7 @@
 #include "pattern_manager_view.hpp"
 #include "scanner.hpp"
 #include "pattern_manager.hpp"
+#include "pattern_matcher.hpp"
 #include "constants.hpp"
 #include "baseband_api.hpp"
 #include "radio.hpp"
@@ -805,29 +806,8 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     }
     new_pattern.name[name_len] = '\0';
 
-    constexpr size_t valid_start = PATTERN_NORM_EDGE_SKIP;
-    constexpr size_t valid_end = FFT_BIN_COUNT - PATTERN_NORM_EDGE_SKIP;
-    constexpr size_t valid_bins = valid_end - valid_start;
-    constexpr size_t bins_per_pattern = valid_bins / PATTERN_WAVEFORM_SIZE;
-
-    for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
-        const size_t bin_start = valid_start + (i * bins_per_pattern);
-        size_t bin_end = bin_start + bins_per_pattern;
-        if (bin_end > valid_end) {
-            bin_end = valid_end;
-        }
-
-        uint32_t sum = 0;
-        uint8_t count = 0;
-        for (size_t j = bin_start; j < bin_end; ++j) {
-            if (j >= FFT_DC_SPIKE_START && j < FFT_DC_SPIKE_END) {
-                continue;
-            }
-            sum += capture_spectrum_[j];
-            ++count;
-        }
-        new_pattern.waveform[i] = (count > 0) ? static_cast<uint8_t>(sum / count) : 0;
-    }
+    // Use shared normalize() from PatternMatcher — identical to match-time normalization
+    PatternMatcher::normalize(capture_spectrum_, new_pattern.waveform);
 
     uint8_t peak_val = 0;
     size_t peak_idx = 0;
@@ -841,12 +821,23 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     new_pattern.features.peak_position = static_cast<uint8_t>(peak_idx / PATTERN_BIN_SCALE_FACTOR);
     new_pattern.features.peak_value = peak_val;
 
-    uint8_t noise_floor = 255;
+    // Median noise floor using capture_spectrum_avg_ as temp buffer (no stack allocation)
+    uint8_t* nf_buf = capture_spectrum_avg_;
+    size_t nf_count = 0;
     for (size_t i = PATTERN_NORM_EDGE_SKIP; i < FFT_BIN_COUNT - PATTERN_NORM_EDGE_SKIP; ++i) {
-        if (capture_spectrum_[i] < noise_floor && capture_spectrum_[i] > 0) {
-            noise_floor = capture_spectrum_[i];
-        }
+        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+        nf_buf[nf_count++] = capture_spectrum_[i];
     }
+    for (size_t i = 1; i < nf_count; ++i) {
+        const uint8_t key = nf_buf[i];
+        size_t j = i;
+        while (j > 0 && nf_buf[j - 1] > key) {
+            nf_buf[j] = nf_buf[j - 1];
+            --j;
+        }
+        nf_buf[j] = key;
+    }
+    const uint8_t noise_floor = (nf_count > 0) ? nf_buf[nf_count / 2] : 0;
     new_pattern.features.noise_floor = noise_floor;
 
     new_pattern.features.margin = (peak_val > noise_floor) ? (peak_val - noise_floor) : 0;

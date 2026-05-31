@@ -23,7 +23,7 @@ void PatternMatcher::clear_patterns() noexcept {
 void PatternMatcher::normalize(
     const uint8_t* fft_256,
     uint8_t* wave_16
-) const noexcept {
+) noexcept {
     if (fft_256 == nullptr || wave_16 == nullptr) {
         return;
     }
@@ -88,7 +88,10 @@ uint16_t PatternMatcher::compute_similarity(
     return static_cast<uint16_t>(score);
 }
 
-PatternMatchResult PatternMatcher::match(const uint8_t* spectrum_256) noexcept {
+PatternMatchResult PatternMatcher::match(
+    const uint8_t* spectrum_256,
+    FreqHz current_freq
+) noexcept {
     if (spectrum_256 == nullptr || pattern_count_ == 0 || patterns_ == nullptr) {
         return PatternMatchResult::no_match();
     }
@@ -97,12 +100,24 @@ PatternMatchResult PatternMatcher::match(const uint8_t* spectrum_256) noexcept {
     normalize(spectrum_256, normalized);
 
     PatternMatchResult best;
-    const uint16_t threshold = DEFAULT_PATTERN_SIMILARITY_THRESHOLD;
 
     for (size_t i = 0; i < pattern_count_; ++i) {
         const SignalPattern& pattern = patterns_[i];
         if (!pattern.is_enabled()) {
             continue;
+        }
+
+        // Frequency proximity check: if pattern has center_freq and caller provides
+        // current_freq, verify the signal is within pattern's frequency range.
+        // This prevents a 2.4 GHz pattern from matching a 5.8 GHz spectrum.
+        if (current_freq > 0 && pattern.center_freq > 0) {
+            const FreqHz half_range = (pattern.range_width > 0) ? (pattern.range_width / 2) : FREQUENCY_BANDWIDTH_HZ;
+            const FreqHz diff = (current_freq > pattern.center_freq)
+                ? (current_freq - pattern.center_freq)
+                : (pattern.center_freq - current_freq);
+            if (diff > half_range) {
+                continue;
+            }
         }
 
         const uint16_t score = compute_similarity(normalized, pattern.waveform);
@@ -113,8 +128,14 @@ PatternMatchResult PatternMatcher::match(const uint8_t* spectrum_256) noexcept {
         }
     }
 
-    if (best.score >= threshold) {
-        best.matched = true;
+    // Use per-pattern match_threshold if set (non-zero), else global default
+    if (best.score > 0 && pattern_count_ > 0) {
+        const uint16_t threshold = (patterns_[best.pattern_index].match_threshold > 0)
+            ? patterns_[best.pattern_index].match_threshold
+            : DEFAULT_PATTERN_SIMILARITY_THRESHOLD;
+        if (best.score >= threshold) {
+            best.matched = true;
+        }
     }
 
     return best;

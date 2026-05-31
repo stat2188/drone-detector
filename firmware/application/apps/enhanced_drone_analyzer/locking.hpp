@@ -12,6 +12,14 @@
 
 namespace drone_analyzer {
 
+/**
+ * @brief Lock ordering for deadlock prevention
+ * @note MUST be acquired in ASCENDING order only:
+ *       0 → 1 → 2 → 3 (PATTERN → DATA → DATABASE → STATE)
+ * @warning Acquiring in descending order will deadlock if another
+ *          thread holds the lower-order lock. This is compile-time
+ *          tagged but NOT enforced — reviewers must verify.
+ */
 enum class LockOrder : uint8_t {
     PATTERN_MUTEX = 0,
     DATA_MUTEX = 1,
