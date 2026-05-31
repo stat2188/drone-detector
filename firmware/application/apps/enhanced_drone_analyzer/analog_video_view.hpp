@@ -76,7 +76,6 @@ private:
     // 13 frames × 256 = 3328 → 26 native lines of 128px each → line-doubled to 52 display lines
     static constexpr uint16_t VIDEO_LINES = 52;          // Display lines after line-doubling
     static constexpr uint16_t VIDEO_LINES_HALF = 26;     // Native lines in buffer
-    static constexpr int16_t VIDEO_START_X = 56;          // Centered: (240-128)/2
     static constexpr uint8_t ACCUMULATED_FRAMES = 13;    // Frames per video field (min RAM, FPS sacrificed)
     static constexpr size_t VIDEO_BUFFER_SIZE = 3328;    // 13 × 256 = 26 × 128 (no waste)
     static constexpr uint16_t LINE_WIDTH = 128;           // Pixels per video line

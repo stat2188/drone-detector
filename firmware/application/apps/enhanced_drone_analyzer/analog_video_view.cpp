@@ -110,15 +110,16 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 
 void VideoWidget::render_frame() noexcept {
     // Stack: ~272 bytes (line_buffer 256B + 16B locals)
-    // Called at frame sync rate, well within 4KB stack limit
     ui::Color line_buffer[LINE_WIDTH];
 
-    // Line-doubling: each native video line is rendered twice (two consecutive scanlines)
-    // 26 native lines × 2 = 52 display lines, starting at Y=32 (after 16px header)
-    constexpr ui::Coord VIDEO_START_Y = 32;
+    // Compute video position from widget's screen rect (robust to layout changes)
+    const auto r = screen_rect();
+    const auto video_start_x = r.left() + (static_cast<int16_t>(r.width()) - static_cast<int16_t>(LINE_WIDTH)) / 2;
+    const auto video_start_y = r.top();
 
     const uint8_t xcorr = x_correction_;
 
+    // Line-doubling: each native line rendered twice → 26 × 2 = 52 display lines
     for (uint16_t line = 0; line < VIDEO_LINES_HALF; ++line) {
         const size_t buf_offset = line * LINE_WIDTH;
 
@@ -127,12 +128,12 @@ void VideoWidget::render_frame() noexcept {
             line_buffer[px] = spectrum_rgb4_lut[video_buffer_[buf_offset + src_idx]];
         }
 
-        const ui::Coord y = static_cast<ui::Coord>(VIDEO_START_Y + line * 2);
+        const auto y = static_cast<ui::Coord>(video_start_y + line * 2);
         portapack::display.render_line(
-            {VIDEO_START_X, y},
+            {video_start_x, y},
             LINE_WIDTH, line_buffer);
         portapack::display.render_line(
-            {VIDEO_START_X, static_cast<ui::Coord>(y + 1)},
+            {video_start_x, static_cast<ui::Coord>(y + 1)},
             LINE_WIDTH, line_buffer);
     }
 }
@@ -329,10 +330,9 @@ void AnalogVideoView::paint(Painter& painter) {
     // Draw header background at the view's screen position
     painter.fill_rectangle({r.left(), r.top(), r.width(), HEADER_H}, Color::black());
 
-    // Fill video area background (don't call View::paint() — it floods screen_rect()
-    // with style().background, overwriting video pixels written by render_frame()).
-    // Video data is rendered directly via display.render_line() in DisplayFrameSync handler.
-    painter.fill_rectangle({r.left(), r.top() + HEADER_H, r.width(), r.height() - HEADER_H}, Color::black());
+    // NOTE: Do NOT fill video area here — VideoWidget::render_frame() writes
+    // directly to the LCD via display.render_line() in the DisplayFrameSync handler.
+    // Any fill here would overwrite those pixels on every frame sync, causing a blank screen.
 
     // Cache theme pointers — eliminate repeated dereference chains
     const auto theme = Theme::getInstance();
