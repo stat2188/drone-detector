@@ -1290,12 +1290,6 @@ private:
     static constexpr size_t SWEEP_USABLE_BINS = 228;
     uint8_t sweep_usable_buf_[SWEEP_USABLE_BINS];
 
-    // FFT pre-smoothing EMA buffer for sweep mode.
-    // Reduces Rayleigh noise variance by ~50% with alpha=0.25 (SWEEP_FFT_EMA_ALPHA_Q8).
-    // Initialized on first sweep frame, updated every frame in process_spectrum_sweep().
-    uint8_t sweep_ema_buf_[FFT_BIN_COUNT]{};
-    bool sweep_ema_initialized_{false};
-
     // Alert callback in progress flag (prevents re-entrant calls)
     AtomicFlag alert_callback_in_progress_;
 
