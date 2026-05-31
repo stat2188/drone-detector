@@ -1305,7 +1305,6 @@ void DroneScannerUI::SweepWindow::reset() noexcept {
     pixel_index = 0;
     pixel_max = 0;
     bins_hz_acc = 0;
-    bins_rem_ns = 0;
     settle_frames_remaining_ = 0;
 }
 
@@ -1331,7 +1330,6 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         pixel_index,
         pixel_max,
         bins_hz_acc,
-        bins_rem_ns,
         pixel_step_hz,
         f_center,
         exception_radius_hz,

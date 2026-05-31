@@ -840,8 +840,6 @@ void DroneDisplay::render_composite(
     }
 
     const uint16_t bar_count = static_cast<uint16_t>(composite_size);
-    // Each composite entry = 1 pixel (240 entries fit in 236px, painter clips)
-    constexpr uint16_t bar_width = 1;
 
     const uint16_t chart_start_x = start_x + 2;
     const uint16_t chart_start_y = start_y + 12;

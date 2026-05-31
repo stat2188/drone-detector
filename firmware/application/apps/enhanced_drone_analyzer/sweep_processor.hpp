@@ -28,8 +28,7 @@ public:
      * @param composite      Output pixel buffer (COMPOSITE_SIZE bytes)
      * @param pixel_index    In/out: current pixel position
      * @param pixel_max      In/out: running max power for current pixel
-     * @param bins_hz_acc    In/out: accumulated Hz since last pixel boundary
-     * @param bins_rem_ns    In/out: fractional bin remainder (prevents pixel drift over many passes)
+     * @param bins_hz_acc    In/out: accumulated Hz since last pixel boundary (integer remainder prevents drift)
      * @param pixel_step_hz  Hz per pixel
      * @param f_center       FFT slice center frequency (Hz, f_min + SLICE_BW/2)
      * @param exception_radius_hz Exclusion radius around exception frequencies
@@ -43,7 +42,6 @@ public:
         uint16_t& pixel_index,
         uint8_t& pixel_max,
         FreqHz& bins_hz_acc,
-        uint16_t& bins_rem_ns,
         FreqHz pixel_step_hz,
         FreqHz f_center,
         FreqHz exception_radius_hz,

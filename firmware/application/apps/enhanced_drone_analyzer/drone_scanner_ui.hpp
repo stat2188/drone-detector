@@ -172,7 +172,6 @@ private:
         FreqHz pixel_step_hz{0};
         FreqHz step_hz{0};
         FreqHz bins_hz_acc{0};
-        uint16_t bins_rem_ns{0};             // fractional Hz remainder (anti-drift)
         FreqHz exceptions[EXCEPTIONS_PER_WINDOW]{};  // exception frequencies (0 = unused)
         FreqHz exception_radius_hz{3000000ULL};       // configurable exclusion radius (Hz)
         uint16_t pixel_index{0};
