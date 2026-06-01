@@ -1520,6 +1520,15 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     // 7 normal-mode frames after sweep exit.
     rssi_median_filter_.reset();
 
+    // Reset Schmitt-trigger state to prevent false detection on sweep→normal mode exit.
+    // If signal_present_=true leaked from the last normal-mode pre-sweep frame and the
+    // scanner resumes on the same frequency (last_hysteresis_freq_ match), the first
+    // process_spectrum_message() call would use the soft OFF-threshold (rssi_threshold-3dB)
+    // instead of the strict ON-threshold (rssi_threshold+3dB), risking a noise-induced
+    // false detection that propagates to drone tracking and alert pipeline.
+    signal_present_ = false;
+    last_hysteresis_freq_ = 0;
+
     // Cache config values locally (avoid repeated member access in hot loop)
     const uint8_t cfg_margin = config_.spectrum_margin;
     const int32_t cfg_rssi_thresh = config_.rssi_threshold_dbm;
