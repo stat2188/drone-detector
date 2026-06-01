@@ -15,6 +15,7 @@
 #include "scanner.hpp"
 #include "pattern_manager.hpp"
 #include "pattern_matcher.hpp"
+#include "peak_detector.hpp"
 #include "constants.hpp"
 #include "baseband_api.hpp"
 #include "radio.hpp"
@@ -809,53 +810,33 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     // Use shared normalize() from PatternMatcher — identical to match-time normalization
     PatternMatcher::normalize(capture_spectrum_, new_pattern.waveform);
 
-    uint8_t peak_val = 0;
-    size_t peak_idx = 0;
-    for (size_t i = 0; i < FFT_BIN_COUNT; ++i) {
-        if (capture_spectrum_[i] > peak_val) {
-            peak_val = capture_spectrum_[i];
-            peak_idx = i;
-        }
-    }
+    // Extract features via unified PeakDetector (reuses same sort buffer that
+    // capture_spectrum_avg_ is no longer using — same trick as before to avoid
+    // stack allocation of a 256-byte array).
+    const PeakDetector::PeakInfo peak = PeakDetector::find(
+        capture_spectrum_, capture_spectrum_avg_,
+        PeakDetector::Range::Full, PeakDetector::EdgePolicy::Wide);
 
-    new_pattern.features.peak_position = static_cast<uint8_t>(peak_idx / PATTERN_BIN_SCALE_FACTOR);
-    new_pattern.features.peak_value = peak_val;
+    new_pattern.features.peak_position = static_cast<uint8_t>(peak.index / PATTERN_BIN_SCALE_FACTOR);
+    new_pattern.features.peak_value = peak.value;
+    new_pattern.features.noise_floor = peak.noise_floor;
+    new_pattern.features.margin = peak.margin;
 
-    // Median noise floor using capture_spectrum_avg_ as temp buffer (no stack allocation)
-    uint8_t* nf_buf = capture_spectrum_avg_;
-    size_t nf_count = 0;
-    for (size_t i = PATTERN_NORM_EDGE_SKIP; i < FFT_BIN_COUNT - PATTERN_NORM_EDGE_SKIP; ++i) {
-        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-        nf_buf[nf_count++] = capture_spectrum_[i];
-    }
-    for (size_t i = 1; i < nf_count; ++i) {
-        const uint8_t key = nf_buf[i];
-        size_t j = i;
-        while (j > 0 && nf_buf[j - 1] > key) {
-            nf_buf[j] = nf_buf[j - 1];
-            --j;
-        }
-        nf_buf[j] = key;
-    }
-    const uint8_t noise_floor = (nf_count > 0) ? nf_buf[nf_count / 2] : 0;
-    new_pattern.features.noise_floor = noise_floor;
+    // Auto-tune match_threshold from the captured peak's SNR margin.
+    //   weak peak  (margin < 10)  → lenient  threshold (~500)
+    //   typical    (margin ≈ 20)  → default  threshold (600)
+    //   strong     (margin ≥ 30)  → stricter threshold (~700, clamped to 800)
+    // Linear mapping: 400 + margin*10, clamped to [400..800].
+    constexpr uint16_t MIN_AUTO_THRESHOLD = 400;
+    constexpr uint16_t MAX_AUTO_THRESHOLD = 800;
+    const uint16_t auto_th = static_cast<uint16_t>(
+        MIN_AUTO_THRESHOLD + static_cast<uint16_t>(new_pattern.features.margin) * 10U);
+    new_pattern.match_threshold = (auto_th > MAX_AUTO_THRESHOLD)
+        ? MAX_AUTO_THRESHOLD
+        : auto_th;
 
-    new_pattern.features.margin = (peak_val > noise_floor) ? (peak_val - noise_floor) : 0;
-
-    size_t left = peak_idx;
-    while (left > 0 && capture_spectrum_[left] > noise_floor + new_pattern.features.margin / 2) {
-        --left;
-    }
-    size_t right = peak_idx;
-    while (right < FFT_BIN_COUNT - 1 && capture_spectrum_[right] > noise_floor + new_pattern.features.margin / 2) {
-        ++right;
-    }
-    new_pattern.features.width = static_cast<uint8_t>((right - left) / PATTERN_BIN_SCALE_FACTOR);
-
-    new_pattern.match_threshold = DEFAULT_PATTERN_SIMILARITY_THRESHOLD;
     new_pattern.flags = SignalPattern::Flags::ENABLED;
     new_pattern.created_time = chTimeNow();
-    new_pattern.match_count = 0;
     new_pattern.center_freq = capture_frequency_;
     new_pattern.range_width = (current_range_end_ > current_range_start_)
         ? (current_range_end_ - current_range_start_)
@@ -913,11 +894,10 @@ void PatternManagerView::show_pattern_details() noexcept {
     // Display pattern details in status label
     char details[64];
     snprintf(details, sizeof(details),
-             "[%s] Pk:%d Mn:%d W:%d Mt:%d",
+             "[%s] Pk:%d Mn:%d Mt:%d",
              pattern->name,
              pattern->features.peak_position,
              pattern->features.margin,
-             pattern->features.width,
              pattern->match_threshold);
     label_status_.set(details);
     set_dirty();

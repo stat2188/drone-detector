@@ -1200,9 +1200,13 @@ private:
     /**
      * @brief Internal: Try to match spectrum against stored patterns
      * @param spectrum Channel spectrum data (256 bins)
+     * @param current_freq Current tuned frequency for proximity filter
      * @return PatternMatchResult with match status
-     * @note Checks config flag: pattern_matching_enabled
-     * @pre Mutex must be held (LockOrder::DATA_MUTEX)
+     * @note Single source of truth for pattern matching — called from both
+     *       process_spectrum_message() (under mutex) and process_spectrum_sweep()
+     *       (no mutex, scanner thread stopped). pattern_manager_ is internally
+     *       thread-safe; config_.pattern_matching_enabled is read non-atomically
+     *       but the worst case is one extra/stale match on a config flip.
      */
     [[nodiscard]] PatternMatchResult try_match_pattern_internal(
         const uint8_t* spectrum,
@@ -1343,7 +1347,6 @@ private:
 
 public:
     [[nodiscard]] bool is_pattern_matched() const noexcept { return matched_pattern_index_ >= 0; }
-    [[nodiscard]] int8_t get_matched_pattern_index() const noexcept { return matched_pattern_index_; }
     [[nodiscard]] size_t get_matched_pattern_bin() const noexcept { return matched_pattern_bin_; }
     void clear_matched_pattern() noexcept { matched_pattern_index_ = -1; matched_pattern_bin_ = 0; }
 };

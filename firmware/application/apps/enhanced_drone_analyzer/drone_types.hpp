@@ -370,14 +370,8 @@ struct TrackedDrone {
         pattern_name_[i] = '\0';
     }
 
-    /**
-     * @brief Clear pattern match state
-     */
-    void clear_pattern_match() noexcept {
-        pattern_matched_ = false;
-        pattern_score_ = 0;
-        pattern_name_[0] = '\0';
-    }
+    // Pattern match state is overwritten on every match; no explicit clear needed
+    // because a drone is removed from tracked_drones_ when its threat decays to NONE.
 
     /**
      * @brief Increment missed sweep cycle counter

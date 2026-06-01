@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <algorithm>
 
 #include "ch.h"
 
@@ -1600,20 +1601,20 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
     }
 
     // Run pattern matching (supplements shape filters — does NOT bypass them)
+    // highlight_bin is the 256-bin index where the UI will draw the red match
+    // marker. It uses the spectrum's actual peak (not the pattern's stored
+    // position) because the user expects the marker on the visible peak.
+    size_t highlight_bin = 0;
     bool early_pattern_matched = false;
     int8_t early_pattern_index = -1;
-    size_t early_pattern_bin = 0;
     uint16_t early_pattern_correlation = 0;
 
-    if (config_.pattern_matching_enabled && pattern_manager_.get_pattern_count() > 0) {
-        const PatternMatchResult early_result = pattern_matcher_.match(spectrum.db.data(), center_freq);
-
-        if (early_result.matched) {
-            early_pattern_matched = true;
-            early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
-            early_pattern_bin = peak_index;
-            early_pattern_correlation = early_result.score;
-        }
+    const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
+    if (early_result.matched) {
+        early_pattern_matched = true;
+        early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
+        highlight_bin = peak_index;
+        early_pattern_correlation = early_result.score;
     }
 
     // Delegate shape analysis to shared implementation (uses FFT_EDGE_SKIP_NARROW)
@@ -1712,7 +1713,7 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
                 const SignalPattern* pattern = pattern_manager_.get_pattern(early_pattern_index);
                 if (pattern != nullptr && pattern->name[0] != '\0') {
                     matched_pattern_index_ = early_pattern_index;
-                    matched_pattern_bin_ = early_pattern_bin;
+                    matched_pattern_bin_ = highlight_bin;
                     const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
                     if (pm_idx.has_value()) {
                         auto& drone = tracked_drones_[pm_idx.value()];
