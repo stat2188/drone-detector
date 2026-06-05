@@ -18,6 +18,16 @@
 
 namespace drone_analyzer {
 
+/**
+ * @brief Pattern capture/management UI for spectrum fingerprint matching.
+ * @note Single-pass capture (no FIFO averaging) to minimize stack usage.
+ *       Spectrum display uses capture_spectrum_[256] as the sole display buffer.
+ *       spectrum_buffer_ (ChannelSpectrum) is reused as PeakDetector scratch.
+ *
+ * Stack: ~512 bytes for instance members (down from ~2,600 B).
+ * Flash: ~2 KB (code).
+ * SRAM: 512 B instance + 256 B spectrum_buffer_ (BSS) = ~768 B total.
+ */
 class PatternManagerView : public ui::View {
 public:
     explicit PatternManagerView(NavigationView& nav) noexcept;
@@ -40,22 +50,11 @@ private:
     static constexpr uint16_t SPECTRUM_X = 0;
     static constexpr uint16_t SPECTRUM_WIDTH = 240;
     static constexpr uint16_t LIST_Y = 150;
-    static constexpr uint16_t LIST_HEIGHT = 120;
-
-    static constexpr uint8_t AVG_PASSES = 5;
-    static constexpr uint8_t MAX_SPECTRUM_FIFO = 5;
 
     enum class ViewState : uint8_t {
         IDLE,
         CAPTURING,
-        SAVING,
         LIVE
-    };
-
-    enum class RangeSelectState : uint8_t {
-        NOT_SELECTED,
-        WAITING_FOR_CAPTURE,
-        CAPTURE_COMPLETE
     };
 
     NavigationView& nav_;
@@ -68,39 +67,33 @@ private:
     ui::Button button_freq_;
     ui::Button button_add_;
     ui::Button button_save_;
-    ui::Button button_edit_;
     ui::Button button_delete_;
-    ui::Button button_clear_all_;
     ui::Button button_back_;
-
     ui::Button button_start_capture_;
     ui::Text label_status_;
     ui::Text label_range_;
 
     uint8_t selected_index_{0};
     ViewState view_state_{ViewState::IDLE};
-    RangeSelectState range_select_state_{RangeSelectState::NOT_SELECTED};
 
     FreqHz capture_frequency_{0};
     FreqHz live_center_frequency_{0};
     FreqHz live_bin_step_hz_{0};
     FreqHz current_range_start_{0};
     FreqHz current_range_end_{0};
+
+    // Display buffer — the ONLY 256-byte spectrum buffer on instance.
     uint8_t capture_spectrum_[FFT_BIN_COUNT]{};
-    uint8_t capture_spectrum_avg_[FFT_BIN_COUNT]{};
-    uint8_t fft_capture_buf_[MAX_SPECTRUM_FIFO][FFT_BIN_COUNT]{};
-    uint8_t fifo_index_{0};
-    uint8_t fifo_count_{0};
+
+    bool capture_completed_{false};
     bool capture_active_{false};
-    uint8_t capture_pass_{0};
-    SystemTime capture_start_time_{0};
 
     int16_t selected_bin_{-1};
     bool bin_selected_{false};
 
     uint8_t selected_range_idx_{0};
 
-    // Sweep state for LIVE mode (frequency hopping)
+    // Sweep state for LIVE mode (frequency hopping).
     FreqHz sweep_start_{0};
     FreqHz sweep_end_{0};
     FreqHz sweep_step_{0};
@@ -112,13 +105,9 @@ private:
     FreqHz bin_to_frequency(int16_t bin) const noexcept;
     int16_t frequency_to_bin(FreqHz freq) const noexcept;
 
-    ErrorCode perform_capture(FreqHz freq) noexcept;
-    void update_spectrum_display() noexcept;
     void draw_spectrum_with_selection(ui::Painter& painter, const uint8_t* spectrum, int16_t sel_bin) noexcept;
     ErrorCode save_current_pattern(const char* name) noexcept;
-    void show_pattern_details() noexcept;
     void delete_selected_pattern() noexcept;
-    void clear_all_patterns() noexcept;
     void start_capture_sequence() noexcept;
     void start_live_spectrum() noexcept;
     void on_capture_complete() noexcept;
@@ -131,8 +120,8 @@ private:
     MessageHandlerRegistration message_handler_frame_sync;
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
 
-    // Reusable buffer to prevent stack overflow in on_frame_sync()
-    // ChannelSpectrum is 256 bytes - moved from local stack to BSS
+    // Incoming spectrum data — shared between LIVE display and capture scratch.
+    // Stack: 256 bytes (BSS, not per-call).
     ChannelSpectrum spectrum_buffer_{};
 
     void on_channel_spectrum_config(ChannelSpectrumFIFO* fifo) noexcept;

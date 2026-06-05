@@ -34,19 +34,13 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         {"SWP1", 0}, {"SWP2", 1}, {"SWP3", 2}, {"SWP4", 3}
     }}
     , button_freq_{{UI_POS_X(23), 0, UI_POS_WIDTH(3), 16}, "Freq"}
-    , button_add_{{UI_POS_X(0), 270, UI_POS_WIDTH(4), 20}, "Capt"}
-    , button_save_{{UI_POS_X(5), 270, UI_POS_WIDTH(4), 20}, "Save"}
-    , button_edit_{{UI_POS_X(10), 270, UI_POS_WIDTH(4), 20}, "Edit"}
-    , button_delete_{{UI_POS_X(20), 270, UI_POS_WIDTH(4), 20}, "Del"}
-    , button_clear_all_{{UI_POS_X(15), 270, UI_POS_WIDTH(4), 20}, "Clr"}
+    , button_add_{{UI_POS_X(0), 270, UI_POS_WIDTH(5), 20}, "Capt"}
+    , button_save_{{UI_POS_X(6), 270, UI_POS_WIDTH(5), 20}, "Save"}
+    , button_delete_{{UI_POS_X(12), 270, UI_POS_WIDTH(5), 20}, "Del"}
     , button_back_{{UI_POS_X(24), 270, UI_POS_WIDTH(3), 20}, "<="}
     , button_start_capture_{{UI_POS_X_RIGHT(3), 270, UI_POS_WIDTH(3), 20}, "START"}
     , label_status_{{UI_POS_X(0), 30, UI_POS_WIDTH(28), 20}, "Idle"}
     , label_range_{{UI_POS_X(14), 0, UI_POS_WIDTH(10), 20}, "Rng:"}
-    , view_state_(ViewState::IDLE)
-    , selected_bin_(-1)
-    , bin_selected_(false)
-    , selected_range_idx_(0)
     , message_handler_spectrum_config{
         Message::ID::ChannelSpectrumConfig,
         [this](Message* const p) {
@@ -61,11 +55,6 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         }
     } {
 
-    for (size_t i = 0; i < FFT_BIN_COUNT; ++i) {
-        capture_spectrum_[i] = 0;
-        capture_spectrum_avg_[i] = 0;
-    }
-
     add_children({
         &labels_,
         &label_range_,
@@ -74,18 +63,13 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         &field_patterns_,
         &button_add_,
         &button_save_,
-        &button_edit_,
         &button_delete_,
-        &button_clear_all_,
         &button_back_,
         &button_start_capture_,
         &label_status_
     });
 
     button_back_.on_select = [this](ui::Button&) {
-        // CRITICAL: Stop streaming before going back to prevent
-        // DBLREG hard fault when returning to main scanner view.
-        // Mirror Looking Glass: stop streaming immediately.
         if (view_state_ == ViewState::LIVE || view_state_ == ViewState::CAPTURING) {
             baseband::spectrum_streaming_stop();
             view_state_ = ViewState::IDLE;
@@ -113,7 +97,7 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 
     button_save_.on_select = [this](ui::Button&) {
         if (pattern_manager_ptr_ == nullptr) {
-            label_status_.set("Pattern manager not ready");
+            label_status_.set("No pattern mgr");
             set_dirty();
             return;
         }
@@ -123,51 +107,42 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
             return;
         }
         if (capture_active_) {
-            label_status_.set("Capture in progress");
+            label_status_.set("Capture active");
             set_dirty();
             return;
         }
-        if (capture_spectrum_[0] == 0) {
-            label_status_.set("No capture data - run Capt first");
+        if (!capture_completed_) {
+            label_status_.set("Run Capt first");
             set_dirty();
             return;
         }
+
         char default_name[PATTERN_NAME_MAX_LEN];
         const size_t count = pattern_manager_ptr_->get_pattern_count();
         snprintf(default_name, sizeof(default_name), "PTR_%zu", count + 1);
+
         const ErrorCode err = save_current_pattern(default_name);
         if (err == ErrorCode::SUCCESS) {
-            label_status_.set("Pattern saved!");
-            // Note: reload_patterns() is called to sync in-memory patterns with SD card.
-            // This handles the case where a pattern was saved (in memory), then app restarted.
-            // Don't show error if reload fails since save succeeded.
+            label_status_.set("Saved!");
             (void)pattern_manager_ptr_->reload_patterns();
             DroneScanner* scanner_ptr = get_scanner_ptr();
             if (scanner_ptr != nullptr) {
                 scanner_ptr->refresh_patterns();
             }
             refresh_list();
-            std::memset(capture_spectrum_, 0, sizeof(capture_spectrum_));
+            capture_completed_ = false;
             selected_bin_ = -1;
             bin_selected_ = false;
         } else if (err == ErrorCode::BUFFER_FULL) {
-            label_status_.set("Max patterns reached");
+            label_status_.set("Max patterns");
         } else {
-            label_status_.set("Save failed!");
+            label_status_.set("Save failed");
         }
         set_dirty();
     };
 
-    button_edit_.on_select = [this](ui::Button&) {
-        show_pattern_details();
-    };
-
     button_delete_.on_select = [this](ui::Button&) {
         delete_selected_pattern();
-    };
-
-    button_clear_all_.on_select = [this](ui::Button&) {
-        clear_all_patterns();
     };
 
     button_start_capture_.on_select = [this](ui::Button&) {
@@ -210,16 +185,12 @@ void PatternManagerView::load_sweep_ranges() noexcept {
         case 0:
             current_range_start_ = cfg.sweep_start_freq;
             current_range_end_ = cfg.sweep_end_freq;
-            live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
-            live_bin_step_hz_ = (current_range_end_ - current_range_start_) / SWEEP_PIXELS_PER_SLICE;
             range_enabled = true;
             break;
         case 1:
             if (cfg.sweep2_enabled) {
                 current_range_start_ = cfg.sweep2_start_freq;
                 current_range_end_ = cfg.sweep2_end_freq;
-                live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
-                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / SWEEP_PIXELS_PER_SLICE;
                 range_enabled = true;
             }
             break;
@@ -227,8 +198,6 @@ void PatternManagerView::load_sweep_ranges() noexcept {
             if (cfg.sweep3_enabled) {
                 current_range_start_ = cfg.sweep3_start_freq;
                 current_range_end_ = cfg.sweep3_end_freq;
-                live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
-                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / SWEEP_PIXELS_PER_SLICE;
                 range_enabled = true;
             }
             break;
@@ -236,25 +205,24 @@ void PatternManagerView::load_sweep_ranges() noexcept {
             if (cfg.sweep4_enabled) {
                 current_range_start_ = cfg.sweep4_start_freq;
                 current_range_end_ = cfg.sweep4_end_freq;
-                live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
-                live_bin_step_hz_ = (current_range_end_ - current_range_start_) / SWEEP_PIXELS_PER_SLICE;
                 range_enabled = true;
             }
             break;
     }
 
-    char range_info[32];
     if (range_enabled && current_range_start_ > 0 && current_range_end_ > current_range_start_) {
+        live_center_frequency_ = current_range_start_ + (current_range_end_ - current_range_start_) / 2;
+        live_bin_step_hz_ = (current_range_end_ - current_range_start_) / SWEEP_PIXELS_PER_SLICE;
+
+        char range_info[32];
         const uint32_t start_mhz = static_cast<uint32_t>(current_range_start_ / 1000000);
         const uint32_t end_mhz = static_cast<uint32_t>(current_range_end_ / 1000000);
         snprintf(range_info, sizeof(range_info), "%lu-%luMHz",
                  static_cast<unsigned long>(start_mhz), static_cast<unsigned long>(end_mhz));
-    } else if (!range_enabled) {
-        snprintf(range_info, sizeof(range_info), "Disabled");
+        label_status_.set(range_info);
     } else {
-        snprintf(range_info, sizeof(range_info), "N/A");
+        label_status_.set(range_enabled ? "N/A" : "Disabled");
     }
-    label_status_.set(range_info);
     set_dirty();
 }
 
@@ -317,80 +285,40 @@ void PatternManagerView::init_sweep_range(uint8_t range_idx) noexcept {
 
     sweep_start_ = start;
     sweep_end_ = end;
-
-    if (step > 0) {
-        sweep_step_ = step;
-    } else {
-        sweep_step_ = static_cast<FreqHz>(SWEEP_BINS_PER_STEP) * SWEEP_BIN_SIZE;
-    }
-
+    sweep_step_ = (step > 0) ? step : static_cast<FreqHz>(SWEEP_BINS_PER_STEP) * SWEEP_BIN_SIZE;
     current_sweep_freq_ = start;
 }
 
 FreqHz PatternManagerView::get_range_center_freq(uint8_t range_idx) const noexcept {
     DroneScanner* scanner_ptr = get_scanner_ptr();
-    if (scanner_ptr == nullptr) {
-        return 0;
-    }
+    if (scanner_ptr == nullptr) return 0;
 
     const ScanConfig& cfg = scanner_ptr->get_config();
-
     switch (range_idx) {
-        case 0:
-            return cfg.sweep_start_freq + (cfg.sweep_end_freq - cfg.sweep_start_freq) / 2;
-        case 1:
-            if (cfg.sweep2_enabled) {
-                return cfg.sweep2_start_freq + (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / 2;
-            }
-            break;
-        case 2:
-            if (cfg.sweep3_enabled) {
-                return cfg.sweep3_start_freq + (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / 2;
-            }
-            break;
-        case 3:
-            if (cfg.sweep4_enabled) {
-                return cfg.sweep4_start_freq + (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / 2;
-            }
-            break;
+        case 0: return cfg.sweep_start_freq + (cfg.sweep_end_freq - cfg.sweep_start_freq) / 2;
+        case 1: if (cfg.sweep2_enabled) return cfg.sweep2_start_freq + (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / 2; break;
+        case 2: if (cfg.sweep3_enabled) return cfg.sweep3_start_freq + (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / 2; break;
+        case 3: if (cfg.sweep4_enabled) return cfg.sweep4_start_freq + (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / 2; break;
     }
     return 0;
 }
 
 FreqHz PatternManagerView::get_range_bin_step(uint8_t range_idx) const noexcept {
     DroneScanner* scanner_ptr = get_scanner_ptr();
-    if (scanner_ptr == nullptr) {
-        return 0;
-    }
+    if (scanner_ptr == nullptr) return 0;
 
     const ScanConfig& cfg = scanner_ptr->get_config();
-
     switch (range_idx) {
-        case 0:
-            return (cfg.sweep_end_freq - cfg.sweep_start_freq) / SWEEP_PIXELS_PER_SLICE;
-        case 1:
-            if (cfg.sweep2_enabled) {
-                return (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / SWEEP_PIXELS_PER_SLICE;
-            }
-            break;
-        case 2:
-            if (cfg.sweep3_enabled) {
-                return (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / SWEEP_PIXELS_PER_SLICE;
-            }
-            break;
-        case 3:
-            if (cfg.sweep4_enabled) {
-                return (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / SWEEP_PIXELS_PER_SLICE;
-            }
-            break;
+        case 0: return (cfg.sweep_end_freq - cfg.sweep_start_freq) / SWEEP_PIXELS_PER_SLICE;
+        case 1: if (cfg.sweep2_enabled) return (cfg.sweep2_end_freq - cfg.sweep2_start_freq) / SWEEP_PIXELS_PER_SLICE; break;
+        case 2: if (cfg.sweep3_enabled) return (cfg.sweep3_end_freq - cfg.sweep3_start_freq) / SWEEP_PIXELS_PER_SLICE; break;
+        case 3: if (cfg.sweep4_enabled) return (cfg.sweep4_end_freq - cfg.sweep4_start_freq) / SWEEP_PIXELS_PER_SLICE; break;
     }
     return 0;
 }
 
 FreqHz PatternManagerView::bin_to_frequency(int16_t bin) const noexcept {
-    if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
-        return 0;
-    }
+    if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) return 0;
     FreqHz offset = 0;
     if (bin >= static_cast<int16_t>(FFT_DC_SPIKE_END)) {
         offset = static_cast<FreqHz>(bin - 256) * SWEEP_BIN_SIZE;
@@ -401,14 +329,9 @@ FreqHz PatternManagerView::bin_to_frequency(int16_t bin) const noexcept {
 }
 
 int16_t PatternManagerView::frequency_to_bin(FreqHz freq) const noexcept {
-    if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
-        return -1;
-    }
-    // Check if frequency is within current sweep window
+    if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) return -1;
     if (current_range_start_ > 0 && current_range_end_ > current_range_start_) {
-        if (freq < current_range_start_ || freq > current_range_end_) {
-            return -1;
-        }
+        if (freq < current_range_start_ || freq > current_range_end_) return -1;
     }
     const FreqHz bin_size = SWEEP_SLICE_BW / FFT_BIN_COUNT;
     const int32_t offset = static_cast<int32_t>(freq - live_center_frequency_);
@@ -419,11 +342,10 @@ int16_t PatternManagerView::frequency_to_bin(FreqHz freq) const noexcept {
 }
 
 void PatternManagerView::show_frequency_keypad() noexcept {
-    // Load sweep range if not initialized
     if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
         load_sweep_ranges();
         if (live_center_frequency_ == 0 || live_bin_step_hz_ == 0) {
-            label_status_.set("Select sweep range first!");
+            label_status_.set("Select sweep range!");
             set_dirty();
             return;
         }
@@ -457,7 +379,6 @@ bool PatternManagerView::on_touch(const ui::TouchEvent event) noexcept {
 
         if (x >= SPECTRUM_X && x < SPECTRUM_X + SPECTRUM_WIDTH &&
             y >= SPECTRUM_Y && y < SPECTRUM_Y + SPECTRUM_HEIGHT) {
-
             int16_t bin = static_cast<int16_t>((x - SPECTRUM_X) * FFT_BIN_COUNT / SPECTRUM_WIDTH);
             if (bin >= 0 && bin < static_cast<int16_t>(FFT_BIN_COUNT)) {
                 on_bin_selected(bin);
@@ -471,8 +392,6 @@ bool PatternManagerView::on_touch(const ui::TouchEvent event) noexcept {
 void PatternManagerView::on_bin_selected(int16_t bin) noexcept {
     selected_bin_ = bin;
     bin_selected_ = true;
-    range_select_state_ = RangeSelectState::WAITING_FOR_CAPTURE;
-
     capture_frequency_ = bin_to_frequency(bin);
 
     char status[32];
@@ -496,22 +415,19 @@ void PatternManagerView::on_show() noexcept {
     pattern_manager_ptr_ = &pm;
 
     if (const auto reload_err = pattern_manager_ptr_->reload_patterns(); reload_err != ErrorCode::SUCCESS) {
-        label_status_.set("Pattern load failed");
+        label_status_.set("Load failed");
     }
 
+    capture_completed_ = false;
     load_sweep_ranges();
     refresh_list();
     set_dirty();
 }
 
 void PatternManagerView::on_hide() noexcept {
-    // CRITICAL: Stop baseband streaming before hiding to prevent
-    // DBLREG hard fault when returning to main scanner view.
-    // Mirror Looking Glass: stop streaming immediately.
     if (view_state_ == ViewState::LIVE || view_state_ == ViewState::CAPTURING) {
         baseband::spectrum_streaming_stop();
     }
-
     view_state_ = ViewState::IDLE;
     capture_active_ = false;
     button_start_capture_.set_text("START");
@@ -524,7 +440,6 @@ void PatternManagerView::focus() noexcept {
             pattern_manager_ptr_ = &scanner_ptr->get_pattern_manager();
         }
     }
-
     refresh_list();
     button_start_capture_.focus();
 }
@@ -534,76 +449,38 @@ void PatternManagerView::on_channel_spectrum_config(ChannelSpectrumFIFO* fifo) n
 }
 
 void PatternManagerView::on_frame_sync() noexcept {
-    if (spectrum_fifo_ == nullptr) {
-        return;
-    }
+    if (spectrum_fifo_ == nullptr) return;
+    if (view_state_ == ViewState::IDLE && !capture_active_) return;
 
-    if (view_state_ == ViewState::IDLE && !capture_active_) {
-        return;
-    }
-
-    // Use class member buffer instead of local stack variable to prevent M0 stack overflow
-    // ChannelSpectrum is 256 bytes - reusing saves stack space per callback
     ChannelSpectrum& spectrum = spectrum_buffer_;
-    if (spectrum_fifo_->out(spectrum)) {
-        if (view_state_ == ViewState::LIVE) {
-            for (size_t i = 0; i < FFT_BIN_COUNT && i < spectrum.db.size(); ++i) {
-                capture_spectrum_[i] = spectrum.db[i];
-            }
-            set_dirty();
+    if (!spectrum_fifo_->out(spectrum)) return;
 
-            if (sweep_start_ > 0 && sweep_end_ > sweep_start_ && sweep_step_ > 0) {
-                if (current_sweep_freq_ < sweep_end_) {
-                    current_sweep_freq_ += sweep_step_;
-                    radio::set_tuning_frequency(rf::Frequency(current_sweep_freq_));
-                    chThdSleepMilliseconds(5);
-                    baseband::spectrum_streaming_start();
-                } else {
-                    current_sweep_freq_ = sweep_start_;
-                    radio::set_tuning_frequency(rf::Frequency(current_sweep_freq_));
-                    chThdSleepMilliseconds(5);
-                    baseband::spectrum_streaming_start();
-                }
-            }
-            return;
+    // LIVE mode: display spectrum and step frequency.
+    if (view_state_ == ViewState::LIVE) {
+        for (size_t i = 0; i < FFT_BIN_COUNT && i < spectrum.db.size(); ++i) {
+            capture_spectrum_[i] = spectrum.db[i];
         }
+        set_dirty();
 
-        if (!capture_active_) {
-            return;
+        if (sweep_start_ > 0 && sweep_end_ > sweep_start_ && sweep_step_ > 0) {
+            current_sweep_freq_ = (current_sweep_freq_ < sweep_end_)
+                ? current_sweep_freq_ + sweep_step_
+                : sweep_start_;
+            radio::set_tuning_frequency(rf::Frequency(current_sweep_freq_));
+            chThdSleepMilliseconds(5);
+            baseband::spectrum_streaming_start();
         }
-
-        if (fifo_count_ < MAX_SPECTRUM_FIFO) {
-            for (size_t i = 0; i < FFT_BIN_COUNT && i < spectrum.db.size(); ++i) {
-                fft_capture_buf_[fifo_count_][i] = spectrum.db[i];
-            }
-            ++fifo_count_;
-        }
-
-        if (fifo_count_ >= AVG_PASSES) {
-            // Optimized average calculation - reduces stack usage
-            // AVG_PASSES=5, unroll loop to avoid nested stack frames
-            for (size_t i = 0; i < FFT_BIN_COUNT; ++i) {
-                // Manual unrolling: 5 iterations without loop overhead
-                const uint32_t sum = 
-                    fft_capture_buf_[0][i] + 
-                    fft_capture_buf_[1][i] + 
-                    fft_capture_buf_[2][i] + 
-                    fft_capture_buf_[3][i] + 
-                    fft_capture_buf_[4][i];
-                capture_spectrum_avg_[i] = static_cast<uint8_t>(sum / AVG_PASSES);
-            }
-
-            capture_active_ = false;
-            view_state_ = ViewState::IDLE;
-            button_start_capture_.set_text("START");
-            on_capture_complete();
-            return;
-        }
-
-        radio::set_tuning_frequency(rf::Frequency(capture_frequency_));
-        chThdSleepMilliseconds(5);
-        baseband::spectrum_streaming_start();
+        return;
     }
+
+    // CAPTURING mode: single-pass capture.
+    if (!capture_active_) return;
+
+    for (size_t i = 0; i < FFT_BIN_COUNT && i < spectrum.db.size(); ++i) {
+        capture_spectrum_[i] = spectrum.db[i];
+    }
+    capture_active_ = false;
+    on_capture_complete();
 }
 
 void PatternManagerView::start_live_spectrum() noexcept {
@@ -618,9 +495,10 @@ void PatternManagerView::start_live_spectrum() noexcept {
     live_center_frequency_ = capture_frequency_;
     live_bin_step_hz_ = get_range_bin_step(selected_range_idx_);
 
-    label_status_.set("Live mode...");
+    label_status_.set("Live...");
     view_state_ = ViewState::LIVE;
     capture_active_ = false;
+    capture_completed_ = false;
     bin_selected_ = false;
     selected_bin_ = -1;
 
@@ -645,8 +523,6 @@ void PatternManagerView::start_capture_sequence() noexcept {
         return;
     }
 
-    const ScanConfig& cfg = scanner_ptr->get_config();
-
     if (!bin_selected_ || selected_bin_ < 0 || capture_frequency_ == 0) {
         label_status_.set("Select bin first!");
         set_dirty();
@@ -657,16 +533,14 @@ void PatternManagerView::start_capture_sequence() noexcept {
     live_bin_step_hz_ = get_range_bin_step(selected_range_idx_);
 
     if (live_bin_step_hz_ == 0) {
+        const ScanConfig& cfg = scanner_ptr->get_config();
         live_bin_step_hz_ = (cfg.sweep_end_freq - cfg.sweep_start_freq) / SWEEP_PIXELS_PER_SLICE;
     }
 
     label_status_.set("Capturing...");
     view_state_ = ViewState::CAPTURING;
     capture_active_ = true;
-    capture_pass_ = 0;
-    fifo_count_ = 0;
-
-    std::memset(fft_capture_buf_, 0, sizeof(fft_capture_buf_));
+    capture_completed_ = false;
 
     portapack::receiver_model.set_sampling_rate(SWEEP_SLICE_BW);
     portapack::receiver_model.set_baseband_bandwidth(SWEEP_SLICE_BW);
@@ -681,9 +555,7 @@ void PatternManagerView::start_capture_sequence() noexcept {
 
 void PatternManagerView::on_capture_complete() noexcept {
     view_state_ = ViewState::IDLE;
-    range_select_state_ = RangeSelectState::CAPTURE_COMPLETE;
-
-    std::memcpy(capture_spectrum_, capture_spectrum_avg_, FFT_BIN_COUNT);
+    capture_completed_ = true;
 
     if (!bin_selected_ || selected_bin_ < 0) {
         size_t peak_bin = 0;
@@ -694,7 +566,6 @@ void PatternManagerView::on_capture_complete() noexcept {
                 peak_bin = i;
             }
         }
-
         if (peak_val > 50) {
             selected_bin_ = static_cast<int16_t>(peak_bin);
             bin_selected_ = true;
@@ -704,13 +575,11 @@ void PatternManagerView::on_capture_complete() noexcept {
 
     char status_buf[32];
     if (bin_selected_ && selected_bin_ >= 0) {
-        snprintf(status_buf, sizeof(status_buf), "Done! Bin:%d",
-                 (int)selected_bin_);
+        snprintf(status_buf, sizeof(status_buf), "Done! Bin:%d", (int)selected_bin_);
     } else {
-        snprintf(status_buf, sizeof(status_buf), "Done - weak sig");
+        snprintf(status_buf, sizeof(status_buf), "Done - weak");
     }
     label_status_.set(status_buf);
-
     set_dirty();
 }
 
@@ -724,14 +593,9 @@ void PatternManagerView::draw_spectrum_with_selection(
     const uint16_t width = SPECTRUM_WIDTH;
     const uint16_t height = SPECTRUM_HEIGHT;
 
-    painter.fill_rectangle(
-        {start_x, start_y, width, height},
-        Color::black()
-    );
+    painter.fill_rectangle({start_x, start_y, width, height}, Color::black());
 
-    if (spectrum == nullptr) {
-        return;
-    }
+    if (spectrum == nullptr) return;
 
     const uint8_t max_display = 180;
 
@@ -751,26 +615,21 @@ void PatternManagerView::draw_spectrum_with_selection(
                         painter.fill_rectangle({
                             start_x + static_cast<uint16_t>(j),
                             start_y + height - h,
-                            1,
-                            h
+                            1, h
                         }, Color::red());
                     }
                 }
                 continue;
             }
         } else {
-            if (val > 150) {
-                bar_color = Color::yellow();
-            } else if (val > 100) {
-                bar_color = Color::cyan();
-            }
+            if (val > 150) bar_color = Color::yellow();
+            else if (val > 100) bar_color = Color::cyan();
         }
 
         painter.fill_rectangle({
             start_x + static_cast<uint16_t>(i),
             start_y + height - bar_height,
-            1,
-            bar_height
+            1, bar_height
         }, bar_color);
     }
 
@@ -778,25 +637,20 @@ void PatternManagerView::draw_spectrum_with_selection(
         painter.draw_rectangle({
             static_cast<uint16_t>(sel_bin - 2) + start_x,
             start_y,
-            5,
-            height
+            5, height
         }, Color::red());
     }
 }
 
 void PatternManagerView::paint(ui::Painter& painter) noexcept {
     (void)painter;
-
-    if (view_state_ == ViewState::CAPTURING || view_state_ == ViewState::LIVE ||
-        capture_spectrum_[0] != 0) {
+    if (view_state_ == ViewState::CAPTURING || view_state_ == ViewState::LIVE || capture_completed_) {
         draw_spectrum_with_selection(painter, capture_spectrum_, selected_bin_);
     }
 }
 
 ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
-    if (!bin_selected_ || selected_bin_ < 0) {
-        return ErrorCode::INVALID_PARAMETER;
-    }
+    if (!bin_selected_ || selected_bin_ < 0) return ErrorCode::INVALID_PARAMETER;
 
     SignalPattern new_pattern{};
 
@@ -807,14 +661,11 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     }
     new_pattern.name[name_len] = '\0';
 
-    // Use shared normalize() from PatternMatcher — identical to match-time normalization
     PatternMatcher::normalize(capture_spectrum_, new_pattern.waveform);
 
-    // Extract features via unified PeakDetector (reuses same sort buffer that
-    // capture_spectrum_avg_ is no longer using — same trick as before to avoid
-    // stack allocation of a 256-byte array).
+    // Use spectrum_buffer_ as scratch for PeakDetector (saves 256 B vs separate buffer).
     const PeakDetector::PeakInfo peak = PeakDetector::find(
-        capture_spectrum_, capture_spectrum_avg_,
+        capture_spectrum_, spectrum_buffer_.db.data(),
         PeakDetector::Range::Full, PeakDetector::EdgePolicy::Wide);
 
     new_pattern.features.peak_position = static_cast<uint8_t>(peak.index / PATTERN_BIN_SCALE_FACTOR);
@@ -822,18 +673,11 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
     new_pattern.features.noise_floor = peak.noise_floor;
     new_pattern.features.margin = peak.margin;
 
-    // Auto-tune match_threshold from the captured peak's SNR margin.
-    //   weak peak  (margin < 10)  → lenient  threshold (~500)
-    //   typical    (margin ≈ 20)  → default  threshold (600)
-    //   strong     (margin ≥ 30)  → stricter threshold (~700, clamped to 800)
-    // Linear mapping: 400 + margin*10, clamped to [400..800].
     constexpr uint16_t MIN_AUTO_THRESHOLD = 400;
     constexpr uint16_t MAX_AUTO_THRESHOLD = 800;
     const uint16_t auto_th = static_cast<uint16_t>(
         MIN_AUTO_THRESHOLD + static_cast<uint16_t>(new_pattern.features.margin) * 10U);
-    new_pattern.match_threshold = (auto_th > MAX_AUTO_THRESHOLD)
-        ? MAX_AUTO_THRESHOLD
-        : auto_th;
+    new_pattern.match_threshold = (auto_th > MAX_AUTO_THRESHOLD) ? MAX_AUTO_THRESHOLD : auto_th;
 
     new_pattern.flags = SignalPattern::Flags::ENABLED;
     new_pattern.created_time = chTimeNow();
@@ -846,67 +690,36 @@ ErrorCode PatternManagerView::save_current_pattern(const char* name) noexcept {
 }
 
 void PatternManagerView::refresh_list() noexcept {
-    if (pattern_manager_ptr_ == nullptr) {
-        return;
-    }
+    if (pattern_manager_ptr_ == nullptr) return;
 
-    constexpr size_t MAX_OPTIONS = MAX_PATTERNS + 1;
-    static char option_texts[MAX_OPTIONS][64]{};
-    static ui::OptionsField::option_t options[MAX_OPTIONS];
-    size_t option_count = 0;
+    // Stack: 10 × (64 + 4) = 680 bytes. Bounded by MAX_PATTERNS=10.
+    constexpr size_t MAX_OPTS = MAX_PATTERNS + 1;
+    char texts[MAX_OPTS][64]{};
+    ui::OptionsField::option_t opts[MAX_OPTS];
+    size_t count = 0;
 
     const size_t pattern_count = pattern_manager_ptr_->get_pattern_count();
-
-    for (size_t i = 0; i < pattern_count && i < MAX_PATTERNS && option_count < MAX_OPTIONS - 1; ++i) {
-        const SignalPattern* pattern = pattern_manager_ptr_->get_pattern(i);
-        if (pattern != nullptr) {
-            const char* status = pattern->is_enabled() ? "+" : "-";
-            snprintf(option_texts[option_count], sizeof(option_texts[option_count]), "[%s] %.20s", status, pattern->name);
-            option_texts[option_count][sizeof(option_texts[option_count]) - 1] = '\0';
-            options[option_count] = {option_texts[option_count], static_cast<int32_t>(i)};
-            ++option_count;
+    for (size_t i = 0; i < pattern_count && i < MAX_PATTERNS && count < MAX_OPTS - 1; ++i) {
+        const SignalPattern* p = pattern_manager_ptr_->get_pattern(i);
+        if (p != nullptr) {
+            const char* s = p->is_enabled() ? "+" : "-";
+            snprintf(texts[count], sizeof(texts[count]), "[%s] %.20s", s, p->name);
+            opts[count] = {texts[count], static_cast<int32_t>(i)};
+            ++count;
         }
     }
 
-    if (option_count == 0) {
-        snprintf(option_texts[0], sizeof(option_texts[0]), "No patterns");
-        options[0] = {option_texts[0], 0};
-        option_count = 1;
+    if (count == 0) {
+        snprintf(texts[0], sizeof(texts[0]), "No patterns");
+        opts[0] = {texts[0], 0};
+        count = 1;
     }
 
-    field_patterns_.set_options({options, options + option_count});
-}
-
-void PatternManagerView::show_pattern_details() noexcept {
-    if (pattern_manager_ptr_ == nullptr || selected_index_ >= pattern_manager_ptr_->get_pattern_count()) {
-        label_status_.set("No pattern selected!");
-        set_dirty();
-        return;
-    }
-
-    const SignalPattern* pattern = pattern_manager_ptr_->get_pattern(selected_index_);
-    if (pattern == nullptr) {
-        label_status_.set("Invalid pattern!");
-        set_dirty();
-        return;
-    }
-
-    // Display pattern details in status label
-    char details[64];
-    snprintf(details, sizeof(details),
-             "[%s] Pk:%d Mn:%d Mt:%d",
-             pattern->name,
-             pattern->features.peak_position,
-             pattern->features.margin,
-             pattern->match_threshold);
-    label_status_.set(details);
-    set_dirty();
+    field_patterns_.set_options({opts, opts + count});
 }
 
 void PatternManagerView::delete_selected_pattern() noexcept {
-    if (pattern_manager_ptr_ == nullptr || selected_index_ >= pattern_manager_ptr_->get_pattern_count()) {
-        return;
-    }
+    if (pattern_manager_ptr_ == nullptr || selected_index_ >= pattern_manager_ptr_->get_pattern_count()) return;
 
     const ErrorCode err = pattern_manager_ptr_->delete_pattern(selected_index_);
     if (err == ErrorCode::SUCCESS) {
@@ -916,19 +729,6 @@ void PatternManagerView::delete_selected_pattern() noexcept {
         }
         refresh_list();
     }
-}
-
-void PatternManagerView::clear_all_patterns() noexcept {
-    if (pattern_manager_ptr_ == nullptr) {
-        return;
-    }
-
-    pattern_manager_ptr_->clear_all_patterns();
-    DroneScanner* scanner_ptr = get_scanner_ptr();
-    if (scanner_ptr != nullptr) {
-        scanner_ptr->refresh_patterns();
-    }
-    refresh_list();
 }
 
 PatternManagerView::~PatternManagerView() noexcept = default;
