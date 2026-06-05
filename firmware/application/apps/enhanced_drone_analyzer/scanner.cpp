@@ -1100,7 +1100,7 @@ bool DroneScanner::is_scanning() const noexcept {
     return scanning_active_.test();
 }
 
-ScanConfig DroneScanner::get_config() const noexcept {
+const ScanConfig& DroneScanner::get_config() const noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     return config_;
 }

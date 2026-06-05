@@ -199,7 +199,7 @@ void PatternManagerView::load_sweep_ranges() noexcept {
         return;
     }
 
-    ScanConfig cfg = scanner_ptr->get_config();
+    const ScanConfig& cfg = scanner_ptr->get_config();
     current_range_start_ = 0;
     current_range_end_ = 0;
     live_center_frequency_ = 0;
@@ -268,7 +268,7 @@ void PatternManagerView::init_sweep_range(uint8_t range_idx) noexcept {
         return;
     }
 
-    ScanConfig cfg = scanner_ptr->get_config();
+    const ScanConfig& cfg = scanner_ptr->get_config();
     FreqHz start = 0;
     FreqHz end = 0;
     FreqHz step = 0;
@@ -333,7 +333,7 @@ FreqHz PatternManagerView::get_range_center_freq(uint8_t range_idx) const noexce
         return 0;
     }
 
-    ScanConfig cfg = scanner_ptr->get_config();
+    const ScanConfig& cfg = scanner_ptr->get_config();
 
     switch (range_idx) {
         case 0:
@@ -363,7 +363,7 @@ FreqHz PatternManagerView::get_range_bin_step(uint8_t range_idx) const noexcept 
         return 0;
     }
 
-    ScanConfig cfg = scanner_ptr->get_config();
+    const ScanConfig& cfg = scanner_ptr->get_config();
 
     switch (range_idx) {
         case 0:
@@ -645,7 +645,7 @@ void PatternManagerView::start_capture_sequence() noexcept {
         return;
     }
 
-    ScanConfig cfg = scanner_ptr->get_config();
+    const ScanConfig& cfg = scanner_ptr->get_config();
 
     if (!bin_selected_ || selected_bin_ < 0 || capture_frequency_ == 0) {
         label_status_.set("Select bin first!");

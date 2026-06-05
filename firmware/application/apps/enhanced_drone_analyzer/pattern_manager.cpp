@@ -53,9 +53,12 @@ PatternManager::~PatternManager() noexcept = default;
 ErrorCode PatternManager::load_patterns() noexcept {
     MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
 
+    if (loaded_) return ErrorCode::SUCCESS;
+
     pattern_count_ = 0;
 
     if (!fs::is_directory(patterns_dir)) {
+        loaded_ = true;
         return ErrorCode::SUCCESS;
     }
 
@@ -67,6 +70,7 @@ ErrorCode PatternManager::load_patterns() noexcept {
         }
     }
 
+    loaded_ = true;
     return ErrorCode::SUCCESS;
 }
 
@@ -88,24 +92,22 @@ ErrorCode PatternManager::load_pattern_from_line(
         FileGuard& operator=(const FileGuard&) = delete;
     } file_guard(&file);
 
-    constexpr size_t READ_BUF_SIZE = 384;
-    uint8_t read_buf[READ_BUF_SIZE];
-    char line_buf[READ_BUF_SIZE];
+    constexpr size_t READ_BUF_SIZE = 256;
     size_t line_pos = 0;
     bool eof = false;
 
     while (!eof) {
-        const auto read_result = file.read(read_buf, READ_BUF_SIZE);
+        const auto read_result = file.read(read_buf_.data(), READ_BUF_SIZE);
         if (!read_result.is_ok()) return ErrorCode::DATABASE_LOAD_TIMEOUT;
         const size_t bytes_read = read_result.value();
         if (bytes_read == 0) eof = true;
 
         for (size_t i = 0; i < bytes_read; ++i) {
-            const char c = static_cast<char>(read_buf[i]);
+            const char c = static_cast<char>(read_buf_[i]);
             if (c == '\n' || c == '\r' || line_pos >= READ_BUF_SIZE - 1) {
                 if (line_pos > 0) {
-                    line_buf[line_pos] = '\0';
-                    const ErrorCode parse_err = parse_pattern_csv(line_buf, line_pos);
+                    line_buf_[line_pos] = '\0';
+                    const ErrorCode parse_err = parse_pattern_csv(line_buf_.data(), line_pos);
                     if (parse_err == ErrorCode::SUCCESS) {
                         ++pattern_count_;
                     }
@@ -113,7 +115,7 @@ ErrorCode PatternManager::load_pattern_from_line(
                     if (pattern_count_ >= MAX_PATTERNS) return ErrorCode::SUCCESS;
                 }
             } else if (c != '\n' && c != '\r') {
-                line_buf[line_pos++] = c;
+                line_buf_[line_pos++] = c;
             }
         }
     }
@@ -132,13 +134,16 @@ ErrorCode PatternManager::parse_pattern_csv(
 
     size_t pos = 0;
     uint8_t field_index = 0;
-    constexpr uint8_t CSV_FEATURE_COUNT = 4;
-    constexpr uint8_t CSV_FIELD_COUNT = 1 + PATTERN_WAVEFORM_SIZE + CSV_FEATURE_COUNT + 4;
-    // CSV_FIELD_COUNT = 25. Old 29-field files (with sharpness/flatness/symmetry
-    // and width) still load — extra trailing fields past index 24 are ignored
-    // by the field_index bounds check.
+    constexpr uint8_t OLD_FIELD_COUNT = 29;
 
-    while (pos < csv_length && field_index < CSV_FIELD_COUNT) {
+    // Temp storage for fields 21-28 — resolves old vs new format after full parse.
+    // Stack: 38 bytes (2×uint16_t + 2×uint8_t + 4×uint64_t).
+    uint16_t tmp_threshold{0};
+    uint8_t tmp_flags{0};
+    uint64_t tmp_center_freq{0};
+    uint64_t tmp_range_width{0};
+
+    while (pos < csv_length && field_index < OLD_FIELD_COUNT) {
         while (pos < csv_length && (csv_line[pos] == ',' || csv_line[pos] == ' ' || csv_line[pos] == '\t')) {
             ++pos;
         }
@@ -169,23 +174,44 @@ ErrorCode PatternManager::parse_pattern_csv(
             pattern.features.noise_floor = parse_uint8(&csv_line[field_start], field_len);
         } else if (field_index == 20) {
             pattern.features.margin = parse_uint8(&csv_line[field_start], field_len);
-        } else if (field_index == 21) {
-            pattern.match_threshold = parse_uint16(&csv_line[field_start], field_len);
-        } else if (field_index == 22) {
-            pattern.flags = parse_uint8(&csv_line[field_start], field_len);
-        } else if (field_index == 23) {
-            pattern.center_freq = static_cast<FreqHz>(parse_uint64(&csv_line[field_start], field_len));
-        } else if (field_index == 24) {
-            pattern.range_width = static_cast<FreqHz>(parse_uint64(&csv_line[field_start], field_len));
+        } else if (field_index >= 21 && field_index <= 24) {
+            // Fields 21-24: NEW format = threshold/flags/center_freq/range_width
+            //                 OLD format = width/sharpness/flatness/symmetry (ignored)
+            if (field_index == 21) tmp_threshold = parse_uint16(&csv_line[field_start], field_len);
+            if (field_index == 22) tmp_flags = parse_uint8(&csv_line[field_start], field_len);
+            if (field_index == 23) tmp_center_freq = parse_uint64(&csv_line[field_start], field_len);
+            if (field_index == 24) tmp_range_width = parse_uint64(&csv_line[field_start], field_len);
+        } else if (field_index >= 25 && field_index <= 28) {
+            // OLD format only: threshold(25), flags(26), center_freq(27), range_width(28)
+            if (field_index == 25) tmp_threshold = parse_uint16(&csv_line[field_start], field_len);
+            if (field_index == 26) tmp_flags = parse_uint8(&csv_line[field_start], field_len);
+            if (field_index == 27) tmp_center_freq = parse_uint64(&csv_line[field_start], field_len);
+            if (field_index == 28) tmp_range_width = parse_uint64(&csv_line[field_start], field_len);
         }
         ++field_index;
     }
 
     // Minimum viable pattern: name + 16 waveform bins + 4 features.
-    if (field_index < 1 + PATTERN_WAVEFORM_SIZE + CSV_FEATURE_COUNT) {
+    constexpr uint8_t MIN_FIELD_COUNT = 1 + PATTERN_WAVEFORM_SIZE + 4;
+    if (field_index < MIN_FIELD_COUNT) {
         return ErrorCode::DATABASE_FORMAT_INVALID;
     }
 
+    // Resolve old vs new format by total field count.
+    // OLD (29 fields): fields 21-24 were width/sharpness/flatness/symmetry,
+    //                   real threshold/flags/center_freq/range_width are at 25-28.
+    // NEW (25 fields):  fields 21-24 are threshold/flags/center_freq/range_width directly.
+    if (field_index >= OLD_FIELD_COUNT) {
+        // OLD format — fields 25-28 are the real values (already stored in tmp)
+        // Fields 21-24 (width/sharpness/flatness/symmetry) are silently discarded.
+    }
+    // For both formats, tmp_threshold/tmp_flags/tmp_center_freq/tmp_range_width
+    // now hold the correct values.
+
+    pattern.match_threshold = tmp_threshold;
+    pattern.flags = tmp_flags;
+    pattern.center_freq = static_cast<FreqHz>(tmp_center_freq);
+    pattern.range_width = static_cast<FreqHz>(tmp_range_width);
     pattern.created_time = chTimeNow();
     return ErrorCode::SUCCESS;
 }
@@ -211,11 +237,10 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
         FileGuard& operator=(const FileGuard&) = delete;
     } file_guard(&file);
 
-    uint8_t write_buf[384];
     size_t write_pos = 0;
 
     auto write_char = [&](char c) noexcept -> void {
-        if (write_pos < sizeof(write_buf)) write_buf[write_pos++] = static_cast<uint8_t>(c);
+        if (write_pos < write_buf_.size()) write_buf_[write_pos++] = static_cast<uint8_t>(c);
     };
 
     constexpr size_t INT32_STR_BUF_SIZE = 12;
@@ -261,7 +286,7 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
     write_uint64(static_cast<uint64_t>(pattern.range_width));
     write_char('\n');
 
-    const File::Result<File::Size> write_result = file.write(write_buf, static_cast<File::Size>(write_pos));
+    const File::Result<File::Size> write_result = file.write(write_buf_.data(), static_cast<File::Size>(write_pos));
     if (!write_result.is_ok()) return ErrorCode::DATABASE_LOAD_TIMEOUT;
 
     patterns_[pattern_count_] = pattern;
@@ -312,6 +337,7 @@ void PatternManager::clear_all_patterns() noexcept {
 
 ErrorCode PatternManager::reload_patterns() noexcept {
     MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+    loaded_ = false;
     pattern_count_ = 0;
 
     if (!fs::is_directory(patterns_dir)) return ErrorCode::SUCCESS;
@@ -323,6 +349,8 @@ ErrorCode PatternManager::reload_patterns() noexcept {
             (void)err;
         }
     }
+
+    loaded_ = true;
     return ErrorCode::SUCCESS;
 }
 

@@ -159,7 +159,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
     // (display and detection filtering are now separate)
     if (scanner_ptr_ != nullptr) {
-        const ScanConfig cfg = scanner_ptr_->get_config();
+        const ScanConfig& cfg = scanner_ptr_->get_config();
         field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
     }
 
@@ -330,7 +330,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             return;
         }
         // Refresh config from scanner (SWP view may have changed sweep settings)
-        ScanConfig config = scanner_ptr_->get_config();
+        const ScanConfig& config = scanner_ptr_->get_config();
         nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
 
@@ -340,7 +340,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        ScanConfig config = scanner_ptr_->get_config();
+        const ScanConfig& config = scanner_ptr_->get_config();
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };
 
@@ -525,7 +525,7 @@ void DroneScannerUI::on_show() {
 
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
     if (composite_active_ && scanner_ptr_ != nullptr) {
-        ScanConfig cfg = scanner_ptr_->get_config();
+        const ScanConfig& cfg = scanner_ptr_->get_config();
 
         // Reinit all windows from config
         last_tuned_freq_ = 0;
@@ -942,10 +942,10 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.reset_composite_persistence();
     drone_display_.set_scan_head(-1, -1);
 
-    ScanConfig cfg;
-    if (scanner_ptr_ != nullptr) {
-        cfg = scanner_ptr_->get_config();
-    }
+    static const ScanConfig default_cfg{};
+    const ScanConfig& cfg = (scanner_ptr_ != nullptr)
+        ? scanner_ptr_->get_config()
+        : default_cfg;
 
     // Initialize all 4 sweep windows from config
     sweep_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq, cfg.sweep_step_freq);

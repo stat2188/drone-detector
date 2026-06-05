@@ -146,7 +146,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     // Restore from scanner config to prevent SD card stale value from overriding
     // the user's button toggle.
     if (scanner_ptr_ != nullptr) {
-        const ScanConfig live_cfg = scanner_ptr_->get_config();
+        const ScanConfig& live_cfg = scanner_ptr_->get_config();
         settings_.median_enabled = live_cfg.median_enabled;
     }
 
@@ -292,7 +292,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             ScanConfig updated_config = original_config_;
             SettingsFileManager::apply_to_config(settings_, updated_config);
             // Preserve sweep settings from scanner (SWP view manages them)
-            ScanConfig current_cfg = scanner_ptr_->get_config();
+            const ScanConfig& current_cfg = scanner_ptr_->get_config();
             updated_config.sweep_start_freq = current_cfg.sweep_start_freq;
             updated_config.sweep_end_freq = current_cfg.sweep_end_freq;
             updated_config.sweep_step_freq = current_cfg.sweep_step_freq;

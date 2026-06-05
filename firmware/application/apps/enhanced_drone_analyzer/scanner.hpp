@@ -753,7 +753,7 @@ public:
      * @return Current scan configuration
      * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
-    [[nodiscard]] ScanConfig get_config() const noexcept;
+    [[nodiscard]] const ScanConfig& get_config() const noexcept;
     
     /**
      * @brief Get sweep step frequency in Hz

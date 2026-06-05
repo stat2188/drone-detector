@@ -60,6 +60,14 @@ private:
     size_t pattern_count_;
     mutable Mutex mutex_;
 
+    // I/O buffers — moved from stack to BSS to prevent stack overflow.
+    // Stack savings: ~768 bytes in load_pattern_from_line(), ~384 bytes in save_pattern().
+    // SRAM cost: 769 bytes in BSS (constant, not per-call).
+    std::array<uint8_t, 256> read_buf_{};     // 256B — max CSV line ~146 bytes
+    std::array<char, 256> line_buf_{};        // 256B — line assembly buffer
+    std::array<uint8_t, 256> write_buf_{};    // 256B — CSV serialization buffer
+    bool loaded_{false};                       // 1B — prevents redundant SD re-reads
+
     [[nodiscard]] ErrorCode load_pattern_from_line(
         const std::filesystem::path& filepath
     ) noexcept;
