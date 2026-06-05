@@ -1192,8 +1192,19 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         }
         if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) sweep_[w1].reset();
 
-        // Advance to next pair (pairs: 0=[w0,w1], 2=[w2,w3])
-        const uint8_t next_pair = (current_pair_ + 2 < MAX_SWEEP_WINDOWS) ? current_pair_ + 2 : 0;
+        // Advance to next pair (pairs: 0=[w0,w1], 2=[w2,w3]).
+        // Skip pairs with no enabled windows — otherwise current_pair_ points
+        // at an empty pair and update_sweep_pair_display() bails out, freezing
+        // the display even though the sweep logic keeps running.
+        uint8_t next_pair = (current_pair_ + 2 < MAX_SWEEP_WINDOWS) ? current_pair_ + 2 : 0;
+        for (uint8_t skip = 0; skip < MAX_SWEEP_WINDOWS / 2; ++skip) {
+            const uint8_t np_w0 = next_pair;
+            const uint8_t np_w1 = np_w0 + 1;
+            const bool has_enabled = sweep_[np_w0].enabled ||
+                (np_w1 < MAX_SWEEP_WINDOWS && sweep_[np_w1].enabled);
+            if (has_enabled) break;
+            next_pair = (next_pair + 2 < MAX_SWEEP_WINDOWS) ? next_pair + 2 : 0;
+        }
 
         // Full cycle wrap: all pairs have been visited.
         // Exit auto-mode before round-robin changes active_sweep_idx_,
