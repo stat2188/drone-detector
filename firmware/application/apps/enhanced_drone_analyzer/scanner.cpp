@@ -87,6 +87,46 @@ static uint8_t quickselect_median(uint8_t* buf, size_t count) noexcept {
     return buf[k];
 }
 
+/**
+ * @brief Compute k-th percentile via quickselect (O(n) average, in-place)
+ * @param buf Buffer to partition (will be modified)
+ * @param count Number of elements in buffer
+ * @param percentile Percentile to compute (0-100, where 25 = 25th percentile)
+ * @return Percentile value (0 if count == 0)
+ * @note 25th percentile is more robust than median for noise floor estimation
+ *       when signal occupies >50% of bins (WiFi-dense environments).
+ *       Median becomes signal-biased in that case; 25th percentile stays near
+ *       the true noise floor.
+ */
+static uint8_t quickselect_percentile(uint8_t* buf, size_t count, uint8_t percentile) noexcept {
+    if (count == 0) return 0;
+    const size_t k = (count * static_cast<size_t>(percentile)) / 100;
+    const size_t k_safe = (k < count) ? k : count - 1;
+    size_t left = 0;
+    size_t right = count - 1;
+    while (left < right) {
+        const size_t pivot_idx = left + (right - left) / 2;
+        const uint8_t pivot = buf[pivot_idx];
+        buf[pivot_idx] = buf[right];
+        buf[right] = pivot;
+        size_t store = left;
+        for (size_t i = left; i < right; ++i) {
+            if (buf[i] < pivot) {
+                const uint8_t t = buf[store];
+                buf[store] = buf[i];
+                buf[i] = t;
+                ++store;
+            }
+        }
+        buf[right] = buf[store];
+        buf[store] = pivot;
+        if (store == k_safe) break;
+        if (store < k_safe) left = store + 1;
+        else right = store - 1;
+    }
+    return buf[k_safe];
+}
+
 // ============================================================================
 // ScanConfig Implementation
 // ============================================================================
@@ -1157,6 +1197,23 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
             return ErrorCode::INVALID_PARAMETER;
         }
     }
+
+    // Validate spectrum shape filter parameters (prevent impossible detection configs)
+    if (config.spectrum_min_width > config.spectrum_max_width) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    if (config.spectrum_min_width < 1 || config.spectrum_max_width < 2) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    if (config.confirm_count < 1 || config.confirm_count > 20) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    if (config.cfar_ref_cells < CFAR_REF_CELLS_MIN || config.cfar_ref_cells > CFAR_REF_CELLS_MAX) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    if (config.cfar_guard_cells > CFAR_GUARD_CELLS_MAX) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
     
     return ErrorCode::SUCCESS;
 }
@@ -1319,7 +1376,11 @@ void DroneScanner::refresh_patterns() noexcept {
 // ============================================================================
 
 bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept {
-    // Step 1: Find noise floor = median of usable bins
+    // Step 1: Find noise floor via 25th percentile of usable bins.
+    // 25th percentile (not median) is more robust when signal occupies >50% of
+    // usable bins (WiFi-dense 2.4 GHz environment). Median becomes signal-biased
+    // in that case, inflating the noise floor estimate and causing real drone
+    // signals to fail the peak_margin check.
     uint8_t* sorted = spectrum_sort_buf_;
     size_t sort_count = 0;
     for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
@@ -1327,7 +1388,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
         sorted[sort_count++] = spectrum.db[i];
     }
     const uint8_t noise_floor = (sort_count > 0)
-        ? quickselect_median(sorted, sort_count)
+        ? quickselect_percentile(sorted, sort_count, 25)
         : 0;
 
     // Step 2: Find peak bin and peak value
@@ -1377,7 +1438,10 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     }
 
     // Step 4: Count elevated bins around peak (signal width)
-    const uint8_t elevated_threshold = noise_floor + (peak_margin / 4);
+    // /3 instead of /4: for weak signals (peak_margin=20), /4 gives 5 units above
+    // noise (≈1 dB) where 1-bin quantization noise dominates width measurement.
+    // /3 gives 7 units (≈1.4 dB), providing more stable width for marginal signals.
+    const uint8_t elevated_threshold = noise_floor + (peak_margin / 3);
 
     size_t left = peak_index;
     while (left > edge_skip) {
@@ -1571,7 +1635,7 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
             usable[idx++] = spectrum.db[i];
         }
         if (idx > 0) {
-            noise_floor = quickselect_median(usable, idx);
+            noise_floor = quickselect_percentile(usable, idx, 25);
         }
     } else {
         // Original fixed-threshold detection
@@ -1592,8 +1656,8 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
         // Guard: no usable bins (all in DC spike or edge skip)
         if (idx == 0) return;
 
-        // Quickselect median O(n) for noise floor
-        noise_floor = quickselect_median(usable, idx);
+        // 25th percentile noise floor — robust when WiFi occupies >50% of bins
+        noise_floor = quickselect_percentile(usable, idx, 25);
 
         // Step 2: Margin check
         const uint8_t peak_margin_fixed = raw_peak - noise_floor;

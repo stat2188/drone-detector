@@ -15,7 +15,6 @@
 #include "histogram_processor.hpp"
 #include "median_filter.hpp"
 #include "message.hpp"
-#include "spectrum_shape.hpp"
 #include "mahalanobis_gate.hpp"
 #include "pattern_matcher.hpp"
 #include "pattern_manager.hpp"
@@ -57,11 +56,11 @@ struct ScanConfig {
     FreqHz sweep4_step_freq{17813000};
     bool sweep4_enabled{true};
 
-    // Advanced detection features (OFF by default)
-    bool dwell_enabled{false};           // Stay on frequency when signal detected
-    bool confirm_count_enabled{false};   // Require multiple confirmations before creating drone
-    bool noise_blacklist_enabled{false}; // Skip frequencies with persistent noise
-    bool spectrum_detection_enabled{false}; // Detect drone signals by spectrum shape (U/V peaks)
+    // Advanced detection features (ON by default — matches constructor)
+    bool dwell_enabled{true};           // Stay on frequency when signal detected
+    bool confirm_count_enabled{true};   // Require multiple confirmations before creating drone
+    bool noise_blacklist_enabled{true}; // Skip frequencies with persistent noise
+    bool spectrum_detection_enabled{true}; // Detect drone signals by spectrum shape (U/V peaks)
     bool median_enabled{true};              // Median filter for RSSI spike rejection (ON by default)
     uint8_t spectrum_margin{DEFAULT_SPECTRUM_MARGIN};            // Peak margin above noise (FPV-optimized: 20 ≈ 7 dB)
     uint8_t spectrum_min_width{DEFAULT_SPECTRUM_MIN_WIDTH};      // Min signal width in bins (FPV-optimized)
@@ -531,9 +530,10 @@ public:
     [[nodiscard]] bool check_margin(FreqHz current_freq, int32_t current_rssi, int32_t min_margin_db) const noexcept {
         if (count_ < 2) return true;  // Not enough data — pass through
         int32_t best_neighbor_rssi = -120;
-        // FIX: Add 1MHz frequency window to avoid cross-band suppression in sweep mode
-        // Without this, a strong signal at 5700MHz suppresses detection at 5900MHz
-        constexpr FreqHz NEIGHBOR_WINDOW_HZ = 1'000'000ULL;
+        // FIX: 5MHz frequency window — wide enough to catch WiFi sidebands and
+        // Bluetooth hopping within a 5MHz sub-band, but narrow enough to avoid
+        // cross-band suppression between 5.7GHz and 5.8GHz FPV channels
+        constexpr FreqHz NEIGHBOR_WINDOW_HZ = 5'000'000ULL;
         for (uint8_t i = 0; i < count_; ++i) {
             const auto freq_diff = (history_[i].freq > current_freq)
                 ? (history_[i].freq - current_freq)
