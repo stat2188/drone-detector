@@ -54,40 +54,6 @@ static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
 }
 
 /**
- * @brief Find median of buffer using quickselect (O(n) average, in-place).
- * @param buf Buffer to partition (will be modified)
- * @param count Number of elements in buffer
- * @return Median value (0 if count == 0)
- */
-static uint8_t quickselect_median(uint8_t* buf, size_t count) noexcept {
-    if (count == 0) return 0;
-    const size_t k = count / 2;
-    size_t left = 0;
-    size_t right = count - 1;
-    while (left < right) {
-        const size_t pivot_idx = left + (right - left) / 2;
-        const uint8_t pivot = buf[pivot_idx];
-        buf[pivot_idx] = buf[right];
-        buf[right] = pivot;
-        size_t store = left;
-        for (size_t i = left; i < right; ++i) {
-            if (buf[i] < pivot) {
-                const uint8_t t = buf[store];
-                buf[store] = buf[i];
-                buf[i] = t;
-                ++store;
-            }
-        }
-        buf[right] = buf[store];
-        buf[store] = pivot;
-        if (store == k) break;
-        if (store < k) left = store + 1;
-        else right = store - 1;
-    }
-    return buf[k];
-}
-
-/**
  * @brief Compute k-th percentile via quickselect (O(n) average, in-place)
  * @param buf Buffer to partition (will be modified)
  * @param count Number of elements in buffer

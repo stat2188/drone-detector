@@ -111,7 +111,7 @@ static void parse_settings_line(
     };
 
     // --- Scanning ---
-    } else if (key_matches("scan_interval_ms")) {
+    if (key_matches("scan_interval_ms")) {
         const uint64_t v = parse_int();
         s.scan_interval_ms = static_cast<uint32_t>((v < 10) ? 10 : (v > 10000 ? 10000 : v));
     } else if (key_matches("sensitivity")) {

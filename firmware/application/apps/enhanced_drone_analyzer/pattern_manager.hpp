@@ -18,7 +18,7 @@ namespace drone_analyzer {
 /**
  * @brief File-backed pattern storage (mutex-protected).
  * @note CSV format: name,wave[16],features[8],threshold,flags,center_freq,range_width
- *                   (29 fields per line, one line per file in /EDA/PATTERNS/*.TXT).
+ *                   (29 fields per line, one line per file in /EDA/PATTERNS/ wildcard TXT).
  * @note Format is stable — older .TXT files load without migration.
  * @note Single source of truth for on-disk pattern data.
  *
@@ -36,7 +36,7 @@ public:
     PatternManager(PatternManager&&) = delete;
     PatternManager& operator=(PatternManager&&) = delete;
 
-    /** @brief Load all patterns from /EDA/PATTERNS/*.TXT into the in-memory array. */
+    /** @brief Load all patterns from /EDA/PATTERNS/ (any .TXT) into the in-memory array. */
     [[nodiscard]] ErrorCode load_patterns() noexcept;
 
     /** @brief Save one pattern to /EDA/PATTERNS/<name>.TXT and append to in-memory array. */
