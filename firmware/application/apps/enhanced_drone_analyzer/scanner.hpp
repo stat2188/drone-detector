@@ -62,7 +62,7 @@ struct ScanConfig {
     bool noise_blacklist_enabled{true}; // Skip frequencies with persistent noise
     bool spectrum_detection_enabled{true}; // Detect drone signals by spectrum shape (U/V peaks)
     bool median_enabled{true};              // Median filter for RSSI spike rejection (ON by default)
-    uint8_t spectrum_margin{DEFAULT_SPECTRUM_MARGIN};            // Peak margin above noise (FPV-optimized: 20 ≈ 7 dB)
+    uint8_t spectrum_margin{DEFAULT_SPECTRUM_MARGIN};            // Peak margin above noise (FPV-optimized: 25 ≈ 8 dB, Wi-Fi rejection)
     uint8_t spectrum_min_width{DEFAULT_SPECTRUM_MIN_WIDTH};      // Min signal width in bins (FPV-optimized)
     uint8_t spectrum_max_width{DEFAULT_SPECTRUM_MAX_WIDTH};            // Max signal width (reject flat U/I shapes)
     uint8_t spectrum_peak_sharpness{DEFAULT_SPECTRUM_PEAK_SHARPNESS};  // Min peak sharpness ratio (enforce V-shape)
@@ -72,12 +72,12 @@ struct ScanConfig {
     uint8_t spectrum_symmetry{DEFAULT_SPECTRUM_SYMMETRY};              // Left/right width symmetry % (reject asymmetric noise)
 
     // Mahalanobis Gate Filter
-    bool mahalanobis_enabled{false};                                    // Enable Mahalanobis gate for outlier detection
+    bool mahalanobis_enabled{true};                                     // FPV-OPTIMIZED: ON by default (analog FM outlier rejection)
     uint8_t mahalanobis_threshold_x10{DEFAULT_MAHALOBIS_THRESHOLD_X10};  // Mahalanobis threshold ×10
 
     // New anti-false-positive features
-    int32_t neighbor_margin_db{DEFAULT_NEIGHBOR_MARGIN_DB};  // 0=disabled, 3=default
-    bool rssi_variance_enabled{false};                        // RSSI variance noise rejection
+    int32_t neighbor_margin_db{DEFAULT_NEIGHBOR_MARGIN_DB};  // 0=disabled, 2=FPV default
+    bool rssi_variance_enabled{true};                         // FPV-OPTIMIZED: ON by default (analog FM RSSI stability)
     uint8_t confirm_count{DEFAULT_CONFIRM_COUNT};             // Configurable confirm count
 
     // CFAR detection (Constant False Alarm Rate)

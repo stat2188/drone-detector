@@ -399,6 +399,20 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
     portapack::receiver_model.enable();
 
+    // FPV-OPTIMIZED RF frontend: ensure max sensitivity for long-range analog
+    // 5.8 GHz video link detection. Non-destructive: only raises values that
+    // are lower than FPV defaults (respects user-set higher values from other apps).
+    // Field set_value() calls fire on_change → receiver_model.set_*() → hardware update.
+    if (portapack::receiver_model.lna() < DEFAULT_LNA_GAIN) {
+        field_lna_.set_value(static_cast<int32_t>(DEFAULT_LNA_GAIN));
+    }
+    if (portapack::receiver_model.vga() < DEFAULT_VGA_GAIN) {
+        field_vga_.set_value(static_cast<int32_t>(DEFAULT_VGA_GAIN));
+    }
+    if (!portapack::receiver_model.rf_amp()) {
+        field_rf_amp_.set_value(1);
+    }
+
     // Set default headphone volume to 70/99 if not already set higher
     if (portapack::receiver_model.normalized_headphone_volume() < 70) {
         portapack::receiver_model.set_normalized_headphone_volume(70);

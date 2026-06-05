@@ -121,11 +121,12 @@ ScanConfig::ScanConfig() noexcept
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
     , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
-    , rssi_variance_enabled(false)
+    , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , pattern_matching_enabled(true)
     , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD) {
     // sweep2/3/4 fields use in-class defaults: disabled
+    // mahalanobis_enabled uses in-class default (true, FPV-optimized)
 }
 
 ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
@@ -152,11 +153,12 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
     , spectrum_symmetry(DEFAULT_SPECTRUM_SYMMETRY)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
-    , rssi_variance_enabled(false)
+    , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , pattern_matching_enabled(true)
     , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD) {
     // sweep2/3/4 fields use in-class defaults: disabled
+    // mahalanobis_enabled uses in-class default (true, FPV-optimized)
 }
 
 
