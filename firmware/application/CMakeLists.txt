@@ -327,6 +327,7 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/spectrum_preview_widget.cpp
 	apps/enhanced_drone_analyzer/sweep_processor.cpp
 	apps/enhanced_drone_analyzer/mahalanobis_gate.cpp
+	apps/enhanced_drone_analyzer/peak_detector.cpp
 	apps/enhanced_drone_analyzer/pattern_types.cpp
 	apps/enhanced_drone_analyzer/pattern_matcher.cpp
 	apps/enhanced_drone_analyzer/pattern_manager.cpp
