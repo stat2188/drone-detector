@@ -743,6 +743,17 @@ constexpr uint8_t SWEEP_SETTLE_FRAMES = 0;
  */
 constexpr uint8_t SWEEP_DISPLAY_NOISE_MARGIN = 8;
 
+/**
+ * @brief Percentile of EMA persistence buffer used as auto-computed noise floor.
+ * @note Range 0..99. Lower value = more aggressive subtraction (cuts more bins).
+ * @note 15 = robust against sparse spectra: only the bottom 15% is treated as noise,
+ *       so the first fresh pixels of a new pass are visible in real-time.
+ * @note 50 (median, the previous default) is too aggressive for real-time sweep:
+ *       with a dense spectrum the median sits at the signal level and zero-outs
+ *       freshly-written pixels until the pass completes.
+ */
+constexpr uint8_t SWEEP_NOISE_FLOOR_PERCENTILE = 15;
+
 // ============================================================================
 // Spectrum Filter Constants (matching Looking Glass)
 // ============================================================================

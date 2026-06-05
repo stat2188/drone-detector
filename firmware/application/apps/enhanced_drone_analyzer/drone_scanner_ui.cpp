@@ -924,6 +924,9 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     // Using SWEEP_DISPLAY_NOISE_MARGIN so only signals above noise + margin draw color.
     // The composite noise floor itself is computed automatically in set_composite_data().
     drone_display_.set_spectrum_filter(SWEEP_DISPLAY_NOISE_MARGIN);
+    // Start with a clean EMA state and hidden scan heads.
+    drone_display_.reset_composite_persistence();
+    drone_display_.set_scan_head(-1, -1);
 
     ScanConfig cfg;
     if (scanner_ptr_ != nullptr) {
@@ -1040,6 +1043,10 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     // Without this, the sweep noise floor threshold would persist in normal mode,
     // causing weak signals to be invisible in non-sweep view.
     drone_display_.set_spectrum_filter(DEFAULT_SPECTRUM_FILTER);
+    // Clean EMA state and hide scan heads so the next sweep entry starts fresh
+    // and the non-sweep view does not show leftover markers.
+    drone_display_.reset_composite_persistence();
+    drone_display_.set_scan_head(-1, -1);
 
     // Stop streaming BEFORE nulling fifo — prevents stale data in frame_sync
     if (scanning_) {
@@ -1161,8 +1168,14 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         update_sweep_pair_display();
         drone_display_.set_dirty();
 
-        // Reset windows in this pair for next scan pass
-        if (sweep_[w0].enabled) sweep_[w0].reset();
+        // Reset windows in this pair for next scan pass.
+        // Also tell the display to drop stale EMA persistence so the new pass
+        // starts with a clean noise floor - otherwise the auto-floor sits at
+        // the previous pass's signal level and subtraction hides fresh pixels.
+        if (sweep_[w0].enabled) {
+            sweep_[w0].reset();
+            drone_display_.reset_composite_persistence();
+        }
         if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) sweep_[w1].reset();
 
         // Advance to next pair (pairs: 0=[w0,w1], 2=[w2,w3])
@@ -1244,6 +1257,18 @@ void DroneScannerUI::update_sweep_pair_display() noexcept {
         drone_display_.set_composite_data(sweep_[w1].composite, COMPOSITE_SIZE);
         drone_display_.set_dual_sweep_mode(false);
     }
+
+    // Push real-time scan-head positions for both bands. The display draws a
+    // 1-px marker at the current pixel_index of each enabled window so the
+    // user sees where the sweep is right now, even before the spectrum data
+    // accumulates enough to fill the band.
+    const int16_t head_w0 = (sweep_[w0].enabled)
+        ? static_cast<int16_t>(sweep_[w0].pixel_index)
+        : static_cast<int16_t>(-1);
+    const int16_t head_w1 = (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled)
+        ? static_cast<int16_t>(sweep_[w1].pixel_index)
+        : static_cast<int16_t>(-1);
+    drone_display_.set_scan_head(head_w0, head_w1);
 }
 
 uint8_t DroneScannerUI::pair_first(uint8_t idx) const noexcept {

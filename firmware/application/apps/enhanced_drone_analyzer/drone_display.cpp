@@ -91,7 +91,7 @@ void DroneDisplay::paint(Painter& painter) {
                 render_multi_zone(painter, ox, y_offset, w, layout.spec_h);
             } else {
                 render_composite(painter, composite_data_, composite_data_size_,
-                                ox, y_offset, w, layout.spec_h);
+                                ox, y_offset, w, layout.spec_h, scan_head_position_[0]);
             }
         } else {
             render_spectrum(painter, spectrum_buffer_.data(), spectrum_data_size_,
@@ -770,12 +770,15 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
     composite_data_size_ = copy_n;
 
     // Auto-compute noise floor from composite data for display filtering.
-    // Uses quickselect median (O(n)) on the persistence buffer.
+    // Uses quickselect at SWEEP_NOISE_FLOOR_PERCENTILE (default 15%) so the floor
+    // tracks the bottom of the distribution rather than the middle - this lets
+    // fresh pixels of a new sweep pass stay visible above the floor.
     if (copy_n > 0) {
         for (size_t i = 0; i < copy_n; ++i) {
             composite_sort_buf_[i] = composite_persist_buf_[i];
         }
-        const size_t k = copy_n / 2;
+        size_t k = (copy_n * SWEEP_NOISE_FLOOR_PERCENTILE) / 100;
+        if (k >= copy_n) k = copy_n - 1;  // safety clamp
         size_t ql = 0;
         size_t qr = copy_n - 1;
         while (ql < qr) {
@@ -806,6 +809,20 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
     }
 }
 
+void DroneDisplay::reset_composite_persistence() noexcept {
+    // Drop EMA state so the next set_composite_data() rebuilds the buffer from
+    // scratch (it enters the "not initialized" branch and copies the raw data).
+    // Set composite_data_ to nullptr so render_composite() skips bar drawing
+    // until fresh data arrives - this is the only safe way to avoid painting
+    // ghost bars from the previous pass.
+    std::memset(composite_persist_buf_, 0, COMPOSITE_SIZE);
+    composite_persist_initialized_ = false;
+    composite_noise_floor_ = 0;
+    composite_noise_floor_valid_ = false;
+    composite_data_ = nullptr;
+    composite_data_size_ = 0;
+}
+
 void DroneDisplay::render_composite(
     Painter& painter,
     const uint8_t* composite_data,
@@ -813,7 +830,8 @@ void DroneDisplay::render_composite(
     uint16_t start_x,
     uint16_t start_y,
     uint16_t width,
-    uint16_t height
+    uint16_t height,
+    int16_t scan_head
 ) noexcept {
     if (composite_data == nullptr || composite_size == 0 || height < 4) {
         return;
@@ -881,6 +899,13 @@ void DroneDisplay::render_composite(
             const uint16_t y = chart_start_y + chart_height - final_height;
             draw_rectangle(painter, x, y, 1, final_height, color);
         }
+    }
+
+    // Real-time scan-head marker: 1-px white vertical line at current pixel_index.
+    // Shows where the sweep is right now, independent of pixel-value filtering.
+    if (scan_head >= 0 && static_cast<uint16_t>(scan_head) < bar_count) {
+        const uint16_t hx = chart_start_x + static_cast<uint16_t>(scan_head);
+        painter.draw_rectangle({hx, chart_start_y, 1, chart_height}, Color::white());
     }
 
     // Draw red frame for matched pattern
@@ -994,9 +1019,9 @@ void DroneDisplay::render_dual_composite(
     const uint16_t band_h = height / 2;
     if (band_h < 4) return;
 
-    // Render sweep 1 (top half)
+    // Render sweep 1 (top half) — upper band scan head
     render_composite(painter, composite_data_, composite_data_size_,
-                     start_x, start_y, width, band_h);
+                     start_x, start_y, width, band_h, scan_head_position_[0]);
 
     // Render sweep 2 (bottom half) — temporarily swap freq range
     const FreqHz saved_start = sweep_freq_start_;
@@ -1004,7 +1029,7 @@ void DroneDisplay::render_dual_composite(
     sweep_freq_start_ = sweep2_freq_start_;
     sweep_freq_end_ = sweep2_freq_end_;
     render_composite(painter, sweep2_data_, sweep2_data_size_,
-                     start_x, start_y + band_h, width, band_h);
+                     start_x, start_y + band_h, width, band_h, scan_head_position_[1]);
     sweep_freq_start_ = saved_start;
     sweep_freq_end_ = saved_end;
 }

@@ -195,6 +195,32 @@ public:
         sweep2_freq_end_ = end;
     }
 
+    /**
+     * @brief Reset EMA persistence buffer and auto-computed noise floor.
+     * @note Call from sweep pass boundary (pair_complete / exit_sweep_mode) so
+     *       stale peaks from the previous pass do not mask fresh pixels of the
+     *       new pass. Without this, the auto-noise-floor stays at the level of
+     *       the previous pass's signals and subtraction zeroes new pixels.
+     * @pre  Called only from UI thread.
+     * @post composite_persist_buf_ = 0, init = false, noise_floor_valid = false,
+     *       composite_data_ = nullptr (paint will skip bar drawing until next
+     *       set_composite_data refreshes the buffer).
+     * @note Stack: 0 B. SRAM: 0 B (in-place zeroing of existing buffer).
+     */
+    void reset_composite_persistence() noexcept;
+
+    /**
+     * @brief Set real-time scan-head position for the upper and lower composite bands.
+     * @param upper Pixel index 0..COMPOSITE_SIZE-1, or -1 to hide on upper band.
+     * @param lower Pixel index 0..COMPOSITE_SIZE-1, or -1 to hide on lower band.
+     * @note Draws a 1-px white vertical marker so the user sees where the sweep
+     *       currently is, independent of pixel-value filtering.
+     */
+    void set_scan_head(int16_t upper, int16_t lower) noexcept {
+        scan_head_position_[0] = upper;
+        scan_head_position_[1] = lower;
+    }
+
     [[nodiscard]] const char* get_status_text() const noexcept;
 
 private:
@@ -457,7 +483,8 @@ private:
         uint16_t start_x,
         uint16_t start_y,
         uint16_t width,
-        uint16_t height
+        uint16_t height,
+        int16_t scan_head = -1
     ) noexcept;
 
     void render_multi_zone(
@@ -520,6 +547,10 @@ private:
 
     // Pattern match highlight (red frame in sweep)
     int16_t matched_pattern_bin_{-1};
+
+    // Real-time scan-head position [0]=upper band, [1]=lower band (dual mode).
+    // -1 means "no marker" for that band.
+    std::array<int16_t, 2> scan_head_position_{ {-1, -1} };
 };
 
 } // namespace drone_analyzer
