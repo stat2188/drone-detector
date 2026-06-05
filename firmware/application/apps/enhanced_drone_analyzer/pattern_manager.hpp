@@ -17,14 +17,14 @@ namespace drone_analyzer {
 
 /**
  * @brief File-backed pattern storage (mutex-protected).
- * @note CSV format: name,wave[16],features[8],threshold,flags,center_freq,range_width
- *                   (29 fields per line, one line per file in /EDA/PATTERNS/ wildcard TXT).
- * @note Format is stable — older .TXT files load without migration.
+ * @note CSV format: name,wave[16],features[4],threshold,flags,center_freq,range_width
+ *                   (25 fields new / 29 fields old, one line per file in /EDA/PATTERNS/).
+ * @note Both new (25-field) and old (29-field) CSV formats load correctly.
  * @note Single source of truth for on-disk pattern data.
  *
- * Stack: 0 (all storage is class-static std::array).
+ * Stack: ~38 bytes (parse_pattern_csv temp locals).
  * Flash: 0 (header only).
- * SRAM: MAX_PATTERNS × sizeof(SignalPattern) ≈ 10 × 72 = 720 B.
+ * SRAM: MAX_PATTERNS × sizeof(SignalPattern) + 769B I/O buffers ≈ 10 × 64 + 769 ≈ 1,409 B.
  */
 class PatternManager {
 public:

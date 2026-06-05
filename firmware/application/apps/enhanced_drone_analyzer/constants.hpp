@@ -158,7 +158,7 @@ constexpr uint16_t DEFAULT_GAIN = 30;
  * @note 40 dB — FPV max-range: catch weak analog 5.8 GHz video links
  * @note 40 dB is the maximum valid value (LNA step = 8 dB)
  */
-constexpr uint8_t DEFAULT_LNA_GAIN = 40;
+constexpr uint8_t DEFAULT_LNA_GAIN = 32;
 
 /**
  * @brief Default VGA gain value (MAX2837: 0-62 dB, step 2 dB)
@@ -167,7 +167,7 @@ constexpr uint8_t DEFAULT_LNA_GAIN = 40;
  *       producing intermod spurs that mimic drone signatures.
  *       40 dB gives max useful range without baseband overload.
  */
-constexpr uint8_t DEFAULT_VGA_GAIN = 40;
+constexpr uint8_t DEFAULT_VGA_GAIN = 32;
 
 // ============================================================================
 // Time Constants

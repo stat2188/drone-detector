@@ -202,9 +202,10 @@ public:
      *       new pass. Without this, the auto-noise-floor stays at the level of
      *       the previous pass's signals and subtraction zeroes new pixels.
      * @pre  Called only from UI thread.
-     * @post composite_persist_buf_ = 0, init = false, noise_floor_valid = false,
-     *       composite_data_ = nullptr (paint will skip bar drawing until next
-     *       set_composite_data refreshes the buffer).
+     * @post composite_persist_buf_ = 0, init = false, noise_floor_valid = false.
+     *       composite_data_ and composite_data_size_ are PRESERVED — the zeroed
+     *       persist buffer renders empty bars until set_composite_data() fills it.
+     *       This prevents the layout collapse that caused the sweep-hang bug.
      * @note Stack: 0 B. SRAM: 0 B (in-place zeroing of existing buffer).
      */
     void reset_composite_persistence() noexcept;

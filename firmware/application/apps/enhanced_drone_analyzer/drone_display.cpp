@@ -812,15 +812,16 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
 void DroneDisplay::reset_composite_persistence() noexcept {
     // Drop EMA state so the next set_composite_data() rebuilds the buffer from
     // scratch (it enters the "not initialized" branch and copies the raw data).
-    // Set composite_data_ to nullptr so render_composite() skips bar drawing
-    // until fresh data arrives - this is the only safe way to avoid painting
-    // ghost bars from the previous pass.
     std::memset(composite_persist_buf_, 0, COMPOSITE_SIZE);
     composite_persist_initialized_ = false;
     composite_noise_floor_ = 0;
     composite_noise_floor_valid_ = false;
-    composite_data_ = nullptr;
-    composite_data_size_ = 0;
+    // DO NOT null composite_data_ or composite_data_size_ here.
+    // Nulling them causes calculate_layout() to collapse the spectrum area
+    // (show_spec = false), letting the histogram take over the display —
+    // this is the root cause of "sweep does 1 pass, then hangs, replaced
+    // by histogram" bug. The zeroed persist buffer renders as empty bars
+    // (invisible) until the next set_composite_data() fills it with fresh data.
 }
 
 void DroneDisplay::render_composite(
