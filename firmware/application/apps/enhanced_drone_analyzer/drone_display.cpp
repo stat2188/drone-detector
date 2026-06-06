@@ -91,7 +91,8 @@ void DroneDisplay::paint(Painter& painter) {
                 render_multi_zone(painter, ox, y_offset, w, layout.spec_h);
             } else {
                 render_composite(painter, composite_data_, composite_data_size_,
-                                ox, y_offset, w, layout.spec_h, scan_head_position_[0]);
+                                ox, y_offset, w, layout.spec_h, scan_head_position_[0],
+                                composite_noise_floor_valid_ ? composite_noise_floor_ : 0);
             }
         } else {
             render_spectrum(painter, spectrum_buffer_.data(), spectrum_data_size_,
@@ -816,6 +817,11 @@ void DroneDisplay::reset_composite_persistence() noexcept {
     composite_persist_initialized_ = false;
     composite_noise_floor_ = 0;
     composite_noise_floor_valid_ = false;
+    // Also reset band 2 persistence (dual-sweep mode).
+    std::memset(sweep2_persist_buf_, 0, COMPOSITE_SIZE);
+    sweep2_persist_initialized_ = false;
+    sweep2_noise_floor_ = 0;
+    sweep2_noise_floor_valid_ = false;
     // DO NOT null composite_data_ or composite_data_size_ here.
     // Nulling them causes calculate_layout() to collapse the spectrum area
     // (show_spec = false), letting the histogram take over the display —
@@ -832,7 +838,8 @@ void DroneDisplay::render_composite(
     uint16_t start_y,
     uint16_t width,
     uint16_t height,
-    int16_t scan_head
+    int16_t scan_head,
+    uint8_t noise_floor
 ) noexcept {
     if (composite_data == nullptr || composite_size == 0 || height < 4) {
         return;
@@ -867,9 +874,7 @@ void DroneDisplay::render_composite(
 
     // Compute display threshold: subtract noise floor + margin from all power values.
     // This eliminates the visible noise baseline while preserving signal peaks.
-    const uint8_t noise_floor = (composite_noise_floor_valid_)
-        ? composite_noise_floor_
-        : 0;
+    // noise_floor parameter allows per-band noise floor in dual-sweep mode.
     const uint8_t display_threshold = min_color_power_;
 
     for (uint16_t i = 0; i < bar_count; ++i) {
@@ -1001,8 +1006,68 @@ void DroneDisplay::render_multi_zone(
 }
 
 void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
-    sweep2_data_ = data;
-    sweep2_data_size_ = size;
+    if (data == nullptr || size == 0) {
+        sweep2_data_ = nullptr;
+        sweep2_data_size_ = 0;
+        return;
+    }
+
+    const size_t copy_n = (size < COMPOSITE_SIZE) ? size : COMPOSITE_SIZE;
+
+    // Apply EMA persistence for band 2 (same formula as band 1).
+    if (!sweep2_persist_initialized_) {
+        for (size_t i = 0; i < copy_n; ++i) {
+            sweep2_persist_buf_[i] = data[i];
+        }
+        sweep2_persist_initialized_ = true;
+    } else {
+        for (size_t i = 0; i < copy_n; ++i) {
+            const uint16_t decayed = (static_cast<uint16_t>(sweep2_persist_buf_[i])
+                                      * SWEEP_PERSISTENCE_DECAY_Q8) >> 8;
+            sweep2_persist_buf_[i] = (data[i] > static_cast<uint8_t>(decayed))
+                ? data[i]
+                : static_cast<uint8_t>(decayed);
+        }
+    }
+
+    sweep2_data_ = sweep2_persist_buf_;
+    sweep2_data_size_ = copy_n;
+
+    // Auto-compute noise floor for band 2.
+    if (copy_n > 0) {
+        for (size_t i = 0; i < copy_n; ++i) {
+            sweep2_sort_buf_[i] = sweep2_persist_buf_[i];
+        }
+        size_t k = (copy_n * SWEEP_NOISE_FLOOR_PERCENTILE) / 100;
+        if (k >= copy_n) k = copy_n - 1;
+        size_t ql = 0;
+        size_t qr = copy_n - 1;
+        while (ql < qr) {
+            const size_t pv = ql + (qr - ql) / 2;
+            const uint8_t pivot = sweep2_sort_buf_[pv];
+            sweep2_sort_buf_[pv] = sweep2_sort_buf_[qr];
+            sweep2_sort_buf_[qr] = pivot;
+            size_t st = ql;
+            for (size_t i = ql; i < qr; ++i) {
+                if (sweep2_sort_buf_[i] < pivot) {
+                    const uint8_t t = sweep2_sort_buf_[st];
+                    sweep2_sort_buf_[st] = sweep2_sort_buf_[i];
+                    sweep2_sort_buf_[i] = t;
+                    ++st;
+                }
+            }
+            {
+                const uint8_t t = sweep2_sort_buf_[st];
+                sweep2_sort_buf_[st] = sweep2_sort_buf_[qr];
+                sweep2_sort_buf_[qr] = t;
+            }
+            if (st == k) break;
+            if (st < k) ql = st + 1;
+            else qr = st - 1;
+        }
+        sweep2_noise_floor_ = sweep2_sort_buf_[k];
+        sweep2_noise_floor_valid_ = true;
+    }
 }
 
 void DroneDisplay::render_dual_composite(
@@ -1021,16 +1086,20 @@ void DroneDisplay::render_dual_composite(
     if (band_h < 4) return;
 
     // Render sweep 1 (top half) — upper band scan head
+    // Pass band 1's noise floor for correct per-band noise subtraction.
+    const uint8_t nf1 = composite_noise_floor_valid_ ? composite_noise_floor_ : 0;
     render_composite(painter, composite_data_, composite_data_size_,
-                     start_x, start_y, width, band_h, scan_head_position_[0]);
+                     start_x, start_y, width, band_h, scan_head_position_[0], nf1);
 
     // Render sweep 2 (bottom half) — temporarily swap freq range
+    // Pass band 2's independently computed noise floor.
     const FreqHz saved_start = sweep_freq_start_;
     const FreqHz saved_end = sweep_freq_end_;
     sweep_freq_start_ = sweep2_freq_start_;
     sweep_freq_end_ = sweep2_freq_end_;
+    const uint8_t nf2 = sweep2_noise_floor_valid_ ? sweep2_noise_floor_ : 0;
     render_composite(painter, sweep2_data_, sweep2_data_size_,
-                     start_x, start_y + band_h, width, band_h, scan_head_position_[1]);
+                     start_x, start_y + band_h, width, band_h, scan_head_position_[1], nf2);
     sweep_freq_start_ = saved_start;
     sweep_freq_end_ = saved_end;
 }

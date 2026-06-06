@@ -40,8 +40,8 @@ namespace drone_analyzer {
 // ============================================================================
 // Memory:
 //   Instance: ~3,360 bytes (video_buffer_[3328] + state ~32B)
-//   Stack per render_frame(): ~520 bytes (line_buffer on stack)
-//     OK: called at frame sync rate, total stack < 4KB per AGENTS.md
+//   Stack per render_frame(): ~280 bytes (line_buffer[128] = 256B + locals ~24B)
+//     OK: well under 512B limit per AGENTS.md
 
 VideoWidget::VideoWidget()
     : video_buffer_{}
@@ -109,12 +109,12 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 }
 
 void VideoWidget::render_frame() noexcept {
-    // Stack: ~272 bytes (line_buffer 256B + 16B locals)
+    // Stack: ~280 bytes (line_buffer[128] = 256B + locals ~24B)
     ui::Color line_buffer[LINE_WIDTH];
 
     // Compute video position from widget's screen rect (robust to layout changes)
     const auto r = screen_rect();
-    const auto video_start_x = r.left() + (static_cast<int16_t>(r.width()) - static_cast<int16_t>(LINE_WIDTH)) / 2;
+    const auto video_start_x = r.left() + (static_cast<int32_t>(r.width()) - static_cast<int32_t>(LINE_WIDTH)) / 2;
     const auto video_start_y = r.top();
 
     const uint8_t xcorr = x_correction_;
@@ -142,9 +142,10 @@ void VideoWidget::render_frame() noexcept {
 // AnalogVideoView implementation
 // ============================================================================
 // Memory:
-//   Instance: ~3,828 bytes (VideoWidget ~3.3KB + spectrum_buffer_ ~272B + handler_storage ~128B + state ~100B)
+//   Instance: ~3,740 bytes (VideoWidget ~3.3KB + spectrum_buffer_ ~256B + handler_storage ~128B + state ~56B)
 //   Stack per paint(): ~16 bytes (freq_str[16] + locals)
-//   Stack per frame_sync handler: 0 bytes (spectrum_buffer_ is class member)
+//   Stack per frame_sync handler: ~280 bytes peak (spectrum_buffer_ is class member,
+//     but render_frame() allocates line_buffer[128] = 256B on stack)
 //   Flash: ~768 bytes (code)
 
 [[nodiscard]] bool AnalogVideoView::is_frequency_valid(FreqHz freq) noexcept {
@@ -192,10 +193,12 @@ void AnalogVideoView::register_handlers() noexcept {
     };
 
     // Handler for DisplayFrameSync -- dequeue spectra and feed to video widget
-    // Uses class member spectrum_buffer_ instead of stack allocation (272 bytes saved).
+    // Uses class member spectrum_buffer_ instead of stack allocation.
+    // Guard: video_widget_.is_active() prevents processing after on_hide() fires.
     new (&h->frame_sync) MessageHandlerRegistration{
         Message::ID::DisplayFrameSync,
         [this](Message* const) {
+            if (!this->video_widget_.is_active()) return;
             if (this->spectrum_fifo_ != nullptr) {
                 while (this->spectrum_fifo_->out(this->spectrum_buffer_)) {
                     this->video_widget_.on_channel_spectrum(this->spectrum_buffer_);
@@ -236,9 +239,10 @@ void AnalogVideoView::setup_video_receiver() noexcept {
     baseband::run_image(am_tv_tag);
 
     // Let baseband image fully settle before sending configuration commands.
-    // run_image waits for baseband_ready, but an extra 1ms prevents
+    // run_image waits for baseband_ready, but an extra delay prevents
     // send_message() spin collisions when receiver_model calls follow immediately.
-    chThdSleepMilliseconds(1);
+    // 5ms matches the PLL settle delay used in sweep mode (retune_sweep_window).
+    chThdSleepMilliseconds(5);
 
     // Configure RF frontend for analog video.
     // Must match external analogtv: modulation=WFM, 2MHz sampling.

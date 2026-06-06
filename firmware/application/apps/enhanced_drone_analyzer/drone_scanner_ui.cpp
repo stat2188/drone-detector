@@ -1183,12 +1183,13 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         drone_display_.set_dirty();
 
         // Reset windows in this pair for next scan pass.
-        // Also tell the display to drop stale EMA persistence so the new pass
-        // starts with a clean noise floor - otherwise the auto-floor sits at
-        // the previous pass's signal level and subtraction hides fresh pixels.
+        // NOTE: Do NOT call reset_composite_persistence() here — the EMA
+        // persistence buffer must survive across passes so the noise floor
+        // estimate (15th percentile) improves with each pass. The EMA decay
+        // formula (max(raw, old*224/256)) already handles the transition:
+        // signal peaks are retained, noise floor decays toward zero.
         if (sweep_[w0].enabled) {
             sweep_[w0].reset();
-            drone_display_.reset_composite_persistence();
         }
         if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) sweep_[w1].reset();
 

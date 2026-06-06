@@ -470,6 +470,15 @@ private:
     uint8_t composite_noise_floor_{0};
     bool composite_noise_floor_valid_{false};
 
+    // Per-band persistence for sweep band 2 (dual-sweep mode).
+    // Band 2 covers a different frequency range than band 1, so it needs
+    // independent EMA persistence and noise floor estimation.
+    uint8_t sweep2_persist_buf_[COMPOSITE_SIZE]{};
+    bool sweep2_persist_initialized_{false};
+    uint8_t sweep2_sort_buf_[COMPOSITE_SIZE]{};
+    uint8_t sweep2_noise_floor_{0};
+    bool sweep2_noise_floor_valid_{false};
+
     // Multi-zone sweep (4 zones)
     static constexpr uint8_t MAX_ZONES = 4;
     const uint8_t* multi_zone_data_[MAX_ZONES]{};
@@ -485,7 +494,8 @@ private:
         uint16_t start_y,
         uint16_t width,
         uint16_t height,
-        int16_t scan_head = -1
+        int16_t scan_head = -1,
+        uint8_t noise_floor = 0
     ) noexcept;
 
     void render_multi_zone(

@@ -41,7 +41,7 @@ namespace drone_analyzer {
  *
  * Memory:
  *   Instance: ~3.3KB (video_buffer_[3328] + state ~32B)
- *   Stack per render_frame(): ~520 bytes (line_buffer on stack)
+ *   Stack per render_frame(): ~280 bytes (line_buffer[128] = 256B + locals ~24B)
  *   Flash: ~512 bytes (code)
  */
 class VideoWidget : public ui::Widget {
@@ -72,6 +72,8 @@ public:
 
     void show_audio_spectrum_view(bool) const noexcept {}
 
+    [[nodiscard]] bool is_active() const noexcept { return active_; }
+
 private:
     // 13 frames × 256 = 3328 → 26 native lines of 128px each → line-doubled to 52 display lines
     static constexpr uint16_t VIDEO_LINES = 52;          // Display lines after line-doubling
@@ -92,7 +94,7 @@ private:
 
     /**
      * @brief Render accumulated frame to display using line-doubling
-     * @note Stack: ~520 bytes (line_buffer on stack, 512B + locals)
+     * @note Stack: ~280 bytes (line_buffer[128] = 256B + locals ~24B)
      * @note Uses display.render_line() for direct pixel write
      * @note 26 native lines → 52 display lines (each line ×2)
      */
@@ -108,7 +110,7 @@ private:
  * Memory:
  *   Instance: ~3,900 bytes (VideoWidget ~3.3KB + spectrum_buffer_ ~272B + handler_storage ~128B + state ~100B)
  *   Stack per paint(): ~48 bytes (freq_str[16] + locals)
- *   Stack per frame_sync handler: ~520 bytes (line_buffer in render_frame)
+ *   Stack per frame_sync handler: ~280 bytes (via on_channel_spectrum → render_frame)
  *   Flash: ~768 bytes (code)
  *
  * @note No audio, no gain controls
