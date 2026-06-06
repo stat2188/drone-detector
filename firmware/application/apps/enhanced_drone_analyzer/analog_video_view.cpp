@@ -39,8 +39,8 @@ namespace drone_analyzer {
 // VideoWidget implementation
 // ============================================================================
 // Memory:
-//   Instance: ~3,360 bytes (video_buffer_[3328] + state ~32B)
-//   Stack per render_frame(): ~280 bytes (line_buffer[128] = 256B + locals ~24B)
+//   Instance: ~3,616 bytes (video_buffer_[3328] + line_buffer_[256] + state ~32B)
+//   Stack per render_frame(): ~24 bytes (locals only — line_buffer_ is instance member)
 //     OK: well under 512B limit per AGENTS.md
 
 VideoWidget::VideoWidget()
@@ -92,6 +92,11 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
         return;
     }
 
+    // Defensive: prevent buffer overwrite if frame_count_ is corrupted
+    if (frame_count_ >= ACCUMULATED_FRAMES) {
+        frame_count_ = 0;
+    }
+
     // 13 frames × 256 bytes = 3328, always inside VIDEO_BUFFER_SIZE (3328)
     const size_t offset = frame_count_ * 256;
     for (size_t i = 0; i < 256; ++i) {
@@ -109,8 +114,7 @@ void VideoWidget::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept 
 }
 
 void VideoWidget::render_frame() noexcept {
-    // Stack: ~280 bytes (line_buffer[128] = 256B + locals ~24B)
-    ui::Color line_buffer[LINE_WIDTH];
+    // Stack: ~24 bytes (locals only — line_buffer_ is instance member, ~256B in SRAM)
 
     // Compute video position from widget's screen rect (robust to layout changes)
     const auto r = screen_rect();
@@ -125,16 +129,16 @@ void VideoWidget::render_frame() noexcept {
 
         for (uint16_t px = 0; px < LINE_WIDTH; ++px) {
             const uint8_t src_idx = static_cast<uint8_t>((px + xcorr) & (LINE_WIDTH - 1));
-            line_buffer[px] = spectrum_rgb4_lut[video_buffer_[buf_offset + src_idx]];
+            line_buffer_[px] = spectrum_rgb4_lut[video_buffer_[buf_offset + src_idx]];
         }
 
         const auto y = static_cast<ui::Coord>(video_start_y + line * 2);
         portapack::display.render_line(
             {video_start_x, y},
-            LINE_WIDTH, line_buffer);
+            LINE_WIDTH, line_buffer_);
         portapack::display.render_line(
             {video_start_x, static_cast<ui::Coord>(y + 1)},
-            LINE_WIDTH, line_buffer);
+            LINE_WIDTH, line_buffer_);
     }
 }
 
@@ -142,10 +146,9 @@ void VideoWidget::render_frame() noexcept {
 // AnalogVideoView implementation
 // ============================================================================
 // Memory:
-//   Instance: ~3,740 bytes (VideoWidget ~3.3KB + spectrum_buffer_ ~256B + handler_storage ~128B + state ~56B)
+//   Instance: ~3,740 bytes (VideoWidget ~3.6KB + spectrum_buffer_ ~256B + handler_storage ~128B + state ~56B)
 //   Stack per paint(): ~16 bytes (freq_str[16] + locals)
-//   Stack per frame_sync handler: ~280 bytes peak (spectrum_buffer_ is class member,
-//     but render_frame() allocates line_buffer[128] = 256B on stack)
+//   Stack per frame_sync handler: ~24 bytes peak (spectrum_buffer_ and line_buffer_ are instance members)
 //   Flash: ~768 bytes (code)
 
 [[nodiscard]] bool AnalogVideoView::is_frequency_valid(FreqHz freq) noexcept {

@@ -35,13 +35,13 @@ namespace drone_analyzer {
 /**
  * @brief Analog video rendering widget — memory-optimized for 128KB SRAM.
  *
- * Accumulates 13 × 256-byte ChannelSpectrum frames (3.3KB buffer) into
+ * Accumulates 13 × 256-byte ChannelSpectrum frames (3.6KB instance) into
  * 26 native lines, line-doubled to 52 display lines.
  * Memory reduced 75% vs the 51-frame approach; FPS sacrificed for RAM.
  *
  * Memory:
- *   Instance: ~3.3KB (video_buffer_[3328] + state ~32B)
- *   Stack per render_frame(): ~280 bytes (line_buffer[128] = 256B + locals ~24B)
+ *   Instance: ~3.6KB (video_buffer_[3328] + line_buffer_[256] + state ~32B)
+ *   Stack per render_frame(): ~24 bytes (locals only)
  *   Flash: ~512 bytes (code)
  */
 class VideoWidget : public ui::Widget {
@@ -85,8 +85,11 @@ private:
     static constexpr uint8_t DEFAULT_X_CORRECTION = 10;
     static constexpr uint8_t MAX_X_CORRECTION = 31;
 
-    /** @brief Frame buffer — instance member, ~3.3KB */
+    /** @brief Frame buffer — instance member, ~3.3KB (3328 bytes) */
     uint8_t video_buffer_[VIDEO_BUFFER_SIZE]{};
+
+    /** @brief Color-mapped line buffer — instance member to avoid 256B stack alloc per frame */
+    ui::Color line_buffer_[LINE_WIDTH];
 
     uint32_t frame_count_{0};    //!< Number of spectra accumulated (0..12)
     bool active_{false};          //!< Rendering active
@@ -94,7 +97,7 @@ private:
 
     /**
      * @brief Render accumulated frame to display using line-doubling
-     * @note Stack: ~280 bytes (line_buffer[128] = 256B + locals ~24B)
+     * @note Stack: ~24 bytes (locals only — line_buffer_ is instance member)
      * @note Uses display.render_line() for direct pixel write
      * @note 26 native lines → 52 display lines (each line ×2)
      */
@@ -108,9 +111,9 @@ private:
  * and forwards data to VideoWidget for rendering.
  *
  * Memory:
- *   Instance: ~3,900 bytes (VideoWidget ~3.3KB + spectrum_buffer_ ~272B + handler_storage ~128B + state ~100B)
+ *   Instance: ~3,900 bytes (VideoWidget ~3.6KB + spectrum_buffer_ ~272B + handler_storage ~128B + state ~100B)
  *   Stack per paint(): ~48 bytes (freq_str[16] + locals)
- *   Stack per frame_sync handler: ~280 bytes (via on_channel_spectrum → render_frame)
+ *   Stack per frame_sync handler: ~24 bytes (no large stack allocs — line_buffer_ is instance member)
  *   Flash: ~768 bytes (code)
  *
  * @note No audio, no gain controls
@@ -145,7 +148,7 @@ private:
     NavigationView& nav_;
     FreqHz frequency_{0};
 
-    // Video rendering widget (~3.3KB)
+    // Video rendering widget (~3.6KB with line_buffer_)
     VideoWidget video_widget_{};
 
     bool receiver_active_{false};
@@ -161,7 +164,7 @@ private:
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
 
     // Reusable buffer to prevent 272-byte stack allocation in frame_sync handler.
-    // Same pattern as DroneScannerUI::spectrum_buffer_ — class member instead of local.
+    // Class member instead of local — same pattern as DroneScannerUI::spectrum_buffer_.
     ChannelSpectrum spectrum_buffer_{};
 
     void register_handlers() noexcept;
