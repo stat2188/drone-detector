@@ -1336,10 +1336,6 @@ void DroneScanner::refresh_patterns() noexcept {
 }
 
 // ============================================================================
-// process_spectrum_sweep — moved from header to reduce code bloat
-// ============================================================================
-
-// ============================================================================
 // Spectrum Shape Analysis — detect U/V peaks above flat noise floor
 // ============================================================================
 
@@ -1671,227 +1667,103 @@ PatternMatchResult DroneScanner::try_match_pattern_internal(
 }
 
 // ============================================================================
-// process_spectrum_sweep — moved from header to reduce code bloat
+// apply_sweep_tracking — range check, exception filter, Mahalanobis gate,
+//                        drone tracking, and pattern match assignment
 // ============================================================================
 
-void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq, FreqHz f_min, FreqHz f_max) noexcept {
-    current_frequency_ = center_freq;
-
-    // Reset stale pattern match state (prevents red frame persistence between frames)
-    clear_matched_pattern();
-
-    // Reset median filter to prevent cross-contamination between sweep and normal modes.
-    // Sweep mode processes frames at 60fps with different RSSI characteristics than the
-    // 50ms-per-frequency normal mode. Without reset, stale sweep values pollute the first
-    // 7 normal-mode frames after sweep exit.
-    rssi_median_filter_.reset();
-
-    // Reset Schmitt-trigger state to prevent false detection on sweep→normal mode exit.
-    // If signal_present_=true leaked from the last normal-mode pre-sweep frame and the
-    // scanner resumes on the same frequency (last_hysteresis_freq_ match), the first
-    // process_spectrum_message() call would use the soft OFF-threshold (rssi_threshold-3dB)
-    // instead of the strict ON-threshold (rssi_threshold+3dB), risking a noise-induced
-    // false detection that propagates to drone tracking and alert pipeline.
-    signal_present_ = false;
-    last_hysteresis_freq_ = 0;
-
-    // Cache config values locally (avoid repeated member access in hot loop)
-    const uint8_t cfg_margin = config_.spectrum_margin;
+void DroneScanner::apply_sweep_tracking(
+    FreqHz peak_freq,
+    int32_t peak_rssi,
+    FreqHz center_freq,
+    FreqHz f_min,
+    FreqHz f_max,
+    size_t highlight_bin,
+    int8_t pattern_index,
+    uint16_t pattern_correlation,
+    bool pattern_matched
+) noexcept {
     const int32_t cfg_rssi_thresh = config_.rssi_threshold_dbm;
+    if (peak_rssi <= cfg_rssi_thresh) return;
 
-    // CFAR detection: if enabled, use adaptive threshold instead of fixed margin
-    size_t peak_index = FFT_EDGE_SKIP_NARROW;
-    uint8_t raw_peak = 0;
-    uint8_t noise_floor = 0;
-
-    if (config_.cfar_mode != CFARMode::OFF) {
-        const size_t cfar_peak = CFARDetector::find_peak_cfar(
-            spectrum.db.data(),
-            FFT_BIN_COUNT,
-            config_.cfar_mode,
-            config_.cfar_ref_cells,
-            config_.cfar_guard_cells,
-            config_.cfar_threshold_x10,
-            FFT_EDGE_SKIP_NARROW,
-            FFT_EDGE_SKIP_NARROW,
-            config_.cfar_hybrid_alpha,
-            config_.cfar_hybrid_beta,
-            config_.cfar_hybrid_gamma,
-            config_.os_cfar_k_percent,
-            config_.vi_cfar_threshold_x10
-        );
-        
-        if (cfar_peak >= FFT_BIN_COUNT) return;  // No signal detected by CFAR
-        
-        peak_index = cfar_peak;
-        raw_peak = spectrum.db[cfar_peak];
-        
-        // Compute noise floor for shape analysis (still needed for width/sharpness checks)
-        uint8_t* usable = sweep_usable_buf_;
-        size_t idx = 0;
-        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-            usable[idx++] = spectrum.db[i];
-        }
-        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-            usable[idx++] = spectrum.db[i];
-        }
-        if (idx > 0) {
-            noise_floor = quickselect_percentile(usable, idx, 25);
-        }
-    } else {
-        // Original fixed-threshold detection
-        uint8_t* usable = sweep_usable_buf_;
-        size_t idx = 0;
-        raw_peak = 0;
-        peak_index = FFT_EDGE_SKIP_NARROW;
-
-        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-            usable[idx++] = spectrum.db[i];
-            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
-        }
-        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-            usable[idx++] = spectrum.db[i];
-            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
-        }
-
-        // Guard: no usable bins (all in DC spike or edge skip)
-        if (idx == 0) return;
-
-        // 25th percentile noise floor — robust when WiFi occupies >50% of bins
-        noise_floor = quickselect_percentile(usable, idx, 25);
-
-        // Step 2: Margin check
-        const uint8_t peak_margin_fixed = raw_peak - noise_floor;
-        if (peak_margin_fixed < cfg_margin) return;
+    // Range check — prevent false positives outside sweep boundaries
+    const FreqHz range_min = (f_min != 0) ? f_min : config_.sweep_start_freq;
+    const FreqHz range_max = (f_max != 0) ? f_max : config_.sweep_end_freq;
+    if (range_min != 0 && range_max != 0) {
+        if (peak_freq < range_min || peak_freq > range_max) return;
     }
 
-    // Run pattern matching (supplements shape filters — does NOT bypass them)
-    // highlight_bin is the 256-bin index where the UI will draw the red match
-    // marker. It uses the spectrum's actual peak (not the pattern's stored
-    // position) because the user expects the marker on the visible peak.
-    size_t highlight_bin = 0;
-    bool early_pattern_matched = false;
-    int8_t early_pattern_index = -1;
-    uint16_t early_pattern_correlation = 0;
-
-    const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
-    if (early_result.matched) {
-        early_pattern_matched = true;
-        early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
-        highlight_bin = peak_index;
-        early_pattern_correlation = early_result.score;
+    // Exception frequency filter
+    const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
+    bool is_exception = false;
+    for (uint8_t w = 0; w < 4 && !is_exception; ++w) {
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !is_exception; ++i) {
+            const FreqHz exc = config_.sweep_exceptions[w][i];
+            if (exc == 0) continue;
+            const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
+            const FreqHz hi = exc + exc_radius;
+            if (peak_freq >= lo && peak_freq <= hi) is_exception = true;
+        }
     }
+    if (is_exception) return;
 
-    // Delegate shape analysis to shared implementation (uses FFT_EDGE_SKIP_NARROW)
-    // Read gain directly from SPI — one call per sweep frame (~1µs) is negligible
-    // compared to the 5ms PLL settle delay already in retune_sweep_window().
-    const int32_t total_gain = get_current_total_gain();
-
-    int32_t shape_rssi = RSSI_MIN_DBM;
-    if (!analyze_spectrum_shape_impl(spectrum, peak_index, raw_peak, noise_floor, shape_rssi, FFT_EDGE_SKIP_NARROW, total_gain)) {
-        return;
-    }
-
-    // Median filter
-    int32_t peak_rssi = shape_rssi;
-
-    rssi_median_filter_.add(peak_rssi);
-    if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
-        peak_rssi = rssi_median_filter_.get_median();
-    }
-
-    // Step 10b: Exception check + tracking
-    if (peak_rssi > cfg_rssi_thresh) {
-        // Convert FFT bin index to ACTUAL RF frequency using Looking Glass mapping.
-        // The pixel formula (f_min + pixel_index * step) is WRONG for FFT bins
-        // because Looking Glass reorders bins. Each bin has a fixed frequency offset
-        // from f_center that depends on its position in the reordering.
-        const FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
-
-        // Check if peak frequency is within sweep range (prevent false positives outside range)
-        // This prevents detections at 6017 MHz when sweep ends at 6000 MHz
-        // Fallback to config sweep range if f_min/f_max are uninitialized (0)
-        const FreqHz range_min = (f_min != 0) ? f_min : config_.sweep_start_freq;
-        const FreqHz range_max = (f_max != 0) ? f_max : config_.sweep_end_freq;
-        if (range_min != 0 && range_max != 0) {
-            if (peak_freq < range_min || peak_freq > range_max) {
-                return;  // Peak outside sweep range — reject to prevent false positives
+    // Mahalanobis gate
+    bool mahalanobis_rejected = false;
+    if (config_.mahalanobis_enabled) {
+        size_t drone_idx = 0;
+        bool drone_found = false;
+        for (uint8_t i = 0; i < tracked_count_; ++i) {
+            if (tracked_drones_[i].frequency == peak_freq) {
+                drone_idx = i;
+                drone_found = true;
+                break;
             }
         }
 
-        const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
-        bool is_exception = false;
-        for (uint8_t w = 0; w < 4 && !is_exception; ++w) {
-            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !is_exception; ++i) {
-                const FreqHz exc = config_.sweep_exceptions[w][i];
-                if (exc == 0) continue;
-                const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
-                const FreqHz hi = exc + exc_radius;
-                if (peak_freq >= lo && peak_freq <= hi) is_exception = true;
+        if (drone_found) {
+            MahalanobisStatistics& stats = tracked_drones_[drone_idx].get_mahalanobis_stats();
+            if (!mahalanobis_detector_.validate(
+                peak_rssi, center_freq, stats, config_.mahalanobis_threshold_x10
+            )) {
+                mahalanobis_rejected = true;
+            } else {
+                mahalanobis_detector_.update_statistics(stats, peak_rssi, center_freq, peak_freq);
+            }
+        } else if (tracked_count_ < MAX_TRACKED_DRONES) {
+            const size_t new_idx = tracked_count_;
+            tracked_drones_[new_idx] = TrackedDrone(peak_freq, DroneType::UNKNOWN, ThreatLevel::NONE);
+            auto& drone = tracked_drones_[new_idx];
+            drone.created_time_ = chTimeNow();
+            drone.last_increase_time_ = chTimeNow();
+            drone.mark_seen(chTimeNow());
+            drone.update_rssi(peak_rssi, chTimeNow());
+            drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
+            tracked_count_++;
+            statistics_.drones_detected++;
+            if (drone.threat_level > ThreatLevel::NONE) {
+                trigger_alert(drone.threat_level);
             }
         }
-        if (is_exception) return;
+    }
 
-        // Mahalanobis Gate - SWEEP MODE ONLY
-        bool mahalanobis_rejected = false;
-        if (config_.mahalanobis_enabled) {
-            size_t drone_idx = 0;
-            bool drone_found = false;
-            for (uint8_t i = 0; i < tracked_count_; ++i) {
-                if (tracked_drones_[i].frequency == peak_freq) {
-                    drone_idx = i;
-                    drone_found = true;
-                    break;
-                }
-            }
+    if (!mahalanobis_rejected) {
+        (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
 
-            if (drone_found) {
-                MahalanobisStatistics& stats = tracked_drones_[drone_idx].get_mahalanobis_stats();
-                if (!mahalanobis_detector_.validate(
-                    peak_rssi, center_freq, stats, config_.mahalanobis_threshold_x10
-                )) {
-                    mahalanobis_rejected = true;
-                } else {
-                    mahalanobis_detector_.update_statistics(stats, peak_rssi, center_freq, peak_freq);
-                }
-            } else if (tracked_count_ < MAX_TRACKED_DRONES) {
-                const size_t new_idx = tracked_count_;
-                tracked_drones_[new_idx] = TrackedDrone(peak_freq, DroneType::UNKNOWN, ThreatLevel::NONE);
-                auto& drone = tracked_drones_[new_idx];
-                drone.created_time_ = chTimeNow();
-                drone.last_increase_time_ = chTimeNow();
-                drone.mark_seen(chTimeNow());
-                drone.update_rssi(peak_rssi, chTimeNow());
-                drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
-                tracked_count_++;
-                statistics_.drones_detected++;
-                if (drone.threat_level > ThreatLevel::NONE) {
-                    trigger_alert(drone.threat_level);
+        if (pattern_matched) {
+            const SignalPattern* pattern = pattern_manager_.get_pattern(pattern_index);
+            if (pattern != nullptr && pattern->name[0] != '\0') {
+                matched_pattern_index_ = pattern_index;
+                matched_pattern_bin_ = highlight_bin;
+                const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
+                if (pm_idx.has_value()) {
+                    auto& drone = tracked_drones_[pm_idx.value()];
+                    drone.set_pattern_match(pattern_correlation, pattern->name);
                 }
             }
         }
 
-        if (!mahalanobis_rejected) {
-            (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
-
-            if (early_pattern_matched) {
-                const SignalPattern* pattern = pattern_manager_.get_pattern(early_pattern_index);
-                if (pattern != nullptr && pattern->name[0] != '\0') {
-                    matched_pattern_index_ = early_pattern_index;
-                    matched_pattern_bin_ = highlight_bin;
-                    const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
-                    if (pm_idx.has_value()) {
-                        auto& drone = tracked_drones_[pm_idx.value()];
-                        // drone_type is preserved from database classification
-                        drone.set_pattern_match(early_pattern_correlation, pattern->name);
-                    }
-                }
-            }
-
-            const auto idx_result = find_drone_by_frequency_internal(peak_freq);
-            if (idx_result.has_value()) {
-                tracked_drones_[idx_result.value()].mark_seen(chTimeNow());
-            }
+        const auto idx_result = find_drone_by_frequency_internal(peak_freq);
+        if (idx_result.has_value()) {
+            tracked_drones_[idx_result.value()].mark_seen(chTimeNow());
         }
     }
 }
@@ -1911,7 +1783,6 @@ void DroneScanner::process_spectrum_sweep(
     last_hysteresis_freq_ = 0;
 
     const uint8_t cfg_margin = config_.spectrum_margin;
-    const int32_t cfg_rssi_thresh = config_.rssi_threshold_dbm;
 
     // Step 1: CFAR or fixed-threshold peak detection on RAW FFT bins.
     // CFAR must run on raw bins to see the true noise structure.
@@ -2012,90 +1883,12 @@ void DroneScanner::process_spectrum_sweep(
         peak_rssi = rssi_median_filter_.get_median();
     }
 
-    // Exception check + tracking (identical to original version)
-    if (peak_rssi > cfg_rssi_thresh) {
-        const FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
-
-        const FreqHz range_min = (f_min != 0) ? f_min : config_.sweep_start_freq;
-        const FreqHz range_max = (f_max != 0) ? f_max : config_.sweep_end_freq;
-        if (range_min != 0 && range_max != 0) {
-            if (peak_freq < range_min || peak_freq > range_max) return;
-        }
-
-        const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
-        bool is_exception = false;
-        for (uint8_t w = 0; w < 4 && !is_exception; ++w) {
-            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !is_exception; ++i) {
-                const FreqHz exc = config_.sweep_exceptions[w][i];
-                if (exc == 0) continue;
-                const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
-                const FreqHz hi = exc + exc_radius;
-                if (peak_freq >= lo && peak_freq <= hi) is_exception = true;
-            }
-        }
-        if (is_exception) return;
-
-        // Mahalanobis Gate
-        bool mahalanobis_rejected = false;
-        if (config_.mahalanobis_enabled) {
-            size_t drone_idx = 0;
-            bool drone_found = false;
-            for (uint8_t i = 0; i < tracked_count_; ++i) {
-                if (tracked_drones_[i].frequency == peak_freq) {
-                    drone_idx = i;
-                    drone_found = true;
-                    break;
-                }
-            }
-
-            if (drone_found) {
-                MahalanobisStatistics& stats = tracked_drones_[drone_idx].get_mahalanobis_stats();
-                if (!mahalanobis_detector_.validate(
-                    peak_rssi, center_freq, stats, config_.mahalanobis_threshold_x10
-                )) {
-                    mahalanobis_rejected = true;
-                } else {
-                    mahalanobis_detector_.update_statistics(stats, peak_rssi, center_freq, peak_freq);
-                }
-            } else if (tracked_count_ < MAX_TRACKED_DRONES) {
-                const size_t new_idx = tracked_count_;
-                tracked_drones_[new_idx] = TrackedDrone(peak_freq, DroneType::UNKNOWN, ThreatLevel::NONE);
-                auto& drone = tracked_drones_[new_idx];
-                drone.created_time_ = chTimeNow();
-                drone.last_increase_time_ = chTimeNow();
-                drone.mark_seen(chTimeNow());
-                drone.update_rssi(peak_rssi, chTimeNow());
-                drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
-                tracked_count_++;
-                statistics_.drones_detected++;
-                if (drone.threat_level > ThreatLevel::NONE) {
-                    trigger_alert(drone.threat_level);
-                }
-            }
-        }
-
-        if (!mahalanobis_rejected) {
-            (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
-
-            if (early_pattern_matched) {
-                const SignalPattern* pattern = pattern_manager_.get_pattern(early_pattern_index);
-                if (pattern != nullptr && pattern->name[0] != '\0') {
-                    matched_pattern_index_ = early_pattern_index;
-                    matched_pattern_bin_ = highlight_bin;
-                    const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
-                    if (pm_idx.has_value()) {
-                        auto& drone = tracked_drones_[pm_idx.value()];
-                        drone.set_pattern_match(early_pattern_correlation, pattern->name);
-                    }
-                }
-            }
-
-            const auto idx_result = find_drone_by_frequency_internal(peak_freq);
-            if (idx_result.has_value()) {
-                tracked_drones_[idx_result.value()].mark_seen(chTimeNow());
-            }
-        }
-    }
+    apply_sweep_tracking(
+        fft_bin_to_freq(center_freq, peak_index),
+        peak_rssi, center_freq, f_min, f_max,
+        highlight_bin, early_pattern_index,
+        early_pattern_correlation, early_pattern_matched
+    );
 }
 
 } // namespace drone_analyzer

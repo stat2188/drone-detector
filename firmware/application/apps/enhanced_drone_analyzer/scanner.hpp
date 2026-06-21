@@ -952,25 +952,11 @@ public:
      * @param center_freq Current slice center frequency
      * @param f_min Minimum frequency of sweep range (0 = no range check)
      * @param f_max Maximum frequency of sweep range (0 = no range check)
-     * @note Uses UNIFIED 40-bin window (100-119, 136-155) — same as spectrum mode.
-     *       This ensures LNA/VGA tuning affects both modes identically.
-     * @note Full spectrum shape analysis: margin + min_width + max_width + peak_sharpness + peak_ratio + valley_depth
-     * @note Called from UI thread during sweep (scanner thread stopped, no mutex needed)
-     * @note Implementation in scanner.cpp — NOT inline (200+ lines, too large for header)
-     */
-    void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq, FreqHz f_min = 0, FreqHz f_max = 0) noexcept;
-
-    /**
-     * @brief Sweep spectrum processing with Looking Glass reordered buffer.
-     * @param spectrum    Raw FFT data (for CFAR peak detection on bins)
-     * @param lg_buffer   Looking Glass reordered 240-pixel buffer (for shape analysis)
-     * @param center_freq Current slice center frequency
-     * @param f_min       Minimum frequency of sweep range (0 = no range check)
-     * @param f_max       Maximum frequency of sweep range (0 = no range check)
      * @note Uses CFAR on raw bins (needs FFT noise structure), then analyzes
      *       shape on the continuous LG pixel line (no DC gap corruption).
      *       Pattern matching also uses LG-normalized waveforms for stable SAD.
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex)
+     * @note Implementation in scanner.cpp — delegates tracking to apply_sweep_tracking()
      */
     void process_spectrum_sweep(
         const ChannelSpectrum& spectrum,
@@ -1235,6 +1221,34 @@ private:
         uint8_t noise_floor,
         int32_t& out_rssi,
         int32_t total_gain
+    ) noexcept;
+
+    /**
+     * @brief Sweep-mode post-detection: range check, exception filter, Mahalanobis gate,
+     *        drone tracking, and pattern match assignment.
+     * @param peak_freq       Detected peak RF frequency (Hz)
+     * @param peak_rssi       Filtered RSSI (dBm) after median filter
+     * @param center_freq     FFT slice center frequency for Mahalanobis
+     * @param f_min           Sweep range lower bound (0 = use config)
+     * @param f_max           Sweep range upper bound (0 = use config)
+     * @param highlight_bin   256-bin FFT index for UI red match marker
+     * @param pattern_index   Matched pattern index (-1 if none)
+     * @param pattern_correlation SAD score (0-1000)
+     * @param pattern_matched Whether a pattern matched this frame
+     * @note Extracted from process_spectrum_sweep to eliminate code duplication
+     *       between the raw-FFT and LG-buffer overloads.
+     * @note Called from UI thread during sweep (scanner thread stopped, no mutex).
+     */
+    void apply_sweep_tracking(
+        FreqHz peak_freq,
+        int32_t peak_rssi,
+        FreqHz center_freq,
+        FreqHz f_min,
+        FreqHz f_max,
+        size_t highlight_bin,
+        int8_t pattern_index,
+        uint16_t pattern_correlation,
+        bool pattern_matched
     ) noexcept;
 
     /**

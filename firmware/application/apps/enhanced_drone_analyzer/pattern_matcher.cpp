@@ -50,10 +50,11 @@ void PatternMatcher::normalize_from_lg(
 ) noexcept {
     if (lg_buffer_240 == nullptr || wave_16 == nullptr) return;
 
-    // Skip first 4 edge pixels (filter rolloff) and last 4 edge pixels.
+    // Skip first/last edge pixels (filter rolloff + DC spike contamination).
     // Pixels 238-239 are already zeroed (DC spike). Total usable = 232 pixels.
-    constexpr size_t valid_start = 4;
-    constexpr size_t valid_end = COMPOSITE_SIZE - 4;
+    constexpr size_t LG_EDGE_SKIP_PX = 4;
+    constexpr size_t valid_start = LG_EDGE_SKIP_PX;
+    constexpr size_t valid_end = COMPOSITE_SIZE - LG_EDGE_SKIP_PX;
     constexpr size_t usable_px = valid_end - valid_start;
 
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
