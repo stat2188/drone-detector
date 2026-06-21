@@ -44,6 +44,79 @@ void PatternMatcher::normalize(
     }
 }
 
+void PatternMatcher::normalize_from_lg(
+    const uint8_t* lg_buffer_240,
+    uint8_t* wave_16
+) noexcept {
+    if (lg_buffer_240 == nullptr || wave_16 == nullptr) return;
+
+    // Skip first 4 edge pixels (filter rolloff) and last 4 edge pixels.
+    // Pixels 238-239 are already zeroed (DC spike). Total usable = 232 pixels.
+    constexpr size_t valid_start = 4;
+    constexpr size_t valid_end = COMPOSITE_SIZE - 4;
+    constexpr size_t usable_px = valid_end - valid_start;
+
+    for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
+        const size_t start = valid_start + (i * usable_px / PATTERN_WAVEFORM_SIZE);
+        const size_t end   = valid_start + ((i + 1) * usable_px / PATTERN_WAVEFORM_SIZE);
+
+        uint32_t sum = 0;
+        size_t count = 0;
+        for (size_t j = start; j < end; ++j) {
+            sum += lg_buffer_240[j];
+            ++count;
+        }
+        wave_16[i] = (count > 0) ? static_cast<uint8_t>(sum / count) : 0;
+    }
+}
+
+PatternMatchResult PatternMatcher::match_from_lg(
+    const uint8_t* lg_buffer_240,
+    FreqHz current_freq
+) noexcept {
+    if (lg_buffer_240 == nullptr || pattern_count_ == 0 || patterns_ == nullptr) {
+        return PatternMatchResult::no_match();
+    }
+
+    uint8_t normalized[PATTERN_WAVEFORM_SIZE];
+    normalize_from_lg(lg_buffer_240, normalized);
+
+    PatternMatchResult best;
+
+    for (size_t i = 0; i < pattern_count_; ++i) {
+        const SignalPattern& pattern = patterns_[i];
+        if (!pattern.is_enabled()) continue;
+
+        if (current_freq > 0 && pattern.center_freq > 0) {
+            const FreqHz half_range = (pattern.range_width > 0)
+                ? (pattern.range_width / 2)
+                : static_cast<FreqHz>(FREQUENCY_BANDWIDTH_HZ);
+            const FreqHz diff = (current_freq > pattern.center_freq)
+                ? (current_freq - pattern.center_freq)
+                : (pattern.center_freq - current_freq);
+            if (diff > half_range) continue;
+        }
+
+        const uint16_t score = compute_similarity(normalized, pattern.waveform);
+
+        if (score > best.score) {
+            best.score = score;
+            best.pattern_index = i;
+        }
+    }
+
+    if (best.score > 0 && pattern_count_ > 0) {
+        const uint16_t threshold = (patterns_[best.pattern_index].match_threshold > 0)
+            ? patterns_[best.pattern_index].match_threshold
+            : static_cast<uint16_t>(DEFAULT_PATTERN_SIMILARITY_THRESHOLD);
+        if (best.score >= threshold) {
+            best.matched = true;
+        }
+    }
+
+    return best;
+}
+
 uint16_t PatternMatcher::compute_similarity(
     const uint8_t* wave_16,
     const uint8_t* pattern_wave

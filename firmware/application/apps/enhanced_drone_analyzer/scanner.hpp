@@ -961,6 +961,26 @@ public:
     void process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqHz center_freq, FreqHz f_min = 0, FreqHz f_max = 0) noexcept;
 
     /**
+     * @brief Sweep spectrum processing with Looking Glass reordered buffer.
+     * @param spectrum    Raw FFT data (for CFAR peak detection on bins)
+     * @param lg_buffer   Looking Glass reordered 240-pixel buffer (for shape analysis)
+     * @param center_freq Current slice center frequency
+     * @param f_min       Minimum frequency of sweep range (0 = no range check)
+     * @param f_max       Maximum frequency of sweep range (0 = no range check)
+     * @note Uses CFAR on raw bins (needs FFT noise structure), then analyzes
+     *       shape on the continuous LG pixel line (no DC gap corruption).
+     *       Pattern matching also uses LG-normalized waveforms for stable SAD.
+     * @note Called from UI thread during sweep (scanner thread stopped, no mutex)
+     */
+    void process_spectrum_sweep(
+        const ChannelSpectrum& spectrum,
+        const uint8_t* lg_buffer,
+        FreqHz center_freq,
+        FreqHz f_min = 0,
+        FreqHz f_max = 0
+    ) noexcept;
+
+    /**
      * @brief Apply RSSI-based threat decay with SWEEP-aware logic
      * @param is_sweep_mode If true, use cycle-based decay for sweep mode; if false, use time-based (normal mode)
      * @note NORMAL mode: time-based decay (fast, continuous scanning)
@@ -1196,6 +1216,46 @@ private:
         size_t edge_skip,
         int32_t total_gain
     ) noexcept;
+
+    /**
+     * @brief Shape analysis on Looking Glass reordered buffer (240 pixels, no DC gap).
+     * @param lg_buffer  240-pixel Looking Glass buffer (from SweepProcessor::reorder_frame())
+     * @param peak_pixel Pixel index of detected peak (0-239)
+     * @param noise_floor 25th percentile noise floor of usable LG pixels
+     * @param out_rssi   Output: RSSI in dBm if signal detected
+     * @param total_gain Current hardware gain for RSSI conversion
+     * @return true if drone-like signal detected
+     * @note Operates on the same continuous line the user sees on screen.
+     *       No DC gap to corrupt width/sharpness/valley/flatness/symmetry.
+     * @note Edge skip: 4 pixels from each end (filter rolloff in LG space).
+     */
+    [[nodiscard]] bool analyze_spectrum_shape_lg(
+        const uint8_t* lg_buffer,
+        size_t peak_pixel,
+        uint8_t noise_floor,
+        int32_t& out_rssi,
+        int32_t total_gain
+    ) noexcept;
+
+    /**
+     * @brief Convert 256-bin FFT index to 240-pixel Looking Glass index.
+     * @param bin FFT bin index (0-255)
+     * @return Pixel index (0-239), or COMPOSITE_SIZE (sentinel) if bin maps to
+     *         DC spike (bins 120-135, no valid pixel).
+     * @note Lower sideband (bins 134-255): pixel = bin - 134  →  pixels 0-121
+     * @note Upper sideband (bins 0-119):   pixel = bin + 118  →  pixels 118-237
+     * @note Edge bins (0-5, 250-255) still produce valid pixel indices; edge
+     *       filtering is handled separately by analyze_spectrum_shape_lg().
+     */
+    static size_t fft_bin_to_lg_pixel(size_t bin) noexcept {
+        if (bin >= SWEEP_FFT_MAP_START) {
+            return bin - SWEEP_FFT_MAP_START;  // bins 134-255 → pixels 0-121
+        }
+        if (bin < FFT_DC_SPIKE_START) {
+            return bin + static_cast<size_t>(SWEEP_FFT_MAP_CROSSOVER - 2);  // bins 0-119 → pixels 118-237
+        }
+        return COMPOSITE_SIZE;  // DC spike (bins 120-135) — invalid
+    }
 
     /**
      * @brief Internal: Try to match spectrum against stored patterns

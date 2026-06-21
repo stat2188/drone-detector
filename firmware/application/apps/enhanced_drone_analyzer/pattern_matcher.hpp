@@ -56,6 +56,33 @@ public:
         uint8_t* wave_16
     ) noexcept;
 
+    /**
+     * @brief Normalize 240-pixel Looking Glass buffer to 16-bin waveform.
+     * @param lg_buffer_240 Looking Glass reordered spectrum (240 pixels, continuous,
+     *                       no DC gap — produced by SweepProcessor::reorder_frame())
+     * @param wave_16       Output 16-bin normalized waveform (same format as normalize())
+     * @note Skips first/last 4 pixels (filter rolloff). No DC gap to skip — the
+     *       Looking Glass reordering already eliminated it.
+     * @note The 16-bin output format is IDENTICAL to normalize(), so stored patterns
+     *       remain compatible. The SAD comparison works the same way.
+     */
+    static void normalize_from_lg(
+        const uint8_t* lg_buffer_240,
+        uint8_t* wave_16
+    ) noexcept;
+
+    /**
+     * @brief Match a Looking Glass reordered buffer against all enabled patterns.
+     * @param lg_buffer_240 Looking Glass reordered spectrum (240 pixels)
+     * @param current_freq  Current tuned frequency for proximity filter. Pass 0 to disable.
+     * @return Best match result (same format as match()).
+     * @note Same as match() but normalizes from LG buffer instead of raw 256-bin FFT.
+     */
+    [[nodiscard]] PatternMatchResult match_from_lg(
+        const uint8_t* lg_buffer_240,
+        FreqHz current_freq = 0
+    ) noexcept;
+
 private:
     const SignalPattern* patterns_{nullptr};
     size_t pattern_count_{0};

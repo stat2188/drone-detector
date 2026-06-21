@@ -1125,8 +1125,14 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // Use the exact frequency the radio was tuned to when this FFT was captured.
         // f_center may have already been incremented from the previous frame's step.
         const FreqHz fft_freq = (last_tuned_freq_ != 0) ? last_tuned_freq_ : win.f_center;
+
+        // Create per-frame Looking Glass reordered view (continuous 240-pixel line).
+        // This eliminates the DC spike gap corruption from shape analysis and
+        // pattern matching, operating on the same smooth line the user sees.
+        SweepProcessor::reorder_frame(spectrum, lg_frame_buf_);
+
         // Pass sweep range boundaries to prevent false positives outside the range
-        scanner_ptr_->process_spectrum_sweep(spectrum, fft_freq, win.f_min, win.f_max);
+        scanner_ptr_->process_spectrum_sweep(spectrum, lg_frame_buf_, fft_freq, win.f_min, win.f_max);
 
         // Update pattern match highlight (red frame) if pattern matching is enabled
         // FIX: Convert 256-bin FFT index to 240-pixel screen index (HIGH-1)

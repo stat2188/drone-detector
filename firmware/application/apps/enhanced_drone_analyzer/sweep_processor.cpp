@@ -67,4 +67,19 @@ uint16_t SweepProcessor::process_frame(
     return pixel_index;
 }
 
+void SweepProcessor::reorder_frame(
+    const ChannelSpectrum& spectrum,
+    uint8_t* lg_buffer
+) noexcept {
+    for (uint8_t px = 0; px < COMPOSITE_SIZE; ++px) {
+        if (px < SWEEP_FFT_MAP_CROSSOVER) {
+            lg_buffer[px] = spectrum.db[SWEEP_FFT_MAP_START + px];
+        } else if (px < UPPER_PIXEL_END) {
+            lg_buffer[px] = spectrum.db[px - UPPER_OFFSET];
+        } else {
+            lg_buffer[px] = 0;  // pixels 238-239: DC spike region, zero
+        }
+    }
+}
+
 } // namespace drone_analyzer

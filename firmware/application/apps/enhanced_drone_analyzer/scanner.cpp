@@ -1522,6 +1522,139 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     return true;
 }
 
+bool DroneScanner::analyze_spectrum_shape_lg(
+    const uint8_t* lg_buffer,
+    size_t peak_pixel,
+    uint8_t noise_floor,
+    int32_t& out_rssi,
+    int32_t total_gain
+) noexcept {
+    // LG edge skip: 4 pixels from each end (filter rolloff region covers
+    // pixels 0-3 = bins 249-253, and pixels 120-123 = bins 2-5).
+    // Pixels 238-239 are zeroed (DC spike) so the right edge stop is natural.
+    static constexpr size_t LG_EDGE_SKIP_PX = 4;
+    static constexpr size_t LG_EDGE_END = COMPOSITE_SIZE - LG_EDGE_SKIP_PX;
+
+    if (peak_pixel >= COMPOSITE_SIZE) return false;
+
+    const uint8_t raw_peak = lg_buffer[peak_pixel];
+    if (raw_peak <= noise_floor) return false;
+
+    const uint8_t peak_margin = raw_peak - noise_floor;
+
+    // Step 3: Peak must be significantly above noise floor
+    if (config_.cfar_mode == CFARMode::OFF) {
+        if (peak_margin < config_.spectrum_margin) return false;
+    }
+
+    // Step 4: Count elevated pixels around peak (signal width)
+    const uint8_t elevated_threshold = noise_floor + (peak_margin / 3);
+
+    size_t left_px = peak_pixel;
+    while (left_px > LG_EDGE_SKIP_PX) {
+        if (lg_buffer[left_px - 1] < elevated_threshold) break;
+        --left_px;
+    }
+
+    size_t right_px = peak_pixel;
+    while (right_px < LG_EDGE_END - 1) {
+        if (lg_buffer[right_px + 1] < elevated_threshold) break;
+        ++right_px;
+    }
+
+    const size_t signal_width = right_px - left_px + 1;
+
+    // Step 5: Minimum width
+    if (signal_width < config_.spectrum_min_width) return false;
+
+    // Step 6: Maximum width
+    if (signal_width > config_.spectrum_max_width) return false;
+
+    // Step 7: Peak sharpness (enforce inverted-V shape)
+    int32_t avg_margin = 0;
+    if (config_.spectrum_peak_sharpness > 50) {
+        int32_t margin_sum = 0;
+        size_t pixel_count = 0;
+        for (size_t i = left_px; i <= right_px; ++i) {
+            if (lg_buffer[i] > noise_floor) {
+                margin_sum += (lg_buffer[i] - noise_floor);
+                ++pixel_count;
+            }
+        }
+        if (pixel_count > 0) {
+            avg_margin = margin_sum / static_cast<int32_t>(pixel_count);
+        }
+        if (avg_margin <= 0) return false;
+        const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
+        if (sharpness < config_.spectrum_peak_sharpness) return false;
+    }
+
+    // Step 8: Peak ratio (tall+narrow = inverted-V)
+    if (config_.spectrum_peak_ratio > 0) {
+        const int32_t ratio = (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
+        if (ratio < config_.spectrum_peak_ratio) return false;
+    }
+
+    // Step 9: Valley depth (deep valleys flanking peak = V-shape)
+    if (config_.spectrum_valley_depth > 0) {
+        uint8_t left_valley_margin = 0;
+        uint8_t right_valley_margin = 0;
+
+        if (left_px > LG_EDGE_SKIP_PX) {
+            const size_t lv = left_px - 1;
+            if (lg_buffer[lv] > noise_floor) {
+                left_valley_margin = lg_buffer[lv] - noise_floor;
+            }
+        }
+        if (right_px < LG_EDGE_END - 1) {
+            const size_t rv = right_px + 1;
+            if (lg_buffer[rv] > noise_floor) {
+                right_valley_margin = lg_buffer[rv] - noise_floor;
+            }
+        }
+
+        const uint8_t max_valley = (left_valley_margin > right_valley_margin)
+            ? left_valley_margin : right_valley_margin;
+        if (max_valley >= config_.spectrum_valley_depth) return false;
+    }
+
+    // Step 10: Flatness (reject flat-top signals like WiFi/BT)
+    if (config_.spectrum_flatness > 0) {
+        const uint8_t high_power_threshold = raw_peak * 9 / 10;
+        size_t high_power_count = 0;
+
+        for (size_t i = peak_pixel; i > left_px && i > LG_EDGE_SKIP_PX; --i) {
+            if (lg_buffer[i] >= high_power_threshold) ++high_power_count;
+            else break;
+        }
+        for (size_t i = peak_pixel + 1; i <= right_px && i < LG_EDGE_END; ++i) {
+            if (lg_buffer[i] >= high_power_threshold) ++high_power_count;
+            else break;
+        }
+
+        const size_t signal_width_px = right_px - left_px + 1;
+        if (signal_width_px > 0) {
+            const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / signal_width_px);
+            if (flatness_pct >= config_.spectrum_flatness) return false;
+        }
+    }
+
+    // Step 11: Symmetry (V-shape must have similar left/right width)
+    if (config_.spectrum_symmetry > 0 && signal_width > 1) {
+        const size_t left_width = peak_pixel - left_px;
+        const size_t right_width = right_px - peak_pixel;
+        const size_t max_side = (left_width > right_width) ? left_width : right_width;
+        const size_t min_side = (left_width < right_width) ? left_width : right_width;
+        if (max_side > 0) {
+            const uint8_t sym_pct = static_cast<uint8_t>((min_side * 100) / max_side);
+            if (sym_pct < config_.spectrum_symmetry) return false;
+        }
+    }
+
+    out_rssi = spectrum_value_to_dbm(raw_peak, total_gain);
+    return true;
+}
+
 PatternMatchResult DroneScanner::try_match_pattern_internal(
     const uint8_t* spectrum,
     FreqHz current_freq
@@ -1750,6 +1883,208 @@ void DroneScanner::process_spectrum_sweep(const ChannelSpectrum& spectrum, FreqH
                     if (pm_idx.has_value()) {
                         auto& drone = tracked_drones_[pm_idx.value()];
                         // drone_type is preserved from database classification
+                        drone.set_pattern_match(early_pattern_correlation, pattern->name);
+                    }
+                }
+            }
+
+            const auto idx_result = find_drone_by_frequency_internal(peak_freq);
+            if (idx_result.has_value()) {
+                tracked_drones_[idx_result.value()].mark_seen(chTimeNow());
+            }
+        }
+    }
+}
+
+void DroneScanner::process_spectrum_sweep(
+    const ChannelSpectrum& spectrum,
+    const uint8_t* lg_buffer,
+    FreqHz center_freq,
+    FreqHz f_min,
+    FreqHz f_max
+) noexcept {
+    current_frequency_ = center_freq;
+
+    clear_matched_pattern();
+    rssi_median_filter_.reset();
+    signal_present_ = false;
+    last_hysteresis_freq_ = 0;
+
+    const uint8_t cfg_margin = config_.spectrum_margin;
+    const int32_t cfg_rssi_thresh = config_.rssi_threshold_dbm;
+
+    // Step 1: CFAR or fixed-threshold peak detection on RAW FFT bins.
+    // CFAR must run on raw bins to see the true noise structure.
+    size_t peak_index = FFT_EDGE_SKIP_NARROW;
+    uint8_t raw_peak = 0;
+    uint8_t noise_floor = 0;
+
+    if (config_.cfar_mode != CFARMode::OFF) {
+        const size_t cfar_peak = CFARDetector::find_peak_cfar(
+            spectrum.db.data(),
+            FFT_BIN_COUNT,
+            config_.cfar_mode,
+            config_.cfar_ref_cells,
+            config_.cfar_guard_cells,
+            config_.cfar_threshold_x10,
+            FFT_EDGE_SKIP_NARROW,
+            FFT_EDGE_SKIP_NARROW,
+            config_.cfar_hybrid_alpha,
+            config_.cfar_hybrid_beta,
+            config_.cfar_hybrid_gamma,
+            config_.os_cfar_k_percent,
+            config_.vi_cfar_threshold_x10
+        );
+
+        if (cfar_peak >= FFT_BIN_COUNT) return;
+        peak_index = cfar_peak;
+        raw_peak = spectrum.db[cfar_peak];
+
+        // Noise floor from raw bins (CFAR path)
+        uint8_t* usable = sweep_usable_buf_;
+        size_t idx = 0;
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
+            usable[idx++] = spectrum.db[i];
+        }
+        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
+            usable[idx++] = spectrum.db[i];
+        }
+        if (idx > 0) {
+            noise_floor = quickselect_percentile(usable, idx, 25);
+        }
+    } else {
+        uint8_t* usable = sweep_usable_buf_;
+        size_t idx = 0;
+        raw_peak = 0;
+        peak_index = FFT_EDGE_SKIP_NARROW;
+
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
+            usable[idx++] = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
+        }
+        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
+            usable[idx++] = spectrum.db[i];
+            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
+        }
+
+        if (idx == 0) return;
+        noise_floor = quickselect_percentile(usable, idx, 25);
+
+        const uint8_t peak_margin_fixed = raw_peak - noise_floor;
+        if (peak_margin_fixed < cfg_margin) return;
+    }
+
+    // Convert FFT bin peak to LG pixel space. If the peak falls on the DC
+    // spike (bins 120-135), fft_bin_to_lg_pixel() returns COMPOSITE_SIZE
+    // and we reject — this is correct because the DC spike carries no
+    // real signal energy.
+    const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
+    if (peak_pixel >= COMPOSITE_SIZE) return;
+
+    // Pattern matching on LG-reordered buffer (continuous, no DC gap)
+    size_t highlight_bin = 0;
+    bool early_pattern_matched = false;
+    int8_t early_pattern_index = -1;
+    uint16_t early_pattern_correlation = 0;
+
+    const PatternMatchResult early_result = pattern_matcher_.match_from_lg(lg_buffer, center_freq);
+    if (early_result.matched) {
+        early_pattern_matched = true;
+        early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
+        highlight_bin = peak_index;
+        early_pattern_correlation = early_result.score;
+    }
+
+    // Shape analysis on LG-reordered buffer (continuous, no DC gap).
+    // The 25th percentile noise floor from raw bins is valid here because
+    // the LG reordering does not change power values — only their order.
+    const int32_t total_gain = get_current_total_gain();
+
+    int32_t shape_rssi = RSSI_MIN_DBM;
+    if (!analyze_spectrum_shape_lg(lg_buffer, peak_pixel, noise_floor, shape_rssi, total_gain)) {
+        return;
+    }
+
+    // Median filter
+    int32_t peak_rssi = shape_rssi;
+    rssi_median_filter_.add(peak_rssi);
+    if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
+        peak_rssi = rssi_median_filter_.get_median();
+    }
+
+    // Exception check + tracking (identical to original version)
+    if (peak_rssi > cfg_rssi_thresh) {
+        const FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
+
+        const FreqHz range_min = (f_min != 0) ? f_min : config_.sweep_start_freq;
+        const FreqHz range_max = (f_max != 0) ? f_max : config_.sweep_end_freq;
+        if (range_min != 0 && range_max != 0) {
+            if (peak_freq < range_min || peak_freq > range_max) return;
+        }
+
+        const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
+        bool is_exception = false;
+        for (uint8_t w = 0; w < 4 && !is_exception; ++w) {
+            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !is_exception; ++i) {
+                const FreqHz exc = config_.sweep_exceptions[w][i];
+                if (exc == 0) continue;
+                const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
+                const FreqHz hi = exc + exc_radius;
+                if (peak_freq >= lo && peak_freq <= hi) is_exception = true;
+            }
+        }
+        if (is_exception) return;
+
+        // Mahalanobis Gate
+        bool mahalanobis_rejected = false;
+        if (config_.mahalanobis_enabled) {
+            size_t drone_idx = 0;
+            bool drone_found = false;
+            for (uint8_t i = 0; i < tracked_count_; ++i) {
+                if (tracked_drones_[i].frequency == peak_freq) {
+                    drone_idx = i;
+                    drone_found = true;
+                    break;
+                }
+            }
+
+            if (drone_found) {
+                MahalanobisStatistics& stats = tracked_drones_[drone_idx].get_mahalanobis_stats();
+                if (!mahalanobis_detector_.validate(
+                    peak_rssi, center_freq, stats, config_.mahalanobis_threshold_x10
+                )) {
+                    mahalanobis_rejected = true;
+                } else {
+                    mahalanobis_detector_.update_statistics(stats, peak_rssi, center_freq, peak_freq);
+                }
+            } else if (tracked_count_ < MAX_TRACKED_DRONES) {
+                const size_t new_idx = tracked_count_;
+                tracked_drones_[new_idx] = TrackedDrone(peak_freq, DroneType::UNKNOWN, ThreatLevel::NONE);
+                auto& drone = tracked_drones_[new_idx];
+                drone.created_time_ = chTimeNow();
+                drone.last_increase_time_ = chTimeNow();
+                drone.mark_seen(chTimeNow());
+                drone.update_rssi(peak_rssi, chTimeNow());
+                drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
+                tracked_count_++;
+                statistics_.drones_detected++;
+                if (drone.threat_level > ThreatLevel::NONE) {
+                    trigger_alert(drone.threat_level);
+                }
+            }
+        }
+
+        if (!mahalanobis_rejected) {
+            (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
+
+            if (early_pattern_matched) {
+                const SignalPattern* pattern = pattern_manager_.get_pattern(early_pattern_index);
+                if (pattern != nullptr && pattern->name[0] != '\0') {
+                    matched_pattern_index_ = early_pattern_index;
+                    matched_pattern_bin_ = highlight_bin;
+                    const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
+                    if (pm_idx.has_value()) {
+                        auto& drone = tracked_drones_[pm_idx.value()];
                         drone.set_pattern_match(early_pattern_correlation, pattern->name);
                     }
                 }

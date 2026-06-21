@@ -49,6 +49,22 @@ public:
         uint8_t num_exceptions
     ) noexcept;
 
+    /**
+     * @brief Reorder a single FFT frame into Looking Glass pixel order.
+     * @param spectrum    256-bin FFT power values from baseband
+     * @param lg_buffer   Output buffer (COMPOSITE_SIZE bytes = 240 pixels)
+     * @note Produces the same 240-pixel Looking Glass mapping as process_frame()
+     *       but WITHOUT the accumulator/persistence logic. This gives a clean
+     *       per-frame view suitable for shape analysis — no DC gap, continuous
+     *       frequency ordering that matches the display.
+     * @note Pixels 238-239 are zeroed (map to DC spike bins 120-121).
+     * @note Stack: ~0 bytes (writes to caller buffer). Flash: <100 bytes.
+     */
+    static void reorder_frame(
+        const ChannelSpectrum& spectrum,
+        uint8_t* lg_buffer
+    ) noexcept;
+
 private:
     [[nodiscard]] static bool is_exception_freq(
         FreqHz hz,

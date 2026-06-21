@@ -226,6 +226,13 @@ private:
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
     uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
 
+    // Per-frame Looking Glass reordered buffer for sweep mode shape analysis.
+    // Created by SweepProcessor::reorder_frame() and passed to scanner's
+    // process_spectrum_sweep(lg_buffer) overload. Eliminates the DC gap
+    // corruption by operating on the same continuous 240-pixel line the
+    // user sees on screen. 240 bytes BSS, shared across all sweep windows.
+    uint8_t lg_frame_buf_[COMPOSITE_SIZE]{};
+
     /**
      * @brief Storage layout for message handlers.
      * @note No constructor — members are placement-new'd manually.
