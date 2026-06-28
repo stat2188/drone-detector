@@ -907,6 +907,52 @@ void DroneDisplay::render_composite(
         }
     }
 
+    // White envelope line: connects bar tops (classical spectrum analyzer look).
+    // Draws AFTER bars (on top) but BEFORE scan-head marker (marker stays visible).
+    // Re-computes noise subtraction identically to bar loop for visual consistency.
+    // Bridges gaps up to MAX_ENVELOPE_GAP pixels to draw a continuous line
+    // across weak-signal regions and the DC spike, matching classic analyzer behavior.
+    // Stack: ~16 bytes. Flash: ~80 bytes.
+    {
+        static constexpr uint8_t MAX_ENVELOPE_GAP = 5;
+        uint16_t env_prev_y = chart_start_y + chart_height;
+        bool env_prev_valid = false;
+        uint8_t env_gap_count = 0;
+        for (uint16_t i = 0; i < bar_count; ++i) {
+            uint8_t pwr = composite_data[i];
+            if (pwr > noise_floor) {
+                pwr -= noise_floor;
+            } else {
+                pwr = 0;
+            }
+            if (pwr > 0) {
+                const uint16_t bh = (static_cast<uint16_t>(pwr) * chart_height) / 256;
+                const uint16_t fh = (bh > 0) ? bh : 1;
+                const uint16_t ex = chart_start_x + i;
+                const uint16_t ey = chart_start_y + chart_height - fh;
+                if (env_prev_valid && env_gap_count > 0 && env_gap_count <= MAX_ENVELOPE_GAP) {
+                    // Bridge small gap: draw connector from last valid point to here
+                    const uint16_t lo = (ey < env_prev_y) ? ey : env_prev_y;
+                    const uint16_t hi = (ey < env_prev_y) ? env_prev_y : ey;
+                    draw_rectangle(painter, ex, lo, 1, hi - lo + 1, COLOR_TEXT);
+                } else if (env_prev_valid && ey != env_prev_y) {
+                    const uint16_t lo = (ey < env_prev_y) ? ey : env_prev_y;
+                    const uint16_t hi = (ey < env_prev_y) ? env_prev_y : ey;
+                    draw_rectangle(painter, ex, lo, 1, hi - lo + 1, COLOR_TEXT);
+                }
+                draw_rectangle(painter, ex, ey, 1, 1, COLOR_TEXT);
+                env_prev_y = ey;
+                env_prev_valid = true;
+                env_gap_count = 0;
+            } else {
+                env_gap_count++;
+                if (env_gap_count > MAX_ENVELOPE_GAP) {
+                    env_prev_valid = false;
+                }
+            }
+        }
+    }
+
     // Real-time scan-head marker: 1-px white vertical line at current pixel_index.
     // Shows where the sweep is right now, independent of pixel-value filtering.
     if (scan_head >= 0 && static_cast<uint16_t>(scan_head) < bar_count) {
@@ -1000,6 +1046,43 @@ void DroneDisplay::render_multi_zone(
                 else if (power > 100) color = COLOR_MEDIUM_THREAT;
 
                 draw_rectangle(painter, x, y, bar_width, bar_h, color);
+            }
+
+            // White envelope line: connects bar tops (same as render_composite).
+            // Bridges gaps up to MAX_ENVELOPE_GAP pixels for continuous line.
+            // Stack: ~16 bytes. Flash: ~80 bytes.
+            {
+                static constexpr uint8_t MAX_ENVELOPE_GAP = 5;
+                uint16_t env_prev_y = chart_y + chart_h;
+                bool env_prev_valid = false;
+                uint8_t env_gap_count = 0;
+                for (uint16_t i = 0; i < width - 4 && i < 240; ++i) {
+                    const uint8_t pwr = data[i];
+                    if (pwr > 0 && pwr >= min_color_power_) {
+                        const uint16_t bh = (static_cast<uint16_t>(pwr) * chart_h) / 255;
+                        if (bh == 0) continue;
+                        const uint16_t ex = start_x + 2 + i;
+                        const uint16_t ey = chart_y + chart_h - bh;
+                        if (env_prev_valid && env_gap_count > 0 && env_gap_count <= MAX_ENVELOPE_GAP) {
+                            const uint16_t lo = (ey < env_prev_y) ? ey : env_prev_y;
+                            const uint16_t hi = (ey < env_prev_y) ? env_prev_y : ey;
+                            draw_rectangle(painter, ex, lo, 1, hi - lo + 1, COLOR_TEXT);
+                        } else if (env_prev_valid && ey != env_prev_y) {
+                            const uint16_t lo = (ey < env_prev_y) ? ey : env_prev_y;
+                            const uint16_t hi = (ey < env_prev_y) ? env_prev_y : ey;
+                            draw_rectangle(painter, ex, lo, 1, hi - lo + 1, COLOR_TEXT);
+                        }
+                        draw_rectangle(painter, ex, ey, 1, 1, COLOR_TEXT);
+                        env_prev_y = ey;
+                        env_prev_valid = true;
+                        env_gap_count = 0;
+                    } else {
+                        env_gap_count++;
+                        if (env_gap_count > MAX_ENVELOPE_GAP) {
+                            env_prev_valid = false;
+                        }
+                    }
+                }
             }
         }
     }
