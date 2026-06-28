@@ -55,6 +55,7 @@ public:
 
     void show_alert(const char* message, uint32_t duration_ms) noexcept;
     void show_error(ErrorCode error, uint32_t duration_ms) noexcept;
+    void save_pattern_inline() noexcept;
 
 private:
 
@@ -236,7 +237,6 @@ private:
     /**
      * @brief Storage layout for message handlers.
      * @note No constructor — members are placement-new'd manually.
-     *       Prevents DBLREG hard fault when pushing PatternManagerView.
      */
     struct HandlerStorage {
         MessageHandlerRegistration spectrum_config;

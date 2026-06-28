@@ -12,7 +12,10 @@
 #include "drone_settings.hpp"
 #include "settings_manager.hpp"
 #include "drone_sweep_view.hpp"
-#include "pattern_manager_view.hpp"
+#include "pattern_list_view.hpp"
+#include "pattern_matcher.hpp"
+#include "pattern_manager.hpp"
+#include "peak_detector.hpp"
 #include "database.hpp"
 #include "hardware_controller.hpp"
 #include "audio_alerts.hpp"
@@ -36,7 +39,6 @@ static ScannerThread s_scanner_thread(s_scanner);
 
 // ============================================================================
 // Handler registration — placement-new to allow manual lifetime control.
-// Prevents DBLREG hard fault when PatternManagerView is pushed.
 // ============================================================================
 void DroneScannerUI::register_handlers() noexcept {
     if (handlers_active_) return;
@@ -344,31 +346,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };
 
-    // PTR button: open pattern manager view
+    // PTR button: inline save pattern from current spectrum
     button_ptr_.on_select = [this](ui::Button&) {
         if (initialization_failed_ || scanner_ptr_ == nullptr) {
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        // CRITICAL: Unregister message handlers BEFORE pushing PatternManagerView.
-        // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
-        // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
-        unregister_handlers();
-
-        // Stop streaming and scanner thread
-        if (scanning_) {
-            baseband::spectrum_streaming_stop();
-            scanning_ = false;
-        }
-        if (scanner_thread_ != nullptr && scanner_thread_->is_scanning()) {
-            scanner_thread_->set_scanning(false);
-        }
-        // Exit sweep mode if active - this also restores bandwidth.
-        // suppress_auto_restart: PatternManagerView handles its own streaming state.
-        if (composite_active_) {
-            exit_sweep_mode(true);
-        }
-        nav_.push<PatternManagerView>();
+        save_pattern_inline();
     };
 
     // Hardware initialization (callbacks are already set, safe to early-return)
@@ -455,7 +439,6 @@ DroneScannerUI::~DroneScannerUI() noexcept {
     unregister_handlers();
 
     // CRITICAL: Exit sweep mode first to stop baseband streaming
-    // Prevents DBLREG hard fault when PatternManagerView is pushed after sweep
     if (composite_active_) {
         exit_sweep_mode();
     }
@@ -514,7 +497,7 @@ void DroneScannerUI::on_show() {
     // Re-register handlers when becoming visible (after returning from sub-view)
     register_handlers();
 
-    // Refresh patterns from SD - ensures new patterns from PTR view are available for SWEEP
+    // Refresh patterns from SD — ensures patterns saved via inline save are available for SWEEP
     if (scanner_ptr_ != nullptr) {
         scanner_ptr_->refresh_patterns();
     }
@@ -1412,6 +1395,69 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     // Skip initial FFT frames after retune to let baseband filters settle.
     // The first few frames contain transient artifacts from frequency switching.
     win.settle_frames_remaining_ = SWEEP_SETTLE_FRAMES;
+}
+
+// ============================================================================
+// Inline pattern save — captures current spectrum and saves as pattern.
+// Stack: ~394 bytes (pattern 64B + sort_buf 256B + PeakInfo 24B + msg 32B + misc 18B).
+// ============================================================================
+void DroneScannerUI::save_pattern_inline() noexcept {
+    PatternManager& pm = scanner_ptr_->get_pattern_manager();
+
+    if (pm.get_pattern_count() >= MAX_PATTERNS) {
+        show_alert("Max patterns!", 2000);
+        return;
+    }
+
+    // Guard: spectrum_buffer_ must contain valid data (scanner was active)
+    if (current_frequency_ == 0) {
+        show_alert("No signal!", 2000);
+        return;
+    }
+
+    // Capture current spectrum (class member, not stack)
+    SignalPattern pattern{};
+
+    // Normalize 256-bin FFT to 16-bin waveform
+    PatternMatcher::normalize(spectrum_buffer_.db.data(), pattern.waveform);
+
+    // Extract peak features for auto-threshold tuning
+    uint8_t sort_buf[FFT_BIN_COUNT];
+    const PeakDetector::PeakInfo peak = PeakDetector::find(
+        spectrum_buffer_.db.data(), sort_buf,
+        PeakDetector::Range::Full, PeakDetector::EdgePolicy::Wide);
+
+    pattern.features.peak_position = static_cast<uint8_t>(peak.index / PATTERN_BIN_SCALE_FACTOR);
+    pattern.features.peak_value = peak.value;
+    pattern.features.noise_floor = peak.noise_floor;
+    pattern.features.margin = peak.margin;
+
+    // Auto-tune threshold from SNR margin
+    constexpr uint16_t MIN_AUTO_THRESHOLD = 400;
+    constexpr uint16_t MAX_AUTO_THRESHOLD = 800;
+    const uint16_t auto_th = static_cast<uint16_t>(
+        MIN_AUTO_THRESHOLD + static_cast<uint16_t>(peak.margin) * 10U);
+    pattern.match_threshold = (auto_th > MAX_AUTO_THRESHOLD) ? MAX_AUTO_THRESHOLD : auto_th;
+
+    // Auto-generate name
+    snprintf(pattern.name, sizeof(pattern.name), "PTR_%zu", pm.get_pattern_count() + 1);
+
+    // Set frequency from current detection
+    pattern.center_freq = current_frequency_;
+    pattern.range_width = SWEEP_SLICE_BW;
+    pattern.flags = SignalPattern::Flags::ENABLED;
+
+    const ErrorCode err = pm.save_pattern(pattern);
+    if (err == ErrorCode::SUCCESS) {
+        scanner_ptr_->refresh_patterns();
+        char msg[32];
+        snprintf(msg, sizeof(msg), "Saved %s", pattern.name);
+        show_alert(msg, 2000);
+    } else if (err == ErrorCode::BUFFER_FULL) {
+        show_alert("Max patterns!", 2000);
+    } else {
+        show_alert("Save failed!", 2000);
+    }
 }
 
 DroneScanner& get_scanner_instance() noexcept {

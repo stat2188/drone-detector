@@ -22,9 +22,9 @@ namespace drone_analyzer {
  * @note Both new (25-field) and old (29-field) CSV formats load correctly.
  * @note Single source of truth for on-disk pattern data.
  *
- * Stack: ~38 bytes (parse_pattern_csv temp locals).
+ * Stack: ~200 bytes (save_pattern write buffer 160B + temps 40B).
  * Flash: 0 (header only).
- * SRAM: MAX_PATTERNS × sizeof(SignalPattern) + 769B I/O buffers ≈ 10 × 64 + 769 ≈ 1,409 B.
+ * SRAM: MAX_PATTERNS × sizeof(SignalPattern) + 256B read buffer ≈ 10 × 64 + 256 ≈ 896 B.
  */
 class PatternManager {
 public:
@@ -60,12 +60,11 @@ private:
     size_t pattern_count_;
     mutable Mutex mutex_;
 
-    // I/O buffers — moved from stack to BSS to prevent stack overflow.
-    // Stack savings: ~768 bytes in load_pattern_from_line(), ~384 bytes in save_pattern().
-    // SRAM cost: 769 bytes in BSS (constant, not per-call).
+    // I/O buffer — single shared buffer for file read and line assembly.
+    // SRAM cost: 256 bytes in BSS (constant, not per-call).
+    // Removed line_buf_[256] and write_buf_[256] to save 512 bytes.
+    // write_pattern uses a local stack buffer (~200 bytes) for CSV serialization.
     std::array<uint8_t, 256> read_buf_{};     // 256B — max CSV line ~146 bytes
-    std::array<char, 256> line_buf_{};        // 256B — line assembly buffer
-    std::array<uint8_t, 256> write_buf_{};    // 256B — CSV serialization buffer
     bool loaded_{false};                       // 1B — prevents redundant SD re-reads
 
     [[nodiscard]] ErrorCode load_pattern_from_line(

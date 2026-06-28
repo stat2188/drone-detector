@@ -1100,7 +1100,7 @@ public:
 
     /**
      * @brief Force reload patterns from SD and update matcher
-     * @note Called when returning from PTR view to ensure SWEEP sees new patterns
+     * @note Called after pattern save/delete to ensure SWEEP sees new patterns
      */
     void refresh_patterns() noexcept;
 

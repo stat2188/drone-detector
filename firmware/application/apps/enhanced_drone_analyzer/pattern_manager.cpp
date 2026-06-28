@@ -92,33 +92,43 @@ ErrorCode PatternManager::load_pattern_from_line(
         FileGuard& operator=(const FileGuard&) = delete;
     } file_guard(&file);
 
-    constexpr size_t READ_BUF_SIZE = 256;
-    size_t line_pos = 0;
-    bool eof = false;
+    // Read entire file into read_buf_ (pattern files are <150 bytes).
+    // Single read — eliminates line assembly buffer (line_buf_ removed).
+    const auto read_result = file.read(read_buf_.data(), read_buf_.size());
+    if (!read_result.is_ok()) return ErrorCode::DATABASE_LOAD_TIMEOUT;
+    const size_t bytes_read = read_result.value();
+    if (bytes_read == 0) return ErrorCode::SUCCESS;
 
-    while (!eof) {
-        const auto read_result = file.read(read_buf_.data(), READ_BUF_SIZE);
-        if (!read_result.is_ok()) return ErrorCode::DATABASE_LOAD_TIMEOUT;
-        const size_t bytes_read = read_result.value();
-        if (bytes_read == 0) eof = true;
-
-        for (size_t i = 0; i < bytes_read; ++i) {
-            const char c = static_cast<char>(read_buf_[i]);
-            if (c == '\n' || c == '\r' || line_pos >= READ_BUF_SIZE - 1) {
-                if (line_pos > 0) {
-                    line_buf_[line_pos] = '\0';
-                    const ErrorCode parse_err = parse_pattern_csv(line_buf_.data(), line_pos);
-                    if (parse_err == ErrorCode::SUCCESS) {
-                        ++pattern_count_;
-                    }
-                    line_pos = 0;
-                    if (pattern_count_ >= MAX_PATTERNS) return ErrorCode::SUCCESS;
-                }
-            } else if (c != '\n' && c != '\r') {
-                line_buf_[line_pos++] = c;
-            }
-        }
+    // Find first line (skip leading whitespace, stop at newline/CR)
+    size_t line_start = 0;
+    while (line_start < bytes_read) {
+        const char c = static_cast<char>(read_buf_[line_start]);
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') break;
+        ++line_start;
     }
+    size_t line_len = line_start;
+    while (line_len < bytes_read) {
+        const char c = static_cast<char>(read_buf_[line_len]);
+        if (c == '\n' || c == '\r') break;
+        ++line_len;
+    }
+    line_len -= line_start;
+
+    if (line_len == 0) return ErrorCode::SUCCESS;
+
+    // Null-terminate in place (read_buf_ is mutable).
+    // Guard: ensure null-terminator fits within read_buf_ (256 bytes).
+    const size_t term_pos = line_start + line_len;
+    if (term_pos >= read_buf_.size()) {
+        line_len = read_buf_.size() - line_start - 1;
+    }
+    read_buf_[line_start + line_len] = 0;
+    const ErrorCode parse_err = parse_pattern_csv(
+        reinterpret_cast<const char*>(&read_buf_[line_start]), line_len);
+    if (parse_err == ErrorCode::SUCCESS) {
+        ++pattern_count_;
+    }
+
     return ErrorCode::SUCCESS;
 }
 
@@ -137,7 +147,7 @@ ErrorCode PatternManager::parse_pattern_csv(
     constexpr uint8_t OLD_FIELD_COUNT = 29;
 
     // Temp storage for fields 21-28 — resolves old vs new format after full parse.
-    // Stack: 38 bytes (2×uint16_t + 2×uint8_t + 4×uint64_t).
+    // Stack: 19 bytes (1×uint16_t + 1×uint8_t + 2×uint64_t).
     uint16_t tmp_threshold{0};
     uint8_t tmp_flags{0};
     uint64_t tmp_center_freq{0};
@@ -237,10 +247,15 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
         FileGuard& operator=(const FileGuard&) = delete;
     } file_guard(&file);
 
+    // Local stack buffer for CSV serialization (write_buf 160B + temps ~40B).
+    // Replaces write_buf_[256] to save 256 bytes BSS.
+    // Stack: ~200 bytes — acceptable for non-hot SD I/O path.
+    static constexpr size_t WRITE_BUF_SIZE = 160;
+    uint8_t write_buf[WRITE_BUF_SIZE]{};
     size_t write_pos = 0;
 
     auto write_char = [&](char c) noexcept -> void {
-        if (write_pos < write_buf_.size()) write_buf_[write_pos++] = static_cast<uint8_t>(c);
+        if (write_pos < WRITE_BUF_SIZE) write_buf[write_pos++] = static_cast<uint8_t>(c);
     };
 
     constexpr size_t INT32_STR_BUF_SIZE = 12;
@@ -286,7 +301,7 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
     write_uint64(static_cast<uint64_t>(pattern.range_width));
     write_char('\n');
 
-    const File::Result<File::Size> write_result = file.write(write_buf_.data(), static_cast<File::Size>(write_pos));
+    const File::Result<File::Size> write_result = file.write(write_buf, static_cast<File::Size>(write_pos));
     if (!write_result.is_ok()) return ErrorCode::DATABASE_LOAD_TIMEOUT;
 
     patterns_[pattern_count_] = pattern;

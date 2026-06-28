@@ -13,7 +13,7 @@ namespace drone_analyzer {
  * @brief SAD-based pattern matching with frequency-proximity pre-filter.
  * @note Pure 16-bin waveform comparison. Each pattern's match_threshold is
  *       auto-tuned at save time from the captured peak's SNR margin
- *       (see PatternManagerView::save_current_pattern).
+ *       (see DroneScannerUI::save_pattern_inline).
  * @note Pure integer math, no heap, no exceptions, no virtual functions.
  * @note Reentrant — single instance can be shared between threads if the
  *       caller serializes access (matches PatternManager's mutex).
@@ -48,7 +48,7 @@ public:
      * @param wave_16 Output 16-bin normalized waveform
      * @note Skips DC spike (bins FFT_DC_SPIKE_START..FFT_DC_SPIKE_END)
      *       and filter rolloff edges (0..PATTERN_NORM_EDGE_SKIP-1, tail end).
-     * @note Shared between PatternMatcher and PatternManagerView so saved
+     * @note Shared between PatternMatcher and DroneScannerUI so saved
      *       patterns match against live spectra identically.
      */
     static void normalize(
