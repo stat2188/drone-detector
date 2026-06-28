@@ -877,78 +877,65 @@ void DroneDisplay::render_composite(
     // noise_floor parameter allows per-band noise floor in dual-sweep mode.
     const uint8_t display_threshold = min_color_power_;
 
+    // White envelope state: connects bar tops (classical spectrum analyzer look).
+    // Drawn inline with bars — single pass eliminates duplicate 240-iteration loop.
+    // Bridges gaps up to MAX_ENVELOPE_GAP pixels across weak-signal regions.
+    // Stack: ~12 bytes (env_prev_y + env_prev_valid + env_gap_count).
+    static constexpr uint8_t MAX_ENVELOPE_GAP = 5;
+    uint16_t env_prev_y = chart_start_y + chart_height;
+    bool env_prev_valid = false;
+    uint8_t env_gap_count = 0;
+
     for (uint16_t i = 0; i < bar_count; ++i) {
         uint8_t power = composite_data[i];
 
-        // Subtract noise floor: only show energy above baseline
+        // Subtract noise floor once — reused for both bar and envelope.
         if (power > noise_floor) {
             power -= noise_floor;
         } else {
             power = 0;
         }
 
-        // Determine color based on noise-subtracted power vs threshold
-        uint32_t color = COLOR_BACKGROUND;
-        if (power >= display_threshold) {
-            if (power > 200) color = COLOR_CRITICAL_THREAT;
-            else if (power > 150) color = COLOR_HIGH_THREAT;
-            else if (power > 100) color = COLOR_MEDIUM_THREAT;
-            else color = COLOR_LOW_THREAT;
-        }
+        const uint16_t x = chart_start_x + i;
 
-        // Bar height proportional to noise-subtracted power.
-        // Only draw non-zero bars above threshold to keep noise floor invisible.
-        if (color != COLOR_BACKGROUND || power > 0) {
+        if (power > 0) {
+            // Bar color from noise-subtracted power
+            uint32_t color = COLOR_BACKGROUND;
+            if (power >= display_threshold) {
+                if (power > 200) color = COLOR_CRITICAL_THREAT;
+                else if (power > 150) color = COLOR_HIGH_THREAT;
+                else if (power > 100) color = COLOR_MEDIUM_THREAT;
+                else color = COLOR_LOW_THREAT;
+            }
+
             const uint16_t bar_height = (static_cast<uint16_t>(power) * chart_height) / 256;
             const uint16_t final_height = (bar_height > 0) ? bar_height : 1;
-            const uint16_t x = chart_start_x + i;
             const uint16_t y = chart_start_y + chart_height - final_height;
-            draw_rectangle(painter, x, y, 1, final_height, color);
-        }
-    }
 
-    // White envelope line: connects bar tops (classical spectrum analyzer look).
-    // Draws AFTER bars (on top) but BEFORE scan-head marker (marker stays visible).
-    // Re-computes noise subtraction identically to bar loop for visual consistency.
-    // Bridges gaps up to MAX_ENVELOPE_GAP pixels to draw a continuous line
-    // across weak-signal regions and the DC spike, matching classic analyzer behavior.
-    // Stack: ~16 bytes. Flash: ~80 bytes.
-    {
-        static constexpr uint8_t MAX_ENVELOPE_GAP = 5;
-        uint16_t env_prev_y = chart_start_y + chart_height;
-        bool env_prev_valid = false;
-        uint8_t env_gap_count = 0;
-        for (uint16_t i = 0; i < bar_count; ++i) {
-            uint8_t pwr = composite_data[i];
-            if (pwr > noise_floor) {
-                pwr -= noise_floor;
-            } else {
-                pwr = 0;
+            if (color != COLOR_BACKGROUND) {
+                draw_rectangle(painter, x, y, 1, final_height, color);
             }
-            if (pwr > 0) {
-                const uint16_t bh = (static_cast<uint16_t>(pwr) * chart_height) / 256;
-                const uint16_t fh = (bh > 0) ? bh : 1;
-                const uint16_t ex = chart_start_x + i;
-                const uint16_t ey = chart_start_y + chart_height - fh;
-                if (env_prev_valid && env_gap_count > 0 && env_gap_count <= MAX_ENVELOPE_GAP) {
-                    // Bridge small gap: draw connector from last valid point to here
-                    const uint16_t lo = (ey < env_prev_y) ? ey : env_prev_y;
-                    const uint16_t hi = (ey < env_prev_y) ? env_prev_y : ey;
-                    draw_rectangle(painter, ex, lo, 1, hi - lo + 1, COLOR_TEXT);
-                } else if (env_prev_valid && ey != env_prev_y) {
-                    const uint16_t lo = (ey < env_prev_y) ? ey : env_prev_y;
-                    const uint16_t hi = (ey < env_prev_y) ? env_prev_y : ey;
-                    draw_rectangle(painter, ex, lo, 1, hi - lo + 1, COLOR_TEXT);
-                }
-                draw_rectangle(painter, ex, ey, 1, 1, COLOR_TEXT);
-                env_prev_y = ey;
-                env_prev_valid = true;
-                env_gap_count = 0;
-            } else {
-                env_gap_count++;
-                if (env_gap_count > MAX_ENVELOPE_GAP) {
-                    env_prev_valid = false;
-                }
+
+            // Envelope: draw connector from previous active pixel, then dot.
+            if (env_prev_valid && env_gap_count == 0 && y != env_prev_y) {
+                // Continuous — draw vertical connector between adjacent active columns.
+                const uint16_t lo = (y < env_prev_y) ? y : env_prev_y;
+                const uint16_t hi = (y < env_prev_y) ? env_prev_y : y;
+                draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
+            } else if (env_prev_valid && env_gap_count > 0 && env_gap_count <= MAX_ENVELOPE_GAP) {
+                // Bridge small gap — connector spans from last valid point.
+                const uint16_t lo = (y < env_prev_y) ? y : env_prev_y;
+                const uint16_t hi = (y < env_prev_y) ? env_prev_y : y;
+                draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
+            }
+            draw_rectangle(painter, x, y, 1, 1, COLOR_TEXT);
+            env_prev_y = y;
+            env_prev_valid = true;
+            env_gap_count = 0;
+        } else {
+            env_gap_count++;
+            if (env_gap_count > MAX_ENVELOPE_GAP) {
+                env_prev_valid = false;
             }
         }
     }
@@ -1023,16 +1010,29 @@ void DroneDisplay::render_multi_zone(
             *dst = '\0';
             draw_text(painter, title, start_x + 2, zone_y + 2, COLOR_TEXT);
 
-            // Bar chart
+            // Bar chart + white envelope (merged single pass).
+            // Envelope connects bar tops (classical analyzer look), bridging
+            // gaps up to MAX_ENVELOPE_GAP pixels. Eliminates duplicate 240-iter pass.
+            // Stack: ~12 bytes.
             constexpr uint16_t bar_width = 1;
             const uint16_t chart_y = zone_y + 12;
             const uint16_t chart_h = zone_h - 14;
             if (chart_h < 4) continue;
 
-            for (uint16_t i = 0; i < width - 4; ++i) {
-                if (i >= 240) break;
+            static constexpr uint8_t MAX_ENVELOPE_GAP = 5;
+            uint16_t env_prev_y = chart_y + chart_h;
+            bool env_prev_valid = false;
+            uint8_t env_gap_count = 0;
+
+            for (uint16_t i = 0; i < width - 4 && i < 240; ++i) {
                 const uint8_t power = data[i];
-                if (power == 0 || power < min_color_power_) continue;
+                if (power == 0 || power < min_color_power_) {
+                    env_gap_count++;
+                    if (env_gap_count > MAX_ENVELOPE_GAP) {
+                        env_prev_valid = false;
+                    }
+                    continue;
+                }
 
                 const uint16_t bar_h = (static_cast<uint16_t>(power) * chart_h) / 255;
                 if (bar_h == 0) continue;
@@ -1046,43 +1046,21 @@ void DroneDisplay::render_multi_zone(
                 else if (power > 100) color = COLOR_MEDIUM_THREAT;
 
                 draw_rectangle(painter, x, y, bar_width, bar_h, color);
-            }
 
-            // White envelope line: connects bar tops (same as render_composite).
-            // Bridges gaps up to MAX_ENVELOPE_GAP pixels for continuous line.
-            // Stack: ~16 bytes. Flash: ~80 bytes.
-            {
-                static constexpr uint8_t MAX_ENVELOPE_GAP = 5;
-                uint16_t env_prev_y = chart_y + chart_h;
-                bool env_prev_valid = false;
-                uint8_t env_gap_count = 0;
-                for (uint16_t i = 0; i < width - 4 && i < 240; ++i) {
-                    const uint8_t pwr = data[i];
-                    if (pwr > 0 && pwr >= min_color_power_) {
-                        const uint16_t bh = (static_cast<uint16_t>(pwr) * chart_h) / 255;
-                        if (bh == 0) continue;
-                        const uint16_t ex = start_x + 2 + i;
-                        const uint16_t ey = chart_y + chart_h - bh;
-                        if (env_prev_valid && env_gap_count > 0 && env_gap_count <= MAX_ENVELOPE_GAP) {
-                            const uint16_t lo = (ey < env_prev_y) ? ey : env_prev_y;
-                            const uint16_t hi = (ey < env_prev_y) ? env_prev_y : ey;
-                            draw_rectangle(painter, ex, lo, 1, hi - lo + 1, COLOR_TEXT);
-                        } else if (env_prev_valid && ey != env_prev_y) {
-                            const uint16_t lo = (ey < env_prev_y) ? ey : env_prev_y;
-                            const uint16_t hi = (ey < env_prev_y) ? env_prev_y : ey;
-                            draw_rectangle(painter, ex, lo, 1, hi - lo + 1, COLOR_TEXT);
-                        }
-                        draw_rectangle(painter, ex, ey, 1, 1, COLOR_TEXT);
-                        env_prev_y = ey;
-                        env_prev_valid = true;
-                        env_gap_count = 0;
-                    } else {
-                        env_gap_count++;
-                        if (env_gap_count > MAX_ENVELOPE_GAP) {
-                            env_prev_valid = false;
-                        }
-                    }
+                // Envelope connector + dot.
+                if (env_prev_valid && env_gap_count == 0 && y != env_prev_y) {
+                    const uint16_t lo = (y < env_prev_y) ? y : env_prev_y;
+                    const uint16_t hi = (y < env_prev_y) ? env_prev_y : y;
+                    draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
+                } else if (env_prev_valid && env_gap_count > 0 && env_gap_count <= MAX_ENVELOPE_GAP) {
+                    const uint16_t lo = (y < env_prev_y) ? y : env_prev_y;
+                    const uint16_t hi = (y < env_prev_y) ? env_prev_y : y;
+                    draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
                 }
+                draw_rectangle(painter, x, y, 1, 1, COLOR_TEXT);
+                env_prev_y = y;
+                env_prev_valid = true;
+                env_gap_count = 0;
             }
         }
     }
