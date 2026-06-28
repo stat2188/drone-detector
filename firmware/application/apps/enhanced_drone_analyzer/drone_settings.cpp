@@ -61,7 +61,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                                DEFAULT_MAHALOBIS_THRESHOLD_X10, ' ')
     , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
     , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 3, {1, 100}, 1, ' ')
-    , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {1, 255}, 1, ' ')
+    , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {2, 255}, 1, ' ')
     , field_spectrum_peak_sharpness_({UI_POS_X(6), UI_POS_Y(6)}, 3, {50, 250}, 5, ' ')
     , field_spectrum_peak_ratio_({UI_POS_X(13), UI_POS_Y(5)}, 3, {0, 255}, 5, ' ')
     , field_spectrum_valley_depth_({UI_POS_X(13), UI_POS_Y(6)}, 3, {0, 200}, 5, ' ')
@@ -204,6 +204,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     check_confirm_count_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.confirm_count_enabled = v;
+        field_confirm_count_.visible(v);
         settings_dirty_ = true;
     };
 
@@ -219,6 +220,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     check_spectrum_detection_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.spectrum_detection_enabled = v;
+        set_shape_filter_visibility(v);
         settings_dirty_ = true;
     };
 
@@ -245,12 +247,20 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     field_spectrum_min_width_.on_change = [this](int32_t v) {
         settings_.spectrum_min_width = static_cast<uint8_t>(v);
+        if (settings_.spectrum_min_width > settings_.spectrum_max_width) {
+            settings_.spectrum_max_width = settings_.spectrum_min_width;
+            field_spectrum_max_width_.set_value(settings_.spectrum_max_width);
+        }
         update_preview();
         settings_dirty_ = true;
     };
 
     field_spectrum_max_width_.on_change = [this](int32_t v) {
         settings_.spectrum_max_width = static_cast<uint8_t>(v);
+        if (settings_.spectrum_max_width < settings_.spectrum_min_width) {
+            settings_.spectrum_min_width = settings_.spectrum_max_width;
+            field_spectrum_min_width_.set_value(settings_.spectrum_min_width);
+        }
         update_preview();
         settings_dirty_ = true;
     };
@@ -318,8 +328,8 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
             const ErrorCode err = scanner_ptr_->set_config(updated_config);
             if (err != ErrorCode::SUCCESS) {
-                // Save to SD card even if scanner config update fails
-                // (scanner validation may fail on some fields, but settings should still be persisted)
+                nav_.display_modal("Error", "Invalid settings.\nCheck min<=max\nand valid ranges.");
+                return;
             }
         }
 
@@ -457,6 +467,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_dwell_enabled_.set_value(settings_.dwell_enabled);
     check_confirm_count_.set_value(settings_.confirm_count_enabled);
     field_confirm_count_.set_value(static_cast<int32_t>(settings_.confirm_count));
+    field_confirm_count_.visible(settings_.confirm_count_enabled);
     check_noise_blacklist_.set_value(settings_.noise_blacklist_enabled);
     check_spectrum_detection_.set_value(settings_.spectrum_detection_enabled);
     field_spectrum_margin_.set_value(static_cast<int32_t>(settings_.spectrum_margin));
@@ -477,6 +488,9 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));
     field_cfar_threshold_.set_value(static_cast<int32_t>(settings_.cfar_threshold_x10));
 
+    // Set initial visibility based on spectrum detection state
+    set_shape_filter_visibility(settings_.spectrum_detection_enabled);
+
     update_preview();
 }
 
@@ -494,6 +508,27 @@ void DroneSettingsView::update_preview() noexcept {
         settings_.spectrum_valley_depth,
         settings_.spectrum_flatness,
         settings_.spectrum_symmetry);
+}
+
+void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
+    field_spectrum_margin_.visible(visible);
+    field_spectrum_min_width_.visible(visible);
+    field_spectrum_max_width_.visible(visible);
+    field_spectrum_peak_sharpness_.visible(visible);
+    field_spectrum_peak_ratio_.visible(visible);
+    field_spectrum_valley_depth_.visible(visible);
+    field_spectrum_flatness_.visible(visible);
+    field_spectrum_symmetry_.visible(visible);
+    button_info_margin_.visible(visible);
+    button_info_width_.visible(visible);
+    button_info_sharp_.visible(visible);
+    button_info_ratio_.visible(visible);
+    // CFAR fields are also gated by spectrum detection
+    field_cfar_mode_.visible(visible);
+    field_cfar_ref_cells_.visible(visible);
+    field_cfar_guard_cells_.visible(visible);
+    field_cfar_threshold_.visible(visible);
+    button_info_cfar_.visible(visible);
 }
 
 // ============================================================================

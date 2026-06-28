@@ -106,6 +106,7 @@ private:
     void apply_settings_to_ui() noexcept;
     void update_preview() noexcept;
     void save_settings_to_sd() noexcept;
+    void set_shape_filter_visibility(bool visible) noexcept;
 };
 
 } // namespace drone_analyzer

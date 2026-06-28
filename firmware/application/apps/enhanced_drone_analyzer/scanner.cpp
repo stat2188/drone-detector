@@ -1173,7 +1173,7 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
     if (config.spectrum_min_width < 1 || config.spectrum_max_width < 2) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    if (config.confirm_count < 1 || config.confirm_count > 20) {
+    if (config.confirm_count < 1 || config.confirm_count > 10) {
         return ErrorCode::INVALID_PARAMETER;
     }
     if (config.cfar_ref_cells < CFAR_REF_CELLS_MIN || config.cfar_ref_cells > CFAR_REF_CELLS_MAX) {
@@ -1399,9 +1399,8 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     const uint8_t peak_margin = raw_peak - noise_floor;
 
     // Step 3: Peak must be significantly above noise floor
-    if (config_.cfar_mode == CFARMode::OFF) {
-        if (peak_margin < config_.spectrum_margin) return false;
-    }
+    // Always enforced — acts as minimum floor even when CFAR is active.
+    if (peak_margin < config_.spectrum_margin) return false;
 
     // Step 4: Count elevated bins around peak (signal width)
     // /3 instead of /4: for weak signals (peak_margin=20), /4 gives 5 units above
@@ -1502,7 +1501,13 @@ bool DroneScanner::analyze_spectrum_shape_impl(
             else break;
         }
 
-        const size_t signal_width_bins = right - left + 1;
+        // Subtract DC spike bins from denominator to match numerator (which skips DC)
+        size_t signal_width_bins = right - left + 1;
+        if (left < FFT_DC_SPIKE_END && right >= FFT_DC_SPIKE_START) {
+            const size_t dc_start = (left > FFT_DC_SPIKE_START) ? left : FFT_DC_SPIKE_START;
+            const size_t dc_end = (right < FFT_DC_SPIKE_END) ? right : (FFT_DC_SPIKE_END - 1);
+            signal_width_bins -= (dc_end - dc_start + 1);
+        }
         if (signal_width_bins > 0) {
             const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / signal_width_bins);
             if (flatness_pct > config_.spectrum_flatness) return false;
@@ -1552,9 +1557,8 @@ bool DroneScanner::analyze_spectrum_shape_lg(
     const uint8_t peak_margin = raw_peak - noise_floor;
 
     // Step 3: Peak must be significantly above noise floor
-    if (config_.cfar_mode == CFARMode::OFF) {
-        if (peak_margin < config_.spectrum_margin) return false;
-    }
+    // Always enforced — acts as minimum floor even when CFAR is active.
+    if (peak_margin < config_.spectrum_margin) return false;
 
     // Step 4: Count elevated pixels around peak (signal width)
     const uint8_t elevated_threshold = noise_floor + (peak_margin / 3);

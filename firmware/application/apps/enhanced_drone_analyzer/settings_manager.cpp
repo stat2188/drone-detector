@@ -128,6 +128,9 @@ static void parse_settings_line(
                 val = val * 10 + (num_start[i] - '0');
         }
         s.alert_rssi_threshold_dbm = negative ? -val : val;
+        // Derive scan_sensitivity to stay in sync with threshold
+        const int32_t sens = -20 - s.alert_rssi_threshold_dbm;
+        s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
 
     // --- Audio / Display ---
     } else if (key_matches("enable_audio_alerts")) {
@@ -157,7 +160,7 @@ static void parse_settings_line(
     // --- Spectrum shape filter (clamped to valid ranges) ---
     } else if (key_matches("spectrum_margin")) {
         const uint64_t v = parse_int();
-        s.spectrum_margin = static_cast<uint8_t>(v > 200 ? 200 : v);
+        s.spectrum_margin = static_cast<uint8_t>((v < 5) ? 5 : (v > 200 ? 200 : v));
     } else if (key_matches("spectrum_min_width")) {
         const uint64_t v = parse_int();
         s.spectrum_min_width = static_cast<uint8_t>((v < 1) ? 1 : (v > 100 ? 100 : v));
@@ -166,17 +169,17 @@ static void parse_settings_line(
         s.spectrum_max_width = static_cast<uint8_t>((v < 2) ? 2 : (v > 255 ? 255 : v));
     } else if (key_matches("spectrum_peak_sharpness")) {
         const uint64_t v = parse_int();
-        s.spectrum_peak_sharpness = static_cast<uint8_t>(v > 250 ? 250 : v);
+        s.spectrum_peak_sharpness = static_cast<uint8_t>((v < 50) ? 50 : (v > 250 ? 250 : v));
     } else if (key_matches("spectrum_peak_ratio")) {
         s.spectrum_peak_ratio = static_cast<uint8_t>(parse_int());
     } else if (key_matches("spectrum_valley_depth")) {
         s.spectrum_valley_depth = static_cast<uint8_t>(parse_int());
     } else if (key_matches("spectrum_flatness")) {
         const uint64_t v = parse_int();
-        s.spectrum_flatness = static_cast<uint8_t>(v > 100 ? 100 : v);
+        s.spectrum_flatness = static_cast<uint8_t>((v > 100) ? 100 : v);
     } else if (key_matches("spectrum_symmetry")) {
         const uint64_t v = parse_int();
-        s.spectrum_symmetry = static_cast<uint8_t>(v > 100 ? 100 : v);
+        s.spectrum_symmetry = static_cast<uint8_t>((v > 100) ? 100 : v);
 
     // --- Anti-false-positive ---
     } else if (key_matches("neighbor_margin_db")) {
@@ -186,7 +189,7 @@ static void parse_settings_line(
         s.rssi_variance_enabled = parse_bool();
     } else if (key_matches("confirm_count")) {
         const uint64_t v = parse_int();
-        s.confirm_count = static_cast<uint8_t>((v < 1) ? 1 : (v > 20 ? 20 : v));
+        s.confirm_count = static_cast<uint8_t>((v < 1) ? 1 : (v > 10 ? 10 : v));
 
     // --- Sweep window 1 ---
     } else if (key_matches("sweep_start_mhz")) {
@@ -267,7 +270,7 @@ static void parse_settings_line(
         s.cfar_ref_cells = static_cast<uint8_t>((v < CFAR_REF_CELLS_MIN) ? CFAR_REF_CELLS_MIN : (v > CFAR_REF_CELLS_MAX ? CFAR_REF_CELLS_MAX : v));
     } else if (key_matches("cfar_guard_cells")) {
         const uint64_t v = parse_int();
-        s.cfar_guard_cells = static_cast<uint8_t>((v > CFAR_GUARD_CELLS_MAX) ? CFAR_GUARD_CELLS_MAX : v);
+        s.cfar_guard_cells = static_cast<uint8_t>((v < CFAR_GUARD_CELLS_MIN) ? CFAR_GUARD_CELLS_MIN : (v > CFAR_GUARD_CELLS_MAX ? CFAR_GUARD_CELLS_MAX : v));
     } else if (key_matches("cfar_threshold_x10")) {
         const uint64_t v = parse_int();
         s.cfar_threshold_x10 = static_cast<uint8_t>((v < CFAR_THRESHOLD_MIN_X10) ? CFAR_THRESHOLD_MIN_X10 : (v > CFAR_THRESHOLD_MAX_X10 ? CFAR_THRESHOLD_MAX_X10 : v));
