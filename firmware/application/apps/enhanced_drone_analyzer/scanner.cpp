@@ -1217,6 +1217,8 @@ void DroneScanner::clear_lock_state() noexcept {
     // Clear lock timing timers for consistency
     lock_start_time_ = 0;
     confirm_start_time_ = 0;
+    // Reset sweep frequency tracking so first sweep frame always resets median filter
+    last_sweep_freq_ = 0;
     if (state_ == ScannerState::LOCKING || state_ == ScannerState::TRACKING) {
         state_ = ScannerState::SCANNING;
     }
@@ -1480,7 +1482,12 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     }
 
     // Step 10: Flatness (reject flat-top signals like WiFi/BT)
-    if (config_.spectrum_flatness > 0) {
+    // Guard: skip for weak signals (peak_margin < FLATNESS_MIN_PEAK_MARGIN).
+    // Below ~8 dB SNR, the 90% threshold is too close to signal values —
+    // V-shape signals compress near the noise floor, inflating flatness_pct
+    // by 20-50% from normal peak fluctuations. The other shape filters
+    // (sharpness, valley depth, width) are more reliable at low SNR.
+    if (config_.spectrum_flatness > 0 && peak_margin >= FLATNESS_MIN_PEAK_MARGIN) {
         const uint8_t high_power_threshold = raw_peak * 9 / 10;
         size_t high_power_count = 0;
 
@@ -1498,7 +1505,7 @@ bool DroneScanner::analyze_spectrum_shape_impl(
         const size_t signal_width_bins = right - left + 1;
         if (signal_width_bins > 0) {
             const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / signal_width_bins);
-            if (flatness_pct >= config_.spectrum_flatness) return false;
+            if (flatness_pct > config_.spectrum_flatness) return false;
         }
     }
 
@@ -1525,9 +1532,15 @@ bool DroneScanner::analyze_spectrum_shape_lg(
     int32_t& out_rssi,
     int32_t total_gain
 ) noexcept {
-    // LG edge skip: 4 pixels from each end (filter rolloff region covers
-    // pixels 0-3 = bins 249-253, and pixels 120-123 = bins 2-5).
-    // Pixels 238-239 are zeroed (DC spike) so the right edge stop is natural.
+    // LG edge skip: 4 pixels from each end.
+    // Pixel mapping (reorder_frame):
+    //   px 0-119  = bins 134-253 (lower sideband)
+    //   px 120-237 = bins 2-119   (upper sideband)
+    //   px 238-239 = 0            (DC spike region, zeroed)
+    // Left edge (px 0-3): bins 134-137, near DC spike — skip rolloff proximity.
+    // Right edge (px 236-239): bins 118-119 + zero padding — skip DC proximity.
+    // Filter rolloff bins (0-5, 250-255) map to px 116-123 (crossover region);
+    // they have attenuated power and naturally terminate width expansion.
     static constexpr size_t LG_EDGE_SKIP_PX = 4;
     static constexpr size_t LG_EDGE_END = COMPOSITE_SIZE - LG_EDGE_SKIP_PX;
 
@@ -1615,7 +1628,10 @@ bool DroneScanner::analyze_spectrum_shape_lg(
     }
 
     // Step 10: Flatness (reject flat-top signals like WiFi/BT)
-    if (config_.spectrum_flatness > 0) {
+    // Guard: skip for weak signals (peak_margin < FLATNESS_MIN_PEAK_MARGIN).
+    // Same rationale as analyze_spectrum_shape_impl() — at low SNR the 90%
+    // threshold causes wild flatness oscillation from normal peak fluctuations.
+    if (config_.spectrum_flatness > 0 && peak_margin >= FLATNESS_MIN_PEAK_MARGIN) {
         const uint8_t high_power_threshold = raw_peak * 9 / 10;
         size_t high_power_count = 0;
 
@@ -1631,7 +1647,7 @@ bool DroneScanner::analyze_spectrum_shape_lg(
         const size_t signal_width_px = right_px - left_px + 1;
         if (signal_width_px > 0) {
             const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / signal_width_px);
-            if (flatness_pct >= config_.spectrum_flatness) return false;
+            if (flatness_pct > config_.spectrum_flatness) return false;
         }
     }
 
@@ -1778,7 +1794,17 @@ void DroneScanner::process_spectrum_sweep(
     current_frequency_ = center_freq;
 
     clear_matched_pattern();
-    rssi_median_filter_.reset();
+
+    // Per-frequency median filter reset: only reset when the tuned frequency changes.
+    // In sweep mode, each FFT frame is a different frequency, so resetting every frame
+    // makes the filter useless (never reaches warm state of 7 samples). By tracking
+    // the last frequency, the filter accumulates across sweep CYCLES for the same freq,
+    // providing meaningful RSSI smoothing after ~7 passes (~11 seconds at 1.6s/pass).
+    if (center_freq != last_sweep_freq_) {
+        rssi_median_filter_.reset();
+        last_sweep_freq_ = center_freq;
+    }
+
     signal_present_ = false;
     last_hysteresis_freq_ = 0;
 
@@ -1852,13 +1878,17 @@ void DroneScanner::process_spectrum_sweep(
     const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
     if (peak_pixel >= COMPOSITE_SIZE) return;
 
-    // Pattern matching on LG-reordered buffer (continuous, no DC gap)
+    // Pattern matching on raw FFT (consistent normalization with saved patterns).
+    // NOTE: Patterns are saved via normalize() which operates on raw 256-bin FFT
+    // and skips DC spike bins within each 16-bin chunk. Using match_from_lg()
+    // here would produce a different 16-bin waveform (different usable range,
+    // no DC skip) causing false mismatches against saved patterns.
     size_t highlight_bin = 0;
     bool early_pattern_matched = false;
     int8_t early_pattern_index = -1;
     uint16_t early_pattern_correlation = 0;
 
-    const PatternMatchResult early_result = pattern_matcher_.match_from_lg(lg_buffer, center_freq);
+    const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
     if (early_result.matched) {
         early_pattern_matched = true;
         early_pattern_index = static_cast<int8_t>(early_result.pattern_index);

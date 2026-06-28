@@ -949,12 +949,14 @@ public:
     /**
      * @brief Lightweight spectrum processing for sweep mode
      * @param spectrum Channel spectrum data (256 bins)
+     * @param lg_buffer 240-pixel Looking Glass reordered buffer (from reorder_frame)
      * @param center_freq Current slice center frequency
      * @param f_min Minimum frequency of sweep range (0 = no range check)
      * @param f_max Maximum frequency of sweep range (0 = no range check)
-     * @note Uses CFAR on raw bins (needs FFT noise structure), then analyzes
-     *       shape on the continuous LG pixel line (no DC gap corruption).
-     *       Pattern matching also uses LG-normalized waveforms for stable SAD.
+     * @note Peak detection runs on raw FFT bins (CFAR or fixed threshold).
+     *       Shape analysis runs on LG-reordered buffer (continuous, no DC gap).
+     *       Pattern matching runs on raw FFT (consistent normalization with
+     *       saved patterns — normalize() and match() both operate on 256-bin FFT).
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex)
      * @note Implementation in scanner.cpp — delegates tracking to apply_sweep_tracking()
      */
@@ -1207,13 +1209,19 @@ private:
      * @brief Shape analysis on Looking Glass reordered buffer (240 pixels, no DC gap).
      * @param lg_buffer  240-pixel Looking Glass buffer (from SweepProcessor::reorder_frame())
      * @param peak_pixel Pixel index of detected peak (0-239)
-     * @param noise_floor 25th percentile noise floor of usable LG pixels
+     * @param noise_floor 25th percentile noise floor (computed from raw FFT usable bins)
      * @param out_rssi   Output: RSSI in dBm if signal detected
      * @param total_gain Current hardware gain for RSSI conversion
      * @return true if drone-like signal detected
      * @note Operates on the same continuous line the user sees on screen.
      *       No DC gap to corrupt width/sharpness/valley/flatness/symmetry.
-     * @note Edge skip: 4 pixels from each end (filter rolloff in LG space).
+     * @note Edge skip: 4 pixels from each end.
+     *       LG pixel layout: px 0-119 = bins 134-253 (lower sideband),
+     *       px 120-237 = bins 2-119 (upper sideband), px 238-239 = 0 (DC).
+     *       Left skip (px 0-3) = bins 134-137 (near DC).
+     *       Right skip (px 236-239) = bins 118-119 + zero padding.
+     *       Filter rolloff bins (0-5, 250-255) map to px 116-123 (crossover);
+     *       they have attenuated power and naturally terminate width expansion.
      */
     [[nodiscard]] bool analyze_spectrum_shape_lg(
         const uint8_t* lg_buffer,
@@ -1323,6 +1331,12 @@ private:
     
     // Current scan frequency
     FreqHz current_frequency_;
+
+    // Last sweep frequency for per-frequency median filter reset
+    // In sweep mode, the median filter must NOT be reset every frame (useless —
+    // never reaches warm state). Instead, only reset when the frequency changes,
+    // allowing the filter to accumulate across sweep cycles for the same freq.
+    FreqHz last_sweep_freq_{0};
 
     // Pending detection hysteresis (prevent noise from adding phantom drones)
     FreqHz pending_frequency_{0};

@@ -858,6 +858,20 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 100;
 constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 40;
 
 /**
+ * @brief Minimum peak margin for flatness check to be meaningful (in spectrum.db units)
+ * @note Below this SNR, the flatness measurement is unreliable because:
+ *       - V-shape signals compress near the noise floor, increasing flatness_pct
+ *       - The 90% threshold is too close to the signal values, causing 20-50% swing
+ *         from normal peak fluctuations
+ * @note At peak_margin < 40 (~8 dB), WiFi flat-top still has flatness > 60%
+ *       while drone V-shape has flatness 40-70% — overlap is too high to distinguish.
+ * @note Above peak_margin 40 (~8 dB), WiFi flatness > 80% vs drone < 30% — clear separation.
+ * @note Skipping flatness for weak signals lets the other filters (sharpness, valley depth,
+ *       width) handle rejection, which are more stable at low SNR.
+ */
+constexpr uint8_t FLATNESS_MIN_PEAK_MARGIN = 40;
+
+/**
  * @brief Default signal symmetry threshold (0-100, percent)
  * @note symmetry = min(left_width, right_width) * 100 / max(left_width, right_width)
  * @note Drone video V-shape: symmetry > 50% (both sides similar)
