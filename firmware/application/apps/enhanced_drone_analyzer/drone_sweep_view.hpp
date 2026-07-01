@@ -131,7 +131,7 @@ public:
  * @note TabView layout: Tab 1 = Win 1-2, Tab 2 = Win 3-4
  * @note Save writes sweep keys to SETTINGS/eda_settings.txt
  * @note Defaults resets all sweep windows to factory values (Win 3-4 disabled)
- * @note Memory optimized: child views use pointers for lazy initialization
+ * @note Child views use direct member allocation (no heap, follows codebase convention)
  */
 class DroneSweepView : public ui::View {
 public:
@@ -149,18 +149,15 @@ public:
 private:
     static constexpr ui::Dim TAB_BAR_H = 24;
 
-    void construct_objects() noexcept;
-    void destruct_objects() noexcept;
-
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
     ScanConfig original_config_;
 
-    // Child views as pointers (lazy init to reduce heap at construction)
-    SweepWindowGroup1View* view_group1_{nullptr};
-    SweepWindowGroup2View* view_group2_{nullptr};
-
-    ui::TabView* tab_view_{nullptr};
+    // Child views as direct members (declaration order = construction order)
+    // Must be declared before tab_view_ so pointers are valid during TabView construction
+    SweepWindowGroup1View view_group1_;
+    SweepWindowGroup2View view_group2_;
+    ui::TabView tab_view_;
 
     // Buttons (below tab content area)
     ui::NumberField field_exc_radius_{{UI_POS_X(0), 285}, 3, {1, 100}, 1, ' '};

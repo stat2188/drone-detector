@@ -24,6 +24,9 @@ namespace drone_analyzer {
 /**
  * @brief Scan configuration
  * @note ScannerState is defined in drone_types.hpp
+ * @note Size: ~104 bytes (large struct with 4 sweep windows + CFAR + pattern params)
+ * @note Passed by const reference (const ScanConfig&) to avoid copy overhead
+ * @note Consider partitioning if future extensions increase size significantly
  */
 struct ScanConfig {
     ScanningMode mode;
@@ -409,10 +412,16 @@ public:
                 
                 // Variability Index: VI = variance / mean^2 (×1000 for integer precision)
                 // To avoid division by zero, use max(mean, 1)
+                // Use int64_t for intermediate multiplication to prevent overflow
+                // (left_var can reach ~4.16M, × 1000 exceeds int32_t max of ~2.14B)
                 const int32_t left_mean_safe = (left_mean > 0) ? left_mean : 1;
                 const int32_t right_mean_safe = (right_mean > 0) ? right_mean : 1;
-                const int32_t left_vi = (left_var * 1000) / (left_mean_safe * left_mean_safe);
-                const int32_t right_vi = (right_var * 1000) / (right_mean_safe * right_mean_safe);
+                const int32_t left_vi = static_cast<int32_t>(
+                    (static_cast<int64_t>(left_var) * 1000) /
+                    (static_cast<int64_t>(left_mean_safe) * left_mean_safe));
+                const int32_t right_vi = static_cast<int32_t>(
+                    (static_cast<int64_t>(right_var) * 1000) /
+                    (static_cast<int64_t>(right_mean_safe) * right_mean_safe));
                 
                 // vi_threshold_x10 is threshold × 10, compare with VI × 1000
                 // So: vi_threshold × 100 = vi_threshold_x10 × 10

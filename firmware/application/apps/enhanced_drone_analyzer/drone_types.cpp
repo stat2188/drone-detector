@@ -133,12 +133,21 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcep
         update_count++;
     }
     
-    // Classify threat from average RSSI (smoother than single sample)
-    // Use average when we have enough samples, otherwise use raw value
-    const RssiValue classify_rssi = (update_count >= 2)
-        ? get_average_rssi()
-        : new_rssi;
-    
+    // Classify threat from PEAK of recent RSSI samples (not average).
+    // Average smooths out peak values, causing MEDIUM classification in sweep mode
+    // where RSSI fluctuates between passes. Peak preserves the strongest recent
+    // detection, giving correct threat level for the closest approach.
+    RssiValue classify_rssi = new_rssi;
+    if (update_count >= 2) {
+        const uint8_t count = (update_count > RSSI_HISTORY_SIZE)
+            ? RSSI_HISTORY_SIZE : update_count;
+        RssiValue peak_rssi = rssi_history_[0];
+        for (uint8_t i = 1; i < count; ++i) {
+            if (rssi_history_[i] > peak_rssi) peak_rssi = rssi_history_[i];
+        }
+        classify_rssi = peak_rssi;
+    }
+
     // All signals above detection threshold start at MEDIUM (not LOW).
     // LOW is only reached through decay from MEDIUM — prevents instant-stuck-LOW loop.
     ThreatLevel classified = ThreatLevel::MEDIUM;

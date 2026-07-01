@@ -239,13 +239,24 @@ constexpr int32_t RSSI_DETECTION_THRESHOLD_DBM = -95;
 
 /**
  * @brief RSSI threshold for high threat (dBm)
+ * @note With default gains (LNA=32 + VGA=32 + RF_AMP=14 = 78 dB),
+ *       max RSSI = (255-255)/5 - 78 = -78 dBm. Threshold must be reachable.
+ *       -87 dBm = 8 dB above detection threshold (-95). Reachable when
+ *       spectrum.db value >= 230 (~90% of max).
+ * @note Previous value (-60) was unreachable with default gains (max -78 dBm),
+ *       causing all detections to classify as MEDIUM.
  */
-constexpr int32_t RSSI_HIGH_THREAT_THRESHOLD_DBM = -60;
+constexpr int32_t RSSI_HIGH_THREAT_THRESHOLD_DBM = -87;
 
 /**
  * @brief RSSI threshold for critical threat (dBm)
+ * @note With default gains (78 dB), max RSSI = -78 dBm. Threshold -80 dBm
+ *       requires spectrum.db value >= 240 (~94% of max) — reserved for very
+ *       strong signals (close-range drone, line-of-sight).
+ * @note Previous value (-40) was unreachable with default gains (max -78 dBm),
+ *       causing all detections to classify as MEDIUM.
  */
-constexpr int32_t RSSI_CRITICAL_THREAT_THRESHOLD_DBM = -40;
+constexpr int32_t RSSI_CRITICAL_THREAT_THRESHOLD_DBM = -80;
 
 /**
  * @brief Noise floor RSSI (dBm)

@@ -163,6 +163,9 @@ private:
 
     /**
      * @brief Encapsulates all state for a single sweep window (Meyers: replace duplication with data)
+     * @note SRAM cost: ~300B per window (240 bytes composite + ~50 bytes metadata)
+     * @note Total for MAX_SWEEP_WINDOWS (4) windows: ~1,200B BSS
+     * @note Within 128KB SRAM budget but significant for resource-constrained system
      */
     struct SweepWindow {
         uint8_t composite[COMPOSITE_SIZE]{};  // pixel buffer
@@ -232,6 +235,7 @@ private:
     // process_spectrum_sweep(lg_buffer) overload. Eliminates the DC gap
     // corruption by operating on the same continuous 240-pixel line the
     // user sees on screen. 240 bytes BSS, shared across all sweep windows.
+    // Total sweep-related SRAM: sweep_[4] (~1,200B) + lg_frame_buf_ (240B) = ~1,440B
     uint8_t lg_frame_buf_[COMPOSITE_SIZE]{};
 
     /**
