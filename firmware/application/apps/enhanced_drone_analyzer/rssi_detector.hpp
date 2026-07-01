@@ -78,6 +78,8 @@ public:
 
     void set_detection_threshold(RssiValue threshold) noexcept;
 
+    void set_threat_thresholds(const ThreatThresholds& thresholds) noexcept;
+
     [[nodiscard]] RssiValue get_detection_threshold() const noexcept;
 
 private:
@@ -96,6 +98,7 @@ private:
     [[nodiscard]] uint32_t calculate_variance() const noexcept;
 
     RssiValue detection_threshold_;
+    ThreatThresholds threat_thresholds_;
 
     std::array<RssiValue, RSSI_HISTORY_SIZE> rssi_history_;
     std::array<SystemTime, TIMESTAMP_HISTORY_SIZE> timestamp_history_;

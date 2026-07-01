@@ -516,9 +516,9 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
         // Enough for median filter to warm up (4 samples) + 2 more frames for
         // reliable lock accumulation. At 60fps, 6 frames ≈ 10 increments of
         // freq_lock_count_ toward MAX_FREQ_LOCK (10) → TRACKING transition.
-        static constexpr uint8_t MAX_DWELL_CYCLES = 6;
+        static constexpr uint8_t LOCAL_MAX_DWELL_CYCLES = 6;
         const uint8_t max_dwell = config_.confirm_count_enabled
-            ? MAX_DWELL_CYCLES : (MAX_DWELL_CYCLES / 2);
+            ? LOCAL_MAX_DWELL_CYCLES : (LOCAL_MAX_DWELL_CYCLES / 2);
 
         if (dwell_cycles_ >= max_dwell) {
             // Max dwell reached — force resume scanning
@@ -852,25 +852,24 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             }
         }
 
+        // Single post-update lookup (reused for pattern match + decay reset)
+        const auto drone_idx = find_drone_by_frequency_internal(frequency);
+
         // Propagate pattern match result to tracked drone entry (normal mode)
         // NOTE: drone_type is NOT overwritten — database classification (DJI, FPV, etc.)
         // is preserved. Pattern match info is supplementary via pattern_matched_ fields.
-        if (normal_pattern_result.matched && should_update) {
+        if (normal_pattern_result.matched && should_update && drone_idx.has_value()) {
             const SignalPattern* p = pattern_manager_.get_pattern(normal_pattern_result.pattern_index);
             if (p != nullptr && p->name[0] != '\0') {
-                ErrorResult<size_t> pm_idx = find_drone_by_frequency_internal(frequency);
-                if (pm_idx.has_value()) {
-                    auto& d = tracked_drones_[pm_idx.value()];
-                    d.set_pattern_match(normal_pattern_result.score, p->name);
-                }
+                auto& d = tracked_drones_[drone_idx.value()];
+                d.set_pattern_match(normal_pattern_result.score, p->name);
             }
         }
 
         // Reset decay counters for detected drone — signal confirmed present
-        ErrorResult<size_t> idx = find_drone_by_frequency_internal(frequency);
-        if (idx.has_value()) {
-            tracked_drones_[idx.value()].reset_missed();
-            tracked_drones_[idx.value()].rssi_decrease_counter_ = 0;
+        if (drone_idx.has_value()) {
+            tracked_drones_[drone_idx.value()].reset_missed();
+            tracked_drones_[drone_idx.value()].rssi_decrease_counter_ = 0;
         }
 
         // Update max RSSI statistic
@@ -971,7 +970,9 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         }
 
         ThreatLevel old_threat = tracked_drones_[index].get_threat();
-        tracked_drones_[index].update_rssi(rssi, timestamp);
+        tracked_drones_[index].update_rssi(rssi, timestamp, ThreatThresholds{
+            config_.threat_low_dbm, config_.threat_medium_dbm,
+            config_.threat_high_dbm, config_.threat_critical_dbm});
         ThreatLevel new_threat = tracked_drones_[index].get_threat();
         
         if (new_threat > old_threat) {
@@ -1045,7 +1046,9 @@ ErrorCode DroneScanner::add_tracked_drone_internal(
     tracked_drones_[tracked_count_] = TrackedDrone(frequency_hz, type, ThreatLevel::NONE);
     tracked_drones_[tracked_count_].created_time_ = timestamp_ms;
     tracked_drones_[tracked_count_].last_increase_time_ = timestamp_ms;
-    tracked_drones_[tracked_count_].update_rssi(rssi_dbm, timestamp_ms);
+    tracked_drones_[tracked_count_].update_rssi(rssi_dbm, timestamp_ms, ThreatThresholds{
+        config_.threat_low_dbm, config_.threat_medium_dbm,
+        config_.threat_high_dbm, config_.threat_critical_dbm});
 
     tracked_count_++;
     statistics_.drones_detected++;
@@ -1115,6 +1118,11 @@ ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     config_ = config;
     median_filter_enabled_ = config.median_enabled;
 
+    // Propagate configurable threat thresholds to RSSI detector
+    rssi_detector_.set_threat_thresholds(ThreatThresholds{
+        config.threat_low_dbm, config.threat_medium_dbm,
+        config.threat_high_dbm, config.threat_critical_dbm});
+
     return ErrorCode::SUCCESS;
 }
 
@@ -1173,7 +1181,7 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
     if (config.spectrum_min_width < 1 || config.spectrum_max_width < 2) {
         return ErrorCode::INVALID_PARAMETER;
     }
-    if (config.confirm_count < 1 || config.confirm_count > 10) {
+    if (config.confirm_count < CONFIRM_COUNT_MIN || config.confirm_count > CONFIRM_COUNT_MAX) {
         return ErrorCode::INVALID_PARAMETER;
     }
     if (config.cfar_ref_cells < CFAR_REF_CELLS_MIN || config.cfar_ref_cells > CFAR_REF_CELLS_MAX) {
@@ -1396,6 +1404,40 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     size_t edge_skip,
     int32_t total_gain
 ) noexcept {
+    return apply_shape_filters(
+        spectrum.db.data(), peak_index, raw_peak, noise_floor,
+        out_rssi, edge_skip, /*has_dc_gap=*/true, total_gain);
+}
+
+bool DroneScanner::analyze_spectrum_shape_lg(
+    const uint8_t* lg_buffer,
+    size_t peak_pixel,
+    uint8_t noise_floor,
+    int32_t& out_rssi,
+    int32_t total_gain
+) noexcept {
+    static constexpr size_t LG_EDGE_SKIP_PX = 4;
+
+    if (peak_pixel >= COMPOSITE_SIZE) return false;
+
+    const uint8_t raw_peak = lg_buffer[peak_pixel];
+    if (raw_peak <= noise_floor) return false;
+
+    return apply_shape_filters(
+        lg_buffer, peak_pixel, raw_peak, noise_floor,
+        out_rssi, LG_EDGE_SKIP_PX, /*has_dc_gap=*/false, total_gain);
+}
+
+bool DroneScanner::apply_shape_filters(
+    const uint8_t* data,
+    size_t peak_idx,
+    uint8_t raw_peak,
+    uint8_t noise_floor,
+    int32_t& out_rssi,
+    size_t edge_skip,
+    bool has_dc_gap,
+    int32_t total_gain
+) const noexcept {
     const uint8_t peak_margin = raw_peak - noise_floor;
 
     // Step 3: Peak must be significantly above noise floor
@@ -1404,22 +1446,31 @@ bool DroneScanner::analyze_spectrum_shape_impl(
 
     // Step 4: Count elevated bins around peak (signal width)
     // /3 instead of /4: for weak signals (peak_margin=20), /4 gives 5 units above
-    // noise (≈1 dB) where 1-bin quantization noise dominates width measurement.
-    // /3 gives 7 units (≈1.4 dB), providing more stable width for marginal signals.
+    // noise (~1 dB) where 1-bin quantization noise dominates width measurement.
+    // /3 gives 7 units (~1.4 dB), providing more stable width for marginal signals.
     const uint8_t elevated_threshold = noise_floor + (peak_margin / 3);
 
-    size_t left = peak_index;
+    // Upper bound: FFT_BIN_COUNT for raw spectrum, COMPOSITE_SIZE for LG buffer
+    const size_t data_size = has_dc_gap ? FFT_BIN_COUNT : COMPOSITE_SIZE;
+    const size_t upper_limit = data_size - edge_skip;
+
+    size_t left = peak_idx;
     while (left > edge_skip) {
-        size_t prev = left - 1;
-        if (prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) { --left; continue; }
-        if (spectrum.db[prev] < elevated_threshold) break;
+        const size_t prev = left - 1;
+        if (has_dc_gap && prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) {
+            --left; continue;
+        }
+        if (data[prev] < elevated_threshold) break;
         --left;
     }
-    size_t right = peak_index;
-    while (right < FFT_BIN_COUNT - edge_skip - 1) {
-        size_t next = right + 1;
-        if (next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) { ++right; continue; }
-        if (spectrum.db[next] < elevated_threshold) break;
+
+    size_t right = peak_idx;
+    while (right < upper_limit - 1) {
+        const size_t next = right + 1;
+        if (has_dc_gap && next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) {
+            ++right; continue;
+        }
+        if (data[next] < elevated_threshold) break;
         ++right;
     }
 
@@ -1435,16 +1486,16 @@ bool DroneScanner::analyze_spectrum_shape_impl(
     int32_t avg_margin = 0;
     if (config_.spectrum_peak_sharpness > 50) {
         int32_t margin_sum = 0;
-        size_t bin_count = 0;
+        size_t count = 0;
         for (size_t i = left; i <= right; ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] > noise_floor) {
-                margin_sum += (spectrum.db[i] - noise_floor);
-                ++bin_count;
+            if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (data[i] > noise_floor) {
+                margin_sum += (data[i] - noise_floor);
+                ++count;
             }
         }
-        if (bin_count > 0) {
-            avg_margin = margin_sum / static_cast<int32_t>(bin_count);
+        if (count > 0) {
+            avg_margin = margin_sum / static_cast<int32_t>(count);
         }
 
         if (avg_margin <= 0) return false;
@@ -1464,19 +1515,22 @@ bool DroneScanner::analyze_spectrum_shape_impl(
         uint8_t right_valley_margin = 0;
 
         if (left > edge_skip) {
-            size_t lv = left - 1;
-            if (!(lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END) && spectrum.db[lv] > noise_floor) {
-                left_valley_margin = spectrum.db[lv] - noise_floor;
+            const size_t lv = left - 1;
+            const bool dc_blocked = has_dc_gap && lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END;
+            if (!dc_blocked && data[lv] > noise_floor) {
+                left_valley_margin = data[lv] - noise_floor;
             }
         }
-        if (right < FFT_BIN_COUNT - edge_skip - 1) {
-            size_t rv = right + 1;
-            if (!(rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END) && spectrum.db[rv] > noise_floor) {
-                right_valley_margin = spectrum.db[rv] - noise_floor;
+        if (right < upper_limit - 1) {
+            const size_t rv = right + 1;
+            const bool dc_blocked = has_dc_gap && rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END;
+            if (!dc_blocked && data[rv] > noise_floor) {
+                right_valley_margin = data[rv] - noise_floor;
             }
         }
 
-        const uint8_t max_valley = (left_valley_margin > right_valley_margin) ? left_valley_margin : right_valley_margin;
+        const uint8_t max_valley = (left_valley_margin > right_valley_margin)
+            ? left_valley_margin : right_valley_margin;
         if (max_valley >= config_.spectrum_valley_depth) return false;
     }
 
@@ -1490,175 +1544,34 @@ bool DroneScanner::analyze_spectrum_shape_impl(
         const uint8_t high_power_threshold = raw_peak * 9 / 10;
         size_t high_power_count = 0;
 
-        for (size_t i = peak_index; i > left && i > edge_skip; --i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] >= high_power_threshold) ++high_power_count;
+        for (size_t i = peak_idx; i > left && i > edge_skip; --i) {
+            if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (data[i] >= high_power_threshold) ++high_power_count;
             else break;
         }
-        for (size_t i = peak_index + 1; i <= right && i < FFT_BIN_COUNT - edge_skip; ++i) {
-            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            if (spectrum.db[i] >= high_power_threshold) ++high_power_count;
+        for (size_t i = peak_idx + 1; i <= right && i < upper_limit; ++i) {
+            if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (data[i] >= high_power_threshold) ++high_power_count;
             else break;
         }
 
-        // Subtract DC spike bins from denominator to match numerator (which skips DC)
-        size_t signal_width_bins = right - left + 1;
-        if (left < FFT_DC_SPIKE_END && right >= FFT_DC_SPIKE_START) {
+        // Denominator: signal width excluding DC spike bins (if present)
+        size_t effective_width = right - left + 1;
+        if (has_dc_gap && left < FFT_DC_SPIKE_END && right >= FFT_DC_SPIKE_START) {
             const size_t dc_start = (left > FFT_DC_SPIKE_START) ? left : FFT_DC_SPIKE_START;
             const size_t dc_end = (right < FFT_DC_SPIKE_END) ? right : (FFT_DC_SPIKE_END - 1);
-            signal_width_bins -= (dc_end - dc_start + 1);
+            effective_width -= (dc_end - dc_start + 1);
         }
-        if (signal_width_bins > 0) {
-            const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / signal_width_bins);
+        if (effective_width > 0) {
+            const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / effective_width);
             if (flatness_pct > config_.spectrum_flatness) return false;
         }
     }
 
     // Step 11: Symmetry (V-shape must have similar left/right width)
     if (config_.spectrum_symmetry > 0 && signal_width > 1) {
-        const size_t left_width = peak_index - left;
-        const size_t right_width = right - peak_index;
-        const size_t max_side = (left_width > right_width) ? left_width : right_width;
-        const size_t min_side = (left_width < right_width) ? left_width : right_width;
-        if (max_side > 0) {
-            const uint8_t sym_pct = static_cast<uint8_t>((min_side * 100) / max_side);
-            if (sym_pct < config_.spectrum_symmetry) return false;
-        }
-    }
-
-    out_rssi = spectrum_value_to_dbm(raw_peak, total_gain);
-    return true;
-}
-
-bool DroneScanner::analyze_spectrum_shape_lg(
-    const uint8_t* lg_buffer,
-    size_t peak_pixel,
-    uint8_t noise_floor,
-    int32_t& out_rssi,
-    int32_t total_gain
-) noexcept {
-    // LG edge skip: 4 pixels from each end.
-    // Pixel mapping (reorder_frame):
-    //   px 0-119  = bins 134-253 (lower sideband)
-    //   px 120-237 = bins 2-119   (upper sideband)
-    //   px 238-239 = 0            (DC spike region, zeroed)
-    // Left edge (px 0-3): bins 134-137, near DC spike — skip rolloff proximity.
-    // Right edge (px 236-239): bins 118-119 + zero padding — skip DC proximity.
-    // Filter rolloff bins (0-5, 250-255) map to px 116-123 (crossover region);
-    // they have attenuated power and naturally terminate width expansion.
-    static constexpr size_t LG_EDGE_SKIP_PX = 4;
-    static constexpr size_t LG_EDGE_END = COMPOSITE_SIZE - LG_EDGE_SKIP_PX;
-
-    if (peak_pixel >= COMPOSITE_SIZE) return false;
-
-    const uint8_t raw_peak = lg_buffer[peak_pixel];
-    if (raw_peak <= noise_floor) return false;
-
-    const uint8_t peak_margin = raw_peak - noise_floor;
-
-    // Step 3: Peak must be significantly above noise floor
-    // Always enforced — acts as minimum floor even when CFAR is active.
-    if (peak_margin < config_.spectrum_margin) return false;
-
-    // Step 4: Count elevated pixels around peak (signal width)
-    const uint8_t elevated_threshold = noise_floor + (peak_margin / 3);
-
-    size_t left_px = peak_pixel;
-    while (left_px > LG_EDGE_SKIP_PX) {
-        if (lg_buffer[left_px - 1] < elevated_threshold) break;
-        --left_px;
-    }
-
-    size_t right_px = peak_pixel;
-    while (right_px < LG_EDGE_END - 1) {
-        if (lg_buffer[right_px + 1] < elevated_threshold) break;
-        ++right_px;
-    }
-
-    const size_t signal_width = right_px - left_px + 1;
-
-    // Step 5: Minimum width
-    if (signal_width < config_.spectrum_min_width) return false;
-
-    // Step 6: Maximum width
-    if (signal_width > config_.spectrum_max_width) return false;
-
-    // Step 7: Peak sharpness (enforce inverted-V shape)
-    int32_t avg_margin = 0;
-    if (config_.spectrum_peak_sharpness > 50) {
-        int32_t margin_sum = 0;
-        size_t pixel_count = 0;
-        for (size_t i = left_px; i <= right_px; ++i) {
-            if (lg_buffer[i] > noise_floor) {
-                margin_sum += (lg_buffer[i] - noise_floor);
-                ++pixel_count;
-            }
-        }
-        if (pixel_count > 0) {
-            avg_margin = margin_sum / static_cast<int32_t>(pixel_count);
-        }
-        if (avg_margin <= 0) return false;
-        const int32_t sharpness = (static_cast<int32_t>(peak_margin) * 100) / avg_margin;
-        if (sharpness < config_.spectrum_peak_sharpness) return false;
-    }
-
-    // Step 8: Peak ratio (tall+narrow = inverted-V)
-    if (config_.spectrum_peak_ratio > 0) {
-        const int32_t ratio = (static_cast<int32_t>(peak_margin) * 10) / static_cast<int32_t>(signal_width);
-        if (ratio < config_.spectrum_peak_ratio) return false;
-    }
-
-    // Step 9: Valley depth (deep valleys flanking peak = V-shape)
-    if (config_.spectrum_valley_depth > 0) {
-        uint8_t left_valley_margin = 0;
-        uint8_t right_valley_margin = 0;
-
-        if (left_px > LG_EDGE_SKIP_PX) {
-            const size_t lv = left_px - 1;
-            if (lg_buffer[lv] > noise_floor) {
-                left_valley_margin = lg_buffer[lv] - noise_floor;
-            }
-        }
-        if (right_px < LG_EDGE_END - 1) {
-            const size_t rv = right_px + 1;
-            if (lg_buffer[rv] > noise_floor) {
-                right_valley_margin = lg_buffer[rv] - noise_floor;
-            }
-        }
-
-        const uint8_t max_valley = (left_valley_margin > right_valley_margin)
-            ? left_valley_margin : right_valley_margin;
-        if (max_valley >= config_.spectrum_valley_depth) return false;
-    }
-
-    // Step 10: Flatness (reject flat-top signals like WiFi/BT)
-    // Guard: skip for weak signals (peak_margin < FLATNESS_MIN_PEAK_MARGIN).
-    // Same rationale as analyze_spectrum_shape_impl() — at low SNR the 90%
-    // threshold causes wild flatness oscillation from normal peak fluctuations.
-    if (config_.spectrum_flatness > 0 && peak_margin >= FLATNESS_MIN_PEAK_MARGIN) {
-        const uint8_t high_power_threshold = raw_peak * 9 / 10;
-        size_t high_power_count = 0;
-
-        for (size_t i = peak_pixel; i > left_px && i > LG_EDGE_SKIP_PX; --i) {
-            if (lg_buffer[i] >= high_power_threshold) ++high_power_count;
-            else break;
-        }
-        for (size_t i = peak_pixel + 1; i <= right_px && i < LG_EDGE_END; ++i) {
-            if (lg_buffer[i] >= high_power_threshold) ++high_power_count;
-            else break;
-        }
-
-        const size_t signal_width_px = right_px - left_px + 1;
-        if (signal_width_px > 0) {
-            const uint8_t flatness_pct = static_cast<uint8_t>((high_power_count * 100) / signal_width_px);
-            if (flatness_pct > config_.spectrum_flatness) return false;
-        }
-    }
-
-    // Step 11: Symmetry (V-shape must have similar left/right width)
-    if (config_.spectrum_symmetry > 0 && signal_width > 1) {
-        const size_t left_width = peak_pixel - left_px;
-        const size_t right_width = right_px - peak_pixel;
+        const size_t left_width = peak_idx - left;
+        const size_t right_width = right - peak_idx;
         const size_t max_side = (left_width > right_width) ? left_width : right_width;
         const size_t min_side = (left_width < right_width) ? left_width : right_width;
         if (max_side > 0) {
@@ -1755,7 +1668,9 @@ void DroneScanner::apply_sweep_tracking(
             drone.created_time_ = chTimeNow();
             drone.last_increase_time_ = chTimeNow();
             drone.mark_seen(chTimeNow());
-            drone.update_rssi(peak_rssi, chTimeNow());
+            drone.update_rssi(peak_rssi, chTimeNow(), ThreatThresholds{
+                config_.threat_low_dbm, config_.threat_medium_dbm,
+                config_.threat_high_dbm, config_.threat_critical_dbm});
             drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
             tracked_count_++;
             statistics_.drones_detected++;
@@ -1768,22 +1683,21 @@ void DroneScanner::apply_sweep_tracking(
     if (!mahalanobis_rejected) {
         (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
 
-        if (pattern_matched) {
+        // Single post-update lookup (reused for pattern match + mark_seen)
+        const auto drone_idx = find_drone_by_frequency_internal(peak_freq);
+
+        if (pattern_matched && drone_idx.has_value()) {
             const SignalPattern* pattern = pattern_manager_.get_pattern(pattern_index);
             if (pattern != nullptr && pattern->name[0] != '\0') {
                 matched_pattern_index_ = pattern_index;
                 matched_pattern_bin_ = highlight_bin;
-                const auto pm_idx = find_drone_by_frequency_internal(peak_freq);
-                if (pm_idx.has_value()) {
-                    auto& drone = tracked_drones_[pm_idx.value()];
-                    drone.set_pattern_match(pattern_correlation, pattern->name);
-                }
+                auto& drone = tracked_drones_[drone_idx.value()];
+                drone.set_pattern_match(pattern_correlation, pattern->name);
             }
         }
 
-        const auto idx_result = find_drone_by_frequency_internal(peak_freq);
-        if (idx_result.has_value()) {
-            tracked_drones_[idx_result.value()].mark_seen(chTimeNow());
+        if (drone_idx.has_value()) {
+            tracked_drones_[drone_idx.value()].mark_seen(chTimeNow());
         }
     }
 }

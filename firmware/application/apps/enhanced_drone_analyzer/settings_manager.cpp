@@ -19,6 +19,10 @@ SettingsStruct::SettingsStruct() noexcept
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
     , scan_sensitivity(75)
     , alert_rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
+    , threat_low_dbm(DEFAULT_THREAT_LOW_DBM)
+    , threat_medium_dbm(DEFAULT_THREAT_MEDIUM_DBM)
+    , threat_high_dbm(RSSI_HIGH_THREAT_THRESHOLD_DBM)
+    , threat_critical_dbm(RSSI_CRITICAL_THREAT_THRESHOLD_DBM)
     , spectrum_visible(true)
     , histogram_visible(true)
     , audio_alerts_enabled(true)
@@ -110,6 +114,18 @@ static void parse_settings_line(
                 val_start[2] == 'u' && val_start[3] == 'e');
     };
 
+    auto parse_signed_int = [val_start, val_len]() -> int32_t {
+        const bool negative = (val_len > 0 && val_start[0] == '-');
+        const uint8_t* num_start = negative ? val_start + 1 : val_start;
+        const size_t num_len = negative ? val_len - 1 : val_len;
+        uint32_t val = 0;
+        for (size_t i = 0; i < num_len; ++i) {
+            if (num_start[i] >= '0' && num_start[i] <= '9')
+                val = val * 10 + (num_start[i] - '0');
+        }
+        return negative ? -static_cast<int32_t>(val) : static_cast<int32_t>(val);
+    };
+
     // --- Scanning ---
     if (key_matches("scan_interval_ms")) {
         const uint64_t v = parse_int();
@@ -119,18 +135,19 @@ static void parse_settings_line(
         s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
         s.alert_rssi_threshold_dbm = -20 - s.scan_sensitivity;
     } else if (key_matches("rssi_threshold_db")) {
-        bool negative = (val_len > 0 && val_start[0] == '-');
-        const uint8_t* num_start = negative ? val_start + 1 : val_start;
-        size_t num_len = negative ? val_len - 1 : val_len;
-        int32_t val = 0;
-        for (size_t i = 0; i < num_len; ++i) {
-            if (num_start[i] >= '0' && num_start[i] <= '9')
-                val = val * 10 + (num_start[i] - '0');
-        }
-        s.alert_rssi_threshold_dbm = negative ? -val : val;
+        s.alert_rssi_threshold_dbm = parse_signed_int();
         // Derive scan_sensitivity to stay in sync with threshold
         const int32_t sens = -20 - s.alert_rssi_threshold_dbm;
         s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
+
+    } else if (key_matches("threat_low_db")) {
+        s.threat_low_dbm = parse_signed_int();
+    } else if (key_matches("threat_medium_db")) {
+        s.threat_medium_dbm = parse_signed_int();
+    } else if (key_matches("threat_high_db")) {
+        s.threat_high_dbm = parse_signed_int();
+    } else if (key_matches("threat_critical_db")) {
+        s.threat_critical_dbm = parse_signed_int();
 
     // --- Audio / Display ---
     } else if (key_matches("enable_audio_alerts")) {
@@ -189,7 +206,9 @@ static void parse_settings_line(
         s.rssi_variance_enabled = parse_bool();
     } else if (key_matches("confirm_count")) {
         const uint64_t v = parse_int();
-        s.confirm_count = static_cast<uint8_t>((v < 1) ? 1 : (v > 10 ? 10 : v));
+        s.confirm_count = static_cast<uint8_t>(
+            (v < CONFIRM_COUNT_MIN) ? CONFIRM_COUNT_MIN
+            : (v > CONFIRM_COUNT_MAX ? CONFIRM_COUNT_MAX : v));
 
     // --- Sweep window 1 ---
     } else if (key_matches("sweep_start_mhz")) {
@@ -415,6 +434,10 @@ ErrorCode SettingsFileManager::save(
     wl(file, "scan_interval_ms", static_cast<int64_t>(s.scan_interval_ms));
     wl(file, "sensitivity", static_cast<int64_t>(s.scan_sensitivity));
     wl(file, "rssi_threshold_db", static_cast<int64_t>(s.alert_rssi_threshold_dbm));
+    wl(file, "threat_low_db", static_cast<int64_t>(s.threat_low_dbm));
+    wl(file, "threat_medium_db", static_cast<int64_t>(s.threat_medium_dbm));
+    wl(file, "threat_high_db", static_cast<int64_t>(s.threat_high_dbm));
+    wl(file, "threat_critical_db", static_cast<int64_t>(s.threat_critical_dbm));
 
     // Audio / Display
     wbool(file, "enable_audio_alerts", s.audio_alerts_enabled);
@@ -520,6 +543,10 @@ void SettingsFileManager::apply_to_config(
     config.mode = s.scanning_mode;
     config.scan_interval_ms = s.scan_interval_ms;
     config.rssi_threshold_dbm = s.alert_rssi_threshold_dbm;
+    config.threat_low_dbm = s.threat_low_dbm;
+    config.threat_medium_dbm = s.threat_medium_dbm;
+    config.threat_high_dbm = s.threat_high_dbm;
+    config.threat_critical_dbm = s.threat_critical_dbm;
     config.dwell_enabled = s.dwell_enabled;
     config.confirm_count_enabled = s.confirm_count_enabled;
     config.noise_blacklist_enabled = s.noise_blacklist_enabled;
@@ -597,6 +624,10 @@ void SettingsFileManager::extract_from_config(
     s.scanning_mode = config.mode;
     s.scan_interval_ms = config.scan_interval_ms;
     s.alert_rssi_threshold_dbm = config.rssi_threshold_dbm;
+    s.threat_low_dbm = config.threat_low_dbm;
+    s.threat_medium_dbm = config.threat_medium_dbm;
+    s.threat_high_dbm = config.threat_high_dbm;
+    s.threat_critical_dbm = config.threat_critical_dbm;
     s.scan_sensitivity = static_cast<uint8_t>(
         (config.rssi_threshold_dbm > -20) ? 0 :
         (config.rssi_threshold_dbm < -120) ? 100 :

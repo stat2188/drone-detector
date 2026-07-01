@@ -88,6 +88,12 @@ private:
     ui::Button button_info_sharp_;
     ui::Button button_info_ratio_;
 
+    // Threat threshold controls
+    ui::NumberField field_threat_low_;
+    ui::NumberField field_threat_medium_;
+    ui::NumberField field_threat_high_;
+    ui::NumberField field_threat_critical_;
+
     // CFAR detection controls
     ui::OptionsField field_cfar_mode_;
     ui::NumberField field_cfar_ref_cells_;

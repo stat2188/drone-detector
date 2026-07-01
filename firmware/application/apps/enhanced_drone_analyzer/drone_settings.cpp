@@ -38,6 +38,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         {{UI_POS_X(11), UI_POS_Y(0)}, "Ref:", Color::white()},
         {{UI_POS_X(17), UI_POS_Y(0)}, "Grd:", Color::white()},
         {{UI_POS_X(22), UI_POS_Y(0)}, "Thr:", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(16)}, "Lo:", Color::white()},
+        {{UI_POS_X(8), UI_POS_Y(16)}, "Md:", Color::white()},
+        {{UI_POS_X(16), UI_POS_Y(16)}, "Hi:", Color::white()},
+        {{UI_POS_X(24), UI_POS_Y(16)}, "Cr:", Color::white()},
     })
     , field_scan_interval_({UI_POS_X(1), UI_POS_Y(2)}, 4, {10, 1000}, 10, ' ')
     , field_rssi_threshold_({UI_POS_X(1), UI_POS_Y(4)}, 3, {0, 100}, 1, ' ')
@@ -87,6 +91,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_cfar_guard_cells_({UI_POS_X(20), UI_POS_Y(0)}, 1, {0, 8}, 1, ' ')
     , field_cfar_threshold_({UI_POS_X(25), UI_POS_Y(0)}, 3, {10, 100}, 5, ' ')
     , button_info_cfar_({UI_POS_X(29), UI_POS_Y(0), UI_POS_WIDTH(3), 16}, "CF?")
+    , field_threat_low_({UI_POS_X(3), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, DEFAULT_THREAT_LOW_DBM, ' ')
+    , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, DEFAULT_THREAT_MEDIUM_DBM, ' ')
+    , field_threat_high_({UI_POS_X(19), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, RSSI_HIGH_THREAT_THRESHOLD_DBM, ' ')
+    , field_threat_critical_({UI_POS_X(27), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, RSSI_CRITICAL_THREAT_THRESHOLD_DBM, ' ')
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , display_ptr_(display)
@@ -137,6 +145,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &field_cfar_guard_cells_,
         &field_cfar_threshold_,
         &button_info_cfar_,
+        &field_threat_low_,
+        &field_threat_medium_,
+        &field_threat_high_,
+        &field_threat_critical_,
     });
 
     // Load persisted settings from SD card (overrides config-based defaults)
@@ -427,6 +439,27 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
+    // Threat threshold callbacks
+    field_threat_low_.on_change = [this](int32_t v) {
+        settings_.threat_low_dbm = v;
+        settings_dirty_ = true;
+    };
+
+    field_threat_medium_.on_change = [this](int32_t v) {
+        settings_.threat_medium_dbm = v;
+        settings_dirty_ = true;
+    };
+
+    field_threat_high_.on_change = [this](int32_t v) {
+        settings_.threat_high_dbm = v;
+        settings_dirty_ = true;
+    };
+
+    field_threat_critical_.on_change = [this](int32_t v) {
+        settings_.threat_critical_dbm = v;
+        settings_dirty_ = true;
+    };
+
     button_info_cfar_.on_select = [this](ui::Button&) {
         nav_.display_modal("CFAR",
             "Adaptivnyj porog CFAR.\n"
@@ -487,6 +520,12 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_cfar_ref_cells_.set_value(static_cast<int32_t>(settings_.cfar_ref_cells));
     field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));
     field_cfar_threshold_.set_value(static_cast<int32_t>(settings_.cfar_threshold_x10));
+
+    // Threat thresholds
+    field_threat_low_.set_value(settings_.threat_low_dbm);
+    field_threat_medium_.set_value(settings_.threat_medium_dbm);
+    field_threat_high_.set_value(settings_.threat_high_dbm);
+    field_threat_critical_.set_value(settings_.threat_critical_dbm);
 
     // Set initial visibility based on spectrum detection state
     set_shape_filter_visibility(settings_.spectrum_detection_enabled);

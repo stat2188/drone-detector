@@ -235,6 +235,17 @@ private:
 // ============================================================================
 
 /**
+ * @brief Configurable RSSI threat level thresholds (dBm)
+ * @note Passed to TrackedDrone::update_rssi() for threat classification
+ */
+struct ThreatThresholds {
+    int32_t low;
+    int32_t medium;
+    int32_t high;
+    int32_t critical;
+};
+
+/**
  * @brief Tracked drone data structure (56 bytes)
  * @note No virtual functions, no vtable
  * @note Memory layout optimized for cache efficiency
@@ -312,7 +323,7 @@ struct TrackedDrone {
     /**
      * @brief Update drone with new RSSI reading
      */
-    void update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcept;
+    void update_rssi(RssiValue new_rssi, SystemTime timestamp, const ThreatThresholds& thresholds) noexcept;
     
     /**
      * @brief Get average RSSI from history

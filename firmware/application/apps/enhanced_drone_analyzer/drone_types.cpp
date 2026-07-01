@@ -113,7 +113,7 @@ TrackedDrone::TrackedDrone(
     , mahalanobis_stats_{} {
 }
 
-void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcept {
+void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp, const ThreatThresholds& thresholds) noexcept {
     // Use circular buffer from the start
     const size_t write_idx = history_index_ % RSSI_HISTORY_SIZE;
     rssi_history_[write_idx] = static_cast<int16_t>(new_rssi);
@@ -151,9 +151,9 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp) noexcep
     // All signals above detection threshold start at MEDIUM (not LOW).
     // LOW is only reached through decay from MEDIUM — prevents instant-stuck-LOW loop.
     ThreatLevel classified = ThreatLevel::MEDIUM;
-    if (classify_rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
+    if (classify_rssi >= thresholds.critical) {
         classified = ThreatLevel::CRITICAL;
-    } else if (classify_rssi >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
+    } else if (classify_rssi >= thresholds.high) {
         classified = ThreatLevel::HIGH;
     }
 

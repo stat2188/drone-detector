@@ -34,6 +34,10 @@ struct ScanConfig {
     FreqHz end_frequency;
     uint32_t scan_interval_ms;
     int32_t rssi_threshold_dbm;
+    int32_t threat_low_dbm{DEFAULT_THREAT_LOW_DBM};
+    int32_t threat_medium_dbm{DEFAULT_THREAT_MEDIUM_DBM};
+    int32_t threat_high_dbm{RSSI_HIGH_THREAT_THRESHOLD_DBM};
+    int32_t threat_critical_dbm{RSSI_CRITICAL_THREAT_THRESHOLD_DBM};
     uint32_t stale_timeout_ms;
     
     // Sweep range (Hz) — window 1
@@ -1239,6 +1243,32 @@ private:
         int32_t& out_rssi,
         int32_t total_gain
     ) noexcept;
+
+    /**
+     * @brief Shared 11-step spectrum shape filter chain (Steps 3-11).
+     * @param data         Power data buffer (spectrum.db.data() or lg_buffer)
+     * @param peak_idx     Index of detected peak
+     * @param raw_peak     Raw power value at peak
+     * @param noise_floor  Computed noise floor (25th percentile)
+     * @param out_rssi     Output: RSSI in dBm if signal passes all filters
+     * @param edge_skip    Number of edge bins/pixels to skip
+     * @param has_dc_gap   true = skip FFT DC spike bins (120-135); false = LG buffer (no DC gap)
+     * @param total_gain   Current hardware gain for RSSI conversion
+     * @return true if signal passes all shape filters
+     * @note Stack: ~0 bytes (all state via parameters).
+     * @note Shared by analyze_spectrum_shape_impl() (raw FFT) and
+     *       analyze_spectrum_shape_lg() (LG reordered buffer).
+     */
+    [[nodiscard]] bool apply_shape_filters(
+        const uint8_t* data,
+        size_t peak_idx,
+        uint8_t raw_peak,
+        uint8_t noise_floor,
+        int32_t& out_rssi,
+        size_t edge_skip,
+        bool has_dc_gap,
+        int32_t total_gain
+    ) const noexcept;
 
     /**
      * @brief Sweep-mode post-detection: range check, exception filter, Mahalanobis gate,

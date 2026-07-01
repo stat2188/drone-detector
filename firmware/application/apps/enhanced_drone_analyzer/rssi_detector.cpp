@@ -4,6 +4,8 @@ namespace drone_analyzer {
 
 RSSIDetector::RSSIDetector() noexcept
     : detection_threshold_(RSSI_DETECTION_THRESHOLD_DBM)
+    , threat_thresholds_{DEFAULT_THREAT_LOW_DBM, DEFAULT_THREAT_MEDIUM_DBM,
+                          RSSI_HIGH_THREAT_THRESHOLD_DBM, RSSI_CRITICAL_THREAT_THRESHOLD_DBM}
     , rssi_history_{}
     , timestamp_history_{}
     , history_index_(0)
@@ -97,13 +99,13 @@ ErrorCode RSSIDetector::detect_drone(RSSIDetectionResult& result) noexcept {
 ThreatLevel RSSIDetector::calculate_threat_level(
     RssiValue rssi
 ) const noexcept {
-    if (rssi >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM) {
+    if (rssi >= threat_thresholds_.critical) {
         return ThreatLevel::CRITICAL;
-    } else if (rssi >= RSSI_HIGH_THREAT_THRESHOLD_DBM) {
+    } else if (rssi >= threat_thresholds_.high) {
         return ThreatLevel::HIGH;
-    } else if (rssi >= RSSI_DETECTION_THRESHOLD_DBM) {
+    } else if (rssi >= threat_thresholds_.medium) {
         return ThreatLevel::MEDIUM;
-    } else if (rssi >= (RSSI_DETECTION_THRESHOLD_DBM - 10)) {
+    } else if (rssi >= threat_thresholds_.low) {
         return ThreatLevel::LOW;
     } else {
         return ThreatLevel::NONE;
@@ -187,6 +189,10 @@ void RSSIDetector::set_detection_threshold(RssiValue threshold) noexcept {
     if (threshold >= RSSI_MIN_DBM && threshold <= RSSI_MAX_DBM) {
         detection_threshold_ = threshold;
     }
+}
+
+void RSSIDetector::set_threat_thresholds(const ThreatThresholds& thresholds) noexcept {
+    threat_thresholds_ = thresholds;
 }
 
 RssiValue RSSIDetector::get_detection_threshold() const noexcept {

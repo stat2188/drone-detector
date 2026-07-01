@@ -856,11 +856,15 @@ void DroneScannerUI::refresh_ui() noexcept {
             case ScannerState::LOCKING:
                 color = BigDisplayColor::YELLOW;
                 break;
-            case ScannerState::TRACKING:
-                color = (current_rssi_ >= RSSI_CRITICAL_THREAT_THRESHOLD_DBM)
+            case ScannerState::TRACKING: {
+                const ScanConfig& cfg = (scanner_ptr_ != nullptr)
+                    ? scanner_ptr_->get_config()
+                    : ScanConfig();
+                color = (current_rssi_ >= cfg.threat_critical_dbm)
                       ? BigDisplayColor::RED
                       : BigDisplayColor::GREEN;
                 break;
+            }
             default:
                 color = BigDisplayColor::GREY;
                 break;

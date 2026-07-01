@@ -22,6 +22,10 @@ struct SettingsStruct {
     uint32_t scan_interval_ms;
     uint8_t scan_sensitivity;
     int32_t alert_rssi_threshold_dbm;
+    int32_t threat_low_dbm;
+    int32_t threat_medium_dbm;
+    int32_t threat_high_dbm;
+    int32_t threat_critical_dbm;
 
     // Display
     bool spectrum_visible;

@@ -264,6 +264,18 @@ constexpr int32_t RSSI_CRITICAL_THREAT_THRESHOLD_DBM = -80;
 constexpr int32_t RSSI_NOISE_FLOOR_DBM = -100;
 
 /**
+ * @brief Default RSSI threshold for low threat (dBm)
+ * @note Detection threshold - 10 dB = -105 dBm
+ */
+constexpr int32_t DEFAULT_THREAT_LOW_DBM = -105;
+
+/**
+ * @brief Default RSSI threshold for medium threat (dBm)
+ * @note Equals detection threshold (-95 dBm) — all signals above detection start at MEDIUM
+ */
+constexpr int32_t DEFAULT_THREAT_MEDIUM_DBM = -95;
+
+/**
  * @brief RF amplifier gain (dB) when enabled
  * @note HackRF RF amp (HMC627A/VGA) provides ~14 dB when enabled, 0 dB bypass when off
  */
@@ -1175,7 +1187,7 @@ constexpr uint8_t CONFIRM_COUNT_MIN = 1;
 /**
  * @brief Maximum confirm count
  */
-constexpr uint8_t CONFIRM_COUNT_MAX = 20;
+constexpr uint8_t CONFIRM_COUNT_MAX = 10;
 
 // ============================================================================
 // RSSI Variance Noise Rejection Constants
