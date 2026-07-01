@@ -136,6 +136,26 @@ void initialize_eda_mutexes() noexcept {
     chMtxInit(&g_filtered_drones_mutex);
     chMtxInit(&g_power_levels_mutex);
 
+    // FIX N01: Initialize mutexes that were never chMtxInit'd
+    // These mutexes were used via chMtxLock() without prior chMtxInit(),
+    // causing undefined behavior (ChibiOS requires chMtxInit before first lock).
+
+    // N01-a: Scanner spectrum data double-buffer mutex
+    // LockOrder: SPECTRUM_DATA_MUTEX (10)
+    chMtxInit(&DroneScanner::g_spectrum_data_mutex);
+
+    // N01-b: Histogram analysis buffer mutex
+    // LockOrder: HISTOGRAM_BUFFER_MUTEX (9)
+    chMtxInit(&HistogramBufferStorage::g_histogram_buffer_mutex);
+
+    // N01-c: Entries-to-scan list mutex
+    // LockOrder: ENTRIES_TO_SCAN_MUTEX (8)
+    chMtxInit(&EntriesToScanStorage::g_entries_to_scan_mutex);
+
+    // N01-d: SD card I/O mutex (FatFS is NOT thread-safe)
+    // LockOrder: SD_CARD_MUTEX (13 — MUST BE LAST)
+    chMtxInit(&get_sd_card_mutex());
+
     // Memory pool functionality has been removed from codebase
     // No need to initialize MemoryPoolManager global mutex
 

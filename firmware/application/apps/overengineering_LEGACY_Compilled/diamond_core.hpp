@@ -34,6 +34,7 @@
 // Minimal includes - rely on project's existing headers
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 // Third-party library headers
 #include <ch.h>
@@ -53,7 +54,7 @@ namespace ui::apps::enhanced_drone_analyzer::DiamondCore {
 using TrendIndex = uint8_t;
 using ThreatIndex = uint8_t;
 using RSSIValue = int32_t;
-using FrequencyHz = uint64_t;
+using FrequencyHz = int64_t;  // N02: Match rf::Frequency in rf_path.hpp (int64_t)
 
 // CONSTANTS
 namespace TrendConstants {
@@ -75,7 +76,7 @@ namespace RSSIConstants {
 }
 
 namespace ErrorCodes {
-    constexpr FrequencyHz FREQUENCY_ERROR = UINT64_MAX;  // Error code for frequency parsing
+    constexpr FrequencyHz FREQUENCY_ERROR = std::numeric_limits<int64_t>::max();  // N02: Error code for frequency parsing
 }
 
 // Movement Trend Utilities
@@ -182,7 +183,7 @@ struct RSSIUtils {
 // - Input format: "XXXX.XXXXXX" (MHz with decimal) or "XXXXXXXXXXXXXXX" (Hz)
 // - Output: Frequency in Hz (uint64_t)
 // - Performance: ~50 cycles vs ~1000-2000 cycles for strtod()
-// - Returns UINT64_MAX on error (outside valid hardware range)
+// - Returns FREQUENCY_ERROR (INT64_MAX) on error (outside valid hardware range)
 
 namespace FrequencyParserConstants {
     constexpr uint64_t MHZ_TO_HZ = 1000000ULL;
@@ -201,7 +202,7 @@ struct FrequencyParser {
     /**
      * @brief Parse frequency string in MHz format (e.g., "2400.5" -> 2400500000 Hz)
      * @param str Null-terminated string containing frequency in MHz
-     * @return Frequency in Hz, or UINT64_MAX on error
+     * @return Frequency in Hz, or FREQUENCY_ERROR on error
      * @note Error conditions:
      *   - Null pointer or empty string
      *   - Non-numeric characters
@@ -280,7 +281,7 @@ struct FrequencyParser {
     /**
      * @brief Parse frequency string in Hz format (e.g., "2400500000" -> 2400500000 Hz)
      * @param str Null-terminated string containing frequency in Hz
-     * @return Frequency in Hz, or UINT64_MAX on error
+     * @return Frequency in Hz, or FREQUENCY_ERROR on error
      * @note Error conditions:
      *   - Null pointer or empty string
      *   - Non-numeric characters

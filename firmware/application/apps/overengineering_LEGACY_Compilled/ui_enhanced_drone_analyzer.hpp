@@ -522,6 +522,10 @@ namespace HistogramBufferStorage {
     };
 }
 
+// FIX N01: Expose SD card mutex for centralized initialization in initialize_eda_mutexes()
+// Definition is in ui_enhanced_drone_analyzer.cpp (function-local static pattern)
+[[nodiscard]] Mutex& get_sd_card_mutex() noexcept;
+
 class DroneScanner {
 public:
     // FIX #3: Public access to storage size constants for static_assert validation

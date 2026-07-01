@@ -378,7 +378,7 @@ public:
      * @note Thread-local storage ensures thread safety
      */
     static LockOrderTracker& instance() noexcept {
-        static thread_local LockOrderTracker tracker;
+        static LockOrderTracker tracker;  // H02: static (single-core M4, no TLS needed)
         return tracker;
     }
 
@@ -723,12 +723,14 @@ private:
 
 namespace {
     /**
-     * @brief Thread-local nesting counter for nested critical sections
+     * @brief Nesting counter for nested critical sections
      * @note Shared between constructor and destructor to track nesting depth
      * @note Only disables interrupts on first entry (nesting count = 0)
      * @note Only re-enables interrupts on last exit (nesting count becomes 0)
+     * @note H02: Changed from thread_local to static (Cortex-M4 is single-core,
+     *       one thread executes at a time, TLS unnecessary)
      */
-    thread_local size_t critical_section_nesting_count = 0;
+    static size_t critical_section_nesting_count = 0;
 }
 
 /**
