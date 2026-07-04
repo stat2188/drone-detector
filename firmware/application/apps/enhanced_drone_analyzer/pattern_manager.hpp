@@ -45,6 +45,12 @@ public:
     /** @brief Delete a pattern by index (file + array compaction). */
     [[nodiscard]] ErrorCode delete_pattern(size_t index) noexcept;
 
+    /** @brief Toggle enabled/disabled flag for a pattern by index.
+     *  @note Modifies in-memory flags AND rewrites the pattern file on SD.
+     *  @return SUCCESS, INVALID_PARAMETER if index out of range,
+     *          DATABASE_LOAD_TIMEOUT on file write failure. */
+    [[nodiscard]] ErrorCode toggle_pattern(size_t index) noexcept;
+
     [[nodiscard]] const SignalPattern* get_pattern(size_t index) const noexcept;
     [[nodiscard]] const SignalPattern* get_patterns_array() const noexcept;
     [[nodiscard]] size_t get_pattern_count() const noexcept;

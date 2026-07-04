@@ -328,6 +328,94 @@ ErrorCode PatternManager::delete_pattern(size_t index) noexcept {
     return ErrorCode::SUCCESS;
 }
 
+ErrorCode PatternManager::toggle_pattern(size_t index) noexcept {
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
+
+    if (index >= pattern_count_) return ErrorCode::INVALID_PARAMETER;
+
+    SignalPattern& p = patterns_[index];
+    p.set_enabled(!p.is_enabled());
+
+    // Rewrite the file with the toggled flag.
+    // Follows the same file path and CSV format as save_pattern().
+    ensure_directory(patterns_dir);
+
+    const auto filepath = patterns_dir / std::string(p.name) + u".TXT";
+
+    File file;
+    const auto open_err = file.create(filepath);
+    if (open_err.is_valid()) return ErrorCode::DATABASE_LOAD_TIMEOUT;
+
+    struct FileGuard {
+        File* const file;
+        explicit FileGuard(File* f) noexcept : file(f) {}
+        ~FileGuard() { if (file) file->close(); }
+        FileGuard(const FileGuard&) = delete;
+        FileGuard& operator=(const FileGuard&) = delete;
+    } file_guard(&file);
+
+    // Local stack buffer for CSV serialization (~160 bytes).
+    // Matches save_pattern() format: 25 fields.
+    static constexpr size_t WRITE_BUF_SIZE = 160;
+    uint8_t write_buf[WRITE_BUF_SIZE]{};
+    size_t write_pos = 0;
+
+    auto write_char = [&](char c) noexcept -> void {
+        if (write_pos < WRITE_BUF_SIZE) write_buf[write_pos++] = static_cast<uint8_t>(c);
+    };
+
+    constexpr size_t INT32_STR_BUF_SIZE = 12;
+    constexpr size_t UINT64_STR_BUF_SIZE = 24;
+
+    auto write_int = [&](int32_t val) noexcept -> void {
+        char tmp[INT32_STR_BUF_SIZE];
+        const int len = snprintf(tmp, sizeof(tmp), "%ld", static_cast<long>(val));
+        if (len <= 0 || len >= static_cast<int>(sizeof(tmp))) return;
+        for (int i = 0; i < len; ++i) write_char(tmp[i]);
+    };
+
+    auto write_uint64 = [&](uint64_t val) noexcept -> void {
+        char tmp[UINT64_STR_BUF_SIZE];
+        const int len = snprintf(tmp, sizeof(tmp), "%llu", static_cast<unsigned long long>(val));
+        if (len <= 0 || len >= static_cast<int>(sizeof(tmp))) return;
+        for (int i = 0; i < len; ++i) write_char(tmp[i]);
+    };
+
+    // Field 0: name
+    for (size_t i = 0; i < PATTERN_NAME_MAX_LEN && p.name[i] != '\0'; ++i) {
+        write_char(p.name[i]);
+    }
+    // Fields 1-16: waveform[16]
+    for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
+        write_char(',');
+        write_int(static_cast<int32_t>(p.waveform[i]));
+    }
+    // Fields 17-20: features
+    write_char(',');
+    write_int(static_cast<int32_t>(p.features.peak_position));
+    write_char(',');
+    write_int(static_cast<int32_t>(p.features.peak_value));
+    write_char(',');
+    write_int(static_cast<int32_t>(p.features.noise_floor));
+    write_char(',');
+    write_int(static_cast<int32_t>(p.features.margin));
+    // Fields 21-24: threshold, flags, center_freq, range_width
+    write_char(',');
+    write_int(static_cast<int32_t>(p.match_threshold));
+    write_char(',');
+    write_int(static_cast<int32_t>(p.flags));
+    write_char(',');
+    write_uint64(static_cast<uint64_t>(p.center_freq));
+    write_char(',');
+    write_uint64(static_cast<uint64_t>(p.range_width));
+    write_char('\n');
+
+    const File::Result<File::Size> write_result = file.write(write_buf, static_cast<File::Size>(write_pos));
+    if (!write_result.is_ok()) return ErrorCode::DATABASE_LOAD_TIMEOUT;
+
+    return ErrorCode::SUCCESS;
+}
+
 const SignalPattern* PatternManager::get_pattern(size_t index) const noexcept {
     MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     if (index >= pattern_count_) return nullptr;

@@ -68,6 +68,9 @@ private:
     ui::Checkbox check_mahalanobis_;
     ui::NumberField field_mahalanobis_threshold_;
 
+    // Pattern matching toggle
+    ui::Checkbox check_pattern_matching_;
+
     // Spectrum detection params
     ui::NumberField field_spectrum_margin_;
     ui::NumberField field_spectrum_min_width_;

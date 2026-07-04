@@ -56,6 +56,7 @@ private:
     static constexpr uint16_t SPECTRUM_X = 0;
     static constexpr uint16_t SPECTRUM_WIDTH = 240;
     static constexpr uint16_t LIST_Y = 150;
+    static constexpr uint16_t BUTTONS2_Y = 290;
 
     enum class ViewState : uint8_t {
         IDLE,
@@ -76,6 +77,9 @@ private:
     ui::Button button_delete_;
     ui::Button button_toggle_;
     ui::Button button_back_;
+    ui::NumberField field_freq_mhz_;
+    ui::Button button_enable_all_;
+    ui::Button button_disable_all_;
     ui::Text label_status_;
 
     // State

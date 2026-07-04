@@ -34,6 +34,9 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
     , button_delete_{{UI_POS_X(12), 270, UI_POS_WIDTH(5), 20}, "Del"}
     , button_toggle_{{UI_POS_X(18), 270, UI_POS_WIDTH(5), 20}, "On/Off"}
     , button_back_{{UI_POS_X(24), 270, UI_POS_WIDTH(3), 20}, "<="}
+    , field_freq_mhz_{{UI_POS_X(10), UI_POS_Y(1)}, 5, {100, 7200}, 1, ' '}
+    , button_enable_all_{{UI_POS_X(6), BUTTONS2_Y, UI_POS_WIDTH(5), 20}, "EnAll"}
+    , button_disable_all_{{UI_POS_X(12), BUTTONS2_Y, UI_POS_WIDTH(6), 20}, "DisAll"}
     , label_status_{{UI_POS_X(0), 30, UI_POS_WIDTH(28), 20}, "Idle"} {
 
     add_children({
@@ -44,6 +47,9 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
         &button_delete_,
         &button_toggle_,
         &button_back_,
+        &field_freq_mhz_,
+        &button_enable_all_,
+        &button_disable_all_,
         &label_status_,
     });
 
@@ -83,6 +89,47 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 
     field_patterns_.on_change = [this](size_t index, int32_t) {
         selected_index_ = static_cast<uint8_t>(index);
+    };
+
+    // Frequency input — MHz field with FrequencyKeypadView for precise entry
+    field_freq_mhz_.on_change = [this](int32_t v) {
+        capture_freq_ = static_cast<FreqHz>(v) * 1000000ULL;
+    };
+
+    field_freq_mhz_.on_select = [this](ui::NumberField&) {
+        baseband::spectrum_streaming_stop();
+        auto new_view = nav_.push<FrequencyKeypadView>(
+            static_cast<rf::Frequency>(field_freq_mhz_.value()) * 1000000ULL);
+        new_view->on_changed = [this](rf::Frequency f) {
+            field_freq_mhz_.set_value(static_cast<int32_t>(f / 1000000ULL));
+        };
+    };
+
+    // Enable All / Disable All buttons
+    button_enable_all_.on_select = [this](ui::Button&) {
+        if (pm_ == nullptr || scanner_ == nullptr) return;
+        const size_t count = pm_->get_pattern_count();
+        for (size_t i = 0; i < count; ++i) {
+            const SignalPattern* p = pm_->get_pattern(i);
+            if (p != nullptr && !p->is_enabled()) {
+                (void)pm_->toggle_pattern(i);
+            }
+        }
+        scanner_->refresh_patterns();
+        refresh_list();
+    };
+
+    button_disable_all_.on_select = [this](ui::Button&) {
+        if (pm_ == nullptr || scanner_ == nullptr) return;
+        const size_t count = pm_->get_pattern_count();
+        for (size_t i = 0; i < count; ++i) {
+            const SignalPattern* p = pm_->get_pattern(i);
+            if (p != nullptr && p->is_enabled()) {
+                (void)pm_->toggle_pattern(i);
+            }
+        }
+        scanner_->refresh_patterns();
+        refresh_list();
     };
 }
 
@@ -330,6 +377,10 @@ void PatternManagerView::init_sweep_range() noexcept {
     if (sweep_step_ == 0) {
         sweep_step_ = static_cast<FreqHz>(SWEEP_BINS_PER_STEP) * SWEEP_BIN_SIZE;
     }
+
+    // Set frequency field from center of sweep range
+    const FreqHz center_mhz = (sweep_start_ + (sweep_end_ - sweep_start_) / 2) / 1000000ULL;
+    field_freq_mhz_.set_value(static_cast<int32_t>(center_mhz));
 }
 
 FreqHz PatternManagerView::bin_to_frequency(int16_t bin) const noexcept {
@@ -478,17 +529,14 @@ void PatternManagerView::toggle_enabled() noexcept {
     if (pm_ == nullptr || scanner_ == nullptr) return;
     if (selected_index_ >= pm_->get_pattern_count()) return;
 
-    const SignalPattern* p = pm_->get_pattern(selected_index_);
-    if (p == nullptr) return;
-
-    // Toggle the enabled flag via reload (PatternManager doesn't expose toggle directly)
-    // Workaround: delete and re-save with toggled flag
-    // Simpler: just mark via the patterns array pointer (patterns_ is mutable internally)
-    // Since we can't modify via const pointer, use the file-based approach:
-    // Delete + re-save is too complex. Instead, just read-modify-write via PatternManager.
-    // PatternManager doesn't expose a toggle method, so we skip for now and show current state.
-    // TODO: Add PatternManager::toggle_pattern(index) method
-    refresh_list();
+    const ErrorCode err = pm_->toggle_pattern(selected_index_);
+    if (err == ErrorCode::SUCCESS) {
+        scanner_->refresh_patterns();
+        refresh_list();
+    } else {
+        label_status_.set("Toggle failed");
+        set_dirty();
+    }
 }
 
 // ============================================================================
