@@ -17,7 +17,7 @@ namespace drone_analyzer {
 SettingsStruct::SettingsStruct() noexcept
     : scanning_mode(DEFAULT_SCANNING_MODE)
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
-    , scan_sensitivity(75)
+    , scan_sensitivity(85)
     , alert_rssi_threshold_dbm(RSSI_DETECTION_THRESHOLD_DBM)
     , threat_low_dbm(DEFAULT_THREAT_LOW_DBM)
     , threat_medium_dbm(DEFAULT_THREAT_MEDIUM_DBM)

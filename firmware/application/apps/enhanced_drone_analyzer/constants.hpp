@@ -780,7 +780,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 5;
  * @note 255 = accepts all widths (no filtering)
  * @note 40 = original default (too narrow for FPV)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 10;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
@@ -803,7 +803,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 125;
  * @note 80 allows signals up to 31 bins wide with peak_margin=255
  * @note FPV: disabled due to wide signal width (~77 bins) having low ratio
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 5;
 
 /**
  * @brief Default valley depth threshold (0-200)
@@ -818,7 +818,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
  *       at all (truly flat), but accepts the natural FPV dual-peak shape.
  * @note Previous default was 80; raised to 100 for analog FM
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 100;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 60;
 
 /**
  * @brief Default peak flatness threshold (0-100, percentage)
@@ -832,7 +832,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 100;
  *       flat-top noise that bleeds through the analog FM bandwidth.
  * @note Previous default was 30; raised to 40 for Wi-Fi rejection
  */
-constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 40;
+constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 0;
 
 /**
  * @brief Minimum peak margin for flatness check to be meaningful (in spectrum.db units)
@@ -861,7 +861,7 @@ constexpr uint8_t FLATNESS_MIN_PEAK_MARGIN = 40;
  *       asymmetric noise spikes.
  * @note Previous default was 50; lowered to 35 for analog FM tolerance
  */
-constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 35;
+constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 0;
 
 // ============================================================================
 // Pattern Matching Constants
