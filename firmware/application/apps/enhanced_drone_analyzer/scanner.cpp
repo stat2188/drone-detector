@@ -1450,9 +1450,22 @@ bool DroneScanner::apply_shape_filters(
 ) const noexcept {
     const uint8_t peak_margin = raw_peak - noise_floor;
 
+    // Sensitivity-adaptive filter scaling:
+    // At high sensitivity (low threshold), the RSSI gate is wide open and shape
+    // filters must work harder to reject noise. We derive a sensitivity factor
+    // from the RSSI threshold: 0 at default (-95 dBm), positive at high sensitivity.
+    // At low sensitivity (strict threshold), the RSSI gate does most of the work
+    // so shape filters stay at defaults (no loosening).
+    const int32_t rssi_sens = -(config_.rssi_threshold_dbm + 95);
+
     // Step 3: Peak must be significantly above noise floor
-    // Always enforced — acts as minimum floor even when CFAR is active.
-    if (peak_margin < config_.spectrum_margin) return false;
+    // Scale margin at high sensitivity: +1 unit per 2 sensitivity points above default.
+    // At sens=75 (default): effective_margin = spectrum_margin (no change).
+    // At sens=87 (rssi_sens=12): effective_margin = spectrum_margin + 6.
+    const uint8_t effective_margin = (rssi_sens > 0)
+        ? static_cast<uint8_t>(config_.spectrum_margin + rssi_sens / 2)
+        : config_.spectrum_margin;
+    if (peak_margin < effective_margin) return false;
 
     // Step 4: Count elevated bins around peak (signal width)
     // /3 instead of /4: for weak signals (peak_margin=20), /4 gives 5 units above
@@ -1545,12 +1558,18 @@ bool DroneScanner::apply_shape_filters(
     }
 
     // Step 10: Flatness (reject flat-top signals like WiFi/BT)
-    // Guard: skip for weak signals (peak_margin < FLATNESS_MIN_PEAK_MARGIN).
-    // Below ~8 dB SNR, the 90% threshold is too close to signal values —
-    // V-shape signals compress near the noise floor, inflating flatness_pct
-    // by 20-50% from normal peak fluctuations. The other shape filters
-    // (sharpness, valley depth, width) are more reliable at low SNR.
-    if (config_.spectrum_flatness > 0 && peak_margin >= FLATNESS_MIN_PEAK_MARGIN) {
+    // Guard: skip for weak signals where flatness measurement is unreliable.
+    // At high sensitivity, lower the guard so flatness activates earlier —
+    // this is critical because flatness is the primary WiFi/BT rejection filter.
+    // At default sensitivity: guard = FLATNESS_MIN_PEAK_MARGIN (40, ~8 dB).
+    // At sens=87 (rssi_sens=12): guard = max(15, 40-12) = 28 (~5.6 dB).
+    // At sens=95 (rssi_sens=20): guard = max(15, 40-20) = 20 (~4 dB).
+    const uint8_t effective_flatness_min = (rssi_sens > 0)
+        ? static_cast<uint8_t>((FLATNESS_MIN_PEAK_MARGIN > static_cast<uint8_t>(rssi_sens))
+            ? (FLATNESS_MIN_PEAK_MARGIN - rssi_sens)
+            : 15)
+        : FLATNESS_MIN_PEAK_MARGIN;
+    if (config_.spectrum_flatness > 0 && peak_margin >= effective_flatness_min) {
         const uint8_t high_power_threshold = raw_peak * 9 / 10;
         size_t high_power_count = 0;
 

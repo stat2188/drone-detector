@@ -765,12 +765,12 @@ constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 25;
 /**
  * @brief Default minimum signal width in bins (1-100)
  * @note Signals narrower than this are rejected as needle spikes
- * @note 3 bins = 234 kHz — FPV-OPTIMIZED: catch narrow pilot/control bursts
- *       and weak analog FM at long range
+ * @note 5 bins = 390 kHz — rejects narrow noise spikes while still catching
+ *       weak analog FM pilot/carrier and narrow control bursts at long range
  * @note 20 bins = 1.56 MHz (aggressive filtering)
- * @note Previous default was 5; lowered to 3 for FPV narrow signals
+ * @note Previous default was 3; raised to 5 to reject more noise spikes
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 3;
+constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 5;
 
 /**
  * @brief Default maximum signal width in bins (1-255)
@@ -787,12 +787,11 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
  * @note sharpness = (peak_margin * 100) / avg_margin
  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
  * @note 50 = no sharpness filtering (accept all shapes)
- * @note FPV-OPTIMIZED: 115 — softer V-shape enforcement.
- *       Analog FM at 5.8 GHz often has gentle slopes (not knife-edge);
- *       115 accepts these while still rejecting broadband flat noise.
- * @note Previous default was 130; lowered to 115 for analog FM tolerance
+ * @note FPV-OPTIMIZED: 130 — rejects noise spikes (sharpness 100-150) while
+ *       accepting real analog FM V-shape signals (sharpness 150-250).
+ * @note Previous default was 115; raised to 130 for better noise rejection
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 115;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 125;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)
