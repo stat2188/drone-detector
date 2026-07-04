@@ -25,7 +25,7 @@ class DroneScanner;
  *       - DBLREG-safe handler lifecycle (register on show, unregister on hide)
  *       - baseband_needs_restore_ flag for proper baseband recovery
  *
- * @note Follows AnalogVideoView handler pattern:
+ * @note Follows handler lifecycle pattern:
  *       - Registers own handlers (ChannelSpectrumConfig + DisplayFrameSync)
  *       - Main DroneScannerUI unregisters its handlers before push
  *       - On return, DroneScannerUI::on_show() re-registers its handlers
@@ -100,7 +100,7 @@ private:
     // Baseband config saved from scanner (value copy, thread-safe)
     ScanConfig scanner_config_{};
 
-    // Message handler lifecycle (AnalogVideoView pattern)
+    // Message handler lifecycle (register on show, unregister on hide)
     struct HandlerStorage {
         MessageHandlerRegistration spectrum_config;
         MessageHandlerRegistration frame_sync;

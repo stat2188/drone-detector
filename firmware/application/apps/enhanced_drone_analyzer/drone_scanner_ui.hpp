@@ -20,7 +20,6 @@
 #include "scanner_thread.hpp"
 #include "drone_display.hpp"
 #include "sweep_processor.hpp"
-#include "analog_video_view.hpp"
 
 namespace drone_analyzer {
 
@@ -203,7 +202,6 @@ private:
     uint8_t db_scan_count_{0};
     AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
     AtomicFlag button_debounce_guard_;     // Debounces button_mode_/start_stop rapid taps
-    AtomicFlag video_transition_guard_;    // Prevents double-tap pushing multiple AnalogVideoView
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)
 

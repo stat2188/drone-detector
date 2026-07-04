@@ -18,7 +18,7 @@
 namespace drone_analyzer {
 
 // ============================================================================
-// Constructor / Destructor — follows AnalogVideoView lifecycle pattern
+// Constructor / Destructor — handler lifecycle pattern
 // ============================================================================
 
 PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
@@ -88,7 +88,7 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 
 PatternManagerView::~PatternManagerView() noexcept {
     // CRITICAL: Unregister handlers BEFORE destroying anything else.
-    // Matches AnalogVideoView destructor pattern.
+    // Matches handler lifecycle: unregister before destruction.
     unregister_handlers();
 
     if (view_state_ == ViewState::LIVE || view_state_ == ViewState::CAPTURING) {
@@ -99,7 +99,7 @@ PatternManagerView::~PatternManagerView() noexcept {
 }
 
 // ============================================================================
-// Handler lifecycle — follows AnalogVideoView pattern exactly
+// Handler lifecycle — register on show, unregister on hide
 // ============================================================================
 
 void PatternManagerView::register_handlers() noexcept {
@@ -138,7 +138,7 @@ void PatternManagerView::unregister_handlers() noexcept {
 }
 
 // ============================================================================
-// Lifecycle — matches AnalogVideoView on_show/on_hide
+// Lifecycle — on_show/on_hide handler registration
 // ============================================================================
 
 void PatternManagerView::on_show() {

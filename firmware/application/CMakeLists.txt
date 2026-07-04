@@ -313,7 +313,6 @@ set(CPPSRC
 	apps/enhanced_drone_analyzer/drone_display.cpp
 	apps/enhanced_drone_analyzer/drone_settings.cpp
 	apps/enhanced_drone_analyzer/drone_scanner_ui.cpp
-	apps/enhanced_drone_analyzer/analog_video_view.cpp
 	apps/enhanced_drone_analyzer/scanner_thread.cpp
 	apps/enhanced_drone_analyzer/rssi_detector.cpp
 	apps/enhanced_drone_analyzer/histogram_processor.cpp

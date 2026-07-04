@@ -127,8 +127,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     , nav_(nav)
     , big_display_{{BIG_FREQUENCY_X, BIG_FREQUENCY_Y, BIG_FREQUENCY_WIDTH, 52}, 0}
     , sweep_transition_guard_()
-    , button_debounce_guard_()
-    , video_transition_guard_() {
+    , button_debounce_guard_() {
     add_children({
         &labels_,
         &field_lna_,
@@ -480,7 +479,6 @@ DroneScannerUI::~DroneScannerUI() noexcept {
     // Ensure atomic flags are cleared on destruction
     button_debounce_guard_.clear();
     sweep_transition_guard_.clear();
-    video_transition_guard_.clear();
 }
 
 void DroneScannerUI::focus() {
@@ -505,9 +503,6 @@ void DroneScannerUI::destruct_objects() noexcept {
 }
 
 void DroneScannerUI::on_show() {
-    // Clear video transition guard when returning from AnalogVideoView (paired with on_touch() set)
-    video_transition_guard_.clear();
-
     if (baseband_needs_restore_ && !composite_active_) {
         baseband_needs_restore_ = false;
         baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
@@ -516,9 +511,7 @@ void DroneScannerUI::on_show() {
         baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
         portapack::receiver_model.enable();
 
-        // CRITICAL FIX: Restore audio output that was muted by AnalogVideoView::setup_video_receiver().
-        // Without this, the scanner returns to operation with muted audio alerts.
-        // audio::output::mute() is called in analog_video_view.cpp, we must unmute here.
+        // Restore audio output that may have been muted by a sub-view
         audio::output::unmute();
     }
 
@@ -582,11 +575,6 @@ void DroneScannerUI::on_show() {
 }
 
 void DroneScannerUI::on_hide() {
-    // Clear video transition guard on ANY hide event.
-    // This prevents permanent guard leak if AnalogVideoView push failed
-    // or if the navigation stack popped unexpectedly.
-    video_transition_guard_.clear();
-
     if (scanning_) {
         scanner_thread_->set_scanning(false);
         if (scanner_ptr_ != nullptr) {
@@ -635,90 +623,7 @@ void DroneScannerUI::show_error(ErrorCode error, uint32_t duration_ms) noexcept 
 }
 
 bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
-    if (View::on_touch(event)) {
-        return true;
-    }
-
-    // CRITICAL: Prevent double-tap from pushing multiple AnalogVideoView instances.
-    // AtomicFlag::try_set() returns false if already set, so the second tap
-    // within the same transition window is silently consumed.
-    if (!video_transition_guard_.try_set()) {
-        return true;
-    }
-
-    const auto display_rect = drone_display_.screen_rect();
-    if (!display_rect.contains(event.point)) {
-        video_transition_guard_.clear();
-        return false;
-    }
-
-    const int16_t local_x = event.point.x() - display_rect.location().x();
-    const int16_t local_y = event.point.y() - display_rect.location().y();
-
-    const int16_t hit_idx = drone_display_.hit_test(
-        static_cast<uint16_t>(local_x),
-        static_cast<uint16_t>(local_y));
-    if (hit_idx < 0) {
-        video_transition_guard_.clear();
-        return false;
-    }
-
-    const auto& display_data = drone_display_.get_display_data();
-    if (hit_idx >= static_cast<int16_t>(display_data.drone_count)) {
-        video_transition_guard_.clear();
-        return false;
-    }
-
-    const auto& drone = display_data.drones[hit_idx];
-
-    const bool is_fpv_band =
-        (drone.frequency >= FPV_BAND_5GHZ_START && drone.frequency <= FPV_BAND_5GHZ_END) ||
-        (drone.frequency >= FPV_BAND_2GHZ_START  && drone.frequency <= FPV_BAND_2GHZ_END) ||
-        (drone.frequency >= FPV_BAND_1GHZ_START  && drone.frequency <= FPV_BAND_1GHZ_END) ||
-        (drone.frequency >= FPV_BAND_900MHZ_START && drone.frequency <= FPV_BAND_900MHZ_END);
-
-    const bool has_video = (drone.type == DroneType::FPV) || is_fpv_band;
-
-    if (!has_video) {
-        show_alert("No video carrier", 1500);
-        video_transition_guard_.clear();
-        return true;
-    }
-
-    // Stop audio alerts — SOS loop could consume stack during video init
-    AudioAlertManager::stop_alert();
-
-    // Remove message handlers — prevents stale lambda calls during AnalogVideoView init
-    unregister_handlers();
-
-    // Stop scanning and streaming in ALL modes.
-    // suppress_auto_restart=true prevents exit_sweep_mode from
-    // restarting streaming — avoids send_message() spin race.
-    if (scanning_) {
-        if (composite_active_) {
-            exit_sweep_mode(true);
-        } else {
-            scanner_thread_->set_scanning(false);
-            if (scanner_ptr_ != nullptr) {
-                (void)scanner_ptr_->stop_scanning();
-            }
-            baseband::spectrum_streaming_stop();
-        }
-        scanning_ = false;
-        button_start_stop_.set_text("Start");
-    }
-
-    // Wait for scanner thread to fully terminate (frees 2KB stack)
-    if (scanner_thread_ != nullptr) {
-        scanner_thread_->stop();
-    }
-
-    // Disable RF to prevent Si5351/MAX2837 races with AnalogVideoView
-    portapack::receiver_model.disable();
-
-    baseband_needs_restore_ = true;
-    nav_.push<AnalogVideoView>(drone.frequency);
-    return true;
+    return View::on_touch(event);
 }
 
 void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
