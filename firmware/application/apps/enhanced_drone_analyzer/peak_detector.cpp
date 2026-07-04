@@ -108,7 +108,7 @@ PeakDetector::PeakInfo PeakDetector::find(
         return out;
     }
 
-    const uint8_t elevated = out.noise_floor + (out.margin / 2);
+    const uint8_t elevated = out.noise_floor + (out.margin / 3);
 
     size_t left = peak_index;
     while (left > edge_skip) {

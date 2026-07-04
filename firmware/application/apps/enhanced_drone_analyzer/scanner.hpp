@@ -125,7 +125,7 @@ struct ScanStatistics {
     uint32_t successful_cycles;
     uint32_t failed_cycles;
     uint32_t drones_detected;
-    uint32_t max_rssi_dbm;
+    int32_t max_rssi_dbm;
     
     /**
      * @brief Default constructor
@@ -665,9 +665,17 @@ public:
 
     /**
      * @brief Increment noise count for a frequency (blacklist tracking)
-     * @note Called by scanner thread when force-resuming from noise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
      */
     void increment_noise_count(FreqHz frequency) noexcept;
+
+    /**
+     * @brief Increment noise count — caller must already hold DATA_MUTEX
+     * @note Internal variant for use inside process_spectrum_message()
+     *       where DATA_MUTEX is already held. ChibiOS mutexes are NOT
+     *       recursive — calling the locking version here would deadlock.
+     */
+    void increment_noise_count_internal(FreqHz frequency) noexcept;
 
     /**
      * @brief Reset noise count for a frequency (real signal confirmed)
@@ -721,20 +729,12 @@ public:
     ) noexcept;
     
     /**
-     * @brief Process ChannelSpectrum message directly
-     * @param spectrum Channel spectrum data
-     * @return ErrorCode::SUCCESS if processed, error code otherwise
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     * @note Uses scanner's internal current_frequency
-     * @note Updates tracked drones if RSSI above threshold
-     */
-    [[nodiscard]] ErrorCode process_spectrum_message(const ChannelSpectrum& spectrum) noexcept;
-
-    /**
      * @brief Process spectrum with explicit frequency (avoids race with scanner thread)
      * @param spectrum Channel spectrum data
      * @param frequency Frequency this spectrum corresponds to
      * @return ErrorCode::SUCCESS if processed, error code otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     * @note Updates tracked drones if RSSI above threshold
      */
     [[nodiscard]] ErrorCode process_spectrum_message(const ChannelSpectrum& spectrum, FreqHz frequency) noexcept;
 
@@ -1074,14 +1074,9 @@ public:
     /**
      * @brief Get lock timeout counter (for monitoring and debugging)
      * @return Number of times scanner force-resumed due to lock timeout
-     * @note Thread-safe: acquires mutex (LockOrder::DATA_MUTEX)
-     * @note Useful for detecting noisy frequency conditions (e.g., 2400 MHz)
+     * @note uint32_t reads are atomic on Cortex-M4 — no mutex needed
      */
     [[nodiscard]] uint32_t get_lock_timeout_count() const noexcept {
-        MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
-        if (!lock.is_locked()) {
-            return lock_timeout_count_;
-        }
         return lock_timeout_count_;
     }
 
@@ -1381,9 +1376,8 @@ private:
     // Pending detection hysteresis (prevent noise from adding phantom drones)
     FreqHz pending_frequency_{0};
     uint8_t pending_count_{0};
-    static constexpr uint8_t DETECT_CONFIRM_COUNT = 2;
 
-    // RSSI hysteresis state (Schmitt trigger: 3 dB to turn ON, 0 dB to turn OFF)
+    // RSSI hysteresis state (Schmitt trigger: 2 dB to turn ON, 2 dB easier to stay ON)
     bool signal_present_{false};
     FreqHz last_hysteresis_freq_{0};
     static constexpr int32_t RSSI_HYSTERESIS_DB = 2;

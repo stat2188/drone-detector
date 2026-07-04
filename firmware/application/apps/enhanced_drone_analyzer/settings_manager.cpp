@@ -158,10 +158,8 @@ static void parse_settings_line(
     } else if (key_matches("enable_audio_alerts")) {
         s.audio_alerts_enabled = parse_bool();
     } else if (key_matches("volume")) {
-        const uint8_t vol = static_cast<uint8_t>(parse_int());
-        if (vol <= 99) {
-            portapack::receiver_model.set_normalized_headphone_volume(vol);
-        }
+        const uint64_t v = parse_int();
+        s.volume = static_cast<uint8_t>((v > 99) ? 99 : v);
     } else if (key_matches("show_spectrum")) {
         s.spectrum_visible = parse_bool();
     } else if (key_matches("show_histogram")) {
@@ -193,9 +191,11 @@ static void parse_settings_line(
         const uint64_t v = parse_int();
         s.spectrum_peak_sharpness = static_cast<uint8_t>((v < 50) ? 50 : (v > 250 ? 250 : v));
     } else if (key_matches("spectrum_peak_ratio")) {
-        s.spectrum_peak_ratio = static_cast<uint8_t>(parse_int());
+        const uint64_t v = parse_int();
+        s.spectrum_peak_ratio = static_cast<uint8_t>((v > 100) ? 100 : v);
     } else if (key_matches("spectrum_valley_depth")) {
-        s.spectrum_valley_depth = static_cast<uint8_t>(parse_int());
+        const uint64_t v = parse_int();
+        s.spectrum_valley_depth = static_cast<uint8_t>((v > 255) ? 255 : v);
     } else if (key_matches("spectrum_flatness")) {
         const uint64_t v = parse_int();
         s.spectrum_flatness = static_cast<uint8_t>((v > 100) ? 100 : v);
@@ -288,7 +288,7 @@ static void parse_settings_line(
     // --- CFAR detection (clamped to valid ranges) ---
     } else if (key_matches("cfar_mode")) {
         const int32_t m = static_cast<int32_t>(parse_int());
-        s.cfar_mode = static_cast<CFARMode>(m > 6 ? 0 : m);
+        s.cfar_mode = static_cast<CFARMode>((m < 0 || m > 6) ? 0 : m);
     } else if (key_matches("cfar_ref_cells")) {
         const uint64_t v = parse_int();
         s.cfar_ref_cells = static_cast<uint8_t>((v < CFAR_REF_CELLS_MIN) ? CFAR_REF_CELLS_MIN : (v > CFAR_REF_CELLS_MAX ? CFAR_REF_CELLS_MAX : v));
@@ -321,9 +321,9 @@ static void parse_settings_line(
         s.mahalanobis_enabled = parse_bool();
     } else if (key_matches("mahalanobis_threshold_x10")) {
         const uint64_t v = parse_int();
-        if (v >= MAHALANOBIS_THRESHOLD_MIN_X10 && v <= MAHALANOBIS_THRESHOLD_MAX_X10) {
-            s.mahalanobis_threshold_x10 = static_cast<uint8_t>(v);
-        }
+        s.mahalanobis_threshold_x10 = static_cast<uint8_t>(
+            (v < MAHALANOBIS_THRESHOLD_MIN_X10) ? MAHALANOBIS_THRESHOLD_MIN_X10
+            : (v > MAHALANOBIS_THRESHOLD_MAX_X10 ? MAHALANOBIS_THRESHOLD_MAX_X10 : v));
     } else if (key_matches("pattern_matching_enabled")) {
         s.pattern_matching_enabled = parse_bool();
     }
@@ -377,6 +377,17 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     }
     if (out.cfar_ref_cells < out.cfar_guard_cells + 2) {
         out.cfar_guard_cells = (out.cfar_ref_cells > 2) ? out.cfar_ref_cells - 2 : 0;
+    }
+    // Normalize CFAR hybrid weights to sum to 100
+    const uint16_t hybrid_sum = static_cast<uint16_t>(
+        out.cfar_hybrid_alpha + out.cfar_hybrid_beta + out.cfar_hybrid_gamma);
+    if (hybrid_sum != 100 && hybrid_sum > 0) {
+        out.cfar_hybrid_alpha = static_cast<uint8_t>(
+            (out.cfar_hybrid_alpha * 100) / hybrid_sum);
+        out.cfar_hybrid_beta = static_cast<uint8_t>(
+            (out.cfar_hybrid_beta * 100) / hybrid_sum);
+        out.cfar_hybrid_gamma = static_cast<uint8_t>(
+            100 - out.cfar_hybrid_alpha - out.cfar_hybrid_beta);
     }
 
     file.close();
@@ -462,7 +473,8 @@ ErrorCode SettingsFileManager::save(
 
     File file;
     ensure_directory(settings_dir);
-    const auto create_error = file.create(settings_dir / u"eda_settings.txt");
+    // Write to temp file first, then rename — prevents corruption on power loss
+    const auto create_error = file.create(settings_dir / u"eda_settings.txt.tmp");
     if (create_error) {
         return ErrorCode::INITIALIZATION_FAILED;
     }
@@ -482,7 +494,7 @@ ErrorCode SettingsFileManager::save(
 
     // Audio / Display
     wbool(file, "enable_audio_alerts", s.audio_alerts_enabled);
-    wl(file, "volume", static_cast<int64_t>(portapack::receiver_model.normalized_headphone_volume()));
+    wl(file, "volume", static_cast<int64_t>(s.volume));
     wbool(file, "show_spectrum", s.spectrum_visible);
     wbool(file, "show_histogram", s.histogram_visible);
 
@@ -574,6 +586,10 @@ ErrorCode SettingsFileManager::save(
 
     (void)file.sync();
     file.close();
+
+    // Atomic rename: delete old file, then rename temp to final
+    (void)delete_file(settings_dir / u"eda_settings.txt");
+    (void)rename_file(settings_dir / u"eda_settings.txt.tmp", settings_dir / u"eda_settings.txt");
 
     return ErrorCode::SUCCESS;
 }

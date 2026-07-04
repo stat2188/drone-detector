@@ -218,6 +218,8 @@ ErrorCode HardwareController::stop_spectrum_streaming() noexcept {
 }
 
 ErrorCode HardwareController::stop_streaming_internal() noexcept {
+    // STUB: Actual spectrum streaming controlled by baseband:: API
+    // in drone_scanner_ui.cpp. This method only tracks state.
     return ErrorCode::SUCCESS;
 }
 
@@ -232,6 +234,8 @@ ErrorResult<RssiSample> HardwareController::get_rssi_sample() noexcept {
 }
 
 ErrorResult<RssiSample> HardwareController::read_rssi_internal() noexcept {
+    // STUB: Actual RSSI extracted from spectrum data in scanner.cpp:extract_rssi()
+    // This method returns noise floor as placeholder for API compatibility
     RssiSample sample;
     sample.timestamp = chTimeNow();
     sample.frequency = current_frequency_;
@@ -250,10 +254,13 @@ ErrorResult<FreqHz> HardwareController::get_current_frequency() const noexcept {
 }
 
 HardwareState HardwareController::get_state() const noexcept {
-    return state_;
+    MutexTryLock<LockOrder::STATE_MUTEX> lock(mutex_);
+    return lock.is_locked() ? state_ : HardwareState::UNINITIALIZED;
 }
 
 bool HardwareController::is_ready() const noexcept {
+    MutexTryLock<LockOrder::STATE_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) return false;
     return state_ == HardwareState::READY || state_ == HardwareState::STREAMING;
 }
 
@@ -346,7 +353,8 @@ ErrorCode HardwareController::reset() noexcept {
 }
 
 ErrorCode HardwareController::get_last_error() const noexcept {
-    return last_error_;
+    MutexTryLock<LockOrder::STATE_MUTEX> lock(mutex_);
+    return lock.is_locked() ? last_error_ : ErrorCode::SUCCESS;
 }
 
 ErrorCode HardwareController::validate_frequency_internal(FreqHz frequency) const noexcept {
@@ -391,7 +399,7 @@ ErrorCode HardwareController::handle_error_internal(ErrorCode error) noexcept {
             return ErrorCode::SUCCESS;
         
         case ErrorCode::HARDWARE_TIMEOUT:
-            // Retry operation
+            // TODO: Implement retry logic with exponential backoff
             return ErrorCode::SUCCESS;
         
         case ErrorCode::HARDWARE_FAILURE:

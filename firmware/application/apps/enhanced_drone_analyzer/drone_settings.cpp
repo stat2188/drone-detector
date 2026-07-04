@@ -152,6 +152,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     });
 
     // Load persisted settings from SD card (overrides config-based defaults)
+    // If load fails, settings_ retains constructor defaults
     (void)SettingsFileManager::load(settings_);
 
     // Median filter is controlled by main UI button (Md+), not settings view.
@@ -179,7 +180,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     field_volume_.on_change = [this](int32_t v) {
+        settings_.volume = static_cast<uint8_t>(v);
         portapack::receiver_model.set_normalized_headphone_volume(static_cast<uint8_t>(v));
+        settings_dirty_ = true;
     };
 
     field_rssi_dec_cyc_.on_change = [this](int32_t v) {
@@ -351,7 +354,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
 
     button_defaults_.on_select = [this](ui::Button&) {
         settings_ = SettingsStruct();
-        portapack::receiver_model.set_normalized_headphone_volume(70);
+        portapack::receiver_model.set_normalized_headphone_volume(settings_.volume);
         settings_dirty_ = true;
         apply_settings_to_ui();
     };
@@ -492,7 +495,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
         const int32_t sens = -(settings_.alert_rssi_threshold_dbm + 20);
         field_rssi_threshold_.set_value(sens < 0 ? 0 : (sens > 100 ? 100 : sens));
     }
-    field_volume_.set_value(portapack::receiver_model.normalized_headphone_volume());
+    field_volume_.set_value(static_cast<int32_t>(settings_.volume));
     field_rssi_dec_cyc_.set_value(static_cast<int32_t>(settings_.rssi_decrease_cycles));
     check_audio_alerts_.set_value(settings_.audio_alerts_enabled);
     check_spectrum_visible_.set_value(settings_.spectrum_visible);

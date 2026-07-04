@@ -265,6 +265,8 @@ bool RSSIDetector::is_receding() const noexcept {
         ? (history_index_ % RSSI_HISTORY_SIZE)
         : 0;
     const RssiValue oldest = rssi_history_[oldest_idx];
+    // NOTE: Using APPROACHING threshold for the reversed comparison
+    // (oldest - latest >= 3) is equivalent to (latest - oldest <= -3)
     return (oldest - latest) >= MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
 }
 

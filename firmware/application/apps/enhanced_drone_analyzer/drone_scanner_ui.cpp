@@ -174,9 +174,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
         // Persist to SD card so state survives app restart
         SettingsStruct persist_settings;
-        (void)SettingsFileManager::load(persist_settings);
-        persist_settings.median_enabled = median_enabled_;
-        (void)SettingsFileManager::save(scanner_ptr_, persist_settings);
+        if (SettingsFileManager::load(persist_settings) == ErrorCode::SUCCESS) {
+            persist_settings.median_enabled = median_enabled_;
+            (void)SettingsFileManager::save(scanner_ptr_, persist_settings);
+        }
     };
 
     // Register button callbacks BEFORE any early returns
@@ -421,8 +422,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
     // Load all settings from SD card via centralized manager
     SettingsStruct startup_settings;
-    (void)SettingsFileManager::load(startup_settings);
-    SettingsFileManager::apply_to_config(startup_settings, config);
+    const ErrorCode load_err = SettingsFileManager::load(startup_settings);
+    if (load_err == ErrorCode::SUCCESS) {
+        SettingsFileManager::apply_to_config(startup_settings, config);
+        // Apply volume from settings (not during parsing to avoid side-effects)
+        portapack::receiver_model.set_normalized_headphone_volume(startup_settings.volume);
+    }
 
     const ErrorCode config_err = scanner_ptr_->set_config(config);
     if (config_err != ErrorCode::SUCCESS) {

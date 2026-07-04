@@ -406,7 +406,12 @@ void DroneScanner::remove_drone_on_frequency(FreqHz frequency) noexcept {
 
 void DroneScanner::increment_noise_count(FreqHz frequency) noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    increment_noise_count_internal(frequency);
+}
+
+void DroneScanner::increment_noise_count_internal(FreqHz frequency) noexcept {
     // Find existing entry or first empty slot
+    // @pre Caller holds DATA_MUTEX
     size_t empty_slot = MAX_NOISE_ENTRIES;
     for (size_t i = 0; i < MAX_NOISE_ENTRIES; ++i) {
         if (noise_blacklist_[i].freq == frequency) {
@@ -687,10 +692,6 @@ ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
     return ErrorResult<RssiValue>::success(rssi);
 }
 
-ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum) noexcept {
-    return process_spectrum_message(spectrum, current_frequency_);
-}
-
 FreqHz DroneScanner::get_spectrum_frequency() noexcept {
     MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
     if (lock.is_locked()) {
@@ -732,7 +733,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         last_hysteresis_freq_ = frequency;
     }
 
-    // Effective threshold: 3 dB harder to turn ON, 3 dB easier to stay ON
+    // Effective threshold: 2 dB harder to turn ON, 2 dB easier to stay ON
     // Prevents signal toggling at the threshold boundary (8-bit FFT quantization
     // causes ±1 bin fluctuation = ~0.19 dB, enough to toggle detection)
     const int32_t rssi_threshold = signal_present_
@@ -829,8 +830,9 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 if (confirm_elapsed >= CONFIRM_TIMEOUT_MS) {
                     // Timeout exceeded - give up on confirmation, allow frequency hop
                     // Blacklist this frequency to prevent re-triggering on intermittent noise
+                    // NOTE: Must use _internal variant — DATA_MUTEX is already held by caller
                     if (config_.noise_blacklist_enabled && frequency != 0) {
-                        increment_noise_count(frequency);
+                        increment_noise_count_internal(frequency);
                     }
                     pending_frequency_ = 0;
                     pending_count_ = 0;
@@ -877,8 +879,8 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         }
 
         // Update max RSSI statistic
-        if (effective_rssi > static_cast<int32_t>(statistics_.max_rssi_dbm)) {
-            statistics_.max_rssi_dbm = static_cast<uint32_t>(effective_rssi);
+        if (effective_rssi > statistics_.max_rssi_dbm) {
+            statistics_.max_rssi_dbm = effective_rssi;
         }
 
         // Frequency lock state machine
@@ -1192,6 +1194,10 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
         return ErrorCode::INVALID_PARAMETER;
     }
     if (config.cfar_guard_cells > CFAR_GUARD_CELLS_MAX) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    // CFAR ref cells must be >= guard cells + 2 for valid reference window
+    if (config.cfar_ref_cells < config.cfar_guard_cells + 2) {
         return ErrorCode::INVALID_PARAMETER;
     }
     
@@ -1645,6 +1651,7 @@ void DroneScanner::apply_sweep_tracking(
 
     // Mahalanobis gate
     bool mahalanobis_rejected = false;
+    bool drone_created_here = false;
     if (config_.mahalanobis_enabled) {
         size_t drone_idx = 0;
         bool drone_found = false;
@@ -1681,10 +1688,13 @@ void DroneScanner::apply_sweep_tracking(
             if (drone.threat_level > ThreatLevel::NONE) {
                 trigger_alert(drone.threat_level);
             }
+            drone_created_here = true;
         }
     }
 
-    if (!mahalanobis_rejected) {
+    // Skip update_tracked_drone_internal when drone was just created above
+    // to avoid double update_rssi() + double trigger_alert()
+    if (!mahalanobis_rejected && !drone_created_here) {
         (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
 
         // Single post-update lookup (reused for pattern match + mark_seen)
@@ -1727,8 +1737,12 @@ void DroneScanner::process_spectrum_sweep(
         last_sweep_freq_ = center_freq;
     }
 
-    signal_present_ = false;
-    last_hysteresis_freq_ = 0;
+    // Hysteresis reset: only when frequency changes (matches normal mode pattern at :730)
+    // Preserves signal_present_ state when revisiting the same frequency in sweep cycles
+    if (center_freq != last_hysteresis_freq_) {
+        signal_present_ = false;
+        last_hysteresis_freq_ = center_freq;
+    }
 
     const uint8_t cfg_margin = config_.spectrum_margin;
 

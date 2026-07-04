@@ -22,9 +22,9 @@ constexpr FreqHz MIN_FREQUENCY_HZ = 1'000'000ULL;
 constexpr FreqHz MAX_FREQUENCY_HZ = 7'200'000'000ULL;
 
 /**
- * @brief Hardware practical maximum frequency in Hz (6 GHz - RFFC5072 mixer limit)
- * @note HackRF One uses RFFC5072 mixer which has practical limit of 6 GHz
- * @note Frequencies above this may fail PLL lock or produce artifacts
+ * @brief Maximum supported frequency in Hz (7.2 GHz)
+ * @note HackRF One RFFC5072 mixer practical limit: ~6 GHz
+ *       but 7.2 GHz is used for validation headroom
  * @note Use this for validation of sweep ranges and database entries
  */
 constexpr FreqHz HARDWARE_MAX_FREQ_HZ = 7'200'000'000ULL;
@@ -125,8 +125,10 @@ constexpr size_t RSSI_HISTORY_SIZE = 6;
 
 /**
  * @brief Timestamp history size for each drone
+ * @note Must equal RSSI_HISTORY_SIZE to prevent index misalignment
+ *       in circular buffer access patterns
  */
-constexpr size_t TIMESTAMP_HISTORY_SIZE = 3;
+constexpr size_t TIMESTAMP_HISTORY_SIZE = RSSI_HISTORY_SIZE;
 
 /**
  * @brief Maximum number of frequency entries to scan
@@ -184,7 +186,7 @@ constexpr uint32_t DRONE_STALE_TIMEOUT_MS = 5000;
 constexpr uint32_t DRONE_REMOVAL_TIMEOUT_MS = 30000;
 
 /**
- * @brief Scan cycle interval in milliseconds (100 ms)
+ * @brief Scan cycle interval in milliseconds (50 ms)
  */
 constexpr uint32_t SCAN_CYCLE_INTERVAL_MS = 50;
 
@@ -398,7 +400,7 @@ constexpr uint32_t MAX_SCAN_CYCLES = 1000;
 
 /**
  * @brief Maximum database entries
- * @note 300 entries × 16 bytes = 4,800 bytes
+ * @note 100 entries × 16 bytes = 1,600 bytes
  */
 constexpr size_t MAX_DATABASE_ENTRIES = 100;
 
@@ -1356,14 +1358,6 @@ constexpr uint32_t STATISTICS_UPDATES_PER_SEC = 10;
  * @note 10 cycles × 50ms = 500ms to verify signal
  */
 constexpr uint32_t MAX_FREQ_LOCK = 10;
-
-/**
- * @brief Maximum dwell cycles on a detected frequency
- * @note 10 cycles × 50ms = 500ms — half second for confident signal confirmation
- * @note After this many dwell cycles, force resume scanning
- *       even if signal persists (avoids permanent lock)
- */
-constexpr uint8_t MAX_DWELL_CYCLES = 10;
 
 /**
  * @brief Signal lock time (ms)

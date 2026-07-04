@@ -33,6 +33,7 @@ struct SettingsStruct {
 
     // Alerts
     bool audio_alerts_enabled;
+    uint8_t volume{50};
 
     // Detection features
     bool dwell_enabled;
