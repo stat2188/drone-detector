@@ -55,7 +55,6 @@ public:
 
     void show_alert(const char* message, uint32_t duration_ms) noexcept;
     void show_error(ErrorCode error, uint32_t duration_ms) noexcept;
-    void save_pattern_inline() noexcept;
 
 private:
 

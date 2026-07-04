@@ -15,7 +15,7 @@ namespace drone_analyzer {
  * @note Stored in pattern file (CSV) for diagnostic display only — PatternMatcher
  *       is now pure SAD-based and does NOT consume these.
  * @note margin (peak_value - noise_floor) drives the auto-tuned match_threshold
- *       at save time (see DroneScannerUI::save_pattern_inline).
+ *       at save time (see PatternManagerView::capture_and_save).
  * @note All fields are 0-255, packed to 4 bytes — no padding, no vtable.
  */
 struct PatternFeatures {
@@ -42,7 +42,7 @@ struct PatternFeatures {
  *                   (25 fields). Old 29-field files still load — extra trailing
  *                   fields are ignored by the reader.
  * @note match_threshold is auto-tuned from the captured peak's SNR margin
- *       at save time (see DroneScannerUI::save_pattern_inline).
+ *       at save time (see PatternManagerView::capture_and_save).
  * @note center_freq + range_width drive the frequency-proximity filter in
  *       PatternMatcher::match().
  */

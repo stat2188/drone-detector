@@ -13,7 +13,7 @@ namespace drone_analyzer {
  * @brief SAD-based pattern matching with frequency-proximity pre-filter.
  * @note Pure 16-bin waveform comparison. Each pattern's match_threshold is
  *       auto-tuned at save time from the captured peak's SNR margin
- *       (see DroneScannerUI::save_pattern_inline).
+ *       (see PatternManagerView::capture_and_save).
  * @note Pure integer math, no heap, no exceptions, no virtual functions.
  * @note Reentrant — single instance can be shared between threads if the
  *       caller serializes access (matches PatternManager's mutex).

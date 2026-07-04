@@ -12,7 +12,7 @@ namespace drone_analyzer {
 /**
  * @brief Single source of truth for FFT peak detection.
  * @note Replaces duplicated peak-detection paths in
- *       DroneScannerUI::save_pattern_inline() and
+ *       DroneScannerUI save and
  *       inline code in scanner.cpp:process_spectrum_sweep().
  * @note Pure integer arithmetic, no FP, no heap, no exceptions.
  * @note Caller owns sort_buf (must be >= FFT_USABLE_BINS bytes).
