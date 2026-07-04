@@ -331,8 +331,24 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
+        // Remember if scanning was active so on_show() can restore it
+        scanning_needs_restore_ = scanning_;
+        // Stop scanning before pushing sub-view (matches PTR handler pattern).
+        if (scanning_) {
+            if (composite_active_) {
+                exit_sweep_mode(true);
+            } else {
+                scanner_thread_->set_scanning(false);
+                if (scanner_ptr_ != nullptr) {
+                    (void)scanner_ptr_->stop_scanning();
+                }
+                baseband::spectrum_streaming_stop();
+                scanning_ = false;
+                button_start_stop_.set_text("Start");
+            }
+        }
         // Refresh config from scanner (SWP view may have changed sweep settings)
-        const auto config = scanner_ptr_->get_config();  // Stack: ~400B (button press, infrequent)
+        const auto config = scanner_ptr_->get_config();  // Stack: ~104B (button press, infrequent)
         nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
 
@@ -342,7 +358,25 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        const auto config = scanner_ptr_->get_config();  // Stack: ~400B (button press, infrequent)
+        // Remember if scanning was active so on_show() can restore it
+        scanning_needs_restore_ = scanning_;
+        // Stop scanning before pushing sub-view (matches PTR handler pattern).
+        // on_hide() also stops scanning, but doing it here ensures clean state
+        // and prevents race conditions with the scanner thread.
+        if (scanning_) {
+            if (composite_active_) {
+                exit_sweep_mode(true);
+            } else {
+                scanner_thread_->set_scanning(false);
+                if (scanner_ptr_ != nullptr) {
+                    (void)scanner_ptr_->stop_scanning();
+                }
+                baseband::spectrum_streaming_stop();
+                scanning_ = false;
+                button_start_stop_.set_text("Start");
+            }
+        }
+        const auto config = scanner_ptr_->get_config();  // Stack: ~104B (button press, infrequent)
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };
 
@@ -356,6 +390,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
         // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
         unregister_handlers();
+
+        // PTR uses baseband_needs_restore_ for full baseband restart, not scanning_needs_restore_
+        scanning_needs_restore_ = false;
 
         // Stop scanning if active
         if (scanning_) {
@@ -505,6 +542,11 @@ void DroneScannerUI::destruct_objects() noexcept {
 void DroneScannerUI::on_show() {
     if (baseband_needs_restore_ && !composite_active_) {
         baseband_needs_restore_ = false;
+        // CRITICAL: shutdown() first to reset baseband_image_running flag.
+        // Sub-views (PatternManagerView) stop streaming but never call shutdown(),
+        // leaving baseband_image_running = true. Without shutdown(), run_image()
+        // panics with "BBRunning".
+        baseband::shutdown();
         baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
         portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
         portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
@@ -525,6 +567,20 @@ void DroneScannerUI::on_show() {
 
     if (scanner_thread_ != nullptr && !scanner_thread_->is_active()) {
         scanner_thread_->start();
+    }
+
+    // Restore scanning after returning from a sub-view.
+    // on_hide() stops scanning and sets scanning_ = false.
+    // scanning_needs_restore_ remembers if scanning was active before the push.
+    // For non-sweep mode: restart streaming and scanning if it was active.
+    // For sweep mode: handled by the composite_active_ block below.
+    if (!composite_active_ && !initialization_failed_ && scanner_ptr_ != nullptr && scanning_needs_restore_ && !scanning_) {
+        scanning_needs_restore_ = false;
+        baseband::spectrum_streaming_start();
+        (void)scanner_ptr_->start_scanning();
+        scanner_thread_->set_scanning(true);
+        scanning_ = true;
+        button_start_stop_.set_text("Stop");
     }
 
     // If in sweep mode, reload sweep range from config (Settings may have changed it)

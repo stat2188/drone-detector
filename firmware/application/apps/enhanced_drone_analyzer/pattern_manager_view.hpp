@@ -48,7 +48,10 @@ public:
     void on_hide() override;
     bool on_touch(const ui::TouchEvent event) override;
 
-    std::string title() const override { return "PTR Pattern"; }
+    std::string title() const override {
+        static const std::string t = "PTR Pattern";
+        return t;
+    }
 
 private:
     static constexpr uint16_t SPECTRUM_Y = 40;

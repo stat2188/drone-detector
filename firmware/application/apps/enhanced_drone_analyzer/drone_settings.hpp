@@ -37,7 +37,10 @@ public:
 
     void focus() override;
 
-    std::string title() const override { return "EDA Settings"; }
+    std::string title() const override {
+        static const std::string t = "EDA Settings";
+        return t;
+    }
 
 private:
     ui::Labels labels_;

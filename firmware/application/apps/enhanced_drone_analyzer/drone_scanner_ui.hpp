@@ -256,6 +256,7 @@ private:
 
     bool on_touch(const ui::TouchEvent event) override;
     bool baseband_needs_restore_{false};
+    bool scanning_needs_restore_{false};
 };
 
 DroneScanner& get_scanner_instance() noexcept;

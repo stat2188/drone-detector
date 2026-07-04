@@ -134,13 +134,8 @@ PatternManagerView::PatternManagerView(NavigationView& nav) noexcept
 }
 
 PatternManagerView::~PatternManagerView() noexcept {
-    // CRITICAL: Unregister handlers BEFORE destroying anything else.
-    // Matches handler lifecycle: unregister before destruction.
-    unregister_handlers();
-
-    if (view_state_ == ViewState::LIVE || view_state_ == ViewState::CAPTURING) {
-        baseband::spectrum_streaming_stop();
-    }
+    // on_hide() already handles: unregister_handlers(), spectrum_streaming_stop(), baseband::shutdown()
+    // Destructor is called after on_hide() during nav_.pop(). Just reset state.
     view_state_ = ViewState::IDLE;
     capture_active_ = false;
 }
@@ -237,6 +232,11 @@ void PatternManagerView::on_hide() {
 
     // Unregister handlers — prevents stale lambda calls
     unregister_handlers();
+
+    // CRITICAL: shutdown baseband to reset baseband_image_running flag.
+    // Without this, DroneScannerUI::on_show() calling run_image() panics
+    // with "BBRunning" because the flag is still true.
+    baseband::shutdown();
 }
 
 void PatternManagerView::focus() {
