@@ -146,13 +146,17 @@ static void parse_settings_line(
         s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
 
     } else if (key_matches("threat_low_db")) {
-        s.threat_low_dbm = parse_signed_int();
+        const int32_t v = parse_signed_int();
+        s.threat_low_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v;
     } else if (key_matches("threat_medium_db")) {
-        s.threat_medium_dbm = parse_signed_int();
+        const int32_t v = parse_signed_int();
+        s.threat_medium_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v;
     } else if (key_matches("threat_high_db")) {
-        s.threat_high_dbm = parse_signed_int();
+        const int32_t v = parse_signed_int();
+        s.threat_high_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v;
     } else if (key_matches("threat_critical_db")) {
-        s.threat_critical_dbm = parse_signed_int();
+        const int32_t v = parse_signed_int();
+        s.threat_critical_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v;
 
     // --- Audio / Display ---
     } else if (key_matches("enable_audio_alerts")) {
@@ -192,7 +196,7 @@ static void parse_settings_line(
         s.spectrum_peak_sharpness = static_cast<uint8_t>((v < 50) ? 50 : (v > 250 ? 250 : v));
     } else if (key_matches("spectrum_peak_ratio")) {
         const uint64_t v = parse_int();
-        s.spectrum_peak_ratio = static_cast<uint8_t>((v > 100) ? 100 : v);
+        s.spectrum_peak_ratio = static_cast<uint8_t>((v > 255) ? 255 : v);
     } else if (key_matches("spectrum_valley_depth")) {
         const uint64_t v = parse_int();
         s.spectrum_valley_depth = static_cast<uint8_t>((v > 255) ? 255 : v);

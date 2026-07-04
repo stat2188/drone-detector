@@ -130,6 +130,11 @@ uint16_t PatternMatcher::compute_similarity(
     }
     if (peak_a == 0 || peak_b == 0) return 0;
 
+    // Amplitude gate: reject matches where the live signal is too weak
+    // relative to the pattern. Prevents noise-level signals from matching
+    // strong saved patterns via pure shape similarity.
+    if (peak_a < (peak_b / PATTERN_MIN_AMPLITUDE_RATIO)) return 0;
+
     uint32_t diff_sum = 0;
     for (size_t i = 0; i < PATTERN_WAVEFORM_SIZE; ++i) {
         const uint8_t a_norm = static_cast<uint8_t>(

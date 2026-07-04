@@ -62,21 +62,26 @@ public:
      * @param sort_buf  Caller-provided scratch buffer (>= 236 bytes)
      * @param range     Search range (default: Full)
      * @param edge      Edge-skip policy (default: Narrow for live scanning)
+     * @param noise_percentile  Percentile for noise floor estimation (0-100, default: 50 = median)
+     *                          Use 25 for dense signal environments (WiFi-dense 2.4/5.8 GHz)
+     *                          to avoid median bias when signal occupies >50% of bins.
      * @return PeakInfo with all derived quantities, or zeroed struct on empty input
      * @note Skips DC spike (FFT_DC_SPIKE_START..FFT_DC_SPIKE_END).
-     * @note Cost: O(n) for quickselect median + O(n) for peak scan + O(n) for width.
+     * @note Cost: O(n) for quickselect percentile + O(n) for peak scan + O(n) for width.
      */
     [[nodiscard]] static PeakInfo find(
         const uint8_t* spectrum,
         uint8_t* sort_buf,
         Range range = Range::Full,
-        EdgePolicy edge = EdgePolicy::Narrow
+        EdgePolicy edge = EdgePolicy::Narrow,
+        uint8_t noise_percentile = 50
     ) noexcept;
 
 private:
-    [[nodiscard]] static uint8_t quickselect_median(
+    [[nodiscard]] static uint8_t quickselect_percentile(
         uint8_t* buf,
-        size_t count
+        size_t count,
+        uint8_t percentile
     ) noexcept;
 };
 

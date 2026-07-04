@@ -48,7 +48,7 @@ void PatternListView::on_show() noexcept {
     DroneScanner* scanner_ptr = get_scanner_ptr();
     if (scanner_ptr != nullptr) {
         pm_ = &scanner_ptr->get_pattern_manager();
-        pm_->reload_patterns();
+        (void)pm_->reload_patterns();
     }
     refresh_list();
 }

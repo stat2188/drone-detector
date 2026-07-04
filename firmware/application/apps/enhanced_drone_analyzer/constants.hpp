@@ -503,13 +503,13 @@ constexpr uint32_t AUDIO_ALERT_LONG_GAP_MS = 50;
  * - Display drones: 16 × 39 = 624 bytes
  * - Spectrum buffer: 256 bytes
  * - Histogram buffer: 512 bytes
- * - Histogram processor: 256 bytes
- * - RSSI detector: ~60 bytes
+ * - Histogram processor: ~509 bytes
+ * - RSSI detector: ~108 bytes (includes RSSIStatistics struct)
  * - Scanner thread stack: 2,048 bytes (BSS)
  * - Other structures: ~200 bytes
- * - Total static RAM: ~6,004 bytes
+ * - Total static RAM: ~6,105 bytes
  */
-constexpr size_t STATIC_RAM_BUDGET_BYTES = 6004;
+constexpr size_t STATIC_RAM_BUDGET_BYTES = 6105;
 
 /**
  * @brief Total stack budget (bytes)
@@ -521,7 +521,7 @@ constexpr size_t STACK_BUDGET_BYTES = 4096;
  * @brief Total memory budget (bytes)
  * @note Sum of static RAM and stack budgets
  */
-constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 10100;
+constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 10200;
 
 /**
  * @brief Maximum stack usage per function (bytes)
@@ -945,6 +945,14 @@ constexpr uint16_t SIMILARITY_STRONG = 600;    // 60% match
 constexpr uint16_t SIMILARITY_MODERATE = 400;  // 40% match
 
 /**
+ * @brief Minimum amplitude ratio for pattern matching (live peak / pattern peak)
+ * @note If the live signal's peak is less than 1/5 (20%) of the pattern's peak,
+ *       skip matching to prevent noise-level signals from matching strong saved patterns.
+ *       This is a weak gate — the primary discrimination is shape-based.
+ */
+constexpr uint8_t PATTERN_MIN_AMPLITUDE_RATIO = 5;
+
+/**
  * @brief Fixed edge skip for pattern normalization
  * @note Must match FFT_EDGE_SKIP (10) for consistency between save and match
  */
@@ -1137,6 +1145,15 @@ constexpr int32_t MAHALANOBIS_Q_SCALE = 256;
  * @brief Minimum variance for clamping (1.0 in Q8.8 = 256)
  */
 constexpr int32_t MAHALANOBIS_MIN_VARIANCE = 256;
+
+/**
+ * @brief Variance decay interval (samples between decay events)
+ * @note Decay occurs every N samples with factor 31/32 (3.125% per event)
+ *       After 256 samples: retention ≈ 88% (vs old 36% with 15/16 every 16)
+ *       After 1024 samples: retention ≈ 72% (vs old 13%)
+ *       This prevents overly aggressive gate tightening during long scans.
+ */
+constexpr uint8_t MAHALANOBIS_VARIANCE_DECAY_INTERVAL = 64;
 
 /**
  * @brief RSSI normalization range (dBm)

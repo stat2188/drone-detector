@@ -6,13 +6,15 @@
 
 namespace drone_analyzer {
 
-uint8_t PeakDetector::quickselect_median(
+uint8_t PeakDetector::quickselect_percentile(
     uint8_t* buf,
-    size_t count
+    size_t count,
+    uint8_t percentile
 ) noexcept {
     if (buf == nullptr || count == 0) return 0;
 
-    const size_t k = count / 2;
+    const size_t k = (count * static_cast<size_t>(percentile)) / 100;
+    const size_t k_safe = (k < count) ? k : count - 1;
     size_t qs_left = 0;
     size_t qs_right = count - 1;
 
@@ -37,18 +39,19 @@ uint8_t PeakDetector::quickselect_median(
             buf[qs_right] = t;
         }
 
-        if (store == k) break;
-        if (store < k) qs_left = store + 1;
+        if (store == k_safe) break;
+        if (store < k_safe) qs_left = store + 1;
         else qs_right = store - 1;
     }
-    return buf[k];
+    return buf[k_safe];
 }
 
 PeakDetector::PeakInfo PeakDetector::find(
     const uint8_t* spectrum,
     uint8_t* sort_buf,
     Range range,
-    EdgePolicy edge
+    EdgePolicy edge,
+    uint8_t noise_percentile
 ) noexcept {
     PeakInfo out{};
     if (spectrum == nullptr || sort_buf == nullptr) return out;
@@ -97,7 +100,7 @@ PeakDetector::PeakInfo PeakDetector::find(
 
     out.value = peak_value;
     out.index = peak_index;
-    out.noise_floor = quickselect_median(sort_buf, idx);
+    out.noise_floor = quickselect_percentile(sort_buf, idx, noise_percentile);
     out.margin = (peak_value > out.noise_floor) ? (peak_value - out.noise_floor) : 0;
 
     // --- 2. Width measurement (extend left/right while above half-margin) ---

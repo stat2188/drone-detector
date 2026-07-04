@@ -78,14 +78,16 @@ void MahalanobisDetector::update_statistics(
     // Store current tuned frequency for next drift measurement
     stats.last_tuned_frequency = tuned_freq;
 
-    // FIXED: Aggressive variance decay to prevent unbounded accumulation.
-    // Previous logic only decayed when sample_count >= HISTORY_SIZE and history_index == 0,
-    // which could happen very rarely or not at all if samples are missed.
-    // New logic: decay every 16 samples regardless of history_index, ensuring
-    // variance stays bounded and gate remains effective during long scans.
-    if (stats.sample_count > 0 && (stats.sample_count % 16) == 0) {
+    // Variance decay: prevents unbounded accumulation while preserving
+    // statistical discrimination for long-tracked drones.
+    // Decay factor: 31/32 = 3.125% per event, every MAHALANOBIS_VARIANCE_DECAY_INTERVAL samples.
+    // After 256 samples: retention ≈ 88%. After 1024: ≈ 72%.
+    // Old behavior (15/16 every 16): After 256: ≈ 36%. After 1024: ≈ 13%.
+    // The gentler decay prevents the gate from becoming overly aggressive
+    // and falsely rejecting valid long-tracked drones.
+    if (stats.sample_count > 0 && (stats.sample_count % MAHALANOBIS_VARIANCE_DECAY_INTERVAL) == 0) {
         for (uint8_t i = 0; i < MAHALANOBIS_DIMENSIONS; ++i) {
-            stats.variance[i] = (stats.variance[i] * 15) / 16;
+            stats.variance[i] = (stats.variance[i] * 31) / 32;
             if (stats.variance[i] < MAHALANOBIS_MIN_VARIANCE) {
                 stats.variance[i] = MAHALANOBIS_MIN_VARIANCE;
             }

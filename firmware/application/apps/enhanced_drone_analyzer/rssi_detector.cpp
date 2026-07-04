@@ -86,9 +86,14 @@ ErrorCode RSSIDetector::detect_drone(RSSIDetectionResult& result) noexcept {
     const size_t latest_index = (history_index_ > 0) ? (history_index_ - 1) : 0;
     result.rssi = rssi_history_[latest_index % RSSI_HISTORY_SIZE];
 
-    if (result.rssi >= detection_threshold_) {
+    // Use averaged RSSI for detection decision when we have enough samples.
+    // This rejects single-sample noise spikes that could trigger false positives.
+    // When fewer than 3 samples, fall back to raw sample for fast response.
+    const RssiValue detection_rssi = (samples_count_ >= 3) ? result.average_rssi : result.rssi;
+
+    if (detection_rssi >= detection_threshold_) {
         result.drone_detected = true;
-        result.threat_level = calculate_threat_level(result.rssi);
+        result.threat_level = calculate_threat_level(detection_rssi);
         result.movement_trend = get_movement_trend();
         update_statistics(true, result.threat_level);
     }
