@@ -57,6 +57,13 @@ struct SettingsStruct {
     uint8_t cfar_guard_cells;
     uint8_t cfar_threshold_x10;
 
+    // CFAR extended parameters (Hybrid weights, OS-CFAR k, VI-CFAR threshold)
+    uint8_t cfar_hybrid_alpha{DEFAULT_CFAR_HYBRID_ALPHA};
+    uint8_t cfar_hybrid_beta{DEFAULT_CFAR_HYBRID_BETA};
+    uint8_t cfar_hybrid_gamma{DEFAULT_CFAR_HYBRID_GAMMA};
+    uint8_t os_cfar_k_percent{DEFAULT_OS_CFAR_K_PERCENT};
+    uint8_t vi_cfar_threshold_x10{DEFAULT_VI_CFAR_THRESHOLD_X10};
+
     // Anti-false-positive
     int32_t neighbor_margin_db;
     bool rssi_variance_enabled;

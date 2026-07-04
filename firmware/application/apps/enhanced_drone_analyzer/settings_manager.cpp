@@ -43,6 +43,11 @@ SettingsStruct::SettingsStruct() noexcept
     , cfar_ref_cells(DEFAULT_CFAR_REF_CELLS)
     , cfar_guard_cells(DEFAULT_CFAR_GUARD_CELLS)
     , cfar_threshold_x10(DEFAULT_CFAR_THRESHOLD_X10)
+    , cfar_hybrid_alpha(DEFAULT_CFAR_HYBRID_ALPHA)
+    , cfar_hybrid_beta(DEFAULT_CFAR_HYBRID_BETA)
+    , cfar_hybrid_gamma(DEFAULT_CFAR_HYBRID_GAMMA)
+    , os_cfar_k_percent(DEFAULT_OS_CFAR_K_PERCENT)
+    , vi_cfar_threshold_x10(DEFAULT_VI_CFAR_THRESHOLD_X10)
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
@@ -293,6 +298,25 @@ static void parse_settings_line(
     } else if (key_matches("cfar_threshold_x10")) {
         const uint64_t v = parse_int();
         s.cfar_threshold_x10 = static_cast<uint8_t>((v < CFAR_THRESHOLD_MIN_X10) ? CFAR_THRESHOLD_MIN_X10 : (v > CFAR_THRESHOLD_MAX_X10 ? CFAR_THRESHOLD_MAX_X10 : v));
+    } else if (key_matches("cfar_hybrid_alpha")) {
+        const uint64_t v = parse_int();
+        s.cfar_hybrid_alpha = static_cast<uint8_t>((v > 100) ? 100 : v);
+    } else if (key_matches("cfar_hybrid_beta")) {
+        const uint64_t v = parse_int();
+        s.cfar_hybrid_beta = static_cast<uint8_t>((v > 100) ? 100 : v);
+    } else if (key_matches("cfar_hybrid_gamma")) {
+        const uint64_t v = parse_int();
+        s.cfar_hybrid_gamma = static_cast<uint8_t>((v > 100) ? 100 : v);
+    } else if (key_matches("os_cfar_k_percent")) {
+        const uint64_t v = parse_int();
+        s.os_cfar_k_percent = static_cast<uint8_t>(
+            (v < OS_CFAR_K_PERCENT_MIN) ? OS_CFAR_K_PERCENT_MIN :
+            (v > OS_CFAR_K_PERCENT_MAX ? OS_CFAR_K_PERCENT_MAX : v));
+    } else if (key_matches("vi_cfar_threshold_x10")) {
+        const uint64_t v = parse_int();
+        s.vi_cfar_threshold_x10 = static_cast<uint8_t>(
+            (v < VI_CFAR_THRESHOLD_MIN_X10) ? VI_CFAR_THRESHOLD_MIN_X10 :
+            (v > VI_CFAR_THRESHOLD_MAX_X10 ? VI_CFAR_THRESHOLD_MAX_X10 : v));
     } else if (key_matches("mahalanobis_enabled")) {
         s.mahalanobis_enabled = parse_bool();
     } else if (key_matches("mahalanobis_threshold_x10")) {
@@ -337,6 +361,23 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
         }
     }
     parse_settings_line(line_buf, line_len, out);
+
+    // Load-time validation: fix inconsistent field relationships
+    if (out.spectrum_min_width > out.spectrum_max_width) {
+        out.spectrum_max_width = out.spectrum_min_width;
+    }
+    if (out.threat_low_dbm > out.threat_medium_dbm) {
+        out.threat_medium_dbm = out.threat_low_dbm;
+    }
+    if (out.threat_medium_dbm > out.threat_high_dbm) {
+        out.threat_high_dbm = out.threat_medium_dbm;
+    }
+    if (out.threat_high_dbm > out.threat_critical_dbm) {
+        out.threat_critical_dbm = out.threat_high_dbm;
+    }
+    if (out.cfar_ref_cells < out.cfar_guard_cells + 2) {
+        out.cfar_guard_cells = (out.cfar_ref_cells > 2) ? out.cfar_ref_cells - 2 : 0;
+    }
 
     file.close();
     return ErrorCode::SUCCESS;
@@ -514,6 +555,11 @@ ErrorCode SettingsFileManager::save(
     wl(file, "cfar_ref_cells", static_cast<int64_t>(s.cfar_ref_cells));
     wl(file, "cfar_guard_cells", static_cast<int64_t>(s.cfar_guard_cells));
     wl(file, "cfar_threshold_x10", static_cast<int64_t>(s.cfar_threshold_x10));
+    wl(file, "cfar_hybrid_alpha", static_cast<int64_t>(s.cfar_hybrid_alpha));
+    wl(file, "cfar_hybrid_beta", static_cast<int64_t>(s.cfar_hybrid_beta));
+    wl(file, "cfar_hybrid_gamma", static_cast<int64_t>(s.cfar_hybrid_gamma));
+    wl(file, "os_cfar_k_percent", static_cast<int64_t>(s.os_cfar_k_percent));
+    wl(file, "vi_cfar_threshold_x10", static_cast<int64_t>(s.vi_cfar_threshold_x10));
 
     // Mahalanobis gate
     wbool(file, "mahalanobis_enabled", s.mahalanobis_enabled);
@@ -524,7 +570,7 @@ ErrorCode SettingsFileManager::save(
 
     // Metadata
     ws(file, "freqman_path=DRONES\n");
-    ws(file, "settings_version=1.1\n");
+    ws(file, "settings_version=1.2\n");
 
     (void)file.sync();
     file.close();
@@ -579,6 +625,13 @@ void SettingsFileManager::apply_to_config(
     config.cfar_ref_cells = s.cfar_ref_cells;
     config.cfar_guard_cells = s.cfar_guard_cells;
     config.cfar_threshold_x10 = s.cfar_threshold_x10;
+
+    // CFAR extended parameters
+    config.cfar_hybrid_alpha = s.cfar_hybrid_alpha;
+    config.cfar_hybrid_beta = s.cfar_hybrid_beta;
+    config.cfar_hybrid_gamma = s.cfar_hybrid_gamma;
+    config.os_cfar_k_percent = s.os_cfar_k_percent;
+    config.vi_cfar_threshold_x10 = s.vi_cfar_threshold_x10;
 
     // Sweep window 1
     config.sweep_start_freq = s.sweep_start_freq;
@@ -655,6 +708,13 @@ void SettingsFileManager::extract_from_config(
     s.cfar_ref_cells = config.cfar_ref_cells;
     s.cfar_guard_cells = config.cfar_guard_cells;
     s.cfar_threshold_x10 = config.cfar_threshold_x10;
+
+    // CFAR extended parameters
+    s.cfar_hybrid_alpha = config.cfar_hybrid_alpha;
+    s.cfar_hybrid_beta = config.cfar_hybrid_beta;
+    s.cfar_hybrid_gamma = config.cfar_hybrid_gamma;
+    s.os_cfar_k_percent = config.os_cfar_k_percent;
+    s.vi_cfar_threshold_x10 = config.vi_cfar_threshold_x10;
 
     // Sweep window 1
     s.sweep_start_freq = config.sweep_start_freq;

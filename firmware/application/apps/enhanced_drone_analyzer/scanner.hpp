@@ -520,7 +520,7 @@ public:
  */
 class NeighborMarginChecker {
 public:
-    static constexpr size_t WINDOW = 5;
+    static constexpr size_t WINDOW = 8;
 
     /**
      * @brief Add frequency/RSSI sample
@@ -762,11 +762,12 @@ public:
     [[nodiscard]] bool is_scanning() const noexcept;
     
     /**
-     * @brief Get scan configuration
-     * @return Current scan configuration
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
+     * @brief Get scan configuration (thread-safe copy)
+     * @return Copy of current scan configuration
+     * @note Acquires mutex (LockOrder::DATA_MUTEX), returns by value
+     *       to prevent data race on reference after mutex release
      */
-    [[nodiscard]] const ScanConfig& get_config() const noexcept;
+    [[nodiscard]] ScanConfig get_config() const noexcept;
     
     /**
      * @brief Get sweep step frequency in Hz
@@ -1385,7 +1386,7 @@ private:
     // RSSI hysteresis state (Schmitt trigger: 3 dB to turn ON, 0 dB to turn OFF)
     bool signal_present_{false};
     FreqHz last_hysteresis_freq_{0};
-    static constexpr int32_t RSSI_HYSTERESIS_DB = 3;
+    static constexpr int32_t RSSI_HYSTERESIS_DB = 2;
 
     // Consecutive missed detections on locked frequency (prevents premature lock-break)
     uint8_t missed_lock_count_{0};

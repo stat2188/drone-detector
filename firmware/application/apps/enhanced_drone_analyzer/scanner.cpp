@@ -512,11 +512,11 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     if (should_dwell) {
         dwell_cycles_++;
 
-        // Max dwell: 300ms total (6 cycles × 50ms).
-        // Enough for median filter to warm up (4 samples) + 2 more frames for
-        // reliable lock accumulation. At 60fps, 6 frames ≈ 10 increments of
+        // Max dwell: 400ms total (8 cycles × 50ms).
+        // Enough for median filter to warm up (4 samples) + 4 more frames for
+        // reliable lock accumulation. At 60fps, 8 frames ≈ 8 increments of
         // freq_lock_count_ toward MAX_FREQ_LOCK (10) → TRACKING transition.
-        static constexpr uint8_t LOCAL_MAX_DWELL_CYCLES = 6;
+        static constexpr uint8_t LOCAL_MAX_DWELL_CYCLES = 8;
         const uint8_t max_dwell = config_.confirm_count_enabled
             ? LOCAL_MAX_DWELL_CYCLES : (LOCAL_MAX_DWELL_CYCLES / 2);
 
@@ -828,6 +828,10 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
                 const uint32_t confirm_elapsed = now - confirm_start_time_;
                 if (confirm_elapsed >= CONFIRM_TIMEOUT_MS) {
                     // Timeout exceeded - give up on confirmation, allow frequency hop
+                    // Blacklist this frequency to prevent re-triggering on intermittent noise
+                    if (config_.noise_blacklist_enabled && frequency != 0) {
+                        increment_noise_count(frequency);
+                    }
                     pending_frequency_ = 0;
                     pending_count_ = 0;
                     confirm_start_time_ = 0;
@@ -1103,7 +1107,7 @@ bool DroneScanner::is_scanning() const noexcept {
     return scanning_active_.test();
 }
 
-const ScanConfig& DroneScanner::get_config() const noexcept {
+ScanConfig DroneScanner::get_config() const noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
     return config_;
 }
