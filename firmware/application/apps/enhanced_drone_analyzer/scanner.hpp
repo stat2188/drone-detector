@@ -766,8 +766,18 @@ public:
      * @return Copy of current scan configuration
      * @note Acquires mutex (LockOrder::DATA_MUTEX), returns by value
      *       to prevent data race on reference after mutex release
+     * @note Stack: ~400 bytes (ScanConfig is large). Prefer targeted
+     *       getters (get_threat_critical_dbm()) in hot paths.
      */
     [[nodiscard]] ScanConfig get_config() const noexcept;
+    
+    /**
+     * @brief Get critical threat RSSI threshold (thread-safe, no full config copy)
+     * @return Critical threat threshold in dBm
+     * @note Acquires mutex (LockOrder::DATA_MUTEX), copies only 4 bytes
+     * @note Use instead of get_config().threat_critical_dbm in hot paths
+     */
+    [[nodiscard]] int32_t get_threat_critical_dbm() const noexcept;
     
     /**
      * @brief Get sweep step frequency in Hz

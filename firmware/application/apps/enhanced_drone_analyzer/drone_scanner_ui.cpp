@@ -160,7 +160,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
     // (display and detection filtering are now separate)
     if (scanner_ptr_ != nullptr) {
-        const auto cfg = scanner_ptr_->get_config();
+        const auto cfg = scanner_ptr_->get_config();  // Stack: ~400B (one-time init, acceptable)
         field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
     }
 
@@ -332,7 +332,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             return;
         }
         // Refresh config from scanner (SWP view may have changed sweep settings)
-        const auto config = scanner_ptr_->get_config();
+        const auto config = scanner_ptr_->get_config();  // Stack: ~400B (button press, infrequent)
         nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
 
@@ -342,7 +342,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        const auto config = scanner_ptr_->get_config();
+        const auto config = scanner_ptr_->get_config();  // Stack: ~400B (button press, infrequent)
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };
 
@@ -529,7 +529,7 @@ void DroneScannerUI::on_show() {
 
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
     if (composite_active_ && scanner_ptr_ != nullptr) {
-        const auto cfg = scanner_ptr_->get_config();
+        const auto cfg = scanner_ptr_->get_config();  // Stack: ~400B (view transition, infrequent)
 
         // Reinit all windows from config
         last_tuned_freq_ = 0;
@@ -790,10 +790,10 @@ void DroneScannerUI::refresh_ui() noexcept {
                 color = BigDisplayColor::YELLOW;
                 break;
             case ScannerState::TRACKING: {
-                const auto cfg = (scanner_ptr_ != nullptr)
-                    ? scanner_ptr_->get_config()
-                    : ScanConfig();
-                color = (current_rssi_ >= cfg.threat_critical_dbm)
+                const int32_t critical_threshold = (scanner_ptr_ != nullptr)
+                    ? scanner_ptr_->get_threat_critical_dbm()
+                    : RSSI_CRITICAL_THREAT_THRESHOLD_DBM;
+                color = (current_rssi_ >= critical_threshold)
                       ? BigDisplayColor::RED
                       : BigDisplayColor::GREEN;
                 break;
@@ -863,7 +863,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.set_scan_head(-1, -1);
 
     const auto cfg = (scanner_ptr_ != nullptr)
-        ? scanner_ptr_->get_config()
+        ? scanner_ptr_->get_config()   // Stack: ~400B (mode switch, infrequent)
         : ScanConfig();
 
     // Initialize all 4 sweep windows from config

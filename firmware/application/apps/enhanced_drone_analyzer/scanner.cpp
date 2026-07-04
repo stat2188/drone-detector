@@ -1114,6 +1114,14 @@ ScanConfig DroneScanner::get_config() const noexcept {
     return config_;
 }
 
+int32_t DroneScanner::get_threat_critical_dbm() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return RSSI_CRITICAL_THREAT_THRESHOLD_DBM;
+    }
+    return config_.threat_critical_dbm;
+}
+
 ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     ErrorCode validate_result = validate_config_internal(config);
     if (validate_result != ErrorCode::SUCCESS) {

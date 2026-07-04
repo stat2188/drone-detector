@@ -946,7 +946,8 @@ void DroneDisplay::render_composite(
     // Envelope only draws on above-threshold bars — eliminates the sub-threshold
     // white dot line that previously appeared at the chart bottom.
     // Stack: ~6 bytes (EnvelopeState struct).
-    EnvelopeState envelope{chart_start_y + chart_height, false, 0};
+    const uint16_t envelope_y0 = static_cast<uint16_t>(chart_start_y + chart_height);
+    EnvelopeState envelope{envelope_y0, false, 0};
 
     for (uint16_t i = 0; i < bar_count; ++i) {
         uint8_t power = composite_data[i];
@@ -1053,7 +1054,8 @@ void DroneDisplay::render_multi_zone(
             const uint16_t chart_h = zone_h - 14;
             if (chart_h < 4) continue;
 
-            EnvelopeState envelope{chart_y + chart_h, false, 0};
+            const uint16_t envelope_y0 = static_cast<uint16_t>(chart_y + chart_h);
+            EnvelopeState envelope{envelope_y0, false, 0};
 
             for (uint16_t i = 0; i < width - 4 && i < 240; ++i) {
                 const uint8_t power = data[i];
