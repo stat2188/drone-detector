@@ -158,7 +158,7 @@ void DroneDisplay::render_spectrum(
         const uint8_t value = spectrum_data[i];
         if (value < min_color_power_) continue;
 
-        const uint16_t bar_height = (static_cast<uint16_t>(value) * chart_height) / 255;
+        const uint16_t bar_height = (static_cast<uint16_t>(value) * chart_height) >> 8;
         const uint16_t x = chart_start_x + static_cast<uint16_t>(i) * bar_width;
         const uint16_t y = chart_start_y + chart_height - bar_height;
 
@@ -769,45 +769,6 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
 
     composite_data_ = composite_persist_buf_;
     composite_data_size_ = copy_n;
-
-    // Auto-compute noise floor from composite data for display filtering.
-    // Uses quickselect at SWEEP_NOISE_FLOOR_PERCENTILE (default 15%) so the floor
-    // tracks the bottom of the distribution rather than the middle - this lets
-    // fresh pixels of a new sweep pass stay visible above the floor.
-    if (copy_n > 0) {
-        for (size_t i = 0; i < copy_n; ++i) {
-            composite_sort_buf_[i] = composite_persist_buf_[i];
-        }
-        size_t k = (copy_n * SWEEP_NOISE_FLOOR_PERCENTILE) / 100;
-        if (k >= copy_n) k = copy_n - 1;  // safety clamp
-        size_t ql = 0;
-        size_t qr = copy_n - 1;
-        while (ql < qr) {
-            const size_t pv = ql + (qr - ql) / 2;
-            const uint8_t pivot = composite_sort_buf_[pv];
-            composite_sort_buf_[pv] = composite_sort_buf_[qr];
-            composite_sort_buf_[qr] = pivot;
-            size_t st = ql;
-            for (size_t i = ql; i < qr; ++i) {
-                if (composite_sort_buf_[i] < pivot) {
-                    const uint8_t t = composite_sort_buf_[st];
-                    composite_sort_buf_[st] = composite_sort_buf_[i];
-                    composite_sort_buf_[i] = t;
-                    ++st;
-                }
-            }
-            {
-                const uint8_t t = composite_sort_buf_[st];
-                composite_sort_buf_[st] = composite_sort_buf_[qr];
-                composite_sort_buf_[qr] = t;
-            }
-            if (st == k) break;
-            if (st < k) ql = st + 1;
-            else qr = st - 1;
-        }
-        composite_noise_floor_ = composite_sort_buf_[k];
-        composite_noise_floor_valid_ = true;
-    }
 }
 
 void DroneDisplay::reset_composite_persistence() noexcept {
@@ -828,6 +789,110 @@ void DroneDisplay::reset_composite_persistence() noexcept {
     // this is the root cause of "sweep does 1 pass, then hangs, replaced
     // by histogram" bug. The zeroed persist buffer renders as empty bars
     // (invisible) until the next set_composite_data() fills it with fresh data.
+}
+
+// ============================================================================
+// Noise floor computation (called once per sweep-pass, not per frame)
+// ============================================================================
+
+static void quickselect_pctile(
+    uint8_t* buf,
+    size_t n,
+    size_t k,
+    uint8_t& output
+) noexcept {
+    if (n == 0) return;
+    if (k >= n) k = n - 1;
+    size_t ql = 0;
+    size_t qr = n - 1;
+    while (ql < qr) {
+        const size_t pv = ql + (qr - ql) / 2;
+        const uint8_t pivot = buf[pv];
+        buf[pv] = buf[qr];
+        buf[qr] = pivot;
+        size_t st = ql;
+        for (size_t i = ql; i < qr; ++i) {
+            if (buf[i] < pivot) {
+                const uint8_t t = buf[st];
+                buf[st] = buf[i];
+                buf[i] = t;
+                ++st;
+            }
+        }
+        {
+            const uint8_t t = buf[st];
+            buf[st] = buf[qr];
+            buf[qr] = t;
+        }
+        if (st == k) break;
+        if (st < k) ql = st + 1;
+        else qr = st - 1;
+    }
+    output = buf[k];
+}
+
+void DroneDisplay::update_noise_floor() noexcept {
+    // Band 1: quickselect on composite persistence buffer.
+    if (composite_data_size_ > 0) {
+        for (size_t i = 0; i < composite_data_size_; ++i) {
+            composite_sort_buf_[i] = composite_persist_buf_[i];
+        }
+        size_t k = (composite_data_size_ * SWEEP_NOISE_FLOOR_PERCENTILE) / 100;
+        if (k >= composite_data_size_) k = composite_data_size_ - 1;
+        quickselect_pctile(composite_sort_buf_, composite_data_size_, k, composite_noise_floor_);
+        composite_noise_floor_valid_ = true;
+    }
+
+    // Band 2: quickselect on sweep2 persistence buffer.
+    if (sweep2_data_size_ > 0) {
+        for (size_t i = 0; i < sweep2_data_size_; ++i) {
+            sweep2_sort_buf_[i] = sweep2_persist_buf_[i];
+        }
+        size_t k2 = (sweep2_data_size_ * SWEEP_NOISE_FLOOR_PERCENTILE) / 100;
+        if (k2 >= sweep2_data_size_) k2 = sweep2_data_size_ - 1;
+        quickselect_pctile(sweep2_sort_buf_, sweep2_data_size_, k2, sweep2_noise_floor_);
+        sweep2_noise_floor_valid_ = true;
+    }
+}
+
+// ============================================================================
+// Shared envelope bar drawing (DRY: used by render_composite + render_multi_zone)
+// ============================================================================
+
+void DroneDisplay::draw_bar_with_envelope(
+    Painter& painter,
+    uint16_t x,
+    uint16_t y,
+    uint16_t bar_height,
+    uint32_t color,
+    EnvelopeState& state
+) noexcept {
+    if (color == COLOR_BACKGROUND || bar_height == 0) {
+        state.gap_count++;
+        if (state.gap_count > EnvelopeState::MAX_GAP) {
+            state.prev_valid = false;
+        }
+        return;
+    }
+
+    draw_rectangle(painter, x, y, 1, bar_height, color);
+
+    // Envelope: draw connector from previous active pixel, then dot.
+    if (state.prev_valid && state.gap_count == 0 && y != state.prev_y) {
+        const uint16_t lo = (y < state.prev_y) ? y : state.prev_y;
+        const uint16_t hi = (y < state.prev_y) ? state.prev_y : y;
+        draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
+    } else if (state.prev_valid && state.gap_count > 0
+               && state.gap_count <= EnvelopeState::MAX_GAP) {
+        const uint16_t lo = (y < state.prev_y) ? y : state.prev_y;
+        const uint16_t hi = (y < state.prev_y) ? state.prev_y : y;
+        draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
+    }
+    draw_rectangle(painter, x, y, 1, 1, COLOR_TEXT);
+
+    state.prev_y = y;
+    state.prev_valid = true;
+    state.gap_count = 0;
 }
 
 void DroneDisplay::render_composite(
@@ -878,18 +943,15 @@ void DroneDisplay::render_composite(
     const uint8_t display_threshold = min_color_power_;
 
     // White envelope state: connects bar tops (classical spectrum analyzer look).
-    // Drawn inline with bars — single pass eliminates duplicate 240-iteration loop.
-    // Bridges gaps up to MAX_ENVELOPE_GAP pixels across weak-signal regions.
-    // Stack: ~12 bytes (env_prev_y + env_prev_valid + env_gap_count).
-    static constexpr uint8_t MAX_ENVELOPE_GAP = 5;
-    uint16_t env_prev_y = chart_start_y + chart_height;
-    bool env_prev_valid = false;
-    uint8_t env_gap_count = 0;
+    // Envelope only draws on above-threshold bars — eliminates the sub-threshold
+    // white dot line that previously appeared at the chart bottom.
+    // Stack: ~6 bytes (EnvelopeState struct).
+    EnvelopeState envelope{chart_start_y + chart_height, false, 0};
 
     for (uint16_t i = 0; i < bar_count; ++i) {
         uint8_t power = composite_data[i];
 
-        // Subtract noise floor once — reused for both bar and envelope.
+        // Subtract noise floor — reused for both bar color and envelope.
         if (power > noise_floor) {
             power -= noise_floor;
         } else {
@@ -898,46 +960,20 @@ void DroneDisplay::render_composite(
 
         const uint16_t x = chart_start_x + i;
 
-        if (power > 0) {
-            // Bar color from noise-subtracted power
-            uint32_t color = COLOR_BACKGROUND;
-            if (power >= display_threshold) {
-                if (power > 200) color = COLOR_CRITICAL_THREAT;
-                else if (power > 150) color = COLOR_HIGH_THREAT;
-                else if (power > 100) color = COLOR_MEDIUM_THREAT;
-                else color = COLOR_LOW_THREAT;
-            }
-
-            const uint16_t bar_height = (static_cast<uint16_t>(power) * chart_height) / 256;
-            const uint16_t final_height = (bar_height > 0) ? bar_height : 1;
-            const uint16_t y = chart_start_y + chart_height - final_height;
-
-            if (color != COLOR_BACKGROUND) {
-                draw_rectangle(painter, x, y, 1, final_height, color);
-            }
-
-            // Envelope: draw connector from previous active pixel, then dot.
-            if (env_prev_valid && env_gap_count == 0 && y != env_prev_y) {
-                // Continuous — draw vertical connector between adjacent active columns.
-                const uint16_t lo = (y < env_prev_y) ? y : env_prev_y;
-                const uint16_t hi = (y < env_prev_y) ? env_prev_y : y;
-                draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
-            } else if (env_prev_valid && env_gap_count > 0 && env_gap_count <= MAX_ENVELOPE_GAP) {
-                // Bridge small gap — connector spans from last valid point.
-                const uint16_t lo = (y < env_prev_y) ? y : env_prev_y;
-                const uint16_t hi = (y < env_prev_y) ? env_prev_y : y;
-                draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
-            }
-            draw_rectangle(painter, x, y, 1, 1, COLOR_TEXT);
-            env_prev_y = y;
-            env_prev_valid = true;
-            env_gap_count = 0;
-        } else {
-            env_gap_count++;
-            if (env_gap_count > MAX_ENVELOPE_GAP) {
-                env_prev_valid = false;
-            }
+        // Bar color from noise-subtracted power
+        uint32_t color = COLOR_BACKGROUND;
+        if (power >= display_threshold) {
+            if (power > 200) color = COLOR_CRITICAL_THREAT;
+            else if (power > 150) color = COLOR_HIGH_THREAT;
+            else if (power > 100) color = COLOR_MEDIUM_THREAT;
+            else color = COLOR_LOW_THREAT;
         }
+
+        const uint16_t bar_height = (static_cast<uint16_t>(power) * chart_height) >> 8;
+        const uint16_t final_height = (bar_height > 0) ? bar_height : 1;
+        const uint16_t y = chart_start_y + chart_height - final_height;
+
+        draw_bar_with_envelope(painter, x, y, final_height, color, envelope);
     }
 
     // Real-time scan-head marker: 1-px white vertical line at current pixel_index.
@@ -1010,57 +1046,34 @@ void DroneDisplay::render_multi_zone(
             *dst = '\0';
             draw_text(painter, title, start_x + 2, zone_y + 2, COLOR_TEXT);
 
-            // Bar chart + white envelope (merged single pass).
-            // Envelope connects bar tops (classical analyzer look), bridging
-            // gaps up to MAX_ENVELOPE_GAP pixels. Eliminates duplicate 240-iter pass.
-            // Stack: ~12 bytes.
+            // Bar chart + white envelope via shared method (DRY).
+            // Stack: ~6 bytes (EnvelopeState).
             constexpr uint16_t bar_width = 1;
             const uint16_t chart_y = zone_y + 12;
             const uint16_t chart_h = zone_h - 14;
             if (chart_h < 4) continue;
 
-            static constexpr uint8_t MAX_ENVELOPE_GAP = 5;
-            uint16_t env_prev_y = chart_y + chart_h;
-            bool env_prev_valid = false;
-            uint8_t env_gap_count = 0;
+            EnvelopeState envelope{chart_y + chart_h, false, 0};
 
             for (uint16_t i = 0; i < width - 4 && i < 240; ++i) {
                 const uint8_t power = data[i];
-                if (power == 0 || power < min_color_power_) {
-                    env_gap_count++;
-                    if (env_gap_count > MAX_ENVELOPE_GAP) {
-                        env_prev_valid = false;
-                    }
-                    continue;
+
+                // Skip below-threshold bins (consistent with render_composite).
+                uint32_t color = COLOR_BACKGROUND;
+                if (power >= min_color_power_) {
+                    if (power > 200) color = COLOR_CRITICAL_THREAT;
+                    else if (power > 150) color = COLOR_HIGH_THREAT;
+                    else if (power > 100) color = COLOR_MEDIUM_THREAT;
+                    else color = COLOR_LOW_THREAT;
                 }
 
-                const uint16_t bar_h = (static_cast<uint16_t>(power) * chart_h) / 255;
-                if (bar_h == 0) continue;
+                const uint16_t bar_h = (static_cast<uint16_t>(power) * chart_h) >> 8;
+                if (bar_h == 0 && color == COLOR_BACKGROUND) continue;
 
                 const uint16_t x = start_x + 2 + i * bar_width;
                 const uint16_t y = chart_y + chart_h - bar_h;
 
-                uint32_t color = COLOR_LOW_THREAT;
-                if (power > 200) color = COLOR_CRITICAL_THREAT;
-                else if (power > 150) color = COLOR_HIGH_THREAT;
-                else if (power > 100) color = COLOR_MEDIUM_THREAT;
-
-                draw_rectangle(painter, x, y, bar_width, bar_h, color);
-
-                // Envelope connector + dot.
-                if (env_prev_valid && env_gap_count == 0 && y != env_prev_y) {
-                    const uint16_t lo = (y < env_prev_y) ? y : env_prev_y;
-                    const uint16_t hi = (y < env_prev_y) ? env_prev_y : y;
-                    draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
-                } else if (env_prev_valid && env_gap_count > 0 && env_gap_count <= MAX_ENVELOPE_GAP) {
-                    const uint16_t lo = (y < env_prev_y) ? y : env_prev_y;
-                    const uint16_t hi = (y < env_prev_y) ? env_prev_y : y;
-                    draw_rectangle(painter, x, lo, 1, hi - lo + 1, COLOR_TEXT);
-                }
-                draw_rectangle(painter, x, y, 1, 1, COLOR_TEXT);
-                env_prev_y = y;
-                env_prev_valid = true;
-                env_gap_count = 0;
+                draw_bar_with_envelope(painter, x, y, bar_h, color, envelope);
             }
         }
     }
@@ -1093,42 +1106,6 @@ void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
 
     sweep2_data_ = sweep2_persist_buf_;
     sweep2_data_size_ = copy_n;
-
-    // Auto-compute noise floor for band 2.
-    if (copy_n > 0) {
-        for (size_t i = 0; i < copy_n; ++i) {
-            sweep2_sort_buf_[i] = sweep2_persist_buf_[i];
-        }
-        size_t k = (copy_n * SWEEP_NOISE_FLOOR_PERCENTILE) / 100;
-        if (k >= copy_n) k = copy_n - 1;
-        size_t ql = 0;
-        size_t qr = copy_n - 1;
-        while (ql < qr) {
-            const size_t pv = ql + (qr - ql) / 2;
-            const uint8_t pivot = sweep2_sort_buf_[pv];
-            sweep2_sort_buf_[pv] = sweep2_sort_buf_[qr];
-            sweep2_sort_buf_[qr] = pivot;
-            size_t st = ql;
-            for (size_t i = ql; i < qr; ++i) {
-                if (sweep2_sort_buf_[i] < pivot) {
-                    const uint8_t t = sweep2_sort_buf_[st];
-                    sweep2_sort_buf_[st] = sweep2_sort_buf_[i];
-                    sweep2_sort_buf_[i] = t;
-                    ++st;
-                }
-            }
-            {
-                const uint8_t t = sweep2_sort_buf_[st];
-                sweep2_sort_buf_[st] = sweep2_sort_buf_[qr];
-                sweep2_sort_buf_[qr] = t;
-            }
-            if (st == k) break;
-            if (st < k) ql = st + 1;
-            else qr = st - 1;
-        }
-        sweep2_noise_floor_ = sweep2_sort_buf_[k];
-        sweep2_noise_floor_valid_ = true;
-    }
 }
 
 void DroneDisplay::render_dual_composite(

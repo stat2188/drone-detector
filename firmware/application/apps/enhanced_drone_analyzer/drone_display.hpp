@@ -211,6 +211,16 @@ public:
     void reset_composite_persistence() noexcept;
 
     /**
+     * @brief Recompute noise floor from EMA persistence buffer using quickselect.
+     * @note Called once per sweep pass (pair_complete), NOT per frame.
+     *       Eliminates ~1200 integer comparisons per frame that previously ran
+     *       in set_composite_data() and set_sweep2_data().
+     * @note Uses composite_sort_buf_ / sweep2_sort_buf_ as temporary storage.
+     * @note SRAM: 0 B additional (uses existing sort buffers).
+     */
+    void update_noise_floor() noexcept;
+
+    /**
      * @brief Set real-time scan-head position for the upper and lower composite bands.
      * @param upper Pixel index 0..COMPOSITE_SIZE-1, or -1 to hide on upper band.
      * @param lower Pixel index 0..COMPOSITE_SIZE-1, or -1 to hide on lower band.
@@ -485,6 +495,38 @@ private:
     FreqHz zone_freq_start_[MAX_ZONES]{};
     FreqHz zone_freq_end_[MAX_ZONES]{};
     uint8_t multi_zone_count_{0};
+
+    /**
+     * @brief Envelope state for connecting bar tops with a white trace.
+     * @note Eliminates code duplication between render_composite() and render_multi_zone().
+     * @note Stack: ~6 bytes when embedded in caller.
+     */
+    struct EnvelopeState {
+        uint16_t prev_y{0};
+        bool prev_valid{false};
+        uint8_t gap_count{0};
+        static constexpr uint8_t MAX_GAP = 5;
+    };
+
+    /**
+     * @brief Draw a single bar column and update the envelope trace.
+     * @note Envelope only draws on above-threshold bars, eliminating the
+     *       sub-threshold white dot line bug that existed in render_composite().
+     * @param x Screen X coordinate
+     * @param y Bar top Y coordinate (chart_start_y + chart_height - bar_height)
+     * @param bar_height Bar height in pixels
+     * @param color Bar color (RGB), or COLOR_BACKGROUND if below threshold
+     * @param state Envelope state (updated in-place)
+     * @note Stack: ~0 bytes (all state in EnvelopeState ref). Flash: ~200 bytes.
+     */
+    void draw_bar_with_envelope(
+        Painter& painter,
+        uint16_t x,
+        uint16_t y,
+        uint16_t bar_height,
+        uint32_t color,
+        EnvelopeState& state
+    ) noexcept;
 
     void render_composite(
         Painter& painter,

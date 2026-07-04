@@ -1103,6 +1103,11 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     const bool pair_complete = w0_done && w1_done;
 
     if (pair_complete) {
+        // Recompute noise floor once per sweep pass (not per frame).
+        // This replaces the per-frame quickselect that previously ran in
+        // set_composite_data() / set_sweep2_data(), saving ~1200 comparisons/frame.
+        drone_display_.update_noise_floor();
+
         // Display final pair data before reset
         update_sweep_pair_display();
         drone_display_.set_dirty();
