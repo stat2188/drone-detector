@@ -157,14 +157,14 @@ public:
      */
     void set_status_text(const char* status_text) noexcept;
 
-    void set_spectrum_visible(bool visible) noexcept { spectrum_visible_ = visible; }
-    void set_histogram_visible(bool visible) noexcept { histogram_visible_ = visible; }
+    void set_spectrum_visible(bool visible) noexcept { spectrum_visible_ = visible; dirty_flags_ = DIRTY_ALL; }
+    void set_histogram_visible(bool visible) noexcept { histogram_visible_ = visible; dirty_flags_ = DIRTY_ALL; }
     [[nodiscard]] bool get_histogram_visible() const noexcept { return histogram_visible_; }
-    void set_drone_list_visible(bool visible) noexcept { drone_list_visible_ = visible; }
-    void set_status_bar_visible(bool visible) noexcept { status_bar_visible_ = visible; }
+    void set_drone_list_visible(bool visible) noexcept { drone_list_visible_ = visible; dirty_flags_ = DIRTY_ALL; }
+    void set_status_bar_visible(bool visible) noexcept { status_bar_visible_ = visible; dirty_flags_ = DIRTY_ALL; }
 
-    void set_spectrum_filter(uint8_t min_power) noexcept { min_color_power_ = min_power; }
-    void set_spectrum_integration(uint8_t factor) noexcept { spectrum_integration_ = factor; }
+    void set_spectrum_filter(uint8_t min_power) noexcept { min_color_power_ = min_power; dirty_flags_ |= DIRTY_SPEC; }
+    void set_spectrum_integration(uint8_t factor) noexcept { spectrum_integration_ = factor; dirty_flags_ |= DIRTY_SPEC; }
 
     /**
      * @brief Set spectrum shape filter parameters (margin, min_width, max_width)
@@ -178,21 +178,23 @@ public:
         spectrum_shape_max_width_ = max_width;
     }
 
-    void set_composite_mode(bool enabled) noexcept { composite_mode_ = enabled; }
+    void set_composite_mode(bool enabled) noexcept { composite_mode_ = enabled; dirty_flags_ = DIRTY_ALL; }
     void set_composite_data(const uint8_t* data, size_t size) noexcept;
     void set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t buffer_size,
                              const FreqHz* freq_starts, const FreqHz* freq_ends) noexcept;
     void set_sweep_range(FreqHz start, FreqHz end) noexcept {
         sweep_freq_start_ = start;
         sweep_freq_end_ = end;
+        dirty_flags_ |= DIRTY_SPEC;
     }
 
     // Dual-sweep support
-    void set_dual_sweep_mode(bool enabled) noexcept { dual_sweep_mode_ = enabled; }
+    void set_dual_sweep_mode(bool enabled) noexcept { dual_sweep_mode_ = enabled; dirty_flags_ = DIRTY_ALL; }
     void set_sweep2_data(const uint8_t* data, size_t size) noexcept;
     void set_sweep2_range(FreqHz start, FreqHz end) noexcept {
         sweep2_freq_start_ = start;
         sweep2_freq_end_ = end;
+        dirty_flags_ |= DIRTY_SPEC;
     }
 
     /**
@@ -230,6 +232,7 @@ public:
     void set_scan_head(int16_t upper, int16_t lower) noexcept {
         scan_head_position_[0] = upper;
         scan_head_position_[1] = lower;
+        dirty_flags_ |= DIRTY_SPEC;
     }
 
     [[nodiscard]] const char* get_status_text() const noexcept;
@@ -431,6 +434,15 @@ private:
     bool drone_list_visible_;
     bool status_bar_visible_;
 
+    // Section-level dirty flags — each bit controls whether a section repaints.
+    // Prevents clearing+redrawing unchanged sections, eliminating flicker.
+    static constexpr uint8_t DIRTY_SPEC   = 1 << 0;
+    static constexpr uint8_t DIRTY_HIST   = 1 << 1;
+    static constexpr uint8_t DIRTY_DRONES = 1 << 2;
+    static constexpr uint8_t DIRTY_STATUS = 1 << 3;
+    static constexpr uint8_t DIRTY_ALL    = 0x0F;
+    uint8_t dirty_flags_{DIRTY_ALL};
+
     // Spectrum filter threshold (0=OFF, 118=MID, 202=HIGH)
     uint8_t min_color_power_{DEFAULT_SPECTRUM_FILTER};
 
@@ -557,7 +569,7 @@ private:
     ) noexcept;
 
 public:
-    void set_matched_pattern_bin(int16_t bin) noexcept { matched_pattern_bin_ = bin; }
+    void set_matched_pattern_bin(int16_t bin) noexcept { matched_pattern_bin_ = bin; dirty_flags_ |= DIRTY_SPEC; }
 
     /**
      * @brief Layout metrics computed once per paint/hit_test cycle.

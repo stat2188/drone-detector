@@ -72,9 +72,6 @@ void DroneDisplay::paint(Painter& painter) {
     const uint16_t oy = sr.location().y();
     const uint16_t w = sr.size().width();
 
-    // NOTE: No full-screen clear — each render_* method clears its own area.
-    // This eliminates double-clear flickering.
-
     const auto layout = calculate_layout();
     uint16_t y_offset = oy;
 
@@ -83,7 +80,7 @@ void DroneDisplay::paint(Painter& painter) {
     const bool show_hist = (histogram_visible_ && histogram_data_size_ > 0);
     const bool show_list = (drone_list_visible_ && display_data_.drone_count > 0);
 
-    if (show_spec) {
+    if (show_spec && (dirty_flags_ & DIRTY_SPEC)) {
         if (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0) {
             if (dual_sweep_mode_ && sweep2_data_ != nullptr && sweep2_data_size_ > 0) {
                 render_dual_composite(painter, ox, y_offset, w, layout.spec_h);
@@ -98,24 +95,26 @@ void DroneDisplay::paint(Painter& painter) {
             render_spectrum(painter, spectrum_buffer_.data(), spectrum_data_size_,
                             ox, y_offset, w, layout.spec_h);
         }
-        y_offset += layout.spec_h;
     }
+    if (show_spec) y_offset += layout.spec_h;
 
-    if (show_hist) {
+    if (show_hist && (dirty_flags_ & DIRTY_HIST)) {
         render_histogram(painter, histogram_buffer_.data(), histogram_data_size_,
                          ox, y_offset, w, layout.hist_h);
-        y_offset += layout.hist_h;
     }
+    if (show_hist) y_offset += layout.hist_h;
 
-    if (show_list && layout.drone_h > 0) {
+    if (show_list && layout.drone_h > 0 && (dirty_flags_ & DIRTY_DRONES)) {
         render_drone_list(painter, display_data_.drones, display_data_.drone_count,
                           ox, y_offset, w, layout.drone_h);
-        y_offset += layout.drone_h;
     }
+    if (show_list && layout.drone_h > 0) y_offset += layout.drone_h;
 
-    if (layout.status_h > 0) {
+    if (layout.status_h > 0 && (dirty_flags_ & DIRTY_STATUS)) {
         render_status_bar(painter, status_text_, ox, y_offset, w, layout.status_h);
     }
+
+    dirty_flags_ = 0;  // All sections painted — clear flags
 }
 
 // ============================================================================
@@ -304,7 +303,6 @@ void DroneDisplay::render_status_bar(
 // ============================================================================
 
 ErrorCode DroneDisplay::update_display_data(const DisplayData& display_data) noexcept {
-    // Validate input
     const ErrorCode error = validate_drone_buffer(
         display_data.drones,
         display_data.drone_count,
@@ -313,10 +311,8 @@ ErrorCode DroneDisplay::update_display_data(const DisplayData& display_data) noe
     if (error != ErrorCode::SUCCESS) {
         return error;
     }
-    
-    // Copy display data
     display_data_ = display_data;
-    
+    dirty_flags_ |= DIRTY_DRONES;
     return ErrorCode::SUCCESS;
 }
 
@@ -396,6 +392,7 @@ ErrorCode DroneDisplay::set_spectrum_data(
         }
     }
 
+    dirty_flags_ |= DIRTY_SPEC;
     return ErrorCode::SUCCESS;
 }
 
@@ -414,7 +411,7 @@ ErrorCode DroneDisplay::set_histogram_data(
     for (size_t i = 0; i < histogram_size && i < histogram_buffer_.size(); ++i) {
         histogram_buffer_[i] = histogram_data[i];
     }
-    
+    dirty_flags_ |= DIRTY_HIST;
     return ErrorCode::SUCCESS;
 }
 
@@ -422,14 +419,13 @@ void DroneDisplay::set_status_text(const char* status_text) noexcept {
     if (status_text == nullptr) {
         return;
     }
-    
-    // Copy status text
     size_t i = 0;
     while (i < MAX_TEXT_LENGTH - 1 && status_text[i] != '\0') {
         status_text_[i] = status_text[i];
         ++i;
     }
     status_text_[i] = '\0';
+    dirty_flags_ |= DIRTY_STATUS;
 }
 
 const char* DroneDisplay::get_status_text() const noexcept {
@@ -769,6 +765,7 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
 
     composite_data_ = composite_persist_buf_;
     composite_data_size_ = copy_n;
+    dirty_flags_ |= DIRTY_SPEC;
 }
 
 void DroneDisplay::reset_composite_persistence() noexcept {
@@ -783,6 +780,7 @@ void DroneDisplay::reset_composite_persistence() noexcept {
     sweep2_persist_initialized_ = false;
     sweep2_noise_floor_ = 0;
     sweep2_noise_floor_valid_ = false;
+    dirty_flags_ = DIRTY_ALL;
     // DO NOT null composite_data_ or composite_data_size_ here.
     // Nulling them causes calculate_layout() to collapse the spectrum area
     // (show_spec = false), letting the histogram take over the display —
@@ -853,6 +851,7 @@ void DroneDisplay::update_noise_floor() noexcept {
         quickselect_pctile(sweep2_sort_buf_, sweep2_data_size_, k2, sweep2_noise_floor_);
         sweep2_noise_floor_valid_ = true;
     }
+    dirty_flags_ |= DIRTY_SPEC;
 }
 
 // ============================================================================
@@ -1108,6 +1107,7 @@ void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
 
     sweep2_data_ = sweep2_persist_buf_;
     sweep2_data_size_ = copy_n;
+    dirty_flags_ |= DIRTY_SPEC;
 }
 
 void DroneDisplay::render_dual_composite(

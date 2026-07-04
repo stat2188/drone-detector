@@ -647,20 +647,10 @@ void DroneScannerUI::on_hide() {
 
 void DroneScannerUI::paint(Painter& painter) {
     (void)painter;
-    
-    if (alert_active_) {
-        const SystemTime now = chTimeNow();
-        if ((now - alert_start_time_) >= alert_duration_ms_) {
-            alert_active_ = false;
-        }
-    }
-    
-    if (error_active_) {
-        const SystemTime now = chTimeNow();
-        if ((now - error_start_time_) >= error_duration_ms_) {
-            error_active_ = false;
-        }
-    }
+    // Alert/error timer expiry is now handled in refresh_ui() to avoid
+    // requiring DroneScannerUI::paint() to be called every frame.
+    // This eliminates the need for this->set_dirty() in refresh_ui(),
+    // preventing full widget-tree repaints that cause screen flicker.
 }
 
 void DroneScannerUI::show_alert(const char* message, uint32_t duration_ms) noexcept {
@@ -704,6 +694,19 @@ void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
 }
 
 void DroneScannerUI::refresh_ui() noexcept {
+    // Check alert/error timer expiry (moved from paint() to avoid full-tree repaint)
+    {
+        const SystemTime now = chTimeNow();
+        if (alert_active_ && (now - alert_start_time_) >= alert_duration_ms_) {
+            alert_active_ = false;
+            drone_display_.set_dirty();  // Force repaint to clear alert overlay
+        }
+        if (error_active_ && (now - error_start_time_) >= error_duration_ms_) {
+            error_active_ = false;
+            drone_display_.set_dirty();
+        }
+    }
+
     if (scanner_ptr_ == nullptr || initialization_failed_) {
         current_scanner_state_ = ScannerState::IDLE;
         current_rssi_ = RSSI_NOISE_FLOOR_DBM;
@@ -717,9 +720,16 @@ void DroneScannerUI::refresh_ui() noexcept {
 
     current_scanner_state_ = scanner_ptr_->get_state();
 
-    // Remove stale drones (not seen for DRONE_REMOVAL_TIMEOUT_MS)
-    // Works in both normal and sweep mode
-    scanner_ptr_->remove_stale_drones(chTimeNow());
+    // Rate-limit stale drone removal to 1Hz (was 60Hz — unnecessary churn)
+    {
+        static SystemTime last_stale_check = 0;
+        constexpr uint32_t STALE_CHECK_INTERVAL_MS = 1000;
+        const SystemTime now = chTimeNow();
+        if ((now - last_stale_check) >= STALE_CHECK_INTERVAL_MS) {
+            scanner_ptr_->remove_stale_drones(now);
+            last_stale_check = now;
+        }
+    }
 
     // Build display data from tracked drones
     // Use single get_tracked_drones call for consistency (one lock, one snapshot)
@@ -876,7 +886,9 @@ void DroneScannerUI::refresh_ui() noexcept {
     // Drive SOS/multi-beep pattern at ~60Hz
     AudioAlertManager::update();
 
-    set_dirty();
+    // REMOVED: this->set_dirty() — was forcing ALL 17 children to repaint
+    // every frame, causing screen flicker. Each widget now only repaints
+    // when its own set_dirty() is called (drone_display_, big_display_).
 }
 
 void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
@@ -1377,21 +1389,18 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
 
 void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) noexcept {
     // NOTE: radio::set_tuning_frequency is thread-safe via internal SPI driver mutex
-    // Removed invalid chSysLock() wrapper that could cause deadlock with interrupt-driven SPI
     radio::set_tuning_frequency(rf::Frequency(win.f_center));
     set_current_frequency_safe(win.f_center);
     last_tuned_freq_ = win.f_center;
 
-    // 5ms PLL settle delay matches Looking Glass app - validated for RFFC5072 + MAX2837 lock
-    static constexpr uint32_t PLL_SETTLE_MS = 5;
-    chThdSleepMilliseconds(PLL_SETTLE_MS);
-
-    (void)prefix;
     baseband::spectrum_streaming_start();
 
-    // Skip initial FFT frames after retune to let baseband filters settle.
-    // The first few frames contain transient artifacts from frequency switching.
-    win.settle_frames_remaining_ = SWEEP_SETTLE_FRAMES;
+    // Skip 1 FFT frame after retune for PLL + baseband filter settle.
+    // PLL lock: ~200µs-1.2ms (RFFC5072 + MAX2837). 1 frame (~17ms) >> 1.2ms.
+    // Eliminates 5ms chThdSleepMilliseconds that blocked the UI thread,
+    // recovering 30% of the frame budget in sweep mode.
+    win.settle_frames_remaining_ = 1;
+    (void)prefix;
 }
 
 DroneScanner& get_scanner_instance() noexcept {
