@@ -1012,6 +1012,8 @@ void DroneDisplay::set_multi_zone_data(const uint8_t buffers[][240], uint8_t zon
         zone_freq_start_[z] = freq_starts[z];
         zone_freq_end_[z] = freq_ends[z];
     }
+    dirty_flags_ |= DIRTY_SPEC;
+    set_dirty();
 }
 
 void DroneDisplay::render_multi_zone(
