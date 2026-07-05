@@ -192,7 +192,7 @@ void PatternManagerView::on_show() {
     }
 
     pm_ = &scanner_->get_pattern_manager();
-    scanner_config_ = scanner_->get_config();
+    scanner_->get_config_to(scanner_config_);
 
     if (pm_->reload_patterns() != ErrorCode::SUCCESS) {
         label_status_.set("Load failed");

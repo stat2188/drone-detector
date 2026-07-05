@@ -1114,6 +1114,11 @@ ScanConfig DroneScanner::get_config() const noexcept {
     return config_;
 }
 
+void DroneScanner::get_config_to(ScanConfig& out) const noexcept {
+    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    out = config_;
+}
+
 int32_t DroneScanner::get_threat_critical_dbm() const noexcept {
     MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
     if (!lock.is_locked()) {

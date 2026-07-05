@@ -10,10 +10,6 @@
 
 namespace drone_analyzer {
 
-// ============================================================================
-// SettingsStruct Implementation
-// ============================================================================
-
 SettingsStruct::SettingsStruct() noexcept
     : scanning_mode(DEFAULT_SCANNING_MODE)
     , scan_interval_ms(SCAN_CYCLE_INTERVAL_MS)
@@ -32,9 +28,9 @@ SettingsStruct::SettingsStruct() noexcept
     , spectrum_detection_enabled(true)
     , median_enabled(true)
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
-    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)  // 5 bins = 390 kHz
+    , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
-    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)  // 130 rejects noise spikes
+    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
     , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
     , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
@@ -71,388 +67,195 @@ SettingsStruct::SettingsStruct() noexcept
     , sweep4_enabled(false) {
 }
 
-// ============================================================================
-// Unified Parser — single implementation for all key=value parsing
-// ============================================================================
-
-static void parse_settings_line(
-    const uint8_t* buf,
-    size_t len,
-    SettingsStruct& s
-) noexcept {
+// Compact key=value parser
+static void parse_line(const uint8_t* buf, size_t len, SettingsStruct& s) noexcept {
     if (len == 0 || buf[0] == '#') return;
-
-    size_t eq_pos = 0;
-    for (size_t i = 0; i < len; ++i) {
-        if (buf[i] == '=') { eq_pos = i; break; }
-    }
-    if (eq_pos == 0 || eq_pos >= len - 1) return;
+    size_t eq = 0;
+    for (size_t i = 0; i < len; ++i) { if (buf[i] == '=') { eq = i; break; } }
+    if (eq == 0 || eq >= len - 1) return;
 
     char key[32];
-    size_t key_len = eq_pos;
-    if (key_len > 31) key_len = 31;
-    for (size_t i = 0; i < key_len; ++i) {
-        key[i] = static_cast<char>(buf[i]);
-    }
-    key[key_len] = '\0';
+    size_t kl = (eq > 31) ? 31 : eq;
+    for (size_t i = 0; i < kl; ++i) key[i] = static_cast<char>(buf[i]);
+    key[kl] = '\0';
+    const uint8_t* val = buf + eq + 1;
+    size_t vl = len - eq - 1;
 
-    const uint8_t* val_start = buf + eq_pos + 1;
-    size_t val_len = len - eq_pos - 1;
-
-    auto key_matches = [key, key_len](const char* expected) -> bool {
-        const size_t elen = __builtin_strlen(expected);
-        return (key_len == elen) && __builtin_memcmp(key, expected, elen) == 0;
+    auto km = [key, kl](const char* e) -> bool {
+        const size_t el = __builtin_strlen(e);
+        return (kl == el) && __builtin_memcmp(key, e, el) == 0;
+    };
+    auto pint = [val, vl]() -> uint64_t {
+        uint64_t v = 0;
+        for (size_t i = 0; i < vl; ++i)
+            if (val[i] >= '0' && val[i] <= '9') v = v * 10 + (val[i] - '0');
+        return v;
+    };
+    auto pbool = [val, vl]() -> bool {
+        return vl == 4 && val[0] == 't' && val[1] == 'r' && val[2] == 'u' && val[3] == 'e';
+    };
+    auto psint = [val, vl]() -> int32_t {
+        const bool neg = vl > 0 && val[0] == '-';
+        const uint8_t* ns = neg ? val + 1 : val;
+        size_t nl = neg ? vl - 1 : vl;
+        uint32_t v = 0;
+        for (size_t i = 0; i < nl; ++i)
+            if (ns[i] >= '0' && ns[i] <= '9') v = v * 10 + (ns[i] - '0');
+        return neg ? -static_cast<int32_t>(v) : static_cast<int32_t>(v);
     };
 
-    auto parse_int = [val_start, val_len]() -> uint64_t {
-        uint64_t val = 0;
-        for (size_t i = 0; i < val_len; ++i) {
-            if (val_start[i] >= '0' && val_start[i] <= '9')
-                val = val * 10ULL + static_cast<uint64_t>(val_start[i] - '0');
-        }
-        return val;
-    };
-
-    auto parse_bool = [val_start, val_len]() -> bool {
-        return (val_len == 4 &&
-                val_start[0] == 't' && val_start[1] == 'r' &&
-                val_start[2] == 'u' && val_start[3] == 'e');
-    };
-
-    auto parse_signed_int = [val_start, val_len]() -> int32_t {
-        const bool negative = (val_len > 0 && val_start[0] == '-');
-        const uint8_t* num_start = negative ? val_start + 1 : val_start;
-        const size_t num_len = negative ? val_len - 1 : val_len;
-        uint32_t val = 0;
-        for (size_t i = 0; i < num_len; ++i) {
-            if (num_start[i] >= '0' && num_start[i] <= '9')
-                val = val * 10 + (num_start[i] - '0');
-        }
-        return negative ? -static_cast<int32_t>(val) : static_cast<int32_t>(val);
-    };
-
-    // --- Scanning ---
-    if (key_matches("scan_interval_ms")) {
-        const uint64_t v = parse_int();
-        s.scan_interval_ms = static_cast<uint32_t>((v < 10) ? 10 : (v > 10000 ? 10000 : v));
-    } else if (key_matches("sensitivity")) {
-        const int32_t sens = static_cast<int32_t>(parse_int());
-        s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
-        s.alert_rssi_threshold_dbm = -20 - s.scan_sensitivity;
-    } else if (key_matches("rssi_threshold_db")) {
-        s.alert_rssi_threshold_dbm = parse_signed_int();
-        // Derive scan_sensitivity to stay in sync with threshold
-        const int32_t sens = -20 - s.alert_rssi_threshold_dbm;
-        s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens));
-
-    } else if (key_matches("threat_low_db")) {
-        const int32_t v = parse_signed_int();
-        s.threat_low_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v;
-    } else if (key_matches("threat_medium_db")) {
-        const int32_t v = parse_signed_int();
-        s.threat_medium_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v;
-    } else if (key_matches("threat_high_db")) {
-        const int32_t v = parse_signed_int();
-        s.threat_high_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v;
-    } else if (key_matches("threat_critical_db")) {
-        const int32_t v = parse_signed_int();
-        s.threat_critical_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v;
-
-    // --- Audio / Display ---
-    } else if (key_matches("enable_audio_alerts")) {
-        s.audio_alerts_enabled = parse_bool();
-    } else if (key_matches("volume")) {
-        const uint64_t v = parse_int();
-        s.volume = static_cast<uint8_t>((v > 99) ? 99 : v);
-    } else if (key_matches("show_spectrum")) {
-        s.spectrum_visible = parse_bool();
-    } else if (key_matches("show_histogram")) {
-        s.histogram_visible = parse_bool();
-
-    // --- Detection features ---
-    } else if (key_matches("spectrum_detection")) {
-        s.spectrum_detection_enabled = parse_bool();
-    } else if (key_matches("dwell_enabled")) {
-        s.dwell_enabled = parse_bool();
-    } else if (key_matches("confirm_count_enabled")) {
-        s.confirm_count_enabled = parse_bool();
-    } else if (key_matches("noise_blacklist_enabled")) {
-        s.noise_blacklist_enabled = parse_bool();
-    } else if (key_matches("median_enabled")) {
-        s.median_enabled = parse_bool();
-
-    // --- Spectrum shape filter (clamped to valid ranges) ---
-    } else if (key_matches("spectrum_margin")) {
-        const uint64_t v = parse_int();
-        s.spectrum_margin = static_cast<uint8_t>((v < 5) ? 5 : (v > 200 ? 200 : v));
-    } else if (key_matches("spectrum_min_width")) {
-        const uint64_t v = parse_int();
-        s.spectrum_min_width = static_cast<uint8_t>((v < 1) ? 1 : (v > 100 ? 100 : v));
-    } else if (key_matches("spectrum_max_width")) {
-        const uint64_t v = parse_int();
-        s.spectrum_max_width = static_cast<uint8_t>((v < 2) ? 2 : (v > 255 ? 255 : v));
-    } else if (key_matches("spectrum_peak_sharpness")) {
-        const uint64_t v = parse_int();
-        s.spectrum_peak_sharpness = static_cast<uint8_t>((v < 50) ? 50 : (v > 250 ? 250 : v));
-    } else if (key_matches("spectrum_peak_ratio")) {
-        const uint64_t v = parse_int();
-        s.spectrum_peak_ratio = static_cast<uint8_t>((v > 255) ? 255 : v);
-    } else if (key_matches("spectrum_valley_depth")) {
-        const uint64_t v = parse_int();
-        s.spectrum_valley_depth = static_cast<uint8_t>((v > 255) ? 255 : v);
-    } else if (key_matches("spectrum_flatness")) {
-        const uint64_t v = parse_int();
-        s.spectrum_flatness = static_cast<uint8_t>((v > 100) ? 100 : v);
-    } else if (key_matches("spectrum_symmetry")) {
-        const uint64_t v = parse_int();
-        s.spectrum_symmetry = static_cast<uint8_t>((v > 100) ? 100 : v);
-
-    // --- Anti-false-positive ---
-    } else if (key_matches("neighbor_margin_db")) {
-        const int32_t v = static_cast<int32_t>(parse_int());
-        s.neighbor_margin_db = (v < 0) ? 0 : (v > 15 ? 15 : v);
-    } else if (key_matches("rssi_variance_enabled")) {
-        s.rssi_variance_enabled = parse_bool();
-    } else if (key_matches("confirm_count")) {
-        const uint64_t v = parse_int();
-        s.confirm_count = static_cast<uint8_t>(
-            (v < CONFIRM_COUNT_MIN) ? CONFIRM_COUNT_MIN
-            : (v > CONFIRM_COUNT_MAX ? CONFIRM_COUNT_MAX : v));
-
-    // --- Sweep window 1 ---
-    } else if (key_matches("sweep_start_mhz")) {
-        s.sweep_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sweep_end_mhz")) {
-        s.sweep_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sweep_step_khz")) {
-        s.sweep_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
-
-    // --- Sweep window 2 ---
-    } else if (key_matches("sweep2_start_mhz")) {
-        s.sweep2_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sweep2_end_mhz")) {
-        s.sweep2_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sweep2_step_khz")) {
-        s.sweep2_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
-    } else if (key_matches("sweep2_enabled")) {
-        s.sweep2_enabled = parse_bool();
-
-    // --- Sweep window 3 ---
-    } else if (key_matches("sweep3_start_mhz")) {
-        s.sweep3_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sweep3_end_mhz")) {
-        s.sweep3_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sweep3_step_khz")) {
-        s.sweep3_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
-    } else if (key_matches("sweep3_enabled")) {
-        s.sweep3_enabled = parse_bool();
-
-    // --- Sweep window 4 ---
-    } else if (key_matches("sweep4_start_mhz")) {
-        s.sweep4_start_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sweep4_end_mhz")) {
-        s.sweep4_end_freq = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sweep4_step_khz")) {
-        s.sweep4_step_freq = static_cast<uint64_t>(parse_int()) * 1000ULL;
-    } else if (key_matches("sweep4_enabled")) {
-        s.sweep4_enabled = parse_bool();
-
-    // --- Sweep exceptions (5 slots per window) ---
-    } else if (key_matches("sw1_exc0_mhz")) { s.sweep_exceptions[0][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc1_mhz")) { s.sweep_exceptions[0][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc2_mhz")) { s.sweep_exceptions[0][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc3_mhz")) { s.sweep_exceptions[0][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw1_exc4_mhz")) { s.sweep_exceptions[0][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc0_mhz")) { s.sweep_exceptions[1][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc1_mhz")) { s.sweep_exceptions[1][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc2_mhz")) { s.sweep_exceptions[1][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc3_mhz")) { s.sweep_exceptions[1][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw2_exc4_mhz")) { s.sweep_exceptions[1][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc0_mhz")) { s.sweep_exceptions[2][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc1_mhz")) { s.sweep_exceptions[2][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc2_mhz")) { s.sweep_exceptions[2][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc3_mhz")) { s.sweep_exceptions[2][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw3_exc4_mhz")) { s.sweep_exceptions[2][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc0_mhz")) { s.sweep_exceptions[3][0] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc1_mhz")) { s.sweep_exceptions[3][1] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc2_mhz")) { s.sweep_exceptions[3][2] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc3_mhz")) { s.sweep_exceptions[3][3] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-    } else if (key_matches("sw4_exc4_mhz")) { s.sweep_exceptions[3][4] = static_cast<uint64_t>(parse_int()) * 1000000ULL;
-
-    // --- Exception radius ---
-    } else if (key_matches("exception_radius_mhz")) {
-        const int32_t r = static_cast<int32_t>(parse_int());
-        s.exception_radius_mhz = static_cast<uint8_t>(r > 100 ? 100 : (r < 1 ? 1 : r));
-
-    // --- RSSI decrease cycles ---
-    } else if (key_matches("rssi_decrease_cycles")) {
-        const int32_t c = static_cast<int32_t>(parse_int());
-        s.rssi_decrease_cycles = static_cast<uint8_t>(c > 50 ? 50 : (c < 1 ? 1 : c));
-
-    // --- CFAR detection (clamped to valid ranges) ---
-    } else if (key_matches("cfar_mode")) {
-        const int32_t m = static_cast<int32_t>(parse_int());
-        s.cfar_mode = static_cast<CFARMode>((m < 0 || m > 6) ? 0 : m);
-    } else if (key_matches("cfar_ref_cells")) {
-        const uint64_t v = parse_int();
-        s.cfar_ref_cells = static_cast<uint8_t>((v < CFAR_REF_CELLS_MIN) ? CFAR_REF_CELLS_MIN : (v > CFAR_REF_CELLS_MAX ? CFAR_REF_CELLS_MAX : v));
-    } else if (key_matches("cfar_guard_cells")) {
-        const uint64_t v = parse_int();
-        s.cfar_guard_cells = static_cast<uint8_t>((v < CFAR_GUARD_CELLS_MIN) ? CFAR_GUARD_CELLS_MIN : (v > CFAR_GUARD_CELLS_MAX ? CFAR_GUARD_CELLS_MAX : v));
-    } else if (key_matches("cfar_threshold_x10")) {
-        const uint64_t v = parse_int();
-        s.cfar_threshold_x10 = static_cast<uint8_t>((v < CFAR_THRESHOLD_MIN_X10) ? CFAR_THRESHOLD_MIN_X10 : (v > CFAR_THRESHOLD_MAX_X10 ? CFAR_THRESHOLD_MAX_X10 : v));
-    } else if (key_matches("cfar_hybrid_alpha")) {
-        const uint64_t v = parse_int();
-        s.cfar_hybrid_alpha = static_cast<uint8_t>((v > 100) ? 100 : v);
-    } else if (key_matches("cfar_hybrid_beta")) {
-        const uint64_t v = parse_int();
-        s.cfar_hybrid_beta = static_cast<uint8_t>((v > 100) ? 100 : v);
-    } else if (key_matches("cfar_hybrid_gamma")) {
-        const uint64_t v = parse_int();
-        s.cfar_hybrid_gamma = static_cast<uint8_t>((v > 100) ? 100 : v);
-    } else if (key_matches("os_cfar_k_percent")) {
-        const uint64_t v = parse_int();
-        s.os_cfar_k_percent = static_cast<uint8_t>(
-            (v < OS_CFAR_K_PERCENT_MIN) ? OS_CFAR_K_PERCENT_MIN :
-            (v > OS_CFAR_K_PERCENT_MAX ? OS_CFAR_K_PERCENT_MAX : v));
-    } else if (key_matches("vi_cfar_threshold_x10")) {
-        const uint64_t v = parse_int();
-        s.vi_cfar_threshold_x10 = static_cast<uint8_t>(
-            (v < VI_CFAR_THRESHOLD_MIN_X10) ? VI_CFAR_THRESHOLD_MIN_X10 :
-            (v > VI_CFAR_THRESHOLD_MAX_X10 ? VI_CFAR_THRESHOLD_MAX_X10 : v));
-    } else if (key_matches("mahalanobis_enabled")) {
-        s.mahalanobis_enabled = parse_bool();
-    } else if (key_matches("mahalanobis_threshold_x10")) {
-        const uint64_t v = parse_int();
-        s.mahalanobis_threshold_x10 = static_cast<uint8_t>(
-            (v < MAHALANOBIS_THRESHOLD_MIN_X10) ? MAHALANOBIS_THRESHOLD_MIN_X10
-            : (v > MAHALANOBIS_THRESHOLD_MAX_X10 ? MAHALANOBIS_THRESHOLD_MAX_X10 : v));
-    } else if (key_matches("pattern_matching_enabled")) {
-        s.pattern_matching_enabled = parse_bool();
-    }
+    // Scanning
+    if (km("scan_interval_ms")) { auto v = pint(); s.scan_interval_ms = static_cast<uint32_t>((v < 10) ? 10 : (v > 10000 ? 10000 : v)); }
+    else if (km("sensitivity")) { auto v = static_cast<int32_t>(pint()); s.scan_sensitivity = static_cast<uint8_t>(v > 100 ? 100 : (v < 0 ? 0 : v)); s.alert_rssi_threshold_dbm = -20 - s.scan_sensitivity; }
+    else if (km("rssi_threshold_db")) { s.alert_rssi_threshold_dbm = psint(); const int32_t sens = -20 - s.alert_rssi_threshold_dbm; s.scan_sensitivity = static_cast<uint8_t>(sens > 100 ? 100 : (sens < 0 ? 0 : sens)); }
+    else if (km("threat_low_db")) { auto v = psint(); s.threat_low_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v; }
+    else if (km("threat_medium_db")) { auto v = psint(); s.threat_medium_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v; }
+    else if (km("threat_high_db")) { auto v = psint(); s.threat_high_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v; }
+    else if (km("threat_critical_db")) { auto v = psint(); s.threat_critical_dbm = (v < RSSI_MIN_DBM) ? RSSI_MIN_DBM : (v > RSSI_MAX_DBM) ? RSSI_MAX_DBM : v; }
+    // Audio/Display
+    else if (km("enable_audio_alerts")) { s.audio_alerts_enabled = pbool(); }
+    else if (km("volume")) { auto v = pint(); s.volume = static_cast<uint8_t>((v > 99) ? 99 : v); }
+    else if (km("show_spectrum")) { s.spectrum_visible = pbool(); }
+    else if (km("show_histogram")) { s.histogram_visible = pbool(); }
+    // Detection
+    else if (km("spectrum_detection")) { s.spectrum_detection_enabled = pbool(); }
+    else if (km("dwell_enabled")) { s.dwell_enabled = pbool(); }
+    else if (km("confirm_count_enabled")) { s.confirm_count_enabled = pbool(); }
+    else if (km("noise_blacklist_enabled")) { s.noise_blacklist_enabled = pbool(); }
+    else if (km("median_enabled")) { s.median_enabled = pbool(); }
+    // Shape filter
+    else if (km("spectrum_margin")) { auto v = pint(); s.spectrum_margin = static_cast<uint8_t>((v < 5) ? 5 : (v > 200 ? 200 : v)); }
+    else if (km("spectrum_min_width")) { auto v = pint(); s.spectrum_min_width = static_cast<uint8_t>((v < 1) ? 1 : (v > 100 ? 100 : v)); }
+    else if (km("spectrum_max_width")) { auto v = pint(); s.spectrum_max_width = static_cast<uint8_t>((v < 2) ? 2 : (v > 255 ? 255 : v)); }
+    else if (km("spectrum_peak_sharpness")) { auto v = pint(); s.spectrum_peak_sharpness = static_cast<uint8_t>((v < 50) ? 50 : (v > 250 ? 250 : v)); }
+    else if (km("spectrum_peak_ratio")) { auto v = pint(); s.spectrum_peak_ratio = static_cast<uint8_t>((v > 255) ? 255 : v); }
+    else if (km("spectrum_valley_depth")) { auto v = pint(); s.spectrum_valley_depth = static_cast<uint8_t>((v > 255) ? 255 : v); }
+    else if (km("spectrum_flatness")) { auto v = pint(); s.spectrum_flatness = static_cast<uint8_t>((v > 100) ? 100 : v); }
+    else if (km("spectrum_symmetry")) { auto v = pint(); s.spectrum_symmetry = static_cast<uint8_t>((v > 100) ? 100 : v); }
+    // Anti-false-positive
+    else if (km("neighbor_margin_db")) { auto v = static_cast<int32_t>(pint()); s.neighbor_margin_db = (v < 0) ? 0 : (v > 15 ? 15 : v); }
+    else if (km("rssi_variance_enabled")) { s.rssi_variance_enabled = pbool(); }
+    else if (km("confirm_count")) { auto v = pint(); s.confirm_count = static_cast<uint8_t>((v < CONFIRM_COUNT_MIN) ? CONFIRM_COUNT_MIN : (v > CONFIRM_COUNT_MAX ? CONFIRM_COUNT_MAX : v)); }
+    // Sweep window 1
+    else if (km("sweep_start_mhz")) { s.sweep_start_freq = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sweep_end_mhz")) { s.sweep_end_freq = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sweep_step_khz")) { s.sweep_step_freq = static_cast<uint64_t>(pint()) * 1000ULL; }
+    // Sweep window 2
+    else if (km("sweep2_start_mhz")) { s.sweep2_start_freq = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sweep2_end_mhz")) { s.sweep2_end_freq = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sweep2_step_khz")) { s.sweep2_step_freq = static_cast<uint64_t>(pint()) * 1000ULL; }
+    else if (km("sweep2_enabled")) { s.sweep2_enabled = pbool(); }
+    // Sweep window 3
+    else if (km("sweep3_start_mhz")) { s.sweep3_start_freq = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sweep3_end_mhz")) { s.sweep3_end_freq = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sweep3_step_khz")) { s.sweep3_step_freq = static_cast<uint64_t>(pint()) * 1000ULL; }
+    else if (km("sweep3_enabled")) { s.sweep3_enabled = pbool(); }
+    // Sweep window 4
+    else if (km("sweep4_start_mhz")) { s.sweep4_start_freq = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sweep4_end_mhz")) { s.sweep4_end_freq = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sweep4_step_khz")) { s.sweep4_step_freq = static_cast<uint64_t>(pint()) * 1000ULL; }
+    else if (km("sweep4_enabled")) { s.sweep4_enabled = pbool(); }
+    // Sweep exceptions (4 windows × 5 slots)
+    else if (km("sw1_exc0_mhz")) { s.sweep_exceptions[0][0] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw1_exc1_mhz")) { s.sweep_exceptions[0][1] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw1_exc2_mhz")) { s.sweep_exceptions[0][2] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw1_exc3_mhz")) { s.sweep_exceptions[0][3] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw1_exc4_mhz")) { s.sweep_exceptions[0][4] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw2_exc0_mhz")) { s.sweep_exceptions[1][0] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw2_exc1_mhz")) { s.sweep_exceptions[1][1] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw2_exc2_mhz")) { s.sweep_exceptions[1][2] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw2_exc3_mhz")) { s.sweep_exceptions[1][3] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw2_exc4_mhz")) { s.sweep_exceptions[1][4] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw3_exc0_mhz")) { s.sweep_exceptions[2][0] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw3_exc1_mhz")) { s.sweep_exceptions[2][1] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw3_exc2_mhz")) { s.sweep_exceptions[2][2] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw3_exc3_mhz")) { s.sweep_exceptions[2][3] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw3_exc4_mhz")) { s.sweep_exceptions[2][4] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw4_exc0_mhz")) { s.sweep_exceptions[3][0] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw4_exc1_mhz")) { s.sweep_exceptions[3][1] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw4_exc2_mhz")) { s.sweep_exceptions[3][2] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw4_exc3_mhz")) { s.sweep_exceptions[3][3] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    else if (km("sw4_exc4_mhz")) { s.sweep_exceptions[3][4] = static_cast<uint64_t>(pint()) * 1000000ULL; }
+    // Misc
+    else if (km("exception_radius_mhz")) { auto r = static_cast<int32_t>(pint()); s.exception_radius_mhz = static_cast<uint8_t>(r > 100 ? 100 : (r < 1 ? 1 : r)); }
+    else if (km("rssi_decrease_cycles")) { auto c = static_cast<int32_t>(pint()); s.rssi_decrease_cycles = static_cast<uint8_t>(c > 50 ? 50 : (c < 1 ? 1 : c)); }
+    else if (km("cfar_mode")) { auto m = static_cast<int32_t>(pint()); s.cfar_mode = static_cast<CFARMode>((m < 0 || m > 6) ? 0 : m); }
+    else if (km("cfar_ref_cells")) { auto v = pint(); s.cfar_ref_cells = static_cast<uint8_t>((v < CFAR_REF_CELLS_MIN) ? CFAR_REF_CELLS_MIN : (v > CFAR_REF_CELLS_MAX ? CFAR_REF_CELLS_MAX : v)); }
+    else if (km("cfar_guard_cells")) { auto v = pint(); s.cfar_guard_cells = static_cast<uint8_t>((v < CFAR_GUARD_CELLS_MIN) ? CFAR_GUARD_CELLS_MIN : (v > CFAR_GUARD_CELLS_MAX ? CFAR_GUARD_CELLS_MAX : v)); }
+    else if (km("cfar_threshold_x10")) { auto v = pint(); s.cfar_threshold_x10 = static_cast<uint8_t>((v < CFAR_THRESHOLD_MIN_X10) ? CFAR_THRESHOLD_MIN_X10 : (v > CFAR_THRESHOLD_MAX_X10 ? CFAR_THRESHOLD_MAX_X10 : v)); }
+    else if (km("cfar_hybrid_alpha")) { auto v = pint(); s.cfar_hybrid_alpha = static_cast<uint8_t>((v > 100) ? 100 : v); }
+    else if (km("cfar_hybrid_beta")) { auto v = pint(); s.cfar_hybrid_beta = static_cast<uint8_t>((v > 100) ? 100 : v); }
+    else if (km("cfar_hybrid_gamma")) { auto v = pint(); s.cfar_hybrid_gamma = static_cast<uint8_t>((v > 100) ? 100 : v); }
+    else if (km("os_cfar_k_percent")) { auto v = pint(); s.os_cfar_k_percent = static_cast<uint8_t>((v < OS_CFAR_K_PERCENT_MIN) ? OS_CFAR_K_PERCENT_MIN : (v > OS_CFAR_K_PERCENT_MAX ? OS_CFAR_K_PERCENT_MAX : v)); }
+    else if (km("vi_cfar_threshold_x10")) { auto v = pint(); s.vi_cfar_threshold_x10 = static_cast<uint8_t>((v < VI_CFAR_THRESHOLD_MIN_X10) ? VI_CFAR_THRESHOLD_MIN_X10 : (v > VI_CFAR_THRESHOLD_MAX_X10 ? VI_CFAR_THRESHOLD_MAX_X10 : v)); }
+    else if (km("mahalanobis_enabled")) { s.mahalanobis_enabled = pbool(); }
+    else if (km("mahalanobis_threshold_x10")) { auto v = pint(); s.mahalanobis_threshold_x10 = static_cast<uint8_t>((v < MAHALANOBIS_THRESHOLD_MIN_X10) ? MAHALANOBIS_THRESHOLD_MIN_X10 : (v > MAHALANOBIS_THRESHOLD_MAX_X10 ? MAHALANOBIS_THRESHOLD_MAX_X10 : v)); }
+    else if (km("pattern_matching_enabled")) { s.pattern_matching_enabled = pbool(); }
 }
 
 // ============================================================================
-// SettingsFileManager::load
+// Load / Save
 // ============================================================================
 
 ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     File file;
     const auto error = file.open(settings_dir / u"eda_settings.txt", true, false);
-    if (error) {
-        return ErrorCode::DATABASE_NOT_LOADED;
-    }
+    if (error) return ErrorCode::DATABASE_NOT_LOADED;
 
-    constexpr size_t READ_CHUNK_SIZE = 256;
-    uint8_t chunk[READ_CHUNK_SIZE];
-    uint8_t line_buf[128];
-    size_t line_len = 0;
+    constexpr size_t CHUNK = 256;
+    uint8_t buf[CHUNK];
+    uint8_t line[128];
+    size_t llen = 0;
 
     while (true) {
-        const auto read_result = file.read(chunk, READ_CHUNK_SIZE);
-        if (!read_result.is_ok() || read_result.value() == 0) break;
-
-        const size_t bytes_read = read_result.value();
-        for (size_t i = 0; i < bytes_read; ++i) {
-            const char c = static_cast<char>(chunk[i]);
-            if (c == '\r' || c == '\n') {
-                parse_settings_line(line_buf, line_len, out);
-                line_len = 0;
-            } else if (line_len < sizeof(line_buf) - 1) {
-                line_buf[line_len++] = chunk[i];
-            }
+        const auto r = file.read(buf, CHUNK);
+        if (!r.is_ok() || r.value() == 0) break;
+        for (size_t i = 0; i < r.value(); ++i) {
+            const char c = static_cast<char>(buf[i]);
+            if (c == '\r' || c == '\n') { parse_line(line, llen, out); llen = 0; }
+            else if (llen < sizeof(line) - 1) { line[llen++] = buf[i]; }
         }
     }
-    parse_settings_line(line_buf, line_len, out);
+    parse_line(line, llen, out);
 
-    // Load-time validation: fix inconsistent field relationships
-    if (out.spectrum_min_width > out.spectrum_max_width) {
-        out.spectrum_max_width = out.spectrum_min_width;
-    }
-    if (out.threat_low_dbm > out.threat_medium_dbm) {
-        out.threat_medium_dbm = out.threat_low_dbm;
-    }
-    if (out.threat_medium_dbm > out.threat_high_dbm) {
-        out.threat_high_dbm = out.threat_medium_dbm;
-    }
-    if (out.threat_high_dbm > out.threat_critical_dbm) {
-        out.threat_critical_dbm = out.threat_high_dbm;
-    }
-    if (out.cfar_ref_cells < out.cfar_guard_cells + 2) {
+    // Post-load validation
+    if (out.spectrum_min_width > out.spectrum_max_width) out.spectrum_max_width = out.spectrum_min_width;
+    if (out.threat_low_dbm > out.threat_medium_dbm) out.threat_medium_dbm = out.threat_low_dbm;
+    if (out.threat_medium_dbm > out.threat_high_dbm) out.threat_high_dbm = out.threat_medium_dbm;
+    if (out.threat_high_dbm > out.threat_critical_dbm) out.threat_critical_dbm = out.threat_high_dbm;
+    if (out.cfar_ref_cells < out.cfar_guard_cells + 2)
         out.cfar_guard_cells = (out.cfar_ref_cells > 2) ? out.cfar_ref_cells - 2 : 0;
+    const uint16_t hs = static_cast<uint16_t>(out.cfar_hybrid_alpha + out.cfar_hybrid_beta + out.cfar_hybrid_gamma);
+    if (hs != 100 && hs > 0) {
+        out.cfar_hybrid_alpha = static_cast<uint8_t>((out.cfar_hybrid_alpha * 100) / hs);
+        out.cfar_hybrid_beta = static_cast<uint8_t>((out.cfar_hybrid_beta * 100) / hs);
+        out.cfar_hybrid_gamma = static_cast<uint8_t>(100 - out.cfar_hybrid_alpha - out.cfar_hybrid_beta);
     }
-    // Normalize CFAR hybrid weights to sum to 100
-    const uint16_t hybrid_sum = static_cast<uint16_t>(
-        out.cfar_hybrid_alpha + out.cfar_hybrid_beta + out.cfar_hybrid_gamma);
-    if (hybrid_sum != 100 && hybrid_sum > 0) {
-        out.cfar_hybrid_alpha = static_cast<uint8_t>(
-            (out.cfar_hybrid_alpha * 100) / hybrid_sum);
-        out.cfar_hybrid_beta = static_cast<uint8_t>(
-            (out.cfar_hybrid_beta * 100) / hybrid_sum);
-        out.cfar_hybrid_gamma = static_cast<uint8_t>(
-            100 - out.cfar_hybrid_alpha - out.cfar_hybrid_beta);
-    }
-
     file.close();
     return ErrorCode::SUCCESS;
 }
 
-// ============================================================================
-// Direct file write helpers — no snprintf (platform-independent, stack-safe)
-// ============================================================================
-
-static void ws(File& f, const char* s) noexcept {
-    f.write(s, __builtin_strlen(s));
-}
-
-static void wb(File& f, bool v) noexcept {
-    ws(f, v ? "true\n" : "false\n");
-}
-
+// Compact write helpers
+static void ws(File& f, const char* s) noexcept { f.write(s, __builtin_strlen(s)); }
+static void wb(File& f, bool v) noexcept { ws(f, v ? "true\n" : "false\n"); }
 static void wi(File& f, int64_t val) noexcept {
-    char buf[24];
-    uint8_t pos = 0;
+    char buf[24]; uint8_t pos = 0;
     if (val < 0) { buf[pos++] = '-'; val = -val; }
-    char dig[20];
-    uint8_t n = 0;
-    uint64_t uval = static_cast<uint64_t>(val);
-    if (uval == 0) { dig[n++] = '0'; }
-    else { while (uval > 0) { dig[n++] = '0' + static_cast<char>(uval % 10); uval /= 10; } }
+    char dig[20]; uint8_t n = 0;
+    uint64_t uv = static_cast<uint64_t>(val);
+    if (uv == 0) { dig[n++] = '0'; } else { while (uv > 0) { dig[n++] = '0' + static_cast<char>(uv % 10); uv /= 10; } }
     for (uint8_t i = n; i > 0; --i) buf[pos++] = dig[i - 1];
     buf[pos++] = '\n';
     f.write(buf, pos);
 }
+static void wl(File& f, const char* k, int64_t v) noexcept { ws(f, k); ws(f, "="); wi(f, v); }
+static void wbool(File& f, const char* k, bool v) noexcept { ws(f, k); ws(f, "="); wb(f, v); }
+static void wexc(File& f, const char* k, uint64_t hz) noexcept { if (hz) wl(f, k, static_cast<int64_t>(hz / 1000000ULL)); }
 
-static void wl(File& f, const char* key, int64_t val) noexcept {
-    ws(f, key);
-    ws(f, "=");
-    wi(f, val);
-}
-
-static void wbool(File& f, const char* key, bool val) noexcept {
-    ws(f, key);
-    ws(f, "=");
-    wb(f, val);
-}
-
-static void wexc(File& f, const char* key, uint64_t hz) noexcept {
-    if (hz == 0) return;
-    wl(f, key, static_cast<int64_t>(hz / 1000000ULL));
-}
-
-// ============================================================================
-// SettingsFileManager::save
-// ============================================================================
-
-ErrorCode SettingsFileManager::save(
-    DroneScanner* scanner_ptr,
-    const SettingsStruct& s
-) noexcept {
-    // Stack budget: move ScanConfig to static to save ~368B on 4KB main thread stack
+ErrorCode SettingsFileManager::save(DroneScanner* scanner_ptr, const SettingsStruct& s) noexcept {
     static ScanConfig sweep_cfg;
-    if (scanner_ptr != nullptr) {
-        sweep_cfg = scanner_ptr->get_config();
+    if (scanner_ptr) {
+        scanner_ptr->get_config_to(sweep_cfg);
     } else {
         sweep_cfg.sweep_start_freq = s.sweep_start_freq;
         sweep_cfg.sweep_end_freq = s.sweep_end_freq;
@@ -469,311 +272,213 @@ ErrorCode SettingsFileManager::save(
         sweep_cfg.sweep4_end_freq = s.sweep4_end_freq;
         sweep_cfg.sweep4_step_freq = s.sweep4_step_freq;
         sweep_cfg.sweep4_enabled = s.sweep4_enabled;
-        for (uint8_t w = 0; w < 4; ++w) {
-            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+        for (uint8_t w = 0; w < 4; ++w)
+            for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
                 sweep_cfg.sweep_exceptions[w][i] = s.sweep_exceptions[w][i];
-            }
-        }
     }
 
     File file;
     ensure_directory(settings_dir);
-    // Write to temp file first, then rename — prevents corruption on power loss
-    const auto create_error = file.create(settings_dir / u"eda_settings.txt.tmp");
-    if (create_error) {
-        return ErrorCode::INITIALIZATION_FAILED;
-    }
+    if (file.create(settings_dir / u"eda_settings.txt.tmp")) return ErrorCode::INITIALIZATION_FAILED;
 
-    ws(file, "# Enhanced Drone Analyzer Settings\n");
-    ws(file, "# Auto-generated - do not edit while app is running\n\n");
-
-    // Scanning
+    ws(file, "# Enhanced Drone Analyzer Settings\n# Auto-generated\n\n");
     ws(file, "spectrum_mode=SEQUENTIAL\n");
-    wl(file, "scan_interval_ms", static_cast<int64_t>(s.scan_interval_ms));
-    wl(file, "sensitivity", static_cast<int64_t>(s.scan_sensitivity));
-    wl(file, "rssi_threshold_db", static_cast<int64_t>(s.alert_rssi_threshold_dbm));
-    wl(file, "threat_low_db", static_cast<int64_t>(s.threat_low_dbm));
-    wl(file, "threat_medium_db", static_cast<int64_t>(s.threat_medium_dbm));
-    wl(file, "threat_high_db", static_cast<int64_t>(s.threat_high_dbm));
-    wl(file, "threat_critical_db", static_cast<int64_t>(s.threat_critical_dbm));
-
-    // Audio / Display
+    wl(file, "scan_interval_ms", s.scan_interval_ms);
+    wl(file, "sensitivity", s.scan_sensitivity);
+    wl(file, "rssi_threshold_db", s.alert_rssi_threshold_dbm);
+    wl(file, "threat_low_db", s.threat_low_dbm);
+    wl(file, "threat_medium_db", s.threat_medium_dbm);
+    wl(file, "threat_high_db", s.threat_high_dbm);
+    wl(file, "threat_critical_db", s.threat_critical_dbm);
     wbool(file, "enable_audio_alerts", s.audio_alerts_enabled);
-    wl(file, "volume", static_cast<int64_t>(s.volume));
+    wl(file, "volume", s.volume);
     wbool(file, "show_spectrum", s.spectrum_visible);
     wbool(file, "show_histogram", s.histogram_visible);
-
-    // Detection features
     wbool(file, "spectrum_detection", s.spectrum_detection_enabled);
     wbool(file, "dwell_enabled", s.dwell_enabled);
     wbool(file, "confirm_count_enabled", s.confirm_count_enabled);
     wbool(file, "noise_blacklist_enabled", s.noise_blacklist_enabled);
     wbool(file, "median_enabled", s.median_enabled);
-
-    // Spectrum shape filter
-    wl(file, "spectrum_margin", static_cast<int64_t>(s.spectrum_margin));
-    wl(file, "spectrum_min_width", static_cast<int64_t>(s.spectrum_min_width));
-    wl(file, "spectrum_max_width", static_cast<int64_t>(s.spectrum_max_width));
-    wl(file, "spectrum_peak_sharpness", static_cast<int64_t>(s.spectrum_peak_sharpness));
-    wl(file, "spectrum_peak_ratio", static_cast<int64_t>(s.spectrum_peak_ratio));
-    wl(file, "spectrum_valley_depth", static_cast<int64_t>(s.spectrum_valley_depth));
-    wl(file, "spectrum_flatness", static_cast<int64_t>(s.spectrum_flatness));
-    wl(file, "spectrum_symmetry", static_cast<int64_t>(s.spectrum_symmetry));
-
-    // Anti-false-positive
-    wl(file, "neighbor_margin_db", static_cast<int64_t>(s.neighbor_margin_db));
+    wl(file, "spectrum_margin", s.spectrum_margin);
+    wl(file, "spectrum_min_width", s.spectrum_min_width);
+    wl(file, "spectrum_max_width", s.spectrum_max_width);
+    wl(file, "spectrum_peak_sharpness", s.spectrum_peak_sharpness);
+    wl(file, "spectrum_peak_ratio", s.spectrum_peak_ratio);
+    wl(file, "spectrum_valley_depth", s.spectrum_valley_depth);
+    wl(file, "spectrum_flatness", s.spectrum_flatness);
+    wl(file, "spectrum_symmetry", s.spectrum_symmetry);
+    wl(file, "neighbor_margin_db", s.neighbor_margin_db);
     wbool(file, "rssi_variance_enabled", s.rssi_variance_enabled);
-    wl(file, "confirm_count", static_cast<int64_t>(s.confirm_count));
-
-    // Sweep window 1
+    wl(file, "confirm_count", s.confirm_count);
     wl(file, "sweep_start_mhz", static_cast<int64_t>(sweep_cfg.sweep_start_freq / 1000000ULL));
     wl(file, "sweep_end_mhz", static_cast<int64_t>(sweep_cfg.sweep_end_freq / 1000000ULL));
     wl(file, "sweep_step_khz", static_cast<int64_t>(sweep_cfg.sweep_step_freq / 1000ULL));
-
-    // Sweep window 2
     wl(file, "sweep2_start_mhz", static_cast<int64_t>(sweep_cfg.sweep2_start_freq / 1000000ULL));
     wl(file, "sweep2_end_mhz", static_cast<int64_t>(sweep_cfg.sweep2_end_freq / 1000000ULL));
     wl(file, "sweep2_step_khz", static_cast<int64_t>(sweep_cfg.sweep2_step_freq / 1000ULL));
     wbool(file, "sweep2_enabled", sweep_cfg.sweep2_enabled);
-
-    // Sweep window 3
     wl(file, "sweep3_start_mhz", static_cast<int64_t>(sweep_cfg.sweep3_start_freq / 1000000ULL));
     wl(file, "sweep3_end_mhz", static_cast<int64_t>(sweep_cfg.sweep3_end_freq / 1000000ULL));
     wl(file, "sweep3_step_khz", static_cast<int64_t>(sweep_cfg.sweep3_step_freq / 1000ULL));
     wbool(file, "sweep3_enabled", sweep_cfg.sweep3_enabled);
-
-    // Sweep window 4
     wl(file, "sweep4_start_mhz", static_cast<int64_t>(sweep_cfg.sweep4_start_freq / 1000000ULL));
     wl(file, "sweep4_end_mhz", static_cast<int64_t>(sweep_cfg.sweep4_end_freq / 1000000ULL));
     wl(file, "sweep4_step_khz", static_cast<int64_t>(sweep_cfg.sweep4_step_freq / 1000ULL));
     wbool(file, "sweep4_enabled", sweep_cfg.sweep4_enabled);
 
-    // Sweep exceptions (4 windows x 5 slots)
     static const char* exc_keys[4][EXCEPTIONS_PER_WINDOW] = {
         {"sw1_exc0_mhz", "sw1_exc1_mhz", "sw1_exc2_mhz", "sw1_exc3_mhz", "sw1_exc4_mhz"},
         {"sw2_exc0_mhz", "sw2_exc1_mhz", "sw2_exc2_mhz", "sw2_exc3_mhz", "sw2_exc4_mhz"},
         {"sw3_exc0_mhz", "sw3_exc1_mhz", "sw3_exc2_mhz", "sw3_exc3_mhz", "sw3_exc4_mhz"},
         {"sw4_exc0_mhz", "sw4_exc1_mhz", "sw4_exc2_mhz", "sw4_exc3_mhz", "sw4_exc4_mhz"},
     };
-    for (uint8_t w = 0; w < 4; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+    for (uint8_t w = 0; w < 4; ++w)
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
             wexc(file, exc_keys[w][i], sweep_cfg.sweep_exceptions[w][i]);
-        }
-    }
 
-    // Exception radius
-    wl(file, "exception_radius_mhz", static_cast<int64_t>(s.exception_radius_mhz));
-
-    // RSSI decrease cycles
-    wl(file, "rssi_decrease_cycles", static_cast<int64_t>(s.rssi_decrease_cycles));
-
-    // CFAR detection
+    wl(file, "exception_radius_mhz", s.exception_radius_mhz);
+    wl(file, "rssi_decrease_cycles", s.rssi_decrease_cycles);
     wl(file, "cfar_mode", static_cast<int64_t>(static_cast<uint8_t>(s.cfar_mode)));
-    wl(file, "cfar_ref_cells", static_cast<int64_t>(s.cfar_ref_cells));
-    wl(file, "cfar_guard_cells", static_cast<int64_t>(s.cfar_guard_cells));
-    wl(file, "cfar_threshold_x10", static_cast<int64_t>(s.cfar_threshold_x10));
-    wl(file, "cfar_hybrid_alpha", static_cast<int64_t>(s.cfar_hybrid_alpha));
-    wl(file, "cfar_hybrid_beta", static_cast<int64_t>(s.cfar_hybrid_beta));
-    wl(file, "cfar_hybrid_gamma", static_cast<int64_t>(s.cfar_hybrid_gamma));
-    wl(file, "os_cfar_k_percent", static_cast<int64_t>(s.os_cfar_k_percent));
-    wl(file, "vi_cfar_threshold_x10", static_cast<int64_t>(s.vi_cfar_threshold_x10));
-
-    // Mahalanobis gate
+    wl(file, "cfar_ref_cells", s.cfar_ref_cells);
+    wl(file, "cfar_guard_cells", s.cfar_guard_cells);
+    wl(file, "cfar_threshold_x10", s.cfar_threshold_x10);
+    wl(file, "cfar_hybrid_alpha", s.cfar_hybrid_alpha);
+    wl(file, "cfar_hybrid_beta", s.cfar_hybrid_beta);
+    wl(file, "cfar_hybrid_gamma", s.cfar_hybrid_gamma);
+    wl(file, "os_cfar_k_percent", s.os_cfar_k_percent);
+    wl(file, "vi_cfar_threshold_x10", s.vi_cfar_threshold_x10);
     wbool(file, "mahalanobis_enabled", s.mahalanobis_enabled);
-    wl(file, "mahalanobis_threshold_x10", static_cast<int64_t>(s.mahalanobis_threshold_x10));
-
-    // Pattern matching
+    wl(file, "mahalanobis_threshold_x10", s.mahalanobis_threshold_x10);
     wbool(file, "pattern_matching_enabled", s.pattern_matching_enabled);
-
-    // Metadata
-    ws(file, "freqman_path=DRONES\n");
-    ws(file, "settings_version=1.2\n");
+    ws(file, "freqman_path=DRONES\nsettings_version=1.2\n");
 
     (void)file.sync();
     file.close();
-
-    // Atomic rename: delete old file, then rename temp to final
     (void)delete_file(settings_dir / u"eda_settings.txt");
     (void)rename_file(settings_dir / u"eda_settings.txt.tmp", settings_dir / u"eda_settings.txt");
-
     return ErrorCode::SUCCESS;
 }
 
 // ============================================================================
-// SettingsFileManager::apply_to_config
+// apply_to_config / extract_from_config
 // ============================================================================
 
-void SettingsFileManager::apply_to_config(
-    const SettingsStruct& s,
-    ScanConfig& config
-) noexcept {
-    config.mode = s.scanning_mode;
-    config.scan_interval_ms = s.scan_interval_ms;
-    config.rssi_threshold_dbm = s.alert_rssi_threshold_dbm;
-    config.threat_low_dbm = s.threat_low_dbm;
-    config.threat_medium_dbm = s.threat_medium_dbm;
-    config.threat_high_dbm = s.threat_high_dbm;
-    config.threat_critical_dbm = s.threat_critical_dbm;
-    config.dwell_enabled = s.dwell_enabled;
-    config.confirm_count_enabled = s.confirm_count_enabled;
-    config.noise_blacklist_enabled = s.noise_blacklist_enabled;
-    config.spectrum_detection_enabled = s.spectrum_detection_enabled;
-    config.median_enabled = s.median_enabled;
-
-    // Mahalanobis gate
-    config.mahalanobis_enabled = s.mahalanobis_enabled;
-    config.mahalanobis_threshold_x10 = s.mahalanobis_threshold_x10;
-
-    // Pattern matching
-    config.pattern_matching_enabled = s.pattern_matching_enabled;
-
-    config.neighbor_margin_db = s.neighbor_margin_db;
-    config.rssi_variance_enabled = s.rssi_variance_enabled;
-    config.confirm_count = s.confirm_count;
-
-    // Spectrum shape filter parameters
-    config.spectrum_margin = s.spectrum_margin;
-    config.spectrum_min_width = s.spectrum_min_width;
-    config.spectrum_max_width = s.spectrum_max_width;
-    config.spectrum_peak_sharpness = s.spectrum_peak_sharpness;
-    config.spectrum_peak_ratio = s.spectrum_peak_ratio;
-    config.spectrum_valley_depth = s.spectrum_valley_depth;
-    config.spectrum_flatness = s.spectrum_flatness;
-    config.spectrum_symmetry = s.spectrum_symmetry;
-
-    // CFAR detection
-    config.cfar_mode = s.cfar_mode;
-    config.cfar_ref_cells = s.cfar_ref_cells;
-    config.cfar_guard_cells = s.cfar_guard_cells;
-    config.cfar_threshold_x10 = s.cfar_threshold_x10;
-
-    // CFAR extended parameters
-    config.cfar_hybrid_alpha = s.cfar_hybrid_alpha;
-    config.cfar_hybrid_beta = s.cfar_hybrid_beta;
-    config.cfar_hybrid_gamma = s.cfar_hybrid_gamma;
-    config.os_cfar_k_percent = s.os_cfar_k_percent;
-    config.vi_cfar_threshold_x10 = s.vi_cfar_threshold_x10;
-
-    // Sweep window 1
-    config.sweep_start_freq = s.sweep_start_freq;
-    config.sweep_end_freq = s.sweep_end_freq;
-    config.sweep_step_freq = s.sweep_step_freq;
-
-    // Sweep window 2
-    config.sweep2_start_freq = s.sweep2_start_freq;
-    config.sweep2_end_freq = s.sweep2_end_freq;
-    config.sweep2_step_freq = s.sweep2_step_freq;
-    config.sweep2_enabled = s.sweep2_enabled;
-
-    // Sweep window 3
-    config.sweep3_start_freq = s.sweep3_start_freq;
-    config.sweep3_end_freq = s.sweep3_end_freq;
-    config.sweep3_step_freq = s.sweep3_step_freq;
-    config.sweep3_enabled = s.sweep3_enabled;
-
-    // Sweep window 4
-    config.sweep4_start_freq = s.sweep4_start_freq;
-    config.sweep4_end_freq = s.sweep4_end_freq;
-    config.sweep4_step_freq = s.sweep4_step_freq;
-    config.sweep4_enabled = s.sweep4_enabled;
-
-    // Sweep exceptions
-    for (uint8_t w = 0; w < 4; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            config.sweep_exceptions[w][i] = s.sweep_exceptions[w][i];
-        }
-    }
-    config.exception_radius_mhz = s.exception_radius_mhz;
-    config.rssi_decrease_cycles = s.rssi_decrease_cycles;
+void SettingsFileManager::apply_to_config(const SettingsStruct& s, ScanConfig& c) noexcept {
+    c.mode = s.scanning_mode;
+    c.scan_interval_ms = s.scan_interval_ms;
+    c.rssi_threshold_dbm = s.alert_rssi_threshold_dbm;
+    c.threat_low_dbm = s.threat_low_dbm;
+    c.threat_medium_dbm = s.threat_medium_dbm;
+    c.threat_high_dbm = s.threat_high_dbm;
+    c.threat_critical_dbm = s.threat_critical_dbm;
+    c.dwell_enabled = s.dwell_enabled;
+    c.confirm_count_enabled = s.confirm_count_enabled;
+    c.noise_blacklist_enabled = s.noise_blacklist_enabled;
+    c.spectrum_detection_enabled = s.spectrum_detection_enabled;
+    c.median_enabled = s.median_enabled;
+    c.mahalanobis_enabled = s.mahalanobis_enabled;
+    c.mahalanobis_threshold_x10 = s.mahalanobis_threshold_x10;
+    c.pattern_matching_enabled = s.pattern_matching_enabled;
+    c.neighbor_margin_db = s.neighbor_margin_db;
+    c.rssi_variance_enabled = s.rssi_variance_enabled;
+    c.confirm_count = s.confirm_count;
+    c.spectrum_margin = s.spectrum_margin;
+    c.spectrum_min_width = s.spectrum_min_width;
+    c.spectrum_max_width = s.spectrum_max_width;
+    c.spectrum_peak_sharpness = s.spectrum_peak_sharpness;
+    c.spectrum_peak_ratio = s.spectrum_peak_ratio;
+    c.spectrum_valley_depth = s.spectrum_valley_depth;
+    c.spectrum_flatness = s.spectrum_flatness;
+    c.spectrum_symmetry = s.spectrum_symmetry;
+    c.cfar_mode = s.cfar_mode;
+    c.cfar_ref_cells = s.cfar_ref_cells;
+    c.cfar_guard_cells = s.cfar_guard_cells;
+    c.cfar_threshold_x10 = s.cfar_threshold_x10;
+    c.cfar_hybrid_alpha = s.cfar_hybrid_alpha;
+    c.cfar_hybrid_beta = s.cfar_hybrid_beta;
+    c.cfar_hybrid_gamma = s.cfar_hybrid_gamma;
+    c.os_cfar_k_percent = s.os_cfar_k_percent;
+    c.vi_cfar_threshold_x10 = s.vi_cfar_threshold_x10;
+    c.sweep_start_freq = s.sweep_start_freq;
+    c.sweep_end_freq = s.sweep_end_freq;
+    c.sweep_step_freq = s.sweep_step_freq;
+    c.sweep2_start_freq = s.sweep2_start_freq;
+    c.sweep2_end_freq = s.sweep2_end_freq;
+    c.sweep2_step_freq = s.sweep2_step_freq;
+    c.sweep2_enabled = s.sweep2_enabled;
+    c.sweep3_start_freq = s.sweep3_start_freq;
+    c.sweep3_end_freq = s.sweep3_end_freq;
+    c.sweep3_step_freq = s.sweep3_step_freq;
+    c.sweep3_enabled = s.sweep3_enabled;
+    c.sweep4_start_freq = s.sweep4_start_freq;
+    c.sweep4_end_freq = s.sweep4_end_freq;
+    c.sweep4_step_freq = s.sweep4_step_freq;
+    c.sweep4_enabled = s.sweep4_enabled;
+    for (uint8_t w = 0; w < 4; ++w)
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
+            c.sweep_exceptions[w][i] = s.sweep_exceptions[w][i];
+    c.exception_radius_mhz = s.exception_radius_mhz;
+    c.rssi_decrease_cycles = s.rssi_decrease_cycles;
 }
 
-// ============================================================================
-// SettingsFileManager::extract_from_config
-// ============================================================================
-
-void SettingsFileManager::extract_from_config(
-    const ScanConfig& config,
-    SettingsStruct& s
-) noexcept {
-    s.scanning_mode = config.mode;
-    s.scan_interval_ms = config.scan_interval_ms;
-    s.alert_rssi_threshold_dbm = config.rssi_threshold_dbm;
-    s.threat_low_dbm = config.threat_low_dbm;
-    s.threat_medium_dbm = config.threat_medium_dbm;
-    s.threat_high_dbm = config.threat_high_dbm;
-    s.threat_critical_dbm = config.threat_critical_dbm;
+void SettingsFileManager::extract_from_config(const ScanConfig& c, SettingsStruct& s) noexcept {
+    s.scanning_mode = c.mode;
+    s.scan_interval_ms = c.scan_interval_ms;
+    s.alert_rssi_threshold_dbm = c.rssi_threshold_dbm;
+    s.threat_low_dbm = c.threat_low_dbm;
+    s.threat_medium_dbm = c.threat_medium_dbm;
+    s.threat_high_dbm = c.threat_high_dbm;
+    s.threat_critical_dbm = c.threat_critical_dbm;
     s.scan_sensitivity = static_cast<uint8_t>(
-        (config.rssi_threshold_dbm > -20) ? 0 :
-        (config.rssi_threshold_dbm < -120) ? 100 :
-        (-20 - config.rssi_threshold_dbm)
-    );
-    s.dwell_enabled = config.dwell_enabled;
-    s.confirm_count_enabled = config.confirm_count_enabled;
-    s.noise_blacklist_enabled = config.noise_blacklist_enabled;
-    s.spectrum_detection_enabled = config.spectrum_detection_enabled;
-    s.median_enabled = config.median_enabled;
-    s.spectrum_margin = config.spectrum_margin;
-    s.spectrum_min_width = config.spectrum_min_width;
-    s.spectrum_max_width = config.spectrum_max_width;
-    s.spectrum_peak_sharpness = config.spectrum_peak_sharpness;
-    s.spectrum_peak_ratio = config.spectrum_peak_ratio;
-    s.spectrum_valley_depth = config.spectrum_valley_depth;
-    s.spectrum_flatness = config.spectrum_flatness;
-    s.spectrum_symmetry = config.spectrum_symmetry;
-    s.neighbor_margin_db = config.neighbor_margin_db;
-    s.rssi_variance_enabled = config.rssi_variance_enabled;
-    s.confirm_count = config.confirm_count;
-
-    // CFAR detection
-    s.cfar_mode = config.cfar_mode;
-    s.cfar_ref_cells = config.cfar_ref_cells;
-    s.cfar_guard_cells = config.cfar_guard_cells;
-    s.cfar_threshold_x10 = config.cfar_threshold_x10;
-
-    // CFAR extended parameters
-    s.cfar_hybrid_alpha = config.cfar_hybrid_alpha;
-    s.cfar_hybrid_beta = config.cfar_hybrid_beta;
-    s.cfar_hybrid_gamma = config.cfar_hybrid_gamma;
-    s.os_cfar_k_percent = config.os_cfar_k_percent;
-    s.vi_cfar_threshold_x10 = config.vi_cfar_threshold_x10;
-
-    // Sweep window 1
-    s.sweep_start_freq = config.sweep_start_freq;
-    s.sweep_end_freq = config.sweep_end_freq;
-    s.sweep_step_freq = config.sweep_step_freq;
-
-    // Sweep window 2
-    s.sweep2_start_freq = config.sweep2_start_freq;
-    s.sweep2_end_freq = config.sweep2_end_freq;
-    s.sweep2_step_freq = config.sweep2_step_freq;
-    s.sweep2_enabled = config.sweep2_enabled;
-
-    // Sweep window 3
-    s.sweep3_start_freq = config.sweep3_start_freq;
-    s.sweep3_end_freq = config.sweep3_end_freq;
-    s.sweep3_step_freq = config.sweep3_step_freq;
-    s.sweep3_enabled = config.sweep3_enabled;
-
-    // Sweep window 4
-    s.sweep4_start_freq = config.sweep4_start_freq;
-    s.sweep4_end_freq = config.sweep4_end_freq;
-    s.sweep4_step_freq = config.sweep4_step_freq;
-    s.sweep4_enabled = config.sweep4_enabled;
-
-    // Sweep exceptions
-    for (uint8_t w = 0; w < 4; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            s.sweep_exceptions[w][i] = config.sweep_exceptions[w][i];
-        }
-    }
-    s.exception_radius_mhz = config.exception_radius_mhz;
-    s.rssi_decrease_cycles = config.rssi_decrease_cycles;
-
-    // Mahalanobis gate
-    s.mahalanobis_enabled = config.mahalanobis_enabled;
-    s.mahalanobis_threshold_x10 = config.mahalanobis_threshold_x10;
-
-    // Pattern matching
-    s.pattern_matching_enabled = config.pattern_matching_enabled;
+        (c.rssi_threshold_dbm > -20) ? 0 : (c.rssi_threshold_dbm < -120) ? 100 : (-20 - c.rssi_threshold_dbm));
+    s.dwell_enabled = c.dwell_enabled;
+    s.confirm_count_enabled = c.confirm_count_enabled;
+    s.noise_blacklist_enabled = c.noise_blacklist_enabled;
+    s.spectrum_detection_enabled = c.spectrum_detection_enabled;
+    s.median_enabled = c.median_enabled;
+    s.spectrum_margin = c.spectrum_margin;
+    s.spectrum_min_width = c.spectrum_min_width;
+    s.spectrum_max_width = c.spectrum_max_width;
+    s.spectrum_peak_sharpness = c.spectrum_peak_sharpness;
+    s.spectrum_peak_ratio = c.spectrum_peak_ratio;
+    s.spectrum_valley_depth = c.spectrum_valley_depth;
+    s.spectrum_flatness = c.spectrum_flatness;
+    s.spectrum_symmetry = c.spectrum_symmetry;
+    s.neighbor_margin_db = c.neighbor_margin_db;
+    s.rssi_variance_enabled = c.rssi_variance_enabled;
+    s.confirm_count = c.confirm_count;
+    s.cfar_mode = c.cfar_mode;
+    s.cfar_ref_cells = c.cfar_ref_cells;
+    s.cfar_guard_cells = c.cfar_guard_cells;
+    s.cfar_threshold_x10 = c.cfar_threshold_x10;
+    s.cfar_hybrid_alpha = c.cfar_hybrid_alpha;
+    s.cfar_hybrid_beta = c.cfar_hybrid_beta;
+    s.cfar_hybrid_gamma = c.cfar_hybrid_gamma;
+    s.os_cfar_k_percent = c.os_cfar_k_percent;
+    s.vi_cfar_threshold_x10 = c.vi_cfar_threshold_x10;
+    s.sweep_start_freq = c.sweep_start_freq;
+    s.sweep_end_freq = c.sweep_end_freq;
+    s.sweep_step_freq = c.sweep_step_freq;
+    s.sweep2_start_freq = c.sweep2_start_freq;
+    s.sweep2_end_freq = c.sweep2_end_freq;
+    s.sweep2_step_freq = c.sweep2_step_freq;
+    s.sweep2_enabled = c.sweep2_enabled;
+    s.sweep3_start_freq = c.sweep3_start_freq;
+    s.sweep3_end_freq = c.sweep3_end_freq;
+    s.sweep3_step_freq = c.sweep3_step_freq;
+    s.sweep3_enabled = c.sweep3_enabled;
+    s.sweep4_start_freq = c.sweep4_start_freq;
+    s.sweep4_end_freq = c.sweep4_end_freq;
+    s.sweep4_step_freq = c.sweep4_step_freq;
+    s.sweep4_enabled = c.sweep4_enabled;
+    for (uint8_t w = 0; w < 4; ++w)
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
+            s.sweep_exceptions[w][i] = c.sweep_exceptions[w][i];
+    s.exception_radius_mhz = c.exception_radius_mhz;
+    s.rssi_decrease_cycles = c.rssi_decrease_cycles;
+    s.mahalanobis_enabled = c.mahalanobis_enabled;
+    s.mahalanobis_threshold_x10 = c.mahalanobis_threshold_x10;
+    s.pattern_matching_enabled = c.pattern_matching_enabled;
 }
+
 } // namespace drone_analyzer

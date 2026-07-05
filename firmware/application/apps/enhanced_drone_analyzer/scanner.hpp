@@ -774,7 +774,13 @@ public:
      *       getters (get_threat_critical_dbm()) in hot paths.
      */
     [[nodiscard]] ScanConfig get_config() const noexcept;
-    
+
+    /**
+     * @brief Copy config into caller buffer — avoids 368B return-by-value on stack
+     * @param out Caller-owned buffer. Thread-safe: mutex held during copy.
+     */
+    void get_config_to(ScanConfig& out) const noexcept;
+
     /**
      * @brief Get critical threat RSSI threshold (thread-safe, no full config copy)
      * @return Critical threat threshold in dBm

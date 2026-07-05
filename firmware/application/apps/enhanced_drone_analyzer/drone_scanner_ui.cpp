@@ -106,6 +106,22 @@ void DroneScannerUI::unregister_handlers() noexcept {
     handlers_active_ = false;
 }
 
+void DroneScannerUI::stop_scanning_for_push() noexcept {
+    scanning_needs_restore_ = scanning_;
+    if (!scanning_) return;
+    if (composite_active_) {
+        exit_sweep_mode(true);
+    } else {
+        scanner_thread_->set_scanning(false);
+        if (scanner_ptr_ != nullptr) {
+            (void)scanner_ptr_->stop_scanning();
+        }
+        baseband::spectrum_streaming_stop();
+        scanning_ = false;
+        button_start_stop_.set_text("Start");
+    }
+}
+
 // ============================================================================
 // Atomic 64-bit frequency access — prevents torn reads on Cortex-M4
 // ============================================================================
@@ -160,8 +176,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
     // (display and detection filtering are now separate)
     if (scanner_ptr_ != nullptr) {
-        const auto cfg = scanner_ptr_->get_config();  // Stack: ~368B (one-time init, acceptable)
-        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
+        static ScanConfig init_cfg;
+        scanner_ptr_->get_config_to(init_cfg);
+        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(init_cfg.rssi_decrease_cycles));
     }
 
     // Median filter toggle (spike rejection on RSSI samples)
@@ -331,26 +348,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        // Remember if scanning was active so on_show() can restore it
-        scanning_needs_restore_ = scanning_;
-        // Stop scanning before pushing sub-view (matches PTR handler pattern).
-        if (scanning_) {
-            if (composite_active_) {
-                exit_sweep_mode(true);
-            } else {
-                scanner_thread_->set_scanning(false);
-                if (scanner_ptr_ != nullptr) {
-                    (void)scanner_ptr_->stop_scanning();
-                }
-                baseband::spectrum_streaming_stop();
-                scanning_ = false;
-                button_start_stop_.set_text("Start");
-            }
-        }
-        // Refresh config from scanner (SWP view may have changed sweep settings)
-        static ScanConfig config;
-        config = scanner_ptr_->get_config();
-        nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
+        stop_scanning_for_push();
+        static ScanConfig cfg;
+        scanner_ptr_->get_config_to(cfg);
+        nav_.push<DroneSettingsView>(cfg, scanner_ptr_, &drone_display_);
     };
 
     // SWP button: open sweep settings view
@@ -359,27 +360,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        // Remember if scanning was active so on_show() can restore it
-        scanning_needs_restore_ = scanning_;
-        // Stop scanning before pushing sub-view (matches PTR handler pattern).
-        // on_hide() also stops scanning, but doing it here ensures clean state
-        // and prevents race conditions with the scanner thread.
-        if (scanning_) {
-            if (composite_active_) {
-                exit_sweep_mode(true);
-            } else {
-                scanner_thread_->set_scanning(false);
-                if (scanner_ptr_ != nullptr) {
-                    (void)scanner_ptr_->stop_scanning();
-                }
-                baseband::spectrum_streaming_stop();
-                scanning_ = false;
-                button_start_stop_.set_text("Start");
-            }
-        }
-        static ScanConfig config;
-        config = scanner_ptr_->get_config();
-        nav_.push<DroneSweepView>(config, scanner_ptr_);
+        stop_scanning_for_push();
+        static ScanConfig cfg;
+        scanner_ptr_->get_config_to(cfg);
+        nav_.push<DroneSweepView>(cfg, scanner_ptr_);
     };
 
     // PTR button: open pattern manager view
@@ -388,31 +372,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        // CRITICAL: Unregister message handlers BEFORE pushing PatternManagerView.
-        // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
-        // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
         unregister_handlers();
-
-        // PTR uses baseband_needs_restore_ for full baseband restart, not scanning_needs_restore_
         scanning_needs_restore_ = false;
-
-        // Stop scanning if active
-        if (scanning_) {
-            if (composite_active_) {
-                // suppress_auto_restart: PatternManagerView handles its own streaming state.
-                exit_sweep_mode(true);
-            } else {
-                scanner_thread_->set_scanning(false);
-                if (scanner_ptr_ != nullptr) {
-                    (void)scanner_ptr_->stop_scanning();
-                }
-                baseband::spectrum_streaming_stop();
-                scanning_ = false;
-                button_start_stop_.set_text("Start");
-            }
-        }
-
-        // Mark baseband for restore when returning from PatternManagerView
+        stop_scanning_for_push();
         baseband_needs_restore_ = true;
         nav_.push<PatternManagerView>();
     };
@@ -590,7 +552,7 @@ void DroneScannerUI::on_show() {
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
     if (composite_active_ && scanner_ptr_ != nullptr) {
         static ScanConfig cfg;
-        cfg = scanner_ptr_->get_config();
+        scanner_ptr_->get_config_to(cfg);
 
         // Reinit all windows from config
         last_tuned_freq_ = 0;
@@ -936,9 +898,11 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.set_scan_head(-1, -1);
 
     static ScanConfig cfg;
-    cfg = (scanner_ptr_ != nullptr)
-        ? scanner_ptr_->get_config()
-        : ScanConfig();
+    if (scanner_ptr_ != nullptr) {
+        scanner_ptr_->get_config_to(cfg);
+    } else {
+        cfg = ScanConfig{};
+    }
 
     // Initialize all 4 sweep windows from config
     sweep_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq, cfg.sweep_step_freq);

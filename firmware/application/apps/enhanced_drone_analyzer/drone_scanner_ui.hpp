@@ -253,6 +253,7 @@ private:
 
     void register_handlers() noexcept;
     void unregister_handlers() noexcept;
+    void stop_scanning_for_push() noexcept;
 
     bool on_touch(const ui::TouchEvent event) override;
     bool baseband_needs_restore_{false};
