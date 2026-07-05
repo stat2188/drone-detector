@@ -13,7 +13,8 @@ namespace drone_analyzer {
 /**
  * @brief Unified settings data structure (all settings + sweep in one POD)
  * @note Single source of truth — replaces duplicated DroneSettings + ScanConfig sweep fields
- * @note ~120 bytes total, stack-safe for local usage
+ * @note ~360 bytes total (14×FreqHz=112B + sweep_exceptions[4][5]=160B + other=~88B)
+ * @note Use static locals in functions to avoid stack overflow on 4KB main thread stack
  * @note No heap allocation, no virtual functions
  */
 struct SettingsStruct {
@@ -107,6 +108,8 @@ struct SettingsStruct {
 
     SettingsStruct() noexcept;
 };
+
+static_assert(sizeof(SettingsStruct) <= 512, "SettingsStruct too large for stack — exceeds 512 bytes");
 
 /**
  * @brief Centralized settings file manager for EDA

@@ -316,7 +316,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     button_save_.on_select = [this](ui::Button&) {
         // Apply settings to scanner config
         if (scanner_ptr_ != nullptr) {
-            ScanConfig updated_config = original_config_;
+            // Stack budget: make ScanConfig static to avoid ~736B peak
+            // (updated_config ~368B + current_cfg ~368B would coexist on stack)
+            static ScanConfig updated_config;
+            updated_config = original_config_;
             SettingsFileManager::apply_to_config(settings_, updated_config);
             // Preserve sweep settings from scanner (SWP view manages them)
             const auto current_cfg = scanner_ptr_->get_config();

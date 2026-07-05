@@ -436,6 +436,10 @@ void DroneSweepView::focus() {
 }
 
 void DroneSweepView::save_settings() noexcept {
+    // Stack budget: 4KB main thread stack. Large structs moved to static
+    // to avoid ~728B peak stack usage (ScanConfig ~368B + SettingsStruct ~360B).
+    // Note: save_settings() is non-reentrant (called from button handler only).
+
     FreqHz sw1_start = static_cast<FreqHz>(view_group1_.field_sw1_start_.value()) * 1000000ULL;
     FreqHz sw1_end = static_cast<FreqHz>(view_group1_.field_sw1_end_.value()) * 1000000ULL;
     FreqHz sw1_step = static_cast<FreqHz>(view_group1_.field_sw1_step_.value()) * 1000ULL;
@@ -455,7 +459,7 @@ void DroneSweepView::save_settings() noexcept {
     FreqHz sw4_end = static_cast<FreqHz>(view_group2_.field_sw4_end_.value()) * 1000000ULL;
     FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
 
-    FreqHz exc[4][EXCEPTIONS_PER_WINDOW]{};
+    static FreqHz exc[4][EXCEPTIONS_PER_WINDOW];
     ui::NumberField* exc1_fields[] = {
         &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
         &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
@@ -502,7 +506,8 @@ void DroneSweepView::save_settings() noexcept {
     }
 
     if (scanner_ptr_ != nullptr) {
-        ScanConfig updated_config = original_config_;
+        static ScanConfig updated_config;
+        updated_config = original_config_;
         updated_config.sweep_start_freq = sw1_start;
         updated_config.sweep_end_freq = sw1_end;
         updated_config.sweep_step_freq = sw1_step;
@@ -527,7 +532,7 @@ void DroneSweepView::save_settings() noexcept {
         (void)scanner_ptr_->set_config(updated_config);
     }
 
-    SettingsStruct current;
+    static SettingsStruct current;
     (void)SettingsFileManager::load(current);
 
     current.sweep_start_freq = sw1_start;
@@ -556,7 +561,7 @@ void DroneSweepView::save_settings() noexcept {
 }
 
 void DroneSweepView::apply_defaults() noexcept {
-    SettingsStruct defaults;
+    static SettingsStruct defaults;
 
     view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(defaults.sweep_start_freq / 1000000ULL));
     view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(defaults.sweep_end_freq / 1000000ULL));

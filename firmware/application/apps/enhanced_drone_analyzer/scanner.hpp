@@ -24,7 +24,7 @@ namespace drone_analyzer {
 /**
  * @brief Scan configuration
  * @note ScannerState is defined in drone_types.hpp
- * @note Size: ~104 bytes (large struct with 4 sweep windows + CFAR + pattern params)
+ * @note Size: ~368 bytes (14×FreqHz=112B + sweep_exceptions[4][5]=160B + bools/uint8_t=~96B)
  * @note Passed by const reference (const ScanConfig&) to avoid copy overhead
  * @note Consider partitioning if future extensions increase size significantly
  */
@@ -110,12 +110,14 @@ struct ScanConfig {
      * @brief Default constructor
      */
     ScanConfig() noexcept;
-    
+
     /**
      * @brief Constructor with values
      */
     ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept;
 };
+
+static_assert(sizeof(ScanConfig) <= 512, "ScanConfig too large for stack — exceeds 512 bytes");
 
 /**
  * @brief Scan statistics
@@ -763,10 +765,12 @@ public:
     
     /**
      * @brief Get scan configuration (thread-safe copy)
-     * @return Copy of current scan configuration
+     * @return Copy of current scan configuration (~368 bytes)
      * @note Acquires mutex (LockOrder::DATA_MUTEX), returns by value
-     *       to prevent data race on reference after mutex release
-     * @note Stack: ~400 bytes (ScanConfig is large). Prefer targeted
+     *       to prevent data race on reference after mutex release.
+     *       DO NOT change to const& — the mutex is released before
+     *       the caller uses the reference, creating a data race.
+     * @note Stack: ~372 bytes (ScanConfig + return value). Prefer targeted
      *       getters (get_threat_critical_dbm()) in hot paths.
      */
     [[nodiscard]] ScanConfig get_config() const noexcept;

@@ -160,7 +160,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
     // (display and detection filtering are now separate)
     if (scanner_ptr_ != nullptr) {
-        const auto cfg = scanner_ptr_->get_config();  // Stack: ~400B (one-time init, acceptable)
+        const auto cfg = scanner_ptr_->get_config();  // Stack: ~368B (one-time init, acceptable)
         field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
     }
 
@@ -172,7 +172,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         }
         button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
         // Persist to SD card so state survives app restart
-        SettingsStruct persist_settings;
+        static SettingsStruct persist_settings;
         if (SettingsFileManager::load(persist_settings) == ErrorCode::SUCCESS) {
             persist_settings.median_enabled = median_enabled_;
             (void)SettingsFileManager::save(scanner_ptr_, persist_settings);
@@ -348,7 +348,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             }
         }
         // Refresh config from scanner (SWP view may have changed sweep settings)
-        const auto config = scanner_ptr_->get_config();  // Stack: ~104B (button press, infrequent)
+        const auto config = scanner_ptr_->get_config();  // Stack: ~368B (button press, infrequent)
         nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
 
@@ -376,7 +376,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Start");
             }
         }
-        const auto config = scanner_ptr_->get_config();  // Stack: ~104B (button press, infrequent)
+        const auto config = scanner_ptr_->get_config();  // Stack: ~368B (button press, infrequent)
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };
 
@@ -474,13 +474,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         AudioAlertManager::play_alert(level);
     });
 
-    ScanConfig config;
+    // Stack budget: make both static to avoid ~728B peak (ScanConfig 368B + SettingsStruct 360B)
+    static ScanConfig config;
+    config = ScanConfig{};
     config.mode = scanning_mode_;
     config.rssi_threshold_dbm = RSSI_DETECTION_THRESHOLD_DBM;
     config.scan_interval_ms = SCAN_CYCLE_INTERVAL_MS;
 
     // Load all settings from SD card via centralized manager
-    SettingsStruct startup_settings;
+    static SettingsStruct startup_settings;
     const ErrorCode load_err = SettingsFileManager::load(startup_settings);
     if (load_err == ErrorCode::SUCCESS) {
         SettingsFileManager::apply_to_config(startup_settings, config);
@@ -585,7 +587,7 @@ void DroneScannerUI::on_show() {
 
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
     if (composite_active_ && scanner_ptr_ != nullptr) {
-        const auto cfg = scanner_ptr_->get_config();  // Stack: ~400B (view transition, infrequent)
+        const auto cfg = scanner_ptr_->get_config();  // Stack: ~368B (view transition, infrequent)
 
         // Reinit all windows from config
         last_tuned_freq_ = 0;
@@ -931,7 +933,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.set_scan_head(-1, -1);
 
     const auto cfg = (scanner_ptr_ != nullptr)
-        ? scanner_ptr_->get_config()   // Stack: ~400B (mode switch, infrequent)
+        ? scanner_ptr_->get_config()   // Stack: ~368B (mode switch, infrequent)
         : ScanConfig();
 
     // Initialize all 4 sweep windows from config

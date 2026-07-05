@@ -449,7 +449,8 @@ ErrorCode SettingsFileManager::save(
     DroneScanner* scanner_ptr,
     const SettingsStruct& s
 ) noexcept {
-    ScanConfig sweep_cfg;
+    // Stack budget: move ScanConfig to static to save ~368B on 4KB main thread stack
+    static ScanConfig sweep_cfg;
     if (scanner_ptr != nullptr) {
         sweep_cfg = scanner_ptr->get_config();
     } else {
