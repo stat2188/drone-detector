@@ -313,6 +313,7 @@ ErrorCode DroneDisplay::update_display_data(const DisplayData& display_data) noe
     }
     display_data_ = display_data;
     dirty_flags_ |= DIRTY_DRONES;
+    set_dirty();
     return ErrorCode::SUCCESS;
 }
 
@@ -393,6 +394,7 @@ ErrorCode DroneDisplay::set_spectrum_data(
     }
 
     dirty_flags_ |= DIRTY_SPEC;
+    set_dirty();
     return ErrorCode::SUCCESS;
 }
 
@@ -412,6 +414,7 @@ ErrorCode DroneDisplay::set_histogram_data(
         histogram_buffer_[i] = histogram_data[i];
     }
     dirty_flags_ |= DIRTY_HIST;
+    set_dirty();
     return ErrorCode::SUCCESS;
 }
 
@@ -426,6 +429,7 @@ void DroneDisplay::set_status_text(const char* status_text) noexcept {
     }
     status_text_[i] = '\0';
     dirty_flags_ |= DIRTY_STATUS;
+    set_dirty();
 }
 
 const char* DroneDisplay::get_status_text() const noexcept {
@@ -766,6 +770,7 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
     composite_data_ = composite_persist_buf_;
     composite_data_size_ = copy_n;
     dirty_flags_ |= DIRTY_SPEC;
+    set_dirty();
 }
 
 void DroneDisplay::reset_composite_persistence() noexcept {
@@ -781,6 +786,7 @@ void DroneDisplay::reset_composite_persistence() noexcept {
     sweep2_noise_floor_ = 0;
     sweep2_noise_floor_valid_ = false;
     dirty_flags_ = DIRTY_ALL;
+    set_dirty();
     // DO NOT null composite_data_ or composite_data_size_ here.
     // Nulling them causes calculate_layout() to collapse the spectrum area
     // (show_spec = false), letting the histogram take over the display —
@@ -852,6 +858,7 @@ void DroneDisplay::update_noise_floor() noexcept {
         sweep2_noise_floor_valid_ = true;
     }
     dirty_flags_ |= DIRTY_SPEC;
+    set_dirty();
 }
 
 // ============================================================================
@@ -1108,6 +1115,7 @@ void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
     sweep2_data_ = sweep2_persist_buf_;
     sweep2_data_size_ = copy_n;
     dirty_flags_ |= DIRTY_SPEC;
+    set_dirty();
 }
 
 void DroneDisplay::render_dual_composite(

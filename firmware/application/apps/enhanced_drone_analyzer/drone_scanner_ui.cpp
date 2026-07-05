@@ -1019,6 +1019,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     baseband::spectrum_streaming_start();
     scanning_ = true;
     button_start_stop_.set_text("Stop");
+    drone_display_.set_dirty();  // ensure sweep display paints on entry
 
     // Allow exit_sweep_mode() to work after enter completes
     sweep_transition_guard_.clear();
@@ -1145,6 +1146,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
     // Live display update: show current pair data every frame
     update_sweep_pair_display();
+    drone_display_.set_dirty();  // repaint sweep display every frame
 
     if (win.pixel_index < COMPOSITE_SIZE) {
         // Normal step: advance frequency within current window
@@ -1393,13 +1395,13 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     set_current_frequency_safe(win.f_center);
     last_tuned_freq_ = win.f_center;
 
-    baseband::spectrum_streaming_start();
+    // 5ms PLL settle delay matches Looking Glass app — validated for RFFC5072 + MAX2837 lock.
+    // Removing this causes corrupted FFT data from unsettled PLLs.
+    static constexpr uint32_t PLL_SETTLE_MS = 5;
+    chThdSleepMilliseconds(PLL_SETTLE_MS);
 
-    // Skip 1 FFT frame after retune for PLL + baseband filter settle.
-    // PLL lock: ~200µs-1.2ms (RFFC5072 + MAX2837). 1 frame (~17ms) >> 1.2ms.
-    // Eliminates 5ms chThdSleepMilliseconds that blocked the UI thread,
-    // recovering 30% of the frame budget in sweep mode.
-    win.settle_frames_remaining_ = 1;
+    baseband::spectrum_streaming_start();
+    win.settle_frames_remaining_ = SWEEP_SETTLE_FRAMES;
     (void)prefix;
 }
 
