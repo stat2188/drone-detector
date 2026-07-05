@@ -41,6 +41,7 @@ SweepWindowGroupView::SweepWindowGroupView(
         {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Color::white()},
         {{UI_POS_X(1), UI_POS_Y(5)}, "Step(kHz):", Color::white()},
     })
+    , check_a_enabled_{{UI_POS_X(1), UI_POS_Y(1)}, 8, "Enabled", false}
     , field_a_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '}
     , field_a_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '}
     , field_a_step_{{UI_POS_X(1), UI_POS_Y(6)}, 5, {17813, 99999}, 17813, ' '}
@@ -73,13 +74,19 @@ SweepWindowGroupView::SweepWindowGroupView(
 
     set_parent_rect(parent_rect);
     add_children({
-        &labels_a_, &field_a_start_, &field_a_end_, &field_a_step_,
+        &labels_a_,
+        &field_a_start_, &field_a_end_, &field_a_step_,
         &labels_b_, &check_b_enabled_, &field_b_start_, &field_b_end_, &field_b_step_,
         &labels_exc_a_,
         &field_exc_a_[0], &field_exc_a_[1], &field_exc_a_[2], &field_exc_a_[3], &field_exc_a_[4],
         &labels_exc_b_,
         &field_exc_b_[0], &field_exc_b_[1], &field_exc_b_[2], &field_exc_b_[3], &field_exc_b_[4],
     });
+    if (window_index_ == 1) {
+        add_children({&check_a_enabled_});
+    } else {
+        check_a_enabled_.hidden(true);
+    }
 
     // Single helper replaces 24 identical lambdas
     setup_freq_keypad(nav_, field_a_start_);
@@ -104,8 +111,7 @@ NumberField& SweepWindowGroupView::field_step(uint8_t w) noexcept {
     return (w == 0) ? field_a_step_ : field_b_step_;
 }
 Checkbox& SweepWindowGroupView::check_enabled(uint8_t w) noexcept {
-    (void)w;
-    return check_b_enabled_;
+    return (w == 0) ? check_a_enabled_ : check_b_enabled_;
 }
 NumberField& SweepWindowGroupView::field_exc(uint8_t w, uint8_t slot) noexcept {
     return (w == 0) ? field_exc_a_[slot] : field_exc_b_[slot];
@@ -159,7 +165,7 @@ void DroneSweepView::populate_from_config(const ScanConfig& cfg) noexcept {
     set_mhz(view_group1_.field_start(0), cfg.sweep_start_freq);
     set_mhz(view_group1_.field_end(0), cfg.sweep_end_freq);
     set_khz(view_group1_.field_step(0), cfg.sweep_step_freq);
-    view_group1_.check_enabled(0).set_value(cfg.sweep2_enabled);
+    view_group1_.check_enabled(1).set_value(cfg.sweep2_enabled);
     set_mhz(view_group1_.field_start(1), cfg.sweep2_start_freq);
     set_mhz(view_group1_.field_end(1), cfg.sweep2_end_freq);
     set_khz(view_group1_.field_step(1), cfg.sweep2_step_freq);
@@ -169,7 +175,7 @@ void DroneSweepView::populate_from_config(const ScanConfig& cfg) noexcept {
     set_mhz(view_group2_.field_start(0), cfg.sweep3_start_freq);
     set_mhz(view_group2_.field_end(0), cfg.sweep3_end_freq);
     set_khz(view_group2_.field_step(0), cfg.sweep3_step_freq);
-    view_group2_.check_enabled(0).set_value(cfg.sweep4_enabled);
+    view_group2_.check_enabled(1).set_value(cfg.sweep4_enabled);
     set_mhz(view_group2_.field_start(1), cfg.sweep4_start_freq);
     set_mhz(view_group2_.field_end(1), cfg.sweep4_end_freq);
     set_khz(view_group2_.field_step(1), cfg.sweep4_step_freq);
@@ -200,7 +206,7 @@ void DroneSweepView::save_settings() noexcept {
     cfg.sweep2_start_freq = mhz(view_group1_.field_start(1));
     cfg.sweep2_end_freq   = mhz(view_group1_.field_end(1));
     cfg.sweep2_step_freq  = khz(view_group1_.field_step(1));
-    cfg.sweep2_enabled    = view_group1_.check_enabled(0).value();
+    cfg.sweep2_enabled    = view_group1_.check_enabled(1).value();
     cfg.sweep3_start_freq = mhz(view_group2_.field_start(0));
     cfg.sweep3_end_freq   = mhz(view_group2_.field_end(0));
     cfg.sweep3_step_freq  = khz(view_group2_.field_step(0));
@@ -208,7 +214,7 @@ void DroneSweepView::save_settings() noexcept {
     cfg.sweep4_start_freq = mhz(view_group2_.field_start(1));
     cfg.sweep4_end_freq   = mhz(view_group2_.field_end(1));
     cfg.sweep4_step_freq  = khz(view_group2_.field_step(1));
-    cfg.sweep4_enabled    = view_group2_.check_enabled(0).value();
+    cfg.sweep4_enabled    = view_group2_.check_enabled(1).value();
 
     for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
         cfg.sweep_exceptions[0][i] = mhz(view_group1_.field_exc(0, i));

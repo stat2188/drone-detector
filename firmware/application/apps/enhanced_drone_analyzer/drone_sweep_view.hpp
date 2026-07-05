@@ -35,8 +35,9 @@ private:
     NavigationView& nav_;
     uint8_t window_index_;
 
-    // Window A: always enabled (index 0 in pair)
+    // Window A (index 0 in pair): Group0=always-on, Group1=has checkbox (win3)
     Labels labels_a_;
+    Checkbox check_a_enabled_;
     NumberField field_a_start_;
     NumberField field_a_end_;
     NumberField field_a_step_;
