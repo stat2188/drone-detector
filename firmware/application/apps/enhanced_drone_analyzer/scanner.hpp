@@ -782,6 +782,22 @@ public:
      * @note Use instead of get_config().threat_critical_dbm in hot paths
      */
     [[nodiscard]] int32_t get_threat_critical_dbm() const noexcept;
+
+    /**
+     * @brief Get median filter enabled state (thread-safe, no full config copy)
+     * @return true if median filter is enabled, false otherwise
+     * @note Acquires mutex (LockOrder::DATA_MUTEX), copies only 1 byte
+     * @note Use instead of get_config().median_enabled to avoid 368B stack waste
+     */
+    [[nodiscard]] bool get_median_enabled() const noexcept;
+
+    /**
+     * @brief Get scan interval in milliseconds (thread-safe, no full config copy)
+     * @return Scan interval in ms (default: SCANNER_SLEEP_MS)
+     * @note Acquires mutex (LockOrder::DATA_MUTEX), copies only 4 bytes
+     * @note Use instead of get_config().scan_interval_ms in hot paths
+     */
+    [[nodiscard]] uint32_t get_scan_interval_ms() const noexcept;
     
     /**
      * @brief Get sweep step frequency in Hz

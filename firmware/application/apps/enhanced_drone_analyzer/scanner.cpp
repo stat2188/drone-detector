@@ -1122,6 +1122,22 @@ int32_t DroneScanner::get_threat_critical_dbm() const noexcept {
     return config_.threat_critical_dbm;
 }
 
+bool DroneScanner::get_median_enabled() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return false;
+    }
+    return config_.median_enabled;
+}
+
+uint32_t DroneScanner::get_scan_interval_ms() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return SCANNER_SLEEP_MS;
+    }
+    return config_.scan_interval_ms;
+}
+
 ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     ErrorCode validate_result = validate_config_internal(config);
     if (validate_result != ErrorCode::SUCCESS) {

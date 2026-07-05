@@ -348,7 +348,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             }
         }
         // Refresh config from scanner (SWP view may have changed sweep settings)
-        const auto config = scanner_ptr_->get_config();  // Stack: ~368B (button press, infrequent)
+        static ScanConfig config;
+        config = scanner_ptr_->get_config();
         nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
 
@@ -376,7 +377,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Start");
             }
         }
-        const auto config = scanner_ptr_->get_config();  // Stack: ~368B (button press, infrequent)
+        static ScanConfig config;
+        config = scanner_ptr_->get_config();
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };
 
@@ -587,7 +589,8 @@ void DroneScannerUI::on_show() {
 
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
     if (composite_active_ && scanner_ptr_ != nullptr) {
-        const auto cfg = scanner_ptr_->get_config();  // Stack: ~368B (view transition, infrequent)
+        static ScanConfig cfg;
+        cfg = scanner_ptr_->get_config();
 
         // Reinit all windows from config
         last_tuned_freq_ = 0;
@@ -932,8 +935,9 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.reset_composite_persistence();
     drone_display_.set_scan_head(-1, -1);
 
-    const auto cfg = (scanner_ptr_ != nullptr)
-        ? scanner_ptr_->get_config()   // Stack: ~368B (mode switch, infrequent)
+    static ScanConfig cfg;
+    cfg = (scanner_ptr_ != nullptr)
+        ? scanner_ptr_->get_config()
         : ScanConfig();
 
     // Initialize all 4 sweep windows from config
