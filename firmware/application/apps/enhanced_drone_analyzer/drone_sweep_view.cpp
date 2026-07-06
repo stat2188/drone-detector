@@ -56,21 +56,18 @@ SweepWindowGroupView::SweepWindowGroupView(
     , field_b_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '}
     , field_b_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {17813, 99999}, 17813, ' '}
     , labels_exc_a_{{{UI_POS_X(16), UI_POS_Y(0)}, "Exc(MHz):", Color::white()}}
-    , field_exc_a_{
-        {{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '},
-        {{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '},
-        {{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '},
-        {{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '},
-        {{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '},
-    }
+    , field_exc_a0_{{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '}
+    , field_exc_a1_{{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '}
+    , field_exc_a2_{{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '}
+    , field_exc_a3_{{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '}
+    , field_exc_a4_{{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '}
     , labels_exc_b_{{{UI_POS_X(16), UI_POS_Y(8)}, "Exc(MHz):", Color::white()}}
-    , field_exc_b_{
-        {{UI_POS_X(16), UI_POS_Y(9)}, 5, {0, 7200}, 1, ' '},
-        {{UI_POS_X(16), UI_POS_Y(10)}, 5, {0, 7200}, 1, ' '},
-        {{UI_POS_X(16), UI_POS_Y(11)}, 5, {0, 7200}, 1, ' '},
-        {{UI_POS_X(16), UI_POS_Y(12)}, 5, {0, 7200}, 1, ' '},
-        {{UI_POS_X(16), UI_POS_Y(13)}, 5, {0, 7200}, 1, ' '},
-    } {
+    , field_exc_b0_{{UI_POS_X(16), UI_POS_Y(9)}, 5, {0, 7200}, 1, ' '}
+    , field_exc_b1_{{UI_POS_X(16), UI_POS_Y(10)}, 5, {0, 7200}, 1, ' '}
+    , field_exc_b2_{{UI_POS_X(16), UI_POS_Y(11)}, 5, {0, 7200}, 1, ' '}
+    , field_exc_b3_{{UI_POS_X(16), UI_POS_Y(12)}, 5, {0, 7200}, 1, ' '}
+    , field_exc_b4_{{UI_POS_X(16), UI_POS_Y(13)}, 5, {0, 7200}, 1, ' '}
+    {
 
     set_parent_rect(parent_rect);
     add_children({
@@ -78,9 +75,9 @@ SweepWindowGroupView::SweepWindowGroupView(
         &field_a_start_, &field_a_end_, &field_a_step_,
         &labels_b_, &check_b_enabled_, &field_b_start_, &field_b_end_, &field_b_step_,
         &labels_exc_a_,
-        &field_exc_a_[0], &field_exc_a_[1], &field_exc_a_[2], &field_exc_a_[3], &field_exc_a_[4],
+        &field_exc_a0_, &field_exc_a1_, &field_exc_a2_, &field_exc_a3_, &field_exc_a4_,
         &labels_exc_b_,
-        &field_exc_b_[0], &field_exc_b_[1], &field_exc_b_[2], &field_exc_b_[3], &field_exc_b_[4],
+        &field_exc_b0_, &field_exc_b1_, &field_exc_b2_, &field_exc_b3_, &field_exc_b4_,
     });
     if (window_index_ == 1) {
         add_children({&check_a_enabled_});
@@ -93,8 +90,16 @@ SweepWindowGroupView::SweepWindowGroupView(
     setup_freq_keypad(nav_, field_a_end_);
     setup_freq_keypad(nav_, field_b_start_);
     setup_freq_keypad(nav_, field_b_end_);
-    for (auto& f : field_exc_a_) setup_freq_keypad(nav_, f);
-    for (auto& f : field_exc_b_) setup_freq_keypad(nav_, f);
+    setup_freq_keypad(nav_, field_exc_a0_);
+    setup_freq_keypad(nav_, field_exc_a1_);
+    setup_freq_keypad(nav_, field_exc_a2_);
+    setup_freq_keypad(nav_, field_exc_a3_);
+    setup_freq_keypad(nav_, field_exc_a4_);
+    setup_freq_keypad(nav_, field_exc_b0_);
+    setup_freq_keypad(nav_, field_exc_b1_);
+    setup_freq_keypad(nav_, field_exc_b2_);
+    setup_freq_keypad(nav_, field_exc_b3_);
+    setup_freq_keypad(nav_, field_exc_b4_);
 }
 
 void SweepWindowGroupView::focus() {
@@ -114,7 +119,18 @@ Checkbox& SweepWindowGroupView::check_enabled(uint8_t w) noexcept {
     return (w == 0) ? check_a_enabled_ : check_b_enabled_;
 }
 NumberField& SweepWindowGroupView::field_exc(uint8_t w, uint8_t slot) noexcept {
-    return (w == 0) ? field_exc_a_[slot] : field_exc_b_[slot];
+    if (w == 0) {
+        if (slot == 0) return field_exc_a0_;
+        if (slot == 1) return field_exc_a1_;
+        if (slot == 2) return field_exc_a2_;
+        if (slot == 3) return field_exc_a3_;
+        return field_exc_a4_;
+    }
+    if (slot == 0) return field_exc_b0_;
+    if (slot == 1) return field_exc_b1_;
+    if (slot == 2) return field_exc_b2_;
+    if (slot == 3) return field_exc_b3_;
+    return field_exc_b4_;
 }
 
 // ============================================================================

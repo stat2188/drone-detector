@@ -50,12 +50,11 @@ private:
     NumberField field_b_step_;
 
     // Exception fields for both windows (5 each)
+    // Individual members — NumberField has deleted copy/move, so C-style arrays cannot be aggregate-initialized
     Labels labels_exc_a_;
-    NumberField field_exc_a_[5];
+    NumberField field_exc_a0_, field_exc_a1_, field_exc_a2_, field_exc_a3_, field_exc_a4_;
     Labels labels_exc_b_;
-    NumberField field_exc_b_[5];
-
-    void setup_exc_callback(NumberField& field) noexcept;
+    NumberField field_exc_b0_, field_exc_b1_, field_exc_b2_, field_exc_b3_, field_exc_b4_;
 };
 
 /**
