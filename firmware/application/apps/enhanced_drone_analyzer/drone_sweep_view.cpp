@@ -56,21 +56,21 @@ SweepWindowGroupView::SweepWindowGroupView(
     , field_b_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '}
     , field_b_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {17813, 99999}, 17813, ' '}
     , labels_exc_a_{{{UI_POS_X(16), UI_POS_Y(0)}, "Exc(MHz):", Color::white()}}
-    , field_exc_a_{{
+    , field_exc_a_{
         {{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '},
         {{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '},
         {{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '},
         {{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '},
         {{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '},
-    }}
+    }
     , labels_exc_b_{{{UI_POS_X(16), UI_POS_Y(8)}, "Exc(MHz):", Color::white()}}
-    , field_exc_b_{{
+    , field_exc_b_{
         {{UI_POS_X(16), UI_POS_Y(9)}, 5, {0, 7200}, 1, ' '},
         {{UI_POS_X(16), UI_POS_Y(10)}, 5, {0, 7200}, 1, ' '},
         {{UI_POS_X(16), UI_POS_Y(11)}, 5, {0, 7200}, 1, ' '},
         {{UI_POS_X(16), UI_POS_Y(12)}, 5, {0, 7200}, 1, ' '},
         {{UI_POS_X(16), UI_POS_Y(13)}, 5, {0, 7200}, 1, ' '},
-    }} {
+    } {
 
     set_parent_rect(parent_rect);
     add_children({
@@ -267,9 +267,7 @@ void DroneSweepView::save_settings() noexcept {
 }
 
 void DroneSweepView::apply_defaults() noexcept {
-    static SettingsStruct defs;
     populate_from_config(ScanConfig{});
-    field_exc_radius_.set_value(static_cast<int32_t>(defs.exception_radius_mhz));
 }
 
 } // namespace drone_analyzer
