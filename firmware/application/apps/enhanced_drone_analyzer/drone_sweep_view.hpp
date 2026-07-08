@@ -81,7 +81,7 @@ private:
 
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
-    ScanConfig original_config_;
+    // NOTE: original_config_ is file-static in .cpp to save ~400B per view instance.
 
     SweepWindowGroupView view_group1_;
     SweepWindowGroupView view_group2_;

@@ -12,6 +12,11 @@
 
 namespace drone_analyzer {
 
+// Heap savings: original_config_ (ScanConfig ~400B) moved from DroneSweepView
+// instance member to file-static. Only one DroneSweepView exists at a time
+// (PortaPack navigation model), so static storage is safe.
+static ScanConfig s_original_config;
+
 // ============================================================================
 // Helper: push FrequencyKeypadView for any NumberField
 // ============================================================================
@@ -141,13 +146,15 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     : ui::View()
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
-    , original_config_(config)
     , view_group1_(nav_, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H}, 0)
     , view_group2_(nav_, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H}, 1)
     , tab_view_({
         {"Win 1-2", Color::white(), &view_group1_},
         {"Win 3-4", Color::white(), &view_group2_}
     }) {
+    // Store in static (not member) — saves ~400B heap per view instance
+    s_original_config = config;
+
     view_group2_.hidden(true);
     add_children({&tab_view_, &view_group1_, &view_group2_, &labels_exc_radius_, &field_exc_radius_, &button_defaults_, &button_save_});
     tab_view_.set_selected(0);
@@ -215,7 +222,7 @@ void DroneSweepView::save_settings() noexcept {
     };
 
     static ScanConfig cfg;
-    cfg = original_config_;
+    cfg = s_original_config;
     cfg.sweep_start_freq  = mhz(view_group1_.field_start(0));
     cfg.sweep_end_freq    = mhz(view_group1_.field_end(0));
     cfg.sweep_step_freq   = khz(view_group1_.field_step(0));

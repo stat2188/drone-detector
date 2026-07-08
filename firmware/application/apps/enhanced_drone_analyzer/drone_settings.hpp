@@ -26,6 +26,7 @@ public:
     DroneSettingsView& operator=(const DroneSettingsView&) = delete;
     void paint(ui::Painter& painter) override;
     void focus() override;
+    void on_show() override;
     std::string title() const override {
         static const std::string t = "EDA Settings";
         return t;
@@ -35,8 +36,6 @@ private:
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
     DroneDisplay* display_ptr_;
-    ScanConfig original_config_;
-    SettingsStruct settings_;
     bool settings_dirty_;
 
     // Row 0: CFAR

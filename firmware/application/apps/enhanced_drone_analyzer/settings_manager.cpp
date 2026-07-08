@@ -202,9 +202,11 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     const auto error = file.open(settings_dir / u"eda_settings.txt", true, false);
     if (error) return ErrorCode::DATABASE_NOT_LOADED;
 
+    // Stack safety: static buffers remove 384 bytes from the call stack.
+    // Only one load/save runs at a time (UI thread serial), so static is safe.
     constexpr size_t CHUNK = 256;
-    uint8_t buf[CHUNK];
-    uint8_t line[128];
+    static uint8_t buf[CHUNK];
+    static uint8_t line[128];
     size_t llen = 0;
 
     while (true) {
