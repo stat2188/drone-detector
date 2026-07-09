@@ -524,18 +524,6 @@ void DroneDisplay::draw_drone_entry(
     // Trend symbol at far right
     char trend_buffer[2] = {trend_symbol, '\0'};
     draw_text(painter, trend_buffer, x + col4_end + PAD, y + 12, COLOR_TEXT);
-
-    // Line 3 (optional): Pattern match info — only when pattern is matched
-    if (drone.pattern_matched && drone.pattern_name[0] != '\0') {
-        char pattern_buf[22];
-        const uint16_t score_pct = (drone.pattern_score * 100) / 1000;
-        snprintf(pattern_buf, sizeof(pattern_buf), "PTR:%.12s(%u%%)",
-                 drone.pattern_name,
-                 static_cast<unsigned>(score_pct));
-        const uint32_t pm_color = (drone.pattern_score >= SIMILARITY_STRONG)
-            ? COLOR_MEDIUM_THREAT : COLOR_LOW_THREAT;
-        draw_text(painter, pattern_buf, x + col1_end + PAD, y + 12, pm_color);
-    }
 }
 
 void DroneDisplay::draw_text(
@@ -988,18 +976,6 @@ void DroneDisplay::render_composite(
     if (scan_head >= 0 && static_cast<uint16_t>(scan_head) < bar_count) {
         const uint16_t hx = chart_start_x + static_cast<uint16_t>(scan_head);
         painter.draw_rectangle({hx, chart_start_y, 1, chart_height}, Color::white());
-    }
-
-    // Draw red frame for matched pattern
-    if (matched_pattern_bin_ >= 0) {
-        const uint16_t frame_x = chart_start_x + static_cast<uint16_t>(matched_pattern_bin_) - 3;
-        const uint16_t frame_w = 7;
-        painter.draw_rectangle({
-            frame_x,
-            chart_start_y,
-            frame_w,
-            chart_height
-        }, Color::red());
     }
 }
 

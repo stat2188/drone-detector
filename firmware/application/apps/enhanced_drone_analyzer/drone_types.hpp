@@ -9,13 +9,6 @@
 namespace drone_analyzer {
 
 /**
- * @brief Maximum pattern name length (including null terminator)
- * @note Defined here (not in constants.hpp or pattern_types.hpp) to break circular dependency:
- *       pattern_types.hpp → drone_types.hpp → pattern_types.hpp
- */
-constexpr size_t PATTERN_NAME_MAX_LEN = 28;
-
-/**
  * @brief Type alias for frequency in Hz
  */
 using FreqHz = uint64_t;
@@ -273,14 +266,6 @@ struct TrackedDrone {
     static constexpr uint8_t MAX_SWEEP_CYCLES_MISSED = 3;  // Allow 3 full cycles (~6-15 sec) before decay
 
     // ========================================================================
-    // Pattern match state
-    // ========================================================================
-
-    bool pattern_matched_{false};              // 1 byte — pattern match indicator
-    uint16_t pattern_score_{0};                // 2 bytes — similarity score (0-1000)
-    char pattern_name_[PATTERN_NAME_MAX_LEN]; // 28 bytes — matched pattern name
-
-    // ========================================================================
     // Mahalanobis statistics
     // ========================================================================
 
@@ -366,25 +351,6 @@ struct TrackedDrone {
     }
 
     /**
-     * @brief Set pattern match state on this tracked drone
-     * @param score Similarity score (0-1000)
-     * @param name Pattern name string (copied internally, truncated to PATTERN_NAME_MAX_LEN-1)
-     */
-    void set_pattern_match(uint16_t score, const char* name) noexcept {
-        pattern_matched_ = true;
-        pattern_score_ = score;
-        size_t i = 0;
-        while (name != nullptr && name[i] != '\0' && i < PATTERN_NAME_MAX_LEN - 1) {
-            pattern_name_[i] = name[i];
-            ++i;
-        }
-        pattern_name_[i] = '\0';
-    }
-
-    // Pattern match state is overwritten on every match; no explicit clear needed
-    // because a drone is removed from tracked_drones_ when its threat decays to NONE.
-
-    /**
      * @brief Increment missed sweep cycle counter
      * @note Called at end of each full sweep cycle when drone was NOT seen
      */
@@ -446,11 +412,8 @@ struct DisplayDroneEntry {
     char type_name[16];         // 16 bytes
     uint32_t display_color;     // 4 bytes (RGBA)
     MovementTrend trend;        // 1 byte (uint8_t)
-    bool pattern_matched;         // 1 byte - Pattern match indicator
-    uint16_t pattern_score;       // 2 bytes - Similarity score (0-1000)
-    char pattern_name[16];       // 16 bytes - Matched pattern name
     
-    // Total: 47 bytes (no vtable, POD type)
+    // Total: 28 bytes (no vtable, POD type)
     
     /**
      * @brief Default constructor

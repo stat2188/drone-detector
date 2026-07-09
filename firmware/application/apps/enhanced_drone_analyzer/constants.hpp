@@ -864,59 +864,6 @@ constexpr uint8_t FLATNESS_MIN_PEAK_MARGIN = 40;
 constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 0;
 
 // ============================================================================
-// Pattern Matching Constants
-// ============================================================================
-
-/**
- * @brief Maximum number of patterns to store
- * @note Reduced from 20 to 10 to save RAM (each pattern ~500 bytes)
- */
-constexpr size_t MAX_PATTERNS = 10;
-
-/**
- * @brief Pattern waveform size (16 bins from 256-bin FFT)
- * @note 256 bins are downsampled to 16 bins for pattern matching
- * @note Clean divisor: 256/16 = 16 (no fractional bin mapping)
- * @note Each bin = ~1.25 MHz at 20 MHz BW
- */
-constexpr size_t PATTERN_WAVEFORM_SIZE = 16;
-
-/**
- * @brief Default similarity threshold for pattern matching (0-1000)
- * @note 600 = 60% similarity — balanced for drone signal detection
- * @note Higher threshold = stricter matching (fewer false positives)
- * @note Lower threshold = more permissive (more false positives)
- */
-constexpr uint16_t DEFAULT_PATTERN_SIMILARITY_THRESHOLD = 600;
-
-/**
- * @brief Similarity score thresholds for match quality classification
- */
-constexpr uint16_t SIMILARITY_EXCELLENT = 800;  // 80% match
-constexpr uint16_t SIMILARITY_STRONG = 600;    // 60% match
-constexpr uint16_t SIMILARITY_MODERATE = 400;  // 40% match
-
-/**
- * @brief Minimum amplitude ratio for pattern matching (live peak / pattern peak)
- * @note If the live signal's peak is less than 1/5 (20%) of the pattern's peak,
- *       skip matching to prevent noise-level signals from matching strong saved patterns.
- *       This is a weak gate — the primary discrimination is shape-based.
- */
-constexpr uint8_t PATTERN_MIN_AMPLITUDE_RATIO = 5;
-
-/**
- * @brief Fixed edge skip for pattern normalization
- * @note Must match FFT_EDGE_SKIP (10) for consistency between save and match
- */
-constexpr size_t PATTERN_NORM_EDGE_SKIP = 10;
-
-/**
- * @brief Scaling factor to convert 256-bin FFT indices to 16-bin pattern space
- * @note 256 / 16 = 16 — exact integer division, no fractional error
- */
-constexpr uint8_t PATTERN_BIN_SCALE_FACTOR = FFT_BIN_COUNT / PATTERN_WAVEFORM_SIZE;
-
-// ============================================================================
 // CFAR Detection Constants (Constant False Alarm Rate)
 // ============================================================================
 // CFAR adapts threshold to local noise level, reducing false alarms

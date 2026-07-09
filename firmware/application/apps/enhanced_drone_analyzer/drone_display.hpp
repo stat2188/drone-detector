@@ -572,7 +572,6 @@ private:
     ) noexcept;
 
 public:
-    void set_matched_pattern_bin(int16_t bin) noexcept { matched_pattern_bin_ = bin; dirty_flags_ |= DIRTY_SPEC; set_dirty(); }
 
     /**
      * @brief Layout metrics computed once per paint/hit_test cycle.
@@ -612,9 +611,6 @@ private:
     size_t sweep2_data_size_{0};
     FreqHz sweep2_freq_start_{0};
     FreqHz sweep2_freq_end_{0};
-
-    // Pattern match highlight (red frame in sweep)
-    int16_t matched_pattern_bin_{-1};
 
     // Real-time scan-head position [0]=upper band, [1]=lower band (dual mode).
     // -1 means "no marker" for that band.

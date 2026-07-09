@@ -53,7 +53,6 @@ SettingsStruct::SettingsStruct() noexcept
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , mahalanobis_enabled(true)
     , mahalanobis_threshold_x10(DEFAULT_MAHALOBIS_THRESHOLD_X10)
-    , pattern_matching_enabled(true)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(17813000)
@@ -327,9 +326,7 @@ static void parse_settings_line(
         const uint64_t v = parse_int();
         s.mahalanobis_threshold_x10 = static_cast<uint8_t>(
             (v < MAHALANOBIS_THRESHOLD_MIN_X10) ? MAHALANOBIS_THRESHOLD_MIN_X10
-            : (v > MAHALANOBIS_THRESHOLD_MAX_X10 ? MAHALANOBIS_THRESHOLD_MAX_X10 : v));
-    } else if (key_matches("pattern_matching_enabled")) {
-        s.pattern_matching_enabled = parse_bool();
+            :             (v > MAHALANOBIS_THRESHOLD_MAX_X10 ? MAHALANOBIS_THRESHOLD_MAX_X10 : v));
     }
 }
 
@@ -582,9 +579,6 @@ ErrorCode SettingsFileManager::save(
     wbool(file, "mahalanobis_enabled", s.mahalanobis_enabled);
     wl(file, "mahalanobis_threshold_x10", static_cast<int64_t>(s.mahalanobis_threshold_x10));
 
-    // Pattern matching
-    wbool(file, "pattern_matching_enabled", s.pattern_matching_enabled);
-
     // Metadata
     ws(file, "freqman_path=DRONES\n");
     ws(file, "settings_version=1.2\n");
@@ -623,9 +617,6 @@ void SettingsFileManager::apply_to_config(
     // Mahalanobis gate
     config.mahalanobis_enabled = s.mahalanobis_enabled;
     config.mahalanobis_threshold_x10 = s.mahalanobis_threshold_x10;
-
-    // Pattern matching
-    config.pattern_matching_enabled = s.pattern_matching_enabled;
 
     config.neighbor_margin_db = s.neighbor_margin_db;
     config.rssi_variance_enabled = s.rssi_variance_enabled;
@@ -772,8 +763,5 @@ void SettingsFileManager::extract_from_config(
     // Mahalanobis gate
     s.mahalanobis_enabled = config.mahalanobis_enabled;
     s.mahalanobis_threshold_x10 = config.mahalanobis_threshold_x10;
-
-    // Pattern matching
-    s.pattern_matching_enabled = config.pattern_matching_enabled;
 }
 } // namespace drone_analyzer
