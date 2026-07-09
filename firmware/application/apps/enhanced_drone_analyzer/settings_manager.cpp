@@ -345,8 +345,8 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     }
 
     constexpr size_t READ_CHUNK_SIZE = 256;
-    uint8_t chunk[READ_CHUNK_SIZE];
-    uint8_t line_buf[128];
+    static uint8_t chunk[READ_CHUNK_SIZE];
+    static uint8_t line_buf[128];
     size_t line_len = 0;
 
     while (true) {
@@ -452,7 +452,7 @@ ErrorCode SettingsFileManager::save(
     // Stack budget: move ScanConfig to static to save ~368B on 4KB main thread stack
     static ScanConfig sweep_cfg;
     if (scanner_ptr != nullptr) {
-        sweep_cfg = scanner_ptr->get_config();
+        scanner_ptr->get_config(sweep_cfg);
     } else {
         sweep_cfg.sweep_start_freq = s.sweep_start_freq;
         sweep_cfg.sweep_end_freq = s.sweep_end_freq;

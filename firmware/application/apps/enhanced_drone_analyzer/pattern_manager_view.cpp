@@ -192,7 +192,7 @@ void PatternManagerView::on_show() {
     }
 
     pm_ = &scanner_->get_pattern_manager();
-    scanner_config_ = scanner_->get_config();
+    scanner_->get_config(scanner_config_);
 
     if (pm_->reload_patterns() != ErrorCode::SUCCESS) {
         label_status_.set("Load failed");
@@ -434,7 +434,7 @@ void PatternManagerView::start_capture() noexcept {
 
 // ============================================================================
 // Save — normalize FFT, extract features, save to SD
-// Stack: ~288 bytes (sort_buf 256B + locals 32B)
+// Stack: ~32 bytes (sort_buf moved to class member to save 256B)
 // ============================================================================
 
 void PatternManagerView::capture_and_save() noexcept {
@@ -462,9 +462,9 @@ void PatternManagerView::capture_and_save() noexcept {
     PatternMatcher::normalize(capture_spectrum_, pattern.waveform);
 
     // Extract peak features for auto-threshold
-    uint8_t sort_buf[FFT_BIN_COUNT];  // 256 bytes on stack
+    // sort_buf_ is a class member (256B in heap object, not stack)
     const PeakDetector::PeakInfo peak = PeakDetector::find(
-        capture_spectrum_, sort_buf,
+        capture_spectrum_, sort_buf_,
         PeakDetector::Range::Full, PeakDetector::EdgePolicy::Wide);
 
     pattern.features.peak_position = static_cast<uint8_t>(peak.index / PATTERN_BIN_SCALE_FACTOR);

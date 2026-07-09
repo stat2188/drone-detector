@@ -233,7 +233,7 @@ ErrorCode PatternManager::save_pattern(const SignalPattern& pattern) noexcept {
 
     ensure_directory(patterns_dir);
 
-    const auto filepath = patterns_dir / std::string(pattern.name) + u".TXT";
+    const auto filepath = patterns_dir / pattern.name + u".TXT";
 
     File file;
     const auto open_err = file.create(filepath);
@@ -314,7 +314,7 @@ ErrorCode PatternManager::delete_pattern(size_t index) noexcept {
 
     if (index >= pattern_count_) return ErrorCode::INVALID_PARAMETER;
 
-    const auto filepath = patterns_dir / std::string(patterns_[index].name) + u".TXT";
+    const auto filepath = patterns_dir / patterns_[index].name + u".TXT";
     const auto del_err = delete_file(filepath);
     if (!del_err.ok()) return ErrorCode::DATABASE_LOAD_TIMEOUT;
 
@@ -340,7 +340,7 @@ ErrorCode PatternManager::toggle_pattern(size_t index) noexcept {
     // Follows the same file path and CSV format as save_pattern().
     ensure_directory(patterns_dir);
 
-    const auto filepath = patterns_dir / std::string(p.name) + u".TXT";
+    const auto filepath = patterns_dir / p.name + u".TXT";
 
     File file;
     const auto open_err = file.create(filepath);

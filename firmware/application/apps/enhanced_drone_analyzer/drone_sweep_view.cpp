@@ -388,19 +388,19 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / 1000000ULL));
     view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
 
-    ui::NumberField* exc1_fields[] = {
+    static ui::NumberField* exc1_fields[] = {
         &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
         &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
         &view_group1_.field_sw1_exc4_};
-    ui::NumberField* exc2_fields[] = {
+    static ui::NumberField* exc2_fields[] = {
         &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
         &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
         &view_group1_.field_sw2_exc4_};
-    ui::NumberField* exc3_fields[] = {
+    static ui::NumberField* exc3_fields[] = {
         &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
         &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
         &view_group2_.field_sw3_exc4_};
-    ui::NumberField* exc4_fields[] = {
+    static ui::NumberField* exc4_fields[] = {
         &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
         &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
         &view_group2_.field_sw4_exc4_};
@@ -460,19 +460,19 @@ void DroneSweepView::save_settings() noexcept {
     FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
 
     static FreqHz exc[4][EXCEPTIONS_PER_WINDOW];
-    ui::NumberField* exc1_fields[] = {
+    static ui::NumberField* exc1_fields[] = {
         &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
         &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
         &view_group1_.field_sw1_exc4_};
-    ui::NumberField* exc2_fields[] = {
+    static ui::NumberField* exc2_fields[] = {
         &view_group1_.field_sw2_exc0_, &view_group1_.field_sw2_exc1_,
         &view_group1_.field_sw2_exc2_, &view_group1_.field_sw2_exc3_,
         &view_group1_.field_sw2_exc4_};
-    ui::NumberField* exc3_fields[] = {
+    static ui::NumberField* exc3_fields[] = {
         &view_group2_.field_sw3_exc0_, &view_group2_.field_sw3_exc1_,
         &view_group2_.field_sw3_exc2_, &view_group2_.field_sw3_exc3_,
         &view_group2_.field_sw3_exc4_};
-    ui::NumberField* exc4_fields[] = {
+    static ui::NumberField* exc4_fields[] = {
         &view_group2_.field_sw4_exc0_, &view_group2_.field_sw4_exc1_,
         &view_group2_.field_sw4_exc2_, &view_group2_.field_sw4_exc3_,
         &view_group2_.field_sw4_exc4_};
@@ -582,7 +582,7 @@ void DroneSweepView::apply_defaults() noexcept {
     view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(defaults.sweep4_end_freq / 1000000ULL));
     view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(defaults.sweep4_step_freq / 1000ULL));
 
-    ui::NumberField* all_exc[] = {
+    static ui::NumberField* all_exc[] = {
         &view_group1_.field_sw1_exc0_, &view_group1_.field_sw1_exc1_,
         &view_group1_.field_sw1_exc2_, &view_group1_.field_sw1_exc3_,
         &view_group1_.field_sw1_exc4_,

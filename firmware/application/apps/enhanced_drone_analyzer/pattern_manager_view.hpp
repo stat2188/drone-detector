@@ -20,7 +20,7 @@ class DroneScanner;
 /**
  * @brief Pattern capture and management UI for spectrum fingerprint matching.
  * @note Replaces the deleted PatternManagerView (dcc2d456) with fixes:
- *       - Thread-safe get_config() (value return, not reference)
+ *       - Thread-safe get_config() (output parameter, 0B stack)
  *       - Stack-safe refresh_list() (64B vs old 704B)
  *       - DBLREG-safe handler lifecycle (register on show, unregister on hide)
  *       - baseband_needs_restore_ flag for proper baseband recovery
@@ -103,6 +103,10 @@ private:
     uint8_t capture_spectrum_[FFT_BIN_COUNT]{};
     ChannelSpectrum spectrum_buffer_{};
     ChannelSpectrumFIFO* spectrum_fifo_{nullptr};
+
+    // Sort buffer for PeakDetector::find() — moved from stack to class member
+    // to eliminate 256B stack allocation in capture_and_save()
+    uint8_t sort_buf_[FFT_BIN_COUNT]{};
 
     // Baseband config saved from scanner (value copy, thread-safe)
     ScanConfig scanner_config_{};

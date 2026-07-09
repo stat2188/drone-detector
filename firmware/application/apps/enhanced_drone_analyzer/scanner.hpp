@@ -770,10 +770,10 @@ public:
      *       to prevent data race on reference after mutex release.
      *       DO NOT change to const& — the mutex is released before
      *       the caller uses the reference, creating a data race.
-     * @note Stack: ~372 bytes (ScanConfig + return value). Prefer targeted
-     *       getters (get_threat_critical_dbm()) in hot paths.
+     * @note Stack: 0 bytes (output parameter avoids 368B return temporary).
+     *       Prefer targeted getters (get_threat_critical_dbm()) in hot paths.
      */
-    [[nodiscard]] ScanConfig get_config() const noexcept;
+    void get_config(ScanConfig& out) const noexcept;
     
     /**
      * @brief Get critical threat RSSI threshold (thread-safe, no full config copy)

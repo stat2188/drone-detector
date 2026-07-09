@@ -159,9 +159,11 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     // Sync RSSI decrease cycles from scanner config to UI field
     // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
     // (display and detection filtering are now separate)
+    // Stack budget: use static to avoid 368B ScanConfig on stack during constructor
     if (scanner_ptr_ != nullptr) {
-        const auto cfg = scanner_ptr_->get_config();  // Stack: ~368B (one-time init, acceptable)
-        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(cfg.rssi_decrease_cycles));
+        static ScanConfig init_cfg;
+        scanner_ptr_->get_config(init_cfg);
+        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(init_cfg.rssi_decrease_cycles));
     }
 
     // Median filter toggle (spike rejection on RSSI samples)
@@ -288,14 +290,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             db_entry_count_ = database_ptr_->get_database_size();
 
             if (err == ErrorCode::SUCCESS && db_entry_count_ > 0) {
-                char status_buf[MAX_TEXT_LENGTH];
-                snprintf(status_buf, sizeof(status_buf), "%s (%lu)",
+                // Stack budget: reuse single buffer for status and alert messages
+                // (saves 64B vs separate status_buf + alert_buf)
+                char msg_buf[MAX_TEXT_LENGTH];
+                snprintf(msg_buf, sizeof(msg_buf), "%s (%lu)",
                          filename, (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(status_buf);
+                drone_display_.set_status_text(msg_buf);
 
-                char alert_buf[MAX_TEXT_LENGTH];
-                snprintf(alert_buf, sizeof(alert_buf), "DB: %s loaded", filename);
-                show_alert(alert_buf, 2000);
+                snprintf(msg_buf, sizeof(msg_buf), "DB: %s loaded", filename);
+                show_alert(msg_buf, 2000);
 
                 // Reset scanner frequency to first entry in new database
                 scanner_ptr_->reset_frequency();
@@ -313,10 +316,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 drone_display_.set_dirty();
                 set_dirty();
             } else {
-                char err_buf[MAX_TEXT_LENGTH];
-                snprintf(err_buf, sizeof(err_buf), "Failed: %s (err %d)",
+                // Stack budget: reuse msg_buf from success path (scope overlap not possible
+                // since this is the else branch, but saves a declaration)
+                char msg_buf[MAX_TEXT_LENGTH];
+                snprintf(msg_buf, sizeof(msg_buf), "Failed: %s (err %d)",
                          filename, static_cast<int>(err));
-                show_alert(err_buf, 3000);
+                show_alert(msg_buf, 3000);
 
                 // Show error in status
                 drone_display_.set_status_text("DB load error");
@@ -349,7 +354,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         }
         // Refresh config from scanner (SWP view may have changed sweep settings)
         static ScanConfig config;
-        config = scanner_ptr_->get_config();
+        scanner_ptr_->get_config(config);
         nav_.push<DroneSettingsView>(config, scanner_ptr_, &drone_display_);
     };
 
@@ -378,7 +383,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             }
         }
         static ScanConfig config;
-        config = scanner_ptr_->get_config();
+        scanner_ptr_->get_config(config);
         nav_.push<DroneSweepView>(config, scanner_ptr_);
     };
 
@@ -590,7 +595,7 @@ void DroneScannerUI::on_show() {
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
     if (composite_active_ && scanner_ptr_ != nullptr) {
         static ScanConfig cfg;
-        cfg = scanner_ptr_->get_config();
+        scanner_ptr_->get_config(cfg);
 
         // Reinit all windows from config
         last_tuned_freq_ = 0;
@@ -936,9 +941,11 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.set_scan_head(-1, -1);
 
     static ScanConfig cfg;
-    cfg = (scanner_ptr_ != nullptr)
-        ? scanner_ptr_->get_config()
-        : ScanConfig();
+    if (scanner_ptr_ != nullptr) {
+        scanner_ptr_->get_config(cfg);
+    } else {
+        cfg = ScanConfig{};
+    }
 
     // Initialize all 4 sweep windows from config
     sweep_[0].init(cfg.sweep_start_freq, cfg.sweep_end_freq, cfg.sweep_step_freq);

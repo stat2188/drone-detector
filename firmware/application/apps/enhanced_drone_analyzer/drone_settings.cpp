@@ -322,7 +322,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
             SettingsFileManager::apply_to_config(settings_, updated_config);
             // Preserve sweep settings from scanner (SWP view manages them)
             static ScanConfig current_cfg;
-            current_cfg = scanner_ptr_->get_config();
+            scanner_ptr_->get_config(current_cfg);
             updated_config.sweep_start_freq = current_cfg.sweep_start_freq;
             updated_config.sweep_end_freq = current_cfg.sweep_end_freq;
             updated_config.sweep_step_freq = current_cfg.sweep_step_freq;
