@@ -461,16 +461,8 @@ private:
     // Updated independently from scanner config to allow different display vs detection behavior
     uint8_t display_margin_{0};
 
-    // Exponential smoothing buffer for LEVEL-V display
-    std::array<int32_t, SPECTRUM_BUFFER_SIZE> spectrum_smoothed_{};
-    bool spectrum_smoothed_initialized_{false};
-
     // Spectrum integration factor for smoothing
     uint8_t spectrum_integration_{DEFAULT_SPECTRUM_INTEGRATION};
-
-    // Previous frame bar heights for dirty-check optimization
-    std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_cached_{};
-    bool spectrum_cache_valid_{false};
 
     // Sorting buffer for noise floor calculation (avoid stack allocation)
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_sort_buffer_{};

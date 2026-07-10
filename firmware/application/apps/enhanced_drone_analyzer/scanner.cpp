@@ -863,7 +863,8 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             const SignalPattern* p = pattern_manager_.get_pattern(normal_pattern_result.pattern_index);
             if (p != nullptr && p->name[0] != '\0') {
                 auto& d = tracked_drones_[drone_idx.value()];
-                d.set_pattern_match(normal_pattern_result.score, p->name);
+                d.set_pattern_match(normal_pattern_result.score,
+                                    static_cast<int8_t>(normal_pattern_result.pattern_index));
             }
         }
 
@@ -1748,7 +1749,7 @@ void DroneScanner::apply_sweep_tracking(
                 matched_pattern_index_ = pattern_index;
                 matched_pattern_bin_ = highlight_bin;
                 auto& drone = tracked_drones_[drone_idx.value()];
-                drone.set_pattern_match(pattern_correlation, pattern->name);
+                drone.set_pattern_match(pattern_correlation, static_cast<int8_t>(pattern_index));
             }
         }
 

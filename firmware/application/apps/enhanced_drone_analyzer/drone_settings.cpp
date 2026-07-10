@@ -15,6 +15,9 @@
 
 namespace drone_analyzer {
 
+// Shared static for UI-thread-only operations
+static ScanConfig s_ds_cfg;
+
 // ============================================================================
 // DroneSettingsView Constructor / Destructor
 // ============================================================================
@@ -315,38 +318,55 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     button_save_.on_select = [this](ui::Button&) {
         // Apply settings to scanner config
         if (scanner_ptr_ != nullptr) {
-            // Stack budget: make ScanConfig static to avoid ~736B peak
-            // (updated_config ~368B + current_cfg ~368B would coexist on stack)
-            static ScanConfig updated_config;
-            updated_config = original_config_;
-            SettingsFileManager::apply_to_config(settings_, updated_config);
-            // Preserve sweep settings from scanner (SWP view manages them)
-            static ScanConfig current_cfg;
-            scanner_ptr_->get_config(current_cfg);
-            updated_config.sweep_start_freq = current_cfg.sweep_start_freq;
-            updated_config.sweep_end_freq = current_cfg.sweep_end_freq;
-            updated_config.sweep_step_freq = current_cfg.sweep_step_freq;
-            updated_config.sweep2_start_freq = current_cfg.sweep2_start_freq;
-            updated_config.sweep2_end_freq = current_cfg.sweep2_end_freq;
-            updated_config.sweep2_step_freq = current_cfg.sweep2_step_freq;
-            updated_config.sweep2_enabled = current_cfg.sweep2_enabled;
-            updated_config.sweep3_start_freq = current_cfg.sweep3_start_freq;
-            updated_config.sweep3_end_freq = current_cfg.sweep3_end_freq;
-            updated_config.sweep3_step_freq = current_cfg.sweep3_step_freq;
-            updated_config.sweep3_enabled = current_cfg.sweep3_enabled;
-            updated_config.sweep4_start_freq = current_cfg.sweep4_start_freq;
-            updated_config.sweep4_end_freq = current_cfg.sweep4_end_freq;
-            updated_config.sweep4_step_freq = current_cfg.sweep4_step_freq;
-            updated_config.sweep4_enabled = current_cfg.sweep4_enabled;
+            // Preserve sweep settings from scanner (SWP view may have changed them)
+            scanner_ptr_->get_config(s_ds_cfg);
+            const FreqHz sw1_s = s_ds_cfg.sweep_start_freq;
+            const FreqHz sw1_e = s_ds_cfg.sweep_end_freq;
+            const FreqHz sw1_st = s_ds_cfg.sweep_step_freq;
+            const FreqHz sw2_s = s_ds_cfg.sweep2_start_freq;
+            const FreqHz sw2_e = s_ds_cfg.sweep2_end_freq;
+            const FreqHz sw2_st = s_ds_cfg.sweep2_step_freq;
+            const bool sw2_en = s_ds_cfg.sweep2_enabled;
+            const FreqHz sw3_s = s_ds_cfg.sweep3_start_freq;
+            const FreqHz sw3_e = s_ds_cfg.sweep3_end_freq;
+            const FreqHz sw3_st = s_ds_cfg.sweep3_step_freq;
+            const bool sw3_en = s_ds_cfg.sweep3_enabled;
+            const FreqHz sw4_s = s_ds_cfg.sweep4_start_freq;
+            const FreqHz sw4_e = s_ds_cfg.sweep4_end_freq;
+            const FreqHz sw4_st = s_ds_cfg.sweep4_step_freq;
+            const bool sw4_en = s_ds_cfg.sweep4_enabled;
+            FreqHz exc[4][EXCEPTIONS_PER_WINDOW];
+            for (uint8_t w = 0; w < 4; ++w)
+                for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
+                    exc[w][i] = s_ds_cfg.sweep_exceptions[w][i];
+            const uint8_t exc_rad = s_ds_cfg.exception_radius_mhz;
 
-            // Preserve sweep exceptions from scanner (SWP view manages them)
-            for (uint8_t w = 0; w < 4; ++w) {
-                for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-                    updated_config.sweep_exceptions[w][i] = current_cfg.sweep_exceptions[w][i];
-                }
-            }
+            // Build updated config from original + user edits
+            s_ds_cfg = original_config_;
+            SettingsFileManager::apply_to_config(settings_, s_ds_cfg);
 
-            const ErrorCode err = scanner_ptr_->set_config(updated_config);
+            // Restore sweep fields preserved from scanner
+            s_ds_cfg.sweep_start_freq = sw1_s;
+            s_ds_cfg.sweep_end_freq = sw1_e;
+            s_ds_cfg.sweep_step_freq = sw1_st;
+            s_ds_cfg.sweep2_start_freq = sw2_s;
+            s_ds_cfg.sweep2_end_freq = sw2_e;
+            s_ds_cfg.sweep2_step_freq = sw2_st;
+            s_ds_cfg.sweep2_enabled = sw2_en;
+            s_ds_cfg.sweep3_start_freq = sw3_s;
+            s_ds_cfg.sweep3_end_freq = sw3_e;
+            s_ds_cfg.sweep3_step_freq = sw3_st;
+            s_ds_cfg.sweep3_enabled = sw3_en;
+            s_ds_cfg.sweep4_start_freq = sw4_s;
+            s_ds_cfg.sweep4_end_freq = sw4_e;
+            s_ds_cfg.sweep4_step_freq = sw4_st;
+            s_ds_cfg.sweep4_enabled = sw4_en;
+            for (uint8_t w = 0; w < 4; ++w)
+                for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
+                    s_ds_cfg.sweep_exceptions[w][i] = exc[w][i];
+            s_ds_cfg.exception_radius_mhz = exc_rad;
+
+            const ErrorCode err = scanner_ptr_->set_config(s_ds_cfg);
             if (err != ErrorCode::SUCCESS) {
                 nav_.display_modal("Error", "Invalid settings.\nCheck min<=max\nand valid ranges.");
                 return;

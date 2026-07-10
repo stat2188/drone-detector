@@ -10,6 +10,9 @@
 
 namespace drone_analyzer {
 
+// Shared static for UI-thread-only operations (saves ~368B function-local static)
+static ScanConfig s_sweep_cfg;
+
 // ============================================================================
 // SettingsStruct Implementation
 // ============================================================================
@@ -455,29 +458,28 @@ ErrorCode SettingsFileManager::save(
     DroneScanner* scanner_ptr,
     const SettingsStruct& s
 ) noexcept {
-    // Stack budget: move ScanConfig to static to save ~368B on 4KB main thread stack
-    static ScanConfig sweep_cfg;
+    // Stack budget: use shared static to avoid ~368B on 4KB main thread stack
     if (scanner_ptr != nullptr) {
-        scanner_ptr->get_config(sweep_cfg);
+        scanner_ptr->get_config(s_sweep_cfg);
     } else {
-        sweep_cfg.sweep_start_freq = s.sweep_start_freq;
-        sweep_cfg.sweep_end_freq = s.sweep_end_freq;
-        sweep_cfg.sweep_step_freq = s.sweep_step_freq;
-        sweep_cfg.sweep2_start_freq = s.sweep2_start_freq;
-        sweep_cfg.sweep2_end_freq = s.sweep2_end_freq;
-        sweep_cfg.sweep2_step_freq = s.sweep2_step_freq;
-        sweep_cfg.sweep2_enabled = s.sweep2_enabled;
-        sweep_cfg.sweep3_start_freq = s.sweep3_start_freq;
-        sweep_cfg.sweep3_end_freq = s.sweep3_end_freq;
-        sweep_cfg.sweep3_step_freq = s.sweep3_step_freq;
-        sweep_cfg.sweep3_enabled = s.sweep3_enabled;
-        sweep_cfg.sweep4_start_freq = s.sweep4_start_freq;
-        sweep_cfg.sweep4_end_freq = s.sweep4_end_freq;
-        sweep_cfg.sweep4_step_freq = s.sweep4_step_freq;
-        sweep_cfg.sweep4_enabled = s.sweep4_enabled;
+        s_sweep_cfg.sweep_start_freq = s.sweep_start_freq;
+        s_sweep_cfg.sweep_end_freq = s.sweep_end_freq;
+        s_sweep_cfg.sweep_step_freq = s.sweep_step_freq;
+        s_sweep_cfg.sweep2_start_freq = s.sweep2_start_freq;
+        s_sweep_cfg.sweep2_end_freq = s.sweep2_end_freq;
+        s_sweep_cfg.sweep2_step_freq = s.sweep2_step_freq;
+        s_sweep_cfg.sweep2_enabled = s.sweep2_enabled;
+        s_sweep_cfg.sweep3_start_freq = s.sweep3_start_freq;
+        s_sweep_cfg.sweep3_end_freq = s.sweep3_end_freq;
+        s_sweep_cfg.sweep3_step_freq = s.sweep3_step_freq;
+        s_sweep_cfg.sweep3_enabled = s.sweep3_enabled;
+        s_sweep_cfg.sweep4_start_freq = s.sweep4_start_freq;
+        s_sweep_cfg.sweep4_end_freq = s.sweep4_end_freq;
+        s_sweep_cfg.sweep4_step_freq = s.sweep4_step_freq;
+        s_sweep_cfg.sweep4_enabled = s.sweep4_enabled;
         for (uint8_t w = 0; w < 4; ++w) {
             for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-                sweep_cfg.sweep_exceptions[w][i] = s.sweep_exceptions[w][i];
+                s_sweep_cfg.sweep_exceptions[w][i] = s.sweep_exceptions[w][i];
             }
         }
     }
@@ -532,27 +534,27 @@ ErrorCode SettingsFileManager::save(
     wl(file, "confirm_count", static_cast<int64_t>(s.confirm_count));
 
     // Sweep window 1
-    wl(file, "sweep_start_mhz", static_cast<int64_t>(sweep_cfg.sweep_start_freq / 1000000ULL));
-    wl(file, "sweep_end_mhz", static_cast<int64_t>(sweep_cfg.sweep_end_freq / 1000000ULL));
-    wl(file, "sweep_step_khz", static_cast<int64_t>(sweep_cfg.sweep_step_freq / 1000ULL));
+    wl(file, "sweep_start_mhz", static_cast<int64_t>(s_sweep_cfg.sweep_start_freq / 1000000ULL));
+    wl(file, "sweep_end_mhz", static_cast<int64_t>(s_sweep_cfg.sweep_end_freq / 1000000ULL));
+    wl(file, "sweep_step_khz", static_cast<int64_t>(s_sweep_cfg.sweep_step_freq / 1000ULL));
 
     // Sweep window 2
-    wl(file, "sweep2_start_mhz", static_cast<int64_t>(sweep_cfg.sweep2_start_freq / 1000000ULL));
-    wl(file, "sweep2_end_mhz", static_cast<int64_t>(sweep_cfg.sweep2_end_freq / 1000000ULL));
-    wl(file, "sweep2_step_khz", static_cast<int64_t>(sweep_cfg.sweep2_step_freq / 1000ULL));
-    wbool(file, "sweep2_enabled", sweep_cfg.sweep2_enabled);
+    wl(file, "sweep2_start_mhz", static_cast<int64_t>(s_sweep_cfg.sweep2_start_freq / 1000000ULL));
+    wl(file, "sweep2_end_mhz", static_cast<int64_t>(s_sweep_cfg.sweep2_end_freq / 1000000ULL));
+    wl(file, "sweep2_step_khz", static_cast<int64_t>(s_sweep_cfg.sweep2_step_freq / 1000ULL));
+    wbool(file, "sweep2_enabled", s_sweep_cfg.sweep2_enabled);
 
     // Sweep window 3
-    wl(file, "sweep3_start_mhz", static_cast<int64_t>(sweep_cfg.sweep3_start_freq / 1000000ULL));
-    wl(file, "sweep3_end_mhz", static_cast<int64_t>(sweep_cfg.sweep3_end_freq / 1000000ULL));
-    wl(file, "sweep3_step_khz", static_cast<int64_t>(sweep_cfg.sweep3_step_freq / 1000ULL));
-    wbool(file, "sweep3_enabled", sweep_cfg.sweep3_enabled);
+    wl(file, "sweep3_start_mhz", static_cast<int64_t>(s_sweep_cfg.sweep3_start_freq / 1000000ULL));
+    wl(file, "sweep3_end_mhz", static_cast<int64_t>(s_sweep_cfg.sweep3_end_freq / 1000000ULL));
+    wl(file, "sweep3_step_khz", static_cast<int64_t>(s_sweep_cfg.sweep3_step_freq / 1000ULL));
+    wbool(file, "sweep3_enabled", s_sweep_cfg.sweep3_enabled);
 
     // Sweep window 4
-    wl(file, "sweep4_start_mhz", static_cast<int64_t>(sweep_cfg.sweep4_start_freq / 1000000ULL));
-    wl(file, "sweep4_end_mhz", static_cast<int64_t>(sweep_cfg.sweep4_end_freq / 1000000ULL));
-    wl(file, "sweep4_step_khz", static_cast<int64_t>(sweep_cfg.sweep4_step_freq / 1000ULL));
-    wbool(file, "sweep4_enabled", sweep_cfg.sweep4_enabled);
+    wl(file, "sweep4_start_mhz", static_cast<int64_t>(s_sweep_cfg.sweep4_start_freq / 1000000ULL));
+    wl(file, "sweep4_end_mhz", static_cast<int64_t>(s_sweep_cfg.sweep4_end_freq / 1000000ULL));
+    wl(file, "sweep4_step_khz", static_cast<int64_t>(s_sweep_cfg.sweep4_step_freq / 1000ULL));
+    wbool(file, "sweep4_enabled", s_sweep_cfg.sweep4_enabled);
 
     // Sweep exceptions (4 windows x 5 slots)
     static const char* exc_keys[4][EXCEPTIONS_PER_WINDOW] = {
@@ -563,7 +565,7 @@ ErrorCode SettingsFileManager::save(
     };
     for (uint8_t w = 0; w < 4; ++w) {
         for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            wexc(file, exc_keys[w][i], sweep_cfg.sweep_exceptions[w][i]);
+            wexc(file, exc_keys[w][i], s_sweep_cfg.sweep_exceptions[w][i]);
         }
     }
 

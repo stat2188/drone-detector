@@ -172,6 +172,11 @@ private:
 
     void save_settings() noexcept;
     void apply_defaults() noexcept;
+
+    // Exception field helpers — replaces static pointer arrays (use-after-free bug)
+    static void set_exception_field(ui::NumberField* field, uint8_t index, FreqHz value_hz) noexcept;
+    static int32_t get_exception_field(const ui::NumberField* field) noexcept;
+    static void zero_exception_field(ui::NumberField* field) noexcept;
 };
 
 } // namespace drone_analyzer

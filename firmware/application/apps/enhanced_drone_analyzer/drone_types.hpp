@@ -10,8 +10,8 @@ namespace drone_analyzer {
 
 /**
  * @brief Maximum pattern name length (including null terminator)
- * @note Defined here (not in constants.hpp or pattern_types.hpp) to break circular dependency:
- *       pattern_types.hpp → drone_types.hpp → pattern_types.hpp
+ * @note Used only in SignalPattern (pattern_types.hpp) and display buffers.
+ *       TrackedDrone no longer stores the name — uses matched_pattern_index_ instead.
  */
 constexpr size_t PATTERN_NAME_MAX_LEN = 28;
 
@@ -278,7 +278,7 @@ struct TrackedDrone {
 
     bool pattern_matched_{false};              // 1 byte — pattern match indicator
     uint16_t pattern_score_{0};                // 2 bytes — similarity score (0-1000)
-    char pattern_name_[PATTERN_NAME_MAX_LEN]; // 28 bytes — matched pattern name
+    int8_t matched_pattern_index_ = -1;       // 1 byte — index into PatternManager (-1 = no match)
 
     // ========================================================================
     // Mahalanobis statistics
@@ -368,17 +368,12 @@ struct TrackedDrone {
     /**
      * @brief Set pattern match state on this tracked drone
      * @param score Similarity score (0-1000)
-     * @param name Pattern name string (copied internally, truncated to PATTERN_NAME_MAX_LEN-1)
+     * @param index Index into PatternManager's pattern array (-1 = no match)
      */
-    void set_pattern_match(uint16_t score, const char* name) noexcept {
-        pattern_matched_ = true;
+    void set_pattern_match(uint16_t score, int8_t index) noexcept {
+        pattern_matched_ = (index >= 0);
         pattern_score_ = score;
-        size_t i = 0;
-        while (name != nullptr && name[i] != '\0' && i < PATTERN_NAME_MAX_LEN - 1) {
-            pattern_name_[i] = name[i];
-            ++i;
-        }
-        pattern_name_[i] = '\0';
+        matched_pattern_index_ = index;
     }
 
     // Pattern match state is overwritten on every match; no explicit clear needed
@@ -438,19 +433,20 @@ struct TrackedDrone {
  * @note POD type, no vtable
  */
 struct DisplayDroneEntry {
-    FreqHz frequency;           // 8 bytes
-    DroneType type;            // 1 byte (uint8_t)
+    FreqHz frequency;           // 8 bytes - Drone frequency
+    DroneType type;             // 1 byte (uint8_t)
     ThreatLevel threat;         // 1 byte (uint8_t)
-    RssiValue rssi;             // 4 bytes
+    RssiValue rssi;            // 4 bytes
     SystemTime last_seen;       // 4 bytes
     char type_name[16];         // 16 bytes
     uint32_t display_color;     // 4 bytes (RGBA)
     MovementTrend trend;        // 1 byte (uint8_t)
     bool pattern_matched;         // 1 byte - Pattern match indicator
     uint16_t pattern_score;       // 2 bytes - Similarity score (0-1000)
-    char pattern_name[16];       // 16 bytes - Matched pattern name
+    char pattern_name[16];       // 16 bytes - Matched pattern name (populated by caller)
+    int8_t pattern_index;        // 1 byte - Index into PatternManager (-1 = no match)
     
-    // Total: 47 bytes (no vtable, POD type)
+    // Total: 48 bytes (no vtable, POD type)
     
     /**
      * @brief Default constructor
