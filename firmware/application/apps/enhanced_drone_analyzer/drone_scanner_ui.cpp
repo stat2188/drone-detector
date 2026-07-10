@@ -167,18 +167,15 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     }
 
     // Median filter toggle (spike rejection on RSSI samples)
+    // NOTE: SD save is DEFERRED to on_hide() to avoid blocking the UI thread
+    // with a full read-modify-write cycle on every tap (100-500ms SD latency).
     button_median_.on_select = [this](ui::Button&) {
         median_enabled_ = !median_enabled_;
         if (scanner_ptr_ != nullptr) {
             scanner_ptr_->set_median_filter_enabled(median_enabled_);
         }
         button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
-        // Persist to SD card so state survives app restart
-        static SettingsStruct persist_settings;
-        if (SettingsFileManager::load(persist_settings) == ErrorCode::SUCCESS) {
-            persist_settings.median_enabled = median_enabled_;
-            (void)SettingsFileManager::save(scanner_ptr_, persist_settings);
-        }
+        median_settings_dirty_ = true;
     };
 
     // Register button callbacks BEFORE any early returns
@@ -652,6 +649,17 @@ void DroneScannerUI::on_hide() {
     }
     if (scanner_thread_ != nullptr) {
         scanner_thread_->stop();
+    }
+
+    // Deferred SD save: persist median filter state when leaving the app.
+    // Avoids blocking the UI thread on every median button tap.
+    if (median_settings_dirty_) {
+        median_settings_dirty_ = false;
+        static SettingsStruct defer_save_settings;
+        if (SettingsFileManager::load(defer_save_settings) == ErrorCode::SUCCESS) {
+            defer_save_settings.median_enabled = median_enabled_;
+            (void)SettingsFileManager::save(scanner_ptr_, defer_save_settings);
+        }
     }
 }
 

@@ -349,7 +349,13 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     static uint8_t line_buf[128];
     size_t line_len = 0;
 
+    // Timeout guard: break if SD read takes longer than SD_CARD_TIMEOUT_MS.
+    // Prevents indefinite hang on corrupted/bad SD cards.
+    const SystemTime start_time = chTimeNow();
+
     while (true) {
+        if ((chTimeNow() - start_time) > SD_CARD_TIMEOUT_MS) break;
+
         const auto read_result = file.read(chunk, READ_CHUNK_SIZE);
         if (!read_result.is_ok() || read_result.value() == 0) break;
 

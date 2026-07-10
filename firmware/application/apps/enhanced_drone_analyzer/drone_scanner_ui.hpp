@@ -217,6 +217,7 @@ private:
 
     // Median filter toggle state
     bool median_enabled_{true};
+    bool median_settings_dirty_{false};  // deferred SD save for median toggle
 
     // Latest ChannelStatistics.max_db from baseband (full-bandwidth RSSI)
     int32_t latest_max_db_{RSSI_NOISE_FLOOR_DBM};

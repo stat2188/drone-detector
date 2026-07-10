@@ -268,15 +268,10 @@ ErrorCode DroneScanner::initialize() noexcept {
     state_ = ScannerState::IDLE;
     statistics_.reset();
 
-    // Load patterns from SD card
-    const ErrorCode patterns_err = pattern_manager_.load_patterns();
-    if (patterns_err == ErrorCode::SUCCESS) {
-        // Set patterns to matcher
-        pattern_matcher_.set_patterns(
-            pattern_manager_.get_patterns_array(),
-            pattern_manager_.get_pattern_count()
-        );
-    }
+    // NOTE: Pattern loading is DEFERRED to on_show() to avoid blocking the
+    // constructor with SD card I/O. PatternManager::load_patterns() is idempotent
+    // (returns immediately if already loaded_==true), so calling it from on_show()
+    // is safe and efficient.
 
     return ErrorCode::SUCCESS;
 }
@@ -1370,6 +1365,10 @@ void DroneScanner::reset_neighbor_checker() noexcept {
 
 void DroneScanner::refresh_patterns() noexcept {
     MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
+
+    // Load patterns from SD on first call (idempotent — skips if already loaded).
+    // This was moved from initialize() to avoid SD card I/O in the constructor.
+    (void)pattern_manager_.load_patterns();
 
     if (config_.pattern_matching_enabled) {
         pattern_matcher_.set_patterns(
