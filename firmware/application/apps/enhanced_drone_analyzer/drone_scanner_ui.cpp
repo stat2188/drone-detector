@@ -37,11 +37,12 @@ static DatabaseManager s_database;
 static DroneScanner s_scanner(s_database, s_hardware);
 static ScannerThread s_scanner_thread(s_scanner);
 
-// Shared static buffers — UI-thread only, never concurrent.
-// Replaces 4× static ScanConfig (~2,000B) + 2× static SettingsStruct (~720B)
-// with a single copy each, saving ~2,720B of BSS.
-static ScanConfig s_cfg;
-static SettingsStruct s_settings;
+// Shared workspace buffers — UI-thread only, never concurrent.
+// Single source of truth for all config/settings edits.
+// Replaces 5 separate file-level statics (~1,824 B) with 2 shared copies (~728 B),
+// saving ~1,096 B of BSS.
+ScanConfig g_workspace_cfg;
+SettingsStruct g_workspace_settings;
 
 // ============================================================================
 // Handler registration — placement-new to allow manual lifetime control.
@@ -166,8 +167,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     // NOTE: spectrum shape params NOT synced here to preserve display_margin_=0 default
     // (display and detection filtering are now separate)
     if (scanner_ptr_ != nullptr) {
-        scanner_ptr_->get_config(s_cfg);
-        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(s_cfg.rssi_decrease_cycles));
+        scanner_ptr_->get_config(g_workspace_cfg);
+        field_rssi_dec_cyc_.set_value(static_cast<int32_t>(g_workspace_cfg.rssi_decrease_cycles));
     }
 
     // Median filter toggle (spike rejection on RSSI samples)
@@ -354,8 +355,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             }
         }
         // Refresh config from scanner (SWP view may have changed sweep settings)
-        scanner_ptr_->get_config(s_cfg);
-        nav_.push<DroneSettingsView>(s_cfg, scanner_ptr_, &drone_display_);
+        scanner_ptr_->get_config(g_workspace_cfg);
+        nav_.push<DroneSettingsView>(g_workspace_cfg, scanner_ptr_, &drone_display_);
     };
 
     // SWP button: open sweep settings view
@@ -382,8 +383,8 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
                 button_start_stop_.set_text("Start");
             }
         }
-        scanner_ptr_->get_config(s_cfg);
-        nav_.push<DroneSweepView>(s_cfg, scanner_ptr_);
+        scanner_ptr_->get_config(g_workspace_cfg);
+        nav_.push<DroneSweepView>(g_workspace_cfg, scanner_ptr_);
     };
 
     // PTR button: open pattern manager view
@@ -481,26 +482,26 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     });
 
     // Stack budget: use shared statics to avoid ~728B peak on stack
-    s_cfg = ScanConfig{};
-    s_cfg.mode = scanning_mode_;
-    s_cfg.rssi_threshold_dbm = RSSI_DETECTION_THRESHOLD_DBM;
-    s_cfg.scan_interval_ms = SCAN_CYCLE_INTERVAL_MS;
+    g_workspace_cfg = ScanConfig{};
+    g_workspace_cfg.mode = scanning_mode_;
+    g_workspace_cfg.rssi_threshold_dbm = RSSI_DETECTION_THRESHOLD_DBM;
+    g_workspace_cfg.scan_interval_ms = SCAN_CYCLE_INTERVAL_MS;
 
     // Load all settings from SD card via centralized manager
-    const ErrorCode load_err = SettingsFileManager::load(s_settings);
+    const ErrorCode load_err = SettingsFileManager::load(g_workspace_settings);
     if (load_err == ErrorCode::SUCCESS) {
-        SettingsFileManager::apply_to_config(s_settings, s_cfg);
+        SettingsFileManager::apply_to_config(g_workspace_settings, g_workspace_cfg);
         // Apply volume from settings (not during parsing to avoid side-effects)
-        portapack::receiver_model.set_normalized_headphone_volume(s_settings.volume);
+        portapack::receiver_model.set_normalized_headphone_volume(g_workspace_settings.volume);
     }
 
-    const ErrorCode config_err = scanner_ptr_->set_config(s_cfg);
+    const ErrorCode config_err = scanner_ptr_->set_config(g_workspace_cfg);
     if (config_err != ErrorCode::SUCCESS) {
         show_error(config_err, ERROR_DURATION_MS);
     }
 
     // Sync UI median_enabled from loaded config
-    median_enabled_ = s_cfg.median_enabled;
+    median_enabled_ = g_workspace_cfg.median_enabled;
     button_median_.set_text(median_enabled_ ? "Md+" : "OFF");
 }
 
@@ -591,25 +592,25 @@ void DroneScannerUI::on_show() {
 
     // If in sweep mode, reload sweep range from config (Settings may have changed it)
     if (composite_active_ && scanner_ptr_ != nullptr) {
-        scanner_ptr_->get_config(s_cfg);
+        scanner_ptr_->get_config(g_workspace_cfg);
 
         // Reinit all windows from config
         last_tuned_freq_ = 0;
         skip_next_fft_ = true;
-        sweep_[0].init(s_cfg.sweep_start_freq, s_cfg.sweep_end_freq, s_cfg.sweep_step_freq);
+        sweep_[0].init(g_workspace_cfg.sweep_start_freq, g_workspace_cfg.sweep_end_freq, g_workspace_cfg.sweep_step_freq);
         sweep_[0].enabled = true;  // Window 0 always enabled
-        sweep_[1].init(s_cfg.sweep2_start_freq, s_cfg.sweep2_end_freq, s_cfg.sweep2_step_freq);
-        sweep_[1].enabled = s_cfg.sweep2_enabled;
-        sweep_[2].init(s_cfg.sweep3_start_freq, s_cfg.sweep3_end_freq, s_cfg.sweep3_step_freq);
-        sweep_[2].enabled = s_cfg.sweep3_enabled;
-        sweep_[3].init(s_cfg.sweep4_start_freq, s_cfg.sweep4_end_freq, s_cfg.sweep4_step_freq);
-        sweep_[3].enabled = s_cfg.sweep4_enabled;
+        sweep_[1].init(g_workspace_cfg.sweep2_start_freq, g_workspace_cfg.sweep2_end_freq, g_workspace_cfg.sweep2_step_freq);
+        sweep_[1].enabled = g_workspace_cfg.sweep2_enabled;
+        sweep_[2].init(g_workspace_cfg.sweep3_start_freq, g_workspace_cfg.sweep3_end_freq, g_workspace_cfg.sweep3_step_freq);
+        sweep_[2].enabled = g_workspace_cfg.sweep3_enabled;
+        sweep_[3].init(g_workspace_cfg.sweep4_start_freq, g_workspace_cfg.sweep4_end_freq, g_workspace_cfg.sweep4_step_freq);
+        sweep_[3].enabled = g_workspace_cfg.sweep4_enabled;
 
         // Copy exception frequencies to each sweep window
-        const FreqHz on_show_exc_radius = static_cast<FreqHz>(s_cfg.exception_radius_mhz) * 1000000ULL;
+        const FreqHz on_show_exc_radius = static_cast<FreqHz>(g_workspace_cfg.exception_radius_mhz) * 1000000ULL;
         for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
             for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-                sweep_[w].exceptions[i] = s_cfg.sweep_exceptions[w][i];
+                sweep_[w].exceptions[i] = g_workspace_cfg.sweep_exceptions[w][i];
             }
             sweep_[w].exception_radius_hz = on_show_exc_radius;
         }
@@ -654,9 +655,9 @@ void DroneScannerUI::on_hide() {
     // Avoids blocking the UI thread on every median button tap.
     if (median_settings_dirty_) {
         median_settings_dirty_ = false;
-        if (SettingsFileManager::load(s_settings) == ErrorCode::SUCCESS) {
-            s_settings.median_enabled = median_enabled_;
-            (void)SettingsFileManager::save(scanner_ptr_, s_settings);
+        if (SettingsFileManager::load(g_workspace_settings) == ErrorCode::SUCCESS) {
+            g_workspace_settings.median_enabled = median_enabled_;
+            (void)SettingsFileManager::save(scanner_ptr_, g_workspace_settings);
         }
     }
 }
@@ -961,26 +962,26 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.set_scan_head(-1, -1);
 
     if (scanner_ptr_ != nullptr) {
-        scanner_ptr_->get_config(s_cfg);
+        scanner_ptr_->get_config(g_workspace_cfg);
     } else {
-        s_cfg = ScanConfig{};
+        g_workspace_cfg = ScanConfig{};
     }
 
     // Initialize all 4 sweep windows from config
-    sweep_[0].init(s_cfg.sweep_start_freq, s_cfg.sweep_end_freq, s_cfg.sweep_step_freq);
+    sweep_[0].init(g_workspace_cfg.sweep_start_freq, g_workspace_cfg.sweep_end_freq, g_workspace_cfg.sweep_step_freq);
     sweep_[0].enabled = true;  // Window 0 always enabled
-    sweep_[1].init(s_cfg.sweep2_start_freq, s_cfg.sweep2_end_freq, s_cfg.sweep2_step_freq);
-    sweep_[1].enabled = s_cfg.sweep2_enabled;
-    sweep_[2].init(s_cfg.sweep3_start_freq, s_cfg.sweep3_end_freq, s_cfg.sweep3_step_freq);
-    sweep_[2].enabled = s_cfg.sweep3_enabled;
-    sweep_[3].init(s_cfg.sweep4_start_freq, s_cfg.sweep4_end_freq, s_cfg.sweep4_step_freq);
-    sweep_[3].enabled = s_cfg.sweep4_enabled;
+    sweep_[1].init(g_workspace_cfg.sweep2_start_freq, g_workspace_cfg.sweep2_end_freq, g_workspace_cfg.sweep2_step_freq);
+    sweep_[1].enabled = g_workspace_cfg.sweep2_enabled;
+    sweep_[2].init(g_workspace_cfg.sweep3_start_freq, g_workspace_cfg.sweep3_end_freq, g_workspace_cfg.sweep3_step_freq);
+    sweep_[2].enabled = g_workspace_cfg.sweep3_enabled;
+    sweep_[3].init(g_workspace_cfg.sweep4_start_freq, g_workspace_cfg.sweep4_end_freq, g_workspace_cfg.sweep4_step_freq);
+    sweep_[3].enabled = g_workspace_cfg.sweep4_enabled;
 
     // Copy exception frequencies to each sweep window
-    const FreqHz exc_radius_hz = static_cast<FreqHz>(s_cfg.exception_radius_mhz) * 1000000ULL;
+    const FreqHz exc_radius_hz = static_cast<FreqHz>(g_workspace_cfg.exception_radius_mhz) * 1000000ULL;
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
         for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
-            sweep_[w].exceptions[i] = s_cfg.sweep_exceptions[w][i];
+            sweep_[w].exceptions[i] = g_workspace_cfg.sweep_exceptions[w][i];
         }
         sweep_[w].exception_radius_hz = exc_radius_hz;
     }

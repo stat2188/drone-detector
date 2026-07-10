@@ -12,11 +12,9 @@
 #include "file.hpp"
 #include "file_path.hpp"
 #include "receiver_model.hpp"
+#include "drone_scanner_ui.hpp"
 
 namespace drone_analyzer {
-
-// Shared static for UI-thread-only operations
-static ScanConfig s_ds_cfg;
 
 // ============================================================================
 // DroneSettingsView Constructor / Destructor
@@ -319,54 +317,54 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         // Apply settings to scanner config
         if (scanner_ptr_ != nullptr) {
             // Preserve sweep settings from scanner (SWP view may have changed them)
-            scanner_ptr_->get_config(s_ds_cfg);
-            const FreqHz sw1_s = s_ds_cfg.sweep_start_freq;
-            const FreqHz sw1_e = s_ds_cfg.sweep_end_freq;
-            const FreqHz sw1_st = s_ds_cfg.sweep_step_freq;
-            const FreqHz sw2_s = s_ds_cfg.sweep2_start_freq;
-            const FreqHz sw2_e = s_ds_cfg.sweep2_end_freq;
-            const FreqHz sw2_st = s_ds_cfg.sweep2_step_freq;
-            const bool sw2_en = s_ds_cfg.sweep2_enabled;
-            const FreqHz sw3_s = s_ds_cfg.sweep3_start_freq;
-            const FreqHz sw3_e = s_ds_cfg.sweep3_end_freq;
-            const FreqHz sw3_st = s_ds_cfg.sweep3_step_freq;
-            const bool sw3_en = s_ds_cfg.sweep3_enabled;
-            const FreqHz sw4_s = s_ds_cfg.sweep4_start_freq;
-            const FreqHz sw4_e = s_ds_cfg.sweep4_end_freq;
-            const FreqHz sw4_st = s_ds_cfg.sweep4_step_freq;
-            const bool sw4_en = s_ds_cfg.sweep4_enabled;
+            scanner_ptr_->get_config(g_workspace_cfg);
+            const FreqHz sw1_s = g_workspace_cfg.sweep_start_freq;
+            const FreqHz sw1_e = g_workspace_cfg.sweep_end_freq;
+            const FreqHz sw1_st = g_workspace_cfg.sweep_step_freq;
+            const FreqHz sw2_s = g_workspace_cfg.sweep2_start_freq;
+            const FreqHz sw2_e = g_workspace_cfg.sweep2_end_freq;
+            const FreqHz sw2_st = g_workspace_cfg.sweep2_step_freq;
+            const bool sw2_en = g_workspace_cfg.sweep2_enabled;
+            const FreqHz sw3_s = g_workspace_cfg.sweep3_start_freq;
+            const FreqHz sw3_e = g_workspace_cfg.sweep3_end_freq;
+            const FreqHz sw3_st = g_workspace_cfg.sweep3_step_freq;
+            const bool sw3_en = g_workspace_cfg.sweep3_enabled;
+            const FreqHz sw4_s = g_workspace_cfg.sweep4_start_freq;
+            const FreqHz sw4_e = g_workspace_cfg.sweep4_end_freq;
+            const FreqHz sw4_st = g_workspace_cfg.sweep4_step_freq;
+            const bool sw4_en = g_workspace_cfg.sweep4_enabled;
             FreqHz exc[4][EXCEPTIONS_PER_WINDOW];
             for (uint8_t w = 0; w < 4; ++w)
                 for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
-                    exc[w][i] = s_ds_cfg.sweep_exceptions[w][i];
-            const uint8_t exc_rad = s_ds_cfg.exception_radius_mhz;
+                    exc[w][i] = g_workspace_cfg.sweep_exceptions[w][i];
+            const uint8_t exc_rad = g_workspace_cfg.exception_radius_mhz;
 
             // Build updated config from original + user edits
-            s_ds_cfg = original_config_;
-            SettingsFileManager::apply_to_config(settings_, s_ds_cfg);
+            g_workspace_cfg = original_config_;
+            SettingsFileManager::apply_to_config(settings_, g_workspace_cfg);
 
             // Restore sweep fields preserved from scanner
-            s_ds_cfg.sweep_start_freq = sw1_s;
-            s_ds_cfg.sweep_end_freq = sw1_e;
-            s_ds_cfg.sweep_step_freq = sw1_st;
-            s_ds_cfg.sweep2_start_freq = sw2_s;
-            s_ds_cfg.sweep2_end_freq = sw2_e;
-            s_ds_cfg.sweep2_step_freq = sw2_st;
-            s_ds_cfg.sweep2_enabled = sw2_en;
-            s_ds_cfg.sweep3_start_freq = sw3_s;
-            s_ds_cfg.sweep3_end_freq = sw3_e;
-            s_ds_cfg.sweep3_step_freq = sw3_st;
-            s_ds_cfg.sweep3_enabled = sw3_en;
-            s_ds_cfg.sweep4_start_freq = sw4_s;
-            s_ds_cfg.sweep4_end_freq = sw4_e;
-            s_ds_cfg.sweep4_step_freq = sw4_st;
-            s_ds_cfg.sweep4_enabled = sw4_en;
+            g_workspace_cfg.sweep_start_freq = sw1_s;
+            g_workspace_cfg.sweep_end_freq = sw1_e;
+            g_workspace_cfg.sweep_step_freq = sw1_st;
+            g_workspace_cfg.sweep2_start_freq = sw2_s;
+            g_workspace_cfg.sweep2_end_freq = sw2_e;
+            g_workspace_cfg.sweep2_step_freq = sw2_st;
+            g_workspace_cfg.sweep2_enabled = sw2_en;
+            g_workspace_cfg.sweep3_start_freq = sw3_s;
+            g_workspace_cfg.sweep3_end_freq = sw3_e;
+            g_workspace_cfg.sweep3_step_freq = sw3_st;
+            g_workspace_cfg.sweep3_enabled = sw3_en;
+            g_workspace_cfg.sweep4_start_freq = sw4_s;
+            g_workspace_cfg.sweep4_end_freq = sw4_e;
+            g_workspace_cfg.sweep4_step_freq = sw4_st;
+            g_workspace_cfg.sweep4_enabled = sw4_en;
             for (uint8_t w = 0; w < 4; ++w)
                 for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i)
-                    s_ds_cfg.sweep_exceptions[w][i] = exc[w][i];
-            s_ds_cfg.exception_radius_mhz = exc_rad;
+                    g_workspace_cfg.sweep_exceptions[w][i] = exc[w][i];
+            g_workspace_cfg.exception_radius_mhz = exc_rad;
 
-            const ErrorCode err = scanner_ptr_->set_config(s_ds_cfg);
+            const ErrorCode err = scanner_ptr_->set_config(g_workspace_cfg);
             if (err != ErrorCode::SUCCESS) {
                 nav_.display_modal("Error", "Invalid settings.\nCheck min<=max\nand valid ranges.");
                 return;

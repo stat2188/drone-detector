@@ -20,6 +20,7 @@
 #include "scanner_thread.hpp"
 #include "drone_display.hpp"
 #include "sweep_processor.hpp"
+#include "settings_manager.hpp"
 
 namespace drone_analyzer {
 
@@ -262,6 +263,14 @@ private:
 
 DroneScanner& get_scanner_instance() noexcept;
 DroneScanner* get_scanner_ptr() noexcept;
+
+// ============================================================================
+// Shared workspace buffers (UI-thread only, no concurrency)
+// Replaces 5 separate file-level statics (~1,824 B) with 2 shared ones (~728 B)
+// Used by DroneSweepView, DroneSettingsView, and DroneScannerUI
+// ============================================================================
+extern ScanConfig g_workspace_cfg;
+extern SettingsStruct g_workspace_settings;
 
 } // namespace drone_analyzer
 
