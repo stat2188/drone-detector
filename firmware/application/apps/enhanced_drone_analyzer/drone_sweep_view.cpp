@@ -15,25 +15,169 @@
 namespace drone_analyzer {
 
 // ============================================================================
-// Helper: open frequency keypad for a NumberField
+// Sweep field ID → config mapping
 // ============================================================================
-// Replaces 44 nearly identical lambdas with a single shared function.
-// Stack: ~32 bytes (nav ref + field ref + optional label).
-// Flash: ~120 bytes (shared code, not 44× copies).
+// Identifies which g_workspace_cfg field a NumberField in the SWP view maps to.
+// Used by open_freq_keypad_replace to write the keypad result directly to
+// the persistent config without capturing a view reference (which would
+// dangle after nav.replace() destroys the DroneSweepView).
+// ============================================================================
+
+enum class SweepFieldID : uint8_t {
+    W1_START,
+    W1_END,
+    W2_START,
+    W2_END,
+    W3_START,
+    W3_END,
+    W4_START,
+    W4_END,
+    W1_EXC0,
+    W1_EXC1,
+    W1_EXC2,
+    W1_EXC3,
+    W1_EXC4,
+    W2_EXC0,
+    W2_EXC1,
+    W2_EXC2,
+    W2_EXC3,
+    W2_EXC4,
+    W3_EXC0,
+    W3_EXC1,
+    W3_EXC2,
+    W3_EXC3,
+    W3_EXC4,
+    W4_EXC0,
+    W4_EXC1,
+    W4_EXC2,
+    W4_EXC3,
+    W4_EXC4,
+};
+
+/**
+ * @brief Write rf::Frequency to the correct g_workspace_cfg field by SweepFieldID.
+ * @note Called from FrequencyKeypadView::on_changed callback AFTER DroneSweepView
+ *       has been destroyed by nav.replace(). Must NOT reference any view objects.
+ */
+static void set_config_field_by_id(SweepFieldID field_id, rf::Frequency f) noexcept {
+    switch (field_id) {
+        case SweepFieldID::W1_START:
+            g_workspace_cfg.sweep_start_freq = f;
+            break;
+        case SweepFieldID::W1_END:
+            g_workspace_cfg.sweep_end_freq = f;
+            break;
+        case SweepFieldID::W2_START:
+            g_workspace_cfg.sweep2_start_freq = f;
+            break;
+        case SweepFieldID::W2_END:
+            g_workspace_cfg.sweep2_end_freq = f;
+            break;
+        case SweepFieldID::W3_START:
+            g_workspace_cfg.sweep3_start_freq = f;
+            break;
+        case SweepFieldID::W3_END:
+            g_workspace_cfg.sweep3_end_freq = f;
+            break;
+        case SweepFieldID::W4_START:
+            g_workspace_cfg.sweep4_start_freq = f;
+            break;
+        case SweepFieldID::W4_END:
+            g_workspace_cfg.sweep4_end_freq = f;
+            break;
+        case SweepFieldID::W1_EXC0:
+            g_workspace_cfg.sweep_exceptions[0][0] = f;
+            break;
+        case SweepFieldID::W1_EXC1:
+            g_workspace_cfg.sweep_exceptions[0][1] = f;
+            break;
+        case SweepFieldID::W1_EXC2:
+            g_workspace_cfg.sweep_exceptions[0][2] = f;
+            break;
+        case SweepFieldID::W1_EXC3:
+            g_workspace_cfg.sweep_exceptions[0][3] = f;
+            break;
+        case SweepFieldID::W1_EXC4:
+            g_workspace_cfg.sweep_exceptions[0][4] = f;
+            break;
+        case SweepFieldID::W2_EXC0:
+            g_workspace_cfg.sweep_exceptions[1][0] = f;
+            break;
+        case SweepFieldID::W2_EXC1:
+            g_workspace_cfg.sweep_exceptions[1][1] = f;
+            break;
+        case SweepFieldID::W2_EXC2:
+            g_workspace_cfg.sweep_exceptions[1][2] = f;
+            break;
+        case SweepFieldID::W2_EXC3:
+            g_workspace_cfg.sweep_exceptions[1][3] = f;
+            break;
+        case SweepFieldID::W2_EXC4:
+            g_workspace_cfg.sweep_exceptions[1][4] = f;
+            break;
+        case SweepFieldID::W3_EXC0:
+            g_workspace_cfg.sweep_exceptions[2][0] = f;
+            break;
+        case SweepFieldID::W3_EXC1:
+            g_workspace_cfg.sweep_exceptions[2][1] = f;
+            break;
+        case SweepFieldID::W3_EXC2:
+            g_workspace_cfg.sweep_exceptions[2][2] = f;
+            break;
+        case SweepFieldID::W3_EXC3:
+            g_workspace_cfg.sweep_exceptions[2][3] = f;
+            break;
+        case SweepFieldID::W3_EXC4:
+            g_workspace_cfg.sweep_exceptions[2][4] = f;
+            break;
+        case SweepFieldID::W4_EXC0:
+            g_workspace_cfg.sweep_exceptions[3][0] = f;
+            break;
+        case SweepFieldID::W4_EXC1:
+            g_workspace_cfg.sweep_exceptions[3][1] = f;
+            break;
+        case SweepFieldID::W4_EXC2:
+            g_workspace_cfg.sweep_exceptions[3][2] = f;
+            break;
+        case SweepFieldID::W4_EXC3:
+            g_workspace_cfg.sweep_exceptions[3][3] = f;
+            break;
+        case SweepFieldID::W4_EXC4:
+            g_workspace_cfg.sweep_exceptions[3][4] = f;
+            break;
+    }
+}
+
+// ============================================================================
+// Helper: open frequency keypad with nav.replace() instead of nav.push()
+// ============================================================================
+// FIX (HEAP OOM): Uses nav.replace() to DESTROY DroneSweepView (~5.8KB heap)
+// BEFORE allocating FrequencyKeypadView (~2KB heap). This avoids the triple
+// residency (DroneScannerUI + DroneSweepView + FrequencyKeypadView) that
+// exhausted the heap and caused chDbgPanic("Out of Memory") → HardFault.
+//
+// The on_changed callback writes directly to g_workspace_cfg via SweepFieldID.
+// After Done, nav.pop() returns to DroneScannerUI (not SWP view). The user
+// can press SWP again to see the updated config values.
 // ============================================================================
 
 /**
- * @brief Open FrequencyKeypadView and bind result to a NumberField (MHz).
- * @param nav  NavigationView reference
- * @param field Target NumberField (value in MHz, keypad returns rf::Frequency in Hz)
- * @note baseband::spectrum_streaming_stop() is called by the keypad on push
+ * @brief Open FrequencyKeypadView via nav.replace().
+ * @param nav       NavigationView reference
+ * @param field_id  Identifies which g_workspace_cfg field to write to
+ * @param initial_hz  Initial keypad value in Hz (read from NumberField BEFORE replace)
+ * @note DroneSweepView is destroyed before FrequencyKeypadView is allocated.
+ * @note on_changed callback captures field_id by value (safe after view destroy).
  */
-static void open_freq_keypad(NavigationView& nav, ui::NumberField& field) noexcept {
-    const FreqHz initial = static_cast<FreqHz>(field.value()) * 1000000ULL;
-    auto* new_view = nav.push<FrequencyKeypadView>(
-        static_cast<rf::Frequency>(initial));
-    new_view->on_changed = [&field](rf::Frequency f) {
-        field.set_value(static_cast<int32_t>(f / 1000000ULL));
+static void open_freq_keypad_replace(
+    NavigationView& nav,
+    SweepFieldID field_id,
+    FreqHz initial_hz) noexcept {
+    baseband::spectrum_streaming_stop();
+    auto* new_view = nav.replace<FrequencyKeypadView>(
+        static_cast<rf::Frequency>(initial_hz));
+    new_view->on_changed = [field_id](rf::Frequency f) {
+        set_config_field_by_id(field_id, f);
     };
 }
 
@@ -69,65 +213,66 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
         &field_sw2_exc4_,
     });
 
-    // All field.on_select handlers share the same open_freq_keypad helper.
-    // Reduces 22 std::function allocations to 1 shared function pointer call.
+    // Use open_freq_keypad_replace which writes to g_workspace_cfg via SweepFieldID.
+    // nav.replace() frees DroneSweepView before allocating FrequencyKeypadView.
+    // field.value() read while this is alive (before replace destroys the view).
     field_sw1_start_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw1_start_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W1_START,
+            static_cast<FreqHz>(field_sw1_start_.value()) * 1000000ULL);
     };
     field_sw1_end_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw1_end_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W1_END,
+            static_cast<FreqHz>(field_sw1_end_.value()) * 1000000ULL);
     };
     field_sw2_start_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw2_start_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W2_START,
+            static_cast<FreqHz>(field_sw2_start_.value()) * 1000000ULL);
     };
     field_sw2_end_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw2_end_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W2_END,
+            static_cast<FreqHz>(field_sw2_end_.value()) * 1000000ULL);
     };
 
     // Exception fields
     field_sw1_exc0_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw1_exc0_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC0,
+            static_cast<FreqHz>(field_sw1_exc0_.value()) * 1000000ULL);
     };
     field_sw1_exc1_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw1_exc1_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC1,
+            static_cast<FreqHz>(field_sw1_exc1_.value()) * 1000000ULL);
     };
     field_sw1_exc2_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw1_exc2_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC2,
+            static_cast<FreqHz>(field_sw1_exc2_.value()) * 1000000ULL);
     };
     field_sw1_exc3_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw1_exc3_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC3,
+            static_cast<FreqHz>(field_sw1_exc3_.value()) * 1000000ULL);
     };
     field_sw1_exc4_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw1_exc4_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC4,
+            static_cast<FreqHz>(field_sw1_exc4_.value()) * 1000000ULL);
     };
     field_sw2_exc0_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw2_exc0_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC0,
+            static_cast<FreqHz>(field_sw2_exc0_.value()) * 1000000ULL);
     };
     field_sw2_exc1_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw2_exc1_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC1,
+            static_cast<FreqHz>(field_sw2_exc1_.value()) * 1000000ULL);
     };
     field_sw2_exc2_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw2_exc2_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC2,
+            static_cast<FreqHz>(field_sw2_exc2_.value()) * 1000000ULL);
     };
     field_sw2_exc3_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw2_exc3_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC3,
+            static_cast<FreqHz>(field_sw2_exc3_.value()) * 1000000ULL);
     };
     field_sw2_exc4_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw2_exc4_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC4,
+            static_cast<FreqHz>(field_sw2_exc4_.value()) * 1000000ULL);
     };
 }
 
@@ -169,61 +314,61 @@ SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect par
     });
 
     field_sw3_start_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw3_start_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W3_START,
+            static_cast<FreqHz>(field_sw3_start_.value()) * 1000000ULL);
     };
     field_sw3_end_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw3_end_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W3_END,
+            static_cast<FreqHz>(field_sw3_end_.value()) * 1000000ULL);
     };
     field_sw4_start_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw4_start_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W4_START,
+            static_cast<FreqHz>(field_sw4_start_.value()) * 1000000ULL);
     };
     field_sw4_end_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw4_end_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W4_END,
+            static_cast<FreqHz>(field_sw4_end_.value()) * 1000000ULL);
     };
 
     field_sw3_exc0_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw3_exc0_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC0,
+            static_cast<FreqHz>(field_sw3_exc0_.value()) * 1000000ULL);
     };
     field_sw3_exc1_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw3_exc1_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC1,
+            static_cast<FreqHz>(field_sw3_exc1_.value()) * 1000000ULL);
     };
     field_sw3_exc2_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw3_exc2_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC2,
+            static_cast<FreqHz>(field_sw3_exc2_.value()) * 1000000ULL);
     };
     field_sw3_exc3_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw3_exc3_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC3,
+            static_cast<FreqHz>(field_sw3_exc3_.value()) * 1000000ULL);
     };
     field_sw3_exc4_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw3_exc4_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC4,
+            static_cast<FreqHz>(field_sw3_exc4_.value()) * 1000000ULL);
     };
     field_sw4_exc0_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw4_exc0_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC0,
+            static_cast<FreqHz>(field_sw4_exc0_.value()) * 1000000ULL);
     };
     field_sw4_exc1_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw4_exc1_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC1,
+            static_cast<FreqHz>(field_sw4_exc1_.value()) * 1000000ULL);
     };
     field_sw4_exc2_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw4_exc2_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC2,
+            static_cast<FreqHz>(field_sw4_exc2_.value()) * 1000000ULL);
     };
     field_sw4_exc3_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw4_exc3_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC3,
+            static_cast<FreqHz>(field_sw4_exc3_.value()) * 1000000ULL);
     };
     field_sw4_exc4_.on_select = [this](NumberField&) {
-        baseband::spectrum_streaming_stop();
-        open_freq_keypad(nav_, field_sw4_exc4_);
+        open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC4,
+            static_cast<FreqHz>(field_sw4_exc4_.value()) * 1000000ULL);
     };
 }
 
