@@ -1645,10 +1645,11 @@ PatternMatchResult DroneScanner::try_match_pattern_internal(
         return PatternMatchResult::no_match();
     }
 
-    if (pattern_manager_.get_pattern_count() == 0) {
-        return PatternMatchResult::no_match();
-    }
-
+    // pattern_matcher_.match() handles empty-patterns case internally.
+    // Do NOT call pattern_manager_.get_pattern_count() here — it acquires
+    // DATABASE_MUTEX which may contend with refresh_patterns() during SD I/O.
+    // The pattern matcher's cached state is only modified under DATA_MUTEX,
+    // and this function is always called from the UI thread (safe no-lock read).
     return pattern_matcher_.match(spectrum, current_freq);
 }
 

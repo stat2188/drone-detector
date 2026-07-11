@@ -40,6 +40,16 @@ constexpr FreqHz HARDWARE_MIN_FREQ_HZ = 1'000'000ULL;
 constexpr FreqHz FREQUENCY_STEP_HZ = 1'000'000ULL;
 
 /**
+ * @brief MHz conversion factor (1e6)
+ */
+constexpr FreqHz MHZ = 1'000'000ULL;
+
+/**
+ * @brief kHz conversion factor (1e3)
+ */
+constexpr FreqHz KHZ = 1'000ULL;
+
+/**
  * @brief Frequency bandwidth in Hz (2 MHz - matches DEFAULT_SAMPLE_RATE_HZ)
  */
 constexpr FreqHz FREQUENCY_BANDWIDTH_HZ = 20'000'000ULL;

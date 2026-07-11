@@ -14,6 +14,14 @@
 
 namespace drone_analyzer {
 
+// Helpers: NumberField value in MHz/kHz → FreqHz
+static FreqHz read_mhz_field(const ui::NumberField& field) noexcept {
+    return static_cast<FreqHz>(field.value()) * MHZ;
+}
+static FreqHz read_khz_field(const ui::NumberField& field) noexcept {
+    return static_cast<FreqHz>(field.value()) * KHZ;
+}
+
 // ============================================================================
 // Sweep field ID → config mapping
 // ============================================================================
@@ -218,61 +226,61 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
     // field.value() read while this is alive (before replace destroys the view).
     field_sw1_start_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_START,
-            static_cast<FreqHz>(field_sw1_start_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw1_start_.value()) * MHZ);
     };
     field_sw1_end_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_END,
-            static_cast<FreqHz>(field_sw1_end_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw1_end_.value()) * MHZ);
     };
     field_sw2_start_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_START,
-            static_cast<FreqHz>(field_sw2_start_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw2_start_.value()) * MHZ);
     };
     field_sw2_end_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_END,
-            static_cast<FreqHz>(field_sw2_end_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw2_end_.value()) * MHZ);
     };
 
     // Exception fields
     field_sw1_exc0_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC0,
-            static_cast<FreqHz>(field_sw1_exc0_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw1_exc0_.value()) * MHZ);
     };
     field_sw1_exc1_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC1,
-            static_cast<FreqHz>(field_sw1_exc1_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw1_exc1_.value()) * MHZ);
     };
     field_sw1_exc2_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC2,
-            static_cast<FreqHz>(field_sw1_exc2_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw1_exc2_.value()) * MHZ);
     };
     field_sw1_exc3_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC3,
-            static_cast<FreqHz>(field_sw1_exc3_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw1_exc3_.value()) * MHZ);
     };
     field_sw1_exc4_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC4,
-            static_cast<FreqHz>(field_sw1_exc4_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw1_exc4_.value()) * MHZ);
     };
     field_sw2_exc0_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC0,
-            static_cast<FreqHz>(field_sw2_exc0_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw2_exc0_.value()) * MHZ);
     };
     field_sw2_exc1_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC1,
-            static_cast<FreqHz>(field_sw2_exc1_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw2_exc1_.value()) * MHZ);
     };
     field_sw2_exc2_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC2,
-            static_cast<FreqHz>(field_sw2_exc2_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw2_exc2_.value()) * MHZ);
     };
     field_sw2_exc3_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC3,
-            static_cast<FreqHz>(field_sw2_exc3_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw2_exc3_.value()) * MHZ);
     };
     field_sw2_exc4_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC4,
-            static_cast<FreqHz>(field_sw2_exc4_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw2_exc4_.value()) * MHZ);
     };
 }
 
@@ -315,60 +323,60 @@ SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect par
 
     field_sw3_start_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_START,
-            static_cast<FreqHz>(field_sw3_start_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw3_start_.value()) * MHZ);
     };
     field_sw3_end_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_END,
-            static_cast<FreqHz>(field_sw3_end_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw3_end_.value()) * MHZ);
     };
     field_sw4_start_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_START,
-            static_cast<FreqHz>(field_sw4_start_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw4_start_.value()) * MHZ);
     };
     field_sw4_end_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_END,
-            static_cast<FreqHz>(field_sw4_end_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw4_end_.value()) * MHZ);
     };
 
     field_sw3_exc0_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC0,
-            static_cast<FreqHz>(field_sw3_exc0_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw3_exc0_.value()) * MHZ);
     };
     field_sw3_exc1_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC1,
-            static_cast<FreqHz>(field_sw3_exc1_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw3_exc1_.value()) * MHZ);
     };
     field_sw3_exc2_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC2,
-            static_cast<FreqHz>(field_sw3_exc2_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw3_exc2_.value()) * MHZ);
     };
     field_sw3_exc3_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC3,
-            static_cast<FreqHz>(field_sw3_exc3_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw3_exc3_.value()) * MHZ);
     };
     field_sw3_exc4_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC4,
-            static_cast<FreqHz>(field_sw3_exc4_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw3_exc4_.value()) * MHZ);
     };
     field_sw4_exc0_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC0,
-            static_cast<FreqHz>(field_sw4_exc0_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw4_exc0_.value()) * MHZ);
     };
     field_sw4_exc1_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC1,
-            static_cast<FreqHz>(field_sw4_exc1_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw4_exc1_.value()) * MHZ);
     };
     field_sw4_exc2_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC2,
-            static_cast<FreqHz>(field_sw4_exc2_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw4_exc2_.value()) * MHZ);
     };
     field_sw4_exc3_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC3,
-            static_cast<FreqHz>(field_sw4_exc3_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw4_exc3_.value()) * MHZ);
     };
     field_sw4_exc4_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC4,
-            static_cast<FreqHz>(field_sw4_exc4_.value()) * 1000000ULL);
+            static_cast<FreqHz>(field_sw4_exc4_.value()) * MHZ);
     };
 }
 
@@ -405,24 +413,24 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
 
     tab_view_.set_selected(0);
 
-    view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / 1000000ULL));
-    view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(config.sweep_end_freq / 1000000ULL));
-    view_group1_.field_sw1_step_.set_value(static_cast<int32_t>(config.sweep_step_freq / 1000ULL));
+    view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(config.sweep_start_freq / MHZ));
+    view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(config.sweep_end_freq / MHZ));
+    view_group1_.field_sw1_step_.set_value(static_cast<int32_t>(config.sweep_step_freq / KHZ));
 
     view_group1_.check_sw2_enabled_.set_value(config.sweep2_enabled);
-    view_group1_.field_sw2_start_.set_value(static_cast<int32_t>(config.sweep2_start_freq / 1000000ULL));
-    view_group1_.field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / 1000000ULL));
-    view_group1_.field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / 1000ULL));
+    view_group1_.field_sw2_start_.set_value(static_cast<int32_t>(config.sweep2_start_freq / MHZ));
+    view_group1_.field_sw2_end_.set_value(static_cast<int32_t>(config.sweep2_end_freq / MHZ));
+    view_group1_.field_sw2_step_.set_value(static_cast<int32_t>(config.sweep2_step_freq / KHZ));
 
     view_group2_.check_sw3_enabled_.set_value(config.sweep3_enabled);
-    view_group2_.field_sw3_start_.set_value(static_cast<int32_t>(config.sweep3_start_freq / 1000000ULL));
-    view_group2_.field_sw3_end_.set_value(static_cast<int32_t>(config.sweep3_end_freq / 1000000ULL));
-    view_group2_.field_sw3_step_.set_value(static_cast<int32_t>(config.sweep3_step_freq / 1000ULL));
+    view_group2_.field_sw3_start_.set_value(static_cast<int32_t>(config.sweep3_start_freq / MHZ));
+    view_group2_.field_sw3_end_.set_value(static_cast<int32_t>(config.sweep3_end_freq / MHZ));
+    view_group2_.field_sw3_step_.set_value(static_cast<int32_t>(config.sweep3_step_freq / KHZ));
 
     view_group2_.check_sw4_enabled_.set_value(config.sweep4_enabled);
-    view_group2_.field_sw4_start_.set_value(static_cast<int32_t>(config.sweep4_start_freq / 1000000ULL));
-    view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / 1000000ULL));
-    view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / 1000ULL));
+    view_group2_.field_sw4_start_.set_value(static_cast<int32_t>(config.sweep4_start_freq / MHZ));
+    view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(config.sweep4_end_freq / MHZ));
+    view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(config.sweep4_step_freq / KHZ));
 
     // Exception fields — read directly from config without static pointer arrays.
     // BUGFIX: Was using static ui::NumberField* arrays that pointed to member fields
@@ -484,7 +492,7 @@ void DroneSweepView::set_exception_field(
     FreqHz value_hz
 ) noexcept {
     if (field != nullptr) {
-        field->set_value(static_cast<int32_t>(value_hz / 1000000ULL));
+        field->set_value(static_cast<int32_t>(value_hz / MHZ));
     }
 }
 
@@ -507,24 +515,24 @@ void DroneSweepView::save_settings() noexcept {
     // FreqHz (uint64_t) × 12 = 96 bytes, bool × 4 = 4 bytes, uint8_t = 1 byte.
     // Total: ~120 bytes stack. No static arrays to member fields (was use-after-free bug).
 
-    FreqHz sw1_start = static_cast<FreqHz>(view_group1_.field_sw1_start_.value()) * 1000000ULL;
-    FreqHz sw1_end = static_cast<FreqHz>(view_group1_.field_sw1_end_.value()) * 1000000ULL;
-    FreqHz sw1_step = static_cast<FreqHz>(view_group1_.field_sw1_step_.value()) * 1000ULL;
+    FreqHz sw1_start = read_mhz_field(view_group1_.field_sw1_start_);
+    FreqHz sw1_end = read_mhz_field(view_group1_.field_sw1_end_);
+    FreqHz sw1_step = read_khz_field(view_group1_.field_sw1_step_);
 
     bool sw2_enabled = view_group1_.check_sw2_enabled_.value();
-    FreqHz sw2_start = static_cast<FreqHz>(view_group1_.field_sw2_start_.value()) * 1000000ULL;
-    FreqHz sw2_end = static_cast<FreqHz>(view_group1_.field_sw2_end_.value()) * 1000000ULL;
-    FreqHz sw2_step = static_cast<FreqHz>(view_group1_.field_sw2_step_.value()) * 1000ULL;
+    FreqHz sw2_start = read_mhz_field(view_group1_.field_sw2_start_);
+    FreqHz sw2_end = read_mhz_field(view_group1_.field_sw2_end_);
+    FreqHz sw2_step = read_khz_field(view_group1_.field_sw2_step_);
 
     bool sw3_enabled = view_group2_.check_sw3_enabled_.value();
-    FreqHz sw3_start = static_cast<FreqHz>(view_group2_.field_sw3_start_.value()) * 1000000ULL;
-    FreqHz sw3_end = static_cast<FreqHz>(view_group2_.field_sw3_end_.value()) * 1000000ULL;
-    FreqHz sw3_step = static_cast<FreqHz>(view_group2_.field_sw3_step_.value()) * 1000ULL;
+    FreqHz sw3_start = read_mhz_field(view_group2_.field_sw3_start_);
+    FreqHz sw3_end = read_mhz_field(view_group2_.field_sw3_end_);
+    FreqHz sw3_step = read_khz_field(view_group2_.field_sw3_step_);
 
     bool sw4_enabled = view_group2_.check_sw4_enabled_.value();
-    FreqHz sw4_start = static_cast<FreqHz>(view_group2_.field_sw4_start_.value()) * 1000000ULL;
-    FreqHz sw4_end = static_cast<FreqHz>(view_group2_.field_sw4_end_.value()) * 1000000ULL;
-    FreqHz sw4_step = static_cast<FreqHz>(view_group2_.field_sw4_step_.value()) * 1000ULL;
+    FreqHz sw4_start = read_mhz_field(view_group2_.field_sw4_start_);
+    FreqHz sw4_end = read_mhz_field(view_group2_.field_sw4_end_);
+    FreqHz sw4_step = read_khz_field(view_group2_.field_sw4_step_);
 
     // Validate ranges
     if (sw1_start < HARDWARE_MIN_FREQ_HZ) sw1_start = HARDWARE_MIN_FREQ_HZ;
@@ -567,26 +575,26 @@ void DroneSweepView::save_settings() noexcept {
         g_workspace_cfg.sweep4_end_freq = sw4_end;
         g_workspace_cfg.sweep4_step_freq = sw4_step;
         g_workspace_cfg.sweep4_enabled = sw4_enabled;
-        g_workspace_cfg.sweep_exceptions[0][0] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc0_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[0][1] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc1_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[0][2] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc2_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[0][3] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc3_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[0][4] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc4_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[1][0] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc0_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[1][1] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc1_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[1][2] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc2_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[1][3] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc3_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[1][4] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc4_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[2][0] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc0_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[2][1] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc1_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[2][2] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc2_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[2][3] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc3_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[2][4] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc4_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[3][0] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc0_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[3][1] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc1_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[3][2] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc2_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[3][3] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc3_)) * 1000000ULL;
-        g_workspace_cfg.sweep_exceptions[3][4] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc4_)) * 1000000ULL;
+        g_workspace_cfg.sweep_exceptions[0][0] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc0_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[0][1] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc1_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[0][2] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc2_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[0][3] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc3_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[0][4] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc4_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[1][0] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc0_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[1][1] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc1_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[1][2] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc2_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[1][3] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc3_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[1][4] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc4_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[2][0] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc0_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[2][1] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc1_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[2][2] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc2_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[2][3] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc3_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[2][4] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc4_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[3][0] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc0_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[3][1] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc1_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[3][2] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc2_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[3][3] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc3_)) * MHZ;
+        g_workspace_cfg.sweep_exceptions[3][4] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc4_)) * MHZ;
         g_workspace_cfg.exception_radius_mhz = exc_radius;
         (void)scanner_ptr_->set_config(g_workspace_cfg);
     }
@@ -609,26 +617,26 @@ void DroneSweepView::save_settings() noexcept {
     g_workspace_settings.sweep4_end_freq = sw4_end;
     g_workspace_settings.sweep4_step_freq = sw4_step;
     g_workspace_settings.sweep4_enabled = sw4_enabled;
-    g_workspace_settings.sweep_exceptions[0][0] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc0_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[0][1] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc1_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[0][2] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc2_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[0][3] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc3_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[0][4] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc4_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[1][0] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc0_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[1][1] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc1_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[1][2] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc2_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[1][3] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc3_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[1][4] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc4_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[2][0] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc0_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[2][1] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc1_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[2][2] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc2_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[2][3] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc3_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[2][4] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc4_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[3][0] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc0_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[3][1] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc1_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[3][2] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc2_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[3][3] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc3_)) * 1000000ULL;
-    g_workspace_settings.sweep_exceptions[3][4] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc4_)) * 1000000ULL;
+    g_workspace_settings.sweep_exceptions[0][0] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc0_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[0][1] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc1_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[0][2] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc2_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[0][3] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc3_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[0][4] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw1_exc4_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[1][0] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc0_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[1][1] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc1_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[1][2] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc2_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[1][3] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc3_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[1][4] = static_cast<FreqHz>(get_exception_field(&view_group1_.field_sw2_exc4_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[2][0] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc0_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[2][1] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc1_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[2][2] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc2_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[2][3] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc3_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[2][4] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw3_exc4_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[3][0] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc0_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[3][1] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc1_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[3][2] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc2_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[3][3] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc3_)) * MHZ;
+    g_workspace_settings.sweep_exceptions[3][4] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc4_)) * MHZ;
     g_workspace_settings.exception_radius_mhz = exc_radius;
 
     (void)SettingsFileManager::save(scanner_ptr_, g_workspace_settings);
@@ -639,24 +647,24 @@ void DroneSweepView::apply_defaults() noexcept {
     // Stack: 0 bytes (was ~360 B with stack-allocated SettingsStruct)
     static const SettingsStruct defaults{};
 
-    view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(defaults.sweep_start_freq / 1000000ULL));
-    view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(defaults.sweep_end_freq / 1000000ULL));
-    view_group1_.field_sw1_step_.set_value(static_cast<int32_t>(defaults.sweep_step_freq / 1000ULL));
+    view_group1_.field_sw1_start_.set_value(static_cast<int32_t>(defaults.sweep_start_freq / MHZ));
+    view_group1_.field_sw1_end_.set_value(static_cast<int32_t>(defaults.sweep_end_freq / MHZ));
+    view_group1_.field_sw1_step_.set_value(static_cast<int32_t>(defaults.sweep_step_freq / KHZ));
 
     view_group1_.check_sw2_enabled_.set_value(defaults.sweep2_enabled);
-    view_group1_.field_sw2_start_.set_value(static_cast<int32_t>(defaults.sweep2_start_freq / 1000000ULL));
-    view_group1_.field_sw2_end_.set_value(static_cast<int32_t>(defaults.sweep2_end_freq / 1000000ULL));
-    view_group1_.field_sw2_step_.set_value(static_cast<int32_t>(defaults.sweep2_step_freq / 1000ULL));
+    view_group1_.field_sw2_start_.set_value(static_cast<int32_t>(defaults.sweep2_start_freq / MHZ));
+    view_group1_.field_sw2_end_.set_value(static_cast<int32_t>(defaults.sweep2_end_freq / MHZ));
+    view_group1_.field_sw2_step_.set_value(static_cast<int32_t>(defaults.sweep2_step_freq / KHZ));
 
     view_group2_.check_sw3_enabled_.set_value(defaults.sweep3_enabled);
-    view_group2_.field_sw3_start_.set_value(static_cast<int32_t>(defaults.sweep3_start_freq / 1000000ULL));
-    view_group2_.field_sw3_end_.set_value(static_cast<int32_t>(defaults.sweep3_end_freq / 1000000ULL));
-    view_group2_.field_sw3_step_.set_value(static_cast<int32_t>(defaults.sweep3_step_freq / 1000ULL));
+    view_group2_.field_sw3_start_.set_value(static_cast<int32_t>(defaults.sweep3_start_freq / MHZ));
+    view_group2_.field_sw3_end_.set_value(static_cast<int32_t>(defaults.sweep3_end_freq / MHZ));
+    view_group2_.field_sw3_step_.set_value(static_cast<int32_t>(defaults.sweep3_step_freq / KHZ));
 
     view_group2_.check_sw4_enabled_.set_value(defaults.sweep4_enabled);
-    view_group2_.field_sw4_start_.set_value(static_cast<int32_t>(defaults.sweep4_start_freq / 1000000ULL));
-    view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(defaults.sweep4_end_freq / 1000000ULL));
-    view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(defaults.sweep4_step_freq / 1000ULL));
+    view_group2_.field_sw4_start_.set_value(static_cast<int32_t>(defaults.sweep4_start_freq / MHZ));
+    view_group2_.field_sw4_end_.set_value(static_cast<int32_t>(defaults.sweep4_end_freq / MHZ));
+    view_group2_.field_sw4_step_.set_value(static_cast<int32_t>(defaults.sweep4_step_freq / KHZ));
 
     // Zero all exception fields (no static pointer array — bugfix)
     zero_exception_field(&view_group1_.field_sw1_exc0_);
