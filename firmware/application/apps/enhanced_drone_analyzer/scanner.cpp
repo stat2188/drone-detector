@@ -1501,11 +1501,16 @@ bool DroneScanner::apply_shape_filters(
     const size_t data_size = has_dc_gap ? FFT_BIN_COUNT : COMPOSITE_SIZE;
     const size_t upper_limit = data_size - edge_skip;
 
+    // Width expansion: extend left/right while bins are above elevated_threshold.
+    // DC spike (bins 120-135) is a hard boundary — expansion stops, never bridges.
+    // The DC spike contains ADC offset energy (not real signal), so including it
+    // inflates width by up to 16 bins (1.25 MHz), causing false rejects (max_width)
+    // or false accepts (min_width) for signals near DC.
     size_t left = peak_idx;
     while (left > edge_skip) {
         const size_t prev = left - 1;
         if (has_dc_gap && prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) {
-            --left; continue;
+            break;
         }
         if (data[prev] < elevated_threshold) break;
         --left;
@@ -1515,7 +1520,7 @@ bool DroneScanner::apply_shape_filters(
     while (right < upper_limit - 1) {
         const size_t next = right + 1;
         if (has_dc_gap && next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) {
-            ++right; continue;
+            break;
         }
         if (data[next] < elevated_threshold) break;
         ++right;

@@ -48,7 +48,7 @@ public:
         uint8_t value{0};         // peak amplitude (0-255)
         uint8_t noise_floor{0};   // median of usable bins
         uint8_t margin{0};        // peak - noise_floor
-        size_t width{0};          // bins above (noise_floor + margin/2)
+        size_t width{0};          // bins above (noise_floor + margin/3)
         size_t left{0};           // left edge of signal band
         size_t right{0};          // right edge of signal band
         size_t usable_count{0};   // number of bins that contributed to noise floor
@@ -62,9 +62,10 @@ public:
      * @param sort_buf  Caller-provided scratch buffer (>= 236 bytes)
      * @param range     Search range (default: Full)
      * @param edge      Edge-skip policy (default: Narrow for live scanning)
-     * @param noise_percentile  Percentile for noise floor estimation (0-100, default: 50 = median)
-     *                          Use 25 for dense signal environments (WiFi-dense 2.4/5.8 GHz)
-     *                          to avoid median bias when signal occupies >50% of bins.
+     * @param noise_percentile  Percentile for noise floor estimation (0-100, default: 25 = lower quartile)
+     *                          Matches the detection pipeline's 25th percentile for consistency.
+     *                          Lower quartile is robust against signal contamination when
+     *                          signal occupies >50% of bins (WiFi-dense 2.4/5.8 GHz).
      * @return PeakInfo with all derived quantities, or zeroed struct on empty input
      * @note Skips DC spike (FFT_DC_SPIKE_START..FFT_DC_SPIKE_END).
      * @note Cost: O(n) for quickselect percentile + O(n) for peak scan + O(n) for width.
@@ -74,7 +75,7 @@ public:
         uint8_t* sort_buf,
         Range range = Range::Full,
         EdgePolicy edge = EdgePolicy::Narrow,
-        uint8_t noise_percentile = 50
+        uint8_t noise_percentile = 25
     ) noexcept;
 
 private:
