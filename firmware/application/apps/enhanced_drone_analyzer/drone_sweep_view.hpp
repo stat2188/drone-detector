@@ -24,6 +24,9 @@ class SweepWindowGroup1View : public ui::View {
 public:
     SweepWindowGroup1View(NavigationView& nav, const Rect parent_rect, DroneScanner* scanner_ptr) noexcept;
 
+    SweepWindowGroup1View(const SweepWindowGroup1View&) = delete;
+    SweepWindowGroup1View& operator=(const SweepWindowGroup1View&) = delete;
+
     void focus() override;
 
     NavigationView& nav_;
