@@ -83,6 +83,9 @@ class SweepWindowGroup2View : public ui::View {
 public:
     SweepWindowGroup2View(NavigationView& nav, const Rect parent_rect, DroneScanner* scanner_ptr) noexcept;
 
+    SweepWindowGroup2View(const SweepWindowGroup2View&) = delete;
+    SweepWindowGroup2View& operator=(const SweepWindowGroup2View&) = delete;
+
     void focus() override;
 
     NavigationView& nav_;
