@@ -180,12 +180,16 @@ static void set_config_field_by_id(SweepFieldID field_id, rf::Frequency f) noexc
 static void open_freq_keypad_replace(
     NavigationView& nav,
     SweepFieldID field_id,
-    FreqHz initial_hz) noexcept {
+    FreqHz initial_hz,
+    DroneScanner* scanner) noexcept {
     baseband::spectrum_streaming_stop();
     auto* new_view = nav.replace<FrequencyKeypadView>(
         static_cast<rf::Frequency>(initial_hz));
-    new_view->on_changed = [field_id](rf::Frequency f) {
+    new_view->on_changed = [field_id, scanner](rf::Frequency f) {
         set_config_field_by_id(field_id, f);
+        if (scanner != nullptr) {
+            (void)scanner->set_config(g_workspace_cfg);
+        }
     };
 }
 
@@ -193,9 +197,10 @@ static void open_freq_keypad_replace(
 // SweepWindowGroup1View — Tab 1: Windows 1-2
 // ============================================================================
 
-SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect parent_rect) noexcept
+SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect parent_rect, DroneScanner* scanner_ptr) noexcept
     : ui::View()
-    , nav_(nav) {
+    , nav_(nav)
+    , scanner_ptr_(scanner_ptr) {
     set_parent_rect(parent_rect);
     add_children({
         &labels_,
@@ -226,61 +231,61 @@ SweepWindowGroup1View::SweepWindowGroup1View(NavigationView& nav, const Rect par
     // field.value() read while this is alive (before replace destroys the view).
     field_sw1_start_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_START,
-            static_cast<FreqHz>(field_sw1_start_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw1_start_.value()) * MHZ, scanner_ptr_);
     };
     field_sw1_end_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_END,
-            static_cast<FreqHz>(field_sw1_end_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw1_end_.value()) * MHZ, scanner_ptr_);
     };
     field_sw2_start_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_START,
-            static_cast<FreqHz>(field_sw2_start_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw2_start_.value()) * MHZ, scanner_ptr_);
     };
     field_sw2_end_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_END,
-            static_cast<FreqHz>(field_sw2_end_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw2_end_.value()) * MHZ, scanner_ptr_);
     };
 
     // Exception fields
     field_sw1_exc0_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC0,
-            static_cast<FreqHz>(field_sw1_exc0_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw1_exc0_.value()) * MHZ, scanner_ptr_);
     };
     field_sw1_exc1_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC1,
-            static_cast<FreqHz>(field_sw1_exc1_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw1_exc1_.value()) * MHZ, scanner_ptr_);
     };
     field_sw1_exc2_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC2,
-            static_cast<FreqHz>(field_sw1_exc2_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw1_exc2_.value()) * MHZ, scanner_ptr_);
     };
     field_sw1_exc3_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC3,
-            static_cast<FreqHz>(field_sw1_exc3_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw1_exc3_.value()) * MHZ, scanner_ptr_);
     };
     field_sw1_exc4_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W1_EXC4,
-            static_cast<FreqHz>(field_sw1_exc4_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw1_exc4_.value()) * MHZ, scanner_ptr_);
     };
     field_sw2_exc0_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC0,
-            static_cast<FreqHz>(field_sw2_exc0_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw2_exc0_.value()) * MHZ, scanner_ptr_);
     };
     field_sw2_exc1_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC1,
-            static_cast<FreqHz>(field_sw2_exc1_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw2_exc1_.value()) * MHZ, scanner_ptr_);
     };
     field_sw2_exc2_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC2,
-            static_cast<FreqHz>(field_sw2_exc2_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw2_exc2_.value()) * MHZ, scanner_ptr_);
     };
     field_sw2_exc3_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC3,
-            static_cast<FreqHz>(field_sw2_exc3_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw2_exc3_.value()) * MHZ, scanner_ptr_);
     };
     field_sw2_exc4_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W2_EXC4,
-            static_cast<FreqHz>(field_sw2_exc4_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw2_exc4_.value()) * MHZ, scanner_ptr_);
     };
 }
 
@@ -292,9 +297,10 @@ void SweepWindowGroup1View::focus() {
 // SweepWindowGroup2View — Tab 2: Windows 3-4
 // ============================================================================
 
-SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect parent_rect) noexcept
+SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect parent_rect, DroneScanner* scanner_ptr) noexcept
     : ui::View()
-    , nav_(nav) {
+    , nav_(nav)
+    , scanner_ptr_(scanner_ptr) {
     set_parent_rect(parent_rect);
     add_children({
         &labels_sw3_,
@@ -323,60 +329,60 @@ SweepWindowGroup2View::SweepWindowGroup2View(NavigationView& nav, const Rect par
 
     field_sw3_start_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_START,
-            static_cast<FreqHz>(field_sw3_start_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw3_start_.value()) * MHZ, scanner_ptr_);
     };
     field_sw3_end_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_END,
-            static_cast<FreqHz>(field_sw3_end_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw3_end_.value()) * MHZ, scanner_ptr_);
     };
     field_sw4_start_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_START,
-            static_cast<FreqHz>(field_sw4_start_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw4_start_.value()) * MHZ, scanner_ptr_);
     };
     field_sw4_end_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_END,
-            static_cast<FreqHz>(field_sw4_end_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw4_end_.value()) * MHZ, scanner_ptr_);
     };
 
     field_sw3_exc0_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC0,
-            static_cast<FreqHz>(field_sw3_exc0_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw3_exc0_.value()) * MHZ, scanner_ptr_);
     };
     field_sw3_exc1_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC1,
-            static_cast<FreqHz>(field_sw3_exc1_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw3_exc1_.value()) * MHZ, scanner_ptr_);
     };
     field_sw3_exc2_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC2,
-            static_cast<FreqHz>(field_sw3_exc2_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw3_exc2_.value()) * MHZ, scanner_ptr_);
     };
     field_sw3_exc3_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC3,
-            static_cast<FreqHz>(field_sw3_exc3_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw3_exc3_.value()) * MHZ, scanner_ptr_);
     };
     field_sw3_exc4_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W3_EXC4,
-            static_cast<FreqHz>(field_sw3_exc4_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw3_exc4_.value()) * MHZ, scanner_ptr_);
     };
     field_sw4_exc0_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC0,
-            static_cast<FreqHz>(field_sw4_exc0_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw4_exc0_.value()) * MHZ, scanner_ptr_);
     };
     field_sw4_exc1_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC1,
-            static_cast<FreqHz>(field_sw4_exc1_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw4_exc1_.value()) * MHZ, scanner_ptr_);
     };
     field_sw4_exc2_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC2,
-            static_cast<FreqHz>(field_sw4_exc2_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw4_exc2_.value()) * MHZ, scanner_ptr_);
     };
     field_sw4_exc3_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC3,
-            static_cast<FreqHz>(field_sw4_exc3_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw4_exc3_.value()) * MHZ, scanner_ptr_);
     };
     field_sw4_exc4_.on_select = [this](NumberField&) {
         open_freq_keypad_replace(nav_, SweepFieldID::W4_EXC4,
-            static_cast<FreqHz>(field_sw4_exc4_.value()) * MHZ);
+            static_cast<FreqHz>(field_sw4_exc4_.value()) * MHZ, scanner_ptr_);
     };
 }
 
@@ -393,8 +399,8 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
     , original_config_(config)
-    , view_group1_(nav_, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H})
-    , view_group2_(nav_, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H})
+    , view_group1_(nav_, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H}, scanner_ptr)
+    , view_group2_(nav_, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H}, scanner_ptr)
     , tab_view_({
         {"Win 1-2", Color::white(), &view_group1_},
         {"Win 3-4", Color::white(), &view_group2_}

@@ -365,8 +365,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
-        // Remember if scanning was active so on_show() can restore it
-        scanning_needs_restore_ = scanning_;
+        // Don't auto-restart scanning after returning from SWP save.
+        // SWP is a configuration view — user should manually start scanning.
+        scanning_needs_restore_ = false;
         // Stop scanning before pushing sub-view (matches PTR handler pattern).
         // on_hide() also stops scanning, but doing it here ensures clean state
         // and prevents race conditions with the scanner thread.

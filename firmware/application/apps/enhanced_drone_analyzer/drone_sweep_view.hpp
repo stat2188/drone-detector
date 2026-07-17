@@ -22,11 +22,12 @@ class DroneScanner;
  */
 class SweepWindowGroup1View : public ui::View {
 public:
-    SweepWindowGroup1View(NavigationView& nav, const Rect parent_rect) noexcept;
+    SweepWindowGroup1View(NavigationView& nav, const Rect parent_rect, DroneScanner* scanner_ptr) noexcept;
 
     void focus() override;
 
     NavigationView& nav_;
+    DroneScanner* scanner_ptr_;
 
     ui::Labels labels_{
         {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window 1 --", Color::white()},
@@ -77,11 +78,12 @@ public:
  */
 class SweepWindowGroup2View : public ui::View {
 public:
-    SweepWindowGroup2View(NavigationView& nav, const Rect parent_rect) noexcept;
+    SweepWindowGroup2View(NavigationView& nav, const Rect parent_rect, DroneScanner* scanner_ptr) noexcept;
 
     void focus() override;
 
     NavigationView& nav_;
+    DroneScanner* scanner_ptr_;
 
     ui::Labels labels_sw3_{
         {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window 3 --", Color::white()},
