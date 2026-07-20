@@ -18,6 +18,9 @@
 #include "mahalanobis_gate.hpp"
 #include "pattern_matcher.hpp"
 #include "pattern_manager.hpp"
+#include "waterfall_history.hpp"
+#include "spectral_kurtosis.hpp"
+#include "adaptive_threshold.hpp"
 
 namespace drone_analyzer {
 
@@ -106,6 +109,16 @@ struct ScanConfig {
     // Pattern matching settings
     bool pattern_matching_enabled{true};              // Enable/disable pattern matching
     uint16_t pattern_similarity_threshold{DEFAULT_PATTERN_SIMILARITY_THRESHOLD};  // 0-1000
+
+    // Spectral Kurtosis (higher-order statistics)
+    bool kurtosis_enabled{false};        // Default OFF (opt-in — new feature, untested in field)
+    int16_t kurtosis_min_x10{20};        // Minimum kurtosis × 10 (2.0) to accept signal
+
+    // Adaptive CFAR threshold
+    bool adaptive_cfar_enabled{false};   // Default OFF — auto-tunes threshold to maintain ≤5% FAR
+
+    // Waterfall history (multi-frame analysis)
+    bool waterfall_enabled{true};        // Default ON — enables TBD, Doppler, history (2KB SRAM)
     /**
      * @brief Default constructor
      */
@@ -211,6 +224,28 @@ struct SweepZoneRuntime {
         return pixel_index >= SWEEP_PIXELS_PER_SLICE;
     }
 };
+
+/**
+ * @brief Multi-target CFAR peak descriptor.
+ * @note Used by find_peaks() to return multiple detections per spectrum.
+ *       SRAM cost: 2 bytes per peak (8 peaks = 16 bytes on stack).
+ */
+struct CFARPeak {
+    size_t bin;      ///< FFT bin index (0-255)
+    uint8_t power;   ///< Peak power (0-255)
+};
+
+/**
+ * @brief Minimum bin separation between CFAR peaks (non-maximum suppression).
+ * @note ~780 kHz at 78 kHz/bin. Prevents detecting the same signal
+ *       twice due to sidelobe contamination.
+ */
+constexpr size_t CFAR_MIN_PEAK_SEPARATION = 10;
+
+/**
+ * @brief Maximum concurrent CFAR detections per spectrum frame.
+ */
+constexpr size_t CFAR_MAX_CONCURRENT_PEAKS = 8;
 
 /**
  * @brief CFAR (Constant False Alarm Rate) detector
@@ -511,6 +546,100 @@ public:
         }
         return peak_bin;
     }
+
+    /**
+     * @brief Run CFAR on entire spectrum and return ALL peaks above threshold.
+     * @param spectrum FFT spectrum data
+     * @param bin_count Total bins
+     * @param out_peaks Caller-provided array for output peaks
+     * @param max_peaks Maximum peaks to return (size of out_peaks array)
+     * @param mode CFAR mode
+     * @param ref_cells Reference cells
+     * @param guard_cells Guard cells
+     * @param threshold_x10 Threshold offset ×10
+     * @param skip_start Skip bins from start (for edge/DC)
+     * @param skip_end Skip bins from end (for edge)
+     * @param alpha CA weight for hybrid mode ×100
+     * @param beta GO weight for hybrid mode ×100
+     * @param gamma SO weight for hybrid mode ×100
+     * @param os_k_percent OS-CFAR k-th order percentile (50-90)
+     * @param vi_threshold_x10 VI-CFAR variability threshold ×10 (5-50)
+     * @return Number of peaks found (0 if none)
+     * @note Results sorted by power descending. Weaker peaks within
+     *       CFAR_MIN_PEAK_SEPARATION of a stronger peak are suppressed
+     *       (non-maximum suppression) to avoid detecting sidelobes.
+     * @note Stack: max_peaks × sizeof(CFARPeak) = 16 bytes for 8 peaks
+     */
+    [[nodiscard]] static size_t find_peaks(
+        const uint8_t* spectrum,
+        size_t bin_count,
+        CFARPeak* out_peaks,
+        size_t max_peaks,
+        CFARMode mode,
+        uint8_t ref_cells,
+        uint8_t guard_cells,
+        uint8_t threshold_x10,
+        size_t skip_start,
+        size_t skip_end,
+        uint8_t alpha = 50,
+        uint8_t beta = 30,
+        uint8_t gamma = 20,
+        uint8_t os_k_percent = 75,
+        uint8_t vi_threshold_x10 = 15
+    ) noexcept {
+        if (mode == CFARMode::OFF || spectrum == nullptr || out_peaks == nullptr || max_peaks == 0) {
+            return 0;
+        }
+
+        // Phase 1: Collect all CFAR-passing bins
+        CFARPeak candidates[CFAR_MAX_CONCURRENT_PEAKS * 2];  // Oversized for filtering
+        size_t candidate_count = 0;
+        const size_t limit = (bin_count > skip_end) ? (bin_count - skip_end) : 0;
+
+        for (size_t i = skip_start; i < limit; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+
+            if (detect(spectrum, bin_count, i, mode, ref_cells, guard_cells,
+                       threshold_x10, alpha, beta, gamma, os_k_percent, vi_threshold_x10)) {
+                if (candidate_count < CFAR_MAX_CONCURRENT_PEAKS * 2) {
+                    candidates[candidate_count++] = {i, spectrum[i]};
+                }
+            }
+        }
+
+        if (candidate_count == 0) return 0;
+
+        // Phase 2: Sort by power descending (insertion sort — small array)
+        for (size_t i = 1; i < candidate_count; ++i) {
+            const CFARPeak key = candidates[i];
+            size_t j = i;
+            while (j > 0 && candidates[j - 1].power < key.power) {
+                candidates[j] = candidates[j - 1];
+                --j;
+            }
+            candidates[j] = key;
+        }
+
+        // Phase 3: Non-maximum suppression — reject peaks within CFAR_MIN_PEAK_SEPARATION
+        size_t output_count = 0;
+        for (size_t i = 0; i < candidate_count && output_count < max_peaks; ++i) {
+            bool suppressed = false;
+            for (size_t j = 0; j < output_count; ++j) {
+                const size_t bin_diff = (candidates[i].bin > out_peaks[j].bin)
+                    ? (candidates[i].bin - out_peaks[j].bin)
+                    : (out_peaks[j].bin - candidates[i].bin);
+                if (bin_diff < CFAR_MIN_PEAK_SEPARATION) {
+                    suppressed = true;
+                    break;
+                }
+            }
+            if (!suppressed) {
+                out_peaks[output_count++] = candidates[i];
+            }
+        }
+
+        return output_count;
+    }
 };
 
 /**
@@ -798,6 +927,14 @@ public:
      * @note Use instead of get_config().scan_interval_ms in hot paths
      */
     [[nodiscard]] uint32_t get_scan_interval_ms() const noexcept;
+
+    /**
+     * @brief Check if adaptive CFAR is enabled (thread-safe, no full config copy)
+     * @return true if adaptive CFAR threshold auto-tuning is active
+     * @note Acquires mutex (LockOrder::DATA_MUTEX), copies only 1 byte
+     * @note Use instead of get_config().adaptive_cfar_enabled in hot paths
+     */
+    [[nodiscard]] bool is_adaptive_cfar_enabled() const noexcept;
     
     /**
      * @brief Get sweep step frequency in Hz
@@ -1453,9 +1590,10 @@ private:
     SystemTime confirm_start_time_{0};
     static constexpr uint32_t CONFIRM_TIMEOUT_MS = 5000;  // 5 seconds to gather confirmations
 
-    // Sort buffer for analyze_spectrum_shape (class member to avoid static in method)
+    // Sort buffer for analyze_spectrum_shape (mutable: used as scratch pad in const methods)
+    // Used by analyze_spectrum_shape() for noise floor and apply_shape_filters() for kurtosis.
     static constexpr size_t SPECTRUM_SORT_BUF_SIZE = 256;
-    uint8_t spectrum_sort_buf_[SPECTRUM_SORT_BUF_SIZE];
+    mutable uint8_t spectrum_sort_buf_[SPECTRUM_SORT_BUF_SIZE];
 
     // Lock timeout violation counter (for monitoring and debugging)
     uint32_t lock_timeout_count_{0};
@@ -1490,6 +1628,42 @@ private:
 
     // Pattern manager for loading/saving patterns from SD card
     PatternManager pattern_manager_;
+
+    // ========================================================================
+    // Phase 1: Foundation Detection Enhancements
+    // ========================================================================
+
+    /**
+     * @brief Temporal spectrum history for multi-frame analysis.
+     * @note SRAM: 2,048 bytes (8 frames × 256 bins).
+     *       Enables Track-Before-Detect, FHSS detection, Doppler estimation.
+     *       Fed by process_spectrum_message() on every detection frame.
+     */
+    WaterfallHistory waterfall_history_;
+
+    /**
+     * @brief Higher-order statistical analysis (kurtosis + skewness).
+     * @note Header-only, no static state. Used in apply_shape_filters() Step 12.
+     *       Distinguishes Gaussian noise (kurtosis ≈ 0) from drone signals
+     *       (kurtosis > 3) and WiFi flat-top (kurtosis < 0).
+     */
+    // SpectralKurtosis is stateless — used via static SpectralKurtosis::compute()
+
+    /**
+     * @brief Adaptive CFAR threshold based on observed false alarm rate.
+     * @note SRAM: ~40 bytes. Auto-tunes threshold to maintain ≤5% false alarm rate.
+     *       Prevents threshold from being too high (missed detections) or too low
+     *       (false positives) in varying noise environments.
+     */
+    AdaptiveThreshold adaptive_threshold_;
+
+    /**
+     * @brief Waterfall-based Track-Before-Detect result cache.
+     * @note When single-frame detection fails but multi-frame integration
+     *       confirms a signal, this caches the TBD detection for tracking.
+     */
+    static constexpr uint8_t TBD_MIN_FRAMES = 3;
+    static constexpr uint8_t TBD_THRESHOLD_MARGIN = 10;  // Half of spectrum margin (dB)
 
     // Matched pattern index (-1 if no pattern matched in sweep)
     int8_t matched_pattern_index_{-1};

@@ -226,7 +226,9 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , neighbor_margin_checker_()
     , mahalanobis_detector_()
     , pattern_matcher_()
-    , pattern_manager_() {
+    , pattern_manager_()
+    , waterfall_history_()
+    , adaptive_threshold_() {
 
     // Initialize mutex
     chMtxInit(&mutex_);
@@ -710,6 +712,9 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     // Feed spectrum to histogram processor for noise floor analysis
     (void)histogram_processor_.update_histogram(spectrum.db.data(), spectrum.db.size());
 
+    // Feed temporal history for multi-frame analysis (TBD, FHSS, Doppler)
+    waterfall_history_.push(spectrum.db.data());
+
     const int32_t raw_rssi = extract_rssi(spectrum);
 
     // Median filter: reject single-sample noise spikes
@@ -726,6 +731,8 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     if (frequency != last_hysteresis_freq_) {
         signal_present_ = false;
         last_hysteresis_freq_ = frequency;
+        // Reset waterfall history — old frames are stale for new frequency
+        waterfall_history_.reset();
     }
 
     // Effective threshold: 2 dB harder to turn ON, 2 dB easier to stay ON
@@ -757,6 +764,44 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             signal_present_ = true;
         } else if (signal_present_) {
             signal_present_ = false;
+        }
+    }
+
+    // ---- Track-Before-Detect (TBD) Pass ----
+    // When single-frame detection fails, check if multi-frame integration
+    // confirms a weak signal. Uses WaterfallHistory to accumulate power
+    // across recent frames. Provides ~9 dB SNR gain (8 frames = 3× sensitivity).
+    // Only runs when waterfall_history_ has enough frames and single-frame failed.
+    if (!signal_detected && waterfall_history_.is_warm(TBD_MIN_FRAMES)
+        && config_.spectrum_detection_enabled) {
+
+        // Find peak bin from newest frame
+        size_t tbd_peak_bin = FFT_EDGE_SKIP;
+        uint8_t tbd_peak_power = 0;
+        for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            const uint8_t max_power = waterfall_history_.get_max_across_frames(i);
+            if (max_power > tbd_peak_power) {
+                tbd_peak_power = max_power;
+                tbd_peak_bin = i;
+            }
+        }
+
+        // Check if this bin was active in enough recent frames
+        const uint8_t threshold = static_cast<uint8_t>(rssi_threshold + 120 + TBD_THRESHOLD_MARGIN);
+        const uint8_t active_frames = waterfall_history_.count_above_threshold(tbd_peak_bin, threshold);
+
+        if (active_frames >= TBD_MIN_FRAMES) {
+            // Multi-frame confirmed — compute integrated RSSI
+            const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
+            const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
+            const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, get_current_total_gain());
+
+            if (tbd_rssi > rssi_threshold) {
+                signal_detected = true;
+                signal_present_ = true;
+                effective_rssi = tbd_rssi;
+            }
         }
     }
 
@@ -1134,6 +1179,14 @@ uint32_t DroneScanner::get_scan_interval_ms() const noexcept {
     return config_.scan_interval_ms;
 }
 
+bool DroneScanner::is_adaptive_cfar_enabled() const noexcept {
+    MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
+    if (!lock.is_locked()) {
+        return false;
+    }
+    return config_.adaptive_cfar_enabled;
+}
+
 ErrorCode DroneScanner::set_config(const ScanConfig& config) noexcept {
     ErrorCode validate_result = validate_config_internal(config);
     if (validate_result != ErrorCode::SUCCESS) {
@@ -1404,15 +1457,33 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
     size_t peak_index = FFT_EDGE_SKIP;
 
     if (config_.cfar_mode != CFARMode::OFF) {
+        // Use adaptive threshold if enabled — auto-tunes to maintain
+        // constant false alarm rate in varying noise environments
+        const uint8_t effective_threshold = adaptive_threshold_.get_optimal_threshold();
+
         const size_t cfar_peak = CFARDetector::find_peak_cfar(
             spectrum.db.data(), FFT_BIN_COUNT,
             config_.cfar_mode, config_.cfar_ref_cells, config_.cfar_guard_cells,
-            config_.cfar_threshold_x10, FFT_EDGE_SKIP, FFT_EDGE_SKIP,
+            effective_threshold, FFT_EDGE_SKIP, FFT_EDGE_SKIP,
             config_.cfar_hybrid_alpha, config_.cfar_hybrid_beta, config_.cfar_hybrid_gamma,
             config_.os_cfar_k_percent, config_.vi_cfar_threshold_x10
         );
 
-        if (cfar_peak >= FFT_BIN_COUNT) return false;
+        if (cfar_peak >= FFT_BIN_COUNT) {
+            // No detection — feed negative result to adaptive threshold
+            // BEFORE early return. Pass RSSI_MIN_DBM as sentinel (not OOB read).
+            adaptive_threshold_.update(
+                false, RSSI_MIN_DBM, noise_floor, config_.cfar_threshold_x10);
+            return false;
+        }
+
+        // Detection found — feed positive result to adaptive threshold
+        adaptive_threshold_.update(
+            true,
+            spectrum_value_to_dbm(spectrum.db[cfar_peak], get_current_total_gain()),
+            noise_floor,
+            config_.cfar_threshold_x10);
+
         peak_index = cfar_peak;
         peak_value = spectrum.db[cfar_peak];
     } else {
@@ -1638,6 +1709,23 @@ bool DroneScanner::apply_shape_filters(
         }
     }
 
+    // Step 12: Spectral Kurtosis (higher-order statistics)
+    // Distinguishes Gaussian noise (kurtosis ≈ 0) from non-Gaussian drone signals
+    // (kurtosis > 3, leptokurtic). WiFi flat-top has kurtosis < 0 (platykurtic).
+    // Only runs when explicitly enabled (opt-in, default OFF).
+    if (config_.kurtosis_enabled && peak_margin >= FLATNESS_MIN_PEAK_MARGIN) {
+        const size_t data_size = has_dc_gap ? FFT_BIN_COUNT : COMPOSITE_SIZE;
+        const auto kurt_result = SpectralKurtosis::compute(
+            data, edge_skip, data_size - edge_skip,
+            spectrum_sort_buf_, SPECTRUM_SORT_BUF_SIZE,
+            has_dc_gap ? FFT_DC_SPIKE_START : 0,
+            has_dc_gap ? FFT_DC_SPIKE_END : 0
+        );
+        if (kurt_result.kurtosis_x10 < config_.kurtosis_min_x10) {
+            return false;
+        }
+    }
+
     out_rssi = spectrum_value_to_dbm(raw_peak, total_gain);
     return true;
 }
@@ -1792,6 +1880,9 @@ void DroneScanner::process_spectrum_sweep(
         signal_present_ = false;
         last_hysteresis_freq_ = center_freq;
     }
+
+    // Feed waterfall history for sweep mode (runs without mutex — scanner thread stopped)
+    waterfall_history_.push(spectrum.db.data());
 
     const uint8_t cfg_margin = config_.spectrum_margin;
 

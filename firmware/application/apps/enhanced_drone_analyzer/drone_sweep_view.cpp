@@ -565,7 +565,10 @@ void DroneSweepView::save_settings() noexcept {
     // Save to scanner config
     // NOTE: No intermediate exc[4][5] stack array — write directly to workspace.
     if (scanner_ptr_ != nullptr) {
-        g_workspace_cfg = original_config_;
+        // Read CURRENT scanner config instead of stale original_config_.
+        // original_config_ was captured at SWP view construction time.
+        // Keypad callbacks may have updated the scanner config since then.
+        scanner_ptr_->get_config(g_workspace_cfg);
         g_workspace_cfg.sweep_start_freq = sw1_start;
         g_workspace_cfg.sweep_end_freq = sw1_end;
         g_workspace_cfg.sweep_step_freq = sw1_step;
@@ -602,7 +605,10 @@ void DroneSweepView::save_settings() noexcept {
         g_workspace_cfg.sweep_exceptions[3][3] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc3_)) * MHZ;
         g_workspace_cfg.sweep_exceptions[3][4] = static_cast<FreqHz>(get_exception_field(&view_group2_.field_sw4_exc4_)) * MHZ;
         g_workspace_cfg.exception_radius_mhz = exc_radius;
-        (void)scanner_ptr_->set_config(g_workspace_cfg);
+        const ErrorCode cfg_err = scanner_ptr_->set_config(g_workspace_cfg);
+        if (cfg_err != ErrorCode::SUCCESS) {
+            return;  // Don't save invalid config to SD
+        }
     }
 
     // Save to SD via SettingsFileManager

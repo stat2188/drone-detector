@@ -249,6 +249,10 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
     };
 
     button_load_.on_select = [this](ui::Button&) {
+        // Always clean up sweep mode before pushing sub-view
+        if (composite_active_) {
+            exit_sweep_mode(true);
+        }
         auto open_view = nav_.push<FileLoadView>(".TXT");
         open_view->push_dir(freqman_dir);
         open_view->on_changed = [this](const std::filesystem::path& new_file_path) {
@@ -340,19 +344,19 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         }
         // Remember if scanning was active so on_show() can restore it
         scanning_needs_restore_ = scanning_;
+        // Always clean up sweep mode before pushing sub-view
+        if (composite_active_) {
+            exit_sweep_mode(true);
+        }
         // Stop scanning before pushing sub-view (matches PTR handler pattern).
         if (scanning_) {
-            if (composite_active_) {
-                exit_sweep_mode(true);
-            } else {
-                scanner_thread_->set_scanning(false);
-                if (scanner_ptr_ != nullptr) {
-                    (void)scanner_ptr_->stop_scanning();
-                }
-                baseband::spectrum_streaming_stop();
-                scanning_ = false;
-                button_start_stop_.set_text("Start");
+            scanner_thread_->set_scanning(false);
+            if (scanner_ptr_ != nullptr) {
+                (void)scanner_ptr_->stop_scanning();
             }
+            baseband::spectrum_streaming_stop();
+            scanning_ = false;
+            button_start_stop_.set_text("Start");
         }
         // Refresh config from scanner (SWP view may have changed sweep settings)
         scanner_ptr_->get_config(g_workspace_cfg);
@@ -368,21 +372,22 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         // Don't auto-restart scanning after returning from SWP save.
         // SWP is a configuration view — user should manually start scanning.
         scanning_needs_restore_ = false;
+        // CRITICAL: Always clean up sweep mode BEFORE checking scanning_.
+        // If user was in sweep mode but stopped scanning (composite_active_=true,
+        // scanning_=false), exit_sweep_mode must still be called to reset
+        // composite_active_=false. Without this, on_show() auto-restarts sweep.
+        if (composite_active_) {
+            exit_sweep_mode(true);
+        }
         // Stop scanning before pushing sub-view (matches PTR handler pattern).
-        // on_hide() also stops scanning, but doing it here ensures clean state
-        // and prevents race conditions with the scanner thread.
         if (scanning_) {
-            if (composite_active_) {
-                exit_sweep_mode(true);
-            } else {
-                scanner_thread_->set_scanning(false);
-                if (scanner_ptr_ != nullptr) {
-                    (void)scanner_ptr_->stop_scanning();
-                }
-                baseband::spectrum_streaming_stop();
-                scanning_ = false;
-                button_start_stop_.set_text("Start");
+            scanner_thread_->set_scanning(false);
+            if (scanner_ptr_ != nullptr) {
+                (void)scanner_ptr_->stop_scanning();
             }
+            baseband::spectrum_streaming_stop();
+            scanning_ = false;
+            button_start_stop_.set_text("Start");
         }
         scanner_ptr_->get_config(g_workspace_cfg);
         nav_.push<DroneSweepView>(g_workspace_cfg, scanner_ptr_);
@@ -402,20 +407,20 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         // PTR uses baseband_needs_restore_ for full baseband restart, not scanning_needs_restore_
         scanning_needs_restore_ = false;
 
+        // Always clean up sweep mode before pushing sub-view
+        if (composite_active_) {
+            // suppress_auto_restart: PatternManagerView handles its own streaming state.
+            exit_sweep_mode(true);
+        }
         // Stop scanning if active
         if (scanning_) {
-            if (composite_active_) {
-                // suppress_auto_restart: PatternManagerView handles its own streaming state.
-                exit_sweep_mode(true);
-            } else {
-                scanner_thread_->set_scanning(false);
-                if (scanner_ptr_ != nullptr) {
-                    (void)scanner_ptr_->stop_scanning();
-                }
-                baseband::spectrum_streaming_stop();
-                scanning_ = false;
-                button_start_stop_.set_text("Start");
+            scanner_thread_->set_scanning(false);
+            if (scanner_ptr_ != nullptr) {
+                (void)scanner_ptr_->stop_scanning();
             }
+            baseband::spectrum_streaming_stop();
+            scanning_ = false;
+            button_start_stop_.set_text("Start");
         }
 
         // Mark baseband for restore when returning from PatternManagerView
@@ -634,6 +639,7 @@ void DroneScannerUI::on_show() {
         if (!scanning_) {
             baseband::spectrum_streaming_start();
             scanning_ = true;
+            button_start_stop_.set_text("Stop");
         }
     }
 }
@@ -928,6 +934,30 @@ void DroneScannerUI::on_retune(FreqHz freq, uint32_t range) noexcept {
     set_current_frequency_safe(freq);
 }
 
+void DroneScannerUI::apply_agc(const uint8_t* spectrum_data) noexcept {
+    // Auto gain control: analyze spectrum and adjust RF frontend.
+    // Runs every frame to catch saturation quickly, but adjustments
+    // are rate-limited inside AutoGainControl (500ms) to prevent oscillation.
+    if (scanner_ptr_ == nullptr || !scanner_ptr_->is_adaptive_cfar_enabled()) return;
+
+    const auto gain = auto_gain_control_.compute_optimal(
+        spectrum_data,
+        portapack::receiver_model.lna(),
+        portapack::receiver_model.vga(),
+        portapack::receiver_model.rf_amp(),
+        chTimeNow()
+    );
+    if (gain.lna != portapack::receiver_model.lna()) {
+        portapack::receiver_model.set_lna(gain.lna);
+    }
+    if (gain.vga != portapack::receiver_model.vga()) {
+        portapack::receiver_model.set_vga(gain.vga);
+    }
+    if (gain.rf_amp != portapack::receiver_model.rf_amp()) {
+        portapack::receiver_model.set_rf_amp(gain.rf_amp);
+    }
+}
+
 void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept {
     if (scanner_ptr_ != nullptr && scanning_) {
         // Use frequency from on_retune() — this matches the hardware tuning
@@ -937,6 +967,9 @@ void DroneScannerUI::on_channel_spectrum(const ChannelSpectrum& spectrum) noexce
         if (freq != 0) {
             (void)scanner_ptr_->process_spectrum_message(spectrum, freq);
         }
+
+        // Auto gain control: analyze spectrum and adjust RF frontend
+        apply_agc(spectrum.db.data());
 
         // Feed spectrum to DroneDisplay for visualization only when scanning
         drone_display_.set_spectrum_data(spectrum.db.data(), spectrum.db.size());
@@ -1155,6 +1188,9 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
 
         // Pass sweep range boundaries to prevent false positives outside the range
         scanner_ptr_->process_spectrum_sweep(spectrum, lg_frame_buf_, fft_freq, win.f_min, win.f_max);
+
+        // AGC for sweep mode — applies optimal gains to each frame's spectrum
+        apply_agc(spectrum.db.data());
 
         // Update pattern match highlight (red frame) if pattern matching is enabled
         // FIX: Convert 256-bin FFT index to 240-pixel screen index (HIGH-1)

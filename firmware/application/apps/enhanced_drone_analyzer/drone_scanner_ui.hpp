@@ -21,6 +21,7 @@
 #include "drone_display.hpp"
 #include "sweep_processor.hpp"
 #include "settings_manager.hpp"
+#include "auto_gain_control.hpp"
 
 namespace drone_analyzer {
 
@@ -152,6 +153,7 @@ private:
 
     void bigdisplay_update(BigDisplayColor color) noexcept;
     void refresh_ui() noexcept;
+    void apply_agc(const uint8_t* spectrum_data) noexcept;
     void on_channel_spectrum(const ChannelSpectrum& spectrum) noexcept;
     void on_retune(FreqHz freq, uint32_t range) noexcept;
 
@@ -236,6 +238,14 @@ private:
     // user sees on screen. 240 bytes BSS, shared across all sweep windows.
     // Total sweep-related SRAM: sweep_[4] (~1,200B) + lg_frame_buf_ (240B) = ~1,440B
     uint8_t lg_frame_buf_[COMPOSITE_SIZE]{};
+
+    /**
+     * @brief RF frontend automatic gain controller.
+     * @note Analyzes each spectrum frame for saturation/dead bins and adjusts
+     *       LNA/VGA/RF amplifiers via hardware_controller. Rate-limited to
+     *       prevent gain oscillation. Default OFF — opt-in via ScanConfig.
+     */
+    AutoGainControl auto_gain_control_{};
 
     /**
      * @brief Storage layout for message handlers.
