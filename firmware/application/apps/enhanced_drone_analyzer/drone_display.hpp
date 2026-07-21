@@ -8,12 +8,13 @@
 #include "ui_widget.hpp"
 #include "drone_types.hpp"
 #include "constants.hpp"
+#include "signal_timeline.hpp"
 
 namespace drone_analyzer {
 
 /**
  * @brief Display component for drone analyzer UI
- * @note Inherits from ui::View, renders spectrum, histogram, drone list, status bar
+ * @note Inherits from ui::View, renders spectrum, signal timeline, drone list, status bar
  * @note Uses static storage for large buffers to reduce stack usage
  * @note Removed features: mini spectrum, RSSI history, frequency ruler, detailed info
  */
@@ -53,19 +54,17 @@ public:
     ) noexcept;
 
     /**
-     * @brief Render histogram display
+     * @brief Render signal timeline (scrolling sparkline of peak power)
      * @param painter Painter instance for drawing
-     * @param histogram_data Histogram data buffer
-     * @param histogram_size Size of histogram data
+     * @param timeline Signal timeline data to render
      * @param start_x Starting X coordinate
      * @param start_y Starting Y coordinate
      * @param width Display width
      * @param height Display height
      */
-    void render_histogram(
+    void render_timeline(
         Painter& painter,
-        const uint16_t* histogram_data,
-        size_t histogram_size,
+        const SignalTimeline& timeline,
         uint16_t start_x,
         uint16_t start_y,
         uint16_t width,
@@ -141,15 +140,10 @@ public:
     ) noexcept;
 
     /**
-     * @brief Set histogram data for rendering
-     * @param histogram_data Histogram data buffer
-     * @param histogram_size Size of histogram data
-     * @return ErrorCode::SUCCESS if set, error code otherwise
+     * @brief Push one frame's peak power into the timeline.
+     * @param peak_power Maximum FFT bin power (0-255)
      */
-    ErrorCode set_histogram_data(
-        const uint16_t* histogram_data,
-        size_t histogram_size
-    ) noexcept;
+    void push_timeline_value(uint8_t peak_power) noexcept;
 
     /**
      * @brief Set status text
@@ -158,8 +152,8 @@ public:
     void set_status_text(const char* status_text) noexcept;
 
     void set_spectrum_visible(bool visible) noexcept { spectrum_visible_ = visible; dirty_flags_ = DIRTY_ALL; set_dirty(); }
-    void set_histogram_visible(bool visible) noexcept { histogram_visible_ = visible; dirty_flags_ = DIRTY_ALL; set_dirty(); }
-    [[nodiscard]] bool get_histogram_visible() const noexcept { return histogram_visible_; }
+    void set_timeline_visible(bool visible) noexcept { timeline_visible_ = visible; dirty_flags_ = DIRTY_ALL; set_dirty(); }
+    [[nodiscard]] bool get_timeline_visible() const noexcept { return timeline_visible_; }
     void set_drone_list_visible(bool visible) noexcept { drone_list_visible_ = visible; dirty_flags_ = DIRTY_ALL; set_dirty(); }
     void set_status_bar_visible(bool visible) noexcept { status_bar_visible_ = visible; dirty_flags_ = DIRTY_ALL; set_dirty(); }
 
@@ -252,24 +246,6 @@ private:
         Painter& painter,
         uint16_t x,
         uint16_t y,
-        uint32_t color
-    ) noexcept;
-
-    /**
-     * @brief Draw histogram bar
-     * @param painter Painter instance for drawing
-     * @param x X coordinate
-     * @param y Y coordinate
-     * @param width Bar width
-     * @param height Bar height
-     * @param color Bar color
-     */
-    void draw_histogram_bar(
-        Painter& painter,
-        uint16_t x,
-        uint16_t y,
-        uint16_t width,
-        uint16_t height,
         uint32_t color
     ) noexcept;
 
@@ -389,17 +365,6 @@ private:
     ) const noexcept;
 
     /**
-     * @brief Validate histogram data
-     * @param histogram_data Histogram data buffer
-     * @param histogram_size Size of histogram data
-     * @return ErrorCode::SUCCESS if valid, error code otherwise
-     */
-    [[nodiscard]] ErrorCode validate_histogram_data(
-        const uint16_t* histogram_data,
-        size_t histogram_size
-    ) const noexcept;
-
-    /**
      * @brief Clamp value to range
      * @param value Value to clamp
      * @param min Minimum value
@@ -419,8 +384,8 @@ private:
     // Spectrum data buffer (static storage for stack optimization)
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_buffer_;
 
-    // Histogram data buffer (static storage for stack optimization)
-    std::array<uint16_t, HISTOGRAM_BUFFER_SIZE> histogram_buffer_;
+    // Signal timeline (scrolling sparkline of peak power, 60 bytes vs 480 for histogram)
+    SignalTimeline timeline_;
 
     // Status text buffer
     char status_text_[MAX_TEXT_LENGTH];
@@ -428,19 +393,15 @@ private:
     // Spectrum data size
     size_t spectrum_data_size_;
 
-    // Histogram data size
-    size_t histogram_data_size_;
-
     // Display flags
     bool spectrum_visible_;
-    bool histogram_visible_;
+    bool timeline_visible_;
     bool drone_list_visible_;
     bool status_bar_visible_;
 
     // Section-level dirty flags — each bit controls whether a section repaints.
     // Prevents clearing+redrawing unchanged sections, eliminating flicker.
     static constexpr uint8_t DIRTY_SPEC   = 1 << 0;
-    static constexpr uint8_t DIRTY_HIST   = 1 << 1;
     static constexpr uint8_t DIRTY_DRONES = 1 << 2;
     static constexpr uint8_t DIRTY_STATUS = 1 << 3;
     static constexpr uint8_t DIRTY_ALL    = 0x0F;
@@ -574,7 +535,7 @@ public:
      */
     struct LayoutMetrics {
         uint16_t spec_h;         // Spectrum/composite section height (0 if hidden)
-        uint16_t hist_h;         // Histogram section height (0 if hidden)
+        uint16_t timeline_h;     // Signal timeline section height (0 if hidden)
         uint16_t status_h;       // Status bar height (0 if hidden)
         uint16_t drone_h;        // Drone list section height (remaining space)
         uint16_t list_start_y;   // Y offset where drone list begins (relative to parent)

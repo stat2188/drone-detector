@@ -75,12 +75,6 @@ constexpr size_t MAX_DISPLAYED_DRONES = 16;
 constexpr size_t SPECTRUM_BUFFER_SIZE = 256;
 
 /**
- * @brief Histogram buffer size (bins)
- * @note 240 = DISPLAY_WIDTH = full sweep composite coverage
- */
-constexpr size_t HISTOGRAM_BUFFER_SIZE = 240;
-
-/**
  * @brief RSSI history size for each drone
  * @note Must be >= MOVEMENT_TREND_MIN_HISTORY for trend calculation
  */
@@ -245,45 +239,6 @@ constexpr int32_t DEFAULT_THREAT_MEDIUM_DBM = -95;
  * @note HackRF RF amp (HMC627A/VGA) provides ~14 dB when enabled, 0 dB bypass when off
  */
 constexpr int32_t RF_AMP_GAIN_DB = 14;
-
-// ============================================================================
-// Histogram Constants
-// ============================================================================
-
-/**
- * @brief Histogram bin count
- */
-constexpr size_t HISTOGRAM_BIN_COUNT = 64;
-
-/**
- * @brief Histogram scale factor
- */
-constexpr uint8_t HISTOGRAM_SCALE_FACTOR = 4;
-
-/**
- * @brief Histogram max value (uint8_t max)
- */
-constexpr uint8_t HISTOGRAM_MAX_VALUE = 255;
-
-/**
- * @brief Histogram extended size (for calculations)
- */
-constexpr size_t HISTOGRAM_EXTENDED_SIZE = 256;
-
-/**
- * @brief Histogram buffer half size
- */
-constexpr size_t HISTOGRAM_HALF_SIZE = 128;
-
-/**
- * @brief Histogram noise floor threshold
- */
-constexpr uint8_t HISTOGRAM_NOISE_FLOOR = 10;
-
-/**
- * @brief Histogram signal threshold
- */
-constexpr uint8_t HISTOGRAM_SIGNAL_THRESHOLD = 20;
 
 // ============================================================================
 // Display Constants
@@ -465,14 +420,13 @@ constexpr uint32_t AUDIO_ALERT_LONG_GAP_MS = 50;
  * - Tracked drones: 16 × 56 = 896 bytes
  * - Display drones: 16 × 39 = 624 bytes
  * - Spectrum buffer: 256 bytes
- * - Histogram buffer: 512 bytes
- * - Histogram processor: ~509 bytes
+ * - Signal timeline: 62 bytes
  * - RSSI detector: ~108 bytes (includes RSSIStatistics struct)
  * - Scanner thread stack: 2,048 bytes (BSS)
  * - Other structures: ~200 bytes
- * - Total static RAM: ~6,105 bytes
+ * - Total static RAM: ~5,146 bytes
  */
-constexpr size_t STATIC_RAM_BUDGET_BYTES = 6105;
+constexpr size_t STATIC_RAM_BUDGET_BYTES = 5146;
 
 /**
  * @brief Total stack budget (bytes)
@@ -698,12 +652,6 @@ constexpr uint16_t SWEEP_BINS_PER_STEP = FFT_USABLE_BINS_NARROW;
  * @note +3dB SNR improvement over trigger=31, sweep takes ~1.6s for 240 freq
  */
 constexpr size_t SWEEP_FFT_TRIGGER = 63;
-
-/**
- * @brief Scale factor for converting 8-bit composite power to 16-bit histogram bins.
- * @note Shifts uint8_t range [0,255] to uint16_t range [0,65280].
- */
-constexpr uint16_t COMPOSITE_TO_HIST_SCALE = 256;
 
 /**
  * @brief Maximum number of sweep windows
@@ -1169,6 +1117,16 @@ constexpr uint8_t CONFIRM_COUNT_MIN = 1;
  * @brief Maximum confirm count
  */
 constexpr uint8_t CONFIRM_COUNT_MAX = 10;
+
+/**
+ * @brief Default miss tolerance (consecutive misses before breaking lock)
+ * @note Independently configurable from confirm_count.
+ *       Default: confirm_count * 2 = 4 misses (~66ms at 50ms/scan)
+ * @note Higher values tolerate more FHSS/burst fading without dropping lock.
+ */
+constexpr uint8_t DEFAULT_MISS_TOLERANCE = 4;
+constexpr uint8_t MISS_TOLERANCE_MIN = 1;
+constexpr uint8_t MISS_TOLERANCE_MAX = 20;
 
 // ============================================================================
 // RSSI Variance Noise Rejection Constants

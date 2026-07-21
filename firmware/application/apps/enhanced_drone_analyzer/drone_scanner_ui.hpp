@@ -229,7 +229,6 @@ private:
     DisplayData refresh_display_data_{};
     TrackedDrone refresh_drones_[MAX_DISPLAYED_DRONES]{};
     char refresh_status_buf_[MAX_TEXT_LENGTH]{};
-    uint16_t refresh_hist_data_[HISTOGRAM_BUFFER_SIZE]{};
 
     // Per-frame Looking Glass reordered buffer for sweep mode shape analysis.
     // Created by SweepProcessor::reorder_frame() and passed to scanner's

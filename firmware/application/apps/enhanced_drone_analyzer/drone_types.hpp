@@ -606,28 +606,6 @@ struct freqman_entry_fixed {
     return ErrorCode::SUCCESS;
 }
 
-/**
- * @brief Validate histogram buffer
- * @param histogram Histogram buffer
- * @param length Buffer length
- * @return ErrorCode::SUCCESS if valid, error code otherwise
- */
-[[nodiscard]] inline ErrorCode validate_histogram_buffer(
-    const uint16_t* histogram,
-    size_t length
-) noexcept {
-    if (histogram == nullptr) {
-        return ErrorCode::BUFFER_INVALID;
-    }
-    if (length == 0) {
-        return ErrorCode::BUFFER_EMPTY;
-    }
-    if (length > 240) {
-        return ErrorCode::BUFFER_INVALID;
-    }
-    return ErrorCode::SUCCESS;
-}
-
 // ============================================================================
 // Utility Functions
 // ============================================================================

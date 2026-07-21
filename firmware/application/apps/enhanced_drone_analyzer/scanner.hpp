@@ -12,7 +12,6 @@
 #include "hardware_controller.hpp"
 #include "audio_alerts.hpp"
 #include "rssi_detector.hpp"
-#include "histogram_processor.hpp"
 #include "median_filter.hpp"
 #include "message.hpp"
 #include "mahalanobis_gate.hpp"
@@ -89,6 +88,7 @@ struct ScanConfig {
     int32_t neighbor_margin_db{DEFAULT_NEIGHBOR_MARGIN_DB};  // 0=disabled, 2=FPV default
     bool rssi_variance_enabled{true};                         // FPV-OPTIMIZED: ON by default (analog FM RSSI stability)
     uint8_t confirm_count{DEFAULT_CONFIRM_COUNT};             // Configurable confirm count
+    uint8_t miss_tolerance{DEFAULT_MISS_TOLERANCE};           // Consecutive misses before breaking lock (independent of confirm_count)
 
     // CFAR detection (Constant False Alarm Rate)
     CFARMode cfar_mode{DEFAULT_CFAR_MODE};                    // CFAR mode (OFF/CA/GO/SO/HYBRID/OS/VI)
@@ -104,7 +104,7 @@ struct ScanConfig {
     // Sweep exception frequencies (per window, 0 = unused slot)
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
     uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100, configurable exclusion radius
-    uint8_t rssi_decrease_cycles{5};  // sweep cycles of RSSI decrease before threat decay
+    uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay (sweep uses hardcoded MAX_SWEEP_CYCLES_MISSED)
     
     // Pattern matching settings
     bool pattern_matching_enabled{true};              // Enable/disable pattern matching
@@ -846,20 +846,6 @@ public:
     ) noexcept;
 
     /**
-     * @brief Process spectrum data and extract RSSI
-     * @param spectrum Channel spectrum data
-     * @param current_frequency Current tuned frequency (for tracking)
-     * @return ErrorResult containing RSSI value or error
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     * @note Extracts maximum power from spectrum and converts to dBm
-     * @note Updates tracked drones if RSSI above threshold
-     */
-    [[nodiscard]] ErrorResult<RssiValue> process_spectrum_data(
-        const ChannelSpectrum& spectrum,
-        FreqHz current_frequency
-    ) noexcept;
-    
-    /**
      * @brief Process spectrum with explicit frequency (avoids race with scanner thread)
      * @param spectrum Channel spectrum data
      * @param frequency Frequency this spectrum corresponds to
@@ -1150,10 +1136,10 @@ public:
     ) noexcept;
 
     /**
-     * @brief Apply RSSI-based threat decay with SWEEP-aware logic
-     * @param is_sweep_mode If true, use cycle-based decay for sweep mode; if false, use time-based (normal mode)
-     * @note NORMAL mode: time-based decay (fast, continuous scanning)
-     * @note SWEEP mode: cycle-based decay (tolerates long gaps between visits)
+     * @brief Apply RSSI-based threat decay with mode-aware logic
+     * @param is_sweep_mode If true, use cycle-based decay (sweep mode); if false, use time-based (normal mode)
+     * @note NORMAL mode: time-based decay (rssi_decrease_cycles × 1000 = ms threshold)
+     * @note SWEEP mode: cycle-based decay (uses MAX_SWEEP_CYCLES_MISSED constant, not rssi_decrease_cycles)
      * @note Each drone: if RSSI did not increase for decay_threshold_ms (CYC × 1000ms in normal mode),
      *       OR if drone was not seen for more than MAX_SWEEP_CYCLES_MISSED cycles (in sweep mode),
      *       decay threat by one step. If RSSI increased or drone seen, reset counters.
@@ -1215,27 +1201,13 @@ public:
         tracked_count_ = static_cast<uint8_t>(write_idx);
     }
 
-    [[nodiscard]] HistogramProcessor& get_histogram_processor() noexcept {
-        return histogram_processor_;
-    }
-
     /**
-     * @brief Get histogram data snapshot (thread-safe)
-     * @param buffer Output buffer for histogram data
-     * @param max_length Maximum buffer length
-     * @return Number of histogram entries copied
-     * @note Acquires mutex (LockOrder::DATA_MUTEX)
-     * @note Use this from UI thread instead of get_histogram_processor().get_histogram_data()
+     * @brief Get peak power from most recent spectrum frame.
+     * @return Maximum FFT bin power (0-255), or 0 if no frame processed yet.
+     * @note uint8_t reads are atomic on Cortex-M4 — no mutex needed.
      */
-    [[nodiscard]] size_t get_histogram_snapshot(
-        uint16_t* buffer,
-        size_t max_length
-    ) noexcept {
-        MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
-        if (!lock.is_locked()) {
-            return 0;
-        }
-        return histogram_processor_.get_histogram_data(buffer, max_length);
+    [[nodiscard]] uint8_t get_last_peak_power() const noexcept {
+        return last_peak_power_;
     }
 
     /**
@@ -1291,17 +1263,19 @@ private:
     
     /**
      * @brief Internal: Update tracked drone
-     * @note Called by update_tracked_drones() with mutex held
+     * @note Called by update_tracked_drones() and apply_sweep_tracking() with mutex held
      * @param frequency Frequency of detected signal
      * @param rssi RSSI value
      * @param timestamp Timestamp of detection
+     * @param out_index Optional output: index of updated/created drone (SIZE_MAX if not found)
      * @return ErrorCode::SUCCESS if updated, error code otherwise
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] ErrorCode update_tracked_drone_internal(
         FreqHz frequency,
         RssiValue rssi,
-        SystemTime timestamp
+        SystemTime timestamp,
+        size_t* out_index = nullptr
     ) noexcept;
     
     /**
@@ -1610,8 +1584,8 @@ private:
     // RSSI detector for signal analysis and threat classification
     RSSIDetector rssi_detector_;
 
-    // Histogram processor for spectrum analysis
-    HistogramProcessor histogram_processor_;
+    // Peak power from most recent spectrum frame (for timeline display)
+    uint8_t last_peak_power_{0};
 
     // Median filter for RSSI spike rejection (window=7 samples)
     MedianFilter<int32_t, 7> rssi_median_filter_;

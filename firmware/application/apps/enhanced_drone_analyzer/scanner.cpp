@@ -220,7 +220,6 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , sweep_usable_buf_{}
     , alert_callback_in_progress_()
     , rssi_detector_()
-    , histogram_processor_()
     , rssi_median_filter_()
     , median_filter_enabled_{false}
     , neighbor_margin_checker_()
@@ -234,7 +233,6 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     chMtxInit(&mutex_);
 
     (void)rssi_detector_.initialize(RSSI_DETECTION_THRESHOLD_DBM);
-    (void)histogram_processor_.initialize(HISTOGRAM_BIN_COUNT);
 }
 
 DroneScanner::~DroneScanner() noexcept {
@@ -643,52 +641,6 @@ ErrorCode DroneScanner::update_tracked_drones(
     return update_tracked_drone_internal(frequency, rssi, timestamp);
 }
 
-ErrorResult<RssiValue> DroneScanner::process_spectrum_data(
-    const ChannelSpectrum& spectrum,
-    FreqHz current_frequency
-) noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-
-    if (current_frequency == 0) {
-        return ErrorResult<RssiValue>::failure(ErrorCode::INVALID_PARAMETER);
-    }
-
-    const int32_t rssi = extract_rssi(spectrum);
-
-    int32_t effective_rssi = rssi;
-    bool signal_detected = false;
-
-    if (config_.spectrum_detection_enabled) {
-        // Spectrum-only: shape analysis gates detection. If the signal
-        // fails all shape filters (margin, width, sharpness, flatness, symmetry, etc.)
-        // it is NOT a drone — reject regardless of raw RSSI.
-        int32_t spectrum_rssi = RSSI_MIN_DBM;
-        if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
-            // Shape passed — still enforce RSSI threshold (sens setting)
-            if (rssi > config_.rssi_threshold_dbm) {
-                signal_detected = true;
-                if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
-            }
-        }
-    } else {
-        signal_detected = (rssi > config_.rssi_threshold_dbm);
-    }
-
-    if (signal_detected) {
-        const ErrorCode err = update_tracked_drone_internal(
-            current_frequency,
-            effective_rssi,
-            chTimeNow()
-        );
-
-        if (err != ErrorCode::SUCCESS) {
-            return ErrorResult<RssiValue>::failure(err);
-        }
-    }
-
-    return ErrorResult<RssiValue>::success(rssi);
-}
-
 FreqHz DroneScanner::get_spectrum_frequency() noexcept {
     MutexTryLock<LockOrder::DATA_MUTEX> lock(mutex_);
     if (lock.is_locked()) {
@@ -709,8 +661,14 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     }
 
     // ChannelSpectrum has fixed-size array (256 bins), no empty check needed
-    // Feed spectrum to histogram processor for noise floor analysis
-    (void)histogram_processor_.update_histogram(spectrum.db.data(), spectrum.db.size());
+    // Track peak power for timeline display
+    {
+        uint8_t peak = 0;
+        for (const auto v : spectrum.db) {
+            if (v > peak) peak = v;
+        }
+        last_peak_power_ = peak;
+    }
 
     // Feed temporal history for multi-frame analysis (TBD, FHSS, Doppler)
     waterfall_history_.push(spectrum.db.data());
@@ -727,17 +685,21 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     const SystemTime now = chTimeNow();
 
     // ----- RSSI Hysteresis (Schmitt trigger) -----
-    // Reset hysteresis state when frequency changes (new hop or new lock target)
+    // Reset waterfall history on frequency change — old frames are stale
     if (frequency != last_hysteresis_freq_) {
-        signal_present_ = false;
         last_hysteresis_freq_ = frequency;
-        // Reset waterfall history — old frames are stale for new frequency
         waterfall_history_.reset();
     }
 
     // Effective threshold: 2 dB harder to turn ON, 2 dB easier to stay ON
     // Prevents signal toggling at the threshold boundary (8-bit FFT quantization
     // causes ±1 bin fluctuation = ~0.19 dB, enough to toggle detection)
+    //
+    // FIX: Do NOT reset signal_present_ on frequency change. When the signal
+    // persists across frequency hops (scanner still in detection zone), hysteresis
+    // carries over — first frame on new freq uses the easier threshold. This is
+    // correct: the signal was confirmed present on the previous frequency.
+    // signal_present_ only resets when signal actually drops (lines 761/770).
     const int32_t rssi_threshold = signal_present_
         ? (config_.rssi_threshold_dbm - RSSI_HYSTERESIS_DB)
         : (config_.rssi_threshold_dbm + RSSI_HYSTERESIS_DB);
@@ -753,10 +715,25 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             if (rssi > rssi_threshold) {
                 signal_detected = true;
                 signal_present_ = true;
-                if (spectrum_rssi > effective_rssi) effective_rssi = spectrum_rssi;
+                // Use shape-analysis RSSI if it's stronger than the simple peak.
+                // This handles CFAR picking a different (stronger) peak than extract_rssi().
+                // Safety bound: don't allow spectrum_rssi to exceed rssi by more than
+                // SHAPE_RSSI_MAX_EXCESS_DB — prevents single-sample noise spikes that
+                // happen to pass shape filters from inflating effective_rssi.
+                constexpr int32_t SHAPE_RSSI_MAX_EXCESS_DB = 10;
+                if (spectrum_rssi > effective_rssi
+                    && spectrum_rssi <= rssi + SHAPE_RSSI_MAX_EXCESS_DB) {
+                    effective_rssi = spectrum_rssi;
+                }
             } else if (signal_present_) {
                 signal_present_ = false;
             }
+        } else {
+            // Shape analysis failed — no drone signal on this frequency.
+            // Must reset signal_present_ so hysteresis doesn't carry over
+            // from a previous frequency (prevents false easy threshold on
+            // next frequency when no signal was detected here).
+            signal_present_ = false;
         }
     } else {
         signal_detected = (rssi > rssi_threshold);
@@ -788,7 +765,15 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         }
 
         // Check if this bin was active in enough recent frames
-        const uint8_t threshold = static_cast<uint8_t>(rssi_threshold + 120 + TBD_THRESHOLD_MARGIN);
+        // FIX: Use correct inverse of spectrum_value_to_dbm encoding.
+        // Forward:  dBm = (value - 255) / 5 - total_gain
+        // Inverse:  value = (dBm + total_gain) * 5 + 255
+        // Previously used legacy approximation (rssi_threshold + 120) which
+        // produced threshold ~37 vs actual ~170, making TBD pass everything.
+        const int32_t total_gain_tbd = get_current_total_gain();
+        const int32_t tbd_raw_threshold = (rssi_threshold + total_gain_tbd) * 5 + 255;
+        const uint8_t threshold = static_cast<uint8_t>(
+            (tbd_raw_threshold < 0) ? 0 : (tbd_raw_threshold > 255 ? 255 : tbd_raw_threshold));
         const uint8_t active_frames = waterfall_history_.count_above_threshold(tbd_peak_bin, threshold);
 
         if (active_frames >= TBD_MIN_FRAMES) {
@@ -965,15 +950,11 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 
         // Only break lock if we're tuned to the locked freq and it's gone
         if (locked_frequency_ != 0 && frequency == locked_frequency_) {
-            // Use confirm_count × 2 as tolerance for intermittent signals (FHSS, burst, fading)
-            // Default confirm_count=2 → 4 consecutive misses (~66ms) before breaking lock.
-            // The ×2 factor gives a grace period for brief fades without dropping the lock.
-            // Guard against confirm_count=0 (would break lock on every miss).
-            const uint8_t miss_tolerance = (config_.confirm_count > 0)
-                ? static_cast<uint8_t>(config_.confirm_count * 2)
-                : 1;
+            // Use configurable miss_tolerance (independent of confirm_count).
+            // Default 4 consecutive misses (~66ms) before breaking lock.
+            // Higher values tolerate more FHSS/burst fading without dropping lock.
             missed_lock_count_++;
-            if (missed_lock_count_ >= miss_tolerance) {
+            if (missed_lock_count_ >= config_.miss_tolerance) {
                 freq_lock_count_ = 0;
                 locked_frequency_ = 0;
                 missed_lock_count_ = 0;
@@ -993,13 +974,16 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
 ErrorCode DroneScanner::update_tracked_drone_internal(
     FreqHz frequency,
     RssiValue rssi,
-    SystemTime timestamp
+    SystemTime timestamp,
+    size_t* out_index
 ) noexcept {
+    if (out_index != nullptr) *out_index = SIZE_MAX;
     ErrorResult<size_t> index_result = find_drone_by_frequency_internal(frequency);
     
     if (index_result.has_value()) {
         // Existing drone — update and alert on threat increase
         size_t index = index_result.value();
+        if (out_index != nullptr) *out_index = index;
         
         // RSSI variance rejection: noise has chaotic fluctuations
         // Real drones have stable signal (variance < 25), noise > 100
@@ -1034,6 +1018,7 @@ ErrorCode DroneScanner::update_tracked_drone_internal(
         if (add_result != ErrorCode::SUCCESS) {
             return add_result;
         }
+        if (out_index != nullptr) *out_index = new_index;
         // First detection: mark as increasing to prevent immediate decay
         // update_rssi() already sets last_rssi_ to the current RSSI
         tracked_drones_[new_index].rssi_increased_ = true;
@@ -1261,6 +1246,9 @@ ErrorCode DroneScanner::validate_config_internal(const ScanConfig& config) const
         return ErrorCode::INVALID_PARAMETER;
     }
     if (config.confirm_count < CONFIRM_COUNT_MIN || config.confirm_count > CONFIRM_COUNT_MAX) {
+        return ErrorCode::INVALID_PARAMETER;
+    }
+    if (config.miss_tolerance < MISS_TOLERANCE_MIN || config.miss_tolerance > MISS_TOLERANCE_MAX) {
         return ErrorCode::INVALID_PARAMETER;
     }
     if (config.cfar_ref_cells < CFAR_REF_CELLS_MIN || config.cfar_ref_cells > CFAR_REF_CELLS_MAX) {
@@ -1832,23 +1820,20 @@ void DroneScanner::apply_sweep_tracking(
     // Skip update_tracked_drone_internal when drone was just created above
     // to avoid double update_rssi() + double trigger_alert()
     if (!mahalanobis_rejected && !drone_created_here) {
-        (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow());
+        size_t drone_idx = SIZE_MAX;
+        (void)update_tracked_drone_internal(peak_freq, peak_rssi, chTimeNow(), &drone_idx);
 
-        // Single post-update lookup (reused for pattern match + mark_seen)
-        const auto drone_idx = find_drone_by_frequency_internal(peak_freq);
-
-        if (pattern_matched && drone_idx.has_value()) {
-            const SignalPattern* pattern = pattern_manager_.get_pattern(pattern_index);
-            if (pattern != nullptr && pattern->name[0] != '\0') {
-                matched_pattern_index_ = pattern_index;
-                matched_pattern_bin_ = highlight_bin;
-                auto& drone = tracked_drones_[drone_idx.value()];
-                drone.set_pattern_match(pattern_correlation, static_cast<int8_t>(pattern_index));
+        // Use returned index — avoids redundant find_drone_by_frequency_internal() O(n) search
+        if (drone_idx < tracked_count_) {
+            if (pattern_matched) {
+                const SignalPattern* pattern = pattern_manager_.get_pattern(pattern_index);
+                if (pattern != nullptr && pattern->name[0] != '\0') {
+                    matched_pattern_index_ = pattern_index;
+                    matched_pattern_bin_ = highlight_bin;
+                    tracked_drones_[drone_idx].set_pattern_match(pattern_correlation, static_cast<int8_t>(pattern_index));
+                }
             }
-        }
-
-        if (drone_idx.has_value()) {
-            tracked_drones_[drone_idx.value()].mark_seen(chTimeNow());
+            tracked_drones_[drone_idx].mark_seen(chTimeNow());
         }
     }
 }

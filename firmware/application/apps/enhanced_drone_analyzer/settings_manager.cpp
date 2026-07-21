@@ -27,7 +27,7 @@ SettingsStruct::SettingsStruct() noexcept
     , threat_high_dbm(RSSI_HIGH_THREAT_THRESHOLD_DBM)
     , threat_critical_dbm(RSSI_CRITICAL_THREAT_THRESHOLD_DBM)
     , spectrum_visible(true)
-    , histogram_visible(true)
+    , timeline_visible(true)
     , audio_alerts_enabled(true)
     , dwell_enabled(true)
     , confirm_count_enabled(true)
@@ -169,8 +169,10 @@ static void parse_settings_line(
         s.volume = static_cast<uint8_t>((v > 99) ? 99 : v);
     } else if (key_matches("show_spectrum")) {
         s.spectrum_visible = parse_bool();
+    } else if (key_matches("show_timeline")) {
+        s.timeline_visible = parse_bool();
     } else if (key_matches("show_histogram")) {
-        s.histogram_visible = parse_bool();
+        s.timeline_visible = parse_bool();
 
     // --- Detection features ---
     } else if (key_matches("spectrum_detection")) {
@@ -221,6 +223,11 @@ static void parse_settings_line(
         s.confirm_count = static_cast<uint8_t>(
             (v < CONFIRM_COUNT_MIN) ? CONFIRM_COUNT_MIN
             : (v > CONFIRM_COUNT_MAX ? CONFIRM_COUNT_MAX : v));
+    } else if (key_matches("miss_tolerance")) {
+        const uint64_t v = parse_int();
+        s.miss_tolerance = static_cast<uint8_t>(
+            (v < MISS_TOLERANCE_MIN) ? MISS_TOLERANCE_MIN
+            : (v > MISS_TOLERANCE_MAX ? MISS_TOLERANCE_MAX : v));
 
     // --- Sweep window 1 ---
     } else if (key_matches("sweep_start_mhz")) {
@@ -509,7 +516,7 @@ ErrorCode SettingsFileManager::save(
     wbool(file, "enable_audio_alerts", s.audio_alerts_enabled);
     wl(file, "volume", static_cast<int64_t>(s.volume));
     wbool(file, "show_spectrum", s.spectrum_visible);
-    wbool(file, "show_histogram", s.histogram_visible);
+    wbool(file, "show_timeline", s.timeline_visible);
 
     // Detection features
     wbool(file, "spectrum_detection", s.spectrum_detection_enabled);
@@ -532,6 +539,7 @@ ErrorCode SettingsFileManager::save(
     wl(file, "neighbor_margin_db", static_cast<int64_t>(s.neighbor_margin_db));
     wbool(file, "rssi_variance_enabled", s.rssi_variance_enabled);
     wl(file, "confirm_count", static_cast<int64_t>(s.confirm_count));
+    wl(file, "miss_tolerance", static_cast<int64_t>(s.miss_tolerance));
 
     // Sweep window 1
     wl(file, "sweep_start_mhz", static_cast<int64_t>(s_sweep_cfg.sweep_start_freq / 1000000ULL));
@@ -638,6 +646,7 @@ void SettingsFileManager::apply_to_config(
     config.neighbor_margin_db = s.neighbor_margin_db;
     config.rssi_variance_enabled = s.rssi_variance_enabled;
     config.confirm_count = s.confirm_count;
+    config.miss_tolerance = s.miss_tolerance;
 
     // Spectrum shape filter parameters
     config.spectrum_margin = s.spectrum_margin;
@@ -731,6 +740,7 @@ void SettingsFileManager::extract_from_config(
     s.neighbor_margin_db = config.neighbor_margin_db;
     s.rssi_variance_enabled = config.rssi_variance_enabled;
     s.confirm_count = config.confirm_count;
+    s.miss_tolerance = config.miss_tolerance;
 
     // CFAR detection
     s.cfar_mode = config.cfar_mode;

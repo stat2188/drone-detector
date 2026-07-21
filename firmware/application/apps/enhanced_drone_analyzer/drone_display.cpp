@@ -15,12 +15,11 @@ DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     : ui::View()
     , display_data_()
     , spectrum_buffer_{}
-    , histogram_buffer_{}
+    , timeline_{}
     , status_text_{0}
     , spectrum_data_size_(0)
-    , histogram_data_size_(0)
     , spectrum_visible_(true)
-    , histogram_visible_(true)
+    , timeline_visible_(true)
     , drone_list_visible_(true)
     , status_bar_visible_(true) {
     set_parent_rect(parent_rect);
@@ -38,7 +37,7 @@ DroneDisplay::~DroneDisplay() noexcept {
 DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
     constexpr uint16_t STATUS_H = 16;
     constexpr uint16_t SPECTRUM_H = 50;
-    constexpr uint16_t HISTOGRAM_H = 30;
+    constexpr uint16_t TIMELINE_H = 24;
 
     const uint16_t total_h = parent_rect().size().height();
 
@@ -46,13 +45,13 @@ DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
 
     const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0) ||
                            (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0);
-    const bool show_hist = (histogram_visible_ && histogram_data_size_ > 0);
+    const bool show_tl = timeline_visible_;
 
     const uint16_t spec_h = show_spec ? SPECTRUM_H : 0;
     if (spec_h <= remaining) remaining -= spec_h; else remaining = 0;
 
-    const uint16_t hist_h = show_hist ? HISTOGRAM_H : 0;
-    if (hist_h <= remaining) remaining -= hist_h; else remaining = 0;
+    const uint16_t tl_h = show_tl ? TIMELINE_H : 0;
+    if (tl_h <= remaining) remaining -= tl_h; else remaining = 0;
 
     const uint16_t status_h = (remaining >= STATUS_H) ? STATUS_H : 0;
     if (status_h <= remaining) remaining -= status_h; else remaining = 0;
@@ -61,9 +60,9 @@ DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
 
     uint16_t list_start_y = 0;
     if (show_spec) list_start_y += spec_h;
-    if (show_hist) list_start_y += hist_h;
+    if (show_tl) list_start_y += tl_h;
 
-    return LayoutMetrics{spec_h, hist_h, status_h, drone_h, list_start_y};
+    return LayoutMetrics{spec_h, tl_h, status_h, drone_h, list_start_y};
 }
 
 void DroneDisplay::paint(Painter& painter) {
@@ -77,7 +76,7 @@ void DroneDisplay::paint(Painter& painter) {
 
     const bool show_spec = (spectrum_visible_ && spectrum_data_size_ > 0) ||
                            (composite_mode_ && composite_data_ != nullptr && composite_data_size_ > 0);
-    const bool show_hist = (histogram_visible_ && histogram_data_size_ > 0);
+    const bool show_tl = timeline_visible_;
     const bool show_list = (drone_list_visible_ && display_data_.drone_count > 0);
 
     if (show_spec && (dirty_flags_ & DIRTY_SPEC)) {
@@ -98,11 +97,11 @@ void DroneDisplay::paint(Painter& painter) {
     }
     if (show_spec) y_offset += layout.spec_h;
 
-    if (show_hist && (dirty_flags_ & DIRTY_HIST)) {
-        render_histogram(painter, histogram_buffer_.data(), histogram_data_size_,
-                         ox, y_offset, w, layout.hist_h);
+    if (show_tl && timeline_.count() > 0) {
+        render_timeline(painter, timeline_,
+                         ox, y_offset, w, layout.timeline_h);
     }
-    if (show_hist) y_offset += layout.hist_h;
+    if (show_tl) y_offset += layout.timeline_h;
 
     if (show_list && layout.drone_h > 0 && (dirty_flags_ & DIRTY_DRONES)) {
         render_drone_list(painter, display_data_.drones, display_data_.drone_count,
@@ -172,63 +171,69 @@ void DroneDisplay::render_spectrum(
     }
 }
 
-void DroneDisplay::render_histogram(
+void DroneDisplay::render_timeline(
     Painter& painter,
-    const uint16_t* histogram_data,
-    size_t histogram_size,
+    const SignalTimeline& timeline,
     uint16_t start_x,
     uint16_t start_y,
     uint16_t width,
     uint16_t height
 ) noexcept {
-    // Validate input
-    if (histogram_data == nullptr || histogram_size == 0 || width < 10 || height < 4) {
-        return;
-    }
-    
-    // Draw background with border
+    if (width < 10 || height < 4) return;
+
+    // Background + label
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-    draw_text(painter, "Power", start_x + 2, start_y + 2, COLOR_TEXT);
+    draw_text(painter, "Timeline", start_x + 2, start_y + 2, COLOR_TEXT);
 
-    // Subsample to fit screen (128 bins → max 60 bars)
-    constexpr size_t MAX_BARS = 60;
-    const size_t step = (histogram_size > MAX_BARS) ? (histogram_size / MAX_BARS) : 1;
-    const size_t visible_count = histogram_size / step;
-
-    // Find max value for scaling (include all visible bins)
-    uint16_t max_value = 0;
-    for (size_t i = 0; i < histogram_size; i += step) {
-        if (histogram_data[i] > max_value) {
-            max_value = histogram_data[i];
-        }
-    }
-
-    if (max_value == 0) {
-        draw_text(painter, "No data", start_x + 2, start_y + 12, COLOR_UNKNOWN_THREAT);
+    if (timeline.count() == 0) {
+        draw_text(painter, "Waiting...", start_x + 2, start_y + 12, COLOR_UNKNOWN_THREAT);
         return;
     }
 
-    constexpr uint16_t MIN_BAR_WIDTH = 2;
-    const uint16_t usable_width = width - 4;
-    uint16_t bar_width = usable_width / static_cast<uint16_t>(visible_count);
-    if (bar_width < MIN_BAR_WIDTH) bar_width = MIN_BAR_WIDTH;
-
+    constexpr uint16_t LABEL_H = 12;
     const uint16_t chart_start_x = start_x + 2;
-    const uint16_t chart_start_y = start_y + 12;
-    const uint16_t chart_height = height - 14;
-    if (chart_height < 4) return;
+    const uint16_t chart_start_y = start_y + LABEL_H;
+    const uint16_t chart_h = (height > LABEL_H + 2) ? (height - LABEL_H - 2) : 4;
+    const uint16_t chart_w = (width > 4) ? (width - 4) : width;
 
-    for (size_t bar = 0; bar < visible_count; ++bar) {
-        const size_t idx = bar * step;
-        const uint16_t value = histogram_data[idx];
-        const uint16_t bar_height = (value * chart_height) / max_value;
-        const uint16_t x = chart_start_x + static_cast<uint16_t>(bar) * bar_width;
-        const uint16_t y = chart_start_y + chart_height - bar_height;
+    // Find peak for scaling
+    const uint8_t max_power = timeline.peak();
+    if (max_power == 0) return;
 
-        if (bar_height > 0) {
-            draw_rectangle(painter, x, y, bar_width - 1, bar_height, COLOR_MEDIUM_THREAT);
+    // Draw sparkline — evenly distribute bars across full width
+    const size_t count = timeline.count();
+    if (count == 0) return;
+
+    for (size_t i = 0; i < count; ++i) {
+        const uint8_t power = timeline[i];
+        const uint16_t bar_h = (static_cast<uint16_t>(power) * chart_h) / max_power;
+
+        // Proportional positioning: each bar fills gap to next bar
+        const uint16_t x0 = chart_start_x + static_cast<uint16_t>((i * chart_w) / count);
+        const uint16_t x1 = chart_start_x + static_cast<uint16_t>(((i + 1) * chart_w) / count);
+        const uint16_t bar_w_actual = (x1 > x0) ? (x1 - x0 - 1) : 0;
+        const uint16_t y = chart_start_y + chart_h - bar_h;
+
+        // Color by power level
+        uint32_t color = COLOR_LOW_THREAT;
+        if (power > 200) color = COLOR_CRITICAL_THREAT;
+        else if (power > 150) color = COLOR_HIGH_THREAT;
+        else if (power > 100) color = COLOR_MEDIUM_THREAT;
+
+        if (bar_w_actual > 0) {
+            draw_rectangle(painter, x0, y, bar_w_actual, bar_h, color);
+        } else {
+            draw_rectangle(painter, x0, y, 1, 1, color);
         }
+    }
+
+    // Draw average line (dashed, white)
+    const uint8_t avg = timeline.average();
+    const uint16_t avg_y = chart_start_y + chart_h -
+        (static_cast<uint16_t>(avg) * chart_h / max_power);
+    for (uint16_t x = chart_start_x; x < chart_start_x + chart_w; x += 4) {
+        draw_rectangle(painter, x, avg_y, 2, 1, COLOR_TEXT);
     }
 }
 
@@ -398,24 +403,9 @@ ErrorCode DroneDisplay::set_spectrum_data(
     return ErrorCode::SUCCESS;
 }
 
-ErrorCode DroneDisplay::set_histogram_data(
-    const uint16_t* histogram_data,
-    size_t histogram_size
-) noexcept {
-    // Validate input
-    const ErrorCode error = validate_histogram_data(histogram_data, histogram_size);
-    if (error != ErrorCode::SUCCESS) {
-        return error;
-    }
-    
-    // Copy histogram data
-    histogram_data_size_ = histogram_size;
-    for (size_t i = 0; i < histogram_size && i < histogram_buffer_.size(); ++i) {
-        histogram_buffer_[i] = histogram_data[i];
-    }
-    dirty_flags_ |= DIRTY_HIST;
+void DroneDisplay::push_timeline_value(uint8_t peak_power) noexcept {
+    timeline_.push_frame(peak_power);
     set_dirty();
-    return ErrorCode::SUCCESS;
 }
 
 void DroneDisplay::set_status_text(const char* status_text) noexcept {
@@ -447,20 +437,6 @@ void DroneDisplay::draw_spectrum_line(
     uint32_t color
 ) noexcept {
     draw_rectangle(painter, x, y, 1, 1, color);
-}
-
-void DroneDisplay::draw_histogram_bar(
-    Painter& painter,
-    uint16_t x,
-    uint16_t y,
-    uint16_t width,
-    uint16_t height,
-    uint32_t color
-) noexcept {
-    if (width == 0 || height == 0) {
-        return;
-    }
-    draw_rectangle(painter, x, y, width, height, color);
 }
 
 void DroneDisplay::draw_drone_entry(
@@ -719,13 +695,6 @@ ErrorCode DroneDisplay::validate_spectrum_data(
     return validate_spectrum_buffer(spectrum_data, spectrum_size);
 }
 
-ErrorCode DroneDisplay::validate_histogram_data(
-    const uint16_t* histogram_data,
-    size_t histogram_size
-) const noexcept {
-    return validate_histogram_buffer(histogram_data, histogram_size);
-}
-
 uint16_t DroneDisplay::clamp(
     int32_t value,
     int32_t min,
@@ -789,9 +758,9 @@ void DroneDisplay::reset_composite_persistence() noexcept {
     set_dirty();
     // DO NOT null composite_data_ or composite_data_size_ here.
     // Nulling them causes calculate_layout() to collapse the spectrum area
-    // (show_spec = false), letting the histogram take over the display —
+    // (show_spec = false), letting the timeline take over the display —
     // this is the root cause of "sweep does 1 pass, then hangs, replaced
-    // by histogram" bug. The zeroed persist buffer renders as empty bars
+    // by timeline" bug. The zeroed persist buffer renders as empty bars
     // (invisible) until the next set_composite_data() fills it with fresh data.
 }
 

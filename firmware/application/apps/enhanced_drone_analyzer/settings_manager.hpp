@@ -30,7 +30,7 @@ struct SettingsStruct {
 
     // Display
     bool spectrum_visible;
-    bool histogram_visible;
+    bool timeline_visible;
 
     // Alerts
     bool audio_alerts_enabled;
@@ -70,6 +70,7 @@ struct SettingsStruct {
     int32_t neighbor_margin_db;
     bool rssi_variance_enabled;
     uint8_t confirm_count;
+    uint8_t miss_tolerance{DEFAULT_MISS_TOLERANCE};  // Consecutive misses before breaking lock
 
     // Mahalanobis Gate Filter
     bool mahalanobis_enabled;
@@ -104,7 +105,7 @@ struct SettingsStruct {
     // Sweep exception frequencies (per window, 0 = unused)
     FreqHz sweep_exceptions[4][EXCEPTIONS_PER_WINDOW]{};
     uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100 MHz exclusion radius
-    uint8_t rssi_decrease_cycles{5};  // sweep cycles of RSSI decrease before threat decay
+    uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds before RSSI decay (sweep uses hardcoded constant)
 
     SettingsStruct() noexcept;
 };

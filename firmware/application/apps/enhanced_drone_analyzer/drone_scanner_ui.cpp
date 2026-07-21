@@ -847,38 +847,8 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }
 
-    // Feed histogram data
-    // Normal mode: from scanner histogram processor
-    // Sweep mode: from composite buffer (live power distribution)
-    if (!composite_active_) {
-        const size_t hist_count = scanner_ptr_->get_histogram_snapshot(
-            refresh_hist_data_, HISTOGRAM_BUFFER_SIZE
-        );
-        if (hist_count > 0) {
-            drone_display_.set_histogram_data(refresh_hist_data_, hist_count);
-        }
-    } else {
-        // Feed displayed pair's composite power levels as histogram bins
-        const uint8_t w0 = pair_first(active_sweep_idx_);
-        const uint8_t w1 = w0 + 1;
-        size_t hist_idx = 0;
-
-        if (sweep_[w0].enabled) {
-            const size_t n0 = (COMPOSITE_SIZE < HISTOGRAM_BUFFER_SIZE)
-                ? COMPOSITE_SIZE : HISTOGRAM_BUFFER_SIZE;
-            for (size_t i = 0; i < n0 && hist_idx < HISTOGRAM_BUFFER_SIZE; ++i) {
-                refresh_hist_data_[hist_idx++] = static_cast<uint16_t>(sweep_[w0].composite[i]) * COMPOSITE_TO_HIST_SCALE;
-            }
-        }
-        if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled) {
-            for (size_t i = 0; i < COMPOSITE_SIZE && hist_idx < HISTOGRAM_BUFFER_SIZE; ++i) {
-                refresh_hist_data_[hist_idx++] = static_cast<uint16_t>(sweep_[w1].composite[i]) * COMPOSITE_TO_HIST_SCALE;
-            }
-        }
-        if (hist_idx > 0) {
-            drone_display_.set_histogram_data(refresh_hist_data_, hist_idx);
-        }
-    }
+    // Push peak power to signal timeline
+    drone_display_.push_timeline_value(scanner_ptr_->get_last_peak_power());
 
     // Update big frequency display
     {
