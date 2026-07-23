@@ -2132,7 +2132,6 @@ void DroneScanner::process_spectrum_sweep(
     // contamination of the per-frequency smoothing accumulator).
     for (size_t p = 0; p < peak_count; ++p) {
         const size_t peak_index = cfar_peaks[p].bin;
-        const uint8_t raw_peak = cfar_peaks[p].power;
 
         // Skip peaks on DC spike (bins 120-135) — no real signal energy
         const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
