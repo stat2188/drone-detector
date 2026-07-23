@@ -674,10 +674,12 @@ public:
     [[nodiscard]] bool check_margin(FreqHz current_freq, int32_t current_rssi, int32_t min_margin_db) const noexcept {
         if (count_ < 2) return true;  // Not enough data — pass through
         int32_t best_neighbor_rssi = -120;
-        // FIX: 5MHz frequency window — wide enough to catch WiFi sidebands and
-        // Bluetooth hopping within a 5MHz sub-band, but narrow enough to avoid
-        // cross-band suppression between 5.7GHz and 5.8GHz FPV channels
-        constexpr FreqHz NEIGHBOR_WINDOW_HZ = 5'000'000ULL;
+        // FIX: 10MHz frequency window — wide enough to prevent self-rejection when
+        // audio subcarrier (5.5 MHz offset from video carrier) is scanned separately.
+        // Previous 5 MHz window caused the second peak to be rejected as "wideband
+        // noise" when the first peak was within 5 MHz. 10 MHz covers FPV dual-peak
+        // span while still excluding cross-band interference (5.7 vs 5.8 GHz).
+        constexpr FreqHz NEIGHBOR_WINDOW_HZ = 10'000'000ULL;
         for (uint8_t i = 0; i < count_; ++i) {
             const auto freq_diff = (history_[i].freq > current_freq)
                 ? (history_[i].freq - current_freq)
@@ -1114,6 +1116,52 @@ public:
     }
 
     /**
+     * @brief Convert normal-mode FFT bin index to actual RF frequency
+     * @param f_center Tuned center frequency (Hz)
+     * @param bin FFT bin index (0-255, standard ordering)
+     * @return Actual RF frequency for this bin (Hz)
+     * @note Standard FFT: bin 0 = lowest freq, bin 128 = DC (center), bin 255 = highest
+     *       Each bin = SWEEP_BIN_SIZE (78125 Hz) with 20 MHz total bandwidth.
+     *       Used by multi-peak detection in normal scanning mode.
+     */
+    static FreqHz normal_bin_to_freq(FreqHz f_center, size_t bin) noexcept {
+        constexpr size_t DC_BIN = FFT_BIN_COUNT / 2;  // 128
+        constexpr FreqHz DC_OFFSET = DC_BIN * SWEEP_BIN_SIZE;  // 10 MHz
+        if (bin >= DC_BIN) {
+            return f_center + static_cast<FreqHz>(bin - DC_BIN) * SWEEP_BIN_SIZE;
+        }
+        const FreqHz offset = static_cast<FreqHz>(DC_BIN - bin) * SWEEP_BIN_SIZE;
+        // Guard: prevent unsigned underflow when f_center < DC_OFFSET (low freq scanning)
+        if (f_center < offset) return 0;
+        return f_center - offset;
+    }
+
+    /**
+     * @brief Maximum independent signal detections per FFT frame
+     * @note Limited to 4 to cap stack usage: 4 × sizeof(ShapeDetection) ≈ 64 bytes
+     */
+    static constexpr size_t MAX_SHAPE_DETECTIONS = 4;
+
+    /**
+     * @brief Result of multi-peak shape analysis for a single FFT frame
+     * @note Each entry represents an independent signal that passed shape filters.
+     *       Secondary entries (index > 0) are weaker peaks in the same 20 MHz frame.
+     * @note Stack: MAX_SHAPE_DETECTIONS × sizeof(ShapeDetection) ≈ 64 bytes
+     */
+    struct ShapeDetection {
+        FreqHz frequency;    ///< Actual RF frequency of detected peak (Hz)
+        int32_t rssi;        ///< Estimated RSSI in dBm after shape filters
+        uint16_t bin_index;  ///< FFT bin index (0-255, for debug/display)
+        uint8_t peak_power;  ///< Raw peak power value (0-255)
+    };
+
+    struct ShapeDetectionResult {
+        ShapeDetection detections[MAX_SHAPE_DETECTIONS];  ///< Detected signals
+        size_t count{0};                                   ///< Number of valid detections
+        uint8_t noise_floor{0};                            ///< Computed noise floor
+    };
+
+    /**
      * @brief Lightweight spectrum processing for sweep mode
      * @param spectrum Channel spectrum data (256 bins)
      * @param lg_buffer 240-pixel Looking Glass reordered buffer (from reorder_frame)
@@ -1327,6 +1375,15 @@ private:
     [[nodiscard]] ErrorCode validate_config_internal(const ScanConfig& config) const noexcept;
 
     /**
+     * @brief Check if a frequency falls within an exception exclusion zone
+     * @param freq Frequency to check (Hz)
+     * @return true if frequency matches any exception (should be skipped)
+     * @note Checks all 4 sweep windows × EXCEPTIONS_PER_WINDOW slots
+     * @pre Caller holds DATA_MUTEX (config_.sweep_exceptions read)
+     */
+    [[nodiscard]] bool is_exception_frequency(FreqHz freq) const noexcept;
+
+    /**
      * @brief Internal: Analyze spectrum shape for U/V signal peaks
      * @param spectrum Channel spectrum data (256 bins, 0-255 each)
      * @param out_rssi Estimated RSSI in dBm if signal detected
@@ -1335,6 +1392,27 @@ private:
      * @pre Mutex must be held (LockOrder::DATA_MUTEX)
      */
     [[nodiscard]] bool analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32_t& out_rssi) noexcept;
+
+    /**
+     * @brief Multi-peak spectrum shape analysis for detecting independent signals
+     * @param spectrum Channel spectrum data (256 bins, 0-255 each)
+     * @param out_result Output: array of shape detections (up to MAX_SHAPE_DETECTIONS)
+     * @param center_freq Tuned center frequency for bin-to-RF conversion (Hz)
+     * @return true if at least one drone-like signal detected
+     * @note Unlike analyze_spectrum_shape() which returns only the strongest peak,
+     *       this method finds ALL CFAR peaks and runs shape filters on each independently.
+     *       Critical for detecting multiple FPV transmitters in the same 20 MHz FFT frame.
+     *       Uses CFARDetector::find_peaks() (multi-peak) instead of find_peak_cfar() (single).
+     * @note Stack: ~48 bytes (ShapeDetectionResult) + ~64 bytes (CFARPeak candidates) = ~112 bytes
+     * @note center_freq MUST be the frequency passed by the caller, NOT current_frequency_.
+     *       The scanner thread mutates current_frequency_ concurrently — reading it from
+     *       the UI thread causes a torn 64-bit read (non-atomic on Cortex-M4F).
+     */
+    [[nodiscard]] bool analyze_spectrum_shape_multi(
+        const ChannelSpectrum& spectrum,
+        ShapeDetectionResult& out_result,
+        FreqHz center_freq
+    ) noexcept;
 
     /**
      * @brief Shared spectrum shape analysis with configurable edge skip.
@@ -1558,7 +1636,10 @@ private:
 
     // Lock timeout tracking (prevents infinite lock on noisy frequencies)
     SystemTime lock_start_time_{0};
-    static constexpr uint32_t MAX_LOCK_DURATION_MS = 5000;  // 5 seconds absolute timeout
+    // Reduced from 5000ms to 3000ms — prevents prolonged lock on single frequency
+    // when multiple FPV transmitters are present. Scanner returns to scanning
+    // after 3s, allowing detection of other peaks in the band.
+    static constexpr uint32_t MAX_LOCK_DURATION_MS = 3000;
 
     // Confirm timeout tracking (prevents waiting forever for confirmations)
     SystemTime confirm_start_time_{0};

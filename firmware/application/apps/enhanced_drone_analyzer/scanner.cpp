@@ -445,6 +445,20 @@ bool DroneScanner::is_blacklisted(FreqHz frequency) const noexcept {
     return false;
 }
 
+bool DroneScanner::is_exception_frequency(FreqHz freq) const noexcept {
+    const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
+    for (uint8_t w = 0; w < 4; ++w) {
+        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW; ++i) {
+            const FreqHz exc = config_.sweep_exceptions[w][i];
+            if (exc == 0) continue;
+            // Absolute difference — avoids unsigned underflow when exc < exc_radius
+            const FreqHz diff = (freq > exc) ? (freq - exc) : (exc - freq);
+            if (diff <= exc_radius) return true;
+        }
+    }
+    return false;
+}
+
 ErrorCode DroneScanner::perform_scan_cycle() noexcept {
     if (!scanning_active_.test()) {
         return ErrorCode::SUCCESS;
@@ -512,11 +526,13 @@ ErrorCode DroneScanner::perform_scan_cycle_internal() noexcept {
     if (should_dwell) {
         dwell_cycles_++;
 
-        // Max dwell: 400ms total (8 cycles × 50ms).
-        // Enough for median filter to warm up (4 samples) + 4 more frames for
-        // reliable lock accumulation. At 60fps, 8 frames ≈ 8 increments of
+        // Max dwell: 300ms total (6 cycles × 50ms).
+        // Enough for median filter to warm up (4 samples) + 2 more frames for
+        // reliable lock accumulation. At 60fps, 6 frames ≈ 6 increments of
         // freq_lock_count_ toward MAX_FREQ_LOCK (10) → TRACKING transition.
-        static constexpr uint8_t LOCAL_MAX_DWELL_CYCLES = 8;
+        // Reduced from 8 cycles (400ms) to allow faster return to scanning
+        // when multiple FPV transmitters are present in the band.
+        static constexpr uint8_t LOCAL_MAX_DWELL_CYCLES = 6;
         const uint8_t max_dwell = config_.confirm_count_enabled
             ? LOCAL_MAX_DWELL_CYCLES : (LOCAL_MAX_DWELL_CYCLES / 2);
 
@@ -707,16 +723,23 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     int32_t effective_rssi = rssi;
     bool signal_detected = false;
 
+    // Multi-peak shape analysis: find ALL independent signals in the 20 MHz frame.
+    // Primary detection (index 0 = strongest) drives hysteresis, TBD, and lock state.
+    // Secondary detections (index 1..N) are tracked as additional drones.
+    ShapeDetectionResult shape_result{};
+    bool has_shape_result = false;
+
     if (config_.spectrum_detection_enabled) {
-        // Spectrum-only: shape analysis gates detection
-        int32_t spectrum_rssi = RSSI_MIN_DBM;
-        if (analyze_spectrum_shape(spectrum, spectrum_rssi)) {
+        has_shape_result = analyze_spectrum_shape_multi(spectrum, shape_result, frequency);
+
+        if (has_shape_result && shape_result.count > 0) {
+            // Primary detection: strongest peak that passed shape filters
+            const int32_t spectrum_rssi = shape_result.detections[0].rssi;
             // Shape passed — enforce RSSI threshold with hysteresis
             if (rssi > rssi_threshold) {
                 signal_detected = true;
                 signal_present_ = true;
                 // Use shape-analysis RSSI if it's stronger than the simple peak.
-                // This handles CFAR picking a different (stronger) peak than extract_rssi().
                 // Safety bound: don't allow spectrum_rssi to exceed rssi by more than
                 // SHAPE_RSSI_MAX_EXCESS_DB — prevents single-sample noise spikes that
                 // happen to pass shape filters from inflating effective_rssi.
@@ -799,20 +822,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     if (signal_detected) {
         // Exception check: suppress drones at configured exclusion frequencies
         // Applies to both normal scanning and sweep detection paths
-        {
-            const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
-            bool exc_match = false;
-            for (uint8_t w = 0; w < 4 && !exc_match; ++w) {
-                for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !exc_match; ++i) {
-                    const FreqHz exc = config_.sweep_exceptions[w][i];
-                    if (exc == 0) continue;
-                    const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
-                    const FreqHz hi = exc + exc_radius;
-                    if (frequency >= lo && frequency <= hi) exc_match = true;
-                }
-            }
-            if (exc_match) return ErrorCode::SUCCESS;
-        }
+        if (is_exception_frequency(frequency)) return ErrorCode::SUCCESS;
 
         // Neighbor margin check (if enabled): center freq must dominate neighbors
         // This eliminates wideband noise false positives (WiFi, BT, microwave)
@@ -966,6 +976,30 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             missed_lock_count_ = 0;
         }
         // If tuned to a non-locked freq and no signal: normal scanning, ignore
+    }
+
+    // ---- Secondary detection tracking (multi-peak) ----
+    // Track additional independent signals found in the same 20 MHz FFT frame.
+    // Primary detection (index 0) was already handled above with full hysteresis,
+    // TBD, confirm count, and lock state machine. Secondary detections bypass
+    // these safeguards (already validated by shape filters) and are tracked directly.
+    if (has_shape_result && shape_result.count > 1 && signal_detected) {
+        for (size_t d = 1; d < shape_result.count; ++d) {
+            const FreqHz det_freq = shape_result.detections[d].frequency;
+            const int32_t det_rssi = shape_result.detections[d].rssi;
+
+            // Skip if frequency is out of valid range
+            if (det_freq < MIN_FREQUENCY_HZ || det_freq > MAX_FREQUENCY_HZ) continue;
+
+            // Exception check (same as primary)
+            if (is_exception_frequency(det_freq)) continue;
+
+            // Track secondary detection directly (no confirm count needed —
+            // shape analysis already validated the signal)
+            if (tracked_count_ < MAX_TRACKED_DRONES) {
+                (void)update_tracked_drone_internal(det_freq, det_rssi, now);
+            }
+        }
     }
 
     return ErrorCode::SUCCESS;
@@ -1502,6 +1536,122 @@ bool DroneScanner::analyze_spectrum_shape_impl(
         out_rssi, edge_skip, /*has_dc_gap=*/true, total_gain);
 }
 
+// ============================================================================
+// Multi-peak shape analysis: find ALL CFAR peaks, try shape filters on each
+// Critical for detecting multiple FPV transmitters in the same 20 MHz frame.
+// ============================================================================
+
+bool DroneScanner::analyze_spectrum_shape_multi(
+    const ChannelSpectrum& spectrum,
+    ShapeDetectionResult& out_result,
+    FreqHz center_freq
+) noexcept {
+    out_result.count = 0;
+
+    // Step 1: Noise floor (25th percentile of usable bins)
+    uint8_t* sorted = spectrum_sort_buf_;
+    size_t sort_count = 0;
+    for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
+        if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+        sorted[sort_count++] = spectrum.db[i];
+    }
+    const uint8_t noise_floor = (sort_count > 0)
+        ? quickselect_percentile(sorted, sort_count, 25)
+        : 0;
+    out_result.noise_floor = noise_floor;
+
+    const int32_t total_gain = get_current_total_gain();
+
+    if (config_.cfar_mode != CFARMode::OFF) {
+        // Find ALL CFAR-passing peaks (up to MAX_SHAPE_DETECTIONS)
+        CFARPeak cfar_peaks[MAX_SHAPE_DETECTIONS];
+        const uint8_t effective_threshold = adaptive_threshold_.get_optimal_threshold();
+
+        const size_t peak_count = CFARDetector::find_peaks(
+            spectrum.db.data(), FFT_BIN_COUNT,
+            cfar_peaks, MAX_SHAPE_DETECTIONS,
+            config_.cfar_mode, config_.cfar_ref_cells, config_.cfar_guard_cells,
+            effective_threshold, FFT_EDGE_SKIP, FFT_EDGE_SKIP,
+            config_.cfar_hybrid_alpha, config_.cfar_hybrid_beta, config_.cfar_hybrid_gamma,
+            config_.os_cfar_k_percent, config_.vi_cfar_threshold_x10
+        );
+
+        if (peak_count == 0) {
+            // No CFAR detection — feed negative result to adaptive threshold
+            adaptive_threshold_.update(
+                false, RSSI_MIN_DBM, noise_floor, config_.cfar_threshold_x10);
+            return false;
+        }
+
+        // Feed first (strongest) peak to adaptive threshold
+        adaptive_threshold_.update(
+            true,
+            spectrum_value_to_dbm(cfar_peaks[0].power, total_gain),
+            noise_floor,
+            config_.cfar_threshold_x10);
+
+        // Try shape filters on each CFAR peak independently
+        for (size_t i = 0; i < peak_count && out_result.count < MAX_SHAPE_DETECTIONS; ++i) {
+            int32_t peak_rssi = RSSI_MIN_DBM;
+            if (apply_shape_filters(
+                    spectrum.db.data(), cfar_peaks[i].bin, cfar_peaks[i].power,
+                    noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain)) {
+                ShapeDetection& det = out_result.detections[out_result.count];
+                det.frequency = normal_bin_to_freq(center_freq, cfar_peaks[i].bin);
+                det.rssi = peak_rssi;
+                det.bin_index = static_cast<uint16_t>(cfar_peaks[i].bin);
+                det.peak_power = cfar_peaks[i].power;
+                out_result.count++;
+            }
+        }
+    } else {
+        // No CFAR — find top N peaks by simple maximum (non-CFAR fallback)
+        struct SimplePeak { size_t bin; uint8_t power; };
+        SimplePeak candidates[MAX_SHAPE_DETECTIONS * 2];
+        size_t cand_count = 0;
+
+        uint8_t max_val = noise_floor;
+        size_t max_bin = FFT_EDGE_SKIP;
+        for (size_t i = FFT_EDGE_SKIP; i < FFT_BIN_COUNT - FFT_EDGE_SKIP; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[i] > max_val) {
+                max_val = spectrum.db[i];
+                max_bin = i;
+            }
+        }
+
+        if (max_val <= noise_floor) return false;
+
+        // Collect the global max and immediate neighbors as candidates
+        candidates[cand_count++] = {max_bin, max_val};
+        // Check bins ±5 around the maximum for secondary peaks
+        for (int32_t offset = -5; offset <= 5; offset += 10) {
+            const size_t check_bin = static_cast<size_t>(static_cast<int32_t>(max_bin) + offset);
+            if (check_bin >= FFT_BIN_COUNT || check_bin == max_bin) continue;
+            if (check_bin >= FFT_DC_SPIKE_START && check_bin < FFT_DC_SPIKE_END) continue;
+            if (spectrum.db[check_bin] > noise_floor + config_.spectrum_margin) {
+                candidates[cand_count++] = {check_bin, spectrum.db[check_bin]};
+            }
+        }
+
+        for (size_t i = 0; i < cand_count && out_result.count < MAX_SHAPE_DETECTIONS; ++i) {
+            int32_t peak_rssi = RSSI_MIN_DBM;
+            if (apply_shape_filters(
+                    spectrum.db.data(), candidates[i].bin, candidates[i].power,
+                    noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain)) {
+                ShapeDetection& det = out_result.detections[out_result.count];
+                det.frequency = normal_bin_to_freq(center_freq, candidates[i].bin);
+                det.rssi = peak_rssi;
+                det.bin_index = static_cast<uint16_t>(candidates[i].bin);
+                det.peak_power = candidates[i].power;
+                out_result.count++;
+            }
+        }
+    }
+
+    return out_result.count > 0;
+}
+
 bool DroneScanner::analyze_spectrum_shape_lg(
     const uint8_t* lg_buffer,
     size_t peak_pixel,
@@ -1761,18 +1911,7 @@ void DroneScanner::apply_sweep_tracking(
     }
 
     // Exception frequency filter
-    const FreqHz exc_radius = static_cast<FreqHz>(config_.exception_radius_mhz) * 1000000ULL;
-    bool is_exception = false;
-    for (uint8_t w = 0; w < 4 && !is_exception; ++w) {
-        for (uint8_t i = 0; i < EXCEPTIONS_PER_WINDOW && !is_exception; ++i) {
-            const FreqHz exc = config_.sweep_exceptions[w][i];
-            if (exc == 0) continue;
-            const FreqHz lo = (exc > exc_radius) ? (exc - exc_radius) : 0;
-            const FreqHz hi = exc + exc_radius;
-            if (peak_freq >= lo && peak_freq <= hi) is_exception = true;
-        }
-    }
-    if (is_exception) return;
+    if (is_exception_frequency(peak_freq)) return;
 
     // Mahalanobis gate
     bool mahalanobis_rejected = false;

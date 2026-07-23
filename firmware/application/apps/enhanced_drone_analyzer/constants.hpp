@@ -736,20 +736,30 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 5;
  * @note 100 = UI limit for some apps
  * @note 200 = FPV video: accommodates ~15 MHz (~192 bins at 78 kHz/bin)
  * @note 255 = accepts all widths (no filtering)
- * @note 40 = original default (too narrow for FPV)
+ * @note FPV-OPTIMIZED: 30 — dual-peak analog FM signals (video carrier + audio
+ *       subcarrier at 5.5 MHz offset) may span 20-40 bins when valley is shallow.
+ *       Width=10 (~780 kHz) rejected dual-peak FPV; 30 bins (~2.3 MHz) accepts
+ *       each individual peak while still rejecting wideband WiFi/BT flat noise.
+ *       Signals with deep valleys between peaks are measured independently anyway.
+ * @note Previous default was 10 (too narrow for dual-peak analog FM)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 10;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 30;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
  * @note sharpness = (peak_margin * 100) / avg_margin
  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
  * @note 50 = no sharpness filtering (accept all shapes)
- * @note FPV-OPTIMIZED: 130 — rejects noise spikes (sharpness 100-150) while
- *       accepting real analog FM V-shape signals (sharpness 150-250).
- * @note Previous default was 115; raised to 130 for better noise rejection
+ * @note FPV-OPTIMIZED: 100 — analog FM with dual peaks (video + audio subcarrier)
+ *       produces sharpness ~100-120 due to valley bins inflating avg_margin.
+ *       Threshold=125 rejected these real FPV signals. Lowering to 100 accepts
+ *       all genuine analog FM while still rejecting truly flat WiFi/BT (~100)
+ *       which is further filtered by valley depth (40) and max width (30 bins).
+ *       Note: flatness filter is disabled (0) to avoid false-rejecting weak FPV
+ *       signals at long range where V-shape compresses near noise floor.
+ * @note Previous default was 125 (rejected dual-peak FPV signals)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 125;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 100;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)
@@ -769,14 +779,14 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 5;
  * @note Inverted-V: deep valleys (flanking bins have margin < 5)
  * @note Flat U/I: shallow valleys (flanking bins still elevated)
  * @note 0 = no valley depth filtering (disabled)
- * @note 60 = default for narrowband drones
- * @note FPV-OPTIMIZED: 100 — analog FM at 5.8 GHz has dual peaks
- *       (audio sub-carrier + video carrier), which produces SHALLOW valleys.
- *       Stricter threshold (100) rejects broadband noise that has NO valley
- *       at all (truly flat), but accepts the natural FPV dual-peak shape.
- * @note Previous default was 80; raised to 100 for analog FM
+ * @note FPV-OPTIMIZED: 40 — analog FM dual-peak signals (video carrier + audio
+ *       subcarrier at 5.5 MHz) have valleys 5-8 dB deep (~25-40 margin units).
+ *       Previous threshold=60 rejected these real FPV dual-peak valleys as "too
+ *       shallow." Lowering to 40 accepts analog FM while still rejecting truly
+ *       flat WiFi/BT (valley margin > 80) and broadband noise (margin > 100).
+ * @note Previous default was 60 (rejected FPV dual-peak valleys)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 60;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 40;
 
 /**
  * @brief Default peak flatness threshold (0-100, percentage)
@@ -1121,10 +1131,13 @@ constexpr uint8_t CONFIRM_COUNT_MAX = 10;
 /**
  * @brief Default miss tolerance (consecutive misses before breaking lock)
  * @note Independently configurable from confirm_count.
- *       Default: confirm_count * 2 = 4 misses (~66ms at 50ms/scan)
- * @note Higher values tolerate more FHSS/burst fading without dropping lock.
+ *       Default: 6 misses (~100ms at 50ms/scan) — tolerates FHSS/burst fading
+ *       without dropping lock. Higher values prevent premature lock-break on
+ *       fading analog FM signals while still allowing scanner to resume
+ *       after sustained signal loss.
+ * @note Previous default was 4; raised to 6 for better FPV signal retention
  */
-constexpr uint8_t DEFAULT_MISS_TOLERANCE = 4;
+constexpr uint8_t DEFAULT_MISS_TOLERANCE = 6;
 constexpr uint8_t MISS_TOLERANCE_MIN = 1;
 constexpr uint8_t MISS_TOLERANCE_MAX = 20;
 
