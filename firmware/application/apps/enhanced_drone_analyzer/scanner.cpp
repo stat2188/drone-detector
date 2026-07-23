@@ -1946,6 +1946,7 @@ void DroneScanner::apply_sweep_tracking(
             drone.update_rssi(peak_rssi, chTimeNow(), ThreatThresholds{
                 config_.threat_low_dbm, config_.threat_medium_dbm,
                 config_.threat_high_dbm, config_.threat_critical_dbm});
+            drone.update_cycle_peak(peak_rssi);
             drone.get_mahalanobis_stats().last_tuned_frequency = peak_freq;
             tracked_count_++;
             statistics_.drones_detected++;
@@ -1973,6 +1974,7 @@ void DroneScanner::apply_sweep_tracking(
                 }
             }
             tracked_drones_[drone_idx].mark_seen(chTimeNow());
+            tracked_drones_[drone_idx].update_cycle_peak(peak_rssi);
         }
     }
 }

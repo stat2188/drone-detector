@@ -85,6 +85,12 @@ TrackedDrone::TrackedDrone() noexcept
     , created_time_{0}
     , last_seen_time_{0}
     , sweep_cycles_missed_{0}
+    , sweep_mode_active_{false}
+    , last_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM}
+    , prev_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM}
+    , has_cycle_peak_{false}
+    , cached_trend_{MovementTrend::UNKNOWN}
+    , trend_hold_count_{0}
     , mahalanobis_stats_{} {
 }
 
@@ -110,6 +116,12 @@ TrackedDrone::TrackedDrone(
     , created_time_{0}
     , last_seen_time_{0}
     , sweep_cycles_missed_{0}
+    , sweep_mode_active_{false}
+    , last_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM}
+    , prev_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM}
+    , has_cycle_peak_{false}
+    , cached_trend_{MovementTrend::UNKNOWN}
+    , trend_hold_count_{0}
     , mahalanobis_stats_{} {
 }
 
@@ -338,52 +350,81 @@ const char* DisplayDroneEntry::get_type_name() const noexcept {
 }
 
 MovementTrend TrackedDrone::get_movement_trend() const noexcept {
-    if (update_count < MOVEMENT_TREND_MIN_HISTORY) {
-        return MovementTrend::UNKNOWN;
-    }
+    MovementTrend raw_trend = MovementTrend::UNKNOWN;
 
-    constexpr uint8_t HALF_HISTORY = RSSI_HISTORY_SIZE / 2;
-    constexpr int32_t APPROACHING_THRESHOLD = MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
-    constexpr int32_t RECEDED_THRESHOLD = MOVEMENT_TREND_THRESHOLD_RECEEDING_DB;
-    constexpr int32_t SILENCE_THRESHOLD = MOVEMENT_TREND_SILENCE_THRESHOLD_DBM;
-
-    int32_t older_sum = 0;
-    int32_t recent_sum = 0;
-    uint8_t older_count = 0;
-    uint8_t recent_count = 0;
-
-    for (size_t i = 0; i < RSSI_HISTORY_SIZE; ++i) {
-        const uint8_t logical_idx = (history_index_ + i) % RSSI_HISTORY_SIZE;
-        const int16_t val = rssi_history_[logical_idx];
-
-        if (val <= SILENCE_THRESHOLD) {
-            continue;
-        }
-
-        if (i < HALF_HISTORY) {
-            older_sum += val;
-            older_count++;
+    // ---- SWEEP MODE: use cycle-peak comparison (rssi_history_ is contaminated) ----
+    if (sweep_mode_active_ && has_cycle_peak_) {
+        constexpr int32_t THRESHOLD = MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
+        const int32_t diff = static_cast<int32_t>(last_cycle_peak_rssi_)
+                           - static_cast<int32_t>(prev_cycle_peak_rssi_);
+        if (diff > THRESHOLD) {
+            raw_trend = MovementTrend::APPROACHING;
+        } else if (diff < -THRESHOLD) {
+            raw_trend = MovementTrend::RECEDING;
         } else {
-            recent_sum += val;
-            recent_count++;
+            raw_trend = MovementTrend::STATIC;
+        }
+    }
+    // ---- NORMAL MODE: use split-buffer averaging ----
+    else if (update_count >= MOVEMENT_TREND_MIN_HISTORY) {
+        constexpr uint8_t HALF_HISTORY = RSSI_HISTORY_SIZE / 2;
+        constexpr int32_t APPROACHING_THRESHOLD = MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
+        constexpr int32_t RECEDED_THRESHOLD = MOVEMENT_TREND_THRESHOLD_RECEEDING_DB;
+        constexpr int32_t SILENCE_THRESHOLD = MOVEMENT_TREND_SILENCE_THRESHOLD_DBM;
+
+        int32_t older_sum = 0;
+        int32_t recent_sum = 0;
+        uint8_t older_count = 0;
+        uint8_t recent_count = 0;
+
+        for (size_t i = 0; i < RSSI_HISTORY_SIZE; ++i) {
+            const uint8_t logical_idx = (history_index_ + i) % RSSI_HISTORY_SIZE;
+            const int16_t val = rssi_history_[logical_idx];
+
+            if (val <= SILENCE_THRESHOLD) {
+                continue;
+            }
+
+            if (i < HALF_HISTORY) {
+                older_sum += val;
+                older_count++;
+            } else {
+                recent_sum += val;
+                recent_count++;
+            }
+        }
+
+        if (older_count > 0 && recent_count > 0) {
+            const int32_t avg_old = older_sum / older_count;
+            const int32_t avg_new = recent_sum / recent_count;
+            const int32_t diff = avg_new - avg_old;
+
+            if (diff > APPROACHING_THRESHOLD) {
+                raw_trend = MovementTrend::APPROACHING;
+            } else if (diff < RECEDED_THRESHOLD) {
+                raw_trend = MovementTrend::RECEDING;
+            } else {
+                raw_trend = MovementTrend::STATIC;
+            }
         }
     }
 
-    if (older_count == 0 || recent_count == 0) {
-        return MovementTrend::UNKNOWN;
+    // ---- HYSTERESIS: require TREND_HYSTERESIS_COUNT agreeing evaluations ----
+    // Prevents icon flicker from single-sample noise
+    if (raw_trend == cached_trend_) {
+        trend_hold_count_ = 0;  // same direction — reset hold counter
+    } else if (raw_trend != MovementTrend::UNKNOWN) {
+        if (trend_hold_count_ < TREND_HYSTERESIS_COUNT) {
+            trend_hold_count_++;
+            // Keep returning the old cached trend until hold count expires
+            return cached_trend_;
+        }
+        // Hold count expired — accept the new trend
+        trend_hold_count_ = 0;
     }
 
-    const int32_t avg_old = older_sum / older_count;
-    const int32_t avg_new = recent_sum / recent_count;
-    const int32_t diff = avg_new - avg_old;
-
-    if (diff > APPROACHING_THRESHOLD) {
-        return MovementTrend::APPROACHING;
-    }
-    if (diff < RECEDED_THRESHOLD) {
-        return MovementTrend::RECEDING;
-    }
-    return MovementTrend::STATIC;
+    cached_trend_ = raw_trend;
+    return raw_trend;
 }
 
 } // namespace drone_analyzer

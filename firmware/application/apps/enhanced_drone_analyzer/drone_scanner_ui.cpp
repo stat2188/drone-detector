@@ -1108,6 +1108,10 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     // the streaming restart would be immediately stopped by the caller,
     // creating a send_message() race that can panic "Baseband Send Fail".
     if (!suppress_auto_restart && was_auto && scanner_ptr_ != nullptr) {
+        // Clear sweep-mode flags on tracked drones so they resume
+        // rssi_history_-based trend calculation in normal scanning mode
+        scanner_ptr_->clear_sweep_modes();
+
         // Continue scanning from last DB position (skip already-scanned)
         // Restore both frequency AND database index for exact resume
         if (last_db_frequency_ != 0) {
@@ -1219,6 +1223,13 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // This replaces the per-frame quickselect that previously ran in
         // set_composite_data() / set_sweep2_data(), saving ~1200 comparisons/frame.
         drone_display_.update_noise_floor();
+
+        // Hand off cycle-peak RSSI for movement trend calculation.
+        // Must run BEFORE apply_rssi_decay() so prev_cycle_peak_rssi_ is set
+        // before any drone removal changes tracked_count_.
+        if (scanner_ptr_ != nullptr) {
+            scanner_ptr_->finalize_sweep_cycles();
+        }
 
         // Display final pair data before reset
         update_sweep_pair_display();

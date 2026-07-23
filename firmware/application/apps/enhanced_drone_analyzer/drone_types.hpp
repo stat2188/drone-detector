@@ -273,6 +273,26 @@ struct TrackedDrone {
     static constexpr uint8_t MAX_SWEEP_CYCLES_MISSED = 3;  // Allow 3 full cycles (~6-15 sec) before decay
 
     // ========================================================================
+    // Sweep-mode trend tracking (cycle-peak comparison)
+    // In sweep mode, rssi_history_ is contaminated by mixed frequencies.
+    // We track per-cycle peak RSSI instead and compare consecutive cycles.
+    // ========================================================================
+    bool sweep_mode_active_{false};             // 1 byte — true when drone detected in sweep mode
+    int16_t last_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM};  // 2 bytes — max RSSI this sweep cycle
+    int16_t prev_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM};  // 2 bytes — max RSSI from previous cycle
+    bool has_cycle_peak_{false};               // 1 byte — true after first cycle completes
+
+    // ========================================================================
+    // Trend hysteresis (prevents icon flicker)
+    // A new raw trend must agree for TREND_HYSTERESIS_COUNT consecutive
+    // evaluations before the displayed trend changes.
+    // Mutable: modified by const get_movement_trend() for hysteresis state.
+    // ========================================================================
+    mutable MovementTrend cached_trend_{MovementTrend::UNKNOWN};
+    mutable uint8_t trend_hold_count_{0};
+    static constexpr uint8_t TREND_HYSTERESIS_COUNT = 3;
+
+    // ========================================================================
     // Pattern match state
     // ========================================================================
 
@@ -387,6 +407,40 @@ struct TrackedDrone {
         if (sweep_cycles_missed_ < 255) {
             ++sweep_cycles_missed_;
         }
+    }
+
+    /**
+     * @brief Update cycle-peak RSSI for sweep-mode trend tracking
+     * @param peak_rssi Peak RSSI detected in current sweep frame
+     * @note Called from apply_sweep_tracking() per detection in sweep mode.
+     *       Tracks the maximum RSSI across all frequencies in one sweep cycle.
+     */
+    void update_cycle_peak(RssiValue peak_rssi) noexcept {
+        sweep_mode_active_ = true;
+        if (peak_rssi > last_cycle_peak_rssi_) {
+            last_cycle_peak_rssi_ = static_cast<int16_t>(peak_rssi);
+        }
+    }
+
+    /**
+     * @brief Hand off cycle-peak at sweep cycle boundary
+     * @note Called at pair_complete (full round-robin pass done).
+     *       Copies current cycle peak to previous, resets for next cycle.
+     */
+    void finalize_sweep_cycle() noexcept {
+        if (has_cycle_peak_) {
+            prev_cycle_peak_rssi_ = last_cycle_peak_rssi_;
+        }
+        last_cycle_peak_rssi_ = RSSI_NOISE_FLOOR_DBM;
+        has_cycle_peak_ = true;
+    }
+
+    /**
+     * @brief Clear sweep-mode flag when returning to normal scanning
+     * @note Called from apply_rssi_decay(false) to re-enable rssi_history_-based trend
+     */
+    void clear_sweep_mode() noexcept {
+        sweep_mode_active_ = false;
     }
 
     /**

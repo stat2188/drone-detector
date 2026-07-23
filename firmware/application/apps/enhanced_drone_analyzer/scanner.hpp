@@ -369,14 +369,16 @@ public:
             case CFARMode::OS: {
                 // OS-CFAR (Ordered Statistic): collect all reference cells, sort, take k-th value
                 // Better in multi-target environments (resists masking from nearby signals)
-                // Use a small stack buffer to collect and sort reference cells
-                uint8_t ref_buf[CFAR_REF_CELLS_MAX * 2];  // Max 128 cells (64 left + 64 right)
+                // Stack: ~128 bytes (buffer) + 4 bytes locals = ~132B. Must stay < 512B per frame.
+                // Use std::array for compile-time size guarantee (rejects VLA).
+                static constexpr size_t OS_CFAR_BUF_SIZE = CFAR_REF_CELLS_MAX * 2;  // 128
+                std::array<uint8_t, OS_CFAR_BUF_SIZE> ref_buf{};
                 size_t ref_idx = 0;
                 
                 // Collect left window cells
                 for (int32_t k = static_cast<int32_t>(cbin) - total_span;
                      k < static_cast<int32_t>(cbin) - static_cast<int32_t>(guard_cells) && 
-                     ref_idx < sizeof(ref_buf); ++k) {
+                     ref_idx < ref_buf.size(); ++k) {
                     if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
                         if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
                             k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
@@ -386,7 +388,7 @@ public:
                 // Collect right window cells
                 for (int32_t k = static_cast<int32_t>(cbin) + static_cast<int32_t>(guard_cells) + 1;
                      k <= static_cast<int32_t>(cbin) + total_span &&
-                     ref_idx < sizeof(ref_buf); ++k) {
+                     ref_idx < ref_buf.size(); ++k) {
                     if (k >= 0 && k < static_cast<int32_t>(bin_count)) {
                         if (k >= static_cast<int32_t>(FFT_DC_SPIKE_START) &&
                             k < static_cast<int32_t>(FFT_DC_SPIKE_END)) continue;
@@ -592,7 +594,8 @@ public:
         }
 
         // Phase 1: Collect all CFAR-passing bins
-        CFARPeak candidates[CFAR_MAX_CONCURRENT_PEAKS * 2];  // Oversized for filtering
+        // Stack: ~32 bytes (CFARPeak × 16 @2 bytes each). Guaranteed < 512B.
+        CFARPeak candidates[CFAR_MAX_CONCURRENT_PEAKS * 2]{};
         size_t candidate_count = 0;
         const size_t limit = (bin_count > skip_end) ? (bin_count - skip_end) : 0;
 
@@ -1126,12 +1129,11 @@ public:
      */
     static FreqHz normal_bin_to_freq(FreqHz f_center, size_t bin) noexcept {
         constexpr size_t DC_BIN = FFT_BIN_COUNT / 2;  // 128
-        constexpr FreqHz DC_OFFSET = DC_BIN * SWEEP_BIN_SIZE;  // 10 MHz
         if (bin >= DC_BIN) {
             return f_center + static_cast<FreqHz>(bin - DC_BIN) * SWEEP_BIN_SIZE;
         }
         const FreqHz offset = static_cast<FreqHz>(DC_BIN - bin) * SWEEP_BIN_SIZE;
-        // Guard: prevent unsigned underflow when f_center < DC_OFFSET (low freq scanning)
+        // Guard: prevent unsigned underflow when f_center < offset (low freq scanning)
         if (f_center < offset) return 0;
         return f_center - offset;
     }
@@ -1247,6 +1249,30 @@ public:
             ++write_idx;
         }
         tracked_count_ = static_cast<uint8_t>(write_idx);
+    }
+
+    /**
+     * @brief Hand off sweep-cycle peak RSSI for all tracked drones
+     * @note Called at pair_complete (full sweep round-robin pass).
+     *       Copies each drone's last_cycle_peak_rssi_ → prev_cycle_peak_rssi_
+     *       so get_movement_trend() can compare consecutive cycles.
+     * @pre Scanner thread stopped (sweep mode), no mutex needed.
+     */
+    void finalize_sweep_cycles() noexcept {
+        for (size_t i = 0; i < tracked_count_; ++i) {
+            tracked_drones_[i].finalize_sweep_cycle();
+        }
+    }
+
+    /**
+     * @brief Clear sweep-mode flag on all tracked drones
+     * @note Called when returning to normal scanning mode.
+     *       Re-enables rssi_history_-based trend calculation.
+     */
+    void clear_sweep_modes() noexcept {
+        for (size_t i = 0; i < tracked_count_; ++i) {
+            tracked_drones_[i].clear_sweep_mode();
+        }
     }
 
     /**
