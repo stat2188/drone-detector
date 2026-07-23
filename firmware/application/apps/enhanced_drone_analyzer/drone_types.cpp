@@ -145,12 +145,12 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp, const T
         update_count++;
     }
     
-    // Classify threat from PEAK of recent RSSI samples (not average).
-    // Average smooths out peak values, causing MEDIUM classification in sweep mode
-    // where RSSI fluctuates between passes. Peak preserves the strongest recent
-    // detection, giving correct threat level for the closest approach.
+    // Classify threat from RSSI value.
+    // In NORMAL mode: use peak of rssi_history_ for stability (survives noise spikes).
+    // In SWEEP mode: use direct new_rssi because rssi_history_ is contaminated
+    // (each entry comes from a different frequency pass, not the drone's frequency).
     RssiValue classify_rssi = new_rssi;
-    if (update_count >= 2) {
+    if (!sweep_mode_active_ && update_count >= 2) {
         const uint8_t count = (update_count > RSSI_HISTORY_SIZE)
             ? RSSI_HISTORY_SIZE : update_count;
         RssiValue peak_rssi = rssi_history_[0];

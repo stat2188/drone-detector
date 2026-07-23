@@ -1479,9 +1479,13 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
     size_t peak_index = FFT_EDGE_SKIP;
 
     if (config_.cfar_mode != CFARMode::OFF) {
-        // Use adaptive threshold if enabled — auto-tunes to maintain
-        // constant false alarm rate in varying noise environments
-        const uint8_t effective_threshold = adaptive_threshold_.get_optimal_threshold();
+        // Use adaptive threshold ONLY when explicitly enabled.
+        // When disabled, use the user-configured fixed threshold directly.
+        // Prevents silent threshold drift from AdaptiveThreshold's internal state
+        // when the user has not opted into auto-tuning.
+        const uint8_t effective_threshold = config_.adaptive_cfar_enabled
+            ? adaptive_threshold_.get_optimal_threshold()
+            : config_.cfar_threshold_x10;
 
         const size_t cfar_peak = CFARDetector::find_peak_cfar(
             spectrum.db.data(), FFT_BIN_COUNT,
@@ -1493,18 +1497,22 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
 
         if (cfar_peak >= FFT_BIN_COUNT) {
             // No detection — feed negative result to adaptive threshold
-            // BEFORE early return. Pass RSSI_MIN_DBM as sentinel (not OOB read).
-            adaptive_threshold_.update(
-                false, RSSI_MIN_DBM, noise_floor, config_.cfar_threshold_x10);
+            // only when adaptive mode is active (avoids polluting internal state).
+            if (config_.adaptive_cfar_enabled) {
+                adaptive_threshold_.update(
+                    false, RSSI_MIN_DBM, noise_floor, config_.cfar_threshold_x10);
+            }
             return false;
         }
 
         // Detection found — feed positive result to adaptive threshold
-        adaptive_threshold_.update(
-            true,
-            spectrum_value_to_dbm(spectrum.db[cfar_peak], get_current_total_gain()),
-            noise_floor,
-            config_.cfar_threshold_x10);
+        if (config_.adaptive_cfar_enabled) {
+            adaptive_threshold_.update(
+                true,
+                spectrum_value_to_dbm(spectrum.db[cfar_peak], get_current_total_gain()),
+                noise_floor,
+                config_.cfar_threshold_x10);
+        }
 
         peak_index = cfar_peak;
         peak_value = spectrum.db[cfar_peak];
@@ -1565,7 +1573,9 @@ bool DroneScanner::analyze_spectrum_shape_multi(
     if (config_.cfar_mode != CFARMode::OFF) {
         // Find ALL CFAR-passing peaks (up to MAX_SHAPE_DETECTIONS)
         CFARPeak cfar_peaks[MAX_SHAPE_DETECTIONS];
-        const uint8_t effective_threshold = adaptive_threshold_.get_optimal_threshold();
+        const uint8_t effective_threshold = config_.adaptive_cfar_enabled
+            ? adaptive_threshold_.get_optimal_threshold()
+            : config_.cfar_threshold_x10;
 
         const size_t peak_count = CFARDetector::find_peaks(
             spectrum.db.data(), FFT_BIN_COUNT,
@@ -1577,18 +1587,22 @@ bool DroneScanner::analyze_spectrum_shape_multi(
         );
 
         if (peak_count == 0) {
-            // No CFAR detection — feed negative result to adaptive threshold
-            adaptive_threshold_.update(
-                false, RSSI_MIN_DBM, noise_floor, config_.cfar_threshold_x10);
+            // No CFAR detection — feed negative result only when adaptive active
+            if (config_.adaptive_cfar_enabled) {
+                adaptive_threshold_.update(
+                    false, RSSI_MIN_DBM, noise_floor, config_.cfar_threshold_x10);
+            }
             return false;
         }
 
-        // Feed first (strongest) peak to adaptive threshold
-        adaptive_threshold_.update(
-            true,
-            spectrum_value_to_dbm(cfar_peaks[0].power, total_gain),
-            noise_floor,
-            config_.cfar_threshold_x10);
+        // Feed first (strongest) peak to adaptive threshold (only when active)
+        if (config_.adaptive_cfar_enabled) {
+            adaptive_threshold_.update(
+                true,
+                spectrum_value_to_dbm(cfar_peaks[0].power, total_gain),
+                noise_floor,
+                config_.cfar_threshold_x10);
+        }
 
         // Try shape filters on each CFAR peak independently
         for (size_t i = 0; i < peak_count && out_result.count < MAX_SHAPE_DETECTIONS; ++i) {
@@ -1943,6 +1957,9 @@ void DroneScanner::apply_sweep_tracking(
             drone.created_time_ = chTimeNow();
             drone.last_increase_time_ = chTimeNow();
             drone.mark_seen(chTimeNow());
+            // Set sweep mode BEFORE update_rssi() so threat classification
+            // uses the direct RSSI (not contaminated rssi_history_).
+            drone.sweep_mode_active_ = true;
             drone.update_rssi(peak_rssi, chTimeNow(), ThreatThresholds{
                 config_.threat_low_dbm, config_.threat_medium_dbm,
                 config_.threat_high_dbm, config_.threat_critical_dbm});
@@ -2012,16 +2029,33 @@ void DroneScanner::process_spectrum_sweep(
 
     const uint8_t cfg_margin = config_.spectrum_margin;
 
-    // Step 1: CFAR or fixed-threshold peak detection on RAW FFT bins.
-    // CFAR must run on raw bins to see the true noise structure.
-    size_t peak_index = FFT_EDGE_SKIP_NARROW;
-    uint8_t raw_peak = 0;
-    uint8_t noise_floor = 0;
+    // Step 1: Compute noise floor (25th percentile of usable bins).
+    // Shared for all peaks in this frame — computed once.
+    uint8_t* usable = sweep_usable_buf_;
+    size_t idx = 0;
+    for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
+        usable[idx++] = spectrum.db[i];
+    }
+    for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
+        usable[idx++] = spectrum.db[i];
+    }
+    if (idx == 0) return;
+    const uint8_t noise_floor = quickselect_percentile(usable, idx, 25);
+
+    // Step 2: Find ALL candidate peaks (CFAR multi-peak or fixed-threshold).
+    // Stack: CFARPeak × 8 = 16 bytes. Well within 512B limit.
+    static constexpr size_t MAX_SWEEP_PEAKS = CFAR_MAX_CONCURRENT_PEAKS;
+    CFARPeak cfar_peaks[MAX_SWEEP_PEAKS]{};
+    size_t peak_count = 0;
 
     if (config_.cfar_mode != CFARMode::OFF) {
-        const size_t cfar_peak = CFARDetector::find_peak_cfar(
+        // Multi-peak CFAR: finds ALL peaks passing the adaptive threshold.
+        // Critical for detecting dual-peak FPV (video + audio subcarrier)
+        // or multiple drones in the same 20 MHz window.
+        peak_count = CFARDetector::find_peaks(
             spectrum.db.data(),
             FFT_BIN_COUNT,
+            cfar_peaks, MAX_SWEEP_PEAKS,
             config_.cfar_mode,
             config_.cfar_ref_cells,
             config_.cfar_guard_cells,
@@ -2034,96 +2068,113 @@ void DroneScanner::process_spectrum_sweep(
             config_.os_cfar_k_percent,
             config_.vi_cfar_threshold_x10
         );
-
-        if (cfar_peak >= FFT_BIN_COUNT) return;
-        peak_index = cfar_peak;
-        raw_peak = spectrum.db[cfar_peak];
-
-        // Noise floor from raw bins (CFAR path)
-        uint8_t* usable = sweep_usable_buf_;
-        size_t idx = 0;
-        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-            usable[idx++] = spectrum.db[i];
-        }
-        for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-            usable[idx++] = spectrum.db[i];
-        }
-        if (idx > 0) {
-            noise_floor = quickselect_percentile(usable, idx, 25);
-        }
     } else {
-        uint8_t* usable = sweep_usable_buf_;
-        size_t idx = 0;
-        raw_peak = 0;
-        peak_index = FFT_EDGE_SKIP_NARROW;
+        // Fixed-threshold: collect all bins above noise_floor + margin,
+        // sort by power descending, take top N.
+        struct SimplePeak { size_t bin; uint8_t power; };
+        SimplePeak candidates[MAX_SWEEP_PEAKS * 2]{};
+        size_t cand_count = 0;
 
         for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_DC_SPIKE_START; ++i) {
-            usable[idx++] = spectrum.db[i];
-            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
+            const int32_t bin_val = spectrum.db[i];
+            const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
+            if (margin >= static_cast<int32_t>(cfg_margin) && cand_count < MAX_SWEEP_PEAKS * 2) {
+                candidates[cand_count++] = {i, spectrum.db[i]};
+            }
         }
         for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW); ++i) {
-            usable[idx++] = spectrum.db[i];
-            if (spectrum.db[i] > raw_peak) { raw_peak = spectrum.db[i]; peak_index = i; }
+            const int32_t bin_val = spectrum.db[i];
+            const int32_t margin = bin_val - static_cast<int32_t>(noise_floor);
+            if (margin >= static_cast<int32_t>(cfg_margin) && cand_count < MAX_SWEEP_PEAKS * 2) {
+                candidates[cand_count++] = {i, spectrum.db[i]};
+            }
         }
 
-        if (idx == 0) return;
-        noise_floor = quickselect_percentile(usable, idx, 25);
+        // Sort by power descending (insertion sort — small array)
+        for (size_t i = 1; i < cand_count; ++i) {
+            const SimplePeak key = candidates[i];
+            size_t j = i;
+            while (j > 0 && candidates[j - 1].power < key.power) {
+                candidates[j] = candidates[j - 1];
+                --j;
+            }
+            candidates[j] = key;
+        }
 
-        const uint8_t peak_margin_fixed = raw_peak - noise_floor;
-        if (peak_margin_fixed < cfg_margin) return;
+        // Non-maximum suppression: reject peaks within CFAR_MIN_PEAK_SEPARATION
+        peak_count = 0;
+        for (size_t i = 0; i < cand_count && peak_count < MAX_SWEEP_PEAKS; ++i) {
+            bool suppressed = false;
+            for (size_t j = 0; j < peak_count; ++j) {
+                const size_t bin_diff = (candidates[i].bin > cfar_peaks[j].bin)
+                    ? (candidates[i].bin - cfar_peaks[j].bin)
+                    : (cfar_peaks[j].bin - candidates[i].bin);
+                if (bin_diff < CFAR_MIN_PEAK_SEPARATION) {
+                    suppressed = true;
+                    break;
+                }
+            }
+            if (!suppressed) {
+                cfar_peaks[peak_count++] = {candidates[i].bin, candidates[i].power};
+            }
+        }
     }
 
-    // Convert FFT bin peak to LG pixel space. If the peak falls on the DC
-    // spike (bins 120-135), fft_bin_to_lg_pixel() returns COMPOSITE_SIZE
-    // and we reject — this is correct because the DC spike carries no
-    // real signal energy.
-    const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
-    if (peak_pixel >= COMPOSITE_SIZE) return;
+    if (peak_count == 0) return;
 
-    // Update peak power for timeline display (was missing — caused flat timeline in sweep mode)
-    last_peak_power_ = raw_peak;
+    // Update peak power for timeline display (strongest peak)
+    last_peak_power_ = cfar_peaks[0].power;
 
-    // Pattern matching on raw FFT (consistent normalization with saved patterns).
-    // NOTE: Patterns are saved via normalize() which operates on raw 256-bin FFT
-    // and skips DC spike bins within each 16-bin chunk. Using match_from_lg()
-    // here would produce a different 16-bin waveform (different usable range,
-    // no DC skip) causing false mismatches against saved patterns.
-    size_t highlight_bin = 0;
-    bool early_pattern_matched = false;
-    int8_t early_pattern_index = -1;
-    uint16_t early_pattern_correlation = 0;
-
-    const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
-    if (early_result.matched) {
-        early_pattern_matched = true;
-        early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
-        highlight_bin = peak_index;
-        early_pattern_correlation = early_result.score;
-    }
-
-    // Shape analysis on LG-reordered buffer (continuous, no DC gap).
-    // The 25th percentile noise floor from raw bins is valid here because
-    // the LG reordering does not change power values — only their order.
     const int32_t total_gain = get_current_total_gain();
 
-    int32_t shape_rssi = RSSI_MIN_DBM;
-    if (!analyze_spectrum_shape_lg(lg_buffer, peak_pixel, noise_floor, shape_rssi, total_gain)) {
-        return;
-    }
+    // Step 3: Process each CFAR peak through shape analysis + tracking.
+    // Only the strongest peak feeds the median filter (prevents cross-frequency
+    // contamination of the per-frequency smoothing accumulator).
+    for (size_t p = 0; p < peak_count; ++p) {
+        const size_t peak_index = cfar_peaks[p].bin;
+        const uint8_t raw_peak = cfar_peaks[p].power;
 
-    // Median filter
-    int32_t peak_rssi = shape_rssi;
-    rssi_median_filter_.add(peak_rssi);
-    if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
-        peak_rssi = rssi_median_filter_.get_median();
-    }
+        // Skip peaks on DC spike (bins 120-135) — no real signal energy
+        const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
+        if (peak_pixel >= COMPOSITE_SIZE) continue;
 
-    apply_sweep_tracking(
-        fft_bin_to_freq(center_freq, peak_index),
-        peak_rssi, center_freq, f_min, f_max,
-        highlight_bin, early_pattern_index,
-        early_pattern_correlation, early_pattern_matched
-    );
+        // Pattern matching per peak on raw FFT (consistent with saved patterns).
+        FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
+        size_t highlight_bin = 0;
+        bool early_pattern_matched = false;
+        int8_t early_pattern_index = -1;
+        uint16_t early_pattern_correlation = 0;
+
+        const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
+        if (early_result.matched) {
+            early_pattern_matched = true;
+            early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
+            highlight_bin = peak_index;
+            early_pattern_correlation = early_result.score;
+        }
+
+        // Shape analysis on LG-reordered buffer (continuous, no DC gap).
+        int32_t shape_rssi = RSSI_MIN_DBM;
+        if (!analyze_spectrum_shape_lg(lg_buffer, peak_pixel, noise_floor, shape_rssi, total_gain)) {
+            continue;  // This peak rejected by shape filter — try next peak
+        }
+
+        // Median filter: only for primary peak (p==0) to avoid cross-frequency contamination.
+        int32_t peak_rssi = shape_rssi;
+        if (p == 0) {
+            rssi_median_filter_.add(peak_rssi);
+            if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
+                peak_rssi = rssi_median_filter_.get_median();
+            }
+        }
+
+        apply_sweep_tracking(
+            peak_freq,
+            peak_rssi, center_freq, f_min, f_max,
+            highlight_bin, early_pattern_index,
+            early_pattern_correlation, early_pattern_matched
+        );
+    }
 }
 
 } // namespace drone_analyzer

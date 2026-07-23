@@ -750,16 +750,14 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 30;
  * @note sharpness = (peak_margin * 100) / avg_margin
  * @note Inverted-V peaks have sharpness > 200; flat U/I shapes have sharpness ~ 100
  * @note 50 = no sharpness filtering (accept all shapes)
- * @note FPV-OPTIMIZED: 100 — analog FM with dual peaks (video + audio subcarrier)
- *       produces sharpness ~100-120 due to valley bins inflating avg_margin.
- *       Threshold=125 rejected these real FPV signals. Lowering to 100 accepts
- *       all genuine analog FM while still rejecting truly flat WiFi/BT (~100)
- *       which is further filtered by valley depth (40) and max width (30 bins).
- *       Note: flatness filter is disabled (0) to avoid false-rejecting weak FPV
- *       signals at long range where V-shape compresses near noise floor.
- * @note Previous default was 125 (rejected dual-peak FPV signals)
+ * @note FPV-OPTIMIZED: 75 — analog FM with dual peaks (video + audio subcarrier)
+ *       produces sharpness ~80-120 due to valley bins inflating avg_margin.
+ *       Threshold=100 rejected real dual-peak FPV signals at medium range.
+ *       Lowering to 75 accepts all genuine analog FM while still rejecting
+ *       truly flat WiFi/BT (sharpness ≈ 100-110, caught by valley depth filter).
+ * @note Previous default was 100 (rejected dual-peak FPV signals)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 100;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 75;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)
@@ -779,14 +777,15 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 5;
  * @note Inverted-V: deep valleys (flanking bins have margin < 5)
  * @note Flat U/I: shallow valleys (flanking bins still elevated)
  * @note 0 = no valley depth filtering (disabled)
- * @note FPV-OPTIMIZED: 40 — analog FM dual-peak signals (video carrier + audio
- *       subcarrier at 5.5 MHz) have valleys 5-8 dB deep (~25-40 margin units).
- *       Previous threshold=60 rejected these real FPV dual-peak valleys as "too
- *       shallow." Lowering to 40 accepts analog FM while still rejecting truly
- *       flat WiFi/BT (valley margin > 80) and broadband noise (margin > 100).
- * @note Previous default was 60 (rejected FPV dual-peak valleys)
+ * @note FPV-OPTIMIZED: 55 — analog FM dual-peak signals (video carrier + audio
+ *       subcarrier at 5.5 MHz) have valleys 5-10 dB deep (~25-55 margin units).
+ *       Previous threshold=40 rejected signals where valley bins were 8+ dB
+ *       above noise — exactly when drone is CLOSEST (strongest signal, bins
+ *       also strongest). Raising to 55 (11 dB) accepts all real FPV dual-peak
+ *       patterns while still rejecting WiFi/BT flat-top (valley bins > 15 dB).
+ * @note Previous default was 40 (rejected FPV signals at close range)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 40;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 55;
 
 /**
  * @brief Default peak flatness threshold (0-100, percentage)
