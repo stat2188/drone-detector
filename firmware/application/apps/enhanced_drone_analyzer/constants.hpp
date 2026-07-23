@@ -200,12 +200,12 @@ constexpr int32_t RSSI_DETECTION_THRESHOLD_DBM = -95;
  * @brief RSSI threshold for high threat (dBm)
  * @note With default gains (LNA=32 + VGA=32 + RF_AMP=14 = 78 dB),
  *       max RSSI = (255-255)/5 - 78 = -78 dBm. Threshold must be reachable.
- *       -87 dBm = 8 dB above detection threshold (-95). Reachable when
- *       spectrum.db value >= 230 (~90% of max).
+ *       -90 dBm = 5 dB above detection threshold (-95). Reachable when
+ *       spectrum.db value >= 195 (~76% of max).
  * @note Previous value (-60) was unreachable with default gains (max -78 dBm),
  *       causing all detections to classify as MEDIUM.
  */
-constexpr int32_t RSSI_HIGH_THREAT_THRESHOLD_DBM = -87;
+constexpr int32_t RSSI_HIGH_THREAT_THRESHOLD_DBM = -90;
 
 /**
  * @brief RSSI threshold for critical threat (dBm)
@@ -795,11 +795,10 @@ constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 55;
  * @note Drone V-shape: flatness ~ 5-20% (only peak bin at high power)
  * @note Higher threshold = stricter (rejects more flat signals)
  * @note 0 = no flatness filtering (disabled)
- * @note FPV-OPTIMIZED: 40 — stricter than 30 to reject Wi-Fi 5.8 GHz
- *       flat-top noise that bleeds through the analog FM bandwidth.
- * @note Previous default was 30; raised to 40 for Wi-Fi rejection
+ * @note FPV-OPTIMIZED: 35 — rejects WiFi flat-top (>50%) while accepting
+ *       analog FM V-shape (<20%). Previous value was 0 (disabled).
  */
-constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 0;
+constexpr uint8_t DEFAULT_SPECTRUM_FLATNESS = 35;
 
 /**
  * @brief Minimum peak margin for flatness check to be meaningful (in spectrum.db units)

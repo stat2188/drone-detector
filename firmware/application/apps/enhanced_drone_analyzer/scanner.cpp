@@ -1785,28 +1785,43 @@ bool DroneScanner::apply_shape_filters(
     }
 
     // Step 9: Valley depth (deep valleys flanking peak = V-shape)
+    // Skip for dual-peak signals (FPV video + audio subcarrier): the valley
+    // between two legitimate peaks is NOT a rejection criterion. Detect by
+    // checking if any bin within the signal width exceeds half peak power.
     if (config_.spectrum_valley_depth > 0) {
-        uint8_t left_valley_margin = 0;
-        uint8_t right_valley_margin = 0;
-
-        if (left > edge_skip) {
-            const size_t lv = left - 1;
-            const bool dc_blocked = has_dc_gap && lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END;
-            if (!dc_blocked && data[lv] > noise_floor) {
-                left_valley_margin = data[lv] - noise_floor;
-            }
-        }
-        if (right < upper_limit - 1) {
-            const size_t rv = right + 1;
-            const bool dc_blocked = has_dc_gap && rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END;
-            if (!dc_blocked && data[rv] > noise_floor) {
-                right_valley_margin = data[rv] - noise_floor;
+        bool has_secondary_peak = false;
+        const uint8_t secondary_threshold = noise_floor + (peak_margin / 2);
+        for (size_t i = left; i <= right && !has_secondary_peak; ++i) {
+            if (has_dc_gap && i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            if (i == peak_idx) continue;
+            if (data[i] >= secondary_threshold) {
+                has_secondary_peak = true;
             }
         }
 
-        const uint8_t max_valley = (left_valley_margin > right_valley_margin)
-            ? left_valley_margin : right_valley_margin;
-        if (max_valley >= config_.spectrum_valley_depth) return false;
+        if (!has_secondary_peak) {
+            uint8_t left_valley_margin = 0;
+            uint8_t right_valley_margin = 0;
+
+            if (left > edge_skip) {
+                const size_t lv = left - 1;
+                const bool dc_blocked = has_dc_gap && lv >= FFT_DC_SPIKE_START && lv < FFT_DC_SPIKE_END;
+                if (!dc_blocked && data[lv] > noise_floor) {
+                    left_valley_margin = data[lv] - noise_floor;
+                }
+            }
+            if (right < upper_limit - 1) {
+                const size_t rv = right + 1;
+                const bool dc_blocked = has_dc_gap && rv >= FFT_DC_SPIKE_START && rv < FFT_DC_SPIKE_END;
+                if (!dc_blocked && data[rv] > noise_floor) {
+                    right_valley_margin = data[rv] - noise_floor;
+                }
+            }
+
+            const uint8_t max_valley = (left_valley_margin > right_valley_margin)
+                ? left_valley_margin : right_valley_margin;
+            if (max_valley >= config_.spectrum_valley_depth) return false;
+        }
     }
 
     // Step 10: Flatness (reject flat-top signals like WiFi/BT)
