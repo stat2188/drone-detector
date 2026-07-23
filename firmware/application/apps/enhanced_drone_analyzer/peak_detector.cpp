@@ -115,18 +115,20 @@ PeakDetector::PeakInfo PeakDetector::find(
 
     size_t left = peak_index;
     while (left > edge_skip) {
-        size_t prev = left - 1;
-        const bool in_dc = (prev >= FFT_DC_SPIKE_START) && (prev < FFT_DC_SPIKE_END);
-        if (in_dc) { --left; continue; }
+        const size_t prev = left - 1;
+        // DC spike is a hard boundary — expansion stops, never bridges.
+        // The DC spike contains ADC offset energy (not real signal), so
+        // including it inflates width by up to 16 bins (1.25 MHz).
+        if (prev >= FFT_DC_SPIKE_START && prev < FFT_DC_SPIKE_END) break;
         if (spectrum[prev] < elevated) break;
         --left;
     }
 
     size_t right = peak_index;
     while (right < FFT_BIN_COUNT - edge_skip - 1) {
-        size_t next = right + 1;
-        const bool in_dc = (next >= FFT_DC_SPIKE_START) && (next < FFT_DC_SPIKE_END);
-        if (in_dc) { ++right; continue; }
+        const size_t next = right + 1;
+        // DC spike is a hard boundary — expansion stops, never bridges.
+        if (next >= FFT_DC_SPIKE_START && next < FFT_DC_SPIKE_END) break;
         if (spectrum[next] < elevated) break;
         ++right;
     }
