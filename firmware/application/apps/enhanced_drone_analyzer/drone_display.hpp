@@ -146,6 +146,11 @@ public:
     void push_timeline_value(uint8_t peak_power) noexcept;
 
     /**
+     * @brief Reset timeline to empty state (clear on mode transitions).
+     */
+    void reset_timeline() noexcept;
+
+    /**
      * @brief Set status text
      * @param status_text Status text to display
      */

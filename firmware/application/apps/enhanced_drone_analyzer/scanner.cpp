@@ -1939,6 +1939,9 @@ void DroneScanner::process_spectrum_sweep(
     const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
     if (peak_pixel >= COMPOSITE_SIZE) return;
 
+    // Update peak power for timeline display (was missing — caused flat timeline in sweep mode)
+    last_peak_power_ = raw_peak;
+
     // Pattern matching on raw FFT (consistent normalization with saved patterns).
     // NOTE: Patterns are saved via normalize() which operates on raw 256-bin FFT
     // and skips DC spike bins within each 16-bin chunk. Using match_from_lg()

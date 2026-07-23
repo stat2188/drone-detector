@@ -408,6 +408,11 @@ void DroneDisplay::push_timeline_value(uint8_t peak_power) noexcept {
     set_dirty();
 }
 
+void DroneDisplay::reset_timeline() noexcept {
+    timeline_.reset();
+    set_dirty();
+}
+
 void DroneDisplay::set_status_text(const char* status_text) noexcept {
     if (status_text == nullptr) {
         return;
