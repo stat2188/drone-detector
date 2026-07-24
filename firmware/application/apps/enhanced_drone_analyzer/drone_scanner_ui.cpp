@@ -1194,21 +1194,24 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     update_sweep_pair_display();
     drone_display_.set_dirty();  // repaint sweep display every frame
 
-    if (win.pixel_index < COMPOSITE_SIZE) {
+    // Unified termination: both pixel_index and f_center must agree the pass is done.
+    // Before: two independent if-checks could disagree — pixel_index fills before
+    // f_center reaches f_max (truncating remaining range), or f_center exhausts
+    // before pixels fill (leaving trailing empty pixels).
+    // After: single combined check ensures consistent completion.
+    const bool pixel_done = (win.pixel_index >= COMPOSITE_SIZE);
+    const bool freq_done = (win.f_center >= win.f_max);
+    if (!pixel_done && !freq_done) {
         // Normal step: advance frequency within current window
-        // REVERT (CRITICAL): Use < to prevent infinite stall at f_max.
-        // The overshoot is safely rejected by process_spectrum_sweep() frequency range check.
-        if (win.f_center < win.f_max) {
-            win.f_center += win.step_hz;
-            retune_sweep_window(win, nullptr);
-            return;
-        }
-        // Reached end of range — force completion and clear accumulators
-        // to prevent stale values from affecting the next sweep pass.
-        win.pixel_index = COMPOSITE_SIZE;
-        win.bins_hz_acc = 0;
-        win.pixel_max = 0;
+        win.f_center += win.step_hz;
+        retune_sweep_window(win, nullptr);
+        return;
     }
+    // One or both limits reached — force completion of the sweep pass.
+    // Clear accumulators to prevent stale values from affecting the next pass.
+    win.pixel_index = COMPOSITE_SIZE;
+    win.bins_hz_acc = 0;
+    win.pixel_max = 0;
 
     // Current window sweep pass complete
     // Check if its pair is fully complete (both enabled windows in the pair done)
@@ -1367,14 +1370,12 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     }
     const FreqHz range = f_max - f_min;
 
-    // FIX: Exact division to avoid Hz drift per pixel (CRIT-3)
     pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;
 
-    // CRITICAL FIX: step_hz must be >= usable FFT bandwidth per frame.
-    // If step is smaller, FFT frames overlap. The sequential pixel_index
-    // accumulation in SweepProcessor then fills composite[] long before
-    // f_center reaches f_max, causing the sweep range to be truncated.
-    // Usable bandwidth = SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE = 228 * 78125 = 17,812,500 Hz.
+    // Minimum step = usable FFT bandwidth per frame.
+    // step_hz MUST NOT exceed this — otherwise consecutive FFT frames leave
+    // uncovered frequency gaps between them (signals in the gap are never detected).
+    // Usable bandwidth: SWEEP_BINS_PER_STEP(228) × SWEEP_BIN_SIZE(78125) = 17,812,500 Hz
     static constexpr FreqHz MIN_STEP_HZ = SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE;
 
     step_hz = (step > 0) ? step : MIN_STEP_HZ;
@@ -1382,21 +1383,25 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
         step_hz = MIN_STEP_HZ;
     }
 
-    // Calculate frame count and align step to exact range coverage
-    uint16_t frames = (range + step_hz / 2) / step_hz;
+    // FIX (CRIT-1): Ceiling division guarantees step_hz ≤ MIN_STEP_HZ after recalc.
+    // Before: frames = range / MIN_STEP_HZ (truncates → too few frames → gaps)
+    // After:  frames = ceil(range / MIN_STEP_HZ) → step_hz = range/frames ≤ MIN
+    uint16_t frames = (range + MIN_STEP_HZ - 1) / MIN_STEP_HZ;
     if (frames == 0) {
-        frames = 1;  // Safety: prevent division by zero
+        frames = 1;
     }
     step_hz = range / frames;
 
-    // Recalculate if rounding down pushed step below minimum
-    if (step_hz < MIN_STEP_HZ && range >= MIN_STEP_HZ) {
-        frames = range / MIN_STEP_HZ;
+    // FIX (CRIT-2): Ensure enough frames to fill all 240 composite pixels.
+    // Each frame contributes 238 bins to the Hz accumulator (2 skipped for DC guard).
+    // Total accumulated Hz = frames × 238 × SWEEP_BIN_SIZE must ≥ range,
+    // otherwise trailing pixels in composite[] stay permanently empty.
+    static constexpr FreqHz HZ_PER_FRAME = (SWEEP_PIXELS_PER_SLICE - 2) * SWEEP_BIN_SIZE;
+    const FreqHz total_accumulated = static_cast<FreqHz>(frames) * HZ_PER_FRAME;
+    if (total_accumulated < range) {
+        frames = static_cast<uint16_t>((range + HZ_PER_FRAME - 1) / HZ_PER_FRAME);
         if (frames == 0) frames = 1;
         step_hz = range / frames;
-        if (step_hz < MIN_STEP_HZ) {
-            step_hz = MIN_STEP_HZ;
-        }
     }
 
     f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
