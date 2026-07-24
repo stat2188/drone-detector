@@ -689,7 +689,7 @@ void DroneDisplay::format_rssi(
     }
 
     write_uint(buf, remaining, static_cast<uint32_t>(rssi));
-    write_str(buf, remaining, " db");
+    write_str(buf, remaining, " dBm");
     *buf = '\0';
 }
 
