@@ -834,16 +834,23 @@ constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 0;
  * @note When peak_margin > this value, loosen valley depth, symmetry, and kurtosis checks.
  *       At close range (drone within ~50m), ALL bins in signal band are elevated,
  *       making these shape filters unreliable. Flatness filter remains active.
+ *       Also switches elevated_threshold from noise+margin/3 to noise+margin/2,
+ *       narrowing the width measurement to prevent false rejections of close-range
+ *       wideband signals (analog FPV at 5.8 GHz).
  */
 constexpr uint8_t VERY_STRONG_SIGNAL_MARGIN = 80;
 
 /**
- * @brief Peak margin threshold for extreme signal bypass (~25 dB above noise)
+ * @brief Peak margin threshold for extreme signal bypass (~19 dB above noise)
  * @note When peak_margin > this value, also skip max_width check.
- *       At 25+ dB, the elevated_threshold captures the entire signal bandwidth,
+ *       At 19+ dB, the elevated_threshold captures the entire signal bandwidth,
  *       making width measurement unreliable. Only min_width check remains.
+ *       Lowered from 128 (~25 dB) to 96 (~19 dB) because width inflation begins
+ *       at ~16 dB (VERY_STRONG_SIGNAL_MARGIN). Without this fix, legitimate
+ *       close-range FPV signals (15+ MHz bandwidth) were falsely rejected by
+ *       max_width when their inflated width exceeded 200 bins.
  */
-constexpr uint8_t EXTREME_SIGNAL_MARGIN = 128;
+constexpr uint8_t EXTREME_SIGNAL_MARGIN = 96;
 
 // ============================================================================
 // Pattern Matching Constants

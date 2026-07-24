@@ -1699,11 +1699,13 @@ bool DroneScanner::apply_shape_filters(
 
     // VERY STRONG SIGNAL BYPASS:
     // When peak_margin > 80 (~16 dB above noise, e.g. drone within ~50m),
-    // loosen width and valley checks to prevent false rejection of strong
-    // wide signals (analog FPV at close range). The signal is clearly not
-    // noise — let it through with only basic sanity checks.
-    // At peak_margin > 128 (~25 dB, drone within ~10m), ALL bins in the
-    // signal band are elevated, making valley/sharpness/flatness unreliable.
+    // three effects activate:
+    //   1) Switch elevated_threshold from margin/3 to margin/2, narrowing the
+    //      width measurement to prevent inflation from elevated flanking bins.
+    //   2) Skip valley depth, symmetry, and kurtosis checks (unreliable when
+    //      all bins in the signal band are elevated).
+    //   3) At peak_margin > 96 (~19 dB), also skip max_width check because
+    //      even the narrowed threshold may still capture the full bandwidth.
     // Stack: 1 byte (local bool). Flash: 0 (inline).
     const bool very_strong = (peak_margin > VERY_STRONG_SIGNAL_MARGIN);
 
@@ -1728,7 +1730,12 @@ bool DroneScanner::apply_shape_filters(
     // /3 instead of /4: for weak signals (peak_margin=20), /4 gives 5 units above
     // noise (~1 dB) where 1-bin quantization noise dominates width measurement.
     // /3 gives 7 units (~1.4 dB), providing more stable width for marginal signals.
-    const uint8_t elevated_threshold = noise_floor + (peak_margin / 3);
+    // Very strong signals use /2 instead: at close range, ALL bins in the signal
+    // band are elevated, so /3 captures too many bins and inflates width beyond
+    // max_width, causing false rejection. /2 narrows the threshold to the actual
+    // peak region, producing a reliable width measurement.
+    const uint8_t elevated_divisor = very_strong ? 2 : 3;
+    const uint8_t elevated_threshold = noise_floor + (peak_margin / elevated_divisor);
 
     // Upper bound: FFT_BIN_COUNT for raw spectrum, COMPOSITE_SIZE for LG buffer
     const size_t data_size = has_dc_gap ? FFT_BIN_COUNT : COMPOSITE_SIZE;
@@ -1765,9 +1772,11 @@ bool DroneScanner::apply_shape_filters(
     if (signal_width < config_.spectrum_min_width) return false;
 
     // Step 6: Maximum width
-    // Very strong signal bypass: at peak_margin > 128 (~25 dB), ALL bins in the
-    // signal band are elevated, making width measurement unreliable. Skip check.
-    // At peak_margin 81-128: use config max_width (200 = ~15.6 MHz).
+    // Very strong signal bypass: at peak_margin > 96 (~19 dB), ALL bins in the
+    // signal band are elevated, making width measurement unreliable even with the
+    // narrowed /2 threshold. Skip max_width check.
+    // At peak_margin 81-96: use config max_width (200 = ~15.6 MHz) with narrowed
+    // /2 threshold — width is now reliable enough to enforce.
     if (!very_strong || peak_margin <= EXTREME_SIGNAL_MARGIN) {
         if (signal_width > config_.spectrum_max_width) return false;
     }
