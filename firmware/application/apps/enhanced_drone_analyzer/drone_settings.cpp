@@ -81,10 +81,10 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , button_info_width_({UI_POS_X(5), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Wid?")
     , button_info_sharp_({UI_POS_X(10), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Shp?")
     , button_info_ratio_({UI_POS_X(15), UI_POS_Y(7), UI_POS_WIDTH(4), 16}, "Rat?")
-    , field_threat_low_({UI_POS_X(3), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, DEFAULT_THREAT_LOW_DBM, ' ')
-    , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, DEFAULT_THREAT_MEDIUM_DBM, ' ')
-    , field_threat_high_({UI_POS_X(19), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, RSSI_HIGH_THREAT_THRESHOLD_DBM, ' ')
-    , field_threat_critical_({UI_POS_X(27), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, RSSI_CRITICAL_THREAT_THRESHOLD_DBM, ' ')
+    , field_threat_low_({UI_POS_X(3), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    , field_threat_medium_({UI_POS_X(11), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    , field_threat_high_({UI_POS_X(19), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
+    , field_threat_critical_({UI_POS_X(27), UI_POS_Y(16)}, 3, {RSSI_MIN_DBM, RSSI_MAX_DBM}, 1, ' ')
     , field_cfar_mode_({UI_POS_X(4), UI_POS_Y(0)}, 7, {
         {"OFF", static_cast<int32_t>(CFARMode::OFF)},
         {"CA", static_cast<int32_t>(CFARMode::CA)},
@@ -479,13 +479,13 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     // Threat threshold callbacks — enforce ordering: low <= medium <= high <= critical
-    // A guard flag prevents re-entrant callback execution when auto-adjusting neighbors.
+    // trigger_change=false prevents re-entrant callback chains when auto-adjusting neighbors.
     field_threat_low_.on_change = [this](int32_t v) {
         settings_.threat_low_dbm = v;
         // Ensure low <= medium: push medium up if needed
         if (v > settings_.threat_medium_dbm) {
             settings_.threat_medium_dbm = v;
-            field_threat_medium_.set_value(v);
+            field_threat_medium_.set_value(v, false);
         }
         settings_dirty_ = true;
     };
@@ -495,12 +495,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         // Ensure low <= medium: push low down if needed
         if (v < settings_.threat_low_dbm) {
             settings_.threat_low_dbm = v;
-            field_threat_low_.set_value(v);
+            field_threat_low_.set_value(v, false);
         }
         // Ensure medium <= high: push high up if needed
         if (v > settings_.threat_high_dbm) {
             settings_.threat_high_dbm = v;
-            field_threat_high_.set_value(v);
+            field_threat_high_.set_value(v, false);
         }
         settings_dirty_ = true;
     };
@@ -510,12 +510,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         // Ensure medium <= high: push medium down if needed
         if (v < settings_.threat_medium_dbm) {
             settings_.threat_medium_dbm = v;
-            field_threat_medium_.set_value(v);
+            field_threat_medium_.set_value(v, false);
         }
         // Ensure high <= critical: push critical up if needed
         if (v > settings_.threat_critical_dbm) {
             settings_.threat_critical_dbm = v;
-            field_threat_critical_.set_value(v);
+            field_threat_critical_.set_value(v, false);
         }
         settings_dirty_ = true;
     };
@@ -525,7 +525,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         // Ensure high <= critical: push high down if needed
         if (v < settings_.threat_high_dbm) {
             settings_.threat_high_dbm = v;
-            field_threat_high_.set_value(v);
+            field_threat_high_.set_value(v, false);
         }
         settings_dirty_ = true;
     };
@@ -593,11 +593,11 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));
     field_cfar_threshold_.set_value(static_cast<int32_t>(settings_.cfar_threshold_x10));
 
-    // Threat thresholds
-    field_threat_low_.set_value(settings_.threat_low_dbm);
-    field_threat_medium_.set_value(settings_.threat_medium_dbm);
-    field_threat_high_.set_value(settings_.threat_high_dbm);
-    field_threat_critical_.set_value(settings_.threat_critical_dbm);
+    // Threat thresholds (trigger_change=false: suppress cascading callbacks during init)
+    field_threat_low_.set_value(settings_.threat_low_dbm, false);
+    field_threat_medium_.set_value(settings_.threat_medium_dbm, false);
+    field_threat_high_.set_value(settings_.threat_high_dbm, false);
+    field_threat_critical_.set_value(settings_.threat_critical_dbm, false);
 
     // Set initial visibility based on spectrum detection state
     set_shape_filter_visibility(settings_.spectrum_detection_enabled);
