@@ -107,7 +107,7 @@ struct ScanConfig {
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay (sweep uses hardcoded MAX_SWEEP_CYCLES_MISSED)
     
     // Pattern matching settings
-    bool pattern_matching_enabled{true};              // Enable/disable pattern matching
+    bool pattern_matching_enabled{false};              // Enable/disable pattern matching
     uint16_t pattern_similarity_threshold{DEFAULT_PATTERN_SIMILARITY_THRESHOLD};  // 0-1000
 
     // Spectral Kurtosis (higher-order statistics)

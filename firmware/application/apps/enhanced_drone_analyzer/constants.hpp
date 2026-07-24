@@ -718,7 +718,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_INTEGRATION = 3;
  *       while still catching weak analog FM video peaks
  * @note Previous default was 20; raised by 5 to cut Wi-Fi false positives
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 25;
+constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 5;
 
 /**
  * @brief Default minimum signal width in bins (1-100)
@@ -743,7 +743,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 2;
  *       noise independently of max width — so widening does NOT increase FPs.
  * @note Previous default was 30 (rejected wide FPV signals)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 20;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
@@ -757,7 +757,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
  *       truly flat WiFi/BT (sharpness ≈ 100-110, caught by valley depth filter).
  * @note Previous default was 100 (rejected dual-peak FPV signals)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 75;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 100;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)

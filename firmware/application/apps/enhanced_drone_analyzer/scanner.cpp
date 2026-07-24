@@ -123,7 +123,7 @@ ScanConfig::ScanConfig() noexcept
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
-    , pattern_matching_enabled(true)
+    , pattern_matching_enabled(false)
     , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD) {
     // sweep2/3/4 fields use in-class defaults: disabled
     // mahalanobis_enabled uses in-class default (true, FPV-optimized)
@@ -155,7 +155,7 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
-    , pattern_matching_enabled(true)
+    , pattern_matching_enabled(false)
     , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD) {
     // sweep2/3/4 fields use in-class defaults: disabled
     // mahalanobis_enabled uses in-class default (true, FPV-optimized)

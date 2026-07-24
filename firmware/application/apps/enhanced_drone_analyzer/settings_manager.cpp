@@ -37,7 +37,7 @@ SettingsStruct::SettingsStruct() noexcept
     , spectrum_margin(DEFAULT_SPECTRUM_MARGIN)
     , spectrum_min_width(DEFAULT_SPECTRUM_MIN_WIDTH)  // 2 bins = 156 kHz
     , spectrum_max_width(DEFAULT_SPECTRUM_MAX_WIDTH)
-    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)  // 75 accepts dual-peak FPV
+    , spectrum_peak_sharpness(DEFAULT_SPECTRUM_PEAK_SHARPNESS)
     , spectrum_peak_ratio(DEFAULT_SPECTRUM_PEAK_RATIO)
     , spectrum_valley_depth(DEFAULT_SPECTRUM_VALLEY_DEPTH)
     , spectrum_flatness(DEFAULT_SPECTRUM_FLATNESS)
@@ -56,7 +56,7 @@ SettingsStruct::SettingsStruct() noexcept
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , mahalanobis_enabled(true)
     , mahalanobis_threshold_x10(DEFAULT_MAHALOBIS_THRESHOLD_X10)
-    , pattern_matching_enabled(true)
+    , pattern_matching_enabled(false)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(17813000)
