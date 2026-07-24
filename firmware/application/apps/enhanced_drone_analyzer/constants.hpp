@@ -417,16 +417,16 @@ constexpr uint32_t AUDIO_ALERT_LONG_GAP_MS = 50;
 /**
  * @brief Memory breakdown (simplified):
  * - Database entries: 96 × 12 = 1,152 bytes
- * - Tracked drones: 16 × 56 = 896 bytes
+ * - Tracked drones: 16 × 125 = 2,000 bytes (includes Mahalanobis stats)
  * - Display drones: 16 × 39 = 624 bytes
  * - Spectrum buffer: 256 bytes
  * - Signal timeline: 62 bytes
  * - RSSI detector: ~108 bytes (includes RSSIStatistics struct)
  * - Scanner thread stack: 2,048 bytes (BSS)
  * - Other structures: ~200 bytes
- * - Total static RAM: ~5,146 bytes
+ * - Total static RAM: ~6,450 bytes
  */
-constexpr size_t STATIC_RAM_BUDGET_BYTES = 5146;
+constexpr size_t STATIC_RAM_BUDGET_BYTES = 6450;
 
 /**
  * @brief Total stack budget (bytes)
@@ -438,7 +438,7 @@ constexpr size_t STACK_BUDGET_BYTES = 4096;
  * @brief Total memory budget (bytes)
  * @note Sum of static RAM and stack budgets
  */
-constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 10200;
+constexpr size_t TOTAL_MEMORY_BUDGET_BYTES = 10546;
 
 /**
  * @brief Maximum stack usage per function (bytes)
@@ -723,27 +723,27 @@ constexpr uint8_t DEFAULT_SPECTRUM_MARGIN = 25;
 /**
  * @brief Default minimum signal width in bins (1-100)
  * @note Signals narrower than this are rejected as needle spikes
- * @note 5 bins = 390 kHz — rejects narrow noise spikes while still catching
- *       weak analog FM pilot/carrier and narrow control bursts at long range
+ * @note 2 bins = 156 kHz — catches narrow control bursts (ELRS, FrSky)
+ *       while still rejecting single-bin noise spikes.
+ * @note 5 bins = 390 kHz (previous default) — missed narrowband drone commands
  * @note 20 bins = 1.56 MHz (aggressive filtering)
- * @note Previous default was 3; raised to 5 to reject more noise spikes
+ * @note Previous default was 5; lowered to 2 for narrowband command reception
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 5;
+constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 2;
 
 /**
  * @brief Default maximum signal width in bins (1-255)
  * @note Signals wider than this are rejected as flat-topped U/I noise
- * @note 100 = UI limit for some apps
  * @note 200 = FPV video: accommodates ~15 MHz (~192 bins at 78 kHz/bin)
  * @note 255 = accepts all widths (no filtering)
- * @note FPV-OPTIMIZED: 30 — dual-peak analog FM signals (video carrier + audio
- *       subcarrier at 5.5 MHz offset) may span 20-40 bins when valley is shallow.
- *       Width=10 (~780 kHz) rejected dual-peak FPV; 30 bins (~2.3 MHz) accepts
- *       each individual peak while still rejecting wideband WiFi/BT flat noise.
- *       Signals with deep valleys between peaks are measured independently anyway.
- * @note Previous default was 10 (too narrow for dual-peak analog FM)
+ * @note FPV-OPTIMIZED: 200 — analog FM video spans up to 15+ MHz (~192 bins).
+ *       Previous default (30 = 2.3 MHz) rejected legitimate FPV signals
+ *       wider than 2.3 MHz, causing missed detections on strong wide peaks.
+ *       Symmetry + flatness + valley depth filters still reject flat WiFi/BT
+ *       noise independently of max width — so widening does NOT increase FPs.
+ * @note Previous default was 30 (rejected wide FPV signals)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 30;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
@@ -765,11 +765,11 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 75;
  * @note Inverted-V (drone video link): ratio > 50 (tall, narrow)
  * @note Flat U/I noise: ratio < 20 (wide, short)
  * @note Needle spikes: ratio > 100 (very tall, very narrow)
- * @note 0 = no ratio filtering (disabled) - RECOMMENDED for FPV
- * @note 80 allows signals up to 31 bins wide with peak_margin=255
- * @note FPV: disabled due to wide signal width (~77 bins) having low ratio
+ * @note 0 = no ratio filtering (disabled) — RECOMMENDED for FPV
+ * @note FPV: disabled due to wide signal width having low ratio.
+ *       Previous default was 5 (inconsistently enabled despite comment).
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 5;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 0;
 
 /**
  * @brief Default valley depth threshold (0-200)
@@ -777,15 +777,14 @@ constexpr uint8_t DEFAULT_SPECTRUM_PEAK_RATIO = 5;
  * @note Inverted-V: deep valleys (flanking bins have margin < 5)
  * @note Flat U/I: shallow valleys (flanking bins still elevated)
  * @note 0 = no valley depth filtering (disabled)
- * @note FPV-OPTIMIZED: 55 — analog FM dual-peak signals (video carrier + audio
- *       subcarrier at 5.5 MHz) have valleys 5-10 dB deep (~25-55 margin units).
- *       Previous threshold=40 rejected signals where valley bins were 8+ dB
- *       above noise — exactly when drone is CLOSEST (strongest signal, bins
- *       also strongest). Raising to 55 (11 dB) accepts all real FPV dual-peak
- *       patterns while still rejecting WiFi/BT flat-top (valley bins > 15 dB).
- * @note Previous default was 40 (rejected FPV signals at close range)
+ * @note FPV-OPTIMIZED: 80 — at close range when drone is ~10m away, ALL bins
+ *       within signal bandwidth are elevated 12-16 dB above noise, including
+ *       the flanking bins. valley_depth=55 (11 dB) would reject these because
+ *       max_valley_margin > 55. Raising to 80 (16 dB) keeps the signal passing
+ *       while still rejecting WiFi/BT flat-top (valley bins > 20 dB consistently).
+ * @note Previous default was 55 (rejected strong FPV at close range)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 55;
+constexpr uint8_t DEFAULT_SPECTRUM_VALLEY_DEPTH = 80;
 
 /**
  * @brief Default peak flatness threshold (0-100, percentage)
@@ -821,13 +820,30 @@ constexpr uint8_t FLATNESS_MIN_PEAK_MARGIN = 40;
  * @note Noise/asymmetric: symmetry < 30% (one side dominant)
  * @note Lower = stricter (requires more symmetry)
  * @note 0 = no symmetry filtering (disabled)
- * @note FPV-OPTIMIZED: 35 — analog FM at 5.8 GHz often has slight asymmetry
- *       (FM modulator drift, multipath). Relaxing from 50 to 35 reduces
- *       false rejection of real FPV signals while still cutting truly
- *       asymmetric noise spikes.
- * @note Previous default was 50; lowered to 35 for analog FM tolerance
+ * @note FPV-OPTIMIZED: 0 — disabled. Analog FM at 5.8 GHz often has slight
+ *       asymmetry (FM modulator drift, multipath). Symmetry filtering causes
+ *       false rejection of legitimate FPV signals without meaningful benefit
+ *       since the other 5 filters (margin, width, sharpness, valley, flatness)
+ *       already reject non-drone signals.
+ * @note Previous default was 35; disabled to 0 for analog FM tolerance
  */
 constexpr uint8_t DEFAULT_SPECTRUM_SYMMETRY = 0;
+
+/**
+ * @brief Peak margin threshold for very strong signal bypass (~16 dB above noise)
+ * @note When peak_margin > this value, loosen valley depth, symmetry, and kurtosis checks.
+ *       At close range (drone within ~50m), ALL bins in signal band are elevated,
+ *       making these shape filters unreliable. Flatness filter remains active.
+ */
+constexpr uint8_t VERY_STRONG_SIGNAL_MARGIN = 80;
+
+/**
+ * @brief Peak margin threshold for extreme signal bypass (~25 dB above noise)
+ * @note When peak_margin > this value, also skip max_width check.
+ *       At 25+ dB, the elevated_threshold captures the entire signal bandwidth,
+ *       making width measurement unreliable. Only min_width check remains.
+ */
+constexpr uint8_t EXTREME_SIGNAL_MARGIN = 128;
 
 // ============================================================================
 // Pattern Matching Constants
@@ -1360,6 +1376,23 @@ constexpr bool DEBUG_LOCK_ORDER_VALIDATION = false;
  */
 constexpr bool DEBUG_STACK_MONITORING = false;
 #endif
+
+// ============================================================================
+// Compile-time consistency checks
+// Enforce that hardcoded array sizes in drone_types.hpp match these constants.
+// Required because drone_types.hpp is parsed before constants.hpp (circular include).
+// ============================================================================
+
+static_assert(RSSI_HISTORY_SIZE == 6,
+    "RSSI_HISTORY_SIZE changed — update rssi_history_[6] in TrackedDrone");
+static_assert(TIMESTAMP_HISTORY_SIZE == RSSI_HISTORY_SIZE,
+    "TIMESTAMP_HISTORY_SIZE must equal RSSI_HISTORY_SIZE");
+static_assert(MAHALANOBIS_HISTORY_SIZE == 8,
+    "MAHALANOBIS_HISTORY_SIZE changed — update history[8] in MahalanobisStatistics");
+static_assert(DRONE_TYPE_NAME_LENGTH == 16,
+    "DRONE_TYPE_NAME_LENGTH changed — update type_name[16] in DisplayDroneEntry");
+static_assert(MAX_DISPLAYED_DRONES == 16,
+    "MAX_DISPLAYED_DRONES changed — update drones[16] in DisplayData");
 
 } // namespace drone_analyzer
 

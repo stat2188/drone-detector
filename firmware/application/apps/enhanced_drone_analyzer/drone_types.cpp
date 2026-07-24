@@ -377,8 +377,17 @@ MovementTrend TrackedDrone::get_movement_trend() const noexcept {
         uint8_t older_count = 0;
         uint8_t recent_count = 0;
 
-        for (size_t i = 0; i < RSSI_HISTORY_SIZE; ++i) {
-            const uint8_t logical_idx = (history_index_ + i) % RSSI_HISTORY_SIZE;
+        // Iterate only initialized slots. When buffer is not yet full
+        // (history_index_ < RSSI_HISTORY_SIZE), start from position 0
+        // instead of history_index_ — the latter would visit uninitialized
+        // slots (value 0) which pass SILENCE_THRESHOLD and corrupt the
+        // older_sum, causing false RECEDING during warmup.
+        const uint8_t n = (update_count > RSSI_HISTORY_SIZE)
+            ? RSSI_HISTORY_SIZE : update_count;
+        const uint8_t start = (update_count >= RSSI_HISTORY_SIZE)
+            ? (history_index_ % RSSI_HISTORY_SIZE) : 0;
+        for (uint8_t i = 0; i < n; ++i) {
+            const uint8_t logical_idx = (start + i) % RSSI_HISTORY_SIZE;
             const int16_t val = rssi_history_[logical_idx];
 
             if (val <= SILENCE_THRESHOLD) {
@@ -416,10 +425,12 @@ MovementTrend TrackedDrone::get_movement_trend() const noexcept {
     } else if (raw_trend != MovementTrend::UNKNOWN) {
         if (trend_hold_count_ < TREND_HYSTERESIS_COUNT) {
             trend_hold_count_++;
-            // Keep returning the old cached trend until hold count expires
-            return cached_trend_;
+            if (trend_hold_count_ < TREND_HYSTERESIS_COUNT) {
+                // Still holding — keep returning old trend
+                return cached_trend_;
+            }
+            // Fall through — hold count reached, accept new trend below
         }
-        // Hold count expired — accept the new trend
         trend_hold_count_ = 0;
     }
 

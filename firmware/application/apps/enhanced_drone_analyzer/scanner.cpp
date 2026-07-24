@@ -1697,6 +1697,16 @@ bool DroneScanner::apply_shape_filters(
 ) const noexcept {
     const uint8_t peak_margin = raw_peak - noise_floor;
 
+    // VERY STRONG SIGNAL BYPASS:
+    // When peak_margin > 80 (~16 dB above noise, e.g. drone within ~50m),
+    // loosen width and valley checks to prevent false rejection of strong
+    // wide signals (analog FPV at close range). The signal is clearly not
+    // noise — let it through with only basic sanity checks.
+    // At peak_margin > 128 (~25 dB, drone within ~10m), ALL bins in the
+    // signal band are elevated, making valley/sharpness/flatness unreliable.
+    // Stack: 1 byte (local bool). Flash: 0 (inline).
+    const bool very_strong = (peak_margin > VERY_STRONG_SIGNAL_MARGIN);
+
     // Sensitivity-adaptive filter scaling:
     // At high sensitivity (low threshold), the RSSI gate is wide open and shape
     // filters must work harder to reject noise. We derive a sensitivity factor
@@ -1755,7 +1765,12 @@ bool DroneScanner::apply_shape_filters(
     if (signal_width < config_.spectrum_min_width) return false;
 
     // Step 6: Maximum width
-    if (signal_width > config_.spectrum_max_width) return false;
+    // Very strong signal bypass: at peak_margin > 128 (~25 dB), ALL bins in the
+    // signal band are elevated, making width measurement unreliable. Skip check.
+    // At peak_margin 81-128: use config max_width (200 = ~15.6 MHz).
+    if (!very_strong || peak_margin <= EXTREME_SIGNAL_MARGIN) {
+        if (signal_width > config_.spectrum_max_width) return false;
+    }
 
     // Step 7: Peak sharpness (enforce inverted-V shape)
     int32_t avg_margin = 0;
@@ -1788,7 +1803,8 @@ bool DroneScanner::apply_shape_filters(
     // Skip for dual-peak signals (FPV video + audio subcarrier): the valley
     // between two legitimate peaks is NOT a rejection criterion. Detect by
     // checking if any bin within the signal width exceeds half peak power.
-    if (config_.spectrum_valley_depth > 0) {
+    // Very strong signal bypass: flanking bins ARE the signal at close range.
+    if (config_.spectrum_valley_depth > 0 && !very_strong) {
         bool has_secondary_peak = false;
         const uint8_t secondary_threshold = noise_floor + (peak_margin / 2);
         for (size_t i = left; i <= right && !has_secondary_peak; ++i) {
@@ -1865,7 +1881,8 @@ bool DroneScanner::apply_shape_filters(
     }
 
     // Step 11: Symmetry (V-shape must have similar left/right width)
-    if (config_.spectrum_symmetry > 0 && signal_width > 1) {
+    // Signal is real regardless of asymmetry at strong levels.
+    if (config_.spectrum_symmetry > 0 && signal_width > 1 && !very_strong) {
         const size_t left_width = peak_idx - left;
         const size_t right_width = right - peak_idx;
         const size_t max_side = (left_width > right_width) ? left_width : right_width;
@@ -1880,7 +1897,8 @@ bool DroneScanner::apply_shape_filters(
     // Distinguishes Gaussian noise (kurtosis ≈ 0) from non-Gaussian drone signals
     // (kurtosis > 3, leptokurtic). WiFi flat-top has kurtosis < 0 (platykurtic).
     // Only runs when explicitly enabled (opt-in, default OFF).
-    if (config_.kurtosis_enabled && peak_margin >= FLATNESS_MIN_PEAK_MARGIN) {
+    // Very strong bypass: kurtosis is unreliable when signal fills >50% of bins.
+    if (config_.kurtosis_enabled && peak_margin >= FLATNESS_MIN_PEAK_MARGIN && !very_strong) {
         const size_t data_size = has_dc_gap ? FFT_BIN_COUNT : COMPOSITE_SIZE;
         const auto kurt_result = SpectralKurtosis::compute(
             data, edge_skip, data_size - edge_skip,

@@ -258,7 +258,7 @@ struct TrackedDrone {
     SystemTime last_seen;              // 4 bytes (uint32_t on ChibiOS)
     RssiValue rssi;                    // 4 bytes
     int16_t rssi_history_[6];              // 12 bytes (6 × int16_t) — RSSI_HISTORY_SIZE
-    SystemTime timestamp_history_[3];       // 12 bytes (3 × uint32_t) — TIMESTAMP_HISTORY_SIZE
+    SystemTime timestamp_history_[6];       // 24 bytes (6 × uint32_t) — must match RSSI_HISTORY_SIZE
     uint8_t history_index_;
     uint8_t missed_cycles_;             // 1 byte — consecutive scans without detection
     int16_t last_rssi_;                 // 2 bytes — RSSI from previous cycle (for decay)
@@ -324,7 +324,7 @@ struct TrackedDrone {
         return mahalanobis_stats_;
     }
 
-    // Total: 65 bytes base + 48 bytes Mahalanobis = 113 bytes (no vtable, no virtual functions)
+    // Total: 77 bytes base + 48 bytes Mahalanobis = 125 bytes (no vtable, no virtual functions)
     
     /**
      * @brief Default constructor
@@ -425,13 +425,17 @@ struct TrackedDrone {
     /**
      * @brief Hand off cycle-peak at sweep cycle boundary
      * @note Called at pair_complete (full round-robin pass done).
-     *       Copies current cycle peak to previous, resets for next cycle.
+     *       Copies current cycle peak to previous.
+     *       Does NOT reset last_cycle_peak_rssi_ — the value persists until
+     *       the next update_cycle_peak() replaces it. The display reads this
+     *       value during on_tick() to compute the trend; resetting it here
+     *       would cause get_movement_trend() to always see -100 vs the real
+     *       prev, producing false RECEDING.
      */
     void finalize_sweep_cycle() noexcept {
         if (has_cycle_peak_) {
             prev_cycle_peak_rssi_ = last_cycle_peak_rssi_;
         }
-        last_cycle_peak_rssi_ = -100;  // RSSI_NOISE_FLOOR_DBM
         has_cycle_peak_ = true;
     }
 
