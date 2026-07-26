@@ -79,6 +79,9 @@ struct SettingsStruct {
     // Pattern matching
     bool pattern_matching_enabled;
 
+    // Sensitive mode — relaxes shape filters for weak/long-range signals
+    bool sensitive_mode{false};
+
     // Sweep window 1
     FreqHz sweep_start_freq;
     FreqHz sweep_end_freq;

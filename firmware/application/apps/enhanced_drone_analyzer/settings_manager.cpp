@@ -57,6 +57,7 @@ SettingsStruct::SettingsStruct() noexcept
     , mahalanobis_enabled(true)
     , mahalanobis_threshold_x10(DEFAULT_MAHALOBIS_THRESHOLD_X10)
     , pattern_matching_enabled(false)
+    , sensitive_mode(false)
     , sweep_start_freq(SWEEP_DEFAULT_START_HZ)
     , sweep_end_freq(SWEEP_DEFAULT_END_HZ)
     , sweep_step_freq(17813000)
@@ -340,6 +341,8 @@ static void parse_settings_line(
             : (v > MAHALANOBIS_THRESHOLD_MAX_X10 ? MAHALANOBIS_THRESHOLD_MAX_X10 : v));
     } else if (key_matches("pattern_matching_enabled")) {
         s.pattern_matching_enabled = parse_bool();
+    } else if (key_matches("sensitive_mode")) {
+        s.sensitive_mode = parse_bool();
     }
 }
 
@@ -601,6 +604,9 @@ ErrorCode SettingsFileManager::save(
     // Pattern matching
     wbool(file, "pattern_matching_enabled", s.pattern_matching_enabled);
 
+    // Sensitive mode
+    wbool(file, "sensitive_mode", s.sensitive_mode);
+
     // Metadata
     ws(file, "freqman_path=DRONES\n");
     ws(file, "settings_version=1.2\n");
@@ -642,6 +648,9 @@ void SettingsFileManager::apply_to_config(
 
     // Pattern matching
     config.pattern_matching_enabled = s.pattern_matching_enabled;
+
+    // Sensitive mode
+    config.sensitive_mode = s.sensitive_mode;
 
     config.neighbor_margin_db = s.neighbor_margin_db;
     config.rssi_variance_enabled = s.rssi_variance_enabled;
@@ -793,5 +802,8 @@ void SettingsFileManager::extract_from_config(
 
     // Pattern matching
     s.pattern_matching_enabled = config.pattern_matching_enabled;
+
+    // Sensitive mode
+    s.sensitive_mode = config.sensitive_mode;
 }
 } // namespace drone_analyzer

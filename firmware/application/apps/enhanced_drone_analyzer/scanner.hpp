@@ -119,6 +119,12 @@ struct ScanConfig {
 
     // Waterfall history (multi-frame analysis)
     bool waterfall_enabled{true};        // Default ON — enables TBD, Doppler, history (2KB SRAM)
+
+    // Sensitive mode — relaxes shape filters for weak/long-range signals
+    // When ON: disables flatness, symmetry, valley_depth, kurtosis checks;
+    //          reduces spectrum_margin by 2 for sweep mode.
+    // When OFF (default): full 11-step shape filter chain active.
+    bool sensitive_mode{false};          // Default OFF — opt-in for max sensitivity
     /**
      * @brief Default constructor
      */

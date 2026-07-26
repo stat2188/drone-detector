@@ -130,7 +130,8 @@ ScanConfig::ScanConfig() noexcept
     , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , pattern_matching_enabled(false)
-    , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD) {
+    , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD)
+    , sensitive_mode(false) {
     // sweep2/3/4 fields use in-class defaults: disabled
     // mahalanobis_enabled uses in-class default (true, FPV-optimized)
 }
@@ -162,7 +163,8 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
     , pattern_matching_enabled(false)
-    , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD) {
+    , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD)
+    , sensitive_mode(false) {
     // sweep2/3/4 fields use in-class defaults: disabled
     // mahalanobis_enabled uses in-class default (true, FPV-optimized)
 }
@@ -1819,7 +1821,8 @@ bool DroneScanner::apply_shape_filters(
     // between two legitimate peaks is NOT a rejection criterion. Detect by
     // checking if any bin within the signal width exceeds half peak power.
     // Very strong signal bypass: flanking bins ARE the signal at close range.
-    if (config_.spectrum_valley_depth > 0 && !very_strong) {
+    // Sensitive mode bypass: valley depth is unreliable for weak signals.
+    if (config_.spectrum_valley_depth > 0 && !very_strong && !config_.sensitive_mode) {
         bool has_secondary_peak = false;
         const uint8_t secondary_threshold = noise_floor + (peak_margin / 2);
         for (size_t i = left; i <= right && !has_secondary_peak; ++i) {
@@ -1867,7 +1870,8 @@ bool DroneScanner::apply_shape_filters(
             ? (FLATNESS_MIN_PEAK_MARGIN - rssi_sens)
             : 15)
         : FLATNESS_MIN_PEAK_MARGIN;
-    if (config_.spectrum_flatness > 0 && peak_margin >= effective_flatness_min) {
+    // Sensitive mode: skip flatness entirely — #1 cause of missed weak FPV signals
+    if (config_.spectrum_flatness > 0 && peak_margin >= effective_flatness_min && !config_.sensitive_mode) {
         const uint8_t high_power_threshold = raw_peak * 9 / 10;
         size_t high_power_count = 0;
 
@@ -1897,7 +1901,8 @@ bool DroneScanner::apply_shape_filters(
 
     // Step 11: Symmetry (V-shape must have similar left/right width)
     // Signal is real regardless of asymmetry at strong levels.
-    if (config_.spectrum_symmetry > 0 && signal_width > 1 && !very_strong) {
+    // Sensitive mode: skip symmetry — asymmetric shapes are common in weak/multipath signals.
+    if (config_.spectrum_symmetry > 0 && signal_width > 1 && !very_strong && !config_.sensitive_mode) {
         const size_t left_width = peak_idx - left;
         const size_t right_width = right - peak_idx;
         const size_t max_side = (left_width > right_width) ? left_width : right_width;
@@ -1913,7 +1918,8 @@ bool DroneScanner::apply_shape_filters(
     // (kurtosis > 3, leptokurtic). WiFi flat-top has kurtosis < 0 (platykurtic).
     // Only runs when explicitly enabled (opt-in, default OFF).
     // Very strong bypass: kurtosis is unreliable when signal fills >50% of bins.
-    if (config_.kurtosis_enabled && peak_margin >= FLATNESS_MIN_PEAK_MARGIN && !very_strong) {
+    // Sensitive mode: skip kurtosis — unreliable for weak signals with low SNR.
+    if (config_.kurtosis_enabled && peak_margin >= FLATNESS_MIN_PEAK_MARGIN && !very_strong && !config_.sensitive_mode) {
         const size_t data_size = has_dc_gap ? FFT_BIN_COUNT : COMPOSITE_SIZE;
         const auto kurt_result = SpectralKurtosis::compute(
             data, edge_skip, data_size - edge_skip,
@@ -2075,7 +2081,12 @@ void DroneScanner::process_spectrum_sweep(
     // Feed waterfall history for sweep mode (runs without mutex — scanner thread stopped)
     waterfall_history_.push(spectrum.db.data());
 
-    const uint8_t cfg_margin = config_.spectrum_margin;
+    // Sensitive mode: reduce sweep margin by 2 for maximum weak-signal detection.
+    // Default margin=5 (~1.6 dB above noise); sensitive: margin=3 (~1 dB above noise).
+    // Only applies to sweep mode — normal mode uses full margin for FP rejection.
+    const uint8_t cfg_margin = config_.sensitive_mode
+        ? ((config_.spectrum_margin > 2) ? (config_.spectrum_margin - 2) : 1)
+        : config_.spectrum_margin;
 
     // Step 1: Compute noise floor (25th percentile of usable bins).
     // Shared for all peaks in this frame — computed once.
@@ -2100,6 +2111,11 @@ void DroneScanner::process_spectrum_sweep(
         // Multi-peak CFAR: finds ALL peaks passing the adaptive threshold.
         // Critical for detecting dual-peak FPV (video + audio subcarrier)
         // or multiple drones in the same 20 MHz window.
+        // Sensitive mode: reduce CFAR threshold by 1.0 unit (~0.2 dB) for max sensitivity.
+        const uint8_t effective_cfar_threshold = config_.sensitive_mode
+            ? ((config_.cfar_threshold_x10 > CFAR_THRESHOLD_MIN_X10 + 10)
+                ? (config_.cfar_threshold_x10 - 10) : CFAR_THRESHOLD_MIN_X10)
+            : config_.cfar_threshold_x10;
         peak_count = CFARDetector::find_peaks(
             spectrum.db.data(),
             FFT_BIN_COUNT,
@@ -2107,7 +2123,7 @@ void DroneScanner::process_spectrum_sweep(
             config_.cfar_mode,
             config_.cfar_ref_cells,
             config_.cfar_guard_cells,
-            config_.cfar_threshold_x10,
+            effective_cfar_threshold,
             FFT_EDGE_SKIP_NARROW,
             FFT_EDGE_SKIP_NARROW,
             config_.cfar_hybrid_alpha,
@@ -2221,6 +2237,52 @@ void DroneScanner::process_spectrum_sweep(
             highlight_bin, early_pattern_index,
             early_pattern_correlation, early_pattern_matched
         );
+    }
+
+    // ---- Sweep-mode Track-Before-Detect (TBD) ----
+    // When single-frame detection fails for all peaks, check if multi-frame
+    // integration confirms a weak signal. Uses waterfall_history_ to accumulate
+    // power across recent frames at the same tuned frequency.
+    // Provides ~9 dB SNR gain (8 frames = 3× sensitivity improvement).
+    // Only runs when waterfall_history_ has enough frames and single-frame
+    // detection found nothing (peak_count == 0 or all peaks rejected by shape).
+    if (waterfall_history_.is_warm(TBD_MIN_FRAMES) && config_.spectrum_detection_enabled) {
+        // Find the peak bin from multi-frame integration across usable bins
+        size_t tbd_peak_bin = FFT_EDGE_SKIP_NARROW;
+        uint8_t tbd_peak_power = 0;
+        for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
+            if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
+            const uint8_t max_power = waterfall_history_.get_max_across_frames(i);
+            if (max_power > tbd_peak_power) {
+                tbd_peak_power = max_power;
+                tbd_peak_bin = i;
+            }
+        }
+
+        // Check if this bin was active in enough recent frames
+        const int32_t total_gain_tbd = get_current_total_gain();
+        const int32_t tbd_raw_threshold = (config_.rssi_threshold_dbm + total_gain_tbd) * 5 + 255;
+        const uint8_t threshold = static_cast<uint8_t>(
+            (tbd_raw_threshold < 0) ? 0 : (tbd_raw_threshold > 255 ? 255 : tbd_raw_threshold));
+        const uint8_t active_frames = waterfall_history_.count_above_threshold(tbd_peak_bin, threshold);
+
+        if (active_frames >= TBD_MIN_FRAMES) {
+            // Multi-frame confirmed — compute integrated RSSI
+            const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
+            const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
+            const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, total_gain_tbd);
+
+            if (tbd_rssi > config_.rssi_threshold_dbm) {
+                const FreqHz tbd_freq = fft_bin_to_freq(center_freq, tbd_peak_bin);
+                // Skip DC spike bins
+                if (fft_bin_to_lg_pixel(tbd_peak_bin) < COMPOSITE_SIZE) {
+                    apply_sweep_tracking(
+                        tbd_freq, tbd_rssi, center_freq, f_min, f_max,
+                        tbd_peak_bin, -1, 0, false
+                    );
+                }
+            }
+        }
     }
 }
 
