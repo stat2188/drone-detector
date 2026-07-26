@@ -75,6 +75,9 @@ private:
     // Pattern matching toggle
     ui::Checkbox check_pattern_matching_;
 
+    // Sensitive mode toggle
+    ui::Checkbox check_sensitive_mode_;
+
     // Spectrum detection params
     ui::NumberField field_spectrum_margin_;
     ui::NumberField field_spectrum_min_width_;

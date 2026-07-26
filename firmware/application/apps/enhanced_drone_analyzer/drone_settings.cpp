@@ -66,6 +66,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
                                DEFAULT_MAHALOBIS_THRESHOLD_X10, ' ')
     , check_pattern_matching_({UI_POS_X(10), UI_POS_Y(8)}, 5, "Ptr", false)
+    , check_sensitive_mode_({UI_POS_X(10), UI_POS_Y(10)}, 4, "Sens", false)
     , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
     , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 3, {1, 100}, 1, ' ')
     , field_spectrum_max_width_({UI_POS_X(6), UI_POS_Y(5)}, 3, {2, 255}, 1, ' ')
@@ -130,6 +131,7 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_mahalanobis_,
         &field_mahalanobis_threshold_,
         &check_pattern_matching_,
+        &check_sensitive_mode_,
         &field_spectrum_margin_,
         &field_spectrum_min_width_,
         &field_spectrum_max_width_,
@@ -473,6 +475,12 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
+    // Sensitive mode toggle
+    check_sensitive_mode_.on_select = [this](ui::Checkbox&, bool v) {
+        settings_.sensitive_mode = v;
+        settings_dirty_ = true;
+    };
+
     field_mahalanobis_threshold_.on_change = [this](int32_t v) {
         settings_.mahalanobis_threshold_x10 = static_cast<uint8_t>(v);
         settings_dirty_ = true;
@@ -588,6 +596,7 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_mahalanobis_.set_value(settings_.mahalanobis_enabled);
     field_mahalanobis_threshold_.set_value(static_cast<int32_t>(settings_.mahalanobis_threshold_x10));
     check_pattern_matching_.set_value(settings_.pattern_matching_enabled);
+    check_sensitive_mode_.set_value(settings_.sensitive_mode);
     field_cfar_mode_.set_by_value(static_cast<int32_t>(settings_.cfar_mode));
     field_cfar_ref_cells_.set_value(static_cast<int32_t>(settings_.cfar_ref_cells));
     field_cfar_guard_cells_.set_value(static_cast<int32_t>(settings_.cfar_guard_cells));
