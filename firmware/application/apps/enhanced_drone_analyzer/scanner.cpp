@@ -19,7 +19,13 @@ namespace drone_analyzer {
  * @note dBm = dBV_norm - total_gain
  */
 static int32_t spectrum_value_to_dbm(const uint8_t value, int32_t total_gain) noexcept {
-    const int32_t dbv_norm = (static_cast<int32_t>(value) - 255) / 5;
+    // Round toward nearest instead of truncating toward zero.
+    // Raw encoding: spectrum.db = clamp(dBV*5 + 255, 0, 255).
+    // Inverse: dBV = (value - 255) / 5. Without rounding, truncation loses
+    // up to 0.2 dB per sample (e.g., value=254 gives 0 instead of -0.2).
+    // Rounding recovers ~0.1 dB average precision at zero cost (no float).
+    const int32_t raw = static_cast<int32_t>(value) - 255;
+    const int32_t dbv_norm = (raw >= 0) ? ((raw + 2) / 5) : ((raw - 2) / 5);
     int32_t rssi = dbv_norm - total_gain;
     if (rssi < RSSI_MIN_DBM) rssi = RSSI_MIN_DBM;
     if (rssi > RSSI_MAX_DBM) rssi = RSSI_MAX_DBM;
@@ -803,7 +809,7 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             // Multi-frame confirmed — compute integrated RSSI
             const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
             const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
-            const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, get_current_total_gain());
+            const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, total_gain_tbd);
 
             if (tbd_rssi > rssi_threshold) {
                 signal_detected = true;
