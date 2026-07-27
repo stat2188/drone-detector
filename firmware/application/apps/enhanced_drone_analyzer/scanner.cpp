@@ -2184,103 +2184,144 @@ void DroneScanner::process_spectrum_sweep(
         }
     }
 
-    if (peak_count == 0) return;
+    // Track whether any peak passed shape analysis + single-frame tracking.
+    // TBD is skipped when single-frame detection succeeded (avoids redundant work).
+    bool any_peak_tracked = false;
 
-    // Update peak power for timeline display (strongest peak)
-    last_peak_power_ = cfar_peaks[0].power;
+    if (peak_count > 0) {
+        // Update peak power for timeline display (strongest peak)
+        last_peak_power_ = cfar_peaks[0].power;
 
-    const int32_t total_gain = get_current_total_gain();
+        const int32_t total_gain = get_current_total_gain();
 
-    // Step 3: Process each CFAR peak through shape analysis + tracking.
-    // Only the strongest peak feeds the median filter (prevents cross-frequency
-    // contamination of the per-frequency smoothing accumulator).
-    for (size_t p = 0; p < peak_count; ++p) {
-        const size_t peak_index = cfar_peaks[p].bin;
+        // Step 3: Process each CFAR peak through shape analysis + tracking.
+        // Only the strongest peak feeds the median filter (prevents cross-frequency
+        // contamination of the per-frequency smoothing accumulator).
+        for (size_t p = 0; p < peak_count; ++p) {
+            const size_t peak_index = cfar_peaks[p].bin;
 
-        // Skip peaks on DC spike (bins 120-135) — no real signal energy
-        const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
-        if (peak_pixel >= COMPOSITE_SIZE) continue;
+            // Skip peaks on DC spike (bins 120-135) — no real signal energy
+            const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
+            if (peak_pixel >= COMPOSITE_SIZE) continue;
 
-        // Pattern matching per peak on raw FFT (consistent with saved patterns).
-        FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
-        size_t highlight_bin = 0;
-        bool early_pattern_matched = false;
-        int8_t early_pattern_index = -1;
-        uint16_t early_pattern_correlation = 0;
+            // Pattern matching per peak on raw FFT (consistent with saved patterns).
+            FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
+            size_t highlight_bin = 0;
+            bool early_pattern_matched = false;
+            int8_t early_pattern_index = -1;
+            uint16_t early_pattern_correlation = 0;
 
-        const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
-        if (early_result.matched) {
-            early_pattern_matched = true;
-            early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
-            highlight_bin = peak_index;
-            early_pattern_correlation = early_result.score;
-        }
-
-        // Shape analysis on LG-reordered buffer (continuous, no DC gap).
-        int32_t shape_rssi = RSSI_MIN_DBM;
-        if (!analyze_spectrum_shape_lg(lg_buffer, peak_pixel, noise_floor, shape_rssi, total_gain)) {
-            continue;  // This peak rejected by shape filter — try next peak
-        }
-
-        // Median filter: only for primary peak (p==0) to avoid cross-frequency contamination.
-        int32_t peak_rssi = shape_rssi;
-        if (p == 0) {
-            rssi_median_filter_.add(peak_rssi);
-            if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
-                peak_rssi = rssi_median_filter_.get_median();
+            const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
+            if (early_result.matched) {
+                early_pattern_matched = true;
+                early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
+                highlight_bin = peak_index;
+                early_pattern_correlation = early_result.score;
             }
-        }
 
-        apply_sweep_tracking(
-            peak_freq,
-            peak_rssi, center_freq, f_min, f_max,
-            highlight_bin, early_pattern_index,
-            early_pattern_correlation, early_pattern_matched
-        );
+            // Shape analysis on LG-reordered buffer (continuous, no DC gap).
+            int32_t shape_rssi = RSSI_MIN_DBM;
+            if (!analyze_spectrum_shape_lg(lg_buffer, peak_pixel, noise_floor, shape_rssi, total_gain)) {
+                continue;  // This peak rejected by shape filter — try next peak
+            }
+
+            // Median filter: only for primary peak (p==0) to avoid cross-frequency contamination.
+            int32_t peak_rssi = shape_rssi;
+            if (p == 0) {
+                rssi_median_filter_.add(peak_rssi);
+                if (median_filter_enabled_ && rssi_median_filter_.is_warm()) {
+                    peak_rssi = rssi_median_filter_.get_median();
+                }
+            }
+
+            apply_sweep_tracking(
+                peak_freq,
+                peak_rssi, center_freq, f_min, f_max,
+                highlight_bin, early_pattern_index,
+                early_pattern_correlation, early_pattern_matched
+            );
+            any_peak_tracked = true;
+        }
     }
 
     // ---- Sweep-mode Track-Before-Detect (TBD) ----
-    // When single-frame detection fails for all peaks, check if multi-frame
-    // integration confirms a weak signal. Uses waterfall_history_ to accumulate
-    // power across recent frames at the same tuned frequency.
-    // Provides ~9 dB SNR gain (8 frames = 3× sensitivity improvement).
-    // Only runs when waterfall_history_ has enough frames and single-frame
-    // detection found nothing (peak_count == 0 or all peaks rejected by shape).
-    if (waterfall_history_.is_warm(TBD_MIN_FRAMES) && config_.spectrum_detection_enabled) {
-        // Find the peak bin from multi-frame integration across usable bins
-        size_t tbd_peak_bin = FFT_EDGE_SKIP_NARROW;
+    // Per-frequency multi-cycle integration for weak signal detection.
+    //
+    // The shared waterfall_history_ contains frames from different center
+    // frequencies in sweep mode (each step is a different freq, ~17.6 MHz
+    // apart, 17 steps per cycle). So waterfall_history_ CANNOT integrate
+    // same-frequency power — a narrowband signal appears in only 1 of 8
+    // frames, making count_above_threshold() never reach TBD_MIN_FRAMES=3.
+    //
+    // Instead, we maintain a small per-frequency accumulator (4 slots) that
+    // tracks peak power at each sweep center frequency across sweep cycles.
+    // Each sweep cycle revisits the same frequency after ~17 frames (~370 ms).
+    // After 3 cycles (~1.1 s), if accumulated power confirms → detection.
+    // Integration gain: ~5 dB SNR improvement (3 cycles averaging).
+    //
+    // Runs when single-frame detection failed (all peaks rejected by shape
+    // filters or CFAR found no peaks). Skipped when any peak was tracked
+    // above (avoids redundant tracking).
+    if (!any_peak_tracked && config_.spectrum_detection_enabled) {
+        // Find peak power in current frame (independent of CFAR).
+        // Stack: ~4 bytes (two locals).
         uint8_t tbd_peak_power = 0;
         for (size_t i = FFT_EDGE_SKIP_NARROW; i < FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW; ++i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            const uint8_t max_power = waterfall_history_.get_max_across_frames(i);
-            if (max_power > tbd_peak_power) {
-                tbd_peak_power = max_power;
-                tbd_peak_bin = i;
+            if (spectrum.db[i] > tbd_peak_power) {
+                tbd_peak_power = spectrum.db[i];
             }
         }
 
-        // Check if this bin was active in enough recent frames
-        const int32_t total_gain_tbd = get_current_total_gain();
-        const int32_t tbd_raw_threshold = (config_.rssi_threshold_dbm + total_gain_tbd) * 5 + 255;
-        const uint8_t threshold = static_cast<uint8_t>(
-            (tbd_raw_threshold < 0) ? 0 : (tbd_raw_threshold > 255 ? 255 : tbd_raw_threshold));
-        const uint8_t active_frames = waterfall_history_.count_above_threshold(tbd_peak_bin, threshold);
+        if (tbd_peak_power > noise_floor) {
+            // Look up this center frequency in the per-frequency accumulator
+            int8_t match_slot = -1;
+            int8_t free_slot = -1;
+            for (size_t i = 0; i < SWEEP_TBD_CACHE_SIZE; ++i) {
+                if (sweep_tbd_cache_[i].frequency == center_freq) {
+                    match_slot = static_cast<int8_t>(i);
+                    break;
+                }
+                if (sweep_tbd_cache_[i].frequency == 0 && free_slot < 0) {
+                    free_slot = static_cast<int8_t>(i);
+                }
+            }
 
-        if (active_frames >= TBD_MIN_FRAMES) {
-            // Multi-frame confirmed — compute integrated RSSI
-            const uint16_t integrated = waterfall_history_.get_integrated_power(tbd_peak_bin);
-            const uint8_t avg_power = static_cast<uint8_t>(integrated / waterfall_history_.size());
-            const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, total_gain_tbd);
+            if (match_slot >= 0) {
+                // Same frequency seen in previous cycle — accumulate power
+                sweep_tbd_cache_[match_slot].power_sum += tbd_peak_power;
+                sweep_tbd_cache_[match_slot].cycles_seen++;
+            } else if (free_slot >= 0) {
+                // New frequency — claim empty slot
+                sweep_tbd_cache_[free_slot] = {center_freq, tbd_peak_power, 1};
+            } else {
+                // All slots full — evict entry with fewest cycles (least confirmed)
+                size_t evict = 0;
+                for (size_t i = 1; i < SWEEP_TBD_CACHE_SIZE; ++i) {
+                    if (sweep_tbd_cache_[i].cycles_seen < sweep_tbd_cache_[evict].cycles_seen) {
+                        evict = i;
+                    }
+                }
+                sweep_tbd_cache_[evict] = {center_freq, tbd_peak_power, 1};
+            }
 
-            if (tbd_rssi > config_.rssi_threshold_dbm) {
-                const FreqHz tbd_freq = fft_bin_to_freq(center_freq, tbd_peak_bin);
-                // Skip DC spike bins
-                if (fft_bin_to_lg_pixel(tbd_peak_bin) < COMPOSITE_SIZE) {
+            // Check if any accumulated entry confirms detection
+            for (size_t i = 0; i < SWEEP_TBD_CACHE_SIZE; ++i) {
+                auto& entry = sweep_tbd_cache_[i];
+                if (entry.cycles_seen < TBD_MIN_FRAMES || entry.frequency == 0) continue;
+
+                const uint8_t avg_power = entry.power_sum / entry.cycles_seen;
+                const int32_t total_gain_tbd = get_current_total_gain();
+                const int32_t tbd_rssi = spectrum_value_to_dbm(avg_power, total_gain_tbd);
+
+                if (tbd_rssi > config_.rssi_threshold_dbm) {
                     apply_sweep_tracking(
-                        tbd_freq, tbd_rssi, center_freq, f_min, f_max,
-                        tbd_peak_bin, -1, 0, false
+                        entry.frequency, tbd_rssi, center_freq, f_min, f_max,
+                        0, -1, 0, false
                     );
                 }
+                // Reset entry after detection attempt (confirmed or not)
+                entry = {0, 0, 0};
             }
         }
     }

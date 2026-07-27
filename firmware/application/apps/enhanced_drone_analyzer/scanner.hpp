@@ -1745,12 +1745,27 @@ private:
     AdaptiveThreshold adaptive_threshold_;
 
     /**
-     * @brief Waterfall-based Track-Before-Detect result cache.
-     * @note When single-frame detection fails but multi-frame integration
-     *       confirms a signal, this caches the TBD detection for tracking.
+     * @brief Track-Before-Detect minimum confirmed cycles for detection.
+     * @note Normal mode: counts frames at same center frequency.
+     *       Sweep mode: counts sweep cycles (each cycle revisits the freq).
      */
     static constexpr uint8_t TBD_MIN_FRAMES = 3;
-    static constexpr uint8_t TBD_THRESHOLD_MARGIN = 10;  // Half of spectrum margin (dB)
+
+    /**
+     * @brief Per-frequency sweep TBD accumulator — tracks power across sweep cycles.
+     * @note The shared waterfall_history_ contains frames from different center
+     *       frequencies in sweep mode (each step is a different freq), so it
+     *       cannot integrate same-frequency power. This cache tracks peak power
+     *       at each sweep center frequency across multiple cycles.
+     *       SRAM: 4 × 6 = 24 bytes.
+     */
+    static constexpr size_t SWEEP_TBD_CACHE_SIZE = 4;
+    struct SweepTbdCache {
+        FreqHz frequency{0};
+        uint8_t power_sum{0};
+        uint8_t cycles_seen{0};
+    };
+    std::array<SweepTbdCache, SWEEP_TBD_CACHE_SIZE> sweep_tbd_cache_{};
 
     // Matched pattern index (-1 if no pattern matched in sweep)
     int8_t matched_pattern_index_{-1};
