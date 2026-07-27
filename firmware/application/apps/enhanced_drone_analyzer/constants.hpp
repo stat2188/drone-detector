@@ -410,6 +410,25 @@ constexpr uint32_t AUDIO_ALERT_SHORT_GAP_MS = 40;
  */
 constexpr uint32_t AUDIO_ALERT_LONG_GAP_MS = 50;
 
+/**
+ * @brief Auto-exit listen mode after this duration (ms)
+ * @note HackRF is half-duplex: spectrum is unavailable during listen.
+ *       30 seconds is enough to identify a drone's audio signature.
+ */
+constexpr uint32_t LISTEN_TIMEOUT_MS = 30000;
+
+/**
+ * @brief NFM sample rate for listen mode (Hz)
+ * @note Standard NFM baseband sample rate (matches FM Radio / Analog Audio apps).
+ */
+constexpr uint32_t LISTEN_NFM_SAMPLE_RATE_HZ = 3072000;
+
+/**
+ * @brief NFM baseband bandwidth for listen mode (Hz)
+ * @note Wide NFM bandwidth for FPV drone audio demodulation.
+ */
+constexpr uint32_t LISTEN_NFM_BANDWIDTH_HZ = 1750000;
+
 // ============================================================================
 // Memory Constants
 // ============================================================================

@@ -193,6 +193,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         // Debounce rapid taps that could cause race conditions
         if (!button_debounce_guard_.try_set()) return;
 
+        // If in listen mode, Stop button exits listen mode
+        if (listen_active_) {
+            exit_listen_mode();
+            button_debounce_guard_.clear();
+            return;
+        }
+
         if (scanning_) {
             // Stop
             if (composite_active_) {
@@ -645,6 +652,15 @@ void DroneScannerUI::on_show() {
 }
 
 void DroneScannerUI::on_hide() {
+    // Cleanup listen mode without resuming scanning (we're leaving the app)
+    if (listen_active_) {
+        restore_spectrum_baseband();
+        listen_active_ = false;
+        listen_frequency_ = 0;
+        listen_start_time_ = 0;
+        was_scanning_before_listen_ = false;
+    }
+
     if (scanning_) {
         scanner_thread_->set_scanning(false);
         if (scanner_ptr_ != nullptr) {
@@ -693,7 +709,135 @@ void DroneScannerUI::show_error(ErrorCode error, uint32_t duration_ms) noexcept 
 }
 
 bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
+    if (event.type == ui::TouchEvent::Type::Start) {
+        // Transform screen coordinates to DroneDisplay-local coordinates
+        const auto drone_rect = drone_display_.screen_rect();
+        const int16_t local_x = event.point.x() - drone_rect.left();
+        const int16_t local_y = event.point.y() - drone_rect.top();
+
+        // Check if tap landed on a drone list entry
+        const int16_t drone_idx = drone_display_.hit_test(
+            static_cast<uint16_t>(local_x),
+            static_cast<uint16_t>(local_y));
+
+        if (drone_idx >= 0 &&
+            drone_idx < static_cast<int16_t>(refresh_display_data_.drone_count)) {
+            const FreqHz freq = refresh_display_data_.drones[drone_idx].frequency;
+
+            if (listen_active_) {
+                // Already listening — stop
+                exit_listen_mode();
+            } else if (freq != 0) {
+                // Start listening on this drone's frequency
+                enter_listen_mode(freq);
+            }
+            return true;  // Claim the touch
+        }
+    }
     return View::on_touch(event);
+}
+
+void DroneScannerUI::enter_listen_mode(FreqHz freq) noexcept {
+    if (listen_active_) return;
+    if (freq == 0) return;
+    if (initialization_failed_ || scanner_ptr_ == nullptr) return;
+
+    // Save scan state so exit_listen_mode() can restore it correctly
+    was_scanning_before_listen_ = scanning_;
+
+    // Exit sweep mode if active (must happen before baseband switch)
+    if (composite_active_) {
+        exit_sweep_mode(true);
+    }
+
+    // Stop scanning — UI will drive tuning during listen mode
+    if (scanning_) {
+        scanner_thread_->set_scanning(false);
+        (void)scanner_ptr_->stop_scanning();
+        baseband::spectrum_streaming_stop();
+        scanning_ = false;
+    }
+
+    // Mute audio before baseband switch to prevent pop/click
+    // (matches AnalogAudioView::update_modulation() pattern)
+    audio::output::mute();
+
+    // Switch baseband from spectrum to NFM audio
+    // Stack: ~200 bytes (shutdown + run_image + receiver_model config)
+    baseband::shutdown();
+    baseband::run_image(portapack::spi_flash::image_tag_nfm_audio);
+
+    // Configure receiver for NFM demodulation
+    portapack::receiver_model.set_modulation(ReceiverModel::Mode::NarrowbandFMAudio);
+    portapack::receiver_model.set_target_frequency(rf::Frequency(freq));
+    portapack::receiver_model.set_sampling_rate(LISTEN_NFM_SAMPLE_RATE_HZ);
+    portapack::receiver_model.set_baseband_bandwidth(LISTEN_NFM_BANDWIDTH_HZ);
+    portapack::receiver_model.enable();
+
+    // Unmute audio output (headphone + speaker)
+    audio::output::unmute();
+
+    // Update listen mode state
+    listen_active_ = true;
+    listen_frequency_ = freq;
+    listen_start_time_ = chTimeNow();
+
+    // Update UI — show frequency and listening status
+    bigdisplay_update(BigDisplayColor::GREEN);
+    button_start_stop_.set_text("Stop");
+
+    char listen_buf[MAX_TEXT_LENGTH];
+    snprintf(listen_buf, sizeof(listen_buf), "Listen %lu.%03lu",
+             (unsigned long)(freq / 1000000),
+             (unsigned long)((freq % 1000000) / 1000));
+    drone_display_.set_status_text(listen_buf);
+    drone_display_.set_dirty();
+}
+
+void DroneScannerUI::exit_listen_mode() noexcept {
+    if (!listen_active_) return;
+
+    // Restore wideband spectrum baseband
+    restore_spectrum_baseband();
+
+    // Clear listen mode state
+    const bool resume_scanning = was_scanning_before_listen_;
+    listen_active_ = false;
+    listen_frequency_ = 0;
+    listen_start_time_ = 0;
+    was_scanning_before_listen_ = false;
+
+    // Resume scanning only if it was active before listen mode
+    if (resume_scanning && scanner_ptr_ != nullptr) {
+        baseband::spectrum_streaming_start();
+        (void)scanner_ptr_->start_scanning();
+        scanner_thread_->set_scanning(true);
+        scanning_ = true;
+        button_start_stop_.set_text("Stop");
+    } else {
+        button_start_stop_.set_text("Start");
+    }
+
+    // Restore UI
+    bigdisplay_update(BigDisplayColor::GREY);
+    drone_display_.set_status_text("Scan");
+    drone_display_.set_dirty();
+}
+
+void DroneScannerUI::restore_spectrum_baseband() noexcept {
+    // Mute audio before switching baseband (idempotent — safe if already muted)
+    audio::output::mute();
+
+    // Full baseband restart: NFM → wideband spectrum
+    // Stack: ~200 bytes (shutdown + run_image + spectrum config)
+    baseband::shutdown();
+    baseband::run_image(portapack::spi_flash::image_tag_wideband_spectrum);
+
+    baseband::set_spectrum(DEFAULT_SAMPLE_RATE_HZ, SWEEP_FFT_TRIGGER);
+    portapack::receiver_model.set_modulation(ReceiverModel::Mode::SpectrumAnalysis);
+    portapack::receiver_model.set_sampling_rate(DEFAULT_SAMPLE_RATE_HZ);
+    portapack::receiver_model.set_baseband_bandwidth(DEFAULT_SAMPLE_RATE_HZ);
+    portapack::receiver_model.enable();
 }
 
 void DroneScannerUI::bigdisplay_update(BigDisplayColor color) noexcept {
@@ -728,6 +872,10 @@ void DroneScannerUI::refresh_ui() noexcept {
         if (error_active_ && (now - error_start_time_) >= error_duration_ms_) {
             error_active_ = false;
             drone_display_.set_dirty();
+        }
+        // Auto-exit listen mode after timeout (30 seconds)
+        if (listen_active_ && (now - listen_start_time_) >= LISTEN_TIMEOUT_MS) {
+            exit_listen_mode();
         }
     }
 

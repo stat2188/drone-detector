@@ -268,6 +268,39 @@ private:
     bool on_touch(const ui::TouchEvent event) override;
     bool baseband_needs_restore_{false};
     bool scanning_needs_restore_{false};
+
+    // Listen mode state — tap a drone entry to listen via NFM demodulation.
+    // HackRF is half-duplex: spectrum is unavailable during listen mode.
+    // SRAM cost: +17 bytes (2×bool + FreqHz + uint32_t)
+    bool listen_active_{false};
+    bool was_scanning_before_listen_{false};
+    FreqHz listen_frequency_{0};
+    uint32_t listen_start_time_{0};
+
+    /**
+     * @brief Enter NFM listen mode on a detected drone frequency.
+     * @param freq Frequency in Hz to tune and demodulate
+     * @note Stops scanning, switches baseband to NFM audio, tunes to freq.
+     * @note Auto-exits after LISTEN_TIMEOUT_MS (30 seconds).
+     * @stack ~200 bytes
+     */
+    void enter_listen_mode(FreqHz freq) noexcept;
+
+    /**
+     * @brief Exit listen mode and restore spectrum scanning.
+     * @note Switches baseband back to wideband spectrum.
+     * @note Resumes scanning only if it was active before listen mode.
+     * @stack ~200 bytes
+     */
+    void exit_listen_mode() noexcept;
+
+    /**
+     * @brief Restore wideband spectrum baseband (shared cleanup path).
+     * @note Used by exit_listen_mode() and on_hide() listen cleanup.
+     *       Mutes audio, restarts baseband to wideband spectrum, enables receiver.
+     * @stack ~200 bytes
+     */
+    void restore_spectrum_baseband() noexcept;
 };
 
 DroneScanner& get_scanner_instance() noexcept;
