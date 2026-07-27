@@ -724,11 +724,12 @@ bool DroneScannerUI::on_touch(const ui::TouchEvent event) {
             drone_idx < static_cast<int16_t>(refresh_display_data_.drone_count)) {
             const FreqHz freq = refresh_display_data_.drones[drone_idx].frequency;
 
-            if (listen_active_) {
-                // Already listening — stop
-                exit_listen_mode();
-            } else if (freq != 0) {
-                // Start listening on this drone's frequency
+            // Enter-only: framework double-dispatches on_touch(Start) — once
+            // during touch_widget() search, again in on_touch_event() dispatch.
+            // Toggle logic (exit if active) would enter+exit in one tap.
+            // Idempotent: 2nd call sees listen_active_==true, skips.
+            // Exit handled by Stop button (line 197) and auto-timeout (line 877).
+            if (!listen_active_ && freq != 0) {
                 enter_listen_mode(freq);
             }
             return true;  // Claim the touch
