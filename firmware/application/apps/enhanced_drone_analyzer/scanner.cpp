@@ -922,6 +922,15 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             tracked_drones_[drone_idx.value()].rssi_decrease_counter_ = 0;
         }
 
+        // Store bin-corrected frequency for display (primary detection).
+        // NOTE: lookup key (`frequency`) stays the center — identity, DB type,
+        // confirm/lock state must remain exact on the tune frequency. The
+        // measured value only refines what the UI shows.
+        if (has_shape_result && shape_result.count > 0 && should_update && drone_idx.has_value()) {
+            tracked_drones_[drone_idx.value()].set_measured_frequency(
+                shape_result.detections[0].frequency);
+        }
+
         // Update max RSSI statistic
         if (effective_rssi > statistics_.max_rssi_dbm) {
             statistics_.max_rssi_dbm = effective_rssi;
@@ -1619,7 +1628,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                     spectrum.db.data(), cfar_peaks[i].bin, cfar_peaks[i].power,
                     noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain)) {
                 ShapeDetection& det = out_result.detections[out_result.count];
-                det.frequency = normal_bin_to_freq(center_freq, cfar_peaks[i].bin);
+                det.frequency = normal_bin_to_freq(center_freq, cfar_peaks[i].bin, spectrum.sampling_rate);
                 det.rssi = peak_rssi;
                 det.bin_index = static_cast<uint16_t>(cfar_peaks[i].bin);
                 det.peak_power = cfar_peaks[i].power;
@@ -1662,7 +1671,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
                     spectrum.db.data(), candidates[i].bin, candidates[i].power,
                     noise_floor, peak_rssi, FFT_EDGE_SKIP, /*has_dc_gap=*/true, total_gain)) {
                 ShapeDetection& det = out_result.detections[out_result.count];
-                det.frequency = normal_bin_to_freq(center_freq, candidates[i].bin);
+                det.frequency = normal_bin_to_freq(center_freq, candidates[i].bin, spectrum.sampling_rate);
                 det.rssi = peak_rssi;
                 det.bin_index = static_cast<uint16_t>(candidates[i].bin);
                 det.peak_power = candidates[i].power;

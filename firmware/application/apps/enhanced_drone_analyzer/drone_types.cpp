@@ -69,6 +69,7 @@ bool freqman_entry_fixed::is_valid() const noexcept {
 
 TrackedDrone::TrackedDrone() noexcept
     : frequency{0}
+    , measured_frequency_{0}
     , drone_type{DroneType::UNKNOWN}
     , threat_level{ThreatLevel::NONE}
     , update_count{0}
@@ -100,6 +101,7 @@ TrackedDrone::TrackedDrone(
     ThreatLevel threat
 ) noexcept
     : frequency{freq}
+    , measured_frequency_{0}
     , drone_type{type}
     , threat_level{threat}
     , update_count{0}
@@ -296,7 +298,7 @@ DisplayDroneEntry::DisplayDroneEntry() noexcept
 }
 
 DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
-    : frequency(drone.frequency)
+    : frequency(drone.get_display_frequency())
     , type(drone.drone_type)
     , threat(drone.get_threat())
     , rssi(drone.rssi)

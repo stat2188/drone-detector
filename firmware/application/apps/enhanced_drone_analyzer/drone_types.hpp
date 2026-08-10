@@ -252,6 +252,7 @@ struct ThreatThresholds {
  */
 struct TrackedDrone {
     FreqHz frequency;                    // 8 bytes (uint64_t)
+    FreqHz measured_frequency_{0};       // 8 bytes — bin-corrected detected frequency for display
     DroneType drone_type;              // 1 byte (uint8_t)
     ThreatLevel threat_level;           // 1 byte (uint8_t)
     uint8_t update_count;              // 1 byte
@@ -344,7 +345,23 @@ struct TrackedDrone {
      * @brief Update drone with new RSSI reading
      */
     void update_rssi(RssiValue new_rssi, SystemTime timestamp, const ThreatThresholds& thresholds) noexcept;
-    
+
+    /**
+     * @brief Set the bin-corrected (measured) frequency
+     * @param freq Actual detected RF frequency from FFT peak (Hz)
+     * @note Stored separately from `frequency` (the tune/DB key) so the
+     *       tracking identity stays stable while the display value is exact.
+     */
+    void set_measured_frequency(FreqHz freq) noexcept { measured_frequency_ = freq; }
+
+    /**
+     * @brief Get the frequency to display
+     * @return Bin-corrected measured frequency if set, else the tuning key
+     */
+    [[nodiscard]] FreqHz get_display_frequency() const noexcept {
+        return (measured_frequency_ != 0) ? measured_frequency_ : frequency;
+    }
+
     /**
      * @brief Get average RSSI from history
      */

@@ -1128,17 +1128,23 @@ public:
      * @brief Convert normal-mode FFT bin index to actual RF frequency
      * @param f_center Tuned center frequency (Hz)
      * @param bin FFT bin index (0-255, standard ordering)
-     * @return Actual RF frequency for this bin (Hz)
+     * @param sampling_rate Spectrum sampling rate (Hz); bin width = sampling_rate / FFT_BIN_COUNT
+     * @return Actual RF frequency for this bin (Hz), or 0 if the rate/bin is invalid
      * @note Standard FFT: bin 0 = lowest freq, bin 128 = DC (center), bin 255 = highest
-     *       Each bin = SWEEP_BIN_SIZE (78125 Hz) with 20 MHz total bandwidth.
-     *       Used by multi-peak detection in normal scanning mode.
+     *       Bin width depends on the actual baseband sampling rate: 2 MHz → 7812.5 Hz,
+     *       20 MHz → 78125 Hz (= SWEEP_BIN_SIZE). CRIT-2 FIX: previously hardcoded
+     *       SWEEP_BIN_SIZE (78125 Hz / 20 MHz) even in normal 2 MHz mode, which made
+     *       secondary detection frequencies 10x too large (up to ~9 MHz error).
      */
-    static FreqHz normal_bin_to_freq(FreqHz f_center, size_t bin) noexcept {
+    static FreqHz normal_bin_to_freq(FreqHz f_center, size_t bin, uint32_t sampling_rate) noexcept {
+        if (sampling_rate == 0) return 0;
+        const FreqHz bin_size = static_cast<FreqHz>(sampling_rate) / FFT_BIN_COUNT;
+        if (bin_size == 0) return 0;
         constexpr size_t DC_BIN = FFT_BIN_COUNT / 2;  // 128
         if (bin >= DC_BIN) {
-            return f_center + static_cast<FreqHz>(bin - DC_BIN) * SWEEP_BIN_SIZE;
+            return f_center + static_cast<FreqHz>(bin - DC_BIN) * bin_size;
         }
-        const FreqHz offset = static_cast<FreqHz>(DC_BIN - bin) * SWEEP_BIN_SIZE;
+        const FreqHz offset = static_cast<FreqHz>(DC_BIN - bin) * bin_size;
         // Guard: prevent unsigned underflow when f_center < offset (low freq scanning)
         if (f_center < offset) return 0;
         return f_center - offset;
