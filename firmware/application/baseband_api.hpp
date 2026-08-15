@@ -105,6 +105,17 @@ void set_subghzd_config(uint8_t modulation, uint32_t sampling_rate);
 void set_wefax_config(uint8_t lpm, uint8_t ioc);
 void set_noaaapt_config();
 void set_flex_config();
+void set_time_sink(
+    const size_t sampling_rate,
+    const size_t trigger);
+void set_moreserx_config(uint8_t mode);
+void set_morsetx_config(uint8_t mode, uint32_t tone, float fm_delta);
+void set_morsetx_key(bool key_down);
+void set_bitstream_config(uint32_t deviation, uint8_t mode);  // mode 0 for am, 1 for 2fsk
+void set_rtty_config(uint16_t baud, uint16_t shift, uint8_t* payload = nullptr, uint16_t payload_length = 0);  // baud*100
+void set_rtty_config(RTTYDataMessage& message);
+void set_epirb_tx_config(EPIRBTXDataMessage& message);
+void set_p25tx_data(const uint8_t* dibits, uint16_t frame_length);
 
 void request_roger_beep();
 void request_rssi_beep();

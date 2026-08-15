@@ -588,6 +588,20 @@ set(MODE_CPPSRC
 DeclareTargets(PEPI epirb_rx)
 
 
+### EPIRB TX
+
+set(MODE_CPPSRC
+	proc_epirb_tx.cpp
+)
+DeclareTargets(PEPT epirb_tx)
+
+### P25 TX
+
+set(MODE_CPPSRC
+	proc_p25_tx.cpp
+)
+DeclareTargets(P25T p25_tx)
+
 ### NRF RX
 
 set(MODE_CPPSRC
@@ -705,6 +719,41 @@ set(MODE_CPPSRC
 	proc_subcar.cpp
 )
 DeclareTargets(PSCD subcar)
+
+### Morse RX Decoder
+
+set(MODE_CPPSRC
+	proc_morse.cpp
+)
+DeclareTargets(PMRS morse)
+
+### RTTY RX
+
+set(MODE_CPPSRC
+	proc_rtty_rx.cpp
+)
+DeclareTargets(PRTR rtty_rx)
+
+### RTTY TX
+
+set(MODE_CPPSRC
+	proc_rtty_tx.cpp
+)
+DeclareTargets(PRTT rtty_tx)
+
+### Morse TX
+
+set(MODE_CPPSRC
+	proc_morsetx.cpp
+)
+DeclareTargets(PMRT morsetx)
+
+### Time Sink
+
+set(MODE_CPPSRC
+	proc_time_sink.cpp
+)
+DeclareTargets(PTSK time_sink)
 
 
 ### HackRF "factory" firmware

@@ -281,6 +281,72 @@ set(EXTCPPSRC
 	external/fpv_detect/main.cpp
 	external/fpv_detect/ui_fpv_detect.cpp
 
+	#epirb_tx
+	external/epirb_tx/main.cpp
+	external/epirb_tx/ui_epirb_tx.cpp
+
+	#keeloqtx
+	external/keeloqtx/main.cpp
+	external/keeloqtx/ui_keeloqtx.cpp
+
+	#kiss_tnc
+	external/kiss_tnc/main.cpp
+	external/kiss_tnc/ui_kiss_tnc.cpp
+
+	#mdc_tx
+	external/mdc_tx/main.cpp
+	external/mdc_tx/ui_mdc_tx.cpp
+
+	#morse_radio
+	external/morse_radio/main.cpp
+	external/morse_radio/ui_morse_radio.cpp
+
+	#morseradiotx
+	external/morseradiotx/main.cpp
+	external/morseradiotx/ui_morse_radiotx.cpp
+
+	#p25_tx
+	external/p25_tx/main.cpp
+	external/p25_tx/ui_p25_tx.cpp
+
+	#pocsag_tx
+	external/pocsag_tx/main.cpp
+	external/pocsag_tx/ui_pocsag_tx.cpp
+
+	#rtty_rx
+	external/rtty_rx/main.cpp
+	external/rtty_rx/ui_rtty_rx.cpp
+	external/rtty_rx/baudot.cpp
+
+	#rtty_tx
+	external/rtty_tx/main.cpp
+	external/rtty_tx/ui_rtty_tx.cpp
+	external/rtty_tx/baudot.cpp
+
+	#same_tx
+	external/same_tx/main.cpp
+	external/same_tx/ui_same_tx.cpp
+
+	#sdusb
+	external/sdusb/main.cpp
+	external/sdusb/ui_sd_over_usb.cpp
+
+	#siggen
+	external/siggen/main.cpp
+	external/siggen/ui_siggen.cpp
+
+	#time_sink
+	external/time_sink/main.cpp
+	external/time_sink/ui_time_sink.cpp
+
+	#tpmstx
+	external/tpmstx/main.cpp
+	external/tpmstx/tpms_tx_app.cpp
+
+	#waterfall_designer
+	external/waterfall_designer/main.cpp
+	external/waterfall_designer/ui_waterfall_designer.cpp
+
 )
 
 set(EXTAPPLIST
@@ -351,4 +417,20 @@ set(EXTAPPLIST
 	adult_toys_controller
 	flex_rx
 	subcarrx
+	epirb_tx
+	keeloqtx
+	kiss_tnc
+	mdc_tx
+	morse_radio
+	morseradiotx
+	p25_tx
+	pocsag_tx
+	rtty_rx
+	rtty_tx
+	same_tx
+	sdusb
+	siggen
+	time_sink
+	tpmstx
+	waterfall_designer
 )
