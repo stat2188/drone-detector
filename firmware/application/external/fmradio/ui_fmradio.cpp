@@ -266,7 +266,7 @@ FmRadioView::~FmRadioView() {
 }
 
 void FmRadioView::on_audio_spectrum() {
-    if (gr.drawn() && audio_spectrum_data) gr.update_audio_spectrum(*audio_spectrum_data);
+    if (gr.visible() && audio_spectrum_data) gr.update_audio_spectrum(*audio_spectrum_data);
     if (audio_spectrum_data && audio_spectrum_data->db.size() <= 128) {
         for (size_t i = 0; i < audio_spectrum_data->db.size(); ++i) {
             audio_spectrum[i] = ((int16_t)audio_spectrum_data->db[i] - 127) * 256;
