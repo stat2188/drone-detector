@@ -182,6 +182,9 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     field_rssi_threshold_.on_change = [this](int32_t v) {
         settings_.alert_rssi_threshold_dbm = -20 - v;
         settings_.scan_sensitivity = static_cast<uint8_t>(v);
+        // Detection threshold must stay below the medium threat threshold,
+        // otherwise the LOW band collapses (LOW becomes unreachable).
+        normalize_threat_ladder(4);
         settings_dirty_ = true;
     };
 
@@ -487,54 +490,29 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     };
 
     // Threat threshold callbacks — enforce ordering: low <= medium <= high <= critical
+    // AND keep medium above the detection threshold (guarantees a non-empty LOW band).
     // trigger_change=false prevents re-entrant callback chains when auto-adjusting neighbors.
     field_threat_low_.on_change = [this](int32_t v) {
         settings_.threat_low_dbm = v;
-        // Ensure low <= medium: push medium up if needed
-        if (v > settings_.threat_medium_dbm) {
-            settings_.threat_medium_dbm = v;
-            field_threat_medium_.set_value(v, false);
-        }
+        normalize_threat_ladder(0);
         settings_dirty_ = true;
     };
 
     field_threat_medium_.on_change = [this](int32_t v) {
         settings_.threat_medium_dbm = v;
-        // Ensure low <= medium: push low down if needed
-        if (v < settings_.threat_low_dbm) {
-            settings_.threat_low_dbm = v;
-            field_threat_low_.set_value(v, false);
-        }
-        // Ensure medium <= high: push high up if needed
-        if (v > settings_.threat_high_dbm) {
-            settings_.threat_high_dbm = v;
-            field_threat_high_.set_value(v, false);
-        }
+        normalize_threat_ladder(1);
         settings_dirty_ = true;
     };
 
     field_threat_high_.on_change = [this](int32_t v) {
         settings_.threat_high_dbm = v;
-        // Ensure medium <= high: push medium down if needed
-        if (v < settings_.threat_medium_dbm) {
-            settings_.threat_medium_dbm = v;
-            field_threat_medium_.set_value(v, false);
-        }
-        // Ensure high <= critical: push critical up if needed
-        if (v > settings_.threat_critical_dbm) {
-            settings_.threat_critical_dbm = v;
-            field_threat_critical_.set_value(v, false);
-        }
+        normalize_threat_ladder(2);
         settings_dirty_ = true;
     };
 
     field_threat_critical_.on_change = [this](int32_t v) {
         settings_.threat_critical_dbm = v;
-        // Ensure high <= critical: push high down if needed
-        if (v < settings_.threat_high_dbm) {
-            settings_.threat_high_dbm = v;
-            field_threat_high_.set_value(v, false);
-        }
+        normalize_threat_ladder(3);
         settings_dirty_ = true;
     };
 
@@ -608,6 +586,10 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_threat_high_.set_value(settings_.threat_high_dbm, false);
     field_threat_critical_.set_value(settings_.threat_critical_dbm, false);
 
+    // Safety net: enforce the LOW-reachability invariant on any loaded/old config,
+    // without disturbing the user's ordering choices (edited_field=4).
+    normalize_threat_ladder(4);
+
     // Set initial visibility based on spectrum detection state
     set_shape_filter_visibility(settings_.spectrum_detection_enabled);
 
@@ -649,6 +631,87 @@ void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
     field_cfar_guard_cells_.visible(visible);
     field_cfar_threshold_.visible(visible);
     button_info_cfar_.visible(visible);
+}
+
+// ============================================================================
+// Threat Ladder Normalization
+// ============================================================================
+//
+// Enforces two invariants after any threat-field or sensitivity edit:
+//   (1) low <= medium <= high <= critical
+//   (2) medium > detection_threshold + RSSI_MIN_MEDIUM_ABOVE_DETECTION_DB
+//
+// Invariant (2) is the LOW-reachability guarantee: a signal that just passes
+// the detection gate (threshold + 2 dB hysteresis) must still have room to
+// classify as LOW. If detection is raised up to/beyond medium, every detected
+// signal would classify MEDIUM+ and LOW would never appear on screen.
+//
+// @param edited_field 0=low, 1=medium, 2=high, 3=critical, 4=detection (Sens).
+//                     Used to prioritize the field the user just touched, while
+//                     neighboring thresholds are auto-adjusted to keep order.
+void DroneSettingsView::normalize_threat_ladder(uint8_t edited_field) noexcept {
+    // Priority order: the edited field's value wins; neighbors are pushed up
+    // or down only to satisfy ordering relative to it.
+    int32_t low = settings_.threat_low_dbm;
+    int32_t medium = settings_.threat_medium_dbm;
+    int32_t high = settings_.threat_high_dbm;
+    int32_t critical = settings_.threat_critical_dbm;
+
+    // Median-clamp: restore ordering, preserving the edited value.
+    switch (edited_field) {
+        case 0:  // LOW edited
+            if (low > medium) medium = low;
+            if (high < medium) high = medium;
+            if (critical < high) critical = high;
+            break;
+        case 1:  // MEDIUM edited
+            if (low > medium) low = medium;
+            if (high < medium) high = medium;
+            if (critical < high) critical = high;
+            break;
+        case 2:  // HIGH edited
+            if (medium > high) medium = high;
+            if (low > medium) low = medium;
+            if (critical < high) critical = high;
+            break;
+        case 3:  // CRITICAL edited
+            if (high > critical) high = critical;
+            if (medium > high) medium = high;
+            if (low > medium) low = medium;
+            break;
+        case 4:  // Detection (Sens) edited: don't move threat fields,
+                 // only enforce the LOW-band invariant below.
+        default:
+            break;
+    }
+
+    // LOW-reachability invariant: keep medium strictly above the detection gate,
+    // leaving at least a small LOW band. Only raises medium upward; lowering it
+    // below the gate would otherwise silence LOW entirely.
+    const int32_t min_medium = settings_.alert_rssi_threshold_dbm
+        + RSSI_MIN_MEDIUM_ABOVE_DETECTION_DB;
+    if (medium < min_medium) {
+        medium = min_medium;
+        if (high < medium) high = medium;
+        if (critical < high) critical = high;
+    }
+
+    // Final clamp to valid RSSI range (NumberField clips anyway on set_value).
+    low = clip(low, RSSI_MIN_DBM, RSSI_MAX_DBM);
+    medium = clip(medium, RSSI_MIN_DBM, RSSI_MAX_DBM);
+    high = clip(high, RSSI_MIN_DBM, RSSI_MAX_DBM);
+    critical = clip(critical, RSSI_MIN_DBM, RSSI_MAX_DBM);
+
+    settings_.threat_low_dbm = low;
+    settings_.threat_medium_dbm = medium;
+    settings_.threat_high_dbm = high;
+    settings_.threat_critical_dbm = critical;
+
+    // Reflect any auto-adjustment back onto the widgets without re-entrancy.
+    field_threat_low_.set_value(low, false);
+    field_threat_medium_.set_value(medium, false);
+    field_threat_high_.set_value(high, false);
+    field_threat_critical_.set_value(critical, false);
 }
 
 // ============================================================================

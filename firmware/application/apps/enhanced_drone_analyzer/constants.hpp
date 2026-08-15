@@ -200,12 +200,12 @@ constexpr int32_t RSSI_DETECTION_THRESHOLD_DBM = -95;
  * @brief RSSI threshold for high threat (dBm)
  * @note With default gains (LNA=32 + VGA=32 + RF_AMP=14 = 78 dB),
  *       max RSSI = (255-255)/5 - 78 = -78 dBm. Threshold must be reachable.
- *       -90 dBm = 5 dB above detection threshold (-95). Reachable when
- *       spectrum.db value >= 195 (~76% of max).
- * @note Previous value (-60) was unreachable with default gains (max -78 dBm),
- *       causing all detections to classify as MEDIUM.
+ *       -84 dBm = 11 dB above LOW (-95), 6 dB above MEDIUM (-88). Reachable when
+ *       spectrum.db value >= 225 (~88% of max).
+ * @note Previous value (-90) sat directly below the medium threshold, leaving
+ *       no room for a LOW band; raised to spread levels across the dynamic range.
  */
-constexpr int32_t RSSI_HIGH_THREAT_THRESHOLD_DBM = -90;
+constexpr int32_t RSSI_HIGH_THREAT_THRESHOLD_DBM = -84;
 
 /**
  * @brief RSSI threshold for critical threat (dBm)
@@ -218,21 +218,34 @@ constexpr int32_t RSSI_HIGH_THREAT_THRESHOLD_DBM = -90;
 constexpr int32_t RSSI_CRITICAL_THREAT_THRESHOLD_DBM = -80;
 
 /**
+ * @brief Minimum gap (dB) push medium threat above the detection threshold
+ * @note Keeps a usable LOW band reachable: any signal that passes the
+ *       detection gate (threshold + 2 dB hysteresis) must still classify as
+ *       LOW when below medium. If detection is raised above/beside medium,
+ *       LOW bands collapse to empty. Enforced in Settings UI and on load.
+ */
+constexpr int32_t RSSI_MIN_MEDIUM_ABOVE_DETECTION_DB = 3;
+
+/**
  * @brief Noise floor RSSI (dBm)
  */
 constexpr int32_t RSSI_NOISE_FLOOR_DBM = -100;
 
 /**
  * @brief Default RSSI threshold for low threat (dBm)
- * @note Detection threshold - 10 dB = -105 dBm
+ * @note Equals detection threshold (-95 dBm) — weak but active signals just
+ *       above the detection gate classify as LOW (not MEDIUM).
+ * @note Previous value (-105) sat below the detection gate, making the LOW
+ *       band unreachable: every detected signal was instantly MEDIUM or higher.
  */
-constexpr int32_t DEFAULT_THREAT_LOW_DBM = -105;
+constexpr int32_t DEFAULT_THREAT_LOW_DBM = -95;
 
 /**
  * @brief Default RSSI threshold for medium threat (dBm)
- * @note Equals detection threshold (-95 dBm) — all signals above detection start at MEDIUM
+ * @note 7 dB above LOW (-95) gives a real 7 dB LOW band for long-range/weak drones.
+ *       Stronger signals escalate to MEDIUM, HIGH (-84), CRITICAL (-80).
  */
-constexpr int32_t DEFAULT_THREAT_MEDIUM_DBM = -95;
+constexpr int32_t DEFAULT_THREAT_MEDIUM_DBM = -88;
 
 /**
  * @brief RF amplifier gain (dB) when enabled

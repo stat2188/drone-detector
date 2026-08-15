@@ -398,6 +398,17 @@ ErrorCode SettingsFileManager::load(SettingsStruct& out) noexcept {
     if (out.threat_high_dbm > out.threat_critical_dbm) {
         out.threat_critical_dbm = out.threat_high_dbm;
     }
+    // LOW-reachability invariant: medium must stay above the detection gate,
+    // else every detected signal would classify MEDIUM+ and LOW never appears.
+    if (out.threat_medium_dbm <= out.alert_rssi_threshold_dbm + RSSI_MIN_MEDIUM_ABOVE_DETECTION_DB) {
+        out.threat_medium_dbm = out.alert_rssi_threshold_dbm + RSSI_MIN_MEDIUM_ABOVE_DETECTION_DB;
+        if (out.threat_high_dbm < out.threat_medium_dbm) {
+            out.threat_high_dbm = out.threat_medium_dbm;
+        }
+        if (out.threat_critical_dbm < out.threat_high_dbm) {
+            out.threat_critical_dbm = out.threat_high_dbm;
+        }
+    }
     if (out.cfar_ref_cells < out.cfar_guard_cells + 2) {
         out.cfar_guard_cells = (out.cfar_ref_cells > 2) ? out.cfar_ref_cells - 2 : 0;
     }

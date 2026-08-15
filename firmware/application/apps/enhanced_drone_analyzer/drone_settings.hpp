@@ -123,6 +123,7 @@ private:
     void update_preview() noexcept;
     void save_settings_to_sd() noexcept;
     void set_shape_filter_visibility(bool visible) noexcept;
+    void normalize_threat_ladder(uint8_t edited_field) noexcept;
 };
 
 } // namespace drone_analyzer

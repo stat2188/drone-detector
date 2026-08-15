@@ -162,13 +162,15 @@ void TrackedDrone::update_rssi(RssiValue new_rssi, SystemTime timestamp, const T
         classify_rssi = peak_rssi;
     }
 
-    // All signals above detection threshold start at MEDIUM (not LOW).
-    // LOW is only reached through decay from MEDIUM — prevents instant-stuck-LOW loop.
-    ThreatLevel classified = ThreatLevel::MEDIUM;
+    // Weak but active signals (above the detection gate yet below the medium
+    // threshold) classify as LOW. Escalates with signal strength.
+    ThreatLevel classified = ThreatLevel::LOW;
     if (classify_rssi >= thresholds.critical) {
         classified = ThreatLevel::CRITICAL;
     } else if (classify_rssi >= thresholds.high) {
         classified = ThreatLevel::HIGH;
+    } else if (classify_rssi >= thresholds.medium) {
+        classified = ThreatLevel::MEDIUM;
     }
 
     // Allow both upgrade and downgrade of threat level during re-detection.
