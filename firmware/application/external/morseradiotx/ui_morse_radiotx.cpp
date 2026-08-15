@@ -32,11 +32,11 @@ MorseRadiotxView::MorseRadiotxView(ui::NavigationView& nav)
                   &btn_clear,
                   &btn_ptt});
 
-    initial_switch_config_ = get_switches_repeat_config();
+    initial_switch_config_ = get_switches_long_press_config();
 
     SwitchesState config = initial_switch_config_;
     config[toUType(Switch::Sel)] = false;
-    set_switches_repeat_config(config);
+    set_switches_long_press_config(config);
 
     audio::set_rate(audio::Rate::Hz_24000);
 
@@ -159,7 +159,7 @@ MorseRadiotxView::MorseRadiotxView(ui::NavigationView& nav)
 }
 
 MorseRadiotxView::~MorseRadiotxView() {
-    set_switches_repeat_config(initial_switch_config_);
+    set_switches_long_press_config(initial_switch_config_);
     if (tx_thread) {
         chThdTerminate(tx_thread);
         chThdWait(tx_thread);

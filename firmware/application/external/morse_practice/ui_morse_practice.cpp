@@ -13,11 +13,11 @@ MorsePracticeView::MorsePracticeView(ui::NavigationView& nav)
                   &console_text,
                   &field_volume});
 
-    initial_switch_config_ = get_switches_repeat_config();
+    initial_switch_config_ = get_switches_long_press_config();
 
     SwitchesState config = initial_switch_config_;
     config[toUType(Switch::Sel)] = false;
-    set_switches_repeat_config(config);
+    set_switches_long_press_config(config);
 
     audio::set_rate(audio::Rate::Hz_24000);
 
@@ -50,7 +50,7 @@ MorsePracticeView::MorsePracticeView(ui::NavigationView& nav)
 }
 
 MorsePracticeView::~MorsePracticeView() {
-    set_switches_repeat_config(initial_switch_config_);
+    set_switches_long_press_config(initial_switch_config_);
     receiver_model.disable();
     baseband::shutdown();
     audio::output::stop();
