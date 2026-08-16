@@ -56,3 +56,5 @@ const std::filesystem::path tpms_dir = u"TPMS";
 const std::filesystem::path waterfalls_dir = u"WATERFALLS";
 const std::filesystem::path macaddress_dir = u"MACADDRESS";
 const std::filesystem::path epirb_dir = u"EPIRB";
+const std::filesystem::path keeloq_keys_dir = u"KEELOQKEYS";
+const std::filesystem::path keeloq_remotes_dir = u"KEELOQREMOTES";
