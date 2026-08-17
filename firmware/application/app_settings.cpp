@@ -68,6 +68,16 @@ void BoundSetting::parse(std::string_view value) {
             as<bool>() = (parsed != 0);
             break;
         }
+        case SettingType::Float: {
+            as<float>() = 0.0f;
+            if (value.size() > max_parse_int_length)
+                break;
+            char zstr[max_parse_int_length + 1];
+            std::memcpy(zstr, value.data(), value.size());
+            zstr[value.size()] = '\0';
+            as<float>() = strtof(zstr, nullptr);
+            break;
+        }
     };
 }
 
@@ -101,6 +111,27 @@ void BoundSetting::write(File& file) const {
         case SettingType::Bool:
             file.write(as<bool>() ? "1" : "0", 1);
             break;
+        case SettingType::Float: {
+            // Round to 2 fixed decimals using integers to avoid modf/pow
+            // float-representation artifacts and keep write() allocation-free.
+            const float v = as<float>();
+            const bool negative = v < 0.0f;
+            const float abs_v = negative ? -v : v;
+            const int32_t scaled = static_cast<int32_t>(abs_v * 100.0f + 0.5f);
+            const int32_t whole = scaled / 100;
+            const int32_t frac = scaled % 100;
+
+            StringFormatBuffer buffer;
+            size_t length = 0;
+            const char* whole_str = to_string_dec_int(negative ? -whole : whole, buffer, length);
+            file.write(whole_str, length);
+            file.write(".", 1);
+            char frac_str[2] = {
+                static_cast<char>('0' + (frac / 10)),
+                static_cast<char>('0' + (frac % 10))};
+            file.write(frac_str, 2);
+            break;
+        }
     }
 
     file.write("\r\n", 2);
