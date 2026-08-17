@@ -44,8 +44,13 @@ static int32_t get_current_total_gain() noexcept {
 
 /**
  * @brief RSSI extraction — scan usable bins with edge skip
+ * @param spectrum Channel spectrum
+ * @param out_peak Optional output for the usable-bin peak power (used to fill
+ *        last_peak_power_ without a second full spectrum scan). Excludes the DC
+ *        spike region and edge bins — same cells used for RSSI, so the returned
+ *        value is the power that actually determines signal detection.
  */
-static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
+static int32_t extract_rssi(const ChannelSpectrum& spectrum, uint8_t* out_peak = nullptr) noexcept {
     uint8_t peak = 0;
 
     for (size_t i = FFT_EDGE_SKIP; i < FFT_DC_SPIKE_START; ++i) {
@@ -54,6 +59,8 @@ static int32_t extract_rssi(const ChannelSpectrum& spectrum) noexcept {
     for (size_t i = FFT_DC_SPIKE_END; i < (FFT_BIN_COUNT - FFT_EDGE_SKIP); ++i) {
         if (spectrum.db[i] > peak) peak = spectrum.db[i];
     }
+
+    if (out_peak != nullptr) *out_peak = peak;
 
     const int32_t total_gain = get_current_total_gain();
     return spectrum_value_to_dbm(peak, total_gain);
@@ -685,19 +692,13 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
     }
 
     // ChannelSpectrum has fixed-size array (256 bins), no empty check needed
-    // Track peak power for timeline display
-    {
-        uint8_t peak = 0;
-        for (const auto v : spectrum.db) {
-            if (v > peak) peak = v;
-        }
-        last_peak_power_ = peak;
-    }
+    // Track peak power for timeline display, fused with the RSSI scan below
+    // (single pass over usable bins — DC spike/edge bins carry no real signal
+    // energy and would crush timeline scaling; mirrors sweep path at :2206).
+    const int32_t raw_rssi = extract_rssi(spectrum, &last_peak_power_);
 
     // Feed temporal history for multi-frame analysis (TBD, FHSS, Doppler)
     waterfall_history_.push(spectrum.db.data());
-
-    const int32_t raw_rssi = extract_rssi(spectrum);
 
     // Median filter: reject single-sample noise spikes
     // Feed every sample; use median only when enabled and filter is warm
@@ -890,44 +891,50 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             }
         }
 
+        // Reuse the index returned by update_tracked_drone_internal (via out_index)
+        // instead of a second find_drone_by_frequency_internal() O(n) search.
+        // out_index is set on every SUCCESS path (existing drone, new drone, and
+        // the RSSI-variance rejection early return) at scanner.cpp:1037/1072.
+        // When should_update is false (confirm count still accumulating), no drone
+        // exists and every consumer below is gated on should_update, so the stale
+        // SIZE_MAX index is never dereferenced.
+        size_t drone_idx = SIZE_MAX;
         if (should_update) {
             const ErrorCode err = update_tracked_drone_internal(
                 frequency,
                 effective_rssi,
-                now
+                now,
+                &drone_idx
             );
             if (err != ErrorCode::SUCCESS) {
                 return err;
             }
         }
 
-        // Single post-update lookup (reused for pattern match + decay reset)
-        const auto drone_idx = find_drone_by_frequency_internal(frequency);
-
         // Propagate pattern match result to tracked drone entry (normal mode)
         // NOTE: drone_type is NOT overwritten — database classification (DJI, FPV, etc.)
         // is preserved. Pattern match info is supplementary via pattern_matched_ fields.
-        if (normal_pattern_result.matched && should_update && drone_idx.has_value()) {
+        if (normal_pattern_result.matched && should_update && drone_idx < tracked_count_) {
             const SignalPattern* p = pattern_manager_.get_pattern(normal_pattern_result.pattern_index);
             if (p != nullptr && p->name[0] != '\0') {
-                auto& d = tracked_drones_[drone_idx.value()];
+                auto& d = tracked_drones_[drone_idx];
                 d.set_pattern_match(normal_pattern_result.score,
                                     static_cast<int8_t>(normal_pattern_result.pattern_index));
             }
         }
 
         // Reset decay counters for detected drone — signal confirmed present
-        if (drone_idx.has_value()) {
-            tracked_drones_[drone_idx.value()].reset_missed();
-            tracked_drones_[drone_idx.value()].rssi_decrease_counter_ = 0;
+        if (should_update && drone_idx < tracked_count_) {
+            tracked_drones_[drone_idx].reset_missed();
+            tracked_drones_[drone_idx].rssi_decrease_counter_ = 0;
         }
 
         // Store bin-corrected frequency for display (primary detection).
         // NOTE: lookup key (`frequency`) stays the center — identity, DB type,
         // confirm/lock state must remain exact on the tune frequency. The
         // measured value only refines what the UI shows.
-        if (has_shape_result && shape_result.count > 0 && should_update && drone_idx.has_value()) {
-            tracked_drones_[drone_idx.value()].set_measured_frequency(
+        if (has_shape_result && shape_result.count > 0 && should_update && drone_idx < tracked_count_) {
+            tracked_drones_[drone_idx].set_measured_frequency(
                 shape_result.detections[0].frequency);
         }
 
@@ -2193,12 +2200,25 @@ void DroneScanner::process_spectrum_sweep(
         }
     }
 
-    if (peak_count == 0) return;
-
     // Update peak power for timeline display (strongest peak)
-    last_peak_power_ = cfar_peaks[0].power;
+    // Do NOT early-return on peak_count == 0: multi-frame TBD below must still
+    // run when single-frame detection found no peaks (documented at :2256).
+    if (peak_count > 0) {
+        last_peak_power_ = cfar_peaks[0].power;
+    }
 
     const int32_t total_gain = get_current_total_gain();
+
+    // Pattern matching is loop-invariant: try_match_pattern_internal → match()
+    // depends only on spectrum + center_freq, not on the per-peak index, and has
+    // no side effects. Match once per frame and reuse for every peak (was called
+    // once per CFAR peak — up to 8 redundant invocations per frame).
+    const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
+
+    // Tracks whether any peak survived shape analysis this frame. TBD below must
+    // be gated on this: once single-frame detection tracked a signal, the
+    // multi-frame integration must NOT run (documented at :2256).
+    bool any_peak_passed_shape = false;
 
     // Step 3: Process each CFAR peak through shape analysis + tracking.
     // Only the strongest peak feeds the median filter (prevents cross-frequency
@@ -2210,14 +2230,13 @@ void DroneScanner::process_spectrum_sweep(
         const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
         if (peak_pixel >= COMPOSITE_SIZE) continue;
 
-        // Pattern matching per peak on raw FFT (consistent with saved patterns).
+        // Pattern matching on raw FFT (consistent with saved patterns).
         FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
         size_t highlight_bin = 0;
         bool early_pattern_matched = false;
         int8_t early_pattern_index = -1;
         uint16_t early_pattern_correlation = 0;
 
-        const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
         if (early_result.matched) {
             early_pattern_matched = true;
             early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
@@ -2230,6 +2249,7 @@ void DroneScanner::process_spectrum_sweep(
         if (!analyze_spectrum_shape_lg(lg_buffer, peak_pixel, noise_floor, shape_rssi, total_gain)) {
             continue;  // This peak rejected by shape filter — try next peak
         }
+        any_peak_passed_shape = true;
 
         // Median filter: only for primary peak (p==0) to avoid cross-frequency contamination.
         int32_t peak_rssi = shape_rssi;
@@ -2255,7 +2275,8 @@ void DroneScanner::process_spectrum_sweep(
     // Provides ~9 dB SNR gain (8 frames = 3× sensitivity improvement).
     // Only runs when waterfall_history_ has enough frames and single-frame
     // detection found nothing (peak_count == 0 or all peaks rejected by shape).
-    if (waterfall_history_.is_warm(TBD_MIN_FRAMES) && config_.spectrum_detection_enabled) {
+    if (!any_peak_passed_shape &&
+        waterfall_history_.is_warm(TBD_MIN_FRAMES) && config_.spectrum_detection_enabled) {
         // Find the peak bin from multi-frame integration across usable bins
         size_t tbd_peak_bin = FFT_EDGE_SKIP_NARROW;
         uint8_t tbd_peak_power = 0;
