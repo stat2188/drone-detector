@@ -250,8 +250,7 @@ void DroneDisplay::render_drone_list(
     if (drones == nullptr || drone_count == 0) {
         draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
         draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);
-        draw_text(painter, "DETECTED SIGNALS", start_x + 2, start_y + 2, COLOR_TEXT);
-        draw_text(painter, STATUS_NO_DRONES, start_x + 2, start_y + 14, COLOR_UNKNOWN_THREAT);
+        draw_text(painter, STATUS_NO_DRONES, start_x + 2, start_y + 4, COLOR_UNKNOWN_THREAT);
         return;
     }
     
@@ -259,14 +258,10 @@ void DroneDisplay::render_drone_list(
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);  // Top border
     
-    // Draw header
-    draw_text(painter, "DETECTED SIGNALS", start_x + 2, start_y + 2, COLOR_TEXT);
-    
-    // Draw column headers
-    constexpr uint16_t HEADER_H = 12;
+    // No header row — the drone entry list fills the full section height
     constexpr uint16_t ENTRY_MIN_H = 22;  // Minimum height per entry
-    const uint16_t list_start_y = start_y + HEADER_H;
-    const uint16_t available_h = height - HEADER_H;
+    const uint16_t list_start_y = start_y;
+    const uint16_t available_h = height;
     
     // Calculate entry height (max 4 entries visible)
     uint16_t entry_height = available_h / static_cast<uint16_t>(drone_count);
@@ -1141,11 +1136,9 @@ int16_t DroneDisplay::hit_test(uint16_t x, uint16_t y) const noexcept {
 
     if (y < layout.list_start_y || y >= layout.list_start_y + layout.drone_h) return -1;
 
-    constexpr uint16_t HEADER_H = 12;
-    if (y < layout.list_start_y + HEADER_H) return -1;
-
-    const uint16_t entry_y = y - (layout.list_start_y + HEADER_H);
-    const uint16_t available_h = layout.drone_h - HEADER_H;
+    // No header row — entry rows begin at the section top (mirrors render_drone_list)
+    const uint16_t entry_y = y - layout.list_start_y;
+    const uint16_t available_h = layout.drone_h;
 
     uint16_t entry_height = available_h / static_cast<uint16_t>(display_data_.drone_count);
     if (entry_height > 40) entry_height = 40;
