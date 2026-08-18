@@ -18,7 +18,7 @@ constexpr uint16_t THREAT_SHIFT_CHARS = 3;       // threat nudged left of Col 1'
 constexpr uint16_t GAP_CHARS = 1;                // min gap between type text and threat level
 constexpr uint16_t TYPE_MAX_CHARS = 7;           // type name truncated to this for layout
 constexpr uint16_t THREAT_MAX_CHARS = 4;         // longest threat label ("CRIT")
-constexpr uint16_t ENTRY_MIN_H = 34;             // fits both rows of an entry
+constexpr uint16_t ENTRY_MIN_H = 26;             // min row height — still fits 5 entries
 constexpr uint16_t ENTRY_MAX_H = 40;             // cap so tall rows don't waste space
 constexpr size_t DUAL_COLUMN_MIN_COUNT = 6;      // split into 2 columns when >= 6 detections
 
@@ -80,7 +80,6 @@ DroneDisplay::~DroneDisplay() noexcept {
 // ============================================================================
 
 DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
-    constexpr uint16_t STATUS_H = 16;
     constexpr uint16_t SPECTRUM_H = 50;
     constexpr uint16_t TIMELINE_H = 24;
 
@@ -98,8 +97,8 @@ DroneDisplay::LayoutMetrics DroneDisplay::calculate_layout() const noexcept {
     const uint16_t tl_h = show_tl ? TIMELINE_H : 0;
     if (tl_h <= remaining) remaining -= tl_h; else remaining = 0;
 
-    const uint16_t status_h = (remaining >= STATUS_H) ? STATUS_H : 0;
-    if (status_h <= remaining) remaining -= status_h; else remaining = 0;
+    // No status bar reserved — the drone list stretches to the window's bottom edge.
+    const uint16_t status_h = 0;
 
     const uint16_t drone_h = remaining;
 
