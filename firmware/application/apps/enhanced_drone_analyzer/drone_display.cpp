@@ -477,32 +477,36 @@ void DroneDisplay::draw_drone_entry(
         default:                         trend_symbol = '-'; break;
     }
     
-    // Layout: Use proportional columns
-    // Col 1 (0-40%): Type name (colored)
+    // Layout: proportional columns
+    // Col 1 (0-40%): Type name; below it frequency + RSSI grouped (no MHz suffix)
     // Col 2 (40-60%): Threat level
-    // Col 3 (60-75%): Frequency
-    // Col 4 (75-90%): RSSI
-    // Col 5 (90-100%): Trend
-    
+    // Col 4 (75-90%): Trend symbol
+    // The RSSI value is drawn right after the frequency digits — in the slot
+    // the old "MHz" label occupied.
     constexpr uint16_t PAD = 3;
+    const uint16_t char_w = Theme::getInstance()->fg_light->font.char_width();
     const uint16_t col1_end = (width * 40) / 100;
-    const uint16_t col3_end = (width * 75) / 100;
     const uint16_t col4_end = (width * 90) / 100;
-    
+    // A third (optional) pattern row must fit: y+22+16 within the entry height.
+    constexpr uint16_t PATTERN_ROW_MIN_H = 38;
+
     // Line 1: Type | Threat
     draw_text(painter, drone.get_type_name(), x + PAD, y + 2, drone.display_color);
     draw_text(painter, threat_str, x + col1_end + PAD, y + 2, drone.display_color);
-    
-    // Line 2: Frequency | RSSI | Trend
+
+    // Line 2: Frequency (no unit) | RSSI | Trend
     draw_text(painter, freq_buffer, x + PAD, y + 12, COLOR_TEXT);
-    draw_text(painter, rssi_buffer, x + col3_end + PAD, y + 12, COLOR_TEXT);
-    
+    draw_text(painter, rssi_buffer,
+              x + PAD + static_cast<uint16_t>(std::strlen(freq_buffer)) * char_w + char_w,
+              y + 12, COLOR_TEXT);
+
     // Trend symbol at far right
     char trend_buffer[2] = {trend_symbol, '\0'};
     draw_text(painter, trend_buffer, x + col4_end + PAD, y + 12, COLOR_TEXT);
 
-    // Line 3 (optional): Pattern match info — only when pattern is matched
-    if (drone.pattern_matched && drone.pattern_name[0] != '\0') {
+    // Line 3 (optional): Pattern match info — on its own row so it never
+    // collides with the RSSI now adjacent to the frequency.
+    if (drone.pattern_matched && drone.pattern_name[0] != '\0' && height >= PATTERN_ROW_MIN_H) {
         char pattern_buf[22];
         const uint16_t score_pct = (drone.pattern_score * 100) / 1000;
         snprintf(pattern_buf, sizeof(pattern_buf), "PTR:%.12s(%u%%)",
@@ -510,7 +514,7 @@ void DroneDisplay::draw_drone_entry(
                  static_cast<unsigned>(score_pct));
         const uint32_t pm_color = (drone.pattern_score >= SIMILARITY_STRONG)
             ? COLOR_MEDIUM_THREAT : COLOR_LOW_THREAT;
-        draw_text(painter, pattern_buf, x + col1_end + PAD, y + 12, pm_color);
+        draw_text(painter, pattern_buf, x + col1_end + PAD, y + 22, pm_color);
     }
 }
 
@@ -662,7 +666,6 @@ void DroneDisplay::format_frequency(
     write_uint(buf, remaining, mhz);
     if (remaining > 1) { *buf++ = '.'; --remaining; }
     write_uint_pad(buf, remaining, khz, 3);
-    write_str(buf, remaining, " MHz");
     *buf = '\0';
 }
 
