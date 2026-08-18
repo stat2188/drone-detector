@@ -8,6 +8,51 @@
 namespace drone_analyzer {
 
 // ============================================================================
+// Drone list layout constants (single source for render, draw, and hit-test)
+// ============================================================================
+namespace {
+
+constexpr uint16_t LIST_PAD = 3;                 // horizontal padding around text
+constexpr uint16_t COMPACT_WIDTH = 160;          // below this, rows drop the "dBm" unit
+constexpr uint16_t THREAT_SHIFT_CHARS = 3;       // threat nudged left of Col 1's right edge
+constexpr uint16_t GAP_CHARS = 1;                // min gap between type text and threat level
+constexpr uint16_t TYPE_MAX_CHARS = 7;           // type name truncated to this for layout
+constexpr uint16_t THREAT_MAX_CHARS = 4;         // longest threat label ("CRIT")
+constexpr uint16_t ENTRY_MIN_H = 34;             // fits both rows of an entry
+constexpr uint16_t ENTRY_MAX_H = 40;             // cap so tall rows don't waste space
+constexpr size_t DUAL_COLUMN_MIN_COUNT = 6;      // split into 2 columns when >= 6 detections
+
+struct EntryLayout {
+    uint16_t col_w;   // cell width (list width when single column)
+    uint16_t rows;    // row count (drone_count when single column)
+    uint16_t entry_h; // height per row
+};
+
+EntryLayout compute_entry_layout(
+    size_t drone_count,
+    uint16_t width,
+    uint16_t height,
+    bool dual_column
+) noexcept {
+    EntryLayout layout;
+    if (dual_column && drone_count >= DUAL_COLUMN_MIN_COUNT) {
+        layout.rows = static_cast<uint16_t>((drone_count + 1) / 2);
+        layout.col_w = width / 2;
+    } else {
+        layout.rows = static_cast<uint16_t>(drone_count);
+        layout.col_w = width;
+    }
+
+    uint16_t entry_h = (layout.rows > 0) ? height / layout.rows : height;
+    if (entry_h > ENTRY_MAX_H) entry_h = ENTRY_MAX_H;
+    if (entry_h < ENTRY_MIN_H) entry_h = ENTRY_MIN_H;
+    layout.entry_h = entry_h;
+    return layout;
+}
+
+} // namespace
+
+// ============================================================================
 // Constructor / Destructor
 // ============================================================================
 
@@ -258,21 +303,30 @@ void DroneDisplay::render_drone_list(
     draw_rectangle(painter, start_x, start_y, width, height, COLOR_BACKGROUND);
     draw_rectangle(painter, start_x, start_y, width, 1, COLOR_UNKNOWN_THREAT);  // Top border
     
-    // No header row — the drone entry list fills the full section height
-    constexpr uint16_t ENTRY_MIN_H = 22;  // Minimum height per entry
+    // No header row — the drone entry list fills the full section height.
+    // Dual column kicks in when enabled and >= DUAL_COLUMN_MIN_COUNT detections.
     const uint16_t list_start_y = start_y;
-    const uint16_t available_h = height;
-    
-    // Calculate entry height (max 4 entries visible)
-    uint16_t entry_height = available_h / static_cast<uint16_t>(drone_count);
-    if (entry_height > 40) entry_height = 40;
-    if (entry_height < ENTRY_MIN_H) entry_height = ENTRY_MIN_H;
-    
-    // Draw drone entries
-    for (size_t i = 0; i < drone_count; ++i) {
-        const uint16_t y = list_start_y + static_cast<uint16_t>(i) * entry_height;
-        if (y + entry_height > start_y + height) break;  // Don't overflow
-        draw_drone_entry(painter, drones[i], start_x, y, width, entry_height);
+    const EntryLayout layout = compute_entry_layout(drone_count, width, height, dual_column_mode_);
+
+    if (layout.col_w < width) {
+        // Dual column: left cell = row index, right cell = row + rows.
+        for (uint16_t row = 0; row < layout.rows; ++row) {
+            const uint16_t y = list_start_y + row * layout.entry_h;
+            if (y + layout.entry_h > start_y + height) break;  // Don't overflow
+            draw_drone_entry(painter, drones[row], start_x, y, layout.col_w, layout.entry_h);
+            const size_t right_idx = static_cast<size_t>(row) + layout.rows;
+            if (right_idx < drone_count) {
+                draw_drone_entry(painter, drones[right_idx], start_x + layout.col_w, y,
+                                 layout.col_w, layout.entry_h);
+            }
+        }
+    } else {
+        // Single column (default)
+        for (size_t i = 0; i < drone_count; ++i) {
+            const uint16_t y = list_start_y + static_cast<uint16_t>(i) * layout.entry_h;
+            if (y + layout.entry_h > start_y + height) break;  // Don't overflow
+            draw_drone_entry(painter, drones[i], start_x, y, width, layout.entry_h);
+        }
     }
 }
 
@@ -450,13 +504,16 @@ void DroneDisplay::draw_drone_entry(
     // Draw entry separator line
     draw_rectangle(painter, x, y + height - 1, width, 1, COLOR_UNKNOWN_THREAT);
     
+    // Compact mode (narrow cell, e.g. dual-column): drop the "dBm" unit.
+    const bool compact = (width < COMPACT_WIDTH);
+    
     // Format frequency
     char freq_buffer[16];
     format_frequency(drone.frequency, freq_buffer, sizeof(freq_buffer));
     
     // Format RSSI
     char rssi_buffer[16];
-    format_rssi(drone.rssi, rssi_buffer, sizeof(rssi_buffer));
+    format_rssi(drone.rssi, rssi_buffer, sizeof(rssi_buffer), !compact);
     
     // Format threat level string
     const char* threat_str = "";
@@ -479,30 +536,47 @@ void DroneDisplay::draw_drone_entry(
     
     // Layout: proportional columns
     // Col 1 (0-40%): Type name; below it frequency + RSSI grouped (no MHz suffix)
-    // Col 2 (40-60%): Threat level
-    // Col 4 (75-90%): Trend symbol
-    // The RSSI value is drawn right after the frequency digits — in the slot
-    // the old "MHz" label occupied.
-    constexpr uint16_t PAD = 3;
+    // Threat level: shifted THREAT_SHIFT_CHARS left of Col 1's right edge, then
+    //   clamped to always sit GAP_CHARS right of the type text — so a 7-char
+    //   type name and a 4-char threat never overlap, even at width=120.
+    // Trend symbol: right-aligned at the row's right edge (x + width - PAD - 1ch).
+    // Compact mode (width < COMPACT_WIDTH): RSSI is drawn without its "dBm"
+    //   unit so freq + RSSI + trend fit in a 120px dual-column cell.
     const uint16_t char_w = Theme::getInstance()->fg_light->font.char_width();
     const uint16_t col1_end = (width * 40) / 100;
-    const uint16_t col4_end = (width * 90) / 100;
     // A third (optional) pattern row must fit: y+22+16 within the entry height.
     constexpr uint16_t PATTERN_ROW_MIN_H = 38;
 
+    // Type name — truncated to TYPE_MAX_CHARS so the threat clamp below always
+    // has a known upper bound, even for names longer than 7 chars.
+    const char* type_name = drone.get_type_name();
+    const size_t type_len = std::strlen(type_name);
+    const size_t type_chars = (type_len > TYPE_MAX_CHARS) ? TYPE_MAX_CHARS : type_len;
+    const uint16_t type_end = x + LIST_PAD + static_cast<uint16_t>(type_chars) * char_w;
+
+    // Threat level: default position, clamped right of the type text and left of
+    // the entry edge so a 4-char label always stays fully visible (even at 120px).
+    const uint16_t threat_x_default = x + col1_end + LIST_PAD - THREAT_SHIFT_CHARS * char_w;
+    const uint16_t threat_x_min = type_end + GAP_CHARS * char_w;
+    const uint16_t threat_x_max = x + width - THREAT_MAX_CHARS * char_w - LIST_PAD;
+    const uint16_t threat_x = (threat_x_default > threat_x_min)
+        ? ((threat_x_default < threat_x_max) ? threat_x_default : threat_x_max)
+        : threat_x_min;
+
     // Line 1: Type | Threat
-    draw_text(painter, drone.get_type_name(), x + PAD, y + 2, drone.display_color);
-    draw_text(painter, threat_str, x + col1_end + PAD, y + 2, drone.display_color);
+    draw_text(painter, std::string_view(type_name, type_chars), x + LIST_PAD, y + 2, drone.display_color);
+    draw_text(painter, threat_str, threat_x, y + 2, drone.display_color);
 
     // Line 2: Frequency (no unit) | RSSI | Trend
-    draw_text(painter, freq_buffer, x + PAD, y + 12, COLOR_TEXT);
+    draw_text(painter, freq_buffer, x + LIST_PAD, y + 12, COLOR_TEXT);
     draw_text(painter, rssi_buffer,
-              x + PAD + static_cast<uint16_t>(std::strlen(freq_buffer)) * char_w + char_w,
+              x + LIST_PAD + static_cast<uint16_t>(std::strlen(freq_buffer)) * char_w + char_w,
               y + 12, COLOR_TEXT);
 
-    // Trend symbol at far right
+    // Trend symbol right-aligned to the row's right edge.
     char trend_buffer[2] = {trend_symbol, '\0'};
-    draw_text(painter, trend_buffer, x + col4_end + PAD, y + 12, COLOR_TEXT);
+    const uint16_t trend_x = x + width - LIST_PAD - char_w;
+    draw_text(painter, trend_buffer, trend_x, y + 12, COLOR_TEXT);
 
     // Line 3 (optional): Pattern match info — on its own row so it never
     // collides with the RSSI now adjacent to the frequency.
@@ -514,7 +588,7 @@ void DroneDisplay::draw_drone_entry(
                  static_cast<unsigned>(score_pct));
         const uint32_t pm_color = (drone.pattern_score >= SIMILARITY_STRONG)
             ? COLOR_MEDIUM_THREAT : COLOR_LOW_THREAT;
-        draw_text(painter, pattern_buf, x + col1_end + PAD, y + 22, pm_color);
+        draw_text(painter, pattern_buf, x + col1_end + LIST_PAD, y + 22, pm_color);
     }
 }
 
@@ -672,7 +746,8 @@ void DroneDisplay::format_frequency(
 void DroneDisplay::format_rssi(
     RssiValue rssi,
     char* buffer,
-    size_t buffer_size
+    size_t buffer_size,
+    bool include_unit
 ) const noexcept {
     if (buffer == nullptr || buffer_size < 8) {
         return;
@@ -687,7 +762,9 @@ void DroneDisplay::format_rssi(
     }
 
     write_uint(buf, remaining, static_cast<uint32_t>(rssi));
-    write_str(buf, remaining, " dBm");
+    if (include_unit) {
+        write_str(buf, remaining, " dBm");
+    }
     *buf = '\0';
 }
 
@@ -1139,15 +1216,27 @@ int16_t DroneDisplay::hit_test(uint16_t x, uint16_t y) const noexcept {
 
     if (y < layout.list_start_y || y >= layout.list_start_y + layout.drone_h) return -1;
 
-    // No header row — entry rows begin at the section top (mirrors render_drone_list)
+    // No header row — entry rows begin at the section top (mirrors render_drone_list).
+    // SINGLE SOURCE OF TRUTH: compute_entry_layout() — the same helper paint() uses.
     const uint16_t entry_y = y - layout.list_start_y;
-    const uint16_t available_h = layout.drone_h;
+    const EntryLayout el = compute_entry_layout(display_data_.drone_count, width,
+                                                layout.drone_h, dual_column_mode_);
+    // Rows that actually fit — mirrors the "Don't overflow" break in render_drone_list.
+    const uint16_t visible_rows = (el.entry_h > 0) ? (layout.drone_h / el.entry_h) : 0;
 
-    uint16_t entry_height = available_h / static_cast<uint16_t>(display_data_.drone_count);
-    if (entry_height > 40) entry_height = 40;
-    if (entry_height < 22) entry_height = 22;
+    if (el.col_w < width) {
+        // Dual column: pick the column by X, the row by Y. Odd count means the
+        // right column's last cell is empty → that tap returns -1.
+        const uint16_t col = (x >= el.col_w) ? 1 : 0;
+        const uint16_t row = entry_y / el.entry_h;
+        if (row >= visible_rows) return -1;
+        const size_t idx = (col == 0) ? row : (static_cast<size_t>(row) + el.rows);
+        if (idx >= display_data_.drone_count) return -1;
+        return static_cast<int16_t>(idx);
+    }
 
-    const uint16_t idx = entry_y / entry_height;
+    const uint16_t idx = entry_y / el.entry_h;
+    if (idx >= visible_rows) return -1;
     if (idx >= display_data_.drone_count) return -1;
 
     return static_cast<int16_t>(idx);

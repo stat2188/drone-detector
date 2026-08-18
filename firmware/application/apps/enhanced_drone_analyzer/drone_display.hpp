@@ -198,6 +198,10 @@ public:
         set_dirty();
     }
 
+    // Dual-column drone list (compact rows, splits above DUAL_COLUMN_MIN_COUNT detections)
+    void set_dual_column_mode(bool enabled) noexcept { dual_column_mode_ = enabled; dirty_flags_ = DIRTY_ALL; set_dirty(); }
+    [[nodiscard]] bool get_dual_column_mode() const noexcept { return dual_column_mode_; }
+
     /**
      * @brief Reset EMA persistence buffer and auto-computed noise floor.
      * @note Call from sweep pass boundary (pair_complete / exit_sweep_mode) so
@@ -351,11 +355,13 @@ private:
      * @param rssi RSSI value in dBm
      * @param buffer Buffer to store formatted string
      * @param buffer_size Buffer size
+     * @param include_unit Append " dBm" suffix (false for compact narrow cells)
      */
     void format_rssi(
         RssiValue rssi,
         char* buffer,
-        size_t buffer_size
+        size_t buffer_size,
+        bool include_unit = true
     ) const noexcept;
 
     /**
@@ -570,6 +576,9 @@ private:
     size_t sweep2_data_size_{0};
     FreqHz sweep2_freq_start_{0};
     FreqHz sweep2_freq_end_{0};
+
+    // Dual-column drone list (two narrow detection columns)
+    bool dual_column_mode_{false};
 
     // Pattern match highlight (red frame in sweep)
     int16_t matched_pattern_bin_{-1};
