@@ -355,13 +355,11 @@ private:
      * @param rssi RSSI value in dBm
      * @param buffer Buffer to store formatted string
      * @param buffer_size Buffer size
-     * @param include_unit Append " dBm" suffix (false for compact narrow cells)
      */
     void format_rssi(
         RssiValue rssi,
         char* buffer,
-        size_t buffer_size,
-        bool include_unit = true
+        size_t buffer_size
     ) const noexcept;
 
     /**

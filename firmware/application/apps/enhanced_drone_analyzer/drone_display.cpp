@@ -13,7 +13,6 @@ namespace drone_analyzer {
 namespace {
 
 constexpr uint16_t LIST_PAD = 3;                 // horizontal padding around text
-constexpr uint16_t COMPACT_WIDTH = 160;          // below this, rows drop the "dBm" unit
 constexpr uint16_t THREAT_SHIFT_CHARS = 3;       // threat nudged left of Col 1's right edge
 constexpr uint16_t GAP_CHARS = 1;                // min gap between type text and threat level
 constexpr uint16_t TYPE_MAX_CHARS = 7;           // type name truncated to this for layout
@@ -503,16 +502,13 @@ void DroneDisplay::draw_drone_entry(
     // Draw entry separator line
     draw_rectangle(painter, x, y + height - 1, width, 1, COLOR_UNKNOWN_THREAT);
     
-    // Compact mode (narrow cell, e.g. dual-column): drop the "dBm" unit.
-    const bool compact = (width < COMPACT_WIDTH);
-    
     // Format frequency
     char freq_buffer[16];
     format_frequency(drone.frequency, freq_buffer, sizeof(freq_buffer));
     
-    // Format RSSI
+    // Format RSSI (no "dBm" unit)
     char rssi_buffer[16];
-    format_rssi(drone.rssi, rssi_buffer, sizeof(rssi_buffer), !compact);
+    format_rssi(drone.rssi, rssi_buffer, sizeof(rssi_buffer));
     
     // Format threat level string
     const char* threat_str = "";
@@ -539,8 +535,6 @@ void DroneDisplay::draw_drone_entry(
     //   clamped to always sit GAP_CHARS right of the type text — so a 7-char
     //   type name and a 4-char threat never overlap, even at width=120.
     // Trend symbol: right-aligned at the row's right edge (x + width - PAD - 1ch).
-    // Compact mode (width < COMPACT_WIDTH): RSSI is drawn without its "dBm"
-    //   unit so freq + RSSI + trend fit in a 120px dual-column cell.
     const uint16_t char_w = Theme::getInstance()->fg_light->font.char_width();
     const uint16_t col1_end = (width * 40) / 100;
     // A third (optional) pattern row must fit: y+22+16 within the entry height.
@@ -745,8 +739,7 @@ void DroneDisplay::format_frequency(
 void DroneDisplay::format_rssi(
     RssiValue rssi,
     char* buffer,
-    size_t buffer_size,
-    bool include_unit
+    size_t buffer_size
 ) const noexcept {
     if (buffer == nullptr || buffer_size < 8) {
         return;
@@ -761,9 +754,6 @@ void DroneDisplay::format_rssi(
     }
 
     write_uint(buf, remaining, static_cast<uint32_t>(rssi));
-    if (include_unit) {
-        write_str(buf, remaining, " dBm");
-    }
     *buf = '\0';
 }
 
