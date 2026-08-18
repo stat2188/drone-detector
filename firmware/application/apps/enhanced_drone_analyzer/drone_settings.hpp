@@ -119,6 +119,10 @@ private:
     SettingsStruct settings_;
     bool settings_dirty_;
 
+    // LOW-auto-follow offset: LOW tracks the detection gate (Sens) by this delta,
+    // preserving the user's manual LOW preference across sensitivity changes.
+    int32_t rssi_low_offset_db_{0};
+
     void apply_settings_to_ui() noexcept;
     void update_preview() noexcept;
     void save_settings_to_sd() noexcept;

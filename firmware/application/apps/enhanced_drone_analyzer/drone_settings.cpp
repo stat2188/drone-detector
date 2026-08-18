@@ -586,6 +586,11 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     field_threat_high_.set_value(settings_.threat_high_dbm, false);
     field_threat_critical_.set_value(settings_.threat_critical_dbm, false);
 
+    // Track the LOW-vs-gate offset from the current settings so the safety-net
+    // normalize(4) below preserves the user's loaded/manual LOW preference
+    // instead of overwriting it with the default gap.
+    rssi_low_offset_db_ = settings_.threat_low_dbm - settings_.alert_rssi_threshold_dbm;
+
     // Safety net: enforce the LOW-reachability invariant on any loaded/old config,
     // without disturbing the user's ordering choices (edited_field=4).
     normalize_threat_ladder(4);
@@ -637,9 +642,11 @@ void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
 // Threat Ladder Normalization
 // ============================================================================
 //
-// Enforces two invariants after any threat-field or sensitivity edit:
+// Enforces ordering plus the LOW-reachability invariants after any threat-field
+// or sensitivity edit:
 //   (1) low <= medium <= high <= critical
 //   (2) medium > detection_threshold + RSSI_MIN_MEDIUM_ABOVE_DETECTION_DB
+//   (3) LOW auto-follows the detection gate (low = gate + rssi_low_offset_db_)
 //
 // Invariant (2) is the LOW-reachability guarantee: a signal that just passes
 // the detection gate (threshold + 2 dB hysteresis) must still have room to
@@ -649,6 +656,9 @@ void DroneSettingsView::set_shape_filter_visibility(bool visible) noexcept {
 // @param edited_field 0=low, 1=medium, 2=high, 3=critical, 4=detection (Sens).
 //                     Used to prioritize the field the user just touched, while
 //                     neighboring thresholds are auto-adjusted to keep order.
+//                     When detection (Sens) changes, LOW auto-follows the gate
+//                     (low = gate + rssi_low_offset_db_) keeping the LOW band
+//                     reachable; the offset preserves the user's manual LOW edit.
 void DroneSettingsView::normalize_threat_ladder(uint8_t edited_field) noexcept {
     // Priority order: the edited field's value wins; neighbors are pushed up
     // or down only to satisfy ordering relative to it.
@@ -657,8 +667,20 @@ void DroneSettingsView::normalize_threat_ladder(uint8_t edited_field) noexcept {
     int32_t high = settings_.threat_high_dbm;
     int32_t critical = settings_.threat_critical_dbm;
 
+    // When the detection gate (Sens) changes, drag LOW along so the LOW band
+    // stays reachable at any sensitivity: low = gate + user-preserved offset.
+    if (edited_field == 4) {
+        low = clip(settings_.alert_rssi_threshold_dbm + rssi_low_offset_db_,
+                   RSSI_MIN_DBM, RSSI_MAX_DBM);
+    }
+
     // Median-clamp: restore ordering, preserving the edited value.
     switch (edited_field) {
+        case 4:  // Detection (Sens) edited: LOW followed the gate above; never
+                 // push the upper ladder up — cap LOW at medium instead (the
+                 // LOW-reachability invariant below still guards the gap).
+            if (low > medium) low = medium;
+            break;
         case 0:  // LOW edited
             if (low > medium) medium = low;
             if (high < medium) high = medium;
@@ -679,8 +701,6 @@ void DroneSettingsView::normalize_threat_ladder(uint8_t edited_field) noexcept {
             if (medium > high) medium = high;
             if (low > medium) low = medium;
             break;
-        case 4:  // Detection (Sens) edited: don't move threat fields,
-                 // only enforce the LOW-band invariant below.
         default:
             break;
     }
@@ -701,6 +721,10 @@ void DroneSettingsView::normalize_threat_ladder(uint8_t edited_field) noexcept {
     medium = clip(medium, RSSI_MIN_DBM, RSSI_MAX_DBM);
     high = clip(high, RSSI_MIN_DBM, RSSI_MAX_DBM);
     critical = clip(critical, RSSI_MIN_DBM, RSSI_MAX_DBM);
+
+    // Track the LOW-vs-gate offset so future Sens edits can drag LOW along
+    // while preserving the user's manual LOW preference.
+    rssi_low_offset_db_ = low - settings_.alert_rssi_threshold_dbm;
 
     settings_.threat_low_dbm = low;
     settings_.threat_medium_dbm = medium;
