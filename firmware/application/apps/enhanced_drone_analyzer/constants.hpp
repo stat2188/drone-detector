@@ -200,22 +200,24 @@ constexpr int32_t RSSI_DETECTION_THRESHOLD_DBM = -95;
  * @brief RSSI threshold for high threat (dBm)
  * @note With default gains (LNA=32 + VGA=32 + RF_AMP=14 = 78 dB),
  *       max RSSI = (255-255)/5 - 78 = -78 dBm. Threshold must be reachable.
- *       -84 dBm = 11 dB above LOW (-95), 6 dB above MEDIUM (-88). Reachable when
- *       spectrum.db value >= 225 (~88% of max).
- * @note Previous value (-90) sat directly below the medium threshold, leaving
- *       no room for a LOW band; raised to spread levels across the dynamic range.
+ *       -85 dBm = 10 dB above LOW (-95), 4 dB above MEDIUM (-89). Reachable when
+ *       spectrum.db value >= 220 (~86% of max).
+ * @note Previous value (-84) sat 2 dB below CRITICAL (-80), squeezing the HIGH
+ *       band to 4 dB; lowered to -85 to give both HIGH and CRITICAL a usable
+ *       3-4 dB band within the reachable dynamic range.
  */
-constexpr int32_t RSSI_HIGH_THREAT_THRESHOLD_DBM = -84;
+constexpr int32_t RSSI_HIGH_THREAT_THRESHOLD_DBM = -85;
 
 /**
  * @brief RSSI threshold for critical threat (dBm)
- * @note With default gains (78 dB), max RSSI = -78 dBm. Threshold -80 dBm
- *       requires spectrum.db value >= 240 (~94% of max) — reserved for very
+ * @note With default gains (78 dB), max RSSI = -78 dBm. Threshold -82 dBm
+ *       requires spectrum.db value >= 235 (~92% of max) — reserved for very
  *       strong signals (close-range drone, line-of-sight).
- * @note Previous value (-40) was unreachable with default gains (max -78 dBm),
- *       causing all detections to classify as MEDIUM.
+ * @note Previous value (-80) required ~96% of max and left a 2 dB CRITICAL
+ *       band at the physical ceiling; -82 keeps CRITICAL practically reachable
+ *       while still reserving it for strong, close-range signals.
  */
-constexpr int32_t RSSI_CRITICAL_THREAT_THRESHOLD_DBM = -80;
+constexpr int32_t RSSI_CRITICAL_THREAT_THRESHOLD_DBM = -82;
 
 /**
  * @brief Minimum gap (dB) push medium threat above the detection threshold
@@ -242,10 +244,12 @@ constexpr int32_t DEFAULT_THREAT_LOW_DBM = -95;
 
 /**
  * @brief Default RSSI threshold for medium threat (dBm)
- * @note 7 dB above LOW (-95) gives a real 7 dB LOW band for long-range/weak drones.
- *       Stronger signals escalate to MEDIUM, HIGH (-84), CRITICAL (-80).
+ * @note 6 dB above LOW (-95) gives a real LOW band for long-range/weak drones.
+ *       Stronger signals escalate to MEDIUM, HIGH (-85), CRITICAL (-82).
+ * @note Previous value (-88) left only a 4 dB HIGH band between MEDIUM and
+ *       CRITICAL (-80); -89 spreads the levels evenly across the dynamic range.
  */
-constexpr int32_t DEFAULT_THREAT_MEDIUM_DBM = -88;
+constexpr int32_t DEFAULT_THREAT_MEDIUM_DBM = -89;
 
 /**
  * @brief RF amplifier gain (dB) when enabled

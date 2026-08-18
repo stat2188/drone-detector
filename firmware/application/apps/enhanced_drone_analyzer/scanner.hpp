@@ -48,22 +48,26 @@ struct ScanConfig {
     FreqHz sweep_step_freq;
 
     // Sweep range (Hz) — window 2 (2.4 GHz: drone control, Wi-Fi drones)
+    // NOTE: disabled by default to match SettingsStruct defaults; the scanner
+    //       ctor comment "all sweep windows disabled" documents this intent.
     FreqHz sweep2_start_freq{2400000000ULL};
     FreqHz sweep2_end_freq{2483500000ULL};
     FreqHz sweep2_step_freq{17813000};
-    bool sweep2_enabled{true};
+    bool sweep2_enabled{false};
 
     // Sweep range (Hz) — window 3 (1.2 GHz: long-range FPV)
+    // NOTE: disabled by default to match SettingsStruct defaults.
     FreqHz sweep3_start_freq{1120000000ULL};
     FreqHz sweep3_end_freq{1360000000ULL};
     FreqHz sweep3_step_freq{17813000};
-    bool sweep3_enabled{true};
+    bool sweep3_enabled{false};
 
     // Sweep range (Hz) — window 4 (433 MHz + 868/915 MHz: control/telemetry)
+    // NOTE: disabled by default to match SettingsStruct defaults.
     FreqHz sweep4_start_freq{433000000ULL};
     FreqHz sweep4_end_freq{928000000ULL};
     FreqHz sweep4_step_freq{17813000};
-    bool sweep4_enabled{true};
+    bool sweep4_enabled{false};
 
     // Advanced detection features (ON by default — matches constructor)
     bool dwell_enabled{true};           // Stay on frequency when signal detected
