@@ -279,6 +279,7 @@ struct TrackedDrone {
     // We track per-cycle peak RSSI instead and compare consecutive cycles.
     // ========================================================================
     bool sweep_mode_active_{false};             // 1 byte — true when drone detected in sweep mode
+    static constexpr int16_t SWEEP_CYCLE_PEAK_INVALID_DBM = -200;  // sentinel (below RSSI_MIN_DBM)
     int16_t last_cycle_peak_rssi_{SWEEP_CYCLE_PEAK_INVALID_DBM};  // 2 bytes — peak RSSI accumulating this sweep cycle (sentinel = not yet seen)
     int16_t prev_cycle_peak_rssi_{SWEEP_CYCLE_PEAK_INVALID_DBM};  // 2 bytes — peak RSSI from previous cycle (sentinel = not yet available)
     bool has_prev_cycle_peak_{false};           // 1 byte — true after a cycle with a real peak has completed

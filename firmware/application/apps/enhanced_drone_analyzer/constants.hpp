@@ -182,13 +182,6 @@ constexpr int32_t RSSI_MIN_DBM = -120;
 constexpr int32_t RSSI_MAX_DBM = -20;
 
 /**
- * @brief Sentinel for unset sweep-cycle peak RSSI (dBm)
- * @note Below RSSI_MIN_DBM so it can never collide with a real detection.
- *       Used to roll over the sweep-cycle peak so RECEDING trend works.
- */
-constexpr int16_t SWEEP_CYCLE_PEAK_INVALID_DBM = -200;
-
-/**
  * @brief RSSI threshold for signal detection (dBm)
  * @note FPV-OPTIMIZED: -95 dBm for maximum long-range detection
  * @note Analog 5.8 GHz FPV: -85 to -100 dBm at 5-15 km (typical analog VTX)
