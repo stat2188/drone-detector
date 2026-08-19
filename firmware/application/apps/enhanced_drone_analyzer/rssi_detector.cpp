@@ -95,7 +95,7 @@ ErrorCode RSSIDetector::detect_drone(RSSIDetectionResult& result) noexcept {
         result.drone_detected = true;
         result.threat_level = calculate_threat_level(detection_rssi);
         result.movement_trend = get_movement_trend();
-        update_statistics(true, result.threat_level);
+        update_statistics(true, result.threat_level, result.movement_trend);
     }
 
     return ErrorCode::SUCCESS;
@@ -119,7 +119,8 @@ ThreatLevel RSSIDetector::calculate_threat_level(
 
 void RSSIDetector::update_statistics(
     bool detected,
-    ThreatLevel threat_level
+    ThreatLevel threat_level,
+    MovementTrend trend
 ) noexcept {
     if (detected) {
         statistics_.detections++;
@@ -130,7 +131,6 @@ void RSSIDetector::update_statistics(
             statistics_.critical_threat_count++;
         }
 
-        const MovementTrend trend = get_movement_trend();
         if (trend == MovementTrend::APPROACHING) {
             statistics_.approaching_count++;
         } else if (trend == MovementTrend::RECEDING) {

@@ -260,7 +260,7 @@ struct TrackedDrone {
     RssiValue rssi;                    // 4 bytes
     int16_t rssi_history_[6];              // 12 bytes (6 × int16_t) — RSSI_HISTORY_SIZE
     SystemTime timestamp_history_[6];       // 24 bytes (6 × uint32_t) — must match RSSI_HISTORY_SIZE
-    uint8_t history_index_;
+    uint16_t history_index_;          // 2 bytes — monotonic write cursor (uint16: no wrap at 256)
     uint8_t missed_cycles_;             // 1 byte — consecutive scans without detection
     int16_t last_rssi_;                 // 2 bytes — RSSI from previous cycle (for decay)
     uint8_t rssi_decrease_counter_;     // 1 bytes — consecutive cycles with RSSI decrease
@@ -279,9 +279,9 @@ struct TrackedDrone {
     // We track per-cycle peak RSSI instead and compare consecutive cycles.
     // ========================================================================
     bool sweep_mode_active_{false};             // 1 byte — true when drone detected in sweep mode
-    int16_t last_cycle_peak_rssi_{-100};       // 2 bytes — max RSSI this sweep cycle (RSSI_NOISE_FLOOR_DBM)
-    int16_t prev_cycle_peak_rssi_{-100};       // 2 bytes — max RSSI from previous cycle
-    bool has_cycle_peak_{false};               // 1 byte — true after first cycle completes
+    int16_t last_cycle_peak_rssi_{SWEEP_CYCLE_PEAK_INVALID_DBM};  // 2 bytes — peak RSSI accumulating this sweep cycle (sentinel = not yet seen)
+    int16_t prev_cycle_peak_rssi_{SWEEP_CYCLE_PEAK_INVALID_DBM};  // 2 bytes — peak RSSI from previous cycle (sentinel = not yet available)
+    bool has_prev_cycle_peak_{false};           // 1 byte — true after a cycle with a real peak has completed
 
     // ========================================================================
     // Trend hysteresis (prevents icon flicker)
@@ -431,6 +431,8 @@ struct TrackedDrone {
      * @param peak_rssi Peak RSSI detected in current sweep frame
      * @note Called from apply_sweep_tracking() per detection in sweep mode.
      *       Tracks the maximum RSSI across all frequencies in one sweep cycle.
+     * @pre finalize_sweep_cycle() resets last_cycle_peak_rssi_ to the sentinel
+     *      at each pair boundary, so this accumulator is per-cycle, not monotonic.
      */
     void update_cycle_peak(RssiValue peak_rssi) noexcept {
         sweep_mode_active_ = true;
@@ -441,19 +443,20 @@ struct TrackedDrone {
 
     /**
      * @brief Hand off cycle-peak at sweep cycle boundary
-     * @note Called at pair_complete (full round-robin pass done).
-     *       Copies current cycle peak to previous.
-     *       Does NOT reset last_cycle_peak_rssi_ — the value persists until
-     *       the next update_cycle_peak() replaces it. The display reads this
-     *       value during on_tick() to compute the trend; resetting it here
-     *       would cause get_movement_trend() to always see -100 vs the real
-     *       prev, producing false RECEDING.
+     * @note Called at pair_complete (full sweep round-robin pass done).
+     *       If the drone produced a real peak this pass, copies it to
+     *       prev_cycle_peak_rssi_ and resets last_cycle_peak_rssi_ to the
+     *       sentinel. If the drone was not seen this pass, both values are
+     *       left untouched so prev_cycle_peak_rssi_ keeps the most recent
+     *       real peak. get_movement_trend() gates on the sentinel, so a
+     *       half-cycle gap never produces false RECEDING from the sentinel.
      */
     void finalize_sweep_cycle() noexcept {
-        if (has_cycle_peak_) {
+        if (last_cycle_peak_rssi_ != SWEEP_CYCLE_PEAK_INVALID_DBM) {
             prev_cycle_peak_rssi_ = last_cycle_peak_rssi_;
+            has_prev_cycle_peak_ = true;
+            last_cycle_peak_rssi_ = SWEEP_CYCLE_PEAK_INVALID_DBM;
         }
-        has_cycle_peak_ = true;
     }
 
     /**

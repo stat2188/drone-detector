@@ -1270,10 +1270,11 @@ public:
     }
 
     /**
-     * @brief Hand off sweep-cycle peak RSSI for all tracked drones
-     * @note Called at pair_complete (full sweep round-robin pass).
+* @brief Hand off sweep-cycle peak RSSI for all tracked drones
+     * @note Called at pair_complete (full sweep round-robin pass done).
      *       Copies each drone's last_cycle_peak_rssi_ → prev_cycle_peak_rssi_
-     *       so get_movement_trend() can compare consecutive cycles.
+     *       when the drone produced a real peak this pass, then resets
+     *       last_cycle_peak_rssi_ to the sentinel so RECEDING trend works.
      * @pre Scanner thread stopped (sweep mode), no mutex needed.
      */
     void finalize_sweep_cycles() noexcept {

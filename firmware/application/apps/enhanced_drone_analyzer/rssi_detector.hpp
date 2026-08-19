@@ -65,7 +65,8 @@ public:
 
     void update_statistics(
         bool detected,
-        ThreatLevel threat_level
+        ThreatLevel threat_level,
+        MovementTrend trend
     ) noexcept;
 
     void reset() noexcept;
@@ -102,7 +103,7 @@ private:
 
     std::array<RssiValue, RSSI_HISTORY_SIZE> rssi_history_;
     std::array<SystemTime, TIMESTAMP_HISTORY_SIZE> timestamp_history_;
-    uint8_t history_index_;
+    uint16_t history_index_;
 
     uint16_t samples_count_;
 

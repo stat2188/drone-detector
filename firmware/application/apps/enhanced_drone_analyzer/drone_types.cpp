@@ -87,9 +87,9 @@ TrackedDrone::TrackedDrone() noexcept
     , last_seen_time_{0}
     , sweep_cycles_missed_{0}
     , sweep_mode_active_{false}
-    , last_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM}
-    , prev_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM}
-    , has_cycle_peak_{false}
+    , last_cycle_peak_rssi_{SWEEP_CYCLE_PEAK_INVALID_DBM}
+    , prev_cycle_peak_rssi_{SWEEP_CYCLE_PEAK_INVALID_DBM}
+    , has_prev_cycle_peak_{false}
     , cached_trend_{MovementTrend::UNKNOWN}
     , trend_hold_count_{0}
     , mahalanobis_stats_{} {
@@ -119,9 +119,9 @@ TrackedDrone::TrackedDrone(
     , last_seen_time_{0}
     , sweep_cycles_missed_{0}
     , sweep_mode_active_{false}
-    , last_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM}
-    , prev_cycle_peak_rssi_{RSSI_NOISE_FLOOR_DBM}
-    , has_cycle_peak_{false}
+    , last_cycle_peak_rssi_{SWEEP_CYCLE_PEAK_INVALID_DBM}
+    , prev_cycle_peak_rssi_{SWEEP_CYCLE_PEAK_INVALID_DBM}
+    , has_prev_cycle_peak_{false}
     , cached_trend_{MovementTrend::UNKNOWN}
     , trend_hold_count_{0}
     , mahalanobis_stats_{} {
@@ -360,17 +360,25 @@ const char* DisplayDroneEntry::get_type_name() const noexcept {
 MovementTrend TrackedDrone::get_movement_trend() const noexcept {
     MovementTrend raw_trend = MovementTrend::UNKNOWN;
 
-    // ---- SWEEP MODE: use cycle-peak comparison (rssi_history_ is contaminated) ----
-    if (sweep_mode_active_ && has_cycle_peak_) {
-        constexpr int32_t THRESHOLD = MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
-        const int32_t diff = static_cast<int32_t>(last_cycle_peak_rssi_)
-                           - static_cast<int32_t>(prev_cycle_peak_rssi_);
-        if (diff > THRESHOLD) {
-            raw_trend = MovementTrend::APPROACHING;
-        } else if (diff < -THRESHOLD) {
-            raw_trend = MovementTrend::RECEDING;
-        } else {
-            raw_trend = MovementTrend::STATIC;
+    // ---- SWEEP MODE: compare cycle peaks (rssi_history_ is contaminated) ----
+    // Gate on the sentinel: last_cycle_peak_rssi_ is reset to the sentinel at
+    // every pair boundary, and prev_cycle_peak_rssi_ is only set after a cycle
+    // with a real peak. Comparing sentinel stubs would yield false RECEDING.
+    // The normal-mode branch below must NOT run while sweep_mode_active_ —
+    // rssi_history_ holds mixed-frequency data that would corrupt the trend.
+    if (sweep_mode_active_) {
+        if (last_cycle_peak_rssi_ != SWEEP_CYCLE_PEAK_INVALID_DBM &&
+            has_prev_cycle_peak_) {
+            constexpr int32_t THRESHOLD = MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
+            const int32_t diff = static_cast<int32_t>(last_cycle_peak_rssi_)
+                               - static_cast<int32_t>(prev_cycle_peak_rssi_);
+            if (diff > THRESHOLD) {
+                raw_trend = MovementTrend::APPROACHING;
+            } else if (diff < -THRESHOLD) {
+                raw_trend = MovementTrend::RECEDING;
+            } else {
+                raw_trend = MovementTrend::STATIC;
+            }
         }
     }
     // ---- NORMAL MODE: use split-buffer averaging ----
@@ -427,18 +435,24 @@ MovementTrend TrackedDrone::get_movement_trend() const noexcept {
     }
 
     // ---- HYSTERESIS: require TREND_HYSTERESIS_COUNT agreeing evaluations ----
-    // Prevents icon flicker from single-sample noise
+    // Prevents icon flicker from single-sample noise. When no new data is
+    // available (sweep gap between passes), hold the last known trend instead
+    // of flipping to '-' every few hundred milliseconds.
     if (raw_trend == cached_trend_) {
         trend_hold_count_ = 0;  // same direction — reset hold counter
-    } else if (raw_trend != MovementTrend::UNKNOWN) {
-        if (trend_hold_count_ < TREND_HYSTERESIS_COUNT) {
-            trend_hold_count_++;
-            if (trend_hold_count_ < TREND_HYSTERESIS_COUNT) {
-                // Still holding — keep returning old trend
-                return cached_trend_;
-            }
-            // Fall through — hold count reached, accept new trend below
+    } else if (raw_trend == MovementTrend::UNKNOWN) {
+        if (cached_trend_ != MovementTrend::UNKNOWN) {
+            // No new data this evaluation — keep showing the last known trend.
+            return cached_trend_;
         }
+    } else if (trend_hold_count_ < TREND_HYSTERESIS_COUNT) {
+        trend_hold_count_++;
+        if (trend_hold_count_ < TREND_HYSTERESIS_COUNT) {
+            // Still holding — keep returning old trend
+            return cached_trend_;
+        }
+        trend_hold_count_ = 0;  // threshold reached — accept new trend below
+    } else {
         trend_hold_count_ = 0;
     }
 
