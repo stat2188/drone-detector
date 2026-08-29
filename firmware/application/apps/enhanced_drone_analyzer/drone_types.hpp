@@ -394,13 +394,22 @@ struct TrackedDrone {
     /**
      * @brief Mark drone as seen at current time (for sweep-aware decay)
      * @param now Current system time
-     * @note Resets sweep_cycles_missed_ and updates rssi_increased_/last_increase_time_
+     * @param peak_rssi Current sweep-frame peak RSSI for this drone
+     * @note Resets sweep_cycles_missed_. Only sets rssi_increased_ when
+     *       peak_rssi actually exceeds the previous cycle's peak, allowing
+     *       apply_rssi_decay() to trigger threat decay when the signal weakens.
      */
-    void mark_seen(SystemTime now) noexcept {
+    void mark_seen(SystemTime now, RssiValue peak_rssi) noexcept {
         last_seen_time_ = now;
-        rssi_increased_ = true;
-        last_increase_time_ = now;
         sweep_cycles_missed_ = 0;
+        // Only flag as "increased" when the new cycle peak exceeds the previous
+        // cycle's peak. Previously this was unconditionally true, which prevented
+        // apply_rssi_decay() from ever activating in sweep mode.
+        if (prev_cycle_peak_rssi_ != SWEEP_CYCLE_PEAK_INVALID_DBM
+            && peak_rssi > prev_cycle_peak_rssi_) {
+            rssi_increased_ = true;
+            last_increase_time_ = now;
+        }
     }
 
     /**

@@ -367,16 +367,23 @@ MovementTrend TrackedDrone::get_movement_trend() const noexcept {
     // The normal-mode branch below must NOT run while sweep_mode_active_ —
     // rssi_history_ holds mixed-frequency data that would corrupt the trend.
     if (sweep_mode_active_) {
-        if (last_cycle_peak_rssi_ != SWEEP_CYCLE_PEAK_INVALID_DBM &&
-            has_prev_cycle_peak_) {
-            constexpr int32_t THRESHOLD = MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
-            const int32_t diff = static_cast<int32_t>(last_cycle_peak_rssi_)
-                               - static_cast<int32_t>(prev_cycle_peak_rssi_);
-            if (diff > THRESHOLD) {
-                raw_trend = MovementTrend::APPROACHING;
-            } else if (diff < -THRESHOLD) {
-                raw_trend = MovementTrend::RECEDING;
+        if (last_cycle_peak_rssi_ != SWEEP_CYCLE_PEAK_INVALID_DBM) {
+            if (has_prev_cycle_peak_) {
+                // Normal case: compare this cycle's peak against previous cycle's peak
+                constexpr int32_t THRESHOLD = MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
+                const int32_t diff = static_cast<int32_t>(last_cycle_peak_rssi_)
+                                   - static_cast<int32_t>(prev_cycle_peak_rssi_);
+                if (diff > THRESHOLD) {
+                    raw_trend = MovementTrend::APPROACHING;
+                } else if (diff < -THRESHOLD) {
+                    raw_trend = MovementTrend::RECEDING;
+                } else {
+                    raw_trend = MovementTrend::STATIC;
+                }
             } else {
+                // First sweep pass: drone just detected, no previous cycle peak yet.
+                // Show STATIC instead of UNKNOWN so the UI reflects that the drone
+                // is present and stationary until proven otherwise by the next pass.
                 raw_trend = MovementTrend::STATIC;
             }
         }

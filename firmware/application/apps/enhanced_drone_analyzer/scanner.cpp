@@ -2030,7 +2030,10 @@ void DroneScanner::apply_sweep_tracking(
             auto& drone = tracked_drones_[new_idx];
             drone.created_time_ = chTimeNow();
             drone.last_increase_time_ = chTimeNow();
-            drone.mark_seen(chTimeNow());
+            // First detection: always mark as increasing to prevent immediate decay
+            drone.rssi_increased_ = true;
+            drone.sweep_cycles_missed_ = 0;
+            drone.last_seen_time_ = chTimeNow();
             // Set sweep mode BEFORE update_rssi() so threat classification
             // uses the direct RSSI (not contaminated rssi_history_).
             drone.sweep_mode_active_ = true;
@@ -2064,8 +2067,8 @@ void DroneScanner::apply_sweep_tracking(
                     tracked_drones_[drone_idx].set_pattern_match(pattern_correlation, static_cast<int8_t>(pattern_index));
                 }
             }
-            tracked_drones_[drone_idx].mark_seen(chTimeNow());
             tracked_drones_[drone_idx].update_cycle_peak(peak_rssi);
+            tracked_drones_[drone_idx].mark_seen(chTimeNow(), peak_rssi);
         }
     }
 }

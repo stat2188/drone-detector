@@ -70,7 +70,7 @@ public:
     void push_column(const uint8_t* composite_240) noexcept {
         if (composite_240 == nullptr) return;
 
-        uint8_t col[COL_BYTES];
+        std::array<uint8_t, COL_BYTES> col{};
 
         for (uint8_t row = 0; row < HEIGHT; ++row) {
             const uint8_t band_start = row * BAND_SIZE;
@@ -85,7 +85,7 @@ public:
             }
         }
 
-        write_column(col);
+        write_column(col.data());
     }
 
     /**
@@ -99,9 +99,9 @@ public:
         const uint8_t nibble = peak_power >> 4;
         const uint8_t packed = static_cast<uint8_t>((nibble << 4) | nibble);
 
-        uint8_t col[COL_BYTES];
+        std::array<uint8_t, COL_BYTES> col{};
         col.fill(packed);
-        write_column(col);
+        write_column(col.data());
     }
 
     /**

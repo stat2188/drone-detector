@@ -45,6 +45,13 @@ struct RSSIStatistics {
  * @note No heap allocation, uses fixed-size arrays
  * @note Thread-safety: @pre Caller must hold DATA_MUTEX before calling any method
  * @note Removed: internal mutex (relies on parent DroneScanner's DATA_MUTEX)
+ *
+ * @deprecated detect_drone(), get_movement_trend(), is_approaching(),
+ *            is_receding() are dead code. The UI trend comes from
+ *            TrackedDrone::get_movement_trend() which uses cycle-peak
+ *            comparison in sweep mode and split-buffer averaging in normal
+ *            mode. Only initialize(), process_rssi_sample(), and
+ *            set_threat_thresholds() are actively called.
  */
 class RSSIDetector {
 public:
