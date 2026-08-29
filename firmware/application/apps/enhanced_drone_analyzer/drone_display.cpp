@@ -59,7 +59,7 @@ DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     : ui::View()
     , display_data_()
     , spectrum_buffer_{}
-    , timeline_{}
+    , waterfall_{}
     , status_text_{0}
     , spectrum_data_size_(0)
     , spectrum_visible_(true)
@@ -140,8 +140,8 @@ void DroneDisplay::paint(Painter& painter) {
     }
     if (show_spec) y_offset += layout.spec_h;
 
-    if (show_tl && (dirty_flags_ & DIRTY_WATERFALL) && timeline_.count() > 0) {
-        render_waterfall(painter, timeline_,
+    if (show_tl && (dirty_flags_ & DIRTY_WATERFALL) && waterfall_.count() > 0) {
+        render_waterfall(painter, waterfall_,
                          ox, y_offset, w, layout.timeline_h);
     }
     if (show_tl) y_offset += layout.timeline_h;
@@ -240,60 +240,24 @@ void DroneDisplay::render_waterfall(
     const uint16_t chart_h = (height > LABEL_H + 2) ? (height - LABEL_H - 2) : 4;
     const uint16_t chart_w = (width > 4) ? (width - 4) : width;
 
-    const uint16_t col_count = waterfall.count();
-    const uint8_t win_count = waterfall.get_active_windows();
+    const uint8_t band_w = chart_w / MiniWaterfall::BANDS;
+    if (band_w == 0) return;
 
-    // Single-window rendering (fast path)
-    if (win_count <= 1) {
-        for (uint16_t col = 0; col < col_count; ++col) {
-            const uint16_t px = chart_start_x
-                + static_cast<uint16_t>((static_cast<uint32_t>(col) * chart_w) / col_count);
-            const uint16_t bar_w = chart_w / col_count;
-            if (bar_w == 0) continue;
+    // Row-oriented rendering: top-to-bottom, oldest at top.
+    // Row 0 = oldest (drawn at chart_start_y), row count-1 = newest (bottom).
+    const uint8_t row_count = waterfall.count();
+    const uint8_t max_visible = (chart_h < row_count) ? static_cast<uint8_t>(chart_h) : row_count;
 
-            for (uint8_t row = 0; row < MiniWaterfall::HEIGHT; ++row) {
-                const uint8_t pixel = waterfall.get_pixel(col, row);
-                if (pixel == 0) continue;
+    for (uint8_t vis_row = 0; vis_row < max_visible; ++vis_row) {
+        const uint16_t py = chart_start_y + vis_row;
 
-                const uint32_t color = MiniWaterfall::PALETTE[pixel];
-                const uint16_t py = chart_start_y + chart_h - 1 - row;
-                draw_rectangle(painter, px, py, bar_w, 1, color);
-            }
-        }
-        return;
-    }
+        for (uint8_t band = 0; band < MiniWaterfall::BANDS; ++band) {
+            const uint8_t pixel = waterfall.get_pixel(vis_row, band);
+            if (pixel == 0) continue;
 
-    // Multi-window rendering: divide chart width among windows.
-    // push_multi_window() interleaves columns: [w0, w1, w2, w3, w0, w1, ...]
-    // Each window section renders only its own columns (every win_count-th).
-    const uint16_t win_w = chart_w / win_count;
-    for (uint8_t w = 0; w < win_count; ++w) {
-        const uint16_t wx = chart_start_x + w * win_w;
-
-        // Separator between windows
-        if (w > 0) {
-            draw_rectangle(painter, wx - 1, chart_start_y, 1, chart_h, COLOR_UNKNOWN_THREAT);
-        }
-
-        // Count columns belonging to this window
-        const uint16_t win_cols = col_count / win_count;
-        if (win_cols == 0) continue;
-
-        for (uint16_t i = 0; i < win_cols; ++i) {
-            const uint16_t col = i * win_count + w;
-            if (col >= col_count) break;
-
-            const uint16_t px = wx
-                + static_cast<uint16_t>((static_cast<uint32_t>(i) * (win_w - 1)) / win_cols);
-
-            for (uint8_t row = 0; row < MiniWaterfall::HEIGHT; ++row) {
-                const uint8_t pixel = waterfall.get_pixel(col, row);
-                if (pixel == 0) continue;
-
-                const uint32_t color = MiniWaterfall::PALETTE[pixel];
-                const uint16_t py = chart_start_y + chart_h - 1 - row;
-                draw_rectangle(painter, px, py, 1, 1, color);
-            }
+            const uint32_t color = MiniWaterfall::PALETTE[pixel];
+            const uint16_t px = chart_start_x + static_cast<uint16_t>(band) * band_w;
+            draw_rectangle(painter, px, py, band_w, 1, color);
         }
     }
 }
@@ -468,9 +432,8 @@ ErrorCode DroneDisplay::set_spectrum_data(
     return ErrorCode::SUCCESS;
 }
 
-void DroneDisplay::push_timeline_value(uint8_t peak_power) noexcept {
-    timeline_.set_active_windows(1);
-    timeline_.push_single_value(peak_power);
+void DroneDisplay::push_waterfall_value(uint8_t peak_power) noexcept {
+    waterfall_.push_single_value(peak_power);
     dirty_flags_ |= DIRTY_WATERFALL;
     set_dirty();
 }
@@ -482,17 +445,18 @@ void DroneDisplay::push_waterfall_from_sweep(
     const uint8_t* composite3_240,
     const uint8_t* composite4_240
 ) noexcept {
-    timeline_.set_active_windows(window_count);
-    timeline_.push_multi_window(
-        composite_240, composite2_240,
-        composite3_240, composite4_240
+    waterfall_.push_multi_window(
+        composite_240, window_count,
+        composite2_240,
+        composite3_240,
+        composite4_240
     );
     dirty_flags_ |= DIRTY_WATERFALL;
     set_dirty();
 }
 
-void DroneDisplay::reset_timeline() noexcept {
-    timeline_.reset();
+void DroneDisplay::reset_waterfall() noexcept {
+    waterfall_.reset();
     dirty_flags_ |= DIRTY_WATERFALL;
     set_dirty();
 }

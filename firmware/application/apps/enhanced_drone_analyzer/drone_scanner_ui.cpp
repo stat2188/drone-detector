@@ -847,8 +847,8 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }
 
-    // Push peak power to signal timeline
-    drone_display_.push_timeline_value(scanner_ptr_->get_last_peak_power());
+    // Push peak power to waterfall
+    drone_display_.push_waterfall_value(scanner_ptr_->get_last_peak_power());
 
     // Update big frequency display
     {
@@ -963,7 +963,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     drone_display_.set_spectrum_filter(SWEEP_DISPLAY_NOISE_MARGIN);
     // Start with a clean EMA state and hidden scan heads.
     drone_display_.reset_composite_persistence();
-    drone_display_.reset_timeline();
+    drone_display_.reset_waterfall();
     drone_display_.set_scan_head(-1, -1);
 
     if (scanner_ptr_ != nullptr) {
@@ -1086,7 +1086,7 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     // Clean EMA state and hide scan heads so the next sweep entry starts fresh
     // and the non-sweep view does not show leftover markers.
     drone_display_.reset_composite_persistence();
-    drone_display_.reset_timeline();
+    drone_display_.reset_waterfall();
     drone_display_.set_scan_head(-1, -1);
 
     // Stop streaming BEFORE nulling fifo — prevents stale data in frame_sync

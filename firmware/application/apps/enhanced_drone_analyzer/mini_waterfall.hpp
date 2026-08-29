@@ -10,36 +10,32 @@
 namespace drone_analyzer {
 
 /**
- * @brief Compact 4-bit packed scrolling waterfall for sweep visualization.
+ * @brief Compact row-oriented scrolling waterfall (top-to-bottom, like Looking Glass).
  *
- * Stores a ring buffer of compressed waterfall columns. Each column is derived
- * from a 240-byte composite spectrum by computing the peak power in each of
- * 24 horizontal bands (10 bins per band), then quantizing to 4-bit (16 colors).
- * Two rows are packed per byte (high nibble = even row, low nibble = odd row).
+ * Each sweep pass produces one ROW of 24 frequency bands (compressed from 240 bins).
+ * Rows are stored in a ring buffer and rendered top-to-bottom: oldest at top,
+ * newest at bottom. Time scrolls downward as new sweep passes complete.
  *
- * @note No heap allocation — fixed-size std::array in BSS.
- * @note No floating-point — pure integer arithmetic.
+ * Layout: X axis = frequency (bands left-to-right), Y axis = time (rows top-to-bottom).
+ *
+ * @note Row-oriented to match Looking Glass waterfall behavior.
+ * @note 4-bit packed: 2 bands per byte (high nibble = even band, low nibble = odd band).
+ * @note No heap allocation -- fixed-size std::array in BSS.
+ * @note No floating-point -- pure integer arithmetic.
  * @note Thread-safety: single-producer (UI thread), no concurrent access needed.
- * @note Replaces SignalTimeline (62 B) with richer 2D history (723 B).
  *
- * SRAM: HISTORY * COL_BYTES + 3 metadata = 60 * 12 + 3 = 723 bytes
- * Stack: ~16 bytes per push_column(), ~8 bytes per get_pixel()
- * Flash: ~300 bytes (all methods inline)
+ * SRAM: MAX_ROWS * ROW_SIZE = 24 * 12 = 288 bytes
+ * Stack: ~12 bytes per push_row(), ~8 bytes per get_pixel()
+ * Flash: ~400 bytes (all methods inline)
  */
 class MiniWaterfall {
 public:
-    static constexpr uint16_t HEIGHT = WATERFALL_HEIGHT;
-    static constexpr uint16_t HISTORY = WATERFALL_HISTORY;
+    static constexpr uint8_t BANDS = WATERFALL_HEIGHT;
+    static constexpr uint8_t MAX_ROWS = WATERFALL_HEIGHT;
     static constexpr uint8_t BAND_SIZE = 10;
-    static constexpr uint8_t COL_BYTES = HEIGHT / 2;
+    static constexpr uint8_t ROW_SIZE = BANDS / 2;
     static constexpr size_t PALETTE_SIZE = 16;
 
-    /**
-     * @brief 16-color waterfall palette (RGB888 packed as uint32_t).
-     * @note Index 0 = black (noise floor), Index 15 = white (strongest signal).
-     *       Gradient: black → blue → cyan → green → yellow → orange → red → pink → white.
-     *       Stored in Flash (constexpr), accessed via Color::RGB() at render time.
-     */
     static constexpr uint32_t PALETTE[PALETTE_SIZE] = {
         0x000000,  //  0: black
         0x000040,  //  1: dark blue
@@ -62,96 +58,147 @@ public:
     MiniWaterfall() noexcept = default;
 
     /**
-     * @brief Compress and push one 240-byte composite column into the ring buffer.
+     * @brief Compress and push one 240-byte composite as a new waterfall row.
      * @param composite_240 Pointer to 240-byte composite spectrum data.
-     * @note Compression: 240 bins → 24 bands of 10 → peak per band → 4-bit quantize.
-     *       Stack: ~16 bytes. O(240) integer comparisons + O(12) writes.
+     * @note Compression: 240 bins -> 24 bands of 10 -> peak per band -> 4-bit quantize.
+     *       New row appears at the bottom; oldest row scrolls off the top.
+     *       Stack: ~0 bytes (no locals beyond loop vars).
      */
-    void push_column(const uint8_t* composite_240) noexcept {
+    void push_row(const uint8_t* composite_240) noexcept {
         if (composite_240 == nullptr) return;
 
-        std::array<uint8_t, COL_BYTES> col{};
+        const uint16_t offset = static_cast<uint16_t>(write_pos_) * ROW_SIZE;
 
-        for (uint8_t row = 0; row < HEIGHT; ++row) {
-            const uint8_t band_start = row * BAND_SIZE;
-            const uint8_t peak = find_peak(composite_240, band_start, BAND_SIZE);
+        for (uint8_t band = 0; band < BANDS; ++band) {
+            const uint8_t band_start = band * BAND_SIZE;
+            uint8_t peak = 0;
+            for (uint8_t i = 0; i < BAND_SIZE; ++i) {
+                const uint8_t val = composite_240[band_start + i];
+                if (val > peak) peak = val;
+            }
             const uint8_t nibble = peak >> 4;
 
-            const uint8_t byte_idx = row / 2;
-            if ((row & 1) == 0) {
-                col[byte_idx] = nibble << 4;
+            const uint8_t byte_idx = band / 2;
+            if ((band & 1) == 0) {
+                buffer_[offset + byte_idx] = nibble << 4;
             } else {
-                col[byte_idx] |= nibble;
+                buffer_[offset + byte_idx] |= nibble;
             }
         }
 
-        write_column(col.data());
+        write_pos_ = (write_pos_ + 1) % MAX_ROWS;
+        if (count_ < MAX_ROWS) ++count_;
     }
 
     /**
-     * @brief Push a single peak power value as a uniform waterfall column.
+     * @brief Push a single peak power value as a uniform waterfall row.
      * @param peak_power Maximum FFT bin power (0-255) for this frame.
-     * @note For non-sweep mode: all 24 rows get the same quantized value.
-     *       Avoids creating a 240-byte fake composite on the stack.
-     *       Stack: ~8 bytes. O(12) writes.
+     * @note For non-sweep mode: all 24 bands get the same quantized value.
+     *       Stack: ~0 bytes.
      */
     void push_single_value(uint8_t peak_power) noexcept {
         const uint8_t nibble = peak_power >> 4;
         const uint8_t packed = static_cast<uint8_t>((nibble << 4) | nibble);
 
-        std::array<uint8_t, COL_BYTES> col{};
-        col.fill(packed);
-        write_column(col.data());
+        const uint16_t offset = static_cast<uint16_t>(write_pos_) * ROW_SIZE;
+        for (uint8_t i = 0; i < ROW_SIZE; ++i) {
+            buffer_[offset + i] = packed;
+        }
+
+        write_pos_ = (write_pos_ + 1) % MAX_ROWS;
+        if (count_ < MAX_ROWS) ++count_;
     }
 
     /**
-     * @brief Push columns from multiple active sweep windows.
+     * @brief Push one combined row from multiple sweep windows.
      * @param composite1 First window's 240-byte composite (required).
+     * @param window_count Number of active windows (1-4).
      * @param composite2 Second window's composite (or nullptr).
      * @param composite3 Third window's composite (or nullptr).
      * @param composite4 Fourth window's composite (or nullptr).
-     * @note Calls push_column() for each non-null pointer.
-     *       Stack: ~24 bytes (4 pointer params + locals).
+     * @note Each window gets a slice of the 24 bands:
+     *       1 window: bands 0-23 from composite1
+     *       2 windows: bands 0-11 from composite1, bands 12-23 from composite2
+     *       4 windows: bands 0-5, 6-11, 12-17, 18-23
+     *       Stack: ~0 bytes.
      */
     void push_multi_window(
         const uint8_t* composite1,
+        uint8_t window_count,
         const uint8_t* composite2 = nullptr,
         const uint8_t* composite3 = nullptr,
         const uint8_t* composite4 = nullptr
     ) noexcept {
-        if (composite1 != nullptr) push_column(composite1);
-        if (composite2 != nullptr) push_column(composite2);
-        if (composite3 != nullptr) push_column(composite3);
-        if (composite4 != nullptr) push_column(composite4);
+        if (composite1 == nullptr) return;
+        if (window_count == 0) window_count = 1;
+        if (window_count > 4) window_count = 4;
+
+        const uint8_t bands_per_window = BANDS / window_count;
+        const uint16_t offset = static_cast<uint16_t>(write_pos_) * ROW_SIZE;
+
+        for (uint8_t band = 0; band < BANDS; ++band) {
+            const uint8_t window_idx = band / bands_per_window;
+            const uint8_t band_in_win = band % bands_per_window;
+
+            const uint8_t* src = nullptr;
+            switch (window_idx) {
+                case 0: src = composite1; break;
+                case 1: src = composite2; break;
+                case 2: src = composite3; break;
+                case 3: src = composite4; break;
+            }
+
+            uint8_t peak = 0;
+            if (src != nullptr) {
+                const uint8_t bin_start = band_in_win * BAND_SIZE;
+                for (uint8_t i = 0; i < BAND_SIZE; ++i) {
+                    const uint8_t val = src[bin_start + i];
+                    if (val > peak) peak = val;
+                }
+            }
+
+            const uint8_t nibble = peak >> 4;
+            const uint8_t byte_idx = band / 2;
+            if ((band & 1) == 0) {
+                buffer_[offset + byte_idx] = nibble << 4;
+            } else {
+                buffer_[offset + byte_idx] |= nibble;
+            }
+        }
+
+        write_pos_ = (write_pos_ + 1) % MAX_ROWS;
+        if (count_ < MAX_ROWS) ++count_;
     }
 
     /**
      * @brief Read a single pixel from the waterfall buffer.
-     * @param col Column index (0 = oldest, count()-1 = newest).
-     * @param row Row index (0 = bottom, HEIGHT-1 = top).
+     * @param row Row index (0 = oldest/top, count()-1 = newest/bottom).
+     * @param band Frequency band index (0 = lowest freq/left, BANDS-1 = highest/right).
      * @return 4-bit palette index (0-15), or 0 if out of range.
-     * @note Stack: ~8 bytes. O(1) read.
+     * @note Stack: ~0 bytes. O(1) read.
      */
-    [[nodiscard]] uint8_t get_pixel(uint16_t col, uint8_t row) const noexcept {
-        if (col >= count_ || row >= HEIGHT) return 0;
+    [[nodiscard]] uint8_t get_pixel(uint8_t row, uint8_t band) const noexcept {
+        if (row >= count_ || band >= BANDS) return 0;
 
-        uint16_t abs_col = (count_ < HISTORY)
-            ? col
-            : (write_pos_ + col);
-        if (abs_col >= HISTORY) abs_col -= HISTORY;
+        uint8_t abs_row;
+        if (count_ < MAX_ROWS) {
+            abs_row = row;
+        } else {
+            abs_row = (write_pos_ + row) % MAX_ROWS;
+        }
 
-        const uint8_t byte_val = buffer_[abs_col * COL_BYTES + row / 2];
-        return (row & 1) ? (byte_val & 0x0F) : (byte_val >> 4);
+        const uint8_t byte_val = buffer_[abs_row * ROW_SIZE + band / 2];
+        return (band & 1) ? (byte_val & 0x0F) : (byte_val >> 4);
     }
 
     /**
-     * @brief Number of columns stored (max HISTORY).
+     * @brief Number of stored rows (max MAX_ROWS).
      */
-    [[nodiscard]] uint16_t count() const noexcept { return count_; }
+    [[nodiscard]] uint8_t count() const noexcept { return count_; }
 
     /**
-     * @brief Reset all stored columns to empty state.
-     * @note Stack: ~4 bytes. O(HISTORY * COL_BYTES) memset.
+     * @brief Reset all stored rows to empty state.
+     * @note Stack: ~0 bytes. O(MAX_ROWS * ROW_SIZE) memset.
      */
     void reset() noexcept {
         buffer_.fill(0);
@@ -159,61 +206,10 @@ public:
         count_ = 0;
     }
 
-    /**
-     * @brief Set the number of active sweep windows (1-4).
-     * @param n Number of active windows (clamped to 1-4).
-     * @note Affects render layout, not data storage.
-     */
-    void set_active_windows(uint8_t n) noexcept {
-        active_windows_ = (n > 0 && n <= 4) ? n : 1;
-    }
-
-    /**
-     * @brief Get the number of active sweep windows.
-     */
-    [[nodiscard]] uint8_t get_active_windows() const noexcept {
-        return active_windows_;
-    }
-
 private:
-    /**
-     * @brief Find peak power in a band of bins.
-     * @param data Pointer to 240-byte composite data.
-     * @param start Starting bin index.
-     * @param size Number of bins to examine.
-     * @return Maximum power value in the band.
-     * @note Stack: ~4 bytes. O(size) comparisons.
-     */
-    [[nodiscard]] static uint8_t find_peak(
-        const uint8_t* data,
-        uint8_t start,
-        uint8_t size
-    ) noexcept {
-        uint8_t peak = 0;
-        for (uint8_t i = 0; i < size; ++i) {
-            const uint8_t val = data[start + i];
-            if (val > peak) peak = val;
-        }
-        return peak;
-    }
-
-    /**
-     * @brief Write a compressed column into the ring buffer.
-     * @param col Pointer to COL_BYTES of packed data.
-     */
-    void write_column(const uint8_t* col) noexcept {
-        const uint16_t offset = write_pos_ * COL_BYTES;
-        for (uint8_t i = 0; i < COL_BYTES; ++i) {
-            buffer_[offset + i] = col[i];
-        }
-        write_pos_ = (write_pos_ + 1) % HISTORY;
-        if (count_ < HISTORY) ++count_;
-    }
-
-    std::array<uint8_t, HISTORY * COL_BYTES> buffer_{};
-    uint16_t write_pos_{0};
-    uint16_t count_{0};
-    uint8_t active_windows_{1};
+    std::array<uint8_t, MAX_ROWS * ROW_SIZE> buffer_{};
+    uint8_t write_pos_{0};
+    uint8_t count_{0};
 };
 
 } // namespace drone_analyzer

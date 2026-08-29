@@ -142,9 +142,9 @@ public:
     /**
      * @brief Push one frame's peak power into the waterfall (non-sweep mode).
      * @param peak_power Maximum FFT bin power (0-255)
-     * @note Uses push_single_value() — no fake composite needed.
+     * @note Uses push_single_value() -- no fake composite needed.
      */
-    void push_timeline_value(uint8_t peak_power) noexcept;
+    void push_waterfall_value(uint8_t peak_power) noexcept;
 
     /**
      * @brief Push completed composite data from sweep windows into waterfall.
@@ -154,6 +154,7 @@ public:
      * @param composite3_240 Third window's composite (or nullptr).
      * @param composite4_240 Fourth window's composite (or nullptr).
      * @note Called from DroneScannerUI on pair_complete.
+     *       Produces one row in the waterfall (top-to-bottom scrolling).
      */
     void push_waterfall_from_sweep(
         const uint8_t* composite_240,
@@ -166,7 +167,7 @@ public:
     /**
      * @brief Reset waterfall to empty state (clear on mode transitions).
      */
-    void reset_timeline() noexcept;
+    void reset_waterfall() noexcept;
 
     /**
      * @brief Set status text
@@ -411,8 +412,8 @@ private:
     // Spectrum data buffer (static storage for stack optimization)
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_buffer_;
 
-    // Mini waterfall (4-bit packed scrolling history, 723 B vs 62 B for SignalTimeline)
-    MiniWaterfall timeline_;
+    // Row-oriented waterfall (top-to-bottom scrolling, 288 B vs old 723 B)
+    MiniWaterfall waterfall_;
 
     // Status text buffer
     char status_text_[MAX_TEXT_LENGTH];
