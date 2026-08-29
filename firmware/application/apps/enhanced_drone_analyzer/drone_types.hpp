@@ -326,7 +326,7 @@ struct TrackedDrone {
         return mahalanobis_stats_;
     }
 
-    // Total: 77 bytes base + 48 bytes Mahalanobis = 125 bytes (no vtable, no virtual functions)
+    // Total: ~96 bytes base + ~48 bytes Mahalanobis = ~144 bytes (no vtable, no virtual functions)
     
     /**
      * @brief Default constructor
@@ -508,8 +508,8 @@ struct TrackedDrone {
 };
 
 /**
- * @brief Display drone entry for UI (39 bytes)
- * @note POD type, no vtable
+ * @brief Display drone entry for UI (~64 bytes with alignment)
+ * @note POD type, no vtable. Includes pattern matching fields.
  */
 struct DisplayDroneEntry {
     FreqHz frequency;           // 8 bytes - Drone frequency
@@ -569,7 +569,7 @@ struct ScannerStateSnapshot {
  * @brief Display data for UI updates
  */
 struct DisplayData {
-    DisplayDroneEntry drones[16];     // 16 × 39 = 624 bytes
+    DisplayDroneEntry drones[16];     // 16 × ~64 = ~1024 bytes
     size_t drone_count;
     ScannerStateSnapshot state;
     

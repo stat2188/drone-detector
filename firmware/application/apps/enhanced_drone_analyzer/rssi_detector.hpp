@@ -94,10 +94,6 @@ private:
 
     [[nodiscard]] bool is_receding() const noexcept;
 
-    [[nodiscard]] bool is_static() const noexcept;
-
-    [[nodiscard]] uint32_t calculate_variance() const noexcept;
-
     RssiValue detection_threshold_;
     ThreatThresholds threat_thresholds_;
 

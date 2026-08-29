@@ -30,18 +30,20 @@ public:
      * @brief Update threshold based on latest detection result.
      * @param detected Whether signal was detected this frame
      * @param rssi RSSI of detection (dBm), used to estimate if it's noise
-     * @param noise_floor Current noise floor estimate (25th percentile)
+     * @param noise_floor_dBm Current noise floor estimate (dBm) — must be in same
+     *        domain as rssi for correct false-alarm classification
      * @param current_threshold_x10 Current CFAR threshold × 10
      */
     void update(
         bool detected,
         int32_t rssi,
-        uint8_t noise_floor,
+        int32_t noise_floor_dBm,
         uint8_t current_threshold_x10
     ) noexcept {
         // Record whether this was a likely false alarm:
-        // detected + RSSI close to noise floor = probably noise
-        const bool likely_false_alarm = detected && (rssi < static_cast<int32_t>(noise_floor) + 20);
+        // detected + RSSI close to noise floor = probably noise.
+        // Both values must be in dBm for valid comparison.
+        const bool likely_false_alarm = detected && (rssi < noise_floor_dBm + 20);
 
         history_[history_index_] = likely_false_alarm ? 1 : 0;
         history_index_ = (history_index_ + 1) % HISTORY_SIZE;

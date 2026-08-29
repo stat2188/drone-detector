@@ -760,7 +760,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MIN_WIDTH = 2;
  *       noise independently of max width — so widening does NOT increase FPs.
  * @note Previous default was 30 (rejected wide FPV signals)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 20;
+constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 200;
 
 /**
  * @brief Default minimum peak sharpness ratio (50-250)
@@ -774,7 +774,7 @@ constexpr uint8_t DEFAULT_SPECTRUM_MAX_WIDTH = 20;
  *       truly flat WiFi/BT (sharpness ≈ 100-110, caught by valley depth filter).
  * @note Previous default was 100 (rejected dual-peak FPV signals)
  */
-constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 100;
+constexpr uint8_t DEFAULT_SPECTRUM_PEAK_SHARPNESS = 75;
 
 /**
  * @brief Default peak-to-width ratio threshold (0-255)

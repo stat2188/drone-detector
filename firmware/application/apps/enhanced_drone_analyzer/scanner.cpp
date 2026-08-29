@@ -1524,7 +1524,9 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
             // only when adaptive mode is active (avoids polluting internal state).
             if (config_.adaptive_cfar_enabled) {
                 adaptive_threshold_.update(
-                    false, RSSI_MIN_DBM, noise_floor, config_.cfar_threshold_x10);
+                    false, RSSI_MIN_DBM,
+                    spectrum_value_to_dbm(noise_floor, get_current_total_gain()),
+                    config_.cfar_threshold_x10);
             }
             return false;
         }
@@ -1534,7 +1536,7 @@ bool DroneScanner::analyze_spectrum_shape(const ChannelSpectrum& spectrum, int32
             adaptive_threshold_.update(
                 true,
                 spectrum_value_to_dbm(spectrum.db[cfar_peak], get_current_total_gain()),
-                noise_floor,
+                spectrum_value_to_dbm(noise_floor, get_current_total_gain()),
                 config_.cfar_threshold_x10);
         }
 
@@ -1614,7 +1616,9 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             // No CFAR detection — feed negative result only when adaptive active
             if (config_.adaptive_cfar_enabled) {
                 adaptive_threshold_.update(
-                    false, RSSI_MIN_DBM, noise_floor, config_.cfar_threshold_x10);
+                    false, RSSI_MIN_DBM,
+                    spectrum_value_to_dbm(noise_floor, total_gain),
+                    config_.cfar_threshold_x10);
             }
             return false;
         }
@@ -1624,7 +1628,7 @@ bool DroneScanner::analyze_spectrum_shape_multi(
             adaptive_threshold_.update(
                 true,
                 spectrum_value_to_dbm(cfar_peaks[0].power, total_gain),
-                noise_floor,
+                spectrum_value_to_dbm(noise_floor, total_gain),
                 config_.cfar_threshold_x10);
         }
 

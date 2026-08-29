@@ -55,7 +55,7 @@ public:
     }
 
     [[nodiscard]] uint8_t get() const noexcept {
-        return flag_;
+        return __atomic_load_n(&flag_, __ATOMIC_ACQUIRE);
     }
 
     AtomicFlag(const AtomicFlag&) = delete;

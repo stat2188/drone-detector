@@ -275,33 +275,4 @@ bool RSSIDetector::is_receding() const noexcept {
     return (oldest - latest) >= MOVEMENT_TREND_THRESHOLD_APPROACHING_DB;
 }
 
-bool RSSIDetector::is_static() const noexcept {
-    const uint32_t variance = calculate_variance();
-    constexpr uint32_t VARIANCE_THRESHOLD = 25;
-    return variance < VARIANCE_THRESHOLD;
-}
-
-uint32_t RSSIDetector::calculate_variance() const noexcept {
-    if (samples_count_ < 2) {
-        return 0;
-    }
-
-    uint32_t sum_squared_diff = 0;
-    const uint32_t count = (samples_count_ > RSSI_HISTORY_SIZE) ? RSSI_HISTORY_SIZE : static_cast<uint32_t>(samples_count_);
-
-    uint32_t sum = 0;
-    for (size_t i = 0; i < count; ++i) {
-        sum += static_cast<uint32_t>(rssi_history_[i] - RSSI_MIN_DBM);
-    }
-
-    const int32_t mean = static_cast<int32_t>((sum / count) + RSSI_MIN_DBM);
-
-    for (size_t i = 0; i < count; ++i) {
-        const int32_t diff = static_cast<int32_t>(rssi_history_[i]) - mean;
-        sum_squared_diff += static_cast<uint32_t>(diff * diff);
-    }
-
-    return sum_squared_diff / count;
-}
-
 } // namespace drone_analyzer

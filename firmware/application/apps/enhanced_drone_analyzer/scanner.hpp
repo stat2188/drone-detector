@@ -1125,9 +1125,15 @@ public:
         // Upper sideband (bin < 120):  freq = f_center - 126*SWEEP_BIN_SIZE + bin*SWEEP_BIN_SIZE
         //   Avoids negative cast: (bin-126) would overflow uint64_t.
         if (bin >= FFT_DC_SPIKE_END) {
-            return f_center - 120 * SWEEP_BIN_SIZE + static_cast<FreqHz>(bin) * SWEEP_BIN_SIZE;
+            const FreqHz offset = 120 * SWEEP_BIN_SIZE;
+            const FreqHz freq = static_cast<FreqHz>(bin) * SWEEP_BIN_SIZE;
+            if (f_center + freq < offset) return 0;
+            return f_center - offset + freq;
         }
-        return f_center - 126 * SWEEP_BIN_SIZE + static_cast<FreqHz>(bin) * SWEEP_BIN_SIZE;
+        const FreqHz offset = 126 * SWEEP_BIN_SIZE;
+        const FreqHz freq = static_cast<FreqHz>(bin) * SWEEP_BIN_SIZE;
+        if (f_center + freq < offset) return 0;
+        return f_center - offset + freq;
     }
 
     /**
@@ -1598,7 +1604,8 @@ private:
      * @brief Internal: Trigger alert callback if set
      * @param threat_level Threat level to report
      * @note Re-entrant safe via AtomicFlag guard
-     * @pre Mutex must NOT be held (callback must be lock-free)
+     * @note May be called with DATA_MUTEX held — callback MUST be lock-free
+     *       (no mutex acquisition, no ChibiOS API calls that block)
      */
     void trigger_alert(ThreatLevel threat_level) noexcept;
 

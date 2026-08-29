@@ -208,6 +208,7 @@ ErrorResult<FrequencyEntry> DatabaseManager::find_entry(FreqHz frequency) const 
 }
 
 size_t DatabaseManager::get_database_size() const noexcept {
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
     return entry_count_;
 }
 
@@ -256,6 +257,8 @@ void DatabaseManager::set_database_file(const char* filename) noexcept {
     if (filename == nullptr) {
         return;
     }
+
+    MutexLock<LockOrder::DATABASE_MUTEX> lock(mutex_);
 
     size_t i = 0;
     while (i < 31 && filename[i] != '\0') {
