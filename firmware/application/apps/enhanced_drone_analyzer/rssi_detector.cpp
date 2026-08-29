@@ -229,20 +229,20 @@ MovementTrend RSSIDetector::calculate_movement_trend() const noexcept {
         return MovementTrend::UNKNOWN;
     }
 
-    const uint32_t variance = calculate_variance();
-    constexpr uint32_t VARIANCE_THRESHOLD = 25;
-
-    if (variance < VARIANCE_THRESHOLD) {
-        return MovementTrend::STATIC;
-    }
-
+    // Check direction FIRST — a clear directional trend (> 3 dB) overrides
+    // low variance. Previously, the variance gate returned STATIC before
+    // direction was checked, producing false STATIC for steadily approaching
+    // or receding signals whose variance was below 25 despite a clear trend.
+    // Now: direction wins when unambiguous; variance is irrelevant when the
+    // latest-vs-oldest difference is within ±3 dB (ambiguous zone → STATIC).
     if (is_approaching()) {
         return MovementTrend::APPROACHING;
-    } else if (is_receding()) {
-        return MovementTrend::RECEDING;
-    } else {
-        return MovementTrend::STATIC;
     }
+    if (is_receding()) {
+        return MovementTrend::RECEDING;
+    }
+
+    return MovementTrend::STATIC;
 }
 
 bool RSSIDetector::is_approaching() const noexcept {

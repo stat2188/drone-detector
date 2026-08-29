@@ -523,10 +523,10 @@ void DroneDisplay::draw_drone_entry(
     // Get movement trend symbol
     char trend_symbol = MOVEMENT_TREND_SYMBOL_UNKNOWN;
     switch (drone.trend) {
-        case MovementTrend::APPROACHING: trend_symbol = '<'; break;  // Approaching
-        case MovementTrend::RECEDING:    trend_symbol = '>'; break;  // Receding
-        case MovementTrend::STATIC:      trend_symbol = '~'; break;  // Static
-        default:                         trend_symbol = '-'; break;
+        case MovementTrend::APPROACHING: trend_symbol = MOVEMENT_TREND_SYMBOL_APPROACHING; break;
+        case MovementTrend::RECEDING:    trend_symbol = MOVEMENT_TREND_SYMBOL_RECEEDING; break;
+        case MovementTrend::STATIC:      trend_symbol = MOVEMENT_TREND_SYMBOL_STATIC; break;
+        default:                         trend_symbol = MOVEMENT_TREND_SYMBOL_UNKNOWN; break;
     }
     
     // Layout: proportional columns
