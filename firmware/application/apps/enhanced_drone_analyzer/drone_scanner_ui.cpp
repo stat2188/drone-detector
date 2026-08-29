@@ -342,14 +342,27 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
+        // CRITICAL: Unregister message handlers BEFORE pushing sub-view.
+        // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
+        // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
+        unregister_handlers();
+
         // Remember if scanning was active so on_show() can restore it
         scanning_needs_restore_ = scanning_;
+
+        // Save scanning state BEFORE exit_sweep_mode() clears it (line 1095).
+        // Without this, the if(scanning_) block below is skipped, leaving the
+        // scanner thread running during DroneSettingsView construction — causing
+        // M0 FIFO overflow and guru meditation.
+        const bool was_scanning = scanning_;
+
         // Always clean up sweep mode before pushing sub-view
         if (composite_active_) {
             exit_sweep_mode(true);
         }
-        // Stop scanning before pushing sub-view (matches PTR handler pattern).
-        if (scanning_) {
+
+        // Stop scanning using saved state (exit_sweep_mode cleared scanning_)
+        if (was_scanning) {
             scanner_thread_->set_scanning(false);
             if (scanner_ptr_ != nullptr) {
                 (void)scanner_ptr_->stop_scanning();
@@ -358,6 +371,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             scanning_ = false;
             button_start_stop_.set_text("Start");
         }
+
+        // Stop scanner thread BEFORE push to prevent M0 FIFO overflow
+        // during DroneSettingsView constructor SD card I/O.
+        if (scanner_thread_ != nullptr) {
+            scanner_thread_->stop();
+        }
+
         // Refresh config from scanner (SWP view may have changed sweep settings)
         scanner_ptr_->get_config(g_workspace_cfg);
         nav_.push<DroneSettingsView>(g_workspace_cfg, scanner_ptr_, &drone_display_);
@@ -369,9 +389,18 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
             return;
         }
+        // CRITICAL: Unregister message handlers BEFORE pushing sub-view.
+        // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
+        // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
+        unregister_handlers();
+
         // Don't auto-restart scanning after returning from SWP save.
         // SWP is a configuration view — user should manually start scanning.
         scanning_needs_restore_ = false;
+
+        // Save scanning state BEFORE exit_sweep_mode() clears it (line 1095).
+        const bool was_scanning = scanning_;
+
         // CRITICAL: Always clean up sweep mode BEFORE checking scanning_.
         // If user was in sweep mode but stopped scanning (composite_active_=true,
         // scanning_=false), exit_sweep_mode must still be called to reset
@@ -379,8 +408,9 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         if (composite_active_) {
             exit_sweep_mode(true);
         }
-        // Stop scanning before pushing sub-view (matches PTR handler pattern).
-        if (scanning_) {
+
+        // Stop scanning using saved state (exit_sweep_mode cleared scanning_)
+        if (was_scanning) {
             scanner_thread_->set_scanning(false);
             if (scanner_ptr_ != nullptr) {
                 (void)scanner_ptr_->stop_scanning();
@@ -389,6 +419,13 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             scanning_ = false;
             button_start_stop_.set_text("Start");
         }
+
+        // Stop scanner thread BEFORE push to prevent M0 FIFO overflow
+        // during DroneSweepView construction SD card I/O.
+        if (scanner_thread_ != nullptr) {
+            scanner_thread_->stop();
+        }
+
         scanner_ptr_->get_config(g_workspace_cfg);
         nav_.push<DroneSweepView>(g_workspace_cfg, scanner_ptr_);
     };
@@ -407,13 +444,17 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         // PTR uses baseband_needs_restore_ for full baseband restart, not scanning_needs_restore_
         scanning_needs_restore_ = false;
 
+        // Save scanning state BEFORE exit_sweep_mode() clears it (line 1095).
+        const bool was_scanning = scanning_;
+
         // Always clean up sweep mode before pushing sub-view
         if (composite_active_) {
             // suppress_auto_restart: PatternManagerView handles its own streaming state.
             exit_sweep_mode(true);
         }
-        // Stop scanning if active
-        if (scanning_) {
+
+        // Stop scanning using saved state (exit_sweep_mode cleared scanning_)
+        if (was_scanning) {
             scanner_thread_->set_scanning(false);
             if (scanner_ptr_ != nullptr) {
                 (void)scanner_ptr_->stop_scanning();
@@ -421,6 +462,12 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
             baseband::spectrum_streaming_stop();
             scanning_ = false;
             button_start_stop_.set_text("Start");
+        }
+
+        // Stop scanner thread BEFORE push to prevent M0 FIFO overflow
+        // during PatternManagerView construction.
+        if (scanner_thread_ != nullptr) {
+            scanner_thread_->stop();
         }
 
         // Mark baseband for restore when returning from PatternManagerView
@@ -645,6 +692,11 @@ void DroneScannerUI::on_show() {
 }
 
 void DroneScannerUI::on_hide() {
+    // Unregister handlers first — prevents stale message processing while
+    // scanner thread is being joined below. Safety net for any code path
+    // that pushes a sub-view without calling unregister_handlers().
+    unregister_handlers();
+
     if (scanning_) {
         scanner_thread_->set_scanning(false);
         if (scanner_ptr_ != nullptr) {
