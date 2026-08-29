@@ -46,7 +46,7 @@ public:
     DroneScannerUI& operator=(const DroneScannerUI&) = delete;
 
     std::string title() const override {
-        static const std::string t = "EDA";
+        static const std::string t = "EDA";  // SSO — no heap allocation for ≤15 chars
         return t;
     }
     void paint(Painter& painter) override;
@@ -270,8 +270,8 @@ private:
     bool scanning_needs_restore_{false};
 };
 
-DroneScanner& get_scanner_instance() noexcept;
-DroneScanner* get_scanner_ptr() noexcept;
+[[nodiscard]] DroneScanner& get_scanner_instance() noexcept;
+[[nodiscard]] DroneScanner* get_scanner_ptr() noexcept;
 
 // ============================================================================
 // Shared workspace buffers (UI-thread only, no concurrency)
@@ -281,6 +281,14 @@ DroneScanner* get_scanner_ptr() noexcept;
 extern ScanConfig g_workspace_cfg;
 extern SettingsStruct g_workspace_settings;
 
+// ============================================================================
+// g_workspace_cfg ownership invariant:
+//   - UI thread ONLY (message handlers, widget callbacks, keypad lambdas).
+//   - The scanner thread NEVER reads g_workspace_cfg: DroneScanner uses its
+//     internal config_ guarded by DATA_MUTEX (get_config/set_config).
+//   - No locking is therefore needed. Any FUTURE cross-thread access must
+//     protect ALL readers AND writers with one consistent lock scheme.
+// ============================================================================
 } // namespace drone_analyzer
 
 #endif // DRONE_SCANNER_UI_HPP

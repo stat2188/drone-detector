@@ -61,10 +61,29 @@ public:
      * @param start_y Starting Y coordinate
      * @param width Display width
      * @param height Display height (should be >= WATERFALL_HEIGHT + 12 for label)
+     * @note Direction: NEWEST row at top, older rows scroll downward (top-down flow).
      */
     void render_waterfall(
         Painter& painter,
         const MiniWaterfall& waterfall,
+        uint16_t start_x,
+        uint16_t start_y,
+        uint16_t width,
+        uint16_t height
+    ) noexcept;
+
+    /**
+     * @brief Render per-window sweep waterfalls (side-by-side layout).
+     * @param painter Painter instance for drawing
+     * @param start_x Starting X coordinate
+     * @param start_y Starting Y coordinate
+     * @param width Total display width (divided equally among active windows)
+     * @param height Display height
+     * @note Each active window gets width/N pixels. Windows separated by 1px line.
+     *       Rows are per-window independent: NEWEST at top, older rows scroll downward.
+     */
+    void render_sweep_waterfalls(
+        Painter& painter,
         uint16_t start_x,
         uint16_t start_y,
         uint16_t width,
@@ -146,23 +165,33 @@ public:
      */
     void push_waterfall_value(uint8_t peak_power) noexcept;
 
+    
+
     /**
-     * @brief Push completed composite data from sweep windows into waterfall.
-     * @param composite_240 First window's 240-byte composite (required).
-     * @param window_count Number of active windows (1-4).
-     * @param composite2_240 Second window's composite (or nullptr).
-     * @param composite3_240 Third window's composite (or nullptr).
-     * @param composite4_240 Fourth window's composite (or nullptr).
-     * @note Called from DroneScannerUI on pair_complete.
-     *       Produces one row in the waterfall (top-to-bottom scrolling).
+     * @brief Push one window's composite directly into its per-window waterfall.
+     * @param window_index Window index (0-3), maps directly to sweep_waterfalls_[index].
+     * @param composite_240 Pointer to 240-byte composite spectrum data.
+     * @param freq_start Start frequency in Hz (for label rendering).
+     * @param freq_end End frequency in Hz (for label rendering).
+     * @note Called from DroneScannerUI on pair_complete for per-window push.
+     *       Each sweep pass produces one row in the window's independent waterfall.
      */
-    void push_waterfall_from_sweep(
+    void push_sweep_waterfall_window(
+        uint8_t window_index,
         const uint8_t* composite_240,
-        uint8_t window_count,
-        const uint8_t* composite2_240 = nullptr,
-        const uint8_t* composite3_240 = nullptr,
-        const uint8_t* composite4_240 = nullptr
+        FreqHz freq_start = 0,
+        FreqHz freq_end = 0
     ) noexcept;
+
+    /**
+     * @brief Set which sweep windows are active for independent waterfall rendering.
+     * @param enabled_mask Bitmask: bit i set -> sweep window i is active
+     *        (bit 0 = window 1, bit 3 = window 4). 0 = non-sweep (realtime) mode.
+     * @note Called from DroneScannerUI on sweep mode entry/exit.
+     *       Layout is slot-based: each active window gets an equal width slice
+     *       placed by its order among active windows - stable across sweep passes.
+     */
+    void set_active_sweep_windows(uint8_t enabled_mask) noexcept;
 
     /**
      * @brief Reset waterfall to empty state (clear on mode transitions).
@@ -412,8 +441,23 @@ private:
     // Spectrum data buffer (static storage for stack optimization)
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_buffer_;
 
-    // Row-oriented waterfall (top-to-bottom scrolling, 288 B vs old 723 B)
-    MiniWaterfall waterfall_;
+    // Per-window sweep waterfalls (one independent history per sweep window).
+    // Each MiniWaterfall stores 24 rows × 12 bytes = 288 bytes.
+    // Total: 4 × 288 = 1,152 bytes BSS.
+    static constexpr uint8_t NUM_SWEEP_WATERFALLS = MAX_SWEEP_WINDOWS;
+    std::array<MiniWaterfall, NUM_SWEEP_WATERFALLS> sweep_waterfalls_{};
+
+    // Per-window frequency ranges for waterfall labels (Flash: 0, SRAM: 4×8 = 32 bytes).
+    // Updated on each push_sweep_waterfall_window() call.
+    std::array<FreqHz, NUM_SWEEP_WATERFALLS> sweep_wf_freq_start_{};
+    std::array<FreqHz, NUM_SWEEP_WATERFALLS> sweep_wf_freq_end_{};
+
+    // Realtime waterfall for non-sweep mode (single peak power per frame).
+    MiniWaterfall realtime_waterfall_;
+
+    // Bitmask of active sweep windows for independent waterfall rendering.
+    // Bit i = sweep window i active; 0 = non-sweep (realtime) waterfall mode.
+    uint8_t active_waterfall_mask_{0};
 
     // Status text buffer
     char status_text_[MAX_TEXT_LENGTH];

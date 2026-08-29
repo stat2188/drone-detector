@@ -10,11 +10,12 @@
 
 #include "drone_types.hpp"
 #include "constants.hpp"
-#include "scanner.hpp"
 
 namespace drone_analyzer {
 
+// Forward declarations to avoid heavy scanner.hpp include
 class DroneScanner;
+struct ScanConfig;
 
 /**
  * @brief Child view for sweep windows 1-2 configuration (Tab 1)
@@ -153,7 +154,7 @@ public:
     void focus() override;
 
     std::string title() const override {
-        static const std::string t = "SWP Settings";
+        static const std::string t = "SWP Settings";  // SSO — no heap allocation
         return t;
     }
 
@@ -162,7 +163,6 @@ private:
 
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
-    ScanConfig original_config_;
 
     // Child views as direct members (declaration order = construction order)
     // Must be declared before tab_view_ so pointers are valid during TabView construction

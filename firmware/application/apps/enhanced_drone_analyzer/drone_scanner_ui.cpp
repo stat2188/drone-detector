@@ -44,6 +44,12 @@ static ScannerThread s_scanner_thread(s_scanner);
 ScanConfig g_workspace_cfg;
 SettingsStruct g_workspace_settings;
 
+// INVARIANT: g_workspace_cfg is UI-thread-only. The scanner thread never reads
+// it (DroneScanner uses its internal config_ under DATA_MUTEX). All readers and
+// writers here run on the UI thread, so no locking is required.
+// If a future feature must access config from another thread, protect ALL
+// readers AND writers with one consistent lock scheme — never partial locking.
+
 // ============================================================================
 // Handler registration — placement-new to allow manual lifetime control.
 // ============================================================================
@@ -899,8 +905,13 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }
 
-    // Push peak power to waterfall
-    drone_display_.push_waterfall_value(scanner_ptr_->get_last_peak_power());
+    // Push peak power to realtime waterfall (non-sweep mode only).
+    // Sweep mode uses per-window waterfalls fed by on_sweep_spectrum() on
+    // pair_complete — pushing realtime rows here would fill an invisible
+    // buffer and burn CPU every DisplayFrameSync frame for no benefit.
+    if (!composite_active_) {
+        drone_display_.push_waterfall_value(scanner_ptr_->get_last_peak_power());
+    }
 
     // Update big frequency display
     {
@@ -1034,6 +1045,22 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     sweep_[3].init(g_workspace_cfg.sweep4_start_freq, g_workspace_cfg.sweep4_end_freq, g_workspace_cfg.sweep4_step_freq);
     sweep_[3].enabled = g_workspace_cfg.sweep4_enabled;
 
+    // Enable per-window waterfalls for each enabled sweep window.
+    // MUST run AFTER sweep_[i].enabled is loaded from config above (lines
+    // preceding this point). exit_sweep_mode() clears every enabled flag and
+    // the windows default to disabled, so reading them before the config load
+    // would always produce a 0 mask — the per-window sweep waterfalls would
+    // never render (paint() would fall back to the realtime waterfall).
+    {
+        uint8_t wf_mask = 0;
+        for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
+            if (sweep_[i].enabled) {
+                wf_mask = static_cast<uint8_t>(wf_mask | (1u << i));
+            }
+        }
+        drone_display_.set_active_sweep_windows(wf_mask);
+    }
+
     // Copy exception frequencies to each sweep window
     const FreqHz exc_radius_hz = static_cast<FreqHz>(g_workspace_cfg.exception_radius_mhz) * 1000000ULL;
     for (uint8_t w = 0; w < MAX_SWEEP_WINDOWS; ++w) {
@@ -1140,6 +1167,7 @@ void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     drone_display_.reset_composite_persistence();
     drone_display_.reset_waterfall();
     drone_display_.set_scan_head(-1, -1);
+    drone_display_.set_active_sweep_windows(0);
 
     // Stop streaming BEFORE nulling fifo — prevents stale data in frame_sync
     if (scanning_) {
@@ -1290,25 +1318,21 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         update_sweep_pair_display();
         drone_display_.set_dirty();
 
-        // Push completed composites into waterfall history.
+        // Push completed composites into per-window waterfall history.
+        // ONLY push ENABLED windows whose sweep pass actually finished:
+        // w0_done/w1_done are defined as true for DISABLED windows, so the
+        // enabled+pixel_index checks are mandatory to avoid pushing stale/empty
+        // rows into a disabled window's waterfall ("phantom panels").
         // Must run BEFORE sweep_[w].reset() clears the composite data.
-        {
-            uint8_t win_count = 0;
-            const uint8_t* composites[MAX_SWEEP_WINDOWS] = {};
-            for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
-                if (sweep_[i].enabled) {
-                    composites[win_count] = sweep_[i].composite;
-                    ++win_count;
-                }
-            }
-            if (win_count > 0) {
-                drone_display_.push_waterfall_from_sweep(
-                    composites[0], win_count,
-                    (win_count > 1) ? composites[1] : nullptr,
-                    (win_count > 2) ? composites[2] : nullptr,
-                    (win_count > 3) ? composites[3] : nullptr
-                );
-            }
+        if (sweep_[w0].enabled && sweep_[w0].pixel_index >= COMPOSITE_SIZE) {
+            drone_display_.push_sweep_waterfall_window(
+                w0, sweep_[w0].composite,
+                sweep_[w0].f_min, sweep_[w0].f_max);
+        }
+        if (w1 < MAX_SWEEP_WINDOWS && sweep_[w1].enabled && sweep_[w1].pixel_index >= COMPOSITE_SIZE) {
+            drone_display_.push_sweep_waterfall_window(
+                w1, sweep_[w1].composite,
+                sweep_[w1].f_min, sweep_[w1].f_max);
         }
 
         // Reset windows in this pair for next scan pass.

@@ -49,7 +49,7 @@ public:
     bool on_touch(const ui::TouchEvent event) override;
 
     std::string title() const override {
-        static const std::string t = "PTR Pattern";
+        static const std::string t = "PTR Pattern";  // SSO — no heap allocation
         return t;
     }
 

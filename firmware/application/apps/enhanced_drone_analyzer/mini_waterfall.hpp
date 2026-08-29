@@ -10,15 +10,16 @@
 namespace drone_analyzer {
 
 /**
- * @brief Compact row-oriented scrolling waterfall (top-to-bottom, like Looking Glass).
+ * @brief Compact row-oriented scrolling waterfall (time-ordered ring buffer).
  *
  * Each sweep pass produces one ROW of 24 frequency bands (compressed from 240 bins).
- * Rows are stored in a ring buffer and rendered top-to-bottom: oldest at top,
- * newest at bottom. Time scrolls downward as new sweep passes complete.
+ * Rows are stored time-ordered: row 0 = oldest, row count()-1 = newest (ring buffer).
+ * The renderer places the newest row at the TOP (top-down flow) by reading rows
+ * in reverse order — see DroneDisplay::render_waterfall()/render_sweep_waterfalls().
  *
- * Layout: X axis = frequency (bands left-to-right), Y axis = time (rows top-to-bottom).
+ * Layout: X axis = frequency (bands left-to-right), Y axis = time (newest at top).
  *
- * @note Row-oriented to match Looking Glass waterfall behavior.
+ * @note Row-oriented; rendering convention (newest-at-top) set by the consumer.
  * @note 4-bit packed: 2 bands per byte (high nibble = even band, low nibble = odd band).
  * @note No heap allocation -- fixed-size std::array in BSS.
  * @note No floating-point -- pure integer arithmetic.
@@ -103,67 +104,6 @@ public:
         const uint16_t offset = static_cast<uint16_t>(write_pos_) * ROW_SIZE;
         for (uint8_t i = 0; i < ROW_SIZE; ++i) {
             buffer_[offset + i] = packed;
-        }
-
-        write_pos_ = (write_pos_ + 1) % MAX_ROWS;
-        if (count_ < MAX_ROWS) ++count_;
-    }
-
-    /**
-     * @brief Push one combined row from multiple sweep windows.
-     * @param composite1 First window's 240-byte composite (required).
-     * @param window_count Number of active windows (1-4).
-     * @param composite2 Second window's composite (or nullptr).
-     * @param composite3 Third window's composite (or nullptr).
-     * @param composite4 Fourth window's composite (or nullptr).
-     * @note Each window gets a slice of the 24 bands:
-     *       1 window: bands 0-23 from composite1
-     *       2 windows: bands 0-11 from composite1, bands 12-23 from composite2
-     *       4 windows: bands 0-5, 6-11, 12-17, 18-23
-     *       Stack: ~0 bytes.
-     */
-    void push_multi_window(
-        const uint8_t* composite1,
-        uint8_t window_count,
-        const uint8_t* composite2 = nullptr,
-        const uint8_t* composite3 = nullptr,
-        const uint8_t* composite4 = nullptr
-    ) noexcept {
-        if (composite1 == nullptr) return;
-        if (window_count == 0) window_count = 1;
-        if (window_count > 4) window_count = 4;
-
-        const uint8_t bands_per_window = BANDS / window_count;
-        const uint16_t offset = static_cast<uint16_t>(write_pos_) * ROW_SIZE;
-
-        for (uint8_t band = 0; band < BANDS; ++band) {
-            const uint8_t window_idx = band / bands_per_window;
-            const uint8_t band_in_win = band % bands_per_window;
-
-            const uint8_t* src = nullptr;
-            switch (window_idx) {
-                case 0: src = composite1; break;
-                case 1: src = composite2; break;
-                case 2: src = composite3; break;
-                case 3: src = composite4; break;
-            }
-
-            uint8_t peak = 0;
-            if (src != nullptr) {
-                const uint8_t bin_start = band_in_win * BAND_SIZE;
-                for (uint8_t i = 0; i < BAND_SIZE; ++i) {
-                    const uint8_t val = src[bin_start + i];
-                    if (val > peak) peak = val;
-                }
-            }
-
-            const uint8_t nibble = peak >> 4;
-            const uint8_t byte_idx = band / 2;
-            if ((band & 1) == 0) {
-                buffer_[offset + byte_idx] = nibble << 4;
-            } else {
-                buffer_[offset + byte_idx] |= nibble;
-            }
         }
 
         write_pos_ = (write_pos_ + 1) % MAX_ROWS;

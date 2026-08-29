@@ -66,92 +66,95 @@ enum class SweepFieldID : uint8_t {
  * @brief Write rf::Frequency to the correct g_workspace_cfg field by SweepFieldID.
  * @note Called from FrequencyKeypadView::on_changed callback AFTER DroneSweepView
  *       has been destroyed by nav.replace(). Must NOT reference any view objects.
+ * @note g_workspace_cfg is UI-thread-only (see invariant in drone_scanner_ui.cpp);
+ *       the scanner thread never reads it, so no locking is required here.
  */
 static void set_config_field_by_id(SweepFieldID field_id, rf::Frequency f) noexcept {
+    const FreqHz value = static_cast<FreqHz>(f);
     switch (field_id) {
         case SweepFieldID::W1_START:
-            g_workspace_cfg.sweep_start_freq = f;
+            g_workspace_cfg.sweep_start_freq = value;
             break;
         case SweepFieldID::W1_END:
-            g_workspace_cfg.sweep_end_freq = f;
+            g_workspace_cfg.sweep_end_freq = value;
             break;
         case SweepFieldID::W2_START:
-            g_workspace_cfg.sweep2_start_freq = f;
+            g_workspace_cfg.sweep2_start_freq = value;
             break;
         case SweepFieldID::W2_END:
-            g_workspace_cfg.sweep2_end_freq = f;
+            g_workspace_cfg.sweep2_end_freq = value;
             break;
         case SweepFieldID::W3_START:
-            g_workspace_cfg.sweep3_start_freq = f;
+            g_workspace_cfg.sweep3_start_freq = value;
             break;
         case SweepFieldID::W3_END:
-            g_workspace_cfg.sweep3_end_freq = f;
+            g_workspace_cfg.sweep3_end_freq = value;
             break;
         case SweepFieldID::W4_START:
-            g_workspace_cfg.sweep4_start_freq = f;
+            g_workspace_cfg.sweep4_start_freq = value;
             break;
         case SweepFieldID::W4_END:
-            g_workspace_cfg.sweep4_end_freq = f;
+            g_workspace_cfg.sweep4_end_freq = value;
             break;
         case SweepFieldID::W1_EXC0:
-            g_workspace_cfg.sweep_exceptions[0][0] = f;
+            g_workspace_cfg.sweep_exceptions[0][0] = value;
             break;
         case SweepFieldID::W1_EXC1:
-            g_workspace_cfg.sweep_exceptions[0][1] = f;
+            g_workspace_cfg.sweep_exceptions[0][1] = value;
             break;
         case SweepFieldID::W1_EXC2:
-            g_workspace_cfg.sweep_exceptions[0][2] = f;
+            g_workspace_cfg.sweep_exceptions[0][2] = value;
             break;
         case SweepFieldID::W1_EXC3:
-            g_workspace_cfg.sweep_exceptions[0][3] = f;
+            g_workspace_cfg.sweep_exceptions[0][3] = value;
             break;
         case SweepFieldID::W1_EXC4:
-            g_workspace_cfg.sweep_exceptions[0][4] = f;
+            g_workspace_cfg.sweep_exceptions[0][4] = value;
             break;
         case SweepFieldID::W2_EXC0:
-            g_workspace_cfg.sweep_exceptions[1][0] = f;
+            g_workspace_cfg.sweep_exceptions[1][0] = value;
             break;
         case SweepFieldID::W2_EXC1:
-            g_workspace_cfg.sweep_exceptions[1][1] = f;
+            g_workspace_cfg.sweep_exceptions[1][1] = value;
             break;
         case SweepFieldID::W2_EXC2:
-            g_workspace_cfg.sweep_exceptions[1][2] = f;
+            g_workspace_cfg.sweep_exceptions[1][2] = value;
             break;
         case SweepFieldID::W2_EXC3:
-            g_workspace_cfg.sweep_exceptions[1][3] = f;
+            g_workspace_cfg.sweep_exceptions[1][3] = value;
             break;
         case SweepFieldID::W2_EXC4:
-            g_workspace_cfg.sweep_exceptions[1][4] = f;
+            g_workspace_cfg.sweep_exceptions[1][4] = value;
             break;
         case SweepFieldID::W3_EXC0:
-            g_workspace_cfg.sweep_exceptions[2][0] = f;
+            g_workspace_cfg.sweep_exceptions[2][0] = value;
             break;
         case SweepFieldID::W3_EXC1:
-            g_workspace_cfg.sweep_exceptions[2][1] = f;
+            g_workspace_cfg.sweep_exceptions[2][1] = value;
             break;
         case SweepFieldID::W3_EXC2:
-            g_workspace_cfg.sweep_exceptions[2][2] = f;
+            g_workspace_cfg.sweep_exceptions[2][2] = value;
             break;
         case SweepFieldID::W3_EXC3:
-            g_workspace_cfg.sweep_exceptions[2][3] = f;
+            g_workspace_cfg.sweep_exceptions[2][3] = value;
             break;
         case SweepFieldID::W3_EXC4:
-            g_workspace_cfg.sweep_exceptions[2][4] = f;
+            g_workspace_cfg.sweep_exceptions[2][4] = value;
             break;
         case SweepFieldID::W4_EXC0:
-            g_workspace_cfg.sweep_exceptions[3][0] = f;
+            g_workspace_cfg.sweep_exceptions[3][0] = value;
             break;
         case SweepFieldID::W4_EXC1:
-            g_workspace_cfg.sweep_exceptions[3][1] = f;
+            g_workspace_cfg.sweep_exceptions[3][1] = value;
             break;
         case SweepFieldID::W4_EXC2:
-            g_workspace_cfg.sweep_exceptions[3][2] = f;
+            g_workspace_cfg.sweep_exceptions[3][2] = value;
             break;
         case SweepFieldID::W4_EXC3:
-            g_workspace_cfg.sweep_exceptions[3][3] = f;
+            g_workspace_cfg.sweep_exceptions[3][3] = value;
             break;
         case SweepFieldID::W4_EXC4:
-            g_workspace_cfg.sweep_exceptions[3][4] = f;
+            g_workspace_cfg.sweep_exceptions[3][4] = value;
             break;
     }
 }
@@ -398,7 +401,6 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     : ui::View()
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
-    , original_config_(config)
     , view_group1_(nav_, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H}, scanner_ptr)
     , view_group2_(nav_, Rect{0, TAB_BAR_H, screen_width, screen_height - TAB_BAR_H}, scanner_ptr)
     , tab_view_({
@@ -565,9 +567,7 @@ void DroneSweepView::save_settings() noexcept {
     // Save to scanner config
     // NOTE: No intermediate exc[4][5] stack array — write directly to workspace.
     if (scanner_ptr_ != nullptr) {
-        // Read CURRENT scanner config instead of stale original_config_.
-        // original_config_ was captured at SWP view construction time.
-        // Keypad callbacks may have updated the scanner config since then.
+        // Read CURRENT scanner config — keypad callbacks may have updated it.
         scanner_ptr_->get_config(g_workspace_cfg);
         g_workspace_cfg.sweep_start_freq = sw1_start;
         g_workspace_cfg.sweep_end_freq = sw1_end;
