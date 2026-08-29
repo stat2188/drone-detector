@@ -8,7 +8,7 @@
 #include "ui_widget.hpp"
 #include "drone_types.hpp"
 #include "constants.hpp"
-#include "signal_timeline.hpp"
+#include "mini_waterfall.hpp"
 
 namespace drone_analyzer {
 
@@ -54,17 +54,17 @@ public:
     ) noexcept;
 
     /**
-     * @brief Render signal timeline (scrolling sparkline of peak power)
+     * @brief Render mini waterfall display (4-bit packed scrolling history).
      * @param painter Painter instance for drawing
-     * @param timeline Signal timeline data to render
+     * @param waterfall MiniWaterfall data to render
      * @param start_x Starting X coordinate
      * @param start_y Starting Y coordinate
      * @param width Display width
-     * @param height Display height
+     * @param height Display height (should be >= WATERFALL_HEIGHT + 12 for label)
      */
-    void render_timeline(
+    void render_waterfall(
         Painter& painter,
-        const SignalTimeline& timeline,
+        const MiniWaterfall& waterfall,
         uint16_t start_x,
         uint16_t start_y,
         uint16_t width,
@@ -140,13 +140,31 @@ public:
     ) noexcept;
 
     /**
-     * @brief Push one frame's peak power into the timeline.
+     * @brief Push one frame's peak power into the waterfall (non-sweep mode).
      * @param peak_power Maximum FFT bin power (0-255)
+     * @note Uses push_single_value() — no fake composite needed.
      */
     void push_timeline_value(uint8_t peak_power) noexcept;
 
     /**
-     * @brief Reset timeline to empty state (clear on mode transitions).
+     * @brief Push completed composite data from sweep windows into waterfall.
+     * @param composite_240 First window's 240-byte composite (required).
+     * @param window_count Number of active windows (1-4).
+     * @param composite2_240 Second window's composite (or nullptr).
+     * @param composite3_240 Third window's composite (or nullptr).
+     * @param composite4_240 Fourth window's composite (or nullptr).
+     * @note Called from DroneScannerUI on pair_complete.
+     */
+    void push_waterfall_from_sweep(
+        const uint8_t* composite_240,
+        uint8_t window_count,
+        const uint8_t* composite2_240 = nullptr,
+        const uint8_t* composite3_240 = nullptr,
+        const uint8_t* composite4_240 = nullptr
+    ) noexcept;
+
+    /**
+     * @brief Reset waterfall to empty state (clear on mode transitions).
      */
     void reset_timeline() noexcept;
 
@@ -393,8 +411,8 @@ private:
     // Spectrum data buffer (static storage for stack optimization)
     std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_buffer_;
 
-    // Signal timeline (scrolling sparkline of peak power, 60 bytes vs 480 for histogram)
-    SignalTimeline timeline_;
+    // Mini waterfall (4-bit packed scrolling history, 723 B vs 62 B for SignalTimeline)
+    MiniWaterfall timeline_;
 
     // Status text buffer
     char status_text_[MAX_TEXT_LENGTH];
@@ -410,10 +428,11 @@ private:
 
     // Section-level dirty flags — each bit controls whether a section repaints.
     // Prevents clearing+redrawing unchanged sections, eliminating flicker.
-    static constexpr uint8_t DIRTY_SPEC   = 1 << 0;
-    static constexpr uint8_t DIRTY_DRONES = 1 << 2;
-    static constexpr uint8_t DIRTY_STATUS = 1 << 3;
-    static constexpr uint8_t DIRTY_ALL    = 0x0F;
+    static constexpr uint8_t DIRTY_SPEC      = 1 << 0;
+    static constexpr uint8_t DIRTY_WATERFALL = 1 << 1;
+    static constexpr uint8_t DIRTY_DRONES    = 1 << 2;
+    static constexpr uint8_t DIRTY_STATUS    = 1 << 3;
+    static constexpr uint8_t DIRTY_ALL       = 0x0F;
     uint8_t dirty_flags_{DIRTY_ALL};
 
     // Spectrum filter threshold (0=OFF, 118=MID, 202=HIGH)

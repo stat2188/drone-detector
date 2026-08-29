@@ -714,6 +714,24 @@ constexpr uint8_t SWEEP_DISPLAY_NOISE_MARGIN = 8;
 constexpr uint8_t SWEEP_NOISE_FLOOR_PERCENTILE = 15;
 
 // ============================================================================
+// Mini Waterfall Constants
+// ============================================================================
+
+/**
+ * @brief Height of the mini waterfall display in pixels.
+ * @note Fixed at 24 rows to match the previous timeline section height.
+ *       Each row maps to 10 composite bins (240 bins / 24 rows).
+ */
+constexpr uint16_t WATERFALL_HEIGHT = 24;
+
+/**
+ * @brief Number of columns in the mini waterfall ring buffer.
+ * @note 60 columns × 12 bytes/column = 720 bytes of 4-bit packed data.
+ *       At ~1.6s per sweep pass, 60 columns covers ~96 seconds of history.
+ */
+constexpr uint16_t WATERFALL_HISTORY = 60;
+
+// ============================================================================
 // Spectrum Filter Constants (matching Looking Glass)
 // ============================================================================
 

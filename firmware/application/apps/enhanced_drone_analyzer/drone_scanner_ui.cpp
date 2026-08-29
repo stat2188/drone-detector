@@ -1238,6 +1238,27 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         update_sweep_pair_display();
         drone_display_.set_dirty();
 
+        // Push completed composites into waterfall history.
+        // Must run BEFORE sweep_[w].reset() clears the composite data.
+        {
+            uint8_t win_count = 0;
+            const uint8_t* composites[MAX_SWEEP_WINDOWS] = {};
+            for (uint8_t i = 0; i < MAX_SWEEP_WINDOWS; ++i) {
+                if (sweep_[i].enabled) {
+                    composites[win_count] = sweep_[i].composite;
+                    ++win_count;
+                }
+            }
+            if (win_count > 0) {
+                drone_display_.push_waterfall_from_sweep(
+                    composites[0], win_count,
+                    (win_count > 1) ? composites[1] : nullptr,
+                    (win_count > 2) ? composites[2] : nullptr,
+                    (win_count > 3) ? composites[3] : nullptr
+                );
+            }
+        }
+
         // Reset windows in this pair for next scan pass.
         // NOTE: Do NOT call reset_composite_persistence() here — the EMA
         // persistence buffer must survive across passes so the noise floor
