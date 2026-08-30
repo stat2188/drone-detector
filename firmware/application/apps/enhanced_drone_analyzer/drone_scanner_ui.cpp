@@ -813,97 +813,113 @@ void DroneScannerUI::refresh_ui() noexcept {
         }
     }
 
-    // Build display data from tracked drones
-    // Use single get_tracked_drones call for consistency (one lock, one snapshot)
-    refresh_display_data_.clear();
+    // FAST/SLOW split: the heavy snapshot (drone-list copy+sort, status text,
+    // SOS re-check) only needs ~10Hz — it does not change 60 times a second.
+    // Between slow ticks refresh_display_data_ keeps its last snapshot, so the
+    // drone list just does not repaint (no DIRTY_DRONES) — this removes the
+    // blocking get_tracked_drones() lock and snprintf churn from every frame.
+    // Big frequency, realtime waterfall and alarm sweeps stay on the fast path.
+    const SystemTime now_frame = chTimeNow();
+    static constexpr uint32_t UI_SLOW_REFRESH_MS = 100;
+    static SystemTime last_slow_refresh = 0;
+    const bool slow_tick = ((now_frame - last_slow_refresh) >= UI_SLOW_REFRESH_MS);
+    if (slow_tick) {
+        last_slow_refresh = now_frame;
+    }
 
-    {
-        const size_t count = scanner_ptr_->get_tracked_drones(refresh_drones_, MAX_DISPLAYED_DRONES);
-        refresh_display_data_.drone_count = count;
-        for (size_t i = 0; i < count; ++i) {
-            DisplayDroneEntry entry(refresh_drones_[i]);
-            // Look up pattern name from PatternManager using stored index
-            if (entry.pattern_matched && entry.pattern_index >= 0) {
-                const auto* pattern = scanner_ptr_->get_pattern_manager().get_pattern(
-                    static_cast<size_t>(entry.pattern_index));
-                if (pattern != nullptr) {
-                    size_t j = 0;
-                    while (j < 15 && pattern->name[j] != '\0') {
-                        entry.pattern_name[j] = pattern->name[j];
-                        ++j;
+    if (slow_tick) {
+        // Build display data from tracked drones
+        // Use single get_tracked_drones call for consistency (one lock, one snapshot)
+        refresh_display_data_.clear();
+
+        {
+            const size_t count = scanner_ptr_->get_tracked_drones(refresh_drones_, MAX_DISPLAYED_DRONES);
+            refresh_display_data_.drone_count = count;
+            for (size_t i = 0; i < count; ++i) {
+                DisplayDroneEntry entry(refresh_drones_[i]);
+                // Look up pattern name from PatternManager using stored index
+                if (entry.pattern_matched && entry.pattern_index >= 0) {
+                    const auto* pattern = scanner_ptr_->get_pattern_manager().get_pattern(
+                        static_cast<size_t>(entry.pattern_index));
+                    if (pattern != nullptr) {
+                        size_t j = 0;
+                        while (j < 15 && pattern->name[j] != '\0') {
+                            entry.pattern_name[j] = pattern->name[j];
+                            ++j;
+                        }
+                        entry.pattern_name[j] = '\0';
                     }
-                    entry.pattern_name[j] = '\0';
+                }
+                refresh_display_data_.drones[i] = entry;
+            }
+            // Clear stale entries beyond current count
+            for (size_t i = count; i < MAX_DISPLAYED_DRONES; ++i) {
+                refresh_display_data_.drones[i] = DisplayDroneEntry();
+            }
+
+            // Sort by threat level descending (CRITICAL first, NONE last)
+            // Simple insertion sort — O(n²) but n ≤ MAX_DISPLAYED_DRONES (small)
+            for (size_t i = 1; i < count; ++i) {
+                const DisplayDroneEntry key = refresh_display_data_.drones[i];
+                size_t j = i;
+                while (j > 0 && refresh_display_data_.drones[j - 1].threat < key.threat) {
+                    refresh_display_data_.drones[j] = refresh_display_data_.drones[j - 1];
+                    --j;
+                }
+                refresh_display_data_.drones[j] = key;
+            }
+        }
+
+        // Update status text based on state and database status
+        // Always show database entry count so user can verify DB changed after Load
+
+        if (!db_loaded_) {
+            drone_display_.set_status_text("No DB");
+        } else if (db_entry_count_ == 0) {
+            drone_display_.set_status_text("DB empty");
+        } else {
+            switch (current_scanner_state_) {
+                case ScannerState::SCANNING:
+                    snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Scan (%lu)", (unsigned long)db_entry_count_);
+                    drone_display_.set_status_text(refresh_status_buf_);
+                    break;
+                case ScannerState::LOCKING:
+                    snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Lock (%lu)", (unsigned long)db_entry_count_);
+                    drone_display_.set_status_text(refresh_status_buf_);
+                    break;
+                case ScannerState::TRACKING:
+                    snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Track %lu (%lu)",
+                             (unsigned long)refresh_display_data_.drone_count, (unsigned long)db_entry_count_);
+                    drone_display_.set_status_text(refresh_status_buf_);
+                    break;
+                case ScannerState::PAUSED:
+                    snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Pause (%lu)", (unsigned long)db_entry_count_);
+                    drone_display_.set_status_text(refresh_status_buf_);
+                    break;
+                default:
+                    snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Ready (%lu)", (unsigned long)db_entry_count_);
+                    drone_display_.set_status_text(refresh_status_buf_);
+                    break;
+            }
+        }
+
+        drone_display_.update_display_data(refresh_display_data_);
+
+        // Stop looping SOS alert if no HIGH/CRITICAL threats remain
+        // (MEDIUM uses one-shot alerts — don't kill those)
+        if (AudioAlertManager::is_sos_looping()) {
+            bool has_high_threat = false;
+            for (size_t i = 0; i < refresh_display_data_.drone_count; ++i) {
+                if (refresh_display_data_.drones[i].threat >= ThreatLevel::HIGH) {
+                    has_high_threat = true;
+                    break;
                 }
             }
-            refresh_display_data_.drones[i] = entry;
-        }
-        // Clear stale entries beyond current count
-        for (size_t i = count; i < MAX_DISPLAYED_DRONES; ++i) {
-            refresh_display_data_.drones[i] = DisplayDroneEntry();
-        }
-
-        // Sort by threat level descending (CRITICAL first, NONE last)
-        // Simple insertion sort — O(n²) but n ≤ MAX_DISPLAYED_DRONES (small)
-        for (size_t i = 1; i < count; ++i) {
-            const DisplayDroneEntry key = refresh_display_data_.drones[i];
-            size_t j = i;
-            while (j > 0 && refresh_display_data_.drones[j - 1].threat < key.threat) {
-                refresh_display_data_.drones[j] = refresh_display_data_.drones[j - 1];
-                --j;
-            }
-            refresh_display_data_.drones[j] = key;
-        }
-    }
-
-    // Update status text based on state and database status
-    // Always show database entry count so user can verify DB changed after Load
-
-    if (!db_loaded_) {
-        drone_display_.set_status_text("No DB");
-    } else if (db_entry_count_ == 0) {
-        drone_display_.set_status_text("DB empty");
-    } else {
-        switch (current_scanner_state_) {
-            case ScannerState::SCANNING:
-                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Scan (%lu)", (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(refresh_status_buf_);
-                break;
-            case ScannerState::LOCKING:
-                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Lock (%lu)", (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(refresh_status_buf_);
-                break;
-            case ScannerState::TRACKING:
-                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Track %lu (%lu)",
-                         (unsigned long)refresh_display_data_.drone_count, (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(refresh_status_buf_);
-                break;
-            case ScannerState::PAUSED:
-                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Pause (%lu)", (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(refresh_status_buf_);
-                break;
-            default:
-                snprintf(refresh_status_buf_, sizeof(refresh_status_buf_), "Ready (%lu)", (unsigned long)db_entry_count_);
-                drone_display_.set_status_text(refresh_status_buf_);
-                break;
-        }
-    }
-
-    drone_display_.update_display_data(refresh_display_data_);
-
-    // Stop looping SOS alert if no HIGH/CRITICAL threats remain
-    // (MEDIUM uses one-shot alerts — don't kill those)
-    if (AudioAlertManager::is_sos_looping()) {
-        bool has_high_threat = false;
-        for (size_t i = 0; i < refresh_display_data_.drone_count; ++i) {
-            if (refresh_display_data_.drones[i].threat >= ThreatLevel::HIGH) {
-                has_high_threat = true;
-                break;
+            if (!has_high_threat) {
+                AudioAlertManager::stop_alert();
             }
         }
-        if (!has_high_threat) {
-            AudioAlertManager::stop_alert();
-        }
-    }
+    }  // if (slow_tick): heavy 10 Hz snapshot ends here
 
     // Push peak power to realtime waterfall (non-sweep mode only).
     // Sweep mode uses per-window waterfalls fed by on_sweep_spectrum() on
@@ -1220,7 +1236,11 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         return;
     }
 
-    baseband::spectrum_streaming_stop();
+    // NOTE: streaming stays RUNNING continuously across sweep steps.
+    // retune_sweep_window() retunes the radio and discards stale frames via the
+    // settle counter. Stopping+restarting streaming here would reset the channel
+    // FIFO twice per step and inject two M0 control messages into the UI event
+    // loop on every frame — the main cause of sweep stutter.
     auto& win = sweep_[active_sweep_idx_];
     win.process_bins(spectrum);
 
@@ -1550,13 +1570,18 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     set_current_frequency_safe(win.f_center);
     last_tuned_freq_ = win.f_center;
 
-    // 5ms PLL settle delay matches Looking Glass app — validated for RFFC5072 + MAX2837 lock.
-    // Removing this causes corrupted FFT data from unsettled PLLs.
-    static constexpr uint32_t PLL_SETTLE_MS = 5;
-    chThdSleepMilliseconds(PLL_SETTLE_MS);
-
-    baseband::spectrum_streaming_start();
-    win.settle_frames_remaining_ = SWEEP_SETTLE_FRAMES;
+    // Frame-based settling replaces the old 5ms wall-clock sleep + streaming
+    // restart. Streaming is continuous, so frames already queued in the 4-slot
+    // channel FIFO (and the frame overlapping the retune instant) belong to the
+    // PREVIOUS frequency. process_bins() discards SWEEP_SETTLE_FRAMES +
+    // STALE_FIFO_FRAMES frames after every retune, guaranteeing each analyzed
+    // frame was captured after the MAX2837/RFFC5072 finished locking (~200us,
+    // far below one FFT frame period). This is strictly stronger than sleeping:
+    // the guarantee is pinned to captured frames, not to wall time, and the
+    // UI event loop no longer blocks for 5ms on every sweep step.
+    static constexpr uint8_t STALE_FIFO_FRAMES = 1;  // frames already in FIFO
+    win.settle_frames_remaining_ =
+        static_cast<uint8_t>(SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES);
     (void)prefix;
 }
 

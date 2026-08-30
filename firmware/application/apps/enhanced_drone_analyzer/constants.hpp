@@ -690,11 +690,16 @@ constexpr uint16_t SWEEP_PERSISTENCE_DECAY_Q8 = 224;
 
 /**
  * @brief Number of FFT frames to discard after frequency retune.
- * @note 0 frames: 5ms PLL settle delay in retune_sweep_window() already exceeds
- *       the MAX2837/RFFC5072 lock time (~200us). No frame skip needed.
- * @note Previously 1, but the 5ms sleep is more than sufficient.
+ * @note The MAX2837/RFFC5072 lock time is ~200us — far below one FFT frame
+ *       period — so discarding the frame(s) that overlap the retune instant
+ *       fully covers the PLL settle window. retune_sweep_window() additionally
+ *       discards STALE_FIFO_FRAMES (frames already queued on the old frequency).
+ * @note Total discard per step: SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES.
+ *       Each discarded frame adds one frame period of dwell per sweep step.
+ *       1 frame is enough at 60fps; raise it only if real hardware shows
+ *       blended frames on the first pixels of each step.
  */
-constexpr uint8_t SWEEP_SETTLE_FRAMES = 0;
+constexpr uint8_t SWEEP_SETTLE_FRAMES = 1;
 
 /**
  * @brief Noise margin for composite display floor subtraction.

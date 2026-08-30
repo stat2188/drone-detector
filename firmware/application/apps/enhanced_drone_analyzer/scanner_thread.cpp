@@ -21,6 +21,9 @@ void ScannerThread::run() noexcept {
 
     while (!chThdShouldTerminate()) {
         if (__atomic_load_n(&scanning_, __ATOMIC_ACQUIRE)) {
+            const uint32_t interval_ms = scanner_.get_scan_interval_ms();
+            const bool has_interval = (interval_ms > 0);
+
             ErrorResult<FreqHz> freq_before = scanner_.get_current_frequency();
 
             ErrorCode err = scanner_.perform_scan_cycle();
@@ -30,14 +33,20 @@ void ScannerThread::run() noexcept {
                 EventDispatcher::send_message(message);
             }
 
-            // Sleep during dwell — use scan_interval_ms from settings (default 100ms)
-            // Normal scanning: no sleep, runs at full hardware speed
-            if (scanner_.is_dwelling()) {
-                const uint32_t dwell_sleep = scanner_.get_scan_interval_ms();
-                chThdSleepMilliseconds(dwell_sleep);
+            // Hop cadence aligned with the M0 spectrum-frame pipeline: every
+            // cycle (dwell or not) holds scan_interval_ms (default 50ms -> ~3
+            // clean FFT frames per visit at 60fps). Previously, non-dwell hops
+            // spun at ~1ms — far faster than M0 produced FFT frames — so frames
+            // were blended across two frequencies, pending_count_/freq_lock_count_
+            // never accumulated, and RetuneMessages flooded EventDispatcher.
+            if (has_interval) {
+                chThdSleepMilliseconds(interval_ms);
+            } else {
+                chThdSleepMilliseconds(1);  // Guard: never busy-loop on interval 0
             }
+        } else {
+            chThdSleepMilliseconds(1);  // Yield to RTOS when not scanning
         }
-        chThdSleepMilliseconds(1);  // Yield to RTOS when not scanning
     }
 }
 
