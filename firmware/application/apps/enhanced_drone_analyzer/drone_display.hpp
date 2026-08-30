@@ -257,7 +257,7 @@ public:
      *       new pass. Without this, the auto-noise-floor stays at the level of
      *       the previous pass's signals and subtraction zeroes new pixels.
      * @pre  Called only from UI thread.
-     * @post composite_persist_buf_ = 0, init = false, noise_floor_valid = false.
+     * @post s_dd.composite_persist = 0, init = false, noise_floor_valid = false.
      *       composite_data_ and composite_data_size_ are PRESERVED — the zeroed
      *       persist buffer renders empty bars until set_composite_data() fills it.
      *       This prevents the layout collapse that caused the sweep-hang bug.
@@ -270,7 +270,7 @@ public:
      * @note Called once per sweep pass (pair_complete), NOT per frame.
      *       Eliminates ~1200 integer comparisons per frame that previously ran
      *       in set_composite_data() and set_sweep2_data().
-     * @note Uses composite_sort_buf_ / sweep2_sort_buf_ as temporary storage.
+     * @note Uses s_dd.composite_sort / s_dd.sweep2_sort as temporary storage.
      * @note SRAM: 0 B additional (uses existing sort buffers).
      */
     void update_noise_floor() noexcept;
@@ -498,8 +498,8 @@ private:
     // Spectrum integration factor for smoothing
     uint8_t spectrum_integration_{DEFAULT_SPECTRUM_INTEGRATION};
 
-    // Sorting buffer for noise floor calculation (avoid stack allocation)
-    std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_sort_buffer_{};
+    // spectrum_sort_buffer_ moved to file-scope static (drone_display.cpp)
+    // Saves 240 bytes of heap per DroneDisplay instance.
 
     // Band sweep composite mode
     bool composite_mode_{false};
@@ -508,25 +508,17 @@ private:
     FreqHz sweep_freq_start_{0};
     FreqHz sweep_freq_end_{0};
 
-    // Composite persistence buffer (EMA over sweep passes).
-    // Updated each pass: buf[i] = max(raw[i], (buf[i] * DECAY) >> 8).
-    // Reduces visual noise by smoothing frame-to-frame variance.
-    uint8_t composite_persist_buf_[COMPOSITE_SIZE]{};
+    // composite_persist_buf_, composite_sort_buf_ moved to file-scope static
+    // (drone_display.cpp) — saves 480 bytes of heap per DroneDisplay instance.
     bool composite_persist_initialized_{false};
-
-    // Sort buffer for composite noise floor computation (avoids stack allocation).
-    uint8_t composite_sort_buf_[COMPOSITE_SIZE]{};
 
     // Auto-computed noise floor for composite display noise floor subtraction.
     uint8_t composite_noise_floor_{0};
     bool composite_noise_floor_valid_{false};
 
-    // Per-band persistence for sweep band 2 (dual-sweep mode).
-    // Band 2 covers a different frequency range than band 1, so it needs
-    // independent EMA persistence and noise floor estimation.
-    uint8_t sweep2_persist_buf_[COMPOSITE_SIZE]{};
+    // sweep2_persist_buf_, sweep2_sort_buf_ moved to file-scope static
+    // (drone_display.cpp) — saves 480 bytes of heap per DroneDisplay instance.
     bool sweep2_persist_initialized_{false};
-    uint8_t sweep2_sort_buf_[COMPOSITE_SIZE]{};
     uint8_t sweep2_noise_floor_{0};
     bool sweep2_noise_floor_valid_{false};
 

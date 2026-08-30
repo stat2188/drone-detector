@@ -1030,6 +1030,7 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
     // Prevent re-entrant entry (double-tap on Mode button)
     if (composite_active_) return;
     if (!sweep_transition_guard_.try_set()) return;
+    sweep_guard_timestamp_ = chTimeNow();
 
     composite_active_ = true;
     last_tuned_freq_ = 0;
@@ -1161,7 +1162,18 @@ void DroneScannerUI::enter_sweep_mode() noexcept {
 void DroneScannerUI::exit_sweep_mode(bool suppress_auto_restart) noexcept {
     // Prevent re-entrant exit — must match enter_sweep_mode() guard pattern
     if (!composite_active_) return;
-    if (!sweep_transition_guard_.try_set()) return;
+    if (!sweep_transition_guard_.try_set()) {
+        // Guard stuck for >200ms — forcibly clear to prevent permanent lockup.
+        // At worst this causes a double-clear, which is harmless.
+        const uint32_t now = chTimeNow();
+        if ((now - sweep_guard_timestamp_) > 200) {
+            sweep_transition_guard_.clear();
+            (void)sweep_transition_guard_.try_set();
+        } else {
+            return;
+        }
+    }
+    sweep_guard_timestamp_ = chTimeNow();
 
     const bool was_auto = sweep_auto_mode_;
     composite_active_ = false;

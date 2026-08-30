@@ -204,6 +204,7 @@ private:
     uint8_t current_pair_{0};             // Current displayed pair index (0 or 2)
     uint8_t db_scan_count_{0};
     AtomicFlag sweep_transition_guard_;   // Prevents concurrent enter/exit
+    uint32_t sweep_guard_timestamp_{0};   // Tick when guard was last set (timeout safety)
     AtomicFlag button_debounce_guard_;     // Debounces button_mode_/start_stop rapid taps
     FreqHz last_db_frequency_{0};         // Last DB frequency before sweep
     size_t last_db_index_{0};             // Last DB index before sweep (for exact restore)

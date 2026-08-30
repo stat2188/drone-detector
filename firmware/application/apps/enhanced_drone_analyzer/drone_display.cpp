@@ -58,6 +58,20 @@ constexpr uint8_t count_bits8(uint8_t v) noexcept {
 
 } // namespace
 
+// ============================================================================
+// Large buffers moved from DroneDisplay members to file-scope static.
+// Saves ~960 bytes of heap per DroneDisplay instance.
+// Thread-safety: single-producer (UI thread only) — no concurrent access.
+// ============================================================================
+struct DisplayBuffers {
+    std::array<uint8_t, SPECTRUM_BUFFER_SIZE> spectrum_sort{};
+    uint8_t composite_persist[COMPOSITE_SIZE]{};
+    uint8_t composite_sort[COMPOSITE_SIZE]{};
+    uint8_t sweep2_persist[COMPOSITE_SIZE]{};
+    uint8_t sweep2_sort[COMPOSITE_SIZE]{};
+};
+static DisplayBuffers s_dd;
+
 // Forward declarations - write_uint/write_str are used by
 // render_sweep_waterfalls() which precedes their definitions below.
 static void write_uint(char*& buf, size_t& remaining, uint32_t value) noexcept;
@@ -514,9 +528,9 @@ ErrorCode DroneDisplay::set_spectrum_data(
         // Quickselect median — O(n) vs O(n²) insertion sort
         // Use class member buffer to avoid stack allocation (was: uint8_t sorted[240])
         size_t sort_count = 0;
-        for (size_t i = 0; i < count && sort_count < spectrum_sort_buffer_.size(); ++i) {
+        for (size_t i = 0; i < count && sort_count < s_dd.spectrum_sort.size(); ++i) {
             if (i >= FFT_DC_SPIKE_START && i < FFT_DC_SPIKE_END) continue;
-            spectrum_sort_buffer_[sort_count++] = spectrum_data[i];
+            s_dd.spectrum_sort[sort_count++] = spectrum_data[i];
         }
         if (sort_count > 0) {
             const size_t k = sort_count / 2;
@@ -524,28 +538,28 @@ ErrorCode DroneDisplay::set_spectrum_data(
             size_t qs_right = sort_count - 1;
             while (qs_left < qs_right) {
                 const size_t pivot_idx = qs_left + (qs_right - qs_left) / 2;
-                const uint8_t pivot = spectrum_sort_buffer_[pivot_idx];
-                spectrum_sort_buffer_[pivot_idx] = spectrum_sort_buffer_[qs_right];
-                spectrum_sort_buffer_[qs_right] = pivot;
+                const uint8_t pivot = s_dd.spectrum_sort[pivot_idx];
+                s_dd.spectrum_sort[pivot_idx] = s_dd.spectrum_sort[qs_right];
+                s_dd.spectrum_sort[qs_right] = pivot;
                 size_t store = qs_left;
                 for (size_t i = qs_left; i < qs_right; ++i) {
-                    if (spectrum_sort_buffer_[i] < pivot) {
-                        const uint8_t t = spectrum_sort_buffer_[store];
-                        spectrum_sort_buffer_[store] = spectrum_sort_buffer_[i];
-                        spectrum_sort_buffer_[i] = t;
+                    if (s_dd.spectrum_sort[i] < pivot) {
+                        const uint8_t t = s_dd.spectrum_sort[store];
+                        s_dd.spectrum_sort[store] = s_dd.spectrum_sort[i];
+                        s_dd.spectrum_sort[i] = t;
                         ++store;
                     }
                 }
                 {
-                    const uint8_t t = spectrum_sort_buffer_[store];
-                    spectrum_sort_buffer_[store] = spectrum_sort_buffer_[qs_right];
-                    spectrum_sort_buffer_[qs_right] = t;
+                    const uint8_t t = s_dd.spectrum_sort[store];
+                    s_dd.spectrum_sort[store] = s_dd.spectrum_sort[qs_right];
+                    s_dd.spectrum_sort[qs_right] = t;
                 }
                 if (store == k) break;
                 if (store < k) qs_left = store + 1;
                 else qs_right = store - 1;
             }
-            const uint8_t noise_floor = spectrum_sort_buffer_[k];
+            const uint8_t noise_floor = s_dd.spectrum_sort[k];
             const uint8_t display_threshold = noise_floor + display_margin_;
             for (size_t i = 0; i < count; ++i) {
                 const uint8_t val = spectrum_data[i];
@@ -934,20 +948,20 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
     // while letting noise floor decay toward zero.
     if (!composite_persist_initialized_) {
         for (size_t i = 0; i < copy_n; ++i) {
-            composite_persist_buf_[i] = data[i];
+            s_dd.composite_persist[i] = data[i];
         }
         composite_persist_initialized_ = true;
     } else {
         for (size_t i = 0; i < copy_n; ++i) {
-            const uint16_t decayed = (static_cast<uint16_t>(composite_persist_buf_[i])
+            const uint16_t decayed = (static_cast<uint16_t>(s_dd.composite_persist[i])
                                       * SWEEP_PERSISTENCE_DECAY_Q8) >> 8;
-            composite_persist_buf_[i] = (data[i] > static_cast<uint8_t>(decayed))
+            s_dd.composite_persist[i] = (data[i] > static_cast<uint8_t>(decayed))
                 ? data[i]
                 : static_cast<uint8_t>(decayed);
         }
     }
 
-    composite_data_ = composite_persist_buf_;
+    composite_data_ = s_dd.composite_persist;
     composite_data_size_ = copy_n;
     dirty_flags_ |= DIRTY_SPEC;
     set_dirty();
@@ -956,12 +970,12 @@ void DroneDisplay::set_composite_data(const uint8_t* data, size_t size) noexcept
 void DroneDisplay::reset_composite_persistence() noexcept {
     // Drop EMA state so the next set_composite_data() rebuilds the buffer from
     // scratch (it enters the "not initialized" branch and copies the raw data).
-    std::memset(composite_persist_buf_, 0, COMPOSITE_SIZE);
+    std::memset(s_dd.composite_persist, 0, COMPOSITE_SIZE);
     composite_persist_initialized_ = false;
     composite_noise_floor_ = 0;
     composite_noise_floor_valid_ = false;
     // Also reset band 2 persistence (dual-sweep mode).
-    std::memset(sweep2_persist_buf_, 0, COMPOSITE_SIZE);
+    std::memset(s_dd.sweep2_persist, 0, COMPOSITE_SIZE);
     sweep2_persist_initialized_ = false;
     sweep2_noise_floor_ = 0;
     sweep2_noise_floor_valid_ = false;
@@ -1019,22 +1033,22 @@ void DroneDisplay::update_noise_floor() noexcept {
     // Band 1: quickselect on composite persistence buffer.
     if (composite_data_size_ > 0) {
         for (size_t i = 0; i < composite_data_size_; ++i) {
-            composite_sort_buf_[i] = composite_persist_buf_[i];
+            s_dd.composite_sort[i] = s_dd.composite_persist[i];
         }
         size_t k = (composite_data_size_ * SWEEP_NOISE_FLOOR_PERCENTILE) / 100;
         if (k >= composite_data_size_) k = composite_data_size_ - 1;
-        quickselect_pctile(composite_sort_buf_, composite_data_size_, k, composite_noise_floor_);
+        quickselect_pctile(s_dd.composite_sort, composite_data_size_, k, composite_noise_floor_);
         composite_noise_floor_valid_ = true;
     }
 
     // Band 2: quickselect on sweep2 persistence buffer.
     if (sweep2_data_size_ > 0) {
         for (size_t i = 0; i < sweep2_data_size_; ++i) {
-            sweep2_sort_buf_[i] = sweep2_persist_buf_[i];
+            s_dd.sweep2_sort[i] = s_dd.sweep2_persist[i];
         }
         size_t k2 = (sweep2_data_size_ * SWEEP_NOISE_FLOOR_PERCENTILE) / 100;
         if (k2 >= sweep2_data_size_) k2 = sweep2_data_size_ - 1;
-        quickselect_pctile(sweep2_sort_buf_, sweep2_data_size_, k2, sweep2_noise_floor_);
+        quickselect_pctile(s_dd.sweep2_sort, sweep2_data_size_, k2, sweep2_noise_floor_);
         sweep2_noise_floor_valid_ = true;
     }
     dirty_flags_ |= DIRTY_SPEC;
@@ -1281,20 +1295,20 @@ void DroneDisplay::set_sweep2_data(const uint8_t* data, size_t size) noexcept {
     // Apply EMA persistence for band 2 (same formula as band 1).
     if (!sweep2_persist_initialized_) {
         for (size_t i = 0; i < copy_n; ++i) {
-            sweep2_persist_buf_[i] = data[i];
+            s_dd.sweep2_persist[i] = data[i];
         }
         sweep2_persist_initialized_ = true;
     } else {
         for (size_t i = 0; i < copy_n; ++i) {
-            const uint16_t decayed = (static_cast<uint16_t>(sweep2_persist_buf_[i])
+            const uint16_t decayed = (static_cast<uint16_t>(s_dd.sweep2_persist[i])
                                       * SWEEP_PERSISTENCE_DECAY_Q8) >> 8;
-            sweep2_persist_buf_[i] = (data[i] > static_cast<uint8_t>(decayed))
+            s_dd.sweep2_persist[i] = (data[i] > static_cast<uint8_t>(decayed))
                 ? data[i]
                 : static_cast<uint8_t>(decayed);
         }
     }
 
-    sweep2_data_ = sweep2_persist_buf_;
+    sweep2_data_ = s_dd.sweep2_persist;
     sweep2_data_size_ = copy_n;
     dirty_flags_ |= DIRTY_SPEC;
     set_dirty();
