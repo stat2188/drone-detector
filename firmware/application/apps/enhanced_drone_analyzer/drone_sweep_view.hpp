@@ -7,7 +7,6 @@
 
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
-#include "ui_tabview.hpp"
 
 #include "drone_types.hpp"
 #include "constants.hpp"
@@ -20,7 +19,8 @@ struct ScanConfig;
 
 /**
  * @brief Per-window sweep configuration data (POD, no UI widgets)
- * @note SRAM: ~56 bytes (4×FreqHz=32B + step=8B + exceptions[5]×8=40B + enabled=1B)
+ * @note SRAM: 72 bytes (3×FreqHz=24B + enabled=1+7pad + exceptions[5]×8=40B)
+ *       Total for array[4]: 288 bytes BSS.
  * @note Stored as std::array<WindowData, MAX_SWEEP_WINDOWS> in DroneSweepView
  *       to avoid duplicating widgets for each window.
  */
@@ -98,7 +98,7 @@ public:
  * @brief Sweep settings view — accessible via SWP button
  * @note Uses a SINGLE SweepWindowView that swaps data for each window.
  *       A window selector (OptionsField) switches which window is displayed.
- *       Total SRAM: ~560B (SweepWindowView ~480B + WindowData[4] ~224B + UI ~56B)
+ *       Total SRAM: ~688B (SweepWindowView ~392B + WindowData[4] 288B + UI ~8B)
  *       vs old design: ~4,800B (2 group views ~2,400B each + TabView + buttons)
  */
 class DroneSweepView : public ui::View {
@@ -123,7 +123,7 @@ private:
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
 
-    // Window data for all 4 windows (compact POD array, ~224 bytes)
+    // Window data for all 4 windows (compact POD array, 288 bytes BSS)
     std::array<WindowData, NUM_WINDOWS> windows_{};
 
     // Single reusable view (~480 bytes) — bound to windows_[selected]

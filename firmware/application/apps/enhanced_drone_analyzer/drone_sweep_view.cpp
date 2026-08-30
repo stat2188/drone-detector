@@ -175,10 +175,14 @@ void SweepWindowView::bind(WindowData* data, uint8_t window_index) noexcept {
     bound_data_ = data;
     bound_index_ = window_index;
     if (data != nullptr) {
-        // Update label to show window number
         char label_buf[20];
         snprintf(label_buf, sizeof(label_buf), "-- Window %d --", static_cast<int>(window_index) + 1);
-        labels_.set(0, label_buf);
+        labels_.set_labels({
+            {{UI_POS_X(0), UI_POS_Y(0)}, label_buf, Color::white()},
+            {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Color::white()},
+            {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Color::white()},
+            {{UI_POS_X(1), UI_POS_Y(5)}, "Step(kHz):", Color::white()},
+        });
         sync_to_widgets();
     }
 }
@@ -346,7 +350,8 @@ void DroneSweepView::save_settings() noexcept {
 }
 
 void DroneSweepView::apply_defaults() noexcept {
-    ScanConfig defaults;
+    // Flash: ~368 bytes (.rodata) — zero stack cost
+    static const ScanConfig defaults{};
     windows_[0].start_freq = defaults.sweep_start_freq;
     windows_[0].end_freq = defaults.sweep_end_freq;
     windows_[0].step_freq = defaults.sweep_step_freq;
