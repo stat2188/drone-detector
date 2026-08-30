@@ -1186,16 +1186,20 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // settle counter. Stopping+restarting streaming here would reset the channel
     // FIFO twice per step and inject two M0 control messages into the UI event
     // loop on every frame — the main cause of sweep stutter.
-    auto& win = sweep_[active_sweep_idx_];
-    const bool processed = win.process_bins(spectrum);
 
-    // Skip first FFT after sweep entry — may be stale from previous mode
-    // Restart retune at same frequency to get a clean FFT
+    // Skip first FFT after sweep entry — may be stale from previous mode.
+    // MUST check BEFORE process_bins() to prevent stale data from being written
+    // into the composite buffer. Looking Glass avoids this entirely by stopping
+    // streaming before processing (no stale frames possible).
     if (skip_next_fft_) {
         skip_next_fft_ = false;
+        auto& win = sweep_[active_sweep_idx_];
         retune_sweep_window(win, nullptr);
         return;
     }
+
+    auto& win = sweep_[active_sweep_idx_];
+    const bool processed = win.process_bins(spectrum);
 
     // FIX: When the settle counter is active, process_bins() discards the frame
     // (stale data from the previous frequency). We must NOT advance f_center or
@@ -1481,8 +1485,15 @@ bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
 
 bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
     // Skip initial frames after frequency retune — baseband filters need time to settle.
+    // IMPORTANT: Even though the power data is stale, we must still advance bins_hz_acc
+    // by the full Hz of this frame (SWEEP_PIXELS_PER_SLICE * SWEEP_BIN_SIZE).
+    // Without this, the Hz accumulator has a gap at each retune boundary, causing
+    // the pixel-to-frequency mapping to drift and creating the visible "dip" at
+    // window transitions. Looking Glass doesn't have this problem because it uses
+    // wall-clock settling (5ms sleep) instead of frame-based settling.
     if (settle_frames_remaining_ > 0) {
         --settle_frames_remaining_;
+        bins_hz_acc += static_cast<FreqHz>(SWEEP_PIXELS_PER_SLICE) * SWEEP_BIN_SIZE;
         return false;
     }
     SweepProcessor::process_frame(
@@ -1515,7 +1526,14 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     // far below one FFT frame period). This is strictly stronger than sleeping:
     // the guarantee is pinned to captured frames, not to wall time, and the
     // UI event loop no longer blocks for 5ms on every sweep step.
-    static constexpr uint8_t STALE_FIFO_FRAMES = 1;  // frames already in FIFO
+    // The channel FIFO is 4 slots deep. After a retune, up to 3 frames
+    // captured at the old frequency may still be queued (the 4th is the one
+    // that triggered this callback). Setting STALE_FIFO_FRAMES=3 ensures we
+    // discard ALL stale frames, not just one. This matches Looking Glass's
+    // approach of draining the FIFO before processing (it stops streaming,
+    // sleeps 5ms, then restarts). We can't stop/restart streaming here
+    // without injecting M0 control messages and causing stutter.
+    static constexpr uint8_t STALE_FIFO_FRAMES = 3;
     win.settle_frames_remaining_ =
         static_cast<uint8_t>(SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES);
     (void)prefix;
