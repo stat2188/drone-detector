@@ -86,6 +86,11 @@ DroneDisplay::DroneDisplay(const Rect parent_rect) noexcept
     : ui::View()
     , display_data_()
     , spectrum_buffer_{}
+    , sweep_waterfalls_{}
+    , sweep_wf_freq_start_{}
+    , sweep_wf_freq_end_{}
+    , realtime_waterfall_{}
+    , active_waterfall_mask_{0}
     , status_text_{0}
     , spectrum_data_size_(0)
     , spectrum_visible_(true)
