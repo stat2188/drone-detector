@@ -1184,9 +1184,9 @@ void DroneDisplay::render_composite(
         painter.draw_rectangle({hx, chart_start_y, 1, chart_height}, Color::white());
     }
 
-    // Draw red frame for matched pattern
-    if (matched_pattern_bin_ >= 0) {
-        const uint16_t frame_x = chart_start_x + static_cast<uint16_t>(matched_pattern_bin_) - 3;
+    // Draw red frame for matched pattern (bin must be ≥3 to avoid uint16_t underflow)
+    if (matched_pattern_bin_ >= 3) {
+        const uint16_t frame_x = chart_start_x + static_cast<uint16_t>(matched_pattern_bin_ - 3);
         const uint16_t frame_w = 7;
         painter.draw_rectangle({
             frame_x,
