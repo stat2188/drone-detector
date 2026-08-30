@@ -93,18 +93,20 @@ static SweepFieldID end_field_id(uint8_t w) noexcept {
 }
 
 // ============================================================================
-// Helper: open frequency keypad with nav.replace()
+// Helper: open frequency keypad with nav.push() — returns to sweep view on Done
 // ============================================================================
-static void open_freq_keypad_replace(
+static void open_freq_keypad_push(
     NavigationView& nav,
     SweepFieldID field_id,
     FreqHz initial_hz,
-    DroneScanner* scanner) noexcept {
+    DroneScanner* scanner,
+    ui::NumberField& target_field) noexcept {
     baseband::spectrum_streaming_stop();
-    auto* new_view = nav.replace<FrequencyKeypadView>(
+    auto* new_view = nav.push<FrequencyKeypadView>(
         static_cast<rf::Frequency>(initial_hz));
-    new_view->on_changed = [field_id, scanner](rf::Frequency f) {
+    new_view->on_changed = [field_id, scanner, &target_field](rf::Frequency f) {
         set_config_field_by_id(field_id, f);
+        target_field.set_value(static_cast<int32_t>(f / MHZ));
         if (scanner != nullptr) {
             (void)scanner->set_config(g_workspace_cfg);
         }
@@ -136,34 +138,34 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
 
     // on_select callbacks route through the bound window index
     field_start_.on_select = [this](NumberField&) {
-        open_freq_keypad_replace(nav_, start_field_id(bound_index_),
-            static_cast<FreqHz>(field_start_.value()) * MHZ, scanner_ptr_);
+        open_freq_keypad_push(nav_, start_field_id(bound_index_),
+            static_cast<FreqHz>(field_start_.value()) * MHZ, scanner_ptr_, field_start_);
     };
     field_end_.on_select = [this](NumberField&) {
-        open_freq_keypad_replace(nav_, end_field_id(bound_index_),
-            static_cast<FreqHz>(field_end_.value()) * MHZ, scanner_ptr_);
+        open_freq_keypad_push(nav_, end_field_id(bound_index_),
+            static_cast<FreqHz>(field_end_.value()) * MHZ, scanner_ptr_, field_end_);
     };
 
     // Exception fields
     field_exc0_.on_select = [this](NumberField&) {
-        open_freq_keypad_replace(nav_, exc_field_id(bound_index_, 0),
-            static_cast<FreqHz>(field_exc0_.value()) * MHZ, scanner_ptr_);
+        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 0),
+            static_cast<FreqHz>(field_exc0_.value()) * MHZ, scanner_ptr_, field_exc0_);
     };
     field_exc1_.on_select = [this](NumberField&) {
-        open_freq_keypad_replace(nav_, exc_field_id(bound_index_, 1),
-            static_cast<FreqHz>(field_exc1_.value()) * MHZ, scanner_ptr_);
+        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 1),
+            static_cast<FreqHz>(field_exc1_.value()) * MHZ, scanner_ptr_, field_exc1_);
     };
     field_exc2_.on_select = [this](NumberField&) {
-        open_freq_keypad_replace(nav_, exc_field_id(bound_index_, 2),
-            static_cast<FreqHz>(field_exc2_.value()) * MHZ, scanner_ptr_);
+        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 2),
+            static_cast<FreqHz>(field_exc2_.value()) * MHZ, scanner_ptr_, field_exc2_);
     };
     field_exc3_.on_select = [this](NumberField&) {
-        open_freq_keypad_replace(nav_, exc_field_id(bound_index_, 3),
-            static_cast<FreqHz>(field_exc3_.value()) * MHZ, scanner_ptr_);
+        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 3),
+            static_cast<FreqHz>(field_exc3_.value()) * MHZ, scanner_ptr_, field_exc3_);
     };
     field_exc4_.on_select = [this](NumberField&) {
-        open_freq_keypad_replace(nav_, exc_field_id(bound_index_, 4),
-            static_cast<FreqHz>(field_exc4_.value()) * MHZ, scanner_ptr_);
+        open_freq_keypad_push(nav_, exc_field_id(bound_index_, 4),
+            static_cast<FreqHz>(field_exc4_.value()) * MHZ, scanner_ptr_, field_exc4_);
     };
 }
 
@@ -221,7 +223,7 @@ DroneSweepView::DroneSweepView(NavigationView& nav, const ScanConfig& config, Dr
     : ui::View()
     , nav_(nav)
     , scanner_ptr_(scanner_ptr)
-    , sweep_view_(nav, Rect{0, 24, screen_width, screen_height - 48}, scanner_ptr)
+    , sweep_view_(nav, Rect{0, UI_POS_Y(2), screen_width, screen_height - UI_POS_Y(3)}, scanner_ptr)
     , selected_window_(0) {
     add_children({
         &field_window_select_,

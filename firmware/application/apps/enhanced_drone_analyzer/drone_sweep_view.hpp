@@ -129,9 +129,9 @@ private:
     // Single reusable view (~480 bytes) — bound to windows_[selected]
     SweepWindowView sweep_view_;
 
-    // Window selector
+    // Window selector — positioned above "-- Window --" label
     ui::OptionsField field_window_select_{
-        {UI_POS_X(0), UI_POS_Y(9) + 8},
+        {UI_POS_X(0), UI_POS_Y(1)},
         5,
         {
             {"Win 1", 0},
