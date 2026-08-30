@@ -186,7 +186,7 @@ private:
 
         void init(FreqHz start, FreqHz end, FreqHz step = 0) noexcept;
         void reset() noexcept;
-        void process_bins(const ChannelSpectrum& spectrum) noexcept;
+        [[nodiscard]] bool process_bins(const ChannelSpectrum& spectrum) noexcept;
 
         /**
          * @brief Check if a frequency falls within ±EXCEPTION_RADIUS_HZ of any exception

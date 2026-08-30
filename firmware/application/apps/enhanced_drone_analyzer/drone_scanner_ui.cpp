@@ -1254,13 +1254,22 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // FIFO twice per step and inject two M0 control messages into the UI event
     // loop on every frame — the main cause of sweep stutter.
     auto& win = sweep_[active_sweep_idx_];
-    win.process_bins(spectrum);
+    const bool processed = win.process_bins(spectrum);
 
     // Skip first FFT after sweep entry — may be stale from previous mode
     // Restart retune at same frequency to get a clean FFT
     if (skip_next_fft_) {
         skip_next_fft_ = false;
         retune_sweep_window(win, nullptr);
+        return;
+    }
+
+    // FIX: When the settle counter is active, process_bins() discards the frame
+    // (stale data from the previous frequency). We must NOT advance f_center or
+    // call retune_sweep_window() here — doing so resets settle_frames_remaining_
+    // back to 2, creating an infinite loop where the counter never expires and
+    // process_bins() never processes data. Just wait for the next frame.
+    if (!processed) {
         return;
     }
 
@@ -1556,11 +1565,11 @@ bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
     return false;
 }
 
-void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
+bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
     // Skip initial frames after frequency retune — baseband filters need time to settle.
     if (settle_frames_remaining_ > 0) {
         --settle_frames_remaining_;
-        return;
+        return false;
     }
     SweepProcessor::process_frame(
         spectrum,
@@ -1574,6 +1583,7 @@ void DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) 
         exceptions,
         EXCEPTIONS_PER_WINDOW
     );
+    return true;
 }
 
 void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) noexcept {
