@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <array>
 
 #include "ui_widget.hpp"
 #include "ui_navigation.hpp"
@@ -18,129 +19,87 @@ class DroneScanner;
 struct ScanConfig;
 
 /**
- * @brief Child view for sweep windows 1-2 configuration (Tab 1)
- * @note Contains Start/End/Step for Window 1 + Enabled/Start/End/Step for Window 2
+ * @brief Per-window sweep configuration data (POD, no UI widgets)
+ * @note SRAM: ~56 bytes (4×FreqHz=32B + step=8B + exceptions[5]×8=40B + enabled=1B)
+ * @note Stored as std::array<WindowData, MAX_SWEEP_WINDOWS> in DroneSweepView
+ *       to avoid duplicating widgets for each window.
  */
-class SweepWindowGroup1View : public ui::View {
-public:
-    SweepWindowGroup1View(NavigationView& nav, const Rect parent_rect, DroneScanner* scanner_ptr) noexcept;
+struct WindowData {
+    FreqHz start_freq{0};
+    FreqHz end_freq{0};
+    FreqHz step_freq{0};
+    bool enabled{false};
+    std::array<FreqHz, EXCEPTIONS_PER_WINDOW> exceptions{};
+};
 
-    SweepWindowGroup1View(const SweepWindowGroup1View&) = delete;
-    SweepWindowGroup1View& operator=(const SweepWindowGroup1View&) = delete;
+/**
+ * @brief Single-window sweep configuration view (reuses widgets for all 4 windows)
+ * @note Contains Start/End/Step + Enabled + 5 exception fields for ONE window.
+ *       DroneSweepView switches the data pointer to show different windows.
+ * @note SRAM: ~480 bytes (15 widgets × ~32 bytes each)
+ *       vs old design: ~2,400 bytes (2 group views × 30 widgets × ~32 bytes)
+ */
+class SweepWindowView : public ui::View {
+public:
+    SweepWindowView(NavigationView& nav, const Rect parent_rect, DroneScanner* scanner_ptr) noexcept;
+
+    SweepWindowView(const SweepWindowView&) = delete;
+    SweepWindowView& operator=(const SweepWindowView&) = delete;
 
     void focus() override;
 
+    /**
+     * @brief Bind this view to a specific window's data
+     * @param data Pointer to the WindowData to display/edit
+     * @param window_index Window index (0-3) for frequency keypad routing
+     */
+    void bind(WindowData* data, uint8_t window_index) noexcept;
+
+    /**
+     * @brief Read current widget values back into the bound WindowData
+     * @note Called by DroneSweepView before save
+     */
+    void sync_from_widgets() noexcept;
+
+    /**
+     * @brief Write WindowData values into widgets
+     * @note Called after bind() and by DroneSweepView after loading config
+     */
+    void sync_to_widgets() noexcept;
+
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
+    WindowData* bound_data_{nullptr};
+    uint8_t bound_index_{0};
 
     ui::Labels labels_{
-        {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window 1 --", Color::white()},
+        {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window --", Color::white()},
         {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Color::white()},
         {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Color::white()},
         {{UI_POS_X(1), UI_POS_Y(5)}, "Step(kHz):", Color::white()},
     };
-    ui::NumberField field_sw1_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw1_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw1_step_{{UI_POS_X(1), UI_POS_Y(6)}, 5, {17813, 99999}, 17813, ' '};
+    ui::Checkbox check_enabled_{{UI_POS_X(1), UI_POS_Y(7)}, 8, "Enabled", false};
+    ui::NumberField field_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
+    ui::NumberField field_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '};
+    ui::NumberField field_step_{{UI_POS_X(1), UI_POS_Y(6)}, 5, {17813, 99999}, 17813, ' '};
 
-    ui::Labels labels_sw2_{
-        {{UI_POS_X(0), UI_POS_Y(8)}, "-- Window 2 --", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(10)}, "Start(MHz):", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(12)}, "End(MHz):", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(14)}, "Step(kHz):", Color::white()},
-    };
-    ui::Checkbox check_sw2_enabled_{{UI_POS_X(1), UI_POS_Y(9)}, 8, "Enabled", false};
-    ui::NumberField field_sw2_start_{{UI_POS_X(1), UI_POS_Y(11)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw2_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw2_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {17813, 99999}, 17813, ' '};
-
-    // Exception fields — right side of Window 1 (5 slots)
-    ui::Labels labels_exc1_{
+    // Exception fields — right side (5 slots)
+    ui::Labels labels_exc_{
         {{UI_POS_X(16), UI_POS_Y(0)}, "Exc(MHz):", Color::white()},
     };
-    ui::NumberField field_sw1_exc0_{{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw1_exc1_{{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw1_exc2_{{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw1_exc3_{{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw1_exc4_{{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
-
-    // Exception fields — right side of Window 2 (5 slots)
-    ui::Labels labels_exc2_{
-        {{UI_POS_X(16), UI_POS_Y(8)}, "Exc(MHz):", Color::white()},
-    };
-    ui::NumberField field_sw2_exc0_{{UI_POS_X(16), UI_POS_Y(9)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw2_exc1_{{UI_POS_X(16), UI_POS_Y(10)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw2_exc2_{{UI_POS_X(16), UI_POS_Y(11)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw2_exc3_{{UI_POS_X(16), UI_POS_Y(12)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw2_exc4_{{UI_POS_X(16), UI_POS_Y(13)}, 5, {0, 7200}, 1, ' '};
-};
-
-/**
- * @brief Child view for sweep windows 3-4 configuration (Tab 2)
- * @note Contains Enabled/Start/End/Step for Window 3 and Window 4
- * @note All disabled by default
- */
-class SweepWindowGroup2View : public ui::View {
-public:
-    SweepWindowGroup2View(NavigationView& nav, const Rect parent_rect, DroneScanner* scanner_ptr) noexcept;
-
-    SweepWindowGroup2View(const SweepWindowGroup2View&) = delete;
-    SweepWindowGroup2View& operator=(const SweepWindowGroup2View&) = delete;
-
-    void focus() override;
-
-    NavigationView& nav_;
-    DroneScanner* scanner_ptr_;
-
-    ui::Labels labels_sw3_{
-        {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window 3 --", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(2)}, "Start(MHz):", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(4)}, "End(MHz):", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(6)}, "Step(kHz):", Color::white()},
-    };
-    ui::Checkbox check_sw3_enabled_{{UI_POS_X(1), UI_POS_Y(1)}, 8, "Enabled", false};
-    ui::NumberField field_sw3_start_{{UI_POS_X(1), UI_POS_Y(3)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw3_end_{{UI_POS_X(1), UI_POS_Y(5)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw3_step_{{UI_POS_X(1), UI_POS_Y(7)}, 5, {17813, 99999}, 17813, ' '};
-
-    ui::Labels labels_sw4_{
-        {{UI_POS_X(0), UI_POS_Y(8)}, "-- Window 4 --", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(10)}, "Start(MHz):", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(12)}, "End(MHz):", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(14)}, "Step(kHz):", Color::white()},
-    };
-    ui::Checkbox check_sw4_enabled_{{UI_POS_X(1), UI_POS_Y(9)}, 8, "Enabled", false};
-    ui::NumberField field_sw4_start_{{UI_POS_X(1), UI_POS_Y(11)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw4_end_{{UI_POS_X(1), UI_POS_Y(13)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_sw4_step_{{UI_POS_X(1), UI_POS_Y(15)}, 5, {17813, 99999}, 17813, ' '};
-
-    // Exception fields — right side of Window 3 (5 slots)
-    ui::Labels labels_exc3_{
-        {{UI_POS_X(16), UI_POS_Y(0)}, "Exc(MHz):", Color::white()},
-    };
-    ui::NumberField field_sw3_exc0_{{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw3_exc1_{{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw3_exc2_{{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw3_exc3_{{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw3_exc4_{{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
-
-    // Exception fields — right side of Window 4 (5 slots)
-    ui::Labels labels_exc4_{
-        {{UI_POS_X(16), UI_POS_Y(8)}, "Exc(MHz):", Color::white()},
-    };
-    ui::NumberField field_sw4_exc0_{{UI_POS_X(16), UI_POS_Y(9)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw4_exc1_{{UI_POS_X(16), UI_POS_Y(10)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw4_exc2_{{UI_POS_X(16), UI_POS_Y(11)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw4_exc3_{{UI_POS_X(16), UI_POS_Y(12)}, 5, {0, 7200}, 1, ' '};
-    ui::NumberField field_sw4_exc4_{{UI_POS_X(16), UI_POS_Y(13)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_exc0_{{UI_POS_X(16), UI_POS_Y(1)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_exc1_{{UI_POS_X(16), UI_POS_Y(2)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_exc2_{{UI_POS_X(16), UI_POS_Y(3)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_exc3_{{UI_POS_X(16), UI_POS_Y(4)}, 5, {0, 7200}, 1, ' '};
+    ui::NumberField field_exc4_{{UI_POS_X(16), UI_POS_Y(5)}, 5, {0, 7200}, 1, ' '};
 };
 
 /**
  * @brief Sweep settings view — accessible via SWP button
- * @note TabView layout: Tab 1 = Win 1-2, Tab 2 = Win 3-4
- * @note Save writes sweep keys to SETTINGS/eda_settings.txt
- * @note Defaults resets all sweep windows to factory values (Win 3-4 disabled)
- * @note Child views use direct member allocation (no heap, follows codebase convention)
+ * @note Uses a SINGLE SweepWindowView that swaps data for each window.
+ *       A window selector (OptionsField) switches which window is displayed.
+ *       Total SRAM: ~560B (SweepWindowView ~480B + WindowData[4] ~224B + UI ~56B)
+ *       vs old design: ~4,800B (2 group views ~2,400B each + TabView + buttons)
  */
 class DroneSweepView : public ui::View {
 public:
@@ -159,18 +118,30 @@ public:
     }
 
 private:
-    static constexpr ui::Dim TAB_BAR_H = 24;
+    static constexpr uint8_t NUM_WINDOWS = MAX_SWEEP_WINDOWS;
 
     NavigationView& nav_;
     DroneScanner* scanner_ptr_;
 
-    // Child views as direct members (declaration order = construction order)
-    // Must be declared before tab_view_ so pointers are valid during TabView construction
-    SweepWindowGroup1View view_group1_;
-    SweepWindowGroup2View view_group2_;
-    ui::TabView tab_view_;
+    // Window data for all 4 windows (compact POD array, ~224 bytes)
+    std::array<WindowData, NUM_WINDOWS> windows_{};
 
-    // Buttons (below tab content area)
+    // Single reusable view (~480 bytes) — bound to windows_[selected]
+    SweepWindowView sweep_view_;
+
+    // Window selector
+    ui::OptionsField field_window_select_{
+        {UI_POS_X(0), UI_POS_Y(9) + 8},
+        5,
+        {
+            {"Win 1", 0},
+            {"Win 2", 1},
+            {"Win 3", 2},
+            {"Win 4", 3},
+        }
+    };
+
+    // Buttons
     ui::NumberField field_exc_radius_{{UI_POS_X(0), 285}, 3, {1, 100}, 1, ' '};
     ui::Labels labels_exc_radius_{
         {{UI_POS_X(4), 285}, "Exc R(MHz):", Color::white()},
@@ -178,13 +149,11 @@ private:
     ui::Button button_defaults_{{UI_POS_X(15), 285, UI_POS_WIDTH(7), 20}, "DEFAULTS"};
     ui::Button button_save_{{UI_POS_X(22), 285, UI_POS_WIDTH(7), 20}, "SAVE"};
 
+    uint8_t selected_window_{0};
+
+    void switch_to_window(uint8_t index) noexcept;
     void save_settings() noexcept;
     void apply_defaults() noexcept;
-
-    // Exception field helpers — replaces static pointer arrays (use-after-free bug)
-    static void set_exception_field(ui::NumberField* field, uint8_t index, FreqHz value_hz) noexcept;
-    static int32_t get_exception_field(const ui::NumberField* field) noexcept;
-    static void zero_exception_field(ui::NumberField* field) noexcept;
 };
 
 } // namespace drone_analyzer
