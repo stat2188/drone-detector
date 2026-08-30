@@ -499,6 +499,13 @@ ErrorCode DroneDisplay::update_display_data(const DisplayData& display_data) noe
     if (error != ErrorCode::SUCCESS) {
         return error;
     }
+    // Skip update if drone list unchanged — avoids 800B copy + DIRTY_DRONES
+    // + full drone list repaint. Called at 10 Hz; most ticks have no changes.
+    if (display_data.drone_count == display_data_.drone_count &&
+        std::memcmp(display_data.drones, display_data_.drones,
+                    display_data.drone_count * sizeof(DisplayDroneEntry)) == 0) {
+        return ErrorCode::SUCCESS;
+    }
     display_data_ = display_data;
     dirty_flags_ |= DIRTY_DRONES;
     set_dirty();
@@ -662,16 +669,14 @@ void DroneDisplay::draw_drone_entry(
 ) noexcept {
     // Draw entry separator line
     draw_rectangle(painter, x, y + height - 1, width, 1, COLOR_UNKNOWN_THREAT);
-    
-    // Format frequency
-    char freq_buffer[16];
-    format_frequency(drone.frequency, freq_buffer, sizeof(freq_buffer));
-    
-    // Format RSSI (no "dBm" unit)
-    char rssi_buffer[16];
-    format_rssi(drone.rssi, rssi_buffer, sizeof(rssi_buffer));
-    
-    // Format threat level string
+
+    const uint16_t char_w = Theme::getInstance()->fg_light->font.char_width();
+
+    // --- Line 1: Type + Threat (merged into one draw_text call) ---
+    const char* type_name = drone.get_type_name();
+    const size_t type_len = std::strlen(type_name);
+    const size_t type_chars = (type_len > TYPE_MAX_CHARS) ? TYPE_MAX_CHARS : type_len;
+
     const char* threat_str = "";
     switch (drone.threat) {
         case ThreatLevel::CRITICAL: threat_str = "CRIT"; break;
@@ -680,8 +685,41 @@ void DroneDisplay::draw_drone_entry(
         case ThreatLevel::LOW:      threat_str = "LOW";  break;
         default:                    threat_str = "---";  break;
     }
-    
-    // Get movement trend symbol
+
+    // Format "TYPE  CRIT" into one buffer — saves one draw_text call
+    char line1_buf[TYPE_MAX_CHARS + 1 + THREAT_MAX_CHARS + 1];
+    size_t pos = 0;
+    for (size_t i = 0; i < type_chars && pos < sizeof(line1_buf) - 1; ++i) {
+        line1_buf[pos++] = type_name[i];
+    }
+    line1_buf[pos++] = ' ';
+    for (const char* p = threat_str; *p != '\0' && pos < sizeof(line1_buf) - 1; ++p) {
+        line1_buf[pos++] = *p;
+    }
+    line1_buf[pos] = '\0';
+    draw_text(painter, line1_buf, x + LIST_PAD, y + 2, drone.display_color);
+
+    // --- Line 2: Frequency + RSSI (merged) + Trend (separate, right-aligned) ---
+    char freq_buffer[16];
+    format_frequency(drone.frequency, freq_buffer, sizeof(freq_buffer));
+
+    char rssi_buffer[16];
+    format_rssi(drone.rssi, rssi_buffer, sizeof(rssi_buffer));
+
+    // Format "123.456 -45" — saves one draw_text + one strlen for RSSI positioning
+    char line2_buf[32];
+    pos = 0;
+    for (const char* p = freq_buffer; *p != '\0' && pos < sizeof(line2_buf) - 1; ++p) {
+        line2_buf[pos++] = *p;
+    }
+    line2_buf[pos++] = ' ';
+    for (const char* p = rssi_buffer; *p != '\0' && pos < sizeof(line2_buf) - 1; ++p) {
+        line2_buf[pos++] = *p;
+    }
+    line2_buf[pos] = '\0';
+    draw_text(painter, line2_buf, x + LIST_PAD, y + 12, COLOR_TEXT);
+
+    // Trend symbol right-aligned
     char trend_symbol = MOVEMENT_TREND_SYMBOL_UNKNOWN;
     switch (drone.trend) {
         case MovementTrend::APPROACHING: trend_symbol = MOVEMENT_TREND_SYMBOL_APPROACHING; break;
@@ -689,43 +727,6 @@ void DroneDisplay::draw_drone_entry(
         case MovementTrend::STATIC:      trend_symbol = MOVEMENT_TREND_SYMBOL_STATIC; break;
         default:                         trend_symbol = MOVEMENT_TREND_SYMBOL_UNKNOWN; break;
     }
-    
-    // Layout: proportional columns
-    // Col 1 (0-40%): Type name; below it frequency + RSSI grouped (no MHz suffix)
-    // Threat level: shifted THREAT_SHIFT_CHARS left of Col 1's right edge, then
-    //   clamped to always sit GAP_CHARS right of the type text — so a 7-char
-    //   type name and a 4-char threat never overlap, even at width=120.
-    // Trend symbol: right-aligned at the row's right edge (x + width - PAD - 1ch).
-    const uint16_t char_w = Theme::getInstance()->fg_light->font.char_width();
-    const uint16_t col1_end = (width * 40) / 100;
-
-    // Type name — truncated to TYPE_MAX_CHARS so the threat clamp below always
-    // has a known upper bound, even for names longer than 7 chars.
-    const char* type_name = drone.get_type_name();
-    const size_t type_len = std::strlen(type_name);
-    const size_t type_chars = (type_len > TYPE_MAX_CHARS) ? TYPE_MAX_CHARS : type_len;
-    const uint16_t type_end = x + LIST_PAD + static_cast<uint16_t>(type_chars) * char_w;
-
-    // Threat level: default position, clamped right of the type text and left of
-    // the entry edge so a 4-char label always stays fully visible (even at 120px).
-    const uint16_t threat_x_default = x + col1_end + LIST_PAD - THREAT_SHIFT_CHARS * char_w;
-    const uint16_t threat_x_min = type_end + GAP_CHARS * char_w;
-    const uint16_t threat_x_max = x + width - THREAT_MAX_CHARS * char_w - LIST_PAD;
-    const uint16_t threat_x = (threat_x_default > threat_x_min)
-        ? ((threat_x_default < threat_x_max) ? threat_x_default : threat_x_max)
-        : threat_x_min;
-
-    // Line 1: Type | Threat
-    draw_text(painter, std::string_view(type_name, type_chars), x + LIST_PAD, y + 2, drone.display_color);
-    draw_text(painter, threat_str, threat_x, y + 2, drone.display_color);
-
-    // Line 2: Frequency (no unit) | RSSI | Trend
-    draw_text(painter, freq_buffer, x + LIST_PAD, y + 12, COLOR_TEXT);
-    draw_text(painter, rssi_buffer,
-              x + LIST_PAD + static_cast<uint16_t>(std::strlen(freq_buffer)) * char_w + char_w,
-              y + 12, COLOR_TEXT);
-
-    // Trend symbol right-aligned to the row's right edge.
     char trend_buffer[2] = {trend_symbol, '\0'};
     const uint16_t trend_x = x + width - LIST_PAD - char_w;
     draw_text(painter, trend_buffer, trend_x, y + 12, COLOR_TEXT);

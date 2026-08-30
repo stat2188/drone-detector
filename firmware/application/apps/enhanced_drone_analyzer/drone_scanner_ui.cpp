@@ -776,19 +776,16 @@ void DroneScannerUI::refresh_ui() noexcept {
 
     if (slow_tick) {
         // Build display data from tracked drones
-        // Use single get_tracked_drones call for consistency (one lock, one snapshot)
+        // update_display_data() skips the copy+DIRTY_DRONES when data is unchanged
+        // Stack: sizeof(TrackedDrone)*16 = ~1,984B, called at 10 Hz. Within budget.
         refresh_display_data_.clear();
+        TrackedDrone refresh_drones[MAX_DISPLAYED_DRONES];
 
         {
-            const size_t count = scanner_ptr_->get_tracked_drones(refresh_drones_, MAX_DISPLAYED_DRONES);
+            const size_t count = scanner_ptr_->get_tracked_drones(refresh_drones, MAX_DISPLAYED_DRONES);
             refresh_display_data_.drone_count = count;
             for (size_t i = 0; i < count; ++i) {
-                DisplayDroneEntry entry(refresh_drones_[i]);
-                refresh_display_data_.drones[i] = entry;
-            }
-            // Clear stale entries beyond current count
-            for (size_t i = count; i < MAX_DISPLAYED_DRONES; ++i) {
-                refresh_display_data_.drones[i] = DisplayDroneEntry();
+                refresh_display_data_.drones[i] = DisplayDroneEntry(refresh_drones[i]);
             }
 
             // Sort by threat level descending (CRITICAL first, NONE last)
