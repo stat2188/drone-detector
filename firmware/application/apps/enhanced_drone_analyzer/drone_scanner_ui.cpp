@@ -1240,14 +1240,18 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
     // paint() cost from ~3ms to ~1.5ms per frame.
     update_sweep_pair_display();
 
-    // Unified termination: both pixel_index and f_center must agree the pass is done.
-    // Before: two independent if-checks could disagree — pixel_index fills before
-    // f_center reaches f_max (truncating remaining range), or f_center exhausts
-    // before pixels fill (leaving trailing empty pixels).
-    // After: single combined check ensures consistent completion.
-    const bool pixel_done = (win.pixel_index >= COMPOSITE_SIZE);
-    const bool freq_done = (win.f_center >= win.f_max);
-    if (!pixel_done && !freq_done) {
+    // A sweep pass is complete only when BOTH conditions hold:
+    //   1. line_full:    composite[0..239] has been painted by the accumulator;
+    //   2. freq_covered: the slice centered at f_center physically reached f_max
+    //      (f_center + half-slice >= f_max).
+    // Terminating on EITHER event (the previous `!pixel_done && !freq_done`)
+    // silently dropped the top of the window: for a 100-500 MHz pass the line
+    // saturated at step 22 (center 475.2 MHz) while the RF tail ~485-500 MHz
+    // required the 23rd slice at 492.6 MHz. That slice was never tuned, so a
+    // drone transmitting in that tail was never detected — a blind band.
+    const bool line_full = (win.pixel_index >= COMPOSITE_SIZE);
+    const bool freq_covered = (win.f_center + (SWEEP_SLICE_BW / 2)) >= win.f_max;
+    if (!(line_full && freq_covered)) {
         // Normal step: advance frequency within current window
         win.f_center += win.step_hz;
         retune_sweep_window(win, nullptr);
@@ -1424,6 +1428,12 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
     const FreqHz range = f_max - f_min;
 
     pixel_step_hz = range / SWEEP_PIXELS_PER_SLICE;
+    // Guard: a degenerate window (< 240 Hz wide) would make pixel_step_hz 0 and
+    // divide-by-zero in SweepProcessor::process_frame(). Clamp to 1 Hz so the
+    // accumulator always advances.
+    if (pixel_step_hz == 0) {
+        pixel_step_hz = 1;
+    }
 
     // Minimum step = usable FFT bandwidth per frame.
     // step_hz MUST NOT exceed this — otherwise consecutive FFT frames leave
@@ -1457,7 +1467,18 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
         step_hz = range / frames;
     }
 
-    f_center_ini = f_min + (SWEEP_SLICE_BW / 2);
+    // Center the first slice so the window lies inside its tunable (RF) band:
+    //   - narrow windows (< one 20 MHz slice): center the whole range in the
+    //     slice (Looking Glass SINGLEPASS pattern, range/2 offset);
+    //   - wide windows: lead by half a slice so the first slice's RF passband
+    //     starts exactly at f_min (receiver is physically tuned to the window's
+    //     lower edge) and each further step overlaps the previous one.
+    // NOTE: if a caller needs a genuinely coarse sweep, step_hz must be clamped
+    // to one consumed frame's Hz (HZ_PER_FRAME) — stepping the center by any
+    // other value desyncs the display accumulator from RF coverage.
+    f_center_ini = (range < SWEEP_SLICE_BW)
+        ? (f_min + (range / 2))
+        : (f_min + (SWEEP_SLICE_BW / 2));
     reset();
 }
 
@@ -1481,16 +1502,25 @@ bool DroneScannerUI::SweepWindow::is_exception(FreqHz hz) const noexcept {
 }
 
 bool DroneScannerUI::SweepWindow::process_bins(const ChannelSpectrum& spectrum) noexcept {
-    // Skip initial frames after frequency retune — baseband filters need time to settle.
-    // IMPORTANT: Even though the power data is stale, we must still advance bins_hz_acc
-    // by the full Hz of this frame (SWEEP_PIXELS_PER_SLICE * SWEEP_BIN_SIZE).
-    // Without this, the Hz accumulator has a gap at each retune boundary, causing
-    // the pixel-to-frequency mapping to drift and creating the visible "dip" at
-    // window transitions. Looking Glass doesn't have this problem because it uses
-    // wall-clock settling (5ms sleep) instead of frame-based settling.
+    // Discard frames captured before/while the PLL settled: their power data is
+    // stale, so it MUST NOT be written into the composite AND it must NOT
+    // advance bins_hz_acc either.
+    //
+    // bins_hz_acc is the DISPLAY-FAITHFUL frequency counter: each PROCESSED
+    // (fresh) frame adds exactly the Hz of the 238 usable FFT bins it consumes
+    // (238 * SWEEP_BIN_SIZE = 18,593,750 Hz), and pixel_step_hz maps that onto
+    // composite columns. If discarded frames also bank "silent" Hz (the
+    // behavior introduced in commit 4ae47015), the accumulator runs AHEAD of
+    // the receiver: pixel_index reaches COMPOSITE_SIZE after only ~5 of the
+    // ~23 steps of a 100-500 MHz window, so the pass is aborted and forever
+    // re-scans only the first ~90 MHz of the window (the user-visible
+    // "fragments" ending at 110 / 127.391 / 144.783 MHz).
+    //
+    // Dropping stale frames without touching bins_hz_acc is the exact
+    // equivalent of Looking Glass, which drains the channel FIFO after a 5 ms
+    // wall-clock settle instead of bookkeeping per-frame credits.
     if (settle_frames_remaining_ > 0) {
         --settle_frames_remaining_;
-        bins_hz_acc += static_cast<FreqHz>(SWEEP_PIXELS_PER_SLICE) * SWEEP_BIN_SIZE;
         return false;
     }
     SweepProcessor::process_frame(
@@ -1523,14 +1553,19 @@ void DroneScannerUI::retune_sweep_window(SweepWindow& win, const char* prefix) n
     // far below one FFT frame period). This is strictly stronger than sleeping:
     // the guarantee is pinned to captured frames, not to wall time, and the
     // UI event loop no longer blocks for 5ms on every sweep step.
-    // The channel FIFO is 4 slots deep. After a retune, up to 3 frames
-    // captured at the old frequency may still be queued (the 4th is the one
-    // that triggered this callback). Setting STALE_FIFO_FRAMES=3 ensures we
-    // discard ALL stale frames, not just one. This matches Looking Glass's
-    // approach of draining the FIFO before processing (it stops streaming,
-    // sleeps 5ms, then restarts). We can't stop/restart streaming here
-    // without injecting M0 control messages and causing stutter.
-    static constexpr uint8_t STALE_FIFO_FRAMES = 3;
+    // The channel FIFO is 4 slots deep and is drained every DisplayFrameSync
+    // tick. After a retune, frames captured at the old frequency may still be
+    // queued; process_bins() discards SWEEP_SETTLE_FRAMES(=1) + STALE_FIFO_FRAMES
+    // SERVED frames after every retune. Because the counter decrements once per
+    // frame actually consumed from the FIFO (not per wall-clock), STALE=1 leaves
+    // 2 discarded frames after each retune — enough to empty the stale tail
+    // given the ~200us MAX2837/RFFC5072 lock time is a tiny fraction of one FFT
+    // frame period (~6.5ms at 20MHz/trigger63). This is the validated
+    // pre-regression setting (was bumped to 3 together with the phantom-credit
+    // bug in 4ae47015, quadrupling dwell per step for no correctness gain).
+    // Raise it only if a blended frame is ever observed on the first pixels of
+    // a step — higher values only slow the sweep, never change RF coverage.
+    static constexpr uint8_t STALE_FIFO_FRAMES = 1;
     win.settle_frames_remaining_ =
         static_cast<uint8_t>(SWEEP_SETTLE_FRAMES + STALE_FIFO_FRAMES);
     (void)prefix;
