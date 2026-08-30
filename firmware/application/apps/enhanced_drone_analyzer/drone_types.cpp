@@ -296,11 +296,7 @@ DisplayDroneEntry::DisplayDroneEntry() noexcept
     , last_seen{0}
     , type_name{'\0'}
     , display_color{0xFFFFFFFF}
-    , trend{MovementTrend::UNKNOWN}
-    , pattern_matched{false}
-    , pattern_score{0}
-    , pattern_name{'\0'}
-    , pattern_index{-1} {
+    , trend{MovementTrend::UNKNOWN} {
 }
 
 DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
@@ -311,11 +307,7 @@ DisplayDroneEntry::DisplayDroneEntry(const TrackedDrone& drone) noexcept
     , last_seen(drone.last_seen)
     , type_name{0}
     , display_color(0xFFFFFFFF)
-    , trend(drone.get_movement_trend())
-    , pattern_matched(drone.pattern_matched_)
-    , pattern_score(drone.pattern_score_)
-    , pattern_name{'\0'}
-    , pattern_index(drone.matched_pattern_index_) {
+    , trend(drone.get_movement_trend()) {
     
     const char* type_str = drone_type_to_string(drone.drone_type);
     size_t i = 0;

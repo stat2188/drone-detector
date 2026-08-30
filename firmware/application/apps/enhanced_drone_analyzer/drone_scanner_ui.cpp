@@ -12,9 +12,6 @@
 #include "drone_settings.hpp"
 #include "settings_manager.hpp"
 #include "drone_sweep_view.hpp"
-#include "pattern_manager_view.hpp"
-#include "pattern_matcher.hpp"
-#include "pattern_manager.hpp"
 #include "peak_detector.hpp"
 #include "database.hpp"
 #include "hardware_controller.hpp"
@@ -158,8 +155,7 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
         &button_mode_,
         &button_load_,
         &button_settings_,
-        &button_swp_,
-        &button_ptr_
+        &button_swp_
     });
 
     // Filter callback (Looking Glass style: OFF/MID/HIGH)
@@ -434,51 +430,6 @@ DroneScannerUI::DroneScannerUI(NavigationView& nav) noexcept
 
         scanner_ptr_->get_config(g_workspace_cfg);
         nav_.push<DroneSweepView>(g_workspace_cfg, scanner_ptr_);
-    };
-
-    // PTR button: open pattern manager view
-    button_ptr_.on_select = [this](ui::Button&) {
-        if (initialization_failed_ || scanner_ptr_ == nullptr) {
-            show_error(ErrorCode::HARDWARE_NOT_INITIALIZED, ERROR_DURATION_MS);
-            return;
-        }
-        // CRITICAL: Unregister message handlers BEFORE pushing PatternManagerView.
-        // Both views register handlers for ChannelSpectrumConfig / DisplayFrameSync.
-        // Without explicit unregister, MessageHandlerMap hits chDbgPanic("MsgDblReg").
-        unregister_handlers();
-
-        // PTR uses baseband_needs_restore_ for full baseband restart, not scanning_needs_restore_
-        scanning_needs_restore_ = false;
-
-        // Save scanning state BEFORE exit_sweep_mode() clears it (line 1095).
-        const bool was_scanning = scanning_;
-
-        // Always clean up sweep mode before pushing sub-view
-        if (composite_active_) {
-            // suppress_auto_restart: PatternManagerView handles its own streaming state.
-            exit_sweep_mode(true);
-        }
-
-        // Stop scanning using saved state (exit_sweep_mode cleared scanning_)
-        if (was_scanning) {
-            scanner_thread_->set_scanning(false);
-            if (scanner_ptr_ != nullptr) {
-                (void)scanner_ptr_->stop_scanning();
-            }
-            baseband::spectrum_streaming_stop();
-            scanning_ = false;
-            button_start_stop_.set_text("Start");
-        }
-
-        // Stop scanner thread BEFORE push to prevent M0 FIFO overflow
-        // during PatternManagerView construction.
-        if (scanner_thread_ != nullptr) {
-            scanner_thread_->stop();
-        }
-
-        // Mark baseband for restore when returning from PatternManagerView
-        baseband_needs_restore_ = true;
-        nav_.push<PatternManagerView>();
     };
 
     // Hardware initialization (callbacks are already set, safe to early-return)
@@ -837,19 +788,6 @@ void DroneScannerUI::refresh_ui() noexcept {
             refresh_display_data_.drone_count = count;
             for (size_t i = 0; i < count; ++i) {
                 DisplayDroneEntry entry(refresh_drones_[i]);
-                // Look up pattern name from PatternManager using stored index
-                if (entry.pattern_matched && entry.pattern_index >= 0) {
-                    const auto* pattern = scanner_ptr_->get_pattern_manager().get_pattern(
-                        static_cast<size_t>(entry.pattern_index));
-                    if (pattern != nullptr) {
-                        size_t j = 0;
-                        while (j < 15 && pattern->name[j] != '\0') {
-                            entry.pattern_name[j] = pattern->name[j];
-                            ++j;
-                        }
-                        entry.pattern_name[j] = '\0';
-                    }
-                }
                 refresh_display_data_.drones[i] = entry;
             }
             // Clear stale entries beyond current count
@@ -1289,26 +1227,7 @@ void DroneScannerUI::on_sweep_spectrum(const ChannelSpectrum& spectrum) noexcept
         // AGC for sweep mode — applies optimal gains to each frame's spectrum
         apply_agc(spectrum.db.data());
 
-        // Update pattern match highlight (red frame) if pattern matching is enabled
-        // FIX: Convert 256-bin FFT index to 240-pixel screen index (HIGH-1)
-        // Original bug: Direct cast from bin (0-255) to pixel caused 134-pixel offset error
-        if (scanner_ptr_->is_pattern_matched()) {
-            const uint8_t bin = scanner_ptr_->get_matched_pattern_bin();
-            int16_t pixel = -1;
-            if (bin >= FFT_DC_SPIKE_START && bin < FFT_DC_SPIKE_END) {
-                pixel = -1;  // DC spike, skip
-            } else if (bin >= SWEEP_FFT_MAP_START) {
-                // Lower sideband: 134-255 -> 0-121
-                pixel = static_cast<int16_t>(bin - SWEEP_FFT_MAP_START);
-            } else if (bin < SWEEP_FFT_MAP_CROSSOVER) {
-                // Upper sideband: 2-119 -> 118-237 (using UPPER_OFFSET = 118)
-                static constexpr uint8_t UPPER_OFFSET = SWEEP_FFT_MAP_CROSSOVER - 2;
-                pixel = static_cast<int16_t>(bin + UPPER_OFFSET);
-            }
-            drone_display_.set_matched_pattern_bin(pixel);
-        } else {
-            drone_display_.set_matched_pattern_bin(-1);
-        }
+
     }
 
     // Live display update: show current pair data every frame

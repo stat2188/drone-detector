@@ -66,7 +66,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
     , field_mahalanobis_threshold_({UI_POS_X(22), UI_POS_Y(1)}, 3,
                                {MAHALANOBIS_THRESHOLD_MIN_X10, MAHALANOBIS_THRESHOLD_MAX_X10},
                                DEFAULT_MAHALOBIS_THRESHOLD_X10, ' ')
-    , check_pattern_matching_({UI_POS_X(10), UI_POS_Y(8)}, 5, "Ptr", false)
     , check_sensitive_mode_({UI_POS_X(10), UI_POS_Y(10)}, 4, "Sens", false)
     , field_spectrum_margin_({UI_POS_X(20), UI_POS_Y(5)}, 3, {5, 200}, 5, ' ')
     , field_spectrum_min_width_({UI_POS_X(20), UI_POS_Y(6)}, 3, {1, 100}, 1, ' ')
@@ -132,7 +131,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         &check_rssi_variance_,
         &check_mahalanobis_,
         &field_mahalanobis_threshold_,
-        &check_pattern_matching_,
         &check_sensitive_mode_,
         &field_spectrum_margin_,
         &field_spectrum_min_width_,
@@ -489,12 +487,6 @@ DroneSettingsView::DroneSettingsView(NavigationView& nav, const ScanConfig& conf
         settings_dirty_ = true;
     };
 
-    // Pattern matching toggle
-    check_pattern_matching_.on_select = [this](ui::Checkbox&, bool v) {
-        settings_.pattern_matching_enabled = v;
-        settings_dirty_ = true;
-    };
-
     // Sensitive mode toggle
     check_sensitive_mode_.on_select = [this](ui::Checkbox&, bool v) {
         settings_.sensitive_mode = v;
@@ -591,7 +583,6 @@ void DroneSettingsView::apply_settings_to_ui() noexcept {
     check_rssi_variance_.set_value(settings_.rssi_variance_enabled);
     check_mahalanobis_.set_value(settings_.mahalanobis_enabled);
     field_mahalanobis_threshold_.set_value(static_cast<int32_t>(settings_.mahalanobis_threshold_x10));
-    check_pattern_matching_.set_value(settings_.pattern_matching_enabled);
     check_sensitive_mode_.set_value(settings_.sensitive_mode);
     field_cfar_mode_.set_by_value(static_cast<int32_t>(settings_.cfar_mode));
     field_cfar_ref_cells_.set_value(static_cast<int32_t>(settings_.cfar_ref_cells));

@@ -9,13 +9,6 @@
 namespace drone_analyzer {
 
 /**
- * @brief Maximum pattern name length (including null terminator)
- * @note Used only in SignalPattern (pattern_types.hpp) and display buffers.
- *       TrackedDrone no longer stores the name — uses matched_pattern_index_ instead.
- */
-constexpr size_t PATTERN_NAME_MAX_LEN = 28;
-
-/**
  * @brief Type alias for frequency in Hz
  */
 using FreqHz = uint64_t;
@@ -295,14 +288,6 @@ struct TrackedDrone {
     static constexpr uint8_t TREND_HYSTERESIS_COUNT = 3;
 
     // ========================================================================
-    // Pattern match state
-    // ========================================================================
-
-    bool pattern_matched_{false};              // 1 byte — pattern match indicator
-    uint16_t pattern_score_{0};                // 2 bytes — similarity score (0-1000)
-    int8_t matched_pattern_index_ = -1;       // 1 byte — index into PatternManager (-1 = no match)
-
-    // ========================================================================
     // Mahalanobis statistics
     // ========================================================================
 
@@ -413,20 +398,6 @@ struct TrackedDrone {
     }
 
     /**
-     * @brief Set pattern match state on this tracked drone
-     * @param score Similarity score (0-1000)
-     * @param index Index into PatternManager's pattern array (-1 = no match)
-     */
-    void set_pattern_match(uint16_t score, int8_t index) noexcept {
-        pattern_matched_ = (index >= 0);
-        pattern_score_ = score;
-        matched_pattern_index_ = index;
-    }
-
-    // Pattern match state is overwritten on every match; no explicit clear needed
-    // because a drone is removed from tracked_drones_ when its threat decays to NONE.
-
-    /**
      * @brief Increment missed sweep cycle counter
      * @note Called at end of each full sweep cycle when drone was NOT seen
      */
@@ -517,8 +488,8 @@ struct TrackedDrone {
 };
 
 /**
- * @brief Display drone entry for UI (~64 bytes with alignment)
- * @note POD type, no vtable. Includes pattern matching fields.
+ * @brief Display drone entry for UI (~48 bytes with alignment)
+ * @note POD type, no vtable.
  */
 struct DisplayDroneEntry {
     FreqHz frequency;           // 8 bytes - Drone frequency
@@ -529,11 +500,6 @@ struct DisplayDroneEntry {
     char type_name[16];         // 16 bytes
     uint32_t display_color;     // 4 bytes (RGBA)
     MovementTrend trend;        // 1 byte (uint8_t)
-    bool pattern_matched;         // 1 byte - Pattern match indicator
-    uint16_t pattern_score;       // 2 bytes - Similarity score (0-1000)
-    char pattern_name[16];       // 16 bytes - Matched pattern name (populated by caller)
-    int8_t pattern_index;        // 1 byte - Index into PatternManager (-1 = no match)
-    
     // Total: 48 bytes (no vtable, POD type)
     
     /**

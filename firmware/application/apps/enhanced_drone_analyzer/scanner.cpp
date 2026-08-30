@@ -136,8 +136,6 @@ ScanConfig::ScanConfig() noexcept
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
-    , pattern_matching_enabled(false)
-    , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD)
     , sensitive_mode(false) {
     // sweep2/3/4 fields use in-class defaults: disabled
     // mahalanobis_enabled uses in-class default (true, FPV-optimized)
@@ -169,8 +167,6 @@ ScanConfig::ScanConfig(ScanningMode m, FreqHz start, FreqHz end) noexcept
     , neighbor_margin_db(DEFAULT_NEIGHBOR_MARGIN_DB)
     , rssi_variance_enabled(true)
     , confirm_count(DEFAULT_CONFIRM_COUNT)
-    , pattern_matching_enabled(false)
-    , pattern_similarity_threshold(DEFAULT_PATTERN_SIMILARITY_THRESHOLD)
     , sensitive_mode(false) {
     // sweep2/3/4 fields use in-class defaults: disabled
     // mahalanobis_enabled uses in-class default (true, FPV-optimized)
@@ -239,8 +235,6 @@ DroneScanner::DroneScanner(DatabaseManager& database, HardwareController& hardwa
     , median_filter_enabled_{false}
     , neighbor_margin_checker_()
     , mahalanobis_detector_()
-    , pattern_matcher_()
-    , pattern_manager_()
     , waterfall_history_()
     , adaptive_threshold_() {
 
@@ -282,11 +276,6 @@ ErrorCode DroneScanner::initialize() noexcept {
 
     state_ = ScannerState::IDLE;
     statistics_.reset();
-
-    // NOTE: Pattern loading is DEFERRED to on_show() to avoid blocking the
-    // constructor with SD card I/O. PatternManager::load_patterns() is idempotent
-    // (returns immediately if already loaded_==true), so calling it from on_show()
-    // is safe and efficient.
 
     return ErrorCode::SUCCESS;
 }
@@ -822,12 +811,6 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
         }
     }
 
-    // Pattern matching in normal scan mode: run after shape analysis passes
-    PatternMatchResult normal_pattern_result = PatternMatchResult::no_match();
-    if (signal_detected && config_.pattern_matching_enabled && pattern_manager_.get_pattern_count() > 0) {
-        normal_pattern_result = try_match_pattern_internal(spectrum.db.data(), frequency);
-    }
-
     if (signal_detected) {
         // Exception check: suppress drones at configured exclusion frequencies
         // Applies to both normal scanning and sweep detection paths
@@ -908,18 +891,6 @@ ErrorCode DroneScanner::process_spectrum_message(const ChannelSpectrum& spectrum
             );
             if (err != ErrorCode::SUCCESS) {
                 return err;
-            }
-        }
-
-        // Propagate pattern match result to tracked drone entry (normal mode)
-        // NOTE: drone_type is NOT overwritten — database classification (DJI, FPV, etc.)
-        // is preserved. Pattern match info is supplementary via pattern_matched_ fields.
-        if (normal_pattern_result.matched && should_update && drone_idx < tracked_count_) {
-            const SignalPattern* p = pattern_manager_.get_pattern(normal_pattern_result.pattern_index);
-            if (p != nullptr && p->name[0] != '\0') {
-                auto& d = tracked_drones_[drone_idx];
-                d.set_pattern_match(normal_pattern_result.score,
-                                    static_cast<int8_t>(normal_pattern_result.pattern_index));
             }
         }
 
@@ -1463,21 +1434,6 @@ void DroneScanner::reset_neighbor_checker() noexcept {
     neighbor_margin_checker_.reset();
 }
 
-void DroneScanner::refresh_patterns() noexcept {
-    MutexLock<LockOrder::DATA_MUTEX> lock(mutex_);
-
-    // Load patterns from SD on first call (idempotent — skips if already loaded).
-    // This was moved from initialize() to avoid SD card I/O in the constructor.
-    (void)pattern_manager_.load_patterns();
-
-    if (config_.pattern_matching_enabled) {
-        pattern_matcher_.set_patterns(
-            pattern_manager_.get_patterns_array(),
-            pattern_manager_.get_pattern_count()
-        );
-    }
-}
-
 // ============================================================================
 // Spectrum Shape Analysis — detect U/V peaks above flat noise floor
 // ============================================================================
@@ -1956,25 +1912,9 @@ bool DroneScanner::apply_shape_filters(
     return true;
 }
 
-PatternMatchResult DroneScanner::try_match_pattern_internal(
-    const uint8_t* spectrum,
-    FreqHz current_freq
-) noexcept {
-    if (!config_.pattern_matching_enabled) {
-        return PatternMatchResult::no_match();
-    }
-
-    // pattern_matcher_.match() handles empty-patterns case internally.
-    // Do NOT call pattern_manager_.get_pattern_count() here — it acquires
-    // DATABASE_MUTEX which may contend with refresh_patterns() during SD I/O.
-    // The pattern matcher's cached state is only modified under DATA_MUTEX,
-    // and this function is always called from the UI thread (safe no-lock read).
-    return pattern_matcher_.match(spectrum, current_freq);
-}
-
 // ============================================================================
 // apply_sweep_tracking — range check, exception filter, Mahalanobis gate,
-//                        drone tracking, and pattern match assignment
+//                        and drone tracking
 // ============================================================================
 
 void DroneScanner::apply_sweep_tracking(
@@ -1982,11 +1922,7 @@ void DroneScanner::apply_sweep_tracking(
     int32_t peak_rssi,
     FreqHz center_freq,
     FreqHz f_min,
-    FreqHz f_max,
-    size_t highlight_bin,
-    int8_t pattern_index,
-    uint16_t pattern_correlation,
-    bool pattern_matched
+    FreqHz f_max
 ) noexcept {
     const int32_t cfg_rssi_thresh = config_.rssi_threshold_dbm;
     if (peak_rssi <= cfg_rssi_thresh) return;
@@ -2059,14 +1995,6 @@ void DroneScanner::apply_sweep_tracking(
 
         // Use returned index — avoids redundant find_drone_by_frequency_internal() O(n) search
         if (drone_idx < tracked_count_) {
-            if (pattern_matched) {
-                const SignalPattern* pattern = pattern_manager_.get_pattern(pattern_index);
-                if (pattern != nullptr && pattern->name[0] != '\0') {
-                    matched_pattern_index_ = pattern_index;
-                    matched_pattern_bin_ = highlight_bin;
-                    tracked_drones_[drone_idx].set_pattern_match(pattern_correlation, static_cast<int8_t>(pattern_index));
-                }
-            }
             tracked_drones_[drone_idx].update_cycle_peak(peak_rssi);
             tracked_drones_[drone_idx].mark_seen(chTimeNow(), peak_rssi);
         }
@@ -2081,8 +2009,6 @@ void DroneScanner::process_spectrum_sweep(
     FreqHz f_max
 ) noexcept {
     current_frequency_ = center_freq;
-
-    clear_matched_pattern();
 
     // Per-frequency median filter reset: only reset when the tuned frequency changes.
     // In sweep mode, each FFT frame is a different frequency, so resetting every frame
@@ -2216,12 +2142,6 @@ void DroneScanner::process_spectrum_sweep(
 
     const int32_t total_gain = get_current_total_gain();
 
-    // Pattern matching is loop-invariant: try_match_pattern_internal → match()
-    // depends only on spectrum + center_freq, not on the per-peak index, and has
-    // no side effects. Match once per frame and reuse for every peak (was called
-    // once per CFAR peak — up to 8 redundant invocations per frame).
-    const PatternMatchResult early_result = try_match_pattern_internal(spectrum.db.data(), center_freq);
-
     // Tracks whether any peak survived shape analysis this frame. TBD below must
     // be gated on this: once single-frame detection tracked a signal, the
     // multi-frame integration must NOT run (documented at :2256).
@@ -2237,19 +2157,7 @@ void DroneScanner::process_spectrum_sweep(
         const size_t peak_pixel = fft_bin_to_lg_pixel(peak_index);
         if (peak_pixel >= COMPOSITE_SIZE) continue;
 
-        // Pattern matching on raw FFT (consistent with saved patterns).
         FreqHz peak_freq = fft_bin_to_freq(center_freq, peak_index);
-        size_t highlight_bin = 0;
-        bool early_pattern_matched = false;
-        int8_t early_pattern_index = -1;
-        uint16_t early_pattern_correlation = 0;
-
-        if (early_result.matched) {
-            early_pattern_matched = true;
-            early_pattern_index = static_cast<int8_t>(early_result.pattern_index);
-            highlight_bin = peak_index;
-            early_pattern_correlation = early_result.score;
-        }
 
         // Shape analysis on LG-reordered buffer (continuous, no DC gap).
         int32_t shape_rssi = RSSI_MIN_DBM;
@@ -2269,9 +2177,7 @@ void DroneScanner::process_spectrum_sweep(
 
         apply_sweep_tracking(
             peak_freq,
-            peak_rssi, center_freq, f_min, f_max,
-            highlight_bin, early_pattern_index,
-            early_pattern_correlation, early_pattern_matched
+            peak_rssi, center_freq, f_min, f_max
         );
     }
 
@@ -2314,8 +2220,7 @@ void DroneScanner::process_spectrum_sweep(
                 // Skip DC spike bins
                 if (fft_bin_to_lg_pixel(tbd_peak_bin) < COMPOSITE_SIZE) {
                     apply_sweep_tracking(
-                        tbd_freq, tbd_rssi, center_freq, f_min, f_max,
-                        tbd_peak_bin, -1, 0, false
+                        tbd_freq, tbd_rssi, center_freq, f_min, f_max
                     );
                 }
             }

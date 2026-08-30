@@ -73,9 +73,6 @@ private:
     ui::Checkbox check_mahalanobis_;
     ui::NumberField field_mahalanobis_threshold_;
 
-    // Pattern matching toggle
-    ui::Checkbox check_pattern_matching_;
-
     // Sensitive mode toggle
     ui::Checkbox check_sensitive_mode_;
 

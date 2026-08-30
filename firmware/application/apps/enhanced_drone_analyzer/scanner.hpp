@@ -15,8 +15,6 @@
 #include "median_filter.hpp"
 #include "message.hpp"
 #include "mahalanobis_gate.hpp"
-#include "pattern_matcher.hpp"
-#include "pattern_manager.hpp"
 #include "waterfall_history.hpp"
 #include "spectral_kurtosis.hpp"
 #include "adaptive_threshold.hpp"
@@ -110,10 +108,6 @@ struct ScanConfig {
     uint8_t exception_radius_mhz{DEFAULT_EXCEPTION_RADIUS_MHZ};  // 1-100, configurable exclusion radius
     uint8_t rssi_decrease_cycles{5};  // Normal mode: seconds of RSSI decrease before threat decay (sweep uses hardcoded MAX_SWEEP_CYCLES_MISSED)
     
-    // Pattern matching settings
-    bool pattern_matching_enabled{false};              // Enable/disable pattern matching
-    uint16_t pattern_similarity_threshold{DEFAULT_PATTERN_SIMILARITY_THRESHOLD};  // 0-1000
-
     // Spectral Kurtosis (higher-order statistics)
     bool kurtosis_enabled{false};        // Default OFF (opt-in — new feature, untested in field)
     int16_t kurtosis_min_x10{20};        // Minimum kurtosis × 10 (2.0) to accept signal
@@ -1196,8 +1190,6 @@ public:
      * @param f_max Maximum frequency of sweep range (0 = no range check)
      * @note Peak detection runs on raw FFT bins (CFAR or fixed threshold).
      *       Shape analysis runs on LG-reordered buffer (continuous, no DC gap).
-     *       Pattern matching runs on raw FFT (consistent normalization with
-     *       saved patterns — normalize() and match() both operate on 256-bin FFT).
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex)
      * @note Implementation in scanner.cpp — delegates tracking to apply_sweep_tracking()
      */
@@ -1317,39 +1309,6 @@ public:
     [[nodiscard]] uint32_t get_lock_timeout_count() const noexcept {
         return lock_timeout_count_;
     }
-
-    /**
-     * @brief Get pattern manager (for UI access)
-     * @return Reference to pattern manager
-     * @note Thread-safe: pattern manager is already thread-safe internally
-     */
-    [[nodiscard]] PatternManager& get_pattern_manager() noexcept {
-        return pattern_manager_;
-    }
-
-    /**
-     * @brief Get number of loaded patterns
-     * @return Pattern count from pattern manager
-     * @note Thread-safe: pattern manager is internally thread-safe
-     */
-    [[nodiscard]] size_t get_pattern_count() const noexcept {
-        return pattern_manager_.get_pattern_count();
-    }
-
-    /**
-     * @brief Get loaded pattern array
-     * @return Pointer to first pattern (may be nullptr if count == 0)
-     * @note Thread-safe: pattern manager is internally thread-safe
-     */
-    [[nodiscard]] const SignalPattern* get_patterns() const noexcept {
-        return pattern_manager_.get_patterns_array();
-    }
-
-    /**
-     * @brief Force reload patterns from SD and update matcher
-     * @note Called after pattern save/delete to ensure SWEEP sees new patterns
-     */
-    void refresh_patterns() noexcept;
 
 private:
     /**
@@ -1538,16 +1497,12 @@ private:
 
     /**
      * @brief Sweep-mode post-detection: range check, exception filter, Mahalanobis gate,
-     *        drone tracking, and pattern match assignment.
+     *        and drone tracking.
      * @param peak_freq       Detected peak RF frequency (Hz)
      * @param peak_rssi       Filtered RSSI (dBm) after median filter
      * @param center_freq     FFT slice center frequency for Mahalanobis
      * @param f_min           Sweep range lower bound (0 = use config)
      * @param f_max           Sweep range upper bound (0 = use config)
-     * @param highlight_bin   256-bin FFT index for UI red match marker
-     * @param pattern_index   Matched pattern index (-1 if none)
-     * @param pattern_correlation SAD score (0-1000)
-     * @param pattern_matched Whether a pattern matched this frame
      * @note Extracted from process_spectrum_sweep to eliminate code duplication
      *       between the raw-FFT and LG-buffer overloads.
      * @note Called from UI thread during sweep (scanner thread stopped, no mutex).
@@ -1557,11 +1512,7 @@ private:
         int32_t peak_rssi,
         FreqHz center_freq,
         FreqHz f_min,
-        FreqHz f_max,
-        size_t highlight_bin,
-        int8_t pattern_index,
-        uint16_t pattern_correlation,
-        bool pattern_matched
+        FreqHz f_max
     ) noexcept;
 
     /**
@@ -1583,22 +1534,6 @@ private:
         }
         return COMPOSITE_SIZE;  // DC spike (bins 120-135) — invalid
     }
-
-    /**
-     * @brief Internal: Try to match spectrum against stored patterns
-     * @param spectrum Channel spectrum data (256 bins)
-     * @param current_freq Current tuned frequency for proximity filter
-     * @return PatternMatchResult with match status
-     * @note Single source of truth for pattern matching — called from both
-     *       process_spectrum_message() (under mutex) and process_spectrum_sweep()
-     *       (no mutex, scanner thread stopped). pattern_manager_ is internally
-     *       thread-safe; config_.pattern_matching_enabled is read non-atomically
-     *       but the worst case is one extra/stale match on a config flip.
-     */
-    [[nodiscard]] PatternMatchResult try_match_pattern_internal(
-        const uint8_t* spectrum,
-        FreqHz current_freq
-    ) noexcept;
 
     /**
      * @brief Internal: Trigger alert callback if set
@@ -1730,12 +1665,6 @@ private:
     // Mahalanobis detector for statistical outlier detection (Sweep mode only)
     MahalanobisDetector mahalanobis_detector_;
 
-    // Pattern matcher for signal pattern recognition
-    PatternMatcher pattern_matcher_;
-
-    // Pattern manager for loading/saving patterns from SD card
-    PatternManager pattern_manager_;
-
     // ========================================================================
     // Phase 1: Foundation Detection Enhancements
     // ========================================================================
@@ -1772,16 +1701,7 @@ private:
     static constexpr uint8_t TBD_MIN_FRAMES = 3;
     static constexpr uint8_t TBD_THRESHOLD_MARGIN = 10;  // Half of spectrum margin (dB)
 
-    // Matched pattern index (-1 if no pattern matched in sweep)
-    int8_t matched_pattern_index_{-1};
-    size_t matched_pattern_bin_{0};
-
     // No gain cache — use get_current_total_gain() directly to avoid stale values.
-
-public:
-    [[nodiscard]] bool is_pattern_matched() const noexcept { return matched_pattern_index_ >= 0; }
-    [[nodiscard]] size_t get_matched_pattern_bin() const noexcept { return matched_pattern_bin_; }
-    void clear_matched_pattern() noexcept { matched_pattern_index_ = -1; matched_pattern_bin_ = 0; }
 };
 
 } // namespace drone_analyzer

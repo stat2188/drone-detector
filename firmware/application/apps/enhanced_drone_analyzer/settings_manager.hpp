@@ -77,9 +77,6 @@ struct SettingsStruct {
     bool mahalanobis_enabled;
     uint8_t mahalanobis_threshold_x10;
 
-    // Pattern matching
-    bool pattern_matching_enabled;
-
     // Sensitive mode — relaxes shape filters for weak/long-range signals
     bool sensitive_mode{false};
 

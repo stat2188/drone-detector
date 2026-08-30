@@ -698,8 +698,6 @@ void DroneDisplay::draw_drone_entry(
     // Trend symbol: right-aligned at the row's right edge (x + width - PAD - 1ch).
     const uint16_t char_w = Theme::getInstance()->fg_light->font.char_width();
     const uint16_t col1_end = (width * 40) / 100;
-    // A third (optional) pattern row must fit: y+22+16 within the entry height.
-    constexpr uint16_t PATTERN_ROW_MIN_H = 38;
 
     // Type name — truncated to TYPE_MAX_CHARS so the threat clamp below always
     // has a known upper bound, even for names longer than 7 chars.
@@ -731,19 +729,6 @@ void DroneDisplay::draw_drone_entry(
     char trend_buffer[2] = {trend_symbol, '\0'};
     const uint16_t trend_x = x + width - LIST_PAD - char_w;
     draw_text(painter, trend_buffer, trend_x, y + 12, COLOR_TEXT);
-
-    // Line 3 (optional): Pattern match info — on its own row so it never
-    // collides with the RSSI now adjacent to the frequency.
-    if (drone.pattern_matched && drone.pattern_name[0] != '\0' && height >= PATTERN_ROW_MIN_H) {
-        char pattern_buf[22];
-        const uint16_t score_pct = (drone.pattern_score * 100) / 1000;
-        snprintf(pattern_buf, sizeof(pattern_buf), "PTR:%.12s(%u%%)",
-                 drone.pattern_name,
-                 static_cast<unsigned>(score_pct));
-        const uint32_t pm_color = (drone.pattern_score >= SIMILARITY_STRONG)
-            ? COLOR_MEDIUM_THREAT : COLOR_LOW_THREAT;
-        draw_text(painter, pattern_buf, x + col1_end + LIST_PAD, y + 22, pm_color);
-    }
 }
 
 void DroneDisplay::draw_text(
@@ -1189,17 +1174,6 @@ void DroneDisplay::render_composite(
         painter.draw_rectangle({hx, chart_start_y, 1, chart_height}, Color::white());
     }
 
-    // Draw red frame for matched pattern (bin must be ≥3 to avoid uint16_t underflow)
-    if (matched_pattern_bin_ >= 3) {
-        const uint16_t frame_x = chart_start_x + static_cast<uint16_t>(matched_pattern_bin_ - 3);
-        const uint16_t frame_w = 7;
-        painter.draw_rectangle({
-            frame_x,
-            chart_start_y,
-            frame_w,
-            chart_height
-        }, Color::red());
-    }
 }
 
 void DroneDisplay::set_multi_zone_data(const uint8_t buffers[][240], uint8_t zone_count, size_t /*buffer_size*/,
