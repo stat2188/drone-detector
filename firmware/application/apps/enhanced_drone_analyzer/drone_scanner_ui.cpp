@@ -577,11 +577,6 @@ void DroneScannerUI::on_show() {
     // Re-register handlers when becoming visible (after returning from sub-view)
     register_handlers();
 
-    // Refresh patterns from SD — ensures patterns saved via inline save are available for SWEEP
-    if (scanner_ptr_ != nullptr) {
-        scanner_ptr_->refresh_patterns();
-    }
-
     if (scanner_thread_ != nullptr && !scanner_thread_->is_active()) {
         scanner_thread_->start();
     }
