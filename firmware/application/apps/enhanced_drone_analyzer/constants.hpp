@@ -647,6 +647,31 @@ constexpr uint8_t SWEEP_PIXELS_PER_SLICE = 240;
 constexpr uint16_t COMPOSITE_SIZE = 240;
 
 /**
+ * @brief Max center-to-center sweep step (Hz) that guarantees ZERO blind
+ *        frequencies across a sweep window ("gapless coverage").
+ * @note Every 20 MHz slice excludes the 16-bin DC notch (bins 120-135) and the
+ *       edge bins (0-5, 250-255) from detection. Stepping the center by more
+ *       than this leaves a PERMANENT ~1.8 MHz dead zone around every slice
+ *       center (a drone on such a frequency can never be detected). Stepping
+ *       by this value or less lets each slice's notch be fully covered by the
+ *       neighbouring slice's active bins (every frequency probed by >=2 fits).
+ * @note Formula: (256 - 6 - 1 - 136) * 78125 = 113 bins * 78,125 = 8,828,125 Hz
+ */
+constexpr FreqHz SWEEP_GAPLESS_STEP_MAX_HZ =
+    static_cast<FreqHz>(FFT_BIN_COUNT - FFT_EDGE_SKIP_NARROW - 1 - FFT_DC_SPIKE_END)
+    * SWEEP_BIN_SIZE;
+
+/**
+ * @brief First-slice center lead above f_min for wide windows (Hz).
+ * @note = 120 bins * 78,125 = 9,375,000 Hz. The first slice's negative-side
+ *       active band (bins 6..119, reach 120 bins below center) then starts at
+ *       exactly f_min, eliminating the leading-edge dead zone (~0.59 MHz) that
+ *       a f_min + half-slice placement leaves.
+ */
+constexpr FreqHz SWEEP_FIRST_CENTER_LEAD_HZ =
+    static_cast<FreqHz>(FFT_DC_SPIKE_START) * SWEEP_BIN_SIZE;
+
+/**
  * @brief FFT bin where lower sideband mapping starts
  */
 constexpr uint8_t SWEEP_FFT_MAP_START = 134;

@@ -18,9 +18,6 @@ namespace drone_analyzer {
 static FreqHz read_mhz_field(const ui::NumberField& field) noexcept {
     return static_cast<FreqHz>(field.value()) * MHZ;
 }
-static FreqHz read_khz_field(const ui::NumberField& field) noexcept {
-    return static_cast<FreqHz>(field.value()) * KHZ;
-}
 
 // ============================================================================
 // Sweep field ID → config mapping (for FrequencyKeypadView callbacks)
@@ -127,7 +124,6 @@ SweepWindowView::SweepWindowView(NavigationView& nav, const Rect parent_rect, Dr
         &check_enabled_,
         &field_start_,
         &field_end_,
-        &field_step_,
         &labels_exc_,
         &field_exc0_,
         &field_exc1_,
@@ -183,7 +179,6 @@ void SweepWindowView::bind(WindowData* data, uint8_t window_index) noexcept {
             {{UI_POS_X(0), UI_POS_Y(0)}, label_buf, Color::white()},
             {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Color::white()},
             {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Color::white()},
-            {{UI_POS_X(1), UI_POS_Y(5)}, "Step(kHz):", Color::white()},
         });
         sync_to_widgets();
     }
@@ -193,7 +188,6 @@ void SweepWindowView::sync_to_widgets() noexcept {
     if (bound_data_ == nullptr) return;
     field_start_.set_value(static_cast<int32_t>(bound_data_->start_freq / MHZ));
     field_end_.set_value(static_cast<int32_t>(bound_data_->end_freq / MHZ));
-    field_step_.set_value(static_cast<int32_t>(bound_data_->step_freq / KHZ));
     check_enabled_.set_value(bound_data_->enabled);
 
     ui::NumberField* exc_fields[5] = {&field_exc0_, &field_exc1_, &field_exc2_, &field_exc3_, &field_exc4_};
@@ -206,7 +200,6 @@ void SweepWindowView::sync_from_widgets() noexcept {
     if (bound_data_ == nullptr) return;
     bound_data_->start_freq = read_mhz_field(field_start_);
     bound_data_->end_freq = read_mhz_field(field_end_);
-    bound_data_->step_freq = read_khz_field(field_step_);
     bound_data_->enabled = check_enabled_.value();
 
     const ui::NumberField* exc_fields[5] = {&field_exc0_, &field_exc1_, &field_exc2_, &field_exc3_, &field_exc4_};

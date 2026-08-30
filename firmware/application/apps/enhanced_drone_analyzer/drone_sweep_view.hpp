@@ -34,8 +34,10 @@ struct WindowData {
 
 /**
  * @brief Single-window sweep configuration view (reuses widgets for all 4 windows)
- * @note Contains Start/End/Step + Enabled + 5 exception fields for ONE window.
+ * @note Contains Start/End + Enabled + 5 exception fields for ONE window.
  *       DroneSweepView switches the data pointer to show different windows.
+ *       (The sweep center pitch is auto-derived for gapless coverage —
+ *       SweepWindow::init() ignores step_freq. See SWEEP_GAPLESS_STEP_MAX_HZ.)
  * @note SRAM: ~480 bytes (15 widgets × ~32 bytes each)
  *       vs old design: ~2,400 bytes (2 group views × 30 widgets × ~32 bytes)
  */
@@ -76,12 +78,10 @@ public:
         {{UI_POS_X(0), UI_POS_Y(0)}, "-- Window --", Color::white()},
         {{UI_POS_X(1), UI_POS_Y(1)}, "Start(MHz):", Color::white()},
         {{UI_POS_X(1), UI_POS_Y(3)}, "End(MHz):", Color::white()},
-        {{UI_POS_X(1), UI_POS_Y(5)}, "Step(kHz):", Color::white()},
     };
-    ui::Checkbox check_enabled_{{UI_POS_X(1), UI_POS_Y(7)}, 8, "Enabled", false};
+    ui::Checkbox check_enabled_{{UI_POS_X(1), UI_POS_Y(5)}, 8, "Enabled", false};
     ui::NumberField field_start_{{UI_POS_X(1), UI_POS_Y(2)}, 5, {100, 7200}, 1, ' '};
     ui::NumberField field_end_{{UI_POS_X(1), UI_POS_Y(4)}, 5, {100, 7200}, 1, ' '};
-    ui::NumberField field_step_{{UI_POS_X(1), UI_POS_Y(6)}, 5, {17813, 99999}, 17813, ' '};
 
     // Exception fields — right side (5 slots)
     ui::Labels labels_exc_{

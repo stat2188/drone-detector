@@ -1435,50 +1435,45 @@ void DroneScannerUI::SweepWindow::init(FreqHz start, FreqHz end, FreqHz step) no
         pixel_step_hz = 1;
     }
 
-    // Minimum step = usable FFT bandwidth per frame.
-    // step_hz MUST NOT exceed this — otherwise consecutive FFT frames leave
-    // uncovered frequency gaps between them (signals in the gap are never detected).
-    // Usable bandwidth: SWEEP_BINS_PER_STEP(228) × SWEEP_BIN_SIZE(78125) = 17,812,500 Hz
-    static constexpr FreqHz MIN_STEP_HZ = SWEEP_BINS_PER_STEP * SWEEP_BIN_SIZE;
+    // GAPLESS COVERAGE — the ONLY correct sweep pitch for a threat detector.
+    // Every 20 MHz slice excludes the 16-bin DC notch (FFT bins 120-135) and
+    // the edge bins (0-5, 250-255) from detection. Stepping the center by the
+    // old ~17.8 MHz pitch (SWEEP_BINS_PER_STEP) left a PERMANENT ~1.8 MHz dead
+    // zone around EVERY slice center plus a ~0.6 MHz dead zone at the window's
+    // lower edge: a drone on any of those fixed frequencies could never be
+    // detected, on any sweep pass (numeric simulation of the exact
+    // fft_bin_to_freq() mask: ~10% of every window was blind).
+    //
+    // The center pitch is AUTO-DERIVED so each slice's notch is fully covered
+    // by the neighbouring slice's active bins: step <= SWEEP_GAPLESS_STEP_MAX_HZ
+    // (8,828,125 Hz) ⇒ every frequency is probed by >= 2 slices and no blind
+    // band exists anywhere. The user-facing sweep_step_freq is intentionally
+    // ignored: any other pitch either recreates the notches (step > 8.83 MHz)
+    // or wastes dwell for no benefit (step < 8.83 MHz).
+    static constexpr FreqHz MAX_STEP_HZ = SWEEP_GAPLESS_STEP_MAX_HZ;
+    static constexpr FreqHz HZ_PER_FRAME = (SWEEP_PIXELS_PER_SLICE - 2) * SWEEP_BIN_SIZE;
 
-    step_hz = (step > 0) ? step : MIN_STEP_HZ;
-    if (step_hz < MIN_STEP_HZ) {
-        step_hz = MIN_STEP_HZ;
-    }
-
-    // FIX (CRIT-1): Ceiling division guarantees step_hz ≤ MIN_STEP_HZ after recalc.
-    // Before: frames = range / MIN_STEP_HZ (truncates → too few frames → gaps)
-    // After:  frames = ceil(range / MIN_STEP_HZ) → step_hz = range/frames ≤ MIN
-    uint16_t frames = (range + MIN_STEP_HZ - 1) / MIN_STEP_HZ;
+    uint16_t frames = (range + MAX_STEP_HZ - 1) / MAX_STEP_HZ;
     if (frames == 0) {
         frames = 1;
     }
     step_hz = range / frames;
 
-    // FIX (CRIT-2): Ensure enough frames to fill all 240 composite pixels.
-    // Each frame contributes 238 bins to the Hz accumulator (2 skipped for DC guard).
-    // Total accumulated Hz = frames × 238 × SWEEP_BIN_SIZE must ≥ range,
-    // otherwise trailing pixels in composite[] stay permanently empty.
-    static constexpr FreqHz HZ_PER_FRAME = (SWEEP_PIXELS_PER_SLICE - 2) * SWEEP_BIN_SIZE;
-    const FreqHz total_accumulated = static_cast<FreqHz>(frames) * HZ_PER_FRAME;
-    if (total_accumulated < range) {
-        frames = static_cast<uint16_t>((range + HZ_PER_FRAME - 1) / HZ_PER_FRAME);
-        if (frames == 0) frames = 1;
-        step_hz = range / frames;
-    }
+    // Edge sanity: frames * HZ_PER_FRAME >= 2.1 * range by construction, so the
+    // composite column accumulator always fills COMPOSITE_SIZE well before the
+    // last slice — no trailing-empty-pixel regression.
+    (void)step;  // user pitch intentionally ignored (gapless auto-derivation)
 
-    // Center the first slice so the window lies inside its tunable (RF) band:
-    //   - narrow windows (< one 20 MHz slice): center the whole range in the
-    //     slice (Looking Glass SINGLEPASS pattern, range/2 offset);
-    //   - wide windows: lead by half a slice so the first slice's RF passband
-    //     starts exactly at f_min (receiver is physically tuned to the window's
-    //     lower edge) and each further step overlaps the previous one.
-    // NOTE: if a caller needs a genuinely coarse sweep, step_hz must be clamped
-    // to one consumed frame's Hz (HZ_PER_FRAME) — stepping the center by any
-    // other value desyncs the display accumulator from RF coverage.
+    // First-slice placement:
+    //   - wide windows: lead by one lower-side reach (120 bins = 9.375 MHz) so
+    //     the slice's active negative band starts exactly at f_min — no
+    //     leading-edge dead zone;
+    //   - narrow windows (< one 20 MHz slice): centre the range in the slice
+    //     (Looking Glass SINGLEPASS pattern) — the extra slices produced by
+    //     the gapless pitch cover the central DC notch.
     f_center_ini = (range < SWEEP_SLICE_BW)
         ? (f_min + (range / 2))
-        : (f_min + (SWEEP_SLICE_BW / 2));
+        : (f_min + SWEEP_FIRST_CENTER_LEAD_HZ);
     reset();
 }
 
